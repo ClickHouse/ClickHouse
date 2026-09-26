@@ -130,6 +130,8 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
+    MultipartUploadMemory getWriteBufferMemory(const WriteSettings & write_settings) const override;
+
     AzureBlobStorage::ConnectionParams getConnectionParameters() const
     {
         return *connection_params.get();

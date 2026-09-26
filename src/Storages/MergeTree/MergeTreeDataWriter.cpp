@@ -1106,7 +1106,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         /*blocks_are_granules_size=*/false,
         context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
-        /*try_adaptive_codec=*/ false);
+        /*try_adaptive_codec=*/ false,
+        /// An inserted part resolves its writer settings (compression block sizes, serialization
+        /// versions) from the table's live context, never from the INSERT query context: the query
+        /// settings of one session must not change the on-disk layout of the parts it writes, and the
+        /// parts a mutation later rewrites are compared checksum for checksum against them.
+        /*writer_context=*/ nullptr);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1199,7 +1204,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     MergeTreeIndices indices,
     bool merge_is_needed,
     bool try_adaptive_codec,
-    bool use_selected_codec)
+    bool use_selected_codec,
+    ContextPtr context,
+    const MergeTreeSettingsPtr & base_data_settings)
 {
     auto temp_part = std::make_unique<MergeTreeTemporaryPart>();
     const auto & metadata_snapshot = projection.metadata;
@@ -1209,11 +1216,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     size_t expected_size = block.bytes();
     // just check if there is enough space on parent volume
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
-    part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection).part_type;
+    part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection, base_data_settings).part_type;
 
     auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, PartDirIntent::CreateFresh, is_temp).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
-    auto data_settings = data.getSettings(&projection.settings_changes);
+    auto data_settings = base_data_settings ? data.applySettingsChanges(base_data_settings, &projection.settings_changes)
+                                            : data.getSettings(&projection.settings_changes);
 
     if (is_temp)
         projection_part_storage->beginTransaction();
@@ -1333,9 +1341,14 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block.bytes(),
         /*reset_columns=*/ false,
         /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings(),
+        context->getWriteSettings(),
         static_cast<WrittenOffsetSubstreams *>(nullptr),
-        try_adaptive_codec);
+        try_adaptive_codec,
+        /// Only a merge (the caller that froze base_data_settings) passes its own context on: its memory
+        /// reservation was priced against that context's settings, so the rebuilt projection's writer
+        /// must resolve the same ones. An inserted or materialized projection part keeps the table's
+        /// live context, exactly like the parent part (see writeTempPartImpl).
+        base_data_settings ? context : nullptr);
 
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
@@ -1378,7 +1391,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         std::move(compression_codec),
         std::move(indices),
         merge_is_needed,
-        /*try_adaptive_codec=*/ false);
+        /*try_adaptive_codec=*/ false,
+        /*use_selected_codec=*/ false,
+        context,
+        /*base_data_settings=*/ {});
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1392,9 +1408,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     size_t block_num,
     bool use_selected_codec,
     bool is_explicit_recompression,
-    ContextPtr context)
+    ContextPtr context,
+    const MergeTreeSettingsPtr & base_data_settings)
 {
-    const auto & table_settings = data.getSettings();
+    /// The frozen selection-time snapshot when the caller is a merge (see the declaration), the live
+    /// table settings otherwise (a MATERIALIZE PROJECTION mutation).
+    const auto table_settings = base_data_settings ? base_data_settings : data.getSettings();
     auto indices = collectSkipIndicesToMaterialize(
         projection.metadata,
         (*table_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge],
@@ -1414,7 +1433,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         std::move(indices),
         /*merge_is_needed=*/ true,
         /*try_adaptive_codec=*/ !is_explicit_recompression,
-        use_selected_codec);
+        use_selected_codec,
+        context,
+        base_data_settings);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;
