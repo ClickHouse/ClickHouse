@@ -144,6 +144,8 @@ public:
 
     std::string getName() const override { return "HashJoin"; }
 
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::HASH); }
+
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool isCloneSupported() const override
@@ -238,7 +240,7 @@ public:
         return static_cast<double>(probe_candidate_rows.load(std::memory_order_relaxed)) / static_cast<double>(rows);
     }
 
-    void onProbePhaseFinish(size_t matched_right_rows) override
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override
     {
         hash_table_matches = matched_right_rows;
         probe_phase_finished = true;
@@ -728,7 +730,7 @@ private:
     bool probe_phase_finished = false;
 
     /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
-    size_t hash_table_matches = 0;
+    std::optional<size_t> hash_table_matches;
 
     /// Probe-time fan-out summed across probe streams. Written from the probe, which holds the join
     /// by const reference, hence `mutable`.
