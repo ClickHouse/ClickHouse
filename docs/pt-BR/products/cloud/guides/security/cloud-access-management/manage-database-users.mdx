@@ -23,6 +23,10 @@ Os usuários do console SQL são criados para cada sessão e autenticados com ce
 
 As funções básicas do console SQL podem ser atribuídas a usuários com as permissões Service Read Only e Service Admin. Para mais informações, consulte [Gerenciar atribuições de funções do console SQL](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). Este guia mostra como criar uma função personalizada para um usuário do console SQL.
 
+<Tip>
+  Prefira [funções de banco de dados gerenciadas pela Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (beta) para gerenciar o acesso ao banco de dados pelo console. As funções `sql-console-role:<email>` não são compatíveis com a [autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
 Para criar uma função personalizada para um usuário do console SQL e atribuir a ela uma função geral, execute os comandos a seguir. O endereço de e-mail deve corresponder ao endereço de e-mail do usuário no console.
 
 <Steps>

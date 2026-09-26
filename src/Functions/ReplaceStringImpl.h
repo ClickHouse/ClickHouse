@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
+#include <Functions/CancellationBudget.h>
 
 #include <functional>
 
@@ -17,43 +18,6 @@ struct ReplaceStringTraits
         First,
         All
     };
-};
-
-/// Throttled cancellation checkpoint for the `replace*` functions. Lives on the stack of a single vector
-/// call, so it is never shared between threads. Counted in loop ITERATIONS, not bytes: an empty regexp
-/// match advances one byte and may copy nothing, yet costs a full `RE2::Match`. Bytes are charged on top,
-/// scaled down, because one iteration can copy megabytes.
-struct ReplaceCancellationBudget
-{
-    /// About 30ms of granularity on the cheapest loop.
-    static constexpr size_t units_per_check = 1ULL << 16;
-    /// Bytes of data read or written that count as one unit of work.
-    static constexpr size_t bytes_per_unit = 16;
-    /// Accumulated inside a substitution loop before being charged, so the loop body stays short.
-    static constexpr size_t units_per_instruction_charge = 4096;
-
-    explicit ReplaceCancellationBudget(const std::function<void()> & check_)
-        : check(check_ ? &check_ : nullptr) {}
-
-    /// One iteration of an unbounded loop, plus the bytes of data that iteration touched.
-    void charge(size_t bytes = 0) { chargeUnits(1 + bytes / bytes_per_unit); }
-
-    /// Work that is not proportional to the amount of data, e.g. constructing a matcher from a pattern.
-    void chargeUnits(size_t units)
-    {
-        if (units_left > units)
-        {
-            units_left -= units;
-            return;
-        }
-        units_left = units_per_check;
-        if (check)
-            (*check)();
-    }
-
-private:
-    const std::function<void()> * check;
-    size_t units_left = units_per_check;
 };
 
 /** Replace one or all occurencies of substring 'needle' to 'replacement'.
@@ -73,7 +37,7 @@ struct ReplaceStringImpl
         size_t input_rows_count,
         const std::function<void()> & check_cancellation = {})
     {
-        ReplaceCancellationBudget budget(check_cancellation);
+        CancellationBudget budget(check_cancellation);
 
         if (needle.empty())
         {
@@ -219,7 +183,7 @@ struct ReplaceStringImpl
     {
         chassert(haystack_offsets.size() == needle_offsets.size());
 
-        ReplaceCancellationBudget budget(check_cancellation);
+        CancellationBudget budget(check_cancellation);
 
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
@@ -297,7 +261,7 @@ struct ReplaceStringImpl
     {
         chassert(haystack_offsets.size() == replacement_offsets.size());
 
-        ReplaceCancellationBudget budget(check_cancellation);
+        CancellationBudget budget(check_cancellation);
 
         if (needle.empty())
         {
@@ -381,7 +345,7 @@ struct ReplaceStringImpl
         chassert(haystack_offsets.size() == needle_offsets.size());
         chassert(needle_offsets.size() == replacement_offsets.size());
 
-        ReplaceCancellationBudget budget(check_cancellation);
+        CancellationBudget budget(check_cancellation);
 
         res_data.reserve(haystack_data.size());
         res_offsets.resize(input_rows_count);
@@ -462,7 +426,7 @@ struct ReplaceStringImpl
         size_t input_rows_count,
         const std::function<void()> & check_cancellation = {})
     {
-        ReplaceCancellationBudget budget(check_cancellation);
+        CancellationBudget budget(check_cancellation);
 
         if (needle.empty() || needle == replacement)
         {

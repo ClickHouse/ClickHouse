@@ -28,7 +28,8 @@ namespace
     }
 
     /// Parses escape sequences in a string literal and replaces them with the characters which they mean.
-    bool tryUnescapeStringLiteral(std::string_view input, String & res_string, String * error_message, size_t * error_pos)
+    bool tryUnescapeStringLiteral(
+        std::string_view input, char quote_char, String & res_string, String * error_message, size_t * error_pos)
     {
         res_string.clear();
         res_string.reserve(input.length());
@@ -68,8 +69,19 @@ namespace
                 case 't':  res_string.push_back(0x09); pos += 2; break;  /// \t  U+0009 horizontal tab
                 case 'v':  res_string.push_back(0x0B); pos += 2; break;  /// \v  U+000B vertical tab
                 case '\\': res_string.push_back('\\'); pos += 2; break;  /// \\  U+005C backslash
-                case '\'': res_string.push_back('\''); pos += 2; break;  /// \'  U+0027 single quote
-                case '"':  res_string.push_back('"');  pos += 2; break;  /// \"  U+0022 double quote
+                case '\'':
+                case '"':
+                {
+                    if (c != quote_char)
+                    {
+                        setErrorMessage(error_message, "Invalid escape sequence {}", quoteString(input.substr(pos)));
+                        setErrorPos(error_pos, pos);
+                        return false;
+                    }
+                    res_string.push_back(c);
+                    pos += 2;
+                    break;
+                }
                 case 'x':
                 {
                     /// \x followed by exactly two hexadecimal digits represents a single byte.
@@ -150,6 +162,14 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
+                    if (UTF8::isSurrogateCodePoint(code_point))
+                    {
+                        setErrorMessage(error_message,
+                                        "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",
+                                        quoteString(input.substr(pos, 6)));
+                        setErrorPos(error_pos, pos);
+                        return false;
+                    }
                     char bytes[3];  /// 3 bytes is enough to represent a Unicode code point up to 0xFFFF.
                     size_t num_bytes = UTF8::convertCodePointToUTF8(code_point, bytes, sizeof(bytes));
                     res_string.append(bytes, num_bytes);
@@ -184,7 +204,15 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    char bytes[4];  /// 4 bytes is enough to represent a Unicode code point up to 0xFFFF.
+                    if (UTF8::isSurrogateCodePoint(code_point))
+                    {
+                        setErrorMessage(error_message,
+                                        "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",
+                                        quoteString(input.substr(pos, 10)));
+                        setErrorPos(error_pos, pos);
+                        return false;
+                    }
+                    char bytes[4];  /// 4 bytes is enough to represent a Unicode code point up to 0x10FFFF.
                     size_t num_bytes = UTF8::convertCodePointToUTF8(code_point, bytes, sizeof(bytes));
                     res_string.append(bytes, num_bytes);
                     pos += 10;
@@ -243,10 +271,20 @@ bool PrometheusQueryParsingUtil::tryParseStringLiteral(
 
     /// A string literal enclosed in quotes or double quotes: escape sequences need to be parsed.
     std::string_view unquoted = input.substr(1, input.length() - 2);
-    if (!tryUnescapeStringLiteral(unquoted, res_string, error_message, error_pos))
+    const size_t newline_pos = unquoted.find('\n');
+    size_t unescape_error_pos = 0;
+    const bool unescape_succeeded = tryUnescapeStringLiteral(unquoted, quote_char, res_string, error_message, &unescape_error_pos);
+
+    if (newline_pos != String::npos && (unescape_succeeded || newline_pos < unescape_error_pos))
     {
-        if (error_pos)
-            ++*error_pos;
+        setErrorMessage(error_message, "unterminated quoted string");
+        setErrorPos(error_pos, 0);
+        return false;
+    }
+
+    if (!unescape_succeeded)
+    {
+        setErrorPos(error_pos, unescape_error_pos + 1);
         return false;
     }
 
@@ -322,13 +360,57 @@ namespace
             return "number";
     }
 
+    bool isOctalFormat(std::string_view input)
+    {
+        if (input.size() < 2 || input[0] != '0')
+            return false;
+
+        for (char c : input.substr(1))
+        {
+            if (c < '0' || c > '7')
+                return false;
+        }
+
+        return true;
+    }
+
     /// Parses an unsigned scalar in number format, for example "1000" or "1_000" or "5.67" or "2e10" or "Inf" or "Nan".
     /// Underscores between digits are ignored.
     template <typename T>
-    bool tryParseNumberFormat(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseNumberFormat(
+        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool allow_octal_literals)
     {
         /// Remove underscores between digits if necessary.
         String str = removeUnderscoresBetweenDigits</* is_hex = */ false>(input);
+
+        /// Prometheus tries parsing integer literals with base 0 before falling back to floating-point parsing.
+        /// In particular, integer literals with a leading zero are interpreted as octal.
+        if (allow_octal_literals && isOctalFormat(str))
+        {
+            Int64 value = 0;
+            if (tryParseIntInBase<8>(value, str))
+            {
+                if constexpr (is_decimal<T>)
+                {
+                    if (common::mulOverflow(value, DecimalUtils::scaleMultiplier<T>(scale), result.value))
+                    {
+                        setErrorMessage(
+                            error_message,
+                            "Cannot parse {} {} in octal format: Overflow, the number is too big",
+                            getTypeName<T>(),
+                            quoteString(input));
+                        setErrorPos(error_pos, 0);
+                        return false;
+                    }
+                }
+                else
+                {
+                    result = static_cast<T>(value);
+                }
+
+                return true;
+            }
+        }
 
         if constexpr (is_decimal<T>)
         {
@@ -606,7 +688,8 @@ namespace
     }
 
     template <typename T>
-    bool tryParseNumber(std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos)
+    bool tryParseNumber(
+        std::string_view input, UInt32 scale, T & result, String * error_message, size_t * error_pos, bool allow_octal_literals)
     {
         size_t pos = 0;
 
@@ -645,7 +728,7 @@ namespace
         }
         else
         {
-            ok = tryParseNumberFormat(unsigned_input, scale, result, error_message, error_pos);
+            ok = tryParseNumberFormat(unsigned_input, scale, result, error_message, error_pos, allow_octal_literals);
         }
 
         if (!ok)
@@ -666,25 +749,35 @@ namespace
 bool PrometheusQueryParsingUtil::tryParseScalar(std::string_view input, ScalarType & res_scalar, String * error_message, size_t * error_pos)
 {
     /// Here `scale` is set to `0` because it's unused when parsing a floating-point number.
-    return tryParseNumber(input, /* scale */ 0, res_scalar, error_message, error_pos);
+    return tryParseNumber(input, /* scale */ 0, res_scalar, error_message, error_pos, /* allow_octal_literals */ true);
 }
 
 bool PrometheusQueryParsingUtil::tryParseTimestamp(
-    std::string_view input, UInt32 timestamp_scale, TimestampType & res_timestamp, String * error_message, size_t * error_pos)
+    std::string_view input,
+    UInt32 timestamp_scale,
+    TimestampType & res_timestamp,
+    String * error_message,
+    size_t * error_pos,
+    bool allow_octal_literals)
 {
-    return tryParseNumber(input, timestamp_scale, res_timestamp, error_message, error_pos);
+    return tryParseNumber(input, timestamp_scale, res_timestamp, error_message, error_pos, allow_octal_literals);
 }
 
 bool PrometheusQueryParsingUtil::tryParseDuration(
-    std::string_view input, UInt32 timestamp_scale, DurationType & res_duration, String * error_message, size_t * error_pos)
+    std::string_view input,
+    UInt32 duration_scale,
+    DurationType & res_duration,
+    String * error_message,
+    size_t * error_pos,
+    bool allow_octal_literals)
 {
-    return tryParseNumber(input, timestamp_scale, res_duration, error_message, error_pos);
+    return tryParseNumber(input, duration_scale, res_duration, error_message, error_pos, allow_octal_literals);
 }
 
 
 /// Parses a time range which is used in range selectors.
 bool PrometheusQueryParsingUtil::tryParseSelectorRange(
-    std::string_view input, UInt32 timestamp_scale, DurationType & res_range, String * error_message, size_t * error_pos)
+    std::string_view input, UInt32 time_scale, DurationType & res_range, String * error_message, size_t * error_pos)
 {
     /// Check opening and closing brackets.
     if (!input.starts_with('['))
@@ -720,7 +813,8 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
         return false;
     }
 
-    if (!tryParseDuration(input.substr(start_pos, end_pos - start_pos), timestamp_scale, res_range, error_message, error_pos))
+    if (!tryParseDuration(
+            input.substr(start_pos, end_pos - start_pos), time_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
     {
         if (error_pos)
             *error_pos += start_pos;
@@ -733,7 +827,7 @@ bool PrometheusQueryParsingUtil::tryParseSelectorRange(
 /// Parses a time range with an optional step which are used in subqueries.
 bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
     std::string_view input,
-    UInt32 timestamp_scale,
+    UInt32 time_scale,
     DurationType & res_range,
     std::optional<DurationType> & res_step,
     String * error_message,
@@ -792,7 +886,8 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
         return false;
     }
 
-    if (!tryParseDuration(input.substr(range_start_pos, range_end_pos - range_start_pos), timestamp_scale, res_range, error_message, error_pos))
+    if (!tryParseDuration(
+            input.substr(range_start_pos, range_end_pos - range_start_pos), time_scale, res_range, error_message, error_pos, /* allow_octal_literals */ true))
     {
         if (error_pos)
             *error_pos += range_start_pos;
@@ -803,7 +898,8 @@ bool PrometheusQueryParsingUtil::tryParseSubqueryRange(
 
     if (step_start_pos != step_end_pos)
     {
-        if (!tryParseDuration(input.substr(step_start_pos, step_end_pos - step_start_pos), timestamp_scale, res_step.emplace(), error_message, error_pos))
+        if (!tryParseDuration(
+                input.substr(step_start_pos, step_end_pos - step_start_pos), time_scale, res_step.emplace(), error_message, error_pos, /* allow_octal_literals */ true))
         {
             if (error_pos)
                 *error_pos += step_start_pos;

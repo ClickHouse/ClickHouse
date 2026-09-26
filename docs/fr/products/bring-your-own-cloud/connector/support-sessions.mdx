@@ -1,0 +1,154 @@
+---
+title: 'Sessions de support'
+sidebarTitle: 'Sessions de support'
+description: 'Activez, délimitez, auditez et révoquez les accès du support ClickHouse via ClickHouse Connector'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Les sessions Support vous permettent d’accorder à ClickHouse un accès temporaire à des fins de diagnostic via le ClickHouse Connector. Cette page explique ce qu’est une session, comment l’activer et la désactiver, ce que les opérateurs ClickHouse peuvent faire lorsqu’elle est active et comment auditer l’ensemble des actions effectuées.
+
+<div id="what-a-support-session-is">
+  ## Qu’est-ce qu’une session de support ?
+</div>
+
+Une session de support est une période limitée dans le temps pendant laquelle l’outil de diagnostic accepte les commandes des ingénieurs du support ClickHouse. Lorsqu’aucune session n’est active, l’outil de diagnostic refuse toutes les commandes, même si son WebSocket sortant est connecté. Il n’existe aucune autre voie d’exécution : rien ne s’exécute sans session et ClickHouse ne peut pas en ouvrir une à votre place. Le plan de contrôle de ClickHouse ne se connecte jamais à votre environnement ; il reçoit uniquement ce que l’outil de diagnostic envoie via son canal sortant, et ce canal ne transmet des commandes que lorsque l’état de votre session l’autorise.
+
+<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="Flux de confiance d’une session de support ClickHouse Connector" />
+
+Vous contrôlez les sessions via deux interfaces :
+
+* **La passerelle de session**, une API authentifiée intégrée à l’outil de diagnostic, avec les endpoints `enable`, `disable` et `status`. Chaque appel à la passerelle nécessite un jeton d’identification OIDC à courte durée de vie dont l’adresse e-mail figure dans votre liste d’autorisation des opérateurs.
+* **Le fichier de session local**, pour les installations sur VM Linux, écrit directement sur l’hôte avec un accès root.
+
+Le transport de la passerelle dépend de la cible. Une passerelle sur VM utilise TLS avec un certificat auto-signé, dont chaque opérateur épingle l’empreinte. Une passerelle Kubernetes écoute localement sur le pod via HTTP et est accessible via `kubectl port-forward` (le tunnel utilise le TLS du serveur API) ou via une ressource Ingress qui termine TLS avec un certificat émis par une AC.
+
+Vous définissez votre politique de session, y compris la liste d’autorisation des opérateurs, lors de l’exécution de `clicklink clctl init`.
+
+<div id="enabling-and-disabling-sessions">
+  ## Activation et désactivation des sessions
+</div>
+
+<Tabs>
+  <Tab title="Kubernetes">
+    La passerelle écoute sur le port 8443 du pod de l’outil de diagnostic. Si vous avez accès au cluster, accédez-y via un port-forward ; le tunnel s’appuie sur le TLS du serveur d’API Kubernetes :
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # l’espace de noms du connecteur choisi lors de l’initialisation
+    kubectl -n "${CONNECTOR_NAMESPACE}" port-forward statefulset/clicklink-connector-troubleshooter 8443:8443
+    ```
+
+    Ensuite, dans un autre terminal, activez une session :
+
+    ```bash
+    clicklink clctl troubleshoot session enable \
+      --gateway-url http://localhost:8443 \
+      --duration 4h \
+      --reason "<référence du ticket>"
+    ```
+
+    Vérifiez-la ou désactivez-la de la même façon :
+
+    ```bash
+    clicklink clctl troubleshoot session status --gateway-url http://localhost:8443
+    clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
+    ```
+
+    L’identité OIDC de l’appelant doit figurer dans la liste d’autorisation des opérateurs ; les appelants non authentifiés ou non autorisés reçoivent une erreur 401 ou 403, et la tentative est consignée. Si vous préférez ne pas exiger d’identifiants de cluster, le chart peut exposer la passerelle via un Ingress facultatif qui termine TLS à l’aide d’un certificat émis par une CA ; consultez la [configuration](/fr/products/bring-your-own-cloud/connector/configuration).
+  </Tab>
+
+  <Tab title="VM Linux">
+    Avec un accès root sur l’hôte, gérez directement la session. L’état est conservé dans `/var/lib/clicklink/session.json`, que le démon et la CLI lisent et écrivent de façon atomique :
+
+    ```bash
+    sudo clicklink clctl troubleshoot session enable --duration 4h --reason "<référence du ticket>"
+    sudo clicklink clctl troubleshoot session status
+    sudo clicklink clctl troubleshoot session disable
+    ```
+
+    La passerelle est également disponible sur une VM pour les appelants sans accès root. Elle utilise un certificat TLS auto-signé ; chaque utilisateur de session enregistre donc une fois l’empreinte du certificat de la passerelle :
+
+    ```bash
+    clicklink clctl troubleshoot gateway trust \
+      --gateway-url https://<hôte-vm>:8443 \
+      --gateway-fingerprint <empreinte-sha256>
+    ```
+
+    L’empreinte est stockée dans `~/.clicklink/clctl.yaml`, et les connexions échouent de manière sécurisée si le certificat présenté ne correspond pas à cette empreinte.
+  </Tab>
+</Tabs>
+
+<div id="session-expiry">
+  ## Expiration de la session
+</div>
+
+Les sessions expirent automatiquement. La durée par défaut est de 4 heures ; `session enable --duration` permet de définir une durée pouvant aller jusqu’à 24 heures. Lorsque la session expire ou dès que vous exécutez `session disable`, l’outil de diagnostic cesse d’accepter les commandes. La désactivation de la session permet une révocation immédiate : aucun redémarrage ni aucune coordination avec ClickHouse ne sont nécessaires.
+
+<div id="operator-allowlist">
+  ## Liste d’autorisation des opérateurs
+</div>
+
+Chaque appel vers la passerelle est autorisé selon une liste d’adresses e-mail d’opérateurs, comparée à l’adresse e-mail attestée par le jeton OIDC validé, et jamais à ce que le client déclare à son sujet.
+
+* **Kubernetes :** définissez `clctl.gateway.allowedOperators` dans votre fichier de surcharge de valeurs. La liste est générée dans une ConfigMap que la passerelle relit toutes les 30 secondes ; ainsi, une modification des valeurs suivie de `helm upgrade` renouvelle la liste d’autorisation sans redémarrer le pod.
+* **VM Linux :** la liste d’autorisation se trouve dans `/etc/clicklink/allowed-operators.txt`, écrit par `clicklink clctl init` à partir des adresses e-mail d’opérateurs que vous fournissez.
+
+<div id="what-operators-can-do">
+  ## Ce que les opérateurs peuvent faire pendant une session
+</div>
+
+Lorsqu’une session est active, les ingénieurs du support ClickHouse peuvent exécuter :
+
+* Des **requêtes SQL en lecture seule** sur vos clusters en tant qu’utilisateur `pcm_troubleshooter`, limitées à une liste explicite de tables autorisées. La liste d’autorisation par défaut couvre les tables ClickHouse `system`, telles que `system.parts`, `system.merges`, `system.replicas`, `system.metrics` et `system.settings` ; `system.query_log` et `system.text_log` sont systématiquement refusées, de sorte que l’historique des requêtes ne quitte jamais votre environnement. La liste d’autorisation par défaut inclut toutefois `system.processes`, dont la colonne `query` affiche le texte des instructions en cours d’exécution à ce moment-là ; retirez cette table de la liste d’autorisation de la session (`troubleshooter.allowedTables` dans la surcouche Helm, `troubleshooter.allowed_tables` dans le fichier de configuration de la VM) si le texte des requêtes en cours ne doit jamais être visible lors d’une session. L’utilisateur dispose uniquement de privilèges `SELECT` par table, sans privilège d’écriture, DDL ni d’administration.
+* Des **vues Kubernetes en lecture seule** sur chaque déploiement provisionné (les bundles d’accès sont associés à des ServiceAccounts Kubernetes sur les deux cibles d’installation) : `get`, `list` et `watch` sur les pods, les journaux de pods, les services, les configmaps, les événements, les PersistentVolumeClaims, les déploiements, les statefulsets et les replicasets dans les espaces de noms autorisés. Sans bundle provisionné, l’outil de diagnostic refuse catégoriquement les commandes de type kubectl.
+
+Le RBAC de l’outil de diagnostic ne contient aucune permission `exec`, `delete` ou `patch` ; les opérateurs ne peuvent donc pas ouvrir de shell dans vos pods ni modifier quoi que ce soit via le connecteur. La liste complète des privilèges et du RBAC figure dans la référence du [modèle de privilèges](/fr/products/bring-your-own-cloud/connector/reference/privilege-model).
+
+<div id="audit-log">
+  ## Journal d’audit
+</div>
+
+Chaque appel de passerelle et chaque commande exécutée au cours d’une session sont ajoutés à `/var/log/clicklink/troubleshoot-audit.log` sous la forme d’un objet JSON par ligne (NDJSON). Le champ `submitted_by` enregistre l’identité associée à chaque entrée, laquelle dépend de son origine : les appels de passerelle contiennent l’adresse e-mail attestée par le jeton validé, jamais une valeur fournie par le client ; les modifications de session effectuées localement sur une VM enregistrent l’utilisateur hôte à l’origine de l’appel ; et les commandes exécutées au cours d’une session enregistrent l’identité de l’organisation transmise sur le canal de commandes authentifié. Une entrée d’activation de session via la passerelle se présente comme suit :
+
+```json
+{
+  "timestamp": "2026-06-22T22:30:00.123456789Z",
+  "command_id": "11111111-2222-4333-8444-555555555555",
+  "submitted_by": "operator@clickhouse.com",
+  "command_type": "clctl.session.enable",
+  "command_text": "ticket #1234",
+  "instance_id": "",
+  "status": "ok",
+  "duration_ms": 42,
+  "output_lines": 0,
+  "remote_addr": "10.20.30.40"
+}
+```
+
+Les entrées du cycle de vie des sessions utilisent les types de commande `clctl.session.enable`, `clctl.session.disable` et `clctl.session.status` ; la valeur de `--reason` lors de l’activation est enregistrée dans `command_text`. Les commandes exécutées pendant une session sont consignées selon le même schéma. `status` distingue les appels réussis des tentatives `unauthorized`, `forbidden` et `rate_limited`, de sorte que les accès refusés apparaissent également dans le journal.
+
+Sur une VM, lisez directement le fichier avec `clicklink clctl troubleshoot audit tail`. Sur Kubernetes, le journal se trouve dans le pod de l’outil de diagnostic et l’image de conteneur ne contient pas d’interpréteur de commandes ; appelez donc le lecteur intégré au binaire via `kubectl exec` :
+
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-troubleshooter -- \
+  /clicklink clctl troubleshoot audit tail
+```
+
+Le journal est un simple fichier dans votre environnement ; transmettez-le à votre SIEM comme n’importe quel autre journal d’hôte ou de conteneur.
+
+<div id="redaction">
+  ## Masquage
+</div>
+
+Tout ce que renvoie l’outil de diagnostic est masqué avant de quitter votre environnement. Des modèles intégrés couvrent les adresses IPv4 et IPv6, les jetons Bearer, les clés d&#39;accès AWS, les adresses e-mail, les JWT, les clés privées SSH et les informations d&#39;identification incluses dans les chaînes de connexion. Vous pouvez les étendre ou les remplacer dans `/etc/clicklink/redaction-patterns.yaml` ; une entrée portant le même nom qu&#39;un modèle intégré le remplace. Le démon refuse de démarrer si le fichier de modèles n&#39;est pas valide, et `clicklink clctl preflight` le valide : ainsi, une configuration de masquage défectueuse échoue explicitement au lieu de laisser passer silencieusement des données.
+
+<div id="related-pages">
+  ## Pages associées
+</div>
+
+* [Architecture](/fr/products/bring-your-own-cloud/connector/architecture) : toutes les connexions établies par le connecteur et les flux de données associés aux sessions.
+* [Configuration](/fr/products/bring-your-own-cloud/connector/configuration) : paramètres de passerelle, de liste d’autorisation et de masquage.
+* [FAQ](/fr/products/bring-your-own-cloud/connector/reference/faq) : questions sur la révocation, l’audit et l’egress des données.

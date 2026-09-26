@@ -27,7 +27,7 @@ ClickHouse Managed Postgres is enterprise-grade Postgres backed by NVMe storage,
 - **Part 1:** Get started with NVMe Postgres and experience its performance
 - **Part 2:** Unlock real-time analytics by integrating with ClickHouse
 
-ClickHouse Managed Postgres is currently available on AWS in several regions and is in public beta.
+ClickHouse Managed Postgres is currently available on AWS in several regions and is in public beta. GCP is in Private Preview. You can sign up for the GCP Private Preview waitlist [here](https://clickhouse.com/cloud/postgres#gcp-waitlist).
 
 **In this quickstart, you will:**
 - Create a ClickHouse Managed Postgres instance with NVMe-powered performance
@@ -282,6 +282,14 @@ CREATE SERVER ch FOREIGN DATA WRAPPER clickhouse_fdw
 Replace `<clickhouse_cloud_host>` with your ClickHouse hostname and `<database_name>` with the database you selected during replication setup. You can find the hostname in your ClickHouse service by clicking **Connect** in the sidebar.
 
 <Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="Get ClickHouse host" size="md" border/>
+
+<Note>
+If you're using the ClickHouse Cloud console to run SQL, grant the console admin user access to the foreign server:
+
+```sql
+GRANT USAGE ON FOREIGN SERVER ch TO chpg_console_admin;
+```
+</Note>
 
 Now, we map the Postgres user to the ClickHouse service's credentials:
 ```sql

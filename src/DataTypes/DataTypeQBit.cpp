@@ -327,6 +327,22 @@ Here the 4096 dimensions are split into 4 groups of 1024. The subcolumns follow 
 
 To run a reduced-dimension search, pass the number of dimensions to read as the fourth argument of the transposed distance functions (see below). The reference vector must have at least that many elements (any extra trailing elements are ignored), and the value must be a multiple of `stride`.
 
+## Element access and slicing {#qbit-element-access}
+
+[`arrayElement`](../functions/array-functions.md#arrayElement) (and the `vec[n]` operator) returns the `n`-th vector element, reconstructed at the full precision of the element type. Only the bit planes of the stride group containing the element are read. [`arraySlice`](../functions/array-functions.md#arraySlice) returns a `QBit` over the selected dimensions (a projection to a subset of dimensions); the offset and length must be constants, because the dimension of a `QBit` is part of its type. A slice aligned to stride-group boundaries keeps the stride and reuses the stored bit-plane streams without copying:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]);
+SELECT vec[3], arraySlice(vec, 2, 3) FROM test;
+```
+
+```text
+┌─arrayElement(vec, 3)─┬─arraySlice(vec, 2, 3)─┐
+│                    3 │ [2,3,4]               │
+└──────────────────────┴───────────────────────┘
+```
+
 ## Vector search functions {#vector-search-functions}
 
 These are the distance functions for vector similarity search that use `QBit` data type:
