@@ -108,6 +108,12 @@ public:
 
     const DataLakeStorageSettings & getDataLakeSettings() const override { return *settings; }
 
+    void setExplicitMetadataFilePath(const String & path) override
+    {
+        if (auto metadata = tryGetMetadata())
+            metadata->setExplicitMetadataFilePath(path);
+    }
+
     std::string getEngineName() const override { return DataLakeMetadata::name + BaseStorageConfiguration::getEngineName(); }
 
     StorageObjectStorageConfiguration::Path getRawPath() const override
