@@ -20,6 +20,7 @@ public:
 
     // ISpaceSharedNode
     ResourceAllocation * selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details) override;
+    ResourceAllocation * selectAllocationToSpill(ResourceCost at_least, String & details) override;
     void approveIncrease() override;
     void approveDecrease() override;
     void propagateUpdate(ISpaceSharedNode & from_child, Update && update) override;
@@ -28,6 +29,7 @@ public:
 private:
     bool setIncrease(ISpaceSharedNode & from_child, IncreaseRequest * new_increase, bool detach_child);
     bool setDecrease(ISpaceSharedNode & from_child, DecreaseRequest * new_decrease, bool detach_child);
+    void syncReclaimableMembership(ISpaceSharedNode & from_child, bool detach_child);
 
     /// Ordering by precedence. Used for both running and increasing children for consistent ordering.
     /// NOTE: According to IWorkloadNode::updateRequiresDetach() any change in precedence will lead to child
@@ -35,6 +37,7 @@ private:
     RunningSetByPrecedence running_children; /// Children with currently running allocations
     IncreasingSetByPrecedence increasing_children; /// Children with pending increase request
     DecreasingList decreasing_children; /// Children with pending decrease request
+    ReclaimableSetByPrecedence reclaimable_children; /// Children with `reclaimable > 0`, ordered by precedence (spill victim = least precedence)
 
     ISpaceSharedNode * increase_child = nullptr; /// Child that requested the current `increase`
     ISpaceSharedNode * decrease_child = nullptr; /// Child that requested the current `decrease`
