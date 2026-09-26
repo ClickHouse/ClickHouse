@@ -479,6 +479,9 @@ extern const std::vector<Event> keeper_profile_events
     M(KeeperChangelogStartupReadThreads) \
     M(KeeperChangelogStartupReadThreadsActive) \
     M(KeeperChangelogStartupReadThreadsScheduled) \
+    M(KeeperSnapshotRecoveryThreads) \
+    M(KeeperSnapshotRecoveryThreadsActive) \
+    M(KeeperSnapshotRecoveryThreadsScheduled) \
     M(KeeperBlockCacheBytes) \
     M(KeeperBlockCacheBlocks) \
     M(KeeperContainerNodes) \

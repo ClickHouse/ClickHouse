@@ -28,7 +28,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/Stopwatch.h>
-
+#include <Common/ThreadPool.h>
 #include <zstd.h>
 
 namespace ProfileEvents
@@ -37,12 +37,20 @@ namespace ProfileEvents
     extern const Event KeeperSnapshotFileSyncMicroseconds;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric KeeperSnapshotRecoveryThreads;
+    extern const Metric KeeperSnapshotRecoveryThreadsActive;
+    extern const Metric KeeperSnapshotRecoveryThreadsScheduled;
+}
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
     extern const int KEEPER_EXCEPTION;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
@@ -357,6 +365,8 @@ KeeperSnapshotManager::makeManagedSnapshotFileInfo(std::string path, DiskPtr dis
                 if (p->retired_for_removal.load(std::memory_order_acquire))
                 {
                     p->disk->removeFileIfExists(p->path);
+                    if (p->recovery_marker_path)
+                        p->disk->removeFileIfExists(*p->recovery_marker_path);
                     LOG_DEBUG(logger, "Removed retired snapshot {} at path {}", log_idx, p->path);
                 }
             }
@@ -370,6 +380,337 @@ KeeperSnapshotManager::makeManagedSnapshotFileInfo(std::string path, DiskPtr dis
         });
 }
 
+namespace
+{
+
+struct DiskInventory
+{
+    DiskPtr disk;
+    size_t precedence = 0;
+    std::vector<std::pair<uint64_t, String>> snapshots;
+    std::vector<std::pair<String, String>> markers; /// target basename, marker path
+};
+
+struct SnapshotRecoveryCandidate
+{
+    SnapshotFileInfoPtr info;
+    std::optional<String> marker_path;
+    bool has_unknown_marker_version = false;
+};
+
+/// Creates the managed `SnapshotFileInfo` for a discovered snapshot file.
+using SnapshotFileInfoFactory = std::function<SnapshotFileInfoPtr(const String & path, const DiskPtr & disk, uint64_t log_idx)>;
+
+/// Rank old/current/latest snapshot disks by precedence and list snapshots and move markers on each.
+std::vector<DiskInventory> inventoryDisks(
+    const LoggerPtr & log, const std::vector<DiskPtr> & old_disks, const DiskPtr & main_disk, const DiskPtr & latest_disk)
+{
+    std::vector<DiskInventory> inventories;
+    const auto add_disk = [&](const DiskPtr & candidate, size_t precedence)
+    {
+        auto it = std::ranges::find(inventories, candidate, &DiskInventory::disk);
+        if (it == inventories.end())
+            inventories.push_back({.disk = candidate, .precedence = precedence, .snapshots = {}, .markers = {}});
+        else
+            it->precedence = std::max(it->precedence, precedence);
+    };
+    size_t precedence = 0;
+    for (const auto & old_disk : old_disks)
+        add_disk(old_disk, precedence++);
+    add_disk(main_disk, precedence++);
+    add_disk(latest_disk, precedence++);
+    const auto inventory_disk = [&](DiskInventory & inventory)
+    {
+        LOG_TRACE(log, "Inventorying snapshots on disk {}", inventory.disk->getName());
+        for (auto it = inventory.disk->iterateDirectory(""); it->isValid(); it->next())
+        {
+            const auto & name = it->name();
+            if (name.starts_with(tmp_keeper_file_prefix))
+            {
+                LOG_TRACE(log, "Found snapshot move marker {} on disk {}", it->path(), inventory.disk->getName());
+                inventory.markers.emplace_back(name.substr(tmp_keeper_file_prefix.size()), it->path());
+            }
+            else if (name.starts_with("snapshot_"))
+            {
+                LOG_TRACE(log, "Found snapshot {} on disk {}", it->path(), inventory.disk->getName());
+                inventory.snapshots.emplace_back(getLogIdxFromSnapshotPath(it->path()), it->path());
+            }
+        }
+    };
+
+    if (inventories.size() == 1)
+    {
+        inventory_disk(inventories.front());
+    }
+    else
+    {
+        ThreadPool pool(
+            CurrentMetrics::KeeperSnapshotRecoveryThreads,
+            CurrentMetrics::KeeperSnapshotRecoveryThreadsActive,
+            CurrentMetrics::KeeperSnapshotRecoveryThreadsScheduled,
+            inventories.size() - 1,
+            /*max_free_threads_*/ 0,
+            /*queue_size_*/ 0);
+        for (auto & inventory : inventories)
+            if (&inventory != &inventories.front())
+                pool.scheduleOrThrowOnError([&inventory, &inventory_disk] { inventory_disk(inventory); });
+        inventory_disk(inventories.front());
+        pool.wait();
+    }
+
+    return inventories;
+}
+
+/// Pair snapshots with their move markers and group same-index candidates; markers left over after
+/// pairing are orphaned.
+std::pair<std::map<uint64_t, std::vector<SnapshotRecoveryCandidate>>, std::vector<std::pair<DiskPtr, String>>> groupRecoveryCandidates(
+    std::vector<DiskInventory> inventories, const SnapshotFileInfoFactory & make_snapshot_file_info)
+{
+    std::map<uint64_t, std::vector<SnapshotRecoveryCandidate>> groups;
+    std::vector<std::pair<DiskPtr, String>> orphan_markers;
+    for (auto & inventory : inventories)
+    {
+        std::unordered_map<String, String> markers;
+        for (auto & [target_name, marker_path] : inventory.markers)
+            markers.emplace(target_name, marker_path);
+
+        for (auto & [log_idx, path] : inventory.snapshots)
+        {
+            SnapshotRecoveryCandidate candidate{
+                .info = make_snapshot_file_info(path, inventory.disk, log_idx),
+                .marker_path = std::nullopt};
+            candidate.info->recovery_precedence = inventory.precedence;
+            const String basename = fs::path(path).filename();
+            if (auto marker_it = markers.find(basename); marker_it != markers.end())
+            {
+                candidate.marker_path = marker_it->second;
+                markers.erase(marker_it);
+            }
+            groups[log_idx].push_back(std::move(candidate));
+        }
+        for (auto & [name, marker_path] : markers)
+            orphan_markers.emplace_back(inventory.disk, marker_path);
+    }
+
+    return {std::move(groups), std::move(orphan_markers)};
+}
+
+/// Resolve one log-index group down to a single candidate, validating move markers and disk
+/// precedence; `duplicates` collects the losing copies to keep as recovery backups. Returns nullptr if
+/// every candidate in the group was removed.
+SnapshotFileInfoPtr selectRecoveryCandidate(
+    const LoggerPtr & log, std::vector<SnapshotRecoveryCandidate> & candidates, std::vector<SnapshotFileInfoPtr> & duplicates)
+{
+    for (auto it = candidates.begin(); it != candidates.end();)
+    {
+        if (!it->marker_path)
+        {
+            ++it;
+            continue;
+        }
+
+        const auto marker = readKeeperMoveMarker(it->info->disk, *it->marker_path);
+        if (!marker)
+        {
+            switch (marker.error())
+            {
+                case KeeperMoveMarkerParseError::LegacyEmpty:
+                    /// An empty marker means that the snapshot creation (or a legacy move) was interrupted,
+                    /// so the snapshot is incomplete.
+                    LOG_TRACE(
+                        log,
+                        "Removing incomplete snapshot {} and legacy marker {} from disk {}",
+                        it->info->path,
+                        *it->marker_path,
+                        it->info->disk->getName());
+                    removeKeeperFileIfExists(it->info->disk, it->info->path);
+                    removeKeeperFileIfExists(it->info->disk, *it->marker_path);
+                    it = candidates.erase(it);
+                    continue;
+                case KeeperMoveMarkerParseError::UnknownVersion:
+                    /// Only a newer server writes other marker versions, so this can only happen after a downgrade.
+                    it->has_unknown_marker_version = true;
+                    ++it;
+                    continue;
+                case KeeperMoveMarkerParseError::Malformed:
+                    break; /// handled as a mismatch below
+            }
+        }
+        else if (it->info->disk->getFileSize(it->info->path) == marker->size
+            && computeKeeperFileDigest(it->info->disk, it->info->path) == *marker)
+        {
+            LOG_TRACE(
+                log,
+                "Snapshot {} on disk {} matches move marker {}, removing the marker",
+                it->info->path,
+                it->info->disk->getName(),
+                *it->marker_path);
+            removeKeeperFileIfExists(it->info->disk, *it->marker_path);
+            it->marker_path.reset();
+            ++it;
+            continue;
+        }
+
+        if (candidates.size() == 1)
+        {
+            LOG_WARNING(
+                log,
+                "Snapshot {} on disk {} does not match move marker {}; removing the marker and keeping the only recovery candidate",
+                it->info->path,
+                it->info->disk->getName(),
+                *it->marker_path);
+            removeKeeperFileIfExists(it->info->disk, *it->marker_path);
+            it->marker_path.reset();
+            ++it;
+            continue;
+        }
+
+        LOG_TRACE(
+            log,
+            "Snapshot {} on disk {} does not match move marker {}, removing the snapshot and marker",
+            it->info->path,
+            it->info->disk->getName(),
+            *it->marker_path);
+        removeKeeperFileIfExists(it->info->disk, it->info->path);
+        removeKeeperFileIfExists(it->info->disk, *it->marker_path);
+        it = candidates.erase(it);
+    }
+
+    if (candidates.empty())
+        return nullptr;
+
+    /// This can only happen after a downgrade (a newer server wrote the markers).
+    /// Keep the highest-precedence copy instead of dropping the last one.
+    if (std::ranges::all_of(candidates, &SnapshotRecoveryCandidate::has_unknown_marker_version))
+    {
+        const auto fallback = std::ranges::max_element(candidates, {}, [](const auto & candidate)
+        {
+            return candidate.info->recovery_precedence;
+        });
+        LOG_WARNING(
+            log,
+            "All snapshot recovery candidates for index {} have an unknown marker version; removing marker {} and using {} on disk {}",
+            getLogIdxFromSnapshotPath(fallback->info->path),
+            *fallback->marker_path,
+            fallback->info->path,
+            fallback->info->disk->getName());
+        removeKeeperFileIfExists(fallback->info->disk, *fallback->marker_path);
+        fallback->marker_path.reset();
+        fallback->has_unknown_marker_version = false;
+    }
+
+    std::erase_if(candidates, [&](const auto & candidate)
+    {
+        if (!candidate.has_unknown_marker_version)
+            return false;
+
+        LOG_WARNING(
+            log,
+            "Keeping snapshot {} and unknown-version marker {} on disk {} as a recovery copy; excluding it from replay selection",
+            candidate.info->path,
+            *candidate.marker_path,
+            candidate.info->disk->getName());
+        candidate.info->recovery_marker_path = *candidate.marker_path;
+        duplicates.push_back(candidate.info);
+        return true;
+    });
+
+    const auto selected = std::ranges::max_element(candidates, {}, [](const auto & candidate)
+    {
+        return candidate.info->recovery_precedence;
+    });
+    for (const auto & candidate : candidates)
+    {
+        if (&candidate != &*selected)
+        {
+            LOG_WARNING(
+                log,
+                "Keeping duplicate snapshot {} on disk {} as a recovery copy; using {} on disk {}",
+                candidate.info->path,
+                candidate.info->disk->getName(),
+                selected->info->path,
+                selected->info->disk->getName());
+            duplicates.push_back(candidate.info);
+        }
+    }
+    auto selected_snapshot = selected->info;
+    LOG_TRACE(log, "Using snapshot {} from disk {}", selected_snapshot->path, selected_snapshot->disk->getName());
+    return selected_snapshot;
+}
+
+/// One entry per recovered log index: the snapshot to use and the duplicate copies kept as recovery
+/// copies (empty for a single copy).
+struct RecoveredSnapshot
+{
+    uint64_t log_idx = 0;
+    SnapshotFileInfoPtr snapshot;
+    std::vector<SnapshotFileInfoPtr> duplicates;
+};
+
+/// Use a single copy without a move marker directly, and resolve the other groups in a thread pool.
+std::vector<RecoveredSnapshot> resolveRecoveryGroups(
+    const LoggerPtr & log, std::map<uint64_t, std::vector<SnapshotRecoveryCandidate>> groups, size_t disk_count)
+{
+    std::vector<RecoveredSnapshot> recovered;
+
+    /// Process independent logical groups concurrently. Markers are resolved before disk precedence.
+    std::vector<std::pair<uint64_t, std::vector<SnapshotRecoveryCandidate> *>> unresolved_groups;
+    for (auto & [log_idx, candidates] : groups)
+    {
+        if (candidates.size() == 1 && !candidates.front().marker_path)
+        {
+            const auto & candidate = candidates.front();
+            LOG_TRACE(log, "Using snapshot {} from disk {}", candidate.info->path, candidate.info->disk->getName());
+            recovered.push_back({.log_idx = log_idx, .snapshot = candidate.info, .duplicates = {}});
+        }
+        else
+            unresolved_groups.emplace_back(log_idx, &candidates);
+    }
+
+    /// Reserve the unresolved slots up front so the thread pool below can write into `recovered`
+    /// without triggering a reallocation.
+    const size_t first_unresolved = recovered.size();
+    recovered.resize(first_unresolved + unresolved_groups.size());
+    for (size_t i = 0; i < unresolved_groups.size(); ++i)
+        recovered[first_unresolved + i].log_idx = unresolved_groups[i].first;
+
+    if (!unresolved_groups.empty())
+    {
+        ThreadPool pool(
+            CurrentMetrics::KeeperSnapshotRecoveryThreads,
+            CurrentMetrics::KeeperSnapshotRecoveryThreadsActive,
+            CurrentMetrics::KeeperSnapshotRecoveryThreadsScheduled,
+            std::min(disk_count, unresolved_groups.size()),
+            /*max_free_threads_*/ 0,
+            /*queue_size_*/ 0);
+        for (size_t group_index = 0; group_index < unresolved_groups.size(); ++group_index)
+        {
+            pool.scheduleOrThrowOnError([&, group_index]
+            {
+                auto & entry = recovered[first_unresolved + group_index];
+                entry.snapshot = selectRecoveryCandidate(log, *unresolved_groups[group_index].second, entry.duplicates);
+            });
+        }
+        pool.wait();
+    }
+
+    /// `selectRecoveryCandidate` returns nullptr only when it removed every candidate in the group,
+    /// before any duplicate could have been recorded.
+    std::erase_if(recovered, [](const auto & entry) { return !entry.snapshot; });
+    return recovered;
+}
+
+void removeOrphanMarkers(const LoggerPtr & log, const std::vector<std::pair<DiskPtr, String>> & orphan_markers)
+{
+    for (const auto & marker : orphan_markers)
+    {
+        LOG_TRACE(log, "Removing orphaned snapshot move marker {} from disk {}", marker.second, marker.first->getName());
+        removeKeeperFileIfExists(marker.first, marker.second);
+    }
+}
+
+}
+
 KeeperSnapshotManager::KeeperSnapshotManager(
     size_t snapshots_to_keep_,
     const KeeperContextPtr & keeper_context_,
@@ -380,93 +721,16 @@ KeeperSnapshotManager::KeeperSnapshotManager(
     , snapshot_zstd_compression_level(validateSnapshotZstdCompressionLevel(snapshot_zstd_compression_level_))
     , keeper_context(keeper_context_)
 {
-    std::unordered_set<DiskPtr> read_disks;
+    auto inventories = inventoryDisks(log, keeper_context->getOldSnapshotDisks(), getDisk(), getLatestSnapshotDisk());
+    const size_t disk_count = inventories.size();
+    auto [groups, orphan_markers] = groupRecoveryCandidates(
+        std::move(inventories),
+        [this](const String & path, const DiskPtr & disk, uint64_t log_idx) { return makeManagedSnapshotFileInfo(path, disk, log_idx); });
+    auto recovered = resolveRecoveryGroups(log, std::move(groups), disk_count);
 
-    struct DuplicateSnapshotFile
-    {
-        DiskPtr disk;
-        std::string path;
-        uint64_t up_to_log_idx = 0;
-    };
-    /// Same-index duplicates found during the scan; handled after all disks are scanned
-    /// because the decision depends on the latest registered index.
-    std::vector<DuplicateSnapshotFile> duplicate_snapshot_files;
+    for (const auto & entry : recovered)
+        existing_snapshots.emplace(entry.log_idx, entry.snapshot);
 
-    const auto load_snapshot_from_disk = [&](const auto & disk)
-    {
-        if (read_disks.contains(disk))
-            return;
-
-        LOG_TRACE(log, "Reading from disk {}", disk->getName());
-        std::unordered_map<std::string, std::string> incomplete_files;
-
-        const auto clean_incomplete_file = [&](const auto & file_path)
-        {
-            if (auto incomplete_it = incomplete_files.find(fs::path(file_path).filename()); incomplete_it != incomplete_files.end())
-            {
-                LOG_TRACE(log, "Removing {} from {}", file_path, disk->getName());
-                disk->removeFile(file_path);
-                disk->removeFile(incomplete_it->second);
-                incomplete_files.erase(incomplete_it);
-                return true;
-            }
-
-            return false;
-        };
-
-        std::vector<std::string> snapshot_files;
-        for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
-        {
-            if (it->name().starts_with(tmp_keeper_file_prefix))
-            {
-                incomplete_files.emplace(it->name().substr(tmp_keeper_file_prefix.size()), it->path());
-                continue;
-            }
-
-            if (it->name().starts_with("snapshot_") && !clean_incomplete_file(it->path()))
-                snapshot_files.push_back(it->path());
-        }
-
-        for (const auto & snapshot_file : snapshot_files)
-        {
-            if (clean_incomplete_file(fs::path(snapshot_file).filename()))
-                continue;
-
-            LOG_TRACE(log, "Found {} on {}", snapshot_file, disk->getName());
-            size_t snapshot_up_to = getLogIdxFromSnapshotPath(snapshot_file);
-            if (existing_snapshots.contains(snapshot_up_to))
-            {
-                /// Equivalent snapshots for the same committed index (upgrade races, crashed loser
-                /// cleanup, interrupted moves). First-scanned copy stays registered; the duplicate
-                /// is handled after the scan.
-                duplicate_snapshot_files.push_back(DuplicateSnapshotFile{disk, snapshot_file, snapshot_up_to});
-                continue;
-            }
-            existing_snapshots.emplace(snapshot_up_to, makeManagedSnapshotFileInfo(snapshot_file, disk, snapshot_up_to));
-        }
-
-        for (const auto & [name, path] : incomplete_files)
-            disk->removeFile(path);
-
-        if (snapshot_files.empty())
-            LOG_TRACE(log, "No snapshots were found on {}", disk->getName());
-
-        read_disks.insert(disk);
-    };
-
-    for (const auto & disk : keeper_context->getOldSnapshotDisks())
-        load_snapshot_from_disk(disk);
-
-    auto disk = getDisk();
-    load_snapshot_from_disk(disk);
-
-    auto latest_snapshot_disk = getLatestSnapshotDisk();
-    if (latest_snapshot_disk != disk)
-        load_snapshot_from_disk(latest_snapshot_disk);
-
-    /// Duplicates outside the retained window are deleted. Duplicates within it are kept as
-    /// redundant recovery points (operator can remove a broken copy and restart from another).
-    const uint64_t latest_registered_idx = getLatestSnapshotIndex();
     std::optional<uint64_t> oldest_retained_idx;
     if (!existing_snapshots.empty() && snapshots_to_keep > 0)
     {
@@ -474,63 +738,31 @@ KeeperSnapshotManager::KeeperSnapshotManager(
             = existing_snapshots.size() > snapshots_to_keep ? existing_snapshots.size() - snapshots_to_keep : 0;
         oldest_retained_idx = std::next(existing_snapshots.begin(), purged_count)->first;
     }
-    for (auto & duplicate : duplicate_snapshot_files)
+    for (auto & entry : recovered)
     {
-        const auto & registered = existing_snapshots.at(duplicate.up_to_log_idx);
-        if (!oldest_retained_idx || duplicate.up_to_log_idx < *oldest_retained_idx)
+        if (entry.duplicates.empty())
+            continue;
+
+        if (oldest_retained_idx && entry.log_idx >= *oldest_retained_idx)
         {
-            LOG_WARNING(
-                log,
-                "Found duplicate snapshot file {} on disk {} for log index {} which is outside the retained window; "
-                "keeping {} on disk {} and removing the duplicate",
-                duplicate.path,
-                duplicate.disk->getName(),
-                duplicate.up_to_log_idx,
-                registered->path,
-                registered->disk->getName());
-            duplicate.disk->removeFileIfExists(duplicate.path);
+            retained_duplicate_snapshots.emplace(entry.log_idx, std::move(entry.duplicates));
             continue;
         }
 
-        /// Same-named cross-disk duplicate (interrupted move): re-point registration to the copy
-        /// already on the target disk so maintenance doesn't overwrite it via `copyFile`.
-        const DiskPtr target_disk = (duplicate.up_to_log_idx == latest_registered_idx) ? getLatestSnapshotDisk() : getDisk();
-        if (duplicate.path == registered->path && duplicate.disk != registered->disk && duplicate.disk == target_disk)
+        for (const auto & duplicate : entry.duplicates)
         {
             LOG_WARNING(
                 log,
-                "Re-pointing registered snapshot {} for retained log index {} from disk {} to its same-named copy on target disk {}; "
-                "keeping both copies as redundant recovery points",
-                registered->path,
-                duplicate.up_to_log_idx,
-                registered->disk->getName(),
-                duplicate.disk->getName());
-            /// Track the now-unreferenced original so retention reclaims it with this index.
-            const DiskPtr orphaned_disk = registered->disk;
-            retained_duplicate_snapshots[duplicate.up_to_log_idx].push_back(
-                makeManagedSnapshotFileInfo(registered->path, orphaned_disk, duplicate.up_to_log_idx));
-            registered->disk = duplicate.disk;
-        }
-        else
-        {
-            LOG_WARNING(
-                log,
-                "Found duplicate snapshot file {} on disk {} for retained log index {}; keeping it as a redundant recovery copy "
-                "next to the registered {} on disk {} until the index leaves the retained window",
-                duplicate.path,
-                duplicate.disk->getName(),
-                duplicate.up_to_log_idx,
-                registered->path,
-                registered->disk->getName());
-            /// Track the kept duplicate so it ages out with its index (as the message promises).
-            retained_duplicate_snapshots[duplicate.up_to_log_idx].push_back(
-                makeManagedSnapshotFileInfo(std::move(duplicate.path), std::move(duplicate.disk), duplicate.up_to_log_idx));
+                "Removing duplicate snapshot {} on disk {} for log index {} outside the retained window",
+                duplicate->path,
+                duplicate->disk->getName(),
+                entry.log_idx);
+            removeKeeperFileIfExists(duplicate->disk, duplicate->path);
+            if (duplicate->recovery_marker_path)
+                removeKeeperFileIfExists(duplicate->disk, *duplicate->recovery_marker_path);
         }
     }
-
-    /// Runs before `init` sets the mark, so `protected_snapshot_log_idx == 0` here — nothing
-    /// to pin yet. With `snapshots_to_keep == 0` retention keeps none at startup (pre-existing).
-    runMaintenanceInline(/*just_written_log_idx=*/0);
+    removeOrphanMarkers(log, orphan_markers);
 }
 
 SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotBufferToFile(nuraft::buffer & buffer, uint64_t up_to_log_idx)
@@ -738,6 +970,21 @@ std::unique_ptr<KeeperSnapshotReader> KeeperSnapshotManager::makeSnapshotReader(
 {
     bool is_zstd_compressed = isZstdCompressed(buffer);
 
+    if (is_zstd_compressed)
+    {
+        const size_t frame_size = ZSTD_findFrameCompressedSize(buffer->data_begin(), buffer->size());
+        if (ZSTD_isError(frame_size))
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Invalid ZSTD snapshot frame: {}",
+                ZSTD_getErrorName(frame_size));
+        if (frame_size != buffer->size())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "ZSTD snapshot frame has {} trailing bytes",
+                buffer->size() - frame_size);
+    }
+
     std::unique_ptr<ReadBuffer> in = std::make_unique<ReadBufferFromNuraftBuffer>(buffer);
 
     if (is_zstd_compressed)
@@ -807,15 +1054,14 @@ KeeperSnapshotManager::detachSnapshotForRemoval(std::map<uint64_t, SnapshotFileI
     existing_snapshots.erase(itr);
     retired.push_back(std::move(snapshot_file_info));
 
-    /// Retire same-index recovery copies; caller's pin drop unlinks them outside `snapshots_lock`.
-    if (auto dup_it = retained_duplicate_snapshots.find(log_idx); dup_it != retained_duplicate_snapshots.end())
+    if (auto duplicate_it = retained_duplicate_snapshots.find(log_idx); duplicate_it != retained_duplicate_snapshots.end())
     {
-        for (auto & duplicate : dup_it->second)
+        for (auto & duplicate : duplicate_it->second)
         {
             duplicate->retired_for_removal.store(true, std::memory_order_release);
             retired.push_back(std::move(duplicate));
         }
-        retained_duplicate_snapshots.erase(dup_it);
+        retained_duplicate_snapshots.erase(duplicate_it);
     }
 
     return retired;
@@ -1075,7 +1321,7 @@ bool KeeperSnapshotManager::moveSnapshotCandidate(
     bool metadata_published = false;
     try
     {
-        moveFileBetweenDisks(
+        const auto move_result = moveFileBetweenDisks(
             candidate.source_disk,
             candidate.source_path,
             candidate.target_disk,
@@ -1084,14 +1330,31 @@ bool KeeperSnapshotManager::moveSnapshotCandidate(
             [&] { metadata_published = publish_moved_snapshot(candidate); return metadata_published; },
             log,
             keeper_context);
+
+        /// Callback rejection is reported only after the destination was validated and its marker was removed.
+        if (!move_result)
+        {
+            if (move_result.error() == KeeperMoveError::CallbackRejectedOrThrew)
+            {
+                if (!metadata_published)
+                    cleanupCopiedMoveTarget(candidate);
+            }
+            else
+                LOG_WARNING(
+                    log,
+                    "Failed to move snapshot {} from {} on disk {} to {} on disk {} at stage {}",
+                    candidate.log_idx,
+                    candidate.source_path,
+                    candidate.source_disk->getName(),
+                    candidate.target_path,
+                    candidate.target_disk->getName(),
+                    magic_enum::enum_name(move_result.error()));
+        }
     }
     catch (...)
     {
         tryLogCurrentException(log, fmt::format("Failed to move snapshot {}", candidate.log_idx));
     }
-
-    if (!metadata_published)
-        cleanupCopiedMoveTarget(candidate); /// harmless if the copy never completed
     return metadata_published;
 }
 
@@ -1210,7 +1473,8 @@ void KeeperSnapshotReader::readACLMapAndNodeCount()
                 /// V1-V6 stored acl_id as uint64_t (8 bytes)
                 uint64_t acl_id_64 = 0;
                 readBinary(acl_id_64, *in);
-                chassert(acl_id_64 <= std::numeric_limits<ACLId>::max());
+                if (acl_id_64 > std::numeric_limits<ACLId>::max())
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "ACL ID in snapshot is too large: {}", acl_id_64);
                 acl_id = static_cast<ACLId>(acl_id_64);
             }
 
@@ -1251,7 +1515,8 @@ bool KeeperSnapshotReader::Stream::readNodePathSize(size_t & out_path_size)
 
     ++nodes_read;
     readVarUInt(out_path_size, *in);
-    chassert(out_path_size != 0);
+    if (out_path_size == 0)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Snapshot contains an empty node path");
     return true;
 }
 
@@ -1261,7 +1526,7 @@ void KeeperSnapshotReader::Stream::readNodePathAndDataSize(char * out_path, size
     readVarUInt(out_data_size, *in);
 
     if (out_data_size > static_cast<size_t>(INT32_MAX))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Node data size in snapshot is too big: {}", out_data_size);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Node data size in snapshot is too big: {}", out_data_size);
 }
 
 void KeeperSnapshotReader::Stream::readNodeDataAndStats(std::string_view path, char * out_data, size_t data_size, KeeperNodeStats & out_stats)
@@ -1286,7 +1551,8 @@ void KeeperSnapshotReader::Stream::readNodeDataAndStats(std::string_view path, c
         if (acl_id_64 == std::numeric_limits<uint64_t>::max())
             acl_id_64 = 0;
 
-        chassert(acl_id_64 <= std::numeric_limits<ACLId>::max());
+        if (acl_id_64 > std::numeric_limits<ACLId>::max())
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "ACL ID in snapshot is too large: {}", acl_id_64);
         out_stats.acl_id = static_cast<ACLId>(acl_id_64);
     }
     else if (version == SnapshotVersion::V0)
@@ -1391,11 +1657,11 @@ void KeeperSnapshotReader::Stream::readNodeDataAndStats(std::string_view path, c
     /// Refuse to load system nodes from snapshot.
     auto match_result = Coordination::matchPath(path, keeper_system_path);
     if (match_result == Coordination::PathMatchResult::IS_CHILD)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot contains system node: {}", path);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Snapshot contains system node: {}", path);
     if (match_result == Coordination::PathMatchResult::EXACT &&
         (out_stats.data_size != 0 || out_stats.mzxid != 0))
         throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+            ErrorCodes::CORRUPTED_DATA,
             "Snapshot contains system root node {} with unexpected data ({} bytes) or stats (mzxid={})",
             path, out_stats.data_size, out_stats.mzxid);
 }

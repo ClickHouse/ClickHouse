@@ -2,6 +2,7 @@
 #include <cerrno>
 #include <chrono>
 #include <exception>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <Coordination/CoordinationSettings.h>
@@ -191,6 +192,13 @@ void KeeperStateMachine::init()
     if (!storage)
         storage = KeeperStorage::create(
             keeper_context->getCoordinationSettings()[CoordinationSetting::dead_session_check_period_ms].totalMilliseconds(), superdigest, keeper_context);
+}
+
+void KeeperStateMachine::finishSnapshotRecovery()
+{
+    std::lock_guard lock(snapshots_lock);
+    if (latest_snapshot_meta)
+        snapshot_manager.runMaintenanceInline(latest_snapshot_meta->get_last_log_idx());
 }
 
 void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uint64_t end_idx, bool lock_mutex)
