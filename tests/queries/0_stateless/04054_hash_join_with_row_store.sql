@@ -130,7 +130,8 @@ CREATE TABLE grace_right (k UInt64, v1 Nullable(Int64), v2 UInt8, s String) ENGI
 INSERT INTO grace_right SELECT number, if(number % 10 = 0, NULL, number), number % 251, toString(number) FROM numbers(20000);
 
 SELECT count(), countIf(r.v1 IS NULL), sum(r.v2), sum(length(r.s)) FROM (SELECT number % 20000 AS k FROM numbers(40000)) l INNER JOIN grace_right r ON l.k = r.k
-SETTINGS join_algorithm = 'grace_hash', max_bytes_in_join = 100000;
+-- `max_bytes_in_join` is a hard cap, the spill threshold is what makes this join go to disk.
+SETTINGS join_algorithm = 'grace_hash', max_bytes_before_external_join = 1000000;
 
 DROP TABLE grace_right;
 DROP TABLE right_asof;

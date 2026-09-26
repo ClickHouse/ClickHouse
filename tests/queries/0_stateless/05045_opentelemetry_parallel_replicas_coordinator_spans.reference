@@ -1,0 +1,4 @@
+=== async_socket_for_remote=1 ===
+coordinator summary span: OK	announcement handler spans: OK	read request handler spans: OK	per-replica fragment spans: OK	replica-side spans: OK
+=== async_socket_for_remote=0 ===
+coordinator summary span: OK	announcement handler spans: OK	read request handler spans: OK	per-replica fragment spans: OK	replica-side spans: OK
