@@ -131,8 +131,8 @@ String DatabasePostgreSQL::getTableNameForLogs(const String & table_name) const
 String DatabasePostgreSQL::formatTableName(const String & table_name, bool quoted) const
 {
     if (configuration.schema.empty())
-        return quoted ? doubleQuoteString(table_name) : table_name;
-    return quoted ? fmt::format("{}.{}", doubleQuoteString(configuration.schema), doubleQuoteString(table_name))
+        return quoted ? doubleQuoteStringPostgreSQL(table_name) : table_name;
+    return quoted ? fmt::format("{}.{}", doubleQuoteStringPostgreSQL(configuration.schema), doubleQuoteStringPostgreSQL(table_name))
                   : fmt::format("{}.{}", configuration.schema, table_name);
 }
 
