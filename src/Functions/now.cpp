@@ -1,6 +1,7 @@
 #include <ctime>
 #include <Core/Field.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -124,7 +125,9 @@ public:
         {
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Arguments size of function {} should be 0 or 1", getName());
         }
-        if (arguments.size() == 1 && !isStringOrFixedString(arguments[0].type))
+        /// `getReturnTypeImpl` is called on a `LowCardinality`-stripped type, so strip it here too:
+        /// otherwise `now(toLowCardinality('UTC'))` is rejected.
+        if (arguments.size() == 1 && !isStringOrFixedString(recursiveRemoveLowCardinality(arguments[0].type)))
         {
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Arguments of function {} should be String or FixedString",
                 getName());
