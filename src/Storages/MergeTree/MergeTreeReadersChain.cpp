@@ -381,7 +381,6 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
 
         executePrewhereActions(range_readers[i], read_result, previous_header, i + 1 == range_readers.size());
 
-        /// A batch emptied earlier skips this: the snapshot taken then already has every granule.
         if (i < num_attributed_readers)
             read_result.query_condition_cache_attributable_marks = read_result.computeUnmatchedMarkRanges();
     }

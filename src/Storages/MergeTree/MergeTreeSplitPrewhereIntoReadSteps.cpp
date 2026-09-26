@@ -204,8 +204,7 @@ bool tryBuildPrewhereSteps(
         return false;
     auto condition_nodes = condition_root.children;
 
-    /// The leading conditions covered by the query condition cache attribution get steps of their own.
-    /// A hash mismatch means the PREWHERE actions were rewritten after the attribution was computed.
+    /// Conditions covered by the query condition cache attribution get their own steps, unless PREWHERE was rewritten since.
     size_t num_attributed_conditions = 0;
     if (const auto & attribution = prewhere_info->query_condition_cache_attribution)
     {

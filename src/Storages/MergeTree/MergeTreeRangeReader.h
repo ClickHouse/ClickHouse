@@ -53,7 +53,6 @@ struct PrewhereExprStep
     std::optional<UInt64> mutation_version;
 
     /// The last step of the PREWHERE part covered by `PrewhereInfo::query_condition_cache_attribution`.
-    /// A flag rather than an index, so that steps prepended to the chain cannot move it.
     bool query_condition_cache_attribution_boundary = false;
 };
 

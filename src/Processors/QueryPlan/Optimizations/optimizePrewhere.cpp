@@ -178,8 +178,7 @@ ActionsDAG splitAndFillPrewhereInfo(
     return std::move(split_result.second);
 }
 
-/// Hash of `node` with aliases collapsed and function names re-derived from their children,
-/// so it does not depend on the names the node reads through.
+/// Hash of `node` that does not depend on the names the node reads through.
 static std::optional<UInt64> getNormalizedHash(const ActionsDAG::Node * node)
 {
     auto dag = ActionsDAG::cloneSubDAG({node}, /*remove_aliases=*/ true);
@@ -230,7 +229,6 @@ static void setQueryConditionCacheAttribution(
         conjunct_hashes.push_back(conjunct->getHash());
     }
 
-    /// With every conjunct attributed the ordinary PREWHERE write already covers the read.
     if (conjunct_hashes.empty() || conjunct_hashes.size() == condition_root.children.size())
         return;
 
