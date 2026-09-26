@@ -112,12 +112,14 @@ CREATE TABLE t_topk_one_index_granule (x UInt64, y UInt64, INDEX i y TYPE minmax
 ENGINE = MergeTree() ORDER BY x
 SETTINGS index_granularity = 1;
 
-INSERT INTO t_topk_one_index_granule SELECT number, number FROM numbers(2048);
+-- The stress profile runs the server-side AST fuzzer, which could add rows here, and its re-runs of
+-- the measured query would keep the `log_comment` the lookup below matches.
+INSERT INTO t_topk_one_index_granule SELECT number, number FROM numbers(2048) SETTINGS ast_fuzzer_runs = 0;
 
 SELECT 'top-K one index granule', y FROM t_topk_one_index_granule ORDER BY y LIMIT 1
 SETTINGS max_threads = 1, use_skip_indexes_on_data_read = 1, use_skip_indexes_for_top_k = 1,
          use_top_k_dynamic_filtering = 1, enable_parallel_replicas = 0, max_rows_to_read = 0,
-         log_comment = '04798_topk_one_index_granule';
+         log_comment = '04798_topk_one_index_granule', ast_fuzzer_runs = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
