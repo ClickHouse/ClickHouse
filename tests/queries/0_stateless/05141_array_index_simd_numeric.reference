@@ -1,0 +1,20 @@
+UInt8	1	1	0	1	64	0
+UInt16	1	1	0	1	64	0
+UInt32	1	1	0	1	64	0
+UInt64	1	1	0	1	64	0
+UInt8 short	1	6	0	0
+Int8 byte	1	1	0	0
+Signed integers	1	64	1	64	1	64
+Float32	1	64	0	0
+Float64	1	64	0	0
+Exact numeric conversion	0	0	0	0	0	0
+NaN needle	0	0	0	0
+Bare UInt32 max	1	13
+Bare UInt64 max	1	9
+3	0	0	0	0
+16	1	9	0	0
+17	1	9	1	17
+33	1	9	1	17
+First duplicate	1	17
+UInt32 tail	1	65	0	0
+UInt8 long missing	0	0
