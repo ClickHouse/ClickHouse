@@ -1,0 +1,170 @@
+---
+description: 'تحتوي على 10 ملايين متجه من مجموعة بيانات LAION 5B'
+sidebarTitle: 'مجموعة بيانات LAION 5B'
+slug: /getting-started/example-datasets/laion-5b-dataset
+title: 'مجموعة بيانات LAION 5B'
+keywords: ['البحث الدلالي', 'تشابه المتجهات', 'أقرب الجيران التقريبي', 'التضمينات']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="introduction">
+  ## المقدمة
+</div>
+
+تحتوي [مجموعة بيانات LAION 5b](https://laion.ai/blog/laion-5b/) على 5.85 مليار تضمين للصور والنصوص،
+إلى جانب البيانات الوصفية المرتبطة بالصور. أُنشئت هذه التضمينات باستخدام نموذج `Open AI CLIP` ‏[ViT-L/14](https://huggingface.co/sentence-transformers/clip-ViT-L-14). ويبلغ
+بُعد كل متجه تضمين `768`.
+
+يمكن استخدام مجموعة البيانات هذه لنمذجة جوانب التصميم وتحديد السعة والأداء لتطبيق
+بحث متجهي واسع النطاق في بيئة واقعية. كما يمكن استخدام مجموعة البيانات هذه لكلٍّ من البحث من النص إلى الصورة
+والبحث من صورة إلى صورة.
+
+<div id="dataset-details">
+  ## تفاصيل مجموعة البيانات
+</div>
+
+يمكن تنزيل مجموعة البيانات الكاملة باستخدام [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
+
+أتاح ClickHouse مجموعة فرعية تضم 10 ملايين متجه في حاوية `S3` عامة.
+تُخزَّن المجموعة الفرعية في ملف `Parquet` واحد.
+
+نوصي المستخدمين أولاً بإجراء تقدير للحجم لتحديد متطلبات التخزين والذاكرة لهذه مجموعة بيانات، بالرجوع إلى [الوثائق](/ar/reference/engines/table-engines/mergetree-family/annindexes).
+
+<div id="steps">
+  ## الخطوات
+</div>
+
+<Steps>
+  <Step title="إنشاء جدول" id="create-table">
+    أنشئ جدول `laion_5b_10m` لتخزين التضمينات والسمات المرتبطة بها:
+
+    ```sql
+    CREATE TABLE laion_5b_10m
+    (
+        id UInt32,
+        image_path String,
+        caption String,
+        NSFW Nullable(String) default 'unknown',
+        similarity Float32,
+        LICENSE Nullable(String),
+        url String,
+        key String,
+        status LowCardinality(String),
+        width Int32,
+        height Int32,
+        original_width Int32,
+        original_height Int32,
+        exif Nullable(String),
+        md5 String,
+        vector Array(Float32) CODEC(NONE)
+    ) ENGINE = MergeTree ORDER BY (id)
+    ```
+
+    `id` هو مجرد عدد صحيح متزايد. ويمكن استخدام السمات الإضافية في الشروط لفهم
+    البحث عن التشابه المتجهي مع التصفية اللاحقة/المسبقة، كما هو موضح في [الوثائق](/ar/reference/engines/table-engines/mergetree-family/annindexes)
+  </Step>
+
+  <Step title="تحميل البيانات" id="load-table">
+    لتحميل مجموعة البيانات، نفّذ عبارة SQL التالية:
+
+    ```sql
+    INSERT INTO laion_5b_10m SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/laion-5b/laion5b_100m_part_1_of_10.parquet', NOSIGN);
+    ```
+
+    سيستغرق تحميل 10 ملايين صف في الجدول بضع دقائق.
+  </Step>
+
+  <Step title="نفِّذ بحثًا شاملاً عن تشابه المتجهات" id="run-a-brute-force-vector-similarity-search">
+    يتضمن بحث KNN ‏(k - أقرب الجيران) أو البحث بالقوة الغاشمة حساب المسافة بين كل متجه في مجموعة البيانات
+    ومتجه التضمين المستخدم للبحث، ثم ترتيب المسافات للحصول على أقرب الجيران. يمكننا استخدام أحد المتجهات
+    من مجموعة البيانات نفسها كمتجه بحث. على سبيل المثال:
+
+    ```sql title="Query"
+    SELECT id, url 
+    FROM laion_5b_10m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
+    LIMIT 20
+
+    The vector in the row with id = 9999 is the embedding for an image of a Deli restaurant.
+    ```
+
+    سجّل زمن استجابة الاستعلام لكي نتمكن من مقارنته بزمن استجابة استعلام ANN (باستخدام فهرس متجهات).
+    مع 10 ملايين صف، قد يستغرق الاستعلام أعلاه من دون فهرس متجهات بضع ثوانٍ أو دقائق ليكتمل.
+  </Step>
+
+  <Step title="إنشاء فهرس للتشابه المتجهي" id="build-vector-similarity-index">
+    نفّذ عبارة SQL التالية لتعريف وإنشاء فهرس للتشابه المتجهي على العمود `vector` في جدول `laion_5b_10m`:
+
+    ```sql
+    ALTER TABLE laion_5b_10m ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 768, 'bf16', 64, 512);
+
+    ALTER TABLE laion_5b_10m MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
+    ```
+
+    ترد في [الوثائق](/ar/reference/engines/table-engines/mergetree-family/annindexes) المعلمات واعتبارات الأداء المتعلقة بإنشاء الفهرس والبحث.
+    تستخدم العبارة أعلاه القيمتين 64 و512 للمعلمتين الفائقتين في HNSW، `M` و`ef_construction`، على التوالي.
+    يجب اختيار القيم المثلى لهذه المعلمات بعناية من خلال تقييم وقت بناء الفهرس وجودة نتائج البحث
+    المقابلة للقيم المختارة.
+
+    قد يستغرق بناء الفهرس وحفظه وقتًا طويلًا لمجموعة فرعية تضم 10 ملايين صف، وذلك حسب عدد أنوية CPU المتاحة وعرض نطاق التخزين.
+  </Step>
+
+  <Step title="إجراء بحث ANN" id="perform-ann-search">
+    بعد إنشاء فهرس تشابه المتجهات، ستستخدم استعلامات البحث المتجهي هذا الفهرس تلقائيًا:
+
+    ```sql title="Query"
+    SELECT id, url 
+    FROM laion_5b_10m
+    ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_10m WHERE id = 9999) ) ASC
+    LIMIT 20
+
+    ```
+
+    قد يستغرق تحميل الفهرس المتجهي في الذاكرة للمرة الأولى بضع ثوانٍ أو دقائق.
+  </Step>
+
+  <Step title="إنشاء تضمينات لاستعلام البحث" id="generating-embeddings-for-search-query">
+    تم إنشاء متجهات التضمين لمجموعة بيانات `LAION 5b` باستخدام نموذج `OpenAI CLIP` ‏`ViT-L/14`.
+
+    يُقدَّم أدناه برنامج نصي مثالي بلغة بايثون يوضّح كيفية إنشاء متجهات التضمين برمجيًا باستخدام واجهات برمجة تطبيقات `CLIP`. ثم يُمرَّر متجه تضمين البحث كوسيطة إلى الدالة [`cosineDistance()`](/ar/reference/functions/regular-functions/distance-functions#cosineDistance) في استعلام `SELECT`.
+
+    لتثبيت حزمة `clip`، يُرجى الرجوع إلى [مستودع OpenAI على GitHub](https://github.com/openai/clip).
+
+    ```python
+    import torch
+    import clip
+    import numpy as np
+    import sys
+    import clickhouse_connect
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load("ViT-L/14", device=device)
+
+    # Search for images that contain both a dog and a cat
+    text = clip.tokenize(["a dog and a cat"]).to(device)
+
+    with torch.no_grad():
+        text_features = model.encode_text(text)
+        np_arr = text_features.detach().cpu().numpy()
+
+        # Pass ClickHouse credentials here
+        chclient = clickhouse_connect.get_client()
+
+        params = {'v1': list(np_arr[0])}
+        result = chclient.query("SELECT id, url FROM laion_5b_10m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
+                                parameters=params)
+
+        # Write the results to a simple HTML page that can be opened in the browser. Some URLs may have become obsolete.
+        print("<html>")
+        for r in result.result_rows:
+            print("<img src = ", r[1], 'width="200" height="200">')
+        print("</html>")
+    ```
+
+    تظهر نتائج البحث أعلاه أدناه:
+
+    <Image img="/images/getting-started/example-datasets/laion5b_visualization_1.webp" alt="نتائج البحث عن تشابه المتجهات" size="md" />
+  </Step>
+</Steps>

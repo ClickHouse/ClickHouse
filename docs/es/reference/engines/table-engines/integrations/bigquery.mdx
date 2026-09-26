@@ -1,0 +1,66 @@
+---
+description: 'El motor permite leer y escribir en una tabla de Google BigQuery, incluidos los conjuntos de datos públicos.'
+sidebarTitle: 'BigQuery'
+slug: /engines/table-engines/integrations/bigquery
+title: 'Motor de tabla BigQuery'
+doc_type: 'reference'
+---
+
+{/*INICIO_AUTOGENERADO*/}
+
+El motor `BigQuery` permite leer de una tabla de [Google BigQuery](https://cloud.google.com/bigquery) y escribir en ella, incluidos los conjuntos de datos públicos.
+
+La lectura utiliza la API REST de BigQuery (`tabledata.list`), por lo que solo se pueden leer tablas nativas (no vistas, vistas materializadas ni tablas externas). La escritura utiliza inserciones en streaming (`tabledata.insertAll`), lo que requiere que la facturación esté habilitada para el proyecto.
+
+Las escrituras no son atómicas: un `INSERT` grande se envía en lotes (como máximo 500 filas por solicitud y también se divide para no superar el límite de tamaño de solicitud de 10 MB de BigQuery), una sola solicitud puede completarse parcialmente (BigQuery puede confirmar algunas filas de una solicitud y rechazar las demás con `insertErrors`) y un lote posterior puede rechazarse después de que se hayan aceptado lotes anteriores; en ambos casos, las filas ya confirmadas permanecen en BigQuery mientras la consulta informa de un error. Cada fila incluye un `insertId` estable (derivado del ID de la consulta y de la posición ordinal de la fila), de modo que BigQuery deduplica, en la medida de lo posible, las filas reintentadas; dado que el `insertId` depende de la posición ordinal, volver a ejecutar el mismo `INSERT` solo deduplica cuando las filas se presentan en el mismo orden (por ejemplo, en un único hilo, con `max_threads = 1` y `max_insert_threads = 1`). Consulte las [limitaciones de la función de tabla `bigquery`](/es/reference/functions/table-functions/bigquery#limitations) para obtener más información.
+
+<div id="creating-a-table">
+  ## Creación de una tabla
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+[(
+    name1 [type1],
+    name2 [type2],
+    ...
+)]
+ENGINE = BigQuery(project, dataset, table[, access_token][, key = value, ...])
+```
+
+La lista de columnas es opcional: si se omite, la estructura se infiere del esquema de la tabla de BigQuery. Si se especifica, las columnas pueden ser un subconjunto de las columnas de BigQuery y cada columna debe declararse con el tipo exacto al que se corresponde en el esquema de BigQuery (consulte la [correspondencia de tipos de datos](/es/reference/functions/table-functions/bigquery#data-type-mapping)). Una tabla cuya definición omite un campo `REQUIRED` de BigQuery sin una expresión de valor predeterminado puede leerse, pero no escribirse: las inserciones en streaming de BigQuery rechazan las filas que omiten dicho campo, por lo que ese `INSERT` se rechaza de antemano. Cuando el campo `REQUIRED` omitido declara un `defaultValueExpression`, BigQuery rellena el valor predeterminado y la tabla sigue permitiendo escrituras. Un `RECORD` `NULLABLE` se asigna a `Nullable(Tuple(...))` para que los registros `NULL` se conserven sin pérdida al escribirse y leerse de nuevo; crear una tabla de este tipo (tanto si la estructura se infiere como si se declara explícitamente) requiere la configuración `enable_nullable_tuple_type`, como cualquier columna `Nullable(Tuple)`. Al declarar columnas explícitamente, un campo `RECORD` puede declararse como un `Tuple(...)` simple para evitar esta configuración, a costa de convertir un `NULL` para todo el registro en una tupla predeterminada; la única diferencia aceptada con respecto al tipo inferido es eliminar el `Nullable` que envuelve el `Tuple` de un `RECORD`, y únicamente en ese mismo registro: la nulabilidad no puede trasladarse a otro registro, ya sea interno o externo.
+
+**Parámetros del motor**
+
+* `project` — El proyecto de Google Cloud propietario del conjunto de datos.
+* `dataset` — El nombre del conjunto de datos.
+* `table` — El nombre de la tabla.
+* `access_token` — Un token de acceso OAuth 2.0 (argumento posicional opcional).
+
+Los parámetros también pueden pasarse como una [colección con nombre](/es/concepts/features/configuration/server-config/named-collections) con sobrescrituras `key = value`. Consulte la [función de tabla `bigquery`](/es/reference/functions/table-functions/bigquery#arguments) para ver la lista completa de claves y la descripción de los [métodos de autenticación](/es/reference/functions/table-functions/bigquery#authentication). Debe proporcionarse exactamente un método de autenticación; para una tabla permanente, es preferible usar un `service_account_key` o un `refresh_token` en lugar de un `access_token`, ya que los tokens de acceso caducan en una hora.
+
+<div id="usage-example">
+  ## Ejemplo de uso
+</div>
+
+```sql
+CREATE TABLE shakespeare
+ENGINE = BigQuery('bigquery-public-data', 'samples', 'shakespeare',
+                  service_account_key = '{"type": "service_account", ...}');
+
+SELECT word, word_count FROM shakespeare ORDER BY word_count DESC LIMIT 3;
+
+CREATE TABLE events (id Int64, payload Nullable(String))
+ENGINE = BigQuery('my-project', 'my_dataset', 'events',
+                  service_account_key = '{"type": "service_account", ...}');
+
+INSERT INTO events VALUES (1, 'started');
+```
+
+<div id="related">
+  ## Contenido relacionado
+</div>
+
+* [función de tabla `bigquery`](/es/reference/functions/table-functions/bigquery)
+
+{/*AUTOGENERATED_END*/}

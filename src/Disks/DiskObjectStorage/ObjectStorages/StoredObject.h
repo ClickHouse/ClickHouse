@@ -30,6 +30,10 @@ struct StoredObject
     /// NOTE: the type must stay uint64_t — MetadataStorageFromDisk removal log serializes it as UInt64 LE.
     uint64_t bytes_size = UnknownSize;
 
+    /// ETag from when the object was listed/headed; the read path rejects a GET whose ETag differs,
+    /// catching an in-place overwrite mid-read. Empty means no validation.
+    String etag;
+
     explicit StoredObject(
         const String & remote_path_ = "",
         const String & local_path_ = "",

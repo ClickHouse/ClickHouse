@@ -1,0 +1,265 @@
+---
+title: "Ejemplo de Terraform: cómo usar la API de Cloud"
+description: "Este ejemplo muestra cómo puedes usar Terraform para crear y eliminar clústeres mediante la API"
+Date: 2023-09-02
+tags: ['Clientes nativos e interfaces']
+keywords: ['Terraform']
+---
+
+<div id="question">
+  ## Pregunta
+</div>
+
+¿Cómo puedo usar la API para gestionar clústeres en ClickHouse Cloud?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+Usaremos Terraform para configurar nuestra infraestructura y [el proveedor de ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)
+
+Pasos:
+
+1). Cree una API key en Cloud.
+Consulte la documentación aquí: [https://clickhouse.com/docs/cloud/manage/openapi](https://clickhouse.com/docs/cloud/manage/openapi)
+
+Guarde las credenciales en su equipo.
+
+2). Instale Terraform desde: [https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
+
+Puede usar el gestor de paquetes Homebrew si está en Mac.
+
+3). Cree un directorio donde prefiera:
+
+```
+mkdir test
+➜  test pwd
+/Users/jaijhala/Desktop/terraform/test
+```
+
+4). Cree 2 archivos: `main.tf` y `secret.tfvars`
+
+Copie lo siguiente:
+
+El archivo `main.tf` quedaría así:
+
+```
+terraform {
+ required_providers {
+   clickhouse = {
+     source = "ClickHouse/clickhouse"
+     version = "0.0.2"
+   }
+ }
+}
+
+variable "organization_id" {
+  type = string
+}
+
+variable "token_key" {
+  type = string
+}
+
+variable "token_secret" {
+  type = string
+}
+
+provider clickhouse {
+  environment 	= "production"
+  organization_id = var.organization_id
+  token_key   	= var.token_key
+  token_secret	= var.token_secret
+}
+
+variable "service_password" {
+  type = string
+  sensitive   = true
+}
+
+resource "clickhouse_service" "service123" {
+  name       	= "jai-terraform"
+  cloud_provider = "aws"
+  region     	= "us-east-2"
+  tier       	= "development"
+  idle_scaling   = true
+  password  = var.service_password
+  ip_access = [
+	{
+    	source  	= "0.0.0.0/0"
+    	description = "Anywhere"
+	}
+  ]
+}
+
+output "CLICKHOUSE_HOST" {
+  value = clickhouse_service.service123.endpoints.0.host
+}
+```
+
+Puedes sustituir tus propios parámetros, como el nombre del servicio, la región, etc., en la sección de recursos anterior.
+
+En `secret.tfvars` es donde colocarás toda la información relacionada con la API key que descargaste antes. La idea de este archivo es que todas tus credenciales secretas queden ocultas del archivo de configuración principal.
+
+Sería algo así (sustituye estos parámetros):
+
+```
+organization_id = "e957a5f7-4qe3-4b05-ad5a-d02b2dcd0593"
+token_key = "QWhhkMeytqQruTeKg"
+token_secret = "4b1dNmjWdLUno9lXxmKvSUcPP62jvn7irkuZPbY"
+service_password = "password123!"
+```
+
+5).  Ejecute `terraform init` desde este directorio
+
+Salida esperada:
+
+```
+Inicializando el backend...
+
+Inicializando plugins de proveedores...
+- Buscando versiones de clickhouse/clickhouse que coincidan con "0.0.2"...
+- Instalando clickhouse/clickhouse v0.0.2...
+- Instalado clickhouse/clickhouse v0.0.2 (autofirmado, ID de clave D7089EE5C6A92ED1)
+
+Los proveedores de socios y de la comunidad están firmados por sus desarrolladores.
+Si desea obtener más información sobre la firma de proveedores, puede leer al respecto aquí:
+https://www.terraform.io/docs/cli/plugins/signing.html
+
+Terraform ha creado un archivo de bloqueo .terraform.lock.hcl para registrar las
+selecciones de proveedores realizadas anteriormente. Incluya este archivo en su repositorio
+de control de versiones para que Terraform pueda garantizar las mismas selecciones de forma
+predeterminada cuando ejecute "terraform init" en el futuro.
+
+¡Terraform se ha inicializado correctamente!
+
+Ahora puede comenzar a trabajar con Terraform. Intente ejecutar "terraform plan" para ver
+los cambios necesarios en su infraestructura. Todos los comandos de Terraform
+deberían funcionar ahora.
+
+Si en algún momento establece o modifica módulos o la configuración del backend para Terraform,
+vuelva a ejecutar este comando para reinicializar su directorio de trabajo. Si lo olvida,
+otros comandos lo detectarán y le recordarán que debe hacerlo si es necesario.
+```
+
+6). Ejecuta el comando `terraform apply -var-file=secret.tfvars`.
+
+Algo así: 
+
+```
+➜  test terraform apply -var-file=secret.tfvars
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with
+the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # clickhouse_service.service123 will be created
+  + resource "clickhouse_service" "service123" {
+      + cloud_provider = "aws"
+      + endpoints      = (known after apply)
+      + id             = (known after apply)
+      + idle_scaling   = true
+      + ip_access      = [
+          + {
+              + description = "Anywhere"
+              + source      = "0.0.0.0/0"
+            },
+        ]
+      + last_updated   = (known after apply)
+      + name           = "jai-terraform"
+      + password       = (sensitive value)
+      + region         = "us-east-2"
+      + tier           = "development"
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + CLICKHOUSE_HOST = (known after apply)
+
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+```
+
+Escribe `yes` y pulsa Enter
+
+Nota al margen: fíjate en que arriba aparece `password       = (sensitive value)`.
+Esto se debe a que establecimos `sensitive   = true` para la contraseña en el archivo main.tf.
+
+7). Tardará un par de minutos en crear el servicio, pero al final debería verse así:
+
+```
+  Enter a value: yes
+
+clickhouse_service.service123: Creating...
+clickhouse_service.service123: Still creating... [10s elapsed]
+clickhouse_service.service123: Still creating... [20s elapsed]
+clickhouse_service.service123: Still creating... [30s elapsed]
+clickhouse_service.service123: Still creating... [40s elapsed]
+clickhouse_service.service123: Still creating... [50s elapsed]
+clickhouse_service.service123: Still creating... [1m0s elapsed]
+clickhouse_service.service123: Still creating... [1m10s elapsed]
+clickhouse_service.service123: Still creating... [1m20s elapsed]
+clickhouse_service.service123: Still creating... [1m30s elapsed]
+clickhouse_service.service123: Still creating... [1m40s elapsed]
+clickhouse_service.service123: Creation complete after 1m41s [id=aa8d8d63-1878-4600-8470-630715af38ed]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+CLICKHOUSE_HOST = "h3ljlaqez6.us-east-2.aws.clickhouse.cloud"
+➜  test
+```
+
+8). Comprueba en Cloud Console que puedes ver el servicio creado.
+
+9). Para limpiar o destruir el servicio de nuevo, ejecuta `terraform destroy -var-file=secret.tfvars`
+
+Algo así:
+
+```
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with
+the following symbols:
+  - destroy
+
+Terraform will perform the following actions:
+
+  # clickhouse_service.service123 will be destroyed
+  - resource "clickhouse_service" "service123" {
+      - cloud_provider = "aws" -> null
+      - ............
+
+Plan: 0 to add, 0 to change, 1 to destroy.
+
+Changes to Outputs:
+  - CLICKHOUSE_HOST = "h3ljlaqez6.us-east-2.aws.clickhouse.cloud" -> null
+
+Do you really want to destroy all resources?
+  Terraform will destroy all your managed infrastructure, as shown above.
+  There is no undo. Only 'yes' will be accepted to confirm.
+
+  Enter a value:
+```
+
+Escriba yes y pulse Intro
+
+10).
+
+```
+clickhouse_service.service123: Destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed]
+clickhouse_service.service123: Still destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed, 10s elapsed]
+clickhouse_service.service123: Still destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed, 20s elapsed]
+clickhouse_service.service123: Destruction complete after 27s
+
+Destroy complete! Resources: 1 destroyed.
+```
+
+Y ya debería haber desaparecido de la Cloud Console.
+
+Puedes encontrar más detalles sobre la API de Cloud aquí - [https://clickhouse.com/docs/cloud/manage/api/api-overview](https://clickhouse.com/docs/cloud/manage/api/api-overview)

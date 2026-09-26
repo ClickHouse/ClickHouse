@@ -21,6 +21,13 @@ The file defines several job configurations:
 - `_docker_build_arm_linux_job` - Builds ARM64 Docker images
 - `_final_job` - Finalization job that runs even if workflow is cancelled
 
+An image is tagged with the digest of its build context, so it is built and
+pushed once and then pulled cold by every job that uses it. Its layers are
+therefore compressed for the pull side, with `DOCKER_LAYER_COMPRESSION` /
+`DOCKER_LAYER_COMPRESSION_LEVEL` (`zstd`, level 3 by default - smaller than gzip
+and several times faster to unpack). The compression is not part of the digest,
+so an image switches over the next time its build context changes.
+
 ## Config Workflow (`_config_workflow`)
 
 The configuration job performs critical setup at the start of each workflow run:

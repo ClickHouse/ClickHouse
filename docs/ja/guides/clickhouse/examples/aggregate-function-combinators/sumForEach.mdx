@@ -1,0 +1,56 @@
+---
+slug: '/examples/aggregate-function-combinators/sumForEach'
+title: 'sumForEach'
+description: 'sumForEach 集約関数の使用例'
+keywords: ['sum', 'ForEach', 'combinator', 'examples', 'sumForEach']
+sidebarTitle: 'sumForEach'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## 説明
+</div>
+
+[`ForEach`](/ja/reference/functions/aggregate-functions/combinators#-foreach) コンビネータは、
+[`sum`](/ja/reference/functions/aggregate-functions/sum) 集約関数に適用できます。これにより、行の値に対して動作する集約
+関数を、Arrayカラムに対して動作する集約関数に変換し、複数の行にまたがって Array 内の各要素に集約を適用できます。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+この例では、[SQL playground](https://sql.clickhouse.com/) で利用できる `hits` データセットを使用します。
+
+`hits` テーブルには `isMobile` という UInt8 型のカラムがあり、デスクトップなら `0`、モバイルなら `1` です。
+
+<RunnableCode>
+  ```sql
+  SELECT EventTime, IsMobile FROM metrica.hits ORDER BY rand() LIMIT 10
+  ```
+</RunnableCode>
+
+`sumForEach` 集約 コンビネータ 関数を使って、デスクトップとモバイルのトラフィックが時間帯によってどのように変化するかを分析します。以下の再生ボタンをクリックすると、クエリを対話的に実行できます。
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toHour(EventTime) AS hour_of_day,
+      -- sumForEach を使って、デスクトップとモバイルの訪問数を 1 回で集計
+      sumForEach([
+          IsMobile = 0, -- デスクトップからの訪問 (IsMobile = 0)
+          IsMobile = 1  -- モバイルからの訪問 (IsMobile = 1)
+      ]) AS device_counts
+  FROM metrica.hits
+  GROUP BY hour_of_day
+  ORDER BY hour_of_day;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`sum`](/ja/reference/functions/aggregate-functions/sum)
+* [`ForEach` コンビネータ](/ja/reference/functions/aggregate-functions/combinators#-foreach)

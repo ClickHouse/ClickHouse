@@ -1,0 +1,66 @@
+---
+slug: /dictionary/best-practices
+title: 'Buenas prácticas de diccionarios'
+sidebarTitle: 'Buenas prácticas'
+description: 'Pautas para elegir layouts de diccionario, cuándo usar diccionarios en lugar de JOINs y cómo supervisar su uso.'
+doc_type: 'guide'
+keywords: ['diccionario', 'diccionarios', 'layout', 'dictGet', 'JOIN', 'hashed', 'flat', 'rendimiento']
+---
+
+Esta página ofrece orientación práctica para elegir el layout de diccionario adecuado, entender cuándo los diccionarios superan a los JOINs (y cuándo no) y supervisar el uso de los diccionarios.
+
+Para ver una introducción a los diccionarios con ejemplos detallados, consulte la [guía principal sobre Diccionarios](/es/concepts/features/dictionaries/index).
+
+<div id="when-to-use-dictionaries-vs-joins">
+  ## Cuándo usar diccionarios frente a JOINs
+</div>
+
+Los diccionarios funcionan mejor cuando uno de los lados de un JOIN es una tabla de referencia que cabe en memoria. Con un JOIN estándar, ClickHouse construye una tabla hash a partir del lado derecho antes de buscar en ella con el izquierdo, aunque la mayoría de las filas acaben descartándose después mediante filtros `WHERE`. Aunque las versiones recientes (24.12+) aplican filtros antes de los JOINs en muchos casos, esto no siempre elimina la sobrecarga. Con un diccionario, llamas a `dictGet` directamente, por lo que las búsquedas solo se realizan sobre las filas que ya han superado el filtrado.
+
+Sin embargo, `dictGet` no siempre es la opción adecuada. Si necesitas llamar a `dictGet` en un porcentaje elevado de las filas de una tabla —por ejemplo, en una condición `WHERE` como `dictGet('dict', 'elevation', id) > 1800`—, puede que te convenga más usar una columna normal con índices nativos. ClickHouse puede usar `PREWHERE` para omitir gránulos en una columna normal, pero `dictGet` se evalúa fila por fila sin soporte de índices.
+
+Como regla general:
+
+* Usa diccionarios para sustituir JOINs con tablas de dimensión pequeñas cuando la clave de búsqueda ya esté disponible.
+* Usa columnas normales e índices cuando filtres por el valor buscado en muchas filas.
+
+<div id="choosing-a-layout">
+  ## Elegir un layout
+</div>
+
+La cláusula `LAYOUT` controla la estructura de datos interna del diccionario. Todos los layouts disponibles están documentados en la [referencia de layouts](/es/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory).
+
+Al elegir un layout, use las siguientes pautas:
+
+* **`flat`** — el layout más rápido (búsqueda simple por desplazamiento en un array), pero las claves deben ser `UInt64` y, de forma predeterminada, están limitadas a 500.000 (`max_array_size`). Es la mejor opción para claves enteras que aumentan de forma monótona en tablas pequeñas o medianas. Las distribuciones de claves dispersas (por ejemplo, valores de clave 1 y 500.000) desperdician memoria, ya que el array se dimensiona según la clave más grande. Si está alcanzando el límite de 500k, es una señal de que debe cambiar a `hashed_array`.
+* **`hashed_array`** — el valor predeterminado recomendado para la mayoría de los casos de uso. Almacena atributos en arrays con una tabla hash que asigna las claves a índices del array. Es casi tan rápido como `hashed`, pero usa la memoria de forma más eficiente, especialmente cuando hay muchos atributos.
+* **`hashed`** — almacena el diccionario completo en una tabla hash. Puede ser más rápido que `hashed_array` cuando tiene muy pocos atributos, pero consume más memoria a medida que aumenta la cantidad de atributos.
+* **`complex_key_hashed` / `complex_key_hashed_array`** — úselos cuando las claves no puedan convertirse a `UInt64` (por ejemplo, claves `String`). Siguen las mismas compensaciones de rendimiento que sus equivalentes no complejos.
+* **`sparse_hashed`** — intercambia CPU por un menor uso de memoria en comparación con `hashed`. Rara vez es la mejor opción: solo es eficiente cuando tiene un único atributo. En la mayoría de los casos, `hashed_array` suele ser una mejor alternativa.
+* **`cache` / `ssd_cache`** — solo almacenan en caché las claves a las que se accede con frecuencia. Son útiles cuando el conjunto de datos completo no cabe en memoria, pero las búsquedas pueden acudir al origen si se produce un fallo de caché. No se recomiendan para cargas de trabajo sensibles a la latencia.
+* **`direct`** — consulta el origen en cada búsqueda, sin almacenamiento en memoria. Úselo cuando los datos cambian con demasiada frecuencia como para almacenarlos en caché o cuando el diccionario es demasiado grande para la memoria.
+
+<div id="monitoring-dictionary-usage">
+  ## Monitoreo del uso de diccionarios
+</div>
+
+Supervise el consumo de memoria y el estado mediante la tabla [`system.dictionaries`](/es/reference/system-tables/dictionaries):
+
+```sql
+SELECT
+    name,
+    status,
+    element_count,
+    formatReadableSize(bytes_allocated) AS size,
+    query_count,
+    hit_rate,
+    found_rate,
+    last_exception
+FROM system.dictionaries
+```
+
+Columnas clave:
+
+* `bytes_allocated` — memoria consumida por el diccionario. Los diccionarios almacenan los datos sin comprimir, por lo que este valor puede ser significativamente mayor que el tamaño comprimido de la tabla.
+* `hit_rate` y `found_rate` — útiles para evaluar la eficacia del diseño `cache`.
+* `last_exception` — consúltalo cuando un diccionario no se cargue o no se actualice.

@@ -1,0 +1,1019 @@
+---
+title: Проектирование схемы
+slug: /integrations/data-formats/json/schema
+description: 'Как оптимально спроектировать схемы JSON'
+keywords: ['json', 'ClickHouse', 'вставка', 'загрузка', 'форматы', 'схема', 'структурированные', 'полуструктурированные']
+score: 20
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Хотя [автоматическое определение схемы](/ru/guides/clickhouse/data-formats/json/inference) можно использовать для построения начальной схемы для JSON-данных и выполнения запросов к JSON-файлам с данными напрямую, например в S3, вам следует стремиться к созданию оптимизированной версионируемой схемы для ваших данных. Ниже мы рассмотрим рекомендуемый подход к моделированию JSON-структур.
+
+<div id="static-vs-dynamic-json">
+  ## Статический и динамический JSON
+</div>
+
+Основная задача при определении схемы для JSON — подобрать подходящий тип для значения каждого ключа. Мы рекомендуем рекурсивно применять следующие правила к каждому ключу в иерархии JSON, чтобы определить для него подходящий тип.
+
+1. **Примитивные типы** - Если значение ключа имеет примитивный тип, независимо от того, находится ли оно во вложенном объекте или в корне, убедитесь, что выбираете его тип в соответствии с общими [рекомендациями по проектированию схемы](/ru/guides/clickhouse/data-modelling/schema-design) и [правилами оптимизации типов](/ru/guides/clickhouse/data-modelling/schema-design#optimizing-types). Массивы примитивов, такие как `phone_numbers` ниже, можно моделировать как `Array(<type>)`, например `Array(String)`.
+2. **Статический или динамический** - Если значение ключа представляет собой сложный объект, то есть объект или массив объектов, определите, может ли оно меняться. Объекты, в которых новые ключи появляются редко, а добавление нового ключа можно предвидеть и обработать изменением схемы через [`ALTER TABLE ADD COLUMN`](/ru/reference/statements/alter/column#add-column), можно считать **статическими**. Сюда относятся и объекты, в которых в некоторых JSON-документах может присутствовать только часть ключей. Объекты, в которые новые ключи добавляются часто и/или непредсказуемо, следует считать **динамическими**. **Исключение составляют структуры с сотнями или тысячами вложенных ключей — для удобства их тоже можно считать динамическими**.
+
+Чтобы определить, является ли значение **статическим** или **динамическим**, см. соответствующие разделы [**Обработка статических объектов**](/ru/guides/clickhouse/data-formats/json/schema#handling-static-structures) и [**Обработка динамических объектов**](/ru/guides/clickhouse/data-formats/json/schema#handling-semi-structured-dynamic-structures) ниже.
+
+<p />
+
+**Важно:** Приведенные выше правила следует применять рекурсивно. Если значение ключа определяется как динамическое, дальнейшая оценка не требуется, и можно следовать рекомендациям из раздела [**Обработка динамических объектов**](/ru/guides/clickhouse/data-formats/json/schema#handling-semi-structured-dynamic-structures). Если объект статический, продолжайте оценивать вложенные ключи, пока не дойдете до примитивных значений или не встретите динамические ключи.
+
+Чтобы проиллюстрировать эти правила, используем следующий пример JSON, описывающий человека:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics",
+    "labels": {
+      "type": "database systems",
+      "founded": "2021"
+    }
+  },
+  "dob": "2007-03-31",
+  "tags": {
+    "hobby": "Databases",
+    "holidays": [
+      {
+        "year": 2024,
+        "location": "Azores, Portugal"
+      }
+    ],
+    "car": {
+      "model": "Tesla",
+      "year": 2023
+    }
+  }
+}
+```
+
+Применяя эти правила:
+
+* Корневые ключи `name`, `username`, `email`, `website` можно представить типом `String`. Столбец `phone_numbers` — это примитив Array типа `Array(String)`, а `dob` и `id` имеют типы `Date` и `UInt32` соответственно.
+* В объект `address` новые ключи добавляться не будут (только новые объекты адресов), поэтому его можно считать **статическим**. Если рекурсивно развернуть его, все подстолбцы можно считать примитивами (и типа `String`), кроме `geo`. Это также статическая структура с двумя столбцами типа `Float32`: `lat` и `lon`.
+* Столбец `tags` является **динамическим**. Мы предполагаем, что в этот объект можно добавлять новые произвольные теги любого типа и структуры.
+* Объект `company` является **статическим** и всегда будет содержать не более 3 указанных ключей. Вложенные ключи `name` и `catchPhrase` имеют тип `String`. Ключ `labels` является **динамическим**. Мы предполагаем, что в этот объект можно добавлять новые произвольные теги. Значения всегда будут представлять собой пары ключ-значение строкового типа.
+
+<Note>
+  Структуры с сотнями или тысячами статических ключей можно считать динамическими, поскольку на практике для них редко удается статически объявить столбцы. Однако там, где это возможно, [пропускайте ненужные пути](#using-type-hints-and-skipping-paths), чтобы сократить затраты как на хранение, так и на определение типов.
+</Note>
+
+<div id="handling-static-structures">
+  ## Обработка статических структур
+</div>
+
+Мы рекомендуем обрабатывать статические структуры с помощью именованных кортежей, то есть `Tuple`. Массивы объектов можно хранить с помощью массивов кортежей, то есть `Array(Tuple)`. В самих кортежах столбцы и соответствующие им типы следует определять по тем же правилам. В результате могут получаться вложенные Tuple для представления вложенных объектов, как показано ниже.
+
+Чтобы проиллюстрировать это, мы используем приведённый ранее JSON-пример с person, опуская динамические объекты:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+Ниже показана схема этой таблицы:
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String),
+    `dob` Date
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+Обратите внимание, что столбец `company` имеет тип `Tuple(catchPhrase String, name String)`. Для ключа `address` используется `Array(Tuple)` с вложенным `Tuple` для представления столбца `geo`.
+
+JSON можно вставлять в эту таблицу в её текущей структуре:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+```
+
+В приведённом выше примере данных немного, но, как показано ниже, мы можем обращаться в запросах к столбцам кортежа по их именам, разделённым точками.
+
+```sql
+SELECT
+ address.street,
+ company.name
+FROM people
+```
+
+```response
+┌─address.street────┬─company.name─┐
+│ ['Victor Plains'] │ ClickHouse   │
+└───────────────────┴──────────────┘
+```
+
+Обратите внимание, что столбец `address.street` возвращается как `Array`. Чтобы обратиться к конкретному объекту внутри массива по его позиции, после имени столбца нужно указать смещение в массиве. Например, чтобы получить улицу из первого адреса:
+
+```sql
+SELECT address.street[1] AS street
+FROM people
+```
+
+```response
+┌─street────────┐
+│ Victor Plains │
+└───────────────┘
+
+1 строка в наборе. Elapsed: 0.001 sec.
+```
+
+Подстолбцы также можно использовать в ключах сортировки, начиная с [`24.12`](https://clickhouse.com/blog/clickhouse-release-24-12#json-subcolumns-as-table-primary-key):
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String),
+    `dob` Date
+)
+ENGINE = MergeTree
+ORDER BY company.name
+```
+
+<div id="handling-default-values">
+  ### Обработка значений по умолчанию
+</div>
+
+Даже если объекты JSON имеют структуру, они часто бывают разреженными: в них передаётся лишь часть известных ключей. К счастью, тип `Tuple` не требует наличия всех столбцов в полезной нагрузке JSON. Если какие-то из них не указаны, будут использованы значения по умолчанию.
+
+Рассмотрим таблицу `people` из предыдущего примера и следующий разреженный JSON, в котором отсутствуют ключи `suite`, `geo`, `phone_numbers` и `catchPhrase`.
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771"
+    }
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+Ниже видно, что эту строку можно успешно вставить:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","city":"Wisokyburgh","zipcode":"90566-7771"}],"website":"clickhouse.com","company":{"name":"ClickHouse"},"dob":"2007-03-31"}
+```
+
+```response
+Ok.
+
+1 строка в наборе. Elapsed: 0.002 sec.
+```
+
+Из запроса к этой единственной строке видно, что для столбцов (включая вложенные объекты), которые не были указаны, используются значения по умолчанию:
+
+```sql
+SELECT *
+FROM people
+FORMAT PrettyJSONEachRow
+
+{
+  "id": "1",
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "city": "Wisokyburgh",
+      "geo": {
+        "lat": 0,
+        "lng": 0
+      },
+      "street": "Victor Plains",
+      "suite": "",
+      "zipcode": "90566-7771"
+    }
+  ],
+  "phone_numbers": [],
+  "website": "clickhouse.com",
+  "company": {
+    "catchPhrase": "",
+    "name": "ClickHouse"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+```response
+1 строка в наборе. Elapsed: 0.001 sec.
+```
+
+<Info>
+  **Различие между пустым значением и null**
+
+  Если вам нужно различать пустое значение и отсутствие значения, можно использовать тип [Nullable](/ru/reference/data-types/nullable). Однако этого [следует избегать](/ru/concepts/best-practices/select-data-type#avoid-nullable-columns), если только это не является абсолютно необходимым, поскольку это отрицательно скажется на хранении и производительности запросов для этих столбцов.
+</Info>
+
+<div id="handling-new-columns">
+  ### Обработка новых столбцов
+</div>
+
+Хотя структурированный подход проще всего применять, когда ключи JSON статичны, его по-прежнему можно использовать, если изменения в схеме можно спланировать, то есть если новые ключи известны заранее и схему можно соответствующим образом изменить.
+
+Обратите внимание, что ClickHouse по умолчанию игнорирует ключи JSON, переданные в полезной нагрузке, если они отсутствуют в схеме. Рассмотрим следующий изменённый JSON с добавлением ключа `nickname`:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "nickname": "Clicky",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+Этот JSON можно успешно вставить, проигнорировав ключ `nickname`:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+```
+
+```response
+Ok.
+
+1 строка в наборе. Elapsed: 0.002 sec.
+```
+
+Столбцы можно добавлять в схему с помощью команды [`ALTER TABLE ADD COLUMN`](/ru/reference/statements/alter/column#add-column). Значение по умолчанию можно задать с помощью конструкции `DEFAULT`; оно будет использоваться, если его не указать при последующих вставках. Для строк, в которых это значение отсутствует (поскольку они были вставлены до его создания), также будет возвращаться это значение по умолчанию. Если значение `DEFAULT` не указано, будет использоваться значение по умолчанию для этого типа.
+
+Например:
+
+```sql
+-- вставка начальной строки (nickname будет проигнорирован)
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+
+-- добавление столбца
+ALTER TABLE people
+ (ADD COLUMN `nickname` String DEFAULT 'no_nickname')
+
+-- вставка новой строки (те же данные, другой id)
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+
+-- выборка 2 строк
+SELECT id, nickname FROM people
+```
+
+```response
+┌─id─┬─nickname────┐
+│  2 │ Clicky      │
+│  1 │ no_nickname │
+└────┴─────────────┘
+
+2 rows in set. Elapsed: 0.001 sec.
+```
+
+<div id="handling-semi-structured-dynamic-structures">
+  ## Обработка полуструктурированных/динамических структур
+</div>
+
+Если JSON-данные являются полуструктурированными, то есть ключи могут динамически добавляться и/или иметь несколько типов, рекомендуется тип [`JSON`](/ru/reference/data-types/newjson).
+
+Точнее, используйте тип JSON, если ваши данные:
+
+* Содержат **непредсказуемые ключи**, которые со временем могут меняться.
+* Содержат **значения разных типов** (например, путь иногда может содержать строку, а иногда число).
+* Требуют гибкости схемы, когда строгая типизация непрактична.
+* У вас есть **сотни или даже тысячи** путей, которые статичны, но явно объявлять их просто нереалистично. Это, как правило, встречается редко.
+
+Рассмотрим [предыдущий пример JSON с person](/ru/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json), где объект `company.labels` был определён как динамический.
+
+Предположим, что `company.labels` содержит произвольные ключи. Кроме того, тип значения любого ключа в этой структуре может различаться от строки к строке. Например:
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics",
+    "labels": {
+      "type": "database systems",
+      "founded": "2021",
+      "employees": 250
+    }
+  },
+  "dob": "2007-03-31",
+  "tags": {
+    "hobby": "Databases",
+    "holidays": [
+      {
+        "year": 2024,
+        "location": "Azores, Portugal"
+      }
+    ],
+    "car": {
+      "model": "Tesla",
+      "year": 2023
+    }
+  }
+}
+```
+
+```json
+{
+  "id": 2,
+  "name": "Analytica Rowe",
+  "username": "Analytica",
+  "address": [
+    {
+      "street": "Maple Avenue",
+      "suite": "Apt. 402",
+      "city": "Dataford",
+      "zipcode": "11223-4567",
+      "geo": {
+        "lat": 40.7128,
+        "lng": -74.006
+      }
+    }
+  ],
+  "phone_numbers": [
+    "123-456-7890",
+    "555-867-5309"
+  ],
+  "website": "fastdata.io",
+  "company": {
+    "name": "FastData Inc.",
+    "catchPhrase": "Streamlined analytics at scale",
+    "labels": {
+      "type": [
+        "real-time processing"
+      ],
+      "founded": 2019,
+      "dissolved": 2023,
+      "employees": 10
+    }
+  },
+  "dob": "1992-07-15",
+  "tags": {
+    "hobby": "Running simulations",
+    "holidays": [
+      {
+        "year": 2023,
+        "location": "Kyoto, Japan"
+      }
+    ],
+    "car": {
+      "model": "Audi e-tron",
+      "year": 2022
+    }
+  }
+}
+```
+
+Учитывая динамический характер столбца `company.labels` в разных объектах с точки зрения ключей и типов, у нас есть несколько вариантов моделирования этих данных:
+
+* **Один JSON-столбец** - представляет всю схему в виде одного столбца `JSON`, позволяя всем вложенным структурам оставаться динамическими.
+* **Целевой JSON-столбец** - использовать тип `JSON` только для столбца `company.labels`, сохраняя для всех остальных столбцов структурированную схему, описанную выше.
+
+Хотя первый подход [не соответствует предыдущей методологии](#static-vs-dynamic-json), подход с одним JSON-столбцом полезен для прототипирования и задач дата-инжиниринга.
+
+Для production-развертываний ClickHouse в большом масштабе мы рекомендуем явно задавать структуру и по возможности использовать тип JSON для отдельных динамических подструктур.
+
+Строгая схема имеет ряд преимуществ:
+
+* **Валидация данных** – использование строгой схемы позволяет избежать риска разрастания столбцов за пределами явно заданных структур.
+* **Позволяет избежать риска разрастания столбцов** - Хотя тип JSON может масштабироваться до тысяч столбцов, где подстолбцы хранятся как отдельные столбцы, это может привести к лавинообразному росту числа файлов столбцов, что негативно сказывается на производительности. Чтобы уменьшить этот риск, базовый [тип Dynamic](/ru/reference/data-types/dynamic), используемый в JSON, поддерживает параметр [`max_dynamic_paths`](/ru/reference/data-types/newjson#reading-json-paths-as-sub-columns), который ограничивает число уникальных путей, сохраняемых как отдельные файлы столбцов. После достижения этого порога дополнительные пути сохраняются в общем файле столбца в компактном закодированном формате, что позволяет сохранить производительность и эффективность хранения, одновременно поддерживая гибкую ингестию данных. Однако доступ к этому общему файлу столбца менее производителен. При этом JSON-столбец можно использовать с [подсказками типов](#using-type-hints-and-skipping-paths). Столбцы с подсказками обеспечивают ту же производительность, что и отдельные столбцы.
+* **Более простая интроспекция путей и типов** - Хотя тип JSON поддерживает [функции интроспекции](/ru/reference/data-types/newjson#introspection-functions) для определения выведенных типов и путей, статические структуры бывает проще исследовать, например с помощью `DESCRIBE`.
+
+<div id="single-json-column">
+  ### Один JSON-столбец
+</div>
+
+Этот подход полезен для прототипирования и задач дата-инжиниринга. Для продакшена старайтесь использовать `JSON` только для динамических вложенных структур там, где это действительно необходимо.
+
+<Info>
+  **Соображения по производительности**
+
+  Один JSON-столбец можно оптимизировать, пропуская (не сохраняя) JSON-пути, которые не нужны, и используя [подсказки типов](#using-type-hints-and-skipping-paths). Подсказки типов позволяют пользователю явно задавать тип для подстолбца, тем самым избегая вывода типов и дополнительной косвенной обработки во время выполнения запроса. Это позволяет добиться той же производительности, как если бы использовалась явная схема. Подробнее см. в разделе [&quot;Использование подсказок типов и пропуск путей&quot;](#using-type-hints-and-skipping-paths).
+</Info>
+
+Схема для одного JSON-столбца здесь проста:
+
+```sql
+SET enable_json_type = 1;
+
+CREATE TABLE people
+(
+    `json` JSON(username String)
+)
+ENGINE = MergeTree
+ORDER BY json.username;
+```
+
+<Note>
+  Мы указываем [подсказку типа](#using-type-hints-and-skipping-paths) для столбца `username` в определении JSON, поскольку используем его в ключе сортировки/первичном ключе. Это помогает ClickHouse понять, что этот столбец не будет содержать NULL, и определить, какой подстолбец `username` следует использовать (для каждого типа их может быть несколько, поэтому без этого возникает неоднозначность).
+</Note>
+
+Вставка строк в указанную выше таблицу может выполняться с использованием формата `JSONAsObject`:
+
+```sql
+INSERT INTO people FORMAT JSONAsObject 
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.028 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONAsObject
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT *
+FROM people
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+json: {"address":[{"city":"Dataford","geo":{"lat":40.7128,"lng":-74.006},"street":"Maple Avenue","suite":"Apt. 402","zipcode":"11223-4567"}],"company":{"catchPhrase":"Streamlined analytics at scale","labels":{"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]},"name":"FastData Inc."},"dob":"1992-07-15","id":"2","name":"Analytica Rowe","phone_numbers":["123-456-7890","555-867-5309"],"tags":{"car":{"model":"Audi e-tron","year":"2022"},"hobby":"Running simulations","holidays":[{"location":"Kyoto, Japan","year":"2023"}]},"username":"Analytica","website":"fastdata.io"}
+
+Row 2:
+──────
+json: {"address":[{"city":"Wisokyburgh","geo":{"lat":-43.9509,"lng":-34.4618},"street":"Victor Plains","suite":"Suite 879","zipcode":"90566-7771"}],"company":{"catchPhrase":"The real-time data warehouse for analytics","labels":{"employees":"250","founded":"2021","type":"database systems"},"name":"ClickHouse"},"dob":"2007-03-31","email":"clicky@clickhouse.com","id":"1","name":"Clicky McCliickHouse","phone_numbers":["010-692-6593","020-192-3333"],"tags":{"car":{"model":"Tesla","year":"2023"},"hobby":"Databases","holidays":[{"location":"Azores, Portugal","year":"2024"}]},"username":"Clicky","website":"clickhouse.com"}
+
+2 rows in set. Elapsed: 0.005 sec.
+```
+
+Мы можем определить автоматически выявленные подстолбцы и их типы с помощью [функций интроспекции](/ru/reference/data-types/newjson#introspection-functions). Например:
+
+```sql
+SELECT JSONDynamicPathsWithTypes(json) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "address": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "company.catchPhrase": "String",
+        "company.labels.employees": "Int64",
+        "company.labels.founded": "String",
+        "company.labels.type": "String",
+        "company.name": "String",
+        "dob": "Date",
+        "email": "String",
+        "id": "Int64",
+        "name": "String",
+        "phone_numbers": "Array(Nullable(String))",
+        "tags.car.model": "String",
+        "tags.car.year": "Int64",
+        "tags.hobby": "String",
+        "tags.holidays": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "website": "String"
+ }
+}
+{
+    "paths": {
+        "address": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "company.catchPhrase": "String",
+        "company.labels.dissolved": "Int64",
+        "company.labels.employees": "Int64",
+        "company.labels.founded": "Int64",
+        "company.labels.type": "Array(Nullable(String))",
+        "company.name": "String",
+        "dob": "Date",
+        "id": "Int64",
+        "name": "String",
+        "phone_numbers": "Array(Nullable(String))",
+        "tags.car.model": "String",
+        "tags.car.year": "Int64",
+        "tags.hobby": "String",
+        "tags.holidays": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "website": "String"
+ }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.009 sec.
+```
+
+Полный список функций интроспекции см. в [&quot;Функции интроспекции&quot;](/ru/reference/data-types/newjson#introspection-functions)
+
+[К вложенным путям можно обращаться](/ru/reference/data-types/newjson#reading-json-paths-as-sub-columns) с помощью нотации `.`; например.
+
+```sql
+SELECT json.name, json.email FROM people
+```
+
+```response
+┌─json.name────────────┬─json.email────────────┐
+│ Analytica Rowe       │ ᴺᵁᴸᴸ                  │
+│ Clicky McCliickHouse │ clicky@clickhouse.com │
+└──────────────────────┴───────────────────────┘
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+
+Обратите внимание: столбцы, которых нет в строках, возвращаются со значением `NULL`.
+
+Кроме того, для путей с одним и тем же типом создаётся отдельный подстолбец. Например, для `company.labels.type` существует подстолбец как типа `String`, так и типа `Array(Nullable(String))`. По возможности будут возвращаться оба, но с помощью синтаксиса `.:` можно обращаться к конкретным подстолбцам:
+
+```sql
+SELECT json.company.labels.type
+FROM people
+```
+
+```response
+┌─json.company.labels.type─┐
+│ database systems         │
+│ ['real-time processing'] │
+└──────────────────────────┘
+
+2 rows in set. Elapsed: 0.007 sec.
+```
+
+```sql
+SELECT json.company.labels.type.:String
+FROM people
+```
+
+```response
+┌─json.company⋯e.:`String`─┐
+│ ᴺᵁᴸᴸ                     │
+│ database systems         │
+└──────────────────────────┘
+
+2 rows in set. Elapsed: 0.009 sec.
+```
+
+Чтобы возвращались вложенные объекты, требуется символ `^`. Это сделано намеренно, чтобы избежать чтения большого количества столбцов без явного запроса. При обращении к объектам без `^` будет возвращаться `NULL`, как показано ниже:
+
+```sql
+-- вложенные объекты не возвращаются по умолчанию
+SELECT json.company.labels
+FROM people
+```
+
+```response
+┌─json.company.labels─┐
+│ ᴺᵁᴸᴸ                │
+│ ᴺᵁᴸᴸ                │
+└─────────────────────┘
+
+2 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+-- возвращаем вложенные объекты с помощью нотации ^
+SELECT json.^company.labels
+FROM people
+```
+
+```response
+┌─json.^`company`.labels─────────────────────────────────────────────────────────────────┐
+│ {"employees":"250","founded":"2021","type":"database systems"}                         │
+│ {"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]} │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="targeted-json-column">
+  ### Целевой JSON-столбец
+</div>
+
+Хотя это удобно при прототипировании и решении задач по инженерии данных, в продакшн-среде мы рекомендуем по возможности использовать явную схему.
+
+Предыдущий пример можно смоделировать, используя единственный столбец типа `JSON` для столбца `company.labels`.
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String, labels JSON),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+Вставку данных в эту таблицу можно выполнить в формате `JSONEachRow`:
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+```sql
+SELECT *
+FROM people
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:            2
+name:          Analytica Rowe
+username:      Analytica
+email:
+address:       [('Dataford',(40.7128,-74.006),'Maple Avenue','Apt. 402','11223-4567')]
+phone_numbers: ['123-456-7890','555-867-5309']
+website:       fastdata.io
+company:       ('Streamlined analytics at scale','FastData Inc.','{"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]}')
+dob:           1992-07-15
+tags:          {"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}
+
+Row 2:
+──────
+id:            1
+name:          Clicky McCliickHouse
+username:      Clicky
+email:         clicky@clickhouse.com
+address:       [('Wisokyburgh',(-43.9509,-34.4618),'Victor Plains','Suite 879','90566-7771')]
+phone_numbers: ['010-692-6593','020-192-3333']
+website:       clickhouse.com
+company:       ('The real-time data warehouse for analytics','ClickHouse','{"employees":"250","founded":"2021","type":"database systems"}')
+dob:           2007-03-31
+tags:          {"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}
+
+2 строки в наборе. Прошло: 0.005 сек.
+```
+
+[Функции интроспекции](/ru/reference/data-types/newjson#introspection-functions) можно использовать для определения выведенных путей и типов для столбца `company.labels`.
+
+```sql
+SELECT JSONDynamicPathsWithTypes(company.labels) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "dissolved": "Int64",
+        "employees": "Int64",
+        "founded": "Int64",
+        "type": "Array(Nullable(String))"
+ }
+}
+{
+    "paths": {
+        "employees": "Int64",
+        "founded": "String",
+        "type": "String"
+ }
+}
+```
+
+```response
+2 строки в наборе. Прошло: 0.003 сек.
+```
+
+<div id="using-type-hints-and-skipping-paths">
+  ### Использование подсказок типов и пропускаемых путей
+</div>
+
+Подсказки типов позволяют задавать тип для пути и его подстолбца, избегая ненужного вывода типов. Рассмотрим следующий пример, в котором мы задаём типы для JSON-ключей `dissolved`, `employees` и `founded` в JSON-столбце `company.labels`
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(
+        city String,
+        geo Tuple(
+            lat Float32,
+            lng Float32),
+        street String,
+        suite String,
+        zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(
+        catchPhrase String,
+        name String,
+        labels JSON(dissolved UInt16, employees UInt16, founded UInt16)),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+Обратите внимание, что у этих столбцов теперь явно заданы типы:
+
+```sql
+SELECT JSONAllPathsWithTypes(company.labels) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "dissolved": "UInt16",
+        "employees": "UInt16",
+        "founded": "UInt16",
+        "type": "String"
+ }
+}
+{
+    "paths": {
+        "dissolved": "UInt16",
+        "employees": "UInt16",
+        "founded": "UInt16",
+        "type": "Array(Nullable(String))"
+ }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+Кроме того, мы можем пропускать пути в JSON, которые не нужно хранить, с помощью параметров [`SKIP` and `SKIP REGEXP`](/ru/reference/data-types/newjson), чтобы сократить объём хранилища и избежать лишнего вывода типов для ненужных путей. Например, предположим, что для приведённых выше данных используется один JSON-столбец. Мы можем пропустить пути `address` и `company`:&quot;
+
+```sql
+CREATE TABLE people
+(
+    `json` JSON(username String, SKIP address, SKIP company)
+)
+ENGINE = MergeTree
+ORDER BY json.username
+
+INSERT INTO people FORMAT JSONAsObject
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONAsObject
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+Обратите внимание, что эти столбцы исключены из данных:
+
+```sql
+SELECT *
+FROM people
+FORMAT PrettyJSONEachRow
+
+{
+    "json": {
+        "dob" : "1992-07-15",
+        "id" : "2",
+        "name" : "Analytica Rowe",
+        "phone_numbers" : [
+            "123-456-7890",
+            "555-867-5309"
+        ],
+        "tags" : {
+            "car" : {
+                "model" : "Audi e-tron",
+                "year" : "2022"
+            },
+            "hobby" : "Running simulations",
+            "holidays" : [
+                {
+                    "location" : "Kyoto, Japan",
+                    "year" : "2023"
+                }
+            ]
+        },
+        "username" : "Analytica",
+        "website" : "fastdata.io"
+    }
+}
+{
+    "json": {
+        "dob" : "2007-03-31",
+        "email" : "clicky@clickhouse.com",
+        "id" : "1",
+        "name" : "Clicky McCliickHouse",
+        "phone_numbers" : [
+            "010-692-6593",
+            "020-192-3333"
+        ],
+        "tags" : {
+            "car" : {
+                "model" : "Tesla",
+                "year" : "2023"
+            },
+            "hobby" : "Databases",
+            "holidays" : [
+                {
+                    "location" : "Azores, Portugal",
+                    "year" : "2024"
+                }
+            ]
+        },
+        "username" : "Clicky",
+        "website" : "clickhouse.com"
+    }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="optimizing-performance-with-type-hints">
+  #### Оптимизация производительности с помощью подсказок типов
+</div>
+
+Подсказки типов — это не просто способ избежать ненужного вывода типов: они полностью устраняют дополнительный уровень косвенности при хранении и обработке, а также позволяют задавать [оптимальные примитивные типы](/ru/guides/clickhouse/data-modelling/schema-design#optimizing-types). JSON-пути с подсказками типов всегда хранятся так же, как и обычные столбцы, поэтому не требуются [**столбцы-дискриминаторы**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data) или динамическое разрешение на этапе выполнения запроса.
+
+Это означает, что при наличии чётко заданных подсказок типов вложенные ключи JSON дают ту же производительность и эффективность, как если бы они с самого начала были смоделированы как столбцы верхнего уровня.
+
+В результате для наборов данных, которые в целом однородны, но при этом выигрывают от гибкости JSON, подсказки типов дают удобный способ сохранить производительность без необходимости перестраивать схему или конвейер приёма.
+
+<div id="configuring-dynamic-paths">
+  ### Настройка динамических путей
+</div>
+
+ClickHouse хранит каждый JSON-путь как подстолбец в по-настоящему столбцовой структуре, обеспечивая те же преимущества по производительности, что и у традиционных столбцов, — такие как сжатие, обработка с ускорением SIMD и минимальный дисковый I/O. Каждая уникальная комбинация пути и типа в ваших JSON-данных может стать отдельным файлом столбца на диске.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="Столбец для каждого JSON-пути" />
+
+Например, когда в два JSON-пути вставляются значения разных типов, ClickHouse хранит значения каждого [конкретного типа в отдельных подстолбцах](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). К этим подстолбцам можно обращаться независимо, что сводит к минимуму лишний I/O. Обратите внимание, что при запросе столбца с несколькими типами его значения по-прежнему возвращаются как единый столбцовый ответ.
+
+Кроме того, используя смещения, ClickHouse гарантирует, что эти подстолбцы остаются плотными, без хранения значений по умолчанию для отсутствующих JSON-путей. Такой подход максимизирует сжатие и дополнительно сокращает I/O.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="JSON-смещения" />
+
+Однако в сценариях с JSON-структурами высокой кардинальности или сильно изменяющейся структурой — например, в конвейерах телеметрии, журналах или хранилищах признаков для машинного обучения — такое поведение может привести к взрывному росту числа файлов столбцов. Каждый новый уникальный JSON-путь приводит к созданию нового файла столбца, а каждый вариант типа в рамках этого пути — к созданию дополнительного файла столбца. Хотя это оптимально для производительности чтения, возникают эксплуатационные сложности: исчерпание дескрипторов файлов, повышенное использование памяти и более медленные слияния из-за большого количества мелких файлов.
+
+Чтобы смягчить эту проблему, ClickHouse вводит понятие overflow-подстолбца: как только число различных JSON-путей превышает порог, дополнительные пути сохраняются в одном общем файле в компактном кодированном формате. Этот файл по-прежнему можно запрашивать, но он не обладает теми же характеристиками производительности, что и выделенные подстолбцы.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="Общий JSON-столбец" />
+
+Этот порог задаётся параметром [`max_dynamic_paths`](/ru/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) в объявлении типа JSON.
+
+```sql
+CREATE TABLE logs
+(
+    payload JSON(max_dynamic_paths = 500)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+**Не задавайте этому параметру слишком большое значение** — большие значения увеличивают потребление ресурсов и снижают эффективность. Как правило, значение должно быть меньше 10 000. Для рабочих нагрузок с сильно меняющейся структурой используйте подсказки типов и параметры `SKIP`, чтобы ограничить объём сохраняемых данных.
+
+Пользователям, которым интересна реализация этого нового типа столбца, рекомендуем прочитать нашу подробную статью в блоге [&quot;A New Powerful JSON Data Type for ClickHouse&quot;](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse).

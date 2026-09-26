@@ -262,7 +262,7 @@ SELECT
     )",
         R"(
 ┌─original─┬─nfkc_normalized─┐
-│ ① ② ③  │ 1 2 3           │
+│ ① ② ③    │ 1 2 3           │
 └──────────┴─────────────────┘
     )"
     }
@@ -312,9 +312,9 @@ SELECT
     normalizeUTF8NFKCCasefold('Ä ① Hello') AS nfkc_cf_normalized;
         )",
         R"(
-┌─original───┬─nfkc_cf_normalized─┐
-│ Ä ① Hello │ ä 1 hello           │
-└────────────┴────────────────────┘
+┌─original──┬─nfkc_cf_normalized─┐
+│ Ä ① Hello │ ä 1 hello          │
+└───────────┴────────────────────┘
         )"
     }
     };

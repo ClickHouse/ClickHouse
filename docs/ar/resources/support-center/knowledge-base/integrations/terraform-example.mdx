@@ -1,0 +1,265 @@
+---
+title: مثال على استخدام Terraform مع Cloud واجهة برمجة تطبيقات
+description: "يوضح هذا مثالًا على كيفية استخدام Terraform لإنشاء المجموعات وحذفها عبر واجهة برمجة تطبيقات Cloud"
+Date: 2023-09-02
+tags: ['العملاء الأصليون والواجهات']
+keywords: ['Terraform']
+---
+
+<div id="question">
+  ## السؤال
+</div>
+
+كيف يمكنني استخدام واجهة برمجة تطبيقات لإدارة المجموعات على ClickHouse Cloud؟
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+سنستخدم Terraform لتهيئة بنيتنا التحتية و[موفّر ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)
+
+الخطوات:
+
+1). أنشئ مفتاح واجهة برمجة تطبيقات على Cloud.
+اتبع الوثائق هنا - [https://clickhouse.com/docs/cloud/manage/openapi](https://clickhouse.com/docs/cloud/manage/openapi)
+
+احفظ بيانات الاعتماد محليًا.
+
+2). ثبّت Terraform باستخدام - [https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)
+
+يمكنك استخدام مدير الحزم Homebrew إذا كنت تعمل على جهاز Mac.
+
+3). أنشئ مجلدًا في أي مكان تريده:
+
+```
+mkdir test
+➜  test pwd
+/Users/jaijhala/Desktop/terraform/test
+```
+
+4). أنشئ ملفين: `main.tf` و `secret.tfvars`
+
+انسخ ما يلي:
+
+سيكون ملف `main.tf` على النحو التالي:
+
+```
+terraform {
+ required_providers {
+   clickhouse = {
+     source = "ClickHouse/clickhouse"
+     version = "0.0.2"
+   }
+ }
+}
+
+variable "organization_id" {
+  type = string
+}
+
+variable "token_key" {
+  type = string
+}
+
+variable "token_secret" {
+  type = string
+}
+
+provider clickhouse {
+  environment 	= "production"
+  organization_id = var.organization_id
+  token_key   	= var.token_key
+  token_secret	= var.token_secret
+}
+
+variable "service_password" {
+  type = string
+  sensitive   = true
+}
+
+resource "clickhouse_service" "service123" {
+  name       	= "jai-terraform"
+  cloud_provider = "aws"
+  region     	= "us-east-2"
+  tier       	= "development"
+  idle_scaling   = true
+  password  = var.service_password
+  ip_access = [
+	{
+    	source  	= "0.0.0.0/0"
+    	description = "Anywhere"
+	}
+  ]
+}
+
+output "CLICKHOUSE_HOST" {
+  value = clickhouse_service.service123.endpoints.0.host
+}
+```
+
+يمكنك استبدال المعلمات الخاصة بك، مثل اسم الخدمة والمنطقة وما إلى ذلك، في قسم الموارد أعلاه.
+
+`secret.tfvars` هو الملف الذي ستضع فيه جميع المعلومات المتعلقة بمفتاح واجهة برمجة التطبيقات التي نزّلتها سابقًا. والفكرة من هذا الملف هي إبقاء جميع بيانات الاعتماد السرية الخاصة بك مخفية عن ملف الإعدادات الرئيسي.
+
+سيكون بالشكل التالي تقريبًا (استبدل هذه المعلمات):
+
+```
+organization_id = "e957a5f7-4qe3-4b05-ad5a-d02b2dcd0593"
+token_key = "QWhhkMeytqQruTeKg"
+token_secret = "4b1dNmjWdLUno9lXxmKvSUcPP62jvn7irkuZPbY"
+service_password = "password123!"
+```
+
+5).  شغِّل `terraform init` من هذا المجلد
+
+المخرجات المتوقعة:
+
+```
+Initializing the backend...
+
+Initializing provider plugins...
+- Finding clickhouse/clickhouse versions matching "0.0.2"...
+- Installing clickhouse/clickhouse v0.0.2...
+- Installed clickhouse/clickhouse v0.0.2 (self-signed, key ID D7089EE5C6A92ED1)
+
+Partner and community providers are signed by their developers.
+If you'd like to know more about provider signing, you can read about it here:
+https://www.terraform.io/docs/cli/plugins/signing.html
+
+Terraform has created a lock file .terraform.lock.hcl to record the provider
+selections it made above. Include this file in your version control repository
+so that Terraform can guarantee to make the same selections by default when
+you run "terraform init" in the future.
+
+Terraform has been successfully initialized!
+
+You may now begin working with Terraform. Try running "terraform plan" to see
+any changes that are required for your infrastructure. All Terraform commands
+should now work.
+
+If you ever set or change modules or backend configuration for Terraform,
+rerun this command to reinitialize your working directory. If you forget, other
+commands will detect it and remind you to do so if necessary.
+```
+
+6). نفّذ الأمر `terraform apply -var-file=secret.tfvars`.
+
+على سبيل المثال: 
+
+```
+➜  test terraform apply -var-file=secret.tfvars
+
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with
+the following symbols:
+  + create
+
+Terraform will perform the following actions:
+
+  # clickhouse_service.service123 will be created
+  + resource "clickhouse_service" "service123" {
+      + cloud_provider = "aws"
+      + endpoints      = (known after apply)
+      + id             = (known after apply)
+      + idle_scaling   = true
+      + ip_access      = [
+          + {
+              + description = "Anywhere"
+              + source      = "0.0.0.0/0"
+            },
+        ]
+      + last_updated   = (known after apply)
+      + name           = "jai-terraform"
+      + password       = (sensitive value)
+      + region         = "us-east-2"
+      + tier           = "development"
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + CLICKHOUSE_HOST = (known after apply)
+
+Do you want to perform these actions?
+  Terraform will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+```
+
+اكتب `yes` ثم اضغط على Enter
+
+ملاحظة جانبية: لاحظ أنه يظهر `password       = (sensitive value)` أعلاه.
+وذلك لأننا عيّنّا `sensitive   = true` لكلمة المرور في ملف main.tf.
+
+7). سيستغرق إنشاء الخدمة بضع دقائق، لكن في النهاية يُفترض أن تظهر بهذا الشكل:
+
+```
+  Enter a value: yes
+
+clickhouse_service.service123: Creating...
+clickhouse_service.service123: Still creating... [10s elapsed]
+clickhouse_service.service123: Still creating... [20s elapsed]
+clickhouse_service.service123: Still creating... [30s elapsed]
+clickhouse_service.service123: Still creating... [40s elapsed]
+clickhouse_service.service123: Still creating... [50s elapsed]
+clickhouse_service.service123: Still creating... [1m0s elapsed]
+clickhouse_service.service123: Still creating... [1m10s elapsed]
+clickhouse_service.service123: Still creating... [1m20s elapsed]
+clickhouse_service.service123: Still creating... [1m30s elapsed]
+clickhouse_service.service123: Still creating... [1m40s elapsed]
+clickhouse_service.service123: Creation complete after 1m41s [id=aa8d8d63-1878-4600-8470-630715af38ed]
+
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+CLICKHOUSE_HOST = "h3ljlaqez6.us-east-2.aws.clickhouse.cloud"
+➜  test
+```
+
+8). تحقّق من Cloud Console، ويُفترض أن تتمكن من رؤية الخدمة التي تم إنشاؤها.
+
+9). لحذف الخدمة/إزالتها مرة أخرى، شغّل `terraform destroy -var-file=secret.tfvars`
+
+شيء من هذا القبيل:
+
+```
+Terraform used the selected providers to generate the following execution plan. Resource actions are indicated with
+the following symbols:
+  - destroy
+
+Terraform will perform the following actions:
+
+  # clickhouse_service.service123 will be destroyed
+  - resource "clickhouse_service" "service123" {
+      - cloud_provider = "aws" -> null
+      - ............
+
+Plan: 0 to add, 0 to change, 1 to destroy.
+
+Changes to Outputs:
+  - CLICKHOUSE_HOST = "h3ljlaqez6.us-east-2.aws.clickhouse.cloud" -> null
+
+Do you really want to destroy all resources?
+  Terraform will destroy all your managed infrastructure, as shown above.
+  There is no undo. Only 'yes' will be accepted to confirm.
+
+  Enter a value:
+```
+
+اكتب yes ثم اضغط على Enter
+
+10).
+
+```
+clickhouse_service.service123: Destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed]
+clickhouse_service.service123: Still destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed, 10s elapsed]
+clickhouse_service.service123: Still destroying... [id=aa8d8d63-1878-4600-8470-630715af38ed, 20s elapsed]
+clickhouse_service.service123: Destruction complete after 27s
+
+Destroy complete! Resources: 1 destroyed.
+```
+
+ومن المفترض أن يكون قد اختفى من Cloud Console.
+
+يمكن العثور على مزيد من التفاصيل حول Cloud واجهة برمجة تطبيقات هنا - [https://clickhouse.com/docs/cloud/manage/api/api-overview](https://clickhouse.com/docs/cloud/manage/api/api-overview)

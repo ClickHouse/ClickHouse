@@ -1,6 +1,7 @@
 -- Tags: no-parallel-replicas
 -- no-parallel-replicas - because explain produced different plan
 
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET enable_analyzer = 1;
 SET parallel_hash_join_threshold = 0;
 SET enable_join_runtime_filters = 0;
