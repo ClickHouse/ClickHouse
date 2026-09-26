@@ -1,0 +1,45 @@
+JSON
+(11,nan)
+JSONColumns
+(11,nan)
+JSONColumnsWithMetadata
+(11,nan)
+JSONCompact
+(11,nan)
+JSONCompactColumns
+(11,nan)
+JSONEachRow
+(11,nan)
+(nan,nan)
+JSONCompactEachRow
+(11,nan)
+JSONCompactEachRowWithNames
+(11,nan)
+JSONCompactEachRowWithNamesAndTypes
+(11,nan)
+JSONObjectEachRow
+(11,nan)
+other geo types built on Point
+[(11,nan),(nan,12)]
+[(11,nan)]
+[[(11,nan),(nan,12)]]
+float elements of tuple, array and map
+(11,nan)
+[11,nan,13]
+[11,nan,13]
+[11,nan,13]
+{'x':nan}
+non-float elements still take the element default
+(11,0)
+[11,0]
+(11,'')
+a top-level null still uses the column default
+0
+0
+nullable is untouched
+(11,NULL)
+\N
+round trip
+{"a":[11,null]}
+null_as_default = 0 was already correct
+(11,nan)
