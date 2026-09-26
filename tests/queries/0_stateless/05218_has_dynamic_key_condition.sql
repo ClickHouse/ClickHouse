@@ -81,3 +81,19 @@ WHERE has([CAST(1, 'Variant(UInt8, Date)'), CAST(toDate('1999-12-31'), 'Variant(
 SETTINGS use_primary_key = 0;
 
 DROP TABLE t_has_variant_same_type;
+
+-- A key that is a function of a `JSON` path, whose values are `Dynamic`: the row holding `true` matches `1`
+-- while its key is 'true'.
+
+DROP TABLE IF EXISTS t_has_json_path_key;
+
+CREATE TABLE t_has_json_path_key (json JSON) ENGINE = MergeTree ORDER BY json.b::String
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO t_has_json_path_key VALUES ('{"b" : true}'), ('{"b" : 7}'), ('{"b" : "zzz"}');
+
+SELECT sum(has([1], json.b)) FROM t_has_json_path_key;
+SELECT count() FROM t_has_json_path_key WHERE has([1], json.b);
+SELECT count() FROM t_has_json_path_key WHERE has([1], json.b) SETTINGS use_primary_key = 0;
+
+DROP TABLE t_has_json_path_key;
