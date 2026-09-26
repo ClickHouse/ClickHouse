@@ -34,22 +34,18 @@ Para crear una alerta de búsqueda:
 Para que se cree una alerta para una búsqueda, esta debe estar guardada. Puede crear la alerta para una búsqueda guardada existente o guardar la búsqueda durante el proceso de creación de la alerta. En el ejemplo siguiente, asumimos que la búsqueda no está guardada.
 
 <Steps>
-  <Step>
-    #### Abrir el cuadro de diálogo de creación de alertas
-
-    Comience introduciendo una [búsqueda](/es/clickstack/features/search) y haciendo clic en el botón `Alerts` en la esquina superior derecha de la página `Search`.
+  <Step title="Abrir el cuadro de diálogo de creación de alertas" id="open-dialog">
+    Comience introduciendo una [búsqueda](/es/clickstack/features/search) y haciendo clic en el botón `Alertas` en la esquina superior derecha de la página `Búsqueda`.
 
     <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="Vista de búsqueda de alertas" size="lg" />
   </Step>
 
-  <Step>
-    #### Crear la alerta
-
+  <Step title="Crear la alerta" id="create-the-alert">
     Desde el panel de creación de alertas, puede:
 
     * Asignar un nombre a la búsqueda guardada asociada a la alerta.
     * Establecer un umbral y especificar cuántas veces debe alcanzarse dentro de un período determinado. Los umbrales también pueden usarse como límites superiores o inferiores. El período también determinará con qué frecuencia se activa la alerta.
-    * Especificar un valor `grouped by`. Esto permite que la búsqueda esté sujeta a una agregación, por ejemplo, `ServiceName`, lo que permite activar varias alertas a partir de la misma búsqueda.
+    * Especificar un valor `grouped by`. Esto permite que la búsqueda se someta a una agregación, por ejemplo, `ServiceName`, lo que permite activar varias alertas a partir de la misma búsqueda.
     * Elegir un destino de webhook para las notificaciones. Puede añadir un nuevo webhook directamente desde esta vista. Consulte [Añadir un webhook](#add-webhook) para obtener más detalles.
 
     Antes de guardar, ClickStack visualiza la condición del umbral para que pueda confirmar que se comportará como se espera.
@@ -81,25 +77,19 @@ Para añadir una alerta de dashboard:
 Las alertas se pueden crear durante el proceso de creación del gráfico, al añadir un gráfico a un dashboard o sobre gráficos existentes. En el ejemplo siguiente, asumimos que el gráfico ya existe en el dashboard.
 
 <Steps>
-  <Step>
-    #### Abre el cuadro de diálogo de edición del gráfico
-
+  <Step title="Abre el cuadro de diálogo de edición del gráfico" id="open-chart-dialog">
     Abre el menú de configuración del gráfico y selecciona el botón de alerta. Se abrirá el cuadro de diálogo de edición del gráfico.
 
     <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="Editar alerta del gráfico" size="lg" />
   </Step>
 
-  <Step>
-    #### Añade la alerta
-
+  <Step title="Añade la alerta" id="add-chart-alert">
     Selecciona **Add Alert**.
 
     <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="Añadir alerta al gráfico" size="lg" />
   </Step>
 
-  <Step>
-    #### Define las condiciones de la alerta
-
+  <Step title="Define las condiciones de la alerta" id="define-alert-conditions">
     Define la condición (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), el umbral, la duración y el webhook. La duración también determinará la frecuencia con la que se activa la alerta.
 
     <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="Crear alerta para el gráfico" size="lg" />
@@ -223,19 +213,15 @@ Otros tipos de gráficos basados en SQL (Tabla, Circular, Mapa de calor, etc.) n
 Para crear una alerta en un gráfico basado en SQL:
 
 <Steps>
-  <Step>
-    #### Crear o abrir un gráfico basado en SQL en un dashboard
-
-    Desde un dashboard guardado, [cree un gráfico nuevo con el modo de gráfico **SQL**](/es/clickstack/features/dashboards/sql-visualizations) o abra para editar un gráfico basado en SQL existente.
+  <Step title="Crear o abrir un gráfico basado en SQL en un dashboard" id="open-sql-chart">
+    Desde un dashboard guardado, [cree un gráfico nuevo con el modo de gráfico **SQL**](/es/clickstack/features/dashboards/sql-visualizations), o abra para editar un gráfico basado en SQL existente.
 
     Elija **Line**, **Stacked Bar** o **Number** como tipo de visualización.
 
     <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="Crear gráfico SQL" size="lg" />
   </Step>
 
-  <Step>
-    #### Añadir la alerta
-
+  <Step title="Añadir la alerta" id="add-sql-alert">
     Seleccione **Add Alert** en la sección de alertas del editor de gráficos. Configure lo siguiente:
 
     * **Tipo de umbral**: `>=` (mayor o igual que), `>` (mayor que), `<=` (menor o igual que), `<` (menor que), `=` (igual a), `!=` (distinto de), `<= x >=` (entre) o `> or <` (fuera de rango)
@@ -252,9 +238,7 @@ Para crear una alerta en un gráfico basado en SQL:
     </Warning>
   </Step>
 
-  <Step>
-    #### Guardar el dashboard
-
+  <Step title="Guardar el dashboard" id="save-sql-dashboard">
     Guarde el dashboard para activar la alerta. La alerta comenzará a evaluarse según el intervalo configurado.
   </Step>
 </Steps>

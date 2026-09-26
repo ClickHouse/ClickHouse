@@ -20,9 +20,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 بالنسبة إلى عبء عمل يعمل داخل Kubernetes، ينبغي نشر مُجمِّع البوابة نفسه **داخل العنقود نفسه باستخدام مخطط Helm الرسمي لـ OpenTelemetry مع صورة مُجمِّع ClickStack**. اتبع مسار Helm في [نشر المُجمِّع](/ar/clickstack/ingesting-data/collector#configuring-the-collector) لتثبيته. **تأكد من تدوين نقطة نهاية OTLP هذه**.
 
 <Steps>
-  <Step>
-    ## جهّز المتطلبات الأساسية
-
+  <Step title="جهّز المتطلبات الأساسية" id="gather-prerequisites">
     ستحتاج إلى:
 
     * **عنقود Kubernetes** (يُوصى بالإصدار v1.20+ أو أحدث) مع إعداد `kubectl` للعمل عليه.
@@ -37,9 +35,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ## أنشئ سرّ المصادقة وConfigMap
-
+  <Step title="أنشئ سرّ المصادقة وConfigMap" id="create-secret-and-configmap">
     اختر مساحة الاسم التي تريد أن تعمل ضمنها المجمِّعات، ثم أنشئ سرًّا يحتوي على `OTLP_AUTH_TOKEN` وConfigMap يشير إلى بوابتك:
 
     ```shell
@@ -61,18 +57,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     يقرأ كلا المجمّعين أدناه هذه القيم عبر `extraEnvs`، لذا يُعاد استخدام الـ Secret وConfigMap نفسيهما في كليهما.
   </Step>
 
-  <Step>
-    ## أضِف مستودع Helm لـ OpenTelemetry
-
+  <Step title="أضِف مستودع Helm لـ OpenTelemetry" id="add-otel-helm-repo">
     ```shell
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
     helm repo update
     ```
   </Step>
 
-  <Step>
-    ## نشر مجمّع المجموعة
-
+  <Step title="نشر مجمّع المجموعة" id="deploy-cluster-collector">
     هذه عملية `Deployment` بنسخة متماثلة واحدة تجمع **أحداث Kubernetes** و**المقاييس على مستوى المجموعة بالكامل** (مثل عدد العُقد، ومراحل الكبسولات `pod`، وحالة عمليات النشر، وما إلى ذلك). وسيؤدي تشغيل أكثر من نسخة متماثلة إلى إنتاج بيانات مكررة.
 
     احفظ ما يلي باسم `k8s_deployment.yaml`:
@@ -141,9 +133,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## نشر مُجمِّع العقد
-
+  <Step title="نشر مُجمِّع العقد" id="deploy-node-collector">
     هذا عبارة عن `DaemonSet` تعمل على كل عقدة لجمع **سجلات الحاويات** و**مقاييس المضيف** و**مقاييس kubelet** (استخدام CPU والذاكرة لكل pod ولكل حاوية نسبةً إلى الطلبات والحدود).
 
     احفظ ما يلي باسم `k8s_daemonset.yaml`:
@@ -260,9 +250,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     يجب أن ترى كبسولة واحدة من نوع Deployment وكبسولة واحدة من نوع DaemonSet لكل عقدة، وجميعها في حالة `Running`.
   </Step>
 
-  <Step>
-    ## مرّر سمات Kubernetes إلى تطبيقاتك (موصى به)
-
+  <Step title="مرّر سمات Kubernetes إلى تطبيقاتك (موصى به)" id="forward-k8s-attributes">
     لربط سجلات تطبيقك ومقاييسه وتتبعاته ببيانات Kubernetes الوصفية (اسم الـpod، ومساحة الاسم، والعقدة، والنشر)، مرّر هذه البيانات الوصفية إلى تطبيقك عبر `OTEL_RESOURCE_ATTRIBUTES`. بعد ذلك، سيقوم المعالج `k8sattributes` الخاص بـDaemonSet بإثراء بيانات القياس عن بُعد الواردة بسمات الـpod والعقدة المطابقتين.
 
     ```yaml
@@ -311,9 +299,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## تحقّق في واجهة ClickStack
-
+  <Step title="تحقّق في واجهة ClickStack" id="confirm-in-ui">
     افتح خدمتك في [وحدة تحكم ClickHouse Cloud](https://console.clickhouse.cloud) ثم اختر **ClickStack** من القائمة الجانبية اليسرى.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="تشغيل ClickStack" border />
@@ -333,9 +319,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     * تحقّق من أن `OTLP_AUTH_TOKEN` في السر `secret` يطابق القيمة المضبوطة على collector الخاص بالبوابة.
   </Step>
 
-  <Step>
-    ## قراءات إضافية
-
+  <Step title="قراءات إضافية" id="further-reading">
     * [مرجع تكامل Kubernetes](/ar/clickstack/integration-examples/kubernetes) للاطلاع على المجموعة الكاملة من المستقبِلات والمعالِجات وخيارات الضبط.
     * [تمرير وسوم المورد إلى البودات](/ar/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) لمزيد من التفاصيل حول الإثراء من جانب التطبيق.
     * [تأمين المجمّع](/ar/clickstack/ingesting-data/collector#securing-the-collector) باستخدام TLS على نقطة نهاية OTLP ولمستخدمي إدخال البيانات بأقل الامتيازات اللازمة.

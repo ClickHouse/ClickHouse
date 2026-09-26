@@ -2,6 +2,11 @@ SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET union_default_mode = 'DISTINCT';
 
+-- The plans below contain a preliminary DISTINCT, which a single stream does not get. The
+-- memory-pressure limiter can lower max_threads to one, so it is disabled here too.
+SET max_threads = 2;
+SET max_threads_min_free_memory_per_thread = 0;
+
 set enable_global_with_statement = 1;
 
 EXPLAIN SELECT 1 UNION ALL SELECT 1 UNION ALL SELECT 1;

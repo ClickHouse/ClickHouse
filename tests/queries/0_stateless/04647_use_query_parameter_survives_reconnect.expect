@@ -1,0 +1,65 @@
+#!/usr/bin/expect -f
+
+# `USE {db:Identifier}` keeps the database name in a query parameter, so the client has to
+# substitute the parameters to learn the new database name. Otherwise it remembers an empty
+# default database and silently resets the current database when it re-establishes a connection,
+# and every later query with an unqualified table name fails with `UNKNOWN_TABLE`.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# `idle_connection_timeout` has to be passed on the command line: the server picks it up when it
+# receives a query, so an in-session `SET` would only take effect from the query after it.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --param_db=\$CLICKHOUSE_DATABASE --idle_connection_timeout=2 --history_file=$history_file"
+
+expect ":) "
+
+send -- "DROP TABLE IF EXISTS t_04647;\r"
+expect ":) "
+send -- "CREATE TABLE t_04647 (x UInt8) ENGINE = Memory;\r"
+expect ":) "
+send -- "INSERT INTO t_04647 VALUES (1);\r"
+expect ":) "
+
+send -- "USE {db:Identifier};\r"
+expect ":) "
+
+# Stay idle long enough for the server to close the connection, so that the query below is executed
+# in a new session, established by the client on its own. The wait is what makes the reconnection
+# deterministic: the connection is already closed by the time the client checks it, instead of being
+# closed in between the check and the query.
+sleep 5
+
+send -- "SELECT currentDatabase() = {db:String}, sum(x) FROM t_04647 FORMAT TSV;\r"
+expect {
+    # The current database is preserved across the reconnection.
+    -exact "1\t1" { }
+    # Without the fix the new session lands in the `default` database and the unqualified name
+    # cannot be resolved. Fail immediately instead of waiting for the timeout.
+    "UNKNOWN_TABLE" { exit 1 }
+}
+expect ":) "
+
+send -- "DROP TABLE t_04647;\r"
+expect ":) "
+
+send -- "exit\r"
+expect eof

@@ -10,6 +10,7 @@
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
+#include <Storages/StorageURL.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -33,11 +34,78 @@ namespace Setting
     extern const SettingsFileLikeEngineDefaultPartitionStrategy file_like_engine_default_partition_strategy;
 }
 
+std::optional<String> StorageObjectStorageConfiguration::tryGetDiskConfigurationPrefix(
+    const Poco::Util::AbstractConfiguration & config, const String & disk_name)
+{
+    static constexpr auto disks_section = "storage_configuration.disks.";
+    static constexpr size_t max_depth = 100;
+
+    String prefix = disks_section + disk_name;
+    if (!config.has(prefix))
+        return std::nullopt;
+
+    /// Layered disk configs (cache, encrypted) reference the next disk by name in their `disk`
+    /// key; the object storage settings live in the section of the innermost disk.
+    for (size_t depth = 0; config.has(prefix + ".disk"); ++depth)
+    {
+        if (depth >= max_depth)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Too deep or cyclic `disk` references in configuration of disk {}", disk_name);
+
+        prefix = disks_section + config.getString(prefix + ".disk");
+        if (!config.has(prefix))
+            return std::nullopt;
+    }
+
+    /// Multi-location disks keep the backend object storage settings in per-location
+    /// subsections. The table's storage is a copy of the local location's backend
+    /// (see `DiskObjectStorage::getObjectStorage`), so pick the location marked `local`.
+    if (config.has(prefix + ".locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys(prefix + ".locations", locations);
+        if (locations.empty())
+            return std::nullopt;
+
+        for (const auto & location : locations)
+        {
+            if (config.getBool(prefix + ".locations." + location + ".local", false))
+                return prefix + ".locations." + location;
+        }
+
+        return prefix + ".locations." + locations.front();
+    }
+
+    return prefix;
+}
+
 void StorageObjectStorageConfiguration::update( ///NOLINT
     ObjectStoragePtr object_storage_ptr,
     ContextPtr context)
 {
     IObjectStorage::ApplyNewSettingsOptions options{.allow_client_change = !isStaticConfiguration()};
+
+    if (source_disk_name.has_value())
+    {
+        /// The settings of a disk come from the server config and the server-level settings only. Apply
+        /// them under the global context, exactly as the config reload of the disk itself does (see
+        /// `DiskSelector::updateFromConfig`): the query context would leak the session's `s3_*`/`azure_*`
+        /// overrides into the table's long-lived copy of the disk's object storage, and they would stick,
+        /// because a later query with default settings does not mark them as changed and cannot revert them.
+        auto global_context = context->getGlobalContext();
+        const auto & config = global_context->getConfigRef();
+        const auto disk_config_prefix = tryGetDiskConfigurationPrefix(config, *source_disk_name);
+        if (!disk_config_prefix)
+            return;
+
+        /// The table works through a private copy of the disk's object storage (see `DataLakeConfiguration::fromDisk`),
+        /// so rebuilding its client cannot affect the disk. The settings of a disk come from the server config, not from
+        /// the query, so `isStaticConfiguration` does not apply: the object storage itself decides whether the settings
+        /// its client is built from have changed.
+        options.allow_client_change = true;
+        object_storage_ptr->applyNewSettings(config, *disk_config_prefix + ".", global_context, options);
+        return;
+    }
+
     object_storage_ptr->applyNewSettings(context->getConfigRef(), getTypeName() + ".", context, options);
 }
 
@@ -112,7 +180,19 @@ void StorageObjectStorageConfiguration::initialize(
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
     else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
+    {
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
+
+        /// A base-URL setting (e.g. `s3_base`) rewrote a relative URL coming from the named
+        /// collection. Materialize the resolved URL back into the engine args as a `url='...'`
+        /// override, so that the persisted DDL (`SHOW CREATE TABLE`, DETACH/ATTACH, server
+        /// restart) does not depend on the value of the setting at attach time.
+        /// `skip_userinfo=true` keeps credentials that may originate from the base setting
+        /// out of the persisted arguments.
+        if (!configuration_to_initialize.url_overridden_by_base_setting.empty())
+            StorageURL::overrideURLInEngineArgs(
+                engine_args, configuration_to_initialize.url_overridden_by_base_setting, local_context, /*skip_userinfo=*/ true);
+    }
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
 
@@ -127,15 +207,15 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
     }
-    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE)
+    else if (!configuration_to_initialize.partition_strategy_was_set
+        && configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && configuration_to_initialize.getRawPath().hasPartitionWildcard()
+        && local_context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value
+            == FileLikeEngineDefaultPartitionStrategy::WILDCARD)
     {
-        if (configuration_to_initialize.getRawPath().hasPartitionWildcard())
-        {
-            // Promote to wildcard in case it is not data lake to make it backwards compatible
-            configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
-        }
+        /// Backwards compatibility: promote to WILDCARD only when it is the effective default strategy.
+        configuration_to_initialize.partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
     }
-
     if (configuration_to_initialize.format == "auto")
     {
         if (configuration_to_initialize.isDataLakeConfiguration())
@@ -184,28 +264,70 @@ void StorageObjectStorageConfiguration::setSchemaHash(const String & hash)
 
 void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_by, const ColumnsDescription & columns, ContextPtr context)
 {
+    /// An explicit `partition_strategy = 'none'` contradicts a `{_partition_id}` placeholder in
+    /// the path: only the `wildcard` strategy substitutes the placeholder, so under `none` it
+    /// would be read and written literally. Reject the definition, but only on `CREATE`: loading
+    /// from existing metadata must not throw, since that would abort server startup.
+    if (is_create_query
+        && partition_by
+        && partition_strategy_was_set
+        && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && getRawPath().hasPartitionWildcard())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Partition strategy 'none' can not be used with a path containing a '{{_partition_id}}' placeholder; "
+            "use the 'wildcard' strategy or remove the placeholder from the path");
+    }
+
     /// Data lake engines (Iceberg, Delta Lake, etc.) implement their own partitioning and
     /// do not use the file-like `partition_strategy`. Skip applying a default strategy here.
     /// Also skip when there is no `PARTITION BY` - there is no strategy to apply, but we still
     /// fall through to `PartitionStrategyFactory::get` so that consistency checks (e.g. explicit
     /// `partition_columns_in_data_file = 0` combined with strategy `none`) keep raising.
-    if (partition_by && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE && !isDataLakeConfiguration())
+    if (partition_by
+        && !partition_strategy_was_set
+        && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && !isDataLakeConfiguration())
     {
-        switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+        partition_strategy_was_inferred = true;
+        if (getRawPath().hasPartitionWildcard())
         {
-            case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+            /// A `{_partition_id}` placeholder in the path is valid only under the `wildcard`
+            /// strategy — `hive` rejects such paths. When no explicit `partition_strategy` is
+            /// given, the path alone therefore determines the only strategy that can work, so
+            /// apply it regardless of `file_like_engine_default_partition_strategy`. Consulting
+            /// the `hive` default here instead would reject with `BAD_ARGUMENTS` every pre-26.6
+            /// CREATE statement that uses a `{_partition_id}` path, breaking existing DDL.
+            /// An explicit `partition_strategy = 'hive'` still rejects such paths.
+            partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
+        }
+        else if (!getRawPath().hasGlobsIgnorePlaceholders())
+        {
+            if (!is_create_query)
             {
-                /// Set the strategy unconditionally; `PartitionStrategyFactory::get` will raise
-                /// `BAD_ARGUMENTS` if the path is missing the `{_partition_id}` placeholder.
-                partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
-                break;
-            }
-            case FileLikeEngineDefaultPartitionStrategy::HIVE:
-            {
+                /// Backward compatibility on ATTACH / server startup / RESTORE / replicated-DDL replay:
+                /// derive the implicit strategy from the path rather than from the mutable default.
                 partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
-                break;
+            }
+            else
+            {
+                switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+                {
+                    case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+                    {
+                        /// Without `{_partition_id}`, preserve the pre-26.6 `NONE` strategy.
+                        break;
+                    }
+                    case FileLikeEngineDefaultPartitionStrategy::HIVE:
+                    {
+                        partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+                        break;
+                    }
+                }
             }
         }
+        /// Globbed paths without `{_partition_id}` remain `NONE`, as they did before 26.6.
 
         /// The default for `partition_columns_in_data_file` was computed at parse time against
         /// `partition_strategy_type == NONE`. Recompute it now that the effective strategy is known,
@@ -254,12 +376,12 @@ StorageObjectStorageConfiguration::Path StorageObjectStorageConfiguration::getPa
 bool StorageObjectStorageConfiguration::Path::hasPartitionWildcard() const
 {
     static const String PARTITION_ID_WILDCARD = "{_partition_id}";
-    return path.find(PARTITION_ID_WILDCARD) != String::npos;
+    return path.contains(PARTITION_ID_WILDCARD);
 }
 
 bool StorageObjectStorageConfiguration::Path::hasSchemaHashWildcard() const
 {
-    return path.find(StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD) != String::npos;
+    return path.contains(StorageObjectStorageConfiguration::SCHEMA_HASH_WILDCARD);
 }
 
 bool StorageObjectStorageConfiguration::Path::hasGlobsIgnorePlaceholders() const
@@ -291,6 +413,11 @@ std::string StorageObjectStorageConfiguration::Path::cutGlobs(bool supports_part
 }
 
 void StorageObjectStorageConfiguration::check(ContextPtr)
+{
+    checkFormat();
+}
+
+void StorageObjectStorageConfiguration::checkFormat() const
 {
     /// `auto` is a sentinel meaning the format must be inferred from the data; it is not a real format
     /// name and is resolved (and thus validated) during schema/format inference. Skipping it here lets
@@ -337,8 +464,10 @@ void StorageObjectStorageConfiguration::initializeFromParsedArguments(const Stor
     compression_method = parsed_arguments.compression_method;
     structure = parsed_arguments.structure;
     partition_strategy_type = parsed_arguments.partition_strategy_type;
+    partition_strategy_was_set = parsed_arguments.partition_strategy_was_set;
     partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
     partition_columns_in_data_file_was_set = parsed_arguments.partition_columns_in_data_file_was_set;
     partition_strategy = parsed_arguments.partition_strategy;
+    url_overridden_by_base_setting = parsed_arguments.url_overridden_by_base_setting;
 }
 }

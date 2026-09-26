@@ -13,13 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-CH_CLIENT_OPTS="--allow_experimental_variant_type=1 --allow_suspicious_types_in_order_by=1 --use_variant_default_implementation_for_comparisons=0"
-# max_execution_time guards only the concurrent query loops below: if the COW
-# bug regressed, a corrupted-column query could hang, so cap it. The setup
-# phase must NOT inherit this cap -- a sanitizer host can starve a single
-# trivial INSERT past 10s, failing setup with a spurious TIMEOUT_EXCEEDED.
-CH_CLIENT_SETUP="$CLICKHOUSE_CLIENT $CH_CLIENT_OPTS"
-CH_CLIENT="$CLICKHOUSE_CLIENT $CH_CLIENT_OPTS --max_execution_time=10"
+CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspicious_types_in_order_by=1 --use_variant_default_implementation_for_comparisons=0"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS test_variant_distinct"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_variant_distinct (v1 Variant(String, UInt64, Array(UInt32)), v2 Variant(String, UInt64, Array(UInt32))) ENGINE = Memory"
@@ -37,7 +31,7 @@ for i in $(seq 1 10); do
     inserts+="INSERT INTO test_variant_distinct VALUES ([1,2,$i], NULL);"
     inserts+="INSERT INTO test_variant_distinct VALUES (NULL, $i);"
 done
-echo "$inserts" | $CH_CLIENT_SETUP -n
+echo "$inserts" | $CH_CLIENT -n
 
 # Run concurrent queries from multiple connections to trigger the race.
 # The permute optimization (ORDER BY) corrupts shared non-active variant

@@ -38,7 +38,7 @@ For detailed examples, see our [Working with JSON guide](/integrations/clickpipe
 
 ### Can I connect MongoDB databases that don't have a public IP or are in private networks? {#can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks}
 
-We support AWS PrivateLink for connecting to MongoDB databases that don't have a public IP or are in private networks. Azure Private Link and GCP Private Service Connect are currently not supported.
+Yes. See [ClickPipes networking](/integrations/clickpipes/networking) for the ways ClickPipes can reach a data source that isn't exposed to the public internet.
 
 ### What happens if I delete a database/table from my MongoDB database? {#what-happens-if-i-delete-a-database-table-from-my-mongodb-database}
 
@@ -80,4 +80,4 @@ If you prefer to connect to a single node in your cluster, you can skip replica 
 
 For replica set connection, you can set up PrivateLink for MongoDB with either VPC Resource or VPC Endpoint Service. If you go with VPC Resource, you would need to create a `GROUP` resource configuration, plus a `CHILD` resource configuration for each node in the cluster. If you go with VPC Endpoint Service, you would need to create a separate Endpoint Service (and a separate NLB) for each node in the cluster. 
 
-See [AWS PrivateLink for ClickPipes](/integrations/clickpipes/aws-privatelink) documentation for more details. Please reach out to ClickHouse support for assistance.
+See the [AWS PrivateLink](/integrations/clickpipes/networking/aws-privatelink) documentation for more details. Please reach out to ClickHouse support for assistance.

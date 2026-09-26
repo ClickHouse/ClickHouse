@@ -66,8 +66,11 @@ doc_type: 'reference'
 | `Time`                                                                                                    | `0x32`                                                                                                                                                                                                                                                                                                                                                                     |
 | `Time64(P)`                                                                                               | `0x34<uint8_precision>`                                                                                                                                                                                                                                                                                                                                                    |
 | `QBit(T, N)`                                                                                              | `0x36<element_type_encoding><var_uint_dimension>`                                                                                                                                                                                                                                                                                                                          |
+| `QBit(T, N, stride)`                                                                                      | `0x37<element_type_encoding><var_uint_dimension><var_uint_stride>`                                                                                                                                                                                                                                                                                                         |
 
 `JSON` 유형에서 바이트 `uint8_serialization_version`은 직렬화 버전을 나타냅니다. 현재 버전은 항상 0이지만, 향후 `JSON` 유형에 새로운 인수가 도입되면 변경될 수 있습니다.
+
+`QBit` 유형에서는 `stride`가 차원 `N`과 다를 때만 `0x37` 인코딩을 사용합니다. `stride == N`인 경우에는 (`QBit(Float32, 4, 4)`처럼 세 번째 인수를 명시적으로 작성한 경우 포함) 유형이 2개 인수 형식인 `QBit(T, N)`로 정규화되고 위의 `0x36`으로 인코딩되므로, 바이너리 인코딩은 stride가 없는 `QBit`와 바이트 단위로 동일하게 유지됩니다.
 
 <div id="interval-kind-binary-encoding">
   ### 인터벌 종류 바이너리 인코딩

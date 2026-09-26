@@ -247,7 +247,7 @@ return rows.Err()
   ## 非同期 INSERT
 </div>
 
-非同期挿入は、Async メソッドでサポートされています。これにより、クライアントがサーバーでの挿入完了を待つか、データを受信した時点で応答を返すかを指定できます。これは実質的に、[wait&#95;for&#95;async&#95;insert](/ja/reference/settings/session-settings#wait_for_async_insert) パラメータを制御するものです。
+非同期挿入は、Async メソッドでサポートされています。これにより、クライアントがサーバーでの挿入完了を待つか、データを受信した時点で応答を返すかを指定できます。これは実質的に、[wait&#95;for&#95;async&#95;insert](/ja/reference/settings/session-settings/wait-for#wait_for_async_insert) パラメータを制御するものです。
 
 ```go
 conn, err := GetNativeConnection(nil, nil, nil)

@@ -16,7 +16,7 @@ ClickStack 提供 REST API，可用于以编程方式管理仪表盘、告警和
 
 <Tabs>
   <Tab title="托管 ClickStack">
-    对于托管 ClickStack，需通过 **ClickHouse Cloud API** 访问 API。ClickStack 的端点可在 [Cloud API 规范](/zh/api-reference/organization/get-list-of-available-organizations#tag/ClickStack) 中查看。
+    对于托管 ClickStack，需通过 **ClickHouse Cloud API** 访问 API。ClickStack 的端点可在 [Cloud API 参考文档](/zh/products/cloud/api-reference/clickstack/click-stack-list-dashboards) 中查看。
 
     以下端点可用：
 
@@ -27,21 +27,21 @@ ClickStack 提供 REST API，可用于以编程方式管理仪表盘、告警和
     | **数据源** | 列出数据源             |
   </Tab>
 
-  <Tab title="开源 ClickStack">
-    对于开源 ClickStack，完整的 API 规范由 [HyperDX 仓库](https://github.com/hyperdxio/hyperdx) 维护，可交互式查看或下载为 OpenAPI 规范：
+  <Tab title="ClickStack 开源版">
+    对于 ClickStack 开源版，完整的 API 规范由 [HyperDX 仓库](https://github.com/hyperdxio/hyperdx) 维护，可交互式查看或下载为 OpenAPI 规范：
 
     * [交互式 API 参考文档](https://www.clickhouse.com/docs/clickstack/api-reference)
     * [下载 OpenAPI 规范 (JSON) ](https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json)
 
     以下端点可用：
 
-    | 资源           | 操作                   |
-    | ------------ | -------------------- |
-    | **仪表盘**      | 创建、列出、获取、更新和删除仪表盘    |
-    | **告警**       | 创建、列出、获取、更新和删除告警     |
-    | **图表**       | 查询时间序列数据 (仅支持 POST)  |
-    | **数据源**      | 列出数据源                |
-    | **Webhooks** | 列出 Webhooks          |
+    | 资源           | 操作                  |
+    | ------------ | ------------------- |
+    | **仪表盘**      | 创建、列出、获取、更新和删除仪表盘   |
+    | **告警**       | 创建、列出、获取、更新和删除告警    |
+    | **图表**       | 查询时间序列数据 (仅支持 POST) |
+    | **数据源**      | 列出数据源               |
+    | **Webhooks** | 列出 Webhooks         |
   </Tab>
 </Tabs>
 
@@ -64,8 +64,8 @@ ClickStack 提供 REST API，可用于以编程方式管理仪表盘、告警和
     ```
   </Tab>
 
-  <Tab title="开源 ClickStack">
-    开源 ClickStack 使用 **Personal API Access Key** 作为 **Bearer token** 进行身份验证。
+  <Tab title="ClickStack 开源版">
+    ClickStack 开源版使用 **Personal API Access Key** 作为 **Bearer token** 进行身份验证。
 
     要获取 API key：
 

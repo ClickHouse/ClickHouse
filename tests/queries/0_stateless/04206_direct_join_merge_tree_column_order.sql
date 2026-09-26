@@ -104,7 +104,7 @@ INSERT INTO rgt_107272 VALUES (1, 'a'), (2, 'b');
 ALTER TABLE rgt_107272 ADD COLUMN extra UInt64 DEFAULT 0;
 INSERT INTO rgt_107272 SELECT number + 100, 'c', 0 FROM numbers(50);
 
--- direct join over a MergeTree right table is only supported by the new analyzer; the old
+-- direct join over a MergeTree right table is only supported by the analyzer; the old
 -- analyzer rejects it with NOT_IMPLEMENTED, so pin enable_analyzer = 1 like the cases above.
 -- Used to crash in ColumnString::compareAt; must return 1.
 SELECT count() FROM (SELECT r.value FROM lft_107272 AS l INNER JOIN rgt_107272 AS r ON l.id = r.id WHERE r.id = 1)

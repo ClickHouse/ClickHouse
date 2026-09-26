@@ -6,7 +6,7 @@ title: 'Functions for Working with UUIDs'
 doc_type: 'reference'
 ---
 
-import DeprecatedBadge from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
+import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
 ## UUIDv7 generation {#uuidv7-generation}
 
@@ -226,7 +226,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **Arguments**
 
 - `uuid` — A UUID version 7. [`String`](/reference/data-types/string)
-- `timezone` — Optional. [Timezone name](/reference/settings/server-settings/settings#timezone) for the returned value. [`String`](/reference/data-types/string)
+- `timezone` — Optional. [Timezone name](/reference/settings/server-settings/settings/other#timezone) for the returned value. [`String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -242,7 +242,7 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'))─┐
-│                                          2024-04-22 15:30:29.048 │
+│                                          2024-04-22 12:30:29.048 │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -254,8 +254,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                             2024-04-22 11:30:29.048 │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+│                                                              2024-04-22 08:30:29.048 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## dateTime64ToSnowflakeID {#dateTime64ToSnowflakeID}
@@ -288,7 +288,7 @@ SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shan
 ```
 
 ```response title=Response
-6832626394434895872
+6832626392367104000
 ```
 
 ## dateTimeToSnowflakeID {#dateTimeToSnowflakeID}
@@ -328,18 +328,14 @@ SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))
 
 Introduced in: v25.8.0
 
-Converts a [DateTime](/reference/data-types/datetime) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
+Converts a [DateTime](/reference/data-types/datetime) value to a [UUIDv7](https://www.rfc-editor.org/rfc/rfc9562) at the given time, as defined by [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
-
-:::note
-As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
-:::
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -365,8 +361,8 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
 
 ```response title=Response
 ┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
-│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
-└─────────────────────────────────────────────────────────────────────────┘
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 **multiple UUIDs for the same timestamp**
@@ -396,9 +392,9 @@ Function `generateSnowflakeID` guarantees that the counter field within a timest
 See section ["Snowflake ID generation"](#snowflake-id-generation) for implementation details.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -464,9 +460,9 @@ Introduced in: v1.1.0
 
 Generates a [version 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](/reference/data-types/uuid).
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -514,18 +510,14 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
 
 Introduced in: v24.5.0
 
-Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](/reference/data-types/uuid).
+Generates a [version 7](https://www.rfc-editor.org/rfc/rfc9562) [UUID](/reference/data-types/uuid) as defined by [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
-
-:::note
-As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
-:::
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -586,7 +578,7 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 - `value` — Snowflake ID. [`UInt64`](/reference/data-types/int-uint)
 - `epoch` — Optional. Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. [`UInt*`](/reference/data-types/int-uint)
-- `time_zone` — Optional. [Timezone](/reference/settings/server-settings/settings#timezone). The function parses `time_string` according to the timezone. [`String`](/reference/data-types/string)
+- `time_zone` — Optional. [Timezone](/reference/settings/server-settings/settings/other#timezone). The function parses `time_string` according to the timezone. [`String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -623,7 +615,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 - `value` — Snowflake ID. [`UInt64`](/reference/data-types/int-uint)
 - `epoch` — Optional. Epoch of the Snowflake ID in milliseconds since 1970-01-01. Defaults to 0 (1970-01-01). For the Twitter/X epoch (2015-01-01), provide 1288834974657. [`UInt*`](/reference/data-types/int-uint)
-- `time_zone` — Optional. [Timezone](/reference/settings/server-settings/settings#timezone). The function parses `time_string` according to the timezone. [`String`](/reference/data-types/string)
+- `time_zone` — Optional. [Timezone](/reference/settings/server-settings/settings/other#timezone). The function parses `time_string` according to the timezone. [`String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -638,9 +630,9 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 ```
 
 ```response title=Response
-┌─────────────────res─┐
-│ 2024-06-06 10:59:58 │
-└─────────────────────┘
+┌─────────────────────res─┐
+│ 2024-06-06 10:59:58.851 │
+└─────────────────────────┘
 ```
 
 ## toUUIDOrDefault {#toUUIDOrDefault}
@@ -677,8 +669,8 @@ SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-
 
 ```response title=Response
 ┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                     │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Failed conversion returns the default UUID**
@@ -689,8 +681,8 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
 
 ```response title=Response
 ┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## toUUIDOrNull {#toUUIDOrNull}
@@ -737,7 +729,7 @@ SELECT
 
 ```response title=Response
 ┌─valid_uuid───────────────────────────┬─invalid_uuid─┐
-│ 550e8400-e29b-41d4-a716-446655440000 │         ᴺᵁᴸᴸ │
+│ 550e8400-e29b-41d4-a716-446655440000 │ ᴺᵁᴸᴸ         │
 └──────────────────────────────────────┴──────────────┘
 ```
 {/*AUTOGENERATED_END*/}

@@ -261,7 +261,7 @@ SELECT byteSwap(123294967295)
 
 أُضيف في: v1.1.0
 
-يحسب ناتج قسمة القيمتين `a` و`b`. ويكون نوع النتيجة دائمًا [Float64](/ar/reference/data-types/float).
+يحسب خارج القسمة للقيمتين `a` و`b`. ويكون نوع النتيجة دائمًا [Float64](/ar/reference/data-types/float).
 وتوفّر الدالة `intDiv` القسمة الصحيحة.
 
 <Note>
@@ -274,13 +274,13 @@ SELECT byteSwap(123294967295)
 divide(x, y)
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `x` — المقسوم - `y` — المقسوم عليه
 
 **القيمة المُعادة**
 
-ناتج قسمة x على y
+خارج القسمة لـ x على y
 
 **أمثلة**
 
@@ -291,7 +291,7 @@ SELECT divide(25,5) AS quotient, toTypeName(quotient)
 ```
 
 ```response title=Response
-5 Float64
+5	Float64
 ```
 
 **القسمة على صفر**
@@ -308,7 +308,7 @@ inf
   ## divideDecimal
 </div>
 
-متاح منذ: v22.12.0
+أُضيف: v22.12.0
 
 يجري قسمة عددين عشريين. تكون القيمة الناتجة من النوع [Decimal256](/ar/reference/data-types/decimal).
 يمكن تحديد مقياس النتيجة صراحةً باستخدام الوسيط `result_scale` (عدد صحيح ثابت ضمن النطاق `[0, 76]`). وإذا لم يُحدَّد، فسيكون مقياس النتيجة هو أكبر مقياس بين الوسيطات المُعطاة.
@@ -318,13 +318,13 @@ inf
   إذا لم تكن بحاجة فعلًا إلى دقة مضبوطة و/أو كنت تحتاج إلى حساب سريع، ففكّر في استخدام [divide](#divide).
 </Note>
 
-**الصياغة**
+**بنية**
 
 ```sql
 divideDecimal(x, y[, result_scale])
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `x` — القيمة الأولى: [Decimal](/ar/reference/data-types/decimal). - `y` — القيمة الثانية: [Decimal](/ar/reference/data-types/decimal). - `result_scale` — مقياس النتيجة. النوع [Int/UInt](/ar/reference/data-types/int-uint).
 
@@ -337,7 +337,7 @@ divideDecimal(x, y[, result_scale])
 **مثال 1**
 
 ```sql title=Query
-divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)
+SELECT divideDecimal(toDecimal256(-12, 0), toDecimal32(2.1, 1), 10)
 ```
 
 ```response title=Response
@@ -357,9 +357,9 @@ SELECT toDecimal64(-12, 1) as a, toDecimal32(2.1, 1) as b, divideDecimal(a, b, 1
 ┌─divide(toDecimal64(-12, 1), toDecimal32(2.1, 1))─┐
 │                                             -5.7 │
 └──────────────────────────────────────────────────┘
-┌───a─┬───b─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 1)─┬─divideDecimal(toDecimal64(-12, 1), toDecimal32(2.1, 1), 5)─┐
-│ -12 │ 2.1 │                                                       -5.7 │                                                   -5.71428 │
-└─────┴─────┴────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────┘
+┌───a─┬───b─┬─divideDecimal(a, b, 1)─┬─divideDecimal(a, b, 5)─┐
+│ -12 │ 2.1 │                   -5.7 │               -5.71428 │
+└─────┴─────┴────────────────────────┴────────────────────────┘
 ```
 
 <div id="divideOrNull">
@@ -439,25 +439,25 @@ SELECT gcd(12, 18)
 
 أُضيفت في: v20.3.0
 
-يتحقق مما إذا كانت قيمة الفاصلة العائمة منتهية.
+يتحقق مما إذا كانت قيمة الفاصلة العائمة متناهية.
 
 يمكنك الحصول على نتيجة مماثلة باستخدام [المعامل الثلاثي](/ar/reference/functions/regular-functions/conditional-functions#if): `isFinite(x) ? x : y`.
 
-**الصيغة**
+**بنية**
 
 ```sql
 ifNotFinite(x,y)
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `x` — القيمة المراد التحقق مما إذا كانت لا نهائية. [`Float*`](/ar/reference/data-types/float)
 * `y` — القيمة البديلة. [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المُعادة**
 
-* `x` إذا كانت `x` منتهية.
-* `y` إذا كانت `x` غير منتهية.
+* `x` إذا كانت `x` متناهية.
+* `y` إذا كانت `x` غير متناهية.
 
 **أمثلة**
 
@@ -468,7 +468,7 @@ SELECT 1/0 AS infimum, ifNotFinite(infimum,42)
 ```
 
 ```response title=Response
-inf  42
+inf	42
 ```
 
 <div id="intDiv">
@@ -485,13 +485,13 @@ inf  42
 يُثار استثناء عند القسمة على الصفر، أو عندما لا يقع خارج القسمة ضمن
 نطاق المقسوم، أو عند قسمة أصغر عدد سالب ممكن على سالب واحد.
 
-**الصياغة**
+**بنية**
 
 ```sql
 intDiv(x, y)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `x` — المعامل الأيسر. - `y` — المعامل الأيمن.
 
@@ -508,9 +508,9 @@ SELECT intDiv(toFloat64(1), 0.001) AS res, toTypeName(res)
 ```
 
 ```response title=Response
-┌──res─┬─toTypeName(intDiv(toFloat64(1), 0.001))─┐
-│ 1000 │ Int64                                   │
-└──────┴─────────────────────────────────────────┘
+┌──res─┬─toTypeName(res)─┐
+│ 1000 │ Int64           │
+└──────┴─────────────────┘
 ```
 
 **ناتج القسمة لا يقع ضمن نطاق المقسوم**
@@ -671,7 +671,7 @@ SELECT isFinite(inf)
 isInfinite(x)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `x` — العدد المراد التحقق مما إذا كان لا نهائيًا. [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float)
 
@@ -684,11 +684,11 @@ isInfinite(x)
 **التحقق مما إذا كان العدد لا نهائيًا**
 
 ```sql title=Query
-SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10))
+SELECT isInfinite(inf), isInfinite(NaN), isInfinite(10)
 ```
 
 ```response title=Response
-1 0 0
+1	0	0
 ```
 
 <div id="isNaN">
@@ -770,7 +770,7 @@ SELECT lcm(6, 8)
 
 يعيد القيمة الأكبر بين قيمتين رقميتين `x` و`y`.
 
-**الصيغة**
+**البنية**
 
 ```sql
 max2(x, y)
@@ -778,8 +778,8 @@ max2(x, y)
 
 **الوسيطات**
 
-* `x` — القيمة الأولى [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
-* `y` — القيمة الثانية [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
+* `x` — القيمة الأولى [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
+* `y` — القيمة الثانية [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
 
 **القيمة المُعادة**
 
@@ -891,7 +891,7 @@ SELECT midpoint(toTime64('12:00:00', 0), toTime64('14:00:00', 0)) AS result, toT
 
 يُرجع القيمة الأصغر من بين القيمتين العدديتين `x` و`y`.
 
-**الصيغة**
+**البنية**
 
 ```sql
 min2(x, y)
@@ -899,8 +899,8 @@ min2(x, y)
 
 **الوسيطات**
 
-* `x` — القيمة الأولى من النوع [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
-* `y` — القيمة الثانية من النوع [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
+* `x` — القيمة الأولى من النوع [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
+* `y` — القيمة الثانية من النوع [`(U)Int8/16/32/64`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
 
 **القيمة المُعادة**
 
@@ -1050,8 +1050,9 @@ SELECT moduloLegacy(10, 3)
 
 أُضيف في: v25.5.0
 
-يحسب remainder عند قسمة `a` على `b`. وهو مشابه للدالة `modulo`، إلا أن `moduloOrNull` تُرجع NULL
-إذا كانت الوسيطة اليمنى تساوي 0.
+يحسب remainder عند قسمة `a` على `b`. وهو مشابه للدالة `modulo`، إلا أن `moduloOrNull` تُرجع `NULL`
+عندما تؤدي العملية، لولا ذلك، إلى حدوث استثناء فاصلة عائمة. وبالنسبة إلى معاملات الفاصلة العائمة، لا يحدث هذا إلا عندما يكون
+المقسوم عليه `0`؛ أما بالنسبة إلى المعاملات الصحيحة، فيشمل ذلك أيضاً باقي قسمة أصغر قيمة سالبة على `-1` (مثل `-128 % -1` في `Int8`).
 
 **البنية**
 
@@ -1061,21 +1062,32 @@ moduloOrNull(x, y)
 
 **الأسماء البديلة**: `modOrNull`
 
-**المعاملات**
+**الوسيطات**
 
 * `x` — المقسوم. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
-* `y` — القاسم (`modulus`). [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `y` — المقسوم عليه (`الموديولس`). [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المُعادة**
 
-تعيد ناتج باقي قسمة `x` على `y`، أو `NULL` إذا كان القاسم صفراً.
+تعيد ناتج باقي قسمة `x` على `y`، أو `NULL` عندما تؤدي العملية إلى حدوث استثناء فاصلة عائمة:
+عندما يكون المقسوم عليه صفراً، أو، بالنسبة إلى الوسيطات الصحيحة، عند حساب أصغر قيمة سالبة بتطبيق modulo على `-1`.
 
 **أمثلة**
 
-**moduloOrNull عندما يكون القاسم صفراً**
+**moduloOrNull عندما يكون المقسوم عليه صفراً**
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**moduloOrNull عند قسمة أصغر عدد صحيح سالب على -1**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1173,7 +1185,7 @@ SELECT multiply(5,5)
 multiplyDecimal(a, b[, result_scale])
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `a` — القيمة الأولى. [`Decimal`](/ar/reference/data-types/decimal)
 * `b` — القيمة الثانية. [`Decimal`](/ar/reference/data-types/decimal)
@@ -1198,7 +1210,8 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
 **الاختلاف عن الضرب العادي**
 
 ```sql title=Query
-SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
+SELECT multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
+SELECT multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
 ```
 
 ```response title=Response
@@ -1210,13 +1223,24 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**فيض Decimal**
+**لا يحدث فيض مع multiplyDecimal**
 
 ```sql title=Query
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
     multiplyDecimal(a, b);
+```
+
+```response title=Response
+┌─────────────a─┬─────────────b─┬─multiplyDecimal(a, b)─┐
+│ -12.647987876 │ 123.967645643 │       -1567.941279108 │
+└───────────────┴───────────────┴───────────────────────┘
+```
+
+**فيض Decimal مع الضرب العادي**
+
+```sql title=Query
 SELECT
     toDecimal64(-12.647987876, 9) AS a,
     toDecimal64(123.967645643, 9) AS b,
@@ -1224,12 +1248,8 @@ SELECT
 ```
 
 ```response title=Response
-┌─────────────a─┬─────────────b─┬─multiplyDecimal(toDecimal64(-12.647987876, 9), toDecimal64(123.967645643, 9))─┐
-│ -12.647987876 │ 123.967645643 │                                                               -1567.941279108 │
-└───────────────┴───────────────┴───────────────────────────────────────────────────────────────────────────────┘
-Received exception from server (version 22.11.1):
-Code: 407. DB::Exception: Received from localhost:9000. DB::Exception: Decimal math overflow:
-While processing toDecimal64(-12.647987876, 9) AS a, toDecimal64(123.967645643, 9) AS b, a * b. (DECIMAL_OVERFLOW)
+Received exception:
+Code: 407. DB::Exception: Decimal math overflow. (DECIMAL_OVERFLOW)
 ```
 
 <div id="negate">
@@ -1371,10 +1391,11 @@ SELECT positiveModulo(-1, 10)
 
 تم تقديمها في: v25.5.0
 
-تحسب الباقي عند قسمة `a` على `b`. وهي مشابهة للدالة `positiveModulo`، باستثناء أن `positiveModuloOrNull` تُرجِع NULL
-إذا كان المعامل الأيمن يساوي 0.
+تحسب الباقي عند قسمة `a` على `b`. وهي مشابهة للدالة `positiveModulo`، باستثناء أن `positiveModuloOrNull` تُرجِع `NULL`
+عندما كانت العملية ستؤدي، لولا ذلك، إلى استثناء فاصلة عائمة. وبالنسبة إلى الوسائط ذات الفاصلة العائمة، لا يحدث هذا إلا عندما
+يكون المقسوم عليه `0`؛ أما بالنسبة إلى الوسائط الصحيحة، فإنه يشمل أيضاً القيمة السالبة الدنيا modulo `-1` (مثل `-128 % -1` بالنسبة إلى `Int8`).
 
-**الصياغة**
+**البنية**
 
 ```sql
 positiveModuloOrNull(x, y)
@@ -1382,18 +1403,19 @@ positiveModuloOrNull(x, y)
 
 **الأسماء البديلة**: `positive_modulo_or_null`, `pmodOrNull`
 
-**الوسائط**
+**الوسيطات**
 
-* `x` — المقسوم. [`(U)Int*`](/ar/reference/data-types/int-uint)/[`Float32/64`](/ar/reference/data-types/float). - `x` — القاسم (modulus). [`(U)Int*`](/ar/reference/data-types/int-uint)/[`Float32/64`](/ar/reference/data-types/float).
+* `x` — المقسوم. [`(U)Int*`](/ar/reference/data-types/int-uint)/[`Float32/64`](/ar/reference/data-types/float). - `x` — المقسوم عليه (الموديولس). [`(U)Int*`](/ar/reference/data-types/int-uint)/[`Float32/64`](/ar/reference/data-types/float).
 
 **القيمة المُعادة**
 
 تعيد الفرق بين `x` وأقرب عدد صحيح لا يزيد عن
-`x` ويقبل القسمة على `y`، وتُعيد `null` عندما يكون القاسم صفراً.
+`x` ويقبل القسمة على `y`، أو `NULL` إذا كانت العملية ستؤدي إلى استثناء فاصلة عائمة: عندما يكون المقسوم عليه صفراً، أو،
+بالنسبة إلى الوسائط الصحيحة، عند حساب أصغر قيمة سالبة بترديد `-1`.
 
 **أمثلة**
 
-**positiveModuloOrNull**
+**positiveModuloOrNull على الصفر**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
@@ -1401,6 +1423,50 @@ SELECT positiveModuloOrNull(5, 0)
 
 ```response title=Response
 \N
+```
+
+**positiveModuloOrNull لأصغر عدد صحيح سالب مع -1**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
+```
+
+```response title=Response
+\N
+```
+
+<div id="sqr">
+  ## sqr
+</div>
+
+تم تقديمه في: v26.7.0
+
+يحسب مربع القيمة `x`.
+
+**البنية**
+
+```sql
+sqr(x)
+```
+
+**الوسيطات**
+
+* `x` — القيمة المطلوب تربيعها. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
+
+**القيمة المُعادة**
+
+تعيد ناتج ضرب `x` في نفسه.
+
+**أمثلة**
+
+**تربيع عدد**
+
+```sql title=Query
+SELECT sqr(5)
+```
+
+```response title=Response
+25
 ```
 
 {/*AUTOGENERATED_END*/}
