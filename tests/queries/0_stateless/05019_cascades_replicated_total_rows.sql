@@ -1,6 +1,5 @@
--- Tags: no-darwin, no-old-analyzer, zookeeper
+-- Tags: no-darwin, zookeeper
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
--- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 -- zookeeper: the estimated table is ReplicatedMergeTree.
 
 SET enable_analyzer = 1;

@@ -20,7 +20,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -437,9 +437,7 @@ bool hasLateAttachedTableFilter(
 
     const auto has_nontrivial_row_policy = [&](const ContextPtr & context)
     {
-        const auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        return row_policy_filter && !row_policy_filter->isAlwaysTrue();
+        return getEffectiveRowPolicyFilter(*table->getStorage(), context) != nullptr;
     };
 
     /// A scalar query can have its own context. Check both contexts even though they normally
@@ -669,9 +667,9 @@ static std::shared_ptr<ListNode> makeInArrayArgumentsList(
     /// (`nullIn` compares `NULL`s, `in` does not), not of the `transform_null_in` setting, which
     /// only renames `in` to `nullIn` before this rewrite. Types that cannot be inside `Nullable`,
     /// such as `Array(...)` or `Map(...)`, are left as they are - the `Nullable` wrapper would be
-    /// rejected when the column is created. `Tuple(...)` is excluded explicitly, because it reports
-    /// that it can be inside `Nullable` while a `Nullable(Tuple(...))` column cannot be created by
-    /// default.
+    /// rejected when the column is created. `Tuple(...)` is left as it is as well: a tuple array
+    /// that contains `NULL` already has `Nullable(Tuple(...))` elements, and the tuple comparison
+    /// gives the same results as the scalar one without the wrapper.
     if ((rhs_has_null || !compare_nulls)
         && !isTuple(common_type))
         common_type = makeNullableOrLowCardinalityNullableSafe(common_type);
@@ -2992,6 +2990,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
 
         auto action = function_node_ptr->getNullsAction();
         std::string aggregate_function_name = rewriteAggregateFunctionNameIfNeeded(function_name, action, scope.context);
+
+        argument_types = bindWindowFunctionArgumentTypes(function_name, std::move(argument_types));
+        for (size_t i = 0; i < argument_types.size(); ++i)
+            function_arguments[i] = castNodeToType(function_arguments[i], argument_types[i], scope);
 
         AggregateFunctionProperties properties;
         auto aggregate_function
