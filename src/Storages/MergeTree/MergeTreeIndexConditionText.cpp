@@ -1802,7 +1802,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (isPerTokenPatternFunction(function_name))
     {
-        /// A NULL needle gives NULL. A map element or a JSON path is not the indexed column, so it is not rewritten.
+        /// A NULL needle gives NULL, and a map element or a JSON path is not the indexed column, so neither is rewritten.
         if (!(value_data_type.isString() || value_data_type.isArray()) || !candidate_for_exact_mode)
             return false;
 
@@ -1831,8 +1831,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             }
         }
 
-        /// Compile all patterns like the function does, so an invalid one always throws.
-        /// A prefix becomes `prefix%`, so the dictionary scan can seek to it.
+        /// Compile all patterns like the function does, so an invalid one always throws,
+        /// and turn a prefix into `prefix%`, so the dictionary scan can seek to it.
         std::vector<OptimizedRegularExpression> patterns;
         for (const auto & needle : needles)
         {
@@ -1844,8 +1844,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
         }
 
-        /// The index answer is exact only if the function sees the stored tokens: no preprocessor, no postprocessor.
-        /// An empty needle matches every token or none, so the index does not help, and neither does an empty array.
+        /// The index is used only if the function sees the stored tokens (no preprocessor, no postprocessor)
+        /// and no needle is empty, since an empty needle or array matches every token or none.
         const bool has_empty_needle = std::ranges::any_of(needles, [](const String & needle) { return needle.empty(); });
         if (has_preprocessor || has_postprocessor || needles.empty() || has_empty_needle
             || !settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])

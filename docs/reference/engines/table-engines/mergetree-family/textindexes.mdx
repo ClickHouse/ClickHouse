@@ -865,7 +865,8 @@ If too many tokens match (see settings [text_index_like_max_matched_tokens](/ref
 
 Like `hasAnyTokens`, the functions use the tokenizer of the index if their optional third argument is omitted; an explicit tokenizer argument must match the index tokenizer for the index to be used.
 Without the argument, whether a call gets the tokenizer of the index depends on the query plan: filters and projections directly over the table get it, and so does a condition pushed down to the table, such as `HAVING` on a grouping key.
-Expressions after `GROUP BY` or `JOIN`, mutations such as `ALTER TABLE ... DELETE`, and conditions that are not pushed down (e.g. with `query_plan_filter_push_down = 0`) use `splitByNonAlpha` instead, so the result can differ.
+Expressions after `GROUP BY` or `JOIN` and conditions that are not pushed down (e.g. with `query_plan_filter_push_down = 0`) use `splitByNonAlpha` instead, so the result can differ.
+Mutations such as `ALTER TABLE ... DELETE` may select parts with the tokenizer of the index and rows with `splitByNonAlpha`.
 Pass the tokenizer argument to get the same result in every query.
 The functions never apply the preprocessor of the index: with a preprocessor or a postprocessor, they see the raw column values and the index is not used.
 Settings such as `use_skip_indexes` or `use_text_index_like_evaluation_by_dictionary_scan` only decide whether the index is used, not the result.

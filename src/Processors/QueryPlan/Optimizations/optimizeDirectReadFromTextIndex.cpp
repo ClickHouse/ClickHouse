@@ -626,8 +626,8 @@ private:
             || function_name == "hasPhrase";
     }
 
-    /// All indexes that can serve the function must use the same tokenizer.
-    /// Prefer an index that can scan its dictionary, then the first by name.
+    /// Chooses the index for the function, preferring one that can scan its dictionary and then the first by name,
+    /// and throws if the indexes that can serve it use different tokenizers.
     std::optional<String> choosePerTokenPatternFunctionIndex(const ActionsDAG::Node & function_node, const ActionsDAG::Node & canonical_node) const
     {
         const auto function_name = function_node.function_base->getName();
@@ -813,8 +813,7 @@ private:
 
         /// Preprocessor: only for an index-analyzed predicate in this filter DAG, so it never depends on a sibling filter. Tokenizer/postprocessor also apply on the row-scan path.
         const bool apply_preprocessor = is_filter_dag && condition.info->index != nullptr && condition.is_index_analyzed && needApplyPreprocessor(function_name) && preprocessor && preprocessor->hasActions();
-        /// As for hasAnyTokens, only queries this pass sees get the index tokenizer (not e.g. after GROUP BY, or mutations).
-        /// An explicit tokenizer argument gives the same result everywhere.
+        /// As for hasAnyTokens, only the expressions this pass sees get the index tokenizer, not e.g. those after GROUP BY.
         const bool apply_tokenizer = needApplyTokenizer(function_name) && tokenizer;
         const bool apply_postprocessor = needApplyPostprocessor(function_name) && has_postprocessor;
 

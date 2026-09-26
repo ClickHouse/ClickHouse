@@ -134,7 +134,7 @@ private:
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
-    /// Patterns of hasAnyTokenPrefix/Like, hasAllTokenLike and hasAnyTokenRegexp. Only these are capped.
+    /// Patterns of hasAnyTokenPrefix/Like, hasAllTokenLike and hasAnyTokenRegexp, the only ones that are capped.
     absl::flat_hash_set<const OptimizedRegularExpression *> per_token_patterns;
     /// This analyzer's own copies of the patterns that use re2, because threads that share one re2 object contend on its cache.
     std::deque<OptimizedRegularExpression> own_patterns;

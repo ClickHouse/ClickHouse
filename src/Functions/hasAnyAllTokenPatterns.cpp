@@ -28,7 +28,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Each matcher checks one token against one pattern. The text index runs the same check on its dictionary.
+/// Each matcher checks one token against one pattern, as the text index does for each token of its dictionary.
 
 struct TokenPrefixMatcher
 {
@@ -105,12 +105,12 @@ bool isStringOrArrayOfStringType(const IDataType & type)
 }
 
 template <typename Traits>
-class FunctionHasTokenPattern : public IFunction
+class FunctionHasAnyAllTokenPatterns : public IFunction
 {
 public:
     static constexpr auto name = Traits::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionHasTokenPattern>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionHasAnyAllTokenPatterns>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -276,7 +276,8 @@ In these cases the function is evaluated on the raw `input` values, still with t
 constexpr auto tokenizer_description = R"(
 Prior to searching, the function tokenizes `input` using the tokenizer specified for the text index on `input`, and the `splitByNonAlpha` tokenizer if `input` has no text index.
 As for [`hasAnyTokens`](#hasAnyTokens), whether the tokenizer of the index is used depends on the query plan: it is used in filters and projections directly over the table, including conditions pushed down to it such as `HAVING` on a grouping key,
-but not in expressions after `GROUP BY` or `JOIN`, in mutations such as `ALTER TABLE ... DELETE`, or in conditions that are not pushed down, where the result can differ.
+but not in expressions after `GROUP BY` or `JOIN`, or in conditions that are not pushed down, where the result can differ.
+Mutations such as `ALTER TABLE ... DELETE` may select parts with the tokenizer of the index and rows with `splitByNonAlpha`, so they need the `tokenizer` argument.
 The optional `tokenizer` argument sets the tokenizer explicitly, which gives the same result in every query, and then the text index is used only if it has the same tokenizer.
 If several text indexes on `input` would give the function different tokenizers, it throws an exception, and the `tokenizer` argument selects among them.
 )";
@@ -300,7 +301,7 @@ Returns 1 if at least one token of `input` starts with one of `prefixes`, and 0 
 `prefixes` is one prefix (`String`, not split into tokens) or several (`Array(String)`).
 The prefix is matched literally and case-sensitively. An empty prefix matches every token; an empty array matches nothing.
 
-If `input` has no text index, `hasAnyTokenPrefix(input, prefixes)` with an array `prefixes` is equivalent to `arrayExists(t -> arrayExists(p -> startsWith(t, p), prefixes), tokens(input))`, and a single prefix `p` is the same as `[p]`.
+If `input` is not an array and has no text index, `hasAnyTokenPrefix(input, prefixes)` with an array `prefixes` is equivalent to `arrayExists(t -> arrayExists(p -> startsWith(t, p), prefixes), tokens(input))`, and a single prefix `p` is the same as `[p]`.
 A prefix without the characters `%`, `_` and `\` gives the same result as the pattern `prefix%` of [`hasAnyTokenLike`](#hasAnyTokenLike).
 )") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasAnyTokenPrefix(input, prefixes[, tokenizer])";
@@ -347,7 +348,7 @@ A prefix without the characters `%`, `_` and `\` gives the same result as the pa
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, commonArguments("prefixes", "The token prefix, or an array of token prefixes, to search for."), {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionHasTokenPattern<HasAnyTokenPrefixTraits>>(documentation);
+    factory.registerFunction<FunctionHasAnyAllTokenPatterns<HasAnyTokenPrefixTraits>>(documentation);
 }
 
 REGISTER_FUNCTION(HasAnyTokenLike)
@@ -359,7 +360,7 @@ Returns 1 if at least one token of `input` matches one of the [`LIKE`](#like) pa
 Each pattern is applied to each token separately and must match the whole token: `%` matches any sequence of bytes, `_` matches one character, and `\` escapes them.
 An empty array matches nothing.
 
-If `input` has no text index, `hasAnyTokenLike(input, patterns)` with an array `patterns` is equivalent to `arrayExists(t -> arrayExists(p -> like(t, p), patterns), tokens(input))`, and a single pattern `p` is the same as `[p]`.
+If `input` is not an array and has no text index, `hasAnyTokenLike(input, patterns)` with an array `patterns` is equivalent to `arrayExists(t -> arrayExists(p -> like(t, p), patterns), tokens(input))`, and a single pattern `p` is the same as `[p]`.
 )") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasAnyTokenLike(input, patterns[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token matches one of `patterns`, `0` otherwise.", {"UInt8"}};
@@ -396,7 +397,7 @@ If `input` has no text index, `hasAnyTokenLike(input, patterns)` with an array `
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, commonArguments("patterns", "The `LIKE` pattern, or an array of `LIKE` patterns, each token is matched against."), {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionHasTokenPattern<HasAnyTokenLikeTraits>>(documentation);
+    factory.registerFunction<FunctionHasAnyAllTokenPatterns<HasAnyTokenLikeTraits>>(documentation);
 }
 
 REGISTER_FUNCTION(HasAllTokenLike)
@@ -405,7 +406,7 @@ REGISTER_FUNCTION(HasAllTokenLike)
 Like [`hasAnyTokenLike`](#hasAnyTokenLike), but returns 1 only if each pattern matches at least one token of `input` (different patterns may match different tokens or the same one), and 0 otherwise.
 An empty array returns 0.
 
-If `input` has no text index, `hasAllTokenLike(input, patterns)` with an array `patterns` is equivalent to `notEmpty(patterns) AND arrayAll(p -> arrayExists(t -> like(t, p), tokens(input)), patterns)`, and a single pattern `p` is the same as `[p]`.
+If `input` is not an array and has no text index, `hasAllTokenLike(input, patterns)` with an array `patterns` is equivalent to `notEmpty(patterns) AND arrayAll(p -> arrayExists(t -> like(t, p), tokens(input)), patterns)`, and a single pattern `p` is the same as `[p]`.
 
 With several patterns, the text index selects the rows where some pattern matches a token and the function checks them;
 `hasAnyTokenLike(input, p1) AND hasAnyTokenLike(input, p2)` can be answered from the index alone.
@@ -445,7 +446,7 @@ With several patterns, the text index selects the rows where some pattern matche
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, commonArguments("patterns", "The `LIKE` pattern, or an array of `LIKE` patterns, that must each match a token."), {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionHasTokenPattern<HasAllTokenLikeTraits>>(documentation);
+    factory.registerFunction<FunctionHasAnyAllTokenPatterns<HasAllTokenLikeTraits>>(documentation);
 }
 
 REGISTER_FUNCTION(HasAnyTokenRegexp)
@@ -459,7 +460,7 @@ a regular expression may match any part of the token, and the anchors `^` and `$
 So `hasAnyTokenRegexp(input, 'err')` finds a token that contains `err`, while `hasAnyTokenLike(input, 'err')` finds a token equal to `err`.
 An empty regular expression matches every token; an empty array matches nothing.
 
-If `input` has no text index, `hasAnyTokenRegexp(input, patterns)` with an array `patterns` is equivalent to `arrayExists(t -> arrayExists(p -> match(t, p), patterns), tokens(input))`, and a single regular expression `p` is the same as `[p]`.
+If `input` is not an array and has no text index, `hasAnyTokenRegexp(input, patterns)` with an array `patterns` is equivalent to `arrayExists(t -> arrayExists(p -> match(t, p), patterns), tokens(input))`, and a single regular expression `p` is the same as `[p]`.
 
 With a text index, a regular expression of the form `^literal` reads only the matching range of the dictionary, and one that contains a literal checks only the tokens holding it;
 any other one is checked against every token in the dictionary of each part.
@@ -499,7 +500,7 @@ any other one is checked against every token in the dictionary of each part.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
     FunctionDocumentation documentation = {description, syntax, commonArguments("patterns", "The regular expression, or an array of regular expressions, each token is matched against."), {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionHasTokenPattern<HasAnyTokenRegexpTraits>>(documentation);
+    factory.registerFunction<FunctionHasAnyAllTokenPatterns<HasAnyTokenRegexpTraits>>(documentation);
 }
 
 }
