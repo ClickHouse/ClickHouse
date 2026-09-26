@@ -1,0 +1,22 @@
+--- an outer expression is not evaluated on the hidden rows
+visible
+visible
+visible
+visible
+--- nor on a remote server
+visible
+visible
+--- an outer predicate does not skip data by the values of the hidden rows
+0
+0
+2
+2
+--- the view is still queried as usual
+alice	visible
+1	visible
+visible
+--- only a view that runs with other privileges and can hide rows is sealed
+definer_view: 1
+none_view: 1
+invoker_view: 0
+projection_view: 0
