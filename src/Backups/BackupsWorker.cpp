@@ -964,6 +964,14 @@ struct BackupsWorker::RestoreStarter
         if (is_internal_restore && !query_context->isDDLOrOnClusterInternal())
             throw Exception(ErrorCodes::ACCESS_DENIED, "Setting 'internal' cannot be set explicitly");
 
+#if CLICKHOUSE_CLOUD
+        /// Internal like the setting above. `doRestore` computes it for every non-internal restore,
+        /// but a privilege decision should be refused here rather than left to that overwrite.
+        if (restore_settings.allow_local_dictionary_source && !query_context->isDDLOrOnClusterInternal())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED, "Setting 'allow_local_dictionary_source' cannot be set explicitly");
+#endif
+
         /// RESTORE is a write operation, it should be forbidden in strict readonly mode (readonly=1).
         /// Note: readonly=2 allows changing settings but still restricts writes - however it's set automatically
         /// by the HTTP interface for GET requests (to protect against accidental writes), so we only block readonly=1
@@ -1152,6 +1160,14 @@ void BackupsWorker::doRestore(
     const ClusterPtr & cluster)
 {
     bool is_internal_restore = restore_settings.internal;
+
+#if CLICKHOUSE_CLOUD
+    /// The only place the restoring user is known: on each host the restore runs in a context with
+    /// no user. The verdict is taken here and travels with the query, and a user-supplied value
+    /// never reaches this point.
+    if (!is_internal_restore)
+        restore_settings.allow_local_dictionary_source = BackupUtils::mayRestoreLocalDictionarySource(context);
+#endif
 
     maybeSleepForTesting();
 
