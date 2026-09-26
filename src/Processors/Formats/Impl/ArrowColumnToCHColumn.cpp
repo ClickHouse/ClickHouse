@@ -56,13 +56,12 @@
 #pragma clang diagnostic pop
 
 
-/// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
+/// UINT16, UINT32 and INT64 are processed separately, see comments in readNonNullableColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
         M(arrow::Type::UINT8, UInt8) \
         M(arrow::Type::INT8, Int8) \
         M(arrow::Type::INT16, Int16) \
         M(arrow::Type::UINT64, UInt64) \
-        M(arrow::Type::INT64, Int64) \
         M(arrow::Type::FLOAT, Float32) \
         M(arrow::Type::DOUBLE, Float64)
 
@@ -1179,6 +1178,26 @@ static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<a
     return {std::move(internal_column), std::move(internal_type), column_name};
 }
 
+/// Reads an Arrow `INT64` column as raw `DateTime64` ticks (the value multiplied by `10^scale`),
+/// which is how the Arrow Flight SQL path exports a `DateTime64` without an explicit time zone.
+static ColumnWithTypeAndName readColumnWithDateTime64Int64Data(
+    const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const DataTypePtr & type_hint, const String & column_name)
+{
+    const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*type_hint);
+    auto internal_column = dt64_type.createColumn();
+    auto & column_data = assert_cast<ColumnDecimal<DateTime64> &>(*internal_column).getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCast<arrow::Int64Array>(chunk, column_name); });
+    column_data.reserve(arrow_column->length());
+
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        const auto & chunk = checkedCast<arrow::Int64Array>(*(arrow_column->chunk(chunk_i)), column_name);
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+            column_data.emplace_back(chunk.Value(value_i));
+    }
+    return {std::move(internal_column), type_hint, column_name};
+}
+
 template <typename TimeType, typename TimeArray>
 static ColumnWithTypeAndName readColumnWithTimeData(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
 {
@@ -1900,6 +1919,7 @@ struct ReadColumnFromArrowColumnSettings
     bool allow_geoparquet_parser;
     bool enable_json_parsing;
     bool empty_timezone_as_utc;
+    bool input_datetime64_int64_as_ticks;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -2554,6 +2574,15 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             return readColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, column_name);
         FOR_ARROW_NUMERIC_TYPES(DISPATCH)
 #    undef DISPATCH
+        case arrow::Type::INT64:
+        {
+            /// Only the Arrow Flight SQL ingest path reads raw ticks back: it is the one exporting a
+            /// `DateTime64` without an explicit time zone this way. Generic Arrow input keeps the
+            /// contract that integer values are whole seconds.
+            if (settings.input_datetime64_int64_as_ticks && type_hint && isDateTime64(*type_hint))
+                return readColumnWithDateTime64Int64Data(arrow_column, type_hint, column_name);
+            return readColumnWithNumericData<Int64>(arrow_column, column_name);
+        }
         case arrow::Type::HALF_FLOAT:
         {
             return readColumnWithFloat16Data(arrow_column, column_name);
@@ -2804,6 +2833,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_geoparquet_parser = allow_geoparquet_parser,
         .enable_json_parsing = enable_json_parsing,
         .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .input_datetime64_int64_as_ticks = false,
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -2855,7 +2885,8 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     bool allow_geoparquet_parser_,
     bool case_insensitive_matching_,
     bool is_stream_,
-    bool enable_json_parsing_)
+    bool enable_json_parsing_,
+    bool input_datetime64_int64_as_ticks_)
     : header(header_)
     , format_name(format_name_)
     , format_settings(format_settings_)
@@ -2866,6 +2897,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     , case_insensitive_matching(case_insensitive_matching_)
     , is_stream(is_stream_)
     , enable_json_parsing(enable_json_parsing_)
+    , input_datetime64_int64_as_ticks(input_datetime64_int64_as_ticks_)
     , parquet_columns_to_clickhouse(parquet_columns_to_clickhouse_)
     , clickhouse_columns_to_parquet(clickhouse_columns_to_parquet_)
 {
@@ -2934,6 +2966,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         .allow_geoparquet_parser = allow_geoparquet_parser,
         .enable_json_parsing = enable_json_parsing,
         .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .input_datetime64_int64_as_ticks = input_datetime64_int64_as_ticks,
     };
 
     Columns columns;

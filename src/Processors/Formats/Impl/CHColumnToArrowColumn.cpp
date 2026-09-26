@@ -2,36 +2,39 @@
 
 #if USE_ARROW || USE_PARQUET
 
-#include <Core/DecimalFunctions.h>
-#include <Core/AccurateComparison.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
-#include <Common/DateLUTImpl.h>
+#include <Core/AccurateComparison.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/callOnTypeIndex.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeInterval.h>
-#include <Common/IntervalKind.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <Processors/Port.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/IntervalKind.h>
+#include <Common/typeid_cast.h>
 
 #include <arrow/api.h>
 #include <arrow/builder.h>
@@ -149,6 +152,15 @@ namespace DB
         {"Int256", arrow::fixed_size_binary(sizeof(Int256))},
         {"UInt256", arrow::fixed_size_binary(sizeof(UInt256))},
     };
+
+    static bool isBoolForArrow(const DataTypePtr & type)
+    {
+        if (isBool(type))
+            return true;
+
+        const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
+        return simple_aggregate_function && isBool(simple_aggregate_function->getArgumentsDataTypes().front());
+    }
 
 
     static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
@@ -334,8 +346,35 @@ namespace DB
     {
         const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(type.get());
         const auto & column = assert_cast<const ColumnDecimal<DateTime64> &>(*write_column);
-        arrow::TimestampBuilder & builder = assert_cast<arrow::TimestampBuilder &>(*array_builder);
         arrow::Status status;
+
+        if (array_builder->type()->id() != arrow::Type::TIMESTAMP)
+        {
+            /// Bare `DateTime64` (no explicit time zone) is exported as raw `Int64` ticks.
+            const auto & internal_data = column.getData();
+            arrow::Int64Builder & builder = assert_cast<arrow::Int64Builder &>(*array_builder);
+
+            if (null_bytemap)
+            {
+                for (size_t value_i = start; value_i < end; ++value_i)
+                {
+                    if ((*null_bytemap)[value_i])
+                        status = builder.AppendNull();
+                    else
+                        status = builder.Append(static_cast<Int64>(internal_data[value_i]));
+
+                    checkStatus(status, write_column->getName(), format_name);
+                }
+            }
+            else
+            {
+                status = builder.AppendValues(reinterpret_cast<const int64_t *>(internal_data.data() + start), end - start);
+                checkStatus(status, write_column->getName(), format_name);
+            }
+            return;
+        }
+
+        arrow::TimestampBuilder & builder = assert_cast<arrow::TimestampBuilder &>(*array_builder);
 
         auto scale = datetime64_type->getScale();
         bool need_rescale = scale % 3;
@@ -1104,11 +1143,23 @@ namespace DB
         const String & format_name,
         arrow::ArrayBuilder* array_builder,
         size_t start,
-        size_t end)
+        size_t end,
+        bool replace_invalid_utf8)
     {
         const auto & internal_column = assert_cast<const ColumnType &>(*write_column);
         ArrowBuilder & builder = assert_cast<ArrowBuilder &>(*array_builder);
         arrow::Status status;
+        String valid_utf8_scratch;
+
+        auto append_string = [&](std::string_view value)
+        {
+            if constexpr (std::is_same_v<ArrowBuilder, arrow::StringBuilder>)
+            {
+                if (replace_invalid_utf8)
+                    value = makeValidUTF8View(value, valid_utf8_scratch);
+            }
+            return builder.Append(value.data(), static_cast<int>(value.size()));
+        };
 
         if (null_bytemap)
         {
@@ -1121,7 +1172,7 @@ namespace DB
                 else
                 {
                     std::string_view string_ref = internal_column.getDataAt(string_i);
-                    status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
+                    status = append_string(string_ref);
                 }
                 checkStatus(status, write_column->getName(), format_name);
             }
@@ -1131,7 +1182,7 @@ namespace DB
             for (size_t string_i = start; string_i < end; ++string_i)
             {
                 std::string_view string_ref = internal_column.getDataAt(string_i);
-                status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
+                status = append_string(string_ref);
                 checkStatus(status, write_column->getName(), format_name);
             }
         }
@@ -1265,8 +1316,39 @@ namespace DB
         size_t end)
     {
         const auto & internal_data = assert_cast<const ColumnVector<UInt32> &>(*write_column).getData();
-        arrow::UInt32Builder & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
         arrow::Status status;
+
+        if (array_builder->type()->id() == arrow::Type::TIMESTAMP)
+        {
+            arrow::TimestampBuilder & builder = assert_cast<arrow::TimestampBuilder &>(*array_builder);
+
+            if (null_bytemap)
+            {
+                for (size_t value_i = start; value_i < end; ++value_i)
+                {
+                    if ((*null_bytemap)[value_i])
+                        status = builder.AppendNull();
+                    else
+                        status = builder.Append(static_cast<Int64>(internal_data[value_i]));
+
+                    checkStatus(status, write_column->getName(), format_name);
+                }
+            }
+            else
+            {
+                PaddedPODArray<Int64> values;
+                values.reserve(end - start);
+
+                for (size_t value_i = start; value_i < end; ++value_i)
+                    values.emplace_back(static_cast<Int64>(internal_data[value_i]));
+
+                status = builder.AppendValues(values.data(), values.size());
+                checkStatus(status, write_column->getName(), format_name);
+            }
+            return;
+        }
+
+        arrow::UInt32Builder & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
 
         if (null_bytemap)
         {
@@ -1450,9 +1532,11 @@ namespace DB
             case TypeIndex::String:
             {
                 if (settings.output_string_as_string && !array_builder->type()->Equals(arrow::binary()))
-                    fillArrowArrayWithStringColumnData<ColumnString, arrow::StringBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                    fillArrowArrayWithStringColumnData<ColumnString, arrow::StringBuilder>(
+                        column, null_bytemap, format_name, array_builder, start, end, settings.replace_invalid_utf8_in_strings);
                 else
-                    fillArrowArrayWithStringColumnData<ColumnString, arrow::BinaryBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                    fillArrowArrayWithStringColumnData<ColumnString, arrow::BinaryBuilder>(
+                        column, null_bytemap, format_name, array_builder, start, end, settings.replace_invalid_utf8_in_strings);
                 break;
             }
             case TypeIndex::FixedString:
@@ -1460,9 +1544,11 @@ namespace DB
                 if (settings.output_fixed_string_as_fixed_byte_array)
                     fillArrowArrayWithFixedStringColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 else if (settings.output_string_as_string)
-                    fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::StringBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                    fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::StringBuilder>(
+                        column, null_bytemap, format_name, array_builder, start, end, settings.replace_invalid_utf8_in_strings);
                 else
-                    fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::BinaryBuilder>(column, null_bytemap, format_name, array_builder, start, end);
+                    fillArrowArrayWithStringColumnData<ColumnFixedString, arrow::BinaryBuilder>(
+                        column, null_bytemap, format_name, array_builder, start, end, settings.replace_invalid_utf8_in_strings);
                 break;
             }
             case TypeIndex::IPv6:
@@ -1532,7 +1618,7 @@ namespace DB
                 break;
             case TypeIndex::UInt8:
             {
-                if (isBool(column_type))
+                if (isBoolForArrow(column_type))
                     fillArrowArrayWithBoolColumnData(column, null_bytemap, format_name, array_builder, start, end);
                 else
                     fillArrowArrayWithNumericColumnData<UInt8, arrow::UInt8Builder>(column, null_bytemap, format_name, array_builder, start, end);
@@ -1780,7 +1866,24 @@ namespace DB
         if (isDateTime64(column_type))
         {
             const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_type.get());
+            if (settings.output_datetime_as_timestamp)
+            {
+                /// A `DateTime64` without an explicit time zone resolves its zone from the mutable
+                /// `session_timezone` setting, so export it as raw `Int64` ticks: the Arrow field type
+                /// must not depend on the session state that builds the schema.
+                if (datetime64_type->hasExplicitTimeZone())
+                    return arrow::timestamp(getArrowTimeUnit(datetime64_type), datetime64_type->getTimeZone().getTimeZone());
+                return arrow::int64();
+            }
             return arrow::timestamp(getArrowTimeUnit(datetime64_type), datetime64_type->getTimeZone().getTimeZone());
+        }
+
+        if (isDateTime(column_type))
+        {
+            const auto * datetime_type = assert_cast<const DataTypeDateTime *>(column_type.get());
+            if (settings.output_datetime_as_timestamp && datetime_type->hasExplicitTimeZone())
+                return arrow::timestamp(arrow::TimeUnit::SECOND, datetime_type->getTimeZone().getTimeZone());
+            return arrow::uint32();
         }
 
         if (isTime64(column_type))
@@ -1801,7 +1904,7 @@ namespace DB
         if (isStringOrFixedString(column_type) && settings.output_string_as_string)
             return arrow::utf8();
 
-        if (isBool(column_type))
+        if (isBoolForArrow(column_type))
             return arrow::boolean();
 
         if (isIPv6(column_type))
@@ -2004,6 +2107,11 @@ namespace DB
                 auto builder_type = getArrowType(
                     column_type, column, header_column.name, format_name, settings, &is_column_nullable, true /* for_builder */);
 
+                // Zero-copy cast to the extension-rich schema (handles infinite nesting)
+                auto target_type = schema->field(static_cast<int>(column_i))->type();
+                if (builder_type->id() == arrow::Type::STRING && target_type->id() == arrow::Type::BINARY)
+                    builder_type = target_type;
+
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
                 arrow::Status status = MakeBuilder(ArrowMemoryPool::instance(), builder_type, &array_builder);
                 checkStatus(status, column->getName(), format_name);
@@ -2020,8 +2128,6 @@ namespace DB
                     settings,
                     dictionary_values);
 
-                // Zero-copy cast to the extension-rich schema (handles infinite nesting)
-                auto target_type = schema->field(static_cast<int>(column_i))->type();
                 if (!arrow_array->type()->Equals(*target_type))
                     arrow_array = checkResult(arrow_array->View(target_type), column->getName(), format_name);
 

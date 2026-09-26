@@ -37,15 +37,16 @@ PollSession::PollSession(
     try
     {
         executor.emplace(block_io.pipeline);
+        const auto schema_header = executor->getHeader().getColumnsWithTypeAndName();
         schema = CHColumnToArrowColumn::calculateArrowSchema(
-            executor->getHeader().getColumnsWithTypeAndName(),
+            schema_header,
             "Arrow",
             nullptr,
             arrowConversionSettings(query_context));
 
         if (schema_modifier)
         {
-            auto result = schema_modifier(schema);
+            auto result = schema_modifier(schema, schema_header);
             if (!result.ok())
                 throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to convert Arrow schema: {} (schema: {})", result.status().ToString(), schema->ToString());
             schema = result.ValueUnsafe();
