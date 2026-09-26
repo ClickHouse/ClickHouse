@@ -1,0 +1,83 @@
+<test>
+  <!-- For 1/10/20 small children, compare feature off, default small-read rejection,
+       and explicit preflight override. The override must select projections so
+       this file continues to expose speculative planning overhead. -->
+  <settings>
+    <max_threads>2</max_threads>
+  </settings>
+  <create_query>CREATE TABLE perf_ns_0 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_0 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_1 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_1 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_2 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_2 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_3 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_3 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_4 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_4 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_5 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_5 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_6 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_6 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_7 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_7 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_8 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_8 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_9 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_9 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_10 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_10 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_11 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_11 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_12 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_12 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_13 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_13 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_14 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_14 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_15 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_15 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_16 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_16 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_17 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_17 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_18 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_18 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_19 (k UInt64,d UInt64,PROJECTION p (SELECT k,sum(d) GROUP BY k)) ENGINE=MergeTree ORDER BY k</create_query>
+  <fill_query>INSERT INTO perf_ns_19 SELECT number%100,1 FROM numbers(10000)</fill_query>
+  <create_query>CREATE TABLE perf_ns_merge_1 (k UInt64,pnl Nullable(Float64)) ENGINE=Merge(currentDatabase(),'^perf_ns_(0)$')</create_query>
+  <query>SELECT multiIf(k=0,0,k=1,1,k=2,2,k=3,3,k=4,4,k=5,0,k=6,1,k=7,2,k=8,3,k=9,4,k=10,0,k=11,1,k=12,2,k=13,3,k=14,4,k=15,0,k=16,1,k=17,2,k=18,3,k=19,4,k=20,0,k=21,1,k=22,2,k=23,3,k=24,4,k=25,0,k=26,1,k=27,2,k=28,3,k=29,4,k=30,0,k=31,1,k=32,2,k=33,3,k=34,4,k=35,0,k=36,1,k=37,2,k=38,3,k=39,4,k=40,0,k=41,1,k=42,2,k=43,3,k=44,4,k=45,0,k=46,1,k=47,2,k=48,3,k=49,4,k) AS bucket,sum(pnl) FROM perf_ns_merge_1 GROUP BY bucket SETTINGS optimize_merge_neutral_sum_children=0 FORMAT Null</query>
+  <query>SELECT multiIf(k=0,0,k=1,1,k=2,2,k=3,3,k=4,4,k=5,0,k=6,1,k=7,2,k=8,3,k=9,4,k=10,0,k=11,1,k=12,2,k=13,3,k=14,4,k=15,0,k=16,1,k=17,2,k=18,3,k=19,4,k=20,0,k=21,1,k=22,2,k=23,3,k=24,4,k=25,0,k=26,1,k=27,2,k=28,3,k=29,4,k=30,0,k=31,1,k=32,2,k=33,3,k=34,4,k=35,0,k=36,1,k=37,2,k=38,3,k=39,4,k=40,0,k=41,1,k=42,2,k=43,3,k=44,4,k=45,0,k=46,1,k=47,2,k=48,3,k=49,4,k) AS bucket,sum(pnl) FROM perf_ns_merge_1 GROUP BY bucket SETTINGS optimize_merge_neutral_sum_children=1 FORMAT Null</query>
+  <query>SELECT multiIf(k=0,0,k=1,1,k=2,2,k=3,3,k=4,4,k=5,0,k=6,1,k=7,2,k=8,3,k=9,4,k=10,0,k=11,1,k=12,2,k=13,3,k=14,4,k=15,0,k=16,1,k=17,2,k=18,3,k=19,4,k=20,0,k=21,1,k=22,2,k=23,3,k=24,4,k=25,0,k=26,1,k=27,2,k=28,3,k=29,4,k=30,0,k=31,1,k=32,2,k=33,3,k=34,4,k=35,0,k=36,1,k=37,2,k=38,3,k=39,4,k=40,0,k=41,1,k=42,2,k=43,3,k=44,4,k=45,0,k=46,1,k=47,2,k=48,3,k=49,4,k) AS bucket,sum(pnl) FROM perf_ns_merge_1 GROUP BY bucket SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_min_read_bytes=0 FORMAT Null</query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_merge_1</drop_query>
+  <create_query>CREATE TABLE perf_ns_merge_10 (k UInt64,pnl Nullable(Float64)) ENGINE=Merge(currentDatabase(),'^perf_ns_(0|1|2|3|4|5|6|7|8|9)$')</create_query>
+  <query>SELECT multiIf(k=0,0,k=1,1,k=2,2,k=3,3,k=4,4,k=5,0,k=6,1,k=7,2,k=8,3,k=9,4,k=10,0,k=11,1,k=12,2,k=13,3,k=14,4,k=15,0,k=16,1,k=17,2,k=18,3,k=19,4,k=20,0,k=21,1,k=22,2,k=23,3,k=24,4,k=25,0,k=26,1,k=27,2,k=28,3,k=29,4,k=30,0,k=31,1,k=32,2,k=33,3,k=34,4,k=35,0,k=36,1,k=37,2,k=38,3,k=39,4,k=40,0,k=41,1,k=42,2,k=43,3,k=44,4,k=45,0,k=46,1,k=47,2,k=48,3,k=49,4,k) AS bucket,sum(pnl) FROM perf_ns_merge_10 GROUP BY bucket SETTINGS optimize_merge_neutral_sum_children=0 FORMAT Null</query>
+  <query>SELECT multiIf(k=0,0,k=1,1,k=2,2,k=3,3,k=4,4,k=5,0,k=6,1,k=7,2,k=8,3,k=9,4,k=10,0,k=11,1,k=12,2,k=13,3,k=14,4,k=15,0,k=16,1,k=17,2,k=18,3,k=19,4,k=20,0,k=21,1,k=22,2,k=23,3,k=24,4,k=25,0,k=26,1,k=27,2,k=28,3,k=29,4,k=30,0,k=31,1,k=32,2,k=33,3,k=34,4,k=35,0,k=36,1,k=37,2,k=38,3,k=39,4,k=40,0,k=41,1,k=42,2,k=43,3,k=44,4,k=45,0,k=46,1,k=47,2,k=48,3,k=49,4,k) AS bucket,sum(pnl) FROM perf_ns_merge_10 GROUP BY bucket SETTINGS optimize_merge_neutral_sum_children=1 FORMAT Null</query>
+  <query>SELECT multiIf(k=0,0,k=1,1,k=2,2,k=3,3,k=4,4,k=5,0,k=6,1,k=7,2,k=8,3,k=9,4,k=10,0,k=11,1,k=12,2,k=13,3,k=14,4,k=15,0,k=16,1,k=17,2,k=18,3,k=19,4,k=20,0,k=21,1,k=22,2,k=23,3,k=24,4,k=25,0,k=26,1,k=27,2,k=28,3,k=29,4,k=30,0,k=31,1,k=32,2,k=33,3,k=34,4,k=35,0,k=36,1,k=37,2,k=38,3,k=39,4,k=40,0,k=41,1,k=42,2,k=43,3,k=44,4,k=45,0,k=46,1,k=47,2,k=48,3,k=49,4,k) AS bucket,sum(pnl) FROM perf_ns_merge_10 GROUP BY bucket SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_min_read_bytes=0 FORMAT Null</query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_merge_10</drop_query>
+  <create_query>CREATE TABLE perf_ns_merge_20 (k UInt64,pnl Nullable(Float64)) ENGINE=Merge(currentDatabase(),'^perf_ns_(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19)$')</create_query>
+  <query>SELECT multiIf(k=0,0,k=1,1,k=2,2,k=3,3,k=4,4,k=5,0,k=6,1,k=7,2,k=8,3,k=9,4,k=10,0,k=11,1,k=12,2,k=13,3,k=14,4,k=15,0,k=16,1,k=17,2,k=18,3,k=19,4,k=20,0,k=21,1,k=22,2,k=23,3,k=24,4,k=25,0,k=26,1,k=27,2,k=28,3,k=29,4,k=30,0,k=31,1,k=32,2,k=33,3,k=34,4,k=35,0,k=36,1,k=37,2,k=38,3,k=39,4,k=40,0,k=41,1,k=42,2,k=43,3,k=44,4,k=45,0,k=46,1,k=47,2,k=48,3,k=49,4,k) AS bucket,sum(pnl) FROM perf_ns_merge_20 GROUP BY bucket SETTINGS optimize_merge_neutral_sum_children=0 FORMAT Null</query>
+  <query>SELECT multiIf(k=0,0,k=1,1,k=2,2,k=3,3,k=4,4,k=5,0,k=6,1,k=7,2,k=8,3,k=9,4,k=10,0,k=11,1,k=12,2,k=13,3,k=14,4,k=15,0,k=16,1,k=17,2,k=18,3,k=19,4,k=20,0,k=21,1,k=22,2,k=23,3,k=24,4,k=25,0,k=26,1,k=27,2,k=28,3,k=29,4,k=30,0,k=31,1,k=32,2,k=33,3,k=34,4,k=35,0,k=36,1,k=37,2,k=38,3,k=39,4,k=40,0,k=41,1,k=42,2,k=43,3,k=44,4,k=45,0,k=46,1,k=47,2,k=48,3,k=49,4,k) AS bucket,sum(pnl) FROM perf_ns_merge_20 GROUP BY bucket SETTINGS optimize_merge_neutral_sum_children=1 FORMAT Null</query>
+  <query>SELECT multiIf(k=0,0,k=1,1,k=2,2,k=3,3,k=4,4,k=5,0,k=6,1,k=7,2,k=8,3,k=9,4,k=10,0,k=11,1,k=12,2,k=13,3,k=14,4,k=15,0,k=16,1,k=17,2,k=18,3,k=19,4,k=20,0,k=21,1,k=22,2,k=23,3,k=24,4,k=25,0,k=26,1,k=27,2,k=28,3,k=29,4,k=30,0,k=31,1,k=32,2,k=33,3,k=34,4,k=35,0,k=36,1,k=37,2,k=38,3,k=39,4,k=40,0,k=41,1,k=42,2,k=43,3,k=44,4,k=45,0,k=46,1,k=47,2,k=48,3,k=49,4,k) AS bucket,sum(pnl) FROM perf_ns_merge_20 GROUP BY bucket SETTINGS optimize_merge_neutral_sum_children=1,optimize_merge_neutral_sum_children_min_read_bytes=0 FORMAT Null</query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_merge_20</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_0</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_1</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_2</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_3</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_4</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_5</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_6</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_7</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_8</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_9</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_10</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_11</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_12</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_13</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_14</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_15</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_16</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_17</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_18</drop_query>
+  <drop_query>DROP TABLE IF EXISTS perf_ns_19</drop_query>
+</test>

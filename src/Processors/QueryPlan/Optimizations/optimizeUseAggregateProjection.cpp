@@ -1616,7 +1616,7 @@ UseProjectionsResult optimizeUseAggregateProjections(
     if (short_circuited_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
         reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
-    if (!query_info.is_internal && context->hasQueryContext())
+    if (optimization_settings.record_projection_usage && !query_info.is_internal && context->hasQueryContext())
     {
         context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
         {
