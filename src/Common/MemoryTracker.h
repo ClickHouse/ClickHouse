@@ -141,6 +141,7 @@ private:
     void logMemoryUsage(Int64 current) const;
     Int64 decrementLocalUsage(Int64 size) noexcept;
     void commitAllocation(Int64 size, Int64 will_be, bool memory_limit_exceeded_ignored, bool enforce_memory_limit) noexcept;
+    void traceLargeAllocation(Int64 size) noexcept;
 
     void setOrRaiseProfilerLimit(Int64 value);
 
@@ -345,6 +346,15 @@ public:
     /// update values based on external information (e.g. jemalloc's stat)
     static void updateRSS(Int64 rss_);
     static void updateAllocated(Int64 allocated_, bool log_change);
+
+    /// Report a stack trace for any single charge of at least `value` bytes to the global tracker.
+    /// A charge is one tracker call and may batch a thread's deferred allocations, so it is not
+    /// necessarily one allocation. 0 disables; coerced to 0 when no TraceCollector is running.
+    static void setMinAllocationSizeToLogStackTrace(UInt64 value);
+    static UInt64 getMinAllocationSizeToLogStackTrace();
+
+    /// Resets the budget for the traces above. Called once per TraceCollector, see its constructor.
+    static void resetLargeAllocationTraceBudget();
 
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage();
