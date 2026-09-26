@@ -2750,7 +2750,7 @@ std::optional<UInt64> InterpreterSelectQuery::getTrivialCount(UInt64 allow_exper
         return {};
 
     auto & query = getSelectQuery();
-    if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
+    if (!query.prewhere() && !query.where())
     {
         /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
         /// require reading some data (but much faster than reading columns).
