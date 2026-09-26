@@ -100,6 +100,29 @@ struct CustomType
     std::shared_ptr<const CustomTypeImpl> impl;
 };
 
+/// Holds the unparsed string representation of a numeric literal.
+/// Used when the literal doesn't fit in Int64/UInt64 (e.g. big integers).
+/// The actual parsing to a concrete numeric type is deferred until the target type is known.
+struct NumberLiteral
+{
+    String value;
+
+    NumberLiteral() = default;
+    explicit NumberLiteral(String s) : value(std::move(s)) {}
+
+    /// Parse the literal text as Float64. This is the single place that turns a numeric literal
+    /// into a float, so every resolution path stays consistent. Decimal/exponent literals go
+    /// through ClickHouse's own precise reader (deterministic, locale-independent); hex floats,
+    /// which the reader can't parse, fall back to strtod.
+    Float64 toFloat64() const;
+
+    bool operator == (const NumberLiteral & rhs) const { return value == rhs.value; }
+    bool operator < (const NumberLiteral &) const;
+    bool operator <= (const NumberLiteral &) const;
+    bool operator > (const NumberLiteral &) const;
+    bool operator >= (const NumberLiteral &) const;
+};
+
 template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
 template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
@@ -228,6 +251,7 @@ template <> struct NearestFieldTypeImpl<Null> { using Type = Null; };
 
 template <> struct NearestFieldTypeImpl<AggregateFunctionStateData> { using Type = AggregateFunctionStateData; };
 template <> struct NearestFieldTypeImpl<CustomType> { using Type = CustomType; };
+template <> struct NearestFieldTypeImpl<NumberLiteral> { using Type = NumberLiteral; };
 
 // For enum types, use the field type that corresponds to their underlying type.
 template <typename T>
@@ -301,6 +325,7 @@ public:
             IPv4 = 30,
             IPv6 = 31,
             CustomType = 32,
+            Number = 33,
         };
     };
 
@@ -349,6 +374,8 @@ public:
             case Types::Object:
             case Types::CustomType:
             case Types::AggregateFunctionState:
+            /// A NumberLiteral holds unparsed literal text and throws on comparison.
+            case Types::Number:
                 return false;
         }
         UNREACHABLE();
@@ -549,17 +576,23 @@ public:
             case Types::Decimal256: return f(field.template get<DecimalField<Decimal256>>());
             case Types::AggregateFunctionState: return f(field.template get<AggregateFunctionStateData>());
             case Types::CustomType: return f(field.template get<CustomType>());
+            case Types::Number: return f(field.template get<NumberLiteral>());
         }
     }
 
     String dump() const;
     static Field restoreFromDump(std::string_view dump_);
 
+    /// If this Field is a NumberLiteral, resolve it to a concrete numeric type
+    /// (Float64 for decimal-looking strings, UInt128/Int128/etc for big integers).
+    /// Returns *this unchanged if it's not a NumberLiteral.
+    Field resolveNumberLiteral() const;
+
 private:
     AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
-        AggregateFunctionStateData, CustomType
+        AggregateFunctionStateData, CustomType, NumberLiteral
         > storage; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw union storage; the active value is always placement-constructed by `create`/`createConcrete` before any read, and zero-initializing it would clear the whole buffer on every construction of this very hot object
 
     Types::Which which{};
@@ -708,6 +741,9 @@ private:
             case Types::CustomType:
                 destroy<CustomType>();
                 break;
+            case Types::Number:
+                destroy<NumberLiteral>();
+                break;
             default: [[likely]]
                  break;
         }
@@ -759,6 +795,7 @@ template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static constexpr
 template <> struct Field::TypeToEnum<DecimalField<Time64>>{ static constexpr Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static constexpr Types::Which value = Types::AggregateFunctionState; };
 template <> struct Field::TypeToEnum<CustomType>{ static constexpr Types::Which value = Types::CustomType; };
+template <> struct Field::TypeToEnum<NumberLiteral>{ static constexpr Types::Which value = Types::Number; };
 template <> struct Field::TypeToEnum<bool>{ static constexpr Types::Which value = Types::Bool; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
@@ -783,6 +820,7 @@ template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = De
 template <> struct Field::EnumToType<Field::Types::Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = AggregateFunctionStateData; };
 template <> struct Field::EnumToType<Field::Types::CustomType> { using Type = CustomType; };
+template <> struct Field::EnumToType<Field::Types::Number> { using Type = NumberLiteral; };
 template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
 /// Use it to prevent inclusion of magic_enum in headers, which is very expensive for the compiler
