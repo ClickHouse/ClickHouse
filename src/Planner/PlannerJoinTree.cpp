@@ -1563,9 +1563,6 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     if (!join_tree_node)
         return false;
 
-    if (join_tree_node->as<CrossJoinNode>())
-        return false;
-
     const JoinNode * join_node = join_tree_node->as<JoinNode>();
     if (!join_node)
         return true;
@@ -1577,7 +1574,9 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
 
     const auto join_kind = join_node->getKind();
     const auto join_strictness = join_node->getStrictness();
-    if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left)
+    /// A cross join coordinates its left side like `INNER ALL`: the parts of the product concatenate
+    /// correctly, and the query plan turns it into `INNER` where `WHERE` has the keys.
+    if ((join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All) || join_kind == JoinKind::Left || isCrossOrComma(join_kind))
     {
         // check that left table expression can be used for parallel replicas
         if (left_table)
@@ -1591,8 +1590,7 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
         return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
             && left_table_expr->getNodeType() != QueryTreeNodeType::UNION
             && left_table_expr->getNodeType() != QueryTreeNodeType::JOIN
-            && left_table_expr->getNodeType() != QueryTreeNodeType::ARRAY_JOIN
-            && left_table_expr->getNodeType() != QueryTreeNodeType::CROSS_JOIN;
+            && left_table_expr->getNodeType() != QueryTreeNodeType::ARRAY_JOIN;
     }
 
     if (join_kind == JoinKind::Right)
@@ -3097,63 +3095,6 @@ JoinTreeQueryPlan joinPlansWithStep(
     };
 }
 
-JoinTreeQueryPlan buildQueryPlanForCrossJoinNode(
-    const QueryTreeNodePtr & join_table_expression,
-    std::vector<JoinTreeQueryPlan> plans,
-    const ColumnIdentifierSet & outer_scope_columns,
-    PlannerContextPtr & planner_context)
-{
-    auto & cross_join_node = join_table_expression->as<CrossJoinNode &>();
-    for (const auto & plan : plans)
-    {
-        if (plan.stage != QueryProcessingStage::FetchColumns)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "JOIN {} table expression expected to process query to fetch columns stage. Actual {}",
-                cross_join_node.formatASTForErrorMessage(),
-                QueryProcessingStage::toString(plan.stage));
-    }
-
-    const auto & query_context = planner_context->getQueryContext();
-    const auto & settings = query_context->getSettingsRef();
-
-    const auto & table_expressions = cross_join_node.getTableExpressions();
-    bool display_internal_aliases = settings[Setting::query_plan_display_internal_aliases];
-
-    auto left_join_tree_query_plan = std::move(plans[0]);
-    auto left_table_label = getQueryDisplayLabel(table_expressions.at(0), display_internal_aliases);
-
-    for (size_t i = 1; i < plans.size(); ++i)
-    {
-        auto right_join_tree_query_plan = std::move(plans[i]);
-
-        const auto & left_header = left_join_tree_query_plan.query_plan.getCurrentHeader();
-        const auto & right_header = right_join_tree_query_plan.query_plan.getCurrentHeader();
-        JoinExpressionActions join_expression_actions(*left_header, *right_header);
-        auto join_step_logical = std::make_unique<JoinStepLogical>(
-            left_header,
-            right_header,
-            JoinOperator{JoinKind::Cross},
-            std::move(join_expression_actions),
-            outer_scope_columns,
-            std::unordered_map<String, const ActionsDAG::Node *>{},
-            settings[Setting::join_use_nulls],
-            JoinSettings(settings, query_context->getJoinAnalyzeMode()),
-            SortingStep::Settings(settings));
-
-        auto right_table_label = getQueryDisplayLabel(table_expressions.at(i), display_internal_aliases);
-        join_step_logical->setInputLabels(std::move(left_table_label), std::move(right_table_label));
-        left_table_label = join_step_logical->getReadableRelationName();
-
-        appendSetsFromActionsDAG(join_step_logical->getActionsDAG(), left_join_tree_query_plan.useful_sets);
-        left_join_tree_query_plan = joinPlansWithStep(
-            std::move(join_step_logical),
-            std::move(left_join_tree_query_plan),
-            std::move(right_join_tree_query_plan));
-    }
-
-    return left_join_tree_query_plan;
-}
-
 void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
     QueryPlan & right_query_plan,
     PreparedJoinStorage & prepared_join,
@@ -3526,10 +3467,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     bool is_right_join_with_remote_table = false;
     int first_join_pos = -1;
     int last_right_join_pos = -1;
-    bool is_cross_join = false;
     bool has_global_join_preserving_broadcast_rows = false;
     /// `allowParallelReplicasForJoinTree` only ever sees the leftmost leaf's parent join, so any other
-    /// join of an n-way tree must be tracked here. Set for JOIN/CROSS_JOIN/ARRAY_JOIN, read only in the JOIN branch.
+    /// join of an n-way tree must be tracked here. Set for JOIN/ARRAY_JOIN, read only in the JOIN branch.
     bool leftmost_join_tree_node_seen = false;
     bool has_unsafe_non_leftmost_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
@@ -3539,7 +3479,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         auto table_expression_type = table_expression->getNodeType();
 
         const bool is_join_tree_node = table_expression_type == QueryTreeNodeType::JOIN
-            || table_expression_type == QueryTreeNodeType::CROSS_JOIN
             || table_expression_type == QueryTreeNodeType::ARRAY_JOIN;
         const bool is_non_leftmost_join_tree_node = is_join_tree_node && leftmost_join_tree_node_seen;
         if (is_join_tree_node)
@@ -3547,13 +3486,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
         if (table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
             continue;
-
-        if (table_expression_type == QueryTreeNodeType::CROSS_JOIN)
-        {
-            joins_count += table_expression->as<const CrossJoinNode &>().getTableExpressions().size() - 1;
-            is_cross_join = true;
-            continue;
-        }
 
         if (table_expression_type == QueryTreeNodeType::JOIN)
         {
@@ -3597,15 +3529,16 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             /// That happens even to a join deciding each left row on its own, such as `INNER ASOF`. Under
             /// `LEFT` every strictness is admitted, which is the point of the kind exemption; outside it this
             /// stays a whitelist, so a future `JoinStrictness` is fail-closed.
-            /// `GLOBAL`/`CROSS`, and a misplaced `RIGHT`, remain the business of the disjuncts
-            /// below, which is why `ALL` is still admitted for those kinds here.
+            /// `GLOBAL`, and a misplaced `RIGHT`, remain the business of the disjuncts below, which is
+            /// why `ALL` is still admitted for those kinds here.
             /// Two kinds need their own term because they are unsafe while carrying `ALL`: `PASTE`
             /// pairs rows by position, and `FULL` emits unmatched right rows, which each replica
             /// would decide from its own slice of the left side.
+            /// A cross join carries no strictness of its own and is decided per left row like `INNER ALL`.
             if (is_non_leftmost_join_tree_node
                 && (join_kind == JoinKind::Paste
                     || join_kind == JoinKind::Full
-                    || (join_node.getStrictness() != JoinStrictness::All && join_kind != JoinKind::Left)))
+                    || (join_node.getStrictness() != JoinStrictness::All && join_kind != JoinKind::Left && !isCrossOrComma(join_kind))))
                 has_unsafe_non_leftmost_join = true;
 
             continue;
@@ -3621,8 +3554,8 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         if (first_join_pos >= 0 && last_right_join_pos >= 0 && first_join_pos < last_right_join_pos)
             return true;
 
-        /// for n-way join with FULL JOIN or GLOBAL JOINS or CROSS JOIN
-        if (joins_count > 1 && (is_full_join || is_global_join || is_cross_join))
+        /// for n-way join with FULL JOIN or GLOBAL JOINS
+        if (joins_count > 1 && (is_full_join || is_global_join))
             return true;
 
         /// A non-leftmost join that is not replica-safe (e.g. INNER ... ANY INNER). Deliberately not gated on
@@ -3648,7 +3581,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     for (const auto & node : table_expressions_stack)
     {
         if (node->getNodeType() == QueryTreeNodeType::JOIN ||
-            node->getNodeType() == QueryTreeNodeType::CROSS_JOIN ||
             node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
         {
             parent_join_tree_for_leftmost = node;
@@ -3721,8 +3653,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
         if (table_expression_type == QueryTreeNodeType::JOIN)
             collectTopLevelColumnIdentifiers(table_expression, planner_context, current_outer_scope_columns);
-        else if (table_expression_type == QueryTreeNodeType::CROSS_JOIN)
-            collectTopLevelColumnIdentifiers(table_expression, planner_context, current_outer_scope_columns);
         else if (table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
             collectTopLevelColumnIdentifiers(table_expression, planner_context, current_outer_scope_columns);
     }
@@ -3764,28 +3694,6 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 table_expression,
                 std::move(left_query_plan),
                 std::move(right_query_plan),
-                table_expressions_outer_scope_columns[i],
-                planner_context));
-        }
-        else if (table_expression_node_type == QueryTreeNodeType::CROSS_JOIN)
-        {
-            auto & cross_join_node = table_expression->as<CrossJoinNode &>();
-            size_t num_tables = cross_join_node.getTableExpressions().size();
-            if (query_plans_stack.size() < num_tables)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected at least {} query plans on stack before CROSS JOIN processing. Actual {}",
-                    num_tables,
-                    query_plans_stack.size());
-
-            std::vector<JoinTreeQueryPlan> plans;
-            for (size_t pos = query_plans_stack.size() - num_tables; pos <  query_plans_stack.size(); ++pos)
-                plans.emplace_back(std::move(query_plans_stack[pos]));
-
-            query_plans_stack.resize(query_plans_stack.size() - num_tables);
-
-            query_plans_stack.push_back(buildQueryPlanForCrossJoinNode(
-                table_expression,
-                std::move(plans),
                 table_expressions_outer_scope_columns[i],
                 planner_context));
         }

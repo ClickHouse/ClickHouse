@@ -582,7 +582,7 @@ The behavior of the ClickHouse server for `ANY JOIN` operations depends on the [
 - [`join_on_disk_max_files_to_merge`](/reference/settings/session-settings/join#join_on_disk_max_files_to_merge)
 - [`any_join_distinct_right_table_keys`](/reference/settings/session-settings/other#any_join_distinct_right_table_keys)
 
-Use the `cross_to_inner_join_rewrite` setting to define the behavior when ClickHouse fails to rewrite a `CROSS JOIN` as an `INNER JOIN`. The default value is `1`, which  allows the join to continue but it will be slower. Set `cross_to_inner_join_rewrite` to `0` if you want an error to be thrown, and set it to `2` to not run the cross joins but instead force a rewrite of all comma/cross joins. If the rewriting fails when the value is `2`, you will receive an error message stating "Please, try to simplify `WHERE` section".
+Use the `cross_to_inner_join_rewrite` setting to define the behavior when ClickHouse fails to rewrite a comma join as an `INNER JOIN`. The default value is `1`, which allows the join to continue as a `CROSS JOIN`, which is slower. Set it to `2` to force the rewrite of all comma joins: a comma join that has no equi-join condition in the `WHERE` section then fails with an error. Set it to `0` to disable the rewrite.
 
 ## ON section conditions {#on-section-conditions}
 
