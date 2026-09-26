@@ -44,9 +44,7 @@ sed -i 's/`dt` Date$/`dt` Date TTL dt + toIntervalDay(1)/' "${metadata_file}"
 # Without this the arm would run against an unmodified definition, i.e. assert nothing.
 grep -c -m 1 -F 'TTL dt + toIntervalDay(1)' "${metadata_file}"
 
-# The row is read back as it was written: `2000-01-01` is long expired, so a `TTL` that was acted on
-# would have reset the column to its default. The table also has to load for the rest of the database
-# to load at all.
+# The table has to load for the rest of the database to load at all.
 $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
 SELECT * FROM db.m;
 SELECT count() FROM system.tables WHERE database = 'db';
@@ -56,5 +54,9 @@ echo '--- the stored TTL stays in the definition, so the load is repeatable ---'
 $CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "
 SELECT extract(create_table_query, 'TTL dt \+ toIntervalDay\(1\)') FROM system.tables WHERE database = 'db' AND name = 'm';
 "
+
+echo '--- REMOVE TTL clears the stored TTL ---'
+$CLICKHOUSE_LOCAL --path "${WORKING_DIR}" -q "ALTER TABLE db.m MODIFY COLUMN dt REMOVE TTL;"
+grep -c -F 'TTL' "${metadata_file}"
 
 rm -rf "${WORKING_DIR}"

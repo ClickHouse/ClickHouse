@@ -8,3 +8,5 @@ BAD_ARGUMENTS
 2
 --- the stored TTL stays in the definition, so the load is repeatable ---
 TTL dt + toIntervalDay(1)
+--- REMOVE TTL clears the stored TTL ---
+0
