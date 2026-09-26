@@ -22,6 +22,7 @@ namespace ProfileEvents
     extern const Event StreamingExchangePacketsReceived;
     extern const Event StreamingExchangeReceiveWaitMicroseconds;
     extern const Event StreamingExchangeEarlyCloses;
+    extern const Event RuntimeFilterReceivesAbandoned;
 }
 
 namespace DB
@@ -57,6 +58,7 @@ void StreamingExchangeSource::onStart()
     /// Register the socket so the waiting source wakes on incoming data or peer close.
     wait_events_epoll.add(socket->sockfd());
 #endif
+    handshake_completed = true;
 }
 
 void StreamingExchangeSource::connect()
@@ -301,7 +303,18 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
     }
     catch (const Exception & e)
     {
-        if (!cancellation || e.code() != ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+        if (e.code() != ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+            throw;
+
+        if (advisory && handshake_completed)
+        {
+            LOG_DEBUG(log, "Exchange stream {} lost its peer, ending it early: {}", stream_name, e.message());
+            ProfileEvents::increment(ProfileEvents::RuntimeFilterReceivesAbandoned);
+            finished_reading = true;
+            return std::nullopt;
+        }
+
+        if (!cancellation)
             throw;
 
         /// The producer went away, most likely because the query is failing elsewhere. The driving

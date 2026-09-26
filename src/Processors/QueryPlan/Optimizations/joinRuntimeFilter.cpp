@@ -149,6 +149,7 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     const ColumnWithTypeAndName & join_key_build_side,
     const DataTypePtr & common_type,
     const QueryPlanOptimizationSettings & optimization_settings,
+    const RuntimeFilterGeometry & filter_geometry,
     bool check_left_does_not_contain,
     std::optional<UInt64> distinct_keys_hint,
     bool distinct_keys_hint_matches_filter_key)
@@ -172,17 +173,11 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
         id.name,
         id.key,
         RuntimeFilterBuildOptions{
-            .exact_values_limit = optimization_settings.join_runtime_filter_exact_values_limit,
-            .bloom = RuntimeBloomFilterParameters{
-                optimization_settings.join_runtime_bloom_filter_bytes,
-                optimization_settings.join_runtime_bloom_filter_hash_functions},
-            .max_ratio_of_set_bits = optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+            .geometry = filter_geometry,
             .polarity = check_left_does_not_contain ? RuntimeFilterPolarity::NotContains : RuntimeFilterPolarity::Contains,
             .track_key_range = optimization_settings.enable_join_runtime_filters_index_analysis,
             .distinct_keys_hint = distinct_keys_hint,
-            .distinct_keys_hint_matches_filter_key = distinct_keys_hint_matches_filter_key},
-        optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
-        optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling);
+            .distinct_keys_hint_matches_filter_key = distinct_keys_hint_matches_filter_key});
     new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
     new_build_filter_node->children = {build_filter_node};
     build_filter_node = new_build_filter_node;
@@ -470,6 +465,15 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         return RuntimeFilterId{.name = runtimeFilterName(structural_hash), .key = random_key};
     };
 
+    const RuntimeFilterGeometry filter_geometry{
+        .exact_values_limit = optimization_settings.join_runtime_filter_exact_values_limit,
+        .bloom_filter_bytes = optimization_settings.join_runtime_bloom_filter_bytes,
+        .bloom_filter_hash_functions = optimization_settings.join_runtime_bloom_filter_hash_functions,
+        .pass_ratio_threshold_for_disabling = optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
+        .blocks_to_skip_before_reenabling = optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
+        .max_ratio_of_set_bits_in_bloom_filter = optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+    };
+
     /// Compute common types for each key pair
     DataTypes common_types;
     common_types.reserve(join_keys_build_side.size());
@@ -547,17 +551,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 filter_name,
                 id.key,
                 RuntimeFilterBuildOptions{
-                    .exact_values_limit = optimization_settings.join_runtime_filter_exact_values_limit,
-                    .bloom = RuntimeBloomFilterParameters{
-                        optimization_settings.join_runtime_bloom_filter_bytes,
-                        optimization_settings.join_runtime_bloom_filter_hash_functions},
-                    .max_ratio_of_set_bits = optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
+                    .geometry = filter_geometry,
                     .polarity = RuntimeFilterPolarity::NotContains,
                     .track_key_range = optimization_settings.enable_join_runtime_filters_index_analysis,
                     .distinct_keys_hint = distinct_keys_hint,
-                    .distinct_keys_hint_matches_filter_key = true},
-                optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
-                optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling);
+                    .distinct_keys_hint_matches_filter_key = true});
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
             new_build_filter_node->children = {build_filter_node};
             build_filter_node = new_build_filter_node;
@@ -606,6 +604,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 join_key_build_side,
                 common_type,
                 optimization_settings,
+                filter_geometry,
                 check_left_does_not_contain,
                 distinct_keys_hint,
                 /*distinct_keys_hint_matches_filter_key=*/join_keys_build_side.size() == 1);

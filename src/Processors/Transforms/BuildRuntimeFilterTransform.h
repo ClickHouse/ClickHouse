@@ -25,7 +25,6 @@ public:
         String filter_key_,
         size_t filters_to_merge_,
         const RuntimeFilterBuildOptions & build_options_,
-        const RuntimeFilterConfig & runtime_filter_config_,
         ContextPtr query_context_);
 
     String getName() const override { return "BuildRuntimeFilterTransform"; }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
 #include <memory>
@@ -48,11 +49,20 @@ struct IExchangeLookup : boost::noncopyable
 
     /// The sink of one stream. Its input is the output of the processors of `createSerializer`: the
     /// packets they make, or the data chunks as they are when there are no such processors.
-    virtual std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) = 0;
+    /// An advisory sink carries data the receiver is free to stop reading at any moment (a
+    /// runtime filter): peer disconnects and resets stop the delivery instead of throwing.
+    /// Data streams must pass false so a lost receiver stays an error. Only a streaming sink has a
+    /// peer that can disconnect. Persisted and in-memory sinks ignore the flag.
+    virtual std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id, bool advisory) = 0;
     /// `output_is_serialized`: the source hands out the packets of the exchange as they are, one per
     /// chunk, for the processors of `createDeserializer` to turn into data; only an exchange kind that
     /// returns such processors accepts true.
-    virtual std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) = 0;
+    /// An advisory source reads data the query can do without (a runtime filter). If the producer
+    /// disconnects after the stream is established, the source ends the stream early instead of
+    /// throwing. A failed connect or handshake still throws. Data streams must pass false. Only a
+    /// streaming source has a peer that can disconnect; persisted and in-memory sources ignore it.
+    virtual std::shared_ptr<ISource>
+    createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool advisory) = 0;
 
     /// A processor that turns data chunks into the form the sinks of exchange `exchange_id` send.
     /// The send steps put one on every stream in front of a sink, so serialization runs on all
