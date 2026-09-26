@@ -74,13 +74,13 @@ SELECT count() FROM system.projections
 
 -- The syntax can also arrive indirectly: old-format workers expand AS <source> after enqueueing.
 CREATE TABLE t_projection_column_list_cluster_copy ON CLUSTER test_shard_localhost
-    AS t_projection_column_list_cluster_source
+    AS {CLICKHOUSE_DATABASE:Identifier}.t_projection_column_list_cluster_source
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_projection_column_list_cluster_copy', 'r1')
     ORDER BY x; -- { serverError SUPPORT_IS_DISABLED }
 SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_column_list_cluster_copy';
 CREATE TABLE t_projection_column_list_cluster_inherited ON CLUSTER test_shard_localhost
-    AS t_projection_column_list_cluster_source; -- { serverError SUPPORT_IS_DISABLED }
+    AS {CLICKHOUSE_DATABASE:Identifier}.t_projection_column_list_cluster_source; -- { serverError SUPPORT_IS_DISABLED }
 SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_column_list_cluster_inherited';
 
@@ -90,7 +90,7 @@ SET distributed_ddl_task_timeout = 180;
 SET distributed_ddl_output_mode = 'throw';
 -- A destination that cannot store projections is safe, even when the source has a column list.
 CREATE TABLE t_projection_column_list_cluster_memory ON CLUSTER test_shard_localhost
-    AS t_projection_column_list_cluster_source ENGINE = Memory FORMAT Null;
+    AS {CLICKHOUSE_DATABASE:Identifier}.t_projection_column_list_cluster_source ENGINE = Memory FORMAT Null;
 SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_memory';
 SET allow_projection_column_list_in_replicated_metadata = 1;
@@ -105,13 +105,13 @@ SELECT count() FROM system.projections
 SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_alter';
 CREATE TABLE t_projection_column_list_cluster_copy ON CLUSTER test_shard_localhost
-    AS t_projection_column_list_cluster_source
+    AS {CLICKHOUSE_DATABASE:Identifier}.t_projection_column_list_cluster_source
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_projection_column_list_cluster_copy', 'r1')
     ORDER BY x FORMAT Null;
 SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_copy';
 CREATE TABLE t_projection_column_list_cluster_inherited ON CLUSTER test_shard_localhost
-    AS t_projection_column_list_cluster_source FORMAT Null;
+    AS {CLICKHOUSE_DATABASE:Identifier}.t_projection_column_list_cluster_source FORMAT Null;
 SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_inherited';
 DROP TABLE t_projection_column_list_cluster_create ON CLUSTER test_shard_localhost FORMAT Null;
