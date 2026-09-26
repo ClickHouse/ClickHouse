@@ -255,11 +255,16 @@ namespace
             return true;
         }
 
-        bool parseScalar(const antlr4::tree::TerminalNode * ctx, ScalarType & result)
+        bool parseScalar(
+            const antlr4::tree::TerminalNode * ctx,
+            ScalarType & result,
+            bool * is_duration = nullptr,
+            std::optional<Int64> * duration_ms = nullptr)
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseScalar(getText(ctx), result, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseScalar(
+                    getText(ctx), result, &error_message, &error_pos, is_duration, duration_ms))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -347,13 +352,19 @@ namespace
         Node * makeScalar(antlr4::tree::TerminalNode * ctx)
         {
             ScalarType scalar = 0;
-            if (!parseScalar(ctx, scalar))
+            bool is_duration = false;
+            std::optional<Int64> duration_ms;
+            if (!parseScalar(ctx, scalar, &is_duration, &duration_ms))
             {
                 chassert(error_listener.hasError());
                 return nullptr;
             }
             auto new_node = std::make_unique<Scalar>();
             new_node->scalar = scalar;
+            new_node->is_duration = is_duration;
+            new_node->duration_ms = duration_ms;
+            if (is_duration)
+                new_node->duration_str = getText(ctx);
             return addNode(std::move(new_node));
         }
 
