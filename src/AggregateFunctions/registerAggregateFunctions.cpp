@@ -88,6 +88,7 @@ void registerAggregateFunctionTheilsU(AggregateFunctionFactory &);
 void registerAggregateFunctionContingency(AggregateFunctionFactory &);
 void registerAggregateFunctionCramersVBiasCorrected(AggregateFunctionFactory &);
 void registerAggregateFunctionGini(AggregateFunctionFactory &);
+void registerAggregateFunctionMedianAbsoluteDeviation(AggregateFunctionFactory &);
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory &);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory &);
 void registerAggregateFunctionNothing(AggregateFunctionFactory &);
@@ -188,6 +189,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionContingency(factory);
         registerAggregateFunctionCramersVBiasCorrected(factory);
         registerAggregateFunctionGini(factory);
+        registerAggregateFunctionMedianAbsoluteDeviation(factory);
         registerAggregateFunctionsBitmap(factory);
         registerAggregateFunctionsNumericIndexedVector(factory);
         registerAggregateFunctionsMaxIntersections(factory);
