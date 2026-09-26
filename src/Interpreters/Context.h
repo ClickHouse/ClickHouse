@@ -841,16 +841,31 @@ public:
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
         AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
         AVAILABLE_MEMORY_TOO_LOW,
+        DATA_PATH_NOT_ON_LARGEST_FILESYSTEM,
+        DATA_PATH_ON_OVERLAY_FS,
         DB_ORDINARY_DEPRECATED,
         DELAY_ACCOUNTING_DISABLED,
+        LINUX_CPU_SCALING_GOVERNOR_NOT_PERFORMANCE,
+        LINUX_CPU_THERMAL_THROTTLING_DETECTED,
+        LINUX_CPU_TURBO_BOOST_DISABLED,
         LINUX_FAST_CLOCK_SOURCE_NOT_USED,
+        LINUX_HIGH_CORRECTED_ECC_ERRORS_COUNT,
+        LINUX_KERNEL_EXT4_CORRUPTION_BUG,
+        LINUX_KERNEL_WITH_KNOWN_ISSUES,
+        LINUX_MDRAID_INSUFFICIENT_STRIPE_CACHE,
         LINUX_MDRAID_IS_BEING_RESYNCHRONIZED,
         LINUX_MDRAID_IS_DEGRADED,
+        LINUX_MAX_OPEN_FILES_SYSTEM_WIDE_TOO_LOW,
         LINUX_MAX_PID_TOO_LOW,
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
         LINUX_MEMORY_OVERCOMMIT_DISABLED,
+        LINUX_RENAMEAT2_UNAVAILABLE,
         LINUX_RSEQ_UNAVAILABLE,
+        LINUX_SWAP_IS_ENABLED,
+        LINUX_TRANSPARENT_HUGEPAGES_DEFRAG_SET_TO_ALWAYS,
         LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
+        LINUX_UNCORRECTED_ECC_ERRORS,
+        LINUX_ZONE_RECLAIM_MODE_ENABLED,
         MAX_ACTIVE_PARTS,
         MAX_ATTACHED_DATABASES,
         MAX_ATTACHED_DICTIONARIES,
@@ -883,7 +898,10 @@ public:
     };
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
-    void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
+    /// The stored message of one warning. Unlike `getWarnings`, it does not publish the recorded ext4 probes.
+    std::optional<PreformattedMessage> getWarningMessage(WarningType warning) const;
+    /// Returns whether the message was published, i.e. `warning_supress_regexp` did not drop it.
+    bool addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
     void addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
