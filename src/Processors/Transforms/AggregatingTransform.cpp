@@ -546,6 +546,7 @@ public:
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
         size_t num_threads_,
+        size_t output_streams_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
         AdaptiveAggregationSessionPtr adaptive_session_)
         : IProcessor({}, {params_->getHeader()})
@@ -553,6 +554,7 @@ public:
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
+        , output_streams(output_streams_)
         , updater(std::move(updater_))
         , adaptive_session(std::move(adaptive_session_))
     {
@@ -907,6 +909,11 @@ private:
 
     size_t num_threads;
 
+    /// How many streams the output is spread over downstream. It is not `num_threads`. That is capped by the
+    /// number of aggregating streams (1 for a single input stream), while the `Resize` after the aggregation
+    /// fans out to `max_threads`. 1 when the results must go out in bucket order.
+    size_t output_streams;
+
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     AdaptiveAggregationSessionPtr adaptive_session;
 
@@ -1003,7 +1010,11 @@ private:
                 throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
         }
 
-        auto agg_chunks = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
+        const size_t max_rows_per_block = Aggregator::singleLevelChunkRowsForFanOut(first->sizeWithoutOverflowRow(), output_streams);
+        if (max_rows_per_block)
+            LOG_TRACE(getLogger("AggregatingTransform"), "Split single level result into chunks of at most {} rows.", max_rows_per_block);
+
+        auto agg_chunks = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ false>(*first, params->final, max_rows_per_block);
         for (auto & agg_chunk : agg_chunks)
         {
             if (agg_chunk.chunk.getNumRows() > 0)
@@ -1086,7 +1097,7 @@ private:
 };
 
 AggregatingTransform::AggregatingTransform(
-    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t output_streams_)
     : AggregatingTransform(
           std::move(header),
           std::move(params_),
@@ -1096,7 +1107,8 @@ AggregatingTransform::AggregatingTransform(
           1,
           true /* should_produce_results_in_order_of_bucket_number */,
           false /* skip_merging */,
-          updater_)
+          updater_,
+          output_streams_)
 {
 }
 
@@ -1109,7 +1121,8 @@ AggregatingTransform::AggregatingTransform(
     size_t temporary_data_merge_threads_,
     bool should_produce_results_in_order_of_bucket_number_,
     bool skip_merging_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    size_t output_streams_)
     : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
     , key_columns(params->params.keys_size)
@@ -1121,6 +1134,7 @@ AggregatingTransform::AggregatingTransform(
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
     , skip_merging(skip_merging_)
     , updater(std::move(updater_))
+    , output_streams(output_streams_)
 {
     /// `AggregatingStep` leaves its engagement verdict in the flag. Without a producer nothing is ever
     /// staged, so the merge-time drains find empty backlogs and do nothing.
@@ -1409,7 +1423,12 @@ void AggregatingTransform::initGenerate()
                 std::move(many_data->variants), adaptive_context ? adaptive_context->session.get() : nullptr);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
-                params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->session : nullptr));
+                params,
+                std::move(prepared_data_ptr),
+                max_threads,
+                output_streams,
+                updater,
+                adaptive_engaged ? adaptive_context->session : nullptr));
         }
         else
         {
