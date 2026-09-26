@@ -63,6 +63,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
 
@@ -96,7 +97,7 @@ namespace DatabaseReplicatedSetting
     extern const DatabaseReplicatedSettingsString collection_name;
     extern const DatabaseReplicatedSettingsFloat max_broken_tables_ratio;
     extern const DatabaseReplicatedSettingsNonZeroUInt64 max_replication_lag_to_enqueue;
-    extern const DatabaseReplicatedSettingsNonZeroUInt64 logs_to_keep;
+    extern const DatabaseReplicatedSettingsNonZeroUInt32 logs_to_keep;
     extern const DatabaseReplicatedSettingsString default_replica_path;
     extern const DatabaseReplicatedSettingsString default_replica_shard_name;
     extern const DatabaseReplicatedSettingsString default_replica_name;
@@ -133,6 +134,7 @@ namespace FailPoints
     extern const char database_replicated_force_metadata_digest_check[];
     extern const char database_replicated_pause_after_reading_log_pointer[];
     extern const char database_replicated_pause_after_snapshot_identity_check[];
+    extern const char database_replicated_pause_after_database_name_fetch[];
     extern const char database_replicated_throw_on_stop_replication[];
 }
 
@@ -318,14 +320,15 @@ std::pair<String, String> DatabaseReplicated::parseFullReplicaName(const String 
 
 ClusterPtr DatabaseReplicated::tryGetCluster() const
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::tryGetCluster");
-    std::lock_guard lock{mutex};
-    if (cluster)
-        return cluster;
+    {
+        std::lock_guard lock{mutex};
+        if (cluster)
+            return cluster;
 
-    /// Database is probably not created or not initialized yet, it's ok to return nullptr
-    if (is_readonly)
-        return cluster;
+        /// Database is probably not created or not initialized yet, it's ok to return nullptr
+        if (is_readonly)
+            return cluster;
+    }
 
     try
     {
@@ -335,13 +338,13 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
         /// get an error when trying to get the info about DB from ZK.
         /// Just ignore these inaccessible databases. A good example of a
         /// failing test is `01526_client_start_and_exit`.
-        cluster = getClusterImpl();
+        return updateCluster(false /* all_groups */, false /* force_overwrite */);
     }
     catch (...)
     {
         /// Coordination errors (`KEEPER_EXCEPTION`), connection failures
         /// (`ALL_CONNECTION_TRIES_FAILED`), and the "no active replicas"
-        /// state (`NO_ACTIVE_REPLICAS`, thrown by `getClusterImpl` when
+        /// state (`NO_ACTIVE_REPLICAS`, thrown by `updateCluster` when
         /// `/replicas` exists but is empty -- i.e. the first replica is
         /// not fully created yet or the last replica was just dropped)
         /// are all expected during concurrent database lifecycle
@@ -354,7 +357,7 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
         /// them at `information` so administrators still see the message
         /// in normal server logs but it does not propagate to clients.
         /// Anything else is unexpected (malformed Keeper payloads, logic
-        /// bugs in `getClusterImpl`, ...) and stays at the default
+        /// bugs in `updateCluster`, ...) and stays at the default
         /// `error` level so operators notice it.
         const auto code = getCurrentExceptionCode();
         if (code == ErrorCodes::KEEPER_EXCEPTION
@@ -364,31 +367,34 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
         else
             tryLogCurrentException(log);
     }
-    return cluster;
+
+    return nullptr;
 }
 
 ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
 {
-    std::lock_guard lock{mutex};
-    if (replica_group_name.empty())
-        return nullptr;
+    {
+        std::lock_guard lock{mutex};
+        if (replica_group_name.empty())
+            return nullptr;
 
-    if (cluster_all_groups)
-        return cluster_all_groups;
+        if (cluster_all_groups)
+            return cluster_all_groups;
 
-    /// Database is probably not created or not initialized yet, it's ok to return nullptr
-    if (is_readonly)
-        return cluster_all_groups;
+        /// Database is probably not created or not initialized yet, it's ok to return nullptr
+        if (is_readonly)
+            return cluster_all_groups;
+    }
 
     try
     {
-        cluster_all_groups = getClusterImpl(/*all_groups*/ true);
+        return updateCluster(true /* all_groups */, false /* force_overwrite */);
     }
     catch (...)
     {
         /// See the note in `tryGetCluster` above: downgrade the expected
         /// coordination/connection failures and the "no active replicas"
-        /// state (all reachable through `getClusterImpl`) to
+        /// state (all reachable through `updateCluster`) to
         /// `information`, leave anything else at the default `error`
         /// level so unexpected problems are visible.
         const auto code = getCurrentExceptionCode();
@@ -399,20 +405,93 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
         else
             tryLogCurrentException(log);
     }
-    return cluster_all_groups;
+
+    return nullptr;
 }
 
-void DatabaseReplicated::setCluster(ClusterPtr && new_cluster, bool all_groups)
+void DatabaseReplicated::setClusterLocked(ClusterPtr && new_cluster, bool all_groups)
 {
-    std::lock_guard lock{mutex};
     if (all_groups)
         cluster_all_groups = std::move(new_cluster);
     else
         cluster = std::move(new_cluster);
 }
 
-ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
+ClusterPtr DatabaseReplicated::updateCluster(bool all_groups, bool force_overwrite) const
 {
+    std::lock_guard update_lock(cluster_update_mutex);
+    {
+        std::lock_guard lock{mutex};
+        if (!force_overwrite
+            && ((all_groups && cluster_all_groups) || (!all_groups && cluster)))
+        {
+            return all_groups ? cluster_all_groups : cluster;
+        }
+    }
+    Shards shards = fetchClusterTopology(all_groups);
+
+    UInt16 default_port = 0;
+    if (cluster_auth_info.cluster_secure_connection)
+        default_port = getContext()->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
+    else
+        default_port = getContext()->getTCPPort();
+
+    bool treat_local_as_remote = false;
+    bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
+
+    std::lock_guard lock{mutex};
+
+    String cluster_name = database_name;
+    if (all_groups)
+        cluster_name = ALL_GROUPS_CLUSTER_PREFIX + cluster_name;
+
+    /// The read of `database_name` above and the publication of the new cluster below must happen
+    /// under the same `mutex` lock. Otherwise a concurrent `RENAME DATABASE` slips in between and
+    /// the published cluster keeps the old name in its connection parameters, which breaks the
+    /// interserver handshake when `cluster_secret` is used. This pause point sits exactly in that
+    /// window to make it observable for tests.
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_after_database_name_fetch);
+
+    ClusterConnectionParameters params{
+        cluster_auth_info.cluster_username,
+        cluster_auth_info.cluster_password,
+        default_port,
+        treat_local_as_remote,
+        treat_local_port_as_remote,
+        cluster_auth_info.cluster_secure_connection,
+        /* bind_host= */ "",
+        Priority{1},
+        cluster_name,
+        cluster_auth_info.cluster_secret};
+
+    /// The shard-scope identity (see `Cluster::getShardScopeIdentity`) is keyed by the Keeper name and
+    /// path rather than by `cluster_name`: `<db>` and `all_groups.<db>` are two spellings of this one
+    /// database, and while both see the same ordered shards a `_shard_num` produced through either denotes
+    /// the same shard, so a parallel replicas read must not be declined for crossing from one spelling to
+    /// the other. The key also survives `RENAME DATABASE` and differing local names on other replicas,
+    /// and it separates two databases that happen to share a local name and their shard names. The path
+    /// alone is not enough: it is unique only inside one Keeper, and two unrelated databases mounted at
+    /// the same path on two auxiliary Keepers must not authenticate each other's shard numbers.
+    auto new_cluster = std::make_shared<Cluster>(
+        getContext()->getSettingsRef(),
+        shards,
+        params,
+        db_settings[DatabaseReplicatedSetting::internal_replication],
+        /* shard_scope_key = */ Cluster::makeKeeperScopeKey(zookeeper_name, zookeeper_path));
+
+    if (all_groups)
+    {
+        cluster_all_groups = std::move(new_cluster);
+        return cluster_all_groups;
+    }
+
+    cluster = std::move(new_cluster);
+    return cluster;
+}
+
+DatabaseReplicated::Shards DatabaseReplicated::fetchClusterTopology(bool all_groups) const
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::fetchClusterTopology");
     Strings unfiltered_hosts;
     Strings hosts;
     Strings host_ids;
@@ -479,7 +558,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
             break;
     }
     if (!success)
-        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot,"
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot, "
                                                                  "because replicas are created or removed concurrently");
 
     LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,
@@ -488,7 +567,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     chassert(!hosts.empty());
     chassert(hosts.size() == host_ids.size());
     String current_shard;
-    std::vector<std::vector<DatabaseReplicaInfo>> shards;
+    Shards shards;
     for (size_t i = 0; i < hosts.size(); ++i)
     {
         const auto & id = host_ids[i];
@@ -509,32 +588,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
     if (shards.empty())
         throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "No active replicas");
 
-    UInt16 default_port = 0;
-    if (cluster_auth_info.cluster_secure_connection)
-        default_port = getContext()->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT);
-    else
-        default_port = getContext()->getTCPPort();
-
-    bool treat_local_as_remote = false;
-    bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-
-    String cluster_name = TSA_SUPPRESS_WARNING_FOR_READ(database_name);     /// FIXME
-    if (all_groups)
-        cluster_name = ALL_GROUPS_CLUSTER_PREFIX + cluster_name;
-
-    ClusterConnectionParameters params{
-        cluster_auth_info.cluster_username,
-        cluster_auth_info.cluster_password,
-        default_port,
-        treat_local_as_remote,
-        treat_local_port_as_remote,
-        cluster_auth_info.cluster_secure_connection,
-        /* bind_host= */ "",
-        Priority{1},
-        cluster_name,
-        cluster_auth_info.cluster_secret};
-
-    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, params, db_settings[DatabaseReplicatedSetting::internal_replication]);
+    return shards;
 }
 
 ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_) const
@@ -983,6 +1037,18 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
             zkutil::KeeperMultiException::check(code, ops, ops_responses);
         }
     }
+}
+
+ASTPtr DatabaseReplicated::getCreateDatabaseQueryImpl() const
+{
+    ASTPtr ast = DatabaseOnDisk::getCreateDatabaseQueryImpl();
+
+    /// The metadata file may still hold a `logs_to_keep` above `UInt32::max`, if written by an older server.
+    auto * create = ast->as<ASTCreateQuery>();
+    if (create && create->storage && create->storage->settings)
+        DatabaseReplicatedSettings::checkOrClampLogsToKeep(*create->storage->settings, true /* clamp_on_overflow */);
+
+    return ast;
 }
 
 void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr context_, LoadingStrictnessLevel mode)
@@ -2378,6 +2444,30 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
     if (!zookeeper)
         throw Exception(ErrorCodes::NO_ZOOKEEPER, "No ZooKeeper");
 
+    /// Stop this replica's DDL worker before the calls below re-initialize replication state:
+    /// its recovery reads `max_log_ptr_at_creation` and compares the Keeper metadata with the
+    /// local table set, which those calls rewrite, and a recovery running against a half-updated
+    /// view detaches local tables into `<db>_broken_replicated_tables`.
+    {
+        std::lock_guard lock{ddl_worker_mutex};
+        if (ddl_worker)
+        {
+            LOG_TRACE(log, "Stopping DDL worker before restoring database metadata in Keeper.");
+            ddl_worker->shutdown();
+            ddl_worker_initialized = false;
+            ddl_worker = nullptr;
+        }
+    }
+
+    /// If the restore fails, reinitialize the DDL worker so the database remains functional.
+    /// SAFE: the body runs while an exception propagates and can itself throw (thread
+    /// creation), which must not replace the restore's own error.
+    bool need_reinitialize_ddl_worker = true;
+    SCOPE_EXIT_SAFE({
+        if (need_reinitialize_ddl_worker)
+            reinitializeDDLWorker();
+    });
+
     try
     {
         restoreDatabaseNodesInKeeper(zookeeper);
@@ -2395,6 +2485,8 @@ void DatabaseReplicated::restoreDatabaseInKeeper(ContextPtr)
     /// Force the database to recover to update the restored metadata
     auto current_zookeeper = getZooKeeper();
     current_zookeeper->set(replica_path + "/digest", DatabaseReplicatedDDLWorker::FORCE_AUTO_RECOVERY_DIGEST);
+
+    need_reinitialize_ddl_worker = false;
     reinitializeDDLWorker();
 }
 
@@ -2442,6 +2534,12 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
     DatabaseAtomic::renameDatabase(query_context, new_name);
     auto db_name_path = fs::path(zookeeper_path) / FIRST_REPLICA_DATABASE_NAME;
     getZooKeeper()->set(db_name_path, getDatabaseName());
+}
+
+void DatabaseReplicated::onDatabaseRenamed()
+{
+    setClusterLocked(nullptr, false /* all_groups */);
+    setClusterLocked(nullptr, true /* all_groups */);
 }
 
 void DatabaseReplicated::stopReplication()
@@ -3038,7 +3136,16 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         const auto & initial_storage_settings = args.context->getDatabaseReplicatedSettings();
         DatabaseReplicatedSettings database_replicated_settings{initial_storage_settings};
         if (engine_define->settings)
-            database_replicated_settings.loadFromQuery(*engine_define);
+        {
+            /// Whether the definition is replayed from stored metadata (startup, short-syntax ATTACH, RESTORE)
+            /// rather than supplied by the user now. A full-syntax ATTACH is user input, validated like CREATE.
+            /// Not `args.internal`: wrappers such as `PARALLEL WITH` run fresh user statements as internal queries.
+            const bool loading_from_existing_metadata = args.is_metadata_replay
+                || args.create_query.attach_short_syntax
+                || args.is_restore_from_backup
+                || isLoadingFromExistingMetadata(args.mode);
+            database_replicated_settings.loadFromQuery(*engine_define, loading_from_existing_metadata);
+        }
 
         return std::make_shared<DatabaseReplicated>(
             args.database_name,
@@ -3050,7 +3157,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             replica_name,
             std::move(database_replicated_settings), args.context);
     };
-    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true}, Documentation{
+    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true, .has_builtin_setting_fn = DatabaseReplicatedSettings::hasBuiltin}, Documentation{
         .description = R"DOCS_MD(
 The engine is based on the [Atomic](/reference/engines/database-engines/atomic) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
 
@@ -3203,7 +3310,7 @@ The following settings are supported:
 | `check_consistency`                                                          | true                           | Check consistency of local metadata and metadata in Keeper, do replica recovery on inconsistency                                                                                                                                                                                                                                      |
 | `max_retries_before_automatic_recovery`                                      | 10                             | Max number of attempts to execute a queue entry before marking replica as lost recovering it from snapshot (0 means infinite)                                                                                                                                                                                                         |
 | `allow_skipping_old_temporary_tables_ddls_of_refreshable_materialized_views` | false                          | If enabled, when processing DDLs in Replicated databases, it skips creating and exchanging DDLs of the temporary tables of refreshable materialized views if possible                                                                                                                                                                 |
-| `logs_to_keep`                                                               | 1000                           | Default number of logs to keep in ZooKeeper for Replicated database.                                                                                                                                                                                                                                                                  |
+| `logs_to_keep`                                                               | 1000                           | Default number of logs to keep in ZooKeeper for Replicated database. Bounded by the DDL log counter, which is 32-bit, so the value must not exceed `4294967295`; a larger value is rejected with `BAD_ARGUMENTS` in a user-supplied definition (`CREATE` or a full-syntax `ATTACH`) and clamped with a warning when existing metadata is replayed |
 | `default_replica_path`                                                       | `/clickhouse/databases/{uuid}` | The path to the database in ZooKeeper. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                        |
 | `default_replica_shard_name`                                                 | `{shard}`                      | The shard name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                |
 | `default_replica_name`                                                       | `{replica}`                    | The name of the replica in the database. Used during database creation if arguments are omitted.                                                                                                                                                                                                                                      |
