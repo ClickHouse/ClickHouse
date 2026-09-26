@@ -183,6 +183,11 @@ std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strat
 /// now, or by an older one that an `ALTER` or a settings-profile update has since replaced.
 UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata, const ContextPtr & refresh_context)
 {
+    /// The `additional_table_filters` entries keyed by a table the refresh never reads are left out.
+    std::optional<NameSet> additional_table_filters_matchable_names;
+    if (metadata.select.select_query)
+        additional_table_filters_matchable_names = collectNamesMatchableByAdditionalTableFilters(metadata.select.select_query, refresh_context);
+
     SipHash hash;
     if (metadata.select.select_query)
         metadata.select.select_query->updateTreeHash(hash, /*ignore_aliases=*/ false);
@@ -195,8 +200,12 @@ UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata, cons
     updateHashWithEffectiveSQLSecurity(hash, metadata);
     /// Only the settings that can affect the produced rows: per-attempt diagnostics such as
     /// `log_comment` and a definer profile's operational settings must not move the hash, or a
-    /// watermark written by one attempt would be ignored by the next one.
-    updateHashWithRowAffectingSettings(hash, refresh_context->getSettingsRef());
+    /// watermark written by one attempt would be ignored by the next one. Likewise an
+    /// `additional_table_filters` entry for a table the refresh does not read.
+    updateHashWithRowAffectingSettings(
+        hash,
+        refresh_context->getSettingsRef(),
+        additional_table_filters_matchable_names ? &*additional_table_filters_matchable_names : nullptr);
     return hash.get128();
 }
 

@@ -681,7 +681,12 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         /// a definer's read limits), so a settings-profile update must invalidate consistency users.
         /// Purely operational settings are left out: a definer's profile carries them without
         /// changing a single row.
-        updateHashWithRowAffectingSettings(hash, effective_context->getSettingsRef());
+        /// An `additional_table_filters` entry keyed by a table the view does not read is left out.
+        const auto additional_table_filters_matchable_names = collectNamesMatchableByAdditionalTableFilters(inner_query, effective_context);
+        updateHashWithRowAffectingSettings(
+            hash,
+            effective_context->getSettingsRef(),
+            additional_table_filters_matchable_names ? &*additional_table_filters_matchable_names : nullptr);
         IASTHash view_query_hash = inner_query->getTreeHash(/*ignore_aliases*/ false);
         hash.update(view_query_hash.low64);
         hash.update(view_query_hash.high64);

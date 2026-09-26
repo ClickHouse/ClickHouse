@@ -398,6 +398,11 @@ bool settingCanAffectQueryRows(std::string_view setting_name);
 /// deterministic order. Settings left at their default value are equal on every replica and every
 /// refresh attempt, so only the changed ones take part: a profile update that resets a setting back
 /// to its default drops it from the fold and still moves the hash.
-void updateHashWithRowAffectingSettings(SipHash & hash, const Settings & settings);
+/// When `additional_table_filters_matchable_names` is given (see
+/// `collectNamesMatchableByAdditionalTableFilters`), only the `additional_table_filters` entries whose
+/// key is in it are folded, as they are the only ones that can apply to the query; otherwise the
+/// whole map is.
+void updateHashWithRowAffectingSettings(
+    SipHash & hash, const Settings & settings, const NameSet * additional_table_filters_matchable_names = nullptr);
 
 }

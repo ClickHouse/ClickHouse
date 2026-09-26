@@ -15,6 +15,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTSetQuery.h>
@@ -31,6 +33,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
 }
 
@@ -1203,7 +1206,7 @@ bool settingCanAffectQueryRows(std::string_view setting_name)
     return true;
 }
 
-void updateHashWithRowAffectingSettings(SipHash & hash, const Settings & settings)
+void updateHashWithRowAffectingSettings(SipHash & hash, const Settings & settings, const NameSet * additional_table_filters_matchable_names)
 {
     /// `changedToFlatMap` returns the changed settings in declaration order, which shifts whenever a
     /// setting is added in the middle of `Settings.cpp`. A refresh watermark outlives an upgrade, so
@@ -1216,10 +1219,44 @@ void updateHashWithRowAffectingSettings(SipHash & hash, const Settings & setting
     const FlatStringMap changed = settings.changedToFlatMap(/* show_secrets */ true);
     std::vector<std::pair<std::string_view, std::string_view>> row_affecting;
     row_affecting.reserve(changed.size());
+    /// Keeps the canonical form of the matching `additional_table_filters` entries alive for the views below.
+    String matching_additional_table_filters;
     changed.forEach([&](std::string_view name, std::string_view value)
     {
-        if (settingCanAffectQueryRows(name))
-            row_affecting.emplace_back(name, value);
+        if (!settingCanAffectQueryRows(name))
+            return;
+
+        /// An `additional_table_filters` entry only takes effect on a table whose name or alias matches
+        /// its key, so with the set of names the query can reach, an entry keyed by any other table
+        /// cannot change a single row. Hashing the whole map instead would make an unrelated profile
+        /// edit, such as adding a filter for some other table to the definer, discard a
+        /// `REFRESH ... IF CHANGED APPEND` watermark and append a duplicate copy of unchanged rows.
+        if (additional_table_filters_matchable_names && name == "additional_table_filters")
+        {
+            std::vector<std::pair<String, String>> matching;
+            for (const auto & entry : settings[Setting::additional_table_filters].value)
+            {
+                const auto & tuple = entry.safeGet<Tuple>();
+                const auto & table = tuple.at(0).safeGet<String>();
+                if (additional_table_filters_matchable_names->contains(table))
+                    matching.emplace_back(table, tuple.at(1).safeGet<String>());
+            }
+            /// No entry applies: the same as not having the setting at all.
+            if (matching.empty())
+                return;
+            std::sort(matching.begin(), matching.end());
+            WriteBufferFromString out(matching_additional_table_filters);
+            for (const auto & [table, filter] : matching)
+            {
+                writeStringBinary(table, out);
+                writeStringBinary(filter, out);
+            }
+            out.finalize();
+            row_affecting.emplace_back(name, matching_additional_table_filters);
+            return;
+        }
+
+        row_affecting.emplace_back(name, value);
     });
     /// The views point into `changed.data`, which outlives this loop.
     std::sort(row_affecting.begin(), row_affecting.end());

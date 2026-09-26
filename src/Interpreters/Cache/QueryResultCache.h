@@ -3,6 +3,7 @@
 #include <Common/CacheBase.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Cache/QueryResultCacheUsage.h>
+#include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IASTHash.h>
 #include <Processors/Chunk.h>
@@ -35,6 +36,14 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_con
 /// Returns nullopt if consistency cannot be guaranteed (the query uses a table function, references a table
 /// that cannot be resolved, or a referenced table cannot report whether its data changed).
 std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context);
+
+/// Collects every name an `additional_table_filters` key can match while `ast` runs under `context`: the
+/// name and the qualified name of each table it reads, directly, through views and materialized views,
+/// or in the subqueries of the filters themselves, and the aliases of the table expressions. An entry
+/// whose key is not in the set cannot apply to the query. Returns nullopt if the set cannot be
+/// enumerated (a table function, a table that cannot be resolved, a storage such as `Merge` or
+/// `Distributed` that reads tables not named in the query), in which case every entry may apply.
+std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast, ContextPtr context);
 
 /// Computes the modification hash of a single table, folded together with the table identity (database,
 /// name and UUID) and gated by the current user's `SELECT` access on it. This is the per-table building

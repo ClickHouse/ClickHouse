@@ -12,6 +12,10 @@
 #include <Access/Common/AccessType.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMemory.h>
+#include <Storages/StorageView.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -230,6 +234,8 @@ struct CollectReferencedTablesMatcher
     struct Data
     {
         std::vector<StorageID> table_ids;
+        /// The aliases of all table expressions; only `collectNamesMatchableByAdditionalTableFilters` needs them.
+        NameSet table_expression_aliases;
         bool cannot_verify = false;
     };
 
@@ -252,6 +258,9 @@ struct CollectReferencedTablesMatcher
         {
             if (table_expression->table_function)
                 data.cannot_verify = true;
+            for (const auto & child : {table_expression->database_and_table_name, table_expression->subquery})
+                if (child && !child->tryGetAlias().empty())
+                    data.table_expression_aliases.insert(child->tryGetAlias());
         }
         else if (const auto * table_identifier = node->as<ASTTableIdentifier>())
         {
@@ -465,7 +474,7 @@ static std::optional<UInt128> computeReferencedTablesModificationHashImpl(ASTPtr
 /// subqueries (e.g. `x IN (SELECT x FROM t2)`) whose tables never appear in the query AST, so the walk
 /// has to see them too. Returns false when a filter cannot be parsed (the query itself will fail on it
 /// later with the same error) - the caller then fails closed.
-static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filter_asts)
+static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filter_asts, const NameSet * additional_table_filters_matchable_names = nullptr)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -484,12 +493,15 @@ static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filte
                 settings[Setting::max_parser_backtracks]));
         };
 
-        /// All entries are collected, not only those matching a table of the current query: matching
-        /// (by name or alias, possibly of a table inside a view this query reads through) would need
-        /// name resolution, and hashing a superset is conservative - it can only produce extra cache
-        /// misses, never a stale hit.
+        /// Without the set of names the query can reach, all entries are collected: hashing a superset
+        /// is conservative - it can only produce extra cache misses, never a stale hit.
         for (const auto & entry : settings[Setting::additional_table_filters].value)
-            parse_filter(entry.safeGet<Tuple>().at(1).safeGet<String>());
+        {
+            const auto & tuple = entry.safeGet<Tuple>();
+            if (additional_table_filters_matchable_names && !additional_table_filters_matchable_names->contains(tuple.at(0).safeGet<String>()))
+                continue;
+            parse_filter(tuple.at(1).safeGet<String>());
+        }
 
         const String & additional_result_filter = settings[Setting::additional_result_filter];
         if (!additional_result_filter.empty())
@@ -503,6 +515,97 @@ static bool parseFilterASTsInjectedFromSettings(ContextPtr context, ASTs & filte
     }
 
     return true;
+}
+
+static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const ContextPtr & context, NameSet & names, size_t depth);
+
+/// Adds the names an `additional_table_filters` key can match for `table_id` - the table name, which
+/// matches when the table is in the current database, and the qualified name - and recurses into the
+/// tables the storage reads itself. Returns false when that set cannot be enumerated.
+static bool collectTableNamesMatchableByAdditionalTableFilters(const StorageID & table_id, const ContextPtr & context, NameSet & names, size_t depth)
+{
+    StorageID resolved_id = StorageID::createEmpty();
+    try
+    {
+        resolved_id = context->resolveStorageID(table_id);
+    }
+    catch (...)
+    {
+        /// Ok to ignore: an unresolved table leaves the set unknown, and the caller hashes all entries.
+        return false;
+    }
+
+    auto storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+    if (!storage)
+        return false;
+
+    const auto storage_id = storage->getStorageID();
+    names.insert(storage_id.getTableName());
+    names.insert(storage_id.getFullNameNotQuoted());
+
+    /// The filters propagate into everything the read runs with the same settings: the query behind a
+    /// view, the target of a materialized view.
+    if (typeid_cast<const StorageView *>(storage.get()))
+    {
+        auto metadata = storage->getInMemoryMetadataPtr(context, false);
+        const auto & inner_query = metadata->getSelectQuery().inner_query;
+        return inner_query && collectNamesMatchableByAdditionalTableFiltersImpl(inner_query->clone(), context, names, depth + 1);
+    }
+    if (const auto * materialized_view = typeid_cast<const StorageMaterializedView *>(storage.get()))
+        return collectTableNamesMatchableByAdditionalTableFilters(materialized_view->getTargetTableId(), context, names, depth + 1);
+
+    /// Storages known to read no other table. Anything else (`Merge`, `Distributed`, `Buffer`, ...) may
+    /// read tables that are not named here, locally or on another server, so the set is unknown.
+    return dynamic_cast<const MergeTreeData *>(storage.get()) || typeid_cast<const StorageMemory *>(storage.get());
+}
+
+static bool collectNamesMatchableByAdditionalTableFiltersImpl(ASTPtr ast, const ContextPtr & context, NameSet & names, size_t depth)
+{
+    static constexpr size_t max_view_nesting_depth = 32;
+    if (depth > max_view_nesting_depth)
+        return false;
+
+    /// The same CTE expansion as `computeReferencedTablesModificationHashImpl`, so that a CTE name is
+    /// not resolved as a table.
+    try
+    {
+        ApplyWithSubqueryVisitor::visit(ast);
+    }
+    catch (...)
+    {
+        /// Ok to ignore: the set stays unknown and the caller hashes all entries.
+        return false;
+    }
+
+    CollectReferencedTablesMatcher::Data finder_data;
+    CollectReferencedTablesVisitor(finder_data).visit(ast);
+    if (finder_data.cannot_verify)
+        return false;
+
+    names.insert(finder_data.table_expression_aliases.begin(), finder_data.table_expression_aliases.end());
+    for (const auto & table_id : finder_data.table_ids)
+        if (!collectTableNamesMatchableByAdditionalTableFilters(table_id, context, names, depth))
+            return false;
+    return true;
+}
+
+std::optional<NameSet> collectNamesMatchableByAdditionalTableFilters(ASTPtr ast, ContextPtr context)
+{
+    const Settings & settings = context->getSettingsRef();
+    if (settings[Setting::additional_table_filters].value.empty())
+        return NameSet{};
+
+    /// The filters themselves are planned with the same settings, so a table read by a filter's subquery
+    /// can match an entry as well. All filters are walked, which can only make the set larger.
+    ASTs roots{ast};
+    if (!parseFilterASTsInjectedFromSettings(context, roots))
+        return {};
+
+    NameSet names;
+    for (const auto & root : roots)
+        if (!collectNamesMatchableByAdditionalTableFiltersImpl(root->clone(), context, names, /*depth=*/ 0))
+            return {};
+    return names;
 }
 
 std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, ContextPtr context)
@@ -526,8 +629,12 @@ std::optional<UInt128> computeQueryReferencedTablesModificationHash(ASTPtr ast, 
     if (context->getSettingsRef()[Setting::implicit_transaction])
         return {};
 
+    /// Only the `additional_table_filters` entries that can apply to a table the query reads take part,
+    /// so that an entry for an unrelated table does not move the hash.
+    const auto matchable_names = collectNamesMatchableByAdditionalTableFilters(ast, context);
+
     ASTs filter_asts;
-    if (!parseFilterASTsInjectedFromSettings(context, filter_asts))
+    if (!parseFilterASTsInjectedFromSettings(context, filter_asts, matchable_names ? &*matchable_names : nullptr))
         return {};
 
     /// The CTE expansion inside mutates the AST, so work on a copy.
