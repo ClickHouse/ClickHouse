@@ -1,0 +1,41 @@
+basic mode
+2	UInt8
+1
+nulls and empty input
+1	Nullable(UInt8)
+\N	Nullable(UInt8)
+0	UInt64
+\N	Nullable(UInt64)
+filtered input
+2
+0
+partial states
+1
+b
+distinct combinator
+1
+generic values
+b	String
+[2]	Array(UInt8)
+(2,'b')	Tuple(UInt8, String)
+String
+floating point zero
+1
+1
+other numeric types
+2.5	Decimal(18, 2)
+1970-01-01	Date
+1
+1
+persisted states
+1	2	2
+1	2	2
+array combinator
+2
+window aggregation
+1	1	2
+1	2	2
+1	2	2
+2	3	4
+2	4	4
+2	4	4
