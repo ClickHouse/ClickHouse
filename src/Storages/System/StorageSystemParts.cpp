@@ -160,6 +160,7 @@ void StorageSystemParts::processNextStorage(
 
     all_parts = info.getParts(all_parts_state, has_state_column, query_status);
 
+    PartitionKeySamples partition_key_samples;
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
         if (query_status && !query_status->checkTimeLimit())
@@ -188,7 +189,7 @@ void StorageSystemParts::processNextStorage(
         size_t src_index = 0;
         size_t res_index = 0;
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
+            columns[res_index++]->insert(part->partition.serializeToString(partition_key_samples.get(*part)));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->name);
         if (columns_mask[src_index++])

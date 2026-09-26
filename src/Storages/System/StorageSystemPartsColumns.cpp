@@ -133,6 +133,7 @@ void StorageSystemPartsColumns::processNextStorage(
     MergeTreeData::DataPartsVector all_parts;
 
     all_parts = info.getParts(all_parts_state, has_state_column, query_status);
+    PartitionKeySamples partition_key_samples;
 
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
@@ -142,7 +143,6 @@ void StorageSystemPartsColumns::processNextStorage(
         slowDownSystemPartsEnumeration(info.table);
 
         const auto & part = all_parts[part_number];
-        const auto part_metadata_snapshot = part->getMetadataSnapshot();
         auto part_state = all_parts_state[part_number];
         auto columns_size = part->getTotalColumnsSize();
 
@@ -167,6 +167,12 @@ void StorageSystemPartsColumns::processNextStorage(
 
         using State = MergeTreeDataPartState;
 
+        /// The rendered text is identical for every column of a part; resolving the key per column
+        /// re-enters the uncached patch branch of PartitionKeySamples::get once per column.
+        String partition_str;
+        if (columns_mask[0])
+            partition_str = part->partition.serializeToString(partition_key_samples.get(*part));
+
         bool time_limit_exceeded = false;
         size_t column_position = 0;
         for (const auto & column : part->getColumns())
@@ -183,7 +189,7 @@ void StorageSystemPartsColumns::processNextStorage(
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->partition.serializeToString(part_metadata_snapshot));
+                columns[res_index++]->insert(partition_str);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])

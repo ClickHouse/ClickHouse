@@ -68,7 +68,7 @@ MergeListElement::MergeListElement(const StorageID & table_id_, FutureMergedMuta
         is_mutation = (result_part_info.level == future_part->parts[0]->info.level) && !is_fake_projection_part;
 
         const auto & part = future_part->parts[0];
-        partition = part->partition.serializeToString(part->getMetadataSnapshot());
+        partition = part->partition.serializeToString(*part);
     }
 
     if (!is_fake_projection_part && is_mutation && normal_parts_count != 1)
