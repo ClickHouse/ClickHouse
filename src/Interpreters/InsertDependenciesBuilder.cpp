@@ -1323,6 +1323,10 @@ std::pair<ContextPtr, ContextPtr> InsertDependenciesBuilder::createSelectInsertC
 
     auto insert_context = Context::createCopy(select_context);
     insert_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
+    if (dynamic_cast<StorageMaterializedView *>(storages.at(current).get()))
+        insert_context->setInsertSource(InsertSource::MaterializedView);
+    else
+        insert_context->setInsertSource(std::nullopt);
     if (!deduplicate_blocks_in_dependent_materialized_views)
         insert_context->setSetting("insert_deduplicate", Field{false});
 
@@ -1662,7 +1666,11 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
     }
 
 
-    auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota(), insert_context->getNormalizedQueryHash());
+    auto counting = std::make_shared<CountingTransform>(
+        output_header,
+        insert_context->getInsertSource(),
+        insert_context->getQuota(),
+        insert_context->getNormalizedQueryHash());
     counting->setProcessListElement(insert_context->getProcessListElement());
     counting->setProgressCallback(insert_context->getProgressCallback());
     counting->setRuntimeData(thread_groups.at(view_id));
