@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Functions/IFunction.h>
+#include <DataTypes/IDataType.h>
+#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -46,6 +48,25 @@ public:
             : function(std::move(function_)), arguments(std::move(arguments_)), result_type(std::move(result_type_)) {}
 
     String getName() const override { return function->getName(); }
+
+    bool isEqual(const IFunctionBase & rhs) const override
+    {
+        const auto * other = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&rhs);
+        if (!other)
+            return false;
+        if (function.get() != other->function.get())
+            return false;
+        if (!result_type->equals(*other->result_type))
+            return false;
+        if (arguments.size() != other->arguments.size())
+            return false;
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (!arguments[i]->equals(*other->arguments[i]))
+                return false;
+        }
+        return true;
+    }
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getResultType() const override { return result_type; }
