@@ -112,3 +112,32 @@ SELECT materialize(1) = 1 OR materialize(1) = NULL SETTINGS optimize_min_equalit
 
 DROP TABLE t_dt;
 DROP TABLE t_var;
+
+-- A Variant expression whose alternative is an Array or a Tuple: `in` reads its constant tuple as a
+-- list of members only when the nesting depths differ by one, and a Variant is not descended, so the
+-- merged form cannot be built at all while one comparison and a raised threshold both answer.
+SET use_variant_default_implementation_for_comparisons = 1;
+SET optimize_and_compare_chain = 1;
+SET transform_null_in = 0;
+
+SELECT count() FROM (SELECT CAST([toInt64(number)], 'Variant(Array(Int64))') AS v FROM numbers(10))
+WHERE v = [toInt64(1)] OR v = [toInt64(2)] OR v = [toInt64(3)];
+SELECT count() FROM (SELECT CAST([toInt64(number)], 'Variant(Array(Int64))') AS v FROM numbers(10))
+WHERE v = [toInt64(1)] OR v = [toInt64(2)] OR v = [toInt64(3)]
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+SELECT count() FROM (SELECT CAST(tuple(toInt64(number)), 'Variant(Tuple(Int64))') AS v FROM numbers(10))
+WHERE v = tuple(toInt64(1)) OR v = tuple(toInt64(2)) OR v = tuple(toInt64(3));
+-- ... and the rewrite is the thing being skipped there:
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT CAST([toInt64(number)], 'Variant(Array(Int64))') AS v FROM numbers(10)) WHERE v = [toInt64(1)] OR v = [toInt64(2)] OR v = [toInt64(3)]) WHERE explain ILIKE '%function_name: in%';
+-- ... while the same Variant type still folds when the constants sit at the expression's own depth,
+-- so the guard is not a blanket exclusion of the type:
+SELECT count() FROM (SELECT CAST(toInt64(number), 'Variant(Int64, Array(Int64))') AS v FROM numbers(10))
+WHERE v = toInt64(1) OR v = toInt64(2) OR v = toInt64(3);
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT CAST(toInt64(number), 'Variant(Int64, Array(Int64))') AS v FROM numbers(10)) WHERE v = toInt64(1) OR v = toInt64(2) OR v = toInt64(3)) WHERE explain ILIKE '%function_name: in%';
+-- ... and a plain Array column still folds, so it is the Variant wrapper and not the array element
+-- pair that stops it:
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT [toInt64(number)] AS v FROM numbers(10)) WHERE v = [toInt64(1)] OR v = [toInt64(2)] OR v = [toInt64(3)]) WHERE explain ILIKE '%function_name: in%';
+-- ... but every literal must sit at that depth, not just the first one the set builder looks at, so a
+-- mixed-depth chain is declined and raises what the unmerged chain already raises:
+SELECT count() FROM (SELECT CAST(toInt64(number), 'Variant(Int64, Array(Int64))') AS v FROM numbers(10))
+WHERE v = toInt64(1) OR v = [toInt64(2)] OR v = toInt64(3); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

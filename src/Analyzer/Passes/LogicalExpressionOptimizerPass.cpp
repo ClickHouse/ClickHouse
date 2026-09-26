@@ -5,6 +5,7 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/SetUtils.h>
 #include <Analyzer/Utils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
@@ -1100,6 +1101,7 @@ static void convertNotEqualsChainToNotIn(
         DataTypes tuple_element_types;
         tuple_element_types.reserve(not_equals_entries.size());
         bool all_constants_convert_losslessly = true;
+        bool all_constants_are_set_members = true;
         for (auto & [idx, not_equals] : not_equals_entries)
         {
             min_index = std::min(min_index, idx);
@@ -1121,9 +1123,14 @@ static void convertNotEqualsChainToNotIn(
             /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
             if (!tryConvertToColumnType(literal, expr_type))
                 all_constants_convert_losslessly = false;
+
+            /// `notIn` reads the constant tuple as its list of members only when the two nesting
+            /// depths differ by one, and a `Variant` is not descended: `Variant(Array(...))` is 0.
+            if (!constantIsReadAsSingleSetMember(expression.node->getResultType(), literal->getResultType()))
+                all_constants_are_set_members = false;
         }
 
-        if (!all_constants_convert_losslessly)
+        if (!all_constants_convert_losslessly || !all_constants_are_set_members)
         {
             std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
             continue;
@@ -2602,6 +2609,7 @@ private:
 
             bool is_any_nullable = false;
             bool all_constants_convert_losslessly = true;
+            bool all_constants_are_set_members = true;
             Tuple args;
             args.reserve(equals_functions.size());
             DataTypes tuple_element_types;
@@ -2629,9 +2637,14 @@ private:
                 /// A NULL constant is excluded above, so it never reaches this check.
                 if (!tryConvertToColumnType(literal, expr_type))
                     all_constants_convert_losslessly = false;
+
+                /// `in` reads the constant tuple as its list of members only when the two nesting
+                /// depths differ by one, and a `Variant` is not descended: `Variant(Array(...))` is 0.
+                if (!constantIsReadAsSingleSetMember(expression.node->getResultType(), literal->getResultType()))
+                    all_constants_are_set_members = false;
             }
 
-            if (!all_constants_convert_losslessly)
+            if (!all_constants_convert_losslessly || !all_constants_are_set_members)
             {
                 std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
                 continue;
