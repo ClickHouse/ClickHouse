@@ -1,0 +1,156 @@
+-- A join step that already has a condition of its own must also join on the equalities implied
+-- through other tables (a = b AND b = c implies a = c) between its two sides, whatever the join
+-- order algorithm. The join orders come from row count hints and from a relation without a row estimate.
+-- https://github.com/ClickHouse/ClickHouse/issues/122396
+
+SET explain_query_plan_default = 'pretty';
+SET enable_join_transitive_predicates = 1;
+SET query_plan_merge_filter_into_join_condition = 1;
+SET query_plan_optimize_join_order_limit = 10;
+SET query_plan_optimize_join_order_randomize = 0;
+SET use_hash_table_stats_for_join_reordering = 0;
+SET enable_parallel_replicas = 0;
+-- Q02: without the outer join conversion `dpsize` alone finds no join order, and the join limits of
+-- the CI profile keep its correlated subquery out of the reordered joins.
+SET query_plan_convert_outer_join_to_inner_join = 1;
+SET max_rows_in_join = 0, max_bytes_in_join = 0;
+
+{% set algorithms = ['dpsize', 'dpsize,greedy', 'dphyp,greedy', 'dpsub,greedy', 'greedy'] -%}
+
+DROP TABLE IF EXISTS t_r;
+DROP TABLE IF EXISTS t_p;
+DROP TABLE IF EXISTS t_s;
+
+-- `t_r` has neither a hint nor statistics, and its filter on `r_flag` cannot use the primary key,
+-- so it has no row estimate. Each chain `r_x = p_x AND p_x = s_x` below spans the three tables.
+CREATE TABLE t_r (r_key UInt32, r_min UInt32, r_flag UInt8, r_text String, r_num Nullable(UInt32), r_name LowCardinality(String))
+    ENGINE = MergeTree ORDER BY r_key SETTINGS auto_statistics_types = '';
+CREATE TABLE t_p (p_key UInt32, p_text FixedString(5), p_num UInt32, p_name String)
+    ENGINE = MergeTree ORDER BY p_key SETTINGS auto_statistics_types = '';
+CREATE TABLE t_s (s_key UInt32, s_cost UInt32, s_text String, s_num UInt32, s_name String)
+    ENGINE = MergeTree ORDER BY s_key SETTINGS auto_statistics_types = '';
+
+INSERT INTO t_r SELECT number, number % 5, number % 2, toString(number), number, toString(number) FROM numbers(200);
+INSERT INTO t_p SELECT number, toString(number), number, toString(number) FROM numbers(200);
+INSERT INTO t_s SELECT intDiv(number, 4), number % 5, toString(intDiv(number, 4)), intDiv(number, 4), toString(intDiv(number, 4)) FROM numbers(800);
+
+SET param__internal_join_table_stat_hints = '{
+    "t_p": { "cardinality": 1000,    "distinct_keys": { "p_key": 1000, "p_text": 1000, "p_num": 1000, "p_name": 1000 } },
+    "t_s": { "cardinality": 4000000, "distinct_keys": { "s_key": 1000000, "s_cost": 100000, "s_text": 1000000, "s_num": 1000000, "s_name": 1000000 } }
+}';
+
+-- Steps joining on `s_cost`, and how many of them do not also join on a key column: expect 1 and 0.
+SELECT '-- key equality next to a direct condition';
+{% for algorithm in algorithms -%}
+SELECT '{{ algorithm }}', countIf(explain ILIKE '%Join conditions:%s_cost%'), countIf(explain ILIKE '%Join conditions:%s_cost%' AND explain NOT ILIKE '%key%')
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_r, t_p, t_s WHERE r_key = p_key AND p_key = s_key AND r_min = s_cost AND r_flag = 1
+    SETTINGS query_plan_optimize_join_order_algorithm = '{{ algorithm }}');
+{% endfor %}
+SELECT '-- result';
+{% for algorithm in algorithms -%}
+SELECT '{{ algorithm }}', count(), sum(r_key) FROM t_r, t_p, t_s WHERE r_key = p_key AND p_key = s_key AND r_min = s_cost AND r_flag = 1
+    SETTINGS query_plan_optimize_join_order_algorithm = '{{ algorithm }}';
+{% endfor -%}
+SELECT 'without transitive predicates', count(), sum(r_key) FROM t_r, t_p, t_s WHERE r_key = p_key AND p_key = s_key AND r_min = s_cost AND r_flag = 1
+    SETTINGS enable_join_transitive_predicates = 0;
+
+-- Only a chain of one type up to Nullable and LowCardinality gets the equality, as equality between
+-- String and FixedString is not transitive: the step joining on `s_cost` also joins the Nullable and
+-- the LowCardinality chains (expect 1 and 1), and no step joins `r_text` with `s_text` (expect 1 and 0).
+SELECT '-- column types';
+SELECT 'String, FixedString', countIf(explain ILIKE '%Join conditions:%s_cost%'), countIf(explain ILIKE '%r_text = s_text%' OR explain ILIKE '%s_text = r_text%')
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_r, t_p, t_s WHERE r_text = p_text AND p_text = s_text AND r_min = s_cost AND r_flag = 1
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize');
+SELECT 'Nullable(UInt32), UInt32', countIf(explain ILIKE '%Join conditions:%s_cost%'), countIf(explain ILIKE '%Join conditions:%s_cost%' AND explain ILIKE '%num%')
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_r, t_p, t_s WHERE r_num = p_num AND p_num = s_num AND r_min = s_cost AND r_flag = 1
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize');
+SELECT 'LowCardinality(String), String', countIf(explain ILIKE '%Join conditions:%s_cost%'), countIf(explain ILIKE '%Join conditions:%s_cost%' AND explain ILIKE '%name%')
+FROM (EXPLAIN actions = 1 SELECT count() FROM t_r, t_p, t_s WHERE r_name = p_name AND p_name = s_name AND r_min = s_cost AND r_flag = 1
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize');
+
+DROP TABLE t_r;
+DROP TABLE t_p;
+DROP TABLE t_s;
+
+-- A `Join` engine table is looked up by its own key only, so its step gets no other equality.
+SELECT '-- Join engine';
+DROP TABLE IF EXISTS t_a;
+DROP TABLE IF EXISTS t_b;
+DROP TABLE IF EXISTS t_join;
+CREATE TABLE t_a (k UInt32, x UInt32) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE t_b (v UInt32, w UInt32) ENGINE = MergeTree ORDER BY v;
+CREATE TABLE t_join (k UInt32, v UInt32) ENGINE = Join(ALL, INNER, k);
+INSERT INTO t_a VALUES (1, 10), (2, 20);
+INSERT INTO t_b VALUES (10, 1), (20, 2), (30, 3);
+INSERT INTO t_join VALUES (1, 10), (2, 99);
+SELECT t_a.k, t_b.w FROM t_a JOIN t_join ON t_a.k = t_join.k JOIN t_b ON t_b.v = t_join.v AND t_b.v = t_a.x ORDER BY t_a.k
+    SETTINGS query_plan_optimize_join_order_algorithm = 'greedy';
+DROP TABLE t_a;
+DROP TABLE t_b;
+DROP TABLE t_join;
+
+-- TPC-H Q02 with SF100 row count hints: its correlated subquery becomes a relation without a row
+-- estimate, joined on the minimal supply cost, and that step must also join on the part key.
+DROP TABLE IF EXISTS region;
+DROP TABLE IF EXISTS nation;
+DROP TABLE IF EXISTS part;
+DROP TABLE IF EXISTS supplier;
+DROP TABLE IF EXISTS partsupp;
+CREATE TABLE region (r_regionkey Int32, r_name String, r_comment String)
+    ENGINE = MergeTree ORDER BY r_regionkey SETTINGS auto_statistics_types = '';
+CREATE TABLE nation (n_nationkey Int32, n_name String, n_regionkey Int32, n_comment String)
+    ENGINE = MergeTree ORDER BY n_nationkey SETTINGS auto_statistics_types = '';
+CREATE TABLE part (p_partkey Int32, p_name String, p_mfgr String, p_brand String, p_type String, p_size Int32, p_container String, p_retailprice Decimal(15, 2), p_comment String)
+    ENGINE = MergeTree ORDER BY p_partkey SETTINGS auto_statistics_types = '';
+CREATE TABLE supplier (s_suppkey Int32, s_name String, s_address String, s_nationkey Int32, s_phone String, s_acctbal Decimal(15, 2), s_comment String)
+    ENGINE = MergeTree ORDER BY s_suppkey SETTINGS auto_statistics_types = '';
+CREATE TABLE partsupp (ps_partkey Int32, ps_suppkey Int32, ps_availqty Int32, ps_supplycost Decimal(15, 2), ps_comment String)
+    ENGINE = MergeTree ORDER BY (ps_partkey, ps_suppkey) SETTINGS auto_statistics_types = '';
+
+INSERT INTO region VALUES (0, 'AFRICA', ''), (1, 'AMERICA', ''), (2, 'ASIA', ''), (3, 'EUROPE', ''), (4, 'MIDDLE EAST', '');
+INSERT INTO nation SELECT number, concat('N', toString(number)), number % 5, '' FROM numbers(25);
+INSERT INTO supplier SELECT number, concat('S', toString(number)), 'address', number % 25, 'phone', number, '' FROM numbers(50);
+INSERT INTO part SELECT number, 'name', 'M', 'B', if(number % 3 = 0, 'SMALL TIN', 'LARGE BRASS'), if(number % 2 = 0, 15, 7), 'C', 1, '' FROM numbers(100);
+-- Four suppliers per part with supply costs 1 to 3, so several suppliers can share the minimal cost.
+INSERT INTO partsupp SELECT intDiv(number, 4), (number * 7) % 50, 1, number % 3 + 1, '' FROM numbers(400);
+
+SET param__internal_join_table_stat_hints = '{
+    "region":   { "cardinality": 1,        "avg_row_bytes": 68, "distinct_keys": { "r_regionkey": 1,       "r_name": 1 } },
+    "nation":   { "cardinality": 25,       "avg_row_bytes": 8,  "distinct_keys": { "n_nationkey": 25,      "n_regionkey": 5, "n_name": 25 } },
+    "supplier": { "cardinality": 1000000,  "avg_row_bytes": 8,  "distinct_keys": { "s_suppkey": 1000000,   "s_nationkey": 25, "s_acctbal": 657087 } },
+    "part":     { "cardinality": 137000,   "avg_row_bytes": 68, "distinct_keys": { "p_partkey": 137000,    "p_type": 30, "p_size": 1, "p_brand": 25 } },
+    "partsupp": { "cardinality": 80000000, "avg_row_bytes": 13, "distinct_keys": { "ps_partkey": 20000000, "ps_suppkey": 1000000, "ps_supplycost": 99865 } }
+}';
+
+{% set q02 -%}
+SELECT s_acctbal, s_name, n_name, p_partkey, p_mfgr, s_address, s_phone, s_comment
+FROM part, supplier, partsupp, nation, region
+WHERE (p_partkey = ps_partkey) AND (s_suppkey = ps_suppkey) AND (p_size = 15) AND (p_type LIKE '%BRASS')
+    AND (s_nationkey = n_nationkey) AND (n_regionkey = r_regionkey) AND (r_name = 'EUROPE')
+    AND (ps_supplycost = (
+        SELECT min(ps_supplycost) FROM partsupp, supplier, nation, region
+        WHERE (p_partkey = ps_partkey) AND (s_suppkey = ps_suppkey) AND (s_nationkey = n_nationkey)
+            AND (n_regionkey = r_regionkey) AND (r_name = 'EUROPE')))
+ORDER BY s_acctbal DESC, n_name, s_name, p_partkey LIMIT 100
+{%- endset %}
+
+-- Steps joining on the minimal supply cost, and how many of them do not also join on the part key: expect 1 and 0.
+SELECT '-- TPC-H Q02';
+{% for algorithm in algorithms -%}
+SELECT '{{ algorithm }}', countIf(explain ILIKE '%Join conditions:%min(ps_supplycost)%'), countIf(explain ILIKE '%Join conditions:%min(ps_supplycost)%' AND explain NOT ILIKE '%partkey%')
+FROM (EXPLAIN actions = 1 {{ q02 }}
+SETTINGS query_plan_optimize_join_order_algorithm = '{{ algorithm }}');
+{% endfor %}
+SELECT '-- TPC-H Q02 result';
+{% for algorithm in algorithms -%}
+SELECT '{{ algorithm }}', count(), sum(cityHash64(s_name, p_partkey)) FROM ({{ q02 }})
+SETTINGS query_plan_optimize_join_order_algorithm = '{{ algorithm }}';
+{% endfor -%}
+SELECT 'without transitive predicates', count(), sum(cityHash64(s_name, p_partkey)) FROM ({{ q02 }})
+SETTINGS enable_join_transitive_predicates = 0;
+
+DROP TABLE region;
+DROP TABLE nation;
+DROP TABLE part;
+DROP TABLE supplier;
+DROP TABLE partsupp;
