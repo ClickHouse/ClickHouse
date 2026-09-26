@@ -5,7 +5,7 @@
 -- sidecars (BACKUP omits them; CHECK flags them as unexpected files). Real
 -- sidecar-aware support is deferred to a follow-up PR. All keys distinct.
 
-SET allow_experimental_unique_key = 1;
+SET enable_unique_key = 1;
 SET async_insert = 0;
 
 DROP TABLE IF EXISTS uk_guard;
