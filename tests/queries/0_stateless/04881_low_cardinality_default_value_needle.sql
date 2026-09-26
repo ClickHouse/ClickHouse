@@ -8,8 +8,8 @@ SELECT indexOf(materialize(CAST(['a', ''], 'Array(LowCardinality(String))')), ''
 SELECT countEqual(materialize(CAST(['', 'a', ''], 'Array(LowCardinality(String))')), '') AS lc, countEqual(materialize(CAST(['', 'a', ''], 'Array(String)')), '') AS oracle;
 SELECT has(materialize(CAST([0, 5], 'Array(LowCardinality(UInt8))')), 0) AS lc, has(materialize(CAST([0, 5], 'Array(UInt8)')), 0) AS oracle;
 SELECT has(materialize(CAST([CAST('', 'FixedString(3)'), CAST('abc', 'FixedString(3)')], 'Array(LowCardinality(FixedString(3)))')), CAST('', 'FixedString(3)')) AS lc, has(materialize(CAST([CAST('', 'FixedString(3)'), CAST('abc', 'FixedString(3)')], 'Array(FixedString(3))')), CAST('', 'FixedString(3)')) AS oracle;
--- An Enum needle compares to a FixedString element as a string, where the element type's own padding
--- is not a difference.
+-- An Enum needle compares to a FixedString element as a string, and the element keeps its padding in
+-- that conversion, so the empty name does not match the all-zero element.
 SELECT has(materialize(CAST([CAST('', 'FixedString(3)'), CAST('abc', 'FixedString(3)')], 'Array(LowCardinality(FixedString(3)))')), CAST('', 'Enum8('''' = 0, ''o'' = 1)')) AS lc, has(materialize(CAST([CAST('', 'FixedString(3)'), CAST('abc', 'FixedString(3)')], 'Array(FixedString(3))')), CAST('', 'Enum8('''' = 0, ''o'' = 1)')) AS oracle;
 
 -- The Map key and value dictionaries are the second call site.
@@ -28,8 +28,9 @@ SELECT has(materialize(CAST([0, 5], 'Array(LowCardinality(UInt8))')), toUInt64(0
 -- so representability is decided by comparing the needle against its own cast image.
 SELECT has(materialize(CAST([toIPv4('0.0.0.0'), toIPv4('1.2.3.4')], 'Array(LowCardinality(IPv4))')), toUInt32(0)) AS lc, has(materialize(CAST([toIPv4('0.0.0.0'), toIPv4('1.2.3.4')], 'Array(IPv4)')), toUInt32(0)) AS oracle;
 
--- A FixedString needle is padded to its own width and equality ignores that padding.
-SELECT has(materialize(CAST(['', 'xy'], 'Array(LowCardinality(String))')), CAST('', 'FixedString(4)')) AS lc, length(arrayFilter(x -> x = CAST('', 'FixedString(4)'), materialize(CAST(['', 'xy'], 'Array(String)')))) AS oracle;
+-- A FixedString needle is padded to its own width and keeps that padding in the conversion to the
+-- element type, as over a plain `Array(String)`.
+SELECT has(materialize(CAST(['', 'xy'], 'Array(LowCardinality(String))')), CAST('', 'FixedString(4)')) AS lc, has(materialize(CAST(['', 'xy'], 'Array(String)')), CAST('', 'FixedString(4)')) AS oracle;
 
 -- -0.0 and 0.0 are equal but a text format stores them apart, so either zero as a needle must match
 -- either spelling, and a count must see both. stored_bits is asserted in the same row: if it ever
