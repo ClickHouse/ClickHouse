@@ -7,7 +7,6 @@
 #if USE_AVRO
 
 #include <cstddef>
-#include <limits>
 #include <memory>
 #include <optional>
 #include <Columns/ColumnConst.h>
@@ -72,6 +71,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AlterDropPartitionExecutor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
@@ -82,6 +82,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/PartitionCommands.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <Common/ProfileEvents.h>
@@ -222,7 +223,8 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     };
 }
 
-std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata) const
+std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
+    const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
@@ -752,6 +754,61 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
                 ErrorCodes::NOT_IMPLEMENTED,
                 "Modifying column '{}' without changing its type is not supported by Iceberg storage", command.column_name);
     }
+}
+
+void IcebergMetadata::checkAlterPartitionIsPossible(const PartitionCommands & commands) const
+{
+    checkTableRootIsQueriedPath("ALTER PARTITION");
+
+    for (const auto & command : commands)
+    {
+        if (command.type != PartitionCommand::Type::DROP_PARTITION)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition of type '{}' is not supported by Iceberg storage", command.type);
+    }
+}
+
+Pipe IcebergMetadata::alterPartition(
+    const PartitionCommands & commands,
+    ContextPtr context,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    StorageID /*storage_id*/)
+{
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Alter iceberg is experimental. To allow its usage, enable setting allow_insert_into_iceberg");
+    }
+    if (catalog)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP PARTITION is not supported for catalog-backed Iceberg tables");
+    if (commands.size() != 1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "ALTER TABLE ... on Iceberg expects exactly one partition command, got {}",
+            commands.size());
+
+    const auto & command = commands.front();
+    chassert(command.type == PartitionCommand::Type::DROP_PARTITION);
+    if (command.part || command.detach)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported by Iceberg", command.typeToString());
+
+    alterPartitionDropImpl(command, context);
+    persistent_components.invalidateMetadataCache();
+    return {};
+}
+
+void IcebergMetadata::alterPartitionDropImpl(const PartitionCommand & command, ContextPtr context)
+{
+    Iceberg::AlterDropPartitionExecutor executor(
+        command,
+        *this,
+        context,
+        object_storage,
+        persistent_components,
+        data_lake_settings,
+        write_format,
+        log);
+    executor.run();
 }
 
 void IcebergMetadata::alter(
@@ -1412,7 +1469,7 @@ void IcebergMetadata::addDeleteTransformers(
     if (!iceberg_object_info)
         return;
 
-    if (!iceberg_object_info->info.position_deletes_objects.empty())
+    if (iceberg_object_info->info.hasPositionDeletes())
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
