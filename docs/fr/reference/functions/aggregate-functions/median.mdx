@@ -1,0 +1,44 @@
+---
+description: "Les fonctions `median*` sont des alias des fonctions `quantile*` correspondantes. Elles calculent la médiane d'un échantillon de données numériques."
+slug: /sql-reference/aggregate-functions/reference/median
+title: 'median'
+doc_type: 'reference'
+---
+
+Les fonctions `median*` sont des alias des fonctions `quantile*` correspondantes. Elles calculent la médiane d&#39;un échantillon de données numériques.
+
+Fonctions :
+
+* `median` — alias de [quantile](/fr/reference/functions/aggregate-functions/quantile).
+* `medianDeterministic` — alias de [quantileDeterministic](/fr/reference/functions/aggregate-functions/quantileDeterministic).
+* `medianExact` — alias de [quantileExact](/fr/reference/functions/aggregate-functions/quantileExact).
+* `medianExactWeighted` — alias de [quantileExactWeighted](/fr/reference/functions/aggregate-functions/quantileExactWeighted).
+* `medianTiming` — alias de [quantileTiming](/fr/reference/functions/aggregate-functions/quantileTiming).
+* `medianTimingWeighted` — alias de [quantileTimingWeighted](/fr/reference/functions/aggregate-functions/quantileTimingWeighted).
+* `medianTDigest` — alias de [quantileTDigest](/fr/reference/functions/aggregate-functions/quantileTDigest).
+* `medianTDigestWeighted` — alias de [quantileTDigestWeighted](/fr/reference/functions/aggregate-functions/quantileTDigestWeighted).
+* `medianBFloat16` — alias de [quantileBFloat16](/fr/reference/functions/aggregate-functions/quantileBFloat16).
+* `medianDD` — alias de [quantileDD](/fr/reference/functions/aggregate-functions/quantileddsketch).
+
+**Exemple**
+
+Table d&#39;entrée :
+
+```text
+┌─val─┐
+│   1 │
+│   1 │
+│   2 │
+│   3 │
+└─────┘
+```
+
+```sql title="Query"
+SELECT medianDeterministic(val, 1) FROM t;
+```
+
+```text title="Response"
+┌─medianDeterministic(val, 1)─┐
+│                         1.5 │
+└─────────────────────────────┘
+```

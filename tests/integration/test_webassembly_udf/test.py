@@ -169,7 +169,7 @@ def test_enabled(start_cluster):
     error = node1.query_and_get_error(
         "DELETE FROM system.webassembly_modules WHERE 1=1"
     )
-    assert "Only deletion of a module by name is supported" in error
+    assert "Only deletion by module name is supported" in error
     assert node1.query("SELECT 1").strip() == "1"
 
     # Cleanup

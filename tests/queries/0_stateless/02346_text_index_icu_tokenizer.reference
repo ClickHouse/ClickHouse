@@ -1,0 +1,59 @@
+-- has*Tokens infers the tokenizer from the text index, so no tokenizer argument is needed.
+
+-- { echoOn }
+-- String needle: tokenized with the index tokenizer (icu). A Latin token embedded in Japanese text.
+SELECT id FROM tab WHERE hasAnyTokens(doc, 'ClickHouse') ORDER BY id;
+3
+-- String needle: a single Japanese dictionary word.
+SELECT id FROM tab WHERE hasAnyTokens(doc, '日本語') ORDER BY id;
+1
+-- String needle that icu splits into several words (コンピュータ / の / プログラミング). splitByNonAlpha would
+-- keep it as one token and match nothing; matching only row 2 proves the index tokenizer (icu) is used.
+SELECT id FROM tab WHERE hasAllTokens(doc, 'コンピュータのプログラミング') ORDER BY id;
+2
+-- Array needle: each element is treated as a literal token (no tokenization).
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['日本語', '東京']) ORDER BY id;
+1
+4
+-- hasAllTokens: all needle tokens must be present in the same row.
+SELECT id FROM tab WHERE hasAllTokens(doc, ['日本', '都市']) ORDER BY id;
+4
+SELECT id FROM tab WHERE hasAllTokens(doc, ['日本語', '東京']) ORDER BY id;
+-- A token that is not present in any row.
+SELECT id FROM tab WHERE hasAnyTokens(doc, '存在しない') ORDER BY id;
+-- Without an index and without a tokenizer argument, the brute-force scan uses splitByNonAlpha, which
+-- cannot segment Japanese: a run with no ASCII separators becomes one token, so searching for an
+-- individual Japanese word that is only a part of such a run finds nothing.
+SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '日本語') ORDER BY id;
+SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '東京') ORDER BY id;
+SELECT id FROM tab_noindex WHERE hasAllTokens(doc, ['日本', '都市']) ORDER BY id;
+-- Specifying the icu tokenizer explicitly (embedded in the tokenizer string, like ngrams/splitByString)
+-- makes the brute-force scan segment Japanese correctly, giving exactly the same results as the indexed
+-- column (which infers the icu tokenizer). Each pair below (explicit brute-force vs inferred index) must match.
+SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '日本語', 'icu(''ja'')') ORDER BY id;
+1
+SELECT id FROM tab         WHERE hasAnyTokens(doc, '日本語') ORDER BY id;
+1
+SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '東京', 'icu(''ja'')') ORDER BY id;
+4
+SELECT id FROM tab         WHERE hasAnyTokens(doc, '東京') ORDER BY id;
+4
+SELECT id FROM tab_noindex WHERE hasAllTokens(doc, 'コンピュータのプログラミング', 'icu(''ja'')') ORDER BY id;
+2
+SELECT id FROM tab         WHERE hasAllTokens(doc, 'コンピュータのプログラミング') ORDER BY id;
+2
+SELECT id FROM tab_noindex WHERE hasAllTokens(doc, ['日本', '都市'], 'icu(''ja'')') ORDER BY id;
+4
+SELECT id FROM tab         WHERE hasAllTokens(doc, ['日本', '都市']) ORDER BY id;
+4
+-- hasPhrase needs an ordered token stream, which the icu tokenizer provides. The tokenizer is inferred
+-- from the index, so no tokenizer argument is needed; the explicit form must also be accepted (not rejected).
+SELECT id FROM tab WHERE hasPhrase(doc, '日本語') ORDER BY id;
+1
+SELECT id FROM tab WHERE hasPhrase(doc, '日本語を勉強') ORDER BY id;
+1
+-- The same tokens in a different order do not form the phrase.
+SELECT id FROM tab WHERE hasPhrase(doc, '勉強を日本語') ORDER BY id;
+-- Explicit tokenizer argument must be accepted rather than rejected with BAD_ARGUMENTS.
+SELECT id FROM tab WHERE hasPhrase(doc, '日本語', 'icu(''ja'')') ORDER BY id;
+1

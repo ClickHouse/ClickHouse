@@ -1,7 +1,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Core/Types.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadHelpers.h>
@@ -13,9 +15,14 @@
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/quoteString.h>
+#include <Common/FieldVisitorToString.h>
+#include <fmt/ranges.h>
 #include <Storages/MergeTree/VectorSearchUtils.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+
+#include <array>
+#include <string_view>
 
 namespace
 {
@@ -43,7 +50,7 @@ namespace ErrorCodes
 
 /// Both `['a', 'b']` and `array('a', 'b')` are parsed as `_CAST(['a', 'b'], 'Array(String)')` with analyzer.
 /// While for non-analyzer there is no _CAST
-std::vector<String> extractParts(const ASTPtr & argument, const ContextPtr & context)
+static Strings extractParts(const ASTPtr & argument, const ContextPtr & context)
 {
     ASTPtr array = argument;
     if (const auto * func = array->as<ASTFunction>())
@@ -60,7 +67,7 @@ std::vector<String> extractParts(const ASTPtr & argument, const ContextPtr & con
     {
         if (const auto * literal = array->as<ASTLiteral>())
         {
-            std::vector<String> result;
+            Strings result;
             for (const auto & element : literal->value.safeGet<Array>())
                 result.push_back(element.safeGet<String>());
             return result;
@@ -68,7 +75,7 @@ std::vector<String> extractParts(const ASTPtr & argument, const ContextPtr & con
 
         if (const auto * expr_list = array->as<ASTExpressionList>())
         {
-            std::vector<String> result;
+            Strings result;
             for (const auto & element : expr_list->children)
                 result.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value.safeGet<String>());
             return result;
@@ -76,6 +83,131 @@ std::vector<String> extractParts(const ASTPtr & argument, const ContextPtr & con
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parts must be an array of strings, got: {}", argument->formatForLogging());
+}
+
+/// The arguments of an optimization, in the same shapes as `extractParts` above accepts: an array
+/// literal wrapped in a `_CAST`, or an `array(...)` call. An argument list of mixed types - the shape
+/// `buildAnalyzeIndexQuery` sends - is an `array(...)` call, either bare or, with `use_variant_as_common_type`,
+/// wrapped in a `_CAST` to an array of `Variant`. Every element is evaluated on its own, so each keeps its own type.
+static Array extractOptimizationArguments(const ASTPtr & argument, const ContextPtr & context)
+{
+    ASTPtr array = argument;
+    if (const auto * func = array->as<ASTFunction>())
+    {
+        if (func->name == "_CAST" && func->arguments && !func->arguments->children.empty()) /// _CAST([...], 'Array(String)')
+            array = func->arguments->children.at(0);
+
+        if (const auto * inner = array->as<ASTFunction>())
+        {
+            if (inner->name == "array" && inner->arguments) /// array(ExpressionList)
+                array = inner->arguments;
+            else
+                array = ASTPtr();
+        }
+    }
+
+    if (array)
+    {
+        if (const auto * literal = array->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::Array)
+            return literal->value.safeGet<Array>();
+
+        if (const auto * expr_list = array->as<ASTExpressionList>())
+        {
+            Array result;
+            for (const auto & element : expr_list->children)
+                result.push_back(evaluateConstantExpressionAsLiteral(element, context)->as<ASTLiteral &>().value);
+            return result;
+        }
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Arguments of an optimization must be an array of its parameters, got: {}", argument->formatForLogging());
+}
+
+/// The six parameters of the `vector_search_index_analysis` optimization, in the order `buildAnalyzeIndexQuery`
+/// sends them. Every slot is checked explicitly, so that a malformed list is reported as `BAD_ARGUMENTS` that
+/// names the offending parameter instead of escaping as an internal `BAD_GET` from `Field::safeGet`.
+static constexpr std::array<std::string_view, 6> vector_search_parameter_names
+    = {"column", "distance function", "limit", "search vector", "additional filters present", "return distances"};
+
+[[noreturn]] static void throwBadVectorSearchArgument(const Field & field, size_t index, std::string_view expected)
+{
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Parameter #{} ({}) of the 'vector_search_index_analysis' optimization must be {}, got {}: {}",
+        index + 1, vector_search_parameter_names[index], expected, field.getTypeName(), applyVisitor(FieldVisitorToString(), field));
+}
+
+static const String & getVectorSearchStringArgument(const Array & args, size_t index)
+{
+    const Field & field = args[index];
+    if (field.getType() != Field::Types::String)
+        throwBadVectorSearchArgument(field, index, "a string");
+    return field.safeGet<String>();
+}
+
+/// A signed literal such as `toInt64(3)` is accepted as long as it is non-negative.
+static UInt64 getVectorSearchUnsignedArgument(const Array & args, size_t index)
+{
+    const Field & field = args[index];
+    if (field.getType() == Field::Types::UInt64)
+        return field.safeGet<UInt64>();
+    if (field.getType() == Field::Types::Int64)
+    {
+        Int64 value = field.safeGet<Int64>();
+        if (value >= 0)
+            return static_cast<UInt64>(value);
+    }
+    throwBadVectorSearchArgument(field, index, "a non-negative integer");
+}
+
+/// `buildAnalyzeIndexQuery` formats the flags as `true` / `false`, a hand-written list is likely to use `1` / `0`.
+static bool getVectorSearchBoolArgument(const Array & args, size_t index)
+{
+    const Field & field = args[index];
+    switch (field.getType())
+    {
+        case Field::Types::Bool:
+            return field.safeGet<bool>();
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        {
+            Int64 value = field.safeGet<Int64>();
+            if (value == 0 || value == 1)
+                return value == 1;
+            break;
+        }
+        default:
+            break;
+    }
+    throwBadVectorSearchArgument(field, index, "a boolean or 0/1");
+}
+
+/// The search vector is sent as an array of `Float64`, a hand-written list may contain integer literals.
+static VectorWithMemoryTracking<Float64> getVectorSearchReferenceVector(const Array & args, size_t index)
+{
+    const Field & field = args[index];
+    if (field.getType() != Field::Types::Array)
+        throwBadVectorSearchArgument(field, index, "an array of numbers");
+
+    VectorWithMemoryTracking<Float64> result;
+    for (const auto & element : field.safeGet<Array>())
+    {
+        switch (element.getType())
+        {
+            case Field::Types::Float64:
+                result.push_back(element.safeGet<Float64>());
+                break;
+            case Field::Types::UInt64:
+                result.push_back(static_cast<Float64>(element.safeGet<UInt64>()));
+                break;
+            case Field::Types::Int64:
+                result.push_back(static_cast<Float64>(element.safeGet<Int64>()));
+                break;
+            default:
+                throwBadVectorSearchArgument(field, index, "an array of numbers");
+        }
+    }
+    return result;
 }
 
 class TableFunctionMergeTreeAnalyzeIndexes : public ITableFunction
@@ -87,9 +219,12 @@ public:
 
     std::string getName() const override { return mergeTreeAnalyzeIndexFunctionName(resolve_by_uuid); }
 
+    /// The returned storage holds its source table's storage object, so a persisted table would keep the source undroppable.
+    bool canBeUsedToCreateTable() const override { return false; }
+
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
-    std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 
 private:
     StoragePtr executeImpl(
@@ -116,12 +251,12 @@ private:
 
     const bool resolve_by_uuid;
     StorageID source_table_id{StorageID::createEmpty()};
-    std::vector<String> parts;
+    Strings parts;
     ASTPtr predicate;
     OptionalVectorSearchParameters vector_search_parameters;
 };
 
-std::vector<size_t> TableFunctionMergeTreeAnalyzeIndexes::skipAnalysisForArguments(const QueryTreeNodePtr & /* query_node_table_function */, ContextPtr /* context */) const
+VectorWithMemoryTracking<size_t> TableFunctionMergeTreeAnalyzeIndexes::skipAnalysisForArguments(const QueryTreeNodePtr & /* query_node_table_function */, ContextPtr /* context */) const
 {
     /// Filter should not be analyzed
     if (resolve_by_uuid)
@@ -203,26 +338,24 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const 
     auto optimization = checkAndGetLiteralArgument<String>(args[start_index++], "extra_optimization");
     if (optimization == "vector_search_index_analysis")
     {
-        auto cast_node = args[start_index++]->children.at(0);
-        auto vector_search_args = evaluateConstantExpressionAsLiteral(cast_node->children.at(0), context)->as<ASTLiteral &>().value.safeGet<Array>();
-        if (vector_search_args.size() != 6)
+        auto vector_search_args = extractOptimizationArguments(args[start_index++], context);
+        if (vector_search_args.size() != vector_search_parameter_names.size())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                "vector_search_index_analysis requires 6 arguments");
+                "The 'vector_search_index_analysis' optimization requires {} parameters ({}), got {}",
+                vector_search_parameter_names.size(), fmt::join(vector_search_parameter_names, ", "), vector_search_args.size());
 
-        Array field_array = vector_search_args[3].safeGet<Array>();
-        std::vector<Float64> reference_vector;
-        for (const auto & field_array_value : field_array)
-        {
-            Float64 float64 = field_array_value.safeGet<Float64>();
-            reference_vector.push_back(float64);
-        }
-
-        vector_search_parameters = VectorSearchParameters{vector_search_args[0].safeGet<String>(), /// column
-            vector_search_args[1].safeGet<String>(), /// distance function
-            vector_search_args[2].safeGet<UInt64>(), /// limit
-            reference_vector, /// search vector
-            static_cast<bool>(vector_search_args[4].safeGet<bool>()), /// additional filters
-            static_cast<bool>(vector_search_args[5].safeGet<bool>())}; /// return distances
+        vector_search_parameters = VectorSearchParameters{
+            getVectorSearchStringArgument(vector_search_args, 0),
+            getVectorSearchStringArgument(vector_search_args, 1),
+            getVectorSearchUnsignedArgument(vector_search_args, 2),
+            getVectorSearchReferenceVector(vector_search_args, 3),
+            getVectorSearchBoolArgument(vector_search_args, 4),
+            getVectorSearchBoolArgument(vector_search_args, 5)};
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Unknown optimization {}, the only supported one is 'vector_search_index_analysis'", quoteString(optimization));
     }
 }
 
@@ -270,13 +403,14 @@ StoragePtr TableFunctionMergeTreeAnalyzeIndexes::executeImpl(
     return res;
 }
 
+void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory)
 {
     factory.registerFunction(mergeTreeAnalyzeIndexFunctionName(/*resolve_by_uuid=*/ false), TableFunctionFactoryData{
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ false); },
         {
             .description = "Internal function for index analysis",
-            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, ['part1', 'part2']])", ""}},
+            .syntax = "mergeTreeAnalyzeIndexes(currentDatabase(), mt_table, predicate[, ['part1', 'part2']])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = true}
@@ -286,7 +420,7 @@ void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory
         []() { return std::make_shared<TableFunctionMergeTreeAnalyzeIndexes>(/* resolve_by_uuid_= */ true); },
         {
             .description = "Internal function for index analysis",
-            .examples = {{"mergeTreeAnalyzeIndexes", "SELECT * FROM mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, ['part1', 'part2']])", ""}},
+            .syntax = "mergeTreeAnalyzeIndexesUUID('table_uuid', predicate[, ['part1', 'part2']])",
             .category = FunctionDocumentation::Category::TableFunction
         },
         {.allow_readonly = true}

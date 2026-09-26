@@ -29,11 +29,11 @@ using Pos = const char *;
 class SplitByNonAlphaImpl
 {
 private:
-    Pos pos;
-    Pos end;
+    Pos pos{};
+    Pos end{};
     std::optional<size_t> max_splits;
-    size_t splits;
-    bool max_substrings_includes_remaining_string;
+    size_t splits{};
+    bool max_substrings_includes_remaining_string{};
 
 public:
     /// Get the name of the function.
@@ -112,9 +112,9 @@ REGISTER_FUNCTION(SplitByNonAlpha)
     FunctionDocumentation::Description description = R"(
 Splits a string separated by whitespace and punctuation characters into an array of substrings.
 
-:::note
-Setting [`splitby_max_substrings_includes_remaining_string`](../../operations/settings/settings.md#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
-:::
+<Note>
+Setting [`splitby_max_substrings_includes_remaining_string`](/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (default: `0`) controls if the remaining string is included in the last element of the result array when argument `max_substrings > 0`.
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "splitByNonAlpha(s[, max_substrings])";
     FunctionDocumentation::Arguments arguments = {

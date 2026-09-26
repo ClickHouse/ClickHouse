@@ -1,0 +1,304 @@
+---
+slug: /optimize/optimization-approaches
+sidebarTitle: 'Choisir une approche d’optimisation'
+sidebar_label: 'Choisir une approche d’optimisation'
+sidebar_position: 4
+title: 'Choisir une approche d’optimisation'
+description: 'Exploitez les éléments d’une requête ClickHouse lente pour évaluer les approches d’optimisation appropriées'
+doc_type: 'guide'
+keywords: ['optimisation des requêtes', 'types de données', 'clé de tri', 'vues matérialisées', 'projections']
+---
+
+import NYCTaxiExampleDataset from '/snippets/fr/_nyc_taxi_example_dataset.mdx';
+
+Appuyez-vous sur les [query logs](/fr/reference/system-tables/query_log), des comparaisons contrôlées et des [plans de requête](/fr/reference/statements/explain) pour évaluer les approches d’optimisation ciblant le goulot d’étranglement identifié.
+
+<div id="before-you-begin">
+  ## Avant de commencer
+</div>
+
+Commencez par établir une référence reproductible et formuler une hypothèse sur le goulot d’étranglement. Si vous ne l’avez pas encore identifié, commencez par [Diagnostiquer les requêtes lentes](/fr/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) et [Isoler les goulots d’étranglement des requêtes](/fr/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks).
+
+Les exemples de ce guide utilisent la table `nyc_taxi.trips_small_inferred`. Pour les exécuter tels quels, créez et chargez la table si ce n’est pas déjà fait :
+
+<Accordion title="Configurer l’exemple de jeu de données">
+  <NYCTaxiExampleDataset />
+</Accordion>
+
+<div id="choose-an-approach">
+  ## Choisir une approche
+</div>
+
+Appuyez-vous sur les éléments recueillis pour déterminer par où commencer. Privilégiez la modification la moins spécialisée qui permet de résoudre le problème :
+
+| Éléments                                                                    | Commencez par                                                                              | Effet attendu                                                 |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| La requête lit des colonnes larges ou des colonnes dont elle n’a pas besoin | [Réduire les données lues](#reduce-the-data-read)                                          | Octets lus, utilisation de la mémoire et charge de traitement |
+| Un filtre sélectif lit toujours de nombreuses [parties ou granules](/fr/parts) | [Aligner l’organisation des données sur la requête](#align-the-data-layout-with-the-query) | Lignes et granules lus                                        |
+| Des transformations ou agrégations répétées dominent la requête             | [Précalculer les opérations répétables](#precompute-repeatable-work)                       | Calculs effectués au moment de l’exécution de la requête      |
+
+Si les éléments recueillis ne correspondent à aucune de ces catégories, revenez au plan de requête plutôt que de faire entrer de force la requête dans l’une de ces approches.
+
+<div id="reduce-the-data-read">
+  ## Réduire les données lues
+</div>
+
+* **À utiliser lorsque :** la requête lit des colonnes larges ou dont elle n’a pas besoin.
+* **Modification :** réduisez la taille ou le nombre de colonnes lues par la requête.
+* **Validation :** comparez `read_bytes`, l’utilisation de la mémoire et la durée dans les mêmes conditions.
+
+ClickHouse lit uniquement les colonnes requises par une requête, mais doit tout de même lire, décompresser et traiter les données sélectionnées. Examinez les colonnes sélectionnées ainsi que leurs types. L’[inférence de schéma](/fr/concepts/features/interfaces/schema-inference) fournit un point de départ pratique, mais les types inférés peuvent être plus larges ou plus permissifs que ne l’exigent les données en production.
+
+<div id="review-column-types">
+  ### Examiner les types de colonnes
+</div>
+
+<span id="choose-precise-types" />
+
+**Choisir des types précis**
+
+Choisissez des types qui préservent la plage de valeurs et la précision requises par la charge de travail, sans stocker plus de données que nécessaire. Utilisez des types numériques et de date plutôt qu&#39;un [`String`](/fr/reference/data-types/string) générique pour ces valeurs, et choisissez le plus petit [type numérique signé ou non signé](/fr/reference/data-types/int-uint) capable de représenter la plage attendue en toute sécurité. Pour les colonnes temporelles, utilisez [`Date`](/fr/reference/data-types/date) ou [`DateTime`](/fr/reference/data-types/datetime), sauf si vous avez besoin de la plage étendue ou de la précision fractionnaire offertes par [`Date32`](/fr/reference/data-types/date32) ou [`DateTime64`](/fr/reference/data-types/datetime64).
+
+<span id="use-nullable-columns-deliberately" />
+
+**Utiliser les colonnes nullable de manière réfléchie**
+
+Une colonne [`Nullable`](/fr/reference/data-types/nullable) stocke, en plus de ses valeurs, un masque distinct indiquant les valeurs nulles, que ClickHouse doit également lire et traiter. Utilisez-la lorsque la distinction entre une valeur nulle et la valeur par défaut du type est significative. Si une colonne est garantie de toujours contenir une valeur, un type non nullable évite cette surcharge.
+
+Avant de modifier une colonne, vérifiez les données sources et le chemin d&#39;ingestion plutôt que de supposer que des données observées comme non nulles le resteront toujours. L&#39;[exemple d&#39;optimisation détaillé](/fr/guides/clickhouse/performance-and-monitoring/query-optimization-example#nullable) montre comment identifier les colonnes contenant des valeurs nulles et mesurer l&#39;effet d&#39;une modification du schéma.
+
+<span id="use-dictionary-encoding-for-repeated-values" />
+
+**Utiliser l&#39;encodage par dictionnaire pour les valeurs répétées**
+
+[`LowCardinality`](/fr/reference/data-types/lowcardinality) utilise l&#39;encodage par dictionnaire et est souvent efficace pour les colonnes de type String, telles que les valeurs de statut, les codes pays ou d&#39;autres dimensions comportant nettement moins de valeurs distinctes que de lignes. Environ 10 000 valeurs distinctes constituent un bon point de départ pour identifier des candidats, mais ne représentent pas une limite fixe. Évitez les identifiants et les autres colonnes dont les valeurs sont majoritairement uniques, et comparez les mesures avant et après avoir modifié le type.
+
+Consultez [Sélection des types de données](/fr/best-practices/select-data-types) pour des recommandations plus détaillées.
+
+<div id="read-only-the-required-columns">
+  ### Lire uniquement les colonnes nécessaires
+</div>
+
+Comme ClickHouse stocke les données par colonne, sélectionner moins de colonnes réduit directement le volume de données lu. Indiquez les colonnes nécessaires plutôt que d&#39;utiliser `SELECT *`, en particulier pour les tables comportant de nombreuses colonnes ou les requêtes qui ne renvoient qu&#39;un petit sous-ensemble de chaque ligne.
+
+Utilisez `read_bytes` de [`system.query_log`](/fr/reference/system-tables/query_log) pour comparer le volume de données lu avant et après avoir réduit le nombre de colonnes sélectionnées. Si `read_bytes` reste élevé, examinez le plan de requête afin d&#39;identifier les expressions, filtres, jointures ou requêtes imbriquées qui nécessitent encore des colonnes supplémentaires.
+
+Par exemple, si un dashboard ne nécessite que l&#39;heure de prise en charge, le type de paiement et le montant total, sélectionnez ces colonnes plutôt que la ligne complète :
+
+```sql
+SELECT
+    pickup_datetime,
+    payment_type,
+    total_amount
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+LIMIT 1000;
+```
+
+Comparez cette requête, avec le même filtre et la même limite, à celle utilisant `SELECT *`. Le nombre de lignes renvoyées reste inchangé, mais `read_bytes` devrait refléter le nombre réduit de colonnes lues.
+
+<div id="align-the-data-layout-with-the-query">
+  ## Adapter l’organisation des données à la requête
+</div>
+
+* **À utiliser lorsque :** Un filtre sélectif lit encore de nombreuses parties ou granules.
+* **Modifier :** Adaptez l’organisation physique aux filtres utilisés par les requêtes récurrentes.
+* **Valider :** Comparez les parties et les granules sélectionnés par [`EXPLAIN indexes = 1`](/fr/reference/statements/explain), puis vérifiez `read_rows`, `read_bytes` et la durée.
+
+<div id="start-with-the-ordering-key">
+  ### Commencez par la clé de tri
+</div>
+
+Pour les [tables de la famille `MergeTree`](/fr/reference/engines/table-engines/mergetree-family/), la clé de tri détermine l’organisation des lignes sur le disque. Par défaut, elle sert également de clé primaire et définit l’[index primaire creux](/fr/primary-indexes). Contrairement à une clé primaire dans une base de données OLTP, une clé primaire ClickHouse ne garantit pas l’unicité. Son intérêt en termes de performances réside dans sa capacité à permettre à ClickHouse d’ignorer les granules qui ne peuvent pas répondre aux filtres d’une requête.
+
+Privilégiez les colonnes qui apparaissent fréquemment dans des filtres sélectifs, ainsi que leur ordre dans la clé. Regrouper des valeurs associées peut également améliorer la compression. Lorsque l’ordre de regroupement ou de tri d’une requête correspond à la clé, ClickHouse peut appliquer des optimisations dans l’ordre pour `GROUP BY` ou `ORDER BY`.
+
+Comparez les parties et les granules sélectionnés par `EXPLAIN indexes = 1` avant et après avoir testé une autre clé de tri. Comparez également `read_rows`, `read_bytes` et la durée dans les mêmes conditions. Consultez [Choisir une clé primaire](/fr/best-practices/choosing-a-primary-key) pour des conseils détaillés sur le choix de la clé.
+
+La table d’exemple utilise `ORDER BY ()`. Le filtre de date sélectif suivant ne dispose donc d’aucune clé de tri permettant d’éliminer des granules :
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    count()
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime >= '2009-01-01'
+  AND pickup_datetime < '2009-04-01'
+GROUP BY payment_type
+SETTINGS
+    use_query_condition_cache = 0,
+    use_skip_indexes_on_data_read = 0;
+```
+
+<Note>
+  Dans ClickHouse 25.9 et les versions ultérieures, ces paramètres garantissent que `EXPLAIN` indique les index utilisés ainsi que les parties et les granules qu&#39;ils éliminent.
+</Note>
+
+Utilisez cette sortie comme référence. Pour compléter la comparaison, suivez [Appliquer la modification de la clé de tri](/fr/guides/clickhouse/performance-and-monitoring/query-optimization-example#apply-the-ordering-key-change) dans l&#39;exemple détaillé afin de créer une table dont la clé de tri inclut `pickup_datetime`, puis exécutez le même `EXPLAIN` sur cette table. La section de clé primaire du plan devrait afficher moins de granules sélectionnés, avant d&#39;utiliser des mesures de durée ou de mémoire pour évaluer la modification dans son ensemble.
+
+<Tip>
+  [`PREWHERE`](/fr/optimize/prewhere) peut réduire le nombre de valeurs de colonnes lues sans modifier le nombre de lignes traitées. Lorsque `optimize_move_to_prewhere` est activé, ce qui est le comportement par défaut, ClickHouse déplace automatiquement les conditions éligibles de `WHERE` vers `PREWHERE`. Inspectez le plan avant d&#39;ajouter manuellement `PREWHERE`, et utilisez `read_bytes` ainsi que `read_rows` pour mesurer son effet.
+</Tip>
+
+<div id="evaluate-additional-indexing-and-data-layout-options">
+  ### Évaluer d’autres options d’indexation et d’organisation des données
+</div>
+
+Si la clé de tri ne permet pas de prendre efficacement en charge un schéma d’accès important, évaluez les options plus spécialisées ci-dessous.
+
+<span id="partition-for-data-management-and-pruning" />
+
+**Partitionner pour la gestion et l’élagage des données**
+
+Le [partitionnement](/fr/best-practices/choosing-a-partitioning-key) est avant tout un mécanisme de gestion des données pour des opérations telles que la rétention, le déplacement et la suppression. Il peut réduire le travail des requêtes lorsque les filtres permettent à ClickHouse d’exclure des partitions entières, mais ne doit pas être le premier mécanisme utilisé pour accélérer une requête.
+
+Par exemple, des partitions mensuelles permettent de supprimer des mois entiers lorsque la rétention est également gérée par mois. N’envisagez le partitionnement que lorsque la clé de partition est alignée sur les exigences du cycle de vie des données ou sur un schéma d’accès bien compris. Maintenez une faible cardinalité : une clé à cardinalité élevée crée de nombreuses parties qui ne peuvent pas être fusionnées entre partitions et peut dégrader les performances. Utilisez `EXPLAIN indexes = 1` pour confirmer que la requête élague effectivement les partitions.
+
+<span id="add-a-data-skipping-index-for-a-localized-filter" />
+
+**Ajouter un index d’évitement des données pour un filtre localisé**
+
+Un [index d’évitement des données](/fr/best-practices/use-data-skipping-indices-where-appropriate) stocke des métadonnées qui permettent à ClickHouse d’éviter de lire les blocs qui ne peuvent pas correspondre à un filtre. Il est particulièrement utile lorsque la clé de tri ne prend pas en charge un filtre important et que les valeurs correspondantes sont suffisamment regroupées au sein des blocs.
+
+Par exemple, un index bloom filter peut faciliter les recherches par égalité lorsque la plupart des blocs ne contiennent pas la valeur recherchée. Utilisez les index d’évitement après avoir examiné les types de données et la clé de tri. Un index qui exclut rarement un bloc ajoute une surcharge de stockage et d’évaluation sans réduire significativement la charge de travail. Testez le type d’index et la granularité avec des données représentatives, puis utilisez `EXPLAIN indexes = 1` pour comparer les granules sélectionnés et vérifier `read_rows`, `read_bytes` et la durée.
+
+<span id="use-projections-selectively" />
+
+**Utiliser les projections de manière sélective**
+
+Les [projections](/fr/data-modeling/projections) stockent des organisations alternatives des données parallèlement à une table. Elles peuvent fournir une autre clé de tri ou un résultat précalculé, et ClickHouse peut sélectionner une projection applicable sans que la requête doive y faire directement référence.
+
+Par exemple, une projection triée par `payment_type` peut prendre en charge un filtre récurrent que le tri de la table de base ne prend pas en charge. Utilisez un nombre limité de projections pour les schémas d’accès importants que le tri de base ne peut pas gérer efficacement.
+
+Les projections stockent des données d’index ou de colonnes supplémentaires et ajoutent du travail lors de l’insertion et de la fusion ; une projection couvrant toutes les colonnes duplique les colonnes qu’elle stocke. Une utilisation intensive des projections peut également accroître le travail nécessaire pour choisir une projection optimale au moment de l’exécution de la requête. Pour les déploiements importants comportant de nombreux schémas d’accès distincts, un nombre réduit de projections ou des tables distinctes conçues à cet effet sont souvent plus faciles à exploiter. Consultez [Vues matérialisées ou projections](/fr/managing-data/materialized-views-versus-projections) pour choisir entre ces mécanismes.
+
+Ajoutez un ordre de tri alternatif pour les requêtes qui filtrent par type de paiement et heure de prise en charge tout en continuant à interroger la table source :
+
+```sql
+ALTER TABLE nyc_taxi.trips_small_inferred
+ADD PROJECTION trips_by_payment_type
+(
+    SELECT
+        payment_type,
+        pickup_datetime,
+        trip_distance,
+        total_amount
+    ORDER BY (payment_type, pickup_datetime)
+);
+
+ALTER TABLE nyc_taxi.trips_small_inferred
+MATERIALIZE PROJECTION trips_by_payment_type;
+```
+
+La matérialisation de la projection la remplit avec les données existantes ; les insertions ultérieures la maintiennent automatiquement. Répétez une requête représentative sur la table d’origine et utilisez `EXPLAIN projections = 1` pour vérifier si ClickHouse sélectionne la projection et lit moins de lignes ou d’octets. Mesurez également le surcoût lié aux insertions et au stockage avant d’appliquer largement ce modèle.
+
+<div id="precompute-repeatable-work">
+  ## Précalculer les opérations répétitives
+</div>
+
+* **À utiliser lorsque :** Les mêmes transformations ou agrégations occupent régulièrement l’essentiel du temps de requête.
+* **Modification :** Déplacez les calculs répétitifs vers l’ingestion, une actualisation planifiée ou une organisation des données conçue à cet effet.
+* **Validation :** Vérifiez que la requête lit un résultat plus petit et effectue moins de calculs au moment de l’exécution, tout en maintenant une charge d’ingestion ou d’actualisation acceptable.
+
+Choisissez en fonction de la manière dont le résultat doit être maintenu et consulté. Ces options ne s’excluent pas mutuellement :
+
+| Lorsque vous avez besoin de                                         | Commencez par                                                     |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Résultats mis à jour à l’arrivée des données                        | [Vue matérialisée incrémentielle](#incremental-materialized-view) |
+| Recalcul périodique avec un certain degré d’obsolescence acceptable | [Vue matérialisée actualisable](#refreshable-materialized-view)   |
+| Un schéma, une clé de tri ou un cycle de vie indépendants           | [Table conçue à cet effet](#purpose-built-table)                  |
+
+Chaque section présente une implémentation de base, le principal compromis opérationnel et une méthode pour valider le résultat.
+
+<div id="incremental-materialized-view">
+  ### Vue matérialisée incrémentielle
+</div>
+
+Utilisez une [vue matérialisée incrémentielle](/fr/materialized-view/incremental-materialized-view) lorsqu’un filtre, une transformation ou une agrégation récurrente doit rester à jour au fur et à mesure de l’arrivée des données. Elle traite chaque bloc nouvellement inséré et écrit le résultat transformé dans une table cible. En contrepartie, elle nécessite davantage de travail lors de l’ingestion et une table cible explicite.
+
+Par exemple, un dashboard qui calcule régulièrement le nombre de trajets par jour peut lire une petite table agrégée au lieu de regrouper les données sources à chaque requête :
+
+```sql
+CREATE TABLE nyc_taxi.trips_by_day
+(
+    pickup_date Date,
+    trip_count UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY pickup_date;
+
+CREATE MATERIALIZED VIEW nyc_taxi.trips_by_day_mv
+TO nyc_taxi.trips_by_day
+AS SELECT
+    toDate(assumeNotNull(pickup_datetime)) AS pickup_date,
+    count() AS trip_count
+FROM nyc_taxi.trips_small_inferred
+WHERE pickup_datetime IS NOT NULL
+GROUP BY pickup_date;
+```
+
+Interrogez la table cible avec `sum(trip_count)`, regroupé par `pickup_date`, afin que les lignes en attente d’une fusion en arrière-plan soient combinées lors de la requête. La vue ne traite que les nouvelles insertions ; rechargez donc séparément les données sources existantes. Validez la modification en comparant la durée et le nombre de lignes lues avec l’agrégation d’origine, puis vérifiez que la charge d’insertion supplémentaire est acceptable.
+
+<div id="refreshable-materialized-view">
+  ### Vue matérialisée actualisable
+</div>
+
+Utilisez une [vue matérialisée actualisable](/fr/materialized-view/refreshable-materialized-view) lorsque des résultats légèrement obsolètes sont acceptables et que le résultat complet peut être recalculé à intervalles raisonnables. Elle réexécute sa requête selon une planification. Le compromis se situe entre la fraîcheur des résultats et le coût de chaque actualisation.
+
+Par exemple, un rapport peut recalculer chaque heure les totaux des trajets par type de paiement :
+
+```sql
+CREATE TABLE nyc_taxi.trips_by_payment_type
+(
+    payment_type Int64,
+    trip_count UInt64
+)
+ENGINE = MergeTree
+ORDER BY payment_type;
+
+CREATE MATERIALIZED VIEW nyc_taxi.trips_by_payment_type_mv
+REFRESH EVERY 1 HOUR
+TO nyc_taxi.trips_by_payment_type
+AS SELECT
+    assumeNotNull(source.payment_type) AS payment_type,
+    count() AS trip_count
+FROM nyc_taxi.trips_small_inferred AS source
+WHERE source.payment_type IS NOT NULL
+GROUP BY payment_type;
+```
+
+Le rapport interroge la cible précalculée pendant que ClickHouse actualise le résultat complet selon la planification. Validez la modification en comparant la durée de la requête à celle de l’agrégation d’origine, puis examinez [`system.view_refreshes`](/fr/reference/system-tables/view_refreshes) afin de vérifier que la durée, le statut et la fréquence d’actualisation sont adaptés à la charge de travail.
+
+<div id="purpose-built-table">
+  ### Table dédiée
+</div>
+
+Utilisez une table dédiée lorsqu&#39;une charge de travail distincte nécessite un schéma, une clé de tri ou un cycle de vie sensiblement différent. Elle permet de contrôler explicitement la conception physique et peut être plus facile à comprendre que de maintenir de nombreuses projections. En contrepartie, elle requiert davantage de stockage et de gestion des pipelines. Les jointures ou transformations répétées peuvent également être intégrées au pipeline d’ingestion lorsque les données source et les exigences de fraîcheur le permettent. Consultez [Utiliser les vues matérialisées](/fr/best-practices/use-materialized-views) et [Dénormaliser les données](/fr/data-modeling/denormalization) pour des conseils détaillés sur la conception.
+
+Par exemple, créez une table plus étroite, triée pour un dashboard qui filtre les trajets par type de paiement et heure de prise en charge :
+
+```sql
+CREATE TABLE nyc_taxi.trips_for_payment_dashboard
+ENGINE = MergeTree
+ORDER BY (payment_type, pickup_datetime)
+AS SELECT
+    assumeNotNull(source.payment_type) AS payment_type,
+    assumeNotNull(source.pickup_datetime) AS pickup_datetime,
+    trip_distance,
+    total_amount
+FROM nyc_taxi.trips_small_inferred AS source
+WHERE source.payment_type IS NOT NULL
+  AND source.pickup_datetime IS NOT NULL;
+```
+
+Cet exemple exclut les valeurs nulles de la clé de tri et supprime `Nullable` de ces deux colonnes cibles. Vérifiez que cette approche répond aux exigences de données de la charge de travail. Le tableau de bord doit interroger explicitement cette table, et le pipeline d’ingestion doit la maintenir à jour. Validez cette modification en comparant le nombre de lignes et d’octets lus, l’utilisation de la mémoire et la durée avec la requête sur la table source. Tenez compte du stockage supplémentaire et de la maintenance du pipeline dans votre décision.
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+Lors de l’évaluation d’une modification, répétez les mesures initiales dans des conditions comparables. Vérifiez que cette modification réduit la charge de travail visée sans déplacer le goulot d’étranglement vers un autre point.
+
+Poursuivez avec l’[exemple détaillé d’optimisation](/fr/guides/clickhouse/performance-and-monitoring/query-optimization-example) pour découvrir des modifications du schéma et de la clé de tri évaluées par rapport à la référence initiale.

@@ -16,7 +16,7 @@
 using namespace DB;
 static pcg64 rng(randomSeed());
 
-std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, size_t k)
+static std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, size_t k)
 {
     auto values = ColumnVector<UInt64>::create();
     auto offsets = ColumnVector<UInt64>::create();
@@ -45,7 +45,7 @@ std::pair<MutableColumnPtr, MutableColumnPtr> createColumns(size_t n, size_t k)
     return std::make_pair(std::move(sparse), std::move(full));
 }
 
-bool checkEquals(const IColumn & lhs, const IColumn & rhs)
+static bool checkEquals(const IColumn & lhs, const IColumn & rhs)
 {
     if (lhs.size() != rhs.size())
         return false;
@@ -327,6 +327,54 @@ TEST(ColumnSparse, GetPermutation)
     {
         FAIL() << e.displayText();
     }
+}
+
+TEST(ColumnSparse, Index)
+{
+    auto values = ColumnUInt64::create();
+    auto offsets = ColumnUInt64::create();
+    auto full = ColumnUInt64::create();
+
+    values->insertValue(0);
+    values->insertValue(10);
+    values->insertValue(20);
+    values->insertValue(30);
+
+    offsets->insertValue(1);
+    offsets->insertValue(4);
+    offsets->insertValue(6);
+
+    full->insertValue(0);
+    full->insertValue(10);
+    full->insertValue(0);
+    full->insertValue(0);
+    full->insertValue(20);
+    full->insertValue(0);
+    full->insertValue(30);
+    full->insertValue(0);
+
+    auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), full->size());
+
+    auto test_case = [&](std::initializer_list<UInt64> index_values, size_t limit)
+    {
+        auto indexes = ColumnUInt64::create();
+        for (UInt64 index : index_values)
+            indexes->insertValue(index);
+
+        auto sparse_result = sparse->index(*indexes, limit);
+        auto full_result = full->index(*indexes, limit);
+
+        ASSERT_TRUE(checkEquals(*sparse_result->convertToFullColumnIfSparse(), *full_result));
+    };
+
+    /// Exercise the binary-search path with repeated default and non-default rows.
+    test_case({4, 4, 2, 2, 0}, 5);
+
+    /// Check that a run continuing past the requested limit is truncated.
+    test_case({4, 4, 4, 1, 0}, 3);
+
+    /// Exercise the linear path with repeated and unique rows.
+    test_case({4, 4, 4, 1, 0, 6, 6, 2}, 8);
 }
 
 #undef DUMP_COLUMN
