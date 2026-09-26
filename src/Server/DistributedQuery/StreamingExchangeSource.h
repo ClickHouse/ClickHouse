@@ -67,13 +67,11 @@ private:
     void onCancel() noexcept override;
 
     void onStart();
-    /// The steps of the handshake, which has one deadline: `HELLO_TIMEOUT_SECONDS` of `handshake_watch`.
-    /// Each returns false if the source is cancelled before the step is done.
+    /// Handshake steps under one deadline (`HELLO_TIMEOUT_SECONDS` of `handshake_watch`); false if cancelled first.
     bool connect(const Stopwatch & handshake_watch);
     bool sendHello(const Stopwatch & handshake_watch);
     bool receiveHello(const Stopwatch & handshake_watch);
-    /// Waits until the socket is ready for `events` (`POLLIN` or `POLLOUT`). Returns false once the source is
-    /// cancelled, throws `Poco::TimeoutException` naming `what` once the handshake deadline passes.
+    /// Waits for `events` on the socket; false once cancelled, `Poco::TimeoutException` naming `what` past the deadline.
     bool waitForSocket(Int16 events, const Stopwatch & handshake_watch, std::string_view what);
 
     /// Read as many bytes as we can from the socket without blocking and update position accordingly.
@@ -138,8 +136,7 @@ private:
 #endif
     /// Written by `onUpdatePorts` (possibly from another thread) to wake the waiting source
     /// when its output port is updated - in particular closed by a satisfied `LIMIT`
-    /// downstream; drained in `tryGenerate`. `onCancel` writes it too, to wake a handshake
-    /// in `waitForSocket`, which drains it.
+    /// downstream; drained in `tryGenerate`. Also written by `onCancel` and drained by `waitForSocket`.
     WakeupFd output_update_wakeup;
 
     LoggerPtr log = getLogger("StreamingExchangeSource");

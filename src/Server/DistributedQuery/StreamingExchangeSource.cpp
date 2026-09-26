@@ -65,7 +65,6 @@ bool StreamingExchangeSource::connect(const Stopwatch & handshake_watch)
     socket->connectNB(address);
     if (!waitForSocket(POLLOUT, handshake_watch, "connect"))
         return false;
-    /// What `Poco::Net::SocketImpl::connect` throws for a connect that failed after it started.
     if (int err = socket->impl()->socketError())
         Poco::Net::SocketImpl::error(err);
     socket->setReceiveBufferSize(10 * 1024 * 1024);
@@ -116,7 +115,6 @@ bool StreamingExchangeSource::sendHello(const Stopwatch & handshake_watch)
 
 bool StreamingExchangeSource::receiveHello(const Stopwatch & handshake_watch)
 {
-    /// Reads `size` bytes; false if the source is cancelled first.
     auto receive = [&](char * buffer, size_t size)
     {
         size_t position = 0;
@@ -395,17 +393,16 @@ std::optional<Chunk> StreamingExchangeSource::readChunk()
     if (!was_on_start_called)
     {
         was_on_start_called = true;
+        /// A cancelled handshake ends the stream without an error, a lost peer included.
         try
         {
             onStart();
         }
         catch (const Exception & e)
         {
-            /// A peer that the same cancel tears down is no failure of this stream.
             if (e.code() != ErrorCodes::EXCHANGE_PEER_DISCONNECTED || !isCancelled())
                 throw;
         }
-        /// A cancel stops the handshake, and the stream ends with it.
         if (isCancelled())
         {
             LOG_TRACE(log, "Exchange stream {} was cancelled during the handshake", stream_name);
