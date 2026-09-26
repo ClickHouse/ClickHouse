@@ -84,7 +84,8 @@ enum class ReadStage
     NotStarted = 0,
 
     BloomFilterHeader,
-    BloomFilterBlocksOrDictionary,
+    BloomFilterBlocks,
+    Dictionary,
     ColumnIndexAndOffsetIndex,
 
     OffsetIndex,
@@ -195,13 +196,13 @@ private:
 /// Live, cross-thread reservation of the memory used by dictionary-filter pruning. Both the decoded
 /// dictionaries (`Reader::decodeDictionaryPage` on the pruning path, held until `clearColumnChunk`) and
 /// the value sets built while evaluating the row-group filter (`Reader::hashDictionaryValues`, held for
-/// the lifetime of the lookup) are charged to the `BloomFilterBlocksOrDictionary` stage counter through
-/// this handle. Unlike a `MemoryUsageToken` - which records its allocation in a per-batch
+/// the lifetime of the lookup) are charged to the `Dictionary` stage counter through this handle.
+/// Unlike a `MemoryUsageToken` - which records its allocation in a per-batch
 /// `MemoryUsageDiff` that is only flushed to the stage counter when the batch finishes - charging the
 /// shared atomic directly makes the allocation visible to every row group pruning in parallel the moment
 /// it is taken, not only after the batch flushes. That matters because pruning runs many row groups
-/// concurrently in the `BloomFilterBlocksOrDictionary` stage: with per-batch accounting two worker
-/// threads could each decode a near-full-budget dictionary (and then reserve value sets) before either
+/// concurrently in the `Dictionary` stage: with per-batch accounting two worker threads could each
+/// decode a near-full-budget dictionary (and then reserve value sets) before either
 /// batch flushed, overshooting the watermark. A live reservation keeps every decoded dictionary and
 /// value set visible to all threads for as long as it is alive, so their combined footprint - across
 /// several dictionary-filtered columns in one row group and across several row groups on different
@@ -215,7 +216,7 @@ private:
 /// (see `ReadManager::pruningMemoryReservation`).
 struct PruningMemoryReservation
 {
-    /// The `BloomFilterBlocksOrDictionary` stage's live memory counter (nullptr == unbounded).
+    /// The `Dictionary` stage's live memory counter (nullptr == unbounded).
     std::atomic<size_t> * stage_memory = nullptr;
     /// The pruning stage's per-reader memory budget: the query-global
     /// `input_format_parquet_memory_high_watermark` scaled by the stage's `memory_target_fraction` and split
