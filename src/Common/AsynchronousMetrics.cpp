@@ -1895,10 +1895,13 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             uint64_t limit = 0;
             tryReadText(limit, *cgroupmem_limit_in_bytes);
 
-            uint64_t usage = cgroupmem_reader->readMemoryUsage();
+            /// The best-effort combined read keeps the pre-existing metrics below published even
+            /// if the inactive-file fields of `memory.stat` cannot be parsed; in that case only
+            /// `CGroupMemoryInactiveFile` is skipped for this update cycle.
+            auto stats = cgroupmem_reader->readMemoryUsageAndOptionalInactiveFile();
 
             new_values["CGroupMemoryTotal"] = { limit, "The total amount of memory in cgroup, in bytes. If stated zero, the limit is the same as OSMemoryTotal." };
-            new_values["CGroupMemoryUsed"] = { usage, "The amount of memory used in cgroup, in bytes. "
+            new_values["CGroupMemoryUsed"] = { stats.usage, "The amount of memory used in cgroup, in bytes. "
                 "On cgroup v2 this is anon + sock + non-reclaimable kernel memory; on cgroup v1 this is RSS. "
                 "In both cases the kernel OS page cache (file-backed cache) is excluded." };
 
@@ -1906,8 +1909,8 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             if (context && context->getPageCache())
                 userspace_page_cache_bytes = context->getPageCache()->sizeInBytes();
 
-            UInt64 cgroup_usage_without_page_cache = (usage > userspace_page_cache_bytes)
-                                                   ? (usage - userspace_page_cache_bytes)
+            UInt64 cgroup_usage_without_page_cache = (stats.usage > userspace_page_cache_bytes)
+                                                   ? (stats.usage - userspace_page_cache_bytes)
                                                    : 0;
 
             new_values["CGroupMemoryUsedWithoutPageCache"] = {
@@ -1916,6 +1919,20 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
                 "This is CGroupMemoryUsed minus the userspace page cache size. "
                 "When userspace page cache is disabled, this value equals CGroupMemoryUsed."
             };
+
+            /// The metric is published only when the kernel actually exposes the statistic
+            /// (`inactive_file` on cgroup v2, `total_inactive_file` on cgroup v1): an absent key
+            /// is not a zero, so it must not be reported as one.
+            if (stats.inactive_file)
+                new_values["CGroupMemoryInactiveFile"] = { *stats.inactive_file,
+                    "The amount of memory used for inactive, file-backed page cache in the same cgroup that CGroupMemoryUsed is read from, in bytes. "
+                    "This is reclaimable memory: the kernel can drop it under memory pressure. "
+                    "Kubernetes and cAdvisor compute the working set size (WSS) by subtracting this value from the raw cgroup memory usage "
+                    "(memory.current on cgroup v2, memory.usage_in_bytes on cgroup v1). "
+                    "Note that CGroupMemoryUsed is not that raw usage, because it already excludes the file-backed page cache. "
+                    "The value matches the one used by kubelet for the container on cgroup v2, and on cgroup v1 when the server runs in a container "
+                    "where the memory controller mount is the container's own cgroup. On cgroup v1 the value is read from the memory controller mount root, "
+                    "so on a host where the server runs in a nested v1 cgroup it covers the whole hierarchy under that root rather than the server's own cgroup." };
         }
         catch (...)
         {
