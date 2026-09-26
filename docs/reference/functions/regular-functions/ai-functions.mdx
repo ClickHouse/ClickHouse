@@ -48,7 +48,7 @@ The requests are issued from a server-wide thread pool. Its size (`max_ai_reques
 </profiles>
 ```
 
-The default is `16`. A value above `1` loosens two guarantees:
+The default is `8`. A value above `1` loosens two guarantees:
 
 - A request's token usage is only known once its response arrives, so [`ai_function_max_input_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query) and [`ai_function_max_output_tokens_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query) may overshoot by one request's worth per request in flight, rather than by one request's worth in total.
 - A wave of requests is dispatched before any of their errors is seen, so a query that fails on its first row may still have issued, and been billed for, as many requests as the concurrency allows.

@@ -9004,7 +9004,7 @@ Minimum estimated ratio of join output rows to build-side rows to enable transfo
     DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
 Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_retries, 1, R"(
+    DECLARE(UInt64, ai_function_max_retries, 3, R"(
 Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`.
 )", BETA) \
     DECLARE(UInt64, ai_function_retry_initial_delay_ms, 1000, R"(
@@ -9032,7 +9032,7 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", BETA) \
-    DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests_per_stream, 16, R"(
+    DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests_per_stream, 8, R"(
 Maximum number of provider requests one pipeline stream has in flight at the same time. `1` issues requests one at a time.
 
 A query running several streams (at most `max_threads`) can have up to this many requests in flight per stream. Use a settings profile constraint (`<constraints><ai_function_max_concurrent_requests_per_stream><max>...</max></...>`) to put a ceiling on it that a query cannot raise. The ceiling is still per stream.
