@@ -5,6 +5,7 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/quoteString.h>
+#include <Common/ProfileEvents.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
@@ -30,6 +31,11 @@
 
 #include <Poco/Logger.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event BloomFilterTextIndexRepeatedTokens;
+}
 
 namespace DB
 {
@@ -112,6 +118,8 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilterText::getGranuleAndR
             tokens.reset();
         added_tokens_used = false;
     }
+    if (remembered_hits)
+        ProfileEvents::increment(ProfileEvents::BloomFilterTextIndexRepeatedTokens, remembered_hits);
     tokens_in_granule = 0;
     remember_tokens = true;
     remembered_lookups = 0;
@@ -167,6 +175,7 @@ void MergeTreeIndexAggregatorBloomFilterText::addTokens(std::string_view documen
 
         if (++remembered_lookups == lookups_per_check)
         {
+            ProfileEvents::increment(ProfileEvents::BloomFilterTextIndexRepeatedTokens, remembered_hits);
             remember_tokens = remembered_hits >= min_hits_per_check;
             remembered_lookups = 0;
             remembered_hits = 0;

@@ -1,5 +1,6 @@
 -- A word that first appears in the last rows of a large granule must still be found through tokenbf_v1,
 -- ngrambf_v1 and sparse_grams indexes, whether the rows before it repeat the same words or rarely repeat.
+-- The INSERTs must also report the repeated words in the BloomFilterTextIndexRepeatedTokens profile event.
 -- Random settings limits: max_insert_threads=(1, 1); use_skip_indexes_on_data_read=(0, 0); use_query_condition_cache=(0, 0)
 -- Tags: no-parallel-replicas
 
@@ -66,6 +67,17 @@ SELECT count() FROM t_sparse WHERE s LIKE '%/api/v1/items%' SETTINGS force_data_
 
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sparse WHERE s LIKE '%qwpzkxvjbmtr%') WHERE explain ILIKE '%Granules: 1/2%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sparse WHERE s LIKE '%pmzvtqkxwrjb%') WHERE explain ILIKE '%Granules: 1/2%';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT sum(ProfileEvents['BloomFilterTextIndexRepeatedTokens']) > 0 FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+    AND type = 'QueryFinish' AND query_kind = 'Insert' AND has(tables, currentDatabase() || '.t_token');
+SELECT sum(ProfileEvents['BloomFilterTextIndexRepeatedTokens']) > 0 FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+    AND type = 'QueryFinish' AND query_kind = 'Insert' AND has(tables, currentDatabase() || '.t_ngram');
+SELECT sum(ProfileEvents['BloomFilterTextIndexRepeatedTokens']) > 0 FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+    AND type = 'QueryFinish' AND query_kind = 'Insert' AND has(tables, currentDatabase() || '.t_sparse');
 
 DROP TABLE t_token;
 DROP TABLE t_ngram;
