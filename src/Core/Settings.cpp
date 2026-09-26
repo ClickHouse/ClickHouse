@@ -9109,6 +9109,9 @@ Name of the named collection used by the text AI functions (`aiGenerate`, `aiCla
     DECLARE(String, ai_function_embedding_default_credentials, "", R"(
 Name of the named collection used by the embedding functions (`aiEmbed`, `aiSimilarity`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. These functions take `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
 )", BETA) \
+    DECLARE(String, ai_function_rerank_default_credentials, "", R"(
+Name of the named collection used by the reranking function (`aiRerank`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. Like the text functions, `aiRerank` reads `model` from its parameter map, falling back to the named collection's `model`. Kept separate from `ai_function_text_default_credentials` and `ai_function_embedding_default_credentials` because a reranking endpoint differs from both a chat and an embeddings one. Only used by `aiRerank`, which requires `allow_experimental_ai_rerank_function`.
+)", EXPERIMENTAL) \
     DECLARE(Bool, ai_function_allow_insecure_endpoint, false, R"(
 If false (default), AI functions refuse to use a named-collection `endpoint` that would send prompts and API keys over an unencrypted connection to a remote host: any non-HTTPS endpoint whose host is not loopback is rejected with an exception. Loopback endpoints (e.g. a local `http://localhost` model server) are always allowed. Set to true to permit plaintext `http://` endpoints on remote hosts.
 )", BETA) \
@@ -9126,6 +9129,9 @@ Enable functions for funnel analysis.
 )", EXPERIMENTAL, allow_experimental_funnel_functions) \
     DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
 Enable experimental functions for natural language processing.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_ai_rerank_function, false, R"(
+Enable the experimental `aiRerank` function, which reranks documents by relevance to a query.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions

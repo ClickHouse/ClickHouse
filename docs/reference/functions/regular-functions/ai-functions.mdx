@@ -31,9 +31,9 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-AI functions reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) vs the embedding functions (`aiEmbed`, `aiSimilarity`), which require different endpoints and usually use different models.
+AI functions reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`), the embedding functions (`aiEmbed`, `aiSimilarity`), and the reranking function (`aiRerank`), which require different endpoints and usually use different models.
 
-Example statement to create a named collection with provider credentials, one with a chat endpoint and another with an embedding endpoint:
+Example statement to create a named collection with provider credentials, one with a chat endpoint, one with an embedding endpoint, and one with a reranking endpoint:
 ```sql
 CREATE NAMED COLLECTION ai_text_credentials AS
     provider = 'openai',
@@ -48,15 +48,24 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
     api_key = 'sk-...';
+
+-- The reranking function (`aiRerank`) is experimental: set `allow_experimental_ai_rerank_function = 1`
+-- to use it. It resolves `model` the same way as the text functions: the named collection's `model`
+-- is a default, overridable via the parameter map.
+CREATE NAMED COLLECTION ai_rerank_credentials AS
+    provider = 'cohere',
+    endpoint = 'https://api.cohere.com/v2/rerank',
+    model = 'rerank-v3.5',
+    api_key = 'sk-...';
 ```
 
 ### Named collection parameters {#named-collection-parameters}
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. See note below. |
+| `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`, `'cohere'`. See note below. |
 | `endpoint` | String | — | API endpoint URL. |
-| `model` | String | — | Model name (e.g. `'gpt-4o-mini'`). Used by the text functions; the embedding functions (`aiEmbed`, `aiSimilarity`) require `model` as a positional argument and error if `model` is specified in the named collection. |
+| `model` | String | — | Model name (e.g. `'gpt-4o-mini'`). Used by the text and reranking functions as a default, overridable via the parameter map; the embedding functions (`aiEmbed`, `aiSimilarity`) require `model` as a positional argument instead and error if `model` is specified in the named collection. |
 | `api_key` | String | — | Authentication key for the provider. Optional: when omitted, the auth header is not sent, which allows targeting OpenAI-compatible servers that do not require authentication. |
 | `max_tokens` | UInt64 | `1024` | Maximum number of output tokens per API call. |
 | `api_version` | String | — | API version string. Used by Anthropic (`'2023-06-01'`). |
@@ -72,9 +81,10 @@ A function resolves the named collection to use from, in order:
 1. the `credentials` key of its parameter map, when present;
 2. otherwise the applicable default-credentials setting:
    - [`ai_function_text_default_credentials`](/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) for the text functions (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`);
-   - [`ai_function_embedding_default_credentials`](/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) for the embedding functions (`aiEmbed`, `aiSimilarity`).
+   - [`ai_function_embedding_default_credentials`](/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) for the embedding functions (`aiEmbed`, `aiSimilarity`);
+   - [`ai_function_rerank_default_credentials`](/reference/settings/session-settings/ai-function#ai_function_rerank_default_credentials) for the experimental reranking function (`aiRerank`).
 
-If neither is set, the call fails. The text and embedding functions use separate default settings because a chat-completions endpoint differs from an embeddings one.
+If neither is set, the call fails. The text, embedding, and reranking functions use separate default settings because a chat-completions endpoint differs from an embeddings or a reranking one.
 
 ```sql
 SET ai_function_text_default_credentials = 'ai_text_credentials';
@@ -102,7 +112,7 @@ The following parameters are common to all the AI functions:
 | Key | Description |
 |-----|-------------|
 | `credentials` | Named collection to use (see above). |
-| `model` | Overrides the collection's `model` (text functions only; the embedding functions (`aiEmbed`, `aiSimilarity`) take `model` as a required positional argument, not a map key). |
+| `model` | Overrides the collection's `model` (text functions and `aiRerank`; the embedding functions `aiEmbed`/`aiSimilarity` take `model` as a required positional argument, not a map key). |
 
 Individual functions accept additional, function-specific parameters (such as `max_tokens`, `temperature`, `system_prompt`, `instructions`, and `dimensions`). See each function's reference below for the parameters it accepts and their defaults.
 
@@ -122,6 +132,7 @@ The `endpoint` URL in an AI named collection is an outbound destination the serv
 <remote_url_allow_hosts>
     <host>api.openai.com</host>
     <host>api.anthropic.com</host>
+    <host>api.cohere.com</host>
 </remote_url_allow_hosts>
 ```
 
@@ -140,10 +151,11 @@ Note that in either case the provider receives the input data in cleartext after
 
 ## Supported providers {#supported-providers}
 
-| Provider | `provider` value | Chat functions | Notes |
-|----------|-----------------|----------------|-------|
-| OpenAI | `'openai'` | Yes | Default provider. |
-| Anthropic | `'anthropic'` | Yes | Uses `/v1/messages` endpoint. |
+| Provider | `provider` value | Chat functions | Embedding functions | Rerank function | Notes |
+|----------|------------------|----------------|---------------------|-----------------|-------|
+| OpenAI | `'openai'` | Yes | Yes | No | Default provider. |
+| Anthropic | `'anthropic'` | Yes | No | No | Uses `/v1/messages` endpoint. |
+| Cohere | `'cohere'` | No | No | Yes (experimental) | Uses the [Cohere Rerank API](https://docs.cohere.com/reference/rerank) `/v2/rerank` endpoint. Cohere bills reranking in search units, which the token limits don't count, but `input_tokens`/`output_tokens` in `meta.billed_units` are counted if the endpoint reports them. `aiRerank` requires `allow_experimental_ai_rerank_function = 1`. |
 
 ## Observability {#observability}
 
@@ -154,6 +166,7 @@ AI function activity is tracked through ClickHouse [ProfileEvents](/reference/sy
 | `AIAPICalls` | Number of HTTP requests made to the AI provider. |
 | `AIInputTokens` | Total input tokens consumed. |
 | `AIOutputTokens` | Total output tokens consumed. |
+| `AISearchUnits` | Total search units billed for reranking (`aiRerank`). |
 | `AIRowsProcessed` | Number of rows that received a result. |
 | `AIRowsSkipped` | Number of rows skipped (quota exceeded, or error with `ai_function_throw_on_error = 0`). |
 
