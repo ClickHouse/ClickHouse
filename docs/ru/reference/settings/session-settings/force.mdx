@@ -10,6 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHistory.jsx";
+import { CloudOnlyBadge } from "/snippets/ru/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -28,6 +29,16 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Этот параметр используется самим сервером для поддержки распределённых запросов. Не изменяйте его вручную, так как это нарушит штатную работу. (Принудительно включает агрегацию in order на удалённых узлах при распределённой агрегации).
+
+<div id="force_creating_set_partitions_independently">
+  ## force_creating_set_partitions_independently
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для принудительной предварительной дедупликации по партициям при построении набора для `IN (subquery)`, даже если проверка перекоса партиций не позволила бы её выполнить."}]}]} />
+
+Принудительно выполняет предварительную дедупликацию по партициям при построении набора для `IN (subquery)`, если она применима, но проверка перекоса партиций (наибольшая партиция более чем вдвое превышает среднее) решила её не использовать. Обходит только проверку перекоса настройки [allow&#95;creating&#95;set&#95;partitions&#95;independently](/ru/reference/settings/session-settings/allow#allow_creating_set_partitions_independently); остальные условия по-прежнему применяются.
 
 <div id="force_data_skipping_indices">
   ## force_data_skipping_indices
@@ -102,6 +113,18 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 
 Если `force_primary_key=1`, ClickHouse проверяет, есть ли в запросе условие по первичному ключу, которое можно использовать для ограничения диапазонов данных. Если подходящего условия нет, генерируется исключение. Однако при этом не проверяется, уменьшает ли это условие объём данных для чтения. Дополнительные сведения о диапазонах данных в таблицах семейства MergeTree см. в разделе [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree).
 
+<div id="force_read_through_distributed_cache">
+  ## force_read_through_distributed_cache
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "auto"},{"label": "Новая настройка, переопределяющая настройку сервера `enable_read_through_distributed_cache` для отдельного запроса."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "auto"},{"label": "Новая настройка, переопределяющая настройку сервера `enable_read_through_distributed_cache` для отдельного запроса."}]}]} />
+
+Действует только в ClickHouse Cloud. Переопределяет настройку сервера `enable_read_through_distributed_cache` для отдельного запроса. `auto` (значение по умолчанию) означает, что используется настройка сервера.
+
 <div id="force_remove_data_recursively_on_drop">
   ## force_remove_data_recursively_on_drop
 </div>
@@ -109,5 +132,27 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Рекурсивно удаляет данные при выполнении запроса DROP. Позволяет избежать ошибки &#39;Каталог не пуст&#39;, но может незаметно удалить данные в состоянии detached
+
+<div id="force_window_partitions_independently">
+  ## force_window_partitions_independently
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка, принудительно включающая независимое вычисление оконных функций для каждой партиции, даже если эвристика стоимости его пропускает."}]}]} />
+
+Принудительно включает независимое вычисление оконных функций для каждой партиции, если это применимо, но эвристика стоимости решила его не использовать. Обходит только эвристику стоимости [allow&#95;window&#95;partitions&#95;independently](/ru/reference/settings/session-settings/allow#allow_window_partitions_independently); остальные условия по-прежнему применяются.
+
+<div id="force_write_through_distributed_cache">
+  ## force_write_through_distributed_cache
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="BoolAuto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "auto"},{"label": "Новая настройка, переопределяющая настройку сервера `enable_write_through_distributed_cache` для отдельного запроса."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "auto"},{"label": "Новая настройка, переопределяющая настройку сервера `enable_write_through_distributed_cache` для отдельного запроса."}]}]} />
+
+Действует только в ClickHouse Cloud. Переопределяет настройку сервера `enable_write_through_distributed_cache` для отдельного запроса. `auto` (значение по умолчанию) означает, что используется настройка сервера.
 
 {/*AUTOGENERATED_END*/}

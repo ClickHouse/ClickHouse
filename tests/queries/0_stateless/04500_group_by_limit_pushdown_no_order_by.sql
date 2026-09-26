@@ -276,7 +276,7 @@ SELECT count(), countIf(complete) FROM
 
 -- The synthesized sort discards any group a heap eviction left partially
 -- aggregated, so the heap stays active even with several independent
--- non-sharded aggregation streams: a key evicted in one stream has >= N
+-- aggregation streams: a key evicted in one stream has >= N
 -- better keys in that stream (hence globally), and the sort+limit drops it.
 SELECT 'Multi-stream: every returned group complete';
 SELECT count(), countIf(complete) FROM
@@ -284,10 +284,10 @@ SELECT count(), countIf(complete) FROM
     SELECT l.s = f.s AS complete
     FROM (SELECT k, sum(v) AS s FROM (SELECT (999 - number % 1000)::UInt32 AS k, 1 AS v FROM numbers_mt(2000000)) GROUP BY k LIMIT 3) AS l
     INNER JOIN gt_multi AS f USING (k)
-) SETTINGS max_threads = 8, enable_sharding_aggregator = 0;
+) SETTINGS max_threads = 8;
 
 SELECT k FROM (SELECT (999 - number % 1000)::UInt32 AS k FROM numbers_mt(2000000)) GROUP BY k LIMIT 3
-SETTINGS enable_group_by_top_k_optimization = 1, max_threads = 8, enable_sharding_aggregator = 0, log_comment = '04500_multi' FORMAT Null;
+SETTINGS enable_group_by_top_k_optimization = 1, max_threads = 8, log_comment = '04500_multi' FORMAT Null;
 SELECT k FROM (SELECT (999 - number % 1000)::UInt32 AS k FROM numbers(2000000)) GROUP BY k LIMIT 3
 SETTINGS enable_group_by_top_k_optimization = 1, max_threads = 1, log_comment = '04500_single' FORMAT Null;
 SELECT k FROM (SELECT toUInt8(255 - (number % 256)) AS k FROM numbers(100000)) GROUP BY k LIMIT 5

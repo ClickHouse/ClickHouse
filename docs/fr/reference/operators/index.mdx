@@ -116,6 +116,32 @@ Pour la soustraction de tuples : [tupleMinus](/fr/reference/functions/regular-f
 
 `a ILIKE b` – La fonction `ilike(a, b)`.
 
+<div id="match-function">
+  ### fonction match
+</div>
+
+`a REGEXP b` – Fonction `match(a, b)`.
+
+`a ~ b` – Fonction `match(a, b)` (correspondance d’expression régulière de type PostgreSQL).
+
+<div id="notmatch-function">
+  ### Fonction notMatch
+</div>
+
+`a !~ b` – Fonction `notMatch(a, b)` (vérifie que `a` ne correspond pas à l’expression régulière `b`).
+
+<div id="matchcaseinsensitive-function">
+  ### Fonction matchCaseInsensitive
+</div>
+
+`a ~* b` – Fonction `matchCaseInsensitive(a, b)` (correspondance d’expression régulière insensible à la casse).
+
+<div id="notmatchcaseinsensitive-function">
+  ### Fonction notMatchCaseInsensitive
+</div>
+
+`a !~* b` – La fonction `notMatchCaseInsensitive(a, b)` (vérifie que `a` ne correspond pas à l’expression régulière `b`, sans distinction entre majuscules et minuscules).
+
 <div id="between-function">
   ### Fonction BETWEEN
 </div>

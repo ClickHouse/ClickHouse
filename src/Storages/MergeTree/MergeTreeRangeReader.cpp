@@ -48,6 +48,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+LoggerPtr getMergeTreeRangeReaderLogger()
+{
+    static LoggerPtr log = getLogger("MergeTreeRangeReader");
+    return log;
+}
+
 static bool canInplaceFilter(const ColumnPtr & column, const ColumnPtr & filter_column)
 {
     if (!column)
@@ -1218,11 +1224,14 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-    /// When no columns were physically read (e.g., constant PREWHERE expression),
-    /// numReadRows() is 0 but total_rows_per_granule has the correct row count
-    /// from the index granularity. Use it so the reading chain can continue
-    /// to subsequent readers that read actual data columns.
-    result.num_rows = result.numReadRows() > 0 ? result.numReadRows() : result.total_rows_per_granule;
+
+    /// A step that materializes no on-disk column (constant PREWHERE, or a filter over a column
+    /// absent from the part) reports no rows read, though the granule sizes taken from the index
+    /// are correct and those rows flow on through the chain. Only this front step accumulates it.
+    if (result.numReadRows() == 0)
+        result.addRows(result.total_rows_per_granule);
+
+    result.num_rows = result.numReadRows();
 
     updatePerformanceCounters(result.numReadRows());
 

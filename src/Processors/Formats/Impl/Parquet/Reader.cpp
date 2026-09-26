@@ -10,12 +10,15 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
-#include <Common/HashTable/HashSet.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <IO/CompressionMethod.h>
 #include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
@@ -29,6 +32,7 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <mutex>
+#include <fmt/ranges.h>
 #include <lz4.h>
 #include <arrow/util/crc32.h>
 
@@ -358,6 +362,127 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
             throw;
         }
     }
+}
+
+std::optional<Range> Reader::getTopKSortColumnRange(const parq::RowGroup & meta) const
+{
+    if (!top_k_primitive_idx.has_value())
+        return std::nullopt;
+    const PrimitiveColumnInfo & column_info = primitive_columns[*top_k_primitive_idx];
+    try
+    {
+        const auto & column_meta = meta.columns.at(column_info.column_idx).meta_data;
+        if (!column_meta.__isset.statistics)
+            return std::nullopt;
+
+        /// The statistics describe only the non-null values. A chunk that may contain nulls
+        /// cannot be skipped by them: depending on NULLS FIRST/LAST, the current heap contents
+        /// and `input_format_null_as_default`, its null rows themselves may belong to the top-K.
+        bool nullable = column_info.levels.back().def > 0;
+        bool no_nulls = column_meta.statistics.__isset.null_count && column_meta.statistics.null_count == 0;
+        if (nullable && !no_nulls)
+            return std::nullopt;
+
+        if (!column_meta.statistics.__isset.min_value || !column_meta.statistics.__isset.max_value)
+            return std::nullopt;
+
+        /// Decode in terms of the output block type: that is the type of the column the sorting
+        /// transforms above see, so the type the threshold `Field`s are compared in.
+        const DataTypePtr & output_block_type_ptr = extended_sample_block_data_types.at(column_info.idx_in_output_block);
+
+        /// `nan` is legally absent from Parquet min/max statistics (parquet.thrift: "When looking
+        /// for NaN values, min and max should be ignored"), while `ORDER BY` sorts `nan` together
+        /// with the NULLs. So, exactly like a chunk that may contain nulls, a floating-point chunk
+        /// that may contain a `nan` is not bounded by its statistics and cannot be skipped by them.
+        /// (`tryTopKForFormatSource` keeps floating-point sort keys off this path entirely for now,
+        /// because the per-row filter is not `nan`-aware either - see
+        /// https://github.com/ClickHouse/ClickHouse/issues/116705 - but the statistics shortcut is
+        /// unsound on its own and stays unsound after that is fixed.)
+        bool can_contain_float = isFloat(output_block_type_ptr);
+        output_block_type_ptr->forEachChild([&](const IDataType & child) { can_contain_float = can_contain_float || isFloat(child); });
+        if (can_contain_float)
+            return std::nullopt;
+
+        /// Parquet orders `UUID` statistics bytewise (parquet.thrift gives the `UUID` logical type
+        /// the `UNSIGNED` sort order, over the 16 big-endian bytes), while ClickHouse compares a
+        /// `UUID` as its two 64-bit halves in the opposite order. So the bytewise `min_value` /
+        /// `max_value` are not the extrema of the row group in the query's order - they can even
+        /// come out inverted - and cannot bound it
+        /// (https://github.com/ClickHouse/ClickHouse/issues/118371). This is the same situation as
+        /// a collated `ORDER BY`: only the statistics shortcut is unusable, the per-row
+        /// `__topKFilter` compares the decoded values and stays.
+        if (WhichDataType(removeNullable(removeLowCardinality(output_block_type_ptr))).isUUID())
+            return std::nullopt;
+
+        const IDataType & output_block_type = *output_block_type_ptr;
+        Range range = Range::createWholeUniverse();
+        column_info.decoder.decodeField(column_meta.statistics.min_value, /*is_max=*/ false, *column_info.decoded_type, output_block_type, range.left);
+        column_info.decoder.decodeField(column_meta.statistics.max_value, /*is_max=*/ true, *column_info.decoded_type, output_block_type, range.right);
+
+        /// `decodeField` leaves a bound at the `Range` infinity sentinel when the statistic cannot
+        /// be turned into a usable value (a `nan`, a rescale overflow, a signed/unsigned
+        /// mismatch, ...). One unusable bound invalidates the other one too: a `min_value` that
+        /// the output type cannot hold means the row group stores a value that `castColumn` wraps
+        /// or clamps to an arbitrary place in the output value space, and then the decoded
+        /// `max_value` is no longer an upper bound of what the sort sees. Give up on the whole row
+        /// group rather than on one side of the range.
+        if (range.left.isNull() || range.right.isNull())
+            return std::nullopt;
+
+        /// `decodeField` produces a `Field` in the output block type's value space only where a
+        /// `castColumn` over the values would rescale them (`cast_stats_to_output_type`); under a
+        /// narrowing type hint - an `INT32` column read as `UInt16`, say - it keeps the raw
+        /// physical value, while the values themselves reach the sort wrapped around by
+        /// `castColumn` (https://github.com/ClickHouse/ClickHouse/issues/118383). Comparing such a
+        /// bound against the threshold compares two different value spaces, so require both bounds
+        /// to be exactly representable in the output block type: an interval whose ends both are
+        /// representable holds no value that the cast could move.
+        Field left = tryConvertFieldToType(range.left, output_block_type, /*from_type_hint=*/ nullptr, /*format_settings=*/ {}, /*strict=*/ true);
+        Field right = tryConvertFieldToType(range.right, output_block_type, /*from_type_hint=*/ nullptr, /*format_settings=*/ {}, /*strict=*/ true);
+        if (left.isNull() || right.isNull())
+            return std::nullopt;
+        range.left = std::move(left);
+        range.right = std::move(right);
+
+        /// Same validation as the static min/max pruning path: self-contradictory statistics
+        /// (`min_value > max_value`) must fail closed rather than become pruning input. We get here
+        /// only for chunks proven to have no nulls, hence `can_be_null = false`.
+        adjustRangeFromIndexIfNeeded(range, column_info, /*can_be_null=*/ false);
+
+        return range;
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(
+            "in column chunk statistics for TopN sort column '{}'; use use_top_k_dynamic_filtering=0 to ignore",
+            column_info.name);
+        throw;
+    }
+}
+
+bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
+{
+    const auto & top_k = format_filter_info->top_k_filter;
+    if (!top_k || !row_group.top_k_sort_column_range.has_value())
+        return false;
+    const auto & tracker = *top_k->threshold_tracker;
+    if (!tracker.isSet())
+        return false;
+    /// For ascending order, a row group whose minimum is already beyond the threshold cannot
+    /// contain a row that improves the top-K heap; for descending, symmetrically the maximum.
+    /// The comparison is non-strict on the other side (a value equal to the threshold may still
+    /// tie-break into the heap on the remaining sort columns), matching `__topKFilter`.
+    const Range & range = *row_group.top_k_sort_column_range;
+    const Field & boundary = tracker.getDirection() == 1 ? range.left : range.right;
+    /// `getTopKSortColumnRange` only hands out a range whose both bounds decoded into the output
+    /// block type's value space, so this is unreachable - but the cost of being wrong is a lost
+    /// row: the `Range` infinity sentinels are `Null`-typed `Field`s, which `TopKThresholdTracker`
+    /// compares as a SQL `NULL` - ordered by `nulls_direction` - rather than as an infinity, so an
+    /// unbounded side would read as "beyond the threshold" and skip the row group.
+    chassert(!boundary.isNull());
+    if (boundary.isNull())
+        return false;
+    return !tracker.isValueInsideThreshold(boundary);
 }
 
 bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
@@ -696,6 +821,41 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         }
     }
 
+    /// TopN dynamic filtering: decide whether this file may apply the threshold at all, and locate
+    /// the sort column among the primitive columns for skipping row groups by its min/max
+    /// statistics against the running threshold (see topKShouldSkipRowGroup).
+    if (format_filter_info->top_k_filter)
+    {
+        auto pos = extended_sample_block.findPositionByName(format_filter_info->top_k_filter->column_name);
+        if (pos.has_value())
+        {
+            const auto & output_idx = sample_block_to_output_columns_idx.at(*pos);
+            if (output_idx.has_value())
+            {
+                const OutputColumnInfo & output_info = output_columns[output_idx.value()];
+
+                /// A column this file does not store is filled with type defaults here, while the
+                /// threshold above is produced from whatever the pipeline puts in its place (e.g.
+                /// `AddingDefaultsTransform` evaluating the column's `DEFAULT` expression).
+                /// Comparing the placeholders against that threshold could drop rows of the
+                /// top-K. The reading step already refuses to arm the filter for a column with a
+                /// default expression, but "physically read" is only known here, per file.
+                top_k_column_is_read = !output_info.is_missing_column;
+
+                /// The row-group statistics shortcut is unsound for a collated `ORDER BY`: Parquet
+                /// string `min_value` / `max_value` are bytewise extrema, not extrema in the
+                /// query's collation order, so a row group could be skipped while still holding
+                /// values that sort before the threshold under the collator. The per-row
+                /// `__topKFilter` (which does compare with the collator) stays.
+                if (top_k_column_is_read
+                    && !format_filter_info->top_k_filter->threshold_tracker->getCollator()
+                    && output_info.is_primitive
+                    && primitive_columns[output_info.primitive_start].decoder.allow_stats)
+                    top_k_primitive_idx = output_info.primitive_start;
+            }
+        }
+    }
+
     /// Populate row_groups. Skip row groups based on column chunk min/max statistics.
     size_t total_rows = 0;
     for (size_t row_group_idx = 0; row_group_idx < file_metadata.row_groups.size(); ++row_group_idx)
@@ -776,6 +936,7 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
         row_group.start_global_row_idx = total_rows - size_t(meta->num_rows);
         row_group.columns.resize(primitive_columns.size());
         row_group.hyperrectangle = std::move(hyperrectangle);
+        row_group.top_k_sort_column_range = getTopKSortColumnRange(*meta);
 
         for (size_t column_idx = 0; column_idx < primitive_columns.size(); ++column_idx)
         {
@@ -990,7 +1151,7 @@ void Reader::prepareBloomFilterCondition()
 void Reader::initializePrefetches()
 {
     bool use_offset_index = options.format.parquet.use_offset_index || format_filter_info->prewhere_info || format_filter_info->row_level_filter
-        || format_filter_info->rows_to_read
+        || format_filter_info->rows_to_read || (format_filter_info->top_k_filter && top_k_column_is_read)
         || std::any_of(primitive_columns.begin(), primitive_columns.end(), [](const auto & c) { return !c.column_index_conditions.empty(); });
     bool need_to_find_bloom_filter_lengths_the_hard_way = false;
 
@@ -1302,6 +1463,28 @@ void Reader::preparePrewhere()
             add_single_step(dag, filter_column_name, needs_filter, 0);
         }
     };
+
+    /// TopN dynamic filtering: drop rows that cannot enter the query's top-K heap by comparing
+    /// the sort column against the running threshold (all-pass until the heap fills). Added as
+    /// the first step: the comparison is cheap, and once the threshold is set it is usually the
+    /// most selective of the filters, so the later steps' columns are then read only for the few
+    /// surviving rows (with whole pages skipped where possible).
+    if (format_filter_info->top_k_filter)
+    {
+        const auto & top_k = *format_filter_info->top_k_filter;
+        /// The sort column is one of the requested output columns (the sorting above consumes it)
+        /// and this file must physically store it (`top_k_column_is_read`, see
+        /// prefilterAndInitRowGroups); if not, just skip the optimization - it only ever removes rows.
+        if (top_k_column_is_read && extended_sample_block.has(top_k.column_name))
+        {
+            const auto & col = extended_sample_block.getByName(top_k.column_name);
+            ActionsDAG dag({NameAndTypePair(col.name, col.type)});
+            const auto & filter_node = dag.addFunction(
+                createInternalFunctionTopKFilterResolver(top_k.threshold_tracker), {dag.getInputs().front()}, {});
+            dag.getOutputs().push_back(&filter_node);
+            add_single_step(dag, filter_node.result_name, /*needs_filter=*/ true, /*step_idx=*/ 0);
+        }
+    }
 
     if (row_level_filter)
         add_step(row_level_filter->actions, row_level_filter->column_name, true);
@@ -1640,10 +1823,54 @@ bool Reader::columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_
     return has_dictionary_data_page;
 }
 
+/// The value set of one column chunk's dictionary, prepared for lookups: the hashes of all
+/// dictionary values, sorted for binary search. `default_value_hash` stands for the values the
+/// dictionary does not hold: nulls decoded as the type's default under `input_format_null_as_default`
+/// (see `hashDictionaryValues`). It is kept out of `hashes` so the vector stays exactly the
+/// allocation `parquetTryHashColumn` made, which the pruning-memory reservation accounts for;
+/// appending would regrow the vector geometrically past the reserved amount.
+struct DictionaryValueHashes
+{
+    std::vector<UInt64> hashes;
+    std::optional<UInt64> default_value_hash;
+
+    /// Whether any of `probes` is among the dictionary's values.
+    ///
+    /// For a sorted probe sequence - which is what `KeyCondition::prepareBloomFilterData` produces -
+    /// this is an intersection of two sorted sequences rather than a sequence of independent binary
+    /// searches: every probe continues where the previous one stopped. A handful of query constants
+    /// then costs a binary search each, while a large probe set degrades to a linear merge of the two
+    /// sequences instead of `probes.size()` full-height searches over the whole vector. That matters
+    /// because a probe set is not always small: `prepareBloomFilterCondition` deliberately keeps
+    /// hashing `IN` sets that are over the bloom filter's cap, so that the exact dictionary filter can
+    /// still prune them, which means `findAnyHash` can be called with thousands of probes for one
+    /// column chunk. An out-of-order probe merely restarts the window, so the result does not depend
+    /// on the probes being sorted.
+    bool containsAny(const std::vector<UInt64> & probes) const
+    {
+        auto it = hashes.begin();
+        UInt64 previous_probe = 0;
+        for (UInt64 probe : probes)
+        {
+            if (probe == default_value_hash)
+                return true;
+            if (probe < previous_probe)
+                it = hashes.begin();
+            previous_probe = probe;
+            it = std::lower_bound(it, hashes.end(), probe);
+            /// `it` at the end means no dictionary value is >= this probe: every later probe that is
+            /// not smaller searches an empty range, and a smaller one restarts from the beginning.
+            if (it != hashes.end() && *it == probe)
+                return true;
+        }
+        return false;
+    }
+};
+
 /// Hash all values of an already-decoded dictionary the same way query constants are hashed for
 /// bloom filters, so the two can be compared. Returns nullopt if the values can't be hashed (in
 /// which case the dictionary can't be used for filtering).
-static std::optional<HashSet<UInt64>> hashDictionaryValues(
+static std::optional<DictionaryValueHashes> hashDictionaryValues(
     const parq::FileMetaData & file_metadata, const ReadOptions & options,
     Reader::ColumnChunk & column, const Reader::PrimitiveColumnInfo & column_info,
     const PruningMemoryReservation & reservation, size_t & held_pruning_bytes)
@@ -1656,8 +1883,8 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// on-disk dictionary page (`dictionary_filter_limit_bytes`, 1 MiB by default), not the decoded
     /// value set we are about to build here. A highly compressible dictionary can stay under that
     /// limit yet decode to many times more, and constructing the value set below (a materialized
-    /// column of all values, a vector of hashes, and a `HashSet` of them) then allocates that much
-    /// transient memory - potentially for several row groups in parallel during pruning. Charge it to
+    /// column of all values and a vector of their hashes) then allocates that much transient
+    /// memory - potentially for several row groups in parallel during pruning. Charge it to
     /// the shared pruning-stage budget (`reservation`): the reader's memory high watermark minus what
     /// the pruning stage already holds - the decoded dictionaries charged in `ReadManager::runTask`,
     /// plus the value sets already reserved by other dictionary lookups, whether earlier in this same
@@ -1674,7 +1901,7 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// `estimated_value_set_bytes` must be an upper bound on the peak transient memory allocated below,
     /// so that once the reservation succeeds the value set is guaranteed to stay within budget while it
     /// is built. The `hashes` vector (allocated at exactly `count` capacity by `parquetTryHashColumn`, so
-    /// exactly `count * sizeof(UInt64)`) and the resulting `value_hashes` HashSet are always built; the
+    /// exactly `count * sizeof(UInt64)`) is always built and sorted in place; the
     /// hashing itself allocates nothing on top - `parquetTryHashColumn` hashes string values in place
     /// from the column's buffers rather than copying each into a `Field` scratch string, and every other
     /// hashable type is stored inline in `Field`. When
@@ -1687,21 +1914,6 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// back by `count` understates a mixed-length string dictionary by up to `count` bytes. The
     /// `Mode::Column` path hashes the already-decoded (and already-charged) column in place, so it
     /// needs none of the materialization terms.
-    ///
-    /// The `HashSet` term cannot be approximated per value: `HashSet::reserve` picks a power-of-two
-    /// buffer with a maximum fill factor of 0.5 (`HashTableGrowerWithPrecalculation::set`), so the
-    /// table holds up to ~4 cells per inserted hash and never fewer than its initial 256 cells.
-    /// Compute the buffer size with the set's own growth rule so the reservation matches what
-    /// `reserve` really allocates, for the full insert cardinality: all `count` dictionary hashes
-    /// plus the one extra default-value hash possibly added under `input_format_null_as_default`
-    /// below (reserving for it up front also guarantees that insert never triggers a rehash past the
-    /// reservation). Add the set's initial constructor-allocated buffer, which can transiently
-    /// coexist with the resized one inside `realloc`.
-    using ValueHashSet = HashSet<UInt64>;
-    ValueHashSet::grower_type value_set_grower;
-    value_set_grower.set(count + 1);
-    size_t value_set_buffer_bytes =
-        (value_set_grower.bufSize() + ValueHashSet::grower_type::initial_count) * sizeof(ValueHashSet::cell_type);
     size_t per_value_bytes = sizeof(UInt64);    /// `hashes` vector
     size_t materialized_payload_bytes = 0;
     if (column.dictionary.mode != Dictionary::Mode::Column)
@@ -1716,12 +1928,12 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
             sizeof(UInt64)      /// materialized `ColumnString` offsets (0 for fixed types; counted conservatively)
             + sizeof(UInt32);   /// identity `indexes`
     }
-    size_t estimated_value_set_bytes = count * per_value_bytes + materialized_payload_bytes + value_set_buffer_bytes;
+    size_t estimated_value_set_bytes = count * per_value_bytes + materialized_payload_bytes;
     /// Reserve the peak footprint before allocating anything. If it does not fit, skip pruning.
     if (!reservation.tryReserve(estimated_value_set_bytes))
         return std::nullopt;
     /// Release the whole reservation on every early-out below; only the successful path keeps the
-    /// persistent part reserved (reduced to the actual `HashSet` footprint) and hands it to the caller
+    /// persistent part reserved (reduced to the actual `hashes` buffer) and hands it to the caller
     /// via `held_pruning_bytes` (see `DictionaryLookup`, which releases it when the value set is freed).
     bool committed = false;
     SCOPE_EXIT({ if (!committed) reservation.release(estimated_value_set_bytes); });
@@ -1752,12 +1964,15 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     }
     if (!hashes.has_value())
         return std::nullopt;
-    ValueHashSet value_hashes;
-    /// +1 for the possible extra default-value hash below: when `hashes->size()` lands exactly on the
-    /// table's maximum fill, that late insert would otherwise rehash past the reserved buffer.
-    value_hashes.reserve(hashes->size() + 1);
-    for (UInt64 h : *hashes)
-        value_hashes.insert(h);
+
+    DictionaryValueHashes value_hashes;
+    value_hashes.hashes = std::move(*hashes);
+    hashes.reset();
+    /// Sort once so every lookup is a binary search. Sorting in place needs no extra memory, unlike
+    /// a hash table of the values, whose buffer (a power-of-two sized to a maximum fill factor of
+    /// 0.5) would hold up to ~4 cells per value on top of this vector - several times the footprint
+    /// for a value set that is built once per column chunk and probed a handful of times.
+    std::sort(value_hashes.hashes.begin(), value_hashes.hashes.end());
 
     /// The dictionary holds only the non-null values of the column chunk, so we must account for how
     /// nulls are read into the output, mirroring the conservative null handling of the min/max path in
@@ -1777,7 +1992,7 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
             /// If the default value can't be hashed, we can't rule out a match.
             if (!default_hash.has_value())
                 return std::nullopt;
-            value_hashes.insert(*default_hash);
+            value_hashes.default_value_hash = default_hash;
         }
         else
         {
@@ -1788,23 +2003,23 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
         }
     }
 
-    /// Free the transient `hashes` vector (the `indexes`/`values` allocations were already freed by
-    /// leaving their scope above) before releasing the reservation that covers it: otherwise a
-    /// concurrent pruning task could observe the released budget as free while `hashes` is still
-    /// allocated here, transiently exceeding the watermark.
-    hashes.reset();
-
     /// The value set is kept alive (in its `DictionaryLookup`) until this whole row-group filter
-    /// evaluation finishes, so keep its persistent footprint - the real `HashSet` buffer - reserved
+    /// evaluation finishes, so keep its persistent footprint - the sorted `hashes` buffer - reserved
     /// against the shared budget and hand the amount to the caller to release when the value set is
-    /// freed. The transient `indexes`/`values`/`hashes` allocations were already freed above, so
-    /// release that part of the reservation now: a second dictionary-filtered column, or another row
-    /// group pruning in parallel, then sees only the persistent part still held, keeping the combined
-    /// footprint within the watermark without over-reserving for the transients. The estimate above
-    /// follows the set's own growth rule, so it never under-predicts the buffer; the grow branch is a
-    /// defensive backstop (mirroring `decodeDictionaryPage`) in case the two ever drift apart, falling
-    /// back to a full scan if the correction no longer fits the budget.
-    size_t persistent_bytes = value_hashes.getBufferSizeInBytes();
+    /// freed. The transient `indexes`/`values` allocations were already freed by leaving their scope
+    /// above, so release that part of the reservation now: a second dictionary-filtered column, or
+    /// another row group pruning in parallel, then sees only the persistent part still held, keeping
+    /// the combined footprint within the watermark without over-reserving for the transients. The
+    /// estimate above covers the buffer exactly (`parquetTryHashColumn` reserves exactly `count`
+    /// elements); the grow branch is a defensive backstop (mirroring `decodeDictionaryPage`) in case
+    /// the two ever drift apart, falling back to a full scan if the correction no longer fits the
+    /// budget.
+    /// The vector must be exactly what `parquetTryHashColumn` allocated: the default value hash above
+    /// is kept in a separate field precisely so that nothing is appended here, which would grow the
+    /// vector geometrically past the reservation (and, for a dictionary whose reservation is nothing
+    /// but the vector - the `Mode::Column` path - past the whole budget).
+    chassert(value_hashes.hashes.size() == count);
+    size_t persistent_bytes = value_hashes.hashes.capacity() * sizeof(UInt64);
     if (persistent_bytes > estimated_value_set_bytes)
     {
         if (!reservation.tryReserve(persistent_bytes - estimated_value_set_bytes))
@@ -1833,7 +2048,7 @@ struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
     size_t reserved_bytes = 0;
 
     bool computed = false;
-    std::optional<HashSet<UInt64>> value_hashes;
+    std::optional<DictionaryValueHashes> value_hashes;
 
     /// Bloom filter of the same column chunk, kept as a fallback for when the exact dictionary value set
     /// can't be built within the pruning memory budget (see `hashDictionaryValues`). Without it such a
@@ -1867,10 +2082,7 @@ bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
     /// fall back to the column chunk's bloom filter if it has one; otherwise we can't rule out a match.
     if (!value_hashes.has_value())
         return bloom_fallback ? bloom_fallback->findAnyHash(hashes) : true;
-    for (UInt64 h : hashes)
-        if (value_hashes->contains(h))
-            return true;
-    return false;
+    return value_hashes->containsAny(hashes);
 }
 
 bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation)
@@ -2865,7 +3077,27 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
     UInt8 max_def = column_info.levels.back().def;
     UInt8 max_rep = column_info.levels.back().rep;
 
-    decodeRepOrDefLevels(rep_encoding, max_rep, page.num_values, std::span(encoded_rep, encoded_rep_size), page.rep);
+    /// Invariant, from `PageLocation.first_row_index` in `parquet.thrift`: when an OffsetIndex is
+    /// present, every page begins on a row boundary (repetition level 0). So a page's row count is
+    /// its number of zero repetition levels, and it must equal the span the offset index declares
+    /// for that page.
+    ///
+    /// A repeated column's V1 data page header has no row count, so the check above had nothing to
+    /// compare and the declared span seeded the row cursor unchecked. Count the zero repetition
+    /// levels as part of the decode - the same quantity the writer counts in `flush_page` in
+    /// `Write.cpp` - and require equality.
+    const bool check_row_count = max_rep > 0 && !num_rows_in_page.has_value() && end_row_idx.has_value();
+    size_t rows_in_page = 0;
+
+    decodeRepOrDefLevels(rep_encoding, max_rep, page.num_values, std::span(encoded_rep, encoded_rep_size), page.rep, check_row_count ? &rows_in_page : nullptr);
+
+    if (check_row_count && rows_in_page != *end_row_idx - next_row_idx)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Number of rows in page of column {} doesn't match offset index: page has {} rows, "
+            "offset index declares rows [{}, {}). For a query without filters, use "
+            "input_format_parquet_use_offset_index=0 to read the file without the offset index",
+            fmt::join(column.meta->meta_data.path_in_schema, "."), rows_in_page, next_row_idx, *end_row_idx);
 
     /// Don't decode def levels in the common case of non-array column that's declared nullable but
     /// contains no nulls.
@@ -3072,6 +3304,9 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
     /// readRowsInPage in page 0 will reach end of page, with next_row_idx == end_row_idx. Then
     /// readRowsInPage in page 1 will continue until it sees the end of the array, i.e. the start of
     /// the next row (rep == 0), still with next_row_idx == end_row_idx.
+    /// Note that a row can only straddle a page boundary like this on the sequential path. When an
+    /// offset index is present, pages must begin on row boundaries, and `initializeDataPage` rejects
+    /// a page whose repetition levels say otherwise.
     chassert(end_row_idx >= page.next_row_idx);
 
     size_t first_row_idx = page.next_row_idx;
@@ -3166,15 +3401,20 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 
         if (page.is_dictionary_encoded)
         {
-            if (!page.indices_column)
-                page.indices_column = ColumnUInt32::create();
-            auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
-            auto & data = indices_column_uint32.getData();
-            chassert(data.empty());
             chassert(!filter);
-            page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
-            column.dictionary.index(indices_column_uint32, *subchunk.column);
-            data.clear();
+            /// Fused decode-and-gather; falls back to materializing the indexes as a column when
+            /// the decoder or the dictionary mode does not support the fusion.
+            if (!page.decoder->decodeAndIndex(encoded_values_to_read, column.dictionary, *subchunk.column))
+            {
+                if (!page.indices_column)
+                    page.indices_column = ColumnUInt32::create();
+                auto & indices_column_uint32 = assert_cast<ColumnUInt32 &>(*page.indices_column);
+                auto & data = indices_column_uint32.getData();
+                chassert(data.empty());
+                page.decoder->decode(encoded_values_to_read, *page.indices_column, nullptr, 0);
+                column.dictionary.index(indices_column_uint32, *subchunk.column);
+                data.clear();
+            }
         }
         else
         {

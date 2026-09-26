@@ -1,7 +1,7 @@
 {
   "groups": [
     {
-      "group": "Fuentes de datos",
+      "group": "Data sources",
       "pages": [
         "es/integrations/connectors/data-sources/index",
         {
@@ -44,7 +44,7 @@
     },
     {
       "expanded": true,
-      "group": "Visualización de datos",
+      "group": "Data visualization",
       "pages": [
         "es/integrations/connectors/data-visualization/index",
         {
@@ -77,7 +77,7 @@
         },
         {
           "expanded": false,
-          "group": "Integraciones de la comunidad",
+          "group": "Community integrations",
           "pages": [
             "es/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse",
             "es/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse",
@@ -100,9 +100,8 @@
     },
     {
       "expanded": true,
-      "group": "Ingestión de datos",
+      "group": "Data ingestion",
       "pages": [
-        "es/integrations/connectors/data-ingestion/index",
         "es/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         "es/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "es/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
@@ -139,7 +138,7 @@
             "es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
             {
               "expanded": false,
-              "group": "Plantillas de Dataflow",
+              "group": "Dataflow templates",
               "pages": [
                 "es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                 "es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -149,15 +148,7 @@
         },
         "es/integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
         {
-          "expanded": false,
-          "group": "dbt",
-          "pages": [
-            "es/integrations/connectors/data-ingestion/etl-tools/dbt/index",
-            "es/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
-            "es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
-            "es/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
-            "es/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ]
+          "$ref": "data-ingestion/etl-tools/dbt/navigation.json"
         },
         "es/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
@@ -180,7 +171,7 @@
         },
         {
           "expanded": false,
-          "group": "Integraciones de la comunidad",
+          "group": "Community integrations",
           "pages": [
             "es/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
             "es/integrations/connectors/data-ingestion/community-integrations/erathos",
@@ -198,11 +189,12 @@
     },
     {
       "expanded": true,
-      "group": "Integraciones de datos",
+      "group": "Data integrations",
       "pages": [
         "es/integrations/connectors/tools/data-integration-index",
         "es/integrations/connectors/data-integrations/integrations/retool",
         "es/integrations/connectors/data-integrations/integrations/easypanel",
+        "es/integrations/connectors/data-integrations/integrations/microsoft-fabric",
         "es/integrations/connectors/data-integrations/integrations/middleware",
         "es/integrations/connectors/data-integrations/integrations/notion",
         "es/integrations/connectors/data-integrations/integrations/splunk"
@@ -210,7 +202,7 @@
     },
     {
       "expanded": true,
-      "group": "Clientes SQL",
+      "group": "SQL-clients",
       "pages": [
         "es/integrations/connectors/sql-clients/index",
         "es/integrations/connectors/sql-clients/sql-console",
@@ -226,7 +218,7 @@
     },
     {
       "expanded": true,
-      "group": "Herramientas",
+      "group": "Tools",
       "pages": [
         "es/integrations/connectors/tools/index",
         "es/integrations/connectors/tools/misc-index",
@@ -237,5 +229,5 @@
     }
   ],
   "icon": "/images/icons/icon-connectors.svg",
-  "item": "Conectores"
+  "item": "Connectors"
 }

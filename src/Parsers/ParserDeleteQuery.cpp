@@ -1,5 +1,6 @@
 #include <Parsers/ParserDeleteQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserSetQuery.h>
@@ -24,7 +25,6 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_on{Keyword::ON};
 
-    ParserPartition parser_partition;
 
     if (s_delete.ignore(pos, expected))
     {
@@ -44,8 +44,17 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (s_in_partition.ignore(pos, expected))
         {
-            if (!parser_partition.parse(pos, query->partition, expected))
+            ParserList partition_list_parser(
+                std::make_unique<ParserPartition>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+            ASTPtr partition_list_ast;
+            if (!partition_list_parser.parse(pos, partition_list_ast, expected))
                 return false;
+
+            auto & partition_list = partition_list_ast->as<ASTExpressionList &>();
+            if (partition_list.children.size() == 1)
+                query->partition = std::move(partition_list.children[0]);
+            else
+                query->partitions = std::move(partition_list_ast);
         }
 
         if (!s_where.ignore(pos, expected))
@@ -80,6 +89,9 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (query->partition)
         query->children.push_back(query->partition);
 
+    if (query->partitions)
+        query->children.push_back(query->partitions);
+
     if (query->predicate)
         query->children.push_back(query->predicate);
 
@@ -108,10 +120,12 @@ void registerStatementDelete(StatementFactory & factory)
 The lightweight `DELETE` statement removes rows from the table `[db.]table` that match the expression `expr`. It is only available for the *MergeTree table engine family.
 
 ```sql
-DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE expr;
 ```
 
 It is called "lightweight `DELETE`" to contrast it to the [ALTER TABLE ... DELETE](/reference/statements/alter/delete) command, which is a heavyweight process.
+
+The `IN PARTITION` clause limits the delete to the listed partitions. Without it, on tables of the `ReplicatedMergeTree` family, when the [optimize_mutations_with_partition_pruning](/reference/settings/session-settings/optimize) setting is enabled (the default), ClickHouse automatically detects partition key conditions in `expr` and only deletes from the affected partitions. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit a delete to specific partitions.
 
 ## Examples {#examples}
 
@@ -194,7 +208,7 @@ GRANT ALTER DELETE ON db.table to username;
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 )DOCS_MD",
         .syntax = R"(
-DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE expr
 )",
         .related = {"ALTER TABLE ... DELETE", "ALTER TABLE ... APPLY DELETED MASK", "UPDATE", "TRUNCATE"},
     });

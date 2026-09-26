@@ -76,11 +76,7 @@ public:
         tx->commit();
     }
 
-    DirectoryIteratorPtr iterateDirectory(const String & path) const override
-    {
-        auto wrapped_path = wrappedPath(path);
-        return delegate->iterateDirectory(wrapped_path);
-    }
+    DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
     void createFile(const String & path) override
     {
@@ -274,6 +270,18 @@ public:
     {
         auto wrapped_path = wrappedPath(path);
         return delegate->getLastChanged(wrapped_path);
+    }
+
+    struct stat stat(const String & path) const override
+    {
+        return delegate->stat(wrappedPath(path));
+    }
+
+    void chmod(const String & path, mode_t mode) override
+    {
+        auto tx = createEncryptedTransaction();
+        tx->chmod(path, mode);
+        tx->commit();
     }
 
     void setReadOnly(const String & path) override
