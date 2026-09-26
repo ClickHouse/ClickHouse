@@ -247,6 +247,11 @@ private:
         NamesAndTypesList storage_columns{};
         NamesAndTypesList virtual_columns{};
         NamesAndTypesList storage_columns_expired_by_ttl{};
+        /// Columns expired because their `DEFAULT` cannot be materialized during the merge (it reads
+        /// a column that is absent from the source parts). Unlike columns expired by a column `TTL`,
+        /// their default must not be evaluated by the TTL step: the value it would produce is exactly
+        /// the one that corrupts the shared `Nested` offsets. They are recomputed on read instead.
+        NameSet columns_expired_by_unmaterializable_default{};
         NamesAndTypesList minmax_idx_columns{};
 
         MergedBlockOutputStream::GatheredData gathered_data{};
