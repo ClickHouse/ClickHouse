@@ -22,7 +22,8 @@ namespace ErrorCodes
 namespace
 {
 bool parseUserNameWithHost(
-    IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTUserNameWithHost> & ast, bool allow_query_parameter)
+    IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTUserNameWithHost> & ast,
+    bool allow_query_parameter, bool parse_host_pattern)
 {
     return IParserBase::wrapParseImpl(
         pos,
@@ -67,7 +68,17 @@ bool parseUserNameWithHost(
 
             host_pattern = trim(host_pattern, isWhitespaceASCII);
 
-            if (host_pattern.empty() || host_pattern == "%")
+            const auto * name_id = name_ast->as<ASTIdentifier>();
+            if (!parse_host_pattern && (!name_id || !name_id->isParam()))
+            {
+                /// These statements historically stored the name as a String. Preserve that canonical form for
+                /// static names so their formatter continues to quote the whole name, including a folded `@host`.
+                String name = name_id ? getIdentifierName(name_ast) : name_ast->as<ASTLiteral &>().value.safeGet<String>();
+                if (!host_pattern.empty() && host_pattern != "%")
+                    name += "@" + host_pattern;
+                ast = make_intrusive<ASTUserNameWithHost>(std::move(name));
+            }
+            else if (host_pattern.empty() || host_pattern == "%")
                 ast = make_intrusive<ASTUserNameWithHost>(std::move(name_ast));
             else
                 ast = make_intrusive<ASTUserNameWithHost>(std::move(name_ast), std::move(host_pattern));
@@ -81,15 +92,15 @@ bool parseUserNameWithHost(
 bool ParserUserNameWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     boost::intrusive_ptr<ASTUserNameWithHost> res;
-    if (!parseUserNameWithHost(pos, expected, res, allow_query_parameter))
+    if (!parseUserNameWithHost(pos, expected, res, allow_query_parameter, parse_host_pattern))
         return false;
 
     node = res;
     return true;
 }
 
-ParserUserNameWithHost::ParserUserNameWithHost(bool allow_query_parameter_)
-    : allow_query_parameter(allow_query_parameter_)
+ParserUserNameWithHost::ParserUserNameWithHost(bool allow_query_parameter_, bool parse_host_pattern_)
+    : allow_query_parameter(allow_query_parameter_), parse_host_pattern(parse_host_pattern_)
 {
 }
 
@@ -101,7 +112,7 @@ bool ParserUserNamesWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     auto parse_single_name = [&]
     {
         boost::intrusive_ptr<ASTUserNameWithHost> ast;
-        if (!parseUserNameWithHost(pos, expected, ast, allow_query_parameter))
+        if (!parseUserNameWithHost(pos, expected, ast, allow_query_parameter, parse_host_pattern))
             return false;
 
         names.emplace_back(std::move(ast));
@@ -117,8 +128,8 @@ bool ParserUserNamesWithHost::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
-ParserUserNamesWithHost::ParserUserNamesWithHost(bool allow_query_parameter_)
-    : allow_query_parameter(allow_query_parameter_)
+ParserUserNamesWithHost::ParserUserNamesWithHost(bool allow_query_parameter_, bool parse_host_pattern_)
+    : allow_query_parameter(allow_query_parameter_), parse_host_pattern(parse_host_pattern_)
 {
 }
 
