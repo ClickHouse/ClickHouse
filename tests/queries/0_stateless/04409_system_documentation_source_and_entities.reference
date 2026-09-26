@@ -18,6 +18,9 @@ src/Common/CurrentMetrics.cpp
 0
 0
 1
+asynchronous_metrics	src/Storages/System/StorageSystemAsynchronousMetrics.cpp
+documentation	src/Storages/System/attachSystemTables.cpp
+query_log	src/Interpreters/SystemLog.h
 src/Functions/moduloOrNull.cpp
 src/Compression/CompressionCodecLZ4.cpp
 1
