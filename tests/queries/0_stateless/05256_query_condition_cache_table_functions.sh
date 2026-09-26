@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-parallel-replicas
 # Tag no-fasttest: needs Parquet, S3 (MinIO) and Iceberg
 # Tag no-parallel: asserts `QueryConditionCacheHits` on the instance-wide query condition cache,
 # which a parallel sibling test can wipe at any moment (see 04498_query_condition_cache_local_files).
+# Tag no-parallel-replicas: with parallel replicas the replicas read the objects, so the cache lookups
+# are not counted by the query this test checks.
 
 # The query condition cache for table functions: `file`, `s3` and `icebergLocal` read through a
 # table without a UUID. Their entries are keyed by the location of the file together with its
@@ -68,7 +70,13 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO FUNCTION s3(s3_conn, filename = '${DATA_DIR}/data.parquet', format = Parquet) SELECT number AS b FROM numbers(1000000)
     SETTINGS output_format_parquet_row_group_size = 100000, s3_truncate_on_insert = 1"
 run s3_rewritten "SELECT count() FROM ${S3} WHERE b = 3"
-events s3_1 s3_2 s3_rewritten
+# The same object through another endpoint is another storage for the cache: the key of a table without
+# a UUID carries the storage, so the entries above must not be found through it (even though the path
+# within the bucket and the ETag are the same), and it keeps entries of its own.
+S3_OTHER_ENDPOINT="s3('http://127.0.0.1:11111/test/${DATA_DIR}/data.parquet', 'test', 'testtest', 'Parquet')"
+run s3_other_endpoint_1 "SELECT count() FROM ${S3_OTHER_ENDPOINT} WHERE b = 3"
+run s3_other_endpoint_2 "SELECT count() FROM ${S3_OTHER_ENDPOINT} WHERE b = 3"
+events s3_1 s3_2 s3_rewritten s3_other_endpoint_1 s3_other_endpoint_2
 
 echo "--- s3Cluster split into buckets"
 # A reader of one bucket of a file reads only some of its row groups. It must not record the others as
