@@ -53,6 +53,34 @@ Use Arrow FIXED_SIZE_BINARY type instead of Binary for FixedString columns.
 
 Enable output LowCardinality type as Dictionary Arrow type
 
+## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target row count. The default `0` preserves one record batch per block."}]}]}/>
+
+Target number of rows per record batch for the `Arrow` and `ArrowStream` output formats. Combining small blocks reduces metadata and buffer-padding overhead, particularly for queries with selective filters.
+
+Blocks accumulate until this target or [output_format_arrow_record_batch_size_bytes](/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes) is reached. A block that already meets the row or byte target is written separately, without splitting. If you set a row target, combined batches contain fewer than twice that many rows, but a single input block can be larger.
+
+Buffering blocks can increase memory use and delay output. If the result never reaches either target, `ArrowStream` writes the first record batch only when the query finishes, though it can write the schema earlier. Leave both targets at `0` to write record batches as blocks arrive.
+
+`0` (the default) disables the row target. Try `65409` as a starting value.
+
+## output_format_arrow_record_batch_size_bytes {#output_format_arrow_record_batch_size_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."}]}]}/>
+
+Target record batch size for the `Arrow` and `ArrowStream` output formats, measured in bytes of accumulated block data. This uses the same measure as [min_insert_block_size_bytes](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes). A batch is written when either this target or [output_format_arrow_record_batch_size](/reference/settings/formats/output-format#output_format_arrow_record_batch_size) is reached.
+
+Note that `LowCardinality` columns can produce Arrow batches much larger or smaller than this byte target. Repeated values expand in the output unless [output_format_arrow_low_cardinality_as_dictionary](/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary) is enabled. Filtered blocks can also retain large dictionaries, so even a block with very few rows can reach the target and be written separately. For these columns, use [output_format_arrow_record_batch_size](/reference/settings/formats/output-format#output_format_arrow_record_batch_size) to control the row count and set the byte target to `0`.
+
+Buffering blocks can increase memory use and delay the first record batch until the query finishes. Leave both targets at `0` to write record batches as blocks arrive.
+
+`0` (the default) disables the byte target. Try `1048576` (1 MiB) as a starting value.
+
 ## output_format_arrow_string_as_string {#output_format_arrow_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -61,13 +89,41 @@ Enable output LowCardinality type as Dictionary Arrow type
 
 Use Arrow String type instead of Binary for String columns
 
+## output_format_arrow_unsupported_types {#output_format_arrow_unsupported_types}
+
+<SettingsInfoBlock type="ArrowUnsupportedTypes" default_value="binary" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "binary"},{"label": "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."}]}]}/>
+
+What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
+
+- `throw` — reject the query;
+- `text` — one text-form value per row (what `CAST(col AS String)` would produce), as an Arrow `Utf8` column;
+- `binary` — the binary representation of each value, as an Arrow `Binary` column (the same per-value encoding as `RowBinary`).
+
+An `AggregateFunction` column is `Binary` in `text` mode as well, because its text form is the raw aggregate state rather than text, and an Arrow `Utf8` column must hold valid UTF-8. Use `finalizeAggregation` to get a readable value.
+
+A value written into a `Utf8` column is made to hold valid UTF-8, with each invalid sequence replaced by U+FFFD. This only affects text that a reader could not have interpreted as text anyway - a `Dynamic` holding a `String` of arbitrary bytes, for example. Use `binary` mode when the bytes have to be preserved exactly.
+
+`output_format_arrow_string_as_string` does not apply to these columns, only to real `String` and `FixedString` ones. That keeps the Arrow type of an opaque column a statement about which encoding it holds: `Utf8` is the text form and `Binary` is the binary one, whatever that setting says.
+
+The same applies to an aggregate state held in a `Dynamic`: the column is typed from `Dynamic`, which says nothing about what its rows hold, and the Arrow schema is fixed before any value is seen, so the state cannot be given a `Binary` column of its own the way an `AggregateFunction` column is. In `text` mode it is therefore lossy. `binary` mode keeps it. A `Variant` is not affected - it lists its alternatives, so an `AggregateFunction` among them gets its own `Binary` child.
+
+In both `text` and `binary` the field is tagged in the Arrow schema with the `clickhouse.opaque` extension name and the original ClickHouse type name, so that a reader can tell it apart from a genuine string or binary column.
+
+ClickHouse reads such a column back into the type the tag names only where the reading side already knows that type, because a table declares it or a structure argument such as the one `file` and `s3` take names it; it then does so inside `Array`, `Tuple`, `Map` and `Nullable` as well. Schema inference does not consult the tag, so a column read without a type named for it still arrives as `String` holding the raw payload. An alternative of a `Variant` never reads back, even with the type named, because the Arrow union its alternatives form is decoded without consulting the tags. The data written is well formed for other Arrow readers in every case.
+
+Takes precedence over the older `output_format_arrow_unsupported_types_as_binary`, which is only consulted when this setting is left at its default.
+
 ## output_format_arrow_unsupported_types_as_binary {#output_format_arrow_unsupported_types_as_binary}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "New setting to convert unsupported CH types to arrow binary instead of UNKNOWN_TYPE exception."}]}]}/>
 
-Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
+Output types having no conversion as raw binary data. If false - such types would raise an exception.
+
+Superseded by `output_format_arrow_unsupported_types`: `0` means `throw` and `1` means `binary`. Only consulted when `output_format_arrow_unsupported_types` is not set explicitly.
 
 ## output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
 
@@ -762,6 +818,14 @@ Target row group size in bytes, before compression.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse allows arbitrary binary data in the String data type, which is typically UTF-8. Parquet\/ORC\/Arrow Strings only support UTF-8. That's why you can choose which Arrow's data type to use for the ClickHouse String data type - String or Binary. While Binary would be more correct and compatible, using String by default will correspond to user expectations in most cases."}]}]}/>
 
 Use Parquet String type instead of Binary for String columns.
+
+## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to write `Int128`, `UInt128`, `Int256`, and `UInt256` values as standard Parquet `DECIMAL` values. The previous value keeps the legacy little-endian `FIXED_LEN_BYTE_ARRAY` representation."}]}]}/>
+
+Write `Int128`, `UInt128`, `Int256`, and `UInt256` values as standards-compliant Parquet `DECIMAL` values in big-endian byte order. The default keeps the legacy unannotated little-endian `FIXED_LEN_BYTE_ARRAY` representation for compatibility with older ClickHouse versions. The decimal representation enables interoperable numeric statistics, but some Parquet readers do not support precisions above 38 or 76.
 
 ## output_format_parquet_write_bloom_filter {#output_format_parquet_write_bloom_filter}
 

@@ -52,6 +52,10 @@ Admin ユーザーにはデフォルトで `sql_console_admin` ロールが割�
   ### きめ細かなアクセス制御
 </div>
 
+<Tip>
+  コンソールからデータベースアクセスを管理するには、[Cloud管理のデータベースロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (ベータ) の使用を推奨します。`sql-console-role:<email>`ロールは、[JWT認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)と互換性がありません。
+</Tip>
+
 このアクセス制御機能は、ユーザーレベルできめ細かく手動設定することもできます。新しい`sql_console_*`ロールをユーザーに割り当てる前に、`sql-console-role:<email>`ネームスペースに対応する、SQL Consoleのユーザー固有のデータベースロールを作成しておく必要があります。例:
 
 ```sql

@@ -10,8 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/es/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-Las copias de seguridad de la base de datos actúan como una red de seguridad, ya que garantizan que, si los datos se pierden por cualquier motivo imprevisto, el servicio pueda restaurarse a un estado anterior a partir de la última copia de seguridad completada correctamente.
-Esto minimiza el tiempo de inactividad y evita la pérdida permanente de datos críticos para la empresa.
+Las copias de seguridad de la base de datos están diseñadas para permitirle restaurar un servicio a un estado anterior a partir de la última copia de seguridad completada correctamente.
 
 <div id="backups">
   ## Copias de seguridad
@@ -34,8 +33,7 @@ El día 1, se realiza una copia de seguridad completa para iniciar la cadena de 
 </div>
 
 Las copias de seguridad se contabilizan y facturan por separado del almacenamiento en los niveles Basic, Scale y Enterprise.
-Todos los servicios incluyen por defecto una copia de seguridad diaria y, a partir del nivel Scale, es posible configurar más desde la pestaña Settings de la consola de Cloud.
-Cada copia de seguridad se conservará durante al menos 24 horas.
+Actualmente, los servicios incluyen por defecto una copia de seguridad diaria con una retención de 24 horas. La configuración de las copias de seguridad puede variar según el servicio y el acuerdo.
 
 Consulta [&quot;Revisar y restaurar copias de seguridad&quot;](/es/products/cloud/guides/backups/review-and-restore-backups) para obtener más detalles.
 
@@ -64,9 +62,9 @@ Consulte [&quot;Configurar programaciones de copias de seguridad&quot;](/es/prod
 </div>
 
 ClickHouse Cloud permite exportar copias de seguridad al almacenamiento de tu cuenta en tu proveedor de servicios en la nube (CSP) (AWS S3, Google Cloud Storage o Azure Blob Storage).
-Si configuras las copias de seguridad en tu propio bucket, ClickHouse Cloud seguirá realizando copias de seguridad diarias en su propio bucket.
-Esto garantiza que tengamos al menos una copia de los datos desde la que restaurar en caso de que las copias de seguridad de tu bucket se corrompan.
-Para obtener más información sobre cómo funcionan las copias de seguridad de ClickHouse Cloud, consulta la documentación de [backups](/es/products/cloud/guides/backups/review-and-restore-backups).
+Si configuras las copias de seguridad en tu propio bucket, ClickHouse Cloud también seguirá realizando sus propias copias de seguridad de forma predeterminada.
+
+Para obtener más información sobre cómo funcionan las copias de seguridad de ClickHouse Cloud, consulta la documentación de [copia de seguridad](/es/products/cloud/guides/backups/review-and-restore-backups).
 
 En esta guía, te mostramos cómo exportar copias de seguridad a tu almacenamiento de objetos en AWS, GCP y Azure, así como cómo restaurar esas copias de seguridad desde tu cuenta en un nuevo servicio de ClickHouse Cloud.
 También compartimos comandos de backup / restore que te permiten exportar copias de seguridad a tu bucket y restaurarlas.

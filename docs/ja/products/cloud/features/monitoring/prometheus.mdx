@@ -7,11 +7,14 @@ keywords: ['prometheus', 'grafana', '監視', 'メトリクス', 'エクスポ�
 doc_type: 'reference'
 ---
 
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-この機能は、[Prometheus](https://prometheus.io/) とのインテグレーションにより、ClickHouse Cloud サービスを監視できるようにします。Prometheus メトリクスへのアクセスは、[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) のエンドポイント経由で提供されており、安全に接続して Prometheus メトリクス collector にメトリクスをエクスポートできます。これらのメトリクスは、Grafana や Datadog などのダッシュボードに統合して可視化できます。
+この機能は、[Prometheus](https://prometheus.io/) との統合により、ClickHouse Cloud サービスを監視できるようにします。Prometheus メトリクスへのアクセスは、[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) のエンドポイント経由で提供されており、安全に接続して Prometheus メトリクス collector にメトリクスをエクスポートできます。これらのメトリクスは、Grafana や Datadog などのダッシュボードに統合して可視化できます。
 
-利用を開始するには、[API key を生成](/ja/products/cloud/features/admin-features/api/openapi)してください。
+サービスにアタッチされた [ClickPipes](/ja/integrations/clickpipes) のメトリクスは、そのサービスの ClickHouse メトリクスとともに含まれます。
+
+利用を開始するには、[API キーを生成](/ja/products/cloud/features/admin-features/api/openapi)してください。
 
 [ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) サービスに対応するエンドポイントをお探しの場合は、[ClickHouse Managed Postgres Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus) を参照してください。
 
@@ -23,18 +26,25 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ### APIリファレンス
 </div>
 
-| メソッド | パス                                                                                                                              | 説明                   |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| GET  | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | 特定のサービスのメトリクスを返します   |
-| GET  | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | 組織内の全サービスのメトリクスを返します |
+| メソッド | パス                                                                                                                              | 説明                                                                                                                            |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| GET  | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | 特定のサービスのメトリクスを返します                                                                                                            |
+| GET  | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | **非推奨。** 組織内の全サービスのメトリクスを返します                                                                                                 |
+| GET  | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus/discovery?filtered_metrics=[true \| false]`           | 組織内のすべてのサービスのPrometheusスクレイプターゲットを、[HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/)フォーマットで返します |
+
+<Note>
+  組織全体のメトリクスエンドポイント (`GET /v1/organizations/{organizationId}/prometheus`) は、[サービスの自動検出](#automatic-service-discovery)の導入に伴い非推奨となりました。既存の組織では引き続き使用できますが、新しく作成された組織では代わりにディスカバリーエンドポイントが使用されます。このエンドポイントへのアクセスが必要な場合は、ClickHouse Supportにお問い合わせください。
+</Note>
 
 **リクエストパラメータ**
 
 | 名前                   | 場所          | 型            |
 | -------------------- | ----------- | ------------ |
-| Organization ID      | エンドポイントアドレス | uuid         |
-| Service ID           | エンドポイントアドレス | uuid (任意)    |
+| 組織 ID                | エンドポイントアドレス | uuid         |
+| サービス ID              | エンドポイントアドレス | uuid (任意)    |
 | filtered&#95;metrics | クエリパラメータ    | boolean (任意) |
+
+これらのエンドポイントの完全なリクエストおよびレスポンススキーマは、[Cloud API リファレンス](/ja/products/cloud/api-reference/prometheus)で確認できます。
 
 <div id="authentication">
   ### 認証
@@ -192,6 +202,56 @@ scrape_configs:
 ```
 
 `honor_labels` のconfiguration parameterは、インスタンスラベルが正しく設定されるよう `true` に設定する必要がある点に注意してください。さらに、上記の例では `filtered_metrics` も `true` に設定されていますが、これはユーザーの好みに応じて設定してください。
+
+<div id="automatic-service-discovery">
+  ### サービスの自動検出
+</div>
+
+<BetaBadge />
+
+ディスカバリーエンドポイントは、組織内のサービスごとに1つのスクレイプターゲットを、Prometheus の [HTTP service discovery](https://prometheus.io/docs/prometheus/latest/http_sd/) (`http_sd`) フォーマットで返します。Prometheus はディスカバリーのポーリングごとにターゲットリストを更新し、検出された各ターゲットをスクレイプするため、新たに作成されたサービスは自動的に追加され、削除されたサービスはターゲットリストから除外されます。API キーに閲覧権限のあるサービスのみが含まれ、削除中または削除済みのサービスは含まれません。
+
+使用するには、[`http_sd_configs`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#http_sd_config) job でディスカバリーエンドポイントを指定します。
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "clickhouse"
+    http_sd_configs:
+      - url: https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/prometheus/discovery
+        refresh_interval: 60s
+        basic_auth:
+          username: <KEY_ID>
+          password: <KEY_SECRET>
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+```
+
+両方の箇所で `basic_auth` を設定します。`http_sd_configs` 配下のブロックではディスカバリーのポーリングを認証し、スクレイプジョブのブロックではサービスごとのメトリクススクレイプを認証します。静的設定と同様に、インスタンスラベルが適切に設定されるよう `honor_labels: true` を設定します。
+
+ディスカバリー応答のサンプル:
+
+```json
+[
+  {
+    "targets": ["api.clickhouse.cloud"],
+    "labels": {
+      "__scheme__": "https",
+      "__metrics_path__": "/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/prometheus",
+      "__param_filtered_metrics": "true",
+      "clickhouse_org_id": "<ORG_ID>",
+      "clickhouse_service_id": "<SERVICE_ID>",
+      "clickhouse_discovery_service_name": "my service"
+    }
+  }
+]
+```
+
+検出されたターゲットは、`filtered_metrics=true` を指定してスクレイプされます。すべてのメトリクスセットをスクレイプするターゲットを検出するには、検出 URL に `?filtered_metrics=false` を追加します。エンドポイントの完全な仕様については、[Cloud API リファレンス](/ja/products/cloud/api-reference/prometheus/organization-prometheus-discovery-get)を参照してください。
 
 <div id="integrating-with-grafana">
   ## Grafana との統合

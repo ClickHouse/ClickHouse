@@ -69,7 +69,7 @@ find_os() {
 }
 
 download_seaweedfs() {
-  local seaweedfs_version=${SEAWEEDFS_VERSION:-4.41}
+  local seaweedfs_version=${SEAWEEDFS_VERSION:-4.42}
 
   wget "https://github.com/seaweedfs/seaweedfs/releases/download/${seaweedfs_version}/$(find_os)_$(find_arch).tar.gz" -O ./seaweedfs.tar.gz
   tar -xzf ./seaweedfs.tar.gz weed

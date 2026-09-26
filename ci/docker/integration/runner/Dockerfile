@@ -38,13 +38,28 @@ RUN apt-get update \
     libssl-dev \
     libcurl4-openssl-dev \
     default-jdk \
-    software-properties-common \
     libkrb5-dev \
     krb5-user \
     g++ \
-    awscli \
+    unzip \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+# The awscli apt package is gone in ubuntu:24.04, install a pinned AWS CLI v2
+ARG AWSCLI_VERSION=2.36.41
+ARG AWSCLI_SHA256_X86_64=659c1fe734a9534736fa452bb1b557dd4cccadea5823f45a74c0f09408a93d22
+ARG AWSCLI_SHA256_AARCH64=1612cda15d605985d8cb675ec429c8916e3b696fa52325994955dc3215c590a9
+RUN arch="$(uname -m)" \
+    && case "$arch" in \
+        x86_64) sha256="$AWSCLI_SHA256_X86_64" ;; \
+        aarch64) sha256="$AWSCLI_SHA256_AARCH64" ;; \
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${arch}-${AWSCLI_VERSION}.zip" -o awscliv2.zip \
+    && echo "$sha256  awscliv2.zip" | sha256sum --check --strict \
+    && unzip -q awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws
 
 ENV TZ=Etc/UTC
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -77,7 +92,7 @@ RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-
 # if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
 RUN packages="io.delta:delta-spark_2.12:3.1.0,\
 org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.1,\
-org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.8.1,\
+org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.10.0,\
 org.apache.hadoop:hadoop-aws:3.3.4,\
 com.amazonaws:aws-java-sdk-bundle:1.12.262,\
 org.apache.hadoop:hadoop-azure:3.3.4,\

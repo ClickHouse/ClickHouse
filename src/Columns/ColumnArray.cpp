@@ -17,6 +17,7 @@
 #include <IO/Operators.h>
 #include <algorithm>
 #include <cstring> // memcpy
+#include <limits>
 
 
 namespace DB
@@ -229,6 +230,12 @@ UInt64 ColumnArray::getNumberOfDefaultRows() const
     return result;
 }
 
+bool ColumnArray::hasOnlyTypeDefaults() const
+{
+    const auto & offsets_data = getOffsets();
+    return offsets_data.empty() || offsets_data.back() == 0;
+}
+
 void ColumnArray::insertData(const char * pos, size_t length)
 {
     /// Similarly - only for arrays of fixed length values.
@@ -313,15 +320,6 @@ void ColumnArray::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::
         getData().deserializeAndInsertFromArena(in, settings);
 
     getOffsets().push_back(getOffsets().back() + array_size);
-}
-
-void ColumnArray::skipSerializedInArena(ReadBuffer & in) const
-{
-    size_t array_size = 0;
-    readBinaryLittleEndian<size_t>(array_size, in);
-
-    for (size_t i = 0; i < array_size; ++i)
-        getData().skipSerializedInArena(in);
 }
 
 void ColumnArray::updateHashWithValue(size_t n, SipHash & hash) const
@@ -427,6 +425,72 @@ void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
     getOffsets().push_back(getOffsets().back() + size);
 }
 
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnArray::insertManyFrom(const IColumn & src_, size_t position, size_t length)
+#else
+void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t length)
+#endif
+{
+    /// Keep the same no-op behavior as IColumn::insertManyFrom, including for an invalid position.
+    if (length == 0)
+        return;
+
+    /// A single insertion does not benefit from bulk setup.
+    if (length == 1)
+    {
+        insertFrom(src_, position);
+        return;
+    }
+
+    const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
+    const size_t source_size = src.sizeAt(position);
+
+    auto & offsets_data = getOffsets();
+    const size_t old_rows = offsets_data.size();
+    if (length > std::numeric_limits<size_t>::max() - old_rows)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many rows in array column: {} + {}", old_rows, length);
+
+    const size_t new_rows = old_rows + length;
+    const size_t old_offset = offsets_data.back();
+
+    auto insert_scalar = [&]
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertFrom(src_, position);
+    };
+
+    /// Nested insertManyFrom repeats one value, so it can represent a repeated Array row
+    /// directly only when source_size == 1.
+    /// Keep the existing scalar implementation outside the narrow fast path.
+    if (getDataPtr().get() == src.getDataPtr().get()
+        || source_size > 1
+        || getData().hasDynamicStructure())
+    {
+        insert_scalar();
+        return;
+    }
+
+    if (new_rows > offsets_data.capacity())
+        offsets_data.reserve(new_rows);
+
+    if (source_size == 0)
+    {
+        offsets_data.resize_assume_reserved(new_rows);
+        std::fill(offsets_data.begin() + old_rows, offsets_data.end(), old_offset);
+        return;
+    }
+
+    /// source_size == 1
+    if (length > std::numeric_limits<Offset>::max() - old_offset)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many elements in array column: {} + {}", old_offset, length);
+
+    getData().insertManyFrom(src.getData(), src.offsetAt(position), length);
+
+    offsets_data.resize_assume_reserved(new_rows);
+    for (size_t i = 0; i < length; ++i)
+        offsets_data[old_rows + i] = old_offset + i + 1;
+}
+
 
 void ColumnArray::insertDefault()
 {
@@ -439,12 +503,11 @@ void ColumnArray::insertDefault()
 
 void ColumnArray::insertManyDefaults(size_t length)
 {
-    /// Not IColumn::insertManyDefaults: its reserve(size() + length) would size the nested column for elements
-    /// that default arrays never hold, and ColumnArray::reserve passes that count down unchanged. Appending the
-    /// offsets grows them geometrically instead, so repeated calls stay amortized without reserving nested data.
-    auto last_offset = getOffsets().back();
-    for (size_t i = 0; i < length; ++i)
-        getOffsets().push_back(last_offset);
+    /// Not `IColumn::insertManyDefaults`: its `reserve(size() + length)` would also size the nested column, which a
+    /// default array never fills. Only the offsets grow, so only they are pre-sized.
+    auto & offsets_data = getOffsets();
+    const auto last_offset = offsets_data.back(); /// By value: `resize_fill` may reallocate.
+    offsets_data.resize_fill(offsets_data.size() + length, last_offset);
 }
 
 
@@ -1740,4 +1803,10 @@ void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<C
     data->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
+ColumnPlanes ColumnArray::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Array, getOffsets().data());
+    planes.children = {&getData()};
+    return planes;
+}
 }

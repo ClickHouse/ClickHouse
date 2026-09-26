@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -147,8 +148,10 @@ NamesAndTypesList SchemaConverter::inferSchema()
     return res;
 }
 
-std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElement & element, const String & current_path) const
+std::string_view SchemaConverter::useColumnMapperIfNeeded(
+    const parq::SchemaElement & element, const String & current_path, bool & out_not_in_schema) const
 {
+    out_not_in_schema = false;
     if (!column_mapper)
         return element.name;
     const auto & map = column_mapper->getFieldIdToClickHouseName();
@@ -162,19 +165,30 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     auto it = map.find(element.field_id);
     if (it == map.end())
     {
-        /// Iceberg reserves field ids greater than 2147483447 (Integer.MAX_VALUE - 200) for metadata
-        /// columns, e.g. the v3 row-lineage fields _row_id (2147483540) and
-        /// _last_updated_sequence_number (2147483539). Spec-compliant Iceberg writers physically
-        /// write these into data files, but they are not part of the table schema. Per the Iceberg
-        /// spec (https://iceberg.apache.org/spec/#reserved-field-ids), readers must ignore
-        /// reserved-range field ids they don't recognize rather than failing. Such a column is
-        /// never requested, so returning its physical name lets the existing "unrequested column"
-        /// path skip it.
-        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200; ids above this are reserved
+        /// Reserved field ids (https://iceberg.apache.org/spec/#reserved-field-ids) are not part of
+        /// the table schema, e.g. the v3 row-lineage fields `_row_id` (2147483540) and
+        /// `_last_updated_sequence_number` (2147483539) that spec-compliant writers materialize
+        /// into data files. Those are requested by their physical name, so they are matched by name.
+        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200
         if (element.field_id > iceberg_max_user_field_id)
             return element.name;
 
-        throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
+        /// An id at or below `last-column-id` of the table metadata belongs to a column dropped
+        /// from the table: `DROP COLUMN` is metadata-only, so data files keep the column. Any other
+        /// id means the file does not belong to this table, or its schema was resolved to a wrong
+        /// one, which is reported rather than silently ignored.
+        const auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
+        if (element.field_id < 1 || !last_assigned_field_id.has_value() || element.field_id > *last_assigned_field_id)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Parquet file has column {} with field_id {} that is not in datalake metadata, and the table cannot have "
+                "assigned that field id: the highest field id it ever assigned is {}",
+                element.name,
+                element.field_id,
+                last_assigned_field_id.has_value() ? std::to_string(*last_assigned_field_id) : String("unknown"));
+
+        out_not_in_schema = true;
+        return element.name;
     }
 
     /// At top level (empty path), return the full mapped name. For nested
@@ -221,9 +235,13 @@ void SchemaConverter::processSubtree(TraversalNode & node)
 
     if (node.schema_context == SchemaContext::None)
     {
-        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name));
+        bool not_in_schema = false;
+        node.appendNameComponent(node.element->name, useColumnMapperIfNeeded(*node.element, node.name, not_in_schema));
 
-        if (sample_block)
+        /// A column that is not in the data lake schema is never requested, and its physical name
+        /// may coincide with an unrelated column of the current schema (e.g. a dropped `x` and a
+        /// later re-added `x` have different field ids), so it must not be matched by name.
+        if (sample_block && !not_in_schema)
         {
             /// Doing this lookup on each schema element to support reading individual tuple elements.
             /// E.g.:
@@ -711,6 +729,20 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
             nullable_group = true;
         }
     }
+    /// Case 2 in schema inference mode (sample_block is null only there), where only the type is
+    /// named: the read gets that type as its hint and re-derives nullable_group above. Excluded: a
+    /// Map key_value tuple (DataTypeMap requires Tuple(keys, values)) and a Map key (never Nullable).
+    const bool infer_nullable_group =
+        !sample_block
+        && !node.type_hint
+        && node.requested
+        && group_is_optional
+        && !has_optional_ancestor
+        && node.schema_context != SchemaContext::MapTuple
+        && node.schema_context != SchemaContext::MapKey
+        && options.format.schema_inference_allow_nullable_tuple_type
+        && !options.schema_inference_force_not_nullable
+        && tupleSubtreeIsAllRequired(file_metadata.schema, schema_idx - 1);
 
     /// Mark leaves recursed below as belonging to a physically-nullable group (case 2 above).
     nullable_tuple_group_depth += nullable_group ? 1 : 0;
@@ -747,6 +779,12 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple with {} elements, requested type is Tuple with {} elements", node.getNameForLogging(), node.element->num_children, tuple_type_hint->getElements().size());
         }
     }
+
+    /// `num_children` comes directly from untrusted input file, need to sanity-check before doing
+    /// `elements.resize(num_children)`.
+    if (node.element->num_children < 0 || size_t(node.element->num_children) > file_metadata.schema.size() - schema_idx)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet schema element {} declares {} children, but only {} schema elements remain in the file", node.getNameForLogging(), node.element->num_children, file_metadata.schema.size() - schema_idx);
+
     if (!lookup_by_name && node.requested)
         elements.resize(size_t(node.element->num_children), UINT64_MAX);
 
@@ -764,11 +802,15 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     std::vector<String> element_names_in_file;
     for (size_t i = 0; i < size_t(node.element->num_children); ++i)
     {
-        const String & element_name = element_names_in_file.emplace_back(useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name));
+        bool not_in_schema = false;
+        const String & element_name = element_names_in_file.emplace_back(
+            useColumnMapperIfNeeded(file_metadata.schema.at(schema_idx), node.name, not_in_schema));
         std::optional<size_t> idx_in_output_tuple = i - skipped_unsupported_columns;
         if (lookup_by_name)
         {
-            idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.format.parquet.case_insensitive_column_matching);
+            idx_in_output_tuple = std::nullopt;
+            if (!not_in_schema)
+                idx_in_output_tuple = tuple_type_hint->tryGetPositionByName(element_name, options.format.parquet.case_insensitive_column_matching);
 
             if (idx_in_output_tuple.has_value() && elements.at(idx_in_output_tuple.value()) != UINT64_MAX)
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Parquet tuple {} has multiple elements with name `{}`", node.getNameForLogging(), element_name);
@@ -856,6 +898,10 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     else
     {
         output_type = std::make_shared<DataTypeTuple>(types, names);
+        /// The group null map is reconstructed from a physical leaf's definition levels, so a group
+        /// with no leaf below it cannot be Nullable(Tuple(...)) and stays a plain Tuple.
+        if (infer_nullable_group && primitive_start != primitive_columns.size())
+            output_type = makeNullable(output_type);
     }
 
     /// Physically-nullable struct (OPTIONAL group, case 2 above): the assembled ColumnTuple must be
@@ -957,27 +1003,64 @@ void SchemaConverter::processPrimitiveColumn(
         return true;
     };
 
-    auto is_output_type_decimal = [&](size_t expected_size, UInt32 expected_scale) -> bool
+    /// Decides whether min/max stats can be used when convertField produces a DecimalField with
+    /// the given value size and scale (parquet DECIMAL and timestamp/time columns).
+    /// If the output type is a Decimal/DateTime64 with the same size and scale, stats are used
+    /// directly; if size or scale differs, the Field additionally goes through
+    /// tryConvertFieldToType, which rescales it the same way as the castColumn that is applied
+    /// to the values - see PageDecoderInfo::cast_stats_to_output_type.
+    /// `decoded_is_time_of_day` says that the decoded values are a time-of-day (parquet `TIME`),
+    /// i.e. that a `Time64` output type has the same semantics as the decoded values. It must stay
+    /// false for every other decoded semantic: casting a `DateTime64` (parquet `TIMESTAMP`) to
+    /// `Time64` wraps by day and is therefore not order-preserving, so min/max stats of the raw
+    /// values must not be used for pruning.
+    auto allow_decimal_stats = [&](size_t decoded_size, UInt32 decoded_scale, bool decoded_is_time_of_day = false)
     {
         const IDataType * output_type = type_hint ? type_hint.get() : out_inferred_type.get();
         WhichDataType which(output_type->getTypeId());
+        bool same = false;
         if (which.isDecimal())
-            return output_type->getSizeOfValueInMemory() == expected_size && getDecimalScale(*output_type) == expected_scale;
+            same = output_type->getSizeOfValueInMemory() == decoded_size && getDecimalScale(*output_type) == decoded_scale;
         else if (which.isDateTime64())
-            return 8 == expected_size && assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == expected_scale;
-        return false;
+        {
+            /// tryConvertFieldToType supports DateTime64 target only for Decimal64 source Field.
+            if (decoded_size != 8)
+                return;
+            same = assert_cast<const DataTypeDateTime64 *>(output_type)->getScale() == decoded_scale;
+        }
+        else if (which.isTime64())
+        {
+            /// Stats are usable only when the decoded values are already a time-of-day; a
+            /// `DateTime64 -> Time64` cast wraps by day (a row group spanning midnight would get
+            /// raw bounds like [23:00:00, 25:00:00] while the values are 23:00:00 and 01:00:00).
+            if (!decoded_is_time_of_day)
+                return;
+            /// Same restriction as for DateTime64: tryConvertFieldToType supports a Time64 target
+            /// only for a Decimal64 source Field.
+            if (decoded_size != 8)
+                return;
+            same = assert_cast<const DataTypeTime64 *>(output_type)->getScale() == decoded_scale;
+        }
+        else
+            return;
+        out_decoder.allow_stats = true;
+        out_decoder.cast_stats_to_output_type = !same;
     };
 
-    auto is_output_type_float = [&](size_t expected_size) -> bool
+    /// Same for floats. convertField produces a Float64 Field (also for Float32 values - Field
+    /// has no separate Float32 type), so only the Float64 -> Float32 direction needs the Field
+    /// conversion (rounding to nearest, same as the castColumn that is applied to the values).
+    auto allow_float_stats = [&](size_t decoded_size)
     {
         size_t size = 0;
         switch (get_output_type_index())
         {
             case TypeIndex::Float32: size = 4; break;
             case TypeIndex::Float64: size = 8; break;
-            default: return false;
+            default: return;
         }
-        return size == expected_size;
+        out_decoder.allow_stats = true;
+        out_decoder.cast_stats_to_output_type = decoded_size == 8 && size == 4;
     };
 
     auto is_output_type_string = [&]() -> bool
@@ -988,7 +1071,7 @@ void SchemaConverter::processPrimitiveColumn(
     /// Escape hatch for reading raw plain-encoded values and bypassing data type stuff.
     /// If type FixedString is requested, and the parquet physical type is a fixed-size type of
     /// matching size, use a trivial FixedSizeConverter.
-    /// E.g. don't do Decimal endianness conversion of INT96 timestamp conversion.
+    /// E.g. don't do Decimal endianness conversion or INT96 timestamp conversion.
     if (const DataTypeFixedString * fixed_string_type = typeid_cast<const DataTypeFixedString *>(type_hint.get()))
     {
         size_t size = 0;
@@ -1124,9 +1207,15 @@ void SchemaConverter::processPrimitiveColumn(
     }
     else if (logical.__isset.TIMESTAMP || logical.__isset.TIME || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MILLIS || converted == CONV::TIME_MICROS)
     {
-        /// We interpret both timestamp (logical.TIMESTAMP) and time-of-day (logical.TIME)
-        /// types as timestamps, since clickhouse doesn't have time-of-day type.
-        /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
+        /// Parquet `TIMESTAMP` is a Unix timestamp -> ClickHouse `DateTime64` (timezone-aware).
+        /// Parquet `TIME` is a time-of-day (no date, no timezone) -> ClickHouse `Time64`
+        /// (timezone-unaware). Routing `TIME` through `DateTime64` and then casting to a
+        /// `Time64` target would shift the value by `session_timezone`, which is wrong because
+        /// time-of-day has no date/timezone to interpret (see issue #104038 for the Arrow
+        /// equivalent of this bug).
+        const bool is_time_of_day = logical.__isset.TIME
+            || converted == CONV::TIME_MILLIS
+            || converted == CONV::TIME_MICROS;
 
         UInt32 scale = 0;
         if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
@@ -1141,19 +1230,27 @@ void SchemaConverter::processPrimitiveColumn(
         if (type != parq::Type::INT64 && type != parq::Type::INT32)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for timestamp logical type: {}", thriftToString(element));
 
-        /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
-        String timezone = "UTC";
-        if (!options.format.parquet.local_time_as_utc &&
-            ((logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC) ||
-             (logical.__isset.TIME && !logical.TIME.isAdjustedToUTC)))
-            timezone = "";
-        out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
+        if (is_time_of_day)
+        {
+            /// Time64 is timezone-unaware; `isAdjustedToUTC` is intentionally ignored here
+            /// because Time64 has no place to store that distinction.
+            out_inferred_type = std::make_shared<DataTypeTime64>(scale);
+        }
+        else
+        {
+            /// Can't leave int -> DateTime64 conversion to castColumn as it interprets the integer as seconds.
+            String timezone = "UTC";
+            if (!options.format.parquet.local_time_as_utc
+                && logical.__isset.TIMESTAMP && !logical.TIMESTAMP.isAdjustedToUTC)
+                timezone = "";
+            out_inferred_type = std::make_shared<DataTypeDateTime64>(scale, timezone);
+        }
         auto converter = std::make_shared<IntConverter>();
-        /// Note: TIMESTAMP is always INT64. INT32 is only for weird unimportant case of TIME_MILLIS
-        /// (i.e. time of day rather than timestamp).
+        /// `TIMESTAMP` is always INT64. INT32 is only used for `TIME_MILLIS`
+        /// (the sole INT32-backed time-of-day logical type in Parquet).
         converter->input_size = type == parq::Type::INT32 ? 4 : 8;
 
-        if (scale == 3 && converter->input_size == 8 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
+        if (!is_time_of_day && scale == 3 && converter->input_size == 8 && type_hint && type_hint->getTypeId() == TypeIndex::DateTime)
         {
             /// Special case: converting milliseconds to seconds.
             /// We generally don't do such conversions during decoding, leaving it to castColumn.
@@ -1165,8 +1262,8 @@ void SchemaConverter::processPrimitiveColumn(
             /// hint. It's pretty important for min/max stats to work with timestamps, so we add
             /// this special case.
             ///
-            /// We could generalize it and allow arbitrary Decimal scale and signedness conversions,
-            /// but it doesn't seem worth the complexity and risk of bugs.
+            /// (cast_stats_to_output_type doesn't cover this case because tryConvertFieldToType
+            /// doesn't support Decimal64 -> DateTime conversion.)
             converter->field_timestamp_from_millis = true;
             converter->field_signed = false;
             out_decoder.allow_stats = true;
@@ -1174,7 +1271,7 @@ void SchemaConverter::processPrimitiveColumn(
         else
         {
             converter->field_decimal_scale = scale;
-            out_decoder.allow_stats = is_output_type_decimal(sizeof(Int64), scale);
+            allow_decimal_stats(sizeof(Int64), scale, is_time_of_day);
             if (converter->input_size == 4)
                 /// Can't leave Decimal32 -> DateTime64 conversion to castColumn because this
                 /// particular cast is not supported for some reason.
@@ -1405,7 +1502,7 @@ void SchemaConverter::processPrimitiveColumn(
         if (decoded_size != out_inferred_type->getSizeOfValueInMemory())
             out_decoded_type = std::move(decoded_type);
 
-        out_decoder.allow_stats = is_output_type_decimal(decoded_size, scale);
+        allow_decimal_stats(decoded_size, scale);
 
         return;
     }
@@ -1425,8 +1522,10 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type for UUID column: {}", thriftToString(element));
 
         out_inferred_type = std::make_shared<DataTypeUUID>();
-        out_decoder.allow_stats = true; // UUIDs support min/max stats
         out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
+        /// (Parquet's sort order for `uuid` is unsigned big-endian byte comparison, while ClickHouse
+        ///  sorts `UUID` by its second half, so the min/max pair is not an interval in the column's
+        ///  own order. Leaving allow_stats == false.)
         return;
     }
     else if (logical.__isset.FLOAT16)
@@ -1492,7 +1591,7 @@ void SchemaConverter::processPrimitiveColumn(
         {
             out_inferred_type = std::make_shared<DataTypeFloat32>();
             auto converter = std::make_shared<FloatConverter<float>>();
-            out_decoder.allow_stats = is_output_type_float(converter->input_size);
+            allow_float_stats(converter->input_size);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
@@ -1500,7 +1599,7 @@ void SchemaConverter::processPrimitiveColumn(
         {
             out_inferred_type = std::make_shared<DataTypeFloat64>();
             auto converter = std::make_shared<FloatConverter<double>>();
-            out_decoder.allow_stats = is_output_type_float(converter->input_size);
+            allow_float_stats(converter->input_size);
             out_decoder.fixed_size_converter = std::move(converter);
             return;
         }
@@ -1531,7 +1630,7 @@ void SchemaConverter::processPrimitiveColumn(
                 {
                     out_inferred_type = type_hint;
                     out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                    out_decoder.allow_stats = true;
+                    /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
                     return;
                 }
 
@@ -1550,7 +1649,7 @@ void SchemaConverter::processPrimitiveColumn(
             {
                 out_inferred_type = std::make_shared<DataTypeUUID>();
                 out_decoder.fixed_size_converter = std::make_shared<UUIDConverter>();
-                out_decoder.allow_stats = true;
+                /// (Leaving allow_stats == false: see the `UUID` logical type branch above.)
                 return;
             }
 

@@ -38,7 +38,7 @@ ClickHouse はテーブルからデータを自動では削除しません。詳
 * `event_time` ([DateTime](/ja/reference/data-types/datetime)) — ビューの実行が完了した日時。
 * `event_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — ビューの実行が完了した日時 (マイクロ秒精度) 。
 * `view_duration_ms` ([UInt64](/ja/reference/data-types/int-uint)) — ビューの実行時間 (各ステージの合計、ミリ秒単位) 。
-* `initial_query_id` ([String](/ja/reference/data-types/string)) — 初期クエリの ID (分散クエリ実行時) 。
+* `initial_query_id` ([String](/ja/reference/data-types/string)) — 同じクエリチェーン内の初期クエリの ID。
 * `view_name` ([String](/ja/reference/data-types/string)) — ビュー名。
 * `view_uuid` ([UUID](/ja/reference/data-types/uuid)) — ビューの UUID。
 * `view_type` ([Enum8(&#39;Default&#39; = 1, &#39;Materialized&#39; = 2, &#39;Live&#39; = 3, &#39;Window&#39; = 4)](/ja/reference/data-types/enum)) — ビューの種類。値: &#39;Default&#39; = 1 — デフォルトビュー。このログには現れないはずです。&#39;Materialized&#39; = 2 — materialized view、&#39;Live&#39; = 3 — Live view。

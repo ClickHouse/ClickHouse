@@ -326,9 +326,9 @@ SELECT 99 AS a, bin(a), bitRotateRight(a, 2) AS a_rotated, bin(a_rotated);
 
 값의 이진 표현을 지정된 비트 수만큼 왼쪽으로 이동합니다.
 
-`FixedString` 또는 `String`은 하나의 다중 바이트 값으로 처리됩니다.
+`FixedString` 또는 `String`은 단일 다중 바이트 값으로 처리됩니다.
 
-`FixedString` 값의 비트는 왼쪽으로 밀려나면서 손실됩니다.
+`FixedString` 값의 비트는 시프트되어 범위를 벗어나면 손실됩니다.
 반대로 `String` 값은 추가 바이트로 확장되므로 비트가 손실되지 않습니다.
 
 **구문**
@@ -344,7 +344,7 @@ bitShiftLeft(a, N)
 
 **반환 값**
 
-`a`와 동일한 타입의 시프트 결과를 반환합니다.
+`a`와 동일한 타입의 시프트된 값을 반환합니다.
 
 **예시**
 
@@ -355,33 +355,34 @@ SELECT 99 AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);
 ```
 
 ```response title=Response
-┌──a─┬─bin(99)──┬─a_shifted─┬─bin(bitShiftLeft(99, 2))─┐
-│ 99 │ 01100011 │       140 │ 10001100                 │
-└────┴──────────┴───────────┴──────────────────────────┘
+┌──a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
+│ 99 │ 01100011 │       140 │ 10001100       │
+└────┴──────────┴───────────┴────────────────┘
 ```
 
 **16진수 인코딩 사용 예시**
 
 ```sql title=Query
-SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
+-- The shifted value is binary, so it is shown with `hex`.
+SELECT 'abc' AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
 ```
 
 ```response title=Response
-┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftLeft('abc', 4))─┐
-│ abc │ 616263     │ &0        │ 06162630                    │
-└─────┴────────────┴───────────┴─────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 06162630  │
+└─────┴────────┴───────────┘
 ```
 
 **Fixed String 인코딩 사용 예시**
 
 ```sql title=Query
-SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
+SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftLeft(a, 4)) AS a_shifted;
 ```
 
 ```response title=Response
-┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftLeft(toFixedString('abc', 3), 4))─┐
-│ abc │ 616263                       │ &0        │ 162630                                        │
-└─────┴──────────────────────────────┴───────────┴───────────────────────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 162630    │
+└─────┴────────┴───────────┘
 ```
 
 <div id="bitShiftRight">
@@ -394,7 +395,7 @@ SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, he
 
 `FixedString` 또는 `String`은 단일 다중 바이트 값으로 처리됩니다.
 
-`FixedString` 값의 비트는 시프트되면서 범위를 벗어나면 손실됩니다.
+`FixedString` 값의 비트는 시프트되어 범위를 벗어나면 손실됩니다.
 반대로 `String` 값은 추가 바이트로 확장되므로 비트가 손실되지 않습니다.
 
 **구문**
@@ -421,33 +422,34 @@ SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
 ```
 
 ```response title=Response
-┌───a─┬─bin(101)─┬─a_shifted─┬─bin(bitShiftRight(101, 2))─┐
-│ 101 │ 01100101 │        25 │ 00011001                   │
-└─────┴──────────┴───────────┴────────────────────────────┘
+┌───a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
+│ 101 │ 01100101 │        25 │ 00011001       │
+└─────┴──────────┴───────────┴────────────────┘
 ```
 
 **16진수 인코딩 사용 예시**
 
 ```sql title=Query
-SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
+-- The shifted value is binary, so it is shown with `hex`.
+SELECT 'abc' AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
 ```
 
 ```response title=Response
-┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftRight('abc', 12))─┐
-│ abc │ 616263     │           │ 0616                          │
-└─────┴────────────┴───────────┴───────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 0616      │
+└─────┴────────┴───────────┘
 ```
 
 **Fixed String 인코딩 사용 예시**
 
 ```sql title=Query
-SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, hex(a_shifted);
+SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
 ```
 
 ```response title=Response
-┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftRight(toFixedString('abc', 3), 12))─┐
-│ abc │ 616263                       │           │ 000616                                          │
-└─────┴──────────────────────────────┴───────────┴─────────────────────────────────────────────────┘
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 000616    │
+└─────┴────────┴───────────┘
 ```
 
 <div id="bitSlice">
@@ -582,9 +584,9 @@ SELECT bitTestAll(43, 0, 1, 3, 5);
 ```
 
 ```response title=Response
-┌─bin(43)──┬─bitTestAll(43, 0, 1, 3, 5)─┐
-│ 00101011 │                          1 │
-└──────────┴────────────────────────────┘
+┌─bitTestAll(43, 0, 1, 3, 5)─┐
+│                          1 │
+└────────────────────────────┘
 ```
 
 **사용 예시 2**
@@ -594,9 +596,9 @@ SELECT bitTestAll(43, 0, 1, 3, 5, 2);
 ```
 
 ```response title=Response
-┌─bin(43)──┬─bitTestAll(4⋯1, 3, 5, 2)─┐
-│ 00101011 │                        0 │
-└──────────┴──────────────────────────┘
+┌─bitTestAll(43, 0, 1, 3, 5, 2)─┐
+│                             0 │
+└───────────────────────────────┘
 ```
 
 <div id="bitTestAny">
@@ -634,9 +636,9 @@ SELECT bitTestAny(43, 0, 2);
 ```
 
 ```response title=Response
-┌─bin(43)──┬─bitTestAny(43, 0, 2)─┐
-│ 00101011 │                    1 │
-└──────────┴──────────────────────┘
+┌─bitTestAny(43, 0, 2)─┐
+│                    1 │
+└──────────────────────┘
 ```
 
 **사용 예시 2**
@@ -646,9 +648,9 @@ SELECT bitTestAny(43, 4, 2);
 ```
 
 ```response title=Response
-┌─bin(43)──┬─bitTestAny(43, 4, 2)─┐
-│ 00101011 │                    0 │
-└──────────┴──────────────────────┘
+┌─bitTestAny(43, 4, 2)─┐
+│                    0 │
+└──────────────────────┘
 ```
 
 <div id="bitXor">
