@@ -62,7 +62,7 @@
   <text x="90" y="610" text-anchor="middle" font-size="13" font-weight="700" fill="#7d7d7d">5</text>
   <rect x="125" y="585" width="460" height="95" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
   <text x="355" y="625" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Connector deployed and verified</text>
-  <text x="355" y="649" text-anchor="middle" font-size="11" fill="#7d7d7d">scraper and troubleshooter running, health checks pass</text>
+  <text x="355" y="649" text-anchor="middle" font-size="11" fill="#7d7d7d">connector running, health checks pass</text>
 
   <!-- ===== Enrollment endpoint (right) ===== -->
   <rect x="975" y="285" width="260" height="255" rx="10" fill="#3b82f6" fill-opacity="0.10" stroke="#3b82f6" stroke-width="1.5"/>

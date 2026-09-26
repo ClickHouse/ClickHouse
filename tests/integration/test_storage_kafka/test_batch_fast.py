@@ -4134,7 +4134,7 @@ def test_disable_insertion_and_mutation_disables_message_queue_insertion(
                 SELECT * FROM test.{kafka_table};
             """,
             settings=(
-                {"allow_experimental_kafka_offsets_storage_in_keeper": 1}
+                {"allow_kafka_offsets_storage_in_keeper": 1}
                 if keeper
                 else {}
             ),
