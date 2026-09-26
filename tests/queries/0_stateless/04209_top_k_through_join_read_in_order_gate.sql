@@ -1,6 +1,6 @@
 -- Verify that `topKThroughJoin` does not silently disable itself when the user
 -- has disabled `query_plan_read_in_order_through_join` (while keeping
--- `query_plan_read_in_order` on).
+-- `optimize_read_in_order` on).
 --
 -- The optimization defers to `optimizeReadInOrder` only when the second-pass
 -- through-join read-in-order optimization can actually apply. If the user has
@@ -24,9 +24,9 @@ INSERT INTO t_l SELECT number, repeat('a', 8) FROM numbers(1000);
 INSERT INTO t_r SELECT number, repeat('b', 8) FROM numbers(1000);
 
 -- Both flags on: defer to `optimizeReadInOrder`, no explicit inner Sort + Limit.
--- The deferral inside `topKThroughJoin` keys on `optimize_read_in_order &&
--- query_plan_read_in_order`, both of which the stateless test runner randomizes;
--- pin them on so the deferral check is deterministic. `enable_parallel_replicas`
+-- The deferral inside `topKThroughJoin` keys on `optimize_read_in_order`, which
+-- the stateless test runner randomizes; pin it on so the deferral check is
+-- deterministic. `enable_parallel_replicas`
 -- is randomized too and would replace `ReadFromMergeTree` with a coordinator
 -- step that breaks the deferral's storage-step lookup.
 -- `max_bytes_*_before_external_join = 0` pins automatic spilling off so the
@@ -38,7 +38,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -54,7 +54,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 0,
+             query_plan_read_in_order_through_join = 0,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -73,7 +73,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -93,7 +93,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -115,7 +115,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -134,7 +134,7 @@ FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
     SETTINGS optimize_read_in_order = 1,
-             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
              query_plan_optimize_lazy_materialization = 0,
@@ -154,36 +154,33 @@ FROM ( EXPLAIN actions = 0
 SELECT 'result_both_on' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+    SETTINGS query_plan_read_in_order_through_join = 1,
              enable_parallel_replicas = 0
 );
 
 SELECT 'result_through_join_off' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 0,
+    SETTINGS query_plan_read_in_order_through_join = 0,
              enable_parallel_replicas = 0
 );
 
 SELECT 'result_partial_merge' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'partial_merge', query_plan_read_in_order = 1,
-             query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
+    SETTINGS join_algorithm = 'partial_merge', query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
 );
 
 SELECT 'result_full_sorting_merge' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'full_sorting_merge', query_plan_read_in_order = 1,
-             query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
+    SETTINGS join_algorithm = 'full_sorting_merge', query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
 );
 
 SELECT 'result_parallel_full_sorting_merge' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'parallel_full_sorting_merge', query_plan_read_in_order = 1,
-             query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
+    SETTINGS join_algorithm = 'parallel_full_sorting_merge', query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
 );
 
 DROP TABLE t_l;

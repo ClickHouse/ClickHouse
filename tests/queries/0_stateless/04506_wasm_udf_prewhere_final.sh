@@ -35,8 +35,8 @@ EOF
 MOVE_SETTINGS="--optimize_move_to_prewhere=1 --optimize_move_to_prewhere_if_final=1"
 
 echo "= plan-level optimization: deterministic is moved, non-deterministic is not ="
-${CLICKHOUSE_CLIENT} ${MOVE_SETTINGS} --enable_analyzer=1 --query_plan_optimize_prewhere=1 -q "SELECT count() > 0 FROM (EXPLAIN actions=1 SELECT * FROM t_wasm_prewhere_final FINAL WHERE wasm_prewhere_det(k) > 100) WHERE explain LIKE '%Prewhere filter%'"
-${CLICKHOUSE_CLIENT} ${MOVE_SETTINGS} --enable_analyzer=1 --query_plan_optimize_prewhere=1 -q "SELECT count() FROM (EXPLAIN actions=1 SELECT * FROM t_wasm_prewhere_final FINAL WHERE wasm_prewhere_nondet(k) > 100) WHERE explain LIKE '%Prewhere filter%'"
+${CLICKHOUSE_CLIENT} ${MOVE_SETTINGS} --enable_analyzer=1 -q "SELECT count() > 0 FROM (EXPLAIN actions=1 SELECT * FROM t_wasm_prewhere_final FINAL WHERE wasm_prewhere_det(k) > 100) WHERE explain LIKE '%Prewhere filter%'"
+${CLICKHOUSE_CLIENT} ${MOVE_SETTINGS} --enable_analyzer=1 -q "SELECT count() FROM (EXPLAIN actions=1 SELECT * FROM t_wasm_prewhere_final FINAL WHERE wasm_prewhere_nondet(k) > 100) WHERE explain LIKE '%Prewhere filter%'"
 
 ${CLICKHOUSE_CLIENT} << 'EOF'
 DROP TABLE t_wasm_prewhere_final;

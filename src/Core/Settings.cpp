@@ -6987,9 +6987,6 @@ Allow to merge expressions into JOIN step during join reordering optimization.
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
 )", 0) \
-    DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
-Allow to push down filter to PREWHERE expression for supported storages
-)", 0) \
     DECLARE(Bool, optimize_prewhere_after_pushdown, false, R"(
 Run a second `PREWHERE` promotion pass after later query plan optimizations may have
 deposited additional filters above a `MergeTree` read step (e.g. predicate pushdown through
@@ -7035,33 +7032,7 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_read_in_order, true, R"(
-Toggles the read in-order optimization query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
     DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0) \
-    DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
-Toggles the aggregation in-order query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-<Note>
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-</Note>
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
@@ -9730,6 +9701,9 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true) \
+    MAKE_OBSOLETE(M, Bool, query_plan_read_in_order, true) \
+    MAKE_OBSOLETE(M, Bool, query_plan_optimize_prewhere, true) \
+    MAKE_OBSOLETE(M, Bool, query_plan_aggregation_in_order, true) \
     MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1) \
     MAKE_OBSOLETE(M, Float, text_index_lazy_intersection_density_threshold, 0.2f) \
     MAKE_OBSOLETE(M, Float, text_index_density_threshold, 0.2f)

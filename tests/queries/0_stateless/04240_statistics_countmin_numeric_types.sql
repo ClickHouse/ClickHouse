@@ -7,7 +7,6 @@ SET use_statistics = 1;
 SET materialize_statistics_on_insert = 1;
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1;
 
 -- b matches exactly 1 of 1010 rows (selectivity ~0.001, well below default_cond_equal_factor 0.01),

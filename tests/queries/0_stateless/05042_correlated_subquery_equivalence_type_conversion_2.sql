@@ -22,7 +22,7 @@ SET correlated_subqueries_default_join_kind = 'left';
 SET enable_parallel_replicas = 0;
 -- Pinned because filter-to-Prewhere relocation, filter merging, and the join-order conversion
 -- change which step descriptions are visible to the plan probes below.
-SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_optimize_join_order_limit = 10;
 -- Pinned off to isolate the guarded float case 24 (and case 12 in part 1) from issue #116358: under the default,

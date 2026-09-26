@@ -43,6 +43,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"query_plan_read_in_order", true, true, "Obsolete setting: the read-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation (`ReadInOrderOptimizer`) was removed. Use `optimize_read_in_order` to toggle the optimization."},
+            {"query_plan_optimize_prewhere", true, true, "Obsolete setting: moving conditions from `WHERE` to `PREWHERE` is now always done at the query plan level, and the legacy AST-based implementation in `InterpreterSelectQuery` was removed. Use `optimize_move_to_prewhere` to toggle the optimization."},
+            {"query_plan_aggregation_in_order", true, true, "Obsolete setting: the aggregation-in-order optimization is now always applied at the query plan level, and the legacy interpreter-level implementation was removed. Use `optimize_aggregation_in_order` to toggle the optimization."},
             {"enable_join_runtime_filters_index_analysis", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."},
             {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
             {"reader_executor_plan_look_ahead", 16777216, 16777216, "New experimental ReaderExecutor setting: how far ahead cache residency is resolved into the held read plan."},

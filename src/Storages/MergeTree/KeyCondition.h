@@ -241,15 +241,6 @@ public:
       */
     using MonotonicFunctionsChain = std::vector<FunctionBasePtr>;
 
-    /** Computes value of constant expression and its data type.
-      * Returns false, if expression isn't constant.
-      */
-    static bool getConstant(
-        const ASTPtr & expr,
-        Block & block_with_constants,
-        Field & out_value,
-        DataTypePtr & out_type);
-
     /** Calculate expressions, that depend only on constants.
       * For index to work when something like "WHERE Date = toDate(now())" is written.
       */

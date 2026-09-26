@@ -7,7 +7,6 @@ set parallel_replicas_local_plan=1;
 
 SET allow_experimental_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 
 -- Tests that queries with enabled query condition cache correctly populate profile events
 

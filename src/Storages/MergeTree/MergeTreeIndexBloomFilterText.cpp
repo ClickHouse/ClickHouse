@@ -961,7 +961,6 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
     RPNElement & out)
 {
     std::vector<KeyTuplePositionMapping> key_tuple_mapping;
-    DataTypes data_types;
 
     auto left_argument_function_node_optional = left_argument.toFunctionNodeOrNull();
 
@@ -973,26 +972,20 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         for (size_t i = 0; i < left_argument_function_node_arguments_size; ++i)
         {
             if (const auto key = getKeyIndex(left_argument_function_node.getArgumentAt(i).getColumnName()))
-            {
                 key_tuple_mapping.emplace_back(i, *key);
-                data_types.push_back(index_data_types[*key]);
-            }
         }
     }
     else if (const auto key = getKeyIndex(left_argument.getColumnName()))
-    {
         key_tuple_mapping.emplace_back(0, *key);
-        data_types.push_back(index_data_types[*key]);
-    }
 
     if (key_tuple_mapping.empty())
         return false;
 
-    auto future_set = right_argument.tryGetPreparedSet(data_types);
+    auto future_set = right_argument.tryGetPreparedSet();
     if (!future_set)
         return false;
 
-    auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getTreeContext().getQueryContext());
+    auto prepared_set = future_set->buildOrderedSetInplace(right_argument.getContext());
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 

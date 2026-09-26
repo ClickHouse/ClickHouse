@@ -15,8 +15,7 @@
 --   * `use_query_condition_cache = 1`         - the cache that can be poisoned.
 --   * `use_skip_indexes_on_data_read = 1`     - puts `MergeTreeReaderIndex` ahead of
 --                                               PREWHERE in the reader chain.
---   * `optimize_move_to_prewhere = 1` and
---     `query_plan_optimize_prewhere = 1`      - guarantee `WHERE pk_prefix = X` is hashed
+--   * `optimize_move_to_prewhere = 1`         - guarantee `WHERE pk_prefix = X` is hashed
 --                                               under the same PREWHERE-predicate key as
 --                                               the explicit-PREWHERE trigger query.
 --   * `optimize_use_implicit_projections = 0` - disable `_exact_count_projection` so the
@@ -58,7 +57,7 @@ SYSTEM DROP QUERY CONDITION CACHE;
 
 SELECT 'truth', count() FROM t_104781 WHERE project_id = 'P1'
 SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 1,
-         optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+         optimize_move_to_prewhere = 1,
          optimize_use_implicit_projections = 0;
 
 -- Trigger: PREWHERE on a primary-key-prefix column + WHERE on a non-PK column with `IN`.
@@ -74,7 +73,7 @@ SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 1;
 -- count (the exact under-count is bloom-filter-FPR-dependent).
 SELECT 'after_trigger', count() FROM t_104781 WHERE project_id = 'P1'
 SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 1,
-         optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+         optimize_move_to_prewhere = 1,
          optimize_use_implicit_projections = 0;
 
 -- Sanity: cache-off path must match `truth`.
@@ -91,7 +90,7 @@ FORMAT Null
 SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 0;
 SELECT 'after_trigger_workaround', count() FROM t_104781 WHERE project_id = 'P1'
 SETTINGS use_query_condition_cache = 1, use_skip_indexes_on_data_read = 1,
-         optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1,
+         optimize_move_to_prewhere = 1,
          optimize_use_implicit_projections = 0;
 
 -- Sanity: a plain PREWHERE-only query (no bloom-filter-backed `WHERE IN`) still benefits
