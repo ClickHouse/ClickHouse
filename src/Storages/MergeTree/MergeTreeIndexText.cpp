@@ -1866,7 +1866,9 @@ public:
     static bool isApplicable(const MergeTreeIndexTextGranuleBuilder & builder, const ColumnLowCardinality & column, size_t num_documents)
     {
         static constexpr size_t min_documents_per_value = 8;
-        return !builder.postprocessor_drop_filter && column.getDictionary().size() * min_documents_per_value <= num_documents;
+        /// A stateful tokenizer can depend on its previous call, so the tokens of a value are not cached for it.
+        return !builder.postprocessor_drop_filter && !builder.tokenizer->isStateful()
+            && column.getDictionary().size() * min_documents_per_value <= num_documents;
     }
 
     ALWAYS_INLINE void add(size_t index)
@@ -1908,6 +1910,12 @@ private:
     void addAndCache(size_t index, Value & value)
     {
         const size_t buffer_size = builder.tokens_map.getBufferSizeInCells();
+        /// The builders taken at a smaller buffer size are stale.
+        if (buffer_size != tokens_buffer_size)
+        {
+            tokens.clear();
+            tokens_buffer_size = buffer_size;
+        }
         const size_t begin = tokens.size();
 
         if (!dictionary.isNullAt(index))
@@ -1946,6 +1954,8 @@ private:
     const PostingListBuildContext & context;
     std::vector<Value> values;
     std::vector<Token> tokens;
+    /// Buffer size of the map when the builders in tokens were taken.
+    size_t tokens_buffer_size = 0;
 };
 
 NO_INLINE void addLowCardinalityDocuments(
