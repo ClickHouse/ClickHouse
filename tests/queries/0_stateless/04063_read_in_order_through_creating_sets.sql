@@ -10,6 +10,7 @@
 -- this test asserts on the EXPLAIN PIPELINE shape, which is sensitive to many
 -- unrelated randomized knobs (merge-tree layout, range splitting, two-level merge
 -- threshold, etc.).
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS data_a;
 DROP TABLE IF EXISTS data_b;

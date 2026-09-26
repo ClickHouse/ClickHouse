@@ -51,7 +51,15 @@ ATTACH VIEW columns
     `DOMAIN_NAME` Nullable(String),
     `EXTRA` Nullable(String),
     `COLUMN_COMMENT` String,
-    `COLUMN_TYPE` String
+    `COLUMN_TYPE` String,
+    `column_key` String,
+    `privileges` String,
+    `generation_expression` String,
+    `srs_id` Nullable(UInt32),
+    `COLUMN_KEY` String,
+    `PRIVILEGES` String,
+    `GENERATION_EXPRESSION` String,
+    `SRS_ID` Nullable(UInt32)
 )
 SQL SECURITY INVOKER
 AS SELECT
@@ -110,5 +118,15 @@ AS SELECT
     domain_name AS DOMAIN_NAME,
     extra AS EXTRA,
     column_comment AS COLUMN_COMMENT,
-    column_type AS COLUMN_TYPE
+    column_type AS COLUMN_TYPE,
+    -- MySQL-compatibility columns, appended after the standard columns to preserve their ordinal positions
+    if(is_in_primary_key, 'PRI', '') AS column_key,                          -- MySQL-specific
+    '' AS privileges,                                                        -- MySQL-specific; left empty until derived from the user's real grants (matches `InterpreterShowColumnsQuery`), since `system.columns` is visible to users with only `SHOW COLUMNS`
+    if(default_kind IN ('MATERIALIZED', 'ALIAS'), default_expression, '')
+                                      AS generation_expression,              -- MySQL-specific
+    NULL AS srs_id,                                                          -- MySQL-specific
+    column_key AS COLUMN_KEY,
+    privileges AS PRIVILEGES,
+    generation_expression AS GENERATION_EXPRESSION,
+    srs_id AS SRS_ID
 FROM system.columns

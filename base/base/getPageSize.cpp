@@ -2,12 +2,19 @@
 #include <unistd.h>
 #include <cstdlib>
 
-Int64 getPageSizeImpl()
+namespace
 {
-    Int64 page_size = sysconf(_SC_PAGESIZE);
-    if (page_size < 0)
-        abort();
-    return page_size;
+    Int64 getPageSizeImpl()
+    {
+        Int64 page_size = sysconf(_SC_PAGESIZE);
+        if (page_size < 0)
+            abort();
+        return page_size;
+    }
 }
 
-Int64 staticPageSize = getPageSizeImpl();
+Int64 getPageSize()
+{
+    static const Int64 page_size = getPageSizeImpl();
+    return page_size;
+}

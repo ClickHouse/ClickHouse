@@ -1,0 +1,47 @@
+---
+title: 'BYOC 成本模型 (AWS)'
+slug: /cloud/reference/byoc/cost-model-aws
+sidebarTitle: '成本模型 (AWS)'
+keywords: ['BYOC', 'bring your own cloud', 'AWS', 'cost', 'billing', 'TCO', 'pricing', 'EC2', 'S3', 'EBS']
+description: 'BYOC 部署的总体拥有成本如何由 ClickHouse Cloud 费用和 AWS 基础设施费用共同构成'
+doc_type: 'reference'
+---
+
+ClickHouse BYOC 部署会产生两笔相互独立的费用：
+
+1. **ClickHouse Cloud 费用** — 由 ClickHouse 对您的 ClickHouse 服务收取，按总内存分配量计费。
+2. **AWS 基础设施费用** — 由 AWS 直接向您的 AWS 账户收取，涵盖该 BYOC 部署在 AWS 中预配的所有资源。
+
+本页介绍各项费用的计算方式，以及它们如何合并构成总体拥有成本 (TCO)。
+
+<div id="clickhouse-cloud-charges">
+  ## ClickHouse Cloud 费用
+</div>
+
+ClickHouse Cloud 的费用按总内存分配量计费。[联系团队](https://clickhouse.com/cloud/bring-your-own-cloud)，了解这在您的部署中如何适用。
+
+<div id="aws-infrastructure-charges">
+  ## AWS 基础设施费用
+</div>
+
+对于 BYOC 预配的每项资源，AWS 都会直接向您的账户计费。ClickHouse 不会对 AWS 容量加价，也不会转售。有关完整的必选和可选服务清单，请参阅[计费 AWS 服务](/zh/products/bring-your-own-cloud/reference/billable-aws-services)。
+
+通常情况下，在 BYOC 账单中，对总成本贡献最大的项目按从高到低排序如下：
+
+1. **Amazon EC2** — 为 EKS 托管节点组提供支持的工作节点实例。默认使用标准 Graviton 家族 (例如 `m7g`) 。实例家族和数量会随服务分配的内存以及节点组的自动扩缩容而变化。
+2. **Amazon S3** — 在您的 bucket 中存储 ClickHouse 表数据和备份。按每 GB-月计费，另加请求费用和跨区域传输费用。
+3. **Amazon EBS** — 挂载到工作节点上的 gp3 卷，用于操作系统、容器镜像和 ClickHouse 日志。
+4. **NAT Gateway 和跨 AZ 数据传输** — 包括来自私有子网的出站流量，以及可用区之间的流量 (多 AZ 部署会在各 AZ 之间复制数据) 。
+5. **Amazon EKS** — 按每集群小时收取固定的控制平面费用。
+6. **Elastic Load Balancing (NLB)** — 按每 LCU-小时对客户端入口流量计费。
+7. **CloudWatch 日志、Route 53、KMS、VPC 端点** — 通常只占总账单中的很小一部分，但会因工作负载而有所不同。
+
+如需查看 AWS 当前的目录价，请参阅 [aws.amazon.com](https://aws.amazon.com/pricing/) 上各项服务的定价页面。
+
+<div id="related">
+  ## 相关内容
+</div>
+
+* [计费 AWS 服务](/zh/products/bring-your-own-cloud/reference/billable-aws-services) — BYOC 会预配的 AWS 服务完整清单
+* [AWS 服务限制和配额](/zh/products/bring-your-own-cloud/reference/aws-service-limits) — 部署前需要核实的配额
+* [BYOC 架构](/zh/products/bring-your-own-cloud/overview/architecture) — ClickHouse Cloud 在您的账户中部署的各个组件

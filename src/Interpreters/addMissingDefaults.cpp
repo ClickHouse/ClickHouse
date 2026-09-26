@@ -4,6 +4,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Core/Block.h>
 #include <Storages/ColumnsDescription.h>
@@ -67,8 +68,8 @@ ActionsDAG addMissingDefaults(
         if (array_type && nested_groups.contains(offsets_name))
         {
             const auto & nested_type = array_type->getNestedType();
-            ColumnPtr nested_column = nested_type->createColumnConstWithDefaultValue(0);
-            const auto & constant = actions.addColumn({nested_column, nested_type, column.name});
+            auto nested_column = nested_type->createColumnConstWithDefaultValue(0);
+            const auto & constant = actions.addColumn(std::move(nested_column), nested_type, column.name);
 
             auto & group = nested_groups[offsets_name];
             group[0] = &constant;
@@ -81,7 +82,7 @@ ActionsDAG addMissingDefaults(
         *  it can be full (or the interpreter may decide that it is constant everywhere).
         */
         auto new_column = column.type->createColumnConstWithDefaultValue(0);
-        const auto * col = &actions.addColumn({new_column, column.type, column.name});
+        const auto * col = &actions.addColumn(std::move(new_column), column.type, column.name);
         index.push_back(&actions.materializeNode(*col));
     }
 

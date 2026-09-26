@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/OffsetTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -38,6 +39,10 @@ void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
             pipeline.getHeader(), offset, pipeline.getNumStreams());
 
     pipeline.addTransform(std::move(transform));
+
+    if (dataflow_cache_updater)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void OffsetStep::describeActions(FormatSettings & settings) const
@@ -58,12 +63,18 @@ void OffsetStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr OffsetStep::deserialize(Deserialization & ctx)
 {
-    UInt64 offset;
+    UInt64 offset = 0;
     readVarUInt(offset, ctx.in);
 
     return std::make_unique<OffsetStep>(ctx.input_headers.front(), offset);
 }
 
+QueryPlanStepPtr OffsetStep::clone() const
+{
+    return std::make_unique<OffsetStep>(*this);
+}
+
+void registerOffsetStep(QueryPlanStepRegistry & registry);
 void registerOffsetStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Offset", OffsetStep::deserialize);

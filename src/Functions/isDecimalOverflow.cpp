@@ -25,7 +25,7 @@ namespace
 
 /// Returns 1 if and Decimal value has more digits then it's Precision allow, 0 otherwise.
 /// Precision could be set as second argument or omitted. If omitted function uses Decimal precision of the first argument.
-class FunctionIsDecimalOverflow : public IFunction
+class FunctionIsDecimalOverflow final : public IFunction
 {
 public:
     static constexpr auto name = "isDecimalOverflow";

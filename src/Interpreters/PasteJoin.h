@@ -27,7 +27,12 @@ public:
     }
 
     std::string getName() const override { return "PasteJoin"; }
+
+    std::string getAlgorithm() const override { return "PASTE"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+
+    /// The left and right blocks are concatenated side by side by row position.
+    bool preservesLeftBlockOrder() const override { return true; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
     {
@@ -76,6 +81,8 @@ public:
     }
 
     bool alwaysReturnsEmptySet() const override { return false; }
+
+    StepAnalysisReport getAnalysisReport() const override { return {}; }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & /* left_sample_block */, const Block & /* result_sample_block */, UInt64 /* max_block_size */) const override

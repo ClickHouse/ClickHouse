@@ -32,7 +32,7 @@ public:
     using ItemPtr = std::shared_ptr<ItemBase>;
 
 private:
-    struct Rec
+    struct Rec // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
     {
         std::type_index type_idx;
         ItemPtr ptr;
@@ -94,8 +94,8 @@ public:
         // remove duplicates
         records.erase(std::unique(records.begin(), records.end()), records.end());
 
-        assert(std::is_sorted(records.begin(), records.end()));
-        assert(isUniqTypes());
+        chassert(std::is_sorted(records.begin(), records.end()));
+        chassert(isUniqTypes());
     }
 
     void mergeWith(Self && other)
@@ -118,8 +118,8 @@ public:
         // remove duplicates
         records.erase(std::unique(records.begin(), records.end()), records.end());
 
-        assert(std::is_sorted(records.begin(), records.end()));
-        assert(isUniqTypes());
+        chassert(std::is_sorted(records.begin(), records.end()));
+        chassert(isUniqTypes());
     }
 
     template <class T>

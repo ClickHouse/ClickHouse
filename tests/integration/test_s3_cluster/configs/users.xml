@@ -1,4 +1,11 @@
 <clickhouse>
+    <profiles>
+        <default>
+            <!-- test_cluster_with_header reads S3 with no explicit credentials, which user queries cannot do
+                 by default. Allow it for this test. -->
+            <s3_allow_server_credentials_in_user_queries>1</s3_allow_server_credentials_in_user_queries>
+        </default>
+    </profiles>
     <users>
         <default>
             <password></password>

@@ -20,6 +20,7 @@
 #include <Analyzer/Passes/ArrayExistsToHasPass.h>
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 #include <Analyzer/Passes/ComparisonTupleEliminationPass.h>
+#include <Analyzer/Passes/HasToInPass.h>
 #include <Analyzer/Passes/ConvertEmptyStringComparisonToFunctionPass.h>
 #include <Analyzer/Passes/ConvertInToEqualPass.h>
 #include <Analyzer/Passes/ConvertOrLikeChainPass.h>
@@ -44,7 +45,10 @@
 #include <Analyzer/Passes/OptimizeDateOrDateTimeConverterWithPreimagePass.h>
 #include <Analyzer/Passes/OptimizeGroupByFunctionKeysPass.h>
 #include <Analyzer/Passes/OptimizeGroupByInjectiveFunctionsPass.h>
+#include <Analyzer/Passes/OptimizeLimitByFunctionKeysPass.h>
+#include <Analyzer/Passes/OptimizeLimitByInjectiveFunctionsPass.h>
 #include <Analyzer/Passes/OptimizeRedundantFunctionsInOrderByPass.h>
+#include <Analyzer/Passes/OptimizeTrivialGroupByLimitPass.h>
 #include <Analyzer/Passes/OrderByLimitByDuplicateEliminationPass.h>
 #include <Analyzer/Passes/OrderByTupleEliminationPass.h>
 #include <Analyzer/Passes/PruneArrayJoinColumnsPass.h>
@@ -102,7 +106,7 @@ public:
 private:
     void visitColumn(ColumnNode * column) const
     {
-        if (column->getColumnSourceOrNull() == nullptr && column->getColumnName() != "__grouping_set")
+        if (column->getColumnSourceOrNull() == nullptr && !column->mayHaveNoSource())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Column {} {} query tree node does not have valid source node after running {} pass",
                 column->getColumnName(), column->getColumnType(), pass_name);
@@ -283,6 +287,7 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<CountDistinctPass>());
     manager.addPass(std::make_unique<UniqToCountPass>());
     manager.addPass(std::make_unique<RewriteArrayExistsToHasPass>());
+    manager.addPass(std::make_unique<RewriteHasToInPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
 
     manager.addPass(std::make_unique<DistanceTransposedPartialReadsPass>());
@@ -325,6 +330,10 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<OptimizeRedundantFunctionsInOrderByPass>());
 
     manager.addPass(std::make_unique<OrderByTupleEliminationPass>());
+
+    manager.addPass(std::make_unique<OptimizeLimitByFunctionKeysPass>());
+    manager.addPass(std::make_unique<OptimizeLimitByInjectiveFunctionsPass>());
+
     manager.addPass(std::make_unique<OrderByLimitByDuplicateEliminationPass>());
 
     manager.addPass(std::make_unique<TruncateOrderByAfterGroupByKeysPass>());
@@ -338,6 +347,8 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
 
     manager.addPass(std::make_unique<CrossToInnerJoinPass>());
     manager.addPass(std::make_unique<ShardNumColumnToFunctionPass>());
+
+    manager.addPass(std::make_unique<OptimizeTrivialGroupByLimitPass>());
 
     manager.addPass(std::make_unique<InjectRandomOrderIfNoOrderByPass>());
 
