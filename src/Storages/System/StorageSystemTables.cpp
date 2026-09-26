@@ -662,8 +662,8 @@ protected:
                         && (!alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_COLUMNS, {})));
 
                 /// `SHOW CREATE DICTIONARY` is authorized by `SHOW DICTIONARIES`, which `SHOW COLUMNS` does not
-                /// imply, so that privilege alone makes a dictionary's CREATE query readable. A non-null
-                /// configuration holds exactly for a `CREATE DICTIONARY` object.
+                /// imply, so on a row visible through `SHOW TABLES` that privilege also makes a dictionary's CREATE
+                /// query readable. A non-null configuration holds exactly for a `CREATE DICTIONARY` object.
                 const auto * storage_dictionary = table ? table->as<StorageDictionary>() : nullptr;
                 const bool can_show_create_query = can_show_declared_columns
                     || (storage_dictionary && storage_dictionary->getConfiguration()
