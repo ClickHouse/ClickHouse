@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 #include <base/defines.h>
 #include <DataTypes/DataTypeString.h>
@@ -72,6 +71,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AlterDropPartitionExecutor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Compaction.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
@@ -82,6 +82,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 #include <Storages/IStorage.h>
+#include <Storages/PartitionCommands.h>
 #include <Common/FieldVisitorToString.h>
 
 #include <Common/ProfileEvents.h>
@@ -222,7 +223,8 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     };
 }
 
-std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata) const
+std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getRelevantState(
+    const ContextPtr & context, bool force_fetch_latest_metadata) const
 {
     const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
@@ -492,26 +494,6 @@ bool IcebergMetadata::optimize(
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
         auto snapshots_info = getHistory(context);
-
-        /// `getHistory` fills `ancestors` only when the table has a current snapshot, so with none -
-        /// `current-snapshot-id` absent, `null` or negative alike - no record is a current ancestor.
-        /// Compaction does not check that: `getPlan` marks a rewrite as needed from any historical
-        /// position delete, and the rewrite republishes a snapshot chain built from append history.
-        /// The table that `SELECT` reads as empty would come back with its historical rows. Nothing
-        /// is expired here, so refuse the rewrite and leave the table as it is (fail-close).
-        ///
-        /// A `current-snapshot-id` that names a snapshot missing from `snapshots` lands here too:
-        /// that metadata is corrupt, and refusing the rewrite is the fail-close answer for it as
-        /// well, so the condition is stated as what was observed - no current ancestor - rather
-        /// than as a claim about `current-snapshot-id`.
-        const bool has_current_ancestor = std::ranges::any_of(
-            snapshots_info, [](const Iceberg::IcebergHistoryRecord & record) { return record.is_current_ancestor; });
-        if (!has_current_ancestor)
-        {
-            LOG_INFO(log, "No snapshot is a current ancestor, skipping compaction");
-            return true;
-        }
-
         compactIcebergTable(
             snapshots_info,
             persistent_components,
@@ -774,6 +756,61 @@ void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
     }
 }
 
+void IcebergMetadata::checkAlterPartitionIsPossible(const PartitionCommands & commands) const
+{
+    checkTableRootIsQueriedPath("ALTER PARTITION");
+
+    for (const auto & command : commands)
+    {
+        if (command.type != PartitionCommand::Type::DROP_PARTITION)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter partition of type '{}' is not supported by Iceberg storage", command.type);
+    }
+}
+
+Pipe IcebergMetadata::alterPartition(
+    const PartitionCommands & commands,
+    ContextPtr context,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    StorageID /*storage_id*/)
+{
+    if (!context->getSettingsRef()[Setting::allow_insert_into_iceberg].value)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Alter iceberg is experimental. To allow its usage, enable setting allow_insert_into_iceberg");
+    }
+    if (catalog)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DROP PARTITION is not supported for catalog-backed Iceberg tables");
+    if (commands.size() != 1)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "ALTER TABLE ... on Iceberg expects exactly one partition command, got {}",
+            commands.size());
+
+    const auto & command = commands.front();
+    chassert(command.type == PartitionCommand::Type::DROP_PARTITION);
+    if (command.part || command.detach)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported by Iceberg", command.typeToString());
+
+    alterPartitionDropImpl(command, context);
+    persistent_components.invalidateMetadataCache();
+    return {};
+}
+
+void IcebergMetadata::alterPartitionDropImpl(const PartitionCommand & command, ContextPtr context)
+{
+    Iceberg::AlterDropPartitionExecutor executor(
+        command,
+        *this,
+        context,
+        object_storage,
+        persistent_components,
+        data_lake_settings,
+        write_format,
+        log);
+    executor.run();
+}
+
 void IcebergMetadata::alter(
     const AlterCommands & params,
     ContextPtr context,
@@ -1031,9 +1068,8 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
             parents_list[snapshot_id] = 0;
     }
 
-    /// For empty table we may have no snapshots. `has` is true for a JSON null, and `getValue<Int64>`
-    /// throws on one; null means "no current snapshot" just like an absent key.
-    if (metadata_object->has(f_current_snapshot_id) && !metadata_object->isNull(f_current_snapshot_id))
+    /// For empty table we may have no snapshots
+    if (metadata_object->has(f_current_snapshot_id))
     {
         auto current_snapshot_id = metadata_object->getValue<Int64>(f_current_snapshot_id);
         /// Add current snapshot-id to ancestors list

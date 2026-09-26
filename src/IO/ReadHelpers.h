@@ -427,6 +427,7 @@ void readStringUntilAmpersand(String & s, ReadBuffer & buf);
 void readStringUntilEquals(String & s, ReadBuffer & buf);
 void readStringUntilColon(String & s, ReadBuffer & buf);
 
+void readStringUntilWhitespaceDelimiter(String & s, ReadBuffer & buf);
 
 /** Read string in CSV format.
   * Parsing rules:
@@ -1932,7 +1933,8 @@ void readBinary(V & x, ReadBuffer & buf)
     readVarUInt(size, buf);
 
     if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Poco::Exception("Too large vector size.");
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too large array size {} (maximum: {})", size, DEFAULT_MAX_STRING_SIZE);
 
     x.resize(size);
     for (size_t i = 0; i < size; ++i)

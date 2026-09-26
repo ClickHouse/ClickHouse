@@ -469,7 +469,7 @@ Disabled by default.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "Disable quoting of the 64 bit integers in JSON by default"}]}]}/>
 
 Controls quoting of 64-bit or bigger [integers](/reference/data-types/int-uint) (like `UInt64` or `Int128`) when they are output in a [JSON](/reference/formats/JSON/JSON) format.
-Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
+Such integers are output without quotes by default. Enabling this setting encloses them in quotes, which is compatible with most JavaScript implementations.
 
 Possible values:
 
