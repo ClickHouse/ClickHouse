@@ -1,5 +1,9 @@
 [
   {
+    "destination": "/integrations/language-clients/java/jdbc",
+    "source": "/concepts/features/interfaces/jdbc"
+  },
+  {
     "destination": "/ar/integrations/language-clients/cpp",
     "source": "/ar/concepts/features/interfaces/cpp"
   },
@@ -5852,7 +5856,7 @@
     "source": "/interfaces/javascript"
   },
   {
-    "destination": "/concepts/features/interfaces/jdbc",
+    "destination": "/integrations/language-clients/java/jdbc",
     "source": "/interfaces/jdbc"
   },
   {
