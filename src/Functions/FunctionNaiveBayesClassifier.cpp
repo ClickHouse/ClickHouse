@@ -339,10 +339,10 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
 {
     factory.registerFunction<FunctionNaiveBayesClassifier>(FunctionDocumentation{
         .description = "Classifies input text using a "
-                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary. "
+                       "[`NAIVE_BAYES`](/reference/statements/create/dictionary/layouts/naive-bayes) dictionary. "
                        "Returns the same predicted class value as `dictGet(dictionary_name, class_attribute, input_text)`, "
                        "where class_attribute is the name of the class label attribute configured in the dictionary's "
-                       "[layout](/sql-reference/statements/create/dictionary/layouts/naive-bayes#layout-parameters). "
+                       "[layout](/reference/statements/create/dictionary/layouts/naive-bayes#layout-parameters). "
                        "Unlike `dictGet`, the result type is always `UInt32` rather than the declared type of the class "
                        "attribute, and `input_text` must be a `String` (no key type conversion is applied).",
         .syntax = "naiveBayesClassifier(dictionary_name, input_text)",
@@ -350,26 +350,61 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
         = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
            {"input_text", "Text to classify.", {"String"}}},
         .returned_value = {"Predicted class ID.", {"UInt32"}},
-        .examples = {{"Classify text", "SELECT naiveBayesClassifier('model', 'some text');", "0"}},
+        .examples = {{"Classify text", R"(
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+SELECT naiveBayesClassifier('sentiment', 'a good and great film') AS class_id;
+        )",
+        R"(
+┌─class_id─┐
+│        0 │
+└──────────┘
+        )"}},
         .introduced_in = {25, 11},
         .category = FunctionDocumentation::Category::MachineLearning});
 
     factory.registerFunction<FunctionNaiveBayesClassifierWithProb>(FunctionDocumentation{
         .description = "Classifies input text using a "
-                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
+                       "[`NAIVE_BAYES`](/reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
                        "returns the predicted class with its probability.",
         .syntax = "naiveBayesClassifierWithProb(dictionary_name, input_text)",
         .arguments
         = {{"dictionary_name", "Name of a dictionary with the NAIVE_BAYES layout.", {"String"}},
            {"input_text", "Text to classify.", {"String"}}},
         .returned_value = {"Tuple of (class_id, probability).", {"Tuple(UInt32, Float64)"}},
-        .examples = {{"Classify with probability", "SELECT naiveBayesClassifierWithProb('model', 'some text');", "(0,0.85)"}},
+        .examples = {{"Classify with probability", R"(
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+WITH naiveBayesClassifierWithProb('sentiment', 'a good and great film') AS p
+SELECT (p.1, round(p.2, 4)) AS prediction;
+        )",
+        R"(
+┌─prediction─┐
+│ (0,0.9677) │
+└────────────┘
+        )"}},
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::MachineLearning});
 
     factory.registerFunction<FunctionNaiveBayesClassifierWithAllProbs>(FunctionDocumentation{
         .description = "Classifies input text using a "
-                       "[`NAIVE_BAYES`](/sql-reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
+                       "[`NAIVE_BAYES`](/reference/statements/create/dictionary/layouts/naive-bayes) dictionary and "
                        "returns all classes with their probabilities, ordered from most to least probable.",
         .syntax = "naiveBayesClassifierWithAllProbs(dictionary_name, input_text)",
         .arguments
@@ -377,7 +412,24 @@ REGISTER_FUNCTION(NaiveBayesClassifier)
            {"input_text", "Text to classify.", {"String"}}},
         .returned_value
         = {"Array of (class_id, probability) tuples ordered from most to least probable.", {"Array(Tuple(UInt32, Float64))"}},
-        .examples = {{"All class probabilities", "SELECT naiveBayesClassifierWithAllProbs('model', 'some text');", "[(0,0.85),(1,0.15)]"}},
+        .examples = {{"All class probabilities", R"(
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sentiment', 'a good and great film')) AS predictions;
+        )",
+        R"(
+┌─predictions─────────────┐
+│ [(0,0.9677),(1,0.0323)] │
+└─────────────────────────┘
+        )"}},
         .introduced_in = {26, 7},
         .category = FunctionDocumentation::Category::MachineLearning});
 }

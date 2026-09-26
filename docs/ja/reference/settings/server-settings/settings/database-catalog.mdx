@@ -58,11 +58,11 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="2592000" changeable_without_restart="No" />
 
-`store/` ディレクトリ内の不要な残存物をクリーンアップするタスクのパラメータです。
+`store/` ディレクトリ内の不要なファイルやディレクトリをクリーンアップするタスクのパラメータです。
 あるサブディレクトリが clickhouse-server に使用されておらず、以前に &quot;非表示&quot; にされていて
 ([database&#95;catalog&#95;unused&#95;dir&#95;hide&#95;timeout&#95;sec](/ja/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_hide_timeout_sec) を参照)
 さらに、このディレクトリが直近
-[`database_catalog_unused_dir_rm_timeout_sec`]/operations/server-configuration-parameters/settings#database&#95;catalog&#95;unused&#95;dir&#95;rm&#95;timeout&#95;sec) 秒間変更されていない場合、このタスクはこのディレクトリを削除します。
+[`database_catalog_unused_dir_rm_timeout_sec`](/ja/reference/settings/server-settings/settings/database-catalog#database_catalog_unused_dir_rm_timeout_sec) 秒間変更されていない場合、このタスクはこのディレクトリを削除します。
 これは、clickhouse-server が `store/` 内に存在することを
 想定していないディレクトリにも適用されます。
 

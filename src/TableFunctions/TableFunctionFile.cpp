@@ -201,8 +201,8 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 void registerTableFunctionFile(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFile>({.description = R"DOCS_MD(
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the [s3](/reference/functions/table-functions/s3) table function. Use `file` when working with local files, and `s3` when working with buckets in object storage such as S3, GCS, or MinIO.
 
@@ -228,7 +228,7 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
 | `path_to_archive` | The relative path to a zip/tar/7z archive. Supports the same globs as `path`.                                                                                                                                                                                                                                 |
 | `format`          | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                |
 | `structure`       | Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                |
-| `compression`     | The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.                                                                                                       |
+| `compression`     | The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query. Supported values are `none` (no compression), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2`, and `snappy`. For `snappy`, the wire format is selected by the [snappy_mode](/reference/settings/session-settings/other#snappy_mode) setting (`basic` by default). |
 
 <Tip>
 When the `structure` argument is omitted, ClickHouse infers the schema from the format itself.

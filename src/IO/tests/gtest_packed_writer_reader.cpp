@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include <Disks/tests/gtest_disk.h>
+#include <base/scope_guard.h>
 #include <IO/PackedFilesWriter.h>
 #include <IO/PackedFilesReader.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -29,8 +31,8 @@ TEST(PackedFilesWriter, Basics)
 {
     static constexpr auto data_filename = "data.packed";
 
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
 
     PackedFilesWriter writer;
 
@@ -92,8 +94,8 @@ TEST(PackedFilesWriter, Removes)
 {
     static constexpr auto data_filename = "data.packed";
 
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
 
     PackedFilesWriter writer1;
 
@@ -143,8 +145,8 @@ TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
 {
     static constexpr auto data_filename = "data_prepare.packed";
 
-    fs::create_directory("tmp/");
-    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+    DiskPtr disk = createDisk("packed_files");
+    SCOPE_EXIT({ destroyDisk(disk); });
 
     PackedFilesWriter writer1;
 

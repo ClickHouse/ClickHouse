@@ -1,7 +1,11 @@
+#include "config.h"
+
+#include <Access/AuthenticationData.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 
 #include <Access/AccessControl.h>
+#include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Access/ReplicatedAccessStorage.h>
 #include <Access/User.h>
@@ -13,14 +17,12 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/removeOnClusterClauseIfNeeded.h>
 #include <Parsers/ASTDatabaseOrNone.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/Access/ASTAuthenticationData.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <boost/range/algorithm/copy.hpp>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Storages/checkAndGetLiteralArgument.h>
-#include <IO/parseDateTimeBestEffort.h>
-#include <IO/ReadBufferFromString.h>
 
 
 namespace DB
@@ -32,6 +34,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
 }
@@ -93,7 +96,23 @@ namespace
         {
             // we only check if user exceeds the allowed quantity of authentication methods in case the create/alter query includes
             // authentication information. Otherwise, we can bypass this check to avoid blocking non-authentication related alters.
-            auto number_of_authentication_methods = user.authentication_methods.size() + authentication_methods.size();
+
+            // Count each SSH key individually toward the limit, so the same set of keys counts equally whether
+            // written as one `ssh_key` method with several keys (`ssh_key BY KEY k1 TYPE t1, KEY k2 TYPE t2`)
+            // or as several `ssh_key` methods (`ssh_key BY KEY k1 TYPE t1, ssh_key BY KEY k2 TYPE t2`).
+            auto count_methods = [](const std::vector<AuthenticationData> & methods)
+            {
+#if USE_SSH
+                size_t count = 0;
+                for (const auto & method : methods)
+                    count += method.getType() == AuthenticationType::SSH_KEY ? method.getSSHKeys().size() : 1;
+                return count;
+#else
+                return methods.size();
+#endif
+            };
+
+            auto number_of_authentication_methods = count_methods(user.authentication_methods) + count_methods(authentication_methods);
             if (number_of_authentication_methods > max_number_of_authentication_methods)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -109,11 +128,31 @@ namespace
 
         bool has_no_password_authentication_method = false;
 
-        for (auto & authentication_method : user.authentication_methods)
+        /// The methods added in this statement were just appended at the end of the list, so the first
+        /// `num_pre_existing_methods` entries are the methods the user already had before this statement.
+        chassert(user.authentication_methods.size() >= authentication_methods.size());
+        const size_t num_pre_existing_methods = user.authentication_methods.size() - authentication_methods.size();
+
+        for (size_t i = 0; i < user.authentication_methods.size(); ++i)
         {
+            auto & authentication_method = user.authentication_methods[i];
+
             if (global_valid_until)
             {
-                authentication_method.setValidUntil(*global_valid_until);
+                /// A user-level `VALID UNTIL` / `VALID FOR` clause applies to every authentication method,
+                /// except a method added in the same statement that carries its own explicit clause - its
+                /// more specific deadline must be preserved. Pre-existing methods (e.g. the ones already on
+                /// the user during `ALTER USER ... VALID FOR ... ADD IDENTIFIED ...`) always take the
+                /// user-level deadline.
+                bool method_has_explicit_valid_until = false;
+                if (i >= num_pre_existing_methods)
+                {
+                    const auto & method_ast = query.authentication_methods[i - num_pre_existing_methods];
+                    method_has_explicit_valid_until = method_ast->valid_until != nullptr;
+                }
+
+                if (!method_has_explicit_valid_until)
+                    authentication_method.setValidUntil(*global_valid_until);
             }
 
             if (authentication_method.getType() == AuthenticationType::NO_PASSWORD)
@@ -198,6 +237,33 @@ namespace
         else if (query.grantees)
             user.grantees = *query.grantees;
     }
+
+    /// Whether the statement does nothing but add authentication methods to the user who runs it, which is
+    /// what `CREATE TOKEN` desugars to. Such a statement is authorized by the `CREATE TOKEN` privilege in
+    /// addition to `ALTER USER` on the user itself, so that a user can issue tokens for its own account
+    /// without being able to administer accounts. Every other clause of `ALTER USER` - renaming, hosts,
+    /// roles, settings, grantees, dropping or replacing the existing authentication methods - keeps
+    /// requiring `ALTER USER`, so the privilege cannot be used to reconfigure the account in any other way.
+    bool isSelfServiceAuthenticationMethodAddition(const ASTCreateUserQuery & query, const String & current_user_name)
+    {
+        if (!query.alter || !query.add_identified_with || query.authentication_methods.empty())
+            return false;
+
+        /// `ADD IDENTIFIED` never replaces or resets the existing methods, but check it explicitly:
+        /// dropping the credentials of an account is account administration, not token issuing.
+        if (query.replace_authentication_methods || query.reset_authentication_methods_to_new)
+            return false;
+
+        /// The user-level `VALID UNTIL` (`global_valid_until`) is rejected because it re-dates the
+        /// pre-existing authentication methods of the account too. A deadline which belongs to the added
+        /// method itself lives in `ASTAuthenticationData::valid_until` and is what `CREATE TOKEN` uses.
+        if (query.new_name || query.hosts || query.add_hosts || query.remove_hosts || query.roles || query.default_roles
+            || query.settings || query.alter_settings || query.grantees || query.default_database || query.global_valid_until)
+            return false;
+
+        const auto names = query.names->toStrings();
+        return (names.size() == 1) && (names.front() == current_user_name);
+    }
 }
 
 BlockIO InterpreterCreateUserQuery::execute()
@@ -208,8 +274,40 @@ BlockIO InterpreterCreateUserQuery::execute()
     auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
 
+    /// A session whose access rights are limited by the GRANTS clause of an authentication method must not
+    /// mint credentials for an existing user. The GRANTS clause of a new authentication method is intersected
+    /// at login with the *user's* full access rights, not with the limit of the session which created the
+    /// method, so such a session could otherwise issue itself a token wider than itself. Deny it (fail-close),
+    /// as with role administration. `CREATE USER` is not affected: a newly created user has no access rights,
+    /// so a limit placed on its authentication methods cannot hand out more than nothing.
+    if (query.alter && !query.authentication_methods.empty() && access->getParams().authentication_grants)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Not enough privileges. "
+            "The current session is authenticated with a method which limits the access rights with the GRANTS clause, "
+            "and such sessions cannot add authentication methods to an existing user");
+
+    const bool self_service_authentication_method_addition
+        = isSelfServiceAuthenticationMethodAddition(query, getContext()->getUserName());
+
+    /// `CREATE USER OR REPLACE` overwrites an existing user - its authentication methods, its granted
+    /// roles and its settings - so it is a drop followed by a create and requires the privileges of both.
+    /// With `CREATE USER` alone its holder could reset the password of any user, including a privileged
+    /// one, and then log in as that user. `DROP USER` is required whether or not the user currently
+    /// exists, mirroring `REPLACE TABLE`, so that the check does not reveal which users exist either.
+    AccessFlags required_access = query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER;
+    if (query.or_replace)
+        required_access |= AccessType::DROP_USER;
+
     for (const auto & name : query.names->toStrings())
-        access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name);
+    {
+        /// `CREATE TOKEN` is an alternative to `ALTER USER` here, not an addition to it: check it only when
+        /// `ALTER USER` is missing, so that the error message of an unprivileged user names the privilege
+        /// which is actually meant for this statement.
+        if (self_service_authentication_method_addition && !access->isGranted(AccessType::ALTER_USER, name))
+            access->checkAccess(AccessType::CREATE_TOKEN);
+        else
+            access->checkAccess(required_access, name);
+    }
 
     if (query.new_name && !query.alter)
         access->checkAccess(AccessType::CREATE_USER, *query.new_name);
@@ -218,18 +316,34 @@ BlockIO InterpreterCreateUserQuery::execute()
     bool no_password_allowed = access_control.isNoPasswordAllowed();
     bool plaintext_password_allowed = access_control.isPlaintextPasswordAllowed();
 
+    /// Capture one reference time for the whole statement, so every `VALID FOR <interval>` clause (the
+    /// global one and each per-authentication one) resolves against the same `now`. Otherwise each
+    /// clause would take its own `CLOCK_REALTIME` sample while methods are built one by one (interleaved
+    /// with e.g. bcrypt hashing), and two identical `VALID FOR INTERVAL 1 DAY` clauses could end up with
+    /// slightly different deadlines.
+    const time_t valid_for_base_time = getCurrentTime();
+
+    /// An attach query holds the stable storage representation emitted by
+    /// `AuthenticationData::toAST(true)`, e.g. a numeric Unix timestamp for dates past 2286, which must
+    /// use the same no-context parsing path as access-entity deserialization. `ATTACH USER` is not part
+    /// of the client SQL grammar (only `ParserAttachAccessEntity` parses it, and its result goes through
+    /// `updateUserFromQuery`, not here), so this only matters for an internally constructed attach AST;
+    /// still, both paths must agree. Ordinary `CREATE`/`ALTER USER` statements evaluate their
+    /// expressions against the query context.
+    const ContextPtr valid_until_context = query.attach ? nullptr : getContext();
+
     std::vector<AuthenticationData> authentication_methods;
     if (!query.authentication_methods.empty())
     {
         for (const auto & authentication_method_ast : query.authentication_methods)
         {
-            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, getContext(), !query.attach));
+            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, valid_until_context, !query.attach, valid_for_base_time));
         }
     }
 
     std::optional<time_t> global_valid_until;
     if (query.global_valid_until)
-        global_valid_until = getValidUntilFromAST(query.global_valid_until, getContext());
+        global_valid_until = getValidUntilFromAST(query.global_valid_until, valid_until_context, query.global_valid_until_is_interval, valid_for_base_time);
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
@@ -243,6 +357,10 @@ BlockIO InterpreterCreateUserQuery::execute()
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
     {
+        /// Changing which roles activate by default for a user is role administration, which a session
+        /// limited by an authentication method's GRANTS clause must not do (the ALTER path is otherwise
+        /// authorized with plain ALTER_USER and does not go through the admin-option check below).
+        access->checkCanAdministerDefaultRoles();
         default_roles_from_query = RolesOrUsersSet{*query.default_roles, access_control};
         if (!query.alter && !default_roles_from_query->all)
         {
@@ -261,7 +379,52 @@ BlockIO InterpreterCreateUserQuery::execute()
         getContext()->checkSettingsConstraints(*settings_from_query, SettingSource::USER);
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(updated_query_ptr, getContext());
+    {
+        /// The deadline of a `VALID FOR <interval>` or `VALID UNTIL <datetime>` clause is resolved on the
+        /// initiator, but when the query is distributed `ON CLUSTER` the AST *text* is what reaches every
+        /// replica. A `VALID FOR <interval>` clause would be re-evaluated as `now + interval` against each
+        /// replica's own clock; a `VALID UNTIL` clause with a bare, time-zone-less literal (for example
+        /// `'2035-01-01 00:00:00'`) would be parsed in each replica's own default time zone. Either way the
+        /// stored `valid_until` could diverge across a cluster whose nodes run in different time zones. To
+        /// keep the deadline identical everywhere, we resolve every deadline once here (on the initiator)
+        /// and rewrite the AST to an absolute, explicit-`UTC` `VALID UNTIL` literal before distributing it.
+        auto cluster_query_ptr = updated_query_ptr->clone();
+        auto & cluster_query = cluster_query_ptr->as<ASTCreateUserQuery &>();
+
+        /// Bind bare-table grants of the authentication methods (e.g. `GRANTS (SELECT ON t1)`) to the current
+        /// database of the initiator before shipping the query, so that every node persists the same limit.
+        /// `AddDefaultDatabaseVisitor` does not rewrite `ASTAuthenticationData::grants` (they are stored outside
+        /// the AST children), and the current database of a DDL worker is not the initiator's, so otherwise each
+        /// node would rebind bare-table grants to a different database.
+        for (auto & authentication_method_ast : cluster_query.authentication_methods)
+            authentication_method_ast->grants.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+
+        auto rewrite_deadline = [](IAST & owner, ASTPtr & valid_until, bool & is_interval, time_t deadline)
+        {
+            /// No clause to canonicalize, or the deadline is the `VALID UNTIL 'infinity'` sentinel
+            /// (`0` == "no expiration"), which is time-zone independent and is left untouched.
+            if (!valid_until || deadline == 0)
+                return;
+
+            /// The explicit `UTC` suffix in the literal makes every replica parse the resulting
+            /// `VALID UNTIL` string to the same instant. Without the zone, a bare `'2026-07-14 12:00:00'`
+            /// would be interpreted in each replica's own default time zone and the stored `valid_until`
+            /// would diverge on mixed-time-zone clusters. The clause subtree is registered in the owner's
+            /// `children`, so it is replaced there too (not just the member pointer).
+            owner.setOrReplace(valid_until, make_intrusive<ASTLiteral>(formatValidUntilInUTC(deadline)));
+            is_interval = false;
+        };
+
+        rewrite_deadline(cluster_query, cluster_query.global_valid_until, cluster_query.global_valid_until_is_interval, global_valid_until.value_or(0));
+
+        for (size_t i = 0; i < cluster_query.authentication_methods.size(); ++i)
+        {
+            auto & method = *cluster_query.authentication_methods[i];
+            rewrite_deadline(method, method.valid_until, method.valid_until_is_interval, authentication_methods[i].getValidUntil());
+        }
+
+        return executeDDLQueryOnCluster(cluster_query_ptr, getContext());
+    }
 
     IAccessStorage * storage = &access_control;
     MultipleAccessStorage::StoragePtr storage_ptr;
@@ -364,7 +527,7 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
 
     std::optional<time_t> global_valid_until;
     if (query.global_valid_until)
-        global_valid_until = getValidUntilFromAST(query.global_valid_until, {});
+        global_valid_until = getValidUntilFromAST(query.global_valid_until, {}, query.global_valid_until_is_interval);
 
     updateUserFromQueryImpl(
         user,

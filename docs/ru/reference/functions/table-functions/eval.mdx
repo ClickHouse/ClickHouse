@@ -1,12 +1,12 @@
 ---
-description: 'Табличная функция `eval` вычисляет константное выражение в строку запроса и выполняет получившийся запрос `SELECT`.'
+description: 'Табличная функция `eval` вычисляет константное выражение в строку запроса и выполняет получившийся SELECT-запрос.'
 sidebarTitle: 'eval'
 slug: /sql-reference/table-functions/eval
 title: 'eval'
 doc_type: 'reference'
 ---
 
-Табличная функция `eval` вычисляет свой аргумент в строку запроса, а затем выполняет её как один запрос `SELECT`.
+Табличная функция `eval` вычисляет свой аргумент в строку запроса, а затем выполняет её как один SELECT-запрос.
 
 Эта табличная функция является экспериментальной и по умолчанию отключена. Чтобы включить её, используйте настройку `allow_experimental_eval_table_function`:
 
@@ -14,7 +14,7 @@ doc_type: 'reference'
 SET allow_experimental_eval_table_function = 1;
 ```
 
-Для этого также нужен анализатор ([`enable_analyzer`](/ru/reference/settings/session-settings#allow_experimental_analyzer), который по умолчанию включен).
+Для этого также нужен анализатор ([`enable_analyzer`](/ru/reference/settings/session-settings/allow-experimental#allow_experimental_analyzer), который по умолчанию включен).
 
 <div id="syntax">
   ## Синтаксис

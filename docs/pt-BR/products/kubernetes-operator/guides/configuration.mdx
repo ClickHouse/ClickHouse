@@ -120,90 +120,11 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-O operador acessa cada pod por meio do headless Service como
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Esse sufixo é repassado para
-duas partes da configuração gerada:
+Para as réplicas do ClickHouse, o operador cria um headless Service de controle, `<cluster-name>-clickhouse-headless`, que atende ao tráfego de clientes.
+Além disso, cria serviços por réplica, `<cluster-name>-clickhouse-internal-<shard>-<index>`, que publicam pods não prontos para tráfego interno
+e solicitações de gerenciamento do operador. Isso pode ser usado para a recuperação de réplicas caso elas não consigam ficar prontas por conta própria.
 
-* Em um `ClickHouseCluster`, seu valor é usado para os nomes de host das réplicas em
-  `remote_servers` (consultas entre réplicas e consultas `Distributed`).
-* Em um `KeeperCluster`, seu valor compõe os nomes de host dos nós do Keeper que o
-  ClickHouse usa para coordenação.
-
-<Note>
-  Só substitua esse valor quando o `agente de nó do Kubernetes` do seu cluster for executado com um `--cluster-domain`
-  diferente de `cluster.local`. Se o valor não corresponder ao domínio real do cluster,
-  o ClickHouse não conseguirá resolver os nomes de host do Keeper e das réplicas — a coordenação e
-  as consultas `Distributed` falharão com erros de resolução de DNS. Defina o **mesmo** valor no
-  `ClickHouseCluster` e no `KeeperCluster` ao qual ele faz referência.
-</Note>
-
-<div id="multi-disk-jbod-storage">
-  ### Armazenamento em vários discos (JBOD)
-</div>
-
-`additionalVolumeClaimTemplates` anexa discos adicionais a cada réplica do ClickHouse, além do `dataVolumeClaimSpec` principal, que é necessário para usá-los.
-Cada entrada é um template de PVC — um `metadata.name` mais uma `spec` de PVC.
-Os discos são reconciliados exatamente como o disco de dados principal — como `volumeClaimTemplates` de StatefulSet — portanto, o controlador do StatefulSet cria e mantém um PVC por réplica, chamado `<name>-<statefulset>-0`.
-
-```yaml
-spec:
-  dataVolumeClaimSpec:
-    storageClassName: fast-ssd
-    resources:
-      requests:
-        storage: 100Gi
-  additionalVolumeClaimTemplates:
-    - metadata:
-        name: disk1
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-    - metadata:
-        name: disk2
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-```
-
-O operador monta cada volume adicional em `/var/lib/clickhouse/disks/<name>` e o adiciona a uma configuração de armazenamento do ClickHouse gerada automaticamente.
-Hífens em um nome tornam-se underscores no identificador do disk no ClickHouse; o caminho de montagem mantém o nome original.
-
-O disk de dados primário e cada disk adicional são colocados em um único volume da política de armazenamento `default`, para que o ClickHouse distribua novas partes de dados entre todos eles em esquema round-robin.
-A capacidade utilizável é a soma de todos os disks, e toda tabela que não define sua própria `storage_policy` (incluindo as tabelas `system.*`) usa o conjunto combinado.
-
-<Note>
-  Os nomes de PVC devem corresponder a `^[a-z]([-a-z0-9]*[a-z0-9])?$` e não devem entrar em conflito com o nome do volume de dados primário.
-  Assim como o disk de dados primário, o conjunto de disks adicionais é fixo no momento da criação: adicionar, remover ou renomear entradas após a criação é rejeitado.
-  PVCs adicionais são mantidos quando o cluster é excluído, assim como o disk de dados primário.
-  O tamanho de armazenamento de uma entrada existente pode ser expandido se a StorageClass oferecer suporte à expansão.
-</Note>
-
-<div id="cluster-domain">
-  ## Domínio do cluster
-</div>
-
-`spec.clusterDomain` define o sufixo DNS do Kubernetes que o operador usa ao construir
-os nomes de host totalmente qualificados dos pods do Kubernetes que ele grava na
-configuração do servidor ClickHouse. O padrão é `cluster.local` e esse campo existe tanto em
-`ClickHouseCluster` quanto em `KeeperCluster`.
-
-```yaml
-spec:
-  clusterDomain: cluster.local   # default; override only for a custom domain
-```
-
-O operador acessa cada pod por meio do headless Service como
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Esse sufixo é repassado para
-duas partes da configuração gerada:
-
-* Em um `ClickHouseCluster`, seu valor é usado para os nomes de host das réplicas em
-  `remote_servers` (consultas entre réplicas e consultas `Distributed`).
-* Em um `KeeperCluster`, seu valor compõe os nomes de host dos nós do Keeper que o
-  ClickHouse usa para coordenação.
+Os nós do Keeper usam nomes de pod por meio de seu headless Service: `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`.
 
 <Note>
   Só substitua esse valor quando o `agente de nó do Kubernetes` do seu cluster for executado com um `--cluster-domain`
@@ -598,7 +519,7 @@ O operador coloca a reconciliação de volta na fila enquanto o Secret é invál
   ## Portas adicionais
 </div>
 
-O operador expõe um conjunto fixo de portas em cada pod do Kubernetes do ClickHouse e em seu Service headless: `8123` HTTP, `9000` native, `9009` interserver, `9001` management, `9363` métricas do Prometheus e as variantes TLS `8443`/`9440` quando o TLS estiver habilitado. Para fazer o ClickHouse aceitar conexões em protocolos adicionais — MySQL, PostgreSQL, gRPC ou qualquer porta personalizada — declare-as em `spec.additionalPorts`:
+O operador expõe um conjunto fixo de portas em cada pod do Kubernetes do ClickHouse e em seu Service headless público: `8123` HTTP, `9000` nativo, `9009` interserver, `9001`/`9002` gerenciamento, `9363` métricas do Prometheus e as variantes TLS `8443`/`9440` quando o TLS estiver habilitado. As portas interserver e de gerenciamento também são expostas por meio dos Services internos de cada réplica para que as réplicas e o operador possam se comunicar antes que uma réplica fique pronta. Para fazer o ClickHouse aceitar conexões em protocolos adicionais — MySQL, PostgreSQL, gRPC ou qualquer porta personalizada — declare-as em `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -611,7 +532,8 @@ spec:
       port: 9100
 ```
 
-O operador adiciona essas portas às `containerPorts` do pod do Kubernetes e ao Service headless. O exemplo completo está em [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+O operador adiciona essas portas às `containerPorts` do pod do Kubernetes e ao Service headless público.
+O exemplo completo está em [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
   `additionalPorts` apenas abre as portas no lado do Kubernetes. Isso **não** configura o servidor ClickHouse para escutar nessas portas. Você também precisa habilitar o protocolo correspondente em `spec.settings.extraConfig.protocols`. Sem isso, a porta fica aberta no Service, mas nada dentro do pod do Kubernetes está respondendo.
@@ -637,7 +559,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -932,7 +854,8 @@ data:
           - '@from_env': READER_PASSWORD
         profile: default
         grants:
-          - query: "GRANT SELECT ON *.*"
+          query:
+            - "GRANT SELECT ON *.*"
 ---
 apiVersion: v1
 kind: Secret
@@ -974,10 +897,16 @@ Ative a sincronização automática do banco de dados para novas réplicas:
 ```yaml
 spec:
   settings:
-    enableDatabaseSync: true  # Padrão: true
+    enableDatabaseSync: true  # Default: true
 ```
 
-Quando ativado, o operator sincroniza as tabelas Replicated e de integração para novas réplicas.
+Quando ativado, o operador sincroniza as tabelas Replicated e de integração para novas réplicas.
+
+Cada pod do Kubernetes de réplica tem a gate de readiness `clickhouse.com/ReplicaInitialized`; portanto, uma nova réplica é publicada pelo Service headless público somente depois que o operador conclui sua inicialização: o banco de dados `default` é convertido para o engine Replicated e o schema é sincronizado. Até então, o operador e as outras réplicas a acessam por meio de seu Service interno. Com `enableDatabaseSync: false`, o operador marca as réplicas como inicializadas imediatamente; portanto, a readiness depende apenas das probes do contêiner.
+
+O operador nunca exclui um banco de dados `default` não Replicated que contém dados. Essa réplica ainda começa a atender ao tráfego de clientes após a preparação do schema, mas o cluster informa `SchemaInSync=False` com o motivo `DefaultDatabaseNotReplicated` até que você resolva esse banco de dados por conta própria.
+
+Antes de remover uma réplica durante a redução de escala, o operador primeiro remove o tráfego de clientes dela, aguarda até que ela deixe de ser publicada, replica os dados restantes para as réplicas sobreviventes e só então a exclui.
 
 <div id="server-logging">
   ### Logging do servidor

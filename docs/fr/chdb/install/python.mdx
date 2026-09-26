@@ -66,7 +66,7 @@ Pour une meilleure gestion des ressources et de meilleures performances :
 ```python
 import chdb
 
-# Create connection (in-memory by default)
+# Create connection (":memory:" is a temporary, non-persistent database)
 conn = chdb.connect(":memory:")
 # Or use file-based: conn = chdb.connect("mydata.db")
 
@@ -358,121 +358,24 @@ cursor.executemany(
 ```
 
 <div id="user-defined-functions">
-  ### Fonctions définies par l’utilisateur (UDF)
+  ### Fonctions définies par l’utilisateur (UDF) en Python
 </div>
 
-Étendez SQL à l’aide de fonctions Python personnalisées :
-
-<div id="basic-udf-usage">
-  #### Utilisation de base des UDF
-</div>
+chDB prend en charge nativement les UDF Python exécutées dans le processus, avec des arguments typés, une inférence automatique des types et une gestion configurable des valeurs NULL et des exceptions.
 
 ```python
-from chdb.udf import chdb_udf
-from chdb import query
+from chdb import query, func
+from chdb.sqltypes import INT64
 
-# Simple mathematical function
-@chdb_udf()
-def add_numbers(a, b):
-    return int(a) + int(b)
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
 
-# String processing function
-@chdb_udf()
-def reverse_string(text):
-    return text[::-1]
-
-# JSON processing function  
-@chdb_udf()
-def extract_json_field(json_str, field):
-    import json
-    try:
-        data = json.loads(json_str)
-        return str(data.get(field, ''))
-    except:
-        return ''
-
-# Use UDFs in queries
-result = query("""
-    SELECT 
-        add_numbers('10', '20') as sum_result,
-        reverse_string('hello') as reversed,
-        extract_json_field('{"name": "John", "age": 30}', 'name') as name
-""")
-print(result)
+result = query("SELECT add(2, 3)")
+print(result)  # 5
 ```
 
-<div id="advanced-udf-custom-return-types">
-  #### UDF avancées avec des types de retour personnalisés
-</div>
-
-```python
-# UDF with specific return type
-@chdb_udf(return_type="Float64")
-def calculate_bmi(height_str, weight_str):
-    height = float(height_str) / 100  # Convert cm to meters
-    weight = float(weight_str)
-    return weight / (height * height)
-
-# UDF for data validation
-@chdb_udf(return_type="UInt8") 
-def is_valid_email(email):
-    import re
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return 1 if re.match(pattern, email) else 0
-
-# Use in complex queries
-result = query("""
-    SELECT 
-        name,
-        calculate_bmi(height, weight) as bmi,
-        is_valid_email(email) as has_valid_email
-    FROM (
-        SELECT 
-            'John' as name, '180' as height, '75' as weight, 'john@example.com' as email
-        UNION ALL
-        SELECT 
-            'Jane' as name, '165' as height, '60' as weight, 'invalid-email' as email
-    )
-""", "Pretty")
-print(result)
-```
-
-<div id="udf-best-practices">
-  #### Bonnes pratiques des UDF
-</div>
-
-1. **Fonctions sans état** : les UDF doivent être des fonctions pures, sans effets de bord
-2. **Import à l’intérieur des fonctions** : tous les modules nécessaires doivent être importés dans l’UDF
-3. **Entrée/sortie de chaînes** : tous les paramètres des UDF sont des chaînes (format TabSeparated)
-4. **Gestion des erreurs** : incluez des blocs try-catch pour rendre les UDF plus robustes
-5. **Performances** : les UDF sont appelées pour chaque ligne, veillez donc à optimiser les performances
-
-```python
-# Well-structured UDF with error handling
-@chdb_udf(return_type="String")
-def safe_json_extract(json_str, path):
-    import json
-    try:
-        data = json.loads(json_str)
-        keys = path.split('.')
-        result = data
-        for key in keys:
-            if isinstance(result, dict) and key in result:
-                result = result[key]
-            else:
-                return 'null'
-        return str(result)
-    except Exception as e:
-        return f'error: {str(e)}'
-
-# Use with complex nested JSON
-query("""
-    SELECT safe_json_extract(
-        '{"user": {"profile": {"name": "Alice", "age": 25}}}',
-        'user.profile.name'
-    ) as extracted_name
-""")
-```
+Pour consulter le guide complet sur les méthodes d’enregistrement, le système de types, la gestion de NULL, la gestion des exceptions et la prise en charge de DateTime, reportez-vous au [guide des UDF Python](/fr/chdb/guides/python-udf). Pour la référence complète de l’API, consultez la [référence de l’API des UDF Python](/fr/chdb/api/python#user-defined-functions). L’ancien décorateur `@chdb_udf` reste disponible, mais est remplacé par cette API — consultez [l’API legacy](/fr/chdb/api/python#legacy-udf).
 
 <div id="streaming-queries">
   ### Traitement des requêtes en streaming

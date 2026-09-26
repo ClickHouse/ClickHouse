@@ -19,7 +19,7 @@ view(subquery)
 
 - `subquery` — `SELECT` query.
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 - A table.
 

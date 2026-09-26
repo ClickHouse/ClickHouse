@@ -169,22 +169,41 @@ String DataPartStorageOnDiskBase::getPartDirForPrefix(const String & prefix, boo
     if (!prefix.empty() && !prefix.ends_with("_"))
         res += "_";
 
-    /// During RESTORE temporary part directories are created with names like "tmp_restore_all_2_2_0-XXXXXXXX".
-    /// To detach such a directory we need to rename it replacing "tmp_restore_" with a specified prefix,
-    /// and a random suffix with an attempt number.
+    /** The part's directory is usually a bare name, but it can be a relative path: the `ATTACH_PART`
+      * executor builds its candidate part with `detached/attaching_<name>` so that it can read the
+      * candidate straight out of `detached/`. Prefixing that whole path names a directory inside a
+      * `broken_detached/` subdirectory that nothing ever creates, so the quarantine rename of a broken
+      * detached part failed with ENOENT and the part kept its valid name in `detached/` - failing every
+      * later attach the same way. Only the last component is the part's own directory name.
+      */
+    const String part_dir_name = fs::path(part_dir).filename();
+
+    /** That name can still be a temporary rename of the part rather than the part's own name, and a
+      * temporary marker has to be dropped rather than prefixed: a detached directory must remain a name
+      * `DetachedPartInfo::parseDetachedPartName` can parse, or `system.detached_parts` reports it with a
+      * `NULL` `reason` and `partition_id` while partition-scoped `DROP DETACHED` and `ATTACH PARTITION`
+      * skip it - the part becomes impossible to inspect or to get rid of. RESTORE names its temporary
+      * directories "tmp_restore_all_2_2_0-XXXXXXXX", where the random suffix goes away together with the
+      * prefix; the `ATTACH_PART` candidate above is `attaching_<name>`, so its quarantined directory has
+      * to become a plain `broken_<name>`.
+      */
     String part_name;
-    if (detached && part_dir.starts_with("tmp_restore_"))
+    if (detached && part_dir_name.starts_with("tmp_restore_"))
     {
-        part_name = part_dir.substr(strlen("tmp_restore_"));
+        part_name = part_dir_name.substr(strlen("tmp_restore_"));
         size_t endpos = part_name.find('-');
         if (endpos != String::npos)
             part_name.erase(endpos, String::npos);
+    }
+    else if (detached && part_dir_name.starts_with("attaching_"))
+    {
+        part_name = part_dir_name.substr(strlen("attaching_"));
     }
 
     if (!part_name.empty())
         res += part_name;
     else
-        res += part_dir;
+        res += part_dir_name;
 
     if (try_no)
         res += DetachedPartInfo::TRY_N_SUFFIX + DB::toString(try_no);

@@ -58,29 +58,54 @@ ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="data_types-support">
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+MySQL への暗号化接続の認証情報は、[named collection](/ja/concepts/features/configuration/server-config/named-collections) のキー (またはキー・バリュー引数) として渡されます。
+
+| パラメータ          | 説明                               |
+| -------------- | -------------------------------- |
+| `ssl_ca_pem`   | MySQL サーバー証明書の検証に使用する CA 証明書の内容。 |
+| `ssl_cert_pem` | 証明書ベース認証に使用するクライアント証明書の内容。       |
+| `ssl_key_pem`  | `ssl_cert_pem` に対応する秘密鍵の内容。      |
+
+値には対応する PEM ファイルの内容を指定します。これらは named collection またはクエリにコピーできます。パスワードと同様に、ログおよび `SHOW` クエリではマスクされます。
+
+同じ認証情報は、サーバー上のファイルへのパスとして `ssl_ca`、`ssl_cert`、`ssl_key` に指定することもできます。ただし、**サーバー設定ファイルで定義された named collection 内でのみ**指定でき、このような値はクエリでオーバーライドできません。サーバーは自身の権限でこれらのファイルを開くため、SQL からパスを受け入れると、MySQL ログソースを定義できるユーザーであれば誰でもローカルファイルシステムを調べ、自身に読み取り権限のない証明書と秘密鍵を使って認証できるようになります。
+
+<a id="data_types-support" />
+
+<div id="data-types-support">
   ## 対応するデータ型
 </div>
 
-| MySQL                            | ClickHouse                                       |
-| -------------------------------- | ------------------------------------------------ |
-| UNSIGNED TINYINT                 | [UInt8](/ja/reference/data-types/int-uint)          |
-| TINYINT                          | [Int8](/ja/reference/data-types/int-uint)           |
-| UNSIGNED SMALLINT                | [UInt16](/ja/reference/data-types/int-uint)         |
-| SMALLINT                         | [Int16](/ja/reference/data-types/int-uint)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/ja/reference/data-types/int-uint)         |
-| INT, MEDIUMINT                   | [Int32](/ja/reference/data-types/int-uint)          |
-| UNSIGNED BIGINT                  | [UInt64](/ja/reference/data-types/int-uint)         |
-| BIGINT                           | [Int64](/ja/reference/data-types/int-uint)          |
-| FLOAT                            | [Float32](/ja/reference/data-types/float)           |
-| DOUBLE                           | [Float64](/ja/reference/data-types/float)           |
-| DATE                             | [Date](/ja/reference/data-types/date)               |
-| DATETIME, TIMESTAMP              | [DateTime](/ja/reference/data-types/datetime)       |
-| BINARY                           | [FixedString](/ja/reference/data-types/fixedstring) |
+| MySQL                            | ClickHouse                                                   |
+| -------------------------------- | ------------------------------------------------------------ |
+| UNSIGNED TINYINT                 | [UInt8](/ja/reference/data-types/int-uint)                      |
+| TINYINT                          | [Int8](/ja/reference/data-types/int-uint)                       |
+| UNSIGNED SMALLINT                | [UInt16](/ja/reference/data-types/int-uint)                     |
+| SMALLINT                         | [Int16](/ja/reference/data-types/int-uint)                      |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/ja/reference/data-types/int-uint)                     |
+| INT, MEDIUMINT                   | [Int32](/ja/reference/data-types/int-uint)                      |
+| UNSIGNED BIGINT                  | [UInt64](/ja/reference/data-types/int-uint)                     |
+| BIGINT                           | [Int64](/ja/reference/data-types/int-uint)                      |
+| FLOAT                            | [Float32](/ja/reference/data-types/float)                       |
+| DOUBLE                           | [Float64](/ja/reference/data-types/float)                       |
+| DATE                             | [Date](/ja/reference/data-types/date)                           |
+| DATETIME, TIMESTAMP              | [DateTime](/ja/reference/data-types/datetime)                   |
+| BINARY                           | [FixedString](/ja/reference/data-types/fixedstring)             |
+| POINT                            | [Point](/ja/reference/data-types/geo#point)                     |
+| LINESTRING                       | [LineString](/ja/reference/data-types/geo#linestring)           |
+| POLYGON                          | [Polygon](/ja/reference/data-types/geo#polygon)                 |
+| MULTILINESTRING                  | [MultiLineString](/ja/reference/data-types/geo#multilinestring) |
+| MULTIPOLYGON                     | [MultiPolygon](/ja/reference/data-types/geo#multipolygon)       |
+| MULTIPOINT                       | [MultiPoint](/ja/reference/data-types/geo#multipoint)           |
+| GEOMETRY                         | [Geometry](/ja/reference/data-types/geo#geometry)               |
 
-それ以外の MySQL データ型はすべて [String](/ja/reference/data-types/string) に変換されます。
+空間型の変換 (常に変換される `POINT` を除く) は、デフォルトで有効になっている [`mysql_datatypes_support_level`](/ja/reference/settings/session-settings/mysql#mysql_datatypes_support_level) 設定の `geometry` フラグで制御されます。汎用的な `GEOMETRY` カラム型は、具体的なジオメトリ型の `Variant` である包括的な [`Geometry`](/ja/reference/data-types/geo#geometry) 型にマッピングされます。このようなカラムには任意のサブタイプの値を格納できるため、ClickHouse に対応する型がないサブタイプ (`GEOMETRYCOLLECTION`) の値を読み取ると、読み取り時に例外が発生します。適切なジオメトリ型を使用するため、この非互換性は許容されています。`GEOMETRYCOLLECTION` 型で宣言されたカラムは、他のすべての MySQL データ型と同様に、[String](/ja/reference/data-types/string) に変換されます。
 
-[Nullable](/ja/reference/data-types/nullable) もサポートされています。
+[Nullable](/ja/reference/data-types/nullable) もサポートされています。空間カラムは、次の 3 つの場合、ジオメトリ型ではなく `String` (nullable の場合は `Nullable(String)`) にマッピングされます。`GEOMETRYCOLLECTION` として宣言されている場合、`geometry` フラグが無効で型が `POINT` ではない場合、または `Point` は `Nullable` 内にネストできる唯一のジオメトリ型であるため、カラムが nullable で型が `POINT` ではない場合です。いずれの場合も、文字列には MySQL が返す値がそのまま格納されます。つまり、4 バイトの SRID プレフィックスの後に WKB ペイロードが続くため、WKB デコーダに渡す前に先頭の 4 バイトを取り除いてください。
 
 <div id="global-variables-support">
   ## グローバル変数のサポート

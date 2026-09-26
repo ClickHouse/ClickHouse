@@ -93,6 +93,9 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_no_read;"
 
 # -------------------------------------------------------------------
 # Case 2: TTLDrop with projections — projections should be empty
+# remove_empty_parts = 0 keeps the empty part produced by the TTLDrop
+# merge active; otherwise the cleanup thread may drop it before the
+# projections check below sees it in system.parts.
 # -------------------------------------------------------------------
 echo "-- Case 2: TTLDrop with projections"
 
@@ -110,7 +113,8 @@ ${CLICKHOUSE_CLIENT} -q "
     SETTINGS
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
-        min_bytes_for_wide_part = 1;
+        min_bytes_for_wide_part = 1,
+        remove_empty_parts = 0;
 
     SYSTEM STOP MERGES t_ttl_drop_proj;
 
@@ -299,6 +303,9 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_ttl_drop_then_insert;"
 # -------------------------------------------------------------------
 # Case 6: Rows TTL + column TTL — not short-circuited
 # hasOnlyRowsTTL is false when column TTL is present, so data IS read.
+# The rows TTL alone covers every row, so `TTLTransform` closes the read side
+# once the merge emits its first block. How many rows the sources pushed before
+# that depends on the granule size, so assert only that they were read at all.
 # -------------------------------------------------------------------
 echo "-- Case 6: Rows TTL + column TTL is not short-circuited"
 
@@ -331,7 +338,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT
         merge_reason,
         rows,
-        read_rows
+        read_rows > 0
     FROM system.part_log
     WHERE
         database = currentDatabase()

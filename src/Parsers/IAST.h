@@ -158,7 +158,12 @@ public:
     /** Get hash code, identifying this element and its subtree.
      *  Hashing by default ignores aliases (e.g. identifier aliases, function aliases, literal aliases) which is
      *  useful for common subexpression elimination. Set 'ignore_aliases = false' if you don't want that behavior.
-      */
+     *
+     *  The default implementation only hashes `getID` and `children`. When adding a member that is
+     *  not a child and is part of the element's meaning, hash it here as well, otherwise two
+     *  elements that differ only in that member get the same hash, and the callers that use the
+     *  hash as an identity of the expression treat them as the same expression.
+     */
     IASTHash getTreeHash(bool ignore_aliases) const;
     void updateTreeHash(SipHash & hash_state, bool ignore_aliases) const;
     virtual void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const;
@@ -364,6 +369,10 @@ public:
         bool enforce_strict_identifier_format;
         /// This is needed for distributed queries with the old analyzer. Remove it after removing the old analyzer.
         bool collapse_identical_nodes_to_aliases;
+        /// Do not print the redundant parentheses that the user has written around an expression
+        /// (the `parenthesized` flag), so that `(a)` and `a` produce the same text. Used to store
+        /// and to compare table definition expressions - see `formatIgnoringRedundantParentheses`.
+        bool ignore_redundant_parentheses = false;
 
         explicit FormatSettings(
             bool one_line_,
@@ -442,7 +451,8 @@ public:
         bool show_secrets,
         bool print_pretty_type_names,
         IdentifierQuotingRule identifier_quoting_rule,
-        IdentifierQuotingStyle identifier_quoting_style) const;
+        IdentifierQuotingStyle identifier_quoting_style,
+        bool ignore_redundant_parentheses = false) const;
 
     /** formatForLogging and formatForErrorMessage always hide secrets. This inconsistent
       * behaviour is due to the fact such functions are called from Client which knows nothing about
@@ -453,6 +463,17 @@ public:
     String formatForErrorMessage() const;
     String formatWithSecretsOneLine() const;
     String formatWithSecretsMultiLine() const;
+
+    /** Same as `formatWithSecretsOneLine`, but the redundant parentheses that the user has written
+      * around an expression are not printed, so `(a)` and `a` give the same text.
+      *
+      * Use it for the definition expressions of a table (keys, `TTL`, indices, projections,
+      * constraints, column defaults) that are stored in ZooKeeper or in a part, and for comparing
+      * two such definitions: whether the parentheses were written is not a property of the table,
+      * and the servers that did not remember them (before the parentheses became a part of the AST)
+      * stored the same text this method produces.
+      */
+    String formatIgnoringRedundantParentheses() const;
 
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
 
