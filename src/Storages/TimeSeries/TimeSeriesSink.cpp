@@ -289,6 +289,11 @@ void TimeSeriesSink::sortTagsAndRemoveDuplicates(std::vector<std::pair<std::stri
             adjacent->first, adjacent->second, std::next(adjacent)->second);
     }
 
+    auto dropped_it = std::lower_bound(tags.begin(), tags.end(), TimeSeriesTagNames::DroppedMetricNameMarker,
+        [](const auto & tag, const char * name) { return tag.first < name; });
+    if (dropped_it != tags.end() && dropped_it->first == TimeSeriesTagNames::DroppedMetricNameMarker)
+        throw Exception(ErrorCodes::ILLEGAL_TIME_SERIES_TAGS, "Tag name `{}` is reserved", TimeSeriesTagNames::DroppedMetricNameMarker);
+
     auto it = std::lower_bound(tags.begin(), tags.end(), TimeSeriesTagNames::MetricName,
         [](const auto & tag, const char * name) { return tag.first < name; });
     if (it == tags.end() || it->first != TimeSeriesTagNames::MetricName)

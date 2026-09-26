@@ -186,6 +186,7 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
     {
         static const std::unordered_set<std::string_view> reserved_tag_names = {
             TimeSeriesTagNames::MetricName,
+            TimeSeriesTagNames::DroppedMetricNameMarker,
         };
         static const std::unordered_set<std::string_view> reserved_column_names = {
             TimeSeriesColumnNames::ID,

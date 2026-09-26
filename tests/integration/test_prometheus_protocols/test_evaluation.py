@@ -623,6 +623,16 @@ def do_query_test_expect_error(
     )
 
 
+# ClickHouse rejects this label name. The reference Prometheus accepts it.
+def do_clickhouse_only_query_test_expect_error(query, timestamp, expected_cherror):
+    assert expected_cherror in execute_query_in_clickhouse_sql(
+        query, timestamp, expect_error=True
+    )
+    assert expected_cherror in execute_query_in_clickhouse_http_api(
+        query, timestamp, expect_error=True
+    )
+
+
 # Evaluates the same range query in Prometheus and in ClickHouse and compare the results.
 def do_range_query_test(
     query,
@@ -6146,4 +6156,29 @@ def test_label_manipulation_functions():
         1753176757.89,
         'expected at least 3 argument(s) in call to "label_join", got 2',
         "Function 'label_join' expects 3 or more arguments, but was called with 2 arguments",
+    )
+
+
+def test_reserved_dropped_metric_name():
+    # `__name__.dropped` is reserved for delayed metric name removal.
+    expected = "Label name '__name__.dropped' is reserved"
+    do_clickhouse_only_query_test_expect_error(
+        'label_replace(rate(foo[5m]), "__name__.dropped", "x", "", "")',
+        120,
+        expected,
+    )
+    do_clickhouse_only_query_test_expect_error(
+        'count_values("__name__.dropped", foo)',
+        120,
+        expected,
+    )
+    do_clickhouse_only_query_test_expect_error(
+        '{"__name__.dropped"="1"}',
+        120,
+        expected,
+    )
+    do_clickhouse_only_query_test_expect_error(
+        'sum without("__name__.dropped")(foo)',
+        120,
+        expected,
     )
