@@ -2,10 +2,40 @@
 
 #include <Common/TargetSpecific.h>
 
-#if defined(__AVX2__)
-#include <immintrin.h>
-#endif
+namespace
+{
+/// Below this size the head scan costs more than the cache line splits it avoids.
+constexpr size_t ALIGN_THRESHOLD = 64 * 1024;
 
+/// Deliberately plain: at x86-64-v3/v4 the compiler vectorizes this reduction,
+/// while the same implementation also produces a good loop on other platforms.
+MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_HEADER(static bool NO_INLINE),
+    isAllASCIIImpl,
+    MULTITARGET_FUNCTION_BODY((const UInt8 * data, size_t size) /// NOLINT
+    {
+        UInt8 mask = 0;
+
+        if (size < ALIGN_THRESHOLD)
+        {
+            for (size_t i = 0; i < size; ++i)
+                mask |= data[i];
+            return !(mask & 0x80);
+        }
+
+        /// One overlapping scan of the first 64 bytes, so that the bulk loop starts on a 64-byte
+        /// boundary and no wide load splits a cache line. Misaligned 512-bit loads run at half rate.
+        for (size_t i = 0; i < 64; ++i)
+            mask |= data[i];
+
+        const size_t start = 64 - (reinterpret_cast<uintptr_t>(data) & 63);
+        const UInt8 * aligned = static_cast<const UInt8 *>(__builtin_assume_aligned(data + start, 64));
+        for (size_t i = 0, rest = size - start; i < rest; ++i)
+            mask |= aligned[i];
+
+        return !(mask & 0x80);
+    }))
+}
 
 namespace impl
 {
@@ -24,30 +54,12 @@ bool endsWith(const std::string & s, const char * suffix, size_t suffix_size)
 
 bool isAllASCII(const UInt8 * data, size_t size)
 {
-#if defined(__AVX2__)
-    __m256i masks = _mm256_setzero_si256();
-
-    size_t i = 0;
-    for (; i + 32 <= size; i += 32)
-    {
-        __m256i bytes = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(data + i));
-        masks = _mm256_or_si256(masks, bytes);
-    }
-    int mask = _mm256_movemask_epi8(masks);
-
-    UInt8 tail_mask = 0;
-    for (; i < size; i++)
-        tail_mask |= data[i];
-
-    mask |= (tail_mask & 0x80);
-    return !mask;
-#else
-    UInt8 mask = 0;
-    for (size_t i = 0; i < size; ++i)
-        mask |= data[i];
-
-    return !(mask & 0x80);
+#if USE_MULTITARGET_CODE
+    if (DB::isArchSupported(DB::TargetArch::x86_64_v4))
+        return isAllASCIIImpl_x86_64_v4(data, size);
 #endif
+
+    return isAllASCIIImpl(data, size);
 }
 
 LikePatternFixedPrefix extractFixedPrefixFromLikePattern(std::string_view like_pattern, bool requires_perfect_prefix)

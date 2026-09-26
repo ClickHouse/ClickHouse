@@ -78,17 +78,17 @@ SELECT 'cardinality tkk', count() FROM tab_heap WHERE hasToken(s, 'tkk');
 
 -- 9-way AND just past the dispatch boundary (n == 9 -> heap).
 -- LCM(2..10) = 2520 -> floor(50000 / 2520) + 1 = 20 matches in [0, 50000).
--- Force leapfrog with text_index_lazy_intersection_density_threshold = 1.0 (min_density = 0.1 < 1.0).
+-- Force leapfrog with `text_index_postings_intersection_algorithm = 'leapfrog'`.
 SELECT 'and 9-way:', count() FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki'])
-SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
+SETTINGS text_index_postings_intersection_algorithm = 'leapfrog',
          log_comment = '04258_heap_9way';
 
 -- Verify the exact matching row IDs (catches off-by-one regressions in the heap
 -- loop). Rows divisible by 2520 in [0, 50000): 0, 2520, 5040, ..., 47880.
 SELECT 'and 9-way rows:', arraySort(groupArray(k)) FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki'])
-SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
+SETTINGS text_index_postings_intersection_algorithm = 'leapfrog',
          log_comment = '04258_heap_9way_rows';
 
 -- 11-way AND stresses the heap deeper.
@@ -96,12 +96,12 @@ SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
 -- floor(50000 / 360360) + 1 = 1 -> only row 0.
 SELECT 'and 11-way:', count() FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki', 'tkj', 'tkk'])
-SETTINGS text_index_lazy_intersection_density_threshold = 1.0,
+SETTINGS text_index_postings_intersection_algorithm = 'leapfrog',
          log_comment = '04258_heap_11way';
 
 SELECT 'and 11-way rows:', arraySort(groupArray(k)) FROM tab_heap
 WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', 'tki', 'tkj', 'tkk'])
-SETTINGS text_index_lazy_intersection_density_threshold = 1.0;
+SETTINGS text_index_postings_intersection_algorithm = 'leapfrog';
 
 -- Equivalence: the materialize path must produce the same count for both shapes.
 -- Without this, a heap-only bug producing the same wrong answer on both lazy
@@ -115,7 +115,7 @@ WHERE hasAllTokens(s, ['tka', 'tkb', 'tkc', 'tkd', 'tke', 'tkf', 'tkg', 'tkh', '
 SETTINGS text_index_posting_list_apply_mode = 'materialize';
 
 -- Telemetry assertions: the heap variant must have run (LeapfrogIntersections > 0),
--- the brute-force variant must NOT have (the threshold forces leapfrog), and
+-- the brute-force variant must NOT have (the setting forces leapfrog), and
 -- advance() must have been called many times (every match in the heap calls
 -- advance ~n times across iterations).
 SYSTEM FLUSH LOGS query_log;
