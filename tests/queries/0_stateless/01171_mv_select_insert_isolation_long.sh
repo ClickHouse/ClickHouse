@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-ordinary-database, no-msan, no-azure-blob-storage
+# Tags: long, no-ordinary-database, no-msan, no-azure-blob-storage, no-parallel-replicas
 # no-msan: it is too slow
 # shellcheck disable=SC2119
 
