@@ -48,6 +48,17 @@ struct PrewhereInfo
     bool remove_prewhere_column = false;
     bool need_filter = false;
 
+    /// Set when only a leading part of the PREWHERE conjunction consists of conjuncts of
+    /// `SelectQueryInfo::filter_actions_dag`. Marks emptied by that part alone are recorded under its key.
+    struct QueryConditionCacheAttribution
+    {
+        UInt64 key;
+        String condition;
+        /// Hashes of the leading conjuncts of the PREWHERE condition that the key covers.
+        std::vector<UInt64> conjunct_hashes;
+    };
+    std::optional<QueryConditionCacheAttribution> query_condition_cache_attribution;
+
     PrewhereInfo() = default;
     explicit PrewhereInfo(ActionsDAG prewhere_actions_, String prewhere_column_name_)
             : prewhere_actions(std::move(prewhere_actions_)), prewhere_column_name(std::move(prewhere_column_name_)) {}

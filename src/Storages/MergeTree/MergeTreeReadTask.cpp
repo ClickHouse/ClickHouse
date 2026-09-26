@@ -540,6 +540,7 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
         .unmatched_mark_ranges = readers.main->getMergeTreeReaderSettings().use_query_condition_cache
             ? read_result.computeUnmatchedMarkRanges()
             : MarkRanges{},
+        .query_condition_cache_attributable_marks = std::move(read_result.query_condition_cache_attributable_marks),
         .row_count = read_result.num_rows,
         .num_read_rows = num_read_rows,
         .num_read_bytes = num_read_bytes };
@@ -550,6 +551,11 @@ MergeTreeReadTask::BlockAndProgress MergeTreeReadTask::read()
 void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_)
 {
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
+}
+
+void MergeTreeReadTask::addQueryConditionCacheAttributableMarks(const MarkRanges & mark_ranges_)
+{
+    query_condition_cache_attributable_marks.insert(query_condition_cache_attributable_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
 bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
