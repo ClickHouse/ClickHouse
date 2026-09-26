@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.10",
         {
             {"enable_join_runtime_filters_index_analysis", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."},
+            {"text_index_like_max_matched_tokens", 20000, 20000, "New setting: abandon the text index dictionary scan of `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` when their patterns match too many tokens, and evaluate them on the column. `LIKE`, `ILIKE`, `startsWith` and `endsWith` are not capped."},
             {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
             {"reader_executor_plan_look_ahead", 16777216, 16777216, "New experimental ReaderExecutor setting: how far ahead cache residency is resolved into the held read plan."},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
@@ -61,6 +62,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_mutation_query", true, true, "Obsolete setting: mutation queries are always validated before being accepted. The recorded value does not change, because validation was already enabled by default and `compatibility` must not turn it back off."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
             {"parallel_replicas_for_queries_with_multiple_tables", true, true, "New setting to control whether parallel replicas are used for queries joining multiple tables (queries with JOIN). It does not affect a UNION query without a JOIN, nor ARRAY JOIN."},
+            {"optimize_rewrite_array_exists_over_tokens", false, true, "New setting to rewrite `arrayExists` over `tokens` to `hasTokenLike` or `hasTokenMatch`, which are new in 26.10 and can use a text index."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {

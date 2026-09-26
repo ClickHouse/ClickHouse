@@ -102,6 +102,8 @@ public:
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
+    /// `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`.
+    static bool isPerTokenPatternFunction(const String & function_name);
     TextIndexDirectReadMode getDirectReadMode(const String & function_name) const;
 
     bool alwaysUnknownOrTrue() const override;
@@ -115,6 +117,7 @@ public:
     const Block & getHeader() const { return header; }
 
     /// Create text search query for the function node if it is suitable for optimization.
+    /// A query with nothing to search only rewrites the function to the index tokenizer.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
