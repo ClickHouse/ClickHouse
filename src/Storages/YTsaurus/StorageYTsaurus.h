@@ -22,6 +22,11 @@ struct YTsaurusStorageConfiguration
     String cypress_path{};
     String oauth_token{};
     std::optional<String> ytsaurus_columns_description{};
+
+    /// Throws `BAD_ARGUMENTS` if the configuration cannot be used to read a table, e.g. when `cypress_path` is empty.
+    /// It is checked at the configuration level so that every entry point (the table engine, the `ytsaurus` table
+    /// function and the dictionary source) rejects such a configuration instead of failing later while reading.
+    void validate() const;
 };
 
 /**

@@ -1,0 +1,32 @@
+<clickhouse>
+    <!--
+        Turns the ClickHouse HTTP port into a fake YTsaurus HTTP proxy for `test_yt_lookups_throttler_proxy_failover`.
+
+        It answers the `get` command that `YTsaurusClient` sends before every selective load (the node type check)
+        so that `recently_used_url_index` keeps pointing at it, but it rejects `lookup_rows` with `404 Not Found`,
+        which `ReadWriteBufferFromHTTP` treats as non-retriable. The failing lookup attempt therefore returns
+        immediately and the client falls over to the real proxy inside the same logical lookup.
+    -->
+    <http_handlers>
+        <rule>
+            <url>/api/v3/get</url>
+            <methods>GET</methods>
+            <handler>
+                <type>static</type>
+                <status>200</status>
+                <content_type>application/json</content_type>
+                <response_content>{"type":"table","dynamic":true}</response_content>
+            </handler>
+        </rule>
+        <rule>
+            <url>/api/v3/lookup_rows</url>
+            <handler>
+                <type>static</type>
+                <status>404</status>
+                <content_type>text/plain</content_type>
+                <response_content>This fake YTsaurus proxy does not serve lookup_rows</response_content>
+            </handler>
+        </rule>
+        <defaults/>
+    </http_handlers>
+</clickhouse>

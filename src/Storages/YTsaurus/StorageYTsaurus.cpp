@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNKNOWN_STORAGE;
 }
@@ -39,6 +40,12 @@ namespace YTsaurusSetting
     extern const YTsaurusSettingsBool enable_heavy_proxy_redirection;
 }
 
+
+void YTsaurusStorageConfiguration::validate() const
+{
+    if (cypress_path.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty `cypress_path` is passed to the YTsaurus data source");
+}
 
 StorageYTsaurus::StorageYTsaurus(
     const StorageID & table_id_,
@@ -125,6 +132,7 @@ YTsaurusStorageConfiguration StorageYTsaurus::processNamedCollectionResult(
         if (!column_description.empty())
             configuration.ytsaurus_columns_description = std::move(column_description);
     }
+    configuration.validate();
     return configuration;
 }
 
@@ -148,6 +156,7 @@ YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args,
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Incorrect Ytsarurus table schema. Expected YTsaurus(http_proxy_url, cypress_path, oauth_token)");
+    configuration.validate();
     return configuration;
 }
 
