@@ -898,7 +898,7 @@ Write values of [JSON](/reference/data-types/newjson) data type as JSON [String]
     \
     DECLARE(Bool, output_format_json_quote_64bit_integers, false, R"(
 Controls quoting of 64-bit or bigger [integers](/reference/data-types/int-uint) (like `UInt64` or `Int128`) when they are output in a [JSON](/reference/formats/JSON/JSON) format.
-Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
+Such integers are output without quotes by default. Enabling this setting encloses them in quotes, which is compatible with most JavaScript implementations.
 
 Possible values:
 
@@ -1543,7 +1543,7 @@ Buffering blocks can increase memory use and delay output. If the result never r
 `0` (the default) disables the row target. Try `65409` as a starting value.
 )", 0) \
     DECLARE(UInt64, output_format_arrow_record_batch_size_bytes, 0, R"(
-Target record batch size for the `Arrow` and `ArrowStream` output formats, measured in bytes of accumulated block data. This uses the same measure as [min_insert_block_size_bytes](/reference/settings/settings#min_insert_block_size_bytes). A batch is written when either this target or [output_format_arrow_record_batch_size](#output_format_arrow_record_batch_size) is reached.
+Target record batch size for the `Arrow` and `ArrowStream` output formats, measured in bytes of accumulated block data. This uses the same measure as [min_insert_block_size_bytes](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes). A batch is written when either this target or [output_format_arrow_record_batch_size](#output_format_arrow_record_batch_size) is reached.
 
 Note that `LowCardinality` columns can produce Arrow batches much larger or smaller than this byte target. Repeated values expand in the output unless [output_format_arrow_low_cardinality_as_dictionary](#output_format_arrow_low_cardinality_as_dictionary) is enabled. Filtered blocks can also retain large dictionaries, so even a block with very few rows can reach the target and be written separately. For these columns, use [output_format_arrow_record_batch_size](#output_format_arrow_record_batch_size) to control the row count and set the byte target to `0`.
 
@@ -1644,7 +1644,7 @@ Possible values:
 Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
 
 Possible values:
 

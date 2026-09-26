@@ -1313,6 +1313,20 @@ public:
         }
     }
 
+    bool isSoftLimitReached(HTTPConnectionGroupType type) const
+    {
+        /// ConnectionGroup has its own mutex, no need for Impl::mutex here.
+        switch (type)
+        {
+            case HTTPConnectionGroupType::DISK:
+                return disk_group->isSoftLimitReached();
+            case HTTPConnectionGroupType::STORAGE:
+                return storage_group->isSoftLimitReached();
+            case HTTPConnectionGroupType::HTTP:
+                return http_group->isSoftLimitReached();
+        }
+    }
+
     void dropCache()
     {
         std::lock_guard lock(mutex);
@@ -1426,6 +1440,11 @@ void HTTPConnectionPools::setSocketBufferSizes(HTTPConnectionPools::SocketBuffer
 HTTPConnectionPools::SocketBufferSizes HTTPConnectionPools::getSocketBufferSizes(HTTPConnectionGroupType type) const
 {
     return impl->getSocketBufferSizes(type);
+}
+
+bool HTTPConnectionPools::isSoftLimitReached(HTTPConnectionGroupType type) const
+{
+    return impl->isSoftLimitReached(type);
 }
 
 void HTTPConnectionPools::dropCache()
