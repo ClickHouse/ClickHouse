@@ -96,7 +96,7 @@ void DatabaseFactory::validate(const ASTCreateQuery & create_query) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 }
 
-DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal)
+DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal, bool is_metadata_replay)
 {
     const auto engine_name = create.storage->engine->name;
     /// check if the database engine is a valid one before proceeding
@@ -113,7 +113,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     validate(create);
     cckMetadataPathForOrdinary(create, metadata_path);
 
-    DatabasePtr impl = getImpl(create, metadata_path, context, mode, internal);
+    DatabasePtr impl = getImpl(create, metadata_path, context, mode, internal, is_metadata_replay);
 
     if (impl && context->hasQueryContext() && context->getSettingsRef()[Setting::log_queries])
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
@@ -127,8 +127,20 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
 
 void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features, Documentation documentation)
 {
+    if (features.supports_settings && !features.has_builtin_setting_fn)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "DatabaseFactory: Database engine '{}' supports settings but has_builtin_setting_fn is not provided", name);
     if (!database_engines.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DatabaseFactory: the database engine name '{}' is not unique", name);
+}
+
+const DatabaseFactory::EngineFeatures * DatabaseFactory::tryGetDatabaseEngineFeatures(const String & engine_name) const
+{
+    auto it = database_engines.find(engine_name);
+    if (it == database_engines.end())
+        return nullptr;
+    return &it->second.features;
 }
 
 DatabaseFactory & DatabaseFactory::instance()
@@ -145,7 +157,7 @@ bool DatabaseFactory::isDatabaseExternal(const String & engine_name) const
     return it->second.features.is_external;
 }
 
-DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal)
+DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal, bool is_metadata_replay)
 {
     auto * storage = create.storage;
     const String & database_name = create.getDatabase();
@@ -165,7 +177,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         .uuid = create.uuid,
         .context = context,
         .mode = mode,
-        .internal = internal};
+        .internal = internal,
+        .is_metadata_replay = is_metadata_replay};
 
     // creator_fn creates and returns a DatabasePtr with the supplied arguments
     auto creator_fn = database_engines.at(engine_name).creator_fn;

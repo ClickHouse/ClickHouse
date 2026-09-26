@@ -98,7 +98,7 @@ struct DecimalOpHelpers
         UInt16 idx = 0;
         DivisorType temp = 0;
 
-        while (temp < divisor && max_index > idx)
+        while (temp < divisor && max_index >= idx)
         {
             temp = temp * 10 + number[idx];
             ++idx;
