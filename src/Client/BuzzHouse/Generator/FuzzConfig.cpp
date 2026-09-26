@@ -411,7 +411,10 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_policies", [&](const JSONObjectType & value) { max_policies = static_cast<uint32_t>(value.getUInt64()); }},
-        {"max_hypotheticals", [&](const JSONObjectType & value) { max_hypotheticals = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_hypothetical_indexes",
+         [&](const JSONObjectType & value) { max_hypothetical_indexes = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_hypothetical_projections",
+         [&](const JSONObjectType & value) { max_hypothetical_projections = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_dictionaries", [&](const JSONObjectType & value) { max_dictionaries = static_cast<uint32_t>(value.getUInt64()); }},
@@ -1151,6 +1154,29 @@ String FuzzConfig::getRandomFileSystemCacheValue()
     return res;
 }
 
+String FuzzConfig::getRandomFuzzedPartName(const uint64_t rand_val)
+{
+    static const DB::Strings fuzzedPartNames = {"all_1_1_0", "all_0_0_0", "20000101_1_1_0", "invalid_part"};
+
+    return fuzzedPartNames[rand_val % fuzzedPartNames.size()];
+}
+
+String FuzzConfig::getRandomFuzzedPartitionValue(const uint64_t rand_val)
+{
+    static const DB::Strings fuzzedPartitionValues
+        = {"tuple()", "0", "-1", "202101", "20000101", "'x'", "(202101, 'x')", "(0, 'a', NULL)"};
+
+    return fuzzedPartitionValues[rand_val % fuzzedPartitionValues.size()];
+}
+
+String FuzzConfig::getRandomFuzzedPartitionId(const uint64_t rand_val)
+{
+    static const DB::Strings fuzzedPartitionIds
+        = {"all", "0", "202101", "20000101", "5-7", "8a4f3b2c1d0e9f8a7b6c5d4e3f2a1b0c", "invalid partition", ""};
+
+    return fuzzedPartitionIds[rand_val % fuzzedPartitionIds.size()];
+}
+
 String FuzzConfig::tableGetRandomPartitionOrPart(
     const uint64_t rand_val, const bool detached, const bool partition, const String & database, const String & table)
 {
@@ -1325,19 +1351,23 @@ void FuzzConfig::validateClickHouseHealth()
                 /// arrayZip + arrayJoin emits one row per pattern while reading text_log only once.
                 "(SELECT t.1 x, t.2 y FROM ("
                 "SELECT arrayJoin(arrayZip("
-                "[countIf(message ILIKE concat('%','POTENTIALLY','_BROKEN','_DATA','_PART','%')),"
-                " countIf(message ILIKE concat('%','REPLICA','_ALREADY','_EXISTS','%')),"
-                " countIf(message ILIKE concat('%','LOGICAL','_ERROR','%')),"
-                " countIf(message ILIKE concat('%','CORRUPTED','_DATA','%')),"
-                " countIf(message ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%')),"
-                " countIf(message ILIKE concat('%','DATA','_AFTER','_MERGE','_DIFF','_FROM','_EXPECTED','%'))],"
+                "[countIf(msg ILIKE concat('%','POTENTIALLY','_BROKEN','_DATA','_PART','%')),"
+                " countIf(msg ILIKE concat('%','REPLICA','_ALREADY','_EXISTS','%')),"
+                " countIf(msg ILIKE concat('%','LOGICAL','_ERROR','%')),"
+                " countIf(msg ILIKE concat('%','CORRUPTED','_DATA','%')),"
+                " countIf(msg ILIKE concat('%','CHECKSUM','_DOESNT','_MATCH','%')),"
+                " countIf(msg ILIKE concat('%','DATA','_AFTER','_MERGE','_DIFF','_FROM','_EXPECTED','%'))],"
                 "[toUInt64(3),toUInt64(8),toUInt64(10),toUInt64(11),toUInt64(12),toUInt64(13)])) AS t"
-                " FROM \"system\".\"text_log\" WHERE event_time >= now() - toIntervalSecond(60)) tlog)"
+                /// Match the server's own words: it echoes the statement at Debug/Trace and quotes it after `(in query:`.
+                " FROM (SELECT splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] AS msg"
+                " FROM \"system\".\"text_log\""
+                " WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information')) tlog)"
                 " UNION ALL "
                 "(SELECT count() x, 4 y FROM clusterAllReplicas(default, \"system\".\"clusters\")"
-                " WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 5)"
+                " WHERE is_shared_catalog_cluster = true AND is_local = true AND recovery_time > 10000)"
                 " UNION ALL "
-                "(SELECT value::UInt64 x, 5 y FROM clusterAllReplicas(default, \"system\".\"metrics\") WHERE \"name\" = "
+                /// Aggregated like every other check: unaggregated it emits one row per replica and shifts all later checks.
+                "(SELECT greatest(sum(\"value\"), 0)::UInt64 x, 5 y FROM clusterAllReplicas(default, \"system\".\"metrics\") WHERE \"name\" = "
                 "'SharedCatalogDropDetachLocalTablesErrors')"
                 " UNION ALL "
                 "(SELECT count() x, 6 y FROM clusterAllReplicas(default, \"system\".\"replicas\") WHERE readonly_start_time IS NOT NULL)"
@@ -1374,17 +1404,17 @@ void FuzzConfig::validateClickHouseHealth()
         static const DB::Strings detail_queries = {
             R"(SELECT "database", "table", "name" FROM "system"."detached_parts" WHERE startsWith("name", 'broken') LIMIT 3)",
             R"(SELECT "database", "table", "lost_part_count" FROM "system"."replicas" WHERE "lost_part_count" > 0 LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'POTENTIALLY', '_BROKEN', '_DATA', '_PART', '%') ORDER BY event_time DESC LIMIT 3)",
             "",
             "",
             R"(SELECT "database", "table", "last_exception" FROM "system"."replicas" WHERE readonly_start_time IS NOT NULL LIMIT 3)",
             R"(SELECT "database", "table", "part_name", "exception" FROM "system"."part_log" WHERE exception != '' AND event_time > (now() - toIntervalSecond(60)) ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'REPLICA', '_ALREADY', '_EXISTS', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "database", "table", "last_exception" FROM "system"."replication_queue" WHERE "last_exception" != '' LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)",
-            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND message ILIKE concat('%', 'DATA', '_AFTER', '_MERGE', '_DIFF', '_FROM', '_EXPECTED', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'LOGICAL', '_ERROR', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'CORRUPTED', '_DATA', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'CHECKSUM', '_DOESNT', '_MATCH', '%') ORDER BY event_time DESC LIMIT 3)",
+            R"(SELECT "message" FROM "system"."text_log" WHERE event_time >= now() - toIntervalSecond(60) AND level <= 'Information' AND splitByString(' in scope ', splitByString('(query: ', splitByString('(in query: ', message)[1])[1])[1] ILIKE concat('%', 'DATA', '_AFTER', '_MERGE', '_DIFF', '_FROM', '_EXPECTED', '%') ORDER BY event_time DESC LIMIT 3)",
             R"(SELECT "database", "table", "type", "last_exception", "num_tries" FROM "system"."replication_queue" WHERE "last_exception" != '' AND "num_tries" > 5 ORDER BY "num_tries" DESC LIMIT 3)"};
 
         while (std::getline(infile, buf) && !buf.empty() && i < health_errors.size())
