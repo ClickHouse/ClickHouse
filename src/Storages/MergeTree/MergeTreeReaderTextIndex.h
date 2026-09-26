@@ -57,6 +57,11 @@ private:
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
     void createEmptyColumns(MutableColumns & columns, size_t max_rows_to_read) const;
     std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
+    /// Opens the postings stream of one token, with the buffer sized to the token's largest segment.
+    std::unique_ptr<MergeTreeReaderStream> makePostingsStream(const TokenPostingsInfo & token_info) const;
+    /// The postings stream of a token: the one opened by `initializePostingStreams` for the tokens the analysis
+    /// left to read, otherwise one opened on demand and kept in `other_postings_streams`.
+    MergeTreeReaderStream & getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info);
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`
     /// (the actual read window, which may be narrower than the mark on partial-mark reads).
@@ -122,12 +127,13 @@ private:
     /// Per-virtual-column flag: true if this column's query was abandoned during the scan
     /// and the predicate must be evaluated directly via fallback_expressions.
     std::vector<bool> use_fallback;
-    /// Small postings stream — kept as a class member because cached lazy cursors
-    /// hold a reference to it for on-demand segment reads.
-    std::unique_ptr<MergeTreeReaderStream> small_postings_stream;
-    /// A separate stream is created for each token to read
-    /// postings blocks continuously without additional seeks.
+    /// A separate stream is created for each token to read postings blocks continuously without additional
+    /// seeks, with the buffer sized to the token's largest segment. Opened upfront for the tokens the analysis
+    /// left to read, which is also how the queries tell those tokens apart.
     absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> large_postings_streams;
+    /// Streams of the other tokens, opened on demand: phrase tokens whose lists the analysis folded already, and
+    /// cursors of tokens it no longer needs. Kept as members because cached lazy cursors hold references to them.
+    absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> other_postings_streams;
 
     /// Stream for position data (.pos file) used for phrase queries.
     std::unique_ptr<MergeTreeReaderStream> positions_stream;

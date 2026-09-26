@@ -82,6 +82,9 @@ struct MergeTreeIndexDeserializationState
     const IMergeTreeIndex & index;
     const MarkRanges * readable_ranges;
     bool skip_postings_deserialization;
+    /// Settings the index streams were opened with. The text index opens its dictionary and postings streams
+    /// itself during the analysis, so that the postings buffer fits the posting lists it is about to read.
+    const MergeTreeReaderSettings & reader_settings;
 };
 
 }
