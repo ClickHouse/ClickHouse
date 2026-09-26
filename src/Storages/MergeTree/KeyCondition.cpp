@@ -2771,6 +2771,12 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_column_type, dag))
         return false;
 
+    /// A `FixedString(N)` constant is compared zero-padded, so against a `String` input of the transform it
+    /// matches the family `value` + trailing '\0'*, while the cast below keeps all N bytes and gives one of
+    /// them. The transformed point would prune matching granules, so decline, as for a key without a transform.
+    if (isFixedString(removeLowCardinalityAndNullable(out_type)) && isString(removeLowCardinalityAndNullable(dag.input_type)))
+        return false;
+
     /// Convert a text constant here, the way the comparison does, so no cast below parses it in another zone.
     Field const_value = out_value;
     DataTypePtr const_value_type = out_type;
