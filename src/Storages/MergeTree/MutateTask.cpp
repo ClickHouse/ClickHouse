@@ -3987,12 +3987,11 @@ bool MutateTask::prepare()
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
 
-    /// The commands were fixed when the part was selected. A RENAME is the only mutation of its task, so if a part holding
-    /// the renamed column (as a column or a missing-column marker, or a patch of it) does not see the rename's version,
-    /// the mutation was killed since then: stop like a task the kill cancels.
+    /// The commands predate this snapshot, and a RENAME is the only mutation of its task: if a part holding the renamed
+    /// column does not see the rename's version, the mutation was killed in between.
     if (std::ranges::any_of(*ctx->commands, [](const MutationCommand & command) { return command.type == MutationCommand::RENAME_COLUMN; }))
     {
-        /// `mutations_snapshot` omits the alter mutations the part has already seen, which an older patch of it can still need.
+        /// A ReplicatedMergeTree snapshot bounded by the part's metadata version omits alters its older patches still need.
         auto rename_check_params = params;
         rename_check_params.min_part_metadata_version = -1;
         rename_check_params.need_patch_parts = false;
