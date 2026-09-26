@@ -1,0 +1,12 @@
+===== rows through the views =====
+target_definer:	100000
+target_none:	100000
+target_invoker:	100000
+alias_definer:	10
+alias_none:	10
+alias_invoker:	10
+===== the plan of a barrier-capable view against the plan of its invoker twin =====
+target_definer:	same
+target_none:	same
+alias_definer:	differs
+alias_none:	differs

@@ -1,0 +1,6 @@
+=== the shard-local policy hides the row on both shards ===
+199998
+=== pushdown declined, the view stays a subquery ===
+1
+=== reading the view costs the same whether or not the hidden row matches ===
+same

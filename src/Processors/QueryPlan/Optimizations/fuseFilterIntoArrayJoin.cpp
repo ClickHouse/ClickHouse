@@ -82,6 +82,15 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     const auto & array_join_output = child_node->step->getOutputHeader();
     auto expression_step = std::make_unique<ExpressionStep>(array_join_output, std::move(residual));
     expression_step->setStepDescription(*filter);
+
+    /// The rows are now dropped by the `ArrayJoinStep`, and the pass-through expression replaces the
+    /// filter step, so a security barrier moves to both of them. See IQueryPlanStep::isSecurityBarrier.
+    if (filter->isSecurityBarrier())
+    {
+        array_join->setSecurityBarrier();
+        expression_step->setSecurityBarrier();
+    }
+
     parent = std::move(expression_step);
 
     return 2;

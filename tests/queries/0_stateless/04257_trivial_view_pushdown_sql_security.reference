@@ -6,9 +6,9 @@ Not enough privileges
 3
 === NONE: direct table access denied ===
 Not enough privileges
-=== NONE: view access succeeds with pushdown ===
+=== NONE: view access succeeds ===
 1
 2
 3
-=== NONE: pushdown fires (no VIEW subquery step) ===
+=== NONE: pushdown declined (the VIEW subquery step stays) ===
 1

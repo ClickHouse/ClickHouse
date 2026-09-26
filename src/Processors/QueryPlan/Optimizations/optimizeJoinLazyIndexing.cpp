@@ -25,6 +25,13 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes
     if (!limit_step && !sorting_step && !join_step)
         return;
 
+    /// A `SQL SECURITY` barrier step belongs to a `DEFINER` / `NONE` view that hides rows. Lazy
+    /// indexing changes how much the join materializes, so the invoker's `LIMIT` / `ORDER BY ... LIMIT`
+    /// / follow-up `JOIN` must not retune a join below the barrier, and a barrier step itself is never
+    /// used as the driver. Fail closed. See IQueryPlanStep::isSecurityBarrier.
+    if (node.step->isSecurityBarrier())
+        return;
+
     if (limit_step || sorting_step)
     {
         size_t limit = limit_step ? limit_step->getLimit() : sorting_step->getLimit();
@@ -39,6 +46,10 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes
     auto * child = node.children.front();
     while (child)
     {
+        /// Stop at the first barrier step: everything below it is sealed.
+        if (child->step->isSecurityBarrier())
+            break;
+
         auto * child_join_step = typeid_cast<JoinStep *>(child->step.get());
         if (child_join_step)
         {

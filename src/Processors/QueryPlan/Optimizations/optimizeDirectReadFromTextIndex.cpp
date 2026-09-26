@@ -1256,7 +1256,16 @@ void processAndOptimizeTextIndexFunctions(
 
             bool removes_filter_column = filter_step->removesFilterColumn();
             auto new_filter_column_name = result_filter_node->result_name;
+            /// The rewrite replaces the step, so it must carry the flag over -- otherwise the
+            /// filtering of a `SQL SECURITY DEFINER` / `NONE` view whose condition uses a
+            /// text-search function silently loses its fence, and the passes that run afterwards
+            /// (lazy materialization splitting the step, then `tryMergeExpressions` /
+            /// `tryMergeFilters` on the rebuilt subtree) combine the invoker's predicate with it.
+            /// See `IQueryPlanStep::isSecurityBarrier`.
+            const bool security_barrier = filter_step->isSecurityBarrier();
             node->step = std::make_unique<FilterStep>(read_from_merge_tree_step->getOutputHeader(), filter_dag.clone(), new_filter_column_name, removes_filter_column);
+            if (security_barrier)
+                node->step->setSecurityBarrier();
             continue;
         }
 
@@ -1266,10 +1275,14 @@ void processAndOptimizeTextIndexFunctions(
             continue;
 
         const SharedHeader & input_header = step->getInputHeaders().front();
+        /// Same as above: the replacement step must inherit the barrier flag.
+        const bool security_barrier = step->isSecurityBarrier();
         if (filter_step)
             node->step = std::make_unique<FilterStep>(input_header, dag.clone(), filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
         else
             node->step = std::make_unique<ExpressionStep>(input_header, dag.clone());
+        if (security_barrier)
+            node->step->setSecurityBarrier();
     }
 }
 

@@ -27,7 +27,11 @@ public:
     /// SETTINGS that are shipped to remote replicas.
     ContextPtr getContext() const { return context; }
 
-    void addFilter(FilterDAGInfo filter);
+    /// Adds a filter on top of the local plan, to be pushed down when that plan is optimized.
+    /// A filter that is a `SQL SECURITY` barrier keeps that role inside the local plan, and this
+    /// step, which now hides the rows the filter drops, becomes a barrier itself.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    void addFilter(FilterDAGInfo filter, bool security_barrier);
 
 private:
     QueryPlanPtr query_plan;

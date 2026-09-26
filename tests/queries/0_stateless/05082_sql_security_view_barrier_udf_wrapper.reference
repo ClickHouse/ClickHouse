@@ -1,0 +1,10 @@
+invoker: 1
+definer:	198
+none:	198
+nested udf definer:	198
+definer, inline views:	198
+nested udf definer, inline views:	198
+definer results:	98	0	98
+plain udf definer kept as a table expression:	0
+sum udf definer kept as a table expression:	1
+sum udf definer result:	4950
