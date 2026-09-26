@@ -45,7 +45,7 @@ SELECT acos(0.5);
 ```
 
 ```response title=Response
-1.0471975511965979
+1.0471975511965974
 ```
 
 <div id="acosh">
@@ -114,7 +114,7 @@ SELECT asin(1.0) = pi() / 2, sin(asin(1)), asin(sin(1))
 ```
 
 ```response title=Response
-1 1 1
+1	1	0.9999999999999999
 ```
 
 **float32**
@@ -134,7 +134,7 @@ SELECT asin(1.1), asin(-2), asin(inf), asin(nan)
 ```
 
 ```response title=Response
-nan nan nan nan
+nan	nan	nan	nan
 ```
 
 <div id="asinh">
@@ -221,8 +221,8 @@ atan2(y, x)
 
 **Argumentos**
 
-* `y` — coordenada y do ponto por onde passa o raio. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
-* `x` — coordenada x do ponto por onde passa o raio. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
+* `y` — coordenada y do ponto por onde passa o raio. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
+* `x` — coordenada x do ponto por onde passa o raio. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
 
 **Valor retornado**
 
@@ -647,7 +647,7 @@ Retorna o fatorial da entrada como UInt64. Retorna 1 para entrada 0 ou qualquer 
 **Exemplo de uso**
 
 ```sql title=Query
-factorial(10)
+SELECT factorial(10)
 ```
 
 ```response title=Response
@@ -671,8 +671,8 @@ hypot(x, y)
 
 **Argumentos**
 
-* `x` — O primeiro cateto de um triângulo retângulo. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
-* `y` — O segundo cateto de um triângulo retângulo. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
+* `x` — O primeiro cateto de um triângulo retângulo. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
+* `y` — O segundo cateto de um triângulo retângulo. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
 
 **Valor retornado**
 
@@ -993,7 +993,7 @@ SELECT log(10);
 ```
 
 ```response title=Response
-2.302585092994046
+2.3025850938475476
 ```
 
 <div id="log10">
@@ -1151,8 +1151,8 @@ pow(x, y)
 
 **Argumentos**
 
-* `x` — A base. [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
-* `y` — O expoente. [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
+* `x` — A base. [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
+* `y` — O expoente. [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Decimal*`](/pt-BR/reference/data-types/decimal)
 
 **Valor retornado**
 
@@ -1573,7 +1573,7 @@ Retorna o número do bucket como um inteiro. Retorna 0 se operand &lt; low e cou
 **Exemplo de uso**
 
 ```sql title=Query
-widthBucket(10.15, -8.6, 23, 18)
+SELECT widthBucket(10.15, -8.6, 23, 18)
 ```
 
 ```response title=Response

@@ -33,9 +33,7 @@ Si vous souhaitez tester l’intégration MongoDB avant de configurer votre prop
 * Accès aux fichiers journaux de MongoDB
 
 <Steps>
-  <Step>
-    #### Vérifier la configuration de journalisation de MongoDB
-
+  <Step title="Vérifier la configuration de journalisation de MongoDB" id="verify-mongodb">
     MongoDB 4.4+ génère par défaut des logs JSON structurés. Vérifiez l’emplacement de votre fichier de logs :
 
     ```bash
@@ -68,9 +66,7 @@ Si vous souhaitez tester l’intégration MongoDB avant de configurer votre prop
     ```
   </Step>
 
-  <Step>
-    #### Créer une configuration personnalisée de l’OTel collector pour MongoDB
-
+  <Step title="Créer une configuration personnalisée de l’OTel collector pour MongoDB" id="custom-otel">
     ClickStack vous permet d’étendre la configuration de base de l’OpenTelemetry Collector en montant un fichier de configuration personnalisé et en définissant une variable d’environnement. La configuration personnalisée est fusionnée avec la configuration de base gérée par HyperDX via OpAMP.
 
     Créez un fichier nommé `mongodb-monitoring.yaml` avec la configuration suivante :
@@ -134,9 +130,7 @@ Si vous souhaitez tester l’intégration MongoDB avant de configurer votre prop
     </Note>
   </Step>
 
-  <Step>
-    #### Configurer ClickStack pour charger une configuration personnalisée
-
+  <Step title="Configurer ClickStack pour charger une configuration personnalisée" id="load-custom">
     Pour activer une configuration personnalisée du collecteur dans votre déploiement ClickStack existant, vous devez :
 
     1. Monter le fichier de configuration personnalisé à l’emplacement `/etc/otelcol-contrib/custom.config.yaml`
@@ -180,9 +174,7 @@ Si vous souhaitez tester l’intégration MongoDB avant de configurer votre prop
     </Note>
   </Step>
 
-  <Step>
-    #### Vérifier les logs dans HyperDX
-
+  <Step title="Vérifier les logs dans HyperDX" id="verifying-logs">
     Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les logs arrivent bien :
 
     <Image img="/images/clickstack/mongodb/search-view.webp" alt="vue Search des logs MongoDB" />
@@ -198,9 +190,7 @@ Si vous souhaitez tester l’intégration MongoDB avant de configurer votre prop
 Testez l’intégration MongoDB avec un jeu de données d’exemple pré-généré avant de configurer vos systèmes de production.
 
 <Steps>
-  <Step>
-    #### Télécharger le jeu de données d’exemple
-
+  <Step title="Télécharger le jeu de données d’exemple" id="download-sample">
     Téléchargez le fichier de logs d’exemple :
 
     ```bash
@@ -208,9 +198,7 @@ Testez l’intégration MongoDB avec un jeu de données d’exemple pré-génér
     ```
   </Step>
 
-  <Step>
-    #### Créer une configuration de collector de test
-
+  <Step title="Créer une configuration de collector de test" id="test-config">
     Créez un fichier nommé `mongodb-demo.yaml` avec la configuration suivante :
 
     ```yaml
@@ -269,9 +257,7 @@ Testez l’intégration MongoDB avec un jeu de données d’exemple pré-génér
     ```
   </Step>
 
-  <Step>
-    #### Exécuter ClickStack avec la configuration de démonstration
-
+  <Step title="Exécuter ClickStack avec la configuration de démonstration" id="run-demo">
     Exécutez ClickStack avec les logs et la configuration de démonstration :
 
     ```bash
@@ -302,27 +288,23 @@ Testez l’intégration MongoDB avec un jeu de données d’exemple pré-génér
 </div>
 
 <Steps>
-  <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  <Step title="Télécharger la configuration du tableau de bord" id="download">
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Télécharger le fichier de configuration du tableau de bord</TrackedLink>.
   </Step>
 
-  <Step>
-    #### Importer un tableau de bord préconfiguré
-
+  <Step title="Importer un tableau de bord préconfiguré" id="import-dashboard">
     1. Ouvrez HyperDX et accédez à la section tableaux de bord.
-    2. Cliquez sur &quot;Import Dashboard&quot; dans l&#39;angle supérieur droit, dans le menu à trois points.
+    2. Cliquez sur &quot;Import Dashboard&quot; dans l’angle supérieur droit, dans le menu à trois points.
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="Importer un tableau de bord" />
 
     3. Téléversez le fichier mongodb-logs-dashboard.json, puis cliquez sur &quot;Finish import&quot;.
 
-    <Image img="/images/clickstack/mongodb/finish-import.webp" alt="Terminer l'importation du tableau de bord des logs MongoDB" />
+    <Image img="/images/clickstack/mongodb/finish-import.webp" alt="Terminer l’importation du tableau de bord des logs MongoDB" />
   </Step>
 
-  <Step>
-    #### Le tableau de bord sera créé avec toutes les visualisations préconfigurées
-
-    Pour le jeu de données de démonstration, définissez l&#39;intervalle de temps de manière à inclure **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
+  <Step title="Le tableau de bord sera créé avec toutes les visualisations préconfigurées" id="created-dashboard">
+    Pour le jeu de données de démonstration, définissez l’intervalle de temps de manière à inclure **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
     <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="Tableau de bord des logs MongoDB" />
   </Step>
@@ -368,7 +350,7 @@ Si la sortie n’est pas un JSON valide, il se peut que votre version de MongoDB
 * Créez des [tableaux de bord](/fr/clickstack/features/dashboards/overview) supplémentaires pour des cas d’utilisation spécifiques (surveillance d’un Replica Set, suivi des connexions)
 
 <div id="going-to-production">
-  ## Mise en production
+  ## Passage en production
 </div>
 
-Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une configuration rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers le point de terminaison OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.
+Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous vous recommandons de déployer votre propre OTel Collector et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.

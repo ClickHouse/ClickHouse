@@ -36,8 +36,8 @@ quantileDeterministic(level)(expr, determinator)
 
 **引数**
 
-* `expr` — カラム値に対する式です。結果のデータ型は、数値型、Date、または DateTime である必要があります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
-* `determinator` — リザーバサンプリングアルゴリズムで、ランダム数生成器の代わりにそのハッシュが使用され、サンプリング結果を決定論的にするための数値です。`determinator` には、ユーザー ID やイベント ID など、任意の決定論的な正の数を使用できます。同じ `determinator` の値があまりに頻繁に現れると、この関数は正しく動作しません。[`(U)Int*`](/ja/reference/data-types/int-uint)
+* `expr` — カラム値に対する式です。結果のデータ型は、数値型、`Date`、または `DateTime` である必要があります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Int128`](/ja/reference/data-types/int-uint) または [`UInt128`](/ja/reference/data-types/int-uint) または [`Int256`](/ja/reference/data-types/int-uint) または [`UInt256`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+* `determinator` — リザーバサンプリングアルゴリズムで、ランダム数生成器の代わりにそのハッシュが使用され、サンプリング結果を決定論的にするための数値です。`determinator` には、ユーザー ID やイベント ID など、任意の決定論的な正の数を使用できます。同じ `determinator` の値があまりに頻繁に現れると、この関数は正しく動作しません。[`UInt*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 

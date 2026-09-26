@@ -1,13 +1,94 @@
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperIO.h>
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+
 using namespace Coordination;
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int REPLICA_ALREADY_EXISTS;
+}
+
+namespace
+{
+
+zkutil::ZooKeeper::Ptr makeTestKeeperClient(int32_t session_timeout_ms)
+{
+    zkutil::ZooKeeperArgs args;
+    args.implementation = "testkeeper";
+    args.session_timeout_ms = session_timeout_ms;
+    return zkutil::ZooKeeper::createWithoutKillingPreviousSessions(args);
+}
+
+}
+
+TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesForeignHolder)
+{
+    /// The node is persistent, so it never disappears and the wait always reaches its deadline.
+    constexpr int32_t session_timeout_ms = 200;
+    auto zk = makeTestKeeperClient(session_timeout_ms);
+    zk->create("/foreign", "someone-else", zkutil::CreateMode::Persistent);
+
+    const auto started_at = std::chrono::steady_clock::now();
+    try
+    {
+        zk->deleteEphemeralNodeIfContentMatches("/foreign", "me");
+        ADD_FAILURE() << "Expected an exception for a node held by someone else";
+    }
+    catch (const DB::Exception & e)
+    {
+        /// A foreign or not-yet-expired holder is expected runtime state, not a broken invariant.
+        EXPECT_EQ(e.code(), DB::ErrorCodes::REPLICA_ALREADY_EXISTS);
+    }
+    const auto elapsed_ms
+        = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started_at).count();
+
+    EXPECT_GE(elapsed_ms, 3 * session_timeout_ms);
+    EXPECT_TRUE(zk->exists("/foreign"));
+}
+
+TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesOwnNode)
+{
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
+    zk->create("/mine", "me", zkutil::CreateMode::Persistent);
+
+    EXPECT_NO_THROW(zk->deleteEphemeralNodeIfContentMatches("/mine", "me"));
+    EXPECT_FALSE(zk->exists("/mine"));
+}
+
+TEST(ZooKeeperTest, DeleteEphemeralNodeIfContentMatchesRewrittenNode)
+{
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
+    zk->create("/rewritten", "me", zkutil::CreateMode::Persistent);
+
+    try
+    {
+        /// The condition runs after the node and its version have been read, so writing from here makes the
+        /// versioned removal lose the same race a concurrent writer would cause.
+        zk->deleteEphemeralNodeIfContentMatches("/rewritten", [&](const std::string & content)
+        {
+            zk->set("/rewritten", "me");
+            return content == "me";
+        });
+        ADD_FAILURE() << "Expected an exception for a node rewritten while it was being removed";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::REPLICA_ALREADY_EXISTS);
+    }
+
+    EXPECT_TRUE(zk->exists("/rewritten"));
+}
 
 TEST(ZooKeeperTest, TestMatchPath)
 {
@@ -74,4 +155,48 @@ TEST(ZooKeeperTest, ListRequestWireRoundTrip)
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, true, true);
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::EPHEMERAL_ONLY, true, false);
     roundtrip(OpNum::FilteredListWithStatsAndData, ListRequestType::ALL, false, true);
+}
+
+TEST(ZooKeeperTest, Create2ResponseWireRoundTrip)
+{
+    ZooKeeperCreate2Response original;
+    original.path_created = "/created/node";
+    original.zstat.czxid = 42;
+    original.zstat.mzxid = 43;
+    original.zstat.ctime = 1000;
+    original.zstat.mtime = 2000;
+    original.zstat.version = 3;
+    original.zstat.cversion = 1;
+    original.zstat.aversion = 0;
+    original.zstat.ephemeralOwner = 0;
+    original.zstat.dataLength = 13;
+    original.zstat.numChildren = 0;
+    original.zstat.pzxid = 44;
+
+    WriteBufferFromOwnString out;
+    original.writeImpl(out);
+
+    ZooKeeperCreate2Response decoded;
+    ReadBufferFromString in(out.str());
+    decoded.readImpl(in);
+
+    EXPECT_TRUE(in.eof());
+    EXPECT_EQ(decoded.path_created, original.path_created);
+    EXPECT_EQ(decoded.zstat, original.zstat);
+    EXPECT_EQ(decoded.zstat.dataLength, 13);
+}
+
+TEST(ZooKeeperTest, MultiRequestRejectsCloseSubrequest)
+{
+    WriteBufferFromOwnString out;
+    Coordination::write(OpNum::Close, out);
+    Coordination::write(false, out);
+    Coordination::write(-1, out);
+    Coordination::write(OpNum::Error, out);
+    Coordination::write(true, out);
+    Coordination::write(-1, out);
+
+    auto request = ZooKeeperRequestFactory::instance().get(OpNum::Multi);
+    ReadBufferFromString in(out.str());
+    EXPECT_THROW(request->readImpl(in), Coordination::Exception);
 }

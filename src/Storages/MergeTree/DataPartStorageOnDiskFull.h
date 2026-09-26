@@ -20,6 +20,7 @@ public:
 
     DataPartStorageIteratorPtr iterate() const override;
     Poco::Timestamp getFileLastModified(const String & file_name) const override;
+    std::optional<UInt64> getPackedFileUncompressedSize(const std::string & file_name) const override;
     UInt32 getRefCount(const std::string & file_name) const override;
     std::vector<std::string> getRemotePaths(const std::string & file_name) const override;
     String getUniqueId() const override;

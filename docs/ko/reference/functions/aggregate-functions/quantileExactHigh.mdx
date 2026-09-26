@@ -40,11 +40,11 @@ quantileExactHigh(level)(expr)
 
 **인수**
 
-* `expr` — 컬럼 값에 대한 표현식이며, 숫자 데이터 타입, Date 또는 DateTime을 반환해야 합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
+* `expr` — 컬럼 값에 대한 표현식이며, 숫자 데이터 타입, `Date`, `DateTime` 또는 `DateTime64`를 반환해야 합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **반환 값**
 
-지정한 레벨의 분위수를 반환합니다. [`Float64`](/ko/reference/data-types/float) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime)
+지정한 레벨의 분위수를 반환합니다. 숫자 데이터 타입의 경우 출력 형식은 입력 형식과 동일합니다. [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float) 또는 [`Decimal*`](/ko/reference/data-types/decimal) 또는 [`Date`](/ko/reference/data-types/date) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64)
 
 **예시**
 

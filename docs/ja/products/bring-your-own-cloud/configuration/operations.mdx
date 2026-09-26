@@ -37,7 +37,7 @@ ClickHouse Cloud では、セキュリティと信頼性を確保し、新機能
   ## Kubernetes クラスターのアップグレードプロセス
 </div>
 
-ClickHouse サービスをホストしている Kubernetes クラスター (AWS の EKS、GCP の GKE) は、セキュリティと互換性を維持し、新機能を利用できるようにするため、定期的なアップグレードが必要です。ClickHouse Cloud は、BYOC デプロイメント向けの Kubernetes クラスターのアップグレードをすべて管理し、クラスターがサポート対象バージョンの最新状態に保たれるようにします。
+ClickHouse サービスをホストしている Kubernetes クラスター (AWS の EKS、GCP の GKE、Azure の AKS) は、セキュリティと互換性を維持し、新機能を利用できるようにするため、定期的なアップグレードが必要です。ClickHouse Cloud は、BYOC デプロイメント向けの Kubernetes クラスターのアップグレードをすべて管理し、クラスターがサポート対象バージョンの最新状態に保たれるようにします。
 
 <div id="cluster-upgrade-types">
   ### クラスターのアップグレードの種類
@@ -65,4 +65,4 @@ Kubernetesクラスターのアップグレードは、ClickHouse Supportを通�
   ### バージョンサポート
 </div>
 
-ClickHouse Cloud は、クラウドサービスプロバイダー (AWS EKS または Google GKE) が定めるサポート対象のバージョン範囲内で Kubernetes クラスターを維持します。クラスターがプロバイダーの要件に適合した状態を保ちつつ、セキュリティパッチや機能アップデートにも継続的に対応できるようにしています。
+ClickHouse Cloud は、クラウドサービスプロバイダー (AWS EKS、Google GKE、または Azure AKS) が定めるサポート対象のバージョン範囲内で Kubernetes クラスターを維持します。クラスターがプロバイダーの要件に適合した状態を保ちつつ、セキュリティパッチや機能アップデートにも継続的に対応できるようにしています。

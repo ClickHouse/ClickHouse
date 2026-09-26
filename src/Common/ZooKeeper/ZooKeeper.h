@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -54,10 +55,6 @@ namespace zkutil
 
 /// Preferred size of multi command (in the number of operations)
 constexpr size_t MULTI_BATCH_SIZE = 100;
-
-/// Path "default:/foo" refers to znode "/foo" in the default zookeeper,
-/// path "other:/foo" refers to znode "/foo" in auxiliary zookeeper named "other".
-constexpr std::string_view DEFAULT_ZOOKEEPER_NAME = "default";
 
 struct ShuffleHost;
 
@@ -495,8 +492,9 @@ public:
 
     /// Checks if a the ephemeral node exists. These nodes are removed automatically by ZK when the session ends
     /// If the node exists and its value is equal to fast_delete_if_equal_value it will remove it
-    /// If the node exists and its value is different, it will wait for it to disappear. It will throw a LOGICAL_ERROR if the node doesn't
-    /// disappear automatically after 3x session_timeout.
+    /// If the node exists and its value is different, it will wait for it to disappear. It will throw
+    /// REPLICA_ALREADY_EXISTS if the node doesn't disappear automatically after 3x session_timeout, or if it was
+    /// rewritten between the read and the removal.
     void deleteEphemeralNodeIfContentMatches(const std::string & path, const std::string & fast_delete_if_equal_value);
     void deleteEphemeralNodeIfContentMatches(const std::string & path, std::function<bool(const std::string &)> condition);
 
@@ -839,16 +837,6 @@ private:
 };
 
 using EphemeralNodeHolderPtr = EphemeralNodeHolder::Ptr;
-
-String normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, LoggerPtr log = nullptr);
-
-String extractZooKeeperName(const String & path);
-
-String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log = nullptr);
-
-/// Like extractZooKeeperPath, but collapses ALL trailing slashes (not just one) into a canonical form,
-/// so that "/a", "/a/" and "/a//" compare equal. Use when comparing keeper paths for equality.
-String extractZooKeeperPathAndCollapseTrailingSlashes(const String & path, bool check_starts_with_slash, LoggerPtr log = nullptr);
 
 String getSequentialNodeName(const String & prefix, UInt64 number);
 

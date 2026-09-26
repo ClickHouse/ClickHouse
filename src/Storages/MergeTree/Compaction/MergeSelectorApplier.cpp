@@ -22,6 +22,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_selector_window_size;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
+    extern const MergeTreeSettingsUInt64 min_partition_age_to_force_merge_seconds;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
@@ -92,7 +93,20 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
 
-    /// Recompression - 3 priority
+    /// Delete columns - 3 priority
+    ///
+    /// `ttl_only_drop_parts` trades the merges that delete expired rows for dropping whole parts once
+    /// every row in them has expired. A column TTL has no such alternative - the only way to clear an
+    /// expired column is to rewrite the part - so this selector runs regardless of that setting.
+    if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyColumnTTL())
+    {
+        TTLColumnDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
+
+        if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
+    }
+
+    /// Recompression - 4 priority
     if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
     {
         TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
@@ -121,6 +135,8 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
 
     if (!ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
         simple_merge_settings.min_age_to_force_merge = ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_seconds];
+
+    simple_merge_settings.min_partition_age_to_force_merge = ctx.merge_tree_settings[MergeTreeSetting::min_partition_age_to_force_merge_seconds];
 
     if (ctx.aggressive)
         simple_merge_settings.base = 1;
@@ -173,14 +189,12 @@ MergeSelectorApplier::MergeSelectorApplier(
     bool merge_with_ttl_allowed_,
     bool aggressive_,
     IMergeSelector::RangeFilter range_filter_,
-    StorageID storage_id_,
-    bool readonly_)
+    StorageID storage_id_)
     : merge_constraints(std::move(merge_constraints_))
     , merge_with_ttl_allowed(merge_with_ttl_allowed_)
     , aggressive(aggressive_)
     , range_filter(std::move(range_filter_))
     , storage_id(std::move(storage_id_))
-    , readonly(readonly_)
 {
     chassert(!merge_constraints.empty(), "At least one merge constraint should be passed");
 
@@ -215,13 +229,6 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
         .current_time = current_time,
         .aggressive = aggressive,
     };
-
-    /// A read-only table (the `table_readonly` MergeTree setting) does not modify any data on disk and
-    /// wastes no background CPU: no merges of any kind run on it — not regular merges, not recompression,
-    /// and not TTL drop/delete merges. A table with a TTL is never marked read-only (see
-    /// `SystemLog::prepareTable`), so skipping TTL merges here cannot strand expired data.
-    if (readonly)
-        return {};
 
     if (metadata_snapshot->hasAnyTTL() && merge_with_ttl_allowed && can_use_ttl_merges)
         if (auto choices = tryChooseTTLMerge(ctx); !choices.empty())

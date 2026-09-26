@@ -10,7 +10,7 @@ integration:
    - category: 'sql_client'
 ---
 
-import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { Image } from "/snippets/es/components/Image.jsx";
 
 SQL Console es la forma más rápida y sencilla de explorar y consultar tus bases de datos en ClickHouse Cloud. Puedes usar SQL Console para:
@@ -346,7 +346,7 @@ Los resultados de las consultas pueden exportarse fácilmente en formato CSV dir
   ## Visualización de datos de consultas
 </div>
 
-Algunos datos pueden interpretarse más fácilmente en forma de gráfico. Puede crear rápidamente visualizaciones a partir de los resultados de una consulta directamente desde la Consola SQL con solo unos clics. Como ejemplo, usaremos una consulta que calcula estadísticas semanales de los viajes en taxi de NYC:
+Algunos datos pueden interpretarse más fácilmente en forma de gráfico. Puede crear rápidamente visualizaciones a partir de los resultados de una consulta directamente desde la SQL Console con solo unos clics. Como ejemplo, usaremos una consulta que calcula estadísticas semanales de los viajes en taxi de NYC:
 
 ```sql
 SELECT

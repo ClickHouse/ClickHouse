@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <IO/Operators.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/Port.h>
@@ -5,6 +6,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
@@ -47,8 +49,14 @@ void NegativeLimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const
 {
     auto transform = std::make_shared<NegativeLimitTransform>(
         pipeline.getSharedHeader(), limit, offset, pipeline.getNumStreams(), with_ties, description);
+    if (is_shard_limit)
+        transform->markAsShardLimit();
 
     pipeline.addTransform(std::move(transform));
+
+    if (dataflow_cache_updater)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void NegativeLimitStep::describeActions(FormatSettings & settings) const
@@ -97,7 +105,7 @@ void NegativeLimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, ctx.out);
+        serializeSortDescription(description, ctx.out, ctx.version);
 }
 
 QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
@@ -120,7 +128,7 @@ QueryPlanStepPtr NegativeLimitStep::deserialize(Deserialization & ctx)
 
     SortDescription sort_description;
     if (with_ties_v)
-        deserializeSortDescription(sort_description, ctx.in);
+        deserializeSortDescription(sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
 
     return std::make_unique<NegativeLimitStep>(ctx.input_headers.front(), limit_v, offset_v, with_ties_v, std::move(sort_description));
 }

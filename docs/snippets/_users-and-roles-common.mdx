@@ -43,15 +43,13 @@ Create these tables and users to be used in the examples.
 #### Creating a sample database, table, and rows {#creating-a-sample-database-table-and-rows}
 
 <Steps>
-<Step>
-##### Create a test database {#create-a-test-database}
+<Step title="Create a test database" id="create-a-test-database">
 
 ```sql
 CREATE DATABASE db1;
 ```
 </Step>
-<Step>
-##### Create a table {#create-a-table}
+<Step title="Create a table" id="create-a-table">
 
 ```sql
 CREATE TABLE db1.table1 (
@@ -63,8 +61,7 @@ ENGINE MergeTree
 ORDER BY id;
 ```
 </Step>
-<Step>
-##### Populate the table with sample rows {#populate}
+<Step title="Populate the table with sample rows" id="populate">
 
 ```sql
 INSERT INTO db1.table1
@@ -76,8 +73,7 @@ VALUES
    (4, 'B', 'def');
 ```
 </Step>
-<Step>
-##### Verify the table {#verify}
+<Step title="Verify the table" id="verify">
 
 ```sql title="Query"
 SELECT *
@@ -95,8 +91,7 @@ Query id: 475015cc-6f51-4b20-bda2-3c9c41404e49
 └────┴─────────┴─────────┘
 ```
 </Step>
-<Step>
-##### Create `column_user` {#create-a-user-with-restricted-access-to-columns}
+<Step title={<>Create <code>column_user</code></>} id="create-a-user-with-restricted-access-to-columns">
 
 Create a regular user that will be used to demonstrate restrict access to certain columns:
 
@@ -104,8 +99,7 @@ Create a regular user that will be used to demonstrate restrict access to certai
 CREATE USER column_user IDENTIFIED BY 'password';
 ```
 </Step>
-<Step>
-##### Create `row_user` {#create-a-user-with-restricted-access-to-rows-with-certain-values}
+<Step title={<>Create <code>row_user</code></>} id="create-a-user-with-restricted-access-to-rows-with-certain-values">
 
 Create a regular user that will be used to demonstrate restricting access to rows with certain values:
    
@@ -127,57 +121,49 @@ With this set of examples:
 Roles are used to define groups of users for certain privileges instead of managing each user separately.
 
 <Steps>
-<Step>
-##### Create a role to restrict users of this role to only see `column1` in database `db1` and `table1`: {#create-column-role}
+<Step title={<>Create a role to restrict users of this role to only see <code>column1</code> in database <code>db1</code> and <code>table1</code>:</>} id="create-column-role">
 
     ```sql
     CREATE ROLE column1_users;
     ```
 </Step>
-<Step>
-##### Set privileges to allow view on `column1` {#set-column-privileges}
+<Step title={<>Set privileges to allow view on <code>column1</code></>} id="set-column-privileges">
 
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
     ```
 </Step>
-<Step>
-##### Add the `column_user` user to the `column1_users` role {#add-column-user-to-role}
+<Step title={<>Add the <code>column_user</code> user to the <code>column1_users</code> role</>} id="add-column-user-to-role">
 
     ```sql
     GRANT column1_users TO column_user;
     ```
 </Step>
-<Step>
-##### Create a role to restrict users of this role to only see selected rows, in this case, only rows containing `A` in `column1` {#create-row-role}
+<Step title={<>Create a role to restrict users of this role to only see selected rows, in this case, only rows containing <code>A</code> in <code>column1</code></>} id="create-row-role">
 
     ```sql
     CREATE ROLE A_rows_users;
     ```
 </Step>
-<Step>
-##### Add the `row_user` to the `A_rows_users` role {#add-row-user-to-role}
+<Step title={<>Add the <code>row_user</code> to the <code>A_rows_users</code> role</>} id="add-row-user-to-role">
 
     ```sql
     GRANT A_rows_users TO row_user;
     ```
 </Step>
-<Step>
-##### Create a policy to allow view on only where `column1` has the values of `A` {#create-row-policy}
+<Step title={<>Create a policy to allow view on only where <code>column1</code> has the values of <code>A</code></>} id="create-row-policy">
 
     ```sql
     CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
     ```
 </Step>
-<Step>
-##### Set privileges to the database and table {#set-db-table-privileges}
+<Step title="Set privileges to the database and table" id="set-db-table-privileges">
 
     ```sql
     GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
     ```
 </Step>
-<Step>
-##### Grant explicit permissions for other roles to still have access to all rows {#grant-other-roles-access}
+<Step title="Grant explicit permissions for other roles to still have access to all rows" id="grant-other-roles-access">
 
     ```sql
     CREATE ROW POLICY allow_other_users_filter 
@@ -195,15 +181,13 @@ Roles are used to define groups of users for certain privileges instead of manag
 ### Testing role privileges with column restricted user {#testing-role-privileges-with-column-restricted-user}
 
 <Steps>
-<Step>
-##### Log into the clickhouse client using the `clickhouse_admin` user {#login-admin-user}
+<Step title={<>Log into the clickhouse client using the <code>clickhouse_admin</code> user</>} id="login-admin-user">
 
    ```bash
    clickhouse-client --user clickhouse_admin --password password
    ```
 </Step>
-<Step>
-##### Verify access to database, table and all rows with the admin user. {#verify-admin-access}
+<Step title="Verify access to database, table and all rows with the admin user." id="verify-admin-access">
 
    ```sql
    SELECT *
@@ -221,15 +205,13 @@ Roles are used to define groups of users for certain privileges instead of manag
    └────┴─────────┴─────────┘
    ```
 </Step>
-<Step>
-##### Log into the ClickHouse client using the `column_user` user {#login-column-user}
+<Step title={<>Log into the ClickHouse client using the <code>column_user</code> user</>} id="login-column-user">
 
    ```bash
    clickhouse-client --user column_user --password password
    ```
 </Step>
-<Step>
-##### Test `SELECT` using all columns {#test-select-all-columns}
+<Step title={<>Test <code>SELECT</code> using all columns</>} id="test-select-all-columns">
 
    ```sql
    SELECT *
@@ -252,8 +234,7 @@ Roles are used to define groups of users for certain privileges instead of manag
    Access is denied since all columns were specified and the user only has access to `id` and `column1`
 </Note>
 </Step>
-<Step>
-##### Verify `SELECT` query with only columns specified and allowed: {#verify-allowed-columns}
+<Step title={<>Verify <code>SELECT</code> query with only columns specified and allowed:</>} id="verify-allowed-columns">
 
    ```sql
    SELECT
@@ -278,15 +259,13 @@ Roles are used to define groups of users for certain privileges instead of manag
 ### Testing role privileges with row restricted user {#testing-role-privileges-with-row-restricted-user}
 
 <Steps>
-<Step>
-##### Log into the ClickHouse client using `row_user` {#login-row-user}
+<Step title={<>Log into the ClickHouse client using <code>row_user</code></>} id="login-row-user">
 
    ```bash
    clickhouse-client --user row_user --password password
    ```
 </Step>
-<Step>
-##### View rows available {#view-available-rows}
+<Step title="View rows available" id="view-available-rows">
 
    ```sql
    SELECT *
@@ -315,36 +294,31 @@ Users can be assigned multiple roles for a combination of privileges needed. Whe
 For example, if one `role1` allows for only select on `column1` and `role2` allows for select on `column1` and `column2` then the user will have access to both columns.
 
 <Steps>
-<Step>
-##### Using the admin account, create new user to restrict by both row and column with default roles {#create-restricted-user}
+<Step title="Using the admin account, create new user to restrict by both row and column with default roles" id="create-restricted-user">
 
    ```sql
    CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
    ```
 </Step>
-<Step>
-##### Remove prior privileges for `A_rows_users` role {#remove-prior-privileges}
+<Step title={<>Remove prior privileges for <code>A_rows_users</code> role</>} id="remove-prior-privileges">
 
    ```sql
    REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
    ```
 </Step>
-<Step>
-##### Allow `A_row_users` role to only select from `column1` {#allow-column1-select}
+<Step title={<>Allow <code>A_row_users</code> role to only select from <code>column1</code></>} id="allow-column1-select">
 
    ```sql
    GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
    ```
 </Step>
-<Step>
-##### Log into the ClickHouse client using `row_and_column_user` {#login-restricted-user}
+<Step title={<>Log into the ClickHouse client using <code>row_and_column_user</code></>} id="login-restricted-user">
 
    ```bash
    clickhouse-client --user row_and_column_user --password password;
    ```
 </Step>
-<Step>
-##### Test with all columns: {#test-all-columns-restricted}
+<Step title="Test with all columns:" id="test-all-columns-restricted">
 
    ```sql
    SELECT *
@@ -363,8 +337,7 @@ For example, if one `role1` allows for only select on `column1` and `role2` allo
    SELECT(id, column1, column2) ON db1.table1. (ACCESS_DENIED)
    ```
 </Step>
-<Step>
-##### Test with limited allowed columns: {#test-limited-columns}
+<Step title="Test with limited allowed columns:" id="test-limited-columns">
 
    ```sql
    SELECT
