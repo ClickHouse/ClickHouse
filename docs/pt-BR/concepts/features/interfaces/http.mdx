@@ -36,9 +36,9 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-&quot;Ok.&quot; é o valor padrão definido em [`http_server_default_response`](/pt-BR/reference/settings/server-settings/settings#http_server_default_response) e pode ser alterado, se desejar.
+&quot;Ok.&quot; é o valor padrão definido em [`http_server_default_response`](/pt-BR/reference/settings/server-settings/settings/http#http_server_default_response) e pode ser alterado, se desejar.
 
-Veja também: [Observações sobre códigos de resposta HTTP](#http_response_codes_caveats).
+Veja também: [Ressalvas sobre códigos de resposta HTTP](#http_response_codes_caveats).
 
 <div id="web-ui">
   ## Interface web
@@ -201,7 +201,7 @@ wget -nv -O- 'http://localhost:8123/?query=SELECT 1, 2, 3 FORMAT JSON'
 }
 ```
 
-Você pode usar o parâmetro de URL `default_format` ou o cabeçalho `X-ClickHouse-Format` para especificar um formato padrão diferente de `TabSeparated`.
+Você pode usar o parâmetro de URL `default_format` para especificar um formato padrão diferente de `TabSeparated`. O cabeçalho `X-ClickHouse-Format` seleciona explicitamente o formato da resposta: é um alias da configuração `output_format`, portanto também substitui uma cláusula `FORMAT` na consulta. Ele nunca altera como o corpo da requisição de um `INSERT` é analisado — use `input_format` ou `format` para isso.
 
 ```bash
 $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @-
@@ -219,6 +219,150 @@ $ curl -X POST -F 'query=select {p1:UInt8} + {p2:UInt8}' -F "param_p1=3" -F "par
 
 7
 ```
+
+<div id="tables-as-files">
+  ## Acesse tabelas por caminhos de URL e construa consultas
+</div>
+
+Disponível no ClickHouse 26.8 e versões posteriores.
+
+A interface HTTP pode interpretar um caminho de URL como um banco de dados, uma tabela, um formato de saída e um método de compressão. Os parâmetros de URL podem então definir o resultado, de modo que solicitações de leitura simples não exigem SQL. Esses recursos são desabilitados por padrão e devem ser habilitados explicitamente.
+
+<div id="enabling-path-routing">
+  ### Habilite o roteamento por caminho
+</div>
+
+A interpretação de caminhos é controlada em dois níveis:
+
+1. Habilite a configuração `http_allow_path_requests` no nível do servidor, que permite que a interface HTTP encaminhe solicitações no formato de caminho ao manipulador de consultas:
+
+```xml
+<clickhouse>
+    <http_allow_path_requests>1</http_allow_path_requests>
+</clickhouse>
+```
+
+2. Habilite as configurações necessárias por usuário:
+
+| Configuração                                        | Efeito                                                                                                |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `http_allow_table_as_file`                          | Interpreta o último componente do caminho como `table`, `table.format` ou `table.format.compression`. |
+| `http_allow_database_as_path`                       | Interpreta um componente inicial do caminho `/database/` como o banco de dados atual.                 |
+| `http_allow_filters_as_path`                        | Interpreta componentes do caminho `/name=value/` no estilo Hive como filtros `WHERE`.                 |
+| `http_allow_filters_as_unrecognized_url_parameters` | Interpreta parâmetros de URL não reconhecidos como filtros `WHERE`.                                   |
+
+<Note>
+  O roteamento ocorre antes da autenticação e, portanto, não pode depender de uma configuração por usuário. Quando `http_allow_path_requests` está desabilitado, um caminho desconhecido retorna um `404` antes da autenticação. Após o roteamento e a autenticação, as configurações por usuário determinam como o caminho é interpretado, permitindo habilitar o recurso seletivamente para um usuário, uma função ou um perfil.
+</Note>
+
+<div id="table-as-file-examples">
+  ### Acesse tabelas como arquivos
+</div>
+
+Com `http_allow_table_as_file` habilitado, uma solicitação a `/table.format.compression` é processada como `SELECT * FROM table`. Habilite `http_allow_database_as_path` para usar `/database/table.format.compression`.
+
+```bash
+# SELECT * FROM my_db.hits, formatted as CSV
+curl 'http://localhost:8123/my_db/hits.csv'
+
+# The same result, compressed with gzip
+curl 'http://localhost:8123/my_db/hits.csv.gz' | gzip -d
+```
+
+As extensões de formato e compressão são reconhecidas sem distinção entre maiúsculas e minúsculas; portanto, `hits.csv` e `hits.CSV` são equivalentes.
+
+Um parâmetro de URL `format` ou `output_format` explícito substitui o formato no caminho. `default_format` não: ele apenas fornece o formato a ser usado quando nenhum outro o seleciona, e a extensão do caminho é mais específica. Um parâmetro `compression` explícito deve corresponder à compressão no caminho; valores conflitantes resultam em uma exceção.
+
+<div id="query-construction">
+  ### Crie uma consulta
+</div>
+
+As configurações a seguir encapsulam a consulta base em uma tabela derivada. Elas podem ser combinadas entre si e com uma consulta existente. Você pode fornecê-las como parâmetros de URL HTTP, em uma cláusula `SETTINGS` na consulta ou por meio de um perfil de usuário.
+
+| Configuração                                                                                                                | Efeito                                                                                                                                                                                                                                 |
+| --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `select`                                                                                                                    | `SELECT <expression_list> FROM (…)`                                                                                                                                                                                                    |
+| `filter`                                                                                                                    | Adiciona `WHERE <expression>`. Vários parâmetros de URL `filter` são combinados com `AND`.                                                                                                                                             |
+| `order`                                                                                                                     | Adiciona `ORDER BY <expression_list>`.                                                                                                                                                                                                 |
+| `sort`                                                                                                                      | Adiciona `ORDER BY` com base em uma lista separada por vírgulas de identificadores ou posições de colunas, cada um com um prefixo opcional `+` (crescente) ou `-` (decrescente), como `sort=a,-b`. Não pode ser combinado com `order`. |
+| [`limit`](/pt-BR/reference/settings/session-settings/other#limit) e [`offset`](/pt-BR/reference/settings/session-settings/other#offset) | Adicionam `LIMIT <n> OFFSET <m>`. Ambos aceitam valores negativos para seleção a partir do final e valores fracionários que representam uma proporção das linhas.                                                                      |
+| `page`                                                                                                                      | Define `offset = limit * (page - 1)`. Requer `limit` e não pode ser combinado com `offset`.                                                                                                                                            |
+
+```bash
+# Filter my_db.hits, sort by a descending, and return the first 10 rows
+curl 'http://localhost:8123/my_db/hits?filter=a%3E0&sort=-a&limit=10'
+
+# Return the second page of 100 rows
+curl 'http://localhost:8123/my_db/hits?limit=100&page=2'
+```
+
+<div id="modify-an-existing-query">
+  #### Modificar uma consulta existente
+</div>
+
+As configurações de construção não se limitam a solicitações de caminho: elas também moldam uma consulta que você mesmo escreve. A consulta se torna a tabela derivada; portanto, as configurações se aplicam ao resultado dela, em vez de serem incorporadas a ela. Por exemplo, `?query=SELECT a, b FROM hits&filter=a > 0&sort=-b&limit=10` é executada como:
+
+```sql
+SELECT * FROM (SELECT a, b FROM hits) WHERE a > 0 ORDER BY b DESC LIMIT 10
+```
+
+Isso é útil para paginar, ordenar ou restringir o resultado de uma consulta definida em outro lugar — em uma consulta salva de um dashboard, em um `predefined_query_handler` ou em um cliente que permite apenas adicionar parâmetros de URL:
+
+```bash
+# Page through the result of an arbitrary query without editing the query text
+curl 'http://localhost:8123/?query=SELECT+a,+b+FROM+hits+GROUP+BY+a,+b&limit=100&page=3'
+
+# Keep only some of the resulting columns and rows
+curl -G 'http://localhost:8123/' --data-urlencode 'query=SELECT * FROM hits' --data-urlencode 'select=a, b' --data-urlencode 'filter=b != 0'
+
+# The last 5 rows of an aggregate (a negative `limit` selects from the tail)
+curl 'http://localhost:8123/?query=SELECT+a,+count()+FROM+hits+GROUP+BY+a+ORDER+BY+a&limit=-5'
+```
+
+Como as configurações envolvem a consulta em vez de reescrevê-la, elas são compatíveis com uma cláusula `FORMAT` e com um `ORDER BY` na consulta, sem nunca alterar quais linhas um `INSERT` grava: uma configuração de construção aplicada a uma instrução `INSERT ... SELECT` molda o resultado (vazio) da própria instrução, e não o `SELECT` de origem. Para moldar a origem, coloque a configuração na cláusula `SETTINGS` do próprio `SELECT`:
+
+```sql
+-- Inserts all 10 rows: `limit` applies to the INSERT statement, not to its SELECT
+INSERT INTO t SETTINGS limit = 2 SELECT number FROM numbers(10);
+
+-- Inserts 2 rows: `limit` applies to the SELECT itself
+INSERT INTO t SELECT number FROM numbers(10) SETTINGS limit = 2;
+```
+
+<Warning>
+  `filter` não é um mecanismo de controle de acesso. Ele adiciona uma cláusula `WHERE` a uma subconsulta envolvente, portanto os dados subjacentes podem ser lidos e processados antes da aplicação do filtro. Para restringir as linhas que um usuário pode acessar, use [políticas de linha](/pt-BR/concepts/features/security/access-rights#row-policy-management) ou [`additional_table_filters`](/pt-BR/reference/settings/session-settings/additional#additional_table_filters).
+</Warning>
+
+<div id="format-and-compression-overrides">
+  ### Substituição de formatos e compressão
+</div>
+
+| Configuração     | Efeito                                                                                                                                                                                                      |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `output_format`  | Substitui o formato de saída. Tem precedência sobre a cláusula `FORMAT` da consulta, a extensão do caminho, `format` e `default_format`. Também pode ser definido usando o cabeçalho `X-ClickHouse-Format`. |
+| `input_format`   | Substitui o formato de entrada para `INSERT`. Tem precedência sobre a cláusula `FORMAT` da consulta e `format`.                                                                                             |
+| `format`         | Substitui o formato em ambas as direções, a menos que seja fornecida uma configuração específica para cada direção.                                                                                         |
+| `default_format` | Define o formato de saída quando a consulta não tem cláusula `FORMAT`, extensão de caminho nem outra substituição de formato.                                                                               |
+| `compression`    | Comprime o corpo da resposta, por exemplo, com `compression=gz`. Isso é independente de `Content-Encoding` do HTTP e do parâmetro nativo `compress` do ClickHouse.                                          |
+
+As configurações de formato também funcionam com outros protocolos, incluindo o cliente nativo e o `clickhouse-local`. `input_format` e `output_format` correspondem às opções `--input-format` e `--output-format`. A opção `--format` é mapeada para a configuração bidirecional `format` no `clickhouse-local`, enquanto no `clickhouse-client` mantém seu significado histórico apenas para saída e é mapeada para `output_format`.
+
+`compression` é específico para a formatação de respostas HTTP e é processado antes da execução da consulta. Forneça-o por meio de um parâmetro de URL HTTP, uma extensão de caminho ou um perfil de usuário. Ele é rejeitado em uma cláusula `SETTINGS` na consulta.
+
+Respostas HTTP binárias e comprimidas incluem um cabeçalho `Content-Disposition: attachment; filename=…`. O nome do arquivo é derivado do caminho da URL ou usa `result.<format>.<compression>` quando o caminho não fornece um nome.
+
+<div id="implicit-table">
+  ### Use uma tabela no caminho com uma consulta
+</div>
+
+Quando o caminho identifica uma tabela e você também fornece um parâmetro `query`, a tabela no caminho é exposta por [`implicit_table_at_top_level`](/pt-BR/reference/settings/session-settings/implicit#implicit_table_at_top_level). Um `SELECT` sem uma cláusula `FROM` lê a tabela no caminho:
+
+```bash
+# Read columns a and b from my_db.hits without a FROM clause
+curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
+```
+
+Se a consulta já contiver uma cláusula `FROM`, o componente do caminho fornecerá apenas o nome do arquivo a ser baixado.
 
 <div id="insert-queries">
   ## Consultas `INSERT` via HTTP/HTTPS
@@ -298,7 +442,7 @@ A compressão pode ser usada para reduzir o tráfego de rede ao transmitir grand
 
 Ao transmitir dados, você pode usar o formato de compressão interno do ClickHouse. Os dados comprimidos têm um formato não padrão, e você precisa do programa `clickhouse-compressor` para trabalhar com eles. Ele é instalado por padrão com o pacote `clickhouse-client`.
 
-Para aumentar a eficiência da inserção de dados, desative a verificação de checksum no lado do servidor com a configuração [`http_native_compression_disable_checksumming_on_decompress`](/pt-BR/reference/settings/session-settings#http_native_compression_disable_checksumming_on_decompress).
+Para aumentar a eficiência da inserção de dados, desative a verificação de checksum no lado do servidor com a configuração [`http_native_compression_disable_checksumming_on_decompress`](/pt-BR/reference/settings/session-settings/http#http_native_compression_disable_checksumming_on_decompress).
 
 Se você especificar `compress=1` na URL, o servidor comprimirá os dados enviados para você. Se você especificar `decompress=1` na URL, o servidor descomprimirá os dados enviados no método `POST`.
 
@@ -313,11 +457,11 @@ Você também pode optar por usar a [compressão HTTP](https://en.wikipedia.org/
 * `bz2`
 * `snappy`
 
-Para enviar uma solicitação `POST` comprimida, adicione o cabeçalho de solicitação `Content-Encoding: compression_method`.
+Para enviar uma solicitação `POST` comprimida, adicione o cabeçalho da solicitação `Content-Encoding: compression_method`.
 
 Para que o ClickHouse comprima a resposta, adicione o cabeçalho `Accept-Encoding: compression_method` à solicitação.
 
-Você pode configurar o nível de compressão dos dados usando a configuração [`http_zlib_compression_level`](/pt-BR/reference/settings/session-settings#http_zlib_compression_level) para todos os métodos de compressão.
+Você pode configurar o nível de compressão dos dados usando a configuração [`http_zlib_compression_level`](/pt-BR/reference/settings/session-settings/http#http_zlib_compression_level) para todos os métodos de compressão.
 
 <Info>
   Alguns clientes HTTP podem descomprimir por padrão os dados recebidos do servidor (com `gzip` e `deflate`), e você pode receber dados descomprimidos mesmo que use corretamente as configurações de compressão.
@@ -450,7 +594,7 @@ Por padrão, a sessão é encerrada após 60 segundos de inatividade. Para alter
 
 Para verificar o status da sessão, use o parâmetro `session_check=1`. Apenas uma consulta por vez pode ser executada em uma única sessão.
 
-Você pode receber informações sobre o progresso de uma consulta nos cabeçalhos de resposta `X-ClickHouse-Progress`. Para isso, habilite [`send_progress_in_http_headers`](/pt-BR/reference/settings/session-settings#send_progress_in_http_headers).
+Você pode receber informações sobre o progresso de uma consulta nos cabeçalhos de resposta `X-ClickHouse-Progress`. Para isso, habilite [`send_progress_in_http_headers`](/pt-BR/reference/settings/session-settings/send#send_progress_in_http_headers).
 
 Abaixo está um exemplo da sequência de cabeçalhos:
 
@@ -476,10 +620,10 @@ As requisições em execução não param automaticamente se a conexão HTTP for
 
 Existem os seguintes parâmetros opcionais:
 
-| Parâmetros             | Descrição                                                                                                                                         |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `query_id` (opcional)  | Pode ser informado como o ID da consulta (qualquer string). [`replace_running_query`](/pt-BR/reference/settings/session-settings#replace_running_query) |
-| `quota_key` (opcional) | Pode ser informado como a chave de quota (qualquer string). [&quot;Quotas&quot;](/pt-BR/concepts/features/configuration/server-config/quotas)           |
+| Parâmetros             | Descrição                                                                                                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `query_id` (opcional)  | Pode ser informado como o ID da consulta (qualquer string). [`replace_running_query`](/pt-BR/reference/settings/session-settings/replace-running-query#replace_running_query) |
+| `quota_key` (opcional) | Pode ser informado como a chave de quota (qualquer string). [&quot;Quotas&quot;](/pt-BR/concepts/features/configuration/server-config/quotas)                                 |
 
 A interface HTTP permite passar dados externos (tabelas temporárias externas) para consulta. Para mais informações, consulte [&quot;Dados externos para processamento de consultas&quot;](/pt-BR/reference/engines/table-engines/special/external-data).
 
@@ -494,8 +638,8 @@ A bufferização de resposta pode ser habilitada no lado do servidor. Os seguint
 
 As seguintes configurações podem ser usadas:
 
-* [`http_response_buffer_size`](/pt-BR/reference/settings/session-settings#http_response_buffer_size)
-* [`http_wait_end_of_query`](/pt-BR/reference/settings/session-settings#http_wait_end_of_query)
+* [`http_response_buffer_size`](/pt-BR/reference/settings/session-settings/http-response#http_response_buffer_size)
+* [`http_wait_end_of_query`](/pt-BR/reference/settings/session-settings/http#http_wait_end_of_query)
 
 `buffer_size` determina o número de bytes do resultado a serem armazenados em buffer na memória do servidor. Se o corpo do resultado for maior que esse limite, o buffer será gravado no canal HTTP, e os dados restantes serão enviados diretamente para o canal HTTP.
 
@@ -567,7 +711,7 @@ O motivo desse comportamento é a própria natureza do protocolo HTTP. O cabeça
 
 Esse comportamento é independente do formato usado, seja `Native`, `TSV` ou `JSON`; a mensagem de erro sempre aparecerá no meio do fluxo de resposta.
 
-Você pode mitigar esse problema habilitando `wait_end_of_query=1` ([Buffering de resposta](#response-buffering)). Nesse caso, o envio do cabeçalho HTTP é adiado até que toda a consulta seja concluída. No entanto, isso não resolve completamente o problema, porque o resultado ainda precisa caber em [`http_response_buffer_size`](/pt-BR/reference/settings/session-settings#http_response_buffer_size), e outras configurações, como [`send_progress_in_http_headers`](/pt-BR/reference/settings/session-settings#send_progress_in_http_headers), podem interferir no atraso do cabeçalho.
+Você pode mitigar esse problema habilitando `wait_end_of_query=1` ([bufferização de resposta](#response-buffering)). Nesse caso, o envio do cabeçalho HTTP é adiado até que toda a consulta seja concluída. No entanto, isso não resolve completamente o problema, porque o resultado ainda precisa caber em [`http_response_buffer_size`](/pt-BR/reference/settings/session-settings/http-response#http_response_buffer_size), e outras configurações, como [`send_progress_in_http_headers`](/pt-BR/reference/settings/session-settings/send#send_progress_in_http_headers), podem interferir no atraso do cabeçalho.
 
 <Tip>
   A única forma de capturar todos os erros é analisar o corpo HTTP antes de fazer o parsing usando o formato necessário.
@@ -821,7 +965,7 @@ Os métodos de configuração para diferentes `type`s são discutidos a seguir.
 
 O valor de `query` é uma consulta predefinida de `predefined_query_handler`, executada pelo ClickHouse quando uma requisição HTTP corresponde a ela, e o resultado da consulta é retornado. Essa configuração é obrigatória.
 
-O exemplo a seguir define os valores das configurações [`max_threads`](/pt-BR/reference/settings/session-settings#max_threads) e [`max_final_threads`](/pt-BR/reference/settings/session-settings#max_final_threads) e, em seguida, consulta a tabela de sistema para verificar se essas configurações foram definidas com sucesso.
+O exemplo a seguir define os valores das configurações [`max_threads`](/pt-BR/reference/settings/session-settings/max-threads#max_threads) e [`max_final_threads`](/pt-BR/reference/settings/session-settings/max#max_final_threads) e, em seguida, consulta a tabela de sistema para verificar se essas configurações foram definidas com sucesso.
 
 <Note>
   Para manter os `handlers` padrão, como `query`, `play` e `ping`, adicione a regra `<defaults/>`.
@@ -903,7 +1047,7 @@ Em `dynamic_query_handler`, a consulta é escrita como um parâmetro da requisi�
 
 O ClickHouse extrai e executa o valor correspondente a `query_param_name` na URL da requisição HTTP. O valor padrão de `query_param_name` é `/query`. Essa é uma configuração opcional. Se não houver definição no arquivo de configuração, o parâmetro não será passado.
 
-Para testar essa funcionalidade, o exemplo a seguir define os valores de [`max_threads`](/pt-BR/reference/settings/session-settings#max_threads) e `max_final_threads` e consulta se as configurações foram definidas com sucesso.
+Para testar essa funcionalidade, o exemplo a seguir define os valores de [`max_threads`](/pt-BR/reference/settings/session-settings/max-threads#max_threads) e `max_final_threads` e consulta se as configurações foram definidas com sucesso.
 
 Exemplo:
 
@@ -1187,7 +1331,7 @@ No exemplo abaixo, toda resposta do servidor conterá dois cabeçalhos personali
 
 Durante a execução da consulta por HTTP, pode ocorrer uma exceção quando parte dos dados já tiver sido enviada. Normalmente, a exceção é enviada ao cliente em texto simples.
 Mesmo que tenha sido usado um formato de dados específico para a saída, ela pode acabar se tornando inválida em relação ao formato especificado.
-Para evitar isso, você pode usar a configuração [`http_write_exception_in_output_format`](/pt-BR/reference/settings/session-settings#http_write_exception_in_output_format) (desabilitada por padrão), que faz com que o ClickHouse grave a exceção no formato especificado (atualmente compatível com os formatos XML e JSON*).
+Para evitar isso, você pode usar a configuração [`http_write_exception_in_output_format`](/pt-BR/reference/settings/session-settings/http#http_write_exception_in_output_format) (desabilitada por padrão), que faz com que o ClickHouse grave a exceção no formato especificado (atualmente compatível com os formatos XML e JSON*).
 
 Exemplos:
 

@@ -3,7 +3,7 @@
 
 -- { echo }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SET engine_file_truncate_on_insert = 1;
 
 -- Nullable struct with non-nullable elements
@@ -193,7 +193,8 @@ INSERT INTO test_nullable_tuple_describe VALUES ((1, 'a')), (NULL), ((3, 'c'));
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_describe.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_describe;
 
--- Parquet V3 native reader: inferred type (struct-level NULL not supported, becomes (NULL,NULL))
+-- Parquet V3 native reader: an OPTIONAL group with an all-REQUIRED subtree is inferred as
+-- Nullable(Tuple), so the struct-level NULL survives inference.
 SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04065_describe.parquet', 'Parquet');
 
 DROP TABLE test_nullable_tuple_describe;

@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/terraform
 sidebarTitle: 'Terraform'
-title: 'Managed Postgres Terraform 참고'
+title: 'ClickHouse Managed Postgres Terraform 참고'
 description: 'ClickHouse Terraform 프로바이더를 사용해 ClickHouse Managed Postgres 서비스를 관리하기 위한 참고 문서입니다.'
 keywords: ['managed postgres', 'terraform', '코드형 인프라', 'iac', 'provider', '프로그래밍 방식']
 doc_type: 'guide'
@@ -11,19 +11,11 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.terraform-beta" />
 
-ClickHouse Managed Postgres 서비스는 [ClickHouse Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service)의 `clickhouse_postgres_service` 리소스를 사용해 생성하고 관리할 수 있습니다. 이 페이지에서는 이 리소스와 관련 데이터 소스를 위한 프로바이더 설정 및 구성 예시를 설명합니다.
+ClickHouse Managed Postgres 서비스는 [ClickHouse Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service)의 `clickhouse_postgres_service` 리소스를 사용해 생성하고 관리할 수 있습니다. 이 페이지에서는 이 리소스와 보조 데이터 소스를 위한 프로바이더 설정 및 구성 예시를 설명합니다.
 
 <Note>
-  이 리소스는 알파 단계이므로 향후 프로바이더 버전에서 동작이 변경될 수 있습니다. 일반 프로바이더 빌드에 포함되어 있습니다. 이 페이지는 자격 증명 관리 방식이 변경된 프로바이더 버전 **v3.21.0** 이상을 문서화합니다. 이전 버전은 다르게 동작하며, 2026-07-31 기준으로 더 이상 올바르게 작동하지 않습니다. 자세한 내용은 [provider releases](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)를 참조하십시오.
+  이 리소스는 알파 단계이므로 향후 프로바이더 버전에서 동작이 변경될 수 있습니다. 일반 프로바이더 빌드에 포함되어 있습니다. 이 페이지는 프로바이더 버전 **v3.21.0** 이상을 문서화합니다. 자세한 내용은 [provider releases](https://github.com/ClickHouse/terraform-provider-clickhouse/releases)를 참조하십시오.
 </Note>
-
-<Warning>
-  **2026-07-31 이전에 프로바이더 v3.21.0으로 업그레이드하세요**
-
-  **2026-07-31**부터 Managed Postgres API는 응답에서 더 이상 슈퍼유저 password와 connection string을 반환하지 않습니다. 자격 증명은 서비스를 생성하거나 password를 재설정할 때만 반환됩니다. 프로바이더 버전 **v3.21.0 이상**은 이 변경 전후에 동일하게 동작합니다. 이전 프로바이더 버전은 API가 자격 증명을 다시 반환하는 동작에 의존합니다. 2026-07-31 기준으로 이러한 버전은 더 이상 `connection_string`을 채우지 않으며, 구성에 `password`를 지정하지 않고 서비스를 생성하면 생성 자체는 성공하더라도 생성된 password는 어디에도 저장되지 않습니다.
-
-  2026-07-31 이전에 업그레이드하십시오. Terraform state는 v3.21.0에서 첫 번째 계획 또는 적용 시 자동으로 마이그레이션됩니다. 서비스 중 서버가 생성한 password에 의존하는 항목이 있다면(구성에 `password`가 없는 경우), v3.21.0에서는 표준 서비스에 `password` 또는 `password_wo`가 필요하므로 먼저 `terraform state pull`로 해당 값을 복구한 뒤 구성에 선언하십시오.
-</Warning>
 
 <div id="provider-setup">
   ## 프로바이더 설정
@@ -73,7 +65,7 @@ provider "clickhouse" {
 | `read_replica_of`          | 아니요                                  | 복제할 기본 서비스의 ID입니다. [읽기 레플리카](#read-replicas)를 참조하십시오. `restore_to_point_in_time`와는 함께 사용할 수 없습니다.                                   |
 | `restore_to_point_in_time` | 아니요                                  | 다른 서비스를 특정 시점으로 복원하여 서비스를 생성합니다. [특정 시점 복원](#point-in-time-restore)를 참조하십시오. `read_replica_of`와는 함께 사용할 수 없습니다.                     |
 
-다음 속성은 읽기 전용이며 생성 후 ClickHouse Cloud가 값을 채웁니다: `id`, `state`, `created_at`, `is_primary`, `hostname`, `port`, 그리고 `username`. `connection_string` 속성은 없습니다(v3.21.0에서 제거됨). 연결 URI는 `hostname`, `port`, `username`, 그리고 선언한 비밀번호를 사용해 직접 구성하십시오. 예: `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`.
+다음 속성은 읽기 전용이며 생성 후 ClickHouse Cloud가 값을 채웁니다: `id`, `state`, `created_at`, `is_primary`, `hostname`, `port`, 그리고 `username`. `connection_string` 속성은 없습니다. 연결 URI는 `hostname`, `port`, `username`, 그리고 선언한 비밀번호를 사용해 직접 구성하십시오. 예: `postgres://${username}:${password}@${hostname}:${port}/postgres?sslmode=require`.
 
 <Warning>
   The `password`는 Terraform state에 평문으로 저장됩니다. 따라서 state 파일을 적절히 보호하십시오. 예를 들어 저장 시 암호화가 적용된 원격 백엔드를 사용하거나, `password_wo`를 사용해 비밀번호가 state에 전혀 저장되지 않도록 하십시오.
@@ -167,7 +159,7 @@ data "clickhouse_postgres_service" "example" {
   id = clickhouse_postgres_service.example.id
 }
 
-# All Managed Postgres services in the organization.
+# All ClickHouse Managed Postgres services in the organization.
 data "clickhouse_postgres_services" "all" {}
 
 # The CA certificates for a service, for TLS connections.
@@ -180,7 +172,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## 기존 서비스 가져오기
 </div>
 
-기존 Managed Postgres 서비스는 서비스 ID를 사용해 Terraform state로 가져올 수 있습니다:
+기존 ClickHouse Managed Postgres 서비스는 서비스 ID를 사용해 Terraform state로 가져올 수 있습니다:
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

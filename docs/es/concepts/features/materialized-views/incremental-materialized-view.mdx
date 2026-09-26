@@ -1051,7 +1051,7 @@ GROUP BY UserId
   ## Procesamiento paralelo frente a secuencial
 </div>
 
-Como se mostró en el ejemplo anterior, una tabla puede actuar como fuente para varias vistas materializadas. El orden en que se ejecutan depende de la configuración [`parallel_view_processing`](/es/reference/settings/session-settings#parallel_view_processing).
+Como se mostró en el ejemplo anterior, una tabla puede actuar como fuente para varias vistas materializadas. El orden en que se ejecutan depende de la configuración [`parallel_view_processing`](/es/reference/settings/session-settings/parallel#parallel_view_processing).
 
 De forma predeterminada, esta configuración es `0` (`false`), lo que significa que las vistas materializadas se ejecutan secuencialmente en orden de `uuid`.
 
@@ -1151,7 +1151,7 @@ ORDER BY uuid ASC
 │ mv_2 │ e611cc31-70e5-499b-adcc-53fb12b109f5 │
 └──────┴──────────────────────────────────────┘
 
-3 filas en el conjunto. Elapsed: 0.004 sec.
+3 rows in set. Elapsed: 0.004 sec.
 ```
 
 Por el contrario, veamos qué sucede si insertamos una fila con `parallel_view_processing=1` activado. Con esta opción activada, las vistas se ejecutan en paralelo, sin garantizar el orden en que las filas llegan a la tabla de destino:

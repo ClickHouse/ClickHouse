@@ -631,10 +631,14 @@ def test_max_data_part_size(start_cluster, name, engine):
 )
 def test_jbod_overflow(start_cluster, name, engine):
     try:
+        # Pin the codec to LZ4: this test relies on the on-disk part size to overflow the small jbod
+        # disk. `get_random_string` returns random printable ASCII, which ZSTD (the default codec)
+        # entropy-codes noticeably better than LZ4, shrinking the parts enough that they no longer
+        # overflow. Pinning LZ4 keeps the on-disk size independent of the server's default codec.
         node1.query_with_retry(
             """
             CREATE TABLE IF NOT EXISTS {name} (
-                s1 String
+                s1 String CODEC(LZ4)
             ) ENGINE = {engine}
             ORDER BY tuple()
             SETTINGS storage_policy='small_jbod_with_external'

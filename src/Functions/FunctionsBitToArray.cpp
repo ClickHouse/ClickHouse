@@ -370,9 +370,9 @@ Signed input integers are first casted to an unsigned integer.
             "All bits set",
             "SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions",
             R"(
-┌─bit_positions─────────────┐
-│ [0, 1, 2, 3, 4, 5, 6, 7]  │
-└───────────────────────────┘
+┌─bit_positions─────┐
+│ [0,1,2,3,4,5,6,7] │
+└───────────────────┘
             )"
         }
     };
@@ -392,9 +392,9 @@ The powers of two are returned as an ascendingly ordered array.
             "Basic example",
             "SELECT bitmaskToArray(50) AS powers_of_two",
             R"(
-┌─powers_of_two───┐
-│ [2, 16, 32]     │
-└─────────────────┘
+┌─powers_of_two─┐
+│ [2,16,32]     │
+└───────────────┘
             )"
         },
         {
@@ -423,9 +423,9 @@ Like bitmaskToArray but returns the powers of two as a comma-separated string.
         {
             "Basic example", "SELECT bitmaskToList(50) AS powers_list",
             R"(
-┌─powers_list───┐
-│ 2, 16, 32     │
-└───────────────┘
+┌─powers_list─┐
+│ 2,16,32     │
+└─────────────┘
            )"
         },
     };
