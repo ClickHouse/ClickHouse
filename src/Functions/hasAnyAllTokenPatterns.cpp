@@ -72,12 +72,18 @@ struct TokenLikeMatcher
     {
         switch (kind)
         {
-            case Kind::Equals: return token == literal;
-            case Kind::StartsWith: return token.starts_with(literal);
-            case Kind::EndsWith: return token.ends_with(literal);
+            case Kind::Equals: return token.size() == literal.size() && hasLiteralAt(token, 0);
+            case Kind::StartsWith: return token.size() >= literal.size() && hasLiteralAt(token, 0);
+            case Kind::EndsWith: return token.size() >= literal.size() && hasLiteralAt(token, token.size() - literal.size());
             case Kind::Contains: return token.find(literal) != std::string_view::npos;
             case Kind::Regexp: return regexp->match(token.data(), token.size());
         }
+    }
+
+    /// Compares the first byte before calling memcmp, because most tokens differ there.
+    ALWAYS_INLINE bool hasLiteralAt(std::string_view token, size_t pos) const
+    {
+        return literal.empty() || (token[pos] == literal[0] && 0 == memcmp(token.data() + pos, literal.data(), literal.size()));
     }
 
     enum class Kind : uint8_t { Equals, StartsWith, EndsWith, Contains, Regexp };
