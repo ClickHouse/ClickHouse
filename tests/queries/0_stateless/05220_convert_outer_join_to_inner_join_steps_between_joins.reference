@@ -1,0 +1,46 @@
+-- DISTINCT allows converting.
+2
+Type: INNER
+Type: INNER
+-- A window partitioned by the join key allows converting.
+20	200
+Type: INNER
+Type: INNER
+-- A window partitioned by another column does not allow converting.
+Type: INNER
+Type: LEFT
+-- LIMIT BY the join key allows converting.
+2
+Type: INNER
+Type: INNER
+-- LIMIT BY with an OFFSET does not allow converting.
+Type: INNER
+Type: LEFT
+-- LIMIT does not allow converting.
+Type: INNER
+Type: LEFT
+-- A GROUP BY key allows converting.
+2
+Type: INNER
+Type: INNER
+-- An aggregate result does not allow converting.
+Type: INNER
+Type: LEFT
+-- GROUPING SETS does not allow converting.
+Type: INNER
+Type: LEFT
+-- ARRAY JOIN of another column allows converting.
+40	60
+Type: INNER
+Type: INNER
+-- ARRAY JOIN of the join key does not allow converting.
+Type: INNER
+Type: LEFT
+-- UNION ALL with matching branches allows converting.
+22
+Type: INNER
+Type: INNER
+-- An IN subquery allows converting.
+10
+Type: INNER
+Type: INNER

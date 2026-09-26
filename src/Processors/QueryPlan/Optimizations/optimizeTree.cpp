@@ -247,6 +247,9 @@ void optimizeTreeSecondPass(
 
     Stack stack;
 
+    /// Before the join reordering and index analysis below, which read the join kinds it rewrites.
+    convertOuterJoinToInnerJoinTransitively(optimization_settings, root);
+
     /// Before index analysis, so the copied conjuncts take part in it, and before the runtime
     /// filters, which would hide the source filters
     bool predicates_were_propagated = false;
