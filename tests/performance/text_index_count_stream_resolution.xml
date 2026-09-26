@@ -1,0 +1,40 @@
+<test>
+    <!--
+        count() over a text-index predicate is answered per part from the index, and a text index
+        has whole-part granularity, so the cost of constructing the index substream readers scales
+        with the number of parts rather than with the number of rows. Many small parts and a single
+        thread make that per-part cost the dominant term.
+    -->
+    <settings>
+        <use_skip_indexes>1</use_skip_indexes>
+        <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+        <query_plan_optimize_count_from_text_index>1</query_plan_optimize_count_from_text_index>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_query_cache>0</use_query_cache>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE text_index_count_streams (ts DateTime, host String, message String,
+            INDEX idx_msg message TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1)
+        ENGINE = MergeTree ORDER BY ts
+        SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0,
+                 max_bytes_to_merge_at_max_space_in_pool = 1
+    </create_query>
+
+    <!-- 400 parts of 2000 rows: every part holds each of the 32 planted `w000..` needles. -->
+    <fill_query>
+        INSERT INTO text_index_count_streams
+        SELECT toDateTime(1704000000 + number), concat('host', toString(number % 64)),
+            concat('w', leftPad(toString(cityHash64(number) % 40000), 5, '0'), ' ',
+                   'w', leftPad(toString((number % 32) * 1250), 5, '0'), ' code', toString(200 + number % 5))
+        FROM numbers(800000)
+        SETTINGS max_insert_threads = 1, max_block_size = 2000, max_insert_block_size = 2000,
+                 min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <query>SELECT count() FROM text_index_count_streams WHERE hasToken(message, 'w01250')</query>
+    <query>SELECT count() FROM text_index_count_streams WHERE hasAnyTokens(message, ['w01250', 'w02500', 'w03750', 'w05000', 'w06250', 'w07500', 'w08750', 'w10000'])</query>
+
+    <drop_query>DROP TABLE IF EXISTS text_index_count_streams</drop_query>
+</test>

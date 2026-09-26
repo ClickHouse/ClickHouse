@@ -1,0 +1,68 @@
+<test>
+    <!-- Repeat one compact right-side row many times through the join output path.
+         Empty arrays only need offset insertion. Single-element arrays can bulk-copy
+         their nested value, including the already-specialized LowCardinality path. -->
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+        <max_threads>1</max_threads>
+        <max_block_size>65536</max_block_size>
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+    </settings>
+
+    <create_query>
+        CREATE TABLE tab
+        (
+            empty_0 Array(UInt64),
+            empty_1 Array(UInt64),
+            empty_2 Array(UInt64),
+            empty_3 Array(UInt64),
+            u64_0 Array(UInt64),
+            u64_1 Array(UInt64),
+            u64_2 Array(UInt64),
+            u64_3 Array(UInt64),
+            string_0 Array(String),
+            string_1 Array(String),
+            string_2 Array(String),
+            string_3 Array(String),
+            lc_0 Array(LowCardinality(String)),
+            lc_1 Array(LowCardinality(String)),
+            lc_2 Array(LowCardinality(String)),
+            lc_3 Array(LowCardinality(String))
+        ) ENGINE = Memory
+    </create_query>
+
+    <fill_query>
+        INSERT INTO tab VALUES
+            ([], [], [], [], [42], [42], [42], [42],
+             ['repeated'], ['repeated'], ['repeated'], ['repeated'],
+             [toLowCardinality('repeated')], [toLowCardinality('repeated')],
+             [toLowCardinality('repeated')], [toLowCardinality('repeated')])
+    </fill_query>
+
+    <query>
+        SELECT
+            l.number,
+            r.empty_0,
+            r.empty_1,
+            r.empty_2,
+            r.empty_3,
+            r.u64_0,
+            r.u64_1,
+            r.u64_2,
+            r.u64_3,
+            r.string_0,
+            r.string_1,
+            r.string_2,
+            r.string_3,
+            r.lc_0,
+            r.lc_1,
+            r.lc_2,
+            r.lc_3
+        FROM numbers(5000000) AS l
+        ANY LEFT JOIN tab AS r ON 1
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS tab</drop_query>
+</test>
