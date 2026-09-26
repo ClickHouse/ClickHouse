@@ -81,6 +81,7 @@ struct DataFilePlan
 {
     IcebergDataObjectInfoPtr data_object_info;
     std::shared_ptr<ManifestFilePlan> manifest_list;
+    std::shared_ptr<const Iceberg::PartitionSpecification> partition_specification;
 
     Iceberg::IcebergPathFromMetadata patched_path;
     UInt64 new_records_count = 0;
@@ -279,6 +280,7 @@ static Plan getPlan(
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
+                        .partition_specification = data_file->common_partition_specification,
                         .patched_path = plan.generator.generateDataFileName()});
                     plan.path_to_data_file[data_file_path] = data_file_ptr;
                 }
@@ -305,10 +307,16 @@ static Plan getPlan(
         /// so a data file outside them has no deleted rows recorded in this delete file.
         const auto & lower = delete_file->parsed_entry->lower_reference_data_file_path;
         const auto & upper = delete_file->parsed_entry->upper_reference_data_file_path;
+        const auto & delete_file_specification = *delete_file->common_partition_specification;
 
         for (auto & data_file : plan.partitions[partition_index])
         {
             if (data_file->data_object_info->info.sequence_number > delete_file->sequence_number)
+                continue;
+
+            /// Buckets are keyed by partition value alone, and a position delete applies only within its own partition spec.
+            const auto & data_file_specification = *data_file->partition_specification;
+            if (data_file_specification < delete_file_specification || delete_file_specification < data_file_specification)
                 continue;
 
             const auto & data_file_path = data_file->data_object_info->info.data_object_file_path_key;

@@ -307,3 +307,77 @@ def test_optimize_mixed_format_position_delete_reference_bounds(
         )
         == 0
     )
+
+
+def test_optimize_position_delete_other_partition_spec(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_delete_other_spec_" + get_uuid_str()
+    table_path = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+
+    # OPTIMIZE must not apply a position delete to a data file of another partition spec. An ORC
+    # data file under `identity(region)` and a position delete under `truncate(1, region)` share the
+    # partition tuple, and `write.data.path` places the ORC file between the two Parquet files the
+    # delete references, so only the partition spec tells the ORC file apart.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, region string) USING iceberg PARTITIONED BY (region)
+        TBLPROPERTIES (
+            'format-version' = '2',
+            'write.delete.mode' = 'merge-on-read',
+            'write.delete.granularity' = 'partition',
+            'write.format.default' = 'orc',
+            'write.data.path' = '{table_path}/data_b'
+        )
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} VALUES (0, 'a')")
+    spark.sql(f"ALTER TABLE {TABLE_NAME} REPLACE PARTITION FIELD region WITH truncate(1, region)")
+    for data_dir, rows in [("data_a", "(1, 'ab'), (3, 'ab')"), ("data_c", "(2, 'ac'), (4, 'ac')")]:
+        spark.sql(
+            f"ALTER TABLE {TABLE_NAME} SET TBLPROPERTIES "
+            f"('write.format.default' = 'parquet', 'write.data.path' = '{table_path}/{data_dir}')"
+        )
+        spark.sql(f"INSERT INTO {TABLE_NAME} VALUES {rows}")
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id IN (1, 2)")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        "local",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table("local", instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    # Arming condition: one partition tuple across both specs, and the ORC file sorting between
+    # the two Parquet files whose deleted rows the single position delete records.
+    files = [
+        line.split("\t")
+        for line in instance.query(
+            f"""
+            SELECT content, file_format, partition, file_path FROM system.iceberg_files
+            WHERE database = currentDatabase() AND table = '{TABLE_NAME}' FORMAT TSV
+            """
+        )
+        .strip()
+        .splitlines()
+    ]
+    orc = [f[3] for f in files if f[0] == "DATA" and f[1].upper() == "ORC"]
+    parquet = sorted(f[3] for f in files if f[0] == "DATA" and f[1].upper() == "PARQUET")
+    deletes = [f for f in files if f[0] == "POSITION_DELETE"]
+    assert len(orc) == 1 and len(parquet) == 2 and len(deletes) == 1, files
+    assert len({f[2] for f in files}) == 1, files
+    assert parquet[0] < orc[0] < parquet[1], files
+
+    expected_ids = "0\n3\n4\n"
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} ORDER BY id") == expected_ids
+    assert "POSITION_DELETE" not in instance.query(
+        f"SELECT content FROM system.iceberg_files WHERE database = currentDatabase() AND table = '{TABLE_NAME}'"
+    )
