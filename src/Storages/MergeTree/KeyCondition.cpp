@@ -4996,6 +4996,27 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         if (!common_type)
                             return false;
 
+                        /// A `FixedString` key is compared with a value of another string-like type, such as
+                        /// an `Enum`, zero-padded, while the cast of the key to `String` keeps its padding.
+                        /// A range over the cast key would prune matching granules. For equality, the value
+                        /// padded to the key width is the one key value that can match, so use it instead.
+                        if (isFixedString(key_expr_type_not_null) && isString(common_type))
+                        {
+                            if (func_name != "equals" && func_name != "notEquals")
+                                return false;
+
+                            Field as_string = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                            if (as_string.isNull()
+                                || as_string.safeGet<String>().size() > assert_cast<const DataTypeFixedString &>(*key_expr_type_not_null).getN())
+                                return false;
+
+                            const_value = convertFieldToType(as_string, *key_expr_type_not_null);
+                            if (const_value.isNull())
+                                return false;
+                            common_type = key_expr_type_not_null;
+                            const_type = key_expr_type_not_null;
+                        }
+
                         if (!const_type->equals(*common_type))
                         {
                             // Replace direct call that throws exception with try version

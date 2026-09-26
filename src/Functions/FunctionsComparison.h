@@ -1463,6 +1463,18 @@ private:
     ColumnPtr executeGeneric(const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1) const
     {
         DataTypePtr common_type = getLeastSupertype(DataTypes{c0.type, c1.type});
+
+        /// A `FixedString` is compared with a `String` zero-padded, while its cast to `String` keeps the
+        /// padding. So keep the `FixedString` side as is and compare it with the other side cast to
+        /// `String`, as for a `String` argument, for example an `Enum`.
+        if (isString(common_type) && isFixedString(c0.type) != isFixedString(c1.type))
+        {
+            ColumnPtr c0_converted = isFixedString(c0.type) ? c0.column : castColumn(c0, common_type);
+            ColumnPtr c1_converted = isFixedString(c1.type) ? c1.column : castColumn(c1, common_type);
+            if (auto res = executeString(c0_converted.get(), c1_converted.get()))
+                return res;
+        }
+
         ColumnPtr c0_converted = castColumn(c0, common_type);
         ColumnPtr c1_converted = castColumn(c1, common_type);
 
