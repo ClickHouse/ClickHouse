@@ -395,7 +395,8 @@ SELECT '--- alter add/drop independent ---';
 
 DROP TABLE IF EXISTS t_alter_ind;
 CREATE TABLE t_alter_ind (id UInt64, `n.a` Array(UInt32))
-    ENGINE = MergeTree ORDER BY id SETTINGS share_nested_offsets = false;
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS share_nested_offsets = false, min_bytes_for_wide_part = 0;
 
 INSERT INTO t_alter_ind VALUES (1, [10, 20]);
 

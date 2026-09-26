@@ -717,10 +717,42 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-/// The exact set of columns an ADD COLUMN command materializes: flatten_nested expansion plus the
-/// IF NOT EXISTS existence filter. Shared by AlterCommand::apply and AlterCommands::validate so both
-/// model the identical schema (an earlier drift here caused apply/validate to disagree on nested adds).
-/// Returns empty when the command is a whole-command no-op (IF NOT EXISTS and the column already exists).
+/// Exact name, or flattened `name.*` when offsets are shared.
+static bool columnExists(const ColumnsDescription & columns, const String & name, bool share_nested_offsets)
+{
+    return columns.has(name) || (share_nested_offsets && columns.hasNested(name));
+}
+
+static ColumnDescription columnDescriptionFromAddAlter(const AlterCommand & command)
+{
+    ColumnDescription column(command.column_name, command.data_type);
+    if (command.default_expression)
+    {
+        column.default_desc.kind = command.default_kind;
+        column.default_desc.expression = command.default_expression;
+    }
+    if (command.comment)
+        column.comment = *command.comment;
+
+    if (command.codec)
+        column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, CodecValidationSettings::trusted());
+
+    column.ttl = command.ttl;
+
+    if (!command.settings_changes.empty())
+    {
+        MergeTreeColumnSettings::validate(command.settings_changes);
+        column.settings = command.settings_changes;
+    }
+
+    if (command.column_statistics_decl)
+        column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(command.column_statistics_decl, command.column_name, command.data_type);
+
+    return column;
+}
+
+
+/// Empty when `IF NOT EXISTS` makes the whole `ADD COLUMN` a no-op.
 static std::vector<ColumnDescription> columnsAddedByAlter(
     const ColumnsDescription & existing_columns,
     ColumnDescription column,
@@ -728,11 +760,7 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
     bool if_not_exists,
     bool share_nested_offsets)
 {
-    /// An exact `column_name` match is always a whole-command no-op; the `n`/`n.*` nested equivalence
-    /// (`hasNested`) is only "exists" when share_nested_offsets is enabled, matching prepare()/validate().
-    if (if_not_exists
-        && (existing_columns.has(column.name)
-            || (share_nested_offsets && existing_columns.hasNested(column.name))))
+    if (if_not_exists && columnExists(existing_columns, column.name, share_nested_offsets))
         return {};
 
     std::vector<ColumnDescription> columns_to_add;
@@ -750,14 +778,20 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
         columns_to_add.push_back(std::move(column));
     }
 
-    /// Skip only the EXACT transformed names that already exist (not an `n.*` prefix), so a repeated
-    /// flattened `n.a` add is a no-op while a genuinely new distinct column is never dropped.
     if (if_not_exists)
         std::erase_if(columns_to_add, [&](const ColumnDescription & c) { return existing_columns.has(c.name); });
 
     return columns_to_add;
 }
 
+
+void AlterCommand::addColumnsFromAlter(
+    ColumnsDescription & columns, ContextPtr context, bool share_nested_offsets) const
+{
+    for (auto & col : columnsAddedByAlter(
+             columns, columnDescriptionFromAddAlter(*this), context, if_not_exists, share_nested_offsets))
+        columns.add(std::move(col));
+}
 
 std::optional<AlterCommand> AlterCommand::extractSettingsResets()
 {
@@ -807,34 +841,8 @@ void AlterCommand::apply(
 
     if (type == ADD_COLUMN)
     {
-        ColumnDescription column(column_name, data_type);
-        if (default_expression)
-        {
-            column.default_desc.kind = default_kind;
-            column.default_desc.expression = default_expression;
-        }
-        if (comment)
-            column.comment = *comment;
+        ColumnDescription column = columnDescriptionFromAddAlter(*this);
 
-        if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, CodecValidationSettings::trusted());
-
-        column.ttl = ttl;
-
-        if (!settings_changes.empty())
-        {
-            MergeTreeColumnSettings::validate(settings_changes);
-            column.settings = settings_changes;
-        }
-
-        /// The declared statistics are transferred like in CREATE (the types are validated against the
-        /// column data type by the storage in `checkAlterIsPossible`).
-        if (column_statistics_decl)
-            column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(column_statistics_decl, column_name, data_type);
-
-        /// The exact columns this ADD materializes (flatten_nested expansion + IF NOT EXISTS filter).
-        /// Empty means a whole-command no-op. validate() advances its snapshot with the same set so
-        /// apply() and validate() never disagree on what a (nested) ADD introduces.
         auto columns_to_add = columnsAddedByAlter(metadata.columns, column, context, if_not_exists, share_nested_offsets);
         if (columns_to_add.empty())
             return;
@@ -854,13 +862,13 @@ void AlterCommand::apply(
     }
     else if (type == DROP_COLUMN)
     {
-        metadata.dropImplicitIndicesForColumn(column_name);
-
-        /// Otherwise just clear data on disk
+        /// `CLEAR COLUMN` and `DROP ... IN PARTITION` keep the column and its implicit index.
         if (!clear && !partition)
         {
-            if (should_skip_column_operation())
+            if (if_exists && !columnExists(metadata.columns, column_name, share_nested_offsets))
                 return;
+            for (const auto & removed_column : metadata.columns.getNested(column_name))
+                metadata.dropImplicitIndicesForColumn(removed_column.name);
             metadata.columns.remove(column_name);
         }
     }
@@ -1324,6 +1332,7 @@ void AlterCommand::apply(
     {
         if (should_skip_column_operation())
             return;
+        metadata.dropImplicitIndicesForColumn(rename_to);
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
         RenameColumnVisitor rename_visitor(rename_data);
@@ -1954,7 +1963,7 @@ void AlterCommands::apply(
 }
 
 
-void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
+void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
@@ -1971,7 +1980,10 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
-        bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
+        /// Nested parents exist only for `ADD`/`DROP`. `MODIFY COLUMN IF EXISTS n` stays a no-op.
+        const bool has_column = (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::DROP_COLUMN)
+            ? columnExists(columns, command.column_name, share_nested_offsets)
+            : columns.has(command.column_name);
         if (command.type == AlterCommand::MODIFY_COLUMN)
         {
             if (!has_column && command.if_exists)
@@ -1989,15 +2001,10 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
                             "in a single ALTER query");
                     }
 
-                    /// `ADD ENUM VALUES` derives the resulting type by merging against the existing column, so
-                    /// the column must be present in the working snapshot. If it is not (e.g. the column is added
-                    /// by a preceding `ADD COLUMN` in the same statement, which does not advance the snapshot),
-                    /// fail explicitly instead of silently dropping the modification.
                     if (!has_column)
                         throw Exception(
                             ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
-                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table. Adding enum values to a "
-                            "column created in the same ALTER statement is not supported.",
+                            "Cannot ADD ENUM VALUES to column {}: it does not exist in the table.",
                             backQuote(command.column_name));
 
                 }
@@ -2089,14 +2096,40 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
         else if (command.type == AlterCommand::ADD_COLUMN)
         {
             if (has_column && command.if_not_exists)
+            {
                 command.ignore = true;
+            }
+            else
+            {
+                command.addColumnsFromAlter(columns, context, share_nested_offsets);
+            }
         }
-        else if (command.type == AlterCommand::DROP_COLUMN
-                || command.type == AlterCommand::COMMENT_COLUMN
-                || command.type == AlterCommand::RENAME_COLUMN)
+        else if (command.type == AlterCommand::DROP_COLUMN)
+        {
+            if (!has_column && command.if_exists)
+            {
+                command.ignore = true;
+            }
+            else if (has_column && !command.clear && !command.partition)
+            {
+                columns.remove(command.column_name);
+            }
+        }
+        else if (command.type == AlterCommand::COMMENT_COLUMN)
         {
             if (!has_column && command.if_exists)
                 command.ignore = true;
+        }
+        else if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            if (!has_column && command.if_exists)
+            {
+                command.ignore = true;
+            }
+            else if (columns.has(command.column_name))
+            {
+                columns.rename(command.column_name, command.rename_to);
+            }
         }
         else if (command.type == AlterCommand::MODIFY_ORDER_BY)
         {
@@ -2186,7 +2219,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
-            if (all_columns.has(column_name) || (share_nested && all_columns.hasNested(column_name)))
+            if (columnExists(all_columns, column_name, share_nested))
             {
                 if (!command.if_not_exists)
                     throw Exception(ErrorCodes::DUPLICATE_COLUMN,
@@ -2220,12 +2253,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     codec_validation_settings);
             }
 
-            /// Advance the working snapshot with the exact columns apply() would materialize
-            /// (flatten_nested expansion), not a synthetic top-level `n`, so a later command in the
-            /// same ALTER that targets a real flattened child (e.g. RENAME COLUMN `n.b`) sees it.
-            for (auto & col : columnsAddedByAlter(all_columns, ColumnDescription(column_name, command.data_type),
-                                                  context, command.if_not_exists, share_nested))
-                all_columns.add(std::move(col));
+            command.addColumnsFromAlter(all_columns, context, share_nested);
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
@@ -2344,7 +2372,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
+            if (columnExists(all_columns, command.column_name, share_nested))
             {
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {

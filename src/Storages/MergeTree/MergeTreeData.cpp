@@ -5406,6 +5406,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         const auto & uk_columns = old_metadata.unique_key.column_names;
         NameSet uk_set(uk_columns.begin(), uk_columns.end());
+        /// Names produced by earlier `RENAME`/`ADD` in this statement (`Nested` `n` becomes `n.x`).
+        ColumnsDescription working_columns = old_metadata.columns;
+        const bool share_nested_offsets = (*settings_from_storage)[MergeTreeSetting::share_nested_offsets];
 
         auto uk_list_str = [&uk_columns]()
         {
@@ -5452,14 +5455,22 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             /// mutation-path guard in `checkMutationIsPossible` never sees CLEAR
             /// COLUMN — it is dispatched as an AlterCommand, not a mutation — so this
             /// is the effective chokepoint.
-            if (command.type == AlterCommand::DROP_COLUMN && command.clear
+            if (command.type == AlterCommand::DROP_COLUMN && command.clear && !command.ignore
                 && !uk_set.contains(command.column_name)
-                && old_metadata.columns.hasPhysical(command.column_name))
+                && (share_nested_offsets
+                    ? working_columns.hasColumnOrNested(GetColumnsOptions::AllPhysical, command.column_name)
+                    : working_columns.hasPhysical(command.column_name)))
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "ALTER TABLE ... CLEAR COLUMN {} is not supported on tables with UNIQUE KEY: "
                     "the whole part is rewritten regardless of which column is targeted, so the "
                     "per-part UNIQUE KEY dense index would be lost.",
                     backQuoteIfNeed(command.column_name));
+
+            if (!command.ignore && command.type == AlterCommand::RENAME_COLUMN
+                && working_columns.has(command.column_name))
+                working_columns.rename(command.column_name, command.rename_to);
+            else if (!command.ignore && command.type == AlterCommand::ADD_COLUMN && command.data_type)
+                command.addColumnsFromAlter(working_columns, local_context, share_nested_offsets);
 
             const bool affects_column =
                 command.type == AlterCommand::DROP_COLUMN
@@ -6092,7 +6103,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             {
                 dropped_columns.emplace(command.column_name);
             }
-            else
+            else if (share_nested_offsets)
             {
                 const auto & nested = old_metadata.columns.getNested(command.column_name);
                 for (const auto & nested_column : nested)
