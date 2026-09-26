@@ -1,0 +1,10 @@
+after drop	0
+after reinsert r2	1
+after reinsert r1	1
+cache hit observed	1
+after drop part	0
+after reinsert drop part	1
+after detach part	0
+after reinsert detach part	1
+cache hit observed	t_04901_detach_part	1
+cache hit observed	t_04901_drop_part	1
