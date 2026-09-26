@@ -1,12 +1,16 @@
+#include "config.h"
+
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Common/CurrentThread.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/HostResolvePool.h>
+#include <Common/proxyConfigurationToPocoProxyConfig.h>
 #include <base/scope_guard.h>
 
 #include <Poco/URI.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/MessageHeader.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPServer.h>
@@ -14,7 +18,13 @@
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
 #include <Poco/Net/ServerSocket.h>
+#include <Poco/Net/SocketImpl.h>
 #include <Poco/Net/SocketAddress.h>
+
+#if USE_SSL
+#include <Common/tests/gtest_ephemeral_certificate.h>
+#include <Poco/Net/HTTPSClientSession.h>
+#endif
 
 #include <atomic>
 
@@ -751,6 +761,43 @@ TEST_F(ConnectionPoolTest, ProxyConnectSkipsTargetResolution)
     ASSERT_TRUE(reached_proxy_connect);
 }
 
+TEST_F(ConnectionPoolTest, ProxyConnectionReportsProxyInResolvedAddress)
+{
+    /// A proxied connection must report the proxy endpoint through `getResolvedAddress`.
+    auto uri = Poco::URI("http://proxy-only-target.invalid:9999");
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.1";
+    proxy_config.port = server_data.server->socket().address().port();
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, proxy_config);
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+    ASSERT_TRUE(connection->connected());
+    ASSERT_EQ("127.0.0.1:" + std::to_string(proxy_config.port), connection->getResolvedAddress());
+}
+
+TEST_F(ConnectionPoolTest, BypassedProxyReportsTargetInResolvedAddress)
+{
+    /// A bypassed proxy must report the target endpoint through `getResolvedAddress`.
+    auto uri = Poco::URI(getServerUrl());
+
+    DB::ProxyConfiguration proxy_config;
+    proxy_config.host = "127.0.0.1";
+    proxy_config.port = 1;
+    proxy_config.protocol = DB::ProxyConfiguration::Protocol::HTTP;
+    proxy_config.no_proxy_hosts = DB::buildPocoNonProxyHosts(uri.getHost());
+
+    auto pool = DB::HTTPConnectionPools::instance().getPool(
+        DB::HTTPConnectionGroupType::HTTP, uri, proxy_config);
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+    ASSERT_TRUE(connection->connected());
+    ASSERT_EQ(server_data.server->socket().address().toString(), connection->getResolvedAddress());
+}
+
 TEST_F(ConnectionPoolTest, RetriesNextAddressOnConnectFailure)
 {
     /// Regression test for the PR's core fallback path: when the first resolved
@@ -1201,3 +1248,70 @@ TEST_F(ConnectionPoolTest, ServerOverwriteMaxRequests)
     ASSERT_EQ(0, CurrentMetrics::get(metrics.active_count));
     ASSERT_EQ(0, CurrentMetrics::get(metrics.stored_count));
 }
+
+namespace
+{
+
+template <typename ExpectedException>
+void expectSocketErrorNamesAddress(int code)
+{
+    const std::string address = "10.255.255.1:9000";
+    try
+    {
+        Poco::Net::SocketImpl::error(code, address);
+        FAIL() << "No exception for error code " << code;
+    }
+    catch (const ExpectedException & e)
+    {
+        ASSERT_TRUE(e.displayText().contains(address)) << e.displayText();
+        ASSERT_EQ(code, e.code());
+    }
+    catch (const Poco::Exception & e)
+    {
+        FAIL() << "Unexpected " << e.className() << " for error code " << code << ": " << e.displayText();
+    }
+}
+
+}
+
+TEST(SocketImplError, ResetAbortedAndTimeoutNameTheAddress)
+{
+    /// A deferred connect error reaches these rows with the dialled address; it must not be dropped.
+    expectSocketErrorNamesAddress<Poco::Net::ConnectionResetException>(POCO_ECONNRESET);
+    expectSocketErrorNamesAddress<Poco::Net::ConnectionAbortedException>(POCO_ECONNABORTED);
+    expectSocketErrorNamesAddress<Poco::TimeoutException>(POCO_ETIMEDOUT);
+}
+
+#if USE_SSL
+TEST_F(ConnectionPoolTest, ProxyTunnelDialsTheCallerResolvedAddress)
+{
+    /// The proxy is named 127.0.0.1 but `connect` is handed 127.0.0.99: the tunnel must use
+    /// the given record instead of resolving the name again.
+    Poco::Net::ServerSocket port_probe(Poco::Net::SocketAddress(Poco::Net::IPAddress("127.0.0.1"), 0));
+    const auto dead_port = port_probe.address().port();
+    port_probe.close();
+
+    struct ExposedSession : public Poco::Net::HTTPSClientSession
+    {
+        using Poco::Net::HTTPSClientSession::HTTPSClientSession;
+        using Poco::Net::HTTPSClientSession::connect;
+    };
+
+    EphemeralCert cert;
+    ExposedSession session("tunnel-target.invalid", 9999, cert.makeContext(Poco::Net::Context::CLIENT_USE));
+    Poco::Net::HTTPClientSession::ProxyConfig proxy_config;
+    proxy_config.host = "127.0.0.1";
+    proxy_config.port = dead_port;
+    session.setProxyConfig(proxy_config);
+
+    try
+    {
+        session.connect(Poco::Net::SocketAddress("127.0.0.99", dead_port));
+        FAIL() << "Expected the tunnel connect to fail";
+    }
+    catch (const Poco::Exception & e)
+    {
+        ASSERT_TRUE(e.displayText().contains("127.0.0.99")) << "The tunnel did not dial the given address: " << e.displayText();
+    }
+}
+#endif
