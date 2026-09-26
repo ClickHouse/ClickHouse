@@ -386,8 +386,21 @@ FreeformFieldMatcher::readNextFields(bool parse_till_newline_as_one_string, unsi
 }
 
 void FreeformFieldMatcher::buildSolutions(
-    Solution current_solution, std::vector<Solution> & solutions, bool parse_till_newline_as_one_string, size_t offset) const
+    Solution current_solution,
+    std::vector<Solution> & solutions,
+    bool parse_till_newline_as_one_string,
+    size_t offset,
+    size_t & search_steps) const
 {
+    /// Every candidate is kept in memory and then validated against the sample rows, so an unbounded
+    /// search over a wide row of strings exhausts memory and time long before it ends.
+    if (++search_steps > max_search_steps)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot infer the structure of the row: it can be split into fields in too many ways (the search exceeded {} steps). "
+            "Use a format with a fixed structure, such as `TSV` or `CSV`",
+            max_search_steps);
+
     seekInRow(offset);
     skipWhitespacesAndDelimiters(in);
 
@@ -414,7 +427,7 @@ void FreeformFieldMatcher::buildSolutions(
         next.score += fields.parse_result.score;
         next.size += fields.parse_result.names_and_types.size();
 
-        buildSolutions(next, solutions, fields.parse_result.parse_till_newline_as_one_string, fields.parse_result.offset);
+        buildSolutions(next, solutions, fields.parse_result.parse_till_newline_as_one_string, fields.parse_result.offset, search_steps);
     }
 }
 
@@ -586,7 +599,9 @@ bool FreeformFieldMatcher::buildSolutionsAndPickBest()
     in.setCheckpoint();
 
     std::vector<Solution> solutions;
-    buildSolutions(Solution{.columns = {}, .matchers_order = {}, .first_columns = {}, .score = 0, .size = 0}, solutions, false, 0);
+    size_t search_steps = 0;
+    buildSolutions(
+        Solution{.columns = {}, .matchers_order = {}, .first_columns = {}, .score = 0, .size = 0}, solutions, false, 0, search_steps);
     in.rollbackToCheckpoint();
     if (solutions.empty())
     {
