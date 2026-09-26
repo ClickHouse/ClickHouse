@@ -198,8 +198,7 @@ std::optional<ColumnPtr> tryConvertToDecimalColumnNative(
 /// (`tryConvertNumericColumnNative`, i.e. `accurate::convertNumeric`) for the accurate integer step and
 /// mirrors each target's quirk exactly: `Date` is a range-checked `UInt16`; `Date32` is an `Int32` day
 /// number restricted to the extended-range window `[DATE_LUT_MIN_EXTEND_DAY_NUM, DATE_LUT_MAX_EXTEND_DAY_NUM]`;
-/// `DateTime` keeps the value unchanged (no range check - `convertFieldToType` returns it as-is and it is
-/// then truncated into the `UInt32` column). Sources are native integers only (matching the `UInt64`/`Int64`
+/// `DateTime` is a range-checked `UInt32`. Sources are native integers only (matching the `UInt64`/`Int64`
 /// field branches there); `Bool`, wide integers and floats fall through to the `Field` path, as do the
 /// cross-calendar (`Date`<->`DateTime`), `DateTime64`/`Time`/`Time64` conversions (a later increment).
 /// Returns the converted size-1 column, a null `ColumnPtr{}` for a not-representable value, or
@@ -232,15 +231,12 @@ std::optional<ColumnPtr> tryConvertToDateColumnNative(
         return column;
     }
 
-    /// `DateTime` (UInt32): `convertFieldToType` returns the unsigned value unchanged, which is then
-    /// stored (truncated) into the `UInt32` column - no range check. `Int64` sources are not handled
-    /// there, so leave them on the `Field` path.
+    /// `DateTime` (UInt32): accurate range-checked conversion, identical to `convertNumericType<UInt32>`,
+    /// so a value that does not fit `UInt32` is not representable instead of wrapping modulo 2^32.
+    /// A `UInt32` result column is exactly a `DateTime` column. `Int64` sources are not handled there,
+    /// so leave them on the `Field` path.
     if (which_to.isDateTime() && which_from.isNativeUInt())
-    {
-        auto column = to->createColumn();
-        assert_cast<ColumnUInt32 &>(*column).getData().push_back(static_cast<UInt32>(value.getUInt(0)));
-        return column;
-    }
+        return tryConvertNumericColumnNative(value, from, std::make_shared<DataTypeUInt32>(), convert_inexact_floats);
 
     return std::nullopt;
 }

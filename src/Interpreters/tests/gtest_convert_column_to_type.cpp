@@ -189,7 +189,9 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Int64", Field(Int64(3000000)), "Date32"},                      // > max extended day -> null
         {"Int64", Field(Int64(-800000)), "Date32"},                      // < min extended day -> null
         {"UInt64", Field(UInt64(1700000000)), "DateTime('UTC')"},        // fits UInt32
-        {"UInt64", Field(UInt64(5000000000)), "DateTime('UTC')"},        // > UInt32 max -> truncates (raw, no range check)
+        {"UInt64", Field(UInt64(4294967295)), "DateTime('UTC')"},        // UInt32 max -> fits
+        {"UInt64", Field(UInt64(4294967296)), "DateTime('UTC')"},        // UInt32 max + 1 -> null (no wrap to the epoch)
+        {"UInt64", Field(UInt64(5000000000)), "DateTime('UTC')"},        // > UInt32 max -> null
 
         /// cross-calendar Date/Date32 <-> DateTime (timezone-aware): day 19000 == 2022-01-08 == 1641600000 UTC
         {"DateTime('UTC')", Field(UInt64(1641600000)), "Date"},          // -> day 19000
