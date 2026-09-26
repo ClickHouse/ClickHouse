@@ -119,9 +119,9 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT a, s FROM t_uw WHERE b >= 1500 SETTINGS ${PIN};
 " | grep -E '^\s+verdict:' | awk '{$1=$1; print}'
 
-# the chooser replays the filters and expressions above the read on the projection and refuses a slice
-# it cannot replay, so an array join inside that slice takes the projection out of the running, while the
-# same array join above the slice leaves it in
+# the chooser replays the filters and expressions above the read on the projection; an array join is
+# planned as its own step above the read in both forms, so the slice stays replayable and the projection
+# stays in the running
 echo "--- an array join decides by where it sits relative to the read ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_aj; DROP TABLE IF EXISTS t_real_aj;
