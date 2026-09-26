@@ -4,6 +4,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/PathLocks.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
@@ -24,6 +25,9 @@ namespace DB
   *   each containing a single file, `prefix.path`, with the content as the logical path of the corresponding directory.
   * - when a logical directory is renamed or moved, we don't touch its randomly assigned name,
   *   and simply rewrite the contents of `prefix.path`.
+  * - a removal is committed by moving the directory (or a backup copy of the file) under a logical name
+  *   starting with `__removed.`, and the objects are deleted afterwards; if the process dies in between,
+  *   such objects are deleted on the next initial load, see `PlainRewritableLayout::REMOVED_NAME_PREFIX`.
   *
   * Example. Let's suppose, the logical filesystem structure is:
   * /hello/world/test1.txt
@@ -84,7 +88,9 @@ private:
     const std::string storage_path_prefix;
     const std::string storage_path_full;
 
-    std::mutex metadata_mutex;
+    /// Transactions hold the locks for the paths they modify while they talk to the object storage and publish the result;
+    /// full reloads of the metadata hold the lock for the root. Transactions on unrelated paths run concurrently.
+    PathLocks path_locks;
     FsMetadata fs;
     std::shared_ptr<PlainRewritableLayout> layout;
 
@@ -101,6 +107,11 @@ protected:
     UncommittedState uncommitted_state;
     MetadataOperationsHolder operations;
     StoredObjects removed_objects;
+
+    /// Normalized paths of the files and directories the operations modify; locked for the duration of the commit.
+    std::vector<std::string> affected_paths;
+
+    void addAffectedPath(const std::string & path);
 
 public:
     explicit MetadataStorageFromPlainRewritableObjectStorageTransaction(MetadataStorageFromPlainRewritableObjectStorage & metadata_storage_);

@@ -13,12 +13,16 @@ FsMetadata::FsMetadata(CurrentMetrics::Metric metric_directories_name, CurrentMe
 {
 }
 
-void FsMetadata::applySnapshot(std::shared_ptr<FsSnapshot> snapshot)
+void FsMetadata::applyJournal(const FsJournal & journal)
 {
-    const auto [directories_delta, files_delta] = snapshot->getRemoteLayoutDeltas();
-
     UniqueLock lock(mutex);
-    latest_snapshot = std::move(snapshot);
+
+    /// The nodes of the latest snapshot are never mutated in place, so readers holding it are not affected.
+    auto new_snapshot = std::make_shared<FsSnapshot>(latest_snapshot->getRoot());
+    new_snapshot->replay(journal);
+
+    const auto [directories_delta, files_delta] = new_snapshot->getRemoteLayoutDeltas();
+    latest_snapshot = std::move(new_snapshot);
     remote_layout_directories_count.add(directories_delta);
     remote_layout_files_count.add(files_delta);
 }

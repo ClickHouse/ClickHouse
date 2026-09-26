@@ -1,0 +1,478 @@
+"""A `plain_rewritable` disk commits a removal in the metadata first and deletes the objects afterwards.
+If the server is killed in between, the objects must not stay in the bucket forever (issue #114051):
+they are kept under reserved names and reclaimed when the metadata is loaded on the next start.
+"""
+
+import concurrent.futures
+import io
+import threading
+import time
+
+import pytest
+from minio.error import S3Error
+
+from helpers.cluster import ClickHouseCluster
+
+cluster = ClickHouseCluster(__file__)
+node = cluster.add_instance(
+    "node",
+    main_configs=[
+        "configs/storage_conf.xml",
+        "configs/drop_table_immediately.xml",
+        "configs/backups.xml",
+    ],
+    with_minio=True,
+    stay_alive=True,
+)
+
+# The disk endpoint is `http://minio1:9001/root/data/`.
+KEY_PREFIX = "data/"
+# `PlainRewritableLayout::REMOVED_NAME_PREFIX`
+REMOVED_NAME_PREFIX = "__removed."
+# `PlainRewritableLayout::constructTombstoneMarkerKey`
+TOMBSTONE_KEY_PREFIX = KEY_PREFIX + "__meta/__tombstone/"
+# `PlainRewritableLayout::PENDING_TOMBSTONE_PREFIX`
+PENDING_TOMBSTONE_PREFIX = "pending\n"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def start_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def list_keys():
+    return sorted(
+        obj.object_name
+        for obj in cluster.minio_client.list_objects(
+            cluster.minio_bucket, KEY_PREFIX, recursive=True
+        )
+    )
+
+
+def key_exists(key):
+    try:
+        cluster.minio_client.stat_object(cluster.minio_bucket, key)
+        return True
+    except S3Error as e:
+        if e.code == "NoSuchKey":
+            return False
+        raise
+
+
+def put_key(key, data):
+    cluster.minio_client.put_object(
+        cluster.minio_bucket, key, io.BytesIO(data), len(data)
+    )
+
+
+def remove_key(key):
+    cluster.minio_client.remove_object(cluster.minio_bucket, key)
+
+
+def read_key(key):
+    response = cluster.minio_client.get_object(cluster.minio_bucket, key)
+    try:
+        return response.read().decode()
+    finally:
+        response.close()
+        response.release_conn()
+
+
+def tombstone_markers(keys):
+    """A removal marks the reserved name it uses, and only a marked name is reclaimed."""
+    return [key for key in keys if key.startswith(TOMBSTONE_KEY_PREFIX)]
+
+
+def has_removed_directory(keys):
+    """`RemoveRecursive` rewrites `prefix.path` of every directory of the subtree to a path under a reserved name."""
+    return any(
+        read_key(key).startswith(REMOVED_NAME_PREFIX)
+        for key in keys
+        if key.endswith("/prefix.path")
+    )
+
+
+def has_removed_file_backup(keys):
+    """The removal of a file keeps a backup copy under a reserved name in `__root` until it is finalized."""
+    return any(f"/__root/{REMOVED_NAME_PREFIX}" in key for key in keys)
+
+
+def has_removed_directory_without_data(keys):
+    """`finalize` deletes the data objects of the subtree first, and the `prefix.path` objects that make it
+    discoverable only once all of them are gone, so in between the subtree is still reclaimable.
+    """
+    removed_remote_names = {
+        key.split("/")[-2]
+        for key in keys
+        if key.endswith("/prefix.path")
+        and read_key(key).startswith(REMOVED_NAME_PREFIX)
+    }
+    if not removed_remote_names:
+        return False
+
+    return not any(
+        key.startswith(f"{KEY_PREFIX}{remote_name}/")
+        for remote_name in removed_remote_names
+        for key in keys
+    )
+
+
+def wait_failpoint_paused(failpoint, timeout=60):
+    """`SYSTEM WAIT FAILPOINT ... PAUSE` blocks until some thread parks at the failpoint,
+    so it runs on a worker thread that is abandoned if the failpoint is never reached.
+    """
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(node.query, f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE")
+    done, _ = concurrent.futures.wait([future], timeout=timeout)
+    if not done:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise AssertionError(f"failpoint {failpoint} was not reached within {timeout}s")
+    pool.shutdown(wait=False)
+    future.result()
+
+
+def wait_for_keys_to_disappear(keys, timeout=60):
+    """A disk is loaded when it is first used, so the reclamation can happen a bit after the start."""
+    deadline = time.time() + timeout
+    remaining = [key for key in keys if key_exists(key)]
+    while remaining and time.time() < deadline:
+        time.sleep(0.5)
+        remaining = [key for key in remaining if key_exists(key)]
+    assert remaining == [], f"objects remain: {remaining}"
+
+
+def wait_for_empty_prefix(timeout=60):
+    deadline = time.time() + timeout
+    keys = list_keys()
+    while keys and time.time() < deadline:
+        time.sleep(0.5)
+        keys = list_keys()
+    assert keys == [], f"objects remain under {KEY_PREFIX}: {keys}"
+
+
+@pytest.mark.parametrize(
+    "failpoint, num_parts, is_removal_in_progress",
+    [
+        # Removing a part: its directory is renamed under a reserved name, then its objects are deleted.
+        pytest.param(
+            "plain_object_storage_pause_before_remove_recursive_finalize",
+            3,
+            has_removed_directory,
+            id="remove_recursive",
+        ),
+        # The same, but in between the two passes of `finalize`: the data objects of the subtree are already
+        # deleted, and the `prefix.path` objects that make it discoverable are about to be deleted.
+        pytest.param(
+            "plain_object_storage_pause_before_remove_recursive_metadata",
+            3,
+            has_removed_directory_without_data,
+            id="remove_recursive_metadata",
+        ),
+        # Removing `format_version.txt`: a backup copy is kept until the removal is finalized.
+        pytest.param(
+            "plain_object_storage_pause_before_unlink_file_finalize",
+            0,
+            has_removed_file_backup,
+            id="unlink_file",
+        ),
+    ],
+)
+def test_drop_table_killed_before_finalize(
+    failpoint, num_parts, is_removal_in_progress
+):
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    # A background merge would remove parts on its own and reach the failpoint instead of the DROP.
+    node.query("SYSTEM STOP MERGES t")
+    for i in range(num_parts):
+        node.query(f"INSERT INTO t VALUES ({i})")
+    assert int(node.query("SELECT count() FROM t")) == num_parts
+    assert list_keys() != []
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    def drop_table():
+        try:
+            node.query("DROP TABLE t SYNC")
+        except Exception:
+            # The server is killed while the query is running.
+            pass
+
+    drop_thread = threading.Thread(target=drop_table)
+    drop_thread.start()
+    try:
+        wait_failpoint_paused(failpoint)
+        # The removal is committed in the metadata but the objects are still there, under a reserved name.
+        keys = list_keys()
+        assert is_removal_in_progress(keys)
+        # The name is marked as a leftover of a removal, which is what makes it reclaimable.
+        assert tombstone_markers(keys) != []
+        node.stop_clickhouse(kill=True)
+    finally:
+        drop_thread.join()
+
+    # The killed process left everything behind, marker included.
+    keys = list_keys()
+    assert is_removal_in_progress(keys)
+    assert tombstone_markers(keys) != []
+
+    node.start_clickhouse()
+
+    # The objects under the reserved names are deleted while loading the metadata, and the table found
+    # in `metadata_dropped` is dropped again, removing whatever the killed process did not get to.
+    wait_for_empty_prefix()
+    assert (
+        node.query(
+            "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't'"
+        )
+        == "0\n"
+    )
+    assert node.contains_in_log("orphaned objects left by")
+
+
+def removed_directory_names(keys):
+    """The reserved names that `RemoveRecursive` moved subtrees under, as written into `prefix.path`."""
+    return {
+        read_key(key).split("/")[0]
+        for key in keys
+        if key.endswith("/prefix.path")
+        and read_key(key).startswith(REMOVED_NAME_PREFIX)
+    }
+
+
+def test_failed_cleanup_is_not_loaded_back():
+    """The objects of a committed removal are deleted after the commit, in best-effort mode: a failure there is
+    only logged. The leftovers must not come back as metadata when it is reloaded, and the next start reclaims them.
+    """
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    node.query("DROP TABLE IF EXISTS t_probe SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("SYSTEM STOP MERGES t")
+    for i in range(3):
+        node.query(f"INSERT INTO t VALUES ({i})")
+
+    node.query("SYSTEM ENABLE FAILPOINT plain_object_storage_fail_on_finalize")
+    try:
+        # The removal is committed, so the query succeeds even though the objects are not deleted.
+        node.query("DROP TABLE t SYNC")
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT plain_object_storage_fail_on_finalize")
+
+    keys = list_keys()
+    assert tombstone_markers(keys) != []
+    removed_names = removed_directory_names(keys)
+    assert removed_names != set()
+
+    # A reload that is not the initial one keeps the leftovers in the bucket, but does not load them.
+    node.query("SYSTEM DROP DISK METADATA CACHE disk_s3_plain_rewritable")
+    assert list_keys() == keys
+
+    # A new entry with a reserved name is accepted only if that name already exists in the loaded metadata
+    # (see `test_existing_look_alike_directory_stays_usable`), so the rejection shows that it was not loaded.
+    node.query("CREATE TABLE t_probe (x UInt64) ENGINE = Memory")
+    for name in removed_names:
+        error = node.query_and_get_error(
+            f"BACKUP TABLE t_probe TO Disk('disk_s3_plain_rewritable', '{name}')"
+        )
+        assert "are reserved" in error
+    node.query("DROP TABLE t_probe SYNC")
+    assert list_keys() == keys
+
+    node.restart_clickhouse()
+    wait_for_empty_prefix()
+    assert node.contains_in_log("orphaned objects left by")
+
+
+def test_names_that_only_look_reserved_are_kept():
+    """A reserved name denotes an unfinished removal only while it has a marker object. Any name of that
+    shape, the exact one included, could have been created as ordinary data by a version that reserved
+    nothing and wrote no markers, so without a marker it is loaded as usual and never deleted.
+    """
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("INSERT INTO t VALUES (1)")
+
+    node.stop_clickhouse()
+
+    def look_alike_names(letter):
+        return [
+            # Exactly the generated shape, which an older server could have been asked to create as ordinary
+            # data, for example `BACKUP TO Disk('s3_plain_rewritable', '__removed.abcdefghijklmnop')`.
+            REMOVED_NAME_PREFIX + letter + "bcdefghijklmnop",
+            # A name that an older server could have been asked to create, for example for a backup.
+            REMOVED_NAME_PREFIX + letter + "mybackup",
+            # One character short of the generated shape, and one character too long.
+            REMOVED_NAME_PREFIX + letter * 15,
+            REMOVED_NAME_PREFIX + letter * 17,
+            # The right length, but not the alphabet of the generated shape.
+            REMOVED_NAME_PREFIX + letter.upper() * 16,
+        ]
+
+    # A top-level directory and a root file with each of these shapes, as an older server would have left them.
+    # A file and a directory can never have the same path, so their names differ.
+    keys_of_name = {}
+    for index, name in enumerate(look_alike_names("a")):
+        remote_name = "zyxwvutsrqponml" + chr(ord("a") + index)
+        keys = {
+            f"{KEY_PREFIX}__meta/{remote_name}/prefix.path": f"{name}/".encode(),
+            f"{KEY_PREFIX}{remote_name}/data.bin": b"a file of a directory",
+        }
+        for key, data in keys.items():
+            put_key(key, data)
+        keys_of_name[name] = list(keys)
+    for name in look_alike_names("c"):
+        key = f"{KEY_PREFIX}__root/{name}"
+        put_key(key, b"a root file")
+        keys_of_name[name] = [key]
+
+    preexisting_keys = [key for keys in keys_of_name.values() for key in keys]
+
+    node.start_clickhouse()
+    assert int(node.query("SELECT count() FROM t")) == 1
+
+    assert [key for key in preexisting_keys if not key_exists(key)] == []
+
+    # The marker is what decides: the same names, marked, are reclaimed on the next writable start, while the
+    # names that have no marker are kept.
+    marked_names = [look_alike_names("a")[0], look_alike_names("c")[0]]
+    marked_keys = [key for name in marked_names for key in keys_of_name[name]]
+    marker_keys = [TOMBSTONE_KEY_PREFIX + name for name in marked_names]
+
+    node.stop_clickhouse()
+    for name in marked_names:
+        put_key(TOMBSTONE_KEY_PREFIX + name, name.encode())
+    node.start_clickhouse()
+
+    wait_for_keys_to_disappear(marked_keys + marker_keys)
+    assert [
+        key
+        for key in preexisting_keys
+        if key not in marked_keys and not key_exists(key)
+    ] == []
+
+    node.query("DROP TABLE t SYNC")
+    for key in preexisting_keys:
+        if key not in marked_keys:
+            remove_key(key)
+    wait_for_empty_prefix()
+
+
+def remove_all_keys():
+    for key in list_keys():
+        remove_key(key)
+
+
+def test_partially_moved_removal_is_rolled_back():
+    """`RemoveRecursive` moves a subtree under a reserved name by rewriting `prefix.path` of its directories one
+    at a time, and its marker says the removal is pending until all of them are moved. A process killed in the
+    middle leaves a part of the subtree under the reserved name and the rest under the original path. Such a
+    removal was never committed, so the next start has to move the directories back rather than delete them.
+    """
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("INSERT INTO t VALUES (1)")
+    node.stop_clickhouse()
+
+    removed_name = REMOVED_NAME_PREFIX + "pendingremovalab"
+    original_path = "partially_moved/"
+    # Moved already: the root of the subtree and one of its subdirectories.
+    moved = {
+        "zyxwvutsrqponmla": f"{removed_name}/",
+        "zyxwvutsrqponmlb": f"{removed_name}/moved/",
+    }
+    # Not reached by the move before the process died.
+    not_moved = {"zyxwvutsrqponmlc": f"{original_path}not_moved/"}
+
+    data_keys = []
+    for remote_name, local_path in {**moved, **not_moved}.items():
+        put_key(f"{KEY_PREFIX}__meta/{remote_name}/prefix.path", local_path.encode())
+        data_key = f"{KEY_PREFIX}{remote_name}/data.bin"
+        put_key(data_key, b"a file of a directory")
+        data_keys.append(data_key)
+    marker_key = TOMBSTONE_KEY_PREFIX + removed_name
+    put_key(marker_key, (PENDING_TOMBSTONE_PREFIX + original_path).encode())
+
+    node.start_clickhouse()
+    assert int(node.query("SELECT count() FROM t")) == 1
+
+    # The marker goes once the directories are moved back, and nothing of the subtree is deleted.
+    wait_for_keys_to_disappear([marker_key])
+    assert [key for key in data_keys if not key_exists(key)] == []
+    assert read_key(f"{KEY_PREFIX}__meta/zyxwvutsrqponmla/prefix.path") == original_path
+    assert (
+        read_key(f"{KEY_PREFIX}__meta/zyxwvutsrqponmlb/prefix.path")
+        == f"{original_path}moved/"
+    )
+    assert (
+        read_key(f"{KEY_PREFIX}__meta/zyxwvutsrqponmlc/prefix.path")
+        == f"{original_path}not_moved/"
+    )
+    assert node.contains_in_log("Rolled back 1 removals that were not committed")
+
+    node.query("DROP TABLE t SYNC")
+    node.stop_clickhouse()
+    remove_all_keys()
+    node.start_clickhouse()
+
+
+def test_existing_look_alike_directory_stays_usable():
+    """A directory whose name only has the reserved shape, left by a version that reserved nothing, is ordinary
+    data: it has to stay writable, not only readable. Only introducing a new entry of that shape is rejected.
+    """
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    node.query("DROP TABLE IF EXISTS t2 SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("INSERT INTO t VALUES (1), (2), (3)")
+    node.stop_clickhouse()
+
+    existing_name = REMOVED_NAME_PREFIX + "abcdefghijklmnop"
+    put_key(
+        f"{KEY_PREFIX}__meta/zyxwvutsrqponmla/prefix.path", f"{existing_name}/".encode()
+    )
+    put_key(f"{KEY_PREFIX}zyxwvutsrqponmla/data.bin", b"a file of a directory")
+
+    node.start_clickhouse()
+
+    # Writing into the existing directory creates new files and subdirectories in it.
+    node.query(f"BACKUP TABLE t TO Disk('disk_s3_plain_rewritable', '{existing_name}')")
+    node.query(
+        f"RESTORE TABLE t AS t2 FROM Disk('disk_s3_plain_rewritable', '{existing_name}')"
+    )
+    assert int(node.query("SELECT count() FROM t2")) == 3
+    assert key_exists(f"{KEY_PREFIX}zyxwvutsrqponmla/data.bin")
+
+    # A new entry of the reserved shape is still rejected.
+    error = node.query_and_get_error(
+        f"BACKUP TABLE t TO Disk('disk_s3_plain_rewritable', '{REMOVED_NAME_PREFIX}qqqqqqqqqqqqqqqq')"
+    )
+    assert "are reserved" in error
+
+    node.query("DROP TABLE t SYNC")
+    node.query("DROP TABLE t2 SYNC")
+    node.stop_clickhouse()
+    remove_all_keys()
+    node.start_clickhouse()
