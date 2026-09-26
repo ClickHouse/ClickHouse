@@ -6,6 +6,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 
 #include <Common/logger_useful.h>
@@ -421,7 +422,11 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     }
 #endif
 
-    enable_parallel_replicas
-        = from->canUseParallelReplicasOnInitiator() && from->getSettingsRef()[Setting::parallel_replicas_plan_based];
+    /// A foreign shard scope is declined later, in `ClusterProxy::canUseParallelReplicasOnInitiator`,
+    /// so it has to be declined here as well: otherwise the optimizations that only run for a local read
+    /// are skipped for a read that ends up being local anyway. The check is last because it resolves a cluster.
+    enable_parallel_replicas = from->canUseParallelReplicasOnInitiator()
+        && from->getSettingsRef()[Setting::parallel_replicas_plan_based]
+        && !ClusterProxy::hasForeignShardScope(from);
 }
 }
