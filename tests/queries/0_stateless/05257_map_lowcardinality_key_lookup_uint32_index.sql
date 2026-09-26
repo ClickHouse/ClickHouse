@@ -14,4 +14,7 @@ SELECT dumpColumnStructure(m) LIKE '%LowCardinality(size = 70000, UInt32(size = 
 SELECT 'subcolumns=0', m['k0'], m['k12345'], m['k65535'], m['k69999'], m['absent'] FROM t_map_lc_uint32_index ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT 'subcolumns=1', m['k0'], m['k12345'], m['k65535'], m['k69999'], m['absent'] FROM t_map_lc_uint32_index ORDER BY id SETTINGS optimize_functions_to_subcolumns = 1;
 
+-- Direct read: covers the subcolumn path without relying on the m[key] rewrite.
+SELECT 'direct subcolumn', m.key_k0, m.key_k12345, m.key_k65535, m.key_k69999, m.key_absent FROM t_map_lc_uint32_index ORDER BY id;
+
 DROP TABLE t_map_lc_uint32_index;
