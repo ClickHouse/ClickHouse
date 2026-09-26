@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ar/clickpipes/_iam_authentication.mdx";
 
 يوضح لك هذا الدليل خطوة بخطوة كيفية تهيئة Amazon RDS MySQL لنسخ البيانات إلى ClickHouse Cloud باستخدام [MySQL ClickPipe](/ar/integrations/clickpipes/mysql/index). للاطلاع على الأسئلة الشائعة المتعلقة بـ MySQL CDC، راجع [صفحة الأسئلة الشائعة لـ MySQL](/ar/integrations/clickpipes/mysql/faq).
 
@@ -140,13 +141,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ### استخدام مصادقة IAM (اختياري)
 </div>
 
-بدلًا من كلمة المرور، يمكنك مصادقة مستخدم ClickPipes عبر الوصول المستند إلى الدور في AWS IAM. أنشئ المستخدم كما يلي، ثم امنحه امتيازات المخطط والنسخ المتماثل نفسها الموضحة أعلاه:
-
-```sql
-CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-```
-
-راجع [AWS IAM DB authentication (RDS/Aurora)](/ar/integrations/clickpipes/postgres/auth) للاطلاع على الخطوات الكاملة لإعداد دور IAM والسياسة المطلوبة لكي تتمكّن ClickPipes من المصادقة بهذه الطريقة.
+<IAMAuthentication engine="mysql" service="rds" />
 
 <div id="configure-network-access">
   ## إعداد الوصول إلى الشبكة
@@ -156,7 +151,7 @@ CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RD
   ### التحكم في الوصول المستند إلى عناوين IP
 </div>
 
-لتقييد حركة المرور إلى مثيل Aurora MySQL لديك، أضف [عناوين IP الثابتة لـ NAT الموثقة](/ar/integrations/clickpipes/home#list-of-static-ips) إلى **Inbound rules** في مجموعة أمان RDS الخاصة بك.
+لتقييد حركة المرور إلى مثيل Aurora MySQL لديك، أضف [عناوين IP الثابتة لـ NAT الموثقة](/ar/integrations/clickpipes/networking/static-ips) إلى **Inbound rules** في مجموعة أمان RDS الخاصة بك.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="أين يمكن العثور على مجموعة الأمان في RDS MySQL؟" size="lg" border />
 

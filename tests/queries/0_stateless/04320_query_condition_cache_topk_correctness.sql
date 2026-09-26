@@ -1,4 +1,4 @@
--- Tags: long, no-parallel, no-parallel-replicas
+-- Tags: long, no-parallel
 -- Tag no-parallel: Messes with internal cache
 -- Tag long: does a ~100k-row insert and several full-part TopK scans; on the slower
 --   S3 + sanitizer configuration this is heavy enough that, run repeatedly by the
@@ -19,8 +19,6 @@
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
--- The query condition cache for TopK (`ORDER BY ... LIMIT n`) reads is off by default; enable it for this test.
-SET use_query_condition_cache_for_top_k = 1;
 SET use_top_k_dynamic_filtering = 1;
 SET use_skip_indexes_for_top_k = 1;
 SET query_plan_max_limit_for_top_k_optimization = 1000;
@@ -28,9 +26,6 @@ SET query_plan_max_limit_for_top_k_optimization = 1000;
 -- so the dynamic-filtering branch of `tryOptimizeTopK` applies and the WHERE
 -- condition is the one written into the query condition cache.
 SET optimize_move_to_prewhere = 0;
--- Parallel replicas split the plan into a different shape and do extra QCC lookups.
-SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 -- QCC population for the TopK plan is best-effort: a granule is recorded as
 -- skippable only when a chunk that physically covers it is reduced to zero rows

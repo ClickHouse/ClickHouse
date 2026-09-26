@@ -6,18 +6,13 @@
 #include <Interpreters/AggregatedDataVariants.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/RowsBeforeStepCounter.h>
+#include <Processors/Transforms/ChunkRowRange.h>
+#include <base/defines.h>
+#include <Common/PODArray.h>
 
 
 namespace DB
 {
-
-/// Chunk-local half-open range of rows `[start, start + length)`.
-struct ChunkRowRange
-{
-    UInt64 start = 0;
-    UInt64 length = 0;
-};
-
 
 /// General `LIMIT BY` transform for input where equal grouping keys are not
 /// guaranteed to be contiguous.
@@ -38,7 +33,12 @@ struct ChunkRowRange
 class LimitByTransform final : public ISimpleTransform
 {
 public:
-    LimitByTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names);
+    LimitByTransform(
+        SharedHeader header,
+        UInt64 group_length_,
+        UInt64 group_offset_,
+        const Names & column_names,
+        bool always_read_till_end_ = false);
 
     String getName() const override { return "LimitByTransform"; }
 
@@ -48,9 +48,28 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
-    void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx);
+    /// Once a group has filled its window every later run for it is a no-op, so keep that test at the
+    /// call site: the call costs more than the work.
+    void processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
+    {
+        chassert(group_idx < group_counts.size());
+        const UInt64 group_rows_seen_before_run = group_counts[group_idx];
+        if (group_rows_seen_before_run < group_limit_end)
+            processRunInsideWindow(run_start_row, run_row_count, group_idx, group_rows_seen_before_run);
+    }
+
+    NO_INLINE void
+    processRunInsideWindow(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx, UInt64 group_rows_seen_before_run);
 
     template <typename Method>
+    requires MapAggregationMethod<Method>
+    void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
+
+    /// LimitBy keeps a group index in the cell's mapped slot, so it cannot use a set method. This overload
+    /// exists only because the dispatch macro is generated over every `AggregatedDataVariants::Type`,
+    /// including the set ones that `GROUP BY` without aggregate functions uses.
+    template <typename Method>
+    requires SetAggregationMethod<Method>
     void consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count);
 
     /// Positions of the non-constant grouping key columns in the chunk header.
@@ -59,6 +78,7 @@ private:
     /// Kept per-group interval is `[group_offset, group_limit_end)`.
     const UInt64 group_offset;
     const UInt64 group_limit_end;
+    const bool always_read_till_end;
 
     AggregatedDataVariants data;
     ColumnsHashing::HashMethodContextPtr hash_method_context;
@@ -68,7 +88,7 @@ private:
     std::vector<UInt64> group_counts;
 
     /// Slices from the current chunk that will be emitted to output.
-    std::vector<ChunkRowRange> output_slices;
+    PODArray<ChunkRowRange> output_slices;
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 };
@@ -94,7 +114,12 @@ private:
 class LimitBySortedStreamTransform final : public ISimpleTransform
 {
 public:
-    LimitBySortedStreamTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const SortDescription & sorted_columns_descr);
+    LimitBySortedStreamTransform(
+        SharedHeader header,
+        UInt64 group_length_,
+        UInt64 group_offset_,
+        const SortDescription & sorted_columns_descr,
+        bool always_read_till_end_ = false);
 
     String getName() const override { return "LimitBySortedStreamTransform"; }
 
@@ -119,6 +144,7 @@ private:
     /// Kept per-group interval is `[group_offset, group_limit_end)`.
     const UInt64 group_offset;
     const UInt64 group_limit_end;
+    const bool always_read_till_end;
 
     MutableColumns previous_chunk_last_grouping_key_columns;
 
@@ -126,7 +152,7 @@ private:
     UInt64 current_group_rows_seen = 0;
 
     /// Slices from the current chunk that will be emitted to output.
-    std::vector<ChunkRowRange> output_slices;
+    PODArray<ChunkRowRange> output_slices;
 
     RowsBeforeStepCounterPtr rows_before_limit_at_least;
 };

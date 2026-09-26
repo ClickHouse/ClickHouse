@@ -52,7 +52,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `format` — ファイルの[フォーマット](/ja/reference/formats/index#formats-overview)。
 * `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) アカウントユーザー向けの長期認証情報です。これらを使用してリクエストを認証できます。このパラメータは任意です。認証情報が指定されていない場合は、設定ファイルのものが使用されます。詳細は [Using S3 for Data Storage](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) を参照してください。
 * `compression` — 圧縮タイプ。サポートされる値: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`。このパラメータは任意です。デフォルトでは、ファイル拡張子から圧縮方式を自動検出します。
-* `partition_strategy` – オプション: `wildcard` または `hive`。`wildcard` では、パス内に `{_partition_id}` が必要で、これがパーティションキーに置き換えられます。`hive` ではワイルドカードは使用できず、パスがテーブルのルートであるとみなし、ファイル名に Snowflake ID、拡張子にファイルフォーマットを使用した Hive スタイルのパーティションディレクトリを生成します。デフォルトは `file_like_engine_default_partition_strategy` 設定です (`26.6` より古い `compatibility` 設定では `wildcard`、それ以外では `hive`) 。
+* `partition_strategy` – オプション: `wildcard` または `hive`。`wildcard` では、パス内に `{_partition_id}` が必要で、これがパーティションキーに置き換えられます。`hive` ではワイルドカードは使用できず、パスがテーブルのルートであるとみなし、ファイル名に Snowflake ID、拡張子にファイルフォーマットを使用した Hive スタイルのパーティションディレクトリを生成します。明示的な方式を指定しない場合、`{_partition_id}` を含むパスでは `wildcard` が使用されます。別の glob を含むパスではパーティション方式を使用せず、`PARTITION BY` は無視されます。glob を含まないパスでは、`file_like_engine_default_partition_strategy` が `hive` の場合は `hive` を使用し、それ以外の場合はパーティション方式を使用しません。
 * `partition_columns_in_data_file` - `hive` パーティション方式でのみ使用されます。データファイル内にパーティションカラムが書き込まれているものとして ClickHouse が扱うかどうかを指定します。デフォルトは `false` です。
 * `storage_class_name` - オプション: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`。即時取り出しが可能な S3 の storage classes のみサポートされます (`GLACIER` や `DEEP_ARCHIVE` などのアーカイブクラスはサポートされません) 。[AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/) を指定できます。
 * `extra_credentials` - 任意。ClickHouse Cloud でロールベースのアクセス用の `role_arn` を渡すために使用します。設定手順については [Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
@@ -102,7 +102,9 @@ SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
   #### パーティション方式
 </div>
 
-`wildcard`: ファイルパス内の `{_partition_id}` ワイルドカードを実際のパーティションキーに置き換えます。読み取りはサポートされていません。デフォルトで選択されるのは `compatibility` 設定が `26.6` より古い場合のみで、それ以外では `hive` がデフォルトです (`file_like_engine_default_partition_strategy` 設定を参照) 。
+`wildcard`: ファイルパス内の `{_partition_id}` ワイルドカードを実際のパーティションキーに置き換えます。読み取りはサポートされていません。パスに `{_partition_id}` が含まれる場合にデフォルトで選択されます。
+
+`partition_strategy` が設定されていない場合、別の glob を含むパスではパーティション方式は使用されず、`PARTITION BY` は無視されます。glob を含まないパスでは、`file_like_engine_default_partition_strategy` が `hive` の場合は `hive` を使用し、それ以外の場合はパーティション方式を使用しません。
 
 `hive` は、読み取りと書き込みに hive スタイルのパーティション化を実装します。読み取りは再帰的な glob パターンを使って実装され、`SELECT * FROM s3('table_root/**.parquet')` と同等です。
 書き込みでは、次のフォーマットでファイルが生成されます: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`。
@@ -357,13 +359,26 @@ CREATE TABLE table_with_asterisk (name String, value UInt32)
     ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/*', 'CSV');
 ```
 
+<div id="resolving-relative-urls">
+  ## 相対 URL の解決
+</div>
+
+[s3&#95;base](/ja/reference/settings/session-settings/s3#s3_base) 設定を使用すると、`S3` エンジンで相対 URL を使用できます。`s3_base` が設定されており、パスに認証スキームが含まれていない場合は、[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) に従って ベース URL を基準に解決されます。解決ルールの詳細については、[S3 テーブル関数 のドキュメント](/ja/reference/functions/table-functions/s3#resolving-relative-urls)を参照してください。解決された URL は保存される table definition にマテリアライズされるため、table の作成後は `s3_base` の値に依存しません。
+
+```sql
+SET s3_base = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/';
+CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Close Float32, Volume Float32, OpenInt Int32)
+    ENGINE = S3('aapl_stock.csv', NOSIGN, 'CSVWithNames');
+```
+
 <div id="storage-settings">
   ## ストレージ設定
 </div>
 
-* [s3&#95;truncate&#95;on&#95;insert](/ja/reference/settings/session-settings#s3_truncate_on_insert) - ファイルに insert する前に、そのファイルを切り詰めることを許可します。デフォルトでは無効です。
-* [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ja/reference/settings/session-settings#s3_create_new_file_on_insert) - フォーマットに接尾辞がある場合、insert のたびに新しいファイルを作成することを許可します。デフォルトでは無効です。
-* [s3&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings#s3_skip_empty_files) - 読み取り時に空のファイルをスキップすることを許可します。デフォルトでは有効です。
+* [s3&#95;truncate&#95;on&#95;insert](/ja/reference/settings/session-settings/s3#s3_truncate_on_insert) - ファイルに 挿入 する前に、そのファイルを切り詰めることを許可します。デフォルトでは無効です。
+* [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ja/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - フォーマットに接尾辞がある場合、挿入 のたびに新しいファイルを作成することを許可します。デフォルトでは無効です。
+* [s3&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings/s3#s3_skip_empty_files) - 読み取り時に空のファイルをスキップすることを許可します。デフォルトでは有効です。
+* [s3&#95;base](/ja/reference/settings/session-settings/s3#s3_base) - エンジンに渡される相対 URL を解決するためのベース URL。デフォルトでは空 (無効) です。
 
 <div id="settings">
   ## S3 関連の設定
@@ -445,7 +460,8 @@ S3 上に次の URI を持つ複数のアーカイブファイルがあるとし
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 

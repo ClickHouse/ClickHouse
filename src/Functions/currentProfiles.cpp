@@ -113,9 +113,9 @@ Returns an array of the setting profiles for the current user.
 SELECT currentProfiles();
         )",
         R"(
-┌─currentProfiles()─────────────────────────────┐
-│ ['default', 'readonly_user', 'web_analytics'] │
-└───────────────────────────────────────────────┘
+┌─currentProfiles()─┐
+│ ['default']       │
+└───────────────────┘
         )"
     }
     };
@@ -136,9 +136,9 @@ Returns an array of setting profile names which are enabled for the current user
 SELECT enabledProfiles();
         )",
         R"(
-┌─enabledProfiles()─────────────────────────────────────────────────┐
-│ ['default', 'readonly_user', 'web_analytics', 'batch_processing'] │
-└───────────────────────────────────────────────────────────────────┘
+┌─enabledProfiles()─┐
+│ ['default']       │
+└───────────────────┘
         )"
     }
     };
