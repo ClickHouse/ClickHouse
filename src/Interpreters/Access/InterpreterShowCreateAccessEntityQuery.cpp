@@ -67,7 +67,7 @@ namespace
 
         for (const auto & authentication_method : user.authentication_methods)
         {
-            query->authentication_methods.push_back(authentication_method.toAST());
+            query->authentication_methods.push_back(authentication_method.toAST(attach_mode));
         }
 
         if (!user.settings.empty())
@@ -312,6 +312,10 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
     }
     else if (show_query.current_quota)
     {
+        /// A user can be governed by several quotas at once (e.g. one keyed by IP address and another
+        /// by normalized query hash); all of them are enforced, so `SHOW CREATE QUOTA` must list every
+        /// current quota instead of an arbitrary single one (which would be inconsistent with
+        /// enforcement and depend on the unordered iteration over the governing quotas).
         for (const auto & usage : getContext()->getQuotaUsages())
             entities.push_back(access_control.read<Quota>(usage.quota_id));
     }

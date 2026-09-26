@@ -37,6 +37,10 @@ public:
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override { return delegate->iterateDirectory(path); }
 
+    /// Forward refresh() so a read-only replica re-reads object-storage metadata (e.g. `plain_rewritable`) and sees
+    /// files written by another server.
+    void refresh(UInt64 not_sooner_than_milliseconds) override { delegate->refresh(not_sooner_than_milliseconds); }
+
     void copyDirectoryContent(
         const String & from_dir,
         const std::shared_ptr<IDisk> & to_disk,
@@ -99,6 +103,8 @@ public:
 
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     void chmod(const String & path, mode_t mode) override { delegate->chmod(path, mode); }
+
+    DiskPtr getDelegateDiskIfExists() const override { return delegate; }
 
     bool isReadOnly() const override { return true; }
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode, const WriteSettings &) override { throwNotAllowed(); }

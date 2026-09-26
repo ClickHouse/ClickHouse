@@ -78,7 +78,7 @@ Chunk DDLOnClusterQueryStatusSource::handleTimeoutExceeded()
 
     constexpr auto msg_format = "Distributed DDL task {} is not finished on {} of {} hosts "
                                 "({} of them are currently executing the task, {} are inactive). "
-                                "They are going to execute the query in background. Was waiting for {} seconds{}";
+                                "They are going to execute the query in background. Was waiting for {:.3f} seconds{}";
 
     if (throw_on_timeout || (throw_on_timeout_only_active && !stop_waiting_offline_hosts))
     {

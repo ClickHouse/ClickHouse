@@ -3,6 +3,7 @@
 
 SET explain_query_plan_default = 'legacy';
 
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 DROP TABLE IF EXISTS t_l;
 DROP TABLE IF EXISTS t_r;
 DROP TABLE IF EXISTS t_r2;

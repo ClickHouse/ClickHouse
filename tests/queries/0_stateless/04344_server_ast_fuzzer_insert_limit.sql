@@ -42,6 +42,12 @@ SETTINGS min_insert_block_size_rows = 1000000, max_block_size = 1000000, max_row
 -- and the fuzzed CREATE is skipped on re-parse.
 DROP TABLE IF EXISTS t_04344_storage;
 CREATE TABLE t_04344_storage (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS max_rows_to_read = 0;
+
+-- ast_fuzzer_any_query fuzzes each CREATE into ~30 clones reusing the real table's UUID, contending
+-- its store/<uuid>/ directory. With the CI's synchronous atomic drop a teardown DROP then waits for
+-- the background worker to clear that directory, and under the slowest sanitizer that wait can pass
+-- max_execution_time and fail with TIMEOUT_EXCEEDED. Teardown does not need to wait synchronously.
+SET database_atomic_wait_for_drop_and_detach_synchronously = 0;
 DROP TABLE t_04344_storage;
 
 -- BACKUP carrier: the cap lives in ASTBackupQuery::settings, outside the AST `children`, so a
