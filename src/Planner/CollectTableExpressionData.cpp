@@ -268,8 +268,9 @@ private:
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
 {
 public:
-    explicit CollectPrewhereTableExpressionVisitor(const QueryTreeNodePtr & query_node_)
+    CollectPrewhereTableExpressionVisitor(const QueryTreeNodePtr & query_node_, const ColumnNodePtrWithHashSet & correlated_columns_set_)
         : query_node(query_node_)
+        , correlated_columns_set(correlated_columns_set_)
     {}
 
     const QueryTreeNodePtr & getPrewhereTableExpression() const
@@ -281,6 +282,10 @@ public:
     {
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
+            return;
+
+        /// A correlated column comes from the outer query, not from a table this PREWHERE can be read from.
+        if (correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(node)))
             return;
 
         auto column_source = column_node->getColumnSourceOrNull();
@@ -348,6 +353,7 @@ public:
 
 private:
     QueryTreeNodePtr query_node;
+    const ColumnNodePtrWithHashSet & correlated_columns_set;
     QueryTreeNodePtr table_expression;
     StorageSnapshotPtr table_storage_snapshot;
     std::optional<NameSet> table_supported_prewhere_columns;
@@ -424,7 +430,9 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
 
     if (query_node_typed.hasPrewhere())
     {
-        CollectPrewhereTableExpressionVisitor collect_prewhere_table_expression_visitor(query_node);
+        auto correlated_columns_set = query_node_typed.getCorrelatedColumnsSet();
+
+        CollectPrewhereTableExpressionVisitor collect_prewhere_table_expression_visitor(query_node, correlated_columns_set);
         collect_prewhere_table_expression_visitor.visit(query_node_typed.getPrewhere());
 
         auto prewhere_table_expression = collect_prewhere_table_expression_visitor.getPrewhereTableExpression();
@@ -446,7 +454,6 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         ActionsDAG prewhere_actions_dag;
 
         QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
-        auto correlated_columns_set = query_node_typed.getCorrelatedColumnsSet();
 
         PlannerActionsVisitor visitor(planner_context, /*correlated_columns_set_=*/correlated_columns_set, false /*use_column_identifier_as_action_node_name*/);
         auto [expression_nodes, correlated_subtrees] = visitor.visit(prewhere_actions_dag, query_tree_node);

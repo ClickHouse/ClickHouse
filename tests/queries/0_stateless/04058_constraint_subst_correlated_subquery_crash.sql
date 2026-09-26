@@ -29,7 +29,7 @@ INSERT INTO t_constraint_corr SELECT number AS i, toString(number) AS a, 1 AS b 
 -- With the fix, the query executes successfully.
 SELECT count() FROM t_constraint_corr
 WHERE exists(
-    (SELECT toUInt8(1) PREWHERE murmurHash3_64(xxHash32(a, intDiv(2, xxHash32(0, toInt256(0) = b))), multiply(10, 10)))
+    (SELECT toUInt8(1) WHERE murmurHash3_64(xxHash32(a, intDiv(2, xxHash32(0, toInt256(0) = b))), multiply(10, 10)))
 )
 SETTINGS enable_analyzer = 1, convert_query_to_cnf = 1, optimize_substitute_columns = 1, optimize_using_constraints = 1;
 
