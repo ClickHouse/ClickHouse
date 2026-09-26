@@ -56,13 +56,12 @@
 #pragma clang diagnostic pop
 
 
-/// UINT16 and UINT32 are processed separately, see comments in readColumnFromArrowColumn.
+/// UINT16, UINT32 and INT64 are processed separately, see comments in readNonNullableColumnFromArrowColumn.
 #define FOR_ARROW_NUMERIC_TYPES(M) \
         M(arrow::Type::UINT8, UInt8) \
         M(arrow::Type::INT8, Int8) \
         M(arrow::Type::INT16, Int16) \
         M(arrow::Type::UINT64, UInt64) \
-        M(arrow::Type::INT64, Int64) \
         M(arrow::Type::FLOAT, Float32) \
         M(arrow::Type::DOUBLE, Float64)
 
@@ -1177,6 +1176,26 @@ static ColumnWithTypeAndName readColumnWithTimestampData(const std::shared_ptr<a
         }
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
+}
+
+/// Reads an Arrow `INT64` column as raw `DateTime64` ticks (the value multiplied by `10^scale`),
+/// which is how the Arrow Flight SQL path exports a `DateTime64` without an explicit time zone.
+static ColumnWithTypeAndName readColumnWithDateTime64Int64Data(
+    const std::shared_ptr<arrow::ChunkedArray> & arrow_column, const DataTypePtr & type_hint, const String & column_name)
+{
+    const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*type_hint);
+    auto internal_column = dt64_type.createColumn();
+    auto & column_data = assert_cast<ColumnDecimal<DateTime64> &>(*internal_column).getData();
+    validateChunksBeforeReserve(*arrow_column, [&](const arrow::Array & chunk) { checkedCast<arrow::Int64Array>(chunk, column_name); });
+    column_data.reserve(arrow_column->length());
+
+    for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
+    {
+        const auto & chunk = checkedCast<arrow::Int64Array>(*(arrow_column->chunk(chunk_i)), column_name);
+        for (size_t value_i = 0, length = static_cast<size_t>(chunk.length()); value_i < length; ++value_i)
+            column_data.emplace_back(chunk.Value(value_i));
+    }
+    return {std::move(internal_column), type_hint, column_name};
 }
 
 template <typename TimeType, typename TimeArray>
@@ -2554,6 +2573,15 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             return readColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, column_name);
         FOR_ARROW_NUMERIC_TYPES(DISPATCH)
 #    undef DISPATCH
+        case arrow::Type::INT64:
+        {
+            /// Arrow Flight exports a `DateTime64` without an explicit time zone as raw `Int64` ticks,
+            /// so read it back as `DateTime64` directly; as a plain integer it would be cast to
+            /// `DateTime64` as whole seconds, corrupting the round-trip.
+            if (type_hint && isDateTime64(*type_hint))
+                return readColumnWithDateTime64Int64Data(arrow_column, type_hint, column_name);
+            return readColumnWithNumericData<Int64>(arrow_column, column_name);
+        }
         case arrow::Type::HALF_FLOAT:
         {
             return readColumnWithFloat16Data(arrow_column, column_name);

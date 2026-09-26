@@ -217,6 +217,49 @@ def test_streaming_insert():
     assert update_result.record_count == 7000
 
 
+def test_bare_datetime64_roundtrip_via_ingest():
+    """A `DateTime64` without an explicit time zone survives a Flight DoGet/DoPut round-trip.
+
+    The export side sends raw `Int64` ticks, so the ingest side must read them back as
+    `DateTime64` ticks rather than as whole seconds.
+    """
+    client = get_client("bare_datetime64_roundtrip")
+    result = client.set_session_options({"session_timezone": "UTC"})
+    assert len(result.errors) == 0
+    client.execute_update(
+        "CREATE TABLE datetime64_src (dt64 DateTime64(3), nullable_dt64 Nullable(DateTime64(3))) ENGINE = Memory"
+    )
+    client.execute_update(
+        "CREATE TABLE datetime64_dst (dt64 DateTime64(3), nullable_dt64 Nullable(DateTime64(3))) ENGINE = Memory"
+    )
+    client.execute_update(
+        "INSERT INTO datetime64_src VALUES ('2024-01-15 10:30:00.123', '2024-01-15 10:30:00.123'), (1705314600, NULL)"
+    )
+
+    flight_info = client.execute("SELECT * FROM datetime64_src")
+    table = client.do_get(flight_info.endpoints[0].ticket).read_all()
+    assert table.schema.field("dt64").type == pa.int64()
+    assert table.schema.field("nullable_dt64").type == pa.int64()
+
+    cmd = CommandStatementUpdate(query="INSERT INTO datetime64_dst VALUES")
+    descriptor = flight_descriptor(cmd)
+    writer, reader = client.client.do_put(descriptor, table.schema, client._flight_call_options())
+    writer.write_table(table)
+    writer.done_writing()
+    result = reader.read()
+    assert result is not None
+    update_result = DoPutUpdateResult()
+    update_result.ParseFromString(result.to_pybytes())
+    assert update_result.record_count == 2
+
+    check = client.execute("SELECT * FROM datetime64_dst ORDER BY dt64")
+    check_table = client.do_get(check.endpoints[0].ticket).read_all()
+    assert check_table.column("dt64")[0].as_py() == 1705314600123
+    assert check_table.column("dt64")[1].as_py() == 1705314600000
+    assert check_table.column("nullable_dt64")[0].as_py() == 1705314600123
+    assert check_table.column("nullable_dt64")[1].as_py() is None
+
+
 #
 # Flight SQL Metadata Commands
 #
