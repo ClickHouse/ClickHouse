@@ -25,6 +25,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
@@ -926,11 +927,48 @@ void StorageMaterializedView::alter(
     /// Check the materialized view's inner table structure.
     if (has_inner_table)
     {
+        auto target_table = getTargetTable();
+        /// Bypass the query's metadata cache, which would otherwise keep serving the snapshot taken
+        /// before the inner table's own alter below.
+        auto target_table_metadata = target_table->getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
+
         /// If this materialized view has an inner table it should always have the same columns as this materialized view.
         /// Try to find mistakes in the select query (it shouldn't have columns which are not in the inner table).
-        auto target_table_metadata = getTargetTable()->getInMemoryMetadataPtr(local_context, false);
         const auto & select_query_output_columns = new_metadata.columns; /// AlterCommands::alter() analyzed the query and assigned `new_metadata.columns` before.
         checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
+
+        /// The copy below replaces the view's column descriptions with the inner table's, so a column
+        /// comment has to be set there. `isCommentAlter()` also covers the view's own table comment, and
+        /// a command `prepare()` marked ignored (`IF EXISTS`, missing column) is applied to neither table.
+        AlterCommands column_comment_commands = params;
+        std::erase_if(column_comment_commands, [](const AlterCommand & command)
+        {
+            return command.ignore || !command.isCommentAlter() || command.type == AlterCommand::COMMENT_TABLE;
+        });
+        /// Altering the inner table is a metadata change of its own, so it has to come after every
+        /// check that can still reject the statement.
+        if (!column_comment_commands.empty())
+        {
+            auto target_alter_lock = target_table->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+            /// As in InterpreterAlterQuery: the query-scoped cache can hold a snapshot pinned before
+            /// this lock, and the alter below reads the inner table's metadata through that cache.
+            if (auto metadata_cache = local_context->getQueryMetadataCache())
+            {
+                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
+                cache->clear();
+            }
+            target_table->checkAlterIsPossible(column_comment_commands, local_context);
+            /// Not `local_context`: a `Replicated` database has a single ZooKeeper transaction per query
+            /// and commits it at the first metadata change made from the query context itself, which has
+            /// to be this view's own commit below, so both changes land in that one transaction.
+            auto target_alter_context = Context::createCopy(local_context);
+            /// A DDLGuard is acquired before a table's alter lock, and the alter locks of the view and
+            /// of the inner table are both held here, so guarding the inner table would be a lock inversion.
+            DDLGuardPtr target_ddl_guard;
+            target_table->alter(column_comment_commands, target_alter_context, target_alter_lock, target_ddl_guard);
+            target_table_metadata = target_table->getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
+        }
+
         /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. the data types of those columns can differ).
         new_metadata.columns = target_table_metadata->columns;
     }
