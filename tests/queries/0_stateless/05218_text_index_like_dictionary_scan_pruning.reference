@@ -35,7 +35,7 @@ arbitrary pattern	[2]
 arbitrary pattern, no index	[2]
 all-0xFF prefix	[11,12]
 all-0xFF prefix, no index	[11,12]
-05218_array_arbitrary	3
+05218_array_arbitrary	2
 05218_array_exact	1
 05218_array_max_prefix	1
 Two parts, LowCardinality and Nullable
@@ -56,8 +56,8 @@ no mandatory literal with a prefix	[1,2,3,4,5,6,7]
 no mandatory literal with a prefix, no index	[1,2,3,4,5,6,7]
 prefix alone	[6,7]
 prefix alone, no index	[6,7]
-05218_no_literal	3	1
-05218_no_literal_mixed	3	1
+05218_no_literal	2	1
+05218_no_literal_mixed	2	1
 05218_no_literal_prefix	1	1
 Block starting at the exclusive upper bound
 block starts at the upper bound	[1,2,3,4]

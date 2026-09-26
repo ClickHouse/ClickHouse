@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/MergeTree/TextIndexDictionaryAutomaton.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -56,6 +57,7 @@ struct TextSearchQuery
     TextIndexDirectReadMode getDirectReadMode() const { return direct_read_mode; }
     const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
     const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
+    const auto & getPatternAutomata() const { return pattern_automata; }
     const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
     UInt128 getHash() const { return hash; }
 
@@ -69,6 +71,9 @@ private:
     /// Sorted in the constructor.
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
+    /// Compiled once per query, shared by the dictionary readers of all parts.
+    /// A null entry means this pattern uses the existing literal/matcher scan.
+    std::vector<std::shared_ptr<const TextIndexDictionaryAutomaton>> pattern_automata;
     /// Not sorted, not deduplicated.
     VectorWithMemoryTracking<String> phrase_tokens;
     /// Precomputed in the constructor because getHash is called on hot paths.
