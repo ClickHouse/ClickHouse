@@ -1943,7 +1943,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
                 bool row_policy_filter_not_pushed = false;
 
-                if (prewhere_actions && select_query_options.build_logical_plan)
+                /// The value of a correlated column exists only above the read, after decorrelation.
+                const bool is_correlated_prewhere = prewhere_actions && prewhere_actions->hasCorrelatedColumns();
+                if (is_correlated_prewhere && table_expression_query_info.table_expression_modifiers
+                    && table_expression_query_info.table_expression_modifiers->hasFinal())
+                    throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                        "PREWHERE that references a column of an outer query is not supported with FINAL");
+
+                if (prewhere_actions && (select_query_options.build_logical_plan || is_correlated_prewhere))
                 {
                     /// Collect columns needed by row policy and additional filters
                     NameSet columns_needed_by_other_filters;

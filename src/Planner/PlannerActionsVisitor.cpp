@@ -115,10 +115,12 @@ class ActionNodeNameHelper
 public:
     ActionNodeNameHelper(QueryTreeNodeToName & node_to_name_,
         const PlannerContext & planner_context_,
-        bool use_column_identifier_as_action_node_name_)
+        bool use_column_identifier_as_action_node_name_,
+        const ColumnNodePtrWithHashSet * correlated_columns_set_ = nullptr)
         : node_to_name(node_to_name_)
         , planner_context(planner_context_)
         , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
+        , correlated_columns_set(correlated_columns_set_)
     {
     }
 
@@ -136,7 +138,11 @@ public:
             case QueryTreeNodeType::COLUMN:
             {
                 const ColumnIdentifier * column_identifier = nullptr;
-                if (use_column_identifier_as_action_node_name)
+                /// The outer query provides a correlated column under its column identifier, also to a DAG that names
+                /// table columns by their names (PREWHERE).
+                if (use_column_identifier_as_action_node_name
+                    || (correlated_columns_set && !correlated_columns_set->empty()
+                        && correlated_columns_set->contains(std::static_pointer_cast<ColumnNode>(node))))
                     column_identifier = planner_context.getColumnNodeIdentifierOrNull(node);
 
                 if (column_identifier)
@@ -524,6 +530,7 @@ private:
     std::unordered_map<QueryTreeNodePtr, std::string> & node_to_name;
     const PlannerContext & planner_context;
     bool use_column_identifier_as_action_node_name = true;
+    const ColumnNodePtrWithHashSet * correlated_columns_set = nullptr;
 };
 
 class ActionsScopeNode
@@ -783,7 +790,7 @@ PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
 )
     : planner_context(planner_context_)
     , correlated_columns_set(correlated_columns_set_)
-    , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_)
+    , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_, &correlated_columns_set)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
 {
     actions_stack.emplace_back(actions_dag, nullptr);

@@ -391,6 +391,17 @@ QueryPlan decorrelateQueryPlan(
 {
     if (!context.correlated_plan_steps[node])
     {
+        /// The outer values join this part of the plan under the names of the correlated columns.
+        const auto & subplan_header = node->step->getOutputHeader();
+        for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
+        {
+            if (subplan_header->has(correlated_column_identifier))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot decorrelate query, because the subquery has a column named {}, which is also the name of a correlated column",
+                    correlated_column_identifier);
+        }
+
         /// The rest of the query plan doesn't use any correlated columns.
         const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
 
