@@ -12,7 +12,9 @@
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/PODArray.h>
+#include <Common/ErrnoException.h>
 #include <cstring>
+#include <poll.h>
 #include <base/scope_guard.h>
 #include <base/types.h>
 
@@ -32,23 +34,17 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int PROTOCOL_VERSION_MISMATCH;
     extern const int EXCHANGE_PEER_DISCONNECTED;
+    extern const int CANNOT_POLL;
 }
 
 void StreamingExchangeSource::onStart()
 {
-    connect();
+    const Stopwatch handshake_watch;
+    if (!connect(handshake_watch) || !sendHello(handshake_watch) || !receiveHello(handshake_watch))
+        return;
 
-    /// The handshake runs synchronously on a blocking socket. Apply per-call
-    /// timeouts so a stalled peer cannot freeze the source startup indefinitely.
-    Poco::Timespan hello_timeout(StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, 0);
-    socket->setReceiveTimeout(hello_timeout);
-    socket->setSendTimeout(hello_timeout);
-
-    sendHello();
-    receiveHello();
-
-    /// Set socket to non-blocking mode after handshake is finished.
-    socket->setBlocking(false);
+    /// `sendNoMoreDataNeeded` sends blocking, under this timeout.
+    socket->setSendTimeout(Poco::Timespan(StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, 0));
     /// Initialize packet receive state
     packet_receive_state = ReceivingHeader;
     current_packet_header_bytes_filled = 0;
@@ -59,19 +55,24 @@ void StreamingExchangeSource::onStart()
 #endif
 }
 
-void StreamingExchangeSource::connect()
+bool StreamingExchangeSource::connect(const Stopwatch & handshake_watch)
 {
     LOG_TRACE(log, "Connecting to {}:{} for query id {} exchange stream {}", host, port, query_id, stream_name);
     socket = std::make_unique<Poco::Net::StreamSocket>();
     Poco::Net::SocketAddress address(host, port);
     /// Apply a connect timeout so a blackholed or filtered peer cannot stall the worker
     /// thread for the default kernel connect timeout (minutes) and ignore cancellation.
-    Poco::Timespan connect_timeout(StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, 0);
-    socket->connect(address, connect_timeout);
+    socket->connectNB(address);
+    if (!waitForSocket(POLLOUT, handshake_watch, "connect"))
+        return false;
+    /// What `Poco::Net::SocketImpl::connect` throws for a connect that failed after it started.
+    if (int err = socket->impl()->socketError())
+        Poco::Net::SocketImpl::error(err);
     socket->setReceiveBufferSize(10 * 1024 * 1024);
+    return true;
 }
 
-void StreamingExchangeSource::sendHello()
+bool StreamingExchangeSource::sendHello(const Stopwatch & handshake_watch)
 {
     WriteBufferFromOwnString body;
     StreamingExchangeProtocol::SourceHelloBody source_hello{
@@ -91,18 +92,47 @@ void StreamingExchangeSource::sendHello()
 
     String packet(reinterpret_cast<const char *>(&header), sizeof(header));
     packet += body_str;
-    StreamingExchangeProtocol::sendAll(*socket, packet.data(), packet.size(), "SourceHello for " + stream_name);
+
+    size_t position = 0;
+    while (position < packet.size())
+    {
+        if (!waitForSocket(POLLOUT, handshake_watch, "sending SourceHello"))
+            return false;
+        int sent = 0;
+        try
+        {
+            sent = socket->sendBytes(packet.data() + position, static_cast<int>(std::min<size_t>(packet.size() - position, INT_MAX)));
+        }
+        catch (const Poco::Exception &)
+        {
+            StreamingExchangeProtocol::rethrowSocketException(*socket, "send SourceHello for " + stream_name);
+        }
+        /// A negative result means that the send would block.
+        if (sent > 0)
+            position += sent;
+    }
+    return true;
 }
 
-void StreamingExchangeSource::receiveHello()
+bool StreamingExchangeSource::receiveHello(const Stopwatch & handshake_watch)
 {
+    /// Reads `size` bytes; false if the source is cancelled first.
+    auto receive = [&](char * buffer, size_t size)
+    {
+        size_t position = 0;
+        while (true)
+        {
+            readFromSocket(buffer, size, position);
+            if (position == size)
+                return true;
+            if (!waitForSocket(POLLIN, handshake_watch, "waiting for SinkHello"))
+                return false;
+        }
+    };
+
     StreamingExchangeProtocol::PacketHeader header{};
-    size_t position = 0;
-    readFromSocket(reinterpret_cast<char *>(&header), sizeof(header), position);
-    if (position != sizeof(header))
-        throw Poco::Net::NetException(fmt::format(
-            "Failed to receive SinkHello header from socket for exchange stream {}, expected {} bytes but received {}",
-            stream_name, sizeof(header), position));
+    if (!receive(reinterpret_cast<char *>(&header), sizeof(header)))
+        return false;
 
     if (header.packet_type != StreamingExchangeProtocol::PacketType::SinkHello)
         throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
@@ -120,12 +150,8 @@ void StreamingExchangeSource::receiveHello()
             header.bytes_size, stream_name);
 
     PODArray<char> body_buffer(header.bytes_size);
-    size_t body_position = 0;
-    readFromSocket(body_buffer.data(), body_buffer.size(), body_position);
-    if (body_position != body_buffer.size())
-        throw Poco::Net::NetException(fmt::format(
-            "Failed to receive SinkHello body from socket for exchange stream {}, expected {} bytes but received {}",
-            stream_name, body_buffer.size(), body_position));
+    if (!receive(body_buffer.data(), body_buffer.size()))
+        return false;
 
     ReadBufferFromMemory body_in(body_buffer.data(), body_buffer.size());
     StreamingExchangeProtocol::SinkHelloBody sink_hello;
@@ -137,6 +163,50 @@ void StreamingExchangeSource::receiveHello()
             "Streaming exchange protocol version mismatch for stream {}: this node speaks version {}, sink at {}:{} speaks version {}",
             stream_name, StreamingExchangeProtocol::PROTOCOL_VERSION,
             host, port, sink_hello.sink_version);
+    return true;
+}
+
+bool StreamingExchangeSource::waitForSocket(Int16 events, const Stopwatch & handshake_watch, std::string_view what)
+{
+    const Int64 timeout_ms = StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS * 1000;
+    while (true)
+    {
+        if (isCancelled())
+            return false;
+        const Int64 remaining_ms = timeout_ms - static_cast<Int64>(handshake_watch.elapsedMilliseconds());
+        if (remaining_ms <= 0)
+            throw Poco::TimeoutException(
+                fmt::format("{} timed out after {} s on exchange stream {}", what, StreamingExchangeProtocol::HELLO_TIMEOUT_SECONDS, stream_name),
+                fmt::format("{}:{}", host, port));
+
+        pollfd fds[] = {
+            {.fd = socket->sockfd(), .events = events, .revents = 0},
+            {.fd = output_update_wakeup.fd(), .events = POLLIN, .revents = 0},
+        };
+        if (::poll(fds, 2, static_cast<int>(remaining_ms)) < 0)
+        {
+            if (errno == EINTR)
+                continue;
+            throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot poll the socket of exchange stream {}", stream_name);
+        }
+        if (fds[1].revents)
+            output_update_wakeup.drain();
+        /// A cancel wins over a socket that became ready at the same time.
+        if (fds[0].revents && !isCancelled())
+            return true;
+    }
+}
+
+void StreamingExchangeSource::onCancel() noexcept
+{
+    try
+    {
+        output_update_wakeup.notify();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 }
 
 IProcessor::Status StreamingExchangeSource::prepare()
@@ -325,7 +395,23 @@ std::optional<Chunk> StreamingExchangeSource::readChunk()
     if (!was_on_start_called)
     {
         was_on_start_called = true;
-        onStart();
+        try
+        {
+            onStart();
+        }
+        catch (const Exception & e)
+        {
+            /// A peer that the same cancel tears down is no failure of this stream.
+            if (e.code() != ErrorCodes::EXCHANGE_PEER_DISCONNECTED || !isCancelled())
+                throw;
+        }
+        /// A cancel stops the handshake, and the stream ends with it.
+        if (isCancelled())
+        {
+            LOG_TRACE(log, "Exchange stream {} was cancelled during the handshake", stream_name);
+            finished_reading = true;
+            return {};
+        }
         return Chunk(); /// Empty chunk means we need to be called again
     }
 
