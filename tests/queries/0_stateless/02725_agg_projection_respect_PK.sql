@@ -2,6 +2,9 @@
 -- add_minmax_index_for_numeric_columns=0: Would use the index and not the projection that we want to test (id2 = 3)
 SET explain_query_plan_default = 'legacy';
 SET optimize_use_projections = 1;
+-- Pin (randomized in CI): preferring a projection regardless of cost takes `p1`, whose sorting
+-- key cannot prune on `c1`, for the filtered query below.
+SET prefer_optimize_projection = 0;
 
 DROP TABLE IF EXISTS t0;
 

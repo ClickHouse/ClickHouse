@@ -21,7 +21,9 @@ INSERT INTO src SELECT number FROM numbers(100000);
 # exclusive lock on the source table; merge_tree_storage_snapshot_sleep_ms widens that window so the
 # concurrent insert below reliably collides with it.
 create_err="${CLICKHOUSE_TMP:-.}/04492_create.err"
-$CLICKHOUSE_CLIENT --merge_tree_storage_snapshot_sleep_ms=1000 -q "
+# exactly-once delivery is what the atomic path adds, so it has to be pinned against randomization
+$CLICKHOUSE_CLIENT --merge_tree_storage_snapshot_sleep_ms=1000 -m -q "
+SET materialized_views_populate_atomically = 1;
 CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY id POPULATE AS SELECT id FROM src
 " 2>"$create_err" &
 CREATE_PID=$!
