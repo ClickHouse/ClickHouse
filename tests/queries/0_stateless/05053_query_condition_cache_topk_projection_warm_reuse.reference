@@ -1,0 +1,9 @@
+--- A warm projection-backed TopK read reuses the granules the first run excluded
+05053_topk_projection_prime	0	1
+05053_topk_projection_warm	1	1
+--- The warm read still returns the correct rows
+0
+1
+2
+3
+4

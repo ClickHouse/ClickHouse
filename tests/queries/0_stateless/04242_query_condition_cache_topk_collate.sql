@@ -4,7 +4,11 @@
 --
 -- Companion to `04217_query_condition_cache_topk.sql`: verify that the QCC key
 -- is partitioned by `COLLATE` locale so two re-runs with the same locale reuse
--- the same entry, while a different locale produces a fresh entry.
+-- the same entries, while a different locale produces fresh entries.
+--
+-- Each TopK plan writes two entries per part: one for the WHERE filter and one for
+-- the dynamic `__topKFilter` PREWHERE (issue #114639), both salted with the TopK
+-- plan parameters, including the collation locale.
 
 SET allow_experimental_analyzer = 1;
 SET use_query_condition_cache = 1;
@@ -31,13 +35,13 @@ FROM numbers(1_000_000);
 SYSTEM CLEAR QUERY CONDITION CACHE;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Same COLLATE locale re-runs reuse the same QCC entry';
+SELECT '--- Same COLLATE locale re-runs reuse the same QCC entries';
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'en_US' LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
-SELECT '--- Different COLLATE locale writes a separate entry';
+SELECT '--- Different COLLATE locale writes separate entries';
 SELECT s FROM tab WHERE v = 10000 ORDER BY s ASC COLLATE 'fr' LIMIT 5 FORMAT Null;
 SELECT count() FROM system.query_condition_cache;
 
