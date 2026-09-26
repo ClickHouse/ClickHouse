@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemKafkaConsumers.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #if USE_RDKAFKA
 
@@ -269,7 +270,7 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
             return;
         add_rows(it, kafka_table);
     };
-    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & db : databases)
     {
         for (auto it = db.second->getTablesIterator(context); it->isValid(); it->next())
@@ -284,5 +285,9 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 }
 
 }
+
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemKafkaConsumers) }
 
 #endif

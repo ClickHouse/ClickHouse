@@ -242,10 +242,13 @@ namespace
     }
 
     template <bool allow_complex_types = true>
-    void writeRandomType(const String & column_name, pcg64 & rng, WriteBuffer & buf, bool allow_suspicious_lc_types, size_t depth = 0)
+    void writeRandomType(const String & column_name, pcg64 & rng, WriteBuffer & buf, bool allow_suspicious_lc_types, size_t depth = 0, size_t max_depth = MAX_DEPTH)
     {
-        if (allow_complex_types && depth > MAX_DEPTH)
-            writeRandomType<false>(column_name, rng, buf, depth);
+        if (allow_complex_types && depth > max_depth)
+        {
+            writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth, max_depth);
+            return;
+        }
 
         constexpr auto all_types = getAllTypes<allow_complex_types>();
         auto type = all_types[rng() % all_types.size()];
@@ -294,14 +297,14 @@ namespace
             case TypeIndex::Nullable:
             {
                 writeCString("Nullable(", buf);
-                writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
+                writeRandomType<false>(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
                 writeChar(')', buf);
                 return;
             }
             case TypeIndex::Array:
             {
                 writeCString("Array(", buf);
-                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
+                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
                 writeChar(')', buf);
                 return;
             }
@@ -310,7 +313,7 @@ namespace
                 writeCString("Map(", buf);
                 writeMapKeyType(column_name, rng, buf);
                 writeCString(", ", buf);
-                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1);
+                writeRandomType(column_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
                 writeChar(')', buf);
                 return;
             }
@@ -335,7 +338,7 @@ namespace
                         writeString(element_name, buf);
                         writeChar(' ', buf);
                     }
-                    writeRandomType(element_name, rng, buf, allow_suspicious_lc_types, depth + 1);
+                    writeRandomType(element_name, rng, buf, allow_suspicious_lc_types, depth + 1, max_depth);
                 }
                 writeChar(')', buf);
                 return;
@@ -445,6 +448,14 @@ String FunctionGenerateRandomStructure::generateRandomDataType(pcg64 & rng, bool
     return buf.str();
 }
 
+String FunctionGenerateRandomStructure::generateRandomTypeForTest(size_t seed, bool allow_suspicious_lc_types, size_t max_depth)
+{
+    pcg64 rng(seed);
+    WriteBufferFromOwnString buf;
+    writeRandomType<true>("c", rng, buf, allow_suspicious_lc_types, /*depth=*/0, max_depth);
+    return buf.str();
+}
+
 REGISTER_FUNCTION(GenerateRandomStructure)
 {
     FunctionDocumentation::Description description = R"(
@@ -481,7 +492,7 @@ c1 Map(UInt256, UInt16)
 SELECT generateRandomStructure(NULL, 33)
         )",
         R"(
-c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCardinality(Nullable(FixedString(30))), c4 Int16, c5 Enum8('c5V0' = 0, 'c5V1' = 1, 'c5V2' = 2, 'c5V3' = 3), c6 Nullable(UInt8), c7 String, c8 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(70)))
+c1 DateTime, c2 Enum8(\'c2V0\' = -123, \'c2V1\' = 94, \'c2V2\' = -105, \'c2V3\' = 67), c3 Nullable(UInt8), c4 String, c5 Nested(e1 IPv4, e2 UInt8, e3 UInt16, e4 UInt16, e5 Int32, e6 Map(Date, Decimal256(71))), c6 UInt32, c7 Bool, c8 Float64
         )"
     }
     };

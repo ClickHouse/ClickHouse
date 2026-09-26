@@ -1,5 +1,6 @@
 -- Test: FunctionToSubcolumnsPass optimization of arrayElement on Map to key subcolumns.
 -- Verifies that m['key'] is rewritten to m.key_<serialized_key> in EXPLAIN output.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;

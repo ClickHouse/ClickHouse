@@ -1,0 +1,8 @@
+--- control: a MergeTree table advertises the optimization, so length(arr) is rewritten to arr.size0 ---
+control-rewritten
+--- ENGINE = URL('file://...') delegates to File, which disables the optimization: length(arr) is NOT rewritten ---
+subcolumn-not-rewritten
+--- PREWHERE on a plain column is allowed (delegate's supportedPrewhereColumns contains it) ---
+1
+--- PREWHERE on a default-expression column is rejected (delegate's supportedPrewhereColumns excludes it) ---
+prewhere-default-col-rejected
