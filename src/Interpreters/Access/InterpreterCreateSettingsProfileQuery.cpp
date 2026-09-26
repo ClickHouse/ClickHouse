@@ -14,11 +14,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ACCESS_ENTITY_ALREADY_EXISTS;
-}
-
 namespace
 {
     void updateSettingsProfileFromQueryImpl(
@@ -107,10 +102,10 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
         if (query.if_exists)
         {
             auto ids = storage->find<SettingsProfile>(query.names);
-            storage->tryUpdate(ids, update_func);
+            access_control.tryUpdate(ids, update_func);
         }
         else
-            storage->update(storage->getIDs<SettingsProfile>(query.names), update_func);
+            access_control.update(storage->getIDs<SettingsProfile>(query.names), update_func);
     }
     else
     {
@@ -123,20 +118,13 @@ BlockIO InterpreterCreateSettingsProfileQuery::execute()
         }
 
         if (!query.storage_name.empty())
-        {
-            for (const auto & name : query.names)
-            {
-                if (auto another_storage_ptr = access_control.findExcludingStorage(AccessEntityType::SETTINGS_PROFILE, name, storage_ptr))
-                    throw Exception(ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS, "Settings profile {} already exists in storage {}", name, another_storage_ptr->getStorageName());
-            }
-        }
-
-        if (query.if_not_exists)
-            storage->tryInsert(new_profiles);
+            access_control.insertInto(query.storage_name, new_profiles, query.or_replace, !query.if_not_exists);
+        else if (query.if_not_exists)
+            access_control.tryInsert(new_profiles);
         else if (query.or_replace)
-            storage->insertOrReplace(new_profiles);
+            access_control.insertOrReplace(new_profiles);
         else
-            storage->insert(new_profiles);
+            access_control.insert(new_profiles);
     }
 
     return {};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 
 #include <Access/AccessChangesNotifier.h>
 #include <Access/MultipleAccessStorage.h>
@@ -137,6 +138,13 @@ public:
     /// The default profile's settings are always applied before any other profile's.
     void setDefaultProfileName(const String & default_profile_name);
 
+    /// The profile every user gets, named by `default_profile` in the server configuration.
+    std::optional<UUID> getDefaultProfileId() const;
+
+    /// How many access storages hold an entity of this type and name. An entity is resolved by name in
+    /// storage order, so a name held more than once means only the first definition is visible.
+    size_t countStoragesWithEntityName(AccessEntityType type, const String & name) const;
+
     /// Sets prefixes which should be used for custom settings.
     /// This function also enables custom prefixes to be used.
     void setCustomSettingsPrefixes(const Strings & prefixes);
@@ -262,6 +270,15 @@ public:
 
     std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfo(const UUID & profile_id);
 
+    /// Inserts into a specific nested access storage while applying the same validation as a regular insert.
+    std::vector<UUID> insertInto(
+        const String & storage_name,
+        const std::vector<AccessEntityPtr> & entities,
+        bool replace_if_exists = false,
+        bool throw_if_exists = true);
+
+    void moveAccessEntities(const std::vector<UUID> & ids, const String & source_storage_name, const String & destination_storage_name);
+
     const ExternalAuthenticators & getExternalAuthenticators() const;
 
     /// Gets manager of notifications.
@@ -280,10 +297,38 @@ private:
     class ContextAccessCache;
     class CustomSettingsPrefixes;
     class PasswordComplexityRules;
+    class RestoreAccessStorage;
 
     bool insertImpl(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, UUID * conflicting_id) override;
+    bool insertImpl(
+        IAccessStorage * storage,
+        const UUID & id,
+        const AccessEntityPtr & entity,
+        bool replace_if_exists,
+        bool throw_if_exists,
+        UUID * conflicting_id);
+    bool insertImplUnlocked(
+        IAccessStorage * storage,
+        const UUID & id,
+        const AccessEntityPtr & entity,
+        bool replace_if_exists,
+        bool throw_if_exists,
+        UUID * conflicting_id) TSA_REQUIRES(access_entities_mutex);
+    bool isShadowedInsertionUnlocked(const IAccessStorage & destination, const IAccessEntity & entity) const
+        TSA_REQUIRES(access_entities_mutex);
+    bool checkNameCollisionInOtherStorage(
+        IAccessStorage & storage,
+        const AccessEntityPtr & entity,
+        bool throw_if_exists,
+        UUID * conflicting_id) const TSA_REQUIRES(access_entities_mutex);
+    void checkFeatureTierForMoveUnlocked(
+        const std::vector<UUID> & ids,
+        const String & source_storage_name,
+        const String & destination_storage_name) TSA_REQUIRES(access_entities_mutex);
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
+
+    mutable std::mutex access_entities_mutex;
 
     std::unique_ptr<ContextAccessCache> context_access_cache;
     std::unique_ptr<RoleCache> role_cache;
