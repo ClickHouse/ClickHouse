@@ -267,12 +267,6 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
     return must_convert;
 }
 
-/// Storage names of columns an on-fly mutation step recomputes rather than forwards from disk.
-///
-/// `is_mutation_step` identifies those steps; not every one of them has a `mutation_version`.
-///
-/// An `UPDATE`'s assignment targets are top-level columns, so `result_name` is already the storage
-/// name the skip test keys on; an output naming no column of the table simply never matches.
 static NameSet collectColumnsComputedByMutationSteps(const RangeReaders & range_readers)
 {
     NameSet computed;
@@ -284,8 +278,6 @@ static NameSet collectColumnsComputedByMutationSteps(const RangeReaders & range_
 
         for (const auto * output : prewhere_info->actions->getActionsDAG().getOutputs())
         {
-            /// An INPUT output is the on-disk column forwarded unchanged; only a computed output
-            /// can hold a value the part does not.
             if (output->type == ActionsDAG::ActionType::INPUT)
                 continue;
             computed.insert(output->result_name);
@@ -428,11 +420,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     for (const auto & col : previous_header)
         previous_step_columns.insert(col.name);
 
-    /// A subcolumn of a column an on-fly mutation step recomputed keeps its own pre-mutation stream
-    /// in the part; dropping the slot lets `evaluateMissingDefaults` derive it from the parent.
-    ///
-    /// A column a PREWHERE step consumes and projects out is absent from `previous_header` and
-    /// survives only in `result.additional_columns`, so the parent is looked for in both.
+    /// A subcolumn's own stream in the part is stale when an on-fly mutation step recomputed its parent.
     NameSet derived_from_mutation_result;
     if (!columns_computed_by_mutation_steps.empty() && !(previous_header.empty() && result.additional_columns.empty()))
     {
@@ -441,8 +429,6 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
         size_t pos = 0;
         for (const auto & name_and_type : merge_tree_reader->getColumns())
         {
-            /// The metadata decides, not the dot: a physical column whose name contains one
-            /// (`n.a` of a `Nested`) has its own data in the part and must keep reading it.
             auto column_in_storage = storage_snapshot->tryGetColumn(options, name_and_type.name);
             if (column_in_storage && column_in_storage->isSubcolumn())
             {
@@ -454,8 +440,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
                 {
                     read_columns[pos] = nullptr;
                     derived_from_mutation_result.insert(name_and_type.name);
-                    /// `fillMissingColumns` learns which parents exist from this set alone, so a
-                    /// parent held only by `result.additional_columns` has to be named here too.
+                    /// A parent projected out by a PREWHERE step is only in `result.additional_columns`, not yet in this set.
                     previous_step_columns.insert(name_in_storage);
                 }
             }
@@ -493,8 +478,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     const auto & result_header = range_reader.getReadSampleBlock();
     auto columns_for_patches = getColumnsForPatches(result_header, read_columns);
 
-    /// A slot derived from its parent gets the parent's patches, applied in version order around the
-    /// mutation step; patching it again here would put an older patch back over the mutation.
+    /// A derived slot inherits the parent's patches, already applied in version order around the mutation step.
     if (!derived_from_mutation_result.empty())
         for (auto & columns_for_patch : columns_for_patches)
             std::erase_if(columns_for_patch, [&](const ColumnForPatch & column) { return derived_from_mutation_result.contains(column.column_name); });

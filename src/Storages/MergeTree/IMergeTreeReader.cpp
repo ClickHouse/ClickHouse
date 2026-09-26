@@ -218,9 +218,7 @@ void IMergeTreeReader::fillMissingColumns(
                     {
                         missing_column_names.insert(column.getNameInStorage());
 
-                        /// A subcolumn whose parent an earlier chain step produced is derived from
-                        /// that parent by `evaluateMissingDefaults`; the frozen default recorded for
-                        /// the absent column would silently win over the derived value.
+                        /// A subcolumn whose parent a previous step produced is derived from it by `evaluateMissingDefaults`.
                         const bool parent_from_previous_step
                             = column.isSubcolumn() && previous_step_columns.contains(column.getNameInStorage());
 
