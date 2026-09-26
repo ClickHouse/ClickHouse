@@ -167,7 +167,7 @@ Use these as supporting checks for ClickHouse-specific invariants. They are not 
 - **No magic constants**
   Avoid magic constants; represent important thresholds or alternative behaviors as settings with sensible defaults.
 - **Backward compatibility**
-  New versions must be configurable to behave like older versions via `compatibility` settings. Ensure `SettingsChangesHistory.cpp` is updated when settings change. **New validation / enforcement on existing data:** if a PR adds a check that throws at `CREATE TABLE`, query execution, or server startup, and that check applies to objects created before the PR, it is a backward-incompatibility — the constraint may be violated by legitimate existing setups. It should either be gated behind a setting or applied only to newly created objects.
+  New versions must be configurable to behave like older versions via `compatibility` settings. Ensure a new setting or a changed default has a history record for the current version as a trailing argument of its `DECLARE` (`{"<version>", previous_value, new_value, "reason"}`). **New validation / enforcement on existing data:** if a PR adds a check that throws at `CREATE TABLE`, query execution, or server startup, and that check applies to objects created before the PR, it is a backward-incompatibility — the constraint may be violated by legitimate existing setups. It should either be gated behind a setting or applied only to newly created objects.
 - **Safe rollout**
   Ensure incremental rollout is feasible in both OSS and Cloud (feature flags, safe defaults, non-disruptive changes).
 - **Compilation time**
