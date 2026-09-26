@@ -1,6 +1,9 @@
 === additional_result_filter filters the output, the whole trace is read ===
 ├─ child_a
 └─ child_b
+=== additional_table_filters on the span log does not cut the spans read ===
+3
+3
 === the filter setting filters the output ===
 ├─ child_a
 └─ child_b

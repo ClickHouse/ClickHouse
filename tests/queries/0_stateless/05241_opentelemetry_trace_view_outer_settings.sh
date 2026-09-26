@@ -25,6 +25,10 @@ ${CLICKHOUSE_CLIENT} -q "system flush logs opentelemetry_span_log"
 echo "=== additional_result_filter filters the output, the whole trace is read ==="
 ${CLICKHOUSE_CLIENT} -q "select span from traceView('$trace_id') order by start_offset_us settings additional_result_filter = 'span LIKE ''%child%'''"
 
+echo "=== additional_table_filters on the span log does not cut the spans read ==="
+${CLICKHOUSE_CLIENT} -q "select count() from traceView('$trace_id') settings additional_table_filters = {'system.opentelemetry_span_log': 'operation_name = ''query'''}"
+${CLICKHOUSE_CLIENT} -q "select count() from traceView('$trace_id') settings additional_table_filters = {'system.opentelemetry_span_log': 'span LIKE ''%child%'''}"
+
 echo "=== the filter setting filters the output ==="
 ${CLICKHOUSE_CLIENT} -q "select span from traceView('$trace_id') order by start_offset_us settings filter = 'span LIKE ''%child%'''"
 

@@ -54,6 +54,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
 }
@@ -271,14 +272,18 @@ Block executeInternalQuery(const String & query, ContextPtr context)
     query_context->setCurrentQueryId("");
 
     /// The caller's settings that shape its own result - `filter`, `additional_result_filter`,
-    /// `limit`, `offset`, and the result size limits - belong to the final traceView output, not
-    /// to the queries that build it: applied here they would cut the spans read, or fail on a
-    /// column that only the output has. The resource limits (rows read, memory, time) stay:
-    /// these queries are where the work of the call is done.
+    /// `additional_table_filters`, `limit`, `offset`, and the result size limits - belong to the
+    /// final traceView output, not to the queries that build it: applied here they would cut the
+    /// spans read, or fail on a column that only the output has. The resource limits (rows read,
+    /// memory, time) stay: these queries are where the work of the call is done.
     Settings settings = query_context->getSettingsCopy();
     ClusterProxy::stripInitiatorOnlySettings(settings);
     settings[Setting::max_result_rows] = 0;
     settings[Setting::max_result_bytes] = 0;
+    /// Keyed by table name, so a filter the caller set for the span log would apply to the reads
+    /// of the span log here and drop spans before the tree is built. Not an initiator-only setting.
+    settings[Setting::additional_table_filters] = Map{};
+    settings[Setting::additional_table_filters].changed = false;
     query_context->setSettings(settings);
     auto io = executeQuery(query, query_context, QueryFlags{.internal = true}).second;
     return pullMonoBlock(io.pipeline);
@@ -652,9 +657,12 @@ String spanLogSource(const TraceViewArguments & arguments, ContextMutablePtr con
     const ClusterPtr span_log_replicas = all_replicas->getClusterWithMultipleShards(
         std::vector<size_t>(indices.begin(), indices.end())); // STYLE_CHECK_ALLOW_STD_CONTAINERS: the type it takes
 
-    /// A Distributed table over those replicas only, visible to the internal queries of `context`
-    /// under this name. It lives as long as `context`, which is private to this call.
-    const String source = "_trace_view_span_log";
+    /// A Distributed table over those replicas only, visible to the internal queries of `context`.
+    /// It lives as long as `context`, which is private to this call, but `context` is a copy of
+    /// the caller's and carries the caller's temporary tables: the name is unique to this call so
+    /// that it cannot clash with one of them.
+    String source = "_trace_view_span_log_" + toString(UUIDHelpers::generateV4());
+    std::erase(source, '-');
     context->addExternalTable(source, TemporaryTableHolder(context, [&](const StorageID & table_id) -> StoragePtr
     {
         auto storage = std::make_shared<StorageDistributed>(
