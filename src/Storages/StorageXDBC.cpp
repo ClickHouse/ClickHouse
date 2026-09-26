@@ -509,6 +509,7 @@ SELECT * FROM odbc_t
 
         },
         {
+            .supports_named_collections = true,
             .source_access_type = BridgeHelperMixin::getSourceAccessObject(),
         },
         documentation);

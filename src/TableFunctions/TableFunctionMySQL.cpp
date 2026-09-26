@@ -111,7 +111,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
         }
     }
 
-    configuration = StorageMySQL::getConfiguration(args, context, mysql_settings);
+    configuration = StorageMySQL::getConfiguration(args, context, mysql_settings, nullptr, getUsedNamedCollectionNameForUpdate());
     effective_settings.emplace(mysql_settings);
     pool.emplace(createMySQLPoolWithFailover(*configuration, mysql_settings));
 }

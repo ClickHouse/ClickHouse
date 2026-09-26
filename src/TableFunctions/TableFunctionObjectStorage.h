@@ -55,7 +55,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true);
+        StorageObjectStorageConfiguration::initialize(*getConfiguration(context), args, context, true, nullptr, getUsedNamedCollectionNameForUpdate());
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(

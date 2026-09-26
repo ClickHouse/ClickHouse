@@ -139,6 +139,7 @@ static void registerStorageAzure(StorageFactory & factory)
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
         .supports_schema_inference = true,
+        .supports_named_collections = true,
         .source_access_type = AccessTypeObjects::Source::AZURE,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
     },
@@ -763,6 +764,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
         .supports_schema_inference = true,
+        .supports_named_collections = true,
         .source_access_type = AccessTypeObjects::Source::S3,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
     },
@@ -807,6 +809,7 @@ static void registerStorageHDFS(StorageFactory & factory)
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
         .supports_schema_inference = true,
+        .supports_named_collections = true,
         .source_access_type = AccessTypeObjects::Source::HDFS,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
     },
@@ -1143,6 +1146,7 @@ void registerStorageIceberg(StorageFactory & factory)
             .supports_sort_order = true,
             .supports_schema_inference = true,
             /// This source access type is probably a bug which was overlooked and we do not know how to fix it simply, so we keep it as it is.
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -1586,6 +1590,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .supports_settings = true,
             .supports_sort_order = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -1625,6 +1630,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .supports_settings = true,
             .supports_sort_order = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -1646,6 +1652,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .supports_settings = true,
             .supports_sort_order = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::HDFS,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -1684,6 +1691,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .supports_settings = true,
             .supports_sort_order = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -1771,6 +1779,7 @@ void registerStoragePaimon(StorageFactory & factory)
             /// inside the factory lambda.  Fixing this requires refactoring the
             /// StorageFactory registration mechanism to support dynamic / deferred
             /// access-type resolution.
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -2072,6 +2081,7 @@ Data types supported in Paimon partition keys:
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -2119,6 +2129,7 @@ Data types supported in Paimon partition keys:
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -2144,6 +2155,7 @@ Data types supported in Paimon partition keys:
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::HDFS,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -2190,6 +2202,7 @@ Data types supported in Paimon partition keys:
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -2246,6 +2259,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -2426,6 +2440,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -2464,6 +2479,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },
@@ -2501,6 +2517,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
         {
             .supports_settings = true,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         },
@@ -2526,6 +2543,7 @@ void registerStorageHudi(StorageFactory & factory)
         {
             .supports_settings = false,
             .supports_schema_inference = true,
+            .supports_named_collections = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
         },

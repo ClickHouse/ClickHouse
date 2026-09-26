@@ -44,7 +44,7 @@ void TableFunctionArrowFlight::parseArguments(const ASTPtr & ast_function, Conte
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'arrowFlight' must have arguments.");
 
     ASTs & args = func_args.arguments->children;
-    config = StorageArrowFlight::getConfiguration(args, context);
+    config = StorageArrowFlight::getConfiguration(args, context, nullptr, getUsedNamedCollectionNameForUpdate());
 
     /// ArrowFlightConnection will establish connection lazily.
     connection = std::make_shared<ArrowFlightConnection>(config);

@@ -79,6 +79,17 @@ public:
         /// serialize `unique_key`, which would allow replicas to diverge silently.
         bool supports_unique_key = false;
         bool supports_sql_security = false;
+        /// Whether the engine resolves its arguments through a named collection when the first
+        /// argument is an identifier (see `tryGetNamedCollectionWithOverrides`). For other engines
+        /// an identifier as the first argument means something else: a cluster name for
+        /// `Distributed`, a database name for `Buffer`, a dictionary name for `Dictionary`.
+        bool supports_named_collections = false;
+        /// Only meaningful together with `supports_named_collections`: whether an identifier first
+        /// argument is also a valid positional argument when the named-collection lookup does not
+        /// resolve, so that syntax alone cannot prove that the table uses a collection. `Remote`
+        /// falls back to interpreting it as a cluster name; every other engine either rejects an
+        /// unknown collection or does not accept an identifier positionally.
+        bool named_collection_argument_is_ambiguous = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
@@ -118,6 +129,8 @@ public:
         .supports_schema_inference = false,
         .supports_unique_key = false,
         .supports_sql_security = false,
+        .supports_named_collections = false,
+        .named_collection_argument_is_ambiguous = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
     }, Documentation documentation = {});
