@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/StringSearcher.h>
 #include <Common/StringUtils.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
@@ -40,6 +41,13 @@ namespace
 
 /// Each matcher checks one token against one pattern, as the text index does for each token of its dictionary.
 
+bool containsLiteral(std::string_view haystack, std::string_view literal)
+{
+    const auto * begin = reinterpret_cast<const UInt8 *>(haystack.data());
+    const auto * end = begin + haystack.size();
+    return literal.empty() || CaseSensitiveStringSearcher(literal.data(), literal.size()).search(begin, end) != end;
+}
+
 struct TokenPrefixMatcher
 {
     TokenPrefixMatcher(const String & prefix_, size_t /*regexp_jit_min_count*/) : prefix(prefix_) {}
@@ -75,17 +83,9 @@ struct TokenLikeMatcher
             case Kind::Equals: return token.size() == literal.size() && hasLiteralAt(token, 0);
             case Kind::StartsWith: return token.size() >= literal.size() && hasLiteralAt(token, 0);
             case Kind::EndsWith: return token.size() >= literal.size() && hasLiteralAt(token, token.size() - literal.size());
-            case Kind::Contains: return containsLiteral(token);
+            case Kind::Contains: return containsLiteral(token, literal);
             case Kind::Regexp: return regexp->match(token.data(), token.size());
         }
-    }
-
-    bool containsLiteral(std::string_view token) const
-    {
-        for (size_t pos = 0; pos + literal.size() <= token.size(); ++pos)
-            if (hasLiteralAt(token, pos))
-                return true;
-        return false;
     }
 
     /// Compares the first byte before calling memcmp, because most tokens differ there.
