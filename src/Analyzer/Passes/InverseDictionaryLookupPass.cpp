@@ -267,15 +267,8 @@ bool canReplaceWithDictGetKeys(
     return supertype && supertype->equals(*stripped_attr_type);
 }
 
-/// `dictGet` propagates the NULL of a top-level `Nullable` key, and that is the NULL the null-aware
-/// name compares instead of propagating. A `Variant` key carries its NULL in a discriminator, so
-/// `dictGet` does not propagate it, and the `in` family rejects a dynamic structure outright, which
-/// `Nullable` and `LowCardinality` forward from the nested type.
-/// A correlated subquery must be evaluated exactly once, and index analysis re-plans a hinted node in
-/// its own actions DAG, which rejects one.
-/// A simple key is one non-nullable `UInt64` column, so the key set cannot hold a NULL and the two names
-/// differ only in the NULL the key expression holds. `dictGet` converts that expression to the key type,
-/// while the rewrite compares it against bare key values in a common supertype: equal types, no cast.
+/// The planner builds an `indexHint` argument in its own actions DAG, which rejects a correlated subquery,
+/// and `dictGet` converts the key to the key column type, while the key set comparison does not.
 bool canRestoreNullForKey(const QueryTreeNodePtr & key_expr_node, bool is_simple_key, const NamesAndTypes & key_cols)
 {
     if (!is_simple_key)
@@ -288,7 +281,6 @@ bool canRestoreNullForKey(const QueryTreeNodePtr & key_expr_node, bool is_simple
         && removeLowCardinalityAndNullable(key_type)->equals(*key_cols.front().type);
 }
 
-/// Restores the NULL the null-aware name swallows, so the result equals `in`'s for every row.
 QueryTreeNodePtr restoreNullForNullKey(QueryTreeNodePtr key_expr, QueryTreeNodePtr set_membership, const ContextPtr & context)
 {
     auto is_null_node = std::make_shared<FunctionNode>("isNull");
@@ -303,8 +295,6 @@ QueryTreeNodePtr restoreNullForNullKey(QueryTreeNodePtr key_expr, QueryTreeNodeP
     return if_node;
 }
 
-/// `indexHint` returns 1 for every row and never evaluates its argument; index analysis reads that
-/// argument back out of the function object and uses it as a condition (`Functions/indexHint.h`).
 QueryTreeNodePtr makeIndexHint(QueryTreeNodePtr condition, const ContextPtr & context)
 {
     auto index_hint_node = std::make_shared<FunctionNode>("indexHint");
@@ -313,8 +303,7 @@ QueryTreeNodePtr makeIndexHint(QueryTreeNodePtr condition, const ContextPtr & co
     return index_hint_node;
 }
 
-/// A new `and` rather than an argument appended to `filter`: the filter node can be shared, and a
-/// typed ancestor of it depends on its result type.
+/// Wraps `filter` in a new `and` instead of extending it, since the filter node can be shared.
 QueryTreeNodePtr conjoin(QueryTreeNodePtr filter, QueryTreeNodes hints, const ContextPtr & context)
 {
     auto and_node = std::make_shared<FunctionNode>("and");
@@ -547,8 +536,7 @@ public:
                 if (!in_function_name && !canRestoreNullForKey(dictget_function_info.key_expr_node, dict_structure.id.has_value(), key_cols))
                     return;
 
-                /// The null-aware name is a fixed point of the renaming, so a shard re-analyzing the
-                /// shipped AST leaves it alone.
+                /// The null-aware name is a fixed point of the renaming, so a shard re-analyzing the shipped AST leaves it alone.
                 const String set_function_name = in_function_name ? *in_function_name : String(getNullInFunctionName("in"));
 
                 /// keys_constant->getResultType() is Array(T) or Array(Tuple(...))
@@ -697,14 +685,12 @@ private:
             filter = conjoin(filter, std::move(hints), getContext());
     }
 
-    /// Only a conjunct reachable from the filter root through `and` alone is implied by the filter
-    /// being true; under `not` or `or` the filter can be true where the conjunct is false.
+    /// Only a conjunct on the `and` spine of the filter is implied by the filter being true.
     void collectHintsFromFilterSpine(const QueryTreeNodePtr & node, QueryTreeNodes & hints)
     {
         if (auto it = null_in_replacements.find(node.get()); it != null_in_replacements.end())
         {
             hints.push_back(makeIndexHint(it->second, getContext()));
-            /// One hint per replacement, even when the same node sits in the filter twice.
             null_in_replacements.erase(it);
             return;
         }
@@ -726,8 +712,7 @@ private:
 
     std::optional<bool> create_temporary_table_granted;
 
-    /// Every node installed in place of a comparison that could only be rewritten with the
-    /// null-aware name, mapped to the set membership node inside it.
+    /// Replacement node installed in the tree -> the `nullIn` node inside it.
     std::unordered_map<const IQueryTreeNode *, QueryTreeNodePtr> null_in_replacements;
 };
 
