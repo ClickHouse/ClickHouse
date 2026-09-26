@@ -691,7 +691,9 @@ static void check(const std::string & name, const DataTypes & argument_types, co
 
 static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
 {
-    if (!(*settings)[Setting::allow_introspection_functions])
+    /// The factory passes null when there is no query context to take settings from, and with no
+    /// principal there is nothing to authorize.
+    if (settings && !(*settings)[Setting::allow_introspection_functions])
         throw Exception(ErrorCodes::FUNCTION_NOT_ALLOWED,
         "Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0");
 
@@ -706,11 +708,11 @@ void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory)
 Builds a [flamegraph](https://www.brendangregg.com/flamegraphs.html) using the list of stacktraces.
 Outputs an array of strings which can be used by the [flamegraph.pl](https://github.com/brendangregg/FlameGraph) utility to render an SVG of the flamegraph.
 
-:::note
+<Note>
 In the case where `ptr != 0`, a flameGraph will map allocations (size > 0) and deallocations (size < 0) with the same size and ptr.
 Only allocations which were not freed are shown.
 Non mapped deallocations are ignored.
-:::
+</Note>
 
 **Recipes.**
 The stacktraces come from `system.trace_log`, which the query profiler fills in, and the array of

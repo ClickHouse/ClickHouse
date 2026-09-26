@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
+# Tags: no-ordinary-database, no-replicated-database
+# Tag no-replicated-database: the chained exchange `RENAME` is not supported
 
 set -e
 
