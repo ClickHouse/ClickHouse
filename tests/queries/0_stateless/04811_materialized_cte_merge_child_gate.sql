@@ -57,14 +57,16 @@ WITH t AS MATERIALIZED (SELECT number AS c FROM numbers(2))
 SELECT count() FROM merge(currentDatabase(), '^(a_04811_dist|t_04811_const)$')
 WHERE (x IN (t)) AND (x NOT IN (t));
 
--- 6. A materialized CTE defined *inside* a `View` that a `Merge` table reads is owned by
---    that child alone (the outer query cannot see it), so the child must keep materializing
---    it itself. Two references keep it from being inlined: 3 + 3 rows, plus 1 from the
+-- 6. A `Merge` table reading a `View` whose body was written with a materialized CTE. A stored view
+--    definition inlines its CTEs, so `MATERIALIZED` is rejected there by default; the view is created
+--    with the guard off and the child evaluates the CTE per reference: 3 + 3 rows, plus 1 from the
 --    constant view.
 DROP VIEW IF EXISTS t_04811_view_cte SYNC;
+SET force_materialized_cte = 0;
 CREATE VIEW t_04811_view_cte AS
     WITH inner_cte AS MATERIALIZED (SELECT number AS x FROM numbers(3))
     SELECT x FROM inner_cte UNION ALL SELECT x FROM inner_cte;
+SET force_materialized_cte = 1;
 
 SELECT count() FROM merge(currentDatabase(), '^t_04811_(view_cte|const)$');
 

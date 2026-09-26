@@ -103,6 +103,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
+#include <Interpreters/RejectMaterializedCTEVisitor.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
@@ -2024,6 +2025,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     // substitute possible UDFs with their definitions
     if (!UserDefinedSQLFunctionFactory::instance().empty())
         UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+
+    /// After UDF expansion, so a materialized CTE hidden in a UDF body is seen too. The stored definition inlines
+    /// every CTE (`ApplyWithSubqueryVisitor` above and again on load), so `MATERIALIZED` cannot be honoured in a view.
+    if (create.select && create.isView() && isFreshTableDefinition(mode, create.attach_short_syntax) && shouldRejectMaterializedCTE(getContext()))
+    {
+        RejectMaterializedCTEVisitor::Data data;
+        data.reason = "are not supported in a view definition";
+        ASTPtr select = create.select->ptr();
+        RejectMaterializedCTEVisitor(data).visit(select);
+    }
 
     /// SQL UDF expansion can introduce unqualified table names into persisted metadata. Resolve
     /// them in the query's current database without revisiting scalar aliases generated during

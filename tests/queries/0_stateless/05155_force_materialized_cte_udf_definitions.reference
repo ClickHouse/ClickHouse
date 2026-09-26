@@ -1,0 +1,5 @@
+-- guard on: a view or MODIFY QUERY whose UDF hides a materialized CTE is rejected
+SUPPORT_IS_DISABLED
+SUPPORT_IS_DISABLED
+-- guard off: accepted and inlined
+9
