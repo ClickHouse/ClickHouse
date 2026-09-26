@@ -24,6 +24,9 @@ namespace DB
   *   each containing a single file, `prefix.path`, with the content as the logical path of the corresponding directory.
   * - when a logical directory is renamed or moved, we don't touch its randomly assigned name,
   *   and simply rewrite the contents of `prefix.path`.
+  * - a removal is committed by moving the directory (or a backup copy of the file) under a logical name
+  *   starting with `__removed.`, and the objects are deleted afterwards; if the process dies in between,
+  *   such objects are deleted on the next initial load, see `PlainRewritableLayout::REMOVED_NAME_PREFIX`.
   *
   * Example. Let's suppose, the logical filesystem structure is:
   * /hello/world/test1.txt
