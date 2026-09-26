@@ -18,7 +18,8 @@ LazyFinalKeyAnalysisStep::LazyFinalKeyAnalysisStep(
     PartitionIdToMaxBlockPtr max_block_numbers_to_read_,
     RangesInDataPartsPtr ranges_,
     ContextPtr query_context_,
-    float min_filtered_ratio_)
+    float min_filtered_ratio_,
+    LazyFinalPreFinalFilters pre_final_filters_)
     : ITransformingStep(
         input_header_,
         input_header_,
@@ -37,6 +38,7 @@ LazyFinalKeyAnalysisStep::LazyFinalKeyAnalysisStep(
     , ranges(std::move(ranges_))
     , query_context(std::move(query_context_))
     , min_filtered_ratio(min_filtered_ratio_)
+    , pre_final_filters(std::move(pre_final_filters_))
 {
 }
 
@@ -48,7 +50,7 @@ void LazyFinalKeyAnalysisStep::transformPipeline(QueryPipelineBuilder & pipeline
         return std::make_shared<LazyFinalKeyAnalysisTransform>(
             future_set, shared_state, metadata_snapshot, mutations_snapshot,
             storage_snapshot, data_settings, data, max_block_numbers_to_read,
-            ranges, query_context, min_filtered_ratio);
+            ranges, query_context, min_filtered_ratio, pre_final_filters);
     });
 }
 
@@ -56,7 +58,7 @@ std::unique_ptr<ReadFromMergeTree> LazyFinalKeyAnalysisStep::buildReadingStep() 
 {
     return LazyFinalKeyAnalysisTransform::buildReadingStep(
         metadata_snapshot, mutations_snapshot, storage_snapshot,
-        data_settings, data, max_block_numbers_to_read, ranges, query_context);
+        data_settings, data, max_block_numbers_to_read, ranges, query_context, pre_final_filters);
 }
 
 }
