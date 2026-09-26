@@ -44,3 +44,15 @@ SELECT toUnixTimestamp(v1), v2 FROM tab1 WHERE v2 > 100000 ORDER BY v1 DESC, v2 
 SELECT toUnixTimestamp(v1), v2 FROM tab1 ORDER BY v1 ASC, v2 ASC LIMIT 5 SETTINGS  use_skip_indexes_for_top_k=1;
 SELECT toUnixTimestamp(v1), v2 FROM tab1 ORDER BY v1 ASC, v2 ASC LIMIT 20 SETTINGS use_skip_indexes_for_top_k=1;
 SELECT toUnixTimestamp(v1), v2 FROM tab1 WHERE v2 > 100000 ORDER BY v1 ASC, v2 ASC LIMIT 10 SETTINGS use_skip_indexes_on_data_read=1, use_skip_indexes_for_top_k=1;
+
+SELECT 'Tests with single column in ORDER BY and index granularity > 1';
+
+SELECT toUnixTimestamp(v1) FROM tab1 ORDER BY v1 DESC LIMIT 5 SETTINGS use_skip_indexes_for_top_k=1;
+SELECT toUnixTimestamp(v1) FROM tab1 ORDER BY v1 DESC LIMIT 20 SETTINGS use_skip_indexes_for_top_k=1;
+SELECT toUnixTimestamp(v1) FROM tab1 WHERE v2 > 100000 ORDER BY v1 DESC LIMIT 10 SETTINGS use_skip_indexes_on_data_read=1, use_skip_indexes_for_top_k=1;
+
+SELECT toUnixTimestamp(v1) FROM tab1 ORDER BY v1 ASC LIMIT 5 SETTINGS use_skip_indexes_for_top_k=1;
+SELECT toUnixTimestamp(v1) FROM tab1 ORDER BY v1 ASC LIMIT 20 SETTINGS use_skip_indexes_for_top_k=1;
+SELECT toUnixTimestamp(v1) FROM tab1 WHERE v2 > 100000 ORDER BY v1 ASC LIMIT 10 SETTINGS use_skip_indexes_on_data_read=1, use_skip_indexes_for_top_k=1;
+
+DROP TABLE tab1;

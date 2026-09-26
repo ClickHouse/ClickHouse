@@ -1,0 +1,32 @@
+Condition: (multiply(key, 2) in [11, +Inf))
+Granules: 5/10
+Condition: (multiply(key, 3) in [16, +Inf))
+Granules: 5/10
+Condition: (multiply(key, 3) in [21, +Inf))
+Granules: 4/11
+Condition: (multiply(key, 3) in [1, +Inf))
+Granules: 11/11
+Condition: (multiply(key, 100) in [501, +Inf))
+Granules: 5/10
+Condition: (multiply(key, -2) in (-Inf, -11])
+Granules: 5/10
+Condition: (multiply(key, \'2\') in (\'10\', +Inf))
+Granules: 5/10
+Condition: (multiply(key, \'3\') in (\'0\', +Inf))
+Granules: 11/11
+Condition: (multiply(key, \'5\') in (\'25\', +Inf))
+Granules: 5/10
+Condition: (multiply(key, \'3\') in (\'0\', +Inf))
+Granules: 11/11
+Condition: (multiply(2, key) in [11, +Inf))
+Granules: 5/10
+Condition: (multiply(key, 1) in [6, +Inf))
+Granules: 5/10
+Condition: (multiply(key, -1) in (-Inf, -2])
+Granules: 10/11
+Condition: (multiply(key, -1) in (-Inf, -6])
+Granules: 5/10
+Condition: true
+Granules: 10/10
+Condition: (multiply(key, 3) in [31, +Inf))
+Granules: 2/11

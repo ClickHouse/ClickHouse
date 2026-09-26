@@ -1,0 +1,24 @@
+-- Case 1: LEFT JOIN chain preserves t2.key = t3.key
+1	10	1	5	1	100
+2	15	0	0	0	0
+3	20	0	0	0	0
+1	10	1	5	1	100
+2	15	0	0	0	0
+3	20	0	0	0	0
+-- Case 2: RIGHT JOIN chain
+1	10	1	5	1	100
+0	0	4	25	0	0
+1	10	1	5	1	100
+0	0	4	25	0	0
+-- Case 3: INNER then LEFT
+1	1	1	1
+1	1	1	1
+-- Case 4: FULL OUTER JOIN
+0	4	0
+1	1	1
+2	0	0
+3	0	0
+0	4	0
+1	1	1
+2	0	0
+3	0	0

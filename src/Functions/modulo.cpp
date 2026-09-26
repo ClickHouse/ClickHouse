@@ -109,23 +109,46 @@ struct ModuloByConstantImpl
         if (b < 0)
             b = static_cast<B>(-b);
 
-        /// Here we failed to make the SSE variant from libdivide give an advantage.
-
         if (b & (b - 1))
         {
-            libdivide::divider<A> divider(static_cast<A>(b));
-            for (size_t i = 0; i < size; ++i)
+            /// BRANCHFULL: the per-iteration algorithm-type branch is
+            /// perfectly predicted (loop-invariant) and lets most divisors
+            /// take the fast `mullhi >> shift` path (2 ops vs BRANCHFREE's
+            /// unconditional 5 ops).  The compiler auto-vectorizes each
+            /// path independently (via vpmuludq on x86, NEON on ARM).
+            /// For 64-bit types, suppress auto-vectorization: there is no
+            /// vpmuludq for 64-bit, so the compiler emits scalar
+            /// extract/insert sequences that are slower than the scalar loop.
+            libdivide::divider<A, libdivide::BRANCHFULL> divider(static_cast<A>(b));
+            if constexpr (sizeof(A) >= 8)
             {
-                /// NOTE: perhaps, the division semantics with the remainder of negative numbers is not preserved.
-                dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
+#pragma clang loop vectorize(disable)
+                for (size_t i = 0; i < size; ++i)
+                    dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                    dst[i] = static_cast<ResultType>(src[i] - (src[i] / divider) * b);
             }
         }
         else
         {
-            // gcc libdivide doesn't work well for pow2 division
+            /// Power-of-two: a single AND is cheaper than libdivide's multiply-shift
             auto mask = b - 1;
             for (size_t i = 0; i < size; ++i)
-                dst[i] = static_cast<ResultType>(src[i] & mask);
+            {
+                A a = src[i];
+                ResultType r = static_cast<ResultType>(a & mask);
+                if constexpr (std::is_signed_v<A> && std::is_signed_v<ResultType>)
+                {
+                    /// Sign-extend the result to match the behavior of %, to make the const and non-const
+                    /// versions of the modulo function behave the same way.
+                    ResultType sign_ext = static_cast<ResultType>(-static_cast<ResultType>((a < 0) & (r != 0)));
+                    r |= sign_ext & ~static_cast<ResultType>(mask);
+                }
+                dst[i] = r;
+            }
         }
     }
 
@@ -181,16 +204,16 @@ using FunctionModulo = BinaryArithmeticOverloadResolver<ModuloImpl, NameModulo, 
 REGISTER_FUNCTION(Modulo)
 {
     FunctionDocumentation::Description description = R"(
-    Calculates the remainder of the division of two values a by b.
+Calculates the remainder of the division of two values a by b.
 
-    The result type is an integer if both inputs are integers. If one of the
-    inputs is a floating-point number, the result type is Float64.
+The result type is an integer if both inputs are integers. If one of the
+inputs is a floating-point number, the result type is Float64.
 
-    The remainder is computed like in C++. Truncated division is used for
-    negative numbers.
+The remainder is computed like in C++. Truncated division is used for
+negative numbers.
 
-    An exception is thrown when dividing by zero or when dividing a minimal
-    negative number by minus one.
+An exception is thrown when dividing by zero or when dividing a minimal
+negative number by minus one.
     )";
     FunctionDocumentation::Syntax syntax = "modulo(a, b)";
     FunctionDocumentation::Argument argument1 = {"a", "The dividend"};

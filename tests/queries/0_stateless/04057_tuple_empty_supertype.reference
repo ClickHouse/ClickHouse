@@ -1,0 +1,5 @@
+0
+Variant(Tuple(), Tuple(Nullable(Nothing), UInt32, UInt8, UInt8))
+()
+Tuple(UInt8, UInt8)
+Array(Variant(Tuple(), Tuple(UInt8, UInt8)))

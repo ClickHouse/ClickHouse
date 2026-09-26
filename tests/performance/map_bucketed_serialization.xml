@@ -1,0 +1,65 @@
+<test>
+    <!-- Benchmarks single-key and multi-key lookups on Map columns stored with bucketed
+         serialization (map_serialization_version = 'with_buckets', the default).
+         Three tables with 100, 1000 and 10000 unique keys test how the bucket count
+         (determined automatically from statistics) reduces the data read per lookup.
+         Maps with fewer than map_buckets_min_avg_size=32 keys use a single bucket,
+         so the 10-key case is excluded. -->
+
+    <settings>
+        <max_insert_threads>4</max_insert_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <create_query>
+        CREATE TABLE map_100_keys (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <create_query>
+        CREATE TABLE map_1000_keys (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <create_query>
+        CREATE TABLE map_10000_keys (id UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_100_keys
+        SELECT number AS id, mapFromArrays(arrayMap(i -> 'key' || toString(i), range(100)), arrayMap(i -> number + i, range(100))) AS m
+        FROM numbers(1000000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_100_keys FINAL SETTINGS mutations_sync=1</fill_query>
+
+    <fill_query>
+        INSERT INTO map_1000_keys
+        SELECT number AS id, mapFromArrays(arrayMap(i -> 'key' || toString(i), range(1000)), arrayMap(i -> number + i, range(1000))) AS m
+        FROM numbers(100000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_1000_keys FINAL SETTINGS mutations_sync=1</fill_query>
+
+    <fill_query>
+        INSERT INTO map_10000_keys
+        SELECT number AS id, mapFromArrays(arrayMap(i -> 'key' || toString(i), range(10000)), arrayMap(i -> number + i, range(10000))) AS m
+        FROM numbers(1000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_10000_keys FINAL SETTINGS mutations_sync=1</fill_query>
+
+    <!-- Query 1: single-key lookup. With bucketed serialization only 1 of N buckets is read. -->
+    <query>SELECT m['key0'] FROM map_100_keys FORMAT Null</query>
+    <query>SELECT m['key0'] FROM map_1000_keys FORMAT Null</query>
+    <query>SELECT m['key0'] FROM map_10000_keys FORMAT Null</query>
+
+    <!-- Query 2: three-key lookup. Reads up to 3 buckets instead of all. -->
+    <query>SELECT m['key0'], m['key1'], m['key2'] FROM map_100_keys FORMAT Null</query>
+    <query>SELECT m['key0'], m['key1'], m['key2'] FROM map_1000_keys FORMAT Null</query>
+    <query>SELECT m['key0'], m['key1'], m['key2'] FROM map_10000_keys FORMAT Null</query>
+
+    <!-- Query 3: selective lookup with a WHERE predicate.
+         Row 0 (number=0) has m['key1'] = 0 + 1 = 1, so this returns exactly one row
+         but still requires reading the 'key1' bucket for every row. -->
+    <query>SELECT * FROM map_100_keys WHERE m['key1'] = 1 FORMAT Null</query>
+    <query>SELECT * FROM map_1000_keys WHERE m['key1'] = 1 FORMAT Null</query>
+    <query>SELECT * FROM map_10000_keys WHERE m['key1'] = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS map_100_keys</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_1000_keys</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_10000_keys</drop_query>
+</test>

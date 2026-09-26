@@ -99,15 +99,22 @@ class DiffToSymbols:
                 linkage_name,
                 ranges[1].1 AS address
             FROM file('{ch_path}', 'DWARF')
-            WHERE (tag = 'subprogram') AND (notEmpty(linkage_name) OR address != 0) AND notEmpty(decl_file)
+            WHERE (tag = 'subprogram')
+              AND (notEmpty(linkage_name) OR address != 0)
+              AND notEmpty(decl_file)
         ) AS binary
-        ON basename(diff.filename) = basename(binary.decl_file) AND diff.line >= binary.decl_line
+        ON basename(diff.filename) = basename(binary.decl_file)
+           AND diff.line >= binary.decl_line
         FORMAT TSV
             """.format(
                 ch_path=self.clickhouse_path
             )
         ).strip()
 
+        import time
+        n_lines = csv_payload.count("\n") - 1  # minus header
+        print(f"[find_symbols] DWARF query: {n_lines} changed lines, binary={self.clickhouse_path}")
+        t0 = time.monotonic()
         proc = subprocess.run(
             [self.clickhouse_path, "local", "--query", query],
             input=csv_payload,
@@ -115,6 +122,7 @@ class DiffToSymbols:
             capture_output=True,
             check=False,
         )
+        print(f"[find_symbols] DWARF query: {time.monotonic()-t0:.2f}s")
         if proc.returncode != 0:
             print(proc.stderr, file=sys.stderr)
             raise SystemExit(proc.returncode)
@@ -142,9 +150,15 @@ class DiffToSymbols:
         return result
 
     def get_file_with_line_numbers(self):
+        import time
         diff_url = f"https://patch-diff.githubusercontent.com/raw/ClickHouse/ClickHouse/pull/{self.pr_number}.diff"
+        t0 = time.monotonic()
         diff_bytes = self.fetch(diff_url)
-        return self.parse_diff_to_line_numbers(diff_bytes)
+        print(f"[find_symbols] fetch diff: {time.monotonic()-t0:.2f}s ({len(diff_bytes)} bytes)")
+        t0 = time.monotonic()
+        result = self.parse_diff_to_line_numbers(diff_bytes)
+        print(f"[find_symbols] parse diff: {time.monotonic()-t0:.2f}s -> {len(result)} changed lines")
+        return result
 
     def get_map_line_to_symbol(self):
         """
@@ -154,10 +168,18 @@ class DiffToSymbols:
             Dictionary mapping (filename, line_number) -> (address, linkage_name, symbol)
             Empty dict if there are no changes in source code
         """
+        import time
+        t_total = time.monotonic()
         file_with_line_numbers = self.get_file_with_line_numbers()
         if not file_with_line_numbers:
             return {}
-        return self.run_query(file_with_line_numbers)
+        result = self.run_query(file_with_line_numbers)
+        resolved = sum(1 for a, l, s in result.values() if s)
+        print(
+            f"[find_symbols] total: {time.monotonic()-t_total:.2f}s, "
+            f"resolved={resolved}/{len(result)} lines"
+        )
+        return result
 
 
 if __name__ == "__main__":

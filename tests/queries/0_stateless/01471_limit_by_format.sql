@@ -1,2 +1,3 @@
+SET enable_analyzer = 1;
 EXPLAIN SYNTAX SELECT * FROM system.one LIMIT 1 BY * LIMIT 1;
 EXPLAIN SYNTAX SELECT * FROM system.one LIMIT 1 BY 0+dummy, 0-dummy LIMIT 1;

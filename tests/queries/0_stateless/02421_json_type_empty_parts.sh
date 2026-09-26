@@ -12,7 +12,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_json_empty_parts;"
 ${CLICKHOUSE_CLIENT} -q "SELECT 'Collapsing';"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_json_empty_parts (id UInt64, s Int8, data JSON) ENGINE = CollapsingMergeTree(s) ORDER BY id SETTINGS old_parts_lifetime=5, merge_tree_clear_old_parts_interval_seconds = 1, cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;" --enable_json_type 1
-${CLICKHOUSE_CLIENT} -q "INSERT INTO t_json_empty_parts VALUES (1, 1, '{\"k1\": \"aaa\"}') (1, -1, '{\"k2\": \"bbb\"}');"
+${CLICKHOUSE_CLIENT} --optimize_on_insert 1 -q "INSERT INTO t_json_empty_parts VALUES (1, 1, '{\"k1\": \"aaa\"}') (1, -1, '{\"k2\": \"bbb\"}');"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_json_empty_parts;"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.parts WHERE table = 't_json_empty_parts' AND database = currentDatabase() AND active;"
 ${CLICKHOUSE_CLIENT} -q "SELECT DISTINCT arrayJoin(JSONAllPathsWithTypes(data)) AS path FROM t_json_empty_parts ORDER BY path"

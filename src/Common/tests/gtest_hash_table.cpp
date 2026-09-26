@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <limits>
 #include <numeric>
 #include <ranges>
 
@@ -6,7 +7,9 @@
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/StringHashMap.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MemoryTracker.h>
 #include <Common/iota.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -66,7 +69,7 @@ TEST(HashTable, Emplace)
 
     Cont cont;
 
-    Cont::LookupResult it;
+    Cont::LookupResult it = {};
     bool inserted = false;
     cont.emplace(1, it, inserted);
     ASSERT_EQ(it->getKey(), 1);
@@ -491,3 +494,155 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple(10, true, true)
     )
 );
+
+TEST(HashTable, StringHashMapMoveConstructorDoesNotAllocate)
+{
+    /// Populate a StringHashMap that covers all five sub-maps:
+    /// m0 (empty key), m1 (1-8 bytes), m2 (9-16 bytes), m3 (17-24 bytes), ms (25+ bytes).
+    /// Then move-construct it under DENY_ALLOCATIONS_IN_SCOPE to verify
+    /// the move constructor does not allocate memory.
+
+    using Map = StringHashMap<UInt64>;
+    Map src;
+
+    std::pair<std::string, UInt64> entries[] = {
+        {"", 0},                              // m0 (empty key)
+        {"hello", 1},                         // m1 (1-8 bytes)
+        {"medium_key_9abc", 2},               // m2 (9-16 bytes)
+        {"long_key_17bytes_value", 3},        // m3 (17-24 bytes)
+        {"this_is_a_very_long_key_value!!", 4}, // ms (25+ bytes)
+    };
+
+    for (const auto & [key, value] : entries)
+    {
+        Map::LookupResult it;
+        bool inserted = false;
+        std::string_view key_view = key;
+        src.emplace(key_view, it, inserted);
+        ASSERT_TRUE(inserted);
+        it->getMapped() = value;
+    }
+
+    auto check_map = [&](const auto & map)
+    {
+        ASSERT_EQ(map.size(), 5);
+
+        /// Verify all keys are findable in the destination map.
+        for (const auto & [key, value] : entries)
+        {
+            std::string_view key_view = key;
+            auto it = map.find(key_view);
+            ASSERT_TRUE(it != nullptr) << "key not found after move: size=" << key.size();
+            ASSERT_EQ(it->getMapped(), value);
+        }
+    };
+
+    /// The move constructor must not allocate — it only swaps buffer pointers.
+    DENY_ALLOCATIONS_IN_SCOPE;
+    Map dst1(std::move(src));
+    ALLOW_ALLOCATIONS_IN_SCOPE;
+
+    check_map(dst1);
+
+    DENY_ALLOCATIONS_IN_SCOPE;
+    Map dst2 = std::move(dst1);
+    ALLOW_ALLOCATIONS_IN_SCOPE;
+
+    check_map(dst2);
+}
+
+namespace
+{
+
+/// Records the allocation overlap required by the memory tracker before a replacement is admitted.
+struct GrowthTrackingAllocator : HashTableAllocator
+{
+    static inline size_t allocated_bytes = 0;
+    static inline size_t peak_bytes = 0;
+
+    void * alloc(size_t bytes)
+    {
+        void * result = HashTableAllocator::alloc(bytes);
+        allocated_bytes += bytes;
+        peak_bytes = std::max(peak_bytes, allocated_bytes);
+        return result;
+    }
+
+    void * realloc(void * buffer, size_t old_bytes, size_t new_bytes)
+    {
+        peak_bytes = std::max(peak_bytes, allocated_bytes + new_bytes);
+        void * result = HashTableAllocator::realloc(buffer, old_bytes, new_bytes);
+        allocated_bytes += new_bytes - old_bytes;
+        return result;
+    }
+
+    void free(void * buffer, size_t bytes)
+    {
+        HashTableAllocator::free(buffer, bytes);
+        allocated_bytes -= bytes;
+    }
+};
+
+
+template <typename Grower>
+void checkGrowthAllocations()
+{
+    using Table = HashSet<UInt64, DefaultHash<UInt64>, Grower, GrowthTrackingAllocator>;
+    Table table;
+    UInt64 next_key = 1;
+    for (size_t additional_keys : {0, 1, 2, 20, 500, 2000, 40000})
+    {
+        const size_t initial_bytes = GrowthTrackingAllocator::allocated_bytes;
+        GrowthTrackingAllocator::peak_bytes = initial_bytes;
+        const size_t growth_memory = table.estimateGrowthMemory(additional_keys);
+        for (size_t i = 0; i < additional_keys; ++i)
+            table.insert(next_key++);
+        EXPECT_EQ(GrowthTrackingAllocator::peak_bytes, initial_bytes + growth_memory);
+    }
+}
+
+}
+
+TEST(HashTableGrowth, MatchesSuccessiveReplacementAllocations)
+{
+    checkGrowthAllocations<HashTableGrower<2>>();
+    checkGrowthAllocations<HashTableGrowerWithPrecalculation<2>>();
+    checkGrowthAllocations<TwoLevelHashTableGrower<15>>();
+}
+
+TEST(HashTableGrowth, SaturatesAtRepresentableSize)
+{
+    constexpr size_t max_size = std::numeric_limits<size_t>::max();
+    auto check = [&]<typename Key, typename Grower>()
+    {
+        HashSet<Key, DefaultHash<Key>, Grower> table;
+        const size_t initial_bytes = table.getBufferSizeInBytes();
+        EXPECT_EQ(table.estimateGrowthMemory(max_size), max_size);
+        EXPECT_EQ(table.estimateGrowthMemory(max_size / 2), max_size);
+        EXPECT_TRUE(table.empty());
+        EXPECT_EQ(table.getBufferSizeInBytes(), initial_bytes);
+
+        table.insert(1);
+        EXPECT_EQ(table.estimateGrowthMemory(max_size), max_size);
+        EXPECT_EQ(table.size(), 1);
+        EXPECT_EQ(table.getBufferSizeInBytes(), initial_bytes);
+    };
+    check.template operator()<UInt8, HashTableGrower<2>>();
+    check.template operator()<UInt64, HashTableGrower<2>>();
+    check.template operator()<UInt8, HashTableGrowerWithPrecalculation<2>>();
+    check.template operator()<UInt64, HashTableGrowerWithPrecalculation<2>>();
+    check.template operator()<UInt8, TwoLevelHashTableGrower<15>>();
+    check.template operator()<UInt64, TwoLevelHashTableGrower<15>>();
+    check.template operator()<UInt8, StringHashTableGrower<2>>();
+    check.template operator()<UInt64, StringHashTableGrower<2>>();
+}
+
+TEST(HashTableGrowth, SaturatesCombinedReplacementMemory)
+{
+    /// Each buffer fits in `size_t`, but accounting for both during replacement exceeds it.
+    HashMap<UInt64, std::pair<UInt64, UInt64>> table;
+    const size_t initial_bytes = table.getBufferSizeInBytes();
+    EXPECT_EQ(table.estimateGrowthMemory(size_t(1) << 58), std::numeric_limits<size_t>::max());
+    EXPECT_TRUE(table.empty());
+    EXPECT_EQ(table.getBufferSizeInBytes(), initial_bytes);
+}

@@ -1,18 +1,12 @@
 #if defined(__ELF__) && !defined(OS_FREEBSD)
 #   define HAS_SYMBOL_INDEX 1
 #elif defined(OS_DARWIN)
-#   define HAS_DLADDR 1
+#   define HAS_SYMBOL_INDEX 1
 #endif
 
-#if defined(HAS_SYMBOL_INDEX) || defined(HAS_DLADDR)
+#if defined(HAS_SYMBOL_INDEX)
 
-#ifdef HAS_SYMBOL_INDEX
 #include <Common/SymbolIndex.h>
-#endif
-
-#ifdef HAS_DLADDR
-#include <dlfcn.h>
-#endif
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -35,7 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionAddressToSymbol : public IFunction
+class FunctionAddressToSymbol final : public IFunction
 {
 public:
     static constexpr auto name = "addressToSymbol";
@@ -54,6 +48,10 @@ public:
     {
         return 1;
     }
+
+    /// Resolved against the executing node's own binary, like `buildId`.
+    bool isDeterministic() const override { return false; }
+    bool isServerConstant() const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -83,7 +81,6 @@ public:
         const typename ColumnVector<UInt64>::Container & data = column_concrete->getData();
         auto result_column = ColumnString::create();
 
-#ifdef HAS_SYMBOL_INDEX
         const SymbolIndex & symbol_index = SymbolIndex::instance();
 
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -93,16 +90,6 @@ public:
             else
                 result_column->insertDefault();
         }
-#elif defined(HAS_DLADDR)
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            Dl_info info;
-            if (dladdr(reinterpret_cast<const void *>(data[i]), &info) != 0 && info.dli_sname)
-                result_column->insertData(info.dli_sname, strlen(info.dli_sname));
-            else
-                result_column->insertDefault();
-        }
-#endif
 
         return result_column;
     }
@@ -125,7 +112,7 @@ Converts virtual memory address inside the ClickHouse server process to a symbol
         "Selecting the first string from the `trace_log` system table",
         R"(
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
         )",
         R"(
 -- The `trace` field contains the stack trace at the moment of sampling.
@@ -144,7 +131,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
         "Getting a symbol for a single address",
         R"(
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(94138803686098) FORMAT Vertical;
         )",
         R"(
 Row 1:
@@ -164,7 +151,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
         )",
         R"(
 Row 1:

@@ -1,0 +1,1 @@
+Incorrect index 10 in indexes column of flattened Dynamic column at row 2: the index should be in range [0, 2] (there are 2 types, index 2 is reserved for NULL values)

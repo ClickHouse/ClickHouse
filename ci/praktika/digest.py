@@ -64,9 +64,7 @@ class Digest:
             for i, file_path in enumerate(included_files):
                 hash_md5 = self._calc_file_digest(file_path, hash_md5)
             if config.with_git_submodules:
-                submodules_shas = Shell.get_output(
-                    "git submodule | awk '{print $1}' | sed 's/^[+-]//'", verbose=True
-                )
+                submodules_shas = Digest.get_submodule_shas()
                 hash_md5.update(submodules_shas.encode())
             digest = hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
 
@@ -84,7 +82,8 @@ class Digest:
         drop_fields = [
             "requires",
             "enable_commit_status",
-            "allow_merge_on_failure",
+            "allow_failure",
+            "force_success",
             "digest_config",
         ]
         filtered_job_dict = {
@@ -140,6 +139,12 @@ class Digest:
             _ = self._calc_file_digest(path, hash_md5=hash_md5)
 
         return hash_md5.hexdigest()[: Settings.CACHE_DIGEST_LEN]
+
+    @staticmethod
+    def get_submodule_shas():
+        return Shell.get_output(
+            "git submodule | awk '{print $1}' | sed 's/^[+-]//'", verbose=True
+        )
 
     @staticmethod
     def _calc_file_digest(file_path, hash_md5):

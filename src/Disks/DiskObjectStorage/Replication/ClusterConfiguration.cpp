@@ -3,6 +3,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Common/UniqueLock.h>
 #include <Common/logger_useful.h>
 
@@ -18,10 +19,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ClusterConfiguration::ClusterConfiguration(std::unordered_map<Location, LocationInfo> locations_)
-    : locations(std::move(locations_))
+ClusterConfiguration::ClusterConfiguration(const std::string & disk_name, std::unordered_map<Location, LocationInfo> locations_)
+    : log(getLogger(fmt::format("{}::ClusterConfiguration", disk_name)))
+    , locations(std::move(locations_))
 {
-    LOG_DEBUG(getLogger("ClusterConfiguration"), "Cluster Configuration: {}", locations | std::views::keys | std::ranges::to<std::vector<std::string>>());
+    LOG_DEBUG(log, "Cluster Configuration: {}", locations | std::views::keys | std::ranges::to<std::vector<std::string>>());
 }
 
 void ClusterConfiguration::applyNewSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
@@ -31,11 +33,13 @@ void ClusterConfiguration::applyNewSettings(const Poco::Util::AbstractConfigurat
     Locations updated_locations;
     config.keys(config_prefix + ".locations", updated_locations);
 
+    LOG_INFO(log, "Applying new settings");
     for (const auto & location : updated_locations)
     {
         auto & info = locations.at(location);
         info.local = config.getBool(config_prefix + ".locations." + location + ".local");
         info.enabled = config.getBool(config_prefix + ".locations." + location + ".enabled");
+        LOG_INFO(log, "Location '{}' - Local: {}, Enabled: {}", location, info.local, info.enabled);
     }
 }
 

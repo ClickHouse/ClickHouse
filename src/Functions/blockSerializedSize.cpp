@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -11,7 +12,7 @@ namespace
 {
 
 /// Returns size on disk for *columns* (without taking into account compression).
-class FunctionBlockSerializedSize : public IFunction
+class FunctionBlockSerializedSize final : public IFunction
 {
 public:
     static constexpr auto name = "blockSerializedSize";
@@ -26,6 +27,8 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isDeterministic() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {

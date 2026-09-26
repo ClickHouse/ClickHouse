@@ -47,8 +47,9 @@ public:
     /** Allocates connection to work. */
     Entry get(const ConnectionTimeouts & timeouts) override;
     Entry get(const ConnectionTimeouts & timeouts,
-              const Settings & settings,
-              bool force_connected) override; /// From IConnectionPool
+              const Settings & settings) override; /// From IConnectionPool
+    /// Selecting a replica requires establishing a connection to it, so this is the same as get.
+    Entry getUnchecked(const ConnectionTimeouts & timeouts, const Settings & settings) override;
 
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.
@@ -131,8 +132,7 @@ private:
             std::string & fail_message,
             const Settings & settings,
             const QualifiedTableName * table_to_check = nullptr,
-            AsyncCallback async_callback = {},
-            bool force_connected = false);
+            AsyncCallback async_callback = {});
 
     GetPriorityForLoadBalancing::Func makeGetPriorityFunc(const Settings & settings);
 

@@ -11,6 +11,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Storages/IStorage.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -38,6 +39,7 @@ void DatabaseMemory::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
+    ensurePopulated();
     std::lock_guard lock{mutex};
     attachTableUnlocked(table_name, table);
 
@@ -60,6 +62,7 @@ void DatabaseMemory::dropTable(
     const String & table_name,
     bool /*sync*/)
 {
+    ensurePopulated();
     StoragePtr table;
     {
         std::lock_guard lock{mutex};
@@ -111,6 +114,7 @@ ASTPtr DatabaseMemory::getCreateDatabaseQueryImpl() const
 
 ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
+    ensurePopulated();
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
     if (it == create_queries.end() || !it->second)
@@ -131,6 +135,16 @@ UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 
 void DatabaseMemory::removeDataPath(ContextPtr)
 {
+    /// This method is called in two cases:
+    /// 1. During startup for the temporary database (_temporary_and_external_tables) to clean up
+    ///    stale directories from previous server sessions (e.g., after crash or Ctrl+C).
+    ///    Temporary tables with disk-based engines (like MergeTree) may leave behind files that
+    ///    need to be removed.
+    /// 2. On explicit DROP DATABASE to remove all data.
+    ///
+    /// We must use removeRecursive() instead of removeDirectoryIfExists() because the directory
+    /// may contain files from temporary tables. Using removeDirectoryIfExists()
+    /// would fail or throw an exception if the directory is not empty.
     auto db_disk = getDisk();
     db_disk->removeRecursive(data_path);
 }
@@ -143,7 +157,7 @@ void DatabaseMemory::drop(ContextPtr local_context)
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
-    /// NOTE: It is safe to modify AST without lock since alterTable() is called under IStorage::lockForShare()
+    ensurePopulated();
     ASTPtr create_query;
     {
         std::lock_guard lock{mutex};
@@ -155,17 +169,23 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
         if (it_query == create_queries.end() || !it_query->second)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
-        create_query = it_query->second;
+        create_query = it_query->second->clone();
     }
 
-    /// Apply metadata changes without holding a lock to avoid possible deadlock
-    /// (i.e. when ALTER contains IN (table))
+    /// Apply metadata changes to the cloned AST without holding a lock to avoid possible deadlock
+    /// (i.e. when ALTER contains IN (table)).
     applyMetadataChangesToCreateQuery(create_query, metadata, local_context, validate_new_create_query);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
     DatabaseCatalog::instance().checkTableCanBeAddedWithNoCyclicDependencies(table_id.getQualifiedName(), ref_dependencies.dependencies, loading_dependencies);
+
+    {
+        std::lock_guard lock{mutex};
+        create_queries[table_id.table_name] = create_query;
+    }
+
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
 }
 
@@ -221,6 +241,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(co
     return res;
 }
 
+void registerDatabaseMemory(DatabaseFactory & factory);
 void registerDatabaseMemory(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -229,7 +250,41 @@ void registerDatabaseMemory(DatabaseFactory & factory)
             args.database_name,
             args.context);
     };
-    factory.registerDatabase("Memory", create_fn);
+    factory.registerDatabase("Memory", create_fn, {}, Documentation{
+        .description = R"DOCS_MD(
+The `Memory` database engine keeps its metadata and table definitions only in memory. It is intended for temporary databases: the database and its tables are lost when the server stops or restarts.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE temporary_data
+ENGINE = Memory;
+```
+
+## Usage {#usage}
+
+Create and use tables as in an [`Atomic`](/reference/engines/database-engines/atomic) database:
+
+```sql
+CREATE TABLE temporary_data.events
+(
+    id UInt64,
+    name String
+)
+ENGINE = Memory;
+
+INSERT INTO temporary_data.events VALUES (1, 'started');
+```
+
+Do not use this engine for data or definitions that must survive a restart. Use `Atomic`, the default open-source database engine, for persistent database metadata.
+
+## See also {#see-also}
+
+- [Atomic database engine](/reference/engines/database-engines/atomic)
+- [`Memory` table engine](/reference/engines/table-engines/special/memory)
+)DOCS_MD",
+        .syntax = "ENGINE = Memory",
+        .related = {"Atomic"}});
 }
 
 }

@@ -2,6 +2,7 @@
 
 #include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/Documentation.h>
 #include <base/types.h>
 
 #include <boost/noncopyable.hpp>
@@ -33,7 +34,13 @@ public:
 
     static DiskFactory & instance();
 
-    void registerDiskType(const String & disk_type, Creator creator);
+    void registerDiskType(const String & disk_type, Creator creator, Documentation documentation = {});
+
+    /// Returns the names of all registered disk types.
+    std::vector<String> getAllRegisteredNames() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+
+    /// Returns the embedded documentation for a disk type (empty if none was registered).
+    Documentation getDocumentation(const String & disk_type) const;
 
     DiskPtr create(
         const String & name,
@@ -50,6 +57,9 @@ public:
 private:
     using DiskTypeRegistry = std::unordered_map<String, Creator>;
     DiskTypeRegistry registry;
+
+    /// Embedded documentation, keyed by disk type.
+    std::unordered_map<String, Documentation> documentations;
 };
 
 }

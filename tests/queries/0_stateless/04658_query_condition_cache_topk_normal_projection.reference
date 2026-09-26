@@ -1,0 +1,9 @@
+--- A projection-backed TopK read must not write any QCC entry when the gate is off
+0
+04658_topk_write_1	0	1
+04658_topk_write_2	0	1
+--- Projection-backed TopK still returns the planted row
+10000
+--- Positive control: a plain projection read still writes QCC entries
+1
+04658_plain_prime	1
