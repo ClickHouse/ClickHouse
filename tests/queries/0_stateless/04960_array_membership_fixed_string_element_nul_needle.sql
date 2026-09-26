@@ -102,20 +102,21 @@ INSERT INTO fs_null_both SELECT [NULL], NULL;
 SELECT has(v, n), 0 FROM fs_null_both WHERE isNotNull(v[1]);
 SELECT has(v, n), 1 FROM fs_null_both WHERE isNull(v[1]);
 
--- Map keys and values reach the same comparison.
+-- Map keys and values reach the same comparison. Pinned: with the setting on, each call is rewritten
+-- to `has` over `m.keys` or `m.values`, and the Map adapter is not the function under test any more.
 DROP TABLE IF EXISTS fs_map_key;
 CREATE TABLE fs_map_key (m Map(FixedString(4), UInt8)) ENGINE = Memory;
 INSERT INTO fs_map_key SELECT map(CAST('a', 'FixedString(4)'), 1);
--- Pinned: with the setting on, `mapContainsKey` is rewritten to `has(m.keys, needle)` and the Map
--- adapter is not the function under test any more.
 SELECT mapContainsKey(m, unhex('6100')), arrayExists(x -> x = unhex('6100'), mapKeys(m)) FROM fs_map_key
 SETTINGS optimize_functions_to_subcolumns = 0;
-SELECT has(m, unhex('6100')), arrayExists(x -> x = unhex('6100'), mapKeys(m)) FROM fs_map_key;
+SELECT has(m, unhex('6100')), arrayExists(x -> x = unhex('6100'), mapKeys(m)) FROM fs_map_key
+SETTINGS optimize_functions_to_subcolumns = 0;
 
 DROP TABLE IF EXISTS fs_map_value;
 CREATE TABLE fs_map_value (m Map(UInt8, FixedString(4))) ENGINE = Memory;
 INSERT INTO fs_map_value SELECT map(1, CAST('a', 'FixedString(4)'));
-SELECT mapContainsValue(m, unhex('6100')), arrayExists(x -> x = unhex('6100'), mapValues(m)) FROM fs_map_value;
+SELECT mapContainsValue(m, unhex('6100')), arrayExists(x -> x = unhex('6100'), mapValues(m)) FROM fs_map_value
+SETTINGS optimize_functions_to_subcolumns = 0;
 
 -- A skip index must select the same rows the query returns without it.
 DROP TABLE IF EXISTS fs_index;
@@ -128,6 +129,35 @@ SELECT count() FROM fs_index WHERE has(v, materialize(unhex('6100'))) SETTINGS u
 SELECT count() FROM fs_index WHERE has(v, materialize(unhex('6100'))) SETTINGS use_skip_indexes = 0;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM fs_index WHERE has(v, unhex('6100')))
 WHERE explain ILIKE '%Granules: 1/3%';
+
+-- The same for the ngram and sparse grams indexes, with a needle longer than the element by a zero byte.
+DROP TABLE IF EXISTS fs_token_index;
+CREATE TABLE fs_token_index
+(
+    id UInt8,
+    v_ngram Array(FixedString(4)),
+    v_sparse Array(FixedString(4)),
+    m_keys Map(FixedString(4), UInt8),
+    m_values Map(UInt8, FixedString(4)),
+    INDEX i_ngram v_ngram TYPE ngrambf_v1(4, 512, 3, 0) GRANULARITY 1,
+    INDEX i_sparse v_sparse TYPE sparse_grams(3, 100, 512, 3, 0) GRANULARITY 1,
+    INDEX i_keys mapKeys(m_keys) TYPE ngrambf_v1(4, 512, 3, 0) GRANULARITY 1,
+    INDEX i_values mapValues(m_values) TYPE ngrambf_v1(4, 512, 3, 0) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO fs_token_index SELECT 1, [CAST('abcd', 'FixedString(4)')], [CAST('abcd', 'FixedString(4)')],
+    map(CAST('abcd', 'FixedString(4)'), 1), map(1, CAST('abcd', 'FixedString(4)'));
+INSERT INTO fs_token_index SELECT 2, [CAST('wxyz', 'FixedString(4)')], [CAST('wxyz', 'FixedString(4)')],
+    map(CAST('wxyz', 'FixedString(4)'), 1), map(1, CAST('wxyz', 'FixedString(4)'));
+SELECT count() FROM fs_token_index WHERE has(v_ngram, unhex('6162636400')) SETTINGS use_skip_indexes = 0;
+SELECT count() FROM fs_token_index WHERE has(v_ngram, unhex('6162636400')) SETTINGS force_data_skipping_indices = 'i_ngram';
+SELECT count() FROM fs_token_index WHERE has(v_sparse, unhex('6162636400')) SETTINGS force_data_skipping_indices = 'i_sparse';
+SELECT count() FROM fs_token_index WHERE mapContainsKey(m_keys, unhex('6162636400'))
+SETTINGS force_data_skipping_indices = 'i_keys', optimize_functions_to_subcolumns = 0;
+SELECT count() FROM fs_token_index WHERE has(m_keys, unhex('6162636400'))
+SETTINGS force_data_skipping_indices = 'i_keys', optimize_functions_to_subcolumns = 0;
+SELECT count() FROM fs_token_index WHERE mapContainsValue(m_values, unhex('6162636400'))
+SETTINGS force_data_skipping_indices = 'i_values', optimize_functions_to_subcolumns = 0;
 
 DROP TABLE IF EXISTS fs;
 DROP TABLE IF EXISTS fs_repeat;
@@ -143,3 +173,4 @@ DROP TABLE IF EXISTS fs_null_both;
 DROP TABLE IF EXISTS fs_map_key;
 DROP TABLE IF EXISTS fs_map_value;
 DROP TABLE IF EXISTS fs_index;
+DROP TABLE IF EXISTS fs_token_index;
