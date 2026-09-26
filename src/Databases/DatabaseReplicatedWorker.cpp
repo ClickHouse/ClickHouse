@@ -293,9 +293,9 @@ void DatabaseReplicatedDDLWorker::scheduleTasks(bool reinitialized)
     DDLWorker::scheduleTasks(reinitialized);
     if (need_update_cached_cluster)
     {
-        database->setCluster(database->getClusterImpl());
+        database->updateCluster(false /* all_groups */, true /* force_overwrite */);
         if (!database->replica_group_name.empty())
-            database->setCluster(database->getClusterImpl(/*all_groups*/ true), /*all_groups*/ true);
+            database->updateCluster(true /* all_groups */, true /* force_overwrite */);
         need_update_cached_cluster = false;
     }
 }
@@ -539,7 +539,7 @@ static bool getRMVCoordinationInfo(
         return false;
     auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
     const auto * refresh = in_memory_metadata->refresh->as<ASTRefreshStrategy>();
-    if (!refresh || refresh->append)
+    if (!refresh || refresh->isAppend())
         return false;
     const auto * mv = dynamic_cast<const StorageMaterializedView *>(storage.get());
     if (!mv)
@@ -800,6 +800,11 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
 
 bool DatabaseReplicatedDDLWorker::checkParentTableExists(const UUID & uuid) const
 {
+    /// Metadata written before the fresh-definition validation existed can carry a Nil view UUID;
+    /// Nil never identifies a table, so treat the parent as missing (mirrors getRMVCoordinationInfo)
+    /// and let the refresh fail cleanly instead of tripping the tryGetByUUID assertion.
+    if (uuid == UUIDHelpers::Nil)
+        return false;
     auto [db, table] = DatabaseCatalog::instance().tryGetByUUID(uuid);
     return db.get() == database && table != nullptr && !table->is_dropped.load() && !table->is_detached.load();
 }
