@@ -103,6 +103,21 @@
         FROM perf_array_index_simd_uint8_short
         FORMAT Null
     </query>
+    <query>
+        SELECT sum(has(u16, 70))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u64, 150))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(u32, 100))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8_short</drop_query>
