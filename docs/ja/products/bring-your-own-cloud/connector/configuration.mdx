@@ -1,0 +1,317 @@
+---
+title: '設定'
+sidebarTitle: '設定'
+description: 'ClickHouse Connector の設定: ClickHouse インスタンス、operator の許可リスト、ネットワークポリシー、マスキング、プライベートミラー、ストレージ'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration']
+doc_type: 'guide'
+---
+
+このページでは、ClickHouse Connector のインストール後に特に変更する可能性が高い設定について説明します。各キーのデフォルト値と意味については[設定リファレンス](/ja/products/bring-your-own-cloud/connector/reference/configuration)を、コマンドフラグについては[CLI リファレンス](/ja/products/bring-your-own-cloud/connector/reference/cli)を参照してください。
+
+<div id="configuration-surfaces">
+  ## 設定箇所
+</div>
+
+コネクタでは、インストール先ごとに設定箇所が 1 つあります。
+
+<Tabs>
+  <Tab title="Kubernetes">
+    `clicklink clctl init` は、作業ディレクトリに `clicklink-values.yaml` という values オーバーレイを作成し、それを使用して `clicklink-connector` チャートをデプロイします。このオーバーレイはデプロイメントの永続的な記録です。`--force` を指定しない限り、`init` を再実行しても保持されるため、編集内容は再実行後や復旧後も維持されます。
+
+    <Note>
+      このページおよび[操作](/ja/products/bring-your-own-cloud/connector/operations)の Day 2 コマンドでは、`helm` CLI を使用します。組み込みの Helm クライアントを持つのは `init` のみです。
+    </Note>
+
+    オーバーレイを編集してから適用します。
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # init 時に選択したコネクタのネームスペース
+    CHART_VERSION="$(helm get metadata clicklink-connector -n "${CONNECTOR_NAMESPACE}" | awk '/^VERSION:/{print $2}')"
+    helm upgrade clicklink-connector clicklink-connector \
+      --repo https://releases.clicklink.clickhouse.com/charts \
+      --version "${CHART_VERSION}" \
+      --namespace "${CONNECTOR_NAMESPACE}" \
+      -f clicklink-values.yaml
+    ```
+
+    このブロックは、すでにインストールされているチャートバージョンに編集済みの values を再適用します。これにより、設定変更が意図しないアップグレードを伴うことはありません。新しいバージョンへの移行は、[操作](/ja/products/bring-your-own-cloud/connector/operations)で説明する意図的な手順です。チャートリポジトリを使用するミラーインストールでは、`--repo` をミラーに置き換えてください。
+
+    直接指定したチャート参照 (`oci://`、URL、またはローカルのアーカイブやディレクトリ。詳細は[プライベートミラー](#private-mirrors)を参照) からインストールした場合、解決に使用できるリポジトリはありません。インストール時に使用した参照を指定して、アップグレードを再実行してください。
+
+    ```bash
+    helm upgrade clicklink-connector <same-chart-reference> \
+      --version "${CHART_VERSION}" \
+      -n "${CONNECTOR_NAMESPACE}" \
+      -f clicklink-values.yaml
+    ```
+  </Tab>
+
+  <Tab title="Linux VM">
+    `clicklink clctl init` は `/etc/clicklink/config.yaml` を書き込みます。`--force` を指定しない限り、`init` を再実行しても既存の設定は保持されるため、このファイルは手動で安全に編集できます。編集後、デーモンを再起動して検証します。
+
+    ```bash
+    sudo systemctl restart clicklink-scraper clicklink-troubleshooter
+    sudo clicklink clctl preflight
+    ```
+  </Tab>
+</Tabs>
+
+<div id="clickhouse-instances">
+  ## ClickHouse インスタンスの追加または変更
+</div>
+
+`instances` 配下の各エントリでは、コネクタが読み取る ClickHouse ネイティブプロトコルのエンドポイントとして、`host`、`port`、`database`、`secure`、および Kubernetes 上では `namespace` と `cluster` を指定します。認証情報は設定には含まれません。各コンポーネントは、プロビジョニングで作成されるアクセスバンドルから読み取り専用の ClickHouse ユーザーを取得します。
+
+<Tabs>
+  <Tab title="Kubernetes">
+    `clicklink-values.yaml` の両方のコンポーネントマップにインスタンスを追加し、そのネームスペースを `networkPolicy.clickhouseNamespaces` に追加します (ネームスペースの `kubernetes.io/metadata.name` ラベルに基づいて照合されます) 。
+
+    ```yaml
+    scraper:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
+
+    troubleshooter:
+      instances:
+        analytics:
+          host: "clickhouse-analytics.clickhouse.svc.cluster.local"
+          port: 9440
+          database: "default"
+          secure: true
+          namespace: "clickhouse"
+          cluster: "default"
+
+    networkPolicy:
+      clickhouseNamespaces:
+        - "clickhouse"
+    ```
+
+    ワークステーションから各コンポーネントの読み取り専用アクセスをプロビジョニングします。`--apply-ch-grants` は、生成された ClickHouse 権限を `kubectl exec` 経由でポッド内に適用します。指定しない場合、コマンドは Kubernetes 側のリソースのみを作成し、適用するための `ch-grants.sql` をディスクに残します。管理ユーザーにパスワードが設定されている場合は、`--ch-admin-password-stdin` を追加し、パイプで渡します。
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # 初期化時に選択したコネクタのネームスペース
+    clicklink clctl scraper access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance analytics --instance-namespace clickhouse \
+      --server <kubernetes-api-server-url> \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
+    clicklink clctl troubleshoot access provision --target helm \
+      --target-namespace "${CONNECTOR_NAMESPACE}" \
+      --instance analytics --instance-namespace clickhouse \
+      --server <kubernetes-api-server-url> \
+      --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
+    ```
+
+    SQL を実行できる管理者がいない Operator 管理インスタンスでは、`--apply-ch-grants` の代わりに `--ch-user-via cr` を使用します (ポッド選択フラグはそのまま使用します) 。詳細は [CLI リファレンス](/ja/products/bring-your-own-cloud/connector/reference/cli)を参照してください。次に、各コマンドで作成される Secret と ServiceAccount の組を対応する `accessBundles` マップに設定し、上記の `helm upgrade` を実行します。
+
+    ```yaml
+    scraper:
+      accessBundles:
+        analytics:
+          secretName: clicklink-connector-scraper-access-analytics
+          serviceAccountName: pcm-scraper-analytics
+
+    troubleshooter:
+      accessBundles:
+        analytics:
+          secretName: clicklink-connector-troubleshooter-access-analytics
+          serviceAccountName: pcm-troubleshooter-analytics
+    ```
+  </Tab>
+
+  <Tab title="Linux VM">
+    インスタンスを `/etc/clicklink/config.yaml` に追加します。
+
+    ```yaml
+    instances:
+      analytics:
+        host: "10.0.12.34"
+        port: 9440
+        database: "default"
+        secure: true
+        cluster: "default"
+    ```
+
+    次に、root としてホスト上で各コンポーネントのアクセスをプロビジョニングします。各コマンドは ClickHouse 権限を適用し、対応するデーモンを再起動します (`--skip-restart` を指定すると再起動をスキップできます) 。
+
+    ```bash
+    sudo clicklink clctl scraper access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
+    sudo clicklink clctl troubleshoot access provision --provider local \
+      --instance analytics --server <kubernetes-api-server-url>
+    ```
+  </Tab>
+</Tabs>
+
+<Tip>
+  同じ `access provision` コマンドに `--force` を指定すると、インスタンスの ClickHouse 認証情報をローテーションできます。[操作](/ja/products/bring-your-own-cloud/connector/operations)を参照してください。
+</Tip>
+
+<div id="operator-allowlist">
+  ## Operator 許可リスト
+</div>
+
+ゲートウェイで管理されるセッションは、operator のメールアドレスの許可リストによって制限されます。セッションゲートウェイへのすべてのリクエストには、証明済みメールアドレスがリストに含まれている、短期間有効な OIDC ID トークンが必要です。許可リストが空の場合、ゲートウェイは閉鎖され、誰もゲートウェイ経由でセッションを開始できません。VM では、ホストの root ユーザーはローカルのセッションファイルを通じてセッションを直接管理することもできます。許可リストはゲートウェイ経由の経路にのみ適用されます。信頼モデルの詳細については、[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。
+
+<Tabs>
+  <Tab title="Kubernetes">
+    許可リストはオーバーレイで定義され、ConfigMap にレンダリングされます。変更するには、リストを編集して `helm upgrade` を実行します。
+
+    ```yaml
+    clctl:
+      gateway:
+        enabled: true
+        allowedOperators:
+          - "oncall@example.com"
+          - "dba@example.com"
+    ```
+  </Tab>
+
+  <Tab title="Linux VM">
+    `init` は許可リストを `/etc/clicklink/allowed-operators.txt` に書き込みます。メールアドレスは 1 行に 1 つずつ記述します。
+
+    ```text
+    oncall@example.com
+    dba@example.com
+    ```
+
+    troubleshooter は 30 秒ごとにファイルを再読み込みするため、再起動せずに編集内容が反映されます。
+  </Tab>
+</Tabs>
+
+<div id="network-policy">
+  ## ネットワークポリシーとegress
+</div>
+
+Kubernetes では、チャート にデフォルト拒否の NetworkPolicy と egress の許可リスト (`networkPolicy.enabled: true`) が含まれています。NetworkPolicy オブジェクトは、CNI がこれらを適用する場合にのみ有効になります。適用可能な CNI を使用している場合、`allowEgressCIDRs` でコネクタの API エンドポイントの背後にある CIDR を指定するまで、コネクタからの egress は一切許可されません。
+
+```yaml
+networkPolicy:
+  enabled: true
+  # CIDRs behind your connector API endpoint. Required under an enforcing CNI.
+  allowEgressCIDRs:
+    - "203.0.113.0/24"
+  # Ports opened to allowEgressCIDRs.
+  allowEgressPorts:
+    - 443
+  # Namespaces of your ClickHouse Services, matched by the
+  # kubernetes.io/metadata.name label. Empty allows no in-cluster
+  # ClickHouse access.
+  clickhouseNamespaces:
+    - "clickhouse"
+  # Kubernetes API server CIDRs. On managed Kubernetes the API server sits
+  # outside the cluster network, so it cannot be matched with a selector.
+  apiserverCIDRs:
+    - "172.16.0.0/28"
+```
+
+特に注意が必要なルールは次の 2 つです。
+
+* **`apiserverCIDRs`**: 空の場合、チャートは API サーバーへの egress ルールを生成しません。そのため、デーモンは最初の Kubernetes トークンリクエストでネットワークエラーにより失敗します。これが設定が必要であることを示すシグナルです。Managed Kubernetes では、クラスターの API サーバーエンドポイントの CIDR を使用してください。
+* **`clctl.gateway.jwksEgressCIDRs`**: セッションゲートウェイが有効な場合、troubleshooter は operatorトークンを検証するために、アイデンティティプロバイダーの JWKS を取得します。デフォルト拒否の方針では、これを空のままにすると、すべてのトークンチェックがブロックされます。
+
+```yaml
+clctl:
+  gateway:
+    jwksEgressCIDRs:
+      - "199.36.153.8/30"
+```
+
+例として、Private Google Access 経由でアクセスする Google のアイデンティティプロバイダを対象とする `private.googleapis.com` の範囲を示します。その他のアイデンティティプロバイダの場合は、そのプロバイダの範囲 (またはその前段のエグレスプロキシの CIDR) を指定してください。
+
+イングレスに関する設定は、さらに 2 つあります。`metricsScrapeSelector` は、ラベルによりメトリクスのスクレイプ用イングレスを特定の Prometheus ネームスペースに制限します。`kubeletProbeCIDRs` は、デフォルト拒否が厳格に適用される環境でキューブレットのヘルスプローブを明示的に許可します。キーの完全な一覧については、[設定リファレンス](/ja/products/bring-your-own-cloud/connector/reference/configuration)を参照してください。
+
+<div id="redaction-patterns">
+  ## マスキングパターン
+</div>
+
+Troubleshooter の出力は、境界外に送信される前にマスキングされます。組み込みパターンでは、`ipv4`、`ipv6`、`bearer-token`、`aws-access-key`、`email`、`jwt`、`ssh-private-key`、`connection-string-credentials` を対象とします。独自のパターンは YAML ファイルに追加できます。独自のパターンはファイル内の記述順に最初に実行され、その後に組み込みパターンが実行されます。また、組み込みパターンと同じ `name` を使用するエントリは、その組み込みパターンを置き換えます。
+
+各パターンでは、`name` (必須、一意) 、`regex` (必須、Go RE2 構文) 、`replace` (デフォルトは `[REDACTED]`、`$1` のキャプチャ参照をサポート) 、`case_insensitive` (デフォルトは `false`) を指定します。
+
+```yaml
+version: 1
+patterns:
+  - name: internal-hostname
+    regex: '\b[a-z0-9-]+\.corp\.example\.com\b'
+    replace: '[REDACTED:internal-host]'
+
+  # Reusing a built-in name replaces the built-in pattern.
+  - name: ipv4
+    regex: '\b(?:\d{1,3}\.){3}\d{1,3}\b'
+    replace: '[REDACTED:ip]'
+```
+
+VM では、ファイルは `/etc/clicklink/redaction-patterns.yaml` にあります。インストーラーはコメント付きのデフォルトファイルを配置し、アップグレード時にも独自のバージョンを保持します。Kubernetes では、YAML を `redaction-patterns.yaml` キーの ConfigMap に格納し、`troubleshooter.redaction.patternsConfigMap` にその名前を設定します。チャート はこれを同じパスにマウントします。
+
+<Warning>
+  パターンファイルが存在するものの無効な場合、troubleshooter は起動を拒否し、問題のあるエントリをログに記録します。`clicklink clctl preflight` でファイルを検証できるため、デーモンを再起動する前に実行してください。
+</Warning>
+
+<div id="private-mirrors">
+  ## プライベートミラーと境界内のエンドポイント
+</div>
+
+公開されているチャートでは、`image.repository` にパブリックなマルチアーキテクチャ対応のcosign署名済みコネクタイメージが事前設定されているため、通常のインストールではイメージ値を指定する必要はありません。公開されているデフォルトを確認するには:
+
+```bash
+CLICKLINK_VERSION="$(curl -fsSL https://releases.clicklink.clickhouse.com/latest-version.txt)"
+helm show values clicklink-connector \
+  --repo https://releases.clicklink.clickhouse.com/charts \
+  --version "${CLICKLINK_VERSION#v}"
+```
+
+独自のレジストリから取得するには、オーバーレイでリポジトリを上書きします。
+
+```yaml
+image:
+  repository: "registry.example.com/mirrors/clicklink"
+```
+
+ミラーからチャート自体をインストールするには、`init` の `--chart` に、`--chart-repo` を基準に解決されるチャート名、直接指定する `oci://` 参照、URL、ローカルのアーカイブまたはディレクトリを指定できます。`--chart-version` のデフォルトは CLI 自身のバージョンのため、バイナリとチャートのバージョンが連動します。
+
+```bash
+clicklink clctl init --handoff handoff.yaml --target helm \
+  --chart oci://registry.example.com/charts/clicklink-connector
+```
+
+コネクタの API エンドポイントが境界内の private CA の配下にある場合は、`init` に `--api-private-ca` を渡します。これにより `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt` が設定され、エンドポイントはシステムルートではなく、登録バンドルの CA チェーンを使用して検証されます。VM では、これに相当する設定は `/etc/clicklink/config.yaml` の `api.tls.ca_file` です。`init` はバンドルのチェーンを `/etc/clicklink/tls/ca.crt` にインストールし、検証用にシステムルートへ追加します。完全に air-gapped な環境での登録と証明書署名については、[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding)を参照してください。
+
+<div id="storage">
+  ## ストレージ
+</div>
+
+<Tabs>
+  <Tab title="Kubernetes">
+    troubleshooter は PersistentVolumeClaim に状態を保存するため、セッション状態と監査証跡はポッドが再スケジュールされても保持されます。
+
+    ```yaml
+    persistence:
+      enabled: true
+      storageClass: "gp3"
+      size: 5Gi
+    ```
+
+    `storageClass` が空の場合は、クラスターのデフォルト StorageClass が使用されます。クラスターでデフォルトの StorageClass が設定されていない場合は、プロンプトまたは `--storage-class` で `init` に指定する必要があります。
+  </Tab>
+
+  <Tab title="Linux VM">
+    scraper は、API エンドポイントに到達できない間、少なくとも 1 回の配信を保証するためにメトリクスを `/var/lib/clicklink/buffer` にスプールします。最大 168 時間または 1024 MB まで保持し、デフォルトでは 1 MB/s に制限された速度でアップロードします。
+
+    ```yaml
+    scraper:
+      buffer:
+        path: /var/lib/clicklink/buffer
+        retention: 168h
+        max_size_mb: 1024
+    ```
+
+    `clicklink clctl preflight` には、buffer ディレクトリと `/var/log` のディスクチェックが含まれます。
+  </Tab>
+</Tabs>

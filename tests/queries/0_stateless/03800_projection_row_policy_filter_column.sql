@@ -13,7 +13,9 @@ CREATE TABLE test_rls_projection
     )
 )
 ENGINE = MergeTree()
-ORDER BY (tenant_id, id);
+ORDER BY (tenant_id, id)
+-- Pin index_granularity: the EXPLAIN indexes section below asserts an exact granule count.
+SETTINGS index_granularity = 8192;
 
 INSERT INTO test_rls_projection VALUES
     (1, 'tenant_A', 'item_1'),
@@ -23,6 +25,8 @@ INSERT INTO test_rls_projection VALUES
     (5, 'tenant_B', 'item_3');
 
 ALTER TABLE test_rls_projection MATERIALIZE PROJECTION proj_by_data;
+
+SET explain_query_plan_default = 'legacy';
 
 -- Baseline without any row policy: all rows are visible, so 'item_1' is counted 3 times
 -- (twice for tenant_A and once for tenant_B) and 'item_3' is present.

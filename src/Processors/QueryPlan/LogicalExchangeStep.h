@@ -10,7 +10,7 @@ namespace DB
 {
 
 /// Base class for logical exchange steps.
-/// Derived classes implement createSinkAndSourcePair method that is used to create a pair of send-recieve steps when converting
+/// Derived classes implement createSinkAndSourcePair method that is used to create a pair of send-receive steps when converting
 /// logical plan to a distributed plan.
 /// By default the data that is sent via the exchange might be reordered, but in cases like distributed sorting it is required to
 /// merge incoming sorted streams according to the sort description.

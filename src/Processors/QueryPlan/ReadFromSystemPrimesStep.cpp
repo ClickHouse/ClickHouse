@@ -25,11 +25,11 @@ namespace
 
 using Interval = std::pair<UInt64, UInt64>; /// inclusive [l..r]
 
-std::vector<Range> intersectWithPrimesDomain(const Ranges & ranges)
+Ranges intersectWithPrimesDomain(const Ranges & ranges)
 {
     const Range primes_domain(FieldRef(UInt64(2)), true, FieldRef(std::numeric_limits<UInt64>::max()), true);
 
-    std::vector<Range> intersections;
+    Ranges intersections;
     intersections.reserve(ranges.size());
 
     for (const auto & range : ranges)
@@ -41,7 +41,7 @@ std::vector<Range> intersectWithPrimesDomain(const Ranges & ranges)
 
 /// We can keep using `Range` however it is very slow, and inside `SourceFromPrimes`, we will doing
 /// lots of ranges access. So, we convert to lightweight `Intervals`.
-std::vector<Interval> rangesToIntervals(const std::vector<Range> & ranges)
+std::vector<Interval> rangesToIntervals(const Ranges & ranges)
 {
     std::vector<Interval> intervals;
     intervals.reserve(ranges.size());
@@ -234,7 +234,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
     {
         /// Intersect extracted conditions with the primes value domain [2, UInt64::max],
         /// and convert to sorted, non-overlapping inclusive intervals for `SourceFromPrimes` implementations.
-        std::vector<Range> intersected = intersectWithPrimesDomain(ranges);
+        Ranges intersected = intersectWithPrimesDomain(ranges);
         if (intersected.empty())
             return std::nullopt;
 
@@ -279,7 +279,7 @@ Pipe ReadFromSystemPrimesStep::makePipe()
 
     /// Filtered path:
     /// Extract ranges/bounds implied by the WHERE clause.
-    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context);
+    ActionsDAGWithInversionPushDown inverted_dag(filter_actions_dag->getOutputs().front(), context, /* boolean_context */ true);
     KeyCondition condition(inverted_dag, context, column_names, key_expression);
     const auto extracted_ranges = NumbersLikeUtils::extractRanges(condition);
 

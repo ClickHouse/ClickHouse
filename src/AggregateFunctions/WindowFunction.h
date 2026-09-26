@@ -29,8 +29,6 @@ public:
 
     virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
 
-    virtual ColumnPtr castColumn(const Columns &, const VectorWithMemoryTracking<size_t> &) { return nullptr; }
-
     /// Is the frame type supported by this function.
     virtual bool checkWindowFrameType(const WindowTransform * /*transform*/) const { return true; }
 };
@@ -80,7 +78,7 @@ struct WindowFunction : public IAggregateFunctionHelper<WindowFunction>, public 
 
     String getName() const override { return name; }
     void add(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override { fail(); }
-    void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override { fail(); }
+    void mergeImpl(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override { fail(); }
     void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t>) const override { fail(); }
     void deserialize(AggregateDataPtr __restrict, ReadBuffer &, std::optional<size_t>, Arena *) const override { fail(); }
     void insertResultInto(AggregateDataPtr __restrict, IColumn &, Arena *) const override { fail(); }

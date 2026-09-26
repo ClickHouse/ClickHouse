@@ -1,11 +1,10 @@
-import pytest
 
 from helpers.cluster import ClickHouseCluster
 
 
 def start_clickhouse(config, err_msg):
     cluster = ClickHouseCluster(__file__)
-    node = cluster.add_instance("node", main_configs=[config])
+    cluster.add_instance("node", main_configs=[config])
     caught_exception = ""
     try:
         cluster.start()

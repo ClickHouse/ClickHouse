@@ -1,0 +1,23 @@
+---
+title: 뮤테이션 피하기
+---
+
+ClickHouse에서 **뮤테이션**은 테이블의 기존 데이터를 수정하거나 삭제하는 작업을 의미하며, 일반적으로 `ALTER TABLE ... DELETE` 또는 `ALTER TABLE ... UPDATE`를 사용합니다. 이러한 SQL 문은 표준 SQL 작업과 비슷해 보일 수 있지만, 내부적으로는 근본적으로 다르게 동작합니다.
+
+ClickHouse의 뮤테이션은 행을 제자리에서 수정하는 대신, 변경의 영향을 받는 전체 [데이터 파트](/ko/concepts/core-concepts/parts)를 재작성하는 비동기 백그라운드 프로세스입니다. 이러한 방식은 ClickHouse의 컬럼 지향(column-oriented) 불변 스토리지 모델 때문에 필요하며, 상당한 I/O 및 리소스 사용으로 이어질 수 있습니다.
+
+뮤테이션이 실행되면 ClickHouse는 새로운 **뮤테이션된 파트**의 생성을 예약하고, 새 파트가 준비될 때까지 기존 파트는 그대로 둡니다. 준비가 완료되면 뮤테이션된 파트가 기존 파트를 원자적으로 대체합니다. 하지만 이 작업은 전체 파트를 재작성하므로, 작은 변경(예: 단일 행 업데이트)조차도 대규모 재작성과 과도한 쓰기 증폭을 초래할 수 있습니다.
+
+대규모 데이터셋에서는 이로 인해 디스크 I/O가 크게 급증하고 전체 클러스터 성능이 저하될 수 있습니다. 머지와 달리 뮤테이션은 한번 제출하면 되돌릴 수 없으며, 명시적으로 취소하지 않는 한 서버가 재시작된 후에도 계속 실행됩니다. 자세한 내용은 [`KILL MUTATION`](/ko/reference/statements/kill#kill-mutation)을 참고하십시오.
+
+<Tip>
+  **ClickHouse에서 활성 상태이거나 큐에 대기 중인 뮤테이션 수 모니터링**
+
+  활성 상태이거나 큐에 대기 중인 뮤테이션 수를 모니터링하는 방법은 다음 [기술 자료](/ko/resources/support-center/knowledge-base/monitoring-debugging/view-number-of-active-mutations)를 참고하십시오.
+</Tip>
+
+뮤테이션은 **전체 순서가 보장되며**, 뮤테이션이 실행되기 전에 삽입된 데이터에 적용되고 그 이후에 삽입된 새 데이터에는 영향을 주지 않습니다. 삽입을 차단하지는 않지만, 진행 중인 다른 쿼리와 겹칠 수는 있습니다. 뮤테이션 실행 중에 수행되는 SELECT는 뮤테이션된 파트와 그렇지 않은 파트가 섞인 상태를 읽을 수 있으므로, 실행 중에는 데이터 뷰가 일관되지 않을 수 있습니다. ClickHouse는 파트별로 뮤테이션을 병렬 실행하므로, 특히 복잡한 서브쿼리(예: x IN (SELECT ...))가 포함된 경우 메모리 및 CPU 사용량이 더욱 증가할 수 있습니다.
+
+원칙적으로 **빈번하거나 대규모인 뮤테이션은 피하십시오**, 특히 대용량 테이블에서는 더욱 그렇습니다. 대신 [ReplacingMergeTree](/ko/concepts/features/operations/update/replacing-merge-tree) 또는 [CollapsingMergeTree](/ko/reference/engines/table-engines/mergetree-family/collapsingmergetree)와 같은 대체 테이블 엔진을 사용하십시오. 이러한 엔진은 쿼리 시점 또는 머지 중에 데이터 수정을 더 효율적으로 처리하도록 설계되었습니다. 뮤테이션이 반드시 필요한 경우에는 system.mutations 테이블을 사용해 주의 깊게 모니터링하고, 프로세스가 멈추거나 비정상적으로 동작하면 `KILL MUTATION`을 사용하십시오. 뮤테이션을 잘못 사용하면 성능 저하, 과도한 스토리지 재작성, 잠재적인 서비스 불안정으로 이어질 수 있으므로 신중하게, 꼭 필요한 경우에만 적용해야 합니다.
+
+데이터를 삭제할 때는 [경량한 삭제](/ko/concepts/features/operations/delete/lightweight-delete) 또는 [파티션](/ko/concepts/best-practices/partitioning-keys)을 통한 데이터 관리도 고려할 수 있습니다. 이러한 방법을 사용하면 전체 파트를 [효율적으로 삭제](/ko/reference/statements/alter/partition#drop-partitionpart)할 수 있습니다.
