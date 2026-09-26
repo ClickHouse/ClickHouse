@@ -1601,6 +1601,39 @@ void MergeTreeData::checkMinMaxIndexForJSON(const IndexDescription & index) cons
 namespace
 {
 
+/// mapKeys(m) and mapValues(m) return the full type of a LowCardinality key or value, which materializes every element, while
+/// getSubcolumn(m, 'keys') returns the map's own keys column. Replaces such outputs of `dag` that are listed in `names`.
+void replaceMapKeysAndValuesWithSubcolumns(ActionsDAG & dag, const NameSet & names, const ContextPtr & context)
+{
+    bool replaced = false;
+    for (auto & output : dag.getOutputs())
+    {
+        if (!names.contains(output->result_name) || output->type != ActionsDAG::ActionType::FUNCTION || output->children.size() != 1)
+            continue;
+
+        const String function_name = output->function_base->getName();
+        const auto * map = output->children.front();
+        if ((function_name != "mapKeys" && function_name != "mapValues") || map->type != ActionsDAG::ActionType::INPUT
+            || !isMap(map->result_type))
+            continue;
+
+        /// bloom_filter refuses an array of Nullable, but not the subcolumn's array of LowCardinality(Nullable).
+        if (hasNullable(output->result_type))
+            continue;
+
+        String subcolumn = function_name == "mapKeys" ? "keys" : "values";
+        auto subcolumn_type = std::make_shared<DataTypeString>();
+        const auto & subcolumn_name = dag.addColumn(subcolumn_type->createColumnConst(0, subcolumn), subcolumn_type, subcolumn);
+        const auto & get_subcolumn = dag.addFunction(FunctionFactory::instance().get("getSubcolumn", context), {map, &subcolumn_name}, {});
+        output = &dag.addAlias(get_subcolumn, output->result_name);
+        replaced = true;
+    }
+
+    /// Every node of the DAG is executed, so the replaced function would still materialize its result.
+    if (replaced)
+        dag.removeUnusedActions(/*allow_remove_inputs=*/ false);
+}
+
 ExpressionActionsPtr getCombinedIndicesExpression(
     const KeyDescription & key,
     const MergeTreeIndices & indices,
@@ -1610,12 +1643,30 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 {
     ASTPtr combined_expr_list = key.expression_list_ast->clone();
 
+    NameSet names_with_declared_type(key.column_names.begin(), key.column_names.end());
+    NameSet names_from_subcolumn;
     for (const auto & index : indices)
+    {
         for (const auto & index_expr : index->index.expression_list_ast->children)
             combined_expr_list->children.push_back(index_expr->clone());
 
+        /// A bloom_filter granule holds hashes computed for the type of the column it is given, so it is the same whether the
+        /// element type is LowCardinality or not. `set` and `text`, for example, build for the index's declared type.
+        auto & names = index->index.type == "bloom_filter" ? names_from_subcolumn : names_with_declared_type;
+        names.insert(index->index.column_names.begin(), index->index.column_names.end());
+    }
+
+    /// Equal expressions share one result column.
+    for (const auto & name : names_with_declared_type)
+        names_from_subcolumn.erase(name);
+
+    /// A physical column of the same name is carried next to the result, and a block allows equal names only with equal types.
+    std::erase_if(names_from_subcolumn, [&](const String & name) { return columns.hasPhysical(name); });
+
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
-    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+    auto actions_dag = ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActionsDAG(false);
+    replaceMapKeysAndValuesWithSubcolumns(actions_dag, names_from_subcolumn, context);
+    return std::make_shared<ExpressionActions>(std::move(actions_dag), ExpressionActionsSettings(context, CompileExpressions::no));
 }
 
 }
