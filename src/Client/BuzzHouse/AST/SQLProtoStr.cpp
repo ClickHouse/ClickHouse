@@ -1242,6 +1242,7 @@ CONV_FN(ExprInType, ein)
             ExplainQueryToString(ret, ein.sel());
             ret += ")";
             break;
+        case InType::kEmptyList: ret += ein.empty_list() ? "[]" : "()"; break;
         default: ret += "1";
     }
 }
@@ -5047,10 +5048,6 @@ CONV_FN(SystemCommand, cmd)
             break;
         case CmdType::kReloadDictionaries:
             ret += "RELOAD DICTIONARIES";
-            can_set_cluster = true;
-            break;
-        case CmdType::kReloadModels:
-            ret += "RELOAD MODELS";
             can_set_cluster = true;
             break;
         case CmdType::kReloadFunctions:
