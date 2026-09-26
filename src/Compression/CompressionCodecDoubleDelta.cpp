@@ -124,7 +124,7 @@ public:
     explicit CompressionCodecDoubleDelta(UInt8 data_bytes_size_);
 
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDesc() const override;
+    ASTPtr getCodecDescription() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -506,7 +506,7 @@ CompressionCodecDoubleDelta::CompressionCodecDoubleDelta(UInt8 data_bytes_size_)
 {
 }
 
-ASTPtr CompressionCodecDoubleDelta::getCodecDesc() const
+ASTPtr CompressionCodecDoubleDelta::getCodecDescription() const
 {
     return makeCodecDescription("DoubleDelta");
 }
@@ -518,7 +518,7 @@ uint8_t CompressionCodecDoubleDelta::getMethodByte() const
 
 void CompressionCodecDoubleDelta::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(data_bytes_size);
 }
 

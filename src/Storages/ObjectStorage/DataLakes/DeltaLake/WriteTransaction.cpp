@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
@@ -35,6 +36,12 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_EXCEPTION;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int NETWORK_ERROR;
+}
+
+namespace DB::FailPoints
+{
+    extern const char delta_lake_commit_fail_before_log_write[];
 }
 
 namespace DeltaLake
@@ -43,9 +50,10 @@ namespace DeltaLake
 namespace
 {
 
-UInt64 getCurrentTime()
+/// The Delta protocol defines `add.modificationTime` as milliseconds since the epoch.
+UInt64 getCurrentTimeMs()
 {
-    return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
 void exportTable(
@@ -100,7 +108,7 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
         columns[0]->insert(path);
         columns[1]->insert(partition_values);
         columns[2]->insert(size_bytes);
-        columns[3]->insert(getCurrentTime());
+        columns[3]->insert(getCurrentTimeMs());
         std::string stats_json = fmt::format("{{\"numRecords\":{}}}", size_rows);
         DB::Tuple stats{stats_json};
         columns[4]->insert(stats);
@@ -131,8 +139,9 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
 
 static constexpr auto engine_info = "ClickHouse";
 
-WriteTransaction::WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_)
+WriteTransaction::WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_, DB::NamesAndTypesList table_schema_)
     : kernel_helper(kernel_helper_)
+    , table_schema(std::move(table_schema_))
     , log(getLogger("WriteTransaction"))
 {
 }
@@ -155,7 +164,7 @@ const DB::NamesAndTypesList & WriteTransaction::getWriteSchema() const
     return write_schema;
 }
 
-void WriteTransaction::create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema)
+void WriteTransaction::create(const DB::Names & partition_columns)
 {
     auto * engine_builder = kernel_helper->createBuilder();
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
@@ -245,6 +254,11 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     }
 
     ffi::add_files(transaction.get(), engine_data.release());
+
+    fiu_do_on(DB::FailPoints::delta_lake_commit_fail_before_log_write, {
+        throw DB::Exception(DB::ErrorCodes::NETWORK_ERROR, "Failpoint for a commit failure before the log write enabled");
+    });
+
     using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
     KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
         ffi::commit(transaction.release(), engine.get()),
@@ -253,6 +267,61 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     auto version = ffi::committed_transaction_version(&committed_handle);
 
     LOG_TEST(log, "Commit version: {}", version);
+}
+
+void WriteTransaction::createTable()
+{
+    /// Reject non-round-tripping column types before the kernel FFI, so unsupported types raise a normal exception.
+    DeltaLake::validateSchemaForDeltaCreate(table_schema);
+
+    /// The kernel needs the table location's root directory to exist; create it up front. No-op for object stores (S3/Azure).
+    kernel_helper->prepareForTableCreation();
+
+    auto * engine_builder = kernel_helper->createBuilder();
+    engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
+
+    DeltaLake::KernelCreateSchemaState schema_state;
+    schema_state.schema_list = &table_schema;
+    auto engine_schema = DeltaLake::buildKernelEngineSchema(schema_state);
+
+    using KernelCreateTableBuilder = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTableBuilder, ffi::free_create_table_builder>;
+    using KernelCreateTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTransaction, ffi::create_table_free_transaction>;
+    using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
+
+    auto builder_result = ffi::get_create_table_builder(
+        DeltaLake::KernelUtils::toDeltaString(kernel_helper->getTableLocation()),
+        &engine_schema,
+        DeltaLake::KernelUtils::toDeltaString(engine_info),
+        engine.get());
+    /// Unwrap inside a `try` -- it must run either way, since it is what
+    /// consumes `builder_result` -- and prefer the visitor's exception when there is one.
+    KernelCreateTableBuilder builder;
+    try
+    {
+        builder = DeltaLake::KernelUtils::unwrapResult(builder_result, "get_create_table_builder");
+    }
+    catch (...)
+    {
+        if (schema_state.exception)
+            std::rethrow_exception(schema_state.exception);
+        throw;
+    }
+    if (schema_state.exception)
+        std::rethrow_exception(schema_state.exception);
+
+    /// `create_table_builder_build` consumes the builder on both success and failure, so release() is correct here.
+    KernelCreateTransaction create_txn(DeltaLake::KernelUtils::unwrapResult(
+        ffi::create_table_builder_build(builder.release(), engine.get()),
+        "create_table_builder_build"));
+
+    /// `create_table_commit` likewise consumes the transaction handle.
+    KernelCommittedTransaction committed(DeltaLake::KernelUtils::unwrapResult(
+        ffi::create_table_commit(create_txn.release(), engine.get()),
+        "create_table_commit"));
+    auto * committed_handle = committed.get();
+    auto version = ffi::committed_transaction_version(&committed_handle);
+
+    LOG_TRACE(log, "Created table at version {}", version);
 }
 
 }

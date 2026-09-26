@@ -3,15 +3,19 @@ import os
 import re
 import shlex
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
+from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.find_tests import Targeting
+from ci.jobs.scripts.integration_coverage_export import IntegrationCoverageExporter
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
+    PER_TEST_COVERAGE_SKIP_PREFIXES,
     force_heavy_modules_sequential,
     get_optimal_test_batch,
 )
@@ -682,6 +686,16 @@ TIMEOUT_ERROR_PATTERNS = [
     "TimeoutExpired",
 ]
 
+# Emitted by `ClickHouseInstance.describe_lost_network_interface` in
+# `tests/integration/helpers/cluster.py`, and only after the harness has confirmed both
+# halves of the state it names: docker removed a running container's network interface (a
+# `veth` name collision in moby, present at least up to 28.3.3), so the server is unreachable
+# for the rest of the module through no fault of its own. Unlike the substrings below it
+# already carries its own proof, which is why the FAIL path trusts it without further
+# context. Must stay in step with the constant of the same name in the harness - pinned by
+# `tests/integration/test_cluster_waiters/test_lost_network_interface.py`.
+LOST_NETWORK_INTERFACE_ERROR = "Docker removed the network interface of the container"
+
 INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "Cannot connect to the Docker daemon",
     "Error response from daemon",
@@ -695,6 +709,7 @@ INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "toomanyrequests",
     "pull access denied",
     "Got exception pulling images:",  # docker pull failure during cluster.start()
+    LOST_NETWORK_INTERFACE_ERROR,
 ]
 
 # compose options that consume the token after them, so the subcommand is not the
@@ -829,6 +844,12 @@ def _is_infrastructure_error(result: Result) -> bool:
     # Require both docker context and an infrastructure pattern to avoid
     # false positives on genuine test failures.
     if result.status == Result.Status.FAIL:
+        # The harness only emits this after checking the container from both sides, so the
+        # evidence the docker-context requirement below stands in for is already in hand.
+        # It has to be honoured here: the state surfaces mid-module as an ordinary failing
+        # query, which carries no docker argv at all.
+        if LOST_NETWORK_INTERFACE_ERROR in result.info:
+            return True
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
@@ -1094,12 +1115,18 @@ def prefetch_images(
     retries: int = 3,
     pull_timeout: int = 300,
     parallel: int = PREFETCH_PARALLEL_PULLS,
+    fetched_out: Optional[Set[str]] = None,
 ) -> bool:
     """Pull the images using `ci/prefetch-integration-test-images`.
 
     Images with no manifest for the current architecture (e.g. amd64-only images
     on arm64 runners) are silently skipped.  Returns True on success, False if any
     image fails to pull for a real reason.
+
+    `fetched_out`, when given, receives the references the script reports as actually
+    pulled. A missing or short report can only leave references out, so a reporting
+    failure costs the skip in `tests/integration/helpers/cluster.py` instead of claiming
+    an image that was never fetched.
     """
     if not images:
         print("No images to pre-fetch.")
@@ -1112,11 +1139,19 @@ def prefetch_images(
         "PULL_TIMEOUT": str(pull_timeout),
         "PULL_PARALLEL": str(parallel),
     }
-    return Shell.check(
-        f"{script} {' '.join(images)}",
-        verbose=True,
-        env=env,
-    )
+    report = ""
+    with tempfile.TemporaryDirectory(prefix="prefetch_", dir=temp_path) as report_dir:
+        if fetched_out is not None:
+            report = os.path.join(report_dir, "fetched.txt")
+            env["PREFETCH_FETCHED_FILE"] = report
+        ok = Shell.check(
+            f"{script} {' '.join(images)}",
+            verbose=True,
+            env=env,
+        )
+        if fetched_out is not None and Path(report).is_file():
+            fetched_out.update(Path(report).read_text(errors="replace").split())
+    return ok
 
 
 def parse_args():
@@ -1300,6 +1335,16 @@ def get_parallel_sequential_tests_to_run(
         ]
         print(
             f"LLVM coverage: skipped {before - len(test_files)} test files matching LLVM_COVERAGE_SKIP_PREFIXES"
+        )
+    if "per_test_coverage" in (job_options or ""):
+        before = len(test_files)
+        test_files = [
+            f
+            for f in test_files
+            if not any(f.startswith(prefix) for prefix in PER_TEST_COVERAGE_SKIP_PREFIXES)
+        ]
+        print(
+            f"Per-test coverage: skipped {before - len(test_files)} test files matching PER_TEST_COVERAGE_SKIP_PREFIXES"
         )
 
     assert len(test_files) > 100
@@ -1526,7 +1571,6 @@ def main():
     args = parse_args()
     job_params = args.options.split(",") if args.options else []
     job_params = [to.strip() for to in job_params]
-    use_old_analyzer = False
     use_distributed_plan = False
     use_database_disk = False
     is_flaky_check = False
@@ -1535,6 +1579,7 @@ def main():
     is_sequential = False
     is_targeted_check = False
     is_llvm_coverage = False
+    is_per_test_coverage = False
     llvm_profdata_cmd = None
 
     # Set on_error_hook to collect logs on hard timeout
@@ -1581,8 +1626,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         elif any(build in to for build in ("amd_", "arm_")):
             if "amd_llvm_coverage" in to:
                 is_llvm_coverage = True
-        elif to == "old analyzer":
-            use_old_analyzer = True
         elif to == "distributed plan":
             use_distributed_plan = True
         elif to == "db disk":
@@ -1597,8 +1640,24 @@ tar -czf ./ci/tmp/logs.tar.gz \
             is_bugfix_validation = True
         elif "targeted" in to:
             is_targeted_check = True
+        elif to == "per_test_coverage":
+            is_per_test_coverage = True
         else:
             assert False, f"Unknown job option [{to}]"
+    assert (
+        not is_per_test_coverage or is_llvm_coverage
+    ), "per_test_coverage requires an amd_llvm_coverage* build"
+
+    per_test_coverage_dir = f"{temp_path}/per_test_coverage"
+    cidb_cluster = None
+    if is_per_test_coverage:
+        Shell.check(f"rm -rf {per_test_coverage_dir}", verbose=True)
+        os.makedirs(per_test_coverage_dir)
+        if not info.is_local_run:
+            # Fail before the tests, not after hours of them.
+            os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
+            cidb_cluster = CIDBCluster()
+            assert cidb_cluster.is_ready(), "CIDB is not ready for the coverage export"
 
     if args.count:
         repeat_option = f"--count {args.count} --random-order"
@@ -1867,17 +1926,26 @@ tar -czf ./ci/tmp/logs.tar.gz \
         + ", ".join(str(f.name) for f in compose_files)
     )
     images_to_prefetch = get_images_from_compose_files(compose_files)
-    if not prefetch_images(images_to_prefetch):
+    prefetched: Set[str] = set()
+    if not prefetch_images(images_to_prefetch, fetched_out=prefetched):
         prefetch_failure_result().complete_job()
+    # A batch's compose files need not yield the default server image, but a project's own
+    # enumeration can: it is the default instance image and Keeper's. So prefetch it separately, and
+    # ignore the result: a failed fetch only leaves it out of the export, which turns the skip off.
+    server_image = f"clickhouse/integration-test:{os.environ['DOCKER_BASE_TAG']}"
+    if server_image not in prefetched:
+        prefetch_images([server_image], fetched_out=prefetched)
 
     test_env = {
         "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": clickhouse_server_config_dir,
         "CLICKHOUSE_TESTS_SERVER_BIN_PATH": clickhouse_path,
         "CLICKHOUSE_BINARY": clickhouse_path,  # some test cases support alternative binary location
         "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": clickhouse_path,
-        "CLICKHOUSE_USE_OLD_ANALYZER": "1" if use_old_analyzer else "0",
         "CLICKHOUSE_USE_DISTRIBUTED_PLAN": "1" if use_distributed_plan else "0",
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
+        # Read by tests/integration/helpers/cluster.py: the references this job pulled. A reference
+        # outside this set was not fetched here and may be a stale floating tag, so it is pulled.
+        "CLICKHOUSE_TESTS_PREFETCHED_IMAGES": " ".join(sorted(prefetched)),
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
         # PromQL compliance: deterministic JSON for upload hook (see promql_compliance_upload_hook.py).
@@ -1885,7 +1953,14 @@ tar -czf ./ci/tmp/logs.tar.gz \
             "COMPLIANCE_RESULT_FILE", os.path.join(temp_path, "promql_compliance_result.json")
         ),
     }
-    if is_llvm_coverage:
+    if is_per_test_coverage:
+        # Read by tests/integration/helpers/cluster.py: every instance attributes its
+        # coverage to the test module and the cluster dumps it here on shutdown.
+        test_env["CLICKHOUSE_TESTS_PER_TEST_COVERAGE_DIR"] = per_test_coverage_dir
+        # No continuous mode (see cluster.py) and no profile merge: the coverage is
+        # taken from the servers' `system.coverage_log`, not from .profraw files.
+        test_env["LLVM_PROFILE_FILE"] = "it-%4m.profraw"
+    elif is_llvm_coverage:
         # %c enables continuous mode: the counters are memory-mapped into the
         # file and updated as the code runs, so the file is structurally valid
         # at every instant. Without it the profile is written only at process
@@ -2455,6 +2530,29 @@ tar -czf ./ci/tmp/logs.tar.gz \
         ), "LLVM coverage with bugfix validation is not supported"
         has_error = finalize_llvm_coverage_status(R, has_error)
 
+    if is_per_test_coverage and not info.is_local_run:
+        # Unlike the profile merge, a partial run is still exported: every module's
+        # coverage stands on its own, and the missing modules are simply absent.
+        export_result = Result.from_commands_run(
+            name="Collect coverage",
+            command=lambda: IntegrationCoverageExporter(
+                clickhouse_path=clickhouse_path,
+                coverage_dir=per_test_coverage_dir,
+                dest=cidb_cluster,
+                job_name=info.job_name,
+            ).do(),
+        )
+        R.results.append(export_result)
+        # The per-instance dumps, to check the merge against.
+        coverage_archive = f"{temp_path}/per_test_coverage.tar.gz"
+        if Shell.check(
+            f"tar -czf {coverage_archive} -C {temp_path} per_test_coverage", verbose=True
+        ):
+            R.files.append(coverage_archive)
+        if not export_result.is_ok():
+            has_error = True
+            error_info.append("Per-module coverage export failed")
+
     # Capture whether this run saw any infrastructure problems BEFORE the
     # clearing block below resets `has_error`. If the answer is yes, the
     # bugfix-validation inversion path further down must be skipped: we have
@@ -2586,6 +2684,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+    elif is_per_test_coverage:
+        force_ok_exit = True
+        print("NOTE: Per-module coverage job - do not block pipeline")
 
     # After the last `/init` work, so the peaks cover the coverage merge too.
     print_leaf_peak_usage(os.environ)

@@ -26,7 +26,7 @@ CompressionCodecQuantized::CompressionCodecQuantized(const QuantizedCodecParams 
 {
 }
 
-ASTPtr CompressionCodecQuantized::getCodecDesc() const
+ASTPtr CompressionCodecQuantized::getCodecDescription() const
 {
     ASTs args;
     args.emplace_back(make_intrusive<ASTLiteral>(params.method));
@@ -44,7 +44,7 @@ uint8_t CompressionCodecQuantized::getMethodByte() const
 
 void CompressionCodecQuantized::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecQuantized::doCompressData(const char * source, UInt32 source_size, char * dest) const
