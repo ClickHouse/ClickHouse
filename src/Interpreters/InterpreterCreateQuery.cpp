@@ -1843,8 +1843,7 @@ void checkProjectionColumnListReplicationCompatibility(
         || context->isRecoveryFromStoredMetadata()
         || context->isDDLOrOnClusterInternal()
         || context->getClientInfo().is_replicated_database_internal
-        || context->getSettingsRef()[Setting::allow_projection_column_list_in_replicated_metadata]
-        || !create.columns_list || !create.columns_list->projections)
+        || context->getSettingsRef()[Setting::allow_projection_column_list_in_replicated_metadata])
         return;
 
     if (const auto metadata_txn = context->getZooKeeperMetadataTransaction();
@@ -1859,14 +1858,55 @@ void checkProjectionColumnListReplicationCompatibility(
         && !(database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared")))
         return;
 
-    for (const auto & projection_ast : create.columns_list->projections->children)
+    bool has_projection_column_list = false;
+    if (create.columns_list && create.columns_list->projections)
     {
-        if (projection_ast->as<const ASTProjectionDeclaration &>().columns)
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Projection column lists in replicated metadata require setting "
-                "allow_projection_column_list_in_replicated_metadata = 1. "
-                "Upgrade every replica before enabling it");
+        for (const auto & projection_ast : create.columns_list->projections->children)
+        {
+            if (const auto * declaration = projection_ast ? projection_ast->as<ASTProjectionDeclaration>() : nullptr;
+                declaration && declaration->columns)
+            {
+                has_projection_column_list = true;
+                break;
+            }
+        }
     }
+    else if (!create.columns_list && !create.as_table.empty() && !create.isView() && !create.is_dictionary
+        && (!create.storage || !create.storage->engine || endsWith(create.storage->engine->name, "MergeTree")))
+    {
+        /// Old ON CLUSTER formats expand AS source_table on the worker. Inspect the source's projections
+        /// now, while the initiator still has the setting that governs the copied definition.
+        const String source_database = context->resolveDatabase(create.as_database);
+        context->checkAccess(AccessType::SHOW_COLUMNS, source_database, create.as_table);
+        const auto source = DatabaseCatalog::instance().getTable({source_database, create.as_table}, context);
+        if (const auto * alias = source->as<StorageAlias>();
+            alias && !alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {}))
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}",
+                StorageID{source_database, create.as_table}.getNameForLogs());
+
+        /// Without an explicit engine, the destination inherits the source's engine. Only a
+        /// MergeTree destination copies projections in getTablePropertiesAndNormalizeCreateQuery().
+        if ((create.storage && create.storage->engine) || endsWith(source->getName(), "MergeTree"))
+        {
+            const auto source_metadata = source->getInMemoryMetadataPtr(context, false);
+            for (const auto & projection : source_metadata->getProjections())
+            {
+                if (const auto * declaration = projection.definition_ast
+                        ? projection.definition_ast->as<ASTProjectionDeclaration>() : nullptr;
+                    declaration && declaration->columns)
+                {
+                    has_projection_column_list = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (has_projection_column_list)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Projection column lists in replicated metadata require setting "
+            "allow_projection_column_list_in_replicated_metadata = 1. "
+            "Upgrade every replica before enabling it");
 }
 
 }
