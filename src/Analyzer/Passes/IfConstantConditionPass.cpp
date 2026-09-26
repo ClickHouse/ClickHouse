@@ -19,7 +19,8 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<IfConstantConditionVisitor>;
     using Base::Base;
 
-    void enterImpl(QueryTreeNodePtr & node)
+    /// After the arguments, so that a chain collapses in one visit and visiting a shared node again is a no-op.
+    void leaveImpl(QueryTreeNodePtr & node)
     {
         auto * function_node = node->as<FunctionNode>();
         if (!function_node || (function_node->getFunctionName() != "if" && function_node->getFunctionName() != "multiIf"))
