@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-## Conexões entre o plano de controle do ClickHouse e sua VPC de BYOC
+## Conexões entre o plano de controle do ClickHouse e sua VPC de BYOC {#connection-between-clickhouse-and-byoc}
 
 O plano de controle do ClickHouse Cloud mantém vários tipos de conexão para operar e dar suporte à sua implantação de BYOC:
 
@@ -20,7 +20,7 @@ O plano de controle do ClickHouse Cloud mantém vários tipos de conexão para o
 | **Solução de problemas — serviço ClickHouse**            | Tailscale                                                                                                                                                  | Engenheiros do ClickHouse acessam o serviço ClickHouse (por exemplo, tabelas de sistema) para diagnóstico via Tailscale.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | **Solução de problemas — servidor da API do Kubernetes** | Tailscale                                                                                                                                                  | Engenheiros do ClickHouse acessam o servidor da API do Kubernetes para diagnóstico do cluster via Tailscale.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
-## APIs do provedor de Cloud vs. a API do Kubernetes
+## APIs do provedor de Cloud vs. a API do Kubernetes {#cloud-api-vs-kubernetes-api}
 
 É fácil confundir dois caminhos de controle distintos. Eles diferem quanto à origem do tráfego, à forma de autenticação e à aplicabilidade do Tailscale:
 
@@ -36,18 +36,18 @@ Em resumo: apenas o tráfego da API do Kubernetes e de solução de problemas po
 
 As APIs do provedor de Cloud também são chamadas no sentido inverso, por controllers em execução dentro do seu próprio cluster — o controller do balanceador de carga, o driver CSI, o escalonador automático, o controller de DNS e o cert-manager. Essas chamadas usam identidades internas ao cluster e saem pelo seu próprio caminho de egress, portanto aparecem na sua trilha de auditoria com uma identidade e um endereço de origem diferentes dos das chamadas de gerenciamento. Consulte [Conexões de saída](#outbound-connections).
 
-### Limites de permissões por origem de rede
+### Limites de permissões por origem de rede {#network-origin-permission-boundaries}
 
 Se a sua organização restringe a assunção de funções do IAM ou as chamadas à Cloud API com base na origem de rede (por exemplo, SCPs da AWS ou condições de confiança de funções que usam `aws:SourceIp` ou `aws:SourceVpc`), essas condições bloquearão a automação do ClickHouse: as chamadas se originam legitimamente da rede do ClickHouse Cloud, e não da sua. Isente as funções criadas pelo ClickHouse dessas condições ou entre em contato com o ClickHouse para obter os intervalos atuais de IPs de egress, caso seja necessário usar uma allowlist por origem.
 
 A seção a seguir descreve como a rede privada **Tailscale** é usada para solução de problemas e acesso opcional de gerenciamento.
 
-## Rede privada Tailscale
+## Rede privada Tailscale {#tailscale-private-network}
 
 O Tailscale fornece uma conexão de rede privada de confiança zero entre os serviços de gerenciamento do ClickHouse Cloud e sua implantação BYOC. Esse canal seguro permite que engenheiros do ClickHouse realizem solução de problemas e operações de gerenciamento sem exigir acesso de entrada à rede pública nem configurações complexas de VPN; os próprios agentes fazem conexões somente de saída e precisam de acesso à internet de saída para alcançar o serviço de coordenação do Tailscale.
 
 <div id="tailscale-overview">
-  ### Visão geral
+  ### Visão geral {#tailscale-overview}
 </div>
 
 O Tailscale cria um túnel de rede privado e criptografado entre o plano de controle do ClickHouse (na VPC do ClickHouse) e o plano de dados do seu BYOC (na sua VPC). Essa conexão é usada exclusivamente para:
@@ -60,7 +60,7 @@ O Tailscale cria um túnel de rede privado e criptografado entre o plano de cont
   O Tailscale é usado **apenas para operações de gerenciamento e solução de problemas**. Ele **nunca é usado para tráfego de consultas** nem para acesso a dados de clientes. Todos os dados dos clientes permanecem na sua própria conta de nuvem e nunca são transmitidos por conexões do Tailscale.
 </Warning>
 
-### Como o Tailscale funciona no BYOC
+### Como o Tailscale funciona no BYOC {#how-tailscale-works}
 
 <Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
 
@@ -78,7 +78,7 @@ Para cada serviço ou endpoint que precisa ser acessado via Tailscale, o ClickHo
    * Encaminha o tráfego para os IPs apropriados dentro do seu cluster do Kubernetes
 
 <div id="tailscale-connection-process">
-  ### Processo de conexão de rede
+  ### Processo de conexão de rede {#tailscale-connection-process}
 </div>
 
 O estabelecimento da conexão no Tailscale segue estas etapas:
@@ -98,7 +98,7 @@ O estabelecimento da conexão no Tailscale segue estas etapas:
    * O tráfego permanece criptografado independentemente de usar o modo direto ou de retransmissão
 
 <div id="tailscale-security">
-  ### Recursos de segurança
+  ### Recursos de segurança {#tailscale-security}
 </div>
 
 **Conexões somente de saída**:
@@ -115,7 +115,7 @@ O estabelecimento da conexão no Tailscale segue estas etapas:
 
 Para ver a política completa de acesso a dados — o que os engenheiros podem ver, autenticação por certificado e auditoria no lado do cliente — consulte [ClickHouse data access](/pt-BR/products/bring-your-own-cloud/reference/clickhouse-data-access).
 
-### Acesso aos serviços de gerenciamento
+### Acesso aos serviços de gerenciamento {#management-services-access}
 
 Por padrão, os serviços de gerenciamento da ClickHouse alcançam seu cluster do Kubernetes BYOC por meio do endpoint público do servidor da API, que cada nuvem controla de forma diferente — na AWS, por uma IP allow list contendo apenas os endereços do gateway NAT da ClickHouse; no GCP e no Azure, pelo IAM da nuvem. Consulte [Exposição do servidor da API do Kubernetes](#kubernetes-api-server-exposure) para os detalhes de cada nuvem.
 
@@ -126,7 +126,7 @@ Por padrão, os serviços de gerenciamento da ClickHouse alcançam seu cluster d
 * Por padrão, o endpoint público é mantido como mecanismo de contingência para necessidades emergenciais de investigação e suporte; após a verificação do acesso privado, ele pode ser totalmente desabilitado em coordenação com a ClickHouse
 
 <div id="tailscale-traffic-flow">
-  ### Fluxo de tráfego de rede
+  ### Fluxo de tráfego de rede {#tailscale-traffic-flow}
 </div>
 
 **Fluxo de conexão do Tailscale**:
@@ -145,7 +145,7 @@ Por padrão, os serviços de gerenciamento da ClickHouse alcançam seu cluster d
 
 Para mais detalhes técnicos sobre como o Tailscale é implementado no BYOC, consulte o post do blog [Building ClickHouse BYOC on AWS](https://clickhouse.com/blog/building-clickhouse-byoc-on-aws#tailscale-connection). Para saber o que os engenheiros do ClickHouse podem ler depois de se conectarem e como o ClickHouse audita esse acesso, consulte [ClickHouse data access](/pt-BR/products/bring-your-own-cloud/reference/clickhouse-data-access).
 
-## Fronteiras de rede
+## Fronteiras de rede {#network-boundaries}
 
 Esta seção apresenta a visão de firewall de uma implantação BYOC: cada conexão que atravessa a fronteira da sua rede BYOC, em qualquer direção. Aplica-se a AWS, GCP e Azure; quando o comportamento varia entre as nuvens, a nuvem é indicada explicitamente.
 
@@ -156,7 +156,7 @@ Termos usados ao longo do texto:
 * **Público**: um endpoint acessível pela internet pública.
 * **Privado**: um endpoint acessível somente por um caminho privado — peering de VPC/VNet, AWS PrivateLink, GCP Private Service Connect, Azure Private Link ou Tailscale.
 
-### Equivalentes por provedor
+### Equivalentes por provedor {#provider-equivalents}
 
 O restante desta página usa nomes neutros em relação à nuvem. Esta tabela os mapeia para cada provedor:
 
@@ -174,7 +174,7 @@ O restante desta página usa nomes neutros em relação à nuvem. Esta tabela os
 
 Em todas as nuvens, o egress para a internet pública sai da sua rede BYOC por um conjunto pequeno e fixo de endereços NAT, o que permite fixá-los nos seus próprios controles de egress. Solicite à equipe da ClickHouse os valores atuais da sua implantação. Na AWS e no GCP, o tráfego para as APIs de armazenamento do próprio provedor é uma exceção: ele segue o caminho privado indicado na linha acima e nunca chega ao NAT gateway.
 
-### Conexões de entrada
+### Conexões de entrada {#inbound-connections}
 
 | Listener                                                                                            | Portas                                                                                                           | Origem                                                                      | Finalidade                                                                                     | Seus controles                                                                                                                                                                                                                                            |
 | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -199,7 +199,7 @@ Sempre que o caminho público estiver habilitado, recomendamos fortemente config
   Portas de protocolo adicionais podem ser habilitadas por implantação — acesso nativo autenticado por certificado e Arrow Flight são os exemplos atuais —, portanto confirme o conjunto exato de portas da sua implantação com sua equipe ClickHouse antes de escrever regras de firewall a partir desta tabela.
 </Note>
 
-#### Exposição do servidor da API do Kubernetes
+#### Exposição do servidor da API do Kubernetes {#kubernetes-api-server-exposure}
 
 A forma como os serviços de gerenciamento do ClickHouse alcançam o servidor da API do Kubernetes, e o que restringe esse access, varia conforme a cloud:
 
@@ -211,13 +211,13 @@ A forma como os serviços de gerenciamento do ClickHouse alcançam o servidor da
   Somente o tráfego da Kubernetes API e de solução de problemas pode ser movido para um caminho privado. As chamadas de gerenciamento às APIs do seu provedor de Cloud originam-se da rede do ClickHouse Cloud e não podem ser roteadas por ele — consulte [APIs do provedor de Cloud vs. a Kubernetes API](#cloud-api-vs-kubernetes-api), que também aborda as API calls ao provedor feitas por controllers dentro do seu próprio cluster.
 </Note>
 
-### Troubleshooting access
+### Troubleshooting access {#troubleshooting-access}
 
 *Entrada, Privado*
 
 Os engenheiros do ClickHouse Cloud acessam sua implantação para troubleshooting somente via Tailscale, nunca pela internet pública, em todas as nuvens. O acesso é just-in-time e baseado em certificados: o engenheiro o solicita por meio de um fluxo interno de aprovação, a plataforma emite uma credencial individual de curta duração para cada engenheiro e ela expira automaticamente. Não há identidade administrativa compartilhada nem standing access. Consulte [ClickHouse data access](/pt-BR/products/bring-your-own-cloud/reference/clickhouse-data-access) para conhecer a política completa, incluindo quais tabelas os engenheiros podem ler.
 
-### Conexões de saída
+### Conexões de saída {#outbound-connections}
 
 | Destino                                          | Portas                       | Iniciada por                                                                                                                    | Finalidade                                                       | O que atravessa o limite                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ------------------------------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -230,7 +230,7 @@ Os engenheiros do ClickHouse Cloud acessam sua implantação para troubleshootin
 | Certificate authority ACME pública               | TCP 443, DNS                 | cert-manager                                                                                                                    | Emissão de certificados TLS para os endpoints dos seus serviços  | Solicitações de assinatura de certificado — apenas chaves públicas                                                                                                                                                                                                                                                                                                                                                                      |
 | Recebimento de alertas do ClickHouse Cloud       | TCP 443                      | AlertManager                                                                                                                    | Aciona o SRE da ClickHouse quando seu cluster está com problemas | Nome do alerta e identificador do serviço — consulte [Alertas](#alerts)                                                                                                                                                                                                                                                                                                                                                                 |
 
-### Coletor de faturamento
+### Coletor de faturamento {#billing-scraper}
 
 *Saída, Private*
 
@@ -242,7 +242,7 @@ Ele é executado como um sidecar junto ao contêiner do servidor ClickHouse e co
   Esse stream transporta apenas métricas de sistema e metadados operacionais. Não contém linhas de tabela, valores de coluna nem texto bruto de consultas.
 </Warning>
 
-### Alertas
+### Alertas {#alerts}
 
 *Saída, Público*
 
@@ -255,19 +255,19 @@ O conjunto completo de dados de monitoramento permanece na sua própria conta em
 
 As métricas usam uma stack de Prometheus e Thanos em execução no seu cluster, com retenção opcional de longo prazo em um bucket na sua própria conta; caso você habilite essa retenção, as gravações saem da sua rede BYOC em direção à storage API do provedor, mas os dados permanecem dentro da sua conta. Atualmente, os logs são gravados nos volumes de nó anexados aos seus nós ClickHouse; em uma atualização futura, eles serão gravados no LogHouse, um armazenamento de logs baseado em ClickHouse que também é executado dentro da sua rede BYOC.
 
-### Estado do serviço
+### Estado do serviço {#service-state}
 
 *Saída, Público*
 
 O state exporter envia informações sobre o estado do serviço ClickHouse e dos backups — eventos de status operacional, e não o conteúdo dos backups — para uma fila pertencente ao ClickHouse Cloud: SQS na AWS, Pub/Sub no GCP e Service Bus no Azure. É isso que permite ao console do ClickHouse Cloud exibir o status de um serviço em execução na sua conta.
 
-### Tráfego intrarrede
+### Tráfego intrarrede {#intra-network-traffic}
 
 O tráfego entre componentes dentro do cluster — do ClickHouse para o ClickHouse Keeper, o operator, da entrada para os pods do ClickHouse, scrapes de monitoramento — nunca sai da sua rede BYOC. Cada provider criptografa o tráfego entre suas próprias instances na camada de rede: consulte [AWS](https://docs.aws.amazon.com/whitepapers/latest/logical-separation/encrypting-data-at-rest-and--in-transit.html), [GCP](https://cloud.google.com/docs/security/encryption-in-transit) e [Azure](https://learn.microsoft.com/azure/security/fundamentals/encryption-overview).
 
 Por padrão, o egress não sofre restrições nas camadas de security group, regra de firewall e network security group; os destinos efetivamente contatados são os que constam em [Conexões de saída](#outbound-connections). Como alternativa, um firewall de egress opcional por service pode impor uma allowlist de destinos — entre em contato com a equipe da ClickHouse caso precise disso.
 
-### Auditando a fronteira
+### Auditando a fronteira {#auditing-the-boundary}
 
 Como todo o data plane é executado na sua própria conta, os fluxos descritos nesta página podem ser observados com as suas próprias ferramentas. Algumas fontes vêm ativadas por padrão; outras você mesmo habilita:
 

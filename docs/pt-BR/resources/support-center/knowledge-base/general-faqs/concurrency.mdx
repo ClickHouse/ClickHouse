@@ -10,7 +10,7 @@ keywords: ['concorrência', 'QPS']
 
 Sim. O ClickHouse foi projetado para aplicações analíticas em tempo real que podem atender usuários externos diretamente. Ele pode atender consultas analíticas com baixa latência (menos de 10 milissegundos) e alta concorrência (ultrapassando 10.000 consultas por segundo) em bancos de dados na escala de petabytes, combinando dados históricos e inserções em tempo real.
 
-## O que possibilita alta concorrência
+## O que possibilita alta concorrência {#what-makes-high-concurrency-possible}
 
 Consultas rápidas são a base de um alto QPS. Quanto menos trabalho cada consulta exige, mais consultas um servidor consegue executar simultaneamente. Os principais recursos que reduzem o trabalho por consulta são:
 
@@ -18,14 +18,14 @@ Consultas rápidas são a base de um alto QPS. Quanto menos trabalho cada consul
 * Caches, como o [cache de consultas](/pt-BR/concepts/features/performance/caches/query-cache), que atende consultas `SELECT` repetidas diretamente com resultados em cache.
 * [Projeções](/pt-BR/concepts/features/projections/projections), que pré-calculam dados no momento da inserção e podem ser selecionadas automaticamente pelo ClickHouse, e [visões materializadas](/pt-BR/concepts/features/materialized-views/index), que armazenam resultados pré-calculados em uma tabela de destino separada, que pode ser consultada diretamente.
 
-## Controle e limitação de concorrência
+## Controle e limitação de concorrência {#controlling-and-limiting-concurrency}
 
 Por padrão, o ClickHouse OSS não limita o número de consultas simultâneas. Por padrão, o ClickHouse Cloud define `max_concurrent_queries_for_all_users` como `1000`. Você pode configurar limites em vários níveis:
 
 * [`max_concurrent_queries`](/pt-BR/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries) limita o número total de consultas executadas simultaneamente no servidor. [`max_concurrent_insert_queries`](/pt-BR/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries) e [`max_concurrent_select_queries`](/pt-BR/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries) aplicam o mesmo limite separadamente às consultas `INSERT` e `SELECT`. Todos os três têm `0` (ilimitado) como valor padrão.
 * [`max_concurrent_queries_for_user`](/pt-BR/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user) e [`max_concurrent_queries_for_all_users`](/pt-BR/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) limitam a concorrência por usuário ou entre todos os usuários.
 
-## Isolamento de workloads
+## Isolamento de workloads {#isolating-workloads}
 
 Para evitar que workloads concorrentes interfiram entre si, o ClickHouse oferece:
 

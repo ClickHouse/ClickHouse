@@ -29,7 +29,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 **Database Backups and Snapshots**: バックアップは、データの別個のコピーを保持することで、耐久性の高い長期保存を実現します。スナップショットはデータの追加コピーを作成せず、通常はより高速で、より優れた RPO を実現します。
 
 <div id="database-backups">
-  ## データベースのバックアップ
+  ## データベースのバックアップ {#database-backups}
 </div>
 
 プライマリサービスのバックアップを保持しておくことで、プライマリサービスでダウンタイムが発生した場合に、そのバックアップを使って復元できます。
@@ -60,13 +60,13 @@ ClickHouse Cloud は、バックアップについて以下の機能をサポー
 このセクションでは、各バックアップの成功 / 失敗ステータスも確認できます。
 
 <div id="restoring-from-a-backup">
-  ## バックアップからの復元
+  ## バックアップからの復元 {#restoring-from-a-backup}
 </div>
 
 1. ClickHouse Cloud の バケット 内にあるデフォルトバックアップは、同じリージョン内の新しいサービスに復元できます。
 2. 外部バックアップ (顧客の オブジェクトストレージ 内) は、同じリージョンまたは別のリージョンの新しいサービスに復元できます。
 
-## バックアップと復元の所要時間の目安
+## バックアップと復元の所要時間の目安 {#backup-and-restore-duration-guidance}
 
 バックアップと復元にかかる時間は、データサイズ、スキーマの複雑さ、およびテーブル数によって大きく異なります。以下の数値は社内テストでの観測結果であり、性能を保証するものではありません。
 
@@ -82,19 +82,19 @@ ClickHouse Cloud は、バックアップについて以下の機能をサポー
 </Note>
 
 <div id="recovery-process">
-  ## 復旧プロセス
+  ## 復旧プロセス {#recovery-process}
 </div>
 
 このセクションでは、各ケースで利用できるさまざまな復旧オプションと、その手順について説明します。
 
 <div id="primary-service-data-corruption">
-  ### プライマリサービスのデータ破損
+  ### プライマリサービスのデータ破損 {#primary-service-data-corruption}
 </div>
 
 この場合、データはバックアップから同一リージョン内の別のサービスに[復元できます](/ja/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup)。
 デフォルトのバックアップポリシーを使用している場合、バックアップは最大24時間前のものになる可能性があります。6時間間隔の設定可能なバックアップを使用している場合は、最大6時間前のものになる可能性があります。
 
-#### 復元手順
+#### 復元手順 {#restoration-steps}
 
 既存のバックアップから復元するには、次の手順に従います。
 
@@ -105,7 +105,7 @@ ClickHouse Cloud は、バックアップについて以下の機能をサポー
 <Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="バックアップから復元" />
 
 <div id="primary-region-downtime">
-  ### プライマリリージョンのダウンタイム
+  ### プライマリリージョンのダウンタイム {#primary-region-downtime}
 </div>
 
 [バックアップをエクスポート](/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)して、ご利用のクラウドプロバイダーのバケットに保存できます。
@@ -125,7 +125,7 @@ ClickHouse Cloud は、バックアップについて以下の機能をサポー
 </Note>
 
 <div id="additional-options">
-  ## 追加オプション
+  ## 追加オプション {#additional-options}
 </div>
 
 検討できる追加オプションがいくつかあります。

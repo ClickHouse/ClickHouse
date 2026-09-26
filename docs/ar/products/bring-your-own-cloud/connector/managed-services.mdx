@@ -14,7 +14,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 في الوضع المُدار يشغّل الـ موصل مكوّنًا ثالثًا هو المنفّذ، ومن خلاله تُشغّل ClickHouse Cloud خدمات ClickHouse في عنقود Kubernetes الخاص بك. تتناول هذه الصفحة إنشاء خدمة، وقراءة حالتها (status)، وما تقوم به ClickHouse Cloud بها، وكيفية إيقافها نهائيًا (retired).
 
-## ما الذي يقوم به الوضع المُدار
+## ما الذي يقوم به الوضع المُدار {#what-managed-mode-does}
 
 المنفّذ عبارة عن خدمة خفية ضمن نفس الملف الثنائي `clicklink` الذي يضم أداة السحب ومستكشف الأخطاء ومصلحها. وهو يحتفظ بقناة WebSocket صادرة نحو نقطة نهاية الموصل الخاصة بك، ويتلقى أوامر دورة الحياة من ClickHouse Cloud. ويطبّق كل أمر على عنقود Kubernetes الوحيد المُهيّأ له، ثم يبلّغ عن النتيجة عبر تلك القناة. وعلى غرار المكوّنات الأخرى، لا ينشئ سوى اتصالات صادرة: فـ ClickHouse Cloud لا يتصل أبدًا بعنقودك، كما أن واجهة برمجة التطبيقات المحلية للمنفّذ ترتبط بعنوان الاسترجاع المحلي (loopback).
 
@@ -24,13 +24,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 على جهاز افتراضي، يعمل المنفّذ بوصفه وحدة systemd باسم `clicklink-executor` إلى جانب المكوّنين الآخرين. أما على Kubernetes فهو Deployment بنسخة واحدة ضمن مساحة أسماء الموصل. ويقدّم بيانات الصحة والمقاييس على المنفذ 8086، وواجهة برمجة التطبيقات المحلية الخاصة به على `127.0.0.1:9999`.
 
-## تفعيل الوضع المُدار
+## تفعيل الوضع المُدار {#enable-managed-mode}
 
 تختار الوضع المُدار عند التسجيل: مرّر `--managed` إلى `clicklink clctl init`، أو أجب عن المُطالبة في الطرفية. على جهاز افتراضي، يأخذ `init` العنقود من ملف kubeconfig الخاص بهذا المضيف (استخدم `--cluster-name` إذا كان يحتوي على أكثر من عنقود EKS) ويمنح المنفّذ أذونات الوصول على مستوى العنقود بشكل مضمّن. على Kubernetes، مرّر `--egress-cidrs` مع نطاقات CIDR الخاصة بنقطة نهاية الـ connector لديك ليُهيّئ المخطط سياسة NetworkPolicy الافتراضية للرفض مُفعّلة.
 
 أما التثبيت نفسه فلم يتغيّر. راجع [onboarding](/ar/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) للاطلاع على التدفق الكامل، و[مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli#init) للاطلاع على الخيارات.
 
-## إنشاء خدمة
+## إنشاء خدمة {#create-a-service}
 
 يُفعَّل إنشاء الخدمة عبر نقطة نهاية الموصل على مستوى كل بيئة؛ تحقّق من ذلك مع فريق الحساب الخاص بك قبل البدء.
 
@@ -118,7 +118,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-## الحالة
+## الحالة {#status}
 
 يجيب المنفّذ عن استعلامات الحالة عبر واجهة برمجة التطبيقات المحلية الخاصة به، التي ترتبط بالعنوان `127.0.0.1:9999` ولا توفّر أي مصادقة خاصة بها. على جهاز افتراضي، شغّل الأوامر على المضيف. أما على Kubernetes، فافتح إعادة توجيه المنفذ (port-forward) أولًا ثم وجّه الأوامر إليه:
 
@@ -140,7 +140,7 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
 
 يسجّل المنفّذ كل أمر ترسله إليه ClickHouse Cloud. ويطبع `clicklink clctl commands list` هذه الأوامر، مع إمكانية تصفيتها بواسطة `--status` (‏`pending` أو `running` أو `completed` أو `failed`) أو `--action` (‏`create_instance` على سبيل المثال) أو `--cluster`. ويطبع `clicklink clctl commands get <id>` أمرًا واحدًا مع مرحلته ونتيجته. وتحتوي `result` الخاصة بالأمر الفاشل على الخطأ: سبب عدم اكتمال عملية الإنشاء، أو أي [تحديث منصة](/ar/products/bring-your-own-cloud/connector/platform-updates) ينتظر موافقتك.
 
-## دورة حياة الـ خدمة
+## دورة حياة الـ خدمة {#service-lifecycle}
 
 بعد إنشاء الـ خدمة، تتولى ClickHouse Cloud تشغيله عبر المنفّذ. والأوامر التي ترسلها هي:
 
@@ -159,7 +159,7 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
 
 أما الأوامر الفرعية `instances scale` و`instances patch` و`instances delete` فترسل الأوامر مباشرةً إلى واجهة برمجة التطبيقات المحلية الخاصة بالمنفّذ، متجاوزةً ClickHouse Cloud. ولا تشغّلها إلا عندما يطلب منك فريق حسابك ذلك؛ ويوضّح [مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli#instances-scale) وظيفة كل منها.
 
-## Support sessions لخدمة مُدارة
+## Support sessions لخدمة مُدارة {#support-sessions}
 
 يربط الـ المنفّذ الـ scraper بكل خدمة ينشئها، لكنه لا يجهّز الـ مستكشف الأخطاء ومصلحها، لذا لا يمكن لأي [support session](/ar/products/bring-your-own-cloud/connector/support-sessions) تشغيل التشخيصات على خدمة مُدارة ما لم تجهّزه بنفسك. جهّزه مرة واحدة لكل خدمة، مع مساحة أسماء الخدمة `ns-<name>`، بالطريقة نفسها المتبعة مع instance سجّلته بنفسك:
 
@@ -189,7 +189,7 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
 
 امنح الأذونات لمستخدم ClickHouse عبر SQL كما سبق. فأي مستخدم يُضاف عبر `--ch-user-via cr` لن يبقى: إذ إن ClickHouse Cloud هي مالكة تعريف الخدمة وتعيد تطبيقه. وعند حذف الخدمة، يزيل الـ المنفّذ حزمة الـ مستكشف الأخطاء ومصلحها على الجهاز الافتراضي. أما على Kubernetes فتبقى الـ Secret والـ ServiceAccount الخاصتان بالحزمة إلى أن تحذفهما بنفسك، كما هو مذكور في [إلغاء التثبيت](/ar/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes).
 
-## حذف خدمة
+## حذف خدمة {#delete-a-service}
 
 لا يوجد أمر حذف متاح للعميل عبر نقطة نهاية الموصل: اطلب من فريق حسابك حذف الخدمة. تتولّى ClickHouse Cloud إنهاءها، ويحذف المنفّذ عبء العمل ومساحة أسمائه (`terminating`، ثم `terminated`). ولا يُمسّ أي شيء في AWS: تبقى الحاويات وبياناتها ودور IAM إلى أن تزيلها بنفسك.
 
@@ -220,7 +220,7 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
 
 وبدون `--yes` يتوقف التشغيل بعد خطوة السجل ويذكر أسماء الحاويات التي كان سيفرغها. أما `--dry-run` فيقرأ كل شيء ولا يكتب شيئًا. وأي دور أحضرته عبر `--role-arn`، أو أي حاوية لم ينشئها `prepare`، يُبلَّغ عنها بوصفها محتفظًا بها ولا تُمسّ إطلاقًا. ويرفض التشغيل العمل ما دامت مساحة أسماء الخدمة لا تزال تحتوي على عنقود ClickHouse. وهو يقرأ كل شيء قبل أن يحذف أي شيء، لذا فإن التشغيل المرفوض لا يغيّر شيئًا.
 
-## عندما يكون الـ موصل غير متصل
+## عندما يكون الـ موصل غير متصل {#when-the-connector-is-offline}
 
 لا تعتمد الخدمات العاملة على المنفّذ؛ إذ يُبقيها ClickHouse Operator في عنقودك قيد التشغيل، ولا يؤثر انقطاع اتصال الـ موصل في أي شيء يخدم الاستعلامات بالفعل.
 

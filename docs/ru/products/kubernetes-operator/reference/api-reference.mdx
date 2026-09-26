@@ -10,7 +10,7 @@ sidebarTitle: 'Справочник по API'
 
 В этом документе содержится подробный справочник по API пользовательских ресурсов ClickHouse Operator.
 
-## AdditionalPort
+## AdditionalPort {#additionalport}
 
 AdditionalPort задаёт один дополнительный TCP-порт, который будет открыт на поде ClickHouse и в публичном headless Service.
 
@@ -23,7 +23,7 @@ AdditionalPort задаёт один дополнительный TCP-порт, 
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## CABundleSelector
+## CABundleSelector {#cabundleselector}
 
 CABundleSelector выбирает ключ, содержащий набор CA, из объекта Secret в пространстве имен кластера.
 
@@ -36,11 +36,11 @@ CABundleSelector выбирает ключ, содержащий набор CA, 
 
 * [ClusterTLSSpec](#clustertlsspec)
 
-## ClickHouseCluster
+## ClickHouseCluster {#clickhousecluster}
 
 ClickHouseCluster — это схема для API `clickhouseclusters`.
 
-### Версия API и Kind
+### Версия API и Kind {#clickhousecluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -56,11 +56,11 @@ kind: ClickHouseCluster
 
 * [ClickHouseClusterList](#clickhouseclusterlist)
 
-## ClickHouseClusterList
+## ClickHouseClusterList {#clickhouseclusterlist}
 
 ClickHouseClusterList содержит список объектов ClickHouseCluster.
 
-### Версия API и Kind
+### Версия API и Kind {#clickhouseclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -71,7 +71,7 @@ kind: ClickHouseClusterList
 | ------- | ---------------------------------------------- | -------- | ----------- | ------------ |
 | `items` | массив [ClickHouseCluster](#clickhousecluster) |          | true        |              |
 
-## ClickHouseClusterSpec
+## ClickHouseClusterSpec {#clickhouseclusterspec}
 
 ClickHouseClusterSpec определяет желаемое состояние ClickHouseCluster.
 
@@ -99,7 +99,7 @@ ClickHouseClusterSpec определяет желаемое состояние C
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseClusterStatus
+## ClickHouseClusterStatus {#clickhouseclusterstatus}
 
 ClickHouseClusterStatus определяет наблюдаемое состояние ClickHouseCluster.
 
@@ -119,7 +119,7 @@ ClickHouseClusterStatus определяет наблюдаемое состоя
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseNetworkPolicySpec
+## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
 
 ClickHouseNetworkPolicySpec настраивает NetworkPolicy, которой управляет оператор для кластера ClickHouse.
 Управляемая политика распространяется на внутренний трафик кластера:
@@ -136,7 +136,7 @@ ClickHouseNetworkPolicySpec настраивает NetworkPolicy, которой
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClickHouseSettings
+## ClickHouseSettings {#clickhousesettings}
 
 ClickHouseSettings определяет параметры настройки сервера ClickHouse.
 
@@ -154,7 +154,7 @@ ClickHouseSettings определяет параметры настройки с
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClusterTLSSpec
+## ClusterTLSSpec {#clustertlsspec}
 
 ClusterTLSSpec определяет настройки TLS для кластера.
 
@@ -170,7 +170,7 @@ ClusterTLSSpec определяет настройки TLS для кластер
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## ConfigMapKeySelector
+## ConfigMapKeySelector {#configmapkeyselector}
 
 ConfigMapKeySelector выбирает ключ в ConfigMap.
 
@@ -183,7 +183,7 @@ ConfigMapKeySelector выбирает ключ в ConfigMap.
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## ContainerImage
+## ContainerImage {#containerimage}
 
 ContainerImage задаёт образ контейнера с указанием repository, tag или hash.
 
@@ -197,7 +197,7 @@ ContainerImage задаёт образ контейнера с указание�
 
 * [ContainerTemplateSpec](#containertemplatespec)
 
-## ContainerTemplateSpec
+## ContainerTemplateSpec {#containertemplatespec}
 
 ContainerTemplateSpec описывает переопределения конфигурации контейнеров кластера.
 
@@ -217,7 +217,7 @@ ContainerTemplateSpec описывает переопределения конф
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## DefaultPasswordSelector
+## DefaultPasswordSelector {#defaultpasswordselector}
 
 DefaultPasswordSelector задает источник пароля пользователя по умолчанию.
 
@@ -231,7 +231,7 @@ DefaultPasswordSelector задает источник пароля пользо�
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## EncryptionSettings
+## EncryptionSettings {#encryptionsettings}
 
 EncryptionSettings включает шифрование данных таблиц при хранении. Если этот параметр задан, оператор создает
 зашифрованную политику хранения ClickHouse для каждого диска с данными; таблицы включают ее с помощью `SETTINGS storage_policy`.
@@ -245,7 +245,7 @@ EncryptionSettings включает шифрование данных табли
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## ExternalSecret
+## ExternalSecret {#externalsecret}
 
 ExternalSecret — это ссылка на Secret в том же пространстве имен.
 
@@ -258,7 +258,7 @@ ExternalSecret — это ссылка на Secret в том же простра
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ExternalSecretPolicy
+## ExternalSecretPolicy {#externalsecretpolicy}
 
 ExternalSecretPolicy определяет, как оператор обрабатывает содержимое внешнего Secret.
 
@@ -271,11 +271,11 @@ ExternalSecretPolicy определяет, как оператор обраба�
 
 * [ExternalSecret](#externalsecret)
 
-## KeeperCluster
+## KeeperCluster {#keepercluster}
 
 KeeperCluster — это схема для API `keeperclusters`.
 
-### Версия API и kind
+### Версия API и kind {#keepercluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -291,11 +291,11 @@ kind: KeeperCluster
 
 * [KeeperClusterList](#keeperclusterlist)
 
-## KeeperClusterList
+## KeeperClusterList {#keeperclusterlist}
 
 KeeperClusterList содержит список KeeperCluster.
 
-### Версия API и Kind
+### Версия API и Kind {#keeperclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -306,7 +306,7 @@ kind: KeeperClusterList
 | ------- | -------------------------------------- | -------- | ----------- | ------------ |
 | `items` | массив [KeeperCluster](#keepercluster) |          | true        |              |
 
-## KeeperClusterReference
+## KeeperClusterReference {#keeperclusterreference}
 
 KeeperClusterReference указывает на KeeperCluster, используемый в ClickHouseCluster.
 
@@ -319,7 +319,7 @@ KeeperClusterReference указывает на KeeperCluster, используе
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## KeeperClusterSpec
+## KeeperClusterSpec {#keeperclusterspec}
 
 KeeperClusterSpec определяет желаемое состояние KeeperCluster.
 
@@ -342,7 +342,7 @@ KeeperClusterSpec определяет желаемое состояние Keepe
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperClusterStatus
+## KeeperClusterStatus {#keeperclusterstatus}
 
 KeeperClusterStatus определяет наблюдаемое состояние KeeperCluster.
 
@@ -362,7 +362,7 @@ KeeperClusterStatus определяет наблюдаемое состояни
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperNetworkPolicySpec
+## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
 
 KeeperNetworkPolicySpec настраивает NetworkPolicy, управляемую для кластера Keeper.
 Управляемая политика распространяется на внутрикластерный трафик:
@@ -380,7 +380,7 @@ KeeperNetworkPolicySpec настраивает NetworkPolicy, управляем
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## KeeperSettings
+## KeeperSettings {#keepersettings}
 
 KeeperSettings определяет конфигурацию сервера ClickHouse Keeper.
 
@@ -394,7 +394,7 @@ KeeperSettings определяет конфигурацию сервера Clic
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## LoggerConfig
+## LoggerConfig {#loggerconfig}
 
 LoggerConfig задаёт конфигурацию логирования сервера.
 
@@ -411,7 +411,7 @@ LoggerConfig задаёт конфигурацию логирования сер
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## NamedTemplateMeta
+## NamedTemplateMeta {#namedtemplatemeta}
 
 NamedTemplateMeta определяет поддерживаемые параметры метаданных для объектов шаблона, которым требуется имя.
 
@@ -425,7 +425,7 @@ NamedTemplateMeta определяет поддерживаемые параме
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
 
-## NetworkPolicyPolicy
+## NetworkPolicyPolicy {#networkpolicypolicy}
 
 NetworkPolicyPolicy определяет, управляет ли оператор ресурсом NetworkPolicy для кластера.
 
@@ -439,7 +439,7 @@ NetworkPolicyPolicy определяет, управляет ли операто
 * [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
 * [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
-## PDBPolicy
+## PDBPolicy {#pdbpolicy}
 
 PDBPolicy определяет, будут ли создаваться объекты PodDisruptionBudget.
 
@@ -453,7 +453,7 @@ PDBPolicy определяет, будут ли создаваться объе�
 
 * [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-## PersistentVolumeClaimTemplate
+## PersistentVolumeClaimTemplate {#persistentvolumeclaimtemplate}
 
 PersistentVolumeClaimTemplate — это именованный шаблон для PersistentVolumeClaim для каждой реплики.
 
@@ -466,7 +466,7 @@ PersistentVolumeClaimTemplate — это именованный шаблон д�
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## PodDisruptionBudgetSpec
+## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
 
 PodDisruptionBudgetSpec настраивает PDB, создаваемый для кластера.
 Можно задать только один из параметров: MinAvailable или MaxUnavailable.
@@ -484,7 +484,7 @@ PodDisruptionBudgetSpec настраивает PDB, создаваемый дл�
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## PodTemplateSpec
+## PodTemplateSpec {#podtemplatespec}
 
 PodTemplateSpec описывает переопределения конфигурации подов кластера.
 
@@ -512,7 +512,7 @@ PodTemplateSpec описывает переопределения конфигу
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## SecretKeySelector
+## SecretKeySelector {#secretkeyselector}
 
 SecretKeySelector выбирает ключ объекта Secret.
 
@@ -525,7 +525,7 @@ SecretKeySelector выбирает ключ объекта Secret.
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## TemplateMeta
+## TemplateMeta {#templatemeta}
 
 TemplateMeta определяет поддерживаемые параметры метаданных для объектов шаблона.
 
@@ -539,7 +539,7 @@ TemplateMeta определяет поддерживаемые параметр�
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbeContainer
+## VersionProbeContainer {#versionprobecontainer}
 
 VersionProbeContainer задаёт переопределения для проверки версии на уровне контейнера.
 Имена полей и JSON-теги соответствуют corev1.Container, чтобы SMP выполнял слияние по имени.
@@ -554,7 +554,7 @@ VersionProbeContainer задаёт переопределения для про�
 
 * [VersionProbePodSpec](#versionprobepodspec)
 
-## VersionProbeJobSpec
+## VersionProbeJobSpec {#versionprobejobspec}
 
 VersionProbeJobSpec задаёт переопределения на уровне задачи для проверки версии.
 
@@ -567,7 +567,7 @@ VersionProbeJobSpec задаёт переопределения на уровн�
 
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbePodSpec
+## VersionProbePodSpec {#versionprobepodspec}
 
 VersionProbePodSpec задаёт переопределения на уровне пода для проверки версии.
 Имена полей и JSON-теги соответствуют corev1.PodSpec для совместимости со strategic merge patch.
@@ -583,7 +583,7 @@ VersionProbePodSpec задаёт переопределения на уровн�
 
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 
-## VersionProbePodTemplate
+## VersionProbePodTemplate {#versionprobepodtemplate}
 
 VersionProbePodTemplate описывает переопределения для пода проверки версии.
 
@@ -596,7 +596,7 @@ VersionProbePodTemplate описывает переопределения для
 
 * [VersionProbeJobSpec](#versionprobejobspec)
 
-## VersionProbeTemplate
+## VersionProbeTemplate {#versionprobetemplate}
 
 VersionProbeTemplate задает переопределения для задачи определения версии.
 Структура повторяет batchv1.JobTemplateSpec и содержит только поддерживаемые поля.

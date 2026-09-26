@@ -32,11 +32,11 @@ ClickHouse هو أول adapter مجتمعي على dbt OSS وdbt v2 ومنصة d
 
 تُتابع الحالة المباشرة في [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (تكافؤ v2 مع v1، بمشكلة فرعية واحدة لكل مجال) و[ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt v2).
 
-#### جرّب ClickHouse في منصة dbt
+#### جرّب ClickHouse في منصة dbt {#request-access}
 
 إذا كنت مهتمًا باختبار الإصدار التجريبي الخاص (Beta)، فسجّل عبر [نموذج الإصدار التجريبي الخاص الخاص بـ dbt Labs](https://docs.google.com/forms/d/e/1FAIpQLScjHwRchnKarq_RpNM7hATjphNFxqBEePmAwRtSpMWG1snGHA/viewform). النموذج تابع لـ dbt Labs، لذا فإن المعلومات التي ترسلها تذهب إلى dbt Labs وليس إلى ClickHouse. وبعد تفعيل الوصول، اتبع [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) في وثائق dbt لإعداد الاتصال.
 
-## المصطلحات والتوافر
+## المصطلحات والتوافر {#terminology}
 
 يتوفر dbt في عدة صور، ويمكن للـ adapter نفسه أن يعمل في أكثر من صورة منها. يوضح هذا الجدول كل تسمية والمستوى الحالي لدعم ClickHouse.
 
@@ -47,7 +47,7 @@ ClickHouse هو أول adapter مجتمعي على dbt OSS وdbt v2 ومنصة d
 | **dbt v2**       | dbt OSS مع مزايا إضافية من dbt Labs: فهم SQL، والتحليل الساكن، وLSP، وextension لـ VS Code، والوعي بالـ column. مغلق المصدر، ومرخَّص بموجب [dbt Product Licensing Agreement](https://www.getdbt.com/dbt-fusion-engine-license-agreement). | **Beta.** يعمل الـ adapter مع binary الخاص بالإصدار v2، لكن مزايا SQL الجديدة غير متوفرة لـ ClickHouse بعد.                                                                                                                                                                                                                                           |
 | **dbt platform** | dbt المُستضاف، وكان يُعرف سابقًا بـ dbt Cloud: Studio IDE، والـ jobs المجدولة، والبيئات، وCatalog، وSemantic Layer. تعمل المنصة بالإصدار v2 فقط، لذا فإن استخدام ClickHouse فيها يعني adapter الإصدار v2.                                 | **Private Beta.** راجع [كيفية طلب access](#request-access). الإعداد: [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) في وثائق dbt.                                                                                                                                                               |
 
-## حالة Beta
+## حالة Beta {#beta-status}
 
 نقيس أداء adapter الخاص بـ dbt v2 مقابل مجموعة اختبارات التكامل الخاصة بـ dbt Core 1.x في `dbt-clickhouse`. تعني Beta أن سير عمل dbt الأساسي ومجموعة ميزات ClickHouse Cloud تعمل ضمن حدود موثّقة؛ أما التكافؤ الكامل مع v1 ودعم العناقيد المُدارة ذاتيًا فسيأتيان لاحقًا.
 
@@ -57,7 +57,7 @@ ClickHouse هو أول adapter مجتمعي على dbt OSS وdbt v2 ومنصة d
 
 وإصدار GA مدرج في خطة الطريق وسيصدر قريبًا، وسنحدّث الوثائق بمجرد أن يكون جاهزًا.
 
-### خارج نطاق Beta
+### خارج نطاق Beta {#out-of-scope}
 
 بالإضافة إلى فجوات التكافؤ مع الإصدار v1 المذكورة أدناه، توجد بعض الميزات الحصرية للإصدار v2 تقع خارج النطاق الحالي، لكنها ستتوفر قريبًا:
 
@@ -65,13 +65,13 @@ ClickHouse هو أول adapter مجتمعي على dbt OSS وdbt v2 ومنصة d
 * **ذكاء ClickHouse SQL في dbt v2** (validation مُدرك للـ dialect، والتحليل الثابت، وLSP، وإدراك الـ column في امتداد VS Code). يعمل الـ adapter حاليًا مع الـ binary الخاص بـ dbt v2، لكنه لا يتضمّن هذه الميزات بعد. وحتى ذلك الحين، يُفرَض ضبط التحليل الثابت على `off` لمشاريع ClickHouse، ولا يكتب الـ engine أي تتبّع للأصول (lineage) على مستوى الـ column. يمكن متابعة ذلك في [#736](https://github.com/ClickHouse/dbt-clickhouse/issues/736).
 * **طرق مصادقة إضافية** بخلاف username وpassword في منصة dbt.
 
-## التكافؤ بين v1 وv2
+## التكافؤ بين v1 وv2 {#parity}
 
 تقارن الجداول أدناه الميزات المتاحة في `dbt-clickhouse` (v1) بحالتها في محوّل dbt v2. جميع الميزات المدرجة مدعومة في v1 ما لم تُشر الملاحظات إلى خلاف ذلك، أما عمود الحالة فيخص dbt v2 وينطبق كذلك على dbt OSS. ويمكن متابعة تطوّر كل عنصر قيد الانتظار في [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660).
 
 <Badge color="green">مدعوم</Badge> يعمل حاليًا · <Badge color="yellow">جزئي</Badge> يعمل ضمن قيود · <Badge color="red">ليس بعد</Badge> قيد التنفيذ.
 
-### التجسيدات
+### التجسيدات {#parity-materializations}
 
 | الميزة                                         | وظيفتها                                                 | dbt v2                             | ملاحظات                                                                                                                     |
 | ---------------------------------------------- | ------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -85,7 +85,7 @@ ClickHouse هو أول adapter مجتمعي على dbt OSS وdbt v2 ومنصة d
 | `ephemeral`                                    | تعبير جدول شائع مضمّن، دون إنشاء أي كائن.               | <Badge color="green">مدعوم</Badge> |                                                                                                                             |
 | `distributed_table`، `distributed_incremental` | جداول مُقسّمة إلى أجزاء خلف محرك Distributed.           | <Badge color="red">ليس بعد</Badge> |                                                                                                                             |
 
-### تهيئة الـ model
+### تهيئة الـ model {#parity-model-configuration}
 
 | الميزة                                            | وظيفتها                                             | dbt v2                             | ملاحظات |
 | ------------------------------------------------- | --------------------------------------------------- | ---------------------------------- | ------- |
@@ -97,7 +97,7 @@ ClickHouse هو أول adapter مجتمعي على dbt OSS وdbt v2 ومنصة d
 | تطور المخطط في الـ models التزايدية               | `on_schema_change` يضيف الأعمدة أو يزامنها.         | <Badge color="green">مدعوم</Badge> |         |
 | `codec` و`ttl` على مستوى الـ column               | الضغط وانتهاء الصلاحية لكل column على حدة.          | <Badge color="green">مدعوم</Badge> |         |
 
-### الاختبار والتوثيق
+### الاختبار والتوثيق {#parity-testing-and-docs}
 
 | الميزة                                  | وظيفتها                                        | dbt v2                              | ملاحظات                                                                                                                                                                                          |
 | --------------------------------------- | ---------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -107,7 +107,7 @@ ClickHouse هو أول adapter مجتمعي على dbt OSS وdbt v2 ومنصة d
 | توليد الـ catalog والتوثيق              | metadata الأعمدة الخاصة بموقع التوثيق.         | <Badge color="green">مدعوم</Badge>  |                                                                                                                                                                                                  |
 | التتبع على مستوى الأعمدة (column-level) | تتبّع الأعمدة عبر الـ DAG.                     | <Badge color="yellow">جزئي</Badge>  | ميزة جديدة في v2 عبر مصرّف SQL وغير متاحة في v1. لا يُعرض التتبع في منصة dbt إلا عند تعطيل quoting المعرّفات في `dbt_project.yml`؛ أما التتبع على جانب الـ engine فيتطلب ClickHouse SQL dialect. |
 
-### العنقود وClickHouse Cloud
+### العنقود وClickHouse Cloud {#parity-cluster-and-cloud}
 
 | الميزة                          | وظيفتها                                                                 | dbt v2                             | ملاحظات                                                                                                                                                                                                           |
 | ------------------------------- | ----------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -118,7 +118,7 @@ ClickHouse هو أول adapter مجتمعي على dbt OSS وdbt v2 ومنصة d
 | إعدادات الاتصال المخصصة         | `custom_settings` على مستوى ملف التعريف.                                | <Badge color="green">مدعوم</Badge> |                                                                                                                                                                                                                   |
 | إصدار خادم ClickHouse           | الحد الأدنى لإصدار الخادم.                                              | <Badge color="green">مدعوم</Badge> | 25.3+ على كلا المحركين. تتطلب قراءة أعمدة `UUID` على v2 الإصدار 26.7+ (الخوادم الأقدم لا تستطيع تحويل `UUID` إلى Arrow).                                                                                          |
 
-### وحدات الماكرو والعمليات
+### وحدات الماكرو والعمليات {#parity-macros-and-operations}
 
 | الميزة                            | وظيفتها                                                        | dbt v2                             | ملاحظات                                           |
 | --------------------------------- | -------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------- |
@@ -130,7 +130,7 @@ ClickHouse هو أول adapter مجتمعي على dbt OSS وdbt v2 ومنصة d
 | `query-comment`                   | تهيئة تعليق الاستعلام.                                         | <Badge color="red">ليس بعد</Badge> | لا يُؤخذ `query-comment: null` بعين الاعتبار بعد. |
 | تكامل الكتالوج (Iceberg)          | التجسيد في external catalogs.                                  | <Badge color="red">ليس بعد</Badge> | غير متوفر في v1 أيضًا؛ وهناك حلول بديلة موثّقة.   |
 
-### الاتصال والمصادقة
+### الاتصال والمصادقة {#parity-connectivity-and-auth}
 
 | الميزة                         | وظيفتها                                                                                                       | dbt v2                             | ملاحظات                                                            |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------ |

@@ -18,7 +18,7 @@ Cette page décrit les garanties transactionnelles de la base de données analyt
 
 Si vous souhaitez vérifier l&#39;atomicité, l&#39;isolation ou la durabilité des insertions dans ClickHouse, poursuivez avec les cas ci-dessous.
 
-## Cas 1 : INSERT dans une partition d’une table de la famille MergeTree*
+## Cas 1 : INSERT dans une partition d’une table de la famille MergeTree* {#case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family}
 
 Cette opération est transactionnelle (ACID) si les lignes insérées sont compactées et insérées sous la forme d’un seul bloc (voir les remarques) :
 
@@ -28,29 +28,29 @@ Cette opération est transactionnelle (ACID) si les lignes insérées sont compa
 * Durabilité : un INSERT réussi est écrit dans le système de fichiers avant qu’une réponse ne soit renvoyée au client, sur une seule réplique ou sur plusieurs répliques (contrôlé par le paramètre `insert_quorum`), et ClickHouse peut demander à l’OS de synchroniser les données du système de fichiers sur le support de stockage (contrôlé par le paramètre `fsync_after_insert`).
 * Un INSERT dans plusieurs tables avec une seule instruction est possible si des vues matérialisées sont impliquées (l’INSERT du client vise une table à laquelle des vues matérialisées sont associées).
 
-## Cas 2 : INSERT dans plusieurs partitions d’une table de la famille MergeTree*
+## Cas 2 : INSERT dans plusieurs partitions d’une table de la famille MergeTree* {#case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family}
 
 Identique au cas 1 ci-dessus, avec cette précision :
 
 * Si la table comporte de nombreuses partitions et que l’INSERT en couvre plusieurs, alors l’insertion dans chaque partition constitue à elle seule une transaction
 
-## Cas 3 : INSERT dans une table distribuée de la famille MergeTree*
+## Cas 3 : INSERT dans une table distribuée de la famille MergeTree* {#case-3-insert-into-one-distributed-table-of-the-mergetree-family}
 
 Identique au cas 1 ci-dessus, avec ce détail :
 
 * l&#39;INSERT dans une table Distributed n&#39;est pas transactionnel dans son ensemble, tandis que l&#39;insertion dans chaque segment l&#39;est
 
-## Cas 4 : Utiliser une table Buffer
+## Cas 4 : Utiliser une table Buffer {#case-4-using-a-buffer-table}
 
 * les insertions dans les tables Buffer ne sont ni atomiques, ni isolées, ni cohérentes, ni durables
 
-## Cas 5 : utilisation de async_insert
+## Cas 5 : utilisation de async_insert {#case-5-using-async_insert}
 
 Identique au cas 1 ci-dessus, avec ce détail :
 
 * l&#39;atomicité est garantie même si `async_insert` est activé et que `wait_for_async_insert` est défini sur 1 (par défaut), mais si `wait_for_async_insert` est défini sur 0, alors l&#39;atomicité n&#39;est pas garantie.
 
-## Remarques
+## Remarques {#notes}
 
 * les lignes insérées depuis le client dans un certain format de données sont regroupées dans un seul bloc lorsque :
   * le format d’insertion est basé sur les lignes (comme CSV, TSV, Values, JSONEachRow, etc.) et que les données contiennent moins de `max_insert_block_size` lignes (~1 000 000 par défaut) ou moins de `min_chunk_bytes_for_parallel_parsing` octets (10 Mo par défaut) si le parsing parallèle est utilisé (activé par défaut)
@@ -63,7 +63,7 @@ Identique au cas 1 ci-dessus, avec ce détail :
 * la « cohérence » au sens d’ACID ne couvre pas la sémantique des systèmes distribués, voir https://jepsen.io/consistency ; cet aspect est contrôlé par d’autres paramètres (`select_sequential_consistency`)
 * cette explication ne couvre pas la nouvelle fonctionnalité de transactions, qui permet d’avoir des transactions complètes sur plusieurs tables, des vues matérialisées, pour plusieurs SELECT, etc. (voir la section suivante sur Transactions, Commit, and Rollback)
 
-## Transactions, commit et rollback
+## Transactions, commit et rollback {#transactions-commit-and-rollback}
 
 <ExperimentalBadge />
 
@@ -73,7 +73,7 @@ Outre les fonctionnalités décrites au début de ce document, ClickHouse prend 
 
 Pour les charges de travail applicatives, envisagez [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview#transactions-and-analytics).
 
-### Prérequis
+### Prérequis {#requirements}
 
 * Déployez ClickHouse Keeper ou ZooKeeper pour suivre les transactions
 * DB atomic uniquement (par défaut)
@@ -85,17 +85,17 @@ Pour les charges de travail applicatives, envisagez [ClickHouse Managed Postgres
   </clickhouse>
   ```
 
-### Remarques
+### Remarques {#notes-1}
 
 * Il s’agit d’une fonctionnalité expérimentale et des modifications sont à prévoir.
 * Si une exception se produit pendant une transaction, vous ne pouvez pas valider la transaction.  Cela inclut toutes les exceptions, y compris les exceptions `UNKNOWN_FUNCTION` causées par des fautes de frappe.
 * Les transactions imbriquées ne sont pas prises en charge ; terminez la transaction en cours et démarrez-en une nouvelle
 
-### Configuration
+### Configuration {#configuration}
 
 Ces exemples s&#39;appuient sur un ClickHouse server mono-nœud avec ClickHouse Keeper activé.
 
-#### Activer la prise en charge expérimentale des transactions
+#### Activer la prise en charge expérimentale des transactions {#enable-experimental-transaction-support}
 
 ```xml title=/etc/clickhouse-server/config.d/transactions.xml
 <clickhouse>
@@ -103,7 +103,7 @@ Ces exemples s&#39;appuient sur un ClickHouse server mono-nœud avec ClickHouse 
 </clickhouse>
 ```
 
-#### Configuration de base pour un seul nœud ClickHouse server avec ClickHouse Keeper activé
+#### Configuration de base pour un seul nœud ClickHouse server avec ClickHouse Keeper activé {#basic-configuration-for-a-single-clickhouse-server-node-with-clickhouse-keeper-enabled}
 
 <Note>
   Consultez la documentation sur le [déploiement](/fr/guides/oss/deployment-and-scaling/terminology) pour plus de détails sur le déploiement de ClickHouse server et sur un quorum adéquat de nœuds ClickHouse Keeper. La configuration présentée ici est fournie à titre expérimental.
@@ -149,9 +149,9 @@ Ces exemples s&#39;appuient sur un ClickHouse server mono-nœud avec ClickHouse 
 </clickhouse>
 ```
 
-### Exemple
+### Exemple {#example}
 
-#### Vérifiez que les transactions expérimentales sont activées
+#### Vérifiez que les transactions expérimentales sont activées {#verify-that-experimental-transactions-are-enabled}
 
 Exécutez un `BEGIN TRANSACTION` ou un `START TRANSACTION`, puis un `ROLLBACK`, afin de vérifier que les transactions expérimentales sont activées et que ClickHouse Keeper l’est également, car il sert à suivre les transactions.
 
@@ -189,7 +189,7 @@ ROLLBACK
 Ok.
 ```
 
-#### Créer une table de test
+#### Créer une table de test {#create-a-table-for-testing}
 
 <Tip>
   La création de tables n&#39;est pas transactionnelle. Exécutez cette requête DDL en dehors de toute transaction.
@@ -208,7 +208,7 @@ ORDER BY n
 Ok.
 ```
 
-#### Démarrer une transaction et insérer une ligne
+#### Démarrer une transaction et insérer une ligne {#begin-a-transaction-and-insert-a-row}
 
 ```sql
 BEGIN TRANSACTION
@@ -241,7 +241,7 @@ FROM mergetree_table
   Vous pouvez interroger la table dans une transaction et constater que la ligne a été insérée même si elle n’a pas encore été validée.
 </Note>
 
-#### Annulez la transaction, puis interrogez de nouveau la table
+#### Annulez la transaction, puis interrogez de nouveau la table {#rollback-the-transaction-and-query-the-table-again}
 
 Vérifiez que la transaction a bien été annulée :
 
@@ -264,7 +264,7 @@ Ok.
 0 rows in set. Elapsed: 0.002 sec.
 ```
 
-#### Finaliser une transaction et interroger à nouveau la table
+#### Finaliser une transaction et interroger à nouveau la table {#complete-a-transaction-and-query-the-table-again}
 
 ```sql
 BEGIN TRANSACTION
@@ -301,7 +301,7 @@ FROM mergetree_table
 └────┘
 ```
 
-### Introspection des transactions
+### Introspection des transactions {#transactions-introspection}
 
 Vous pouvez inspecter les transactions en interrogeant la table `system.transactions`, mais notez que vous ne pouvez pas interroger cette
 table depuis une session déjà engagée dans une transaction. Ouvrez une deuxième session `clickhouse client` pour interroger cette table.
@@ -322,6 +322,6 @@ is_readonly: 1
 state:       RUNNING
 ```
 
-## Plus de détails
+## Plus de détails {#more-details}
 
 Consultez ce [ticket récapitulatif](https://github.com/ClickHouse/ClickHouse/issues/48794) pour accéder à des tests bien plus complets et suivre l’avancement.

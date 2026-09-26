@@ -12,9 +12,9 @@ import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrat
 
 *Чтобы отправлять журналы в ClickStack, используйте [OpenTelemetry Collector](/ru/clickstack/ingesting-data/collector).*
 
-## Начало работы
+## Начало работы {#getting-started}
 
-### Установка пакетов OpenTelemetry
+### Установка пакетов OpenTelemetry {#install-otel-packages}
 
 Выполните следующую команду, чтобы установить пакет OpenTelemetry.
 
@@ -22,7 +22,7 @@ import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrat
 bundle add opentelemetry-sdk opentelemetry-instrumentation-all opentelemetry-exporter-otlp
 ```
 
-### Настройте OpenTelemetry + форматтер логгера
+### Настройте OpenTelemetry + форматтер логгера {#configure-otel-logger-formatter}
 
 Далее нужно инициализировать инструментацию трассировки OpenTelemetry
 и настроить форматтер сообщений журнала для логгера Rails, чтобы журналы
@@ -63,7 +63,7 @@ Rails.application.configure do
 end
 ```
 
-### Настройте переменные окружения
+### Настройте переменные окружения {#configure-environment-variables}
 
 После этого вам нужно задать в командной оболочке следующие переменные окружения, чтобы отправлять телеметрию в ClickStack через OpenTelemetry Collector:
 

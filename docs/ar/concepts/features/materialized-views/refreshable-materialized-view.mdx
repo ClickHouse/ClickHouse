@@ -30,7 +30,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 > يمكن للعروض المادية القابلة للتحديث تشغيل عمليات دفعية لتنفيذ مهام مثل إلغاء التطبيع. ويمكن إنشاء تبعيات بين العروض المادية القابلة للتحديث بحيث يعتمد أحد العروض على نتائج عرض آخر، ولا يُنفَّذ إلا بعد اكتماله. ويمكن أن يحل هذا محل مسارات العمل المجدولة أو مخططات DAG البسيطة مثل مهمة [dbt](https://www.getdbt.com/). ولمعرفة المزيد حول كيفية تعيين التبعيات بين العروض المادية القابلة للتحديث، انتقل إلى [CREATE VIEW](/ar/reference/statements/create/view#refresh-dependencies)، قسم `Dependencies`.
 
-## كيف يتم تحديث عرض مادي قابل للتحديث؟
+## كيف يتم تحديث عرض مادي قابل للتحديث؟ {#how-do-you-refresh-a-refreshable-materialized-view}
 
 يُحدَّث العرض المادي القابل للتحديث تلقائيًا على فاصل زمني يُحدَّد أثناء الإنشاء.
 على سبيل المثال، يُحدَّث العرض المادي التالي كل دقيقة:
@@ -55,7 +55,7 @@ SYSTEM REFRESH VIEW table_name_mv;
 </Warning>
 
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## متى تم آخر تحديث للعرض المادي القابل للتحديث؟
+  ## متى تم آخر تحديث للعرض المادي القابل للتحديث؟ {#when-was-a-refreshable-materialized-view-last-refreshed}
 </div>
 
 لمعرفة وقت آخر تحديث للعرض المادي القابل للتحديث، يمكنك الاستعلام عن جدول النظام [`system.view_refreshes`](/ar/reference/system-tables/view_refreshes)، كما هو موضح أدناه:
@@ -74,7 +74,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## كيف يمكنني تغيير معدل التحديث؟
+  ## كيف يمكنني تغيير معدل التحديث؟ {#how-can-i-change-the-refresh-rate}
 </div>
 
 لتغيير معدل التحديث لعرض مادي قابل للتحديث، استخدم صيغة [`ALTER TABLE...MODIFY REFRESH`](/ar/reference/statements/alter/view#alter-table--modify-refresh-statement).
@@ -93,7 +93,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## استخدام `APPEND` لإضافة صفوف جديدة
+  ## استخدام `APPEND` لإضافة صفوف جديدة {#using-append-to-add-new-rows}
 </div>
 
 تتيح لك وظيفة `APPEND` إضافة صفوف جديدة إلى نهاية الجدول بدلًا من استبدال العرض بأكمله.
@@ -199,13 +199,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## أمثلة
+  ## أمثلة {#examples}
 </div>
 
 لنرَ الآن كيفية استخدام العروض المادية القابلة للتحديث مع بعض مجموعات البيانات النموذجية.
 
 <div id="stack-overflow">
-  ### Stack Overflow
+  ### Stack Overflow {#stack-overflow}
 </div>
 
 يوضح [دليل إزالة تطبيع البيانات](/ar/guides/clickhouse/data-modelling/denormalization) تقنيات متنوعة لإزالة تطبيع البيانات باستخدام مجموعة بيانات Stack Overflow. نملأ هذه الجداول بالبيانات التالية: `votes` و`users` و`badges` و`posts` و`postlinks`.
@@ -257,7 +257,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb
+  ### IMDb {#imdb}
 </div>
 
 في [دليل تكامل dbt وClickHouse](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/index)، ملأنا مجموعة بيانات IMDb بالجداول التالية: `actors` و`directors` و`genres` و`movie_directors` و`movies` و`roles`.

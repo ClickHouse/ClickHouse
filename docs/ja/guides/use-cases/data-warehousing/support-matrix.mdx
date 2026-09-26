@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 サポート状況は、ClickHouse Cloud とセルフマネージド ClickHouse で分けて示しています。実験的機能は ClickHouse Cloud ではデフォルトで無効になっており、[サポートを通じてリクエストする必要があります](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#13-experimental-features-in-production)。利用可否は機能によって異なるため、特定の実験的機能を有効にできるかどうかはサポートにお問い合わせください。デプロイメント固有の設定と制限事項は、Notes カラムに記載されています。
 
-## オープンテーブルフォーマットのサポート
+## オープンテーブルフォーマットのサポート {#format-support}
 
 ClickHouse は、[Apache Iceberg](/ja/reference/engines/table-engines/integrations/iceberg)、[Delta Lake](/ja/reference/engines/table-engines/integrations/deltalake)、[Apache Hudi](/ja/reference/engines/table-engines/integrations/hudi)、[Apache Paimon](/ja/reference/functions/table-functions/paimon) の 4 つのオープンテーブルフォーマットに対応しています。サポートマトリクスを表示するには、以下からフォーマットを選択してください。
 
@@ -153,7 +153,7 @@ ClickHouse は、[Apache Iceberg](/ja/reference/engines/table-engines/integratio
   </Tab>
 </Tabs>
 
-## カタログのサポート
+## カタログのサポート {#catalog-support}
 
 ClickHouse は、[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンを使用して外部データカタログに接続できます。このエンジンにより、カタログが ClickHouse データベースとして公開されます。カタログに登録されたテーブルは自動的に表示され、標準 SQL でクエリできます。
 

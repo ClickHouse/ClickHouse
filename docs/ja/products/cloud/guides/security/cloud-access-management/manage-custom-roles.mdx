@@ -13,7 +13,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロールを選択することも、ユーザーに割り当てるカスタムロールを作成することもできます。システムロールと、それに関連付けられた権限の詳細については、[Console roles and permissions](/ja/products/cloud/reference/security/console-roles)を参照してください。このガイドでは、カスタムロールの管理方法について詳しく説明します。
 
-## カスタムロールを作成する
+## カスタムロールを作成する {#create-custom-role}
 
 カスタムロールには、組織、サービス、データベースの権限を組み合わせて含めることができます。権限は、すべてのサービスとデータベース、またはその一部に適用できます。
 
@@ -65,7 +65,7 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
   </Step>
 </Steps>
 
-## データベースロールを管理する
+## データベースロールを管理する {#manage-database-roles}
 
 コンソールの権限に加え、カスタムロールには、選択したサービスのデータベースへのアクセスを制御する `Data` ポリシーを含めることができます。これにより、各データベースで個別にロールを管理する代わりに、コンソールとデータベースへのアクセスを一元管理できます。
 
@@ -79,7 +79,7 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
   Cloud 管理のデータベースロールは、SQL コンソール内の JWT セッションと互換性のない、手動で割り当てられた [`sql-console-role:<email>`](/ja/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) ロールに代わるものです。
 </Warning>
 
-### 前提条件
+### 前提条件 {#manage-database-roles-prerequisites}
 
 サービス上のカスタムデータベースロールは、[JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)に依存しており、無効になっている間は適用されません。ロールに `Data` ポリシーを追加する前に、サービスに移動し、`Settings` を開き、`Security` セクションで `JWT authentication` カードを見つけます。`SQL Console` トグルが有効になっていることを確認してください。
 
@@ -119,7 +119,7 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
   </Step>
 </Steps>
 
-### データベースロールを確認する
+### データベースロールを確認する {#verify-database-roles}
 
 コンソール で管理されるロールは、データベース内に `cloud:` プレフィックスと `cloud` ストレージタイプを使用して作成され、作成後に表示されるまで最大 10 分かかる場合があります。これらを一覧表示するには、サービス の `system.roles` テーブルにクエリを実行します。
 
@@ -134,7 +134,7 @@ SELECT * FROM system.roles;
 ```
 
 <div id="update-custom-role">
-  ## カスタムロールを更新する
+  ## カスタムロールを更新する {#update-custom-role}
 </div>
 
 カスタムロールは、作成後に更新できます。ロールから削除された権限はユーザーから失われ、追加された権限はユーザーに付与されます。
@@ -151,7 +151,7 @@ SELECT * FROM system.roles;
 6. `Edit role` を選択します
 
 <div id="delete-custom-role">
-  ## カスタムロールを削除する
+  ## カスタムロールを削除する {#delete-custom-role}
 </div>
 
 カスタムロールはいつでも削除できます。

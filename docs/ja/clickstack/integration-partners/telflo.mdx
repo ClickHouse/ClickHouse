@@ -27,7 +27,7 @@ import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.
 
 {/* vale off */}
 
-## Telfloとは？
+## Telfloとは？ {#what-is-telflo}
 
 {/* vale on */}
 
@@ -37,7 +37,7 @@ Telfloは[コマンドラインインターフェイス](https://docs.telflo.com
 
 {/* vale off */}
 
-## なぜ Telflo + ClickStack なのか？
+## なぜ Telflo + ClickStack なのか？ {#why-telflo-clickstack}
 
 {/* vale on */}
 
@@ -58,7 +58,7 @@ Telflo が提供する機能:
   * **Telflo は ClickStack にデータを供給する collector フリートを運用する**
 </Tip>
 
-## 前提条件
+## 前提条件 {#prerequisites}
 
 * 宛先: [オープンソース版 ClickStack](/ja/clickstack/getting-started/oss)、[Managed ClickStack](/ja/clickstack/getting-started/managed)、またはセルフマネージドの ClickHouse インスタンス
 * Telflo アカウント ([telflo.com でアカウントを作成](https://telflo.com))
@@ -70,7 +70,7 @@ Telflo が提供する機能:
 
 {/* vale off */}
 
-## ClickStack を Telflo と統合する
+## ClickStack を Telflo と統合する {#integrate-telflo-clickstack}
 
 {/* vale on */}
 
@@ -144,25 +144,25 @@ Telflo が提供する機能:
   </Step>
 </Steps>
 
-## 高度な設定
+## 高度な設定 {#advanced-configuration}
 
-### ファンアウトルーティング
+### ファンアウトルーティング {#fan-out-routing}
 
 同一のテレメトリーを、長期保存用の ClickStack、移行期間中の別プラットフォーム、セキュリティ分析用の SIEM へ同時に送信できます。キャンバス上にエクスポーターを追加し、データを流し込むパイプラインに接続してください。あるいは、[Telflo のフローライブラリ](https://telflo.com/flows)にある構築済みパイプラインから始めることもできます。
 
-### 圧縮とパフォーマンス
+### 圧縮とパフォーマンス {#compression-and-performance}
 
 * **OTLP/HTTP および OTLP エクスポーター**: **Compression** は gzip のままにします。
 * **ClickHouse exporter**: **Async Insert** は有効のまま、**Compression** は lz4 のままにし、その前段に **Batch** processor を追加します。[Optimizing inserts](/ja/clickstack/ingesting-data/collector#optimizing-inserts) を参照してください。
 
-## 次のステップ
+## 次のステップ {#next-steps}
 
 * **ダッシュボードの構築**: HyperDX でログ、メトリクス、トレースの可視化を作成します
 * **アラートの設定**: ClickStack で重要な状態を監視するアラートを設定します
 * **AI アシスタントによる改善**: パイプラインの調整やテストの提案を依頼できます
 * **他ベンダーからの移行**: [flows](https://telflo.com/flows) は切り替え作業に対応しており、既にフリート上で稼働しているエージェントを置き換えつつ、比較期間中は両方のバックエンドへ二重送信できます
 
-## さらに詳しく
+## さらに詳しく {#read-more}
 
 * [Telflo ドキュメント](https://docs.telflo.com/docs)
 * [クイックスタート: 空のキャンバスから collector のデプロイまで](https://docs.telflo.com/docs/getting-started/quickstart)

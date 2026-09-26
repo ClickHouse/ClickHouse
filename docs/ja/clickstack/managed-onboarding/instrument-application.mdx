@@ -17,13 +17,13 @@ import InstrumentApplication from '/snippets/ja/clickstack/_instrument_applicati
 
 このガイドは、[OpenTelemetry Collector のセットアップ](/ja/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) を完了しており、このアプリケーションを実行するマシンからアクセス可能な ClickStack collector が稼働していることを前提としています。**その OTLP エンドポイント** と、デプロイ時に設定した `OTLP_AUTH_TOKEN` を必ず控えておいてください。インストルメントする前に、これらの値を `.env` に設定します。
 
-## 前提条件
+## 前提条件 {#prerequisites}
 
 * このマシンからアクセス可能な ClickStack collector。まだデプロイしていない場合は、先に [OpenTelemetry Collector のセットアップ](/ja/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) の手順に従ってください。
 * その collector の OTLP/HTTP エンドポイント (通常はポート `4318`) と、そこに設定した `OTLP_AUTH_TOKEN`。これらを `OTEL_EXPORTER_OTLP_ENDPOINT` および `OTEL_EXPORTER_OTLP_HEADERS=authorization=<token>` として使用します。
 * Node 18+ と npm。
 
-## リポジトリをクローンする
+## リポジトリをクローンする {#clone-the-repository}
 
 [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)をクローンし、依存関係をインストールして、環境変数テンプレートをコピーします。
 
@@ -38,7 +38,7 @@ cp .env.example .env
 
 <InstrumentApplication />
 
-## 関連情報
+## 関連情報 {#further-reading}
 
 * [Kubernetes の監視](/ja/clickstack/managed-onboarding/monitoring-kubernetes): クラスターからログ、インフラメトリクス、Kubernetes イベントを収集します。
 * [AWS CloudWatch ログの監視](/ja/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry の CloudWatch receiver 経由で CloudWatch ログを転送します。

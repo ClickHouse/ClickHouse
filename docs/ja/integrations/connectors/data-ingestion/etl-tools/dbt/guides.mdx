@@ -22,7 +22,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
 本ガイドは、[ドキュメント](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/index)の他のページや、[Features and configurations](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) ページ、[materializations リファレンス](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)と併せて読むことを想定しています。
 
-## 始める前に
+## 始める前に {#before-you-start}
 
 まず [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) の README に従ってください。dbt Core 1.x、dbt OSS、dbt v2、または dbt プラットフォームでプロジェクトをセットアップする方法、接続先をローカルの ClickHouse (docker) または ClickHouse Cloud に設定する方法、`dbt seed` でサンプルデータを読み込む方法、最初の `dbt build` を実行する方法が説明されています。`dbt build` が正常に完了したら、このページに戻って ClickHouse 固有の例と設定を確認してください。
 
@@ -39,7 +39,7 @@ README の手順を終えると、ClickHouse に2つのデータベースがで�
 
 dbt コマンド以外の SQL 文はすべて、`clickhouse client`、ClickHouse Cloud の SQL コンソール、またはお好みの SQL クライアントなどから、ClickHouse に対して直接実行することを想定しています。
 
-## プロジェクトのマテリアライズ方法
+## プロジェクトのマテリアライズ方法 {#views-and-tables}
 
 Jaffle Shop では、materialization を `dbt_project.yml` で設定しています。staging の model は view、marts は table になります。
 
@@ -108,7 +108,7 @@ SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 
 ここには ClickHouse 固有の点が 2 つあります。この model は table engine を宣言していないため、アダプターは `MergeTree` を使用します。また sorting key も宣言していないため、アダプターは `ORDER BY tuple()` を使用し、その結果データはまったくソートされません。サンプルプロジェクトであれば問題ありませんが、実運用の table では両方を明示的に指定すべきです。次のセクションでは、まさにその作業を行います。[materializations のページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)では、アダプターがサポートするすべての table configuration を一覧しています。
 
-## seed によるデータのロード
+## seed によるデータのロード {#seeds}
 
 Jaffle Shop は dbt の [seeds](https://docs.getdbt.com/docs/build/seeds) を使用して、`seeds/jaffle-data` 内の CSV ファイルから生データをロードします。seed は小規模で静的な参照データ (コードテーブルやマッピング) 向けのものであり、warehouse へのロードを想定したものではありません。このプロジェクトでは、別途インジェスト用のツールを用意しなくてもすぐに始められるようにするため、便宜上 seed を利用しています。そのため、`--vars '{"load_source_data": true}'` を渡さない限り seed は無効化されています。
 
@@ -177,7 +177,7 @@ SETTINGS index_granularity = 8192
 
 `dbt seed --full-refresh` はテーブルを削除して再作成するため、本ガイドで後述する materialized view のように、そのテーブルのデータに直接依存するものを構築する前に実行してください。
 
-## ClickHouse 向けにテーブルを設定する
+## ClickHouse 向けにテーブルを設定する {#table-configuration}
 
 まず手をつけるのに適しているのは `orders` マートです。このマートは `customers` マートとプロジェクトのメトリクスの両方から参照されており、タイムスタンプを持つイベント形式のテーブルでもあります。`models/marts/orders.sql` の先頭に `config` ブロックを追加し、エンジン、ソートキー、パーティション化の方式を指定します。
 
@@ -249,7 +249,7 @@ ORDER BY partition;
 
 `engine`、`order_by`、`partition_by` のほかに、テーブル model では `primary_key`、`ttl`、`settings`、`query_settings`、`projections`、`indexes` を指定でき、さらに model contract を通じてカラムに `codec` と `ttl` を設定できます。これらはすべて [materializations のページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)で説明しています。
 
-## インクリメンタルモデルの作成
+## インクリメンタルモデルの作成 {#incremental}
 
 62,000 行程度であれば実行のたびに `orders` をゼロから再構築しても問題ありませんが、1 日に数百万行ずつ増えるテーブルではそうはいきません。dbt の [インクリメンタルマテリアライゼーション](https://docs.getdbt.com/docs/build/incremental-models) では、前回の実行以降に変更された行だけが処理されます。`orders` モデルをインクリメンタル化するには、次の 2 点を追加します。
 
@@ -356,7 +356,7 @@ WHERE customer_id = 'clicky-0001';
 └─────────────────────┴───────────────────────┴────────────────┴───────────────┘
 ```
 
-### 内部動作
+### 内部動作 {#internals}
 
 ClickHouse の query log を見ると、アダプターがインクリメンタルな update のために実行した文を確認できます:
 
@@ -420,7 +420,7 @@ flowchart TB
 
 ステップ 2 ではテーブル全体をコピーするため、この戦略は非常に大規模な model ではテーブルの再構築と同程度のコストがかかります。[制限事項](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations)を参照してください。以下の戦略では、このコピーを回避できます。
 
-### Append 戦略
+### Append 戦略 {#append-strategy}
 
 `append` 戦略では、モデルが選択した行をそのままターゲットテーブルに挿入します。一時テーブルは作成されず、コピーも発生しないため、インクリメンタル実行としては最も低コストです。その代償として、重複排除も一切行われません。インクリメンタルの filter がすでにテーブルに存在する行を選択してしまうと、その行は二重に登録されます。イミュータブルなイベント形式のデータに使用し、filter が本当に新しい行のみを選択するようにしてください。
 
@@ -495,7 +495,7 @@ query log を見ると違いが分かります。今回 `orders` を操作して
   `>` と日単位に切り捨てられた timestamp を使う場合、ロード済みの最新の注文と同じ日の、それより後の時刻に届いた注文は取り込まれません。実際のプロジェクトで `append` 戦略を使う場合は、元の精度の timestamp、または単調増加するインジェスト時刻で filter してください。
 </Warning>
 
-### Delete and insert 戦略
+### Delete and insert 戦略 {#delete-insert-strategy}
 
 ClickHouse は従来、非同期[ミューテーション](/ja/reference/statements/alter/index)という形でしか更新と削除をサポートしておらず、その機能は限定的でした。ミューテーションは極めて I/O 負荷が高くなることがあるため、原則として使用を避けるべきです。ClickHouse 22.8 で[論理削除](/ja/reference/statements/delete)が、ClickHouse 25.7 で[論理更新](/ja/reference/statements/update)が導入されました。これらを使うと、マテリアライズは非同期に行われるものの、ユーザーから見れば単一の削除文や更新文の結果が即座に反映されます。
 
@@ -549,7 +549,7 @@ flowchart TB
     class q1,q2,q3,q4 query;
 ```
 
-### Insert overwrite 戦略 (実験的機能)
+### Insert overwrite 戦略 (実験的機能) {#insert-overwrite-strategy}
 
 `insert_overwrite` 戦略はパーティション単位で丸ごと置き換えるため、`orders` の月次パーティションのような `partition_by` の設定が必要です。処理は次の手順で行われます。
 
@@ -598,7 +598,7 @@ flowchart TB
 
 [materializations のページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-incremental)では、`microbatch` 戦略や `on_schema_change` など、インクリメンタル materialization のその他のオプションについて説明しています。
 
-## スナップショットの作成
+## スナップショットの作成 {#snapshot}
 
 dbt の [スナップショット](https://docs.getdbt.com/docs/build/snapshots) は、可変テーブルの行が時間の経過とともにどのように変化したかを記録するもので、アナリストは過去の任意の時点におけるデータの状態を振り返って確認できます。スナップショットは [タイプ 2 の緩やかに変化する次元](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row) を実装しており、行の各バージョンは、それが有効であったインターバルとともに保存されます。
 
@@ -689,7 +689,7 @@ ORDER BY customer_id, dbt_valid_from;
 
 内部的には、アダプターは新しいバージョンのスナップショットを `customers_snapshot__snapshot_upsert` というテーブルに構築し、`EXCHANGE TABLES` で入れ替えます (サーバーがテーブルの交換に対応していない場合は drop とリネームで代替します) 。このため、読み取り側からは常に以前のバージョンか新しいバージョンのいずれかのスナップショットが見えます。設定のリファレンスについては、[マテリアライゼーションのページの snapshot セクション](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#snapshot)を参照してください。
 
-## materialized view の利用
+## materialized view の利用 {#materialized-views}
 
 ここまでの内容では、新しいデータを model に取り込むために毎回 `dbt run` が必要でした。ClickHouse の [materialized view](/ja/concepts/features/materialized-views/index) はこれとは異なり、insert トリガーとして動作します。ソーステーブルに挿入された行のブロックはその都度 view の `SELECT` によって変換され、ターゲットテーブルへ書き込まれます。スケジューリングは一切不要です。アダプターは `materialized_view` の materialization としてこの機能を提供します。
 
@@ -794,6 +794,6 @@ ORDER BY order_date, store_id;
 
 2回目以降の `dbt run` ではターゲットテーブルとそのデータは保持され、変更内容が許す場合は `ALTER TABLE ... MODIFY QUERY` によってビュー定義のみが更新されます。そのため、このモデルをプロジェクトに残しておいても問題ありません。`dbt run --full-refresh` はターゲットテーブルを作り直し、再度バックフィルを実行します (`catchup` が `False` の場合を除く) 。残りの内容は[materialized viewのページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view)で扱っています。`on_schema_change` によるスキーマ変更、`catchup` によるバックフィルの無効化、リフレッシュ可能なマテリアライズドビュー、複数のビューから同一のターゲットへ書き込む構成、ターゲットテーブルを独立したモデルとして定義する方法などです。
 
-## さらに詳しい情報
+## さらに詳しい情報 {#further-information}
 
 このガイドではdbtのごく一部しか扱っていません。ClickHouse固有ではない事柄については、[dbtドキュメント](https://docs.getdbt.com/docs/introduction)を参照してください。アダプターについては、profileの設定やグローバルな機能を解説した[features and configurations](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations)ページを、上記で使用したすべての設定については[materializations のページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)を、dbt OSS、dbt v2、またはdbtプラットフォームを利用している場合は[dbt OSS、dbt v2、dbtプラットフォームのページ](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)をご覧ください。[Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)への新しい例の投稿も歓迎します。

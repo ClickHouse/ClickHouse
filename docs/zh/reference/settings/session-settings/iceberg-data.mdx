@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## iceberg_data_file_size_lower_threshold_compaction
+## iceberg_data_file_size_lower_threshold_compaction {#iceberg_data_file_size_lower_threshold_compaction}
 
 <SettingsInfoBlock type="UInt64" default_value="402653184" />
 
@@ -24,7 +24,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 默认值为 Iceberg 表属性 `write.target-file-size-bytes` 文档默认值 (512 MiB) 的 `0.75` 倍，这也是 `rewrite_data_files` 存储过程推导其 `min-file-size-bytes` 选项的方式，
 参见 https://iceberg.apache.org/docs/1.5.2/configuration/。
 
-## iceberg_data_file_size_upper_threshold_compaction
+## iceberg_data_file_size_upper_threshold_compaction {#iceberg_data_file_size_upper_threshold_compaction}
 
 <SettingsInfoBlock type="UInt64" default_value="966367641" />
 

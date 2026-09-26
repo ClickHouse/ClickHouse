@@ -361,7 +361,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
     </Step>
   </Steps>
 
-  ## الخطوات التالية
+  ## الخطوات التالية {#next-steps}
 
   تعرّف على المزيد عن ClickHouse من خلال الوثائق التالية:
 
@@ -385,7 +385,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
     [&quot;مواصفات Playground&quot;](/ar/get-started/sample-datasets/playground#specifications).
   </Note>
 
-  ## إنشاء الجدول trips
+  ## إنشاء الجدول trips {#create-the-table-trips}
 
   ابدأ بإنشاء جدول لرحلات سيارات الأجرة:
 
@@ -416,7 +416,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
   PRIMARY KEY (pickup_datetime, dropoff_datetime);
   ```
 
-  ## تحميل البيانات مباشرةً من التخزين الكائني
+  ## تحميل البيانات مباشرةً من التخزين الكائني {#load-the-data-directly-from-object-storage}
 
   يمكن للمستخدمين الحصول على مجموعة فرعية صغيرة من البيانات (3 ملايين صف) للتعرّف عليها. تتوفر البيانات في ملفات TSV ضمن تخزين كائني، ويمكن نقلها تدفقيًا بسهولة إلى
   ClickHouse Cloud باستخدام دالة الجدول `s3`.
@@ -485,7 +485,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
     </Tab>
   </Tabs>
 
-  ## استعلامات نموذجية
+  ## استعلامات نموذجية {#sample-queries}
 
   تُنفَّذ الاستعلامات التالية على العينة الموضَّحة أعلاه. يمكنك تشغيل الاستعلامات النموذجية على مجموعة البيانات الكاملة في [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19)، مع تعديل الاستعلامات أدناه لاستخدام الجدول `nyc_taxi.trips`.
 
@@ -547,7 +547,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
   ORDER BY passenger_count ASC
   ```
 
-  ## تنزيل الأقسام المُعدّة مسبقًا
+  ## تنزيل الأقسام المُعدّة مسبقًا {#download-of-prepared-partitions}
 
   <Note>
     توفّر الخطوات التالية معلومات عن مجموعة البيانات الأصلية، إلى جانب طريقة لتحميل التقسيمات المُعدّة مسبقًا إلى بيئة خادم ClickHouse مُدار ذاتيًا.
@@ -573,7 +573,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
     إذا كنت ستُشغِّل الاستعلامات الموضَّحة أدناه، فعليك استخدام الاسم الكامل للجدول، `datasets.trips_mergetree`.
   </Info>
 
-  ## النتائج على خادم واحد
+  ## النتائج على خادم واحد {#results-on-single-server}
 
   Q1:
 
@@ -657,7 +657,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
   في هذه الحالة، يتحدد زمن معالجة الاستعلام في المقام الأول بزمن الاستجابة في الشبكة.
   شغّلنا الاستعلامات باستخدام عميل موجود في مركز بيانات غير الذي يستضيف العنقود، مما أضاف نحو 20 ms إلى زمن الاستجابة.
 
-  ## الملخص
+  ## الملخص {#summary}
 
   | الخوادم            | Q1    | Q2    | Q3    | Q4    |
   | ------------------ | ----- | ----- | ----- | ----- |

@@ -14,14 +14,14 @@ Cette fonction de table est expérimentale et désactivée par défaut. Activez-
 SET allow_experimental_eval_table_function = 1;
 ```
 
-## Syntaxe
+## Syntaxe {#syntax}
 
 ```sql
 eval(expression)
 eval(SELECT ...)
 ```
 
-## Arguments
+## Arguments {#arguments}
 
 * `expression` — Une expression constante qui renvoie une chaîne de requête. Les paramètres de requête et les sous-requêtes scalaires sont autorisés.
 * `SELECT ...` — Une requête `SELECT` qui renvoie une chaîne de requête. Cette forme est un raccourci syntaxique pour une sous-requête scalaire : `eval(SELECT ...)` est équivalent à `eval((SELECT ...))`. La requête doit donc renvoyer exactement une ligne et une colonne.
@@ -35,13 +35,13 @@ La valeur de l&#39;expression doit être de l&#39;un des types suivants :
 
 Si la valeur est `NULL`, `eval` lève une exception.
 
-## Valeur renvoyée
+## Valeur renvoyée {#returned-value}
 
 Renvoie le résultat de la requête `SELECT` générée sous forme de table.
 
 Le schéma de sortie est déterminé lors de l’analyse de la fonction de table `eval`, de sorte que les requêtes externes peuvent faire référence aux noms et aux types réels des colonnes de la requête générée.
 
-## Exemples
+## Exemples {#examples}
 
 Évaluez une expression constante :
 
@@ -100,7 +100,7 @@ Résultat :
 └────────────┘
 ```
 
-## Restrictions
+## Restrictions {#restrictions}
 
 * La requête générée doit être une unique requête `SELECT`, sans options de sortie telles que `INTO OUTFILE` ou `FORMAT`. `eval` n’exécute pas plusieurs instructions.
 * La requête générée doit être autonome : elle est résolue dans sa propre portée et ne peut pas référencer les alias `WITH` ni les colonnes de la requête externe.
@@ -109,7 +109,7 @@ Résultat :
 * L’argument est évalué une seule fois lors de l’analyse de la requête, et non une fois par ligne ou par bloc.
 * Le journal des requêtes de la requête externe enregistre la requête d’origine qui contient `eval` ; la requête `SELECT` générée n’est pas enregistrée comme une requête utilisateur distincte.
 
-## Voir aussi
+## Voir aussi {#related}
 
 * [fonction de table `view`](/fr/reference/functions/table-functions/view)
 * paramètre `allow_experimental_eval_table_function`

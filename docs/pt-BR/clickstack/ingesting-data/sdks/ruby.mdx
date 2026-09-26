@@ -12,9 +12,9 @@ import { ClickStackIntegrates } from '/snippets/pt-BR/components/ClickStackInteg
 
 *Para enviar logs para o ClickStack, envie-os por meio do [OpenTelemetry collector](/pt-BR/clickstack/ingesting-data/collector).*
 
-## Primeiros passos
+## Primeiros passos {#getting-started}
 
-### Instale os pacotes do OpenTelemetry
+### Instale os pacotes do OpenTelemetry {#install-otel-packages}
 
 Use o comando abaixo para instalar o pacote do OpenTelemetry.
 
@@ -22,7 +22,7 @@ Use o comando abaixo para instalar o pacote do OpenTelemetry.
 bundle add opentelemetry-sdk opentelemetry-instrumentation-all opentelemetry-exporter-otlp
 ```
 
-### Configurar OpenTelemetry + formatador do logger
+### Configurar OpenTelemetry + formatador do logger {#configure-otel-logger-formatter}
 
 Em seguida, você precisará inicializar a instrumentação de tracing do OpenTelemetry
 e configurar o formatador de mensagens de log do Rails logger para que os logs possam ser
@@ -63,7 +63,7 @@ Rails.application.configure do
 end
 ```
 
-### Configure as variáveis de ambiente
+### Configure as variáveis de ambiente {#configure-environment-variables}
 
 Depois, você precisará configurar as seguintes variáveis de ambiente no shell para enviar telemetria ao ClickStack por meio do OpenTelemetry collector:
 

@@ -14,14 +14,14 @@ Esta função de tabela é experimental e fica desativada por padrão. Habilite-
 SET allow_experimental_eval_table_function = 1;
 ```
 
-## Sintaxe
+## Sintaxe {#syntax}
 
 ```sql
 eval(expression)
 eval(SELECT ...)
 ```
 
-## Argumentos
+## Argumentos {#arguments}
 
 * `expression` — Uma expressão constante que retorna uma string de consulta. Parâmetros de consulta e subconsultas escalares são permitidos.
 * `SELECT ...` — Uma consulta `SELECT` que retorna uma string de consulta. Essa forma é um açúcar sintático para uma subconsulta escalar: `eval(SELECT ...)` é equivalente a `eval((SELECT ...))`, portanto a consulta deve retornar exatamente uma linha e uma coluna.
@@ -35,13 +35,13 @@ O valor da expressão deve ter um dos seguintes tipos:
 
 Se o valor for `NULL`, `eval` lança uma exceção.
 
-## Valor retornado
+## Valor retornado {#returned-value}
 
 Retorna o resultado da consulta `SELECT` gerada na forma de uma tabela.
 
 O esquema de saída é determinado quando a função de tabela `eval` é analisada, portanto consultas externas podem se referir aos nomes e tipos reais das colunas da consulta gerada.
 
-## Exemplos
+## Exemplos {#examples}
 
 Avalie uma expressão constante:
 
@@ -100,7 +100,7 @@ Resultado:
 └────────────┘
 ```
 
-## Restrições
+## Restrições {#restrictions}
 
 * A consulta gerada deve ser uma única consulta `SELECT`, sem opções de saída como `INTO OUTFILE` ou `FORMAT`. `eval` não executa várias instruções.
 * A consulta gerada deve ser autocontida: ela é resolvida em seu próprio escopo e não pode referenciar aliases de `WITH` nem colunas da consulta externa.
@@ -109,7 +109,7 @@ Resultado:
 * O argumento é avaliado uma vez durante a análise da consulta, não uma vez por linha ou bloco.
 * O log da consulta externa registra a consulta original que contém `eval`; a consulta `SELECT` gerada não é registrada como uma consulta de usuário separada.
 
-## Veja também
+## Veja também {#related}
 
 * [função de tabela `view`](/pt-BR/reference/functions/table-functions/view)
 * configuração `allow_experimental_eval_table_function`

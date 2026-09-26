@@ -14,7 +14,7 @@ keywords: ['merge', 'table function', 'query patterns', 'table engine', 'data ac
   <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## إعداد الجداول
+## إعداد الجداول {#setup-tables}
 
 سنتعلّم كيفية استخدام هذه الدالة بالاستعانة بـ [قاعدة بيانات مباريات ATP الخاصة بـ TennisMyLife](https://github.com/Tennismylife/TML-Database).
 سنعالج ملفات CSV التي تتضمن مباريات تعود إلى ستينيات القرن الماضي، لكننا سننشئ مخططًا مختلفًا قليلًا لكل عقد.
@@ -50,7 +50,7 @@ SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
 ```
 
-## مخطط عدة جداول
+## مخطط عدة جداول {#schema-multiple-tables}
 
 يمكننا تشغيل الاستعلام التالي لعرض أعمدة كل جدول وأنواعها جنبًا إلى جنب، مما يسهّل ملاحظة الاختلافات.
 
@@ -89,7 +89,7 @@ SETTINGS output_format_pretty_max_value_width=25;
 * يغيّر جدول 1980s نوعَي `winner_seed` و`loser_seed` من `Nullable(UInt8)` إلى `Nullable(UInt16)`.
 * يغيّر جدول 1990s `surface` من `String` إلى `Enum('Hard', 'Grass', 'Clay', 'Carpet')`، ويضيف العمودين `walkover` و`retirement`.
 
-## الاستعلام عن عدة جداول باستخدام merge
+## الاستعلام عن عدة جداول باستخدام merge {#querying-multiple-tables}
 
 لنكتب استعلامًا للعثور على المباريات التي فاز بها جون ماكنرو ضد لاعب كان المصنف الأول:
 
@@ -149,7 +149,7 @@ AND multiIf(
 └───────────────┴─────────────────────┴─────────────┘
 ```
 
-## من أي جدول تأتي الصفوف عند استخدام merge؟
+## من أي جدول تأتي الصفوف عند استخدام merge؟ {#which-table-merge}
 
 ماذا لو أردنا معرفة الجدول الذي تنتمي إليه الصفوف؟
 يمكننا استخدام العمود الافتراضي `_table` للقيام بذلك، كما هو موضح في الاستعلام التالي:

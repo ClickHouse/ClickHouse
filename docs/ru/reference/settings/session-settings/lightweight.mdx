@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются из [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## lightweight_delete_mode
+## lightweight_delete_mode {#lightweight_delete_mode}
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -27,7 +27,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `lightweight_update` - выполнить легковесное обновление, если это возможно; в противном случае выполнить `ALTER UPDATE`.
 * `lightweight_update_force` - выполнить легковесное обновление, если это возможно; в противном случае сгенерировать исключение.
 
-## lightweight_deletes_sync
+## lightweight_deletes_sync {#lightweight_deletes_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 

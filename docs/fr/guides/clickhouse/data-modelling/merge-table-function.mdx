@@ -14,7 +14,7 @@ Pour cela, elle crée une table [Merge](/fr/reference/engines/table-engines/spec
   <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## Préparer les tables
+## Préparer les tables {#setup-tables}
 
 Nous allons apprendre à utiliser cette fonction à l&#39;aide de la [base de données des matchs ATP de TennisMyLife](https://github.com/Tennismylife/TML-Database).
 Nous allons traiter des fichiers CSV contenant des matchs qui remontent aux années 1960, mais nous créerons un schéma légèrement différent pour chaque décennie.
@@ -50,7 +50,7 @@ SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
 ```
 
-## Schéma de plusieurs tables
+## Schéma de plusieurs tables {#schema-multiple-tables}
 
 Nous pouvons exécuter la requête suivante pour afficher les colonnes de chaque table et leurs types côte à côte, afin de repérer plus facilement les différences.
 
@@ -89,7 +89,7 @@ Passons en revue les différences :
 * Dans les années 1980, `winner_seed` et `loser_seed` passent de `Nullable(UInt8)` à `Nullable(UInt16)`.
 * Dans les années 1990, `surface` passe de `String` à `Enum('Hard', 'Grass', 'Clay', 'Carpet')` et les colonnes `walkover` et `retirement` sont ajoutées.
 
-## Interroger plusieurs tables avec merge
+## Interroger plusieurs tables avec merge {#querying-multiple-tables}
 
 Écrivons une requête pour trouver les matchs que John McEnroe a remportés contre un joueur tête de série n° 1 :
 
@@ -149,7 +149,7 @@ Le résultat de l’exécution de la requête est présenté ci-dessous :
 └───────────────┴─────────────────────┴─────────────┘
 ```
 
-## De quelle table proviennent les lignes lors de l’utilisation de merge ?
+## De quelle table proviennent les lignes lors de l’utilisation de merge ? {#which-table-merge}
 
 Comment savoir de quelle table proviennent les lignes ?
 Nous pouvons utiliser la colonne virtuelle `_table` à cette fin, comme le montre la requête suivante :

@@ -16,7 +16,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
   ## バックアップ
 </div>
 
-### ClickHouse Cloud におけるバックアップの仕組み
+### ClickHouse Cloud におけるバックアップの仕組み {#how-backups-work-in-clickhouse-cloud}
 
 ClickHouse Cloud のバックアップは、フルバックアップと増分バックアップを組み合わせたもので、これらがバックアップチェーンを構成します。チェーンはフルバックアップから始まり、その後、以降のいくつかのスケジュールされた期間にわたって増分バックアップが取得され、バックアップの連続した系列が作られます。バックアップチェーンが一定の長さに達すると、新しいチェーンが開始されます。必要に応じて、このバックアップチェーン全体を使用してデータを新しいサービスに復元できます。特定のチェーンに含まれるすべてのバックアップが、そのサービスに設定された保持期間 (保持については後述) を過ぎると、そのチェーンは破棄されます。
 
@@ -26,14 +26,14 @@ ClickHouse Cloud のバックアップは、フルバックアップと増分バ
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloudにおけるバックアップチェーンの例" />
 
-### デフォルトのバックアップポリシー
+### デフォルトのバックアップポリシー {#default-backup-policy}
 
 バックアップは、Basic、Scale、Enterprise ティアでは、ストレージとは別に計測・課金されます。
 現在、各サービスには、保持期間が24時間の1日1回のバックアップがデフォルトで設定されています。バックアップ設定は、サービスおよび契約によって異なる場合があります。
 
 詳細については、[&quot;バックアップの確認と復元&quot;](/ja/products/cloud/guides/backups/review-and-restore-backups)を参照してください。
 
-## 設定可能なバックアップ
+## 設定可能なバックアップ {#configurable-backups}
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
 
@@ -51,7 +51,7 @@ ClickHouse Cloud では、**Scale** および **Enterprise** ティアのサー�
 
 バックアップの設定手順については、[&quot;バックアップスケジュールを設定する&quot;](/ja/products/cloud/guides/backups/configurable-backups) を参照してください。
 
-## Bring Your Own Bucket (BYOB) バックアップ
+## Bring Your Own Bucket (BYOB) バックアップ {#byob}
 
 ClickHouse Cloud では、バックアップをお使いのクラウドサービスプロバイダー (CSP) アカウントのストレージ (AWS S3、Google Cloud Storage、または Azure Blob Storage) にエクスポートできます。
 独自のバケットへのバックアップを設定した場合でも、ClickHouse Cloud はデフォルトで引き続き独自のバックアップを取得します。
@@ -74,7 +74,7 @@ ClickHouse Cloud のバックアップの仕組みについて詳しくは、[�
 
 AWS、GCP、Azure のオブジェクトストレージに対してフルバックアップおよび増分バックアップを取得する方法と、それらのバックアップから復元する方法の例については、[&quot;Export backups to your own Cloud account&quot;](/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) を参照してください。
 
-### バックアップオプション
+### バックアップオプション {#backup-options}
 
 バックアップをお客様ご自身のクラウドアカウントにエクスポートする方法は、2 つあります。
 

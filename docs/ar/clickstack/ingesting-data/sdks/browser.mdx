@@ -19,7 +19,7 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 
 <ClickStackIntegrates signals={['logs', 'traces']} />
 
-## البدء
+## البدء {#getting-started}
 
 <br />
 
@@ -72,7 +72,7 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
   </Tab>
 </Tabs>
 
-### الخيارات
+### الخيارات {#options}
 
 * `apiKey` - مفتاح واجهة برمجة تطبيقات للإدخال الخاص بك في ClickStack.
 * `service` - اسم الخدمة الذي ستظهر به الأحداث في واجهة مستخدم HyperDX.
@@ -92,9 +92,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 * `disableIntercom` - (اختياري) ما إذا كان يجب تعطيل تكامل Intercom (القيمة الافتراضية `false`)
 * `disableReplay` - (اختياري) ما إذا كان يجب تعطيل إعادة تشغيل الجلسة (القيمة الافتراضية `false`)
 
-## تهيئة إضافية
+## تهيئة إضافية {#additional-configuration}
 
-### إرفاق معلومات المستخدم أو البيانات الوصفية
+### إرفاق معلومات المستخدم أو البيانات الوصفية {#attach-user-information-or-metadata}
 
 سيتيح لك إرفاق معلومات المستخدم البحث في الجلسات والأحداث وتصفيتها
 في واجهة مستخدم HyperDX. يمكن استدعاء ذلك في أي وقت أثناء جلسة العميل. وسترتبط
@@ -115,7 +115,7 @@ HyperDX.setGlobalAttributes({
 });
 ```
 
-### الالتقاط التلقائي لأخطاء حدود الأخطاء في React
+### الالتقاط التلقائي لأخطاء حدود الأخطاء في React {#auto-capture-react-error-boundary-errors}
 
 إذا كنت تستخدم React، فيمكنك تلقائيًا التقاط الأخطاء التي تحدث داخل
 حدود الأخطاء في React من خلال تمرير مكوّن حدّ الأخطاء الخاص بك
@@ -130,7 +130,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 HyperDX.attachToReactErrorBoundary(ErrorBoundary);
 ```
 
-### إرسال الإجراءات المخصّصة
+### إرسال الإجراءات المخصّصة {#send-custom-actions}
 
 لتتبّع حدث معيّن في التطبيق بشكل صريح (مثل التسجيل أو الإرسال
 وغير ذلك)، يمكنك استدعاء الدالة `addAction` مع اسم الحدث وبيانات
@@ -146,7 +146,7 @@ HyperDX.addAction('Form-Completed', {
 });
 ```
 
-### تفعيل التقاط حركة الشبكة ديناميكيًا
+### تفعيل التقاط حركة الشبكة ديناميكيًا {#enable-network-capture-dynamically}
 
 لتفعيل أو تعطيل التقاط حركة الشبكة ديناميكيًا، ما عليك سوى استدعاء الدالة `enableAdvancedNetworkCapture` أو `disableAdvancedNetworkCapture` حسب الحاجة.
 
@@ -154,7 +154,7 @@ HyperDX.addAction('Form-Completed', {
 HyperDX.enableAdvancedNetworkCapture();
 ```
 
-### تفعيل توقيت الموارد لطلبات CORS
+### تفعيل توقيت الموارد لطلبات CORS {#enable-resource-timing-for-cors-requests}
 
 إذا كان تطبيق الواجهة الأمامية لديك يُجري طلبات إلى واجهة برمجة تطبيقات على نطاق مختلف، فيمكنك
 اختياريًا تفعيل إرسال ترويسة `Timing-Allow-Origin`[header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin) مع الطلب. يتيح ذلك لـ ClickStack التقاط

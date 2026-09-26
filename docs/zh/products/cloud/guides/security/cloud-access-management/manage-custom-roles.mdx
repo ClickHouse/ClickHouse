@@ -13,7 +13,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自定义角色并分配给用户。有关系统角色及其对应权限的更多信息，请参阅[控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。本指南将详细介绍如何管理自定义角色。
 
-## 创建自定义角色
+## 创建自定义角色 {#create-custom-role}
 
 自定义角色可以包含组织、服务和数据库权限的任意组合。权限可应用于全部或部分服务和数据库。
 
@@ -65,7 +65,7 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
   </Step>
 </Steps>
 
-## 管理数据库角色
+## 管理数据库角色 {#manage-database-roles}
 
 除控制台权限外，自定义角色还可包含 `Data` 策略，以控制对所选服务中数据库的访问。这样，您可以在一个位置管理控制台和数据库访问权限，无需在每个数据库中分别维护角色。
 
@@ -79,7 +79,7 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
   Cloud 托管的数据库角色会替代手动分配的 [`sql-console-role:<email>`](/zh/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) 角色；后者与 SQL 控制台中的 JWT 会话不兼容。
 </Warning>
 
-### 前置条件
+### 前置条件 {#manage-database-roles-prerequisites}
 
 服务上的自定义数据库角色依赖于 [JWT 身份验证](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)，禁用时不会生效。在向角色添加 `Data` 策略之前，请进入相应服务，打开 `Settings`，然后在 `Security` 部分找到 `JWT authentication` 卡片。确保已启用 `SQL 控制台` 切换开关。
 
@@ -119,7 +119,7 @@ ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自
   </Step>
 </Steps>
 
-### 验证数据库角色
+### 验证数据库角色 {#verify-database-roles}
 
 通过控制台管理的角色会在数据库中创建，其名称带有 `cloud:` 前缀，存储类型为 `cloud`，创建后最多可能需要 10 分钟才会显示。要列出这些角色，请查询服务中的 `system.roles` 表：
 
@@ -134,7 +134,7 @@ SELECT * FROM system.roles;
 ```
 
 <div id="update-custom-role">
-  ## 更新自定义角色
+  ## 更新自定义角色 {#update-custom-role}
 </div>
 
 自定义角色创建后可以更新。用户会失去从该角色中移除的所有权限，并获得新增的所有权限。
@@ -151,7 +151,7 @@ SELECT * FROM system.roles;
 6. 选择 `Edit role`
 
 <div id="delete-custom-role">
-  ## 删除自定义角色
+  ## 删除自定义角色 {#delete-custom-role}
 </div>
 
 自定义角色可随时删除。

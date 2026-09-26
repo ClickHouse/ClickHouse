@@ -6,7 +6,7 @@ title: 'Funções de conversão de tipos'
 doc_type: 'reference'
 ---
 
-## Problemas comuns na conversão de dados
+## Problemas comuns na conversão de dados {#common-issues-with-data-conversion}
 
 O ClickHouse geralmente usa o [mesmo comportamento dos programas em C++](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
@@ -49,7 +49,7 @@ SETTINGS cast_keep_nullable = 1
 └──────────────────┴─────────────────────┴──────────────────┘
 ```
 
-## Observações sobre as funções `toString`
+## Observações sobre as funções `toString` {#to-string-functions}
 
 A família de funções `toString` permite converter entre números, strings (mas não strings fixas), datas e datas com hora.
 Todas essas funções aceitam um argumento.
@@ -59,7 +59,7 @@ Todas essas funções aceitam um argumento.
 * Ao converter datas com hora em números ou vice-versa, a data com hora corresponde ao número de segundos desde o início da epoch Unix.
 * A função `toString` do argumento `DateTime` pode receber um segundo argumento String contendo o nome do fuso horário, por exemplo: `Europe/Amsterdam`. Nesse caso, a hora é formatada de acordo com o fuso horário especificado.
 
-## Observações sobre as funções `toDate`/`toDateTime`
+## Observações sobre as funções `toDate`/`toDateTime` {#to-date-and-date-time-functions}
 
 Os formatos de data e de data e hora das funções `toDate`/`toDateTime` são definidos da seguinte forma:
 

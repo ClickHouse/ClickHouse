@@ -16,11 +16,11 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 `instances` 和 `commands` 命令以及 `executor teardown` 会读取 executor 的本地 API。有两个全局 标志 用于指定该 API：`--endpoint <url>` (默认 `http://127.0.0.1:9999`，环境变量 `CLCTL_ENDPOINT`) 和 `--cluster <name>` (环境变量 `CLCTL_CLUSTER`)，后者用于在命令需要时指定受管 cluster 的名称。在 Kubernetes 上，请先对 executor Deployment 开启 `kubectl port-forward`；参见 [managed services](/zh/products/bring-your-own-cloud/connector/managed-services#status)。
 
-## clicklink clctl init
+## clicklink clctl init {#init}
 
 通过注册令牌、已保存的注册包或带外签名证书初始化连接器。一次调用即可暂存配置、配置 ClickHouse 访问权限、获取 mTLS 客户端证书、部署 (Helm 图表或 systemd 单元) 并验证运行状况。使用 `--managed` 时，它还会为检测到的 EKS 集群启用 executor，并授予该 executor 的集群级访问权限。重复运行是安全的：`init` 会保留配置和集群 UUID，以原子方式覆盖凭据；除非传入 `--force`，否则会复用现有客户端密钥。有关完整流程，请参阅[入门配置](/zh/products/bring-your-own-cloud/connector/onboarding)；有关 executor 的作用，请参阅[托管服务](/zh/products/bring-your-own-cloud/connector/managed-services)。
 
-### 入口点
+### 入口点 {#init-entry-points}
 
 必须且只能使用一个入口点。
 
@@ -30,7 +30,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 | `--handoff <path>`     | 使用已保存的注册包进行引导。`handoff.yaml` 存在后，重新运行和恢复时都会使用此选项。                                                                                                                                            |
 | `--signed-cert <path>` | 隔离网络流程的第 2 阶段：安装通过带外方式签名的客户端证书，并完成分阶段安装。还可使用 `--chain <path>` 同时替换 CA 证书链。                                                                                                                   |
 
-### 通用参数
+### 通用参数 {#init-common-flags}
 
 | 标志                          | 描述                                                                                                                                                                                             |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -46,14 +46,14 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 | `--ch-user-suffix <suffix>` | 为预配的 ClickHouse 用户名添加可选后缀 (`pcm_scraper` 变为 `pcm_scraper_<suffix>`) ，使第二个连接器部署可以共享同一实例，而不会与第一个部署的用户发生冲突。                                                                                       |
 | `--ch-admin-password-stdin` | 当 SQL 预配需要密码时，从 stdin 读取 ClickHouse 管理员密码；若在终端中运行，则改为交互提示输入。                                                                                                                                   |
 
-### 签名选项 (仅限阶段 1)
+### 签名选项 (仅限阶段 1) {#init-signing-flags}
 
 | 标志                      | 描述                                                           |
 | ----------------------- | ------------------------------------------------------------ |
 | `--no-auto-sign`        | 仅限阶段 1：跳过通过注册端点自动签署 CSR，适用于隔离网络或带外签名流程。                      |
 | `--sign-endpoint <url>` | 覆盖注册签名端点 (默认值：通过在支持包端点中插入 `enroll` DNS 标签生成) 。必须为 HTTPS URL。 |
 
-### 仅适用于 Kubernetes 的标志
+### 仅适用于 Kubernetes 的标志 {#init-kubernetes-flags}
 
 仅可与 `--target helm` 一同使用。
 
@@ -70,7 +70,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 | `--api-private-ca`          | 你的连接器端点提供由注册包 CA 签发的证书：暂存 `api.tls.caFile`，使其指向已挂载的 CA 证书链，该证书链会被追加到系统根证书中。                                                                        |
 | `--egress-cidrs <cidrs>`    | 以逗号分隔的连接器端点 CIDR，供 chart 的默认拒绝 NetworkPolicy 使用：暂存为启用状态，并将这些 CIDR 设为 `networkPolicy.allowEgressCIDRs` (在托管模式下会在终端中提示输入) 。若未提供，则该策略会以禁用状态暂存，供你稍后启用。 |
 
-### 仅适用于 VM 的标志
+### 仅适用于 VM 的标志 {#init-vm-flags}
 
 仅可与 `--target systemd` 配合使用。
 
@@ -81,7 +81,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 | `--cluster-name <name>` | managed 模式所驱动的 EKS cluster 名称 (默认使用此主机 kubeconfig 中唯一的 EKS cluster；在终端中会提示输入) 。     |
 | `--no-instance`         | 以空的 instance registry 启动，并跳过 instance 相关提示。                                         |
 
-### 标志冲突
+### 标志冲突 {#init-flag-conflicts}
 
 * `--handoff`、`--enroll` 和 `--signed-cert` 互斥；必须且只能指定其中一个。
 * 仅 Kubernetes 适用的标志仅在指定 `--target helm` 时可用；使用 `--target helm` 时，不接受 `--server`、`--ca-data`、`--cluster-name` 和 `--no-instance` (Helm 流程会读取工作站的 kubeconfig 并检测集群内的实例) 。
@@ -91,7 +91,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 * `--operators` 与 `--no-gateway` 互斥。
 * 使用 `--skip-provision` 时，不接受 `--ch-pod`、`--ch-user-suffix`、`--server`、`--ca-data` 和 `--ch-admin-password-stdin` (不会执行任何预配) 。
 
-## clicklink clctl preflight
+## clicklink clctl preflight {#preflight}
 
 运行按类别分组的连接器检查套件：配置、文件、网络、ClickHouse、systemd、访问、磁盘和脱敏。每项检查会报告通过、警告、失败或跳过。退出代码为 0 表示所有检查均已通过 (警告不造成阻塞) ；退出代码为 2 表示至少有一项失败。
 
@@ -110,7 +110,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 `--k8s-*` 标志与远程通道标志互斥；请选择其中一个目标。
 
-## clicklink clctl troubleshoot session
+## clicklink clctl troubleshoot session {#troubleshoot-session}
 
 用于启用、禁用和检查支持会话：故障排除程序在此限定时间窗口内接受命令。若没有活动会话，即使其 WebSocket 已连接，守护进程也会拒绝所有命令。请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
 
@@ -119,7 +119,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 * **本地文件** (默认) ：在运行故障排除程序的主机上读取和写入会话状态文件 (默认为 `/var/lib/clicklink/session.json`) 。
 * **Gateway**：使用 `--gateway-url` 时，会从您的工作站获取 OIDC ID 令牌，并改为调用故障排除程序的会话网关。
 
-### 共享选项
+### 共享选项 {#session-shared-flags}
 
 | 标志                         | 说明                                                                                       |
 | -------------------------- | ---------------------------------------------------------------------------------------- |
@@ -132,7 +132,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 | `--token-file <path>`      | 包含预先生成的 OIDC ID 令牌的文件；该令牌将作为 Bearer 令牌使用，并绕过其他令牌提供商。                                     |
 | `--gateway-ca <path>`      | 用于验证网关证书的 CA bundle (自带证书) 。未设置时，命令会使用通过 `gateway trust` 固定的证书；未固定证书的自签名网关会拒绝连接。         |
 
-### 启用 session
+### 启用 session {#session-enable}
 
 | 标志                 | 描述                                                                             |
 | ------------------ | ------------------------------------------------------------------------------ |
@@ -142,11 +142,11 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 如果已有处于活动状态的 session，启用操作将失败；请先将其禁用，或等待其过期。
 
-### 禁用 session
+### 禁用 session {#session-disable}
 
 立即停用 session。未激活 session 时，此操作为空操作。
 
-### 会话状态
+### 会话状态 {#session-status}
 
 显示会话是否处于活动状态、由谁启用及其到期时间。`--output` (`-o`) 可选择 `table` (默认) 或 `json`。
 
@@ -160,7 +160,7 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-## clicklink clctl troubleshoot gateway trust
+## clicklink clctl troubleshoot gateway trust {#gateway-trust}
 
 在 VM 上，会话网关使用自签名 TLS 证书。此命令会将证书的 SHA-256 指纹记录到 `~/.clicklink/clctl.yaml`，以便 `session` 命令验证该证书；若固定的指纹不再匹配，验证将失败并拒绝连接。可通过以下两种带外方式之一建立信任：
 
@@ -181,7 +181,7 @@ clicklink clctl troubleshoot gateway trust \
 
 在 Kubernetes 中，不使用固定方式：应通过具有 CA 签发证书的入口公开网关，或使用端口转发。
 
-## clicklink clctl troubleshoot audit tail
+## clicklink clctl troubleshoot audit tail {#audit-tail}
 
 打印故障排除程序审计日志中的最后几条记录：采用以换行分隔的 JSON 格式，守护进程接受或阻止的每条命令各对应一条记录。它以只读方式打开日志。
 
@@ -197,7 +197,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-## 访问凭据预配
+## 访问凭据预配 {#access-provision}
 
 `clicklink clctl scraper access provision` 和 `clicklink clctl troubleshoot access provision` 会创建组件每个实例的访问包；使用 `--force` 时会轮换该访问包。访问包包括只读 ClickHouse 用户及其授权，以及组件所使用的 Kubernetes ServiceAccount、RBAC 和令牌。`init` 会在安装期间内联执行此操作；独立命令则用于重新执行和轮换。
 
@@ -235,11 +235,11 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-## clicklink clctl executor access
+## clicklink clctl executor access {#executor-access}
 
 `init --managed` 会使用你的凭据为 executor 应用集群级 grant。若无法完成，`init` 会打印出需通过具备集群管理员权限的 kubeconfig 执行的命令：在 VM 上只需执行 `access apply` (bundle 已就绪) ，在 Kubernetes 上则先执行 `access grant`，再执行 `access apply`。参见 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding#install-and-enroll)。
 
-### executor access grant
+### executor access grant {#executor-access-grant}
 
 在 `<output-dir>/_cluster/` 下生成 executor 的集群级访问包：包含一个 ServiceAccount、一个集群角色和 ClusterRoleBinding，以及一个 ValidatingAdmissionPolicy，用于将该 ServiceAccount 限制在 executor 命名空间前缀下的各命名空间内。应用前请先检查生成的 RBAC 内容。
 
@@ -254,7 +254,7 @@ clicklink clctl scraper access provision --target helm \
 | `--force`                             | 覆盖已有的访问包。                                                                              |
 | `--dry-run`                           | 仅打印执行计划，不写入文件。                                                                         |
 
-### executor access apply
+### executor access apply {#executor-access-apply}
 
 应用已渲染的集群级 `grant` 支持包：ServiceAccount 所属的命名空间、ServiceAccount、集群角色与 ClusterRoleBinding，以及 admission 策略，随后签发 ServiceAccount 标记并写入该包。此命令不会注册任何 service。
 
@@ -272,7 +272,7 @@ clicklink clctl executor access grant --cluster --sa-namespace <connector-namesp
 clicklink clctl executor access apply --cluster --output-dir <dir>
 ```
 
-## clicklink clctl executor prepare
+## clicklink clctl executor prepare {#executor-prepare}
 
 在一次幂等运行中完成 managed service 创建所需的、位于你这一侧的全部准备工作，并在遇到第一个失败时停止。它会选取或校验 service 名称，并创建数据桶和备份桶以及 IAM role (或校验你自带的 role) 。在 VM 上，它还会为该 service 命名空间渲染并应用 executor 的访问包；在 Kubernetes 上则会跳过访问包，因为 executor 以其 pod ServiceAccount 身份运行。随后它会生成 `default` USER 的密码 (仅显示一次) ，并写出供 [`instances create`](#instances-create) 使用的创建请求体。参见 [managed services](/zh/products/bring-your-own-cloud/connector/managed-services#create-a-service)。
 
@@ -296,7 +296,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--output <fmt>`                                | `text` (默认) 或 `json`。两者均不包含密码。                                                                                         |
 | `--dry-run`                                     | 以 dry-run 模式执行每个步骤；不创建也不写入任何内容。                                                                                        |
 
-## clicklink clctl executor teardown
+## clicklink clctl executor teardown {#executor-teardown}
 
 针对 ClickHouse Cloud 中已删除的 service,移除 `prepare` 为其创建的资源,包括:IAM role、已记录的名称,以及 executor 中该 service 的记录;在 VM 上,还包括该 service 的集群角色和 ClusterRoleBinding、本地访问包和 registry entry。执行时 executor 必须处于运行状态,且 service 状态为 `terminated` (或 `stale`) ;若 service 命名空间中仍存在 ClickHouse cluster,则该命令会拒绝执行。除非显式要求删除,否则 `prepare` 创建的桶及其中的数据和备份会被保留,保留下来的桶会被重新打上 `clicklink:retained-from=<name>` 标签。该命令会先读取全部信息,然后才开始删除。参见[删除 service](/zh/products/bring-your-own-cloud/connector/managed-services#delete-a-service)。
 
@@ -316,9 +316,9 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--output <fmt>`                                | `text` (默认) 或 `json`。                                                                                           |
 | `--dry-run`                                     | 仅打印将被移除的内容并退出,不删除任何内容。                                                                                          |
 
-## clicklink clctl instances
+## clicklink clctl instances {#instances}
 
-### instances create
+### instances create {#instances-create}
 
 通过你的连接器端点、使用连接器自身的凭证，向 ClickHouse Cloud 提交一次已准备好的创建请求。创建功能按环境启用；参见 [创建服务](/zh/products/bring-your-own-cloud/connector/managed-services#create-a-service)。命令会打印 ClickHouse Cloud 分配的可读名称、状态，以及一条使用你的 Service 名称的 `watch:` 提示。创建请求正文来自 `prepare` 写入的文件，或由 `--deployed-name`、`--data-bucket`、`--backup-bucket` 和 `--irsa-role-arn` 这四个标志共同提供。使用相同输入重试将返回首次创建的结果。
 
@@ -336,31 +336,31 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--wait`                                                                                         | 轮询 executor 的本地 API，直到服务处于 `running` 状态。若该名称对应的创建失败，或服务转为 `terminating`、`terminated` 或 `stale`，则立即失败退出。                                                          |
 | `--wait-timeout <dur>`                                                                           | `--wait` 在失败前轮询的时长 (默认 `30m`) 。                                                                                                                                  |
 
-### instances list
+### instances list {#instances-list}
 
 以 JSON 格式输出 executor 已知的所有 service。`--cluster <name>` 可按受管集群进行过滤。
 
-### instances get
+### instances get {#instances-get}
 
 以 JSON 形式打印单个 service，并包含其创建时所用的 storage。必须提供 `--name <name>`，同时也必须指定 cluster：传入 `--cluster`、设置 `CLCTL_CLUSTER`，或将其写入 `~/.clicklink/clctl.yaml`。
 
 以下三个子命令会将命令直接提交到 executor 的本地 API，绕过 ClickHouse Cloud。请仅在客户团队要求时运行。每个子命令都需要 `--name <name>` 以及 cluster (`--cluster`、`CLCTL_CLUSTER` 或 `~/.clicklink/clctl.yaml`) ，并会以 JSON 形式打印该命令。将其 `id` 传给 [`commands get`](#commands-get) 即可跟踪其状态；命令失败时，其 `result` 中会包含对应的 error。
 
-### instances scale
+### instances scale {#instances-scale}
 
 通过 `ScalingOverride` 设置单个 service 的服务器副本数。必须指定 `--server-replicas <n>`，且取值需大于零。executor 在应用该 override 时会将命令状态报告为 running，待副本就绪后报告为 completed。
 
-### instances patch
+### instances patch {#instances-patch}
 
 原地修改单个 service。`--create-nlb` 是唯一可用的 patch；若未指定它,该命令将以 `nothing to patch` 拒绝执行。它会以 Kubernetes `Service` 的形式预配一个内部 NLB,仅支持 AWS,使 cluster 外部的抓取器能够访问这些服务器。executor 会在下一次同步时从 load balancer 回填抓取器的 host。
 
-### instances delete
+### instances delete {#instances-delete}
 
 从 cluster 中移除一个 service。该命令会停止 service，并等待 operator 完成有序 shutdown，然后卸载 workload、删除 `ns-<name>` 命名空间以及抓取器的制品，等待该命名空间完全消失，并将该 service 标记为 `terminated`。该 service 的桶和 IAM role 会保留，需通过 [`executor teardown`](#executor-teardown) 使用你的 credentials 删除。对已完成的删除再次 retry 为空操作。常规做法是在 ClickHouse Cloud 中删除该 service，参见 [delete a service](/zh/products/bring-your-own-cloud/connector/managed-services#delete-a-service)。
 
-## clicklink clctl 命令
+## clicklink clctl 命令 {#commands}
 
-### commands list
+### commands list {#commands-list}
 
 以 JSON 格式打印 executor 记录的命令，最新的排在最前面。失败命令的 `result` 中包含对应的 error；等待你批准的平台同步会在该字段中给出确切的 `platform approve` 命令。
 
@@ -370,11 +370,11 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--action <action>` | 按操作过滤，例如 `create_instance` 或 `sync_platform`。   |
 | `--cluster <name>`  | 按受管集群过滤。                                 |
 
-### commands get
+### commands get {#commands-get}
 
 `clicklink clctl commands get <id>` 打印单条命令及其 stage 和结果。
 
-## clicklink clctl platform approve
+## clicklink clctl platform approve {#platform-approve}
 
 使用你自己的集群凭证授权一次平台变更。该命令会读取 executor 暂存的 bundle、计算其哈希，并以与 executor 完全相同的方式渲染其中的每个 chart。它使用你选择的 kube context 应用权限部分，在需要时创建 executor 的 `pcm-platform` 身份，并为其签发 token。该命令不会向你的连接器端点发起任何请求。权限部分包括 Namespaces、CustomResourceDefinitions、ServiceAccounts、集群角色及其 bindings、Roles 及其 bindings、webhook 与 admission 配置、PriorityClasses 以及存储类。随后 executor 仅应用 workload 部分，且仅在该 token 有效期内执行。参见[平台更新](/zh/products/bring-your-own-cloud/connector/platform-updates)。
 
@@ -392,7 +392,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--bundle <path>`         | 覆盖项：通过带外方式交付的已渲染平台清单，读取它以替代暂存的 bundle。通常无需指定。                                                                                |
 | `--dry-run`               | 仅渲染并列出权限部分，不实际应用，也不签发 token。                                                                                                 |
 
-## clicklink clctl platform reset
+## clicklink clctl platform reset {#platform-reset}
 
 适用于没有 service 的测试 cluster：按依赖关系的逆序卸载平台 release，并移除 executor 的平台标记支持包，从而可以再次执行首次安装流程。在做出任何更改之前，它会先列出该连接器所拥有的命名空间中的 ClickHouse cluster，只要存在任何 cluster 就会拒绝执行。CustomResourceDefinition、RBAC 和存储类会予以保留。在下一次平台同步之前，请重新运行 `platform approve`。
 
@@ -405,7 +405,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--secret-namespace <ns>`、`--secret-name <name>` | Kubernetes 安装方式：改为移除连接器命名空间中的平台支持包 Secret (默认名称 `clicklink-platform-bundle`) 。 |
 | `--dry-run`                                      | 检查是否存在 service 并打印重置 plan，但不会更改 cluster。                                       |
 
-## 远程通道标志
+## 远程通道标志 {#channel-flags}
 
 `preflight`、`gateway trust` 和 `access provision` 共用一组标志，用于指定连接到 VM 目标的方式：
 

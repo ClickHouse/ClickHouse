@@ -12,7 +12,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 本页面介绍安装连接器后最常需要进行的配置更改。各项 key 的默认值及其含义，均可在[配置参考](/zh/products/bring-your-own-cloud/connector/reference/configuration)中查阅；命令行 flags 请参阅 [命令行客户端 参考](/zh/products/bring-your-own-cloud/connector/reference/cli)。创建、扩缩容和删除 服务的相关内容，请参阅 [managed services](/zh/products/bring-your-own-cloud/connector/managed-services)。
 
-## 配置方式
+## 配置方式 {#configuration-surfaces}
 
 每种安装目标各有一种配置方式。
 
@@ -58,7 +58,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
   </Tab>
 </Tabs>
 
-## 托管模式
+## 托管模式 {#managed-mode}
 
 托管模式会运行 executor，由它把 ClickHouse Cloud 所驱动的服务生命周期应用到你的集群上。`init` 会在注册时启用该模式，并填入集群身份 (参见[启用托管模式](/zh/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)) 。下列键是之后可能需要再次调整的部分。若要更改该模式状态，请带上 `--force` 以及 `--managed` 或 `--no-managed` 重新运行 `init`。与任何一次 `init` 运行一样，这也需要一个 entry point：如果保留了支持包，则使用 `--handoff`；否则使用 `--enroll` 并提供新的 token (参见[重新运行与恢复](/zh/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery)) 。
 
@@ -160,7 +160,7 @@ sudo systemctl disable --now clicklink-executor
   </Tab>
 </Tabs>
 
-## 添加或更改 ClickHouse 实例
+## 添加或更改 ClickHouse 实例 {#clickhouse-instances}
 
 executor 创建的 服务会自行注册，因此在托管模式下无需在此手动添加。本节适用于不运行 executor 的独立连接器部署，该部署用于观测你自行运行的 ClickHouse。当两个部署共用同一个实例时，请在其 `init` 时传入 `--ch-user-suffix`。`instances` 下的每个条目对应一个连接器读取数据的 ClickHouse 原生协议端点，包括 `host`、`port`、`database`、`secure`、`cluster`，在 Kubernetes 上还包括 `namespace`。`max_open_conns` 与 `max_idle_conns` 用于限制连接池的规模。凭据绝不保存在配置中；每个组件都从预配过程创建的访问包中获取各自的只读 ClickHouse 用户。
 
@@ -244,7 +244,7 @@ executor 创建的 服务会自行注册，因此在托管模式下无需在此�
   对同样的 `access provision` 命令添加 `--force`，即可轮换实例的 ClickHouse 凭据。请参阅[操作](/zh/products/bring-your-own-cloud/connector/operations)。
 </Tip>
 
-## 运维人员允许列表
+## 运维人员允许列表 {#operator-allowlist}
 
 运维人员电子邮件地址允许列表限制着网关管理的会话。发送至会话网关的每个请求都必须携带短时有效的 OIDC ID 标记，且其中经认证的电子邮件地址必须在列表中。允许列表为空时，网关将关闭。在 VM 上，主机的 root 用户也可以通过本地会话文件直接管理会话；允许列表仅约束经由网关的访问路径。有关完整的信任模型，请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
 
@@ -274,7 +274,7 @@ executor 创建的 服务会自行注册，因此在托管模式下无需在此�
   </Tab>
 </Tabs>
 
-## 网络策略
+## 网络策略 {#network-policy}
 
 在 Kubernetes 上，该图表默认提供一个带出站允许列表的 default-deny NetworkPolicy。NetworkPolicy 对象只有在 CNI 强制执行时才会生效。在具备强制执行能力的 CNI 下，只有集群 DNS 和 ClickHouse 服务所在的命名空间可达，直到两个 CIDR 列表都填写完毕为止。在此之前，连接器无法通过出站访问你的连接器端点或 Kubernetes API server。只有当 `init` 获知连接器端点背后的 CIDR 后，才会将该 policy 以 `enabled` 状态部署。
 
@@ -320,7 +320,7 @@ clctl:
 
 还剩两个入口相关的键：`metricsScrapeSelector` 按标签将指标抓取入口限制在单个 Prometheus 命名空间内；`kubeletProbeCIDRs` 则在严格的默认拒绝策略下显式放行 kubelet 节点代理的健康检查探针。完整的键列表请参阅[配置参考](/zh/products/bring-your-own-cloud/connector/reference/configuration)。
 
-## 脱敏规则
+## 脱敏规则 {#redaction-patterns}
 
 故障排查工具 在输出离开您的边界之前会对其进行脱敏处理。内置规则涵盖 `ipv4`、`ipv6`、`bearer-token`、`aws-access-key`、`email`、`jwt`、`ssh-private-key` 和 `connection-string-credentials`。您可以在 YAML 文件中添加自定义规则。这些规则会先按文件中的顺序执行，然后再执行内置规则；如果某个条目使用了与内置规则相同的 `name`，则会替换该内置规则。
 
@@ -345,7 +345,7 @@ patterns:
   如果规则文件存在但无效，故障排查工具 会拒绝启动，并记录无效条目。如果已配置但文件缺失，则仅记录一条警告并使用内置规则。`clicklink clctl preflight` 会验证该文件，因此请在重启守护进程前运行此命令。
 </Warning>
 
-## 私有镜像 和边界内端点
+## 私有镜像 和边界内端点 {#private-mirrors}
 
 已发布的图表将 `image.repository` 预设为公网、多架构且经 cosign 签名的连接器镜像，因此常规安装无需指定镜像配置值。要查看已发布的默认配置：
 
@@ -372,7 +372,7 @@ clicklink clctl init --handoff handoff.yaml --target helm --managed \
 
 当连接器端点位于边界内并由私有 CA 保护时，请向 `init` 传入 `--api-private-ca`。这会设置 `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`，连接器将根据系统根证书以及注册包中的 CA 证书链来验证端点。在 VM 上，对应配置为 `/etc/clicklink/config.yaml` 中的 `api.tls.ca_file`：`init` 会将包中的证书链安装到 `/etc/clicklink/tls/ca.crt`，连接器也会以同样方式将其追加到系统根证书中。如需在完全隔离网络环境中进行注册和证书签名，请参阅 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding)。
 
-## 存储
+## 存储 {#storage}
 
 <Tabs>
   <Tab title="Kubernetes" id="storage-kubernetes">

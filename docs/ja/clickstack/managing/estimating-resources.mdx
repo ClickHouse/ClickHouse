@@ -11,7 +11,7 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 
 <ResourceEstimation />
 
-## 環境に合わせたサイジング前提の調整
+## 環境に合わせたサイジング前提の調整 {#refining-sizing-assumptions}
 
 このモデルは、検索、ダッシュボード、アラートを含むすべてのクエリタイプを合算した、ClickStack からの継続的な平均 1 QPS を前提としています。
 
@@ -21,7 +21,7 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 
 これは、クエリ分布が比較的均等であることを前提としています。より負荷の高い過去データ参照やアーカイブクエリに偏ったワークロードでは、必要なコンピュートが大きく異なる可能性があるため、負荷テストで検証する必要があります。今後は、クエリ分布パターンの違いに応じてクエリ用コンピュートを外挿できる、より柔軟なサイジングモデルを導入する予定です。
 
-### 計算例
+### 計算例 {#worked-example}
 
 **要件:** 月間 1.5 PB の取り込み、5 QPS、3 か月保持。
 
@@ -62,7 +62,7 @@ import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
 | 月間ストレージ (圧縮後)  | 150 TB    |
 | 3 か月保持のストレージ   | 450 TB    |
 
-## オブザーバビリティ ワークロードの分離
+## オブザーバビリティ ワークロードの分離 {#isolating-workloads}
 
 リアルタイムのアプリケーション分析など、すでに他のワークロードをサポートしている**既存の ClickHouse Cloud サービス**に ClickStack を追加する場合は、オブザーバビリティ トラフィックを分離することを強く推奨します。
 

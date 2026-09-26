@@ -17,13 +17,13 @@ import InstrumentApplication from '/snippets/ru/clickstack/_instrument_applicati
 
 В этом руководстве предполагается, что вы уже выполнили [Настройка OpenTelemetry Collector](/ru/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) и что у вас запущен коллектор ClickStack, доступный с машины, на которой вы запускаете это приложение. **Убедитесь, что вы сохранили его конечную точку OTLP** и `OTLP_AUTH_TOKEN`, который задали при развёртывании. Перед добавлением инструментации укажите эти значения в `.env`.
 
-## Предварительные требования
+## Предварительные требования {#prerequisites}
 
 * Коллектор ClickStack, доступный с этой машины. Если вы еще не развернули его, сначала следуйте инструкции [Настройка OpenTelemetry Collector](/ru/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector).
 * Конечная точка OTLP/HTTP этого коллектора (обычно порт `4318`) и заданный для него `OTLP_AUTH_TOKEN`. Используйте их в качестве `OTEL_EXPORTER_OTLP_ENDPOINT` и `OTEL_EXPORTER_OTLP_HEADERS=authorization=<token>`.
 * Node 18+ и npm.
 
-## Клонируйте репозиторий
+## Клонируйте репозиторий {#clone-the-repository}
 
 Клонируйте [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), установите зависимости и скопируйте шаблон файла env:
 
@@ -38,7 +38,7 @@ cp .env.example .env
 
 <InstrumentApplication />
 
-## Дополнительные материалы
+## Дополнительные материалы {#further-reading}
 
 * [Мониторинг Kubernetes](/ru/clickstack/managed-onboarding/monitoring-kubernetes): сбор журналов, инфраструктурных метрик и событий Kubernetes из кластера.
 * [Мониторинг журналов AWS CloudWatch](/ru/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): пересылка журналов CloudWatch через приёмник CloudWatch в OpenTelemetry.

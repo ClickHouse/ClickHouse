@@ -12,11 +12,11 @@ import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge
 
 Esta página enumera todas las claves de configuración que podría necesitar modificar, junto con su valor predeterminado y significado: primero, el archivo de configuración de la VM y, después, los valores del gráfico de Helm. Para obtener instrucciones orientadas a tareas, consulte la [guía de configuración](/es/products/bring-your-own-cloud/connector/configuration).
 
-## Archivo de configuración de la VM
+## Archivo de configuración de la VM {#vm-configuration-file}
 
 En una VM Linux, el conector lee `/etc/clicklink/config.yaml`. `clicklink clctl init` lo escribe y lo conserva entre ejecuciones posteriores, salvo que se use `--force`. Las claves que se omitan del archivo usarán los valores predeterminados compilados que se indican a continuación. `init` no escribe credenciales en él: las claves HMAC se encuentran en las rutas `*_file` y el certificado de cliente en `/etc/clicklink/tls`.
 
-### Claves de nivel superior
+### Claves de nivel superior {#vm-top-level}
 
 | Clave                        | Valor predeterminado | Significado                                                                                                                                                                     |
 | ---------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -35,7 +35,7 @@ En una VM Linux, el conector lee `/etc/clicklink/config.yaml`. `clicklink clctl 
 
 Los demonios ignoran una sección `instances:` en este archivo. Las instancias residen en el [registro de instancias](#vm-instances).
 
-### api
+### api {#vm-api}
 
 | Clave                              | Valor predeterminado                             | Significado                                                                                                                                                                                                                    |
 | ---------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -52,7 +52,7 @@ Los demonios ignoran una sección `instances:` en este archivo. Las instancias r
 | `api.retry.max_delay`              | `30s`                                            | Límite máximo de backoff.                                                                                                                                                                                                      |
 | `api.retry.jitter_factor`          | `0.25`                                           | Variación aleatoria aplicada a los retrasos de backoff.                                                                                                                                                                        |
 
-### Registro de instancias
+### Registro de instancias {#vm-instances}
 
 Las instancias residen en `/var/lib/clicklink/instances.yaml`, un mapa `instances:` de nivel superior con clave por nombre. `init` lo inicializa y el executor lo mantiene; el scraper vigila el archivo, por lo que las ediciones se aplican sin reiniciar. Cada entrada describe un destino del protocolo nativo de ClickHouse:
 
@@ -67,7 +67,7 @@ Las instancias residen en `/var/lib/clicklink/instances.yaml`, un mapa `instance
 | `namespace`      |                | Espacio de nombres de Kubernetes de la instancia, utilizado para delimitar las lecturas de Kubernetes del solucionador de problemas. |
 | `cluster`        | `default`      | Nombre del cluster de ClickHouse utilizado para consultas distribuidas.                                                                           |
 
-### scraper
+### scraper {#vm-scraper}
 
 | Clave                               | Predeterminado                  | Significado                                                                                                                                                                                                                                                                            |
 | ----------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -90,7 +90,7 @@ Las instancias residen en `/var/lib/clicklink/instances.yaml`, un mapa `instance
 | `scraper.observability.health_port` | `8082`                          | Puerto de estado y métricas del scraper.                                                                                                                                                                                                                                               |
 | `scraper.access_directory`          | `/etc/clicklink/access/scraper` | Directorio raíz de los paquetes de acceso por instancia del scraper.                                                                                                                                                   |
 
-### solucionador de problemas
+### solucionador de problemas {#vm-troubleshooter}
 
 | Clave                                              | Predeterminado                                                                             | Significado                                                                                                                                                                                                      |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -127,7 +127,7 @@ Las instancias residen en `/var/lib/clicklink/instances.yaml`, un mapa `instance
 | `troubleshooter.gateway.tls.ca_file`               | `""`                                                                                       | CA a la que deben encadenarse los certificados de cliente de los operadores. Si se establece, exige mTLS además del bearer de OIDC.                                                                              |
 | `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (`init` rellena previamente el host)                                                  | SAN del certificado autofirmado; las entradas que se interpretan como direcciones IP se convierten en SAN de IP.                                                                                                 |
 
-### executor
+### executor {#vm-executor}
 
 El executor se ejecuta en [modo gestionado](/es/products/bring-your-own-cloud/connector/managed-services). `init --managed` escribe `enabled: true` y la identidad del `cluster`; el resto toma los valores predeterminados.
 
@@ -152,7 +152,7 @@ El executor se ejecuta en [modo gestionado](/es/products/bring-your-own-cloud/co
 
 `executor.cluster` es una única correspondencia: un cluster por executor. El cargador convierte en `cluster` una lista `clusters:` heredada que tenga una sola entrada y ninguna correspondencia `cluster:`. Rechaza una lista con más de una entrada, o una que aparezca junto a una clave `cluster:`, cuando el executor está habilitado.
 
-### observabilidad
+### observabilidad {#vm-observability}
 
 | Clave                       | Predeterminado | Significado                                               |
 | --------------------------- | -------------- | --------------------------------------------------------- |
@@ -162,7 +162,7 @@ El executor se ejecuta en [modo gestionado](/es/products/bring-your-own-cloud/co
 
 Cada demonio expone `/livez` (un cuerpo de estado en JSON), `/readyz`, `/healthz` y `/metrics` en un único listener; no hay un puerto de métricas independiente. Los bloques `observability` específicos de cada componente se superponen a esta configuración base: el scraper usa `8082`, el solucionador de problemas `8084`, el executor `8086` y el gateway escucha en `8443` cuando está habilitado. Una clave `metrics_port` de una configuración anterior todavía se carga, pero no vincula nada.
 
-### Lista de tablas permitidas predeterminada
+### Lista de tablas permitidas predeterminada {#default-table-allowlist}
 
 El conjunto predeterminado `allowed_tables` del solucionador de problemas, idéntico al valor predeterminado `troubleshooter.allowedTables` del gráfico:
 
@@ -180,11 +180,11 @@ system.functions        system.formats        system.table_engines
 system.users            system.roles          system.grants
 ```
 
-## Valores del gráfico de Helm
+## Valores del gráfico de Helm {#helm-chart-values}
 
 En Kubernetes, el conector se configura mediante los valores del gráfico `clicklink-connector`. `clicklink clctl init` prepara una superposición de `clicklink-values.yaml` con todos los valores siguientes completados y la conserva en ejecuciones posteriores, salvo que se especifique `--force`. Las tablas muestran los valores predeterminados del gráfico. Los parámetros estándar de carga de trabajo (`resources`, `nodeSelector`, `tolerations`, `affinity`, `serviceAccount.annotations`, `env`) están disponibles en cada componente, tienen valores predeterminados vacíos y no se repiten en cada tabla.
 
-### Claves de nivel superior
+### Claves de nivel superior {#helm-top-level}
 
 | Clave                     | Predeterminado                                                                                           | Significado                                                                                                                                                                                                                                                                                       |
 | ------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -195,7 +195,7 @@ En Kubernetes, el conector se configura mediante los valores del gráfico `click
 | `serviceMonitor.enabled`  | `false`                                                                                                  | Genera un ServiceMonitor de Prometheus Operator para los Services de los componentes. Se ajusta mediante `namespace`, `interval` (`30s`), `scrapeTimeout` (`10s`) y `labels`.                                                                                                                     |
 | `externalSecrets.enabled` | `false`                                                                                                  | Materializa los secretos de mTLS, HMAC y del paquete de acceso mediante External Secrets Operator en lugar de usar secretos creados previamente. `secretStoreRef`, `refreshInterval` (`1h`), `mtlsRemoteKey`, `hmacRemoteKey` y `accessBundles` indican el almacén remoto y las claves.           |
 
-### cluster
+### cluster {#helm-cluster}
 
 | Clave                     | Valor predeterminado      | Significado                                                                                                                                                        |
 | ------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -205,7 +205,7 @@ En Kubernetes, el conector se configura mediante los valores del gráfico `click
 | `cluster.namespacePrefix` | `ns-`                     | Prefijo de los espacios de nombres de Kubernetes en los que residen los servicios gestionados (`<prefix><service>`).                                               |
 | `cluster.reportInfraMeta` | `true`                    | Informa el nombre, la región y la cuenta del cluster gestionado a ClickHouse Cloud en cada latido, con fines de diagnóstico. Establezca `false` para desactivarlo. |
 
-### image
+### image {#helm-image}
 
 | Clave              | Predeterminado                                                           | Significado                                                                                                                                                                                                                                                                                |
 | ------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -213,7 +213,7 @@ En Kubernetes, el conector se configura mediante los valores del gráfico `click
 | `image.tag`        | `""` (sigue el `appVersion` del chart; `init` fija la versión de la CLI) | Etiqueta de la imagen.                                                                                                                                                                                                                                                                     |
 | `image.pullPolicy` | `IfNotPresent`                                                           | Política de extracción de imágenes de Kubernetes.                                                                                                                                                                                                                                          |
 
-### api
+### api {#helm-api}
 
 | Clave             | Predeterminado            | Significado                                                                                                                                                                                                                            |
 | ----------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -221,7 +221,7 @@ En Kubernetes, el conector se configura mediante los valores del gráfico `click
 | `api.tls.enabled` | `true`                    | Presenta el certificado de cliente mTLS en las conexiones de API.                                                                                                                                                                      |
 | `api.tls.caFile`  | `""` (raíces del sistema) | CA añadida a las raíces del sistema para verificar el servidor. Establézcalo en `/etc/clicklink/secrets/mtls/ca.crt` (o vuelva a ejecutar `init` con `--api-private-ca`) cuando el endpoint presente un certificado de una CA privada. |
 
-### secretos
+### secretos {#helm-secrets}
 
 El chart utiliza Secrets creados previamente; `init` los crea antes de la instalación.
 
@@ -231,7 +231,7 @@ El chart utiliza Secrets creados previamente; `init` los crea antes de la instal
 | `secrets.hmacSecretName` | `clicklink-hmac` | Secret opaco que contiene `access-key` y `secret-key` para firmar solicitudes.                                                                                                                                                                                                                                                                                         |
 | `secrets.mtlsWriteback`  | `true`           | Permite que los demonios guarden en el Secret mTLS el certificado final mTLS renovado automáticamente. Concede a las ServiceAccounts del componente el permiso `update` sobre ese único Secret por su nombre exacto; sin esta opción, los certificados renovados no tienen dónde almacenarse de forma persistente. Se ignora cuando `externalSecrets.enabled` es true. |
 
-### scraper
+### scraper {#helm-scraper}
 
 | Clave                                                                    | Predeterminado                    | Significado                                                                                                                                                                                                                                                   |
 | ------------------------------------------------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -245,7 +245,7 @@ El chart utiliza Secrets creados previamente; `init` los crea antes de la instal
 | `scraper.rbac.extraSecretNames`                                          | `[]`                              | Nombres adicionales de Secret a los que el ServiceAccount del scraper puede aplicar `get`; solo se admiten nombres exactos.                                                                                                                                   |
 | `scraper.accessBundles`                                                  | `{}`                              | Paquetes de acceso por instancia, identificados por el nombre de la instancia, cada uno con `secretName` y `serviceAccountName`. Se montan en `/etc/clicklink/access/scraper/<instance>/`; los crea `clicklink clctl scraper access provision --target helm`. |
 
-### troubleshooter
+### troubleshooter {#helm-troubleshooter}
 
 | Key                                             | Default                                                           | Significado                                                                                                                                                                                                                                                               |
 | ----------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -266,7 +266,7 @@ El chart utiliza Secrets creados previamente; `init` los crea antes de la instal
 | `troubleshooter.rbac.extraSecretNames`          | `[]`                                                              | Nombres adicionales de Secret sobre los que el ServiceAccount del solucionador de problemas puede hacer `get`, únicamente nombres exactos.                                                                                                                                |
 | `troubleshooter.accessBundles`                  | `{}`                                                              | Paquetes de acceso por instance, con la misma shape que `scraper.accessBundles`, montados en `/etc/clicklink/access/troubleshooter/<instance>/`.                                                                                                                          |
 
-### executor
+### executor {#helm-executor}
 
 El executor para el [modo gestionado](/es/products/bring-your-own-cloud/connector/managed-services): una Implementación de una sola réplica sobre un PersistentVolumeClaim. `init --managed` lo deja preparado y habilitado, con la identidad del cluster ya rellenada.
 
@@ -295,7 +295,7 @@ El executor para el [modo gestionado](/es/products/bring-your-own-cloud/connecto
 
 `executor.cluster` es una única correspondencia: un cluster por executor. Una lista `clusters` hace fallar el renderizado.
 
-### persistencia
+### persistencia {#helm-persistence}
 
 | Clave                      | Predeterminado                    | Significado                                                                                                                                                                            |
 | -------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -304,7 +304,7 @@ El executor para el [modo gestionado](/es/products/bring-your-own-cloud/connecto
 | `persistence.size`         | `5Gi`                             | Tamaño de la reclamación.                                                                                                                                                              |
 | `persistence.accessModes`  | `[ReadWriteOnce]`                 | Modos de acceso de la reclamación.                                                                                                                                                     |
 
-### clctl.gateway
+### clctl.gateway {#helm-clctl-gateway}
 
 La puerta de enlace de sesiones para las [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions).
 
@@ -325,7 +325,7 @@ La puerta de enlace de sesiones para las [sesiones de soporte](/es/products/brin
 | `clctl.gateway.ingress.enabled`                                  | `false`                | Genera un Ingreso para la puerta de enlace. Cuando está deshabilitado, los operadores acceden a la puerta de enlace mediante `kubectl port-forward`; no se necesita ningún controlador de Ingreso ni cert-manager.                                                  |
 | `clctl.gateway.ingress.className`, `hosts`, `tls`, `annotations` | `""`, `[]`, `[]`, `{}` | Campos estándar de Ingreso; `tls` hace referencia a secretos `kubernetes.io/tls`.                                                                                                                                                                                   |
 
-### networkPolicy
+### networkPolicy {#helm-networkpolicy}
 
 | Clave                                 | Valor predeterminado                                               | Significado                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

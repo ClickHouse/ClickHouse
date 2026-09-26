@@ -12,7 +12,7 @@ import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge
 
 如需申请私有预览的访问权限，请联系您的 ClickHouse 客户团队。
 
-## 连接器的作用
+## 连接器的作用 {#what-the-connector-does}
 
 ClickHouse 连接器是部署在你自己环境中的组件。它让 ClickHouse Cloud 能够管理、监控并支持运行在你所运维的 Kubernetes 集群中的 ClickHouse 服务。连接器只发起出站连接，并以限定在这些服务范围内的身份执行操作。它以单个二进制文件 `clicklink` 的形式发布，其中包含各个守护进程，以及用于安装和运维它们的 `clicklink clctl` 工具。
 
@@ -26,7 +26,7 @@ ClickHouse 连接器是部署在你自己环境中的组件。它让 ClickHouse 
 
 连接器发起的每一个连接都是出站连接；ClickHouse Cloud 绝不会主动向你的环境发起连接。[架构](/zh/products/bring-your-own-cloud/connector/architecture)页面列出了每一个连接、所用的协议及其认证方式。
 
-## 何时使用
+## 何时使用 {#when-to-use-it}
 
 如果你希望 ClickHouse Cloud 在你自己的云账户中运行 ClickHouse 服务，并满足以下约束，则可部署该连接器：
 
@@ -35,7 +35,7 @@ ClickHouse 连接器是部署在你自己环境中的组件。它让 ClickHouse 
 * 你的数据存放在由你自行创建和删除的桶中，并受你自行管理的 IAM role 保护。executor 不持有访问这些桶或 IAM role 的任何凭据。
 * 支持人员的访问有时间限制，由你开启，也可随时撤销。support session 中的每一条命令都会记录到你所拥有的审计日志中。
 
-## 工作原理
+## 工作原理 {#how-it-works}
 
 在 onboarding 期间，ClickHouse 会注册你的环境，并提供连接器端点和一个一次性的注册标记。你只需运行一次 `clicklink clctl init --enroll`：Kubernetes 安装方式下，从具备 kubeconfig 访问权限的 workstation 运行；Linux VM 安装方式下，则在该主机上运行。这条命令会完成标记兑换、获取 mTLS 客户端证书、部署并启动守护进程，并验证其健康状况。
 
@@ -47,11 +47,11 @@ ClickHouse 连接器是部署在你自己环境中的组件。它让 ClickHouse 
 
 抓取器会按固定时间间隔读取允许列表中的系统表，并通过 mTLS 将指标、元数据和健康状况发送到你的连接器端点。故障排查工具会保持一个 出站 命令通道处于打开状态，但在你启用 support session 之前，该通道不会传输任何内容。mTLS 证书会自行续订。
 
-## 在非托管模式下运行
+## 在非托管模式下运行 {#run-without-managed-mode}
 
 向 `clicklink clctl init` 传入 `--no-managed`，或在提示时回答 no，即可仅安装抓取器和故障排查工具。此时连接器只会观测并支持由你自行运维的 ClickHouse 集群；ClickHouse 无法创建、变更或删除服务。连接器仍会自行部署，并预配只读的 ClickHouse 用户和 ServiceAccount；参见[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)。托管模式未覆盖的目标同样采用这种形态。托管模式仅运行在采用 S3 存储的 Amazon EKS 上；而可观测性与支持能力可运行在任何符合规范的 Kubernetes 集群或 Linux 主机上。
 
-## 需求一览
+## 需求一览 {#requirements-at-a-glance}
 
 * **部署目标。** 托管模式需要一个配备 S3 存储的 Amazon EKS 集群。若仅使用可观测性与支持功能，则可运行在任意符合规范的 Kubernetes 集群 (通过 Helm 图表安装) 或任意 systemd Linux 主机上，支持 amd64 或 arm64。
 * **由 ClickHouse 完成注册。** ClickHouse 会为托管模式注册你的环境，并在 onboarding 过程中提供连接器端点和一次性使用的注册标记。
@@ -61,7 +61,7 @@ ClickHouse 连接器是部署在你自己环境中的组件。它让 ClickHouse 
 * **可访问的 ClickHouse 原生监听器**，适用于你自行运维的集群，由不运行 executor 的独立连接器部署进行观测。抓取器和故障排查工具通过原生协议与各个集群通信；在 Kubernetes 上会自动检测安全端口 (9440) 或明文端口 (9000) 。
 * **安装期间的 ClickHouse 管理员访问权限**，适用于你自行运维的集群。初始预配会创建连接器的只读用户。如果设置了管理员密码，系统只会提示输入一次，且绝不存储。
 
-## 后续步骤
+## 后续步骤 {#next-steps}
 
 * [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding)：在 Kubernetes 或 Linux VM 上安装并注册连接器。
 * [managed service](/zh/products/bring-your-own-cloud/connector/managed-services)：启用托管模式、创建服务，并了解其生命周期、状态和删除操作。

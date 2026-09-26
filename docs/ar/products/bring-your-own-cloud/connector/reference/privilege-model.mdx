@@ -13,7 +13,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 هذه الصفحة هي المرجع الأمني لـ ClickHouse Connector: الهويات، والاتصالات، والامتيازات المحددة بدقة، والحدود البنيوية، وكيفية إسناد كل إجراء إلى مصدره. ولمعرفة كيف تتكامل هذه المكوّنات معًا، راجع [المعمارية](/ar/products/bring-your-own-cloud/connector/architecture).
 
-## الهويات
+## الهويات {#identities}
 
 <Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="نموذج هوية ClickHouse Connector" />
 
@@ -26,9 +26,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * **ملف تعريف المثيل الخاص بجهاز EC2 الافتراضي للموصّل** يتولّى دور سحب ECR للقراءة فقط الخاص ببيئتك من أجل الوصول المباشر إلى المنصة، وذلك لتسجيل الدخول لمخططات Helm ولفحوصات الصور معًا. وتستخدم واجهة سطر الأوامر الخاصة بالموافقة المسار نفسه لملف تعريف المثيل؛ ولا تحل محله ملفات تعريف AWS على محطة العمل ولا بيانات اعتماد SSO. أما سجلات مخططات ECR الأخرى فتستخدم بيانات اعتماد AWS المتاحة من البيئة. أما عمليات سحب الصور فتتم على عُقدك بموجب دور السحب الخاص بها. ولا يحتفظ المنفّذ بأي بيانات اعتماد لحاويات التخزين أو IAM الخاصة بك ولا يجري أي استدعاءات لـ S3 أو IAM. راجع [بيانات اعتماد السجل](/ar/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
 * **بيانات الاعتماد الخاصة بك** هي ما يمنح كل صلاحية: صلاحية وصول المنفّذ عند `init --managed`، وحاويات التخزين والدور عند `prepare`، والشق المتعلق بالأذونات من كل تحديث للمنصة عند `approve`، والتنظيف عند `teardown`.
 
-## ما يمكن للموصل القيام به
+## ما يمكن للموصل القيام به {#what-the-connector-can-do}
 
-### الاتصالات الصادرة
+### الاتصالات الصادرة {#outbound-connections}
 
 كل اتصال يفتحه الموصّل ينشأ من داخل بيئتك. وفي ما يلي القائمة الكاملة:
 
@@ -47,7 +47,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 أما على الجانب الوارد، فيُتيح كل برنامج خفي منفذ سلامة محلياً واحداً يقدّم أيضاً مقاييس Prometheus الخاصة به، إلى جانب بوابة الجلسات الاختيارية. وترتبط واجهة برمجة تطبيقات الأوامر المحلية للمُنفِّذ بالحلقة المحلية (loopback) فقط، ولا يستمع أي شيء آخر. ولا تتصل ClickHouse Cloud أبداً ببيئتك: فكل ما تستطيعه هو الرد على اتصالي WebSocket الصادرين.
 
-### أذونات ClickHouse
+### أذونات ClickHouse {#clickhouse-grants}
 
 ينشئ التوفير مستخدمًا واحدًا بصلاحية القراءة فقط لكل مكوّن مراقِب. يُنشأ المستخدمون باستخدام `IDENTIFIED WITH bcrypt_hash`، لذا لا تحتوي SQL الخاصة بالتوفير إلا على تجزئة bcrypt مملّحة. أما كلمة المرور بنص واضح فلا توجد إلا في ملف بيانات الاعتماد الذي يقرأه البرنامج الخفي وقت التشغيل. وسطر `ALTER USER` الذي يلي كل `CREATE USER` يعيد توليد التجزئة عند استخدام `--force`. ولا يملك المنفّذ أي مستخدم ClickHouse ولا يتصل بـ ClickHouse إطلاقًا. وهذه هي الأذونات تحديدًا، مع مجموعات الجداول الافتراضية:
 
@@ -106,9 +106,9 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 
 لا توجد امتيازات `INSERT` أو DDL أو إدارة المستخدمين أو الإعدادات أو التحكم بالعمليات. وعندما تشترك عملية نشر ثانية للموصل في مثيل واحد، تكون أسماء مستخدميها ذات لاحقة (`pcm_scraper_<suffix>`) ومجموعات الامتيازات نفسها.
 
-### RBAC في Kubernetes
+### RBAC في Kubernetes {#kubernetes-rbac}
 
-#### أداة السحب ومستكشف الأعطال
+#### أداة السحب ومستكشف الأعطال {#kubernetes-rbac-observing}
 
 لا تمتلك أداة السحب ومستكشف الأعطال أي ClusterRole أو ClusterRoleBinding. ينشئ المخطط كائنات Role ضمن نطاق مساحة الأسماء في مساحة أسماء الموصّل، وتُنشئ كل حزمة وصول خاصة بمثيل كائن Role في مساحة أسماء ClickHouse أو الخدمة الخاصة بذلك المثيل.
 
@@ -121,7 +121,7 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 | `pods`, `pods/log`, `pods/status`, `services`, `configmaps`, `events`, `persistentvolumeclaims` | `get`, `list`, `watch` | مستكشف الأعطال فقط                                                                                                       |
 | `deployments`, `statefulsets`, `replicasets` (`apps`)                                           | `get`, `list`, `watch` | مستكشف الأعطال فقط                                                                                                       |
 
-#### Executor
+#### Executor {#kubernetes-rbac-executor}
 
 في الوضع المُدار، يطبّق `clicklink clctl init --managed` (أو `clicklink clctl executor access grant --cluster` متبوعًا بـ `apply --cluster`) منح الـ executor باستخدام بيانات اعتمادك. ويتألف المنح من ServiceAccount باسم `pcm-executor` (في namespace الموصل على Kubernetes، وفي `clicklink-system` عند التثبيت على جهاز افتراضي)، وClusterRole واحد مرتبط به، وValidatingAdmissionPolicy باسم `pcm-executor-prefix-guard`.
 
@@ -146,13 +146,13 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 
 ولا يعمل الـ admission مع `get` أو `list` أو `watch`، لذا فإن قراءات الـ executor لعائلات الموارد هذه ليست محصورة بالبادئة.
 
-#### هوية المنصة
+#### هوية المنصة {#kubernetes-rbac-platform}
 
 يطبّق الأمر `clicklink clctl platform approve` الشقّ الخاص بالصلاحيات من تحديث المنصة باستخدام بيانات اعتمادك: Namespaces وCustomResourceDefinitions وServiceAccounts وClusterRoles وClusterRoleBindings وRoles وRoleBindings وتهيئات webhook وadmission وPriorityClasses وStorageClass. ثم يطبّق ServiceAccount المسمى `pcm-platform`، وClusterRole الخاص به، وValidatingAdmissionPolicy المسماة `pcm-platform-scope-guard`، والربط الخاص بها، ويُصدر رمزاً مقيّداً صالحاً لمدة ساعتين.
 
 وبهذا الرمز، لا يستطيع المنفّذ الكتابة إلا على `deployments` و`services` و`configmaps` و`secrets` و`jobs` و`poddisruptionbudgets`، وفي مساحات الأسماء للمنصة التي يسمح بها حارس النطاق دون غيرها. ويمكنه قراءة `pods` و`events` و`namespaces` و`serviceaccounts` وCustomResourceDefinitions وكائنات RBAC وتهيئات webhook وStorageClasses وPriorityClasses للتأكد من أن شقّ الصلاحيات قائم قبل أن يطبّق أي شيء. وهو لا يحمل أبداً `escalate` أو `bind` أو `impersonate`، ولا يكتب أبداً نوعاً على نطاق العنقود أو كائن RBAC، ولا يمكنه إصدار رمزه الخاص أو تجديده. ويخوّل الرمز حزمة واحدة بعينها: فالبصمة التي وافقت عليها مسجّلة على ServiceAccount، ويرفض المنفّذ أي حزمة سواها.
 
-## ما لا يستطيع الموصّل فعله
+## ما لا يستطيع الموصّل فعله {#what-the-connector-cannot-do}
 
 * **لا كتابة على بيانات ClickHouse أو حالتها.** لا تتضمن الأذونات الممنوحة أعلاه أي `INSERT`، ولا أوامر DDL، ولا أي امتيازات لإدارة المستخدمين أو الإعدادات أو التحكم في العمليات. والامتياز الوحيد من فئة النظام، وهو `SYSTEM FLUSH LOGS` الخاص بـ scraper، لا يفعل سوى دفع جداول السجلات إلى تثبيت ما هو موجود أصلًا في مخازنها المؤقتة. ولا يملك المنفّذ أي مستخدم ClickHouse. فلا يستطيع أي مكوّن تعديل البيانات أو المخططات أو المستخدمين أو الإعدادات عبر ClickHouse.
 * **لا تنفيذ للأوامر.** لا يتضمن أي RBAC الصلاحية `pods/exec`؛ ولا يمكن لأي مكوّن تشغيل أوامر داخل الحاويات (pods) الخاصة بك.
@@ -162,7 +162,7 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 * **لا علم له بكلمة مرور المستخدم الافتراضي لديك.** يولّدها الأمر `clicklink clctl executor prepare` على جانبك ويعرضها مرة واحدة (أو يفعل ذلك الأمر `clicklink clctl instances create` عندما تمرر المدخلات كرايات). ولا تُرسَل سوى بصماتها المشفّرة، لذا لا يستطيع الموصّل ولا ClickHouse Cloud استرجاعها.
 * **لا شيء وارد.** لا تفتح ClickHouse Cloud أبدًا اتصالًا إلى بيئتك. ومسارا الأوامر الوحيدان هما اتصالا WebSocket الصادران. ويرفض مستكشف الأخطاء ومصلحها كل أمر ما لم تكن هناك جلسة دعم فعّالة قمت أنت بتمكينها. ولا يقبل المنفّذ أوامر دورة الحياة إلا للخدمات التي طلبت من ClickHouse إدارتها، وضمن النطاقات المذكورة أعلاه. وحتى أثناء الجلسة، يظل مستكشف الأخطاء ومصلحها محدودًا من الجانبين. فاستعلامات ClickHouse مقصورة على قائمة الجداول المسموح بها، وهي ترفض `query_log` و`text_log`، فلا يُمنح الوصول إليهما أبدًا. أما الوصول إلى Kubernetes فمحصور في العروض للقراءة فقط وسجلات الحاويات (pods) التي تمنحها الأدوار المحصورة بمساحة الأسماء.
 
-## ما يتطلب إجراءً منك
+## ما يتطلب إجراءً منك {#what-requires-your-action}
 
 * **تفعيل الوضع المُدار.** لا يعمل executor، ولا يوجد grant الخاص به في Kubernetes، إلا بعد أن تفعّل الوضع المُدار عند `init`؛ ويُطبَّق الـ grant بصلاحيات مسؤول العنقود. راجع [الخدمات المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode).
 * **إنشاء خدمة.** يعمل الأمر `clicklink clctl executor prepare` باستخدام بيانات اعتماد AWS الخاصة بك لإنشاء الـ حاويات ودور IAM، ويقدّم الأمر `clicklink clctl instances create` التعريف. لا تستطيع ClickHouse Cloud إنشاء خدمة في عنقودك بدونهما معًا. راجع [إنشاء خدمة](/ar/products/bring-your-own-cloud/connector/managed-services#create-a-service).
@@ -173,7 +173,7 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 * **إتاحة Gateway.** تكون بوابة الجلسة معطّلة ما لم تفعّلها، ولا يمكن الوصول إليها إلا عبر إعادة توجيه المنفذ ما لم تختر استخدام مورد Ingress. على جهاز افتراضي، يجب على كل مشغّل تثبيت بصمة شهادتها الموقّعة ذاتيًا، أو التحقق منها باستخدام CA bundle يُمرَّر عبر `--gateway-ca`، قبل أن تتصل بها أوامر الجلسة.
 * **حركة الشبكة الصادرة.** عند استخدام CNI يفرض السياسات، لا يصل أي برنامج خفي إلى نقطة نهاية الموصل لديك حتى تدرج نطاقات CIDR الخاصة بها في `networkPolicy.allowEgressCIDRs`. كما يحتاج executor إلى نطاقات CIDR الخاصة بخادم API في Kubernetes (`networkPolicy.apiserverCIDRs`)، والتي يشتقها `init --managed` من VPC الخاص بالعنقود. وإذا كانت مخططات المنصة تأتي من Amazon ECR، فأضف نطاقات ECR وSTS أيضًا.
 
-## كيف يُنسب الوصول
+## كيف يُنسب الوصول {#how-access-is-attributed}
 
 * **هوية النشر.** الاسم الشائع (common name) في شهادة عميل mTLS هو معرّف مؤسستك، واسم DNS الوحيد الخاص بها مرتبط بمضيف نقطة النهاية لديك. وهذا يجعل كل اتصال بواجهة برمجة التطبيقات قابلًا للنسب إلى مؤسستك. ويجري التجديد تلقائيًا داخل البرنامج الخفي؛ ولا يتعامل أي مشغّل مع مادة المفتاح.
 * **سلامة الطلب.** يحمل كل طلب لواجهة برمجة التطبيقات أيضًا توقيع HMAC-SHA256 (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) يغطي الطريقة والمسار والطابع الزمني وتجزئة المتن، باستخدام زوج المفاتيح الصادر عند التسجيل.
@@ -182,7 +182,7 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 * **موافقات المنصة.** تُسجَّل خلاصة الحزمة التي وافقت عليها على ServiceAccount المسمى `pcm-platform`. وكل كائن تطبّقه بيانات اعتمادك يحمل تجزئة محتوى يتحقق منها المنفّذ قبل أن يكتب أي شيء. وتُرفض أي حزمة تحمل خلاصة مختلفة.
 * **مسار التدقيق.** يُلحق كل أمر جلسة، سواء قُبل أو حُجب، بسجل تدقيق NDJSON مع هوية المؤسسة المأخوذة من قناة الأوامر. وتُسجَّل استدعاءات البوابة كأسطر `clctl.gateway` مهيكلة في سجل مستكشف الأخطاء ومصلحها مع البريد الإلكتروني المُصادَق عليه للمشغّل. أما تغييرات الجلسة المحلية على الآلة الافتراضية فتسجّل مستخدم المضيف في `session.json`. اقرأ سجل التدقيق باستخدام `clicklink clctl troubleshoot audit tail`؛ راجع [مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli).
 
-## الإعدادات الافتراضية لتقليل البيانات
+## الإعدادات الافتراضية لتقليل البيانات {#data-minimization-defaults}
 
 * **`query_log` مُستثنى من عمليات السحب افتراضيًا.** فأعمدته تحمل SQL خامًا يتضمن قيمًا حرفية قد تحتوي على بيانات شخصية أو أسرار. وهو لا يخرج من حدود بيئتك إلا إذا أضفته بنفسك.
 * **لا يقرأ مستكشف الأخطاء ومصلحها سوى الجداول المُدرجة في قائمة السماح.** يُرفض كل من `query_log` و`text_log` داخل تهيئة قائمة السماح نفسها، فلا يُمنحان مطلقًا ويبقى سجل الاستعلامات غير قابل للقراءة. أما قائمة السماح الافتراضية فتتضمن `system.processes` (نص الاستعلامات الجارية)؛ فقلّص محتواها (`troubleshooter.allowedTables` على Kubernetes، و`troubleshooter.allowed_tables` على جهاز افتراضي) إذا كان يجب إبقاء ذلك مخفيًا أثناء الجلسات.

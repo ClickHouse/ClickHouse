@@ -6,19 +6,19 @@ title: 'Funções de machine learning'
 doc_type: 'reference'
 ---
 
-## evalMLMethod
+## evalMLMethod {#evalmlmethod}
 
 A previsão com modelos de regressão ajustados usa a função `evalMLMethod`. Veja o link em `linearRegression`.
 
-## stochasticLinearRegression
+## stochasticLinearRegression {#stochasticlinearregression}
 
 A função de agregação [stochasticLinearRegression](/pt-BR/reference/functions/aggregate-functions/stochasticLinearRegression) implementa o método de descida estocástica do gradiente usando um modelo linear e a função de perda MSE. Usa `evalMLMethod` para fazer previsões em novos dados.
 
-## stochasticLogisticRegression
+## stochasticLogisticRegression {#stochasticlogisticregression}
 
 A função de agregação [stochasticLogisticRegression](/pt-BR/reference/functions/aggregate-functions/stochasticLogisticRegression) implementa o método de descida de gradiente estocástico para o problema de classificação binária. Usa `evalMLMethod` para fazer previsões com novos dados.
 
-## naiveBayesClassifier
+## naiveBayesClassifier {#naivebayesclassifier}
 
 Classifica o texto de entrada usando um modelo Naive Bayes com n-gramas e Laplace smoothing. O modelo deve ser configurado no ClickHouse antes de ser usado.
 
@@ -58,7 +58,7 @@ SELECT naiveBayesClassifier('language', 'How are you?');
 
 ***
 
-### Detalhes de implementação
+### Detalhes de implementação {#implementation-details}
 
 **Algoritmo**
 Utiliza o algoritmo de classificação Naive Bayes com [suavização de Laplace](https://en.wikipedia.org/wiki/Additive_smoothing) para lidar com n-gramas não observados, com base nas probabilidades de n-gramas descritas [neste documento](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
@@ -73,7 +73,7 @@ Utiliza o algoritmo de classificação Naive Bayes com [suavização de Laplace]
 
 ***
 
-### Configuração do modelo
+### Configuração do modelo {#model-configuration}
 
 Você pode encontrar [aqui](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models) um exemplo de código-fonte para criar um modelo Naive Bayes para detecção de idioma.
 

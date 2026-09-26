@@ -12,7 +12,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 データセットを ClickHouse Cloud に読み込み、スキーマを確認したうえで、数千万行を対象に集計クエリを実行します。
 続いて、Dictionary を使ってデータを拡充し、`pointInPolygon` 関数でドイツ国内の基地局数を集計したうえで、ClickHouse Agents を使ってその結果を地図上に可視化します。
 
-## 前提条件
+## 前提条件 {#prerequisites}
 
 このチュートリアルには、以下が必要です。
 
@@ -247,7 +247,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Step>
 </Steps>
 
-## 次のステップ
+## 次のステップ {#next-steps}
 
 このチュートリアルでは、OpenCelliD の基地局データセットを ClickHouse Cloud に読み込み、そのスキーマを確認したうえで、数千万行を対象に集計クエリを実行しました。
 さらに、Dictionary を作成して数値の `mcc` カラムに国名を付与し、ドイツの輪郭をポリゴンとして保存して、`pointInPolygon` でその内部にある基地局の数をカウントしました。

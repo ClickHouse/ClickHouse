@@ -13,7 +13,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 지원 세션은 ClickHouse Connector를 통해 ClickHouse에 임시 진단 액세스 권한을 부여합니다. 이 페이지에서는 세션의 의미, 세션을 활성화 및 비활성화하는 방법, 세션이 진행되는 동안 ClickHouse 지원 엔지니어가 수행할 수 있는 작업, 그리고 이를 감사하는 방법을 다룹니다.
 
-## 지원 세션이란
+## 지원 세션이란 {#what-a-support-session-is}
 
 지원 세션은 troubleshooter가 ClickHouse 지원 엔지니어의 명령어를 수락하는, 시간이 정해진 윈도우입니다. 세션이 아닐 때는 아웃바운드 WebSocket이 연결되어 있더라도 모든 명령어를 거부합니다. 다른 실행 경로는 존재하지 않으며, ClickHouse가 사용자를 대신해 세션을 열 수도 없습니다. ClickHouse Cloud는 사용자의 환경으로 접속하지 않으며, troubleshooter가 아웃바운드 채널로 전송하는 내용만 수신합니다.
 
@@ -30,7 +30,7 @@ gateway의 전송 방식은 대상에 따라 다릅니다. VM gateway는 각 연
 
 연산자 허용 목록를 포함한 세션 정책은 `clicklink clctl init` 과정에서 선택합니다.
 
-## 세션 활성화 및 비활성화
+## 세션 활성화 및 비활성화 {#enabling-and-disabling-sessions}
 
 <Tabs>
   <Tab title="Kubernetes" id="sessions-kubernetes">
@@ -81,11 +81,11 @@ gateway의 전송 방식은 대상에 따라 다릅니다. VM gateway는 각 연
   </Tab>
 </Tabs>
 
-## 세션 만료
+## 세션 만료 {#session-expiry}
 
 세션은 자동으로 만료됩니다. 기본 지속 시간은 4시간이며, `session enable --duration`은 최대 24시간까지 허용합니다. 만료되거나 `session disable`을 실행하면 troubleshooter는 즉시 명령어 수락을 중지합니다. 비활성화하면 액세스가 즉시 해지되며, 재시작하거나 ClickHouse와 조정할 필요가 없습니다.
 
-## 연산자 허용 목록
+## 연산자 허용 목록 {#operator-allowlist}
 
 모든 gateway 호출은 연산자 이메일 허용 목록을 기준으로 권한이 부여됩니다. 일치 여부는 검증된 OIDC 토큰으로 증명된 이메일을 기준으로 판단하며, 클라이언트가 제공하는 값은 결코 사용하지 않습니다.
 
@@ -94,7 +94,7 @@ gateway의 전송 방식은 대상에 따라 다릅니다. VM gateway는 각 연
 
 두 대상 모두에서 gateway는 마지막으로 읽은 시점부터 30초가 지나면 다음 request 시 파일을 다시 읽습니다. 재시작 없이 편집 내용이 적용됩니다.
 
-## 세션 중 연산자가 수행할 수 있는 작업
+## 세션 중 연산자가 수행할 수 있는 작업 {#what-operators-can-do}
 
 세션이 활성화된 동안 ClickHouse 지원 엔지니어는 두 가지 종류의 명령어를 실행할 수 있습니다.
 
@@ -106,7 +106,7 @@ gateway의 전송 방식은 대상에 따라 다릅니다. VM gateway는 각 연
 
 Troubleshooter의 RBAC에는 `exec`, `delete`, `patch` 권한이 없으므로, 연산자는 파드에서 셸을 열거나 세션을 통해 어떤 것도 변경할 수 없습니다. 전체 권한 및 RBAC 목록은 [권한 모델](/ko/products/bring-your-own-cloud/connector/reference/privilege-model) 참고 문서에서 확인할 수 있습니다.
 
-## 감사 로그
+## 감사 로그 {#audit-log}
 
 세션 중 실행된 모든 명령어는 한 줄에 하나의 JSON 객체 형식(NDJSON)으로 `/var/log/clicklink/troubleshoot-audit.log`에 기록됩니다. 차단된 명령어도 함께 기록되며, `blocked_by` 필드에 차단 사유(예: `session inactive`)가 표시됩니다. `submitted_by`는 명령 채널의 조직 ID, 즉 사용자 본인의 조직 ID입니다. 명령을 실행한 개별 ClickHouse 엔지니어 정보는 이 파일이 아니라 ClickHouse Cloud 측에 기록됩니다. 세션 명령어 항목은 다음과 같은 형태입니다:
 
@@ -140,11 +140,11 @@ kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-trouble
 
 감사 로그(audit log)는 사용자 환경 내에 존재하는 일반 파일이므로, 다른 호스트 또는 컨테이너 로그와 동일한 방식으로 자체 SIEM으로 전송하십시오.
 
-## 민감 정보 삭제
+## 민감 정보 삭제 {#redaction}
 
 troubleshooter가 반환하는 모든 내용은 사용자 환경을 벗어나기 전에 민감 정보가 삭제됩니다. 기본 제공 패턴은 IPv4 및 IPv6 주소, Bearer token, AWS 액세스 키, 이메일 주소, JWT, SSH private key, connection string에 포함된 자격 증명을 처리합니다. `/etc/clicklink/redaction-patterns.yaml`에서 이를 확장하거나 재정의할 수 있으며, 기본 제공 패턴과 이름이 같은 항목은 해당 패턴을 대체합니다. 패턴 파일이 유효하지 않으면 데몬이 시작되지 않으며 `clicklink clctl preflight`에서도 이를 검증하므로, 민감 정보 삭제 구성이 잘못되면 명확하게 실패합니다.
 
-## 관련 페이지
+## 관련 페이지 {#related-pages}
 
 * [Architecture](/ko/products/bring-your-own-cloud/connector/architecture): 커넥터가 설정하는 모든 연결과 세션 관련 데이터 흐름을 설명합니다.
 * [구성](/ko/products/bring-your-own-cloud/connector/configuration): gateway, 허용 목록 및 민감 정보 삭제 설정을 설명합니다.

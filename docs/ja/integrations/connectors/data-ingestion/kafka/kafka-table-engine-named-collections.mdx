@@ -6,7 +6,7 @@ slug: /integrations/data-ingestion/kafka/kafka-table-engine-named-collections
 doc_type: 'guide'
 ---
 
-## はじめに
+## はじめに {#introduction}
 
 このガイドでは、named collections を使用して ClickHouse を Kafka に接続する方法を紹介します。named collections の設定ファイルを使用することで、次のような利点があります。
 
@@ -16,7 +16,7 @@ doc_type: 'guide'
 
 このガイドは、Apache Kafka 3.4.1 および ClickHouse 24.5.1 で検証されています。
 
-## 前提
+## 前提 {#assumptions}
 
 このドキュメントでは、以下を前提としています。
 
@@ -24,7 +24,7 @@ doc_type: 'guide'
 2. ClickHouseクラスターが構成済みで、稼働していること。
 3. SQLの基本的な知識があり、ClickHouseおよびKafkaの設定に精通していること。
 
-## 前提条件
+## 前提条件 {#prerequisites}
 
 named collection を作成するユーザーに必要なアクセス権限があることを確認してください。
 
@@ -36,7 +36,7 @@ named collection を作成するユーザーに必要なアクセス権限があ
 
 アクセス制御を有効にする方法の詳細については、[ユーザー管理ガイド](/ja/concepts/features/security/access-rights)を参照してください。
 
-## 設定
+## 設定 {#configuration}
 
 以下のセクションを ClickHouse の `config.xml` ファイルに追加します。
 
@@ -89,24 +89,24 @@ named collection を作成するユーザーに必要なアクセス権限があ
 </named_collections>
 ```
 
-### 設定に関する注意事項
+### 設定に関する注意事項 {#configuration-notes}
 
 1. Kafka のアドレスと関連設定は、ご使用の Kafka クラスター構成に合わせて調整してください。
 2. `<kafka>` の前のセクションには、ClickHouse の Kafka エンジンパラメータが含まれています。パラメータの一覧については、[Kafka エンジンパラメータ ](/ja/reference/engines/table-engines/integrations/kafka)を参照してください。
 3. `<kafka>` 内のセクションには、Kafka の拡張設定オプションが含まれています。その他のオプションについては、[librdkafka の設定](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)を参照してください。
 4. この例では、`SASL_SSL` セキュリティプロトコルと `PLAIN` メカニズムを使用しています。これらの設定は、Kafka クラスターの構成に応じて調整してください。
 
-## テーブルとデータベースの作成
+## テーブルとデータベースの作成 {#creating-tables-and-databases}
 
 ClickHouseクラスター上に必要なデータベースとテーブルを作成します。ClickHouseを単一ノードで実行している場合は、SQLコマンドのクラスター指定部分を省略し、`ReplicatedMergeTree` の代わりに別のエンジンを使用してください。
 
-### データベースを作成する
+### データベースを作成する {#create-the-database}
 
 ```sql
 CREATE DATABASE kafka_testing ON CLUSTER LAB_CLICKHOUSE_CLUSTER;
 ```
 
-### Kafkaテーブルを作成する
+### Kafkaテーブルを作成する {#create-kafka-tables}
 
 1つ目のKafkaクラスター用に、1つ目のKafkaテーブルを作成します。
 
@@ -132,7 +132,7 @@ CREATE TABLE kafka_testing.second_kafka_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTE
 ENGINE = Kafka(cluster_2);
 ```
 
-### レプリケートテーブルを作成する
+### レプリケートテーブルを作成する {#create-replicated-tables}
 
 最初のKafkaテーブル用に、次のテーブルを作成します：
 
@@ -158,7 +158,7 @@ CREATE TABLE kafka_testing.second_replicated_table ON CLUSTER STAGE_CLICKHOUSE_C
 ORDER BY id;
 ```
 
-### materialized view を作成する
+### materialized view を作成する {#create-materialized-views}
 
 最初の Kafka テーブルから最初のレプリケートテーブルへデータを挿入する materialized view を作成します。
 
@@ -182,7 +182,7 @@ SELECT
 FROM second_kafka_table;
 ```
 
-## セットアップの確認
+## セットアップの確認 {#verifying-the-setup}
 
 これで、Kafkaクラスター上に対応するコンシューマグループが表示されているはずです。
 
@@ -199,7 +199,7 @@ SELECT * FROM first_replicated_table LIMIT 10;
 SELECT * FROM second_replicated_table LIMIT 10;
 ```
 
-### 注
+### 注 {#note}
 
 このガイドでは、両方のKafkaトピックに取り込まれるデータは同一です。実際の環境では、異なるデータになるはずです。Kafkaクラスターは必要な数だけ追加できます。
 

@@ -16,7 +16,7 @@ doc_type: 'reference'
   위에서 언급한 작업을 지원합니다.
 </Note>
 
-## 데이터베이스 생성
+## 데이터베이스 생성 {#creating-a-database}
 
 ```sql
 CREATE DATABASE test [ENGINE = Atomic] [SETTINGS name = value, ...];
@@ -24,9 +24,9 @@ CREATE DATABASE test [ENGINE = Atomic] [SETTINGS name = value, ...];
 
 `ENGINE = Atomic`은 기본값이므로 생략할 수 있습니다. `SETTINGS` 절에는 데이터베이스 엔진의 설정([`disk`](#metadata-disk), [`max_tables`](#limiting-the-number-of-tables) 등)과 일반 쿼리 설정을 함께 지정할 수 있으며, 각 이름은 둘 중 해당하는 쪽으로 전달됩니다.
 
-## 세부 정보 및 권장 사항
+## 세부 정보 및 권장 사항 {#specifics-and-recommendations}
 
-### 테이블 UUID
+### 테이블 UUID {#table-uuid}
 
 `Atomic` 데이터베이스의 각 테이블에는 영구적인 [UUID](/ko/reference/data-types/uuid)가 있으며, 해당 데이터는 다음 디렉터리에 저장됩니다:
 
@@ -48,16 +48,16 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
   [show&#95;table&#95;uuid&#95;in&#95;table&#95;create&#95;query&#95;if&#95;not&#95;nil](/ko/reference/settings/session-settings/show#show_table_uuid_in_table_create_query_if_not_nil) 설정을 사용하면 `SHOW CREATE` 쿼리에서 UUID를 표시할 수 있습니다.
 </Note>
 
-### RENAME TABLE
+### RENAME TABLE {#rename-table}
 
 [`RENAME`](/ko/reference/statements/rename) 쿼리는 UUID를 변경하거나 테이블 데이터를 이동하지 않습니다. 이 쿼리는 즉시 실행되며, 해당 테이블을 사용 중인 다른 쿼리가 끝날 때까지 기다리지 않습니다.
 
-### DROP/DETACH TABLE
+### DROP/DETACH TABLE {#drop-detach-table}
 
 `DROP TABLE`를 사용해도 데이터는 삭제되지 않습니다. `Atomic` 엔진은 메타데이터를 `/clickhouse_path/metadata_dropped/`로 이동하여 테이블을 삭제된 것으로 표시하고 백그라운드 스레드에 알립니다. 최종적으로 테이블 데이터가 삭제되기 전까지의 지연 시간은 [`database_atomic_delay_before_drop_table_sec`](/ko/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec) 설정으로 지정됩니다.
 `SYNC` 수정자를 사용하여 동기 모드를 지정할 수 있습니다. 이를 위해 [`database_atomic_wait_for_drop_and_detach_synchronously`](/ko/reference/settings/session-settings/database#database_atomic_wait_for_drop_and_detach_synchronously) 설정을 사용하십시오. 이 경우 `DROP`은 테이블을 사용 중인 실행 중의 `SELECT`, `INSERT` 및 기타 쿼리가 완료될 때까지 기다립니다. 테이블은 더 이상 사용되지 않을 때 제거됩니다.
 
-### EXCHANGE TABLES/사전
+### EXCHANGE TABLES/사전 {#exchange-tables}
 
 [`EXCHANGE`](/ko/reference/statements/exchange) 쿼리는 테이블이나 사전의 이름을 원자적으로 서로 바꿉니다. 예를 들어, 다음과 같은 원자적이지 않은 작업 대신:
 
@@ -71,11 +71,11 @@ Atomic 데이터베이스를 사용할 수 있습니다:
 EXCHANGE TABLES new_table AND old_table;
 ```
 
-### Atomic 데이터베이스의 ReplicatedMergeTree
+### Atomic 데이터베이스의 ReplicatedMergeTree {#replicatedmergetree-in-atomic-database}
 
 [`ReplicatedMergeTree`](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블에서는 ZooKeeper의 경로와 레플리카 이름에 대한 엔진 매개변수를 지정하지 않는 것을 권장합니다. 이 경우 구성 매개변수 [`default_replica_path`](/ko/reference/settings/server-settings/settings/default-replica#default_replica_path)와 [`default_replica_name`](/ko/reference/settings/server-settings/settings/default-replica#default_replica_name)이 사용됩니다. 엔진 매개변수를 명시적으로 지정하려면 `{uuid}` 매크로를 사용하는 것을 권장합니다. 이렇게 하면 ZooKeeper에서 각 테이블마다 고유한 경로가 자동으로 생성됩니다.
 
-### 메타데이터 디스크
+### 메타데이터 디스크 {#metadata-disk}
 
 `SETTINGS`에 `disk`를 지정하면 해당 디스크가 테이블 메타데이터 파일을 저장하는 데 사용됩니다.
 단일 테이블과 마찬가지로, 서버 구성에 정의된 디스크 이름을 지정하거나 `disk` 함수로 인라인 정의할 수 있습니다:
@@ -96,7 +96,7 @@ ATTACH DATABASE db UUID '28f1c61c-2970-457a-bffe-454156ddcfef'
 SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
 ```
 
-### 테이블 수 제한
+### 테이블 수 제한 {#limiting-the-number-of-tables}
 
 `max_tables` 설정은 데이터베이스가 포함할 수 있는 테이블 수를 제한합니다. `0`(기본값)은 무제한을 의미합니다. 일반 테이블, VIEW, materialized view, `CREATE DICTIONARY`로 생성한 딕셔너리 등 테이블 형태의 모든 객체가 이 제한에 포함됩니다. 제한에 도달하면 `CREATE TABLE`, `CREATE DICTIONARY`, `ATTACH TABLE`은 `TOO_MANY_TABLES` 예외를 발생시킵니다.
 
@@ -120,7 +120,7 @@ ALTER DATABASE db MODIFY SETTING max_tables = 200;
 
 이 설정은 테이블을 메모리에 유지하고 메타데이터를 로컬 `.sql` 파일에 저장하는 온디스크 데이터베이스 엔진인 `Atomic`과 `Ordinary`에서 사용할 수 있습니다. `Replicated` 엔진에서는 지원되지 않습니다.
 
-## 관련 항목
+## 관련 항목 {#see-also}
 
 * [system.databases](/ko/reference/system-tables/databases) 시스템 테이블
 

@@ -9,7 +9,7 @@ doc_type: '참고'
 
 ClickHouse Connect는 고급 활용 사례를 위한 다양한 추가 옵션을 제공합니다.
 
-## 전역 설정
+## 전역 설정 {#global-settings}
 
 ClickHouse Connect의 동작을 전역적으로 제어하는 몇 가지 설정이 있습니다. 이러한 설정은 최상위 `common` package에서 액세스할 수 있습니다:
 
@@ -45,7 +45,7 @@ print(common.get_setting("invalid_setting_action"))
 | `max_error_size`          | `1024`     | 임의의 음이 아닌 정수                          | 클라이언트 오류에 포함할 최대 문자 수입니다. 전체 메시지를 표시하려면 `0`을 사용하십시오.                                                                                                                                                                                                                             |
 | `http_buffer_size`        | `10485760` | 바이트                                   | 스트리밍 HTTP 쿼리를 위한 인메모리 버퍼 크기이며, 기본값은 10 MiB입니다.                                                                                                                                                                                                                                   |
 
-## 압축
+## 압축 {#compression}
 
 ClickHouse Connect는 lz4, zstd, brotli, gzip, deflate 응답 압축을 지원합니다. 네이티브 삽입은 lz4, zstd, brotli, gzip을 지원합니다. 압축을 사용하면 네트워크 전송량을 줄이는 대신 CPU 시간을 더 사용합니다.
 
@@ -59,17 +59,17 @@ lz4 및 zstd 지원은 ClickHouse Connect와 함께 설치됩니다. Python 3.14
 
 ClickHouse 워크로드에서는 일반적으로 gzip이 lz4 또는 zstd보다 느립니다.
 
-## HTTP 프록시 지원
+## HTTP 프록시 지원 {#http-proxy-support}
 
 ClickHouse Connect는 표준 `HTTP_PROXY` 및 `HTTPS_PROXY` 환경 변수를 인식합니다. 이 변수들은 해당 프로세스의 모든 클라이언트에 적용됩니다. 클라이언트별로 프록시를 구성하려면 `http_proxy` 또는 `https_proxy`를 `get_client` 또는 `get_async_client`에 전달하세요.
 
 동기 클라이언트는 `urllib3`를 사용합니다. SOCKS 프록시를 사용하려면 PySocks를 설치한 다음, `urllib3.contrib.socks.SOCKSProxyManager`를 `pool_mgr` 인수로 `get_client`에 전달하세요. `pool_mgr`는 async 클라이언트에서 지원되지 않습니다.
 
-## Variant, Dynamic, 및 JSON 데이터 타입
+## Variant, Dynamic, 및 JSON 데이터 타입 {#variant-dynamic-json-data-types}
 
 ClickHouse Connect는 현재 ClickHouse의 `Variant`, `Dynamic`, `JSON` 데이터 타입을 지원합니다. 이전 `Object('json')` 타입은 clickhouse-connect 0.14에서 제거되었으며 현재는 지원되지 않습니다.
 
-### 사용 시 참고 사항
+### 사용 시 참고 사항 {#usage-notes}
 
 * `Variant` 값은 해당 Python 타입으로 읽힙니다. 네이티브 삽입에서는 Python 값의 타입에 따라 멤버를 선택합니다.
 * 여러 `Variant` 멤버가 동일한 Python 타입에 매핑되는 경우, 멤버를 명시적으로 선택하려면 값을 `clickhouse_connect.datatypes.dynamic.typed_variant(value, "TypeName")`로 감싸십시오.

@@ -7,9 +7,9 @@ description: '자체 클라우드 인프라에 ClickHouse 배포'
 doc_type: '참고'
 ---
 
-## AWS IAM 역할
+## AWS IAM 역할 {#aws-iam-roles}
 
-### Bootstrap IAM 역할
+### Bootstrap IAM 역할 {#bootstrap-iam-role}
 
 Bootstrap IAM 역할에는 다음 권한이 필요합니다:
 
@@ -18,7 +18,7 @@ Bootstrap IAM 역할에는 다음 권한이 필요합니다:
 * **IAM 작업(예: `iam:CreatePolicy`)**: 컨트롤러가 추가 역할을 생성하는 데 필요합니다(자세한 내용은 다음 섹션을 참조하십시오).
 * **EKS 작업**: 이름이 `clickhouse-cloud` 접두사로 시작하는 리소스로 제한됩니다.
 
-### 컨트롤러가 생성하는 추가 IAM 역할
+### 컨트롤러가 생성하는 추가 IAM 역할 {#additional-iam-roles-created-by-the-controller}
 
 CloudFormation을 통해 생성된 `ClickHouseManagementRole` 외에도 컨트롤러는 몇 가지 추가 역할을 생성합니다.
 
@@ -44,9 +44,9 @@ CloudFormation을 통해 생성된 `ClickHouseManagementRole` 외에도 컨트�
 
 마지막으로, **`data-plane-mgmt`**는 ClickHouse Cloud 컨트롤 플레인 구성 요소가 `ClickHouseCluster` 및 Istio Virtual Service/Gateway와 같은 필요한 사용자 지정 리소스를 reconcile할 수 있도록 허용합니다.
 
-## GCP 서비스 계정
+## GCP 서비스 계정 {#gcp-service-accounts}
 
-### Bootstrap 서비스 계정
+### Bootstrap 서비스 계정 {#bootstrap-service-account}
 
 Bootstrap 서비스 계정에는 다음 권한이 포함된 프로젝트 범위의 custom 역할이 부여됩니다:
 
@@ -56,7 +56,7 @@ Bootstrap 서비스 계정에는 다음 권한이 포함된 프로젝트 범위�
 * **Storage**: ClickHouse 백업, 공유 상태, 모니터링 데이터에 사용되는 Cloud Storage 버킷을 관리하는 데 사용됩니다.
 * **IAM 역할**: 프로젝트 내 서비스 계정과 custom 역할을 관리합니다. 이 역할은 서비스 계정 키 생성, organization 정책 바인딩, 또는 다른 프로젝트의 리소스 작업 권한은 부여하지 않습니다.
 
-### 컨트롤러가 추가로 생성하는 서비스 계정
+### 컨트롤러가 추가로 생성하는 서비스 계정 {#additional-service-accounts-created-by-the-controller}
 
 온보딩 과정의 일부로 Terraform을 통해 생성되는 `clickhouse-management` 서비스 계정 외에도, 첫 번째 BYOC 서비스를 프로비저닝하면 ClickHouse의 컨트롤 플레인(`clickhouse-management`로 인증)이 프로젝트 내 특정 클러스터 내 워크로드용 추가 서비스 계정을 생성합니다. 이러한 계정은 각각 제한된 단일 목적의 권한 세트로 생성됩니다.
 
@@ -72,9 +72,9 @@ Bootstrap 서비스 계정에는 다음 권한이 포함된 프로젝트 범위�
 
 서비스 및 백업 상태 이벤트를 ClickHouse Cloud에 게시하는 state exporter는 의도적으로 이 목록에 포함되지 않았습니다. GCP에서 이 컴포넌트의 게시 아이덴티티는 사용자 프로젝트에 생성되는 계정이 아니라 ClickHouse 소유 프로젝트에 있는 ClickHouse 소유 서비스 계정입니다. 사용자 프로젝트에 생성되는 것은 클러스터 내 `state-exporter` 서비스 계정이 해당 아이덴티티를 가장할 수 있도록 하는 workload identity 바인딩입니다. 키 자료는 전혀 관여하지 않으며, Pub/Sub에 게시하는 아이덴티티는 사용자 프로젝트에서 어떠한 권한도 보유하지 않습니다.
 
-## Azure 역할 및 ID
+## Azure 역할 및 ID {#azure-roles-and-identities}
 
-### 온보딩 서비스 주체
+### 온보딩 서비스 주체 {#onboarding-service-principal}
 
 [Azure용 Terraform module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure)을 통한 온보딩은 테넌트 간 인증에 관한 Azure 지침에 따라 테넌트에 다중 테넌트 애플리케이션을 Enterprise Application(서비스 주체)으로 프로비저닝합니다. 서비스 주체에는 대상 subscription 범위에서 최소 권한 원칙을 따르는 custom 역할이 할당되며, 다음 권한이 포함됩니다.
 
@@ -84,7 +84,7 @@ Bootstrap 서비스 계정에는 다음 권한이 포함된 프로젝트 범위�
 * **아이덴티티**: subscription 내의 사용자 할당 관리형 아이덴티티와 해당 페더레이션 아이덴티티 자격 증명을 관리합니다.
 * **권한 부여**: custom 역할 정의와 역할 할당을 관리합니다. 모든 권한은 대상 subscription으로 범위가 제한되므로 이 역할은 다른 subscription이나 테넌트의 리소스에 접근할 수 없습니다.
 
-### 컨트롤러가 생성하는 추가 관리형 아이덴티티
+### 컨트롤러가 생성하는 추가 관리형 아이덴티티 {#additional-managed-identities-created-by-the-controller}
 
 BYOC 서비스를 프로비저닝하면 ClickHouse의 컨트롤 플레인이 subscription에 사용자 할당 관리형 아이덴티티를 생성합니다. 각 아이덴티티는 제한적이고 단일 목적의 권한 세트를 가진 특정 Kubernetes 서비스 계정(Workload Identity)에 페더레이션됩니다.
 

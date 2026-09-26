@@ -361,7 +361,7 @@ import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.
     </Step>
   </Steps>
 
-  ## 后续步骤
+  ## 后续步骤 {#next-steps}
 
   如需进一步了解 ClickHouse，请参阅以下文档：
 
@@ -385,7 +385,7 @@ import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.
     [&quot;Playground 规格&quot;](/zh/get-started/sample-datasets/playground#specifications)。
   </Note>
 
-  ## 创建 trips 表
+  ## 创建 trips 表 {#create-the-table-trips}
 
   首先，创建一张用于存储出租车行程数据的表：
 
@@ -416,7 +416,7 @@ import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.
   PRIMARY KEY (pickup_datetime, dropoff_datetime);
   ```
 
-  ## 直接从对象存储加载数据
+  ## 直接从对象存储加载数据 {#load-the-data-directly-from-object-storage}
 
   用户可以先获取一小部分数据 (300 万行) 来熟悉该数据集。这些数据以 TSV 文件形式存放在对象存储中，使用 `s3` 表函数即可轻松地以流式方式导入
   ClickHouse Cloud。
@@ -485,7 +485,7 @@ import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.
     </Tab>
   </Tabs>
 
-  ## 示例查询
+  ## 示例查询 {#sample-queries}
 
   以下查询基于上文所述的样本执行。你可以在 [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19) 上针对完整数据集运行这些示例查询，只需将下面的查询改为使用表 `nyc_taxi.trips`。
 
@@ -547,7 +547,7 @@ import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.
   ORDER BY passenger_count ASC
   ```
 
-  ## 下载预先准备的分区
+  ## 下载预先准备的分区 {#download-of-prepared-partitions}
 
   <Note>
     以下步骤介绍了原始数据集的相关信息，以及将预先准备好的分区加载到自管理 ClickHouse 服务器环境中的方法。
@@ -573,7 +573,7 @@ import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.
     如果要运行下文所述的查询，你需要使用完整的表名 `datasets.trips_mergetree`。
   </Info>
 
-  ## 单服务器测试结果
+  ## 单服务器测试结果 {#results-on-single-server}
 
   Q1:
 
@@ -657,7 +657,7 @@ import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.
   在这种情况下，查询处理时间主要取决于网络延迟。
   我们运行查询时使用的客户端与集群位于不同的数据中心，因此额外增加了约 20 毫秒的延迟。
 
-  ## 摘要
+  ## 摘要 {#summary}
 
   | 服务器                | Q1    | Q2    | Q3    | Q4    |
   | ------------------ | ----- | ----- | ----- | ----- |

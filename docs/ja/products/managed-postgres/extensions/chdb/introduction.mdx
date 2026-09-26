@@ -7,11 +7,11 @@ doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
 
-## はじめに
+## はじめに {#introduction}
 
 このライブラリは、Postgres 上で [chDB] クエリを実行したり、さまざまなフォーマットやオブジェクトストアとの間でデータをコピーしたりするための PostgreSQL 拡張機能を提供します。
 
-### chdb 拡張機能
+### chdb 拡張機能 {#chdb-extension}
 
 `chdb` 拡張機能は [chDB] のクエリを実行します。`chdb_query()` 関数は単一のクエリを実行します。たとえば、次のクエリの場合:
 
@@ -34,7 +34,7 @@ Output:
 
 詳細については、[chdb のドキュメント](/ja/products/managed-postgres/extensions/chdb/chdb)を参照してください。
 
-### chdb_hook モジュール
+### chdb_hook モジュール {#chdb_hook-module}
 
 `chdb_hook` モジュールは [COPY] コマンドにフックし、S3、GCS、Azure Blob、ファイル、http URL との間でデータをコピーします。次の例では、S3 上にある複数の CSV ファイルのレコードを、1 つの [COPY] コマンドで読み込みます:
 
@@ -87,7 +87,7 @@ CREATE TABLE reviews () WITH (
 詳細については [chdb&#95;hook のドキュメント](/ja/products/managed-postgres/extensions/chdb/chdb_hook)
 を参照してください。
 
-## フォーマットのベンチマーク
+## フォーマットのベンチマーク {#benchmarking-formats}
 
 [ベンチマーク][benchmark]では、[NYC Taxi dataset] の約 100 万行をさまざまなフォーマットで扱った場合の [chdb&#95;hook] の `COPY` のパフォーマンスを、[aws&#95;s3]、[pg&#95;duckdb]、[pg&#95;lake] と比較しています。
 
@@ -108,7 +108,7 @@ CREATE TABLE reviews () WITH (
 
 このベンチマークでは、他の拡張機能との互換性を保つために [JSONCompact] フォーマットを使用しています。[JSONCompactEachRow] などの他の JSON フォーマットを用いれば、他のフォーマットのパフォーマンスにより近い結果が得られます。
 
-## アーキテクチャ
+## アーキテクチャ {#architecture}
 
 chdb および chdb&#95;hook 拡張機能は、[chDB] クエリの実行に `chdb_helper` プロセスを使用します。このヘルパーにより [chDB] のリソース消費が Postgres のメインプロセスから切り離されるため、データレイクからのデータロードのように、たまにしか実行されないワークフローでは大きな利点となります。
 
@@ -129,7 +129,7 @@ chdb および chdb&#95;hook 拡張機能は、[chDB] クエリの実行に `chd
   ヘルパーはクエリごとに、実行用としてディスク上に新しい一時的な chDB データベースを作成して接続します。そのため、現時点では各クエリは他のすべてのクエリから完全に独立した状態で実行されます。テーブルを作成しても、後続のクエリからそのテーブルを参照できるとは考えないでください。
 </Important>
 
-## Dependencies
+## Dependencies {#dependencies}
 
 `chdb` 拡張機能には、PostgreSQL 15 以降と [chDB] ライブラリ v26.7.0 以降が必要です (現在は Linux および macOS でのみ利用可能) 。最も簡単なインストール方法は、[lib.chdb.io] の シェルスクリプト を使用する方法です。
 
@@ -148,7 +148,7 @@ export BUNDLE_LIBCHDB=1 LIBCHDB_BUILD=static
 
 Linux では、[インストール](#compile-from-source) の `make` コマンドを実行する前に `export BUNDLE_LIBCHDB=1` を設定しておくことで、インストール処理で動的な `libchdb` ライブラリをダウンロードしてインストールさせることもできます。
 
-### ソースからコンパイル
+### ソースからコンパイル {#compile-from-source}
 
 chdb をビルドするには、次のコマンドを実行します。
 
@@ -223,12 +223,12 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-## 著者
+## 著者 {#authors}
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## 著作権
+## 著作権 {#copyright}
 
 Copyright (c) 2026, ClickHouse
 

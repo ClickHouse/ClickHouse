@@ -11,7 +11,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-## Mise à l’échelle horizontale manuelle
+## Mise à l’échelle horizontale manuelle {#manual-horizontal-scaling}
 
 <ScalePlanFeatureBadge feature="Mise à l’échelle horizontale manuelle" />
 
@@ -23,7 +23,7 @@ Les tiers **Scale** et **Enterprise** prennent également en charge les services
   Pour connaître les limites de répliques applicables à votre service, consultez [Limites d’utilisation](/fr/cloud/bestpractices/usage-limits). Contactez notre équipe d’assistance si vous avez besoin de répliques supplémentaires.
 </Note>
 
-### Mise à l’échelle horizontale via l’API
+### Mise à l’échelle horizontale via l’API {#horizontal-scaling-via-api}
 
 Pour mettre à l’échelle horizontalement un cluster, envoyez une requête `PATCH` via l’API afin d’ajuster le nombre de répliques. Les captures d’écran ci-dessous montrent un appel à l’API pour faire passer un cluster de `3` répliques à `6` répliques, ainsi que la réponse correspondante.
 
@@ -37,7 +37,7 @@ Pour mettre à l’échelle horizontalement un cluster, envoyez une requête `PA
 
 Si vous envoyez une nouvelle demande de mise à l’échelle, ou plusieurs demandes successives, alors qu’une opération est déjà en cours, le service de mise à l’échelle ignorera les états intermédiaires et convergera vers le nombre final de répliques.
 
-### Mise à l’échelle horizontale via l’UI
+### Mise à l’échelle horizontale via l’UI {#horizontal-scaling-via-ui}
 
 Pour mettre un service à l’échelle horizontalement depuis l’UI, vous pouvez ajuster le nombre de répliques du service sur la page **Settings**.
 

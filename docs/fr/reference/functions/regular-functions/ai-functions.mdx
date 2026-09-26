@@ -29,7 +29,7 @@ Toutes les fonctions partagent une infrastructure commune qui fournit :
 * **Application des quotas** : limites par requête sur les tokens ([`ai_function_max_input_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) et sur les appels d’API ([`ai_function_max_api_calls_per_query`](/fr/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Nouvelle tentative avec backoff** : les échecs temporaires sont réessayés ([`ai_function_max_retries`](/fr/reference/settings/session-settings/ai-function#ai_function_max_retries)) avec un backoff exponentiel ([`ai_function_retry_initial_delay_ms`](/fr/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 
-## Configuration
+## Configuration {#configuration}
 
 Les fonctions d’IA s’appuient sur une **collection nommée** qui stocke les identifiants du fournisseur et la configuration. Différentes collections nommées peuvent être créées et utilisées pour différentes fonctions ou différents appels de fonction. Par exemple, vous pouvez définir une collection nommée distincte pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`), et une autre pour les fonctions d’embedding (`aiEmbed`, `aiSimilarity`), qui nécessitent des points de terminaison différents et utilisent généralement des modèles différents.
 
@@ -51,7 +51,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     api_key = 'sk-...';
 ```
 
-### Paramètres de la collection nommée
+### Paramètres de la collection nommée {#named-collection-parameters}
 
 | Paramètre     | Type   | Par défaut | Description                                                                                                                                                                                                                                                  |
 | ------------- | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -66,7 +66,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
   Toute API compatible OpenAI (par ex. vLLM, Ollama, LiteLLM) peut être utilisée en définissant `provider = 'openai'` et en pointant `endpoint` vers votre service.
 </Note>
 
-### Sélection des identifiants
+### Sélection des identifiants {#selecting-credentials}
 
 Une fonction détermine la collection nommée à utiliser dans l’ordre suivant :
 
@@ -94,7 +94,7 @@ SELECT * FROM reviews
 WHERE aiFilter(body, 'the customer is angry about shipping');
 ```
 
-### Map de paramètres
+### Map de paramètres {#parameter-map}
 
 Chaque fonction accepte, en dernier argument optionnel, une `Map(String, String)` de paramètres. Toutes les valeurs sont des chaînes de caractères (mettez les nombres entre apostrophes, par ex. `'0.2'`). Les clés inconnues sont rejetées. Une clé présente remplace la valeur correspondante de la collection nommée ; une clé absente se rabat sur la collection nommée (pour `model`/`max_tokens`) ou sur la valeur par défaut intégrée. Les exceptions sont les fonctions d’embedding (`aiEmbed`, `aiSimilarity`), qui prennent `model` comme argument positionnel obligatoire (par ex. `aiEmbed(text, model[, params])`, `aiSimilarity(text1, text2, model[, params])`) et renvoient une erreur si celui-ci est défini à la place dans la map de paramètres ou la collection nommée. Cela permet de garantir des embeddings reproductibles.
 
@@ -111,11 +111,11 @@ Certaines fonctions acceptent des paramètres supplémentaires qui leur sont pro
 SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
 ```
 
-### Paramètres au niveau de la requête
+### Paramètres au niveau de la requête {#query-level-settings}
 
 Tous les paramètres liés à l’IA sont répertoriés dans [Paramètres](/fr/reference/settings/session-settings) sous le préfixe `ai_function_`.
 
-### Restreindre les hôtes de point de terminaison
+### Restreindre les hôtes de point de terminaison {#restricting-endpoint-hosts}
 
 L’URL `endpoint` d’une collection nommée d’IA est une destination sortante à laquelle le serveur se connecte avec sa propre identité, en transmettant potentiellement (si elle est spécifiée) l’`api_key` de la collection nommée dans les en-têtes de requête. Par défaut, ClickHouse autorise n’importe quel hôte. Pour limiter les fonctions à un ensemble spécifique de fournisseurs, configurez [`remote_url_allow_hosts`](/fr/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) dans la configuration du serveur, par exemple :
 
@@ -128,7 +128,7 @@ L’URL `endpoint` d’une collection nommée d’IA est une destination sortant
 
 Notez que ce paramètre s’applique à l’ensemble du serveur et à toutes les fonctionnalités utilisant HTTP.
 
-### Sécurité du transport (HTTP vs HTTPS)
+### Sécurité du transport (HTTP vs HTTPS) {#transport-security}
 
 Le transport est déterminé uniquement par le schéma de l’URL `endpoint`. Il n’existe aucun chiffrement du corps de la requête au niveau de l’application ; la protection des données en transit dépend entièrement du schéma :
 
@@ -139,14 +139,14 @@ Par défaut, les fonctions d’IA rejettent un `endpoint` qui enverrait des donn
 
 Notez que, dans les deux cas, le fournisseur reçoit les données d’entrée en clair après la terminaison TLS ; TLS protège les données uniquement sur le trajet réseau entre le serveur et le fournisseur.
 
-## Fournisseurs pris en charge
+## Fournisseurs pris en charge {#supported-providers}
 
 | Fournisseur | valeur de `provider` | Fonctions de chat | Notes                                  |
 | ----------- | -------------------- | ----------------- | -------------------------------------- |
 | OpenAI      | `'openai'`           | Oui               | Fournisseur par défaut.                |
 | Anthropic   | `'anthropic'`        | Oui               | Utilise le point de terminaison `/v1/messages`. |
 
-## Observabilité
+## Observabilité {#observability}
 
 L’activité de la fonction d’IA est suivie via les [ProfileEvents](/fr/reference/system-tables/query_log) de ClickHouse :
 

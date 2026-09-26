@@ -6,9 +6,9 @@ title: '条件付き関数'
 doc_type: 'reference'
 ---
 
-## 概要
+## 概要 {#overview}
 
-### 条件式の結果をそのまま使用する
+### 条件式の結果をそのまま使用する {#using-conditional-results-directly}
 
 条件式の結果は常に `0`、`1`、または `NULL` です。そのため、条件式の結果は次のようにそのまま使用できます。
 
@@ -25,7 +25,7 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-### 条件式における NULL 値
+### 条件式における NULL 値 {#null-values-in-conditionals}
 
 条件式に NULL 値が含まれる場合、結果も NULL になります。
 
@@ -61,7 +61,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-### CASE ステートメント
+### CASE ステートメント {#case-statement}
 
 ClickHouse の CASE 式は、SQL の CASE 演算子と同様の条件分岐ロジックを提供します。条件を評価し、最初に一致した条件に基づいて値を返します。
 
@@ -164,7 +164,7 @@ WHERE number < 3
 3 rows in set. Elapsed: 0.001 sec.
 ```
 
-#### 注意点
+#### 注意点 {#caveats}
 
 ClickHouse は、CASE 式 (または `multiIf` などの内部的に等価な処理) の結果の型を、条件を評価する前に決定します。これは、返される式の型が異なる場合、たとえばタイムゾーンや数値型が異なる場合に重要です。
 

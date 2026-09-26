@@ -21,7 +21,7 @@ BYOC предлагает два основных способа сбора и �
 2. **Сбор метрик ClickHouse напрямую**: Настройте собственное развертывание Prometheus на сбор метрик с конечной точки `/metrics_all`, доступной для каждого сервиса ClickHouse.
 
 <div id="monitoring-approaches-comparison">
-  ### Сравнение методов мониторинга
+  ### Сравнение методов мониторинга {#monitoring-approaches-comparison}
 </div>
 
 | Возможность                  | Встроенный стек Prometheus                                                                          | Прямой сбор с сервисов ClickHouse                                                         |
@@ -37,7 +37,7 @@ BYOC предлагает два основных способа сбора и �
 **Рекомендация**: Для большинства сценариев мы рекомендуем интеграцию со встроенным стеком Prometheus, так как он предоставляет исчерпывающий набор метрик от всех компонентов в вашем BYOC-развертывании (сервисы ClickHouse, кластер Kubernetes и вспомогательные сервисы), а не только метрики сервера ClickHouse.
 
 <div id="builtin-prometheus-stack">
-  ## Встроенный стек Prometheus для BYOC
+  ## Встроенный стек Prometheus для BYOC {#builtin-prometheus-stack}
 </div>
 
 ClickHouse BYOC разворачивает в вашем кластере Kubernetes полный стек мониторинга Prometheus, включая Prometheus, Grafana, AlertManager и, при необходимости, Thanos для долговременного хранения метрик. Этот стек собирает метрики из:
@@ -46,7 +46,7 @@ ClickHouse BYOC разворачивает в вашем кластере Kubern
 * кластера Kubernetes и системных компонентов
 * узлов базовой инфраструктуры
 
-### Доступ к стеку Prometheus
+### Доступ к стеку Prometheus {#accessing-prometheus-stack}
 
 Чтобы подключиться к встроенному стеку Prometheus:
 
@@ -68,7 +68,7 @@ ClickHouse BYOC разворачивает в вашем кластере Kubern
 </Note>
 
 <div id="prometheus-stack-integration">
-  ### Интеграция с вашими инструментами мониторинга
+  ### Интеграция с вашими инструментами мониторинга {#prometheus-stack-integration}
 </div>
 
 Вы можете использовать стек BYOC Prometheus в своей экосистеме мониторинга несколькими способами:
@@ -107,12 +107,12 @@ scrape_configs:
 ```
 
 <div id="direct-prometheus-integration">
-  ## Интеграция Prometheus с сервисом ClickHouse
+  ## Интеграция Prometheus с сервисом ClickHouse {#direct-prometheus-integration}
 </div>
 
 Сервисы ClickHouse предоставляют совместимую с Prometheus конечную точку метрик, с которой можно напрямую выполнять сбор из собственного экземпляра Prometheus. Этот подход дает метрики, специфичные для ClickHouse, но не включает метрики Kubernetes или вспомогательных сервисов.
 
-### Доступ к конечной точке метрик
+### Доступ к конечной точке метрик {#metrics-endpoint}
 
 Конечная точка метрик доступна по пути `/metrics_all` на конечной точке вашего сервиса ClickHouse:
 
@@ -135,7 +135,7 @@ ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj
 ```
 
 <div id="authentication">
-  ### Аутентификация
+  ### Аутентификация {#authentication}
 </div>
 
 Для конечной точки метрик требуется аутентификация с использованием учетных данных ClickHouse. Мы рекомендуем использовать пользователя `default` или создать отдельного пользователя с минимальными разрешениями специально для сбора метрик.
@@ -167,7 +167,7 @@ GRANT SELECT(description, labels, metric, value) ON system.histogram_metrics TO 
 GRANT SELECT(description, metric, value) ON system.metrics TO scrapping_user;
 ```
 
-### Настройка Prometheus
+### Настройка Prometheus {#configuring-prometheus}
 
 Настройте экземпляр Prometheus для сбора метрик с конечной точки метрик ClickHouse:
 
@@ -193,12 +193,12 @@ scrape_configs:
 * `<username>` и `<password>` на учетные данные пользователя, используемые для сбора метрик
 
 <div id="clickhouse-mixin">
-  ## ClickHouse Mixin
+  ## ClickHouse Mixin {#clickhouse-mixin}
 </div>
 
 Для команд, которым нужен готовый набор панелей мониторинга, ClickHouse предлагает **ClickHouse Mixin** для Prometheus. Это готовая панель мониторинга Grafana, специально разработанная для мониторинга кластеров ClickHouse.
 
-### Настройка Grafana и импорт ClickHouse Mix-in
+### Настройка Grafana и импорт ClickHouse Mix-in {#setup-grafana-mixin}
 
 После интеграции вашего экземпляра Prometheus со стеком мониторинга ClickHouse вы сможете визуализировать метрики в Grafana, выполнив следующие шаги:
 

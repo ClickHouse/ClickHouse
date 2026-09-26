@@ -163,7 +163,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
   </Step>
 
   <Step title="Настройка узлов ClickHouse" id="configure-clickhouse-servers">
-### Настройка сервера
+### Настройка сервера {#server-setup}
 
     Теперь измените каждый пустой файл конфигурации `config.xml`, расположенный по пути
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Выделенные ниже строки
@@ -237,7 +237,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     Каждый раздел приведённого выше конфигурационного файла подробно описан ниже.
 
-#### Сеть и логирование
+#### Сеть и логирование {#networking}
 
     <ListenHost />
 
@@ -256,7 +256,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     Дополнительную информацию о конфигурации логирования см. в комментариях в стандартном [файле конфигурации](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) ClickHouse.
 
-#### Конфигурация кластера
+#### Конфигурация кластера {#cluster-configuration}
 
     Конфигурация кластера задаётся в блоке `<remote_servers>`.
     Здесь определяется имя кластера `cluster_2S_1R`.
@@ -290,7 +290,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
     <ServerParameterTable />
 
-#### Конфигурация Keeper
+#### Конфигурация Keeper {#keeper-config-explanation}
 
     Раздел `<ZooKeeper>` указывает ClickHouse, где запущен ClickHouse Keeper (или ZooKeeper).
     Поскольку мы используем кластер ClickHouse Keeper, необходимо указать каждый `<node>` кластера
@@ -320,7 +320,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
       в продакшн-средах мы настоятельно рекомендуем запускать ClickHouse Keeper на выделенных хостах.
     </Note>
 
-#### Конфигурация макросов
+#### Конфигурация макросов {#macros-config-explanation}
 
     Кроме того, раздел `<macros>` используется для определения подстановок параметров для
     реплицированных таблиц. Они перечислены в `system.macros` и позволяют использовать подстановки
@@ -337,7 +337,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
       Они будут определяться по-разному в зависимости от структуры кластера.
     </Note>
 
-### Конфигурация пользователя
+### Конфигурация пользователя {#user-config}
 
     Теперь внесите следующие изменения в каждый пустой конфигурационный файл `users.xml`, расположенный по пути
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d`:
@@ -394,7 +394,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
   </Step>
 
   <Step title="Настройка ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
-### Настройка Keeper
+### Настройка Keeper {#configuration-explanation}
 
     <KeeperConfig />
 
@@ -801,7 +801,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 </Steps>
 
 <div id="conclusion">
-  ## Заключение
+  ## Заключение {#conclusion}
 </div>
 
 Преимущество этой топологии кластера в том, что данные распределяются по

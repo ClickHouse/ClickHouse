@@ -10,9 +10,9 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-## الأسئلة الشائعة
+## الأسئلة الشائعة {#faq}
 
-### من يمكنه تغيير خدماتي، ومتى؟
+### من يمكنه تغيير خدماتي، ومتى؟ {#who-can-change-my-services}
 
 في الوضع المُدار، لا تُغيّر ClickHouse Cloud سوى الخدمات التي طلبت منها إدارتها. ويمكن أيضًا لأي شخص لديه وصول إلى مضيف الـ منفّذ أو كبسولة الخاصة به التحكم بها عبر أوامر `clicklink clctl instances` المحلية؛ انظر [دورة حياة الخدمة](/ar/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). وترسل ClickHouse Cloud أوامر دورة الحياة عبر القناة الصادرة للـ منفّذ:
 
@@ -28,7 +28,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 وكل ما يفعله الـ منفّذ يجري عبر واجهة برمجة تطبيقات Kubernetes. وتُقيّد سياسة admission عمليات الكتابة الخاصة به بمساحات الأسماء التي تحمل prefix الخدمة (`ns-` افتراضيًا). كما تسمح بثلاث عمليات كتابة في مساحة الأسماء الخاصة بالـ منفّذ: تجديد الرمز، وConfigMap الخاص بـ سجل الخدمات، وعلى Kubernetes الشهادة المُجدَّدة للعميل في الـ Secret المسمى `clicklink-mtls`. أما عمليات القراءة لعائلات الموارد نفسها فتشمل العنقود بالكامل. وتُنفَّذ تحديثات المنصة المعتمدة بهوية منفصلة هي `pcm-platform` مُقيَّدة بمساحات أسماء المنصة. ولا تُمَس أبدًا العناقيد التي تديرها بنفسك: فـ scraper ومستكشف الأخطاء ومصلحها للقراءة فقط. وتجد النطاقات الدقيقة في صفحة [نموذج الامتيازات](/ar/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-### ما هي البيانات التي تخرج من بيئتي؟
+### ما هي البيانات التي تخرج من بيئتي؟ {#what-data-leaves-my-environment}
 
 هناك ثلاثة مسارات ترسل البيانات إلى الخارج، وجميعها عبر اتصالات صادرة يفتحها الموصّل بنفسه: مسار السحب، والمنفّذ، وجلسات الدعم التي تقوم بتمكينها.
 
@@ -44,7 +44,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 تجد القائمة الكاملة للاتصالات الصادرة في صفحة [نموذج الامتيازات](/ar/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-### كيف أمنع ClickHouse من تغيير عناقيدي؟
+### كيف أمنع ClickHouse من تغيير عناقيدي؟ {#stop-managed-mode}
 
 شغّله بدون الوضع المُدار. عند التثبيت، مرّر `--no-managed` إلى `clicklink clctl init`، أو أجب بالنفي عند السؤال. لا يُنشر سوى scraper ومستكشف الأخطاء ومصلحها، وبذلك لا يستطيع ClickHouse إنشاء الخدمات أو تغييرها أو حذفها. ومع ذلك يستمر الموصّل في تجهيز مستخدمي ClickHouse للقراءة فقط وحسابات ServiceAccount؛ راجع [نموذج الامتيازات](/ar/products/bring-your-own-cloud/connector/reference/privilege-model).
 
@@ -60,7 +60,7 @@ kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 
 تستمر الخدمات التي أنشأها ClickHouse في العمل، لكن لم يعد بإمكان ClickHouse Cloud توسيع نطاقها أو ترقيتها أو نسخها احتياطيًا أو حذفها، وتفشل الأوامر المعلّقة الخاصة بها. وتتوقف تحديثات المنصة أيضًا: فالمنفّذ هو الذي يطبّق شطر عبء العمل منها، وهو لم يعد يعمل.
 
-### ماذا يحدث إذا كان الموصّل غير متصل؟
+### ماذا يحدث إذا كان الموصّل غير متصل؟ {#connector-down}
 
 لا تتأثر خدمات ClickHouse لديك: فـ الموصّل لا يقع ضمن أي data path، وتواصل الخدمة المُدارة عملها دون منفّذ. أما الأثر فهو فقدان الرؤية والتحكم؛ إذ يتوقف ClickHouse Cloud عن استقبال بيانات القياس عن بُعد، وتصبح جلسات الدعم غير متاحة حتى يعود الموصّل. وفي الوضع المُدار، يعرض ClickHouse Cloud بيئتك على أنها غير متصلة إذا لم تصل أي نبضة قلب خلال 5 دقائق، ثم يعرضها جاهزة مجددًا فور وصول النبضة التالية.
 
@@ -70,17 +70,17 @@ kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 
 وللتشخيص، تحقق من نقطة نهاية `/livez` لكل مكوّن (المؤشر هو حقل `status` في JSON، وليس رمز HTTP) ونفّذ `clicklink clctl preflight` (مع `sudo` على مضيف الجهاز الافتراضي). يفحص Preflight التهيئة والاتصال وإمكانية الوصول إلى ClickHouse والصلاحيات والقرص في مسار واحد. راجع [العمليات](/ar/products/bring-your-own-cloud/connector/operations)؛ وإذا ظل الموصّل غير سليم، فتواصل مع دعم ClickHouse.
 
-### ما الذي يُحذف عند حذف الخدمة؟
+### ما الذي يُحذف عند حذف الخدمة؟ {#what-is-deleted}
 
 يوقف المُنفِّذ الخدمة، ويزيل موارد Kubernetes الخاصة بها، ويحذف مساحة الأسماء التابعة لها، ثم يُبلغ عن إنهاء الخدمة بمجرد اختفاء مساحة الأسماء. أما كل ما هو خارج Kubernetes فيبقى كما هو: حاوية البيانات، وحاوية النسخ الاحتياطي، ودور IAM الخاص بالخدمة. فالمُنفِّذ لا يمتلك أي بيانات اعتماد لحاويات التخزين الخاصة بك أو لـ IAM، ولذلك لا يمكنه المساس بها.
 
 أما الباقي فتزيله بالأمر `clicklink clctl executor teardown` مع تشغيله ببيانات الاعتماد الخاصة بك. وهو يزيل افتراضيًا دور IAM ويُبقي على البيانات والنسخ الاحتياطية، أما حذفها فيتطلب تمرير خيارات صريحة. راجع [حذف خدمة](/ar/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
-### أين أجد كلمة مرور المستخدم default؟
+### أين أجد كلمة مرور المستخدم default؟ {#default-user-password}
 
 يولّدها الأمر `clicklink clctl executor prepare` على جهازك ويطبعها مرة واحدة فقط. وإذا أرسلت الطلب باستخدام الخيارات الفردية بدلاً من `--from-prepare`، فإن `clicklink clctl instances create` يقرأها من `--default-user-password-file` أو ينشئها ويطبعها. ولا تُرسل إلى ClickHouse Cloud سوى قيم الـ hashes الخاصة بها، ولذلك لا يمكن للـ موصّل ولا لـ ClickHouse عرضها لك مرة أخرى. احرص على حفظها فور ظهورها.
 
-### كيف أسحب صلاحية وصول ClickHouse؟
+### كيف أسحب صلاحية وصول ClickHouse؟ {#how-do-i-revoke-access}
 
 بالترتيب التصاعدي:
 
@@ -91,7 +91,7 @@ kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 5. **إلغاء بيانات الاعتماد.** احذف مستخدمي ClickHouse ‏`pcm_scraper` و`pcm_troubleshooter`، واحذف أسرار الموصل (Kubernetes) أو الملفات الموجودة ضمن `/etc/clicklink` ‏(جهاز افتراضي).
 6. **إزالة الموصل بالكامل.** راجع [العمليات](/ar/products/bring-your-own-cloud/connector/operations).
 
-### هل يمكنني تشغيل هذا في بيئة معزولة (air-gapped) أو عبر مرايا خاصة بي؟
+### هل يمكنني تشغيل هذا في بيئة معزولة (air-gapped) أو عبر مرايا خاصة بي؟ {#air-gapped-and-mirrors}
 
 نعم. يمكن أن يأتي كل artifact مطلوب وقت التثبيت من داخل حدود شبكتك:
 
@@ -104,7 +104,7 @@ kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 
 راجع [المرايا الخاصة](/ar/products/bring-your-own-cloud/connector/configuration) وقسم البيئات المعزولة في [الإعداد الأولي](/ar/products/bring-your-own-cloud/connector/onboarding). ومع ذلك، يظل الموصّل بحاجة إلى مسار يصل إلى نقطة نهاية الموصّل أثناء التشغيل؛ فبدونه لن تتلقى ClickHouse Cloud أي بيانات قياس عن بُعد ولن يصل أي أمر من أوامر دورة الحياة إلى المُنفِّذ.
 
-### كيف تُدقَّق جلسات الدعم؟
+### كيف تُدقَّق جلسات الدعم؟ {#support-session-auditing}
 
 يُضاف كل أمر يُنفَّذ أثناء الجلسة، سواء قُبل أو حُظر، إلى `/var/log/clicklink/troubleshoot-audit.log` بتنسيق JSON المحدد بأسطر جديدة. ويسجل كل إدخال `submitted_by` (معرّف المؤسسة على قناة الأوامر)، ونص الأمر، والمثيل الهدف، والنتيجة، و`blocked_by` للأوامر المرفوضة. أما طلبات البوابة، بما فيها المرفوضة، فتُسجَّل كأسطر `clctl.gateway` مهيكلة في سجل مستكشف الأخطاء ومصلحها نفسه. وتُنسب إلى البريد الإلكتروني للمشغّل المثبت بالرمز المميز، وليس اسمًا يبلّغه المستخدم بنفسه مطلقًا. وتسجل تغييرات الجلسات المحلية على جهاز افتراضي مستخدم المضيف الذي استدعاها في الحقل `enabled_by` ضمن `/var/lib/clicklink/session.json`.
 

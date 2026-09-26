@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-## object_shared_data_buckets_for_compact_part
+## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
@@ -22,7 +22,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 عدد الحاويات المستخدمة في تسلسل البيانات المشتركة بتنسيق JSON داخل الأجزاء المضغوطة. يعمل مع تسلسلات البيانات المشتركة `map_with_buckets` و`advanced` و`advanced_chunked`.
 الحد الأقصى المسموح به للقيمة هو 256.
 
-## object_shared_data_buckets_for_wide_part
+## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -31,7 +31,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 عدد الحاويات المستخدمة في تسلسل البيانات المشتركة بصيغة JSON في الأجزاء الواسعة. يعمل هذا الإعداد مع تسلسلات البيانات المشتركة `map_with_buckets` و`advanced` و`advanced_chunked`.
 الحد الأقصى المسموح به هو 256.
 
-## object_shared_data_serialization_version
+## object_shared_data_serialization_version {#object_shared_data_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -50,7 +50,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يُحدَّد عدد الحاويات لتسلسلات `map_with_buckets` و`advanced` و`advanced_chunked` من خلال الإعدادات
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part).
 
-## object_shared_data_serialization_version_for_zero_level_parts
+## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts}
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 
@@ -61,7 +61,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 يُنصح بعدم استخدام تسلسل البيانات المشتركة `advanced` أو `advanced_chunked` لأجزاء المستوى الصفري لأنه قد يزيد
 وقت الإدراج بشكل ملحوظ.
 
-## object_shared_data_target_chunk_rows
+## object_shared_data_target_chunk_rows {#object_shared_data_target_chunk_rows}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 

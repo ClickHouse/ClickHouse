@@ -14,9 +14,9 @@ visualiser les requêtes réseau mobiles et les exceptions aux côtés des évé
 
 <ClickStackIntegrates signals={['traces']} />
 
-## Prise en main
+## Prise en main {#getting-started}
 
-### Installer avec NPM
+### Installer avec NPM {#install-via-npm}
 
 Utilisez la commande suivante pour installer le [paquet ClickStack pour React Native](https://www.npmjs.com/package/@hyperdx/otel-react-native).
 
@@ -24,7 +24,7 @@ Utilisez la commande suivante pour installer le [paquet ClickStack pour React Na
 npm install @hyperdx/otel-react-native
 ```
 
-### Initialiser ClickStack
+### Initialiser ClickStack {#initialize-clickstack}
 
 Initialisez la bibliothèque dès que possible dans le cycle de vie de votre application :
 
@@ -39,7 +39,7 @@ HyperDXRum.init({
 });
 ```
 
-### Associer des informations utilisateur ou des métadonnées (facultatif)
+### Associer des informations utilisateur ou des métadonnées (facultatif) {#attach-user-information-metadata}
 
 L’association d’informations utilisateur vous permettra de rechercher/filtrer des sessions et des événements
 dans HyperDX. Cela peut être appelé à tout moment pendant la session du client. La
@@ -60,7 +60,7 @@ HyperDXRum.setGlobalAttributes({
 });
 ```
 
-### Instrumenter les versions antérieures
+### Instrumenter les versions antérieures {#instrument-lower-versions}
 
 Pour instrumenter les applications qui s’exécutent sur des versions de React Native antérieures à 0.68,
 modifiez votre fichier `metro.config.js` afin de forcer metro à utiliser des
@@ -106,7 +106,7 @@ module.exports = {
 };
 ```
 
-## Navigation entre les vues
+## Navigation entre les vues {#view-navigation}
 
 Les versions 5 et 6 de [react-navigation](https://github.com/react-navigation/react-navigation) sont prises en charge.
 

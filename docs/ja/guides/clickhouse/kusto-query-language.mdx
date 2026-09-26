@@ -22,7 +22,7 @@ StormEvents
 
 `SET dialect = 'clickhouse'` を実行すると、元に戻せます。KQL ダイアレクトが有効な間に認識される SQL ステートメントは `SET` だけなので、セッションはいつでもこの状態から抜け出せます。
 
-## サポート対象
+## サポート対象 {#what-is-supported}
 
 これは意図的に限定されたサブセットです。KQL 構文は、Kusto のドキュメントで定義されているセマンティクスに従って変換されるか、名前を示したパースエラーとして拒否されます。暗黙的に近似されることはありません。
 クエリが解析できた場合、その結果は Kusto&#39;s の結果と一致することを意図しています。
@@ -87,7 +87,7 @@ StormEvents
 `range` が最も分かりやすい例です。Kusto では `range(1, 3, 1)` は `[1, 2, 3]` ですが、
 ClickHouse では `[1, 2]` になるため、KQL でこれを記述すると誤った結果ではなくエラーになります。
 
-## Kusto リファレンスに対するカバレッジ
+## Kusto リファレンスに対するカバレッジ {#coverage-against-the-kusto-reference}
 
 Microsoft が公開している索引
  ([表形式演算子](https://learn.microsoft.com/en-us/kusto/query/queries)、
@@ -103,7 +103,7 @@ Microsoft が公開している索引
 サポート対象の演算子は、Microsoft の *Learn common operators* チュートリアルで取り上げられているものに、
 `datatable`、`range`、`print`、`union`、`join` を加えたものです。これらにより、そのチュートリアルと KQL Quick Reference で扱われる形式のクエリを十分にカバーできます。
 
-## サポートされていないもの
+## サポートされていないもの {#what-is-not-supported}
 
 誤訳されるのではなく、パースエラーとして拒否されます。
 
@@ -139,7 +139,7 @@ Microsoft が公開している索引
   `declare query_parameters`、`restrict access to`。
 * 難読化された文字列リテラル (`h"..."`) および複数行リテラル (トリプルバッククォート) 。
 
-## 知っておくべき動作
+## 知っておくべき動作 {#behaviour-worth-knowing}
 
 * **期間は `Interval` 値です。** `1d` は `toIntervalNanosecond(86400000000000)` になります。
   数値ではなく Kusto 形式 (`1.00:00:00`) で表示するには、
@@ -174,6 +174,6 @@ Microsoft が公開している索引
 * **ClickHouse のパラメトリック集約関数** (`quantileExact(0.5)(x)`) には KQL での表記がありません。
   `medianExact(x)` などの名前付き代替関数を使用してください。
 
-## 問題の報告
+## 問題の報告 {#reporting-a-problem}
 
 パースはされるものの、Kusto では返されない結果を返すクエリはバグです。両方の結果を添えて報告してください。拒否されるものの必要なクエリは機能リクエストです。上記の一覧は、拒否されるすべての名前を列挙するのではなく、その境界を示すものです。特定のクエリについては、パースエラーそのものが正式な回答であり、これらはいずれも恒久的なものではありません。

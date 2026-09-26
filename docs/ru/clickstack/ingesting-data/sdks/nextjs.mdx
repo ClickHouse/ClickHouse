@@ -18,9 +18,9 @@ ClickStack может принимать нативные трассировки
   Если вам нужно воспроизведение сеанса или мониторинг в браузере, установите вместо этого [браузерную интеграцию](/ru/clickstack/ingesting-data/sdks/browser).
 </Note>
 
-## Установка
+## Установка {#installing}
 
-### Включите хук инструментирования (обязательно для v15 и ниже)
+### Включите хук инструментирования (обязательно для v15 и ниже) {#enable-instrumentation-hook}
 
 Для начала нужно включить хук инструментирования Next.js, задав `experimental.instrumentationHook = true;` в файле `next.config.js`.
 
@@ -47,7 +47,7 @@ const nextConfig = {
 module.exports = nextConfig;
 ```
 
-### Установка SDK OpenTelemetry для ClickHouse
+### Установка SDK OpenTelemetry для ClickHouse {#install-sdk}
 
 <Tabs>
   <Tab title="NPM">
@@ -63,7 +63,7 @@ module.exports = nextConfig;
   </Tab>
 </Tabs>
 
-### Создайте файлы для инструментирования
+### Создайте файлы для инструментирования {#create-instrumentation-files}
 
 Создайте файл с именем `instrumentation.ts` (или `.js`) в корневом каталоге проекта Next.js со следующим содержимым:
 
@@ -82,7 +82,7 @@ export async function register() {
 
 Это позволит Next.js импортировать инструментирование OpenTelemetry при любом вызове бессерверной функции.
 
-### Настройка переменных окружения
+### Настройка переменных окружения {#configure-environment-variables}
 
 Если вы отправляете трассировки напрямую в ClickStack через OpenTelemetry, запустите сервер Next.js
 со следующими переменными окружения, чтобы отправлять спаны в OTel collector:

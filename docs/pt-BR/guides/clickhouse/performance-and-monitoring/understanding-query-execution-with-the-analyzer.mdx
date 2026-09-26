@@ -33,7 +33,7 @@ Agora que temos alguns dados no ClickHouse, queremos executar algumas consultas 
 
 Vamos ver cada elemento em ação durante a execução da consulta. Vamos usar algumas consultas e depois examiná-las com a instrução `EXPLAIN`.
 
-## Parser
+## Parser {#parser}
 
 O objetivo de um parser é transformar o texto da consulta em uma AST (árvore sintática abstrata). Este passo pode ser visualizado usando `EXPLAIN AST`:
 
@@ -81,7 +81,7 @@ graph TD
 
 Cada nó tem filhos correspondentes, e a árvore como um todo representa a estrutura geral da sua consulta. Trata-se de uma estrutura lógica que ajuda no processamento de uma consulta. Do ponto de vista do usuário final (a menos que haja interesse na execução de consultas), ela não é tão útil; essa ferramenta é usada principalmente por desenvolvedores.
 
-## Analisador
+## Analisador {#analyzer}
 
 O analisador vem habilitado por padrão desde o ClickHouse `24.3` e é a única forma de análise de consultas desde a versão `26.9`, quando `enable_analyzer` se tornou uma configuração obsoleta que não pode mais ser desabilitada.
 
@@ -141,7 +141,7 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 Entre as duas execuções, é possível observar a resolução dos aliases e das projeções.
 
 <div id="planner">
-  ## Planejador
+  ## Planejador {#planner}
 </div>
 
 O planejador recebe uma árvore de consulta e, a partir dela, gera um plano de consulta. A árvore de consulta nos diz o que queremos fazer com uma consulta específica, e o plano de consulta nos diz como isso será feito. Otimizações adicionais também são aplicadas como parte do plano de consulta. Você pode usar `EXPLAIN PLAN` ou `EXPLAIN` para ver o plano de consulta (`EXPLAIN` executa `EXPLAIN PLAN`).
@@ -261,7 +261,7 @@ GROUP BY type
 Agora você pode ver todas as entradas, funções, aliases e tipos de dados em uso. Você pode ver algumas das otimizações que o planejador vai aplicar [aqui](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h).
 
 <div id="query-pipeline">
-  ## Pipeline de consulta
+  ## Pipeline de consulta {#query-pipeline}
 </div>
 
 Um pipeline de consulta é gerado a partir do plano de consulta. O pipeline de consulta é muito semelhante ao plano de consulta, com a diferença de que não é uma árvore, mas um grafo. Ele mostra como o ClickHouse executará uma consulta e quais recursos serão utilizados. Analisar o pipeline de consulta é muito útil para identificar onde está o gargalo em termos de entradas/saídas. Vamos usar nossa consulta anterior e observar a execução do pipeline de consulta:
@@ -462,7 +462,7 @@ digraph
 Assim, o executor decidiu não paralelizar as operações porque o volume de dados não era grande o suficiente. Ao adicionar mais linhas, o executor passou a usar várias threads, como mostrado no grafo.
 
 <div id="executor">
-  ## Executor
+  ## Executor {#executor}
 </div>
 
 Por fim, a última etapa da execução da consulta é realizada pelo executor. Ele recebe o pipeline da consulta e o executa. Há diferentes tipos de executores, dependendo de você estar fazendo um `SELECT`, um `INSERT` ou um `INSERT SELECT`.

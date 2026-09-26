@@ -14,7 +14,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在 managed 模式下，连接器会运行第三个组件 executor。ClickHouse Cloud 正是通过它在你的 Kubernetes 集群中运维 ClickHouse 服务。本页介绍如何创建服务、如何查看服务的 status、ClickHouse Cloud 会对其执行哪些操作，以及它如何退役。
 
-## managed 模式的作用
+## managed 模式的作用 {#what-managed-mode-does}
 
 executor 是一个守护进程，与 scraper、troubleshooter 一同包含在 `clicklink` 二进制文件中。它与你的连接器端点之间维持一条出站 WebSocket 通道，并从 ClickHouse Cloud 接收生命周期命令。它会将每条命令应用到为其配置的那一个 Kubernetes 集群上，并通过该通道回报执行结果。与其他组件一样，它只发起出站连接：ClickHouse Cloud 绝不会主动连入你的集群，executor 的本地 API 也仅绑定在回环地址上。
 
@@ -24,13 +24,13 @@ managed 模式在私有预览期间，在使用 S3 存储的 Amazon EKS 上提�
 
 在虚拟机上，executor 以 `clicklink-executor` systemd 单元的形式与另外两个组件一同运行。在 Kubernetes 上，它是连接器命名空间中的单副本 Deployment。它在端口 8086 上提供健康检查和指标，并在 `127.0.0.1:9999` 上提供本地 API。
 
-## 启用 managed 模式
+## 启用 managed 模式 {#enable-managed-mode}
 
 managed 模式在 enroll 时选定：向 `clicklink clctl init` 传入 `--managed`，或在终端中响应提示。在 VM 上，`init` 会从当前主机的 kubeconfig 中读取集群 (若其中包含多个 EKS 集群，则通过 `--cluster-name` 指定) ，并以 Inline 方式授予 executor 的集群级访问权限。在 Kubernetes 上，请通过 `--egress-cidrs` 传入连接器端点的 CIDR，使 chart 在部署时默认启用其 default-deny NetworkPolicy。
 
 安装过程本身没有变化。完整流程请参阅 [onboarding](/zh/products/bring-your-own-cloud/connector/onboarding#install-and-enroll)，各命令行参数说明请参阅 [CLI reference](/zh/products/bring-your-own-cloud/connector/reference/cli#init)。
 
-## 创建服务
+## 创建服务 {#create-a-service}
 
 通过连接器端点创建服务的功能按环境逐一启用；开始之前请与你的客户团队确认。
 
@@ -118,7 +118,7 @@ managed 模式在 enroll 时选定：向 `clicklink clctl init` 传入 `--manage
   </Step>
 </Steps>
 
-## 状态
+## 状态 {#status}
 
 executor 通过其本地 API 响应状态查询，该 API 绑定在 `127.0.0.1:9999` 上，自身不提供任何身份验证。在 VM 上，直接在主机上运行以下命令；在 Kubernetes 上，请先开启端口转发，再让命令指向转发地址：
 
@@ -140,7 +140,7 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
 
 executor 会记录 ClickHouse Cloud 下发的每一条命令。`clicklink clctl commands list` 可输出这些命令，并支持通过 `--status` (`pending`、`running`、`completed`、`failed`) 、`--action` (例如 `create_instance`) 或 `--cluster` 进行过滤。`clicklink clctl commands get <id>` 会输出单条命令及其 stage 和结果。失败命令的 `result` 中包含错误信息：例如某次创建为何未能收敛，或哪个[平台更新](/zh/products/bring-your-own-cloud/connector/platform-updates)正在等待您的批准。
 
-## 服务生命周期
+## 服务生命周期 {#service-lifecycle}
 
 服务创建后，ClickHouse Cloud 会通过 executor 对其进行运维，所下发的命令包括：
 
@@ -159,7 +159,7 @@ executor 会记录 ClickHouse Cloud 下发的每一条命令。`clicklink clctl 
 
 `instances scale`、`instances patch` 和 `instances delete` 子命令会绕过 ClickHouse Cloud，直接向 executor 的本地 API 提交命令。仅在客户团队要求时才执行这些命令；[CLI reference](/zh/products/bring-your-own-cloud/connector/reference/cli#instances-scale) 说明了各个命令的作用。
 
-## managed service 的 support sessions
+## managed service 的 support sessions {#support-sessions}
 
 executor 会将 scraper 接入它创建的每个 服务，但不会 provision troubleshooter，因此在你完成该操作之前，[support session](/zh/products/bring-your-own-cloud/connector/support-sessions) 无法对 managed service 运行诊断。请为每个 服务 各 provision 一次，使用 服务 命名空间 `ns-<name>`，方式与自行注册的 instance 相同：
 
@@ -189,7 +189,7 @@ executor 会将 scraper 接入它创建的每个 服务，但不会 provision tr
 
 请按上文所示使用 SQL 为 ClickHouse 用户 授权。通过 `--ch-user-via cr` 添加的用户无法保留：服务 定义归 ClickHouse Cloud 所有，并会被其重新应用。删除 服务 时，executor 会移除 VM 上 troubleshooter 的 bundle；而在 Kubernetes 上，bundle 对应的 Secret 和 ServiceAccount 会一直保留，需要你手动删除，详见[卸载](/zh/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes)。
 
-## 删除服务
+## 删除服务 {#delete-a-service}
 
 连接器端点并未提供面向客户的删除命令：请联系您的客户团队删除该服务。ClickHouse Cloud 会终止该服务，executor 随即删除 workload 及其命名空间 (状态先变为 `terminating`，再变为 `terminated`) 。AWS 侧不会有任何改动：桶、桶中的数据以及 IAM role 都会保留，直到您自行删除。
 
@@ -220,7 +220,7 @@ executor 会将 scraper 接入它创建的每个 服务，但不会 provision tr
 
 若不加 `--yes`，命令会在记录步骤后停止，并列出将被清空的桶名称。`--dry-run` 只读取，不做任何写入。对于您通过 `--role-arn` 自带的 role，或并非由 `prepare` 创建的桶，命令会将其报告为保留，并且不会做任何改动。若该服务的命名空间中仍存在 ClickHouse 集群，命令会拒绝执行。由于它会在删除任何内容之前先读取全部信息，被拒绝的执行不会造成任何更改。
 
-## 当连接器离线时
+## 当连接器离线时 {#when-the-connector-is-offline}
 
 正在运行的 服务 并不依赖 executor。集群中的 ClickHouse operator 会维持它们继续运行，连接器断开不会中断任何正在提供查询服务的负载。
 

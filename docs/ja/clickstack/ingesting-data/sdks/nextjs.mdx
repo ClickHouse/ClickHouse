@@ -18,9 +18,9 @@ ClickStack は、Next 13.2+ の
   セッションリプレイやブラウザー側の監視が必要な場合は、代わりに [Browser インテグレーション](/ja/clickstack/ingesting-data/sdks/browser) をインストールしてください。
 </Note>
 
-## インストール
+## インストール {#installing}
 
-### インストルメンテーション フックを有効にする (v15 以下では必須)
+### インストルメンテーション フックを有効にする (v15 以下では必須) {#enable-instrumentation-hook}
 
 まず、`next.config.js` で `experimental.instrumentationHook = true;` を設定して、Next.js のインストルメンテーション フックを有効にする必要があります。
 
@@ -47,7 +47,7 @@ const nextConfig = {
 module.exports = nextConfig;
 ```
 
-### ClickHouse OpenTelemetry SDK のインストール
+### ClickHouse OpenTelemetry SDK のインストール {#install-sdk}
 
 <Tabs>
   <Tab title="NPM">
@@ -63,7 +63,7 @@ module.exports = nextConfig;
   </Tab>
 </Tabs>
 
-### インストルメンテーション用ファイルを作成する
+### インストルメンテーション用ファイルを作成する {#create-instrumentation-files}
 
 Next.js プロジェクトのルートに、次の内容で `instrumentation.ts` (または `.js`) という名前のファイルを作成します。
 
@@ -82,7 +82,7 @@ export async function register() {
 
 これにより、Next.js はサーバーレス関数が呼び出されるたびに OpenTelemetry のインストルメンテーションをインポートできるようになります。
 
-### 環境変数を設定する
+### 環境変数を設定する {#configure-environment-variables}
 
 OpenTelemetry 経由でトレースを ClickStack に直接送信する場合は、スパンの送信先が OTel collector になるように、以下の環境変数を設定して Next.js
 サーバーを起動する必要があります。

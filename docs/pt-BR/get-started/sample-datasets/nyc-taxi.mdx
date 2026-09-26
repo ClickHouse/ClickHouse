@@ -361,7 +361,7 @@ import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCo
     </Step>
   </Steps>
 
-  ## Próximos passos
+  ## Próximos passos {#next-steps}
 
   Saiba mais sobre o ClickHouse na documentação a seguir:
 
@@ -385,7 +385,7 @@ import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCo
     [&quot;Especificações do Playground&quot;](/pt-BR/get-started/sample-datasets/playground#specifications).
   </Note>
 
-  ## Criar a tabela trips
+  ## Criar a tabela trips {#create-the-table-trips}
 
   Comece criando uma tabela para as corridas de táxi:
 
@@ -416,7 +416,7 @@ import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCo
   PRIMARY KEY (pickup_datetime, dropoff_datetime);
   ```
 
-  ## Carregue os dados diretamente do armazenamento de objetos
+  ## Carregue os dados diretamente do armazenamento de objetos {#load-the-data-directly-from-object-storage}
 
   Os usuários podem obter um pequeno subconjunto dos dados (3 milhões de linhas) para se familiarizar com eles. Os dados estão em arquivos TSV no armazenamento de objetos, de onde podem ser facilmente transmitidos para o
   ClickHouse Cloud usando a função de tabela `s3`.
@@ -485,7 +485,7 @@ import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCo
     </Tab>
   </Tabs>
 
-  ## Consultas de exemplo
+  ## Consultas de exemplo {#sample-queries}
 
   As consultas a seguir são executadas na amostra descrita acima. Você pode executar as consultas de exemplo no conjunto de dados completo em [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19), modificando as consultas abaixo para usar a tabela `nyc_taxi.trips`.
 
@@ -547,7 +547,7 @@ import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCo
   ORDER BY passenger_count ASC
   ```
 
-  ## Download das partições preparadas
+  ## Download das partições preparadas {#download-of-prepared-partitions}
 
   <Note>
     As etapas a seguir apresentam informações sobre o conjunto de dados original e um método para carregar partições preparadas em um ambiente com servidor ClickHouse autogerenciado.
@@ -573,7 +573,7 @@ import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCo
     Se você for executar as consultas descritas abaixo, precisará usar o nome completo da tabela, `datasets.trips_mergetree`.
   </Info>
 
-  ## Resultados em um único servidor
+  ## Resultados em um único servidor {#results-on-single-server}
 
   Q1:
 
@@ -657,7 +657,7 @@ import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCo
   Nesse caso, o tempo de processamento da consulta é determinado principalmente pela latência de rede.
   Executamos as consultas a partir de um cliente localizado em um datacenter diferente daquele em que o cluster estava, o que acrescentou cerca de 20 ms de latência.
 
-  ## Resumo
+  ## Resumo {#summary}
 
   | servidores         | Q1    | Q2    | Q3    | Q4    |
   | ------------------ | ----- | ----- | ----- | ----- |

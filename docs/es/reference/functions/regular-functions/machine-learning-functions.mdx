@@ -6,19 +6,19 @@ title: 'Funciones de aprendizaje automático'
 doc_type: 'reference'
 ---
 
-## evalMLMethod
+## evalMLMethod {#evalmlmethod}
 
 La predicción con modelos de regresión ajustados se realiza con la función `evalMLMethod`. Consulte el enlace en `linearRegression`.
 
-## stochasticLinearRegression
+## stochasticLinearRegression {#stochasticlinearregression}
 
 La [stochasticLinearRegression](/es/reference/functions/aggregate-functions/stochasticLinearRegression) función de agregado implementa el método de descenso de gradiente estocástico con un modelo lineal y la función de pérdida MSE. Usa `evalMLMethod` para hacer predicciones sobre datos nuevos.
 
-## stochasticLogisticRegression
+## stochasticLogisticRegression {#stochasticlogisticregression}
 
 La función de agregado [stochasticLogisticRegression](/es/reference/functions/aggregate-functions/stochasticLogisticRegression) implementa el método de descenso de gradiente estocástico para un problema de clasificación binaria. Usa `evalMLMethod` para hacer predicciones sobre datos nuevos.
 
-## naiveBayesClassifier
+## naiveBayesClassifier {#naivebayesclassifier}
 
 Clasifica el texto de entrada mediante un modelo de Naive Bayes con n-gramas y suavizado de Laplace. El modelo debe configurarse en ClickHouse antes de usarlo.
 
@@ -58,7 +58,7 @@ SELECT naiveBayesClassifier('language', 'How are you?');
 
 ***
 
-### Detalles de implementación
+### Detalles de implementación {#implementation-details}
 
 **Algoritmo**
 Utiliza el algoritmo de clasificación Naive Bayes con [suavizado de Laplace](https://en.wikipedia.org/wiki/Additive_smoothing) para manejar n-gramas no observados, a partir de probabilidades de n-gramas según [esto](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
@@ -73,7 +73,7 @@ Utiliza el algoritmo de clasificación Naive Bayes con [suavizado de Laplace](ht
 
 ***
 
-### Configuración del modelo
+### Configuración del modelo {#model-configuration}
 
 Puede encontrar [aquí](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models) código fuente de ejemplo para crear un modelo de Naive Bayes para la detección de idiomas.
 

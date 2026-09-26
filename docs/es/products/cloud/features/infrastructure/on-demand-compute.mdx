@@ -31,7 +31,7 @@ On-Demand Compute aprovecha capabilities completamente nuevas:
 * Un nuevo [CBO](https://github.com/ClickHouse/ClickHouse/pull/86353) (cost-based optimizer)
 * Una nueva [distributed query execution](https://clickhouse.com/blog/multi-stage-distributed-query-execution-clickhouse-cloud)
 
-## Cuándo usar On-Demand Compute
+## Cuándo usar On-Demand Compute {#when-to-use-on-demand-compute}
 
 Durante la private preview, use On-Demand Compute para las consultas `SELECT` elegibles y de uso intensivo de compute que desee ejecutar fuera del compute del primary service:
 
@@ -42,7 +42,7 @@ Durante la private preview, use On-Demand Compute para las consultas `SELECT` el
 
 La private preview solo admite consultas `SELECT`. Los workers no ejecutan consultas `INSERT`, DDL, mutations ni background operations.
 
-## Cómo funciona
+## Cómo funciona {#how-it-works}
 
 1. Envías una consulta `SELECT` elegible a tu ClickHouse Cloud service solicitando un número específico de workers. Tu endpoint, la authentication y la configuración de RBAC no cambian
 2. Tu cluster se conecta entonces al grupo y solicita el número de workers especificado
@@ -53,9 +53,9 @@ La private preview solo admite consultas `SELECT`. Los workers no ejecutan consu
 
 Durante el private preview, cada worker cuenta con `8 vCPUs` y `32 GiB` de memoria. Usa `distributed_plan_workers_num` para especificar cuántos workers solicita la consulta.
 
-## Uso de compute bajo demanda
+## Uso de compute bajo demanda {#using-on-demand-compute}
 
-### Settings
+### Settings {#settings}
 
 Utilice estos ajustes para empezar a usar on-demand compute:
 
@@ -70,7 +70,7 @@ Utilice estos ajustes para empezar a usar on-demand compute:
   Durante la versión preliminar, defina los ajustes a nivel de consulta o cree un usuario aparte con ajustes distintos. De este modo queda claro qué sentencias usan On-Demand Compute.
 </Tip>
 
-### Ejemplo
+### Ejemplo {#example}
 
 Algunas consultas no se pueden distribuir entre los workers:
 
@@ -121,7 +121,7 @@ SETTINGS
 
 Esta consulta solicita cinco workers. La cantidad de workers que proporciona ClickHouse depende del límite de la vista previa privada y de la capacidad disponible del grupo.
 
-### Consultas concurrentes
+### Consultas concurrentes {#concurrent-queries}
 
 Las consultas concurrentes de un mismo ClickHouse Cloud service pueden compartir los workers asignados. ClickHouse solicita workers adicionales únicamente cuando una consulta necesita más workers de los que ya están asignados al service.
 
@@ -144,7 +144,7 @@ SELECT ... SETTINGS make_distributed_plan = 1, distributed_plan_workers_num = 5,
 
 Esa consulta se ejecuta en los tres workers existentes más dos workers recién adquiridos en lease.
 
-### Cuando el grupo no puede satisfacer la solicitud
+### Cuando el grupo no puede satisfacer la solicitud {#pool-capacity}
 
 La disponibilidad de workers no está garantizada durante la private preview. Si hay menos workers disponibles de los solicitados, la consulta se ejecuta con los workers que ClickHouse pueda asignar. Por ejemplo, una solicitud de cinco workers puede ejecutarse con tres.
 
@@ -152,11 +152,11 @@ Si no se puede arrendar ningún worker, la consulta falla.
 
 Reintente la consulta. Si el problema persiste, póngase en contacto con el equipo de su cuenta de ClickHouse: es posible que el grupo de vista previa esté agotado o mal dimensionado.
 
-## Monitoring
+## Monitoring {#monitoring}
 
 Utiliza `system.query_log` en tu service para saber cuántos workers se asignaron a tu consulta.
 
-### Número de workers asignados
+### Número de workers asignados {#worker-provided}
 
 ```sql
 SELECT
@@ -187,7 +187,7 @@ SETTINGS
     log_comment = 'on-demand-private-preview'
 ```
 
-## Regiones disponibles
+## Regiones disponibles {#available-regions}
 
 On-Demand Compute es regional: los workers se ejecutan en la misma región que su servicio.
 
@@ -198,7 +198,7 @@ On-Demand Compute es regional: los workers se ejecutan en la misma región que s
 
 Si su región no aparece, solicítela en la [lista de espera](https://clickhouse.com/cloud/on-demand-compute-waitlist). Habilitaremos más regiones en función de la demanda.
 
-## Precios
+## Precios {#pricing}
 
 Durante la private preview, On-Demand Compute es gratuito, con un límite de uso (consulte [Limitaciones](#limitations)). Consulte a su account team de ClickHouse si necesita ampliar ese límite.
 
@@ -206,7 +206,7 @@ Los precios se aplicarán cuando finalice la preview. Se notificará a los parti
 
 El modelo previsto es el mismo que el del compute de ClickHouse Cloud: se paga por el compute que se utiliza (tiempo de worker en lease), no por los datos escaneados ni por las filas leídas.
 
-## Limitaciones
+## Limitaciones {#limitations}
 
 Durante la private preview se aplican las siguientes limitaciones. Pueden existir otras. Informe de cualquier comportamiento inesperado al soporte de ClickHouse o a su account team.
 
@@ -219,7 +219,7 @@ Durante la private preview se aplican las siguientes limitaciones. Pueden existi
 * **Rendimiento.** El rendimiento varía según la consulta. La asignación de workers, la planificación distribuida y la transferencia de las etapas del plan pueden añadir latency. Algunas formas de consulta pueden rendir peor que si se ejecutaran en el primary service (sus consultas habituales de menos de un segundo probablemente rendirán mejor en su cluster)
 * **Compatibilidad de consultas.** El distributed planner no puede ejecutar de forma remota todos los query plans. Las consultas no compatibles pueden devolver una excepción `SUPPORT_IS_DISABLED`.
 
-## Roadmap
+## Roadmap {#roadmap}
 
 On-Demand Compute es un punto de partida. Trabajos en curso o previstos:
 
@@ -233,7 +233,7 @@ On-Demand Compute es un punto de partida. Trabajos en curso o previstos:
 * Permisos dedicados para On-Demand Compute
 * Ampliación de las cargas de trabajo de lago de datos (escritura, compaction, etc...)
 
-## Seguridad
+## Seguridad {#security}
 
 Los workers provienen de un grupo precalentado que se comparte entre los services de una misma región, por lo que existe una regla no negociable: un worker atiende a un único service a la vez y nunca se traspasa de un service a otro.
 
@@ -246,7 +246,7 @@ La forma de acceder a ClickHouse no cambia en absoluto. Los clients siguen conec
 * **Sus access controls existentes siguen vigentes:** las IP access lists y los private endpoints rigen su service endpoint exactamente igual que antes. On-Demand Compute no añade ningún endpoint que deba configurar o proteger.
 * **Su authentication y RBAC actuales:** las consultas se ejecutan con el mismo USER y los mismos privileges que cualquier otra consulta de su service. Los workers no tienen una identity ni un modelo de permission propios.
 
-### Aislamiento de red
+### Aislamiento de red {#network-isolation}
 
 Mientras un worker está arrendado a tu service, la plataforma permite el tráfico de red entre ese worker y tu service, y bloquea todo lo demás. La restricción se aplica en la capa de red y no en el query engine, por lo que no depende de la consulta, de sus settings ni del plan que genere el optimizer.
 
@@ -258,7 +258,7 @@ Mientras un worker está arrendado a tu service, la plataforma permite el tráfi
 * **El path se elimina junto con el worker.** Finalizar un lease destruye el worker, con lo que desaparece lo único que el tráfico tenía permitido alcanzar.
 * **El path de las requests se mantiene acotado.** Tu service se comunica con el servicio de asignación de workers para arrendar y renovar workers. Ese path no transporta datos de consultas y se limita a la assignment API.
 
-### Autenticación y autorización internas
+### Autenticación y autorización internas {#authentication-and-authorization}
 
 El aislamiento de red determina qué puede llegar a un worker. La autenticación determina qué se le permite hacer a un llamador una vez que llega allí, y ambos mecanismos se aplican de forma independiente: un llamador debe cumplir con los dos.
 
@@ -278,7 +278,7 @@ Cada connection entre su service, el servicio de asignación de workers y los wo
   Estas credenciales son internas al modo en que ClickHouse Cloud ejecuta su consulta. Nunca se exponen a sus clients y no guardan relación con la forma en que usted se autentica en ClickHouse: los clients siguen conectándose con sus credenciales existentes, y los privilegios de consulta continúan regidos por el RBAC de su service.
 </Note>
 
-## FAQ
+## FAQ {#faq}
 
 <AccordionGroup>
   <Accordion title="¿On-Demand Compute es open source?">

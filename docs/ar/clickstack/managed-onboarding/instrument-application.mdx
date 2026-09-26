@@ -17,13 +17,13 @@ import InstrumentApplication from '/snippets/ar/clickstack/_instrument_applicati
 
 يفترض هذا الدليل أنك أكملت [إعداد OpenTelemetry Collector](/ar/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) وأن لديك مجمّع ClickStack قيد التشغيل ويمكن الوصول إليه من الجهاز الذي تشغّل عليه هذا التطبيق. **تأكد من أنك دوّنت نقطة نهاية OTLP الخاصة به** و`OTLP_AUTH_TOKEN` الذي عيّنته عند نشره. ستضع هذه القيم في `.env` قبل تزويده بأدوات الرصد.
 
-## المتطلبات الأساسية
+## المتطلبات الأساسية {#prerequisites}
 
 * مجمّع ClickStack يمكن الوصول إليه من هذا الجهاز. إذا لم تكن قد نشرت واحدًا بعد، فاتبع أولًا [إعداد OpenTelemetry Collector](/ar/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector).
 * نقطة نهاية OTLP/HTTP لذلك المجمّع (عادةً المنفذ `4318`) و`OTLP_AUTH_TOKEN` الذي ضبطته عليه. استخدمهما كـ`OTEL_EXPORTER_OTLP_ENDPOINT` و`OTEL_EXPORTER_OTLP_HEADERS=authorization=<token>`.
 * Node 18+ وnpm.
 
-## استنسخ المستودع
+## استنسخ المستودع {#clone-the-repository}
 
 استنسخ [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)، وثبّت التبعيات، وانسخ قالب ملف البيئة:
 
@@ -38,7 +38,7 @@ cp .env.example .env
 
 <InstrumentApplication />
 
-## للمزيد من القراءة
+## للمزيد من القراءة {#further-reading}
 
 * [مراقبة Kubernetes](/ar/clickstack/managed-onboarding/monitoring-kubernetes): اجمع السجلات، ومقاييس البنية التحتية، وأحداث Kubernetes من عنقود.
 * [مراقبة سجلات AWS CloudWatch](/ar/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): مرّر سجلات CloudWatch عبر مستقبل CloudWatch في OpenTelemetry.

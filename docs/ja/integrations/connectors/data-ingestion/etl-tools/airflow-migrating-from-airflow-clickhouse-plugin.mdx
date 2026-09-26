@@ -11,7 +11,7 @@ keywords: ['Apache Airflow', 'airflow-clickhouse-plugin', 'migration', 'clickhou
 [airflow-clickhouse-plugin](https://github.com/bryzgaloff/airflow-clickhouse-plugin) を介して
 ClickHouse に接続していました。本ガイドでは、既存のデプロイメントを `apache-airflow-providers-clickhousedb` へ移行する手順を説明します。プロバイダ自体の動作については、[Apache Airflow と ClickHouse の接続](/ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse)を参照してください。
 
-## なぜネイティブプロバイダなのか？
+## なぜネイティブプロバイダなのか？ {#why-a-native-provider}
 
 プロバイダは、Airflow がサードパーティ製システムと連携するための仕組みです。Airflow エコシステムの他の構成要素と同じタイミングでリリース・テスト・ドキュメント化されており、本プロバイダは Airflow コミュニティと ClickHouse チームが共同でメンテナンスしています。コミュニティがメンテナンスするドライバーではなく、ClickHouse 自身が開発・サポートする Python クライアントである [clickhouse-connect](/ja/integrations/language-clients/python/index) を基盤としています。そのため、新しいサーバー機能や修正は、サポートされた経路を通じて Airflow ユーザーのもとに届きます。プロバイダに移行すれば、公式の提供元を持つパッケージ、標準の `common.sql` オペレーターとセンサー、そして他のデータベースと同様に Airflow UI に表示される接続タイプが利用できます。
 
@@ -21,7 +21,7 @@ ClickHouse に接続していました。本ガイドでは、既存のデプロ
   変更を加える前に、このガイドを一度通読してください。特に接続の変更は、すべての DAG に同時に影響します。
 </Note>
 
-## 概要
+## 概要 {#at-a-glance}
 
 |                  | `airflow-clickhouse-plugin`                                                           | `apache-airflow-providers-clickhousedb`                                                                                        |
 | ---------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -34,7 +34,7 @@ ClickHouse に接続していました。本ガイドでは、既存のデプロ
 | フック              | `ClickHouseHook` (`BaseHook`) と `ClickHouseDbApiHook` (`DbApiHook`)                   | `ClickHouseHook` (`DbApiHook`) の 1 つのみ                                                                                         |
 | 最小 Airflow バージョン | 2.0                                                                                   | 2.11                                                                                                                           |
 
-## ステップ 1: 前提条件の確認とインストール
+## ステップ 1: 前提条件の確認とインストール {#step-1-check-prerequisites-and-install}
 
 このプロバイダには Airflow 2.11 以降と `apache-airflow-providers-common-sql` 1.32.0 以降が必要です。これより古いバージョンを使用している場合は、まず Airflow をアップグレードしてください。
 
@@ -48,7 +48,7 @@ pip install apache-airflow-providers-clickhousedb
 pip uninstall airflow-clickhouse-plugin clickhouse-driver
 ```
 
-## ステップ 2: connection を更新する
+## ステップ 2: connection を更新する {#step-2-update-connections}
 
 このステップを省略すると動作しなくなります。既存の ClickHouse connection はすべてネイティブポートを指しているため、provider が必要とする HTTP ポートに変更する必要があります。
 
@@ -64,7 +64,7 @@ ClickHouse がファイアウォールや load balancer の背後にある場合
 
 URI として保存されている connection (`clickhouse://user:pass@host:9000/db?secure=true`) の場合、Airflow が URI のスキームから判別するため、接続タイプはすでに `clickhouse` になっています。変更が必要なのはポートと extra のオプションだけです。クエリ文字列の値は JSON としてパースされるため、`secure=true` はブール値のまま扱われます。
 
-### 接続の extra
+### 接続の extra {#connection-extras}
 
 プラグインは `extra` 内のすべてのキーをそのまま `clickhouse_driver.Client` に渡していたため、接続には `clickhouse-driver` の任意のキーワード引数を指定できました。プロバイダは決められたキーのみを読み取り、それ以外は `client_kwargs` 経由で転送します。次のように読み替えてください。
 
@@ -126,7 +126,7 @@ DAG を変更する前に、移行した各 connection を検証します。
 airflow connections test clickhouse_default
 ```
 
-## ステップ3: import の置き換え
+## ステップ3: import の置き換え {#step-3-replace-imports}
 
 | プラグインのクラス                                                                                | プロバイダでの置き換え先                                                         |
 | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
@@ -146,7 +146,7 @@ airflow connections test clickhouse_default
 
 `ClickHouse` プレフィックスが付いた `common.sql` の wrapper は、プラグインの hook を注入するためだけに存在していたものです。プロバイダが `clickhouse` 接続タイプを登録するため、プレフィックスなしの `common.sql` のクラスは connection から hook を自力で解決できます。これらの wrapper を使用していた場合、移行作業は通常、import 行の書き換え、`ClickHouse` プレフィックスの削除、`conn_id` の明示的な指定だけで済みます ([ステップ7](#step-7-the-commonsql-wrapper-family)を参照) 。
 
-## ステップ4: `ClickHouseOperator` から `SQLExecuteQueryOperator` へ
+## ステップ4: `ClickHouseOperator` から `SQLExecuteQueryOperator` へ {#step-4-clickhouseoperator-to-sqlexecutequeryoperator}
 
 | `ClickHouseOperator` の argument    | `SQLExecuteQueryOperator` での同等な指定                       | Notes                                                                                                                                                                                                                                                               |
 | ---------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -213,7 +213,7 @@ update_income_aggregate = SQLExecuteQueryOperator(
 )
 ```
 
-### 複数ステートメントの結果
+### 複数ステートメントの結果 {#multi-statement-results}
 
 このpluginは**最後**のステートメントの結果をXComにプッシュしていました。`SQLExecuteQueryOperator`は`sql`がリストの場合、ステートメントごとに1つの結果を返します。そのため、上記の例では`[[], [(12345.0,)]]`がプッシュされますが、pluginでは`[(12345.0,)]`がプッシュされていました。次のいずれかの対応を行ってください:
 
@@ -252,7 +252,7 @@ load_rows = SQLInsertRowsOperator(
 
 必ず `columns` を渡してください。指定しない場合、operator は SQLAlchemy 経由でテーブルを参照します。
 
-### カラム型を保持する
+### カラム型を保持する {#keeping-column-types}
 
 `with_column_types=True` は `(rows, [(name, type), ...])` を返していました。これはハンドラーを使って再現できます。`clickhouse-connect` のカーソルは、`cursor.description` で ClickHouse の型名を返します:
 
@@ -269,7 +269,7 @@ SQLExecuteQueryOperator(
 )
 ```
 
-## ステップ5: `ClickHouseHook.execute` から `DbApiHook` のメソッドへ
+## ステップ5: `ClickHouseHook.execute` から `DbApiHook` のメソッドへ {#step-5-clickhousehookexecute-to-dbapihook-methods}
 
 プラグインの hook は、`clickhouse_driver.Client.execute` をそのまま反映した `execute` という単一のメソッドのみを公開していました。プロバイダの hook は `DbApiHook` であるため、他のすべての SQL プロバイダと同じ標準メソッド、すなわち `run`、`get_records`、`get_first`、`get_pandas_df`、`get_df`、`insert_rows`、`test_connection` が利用できます。コンストラクタ引数の `clickhouse_conn_id` と `database` は変更ありません。
 
@@ -330,7 +330,7 @@ with hook.get_client() as client:
     columns = result.result_columns
 ```
 
-## ステップ 6: `ClickHouseSensor` から `SqlSensor` へ
+## ステップ 6: `ClickHouseSensor` から `SqlSensor` へ {#step-6-clickhousesensor-to-sqlsensor}
 
 置き換えのなかで、callable への入力が変わるのはこれだけです。
 
@@ -375,7 +375,7 @@ SqlSensor(
 
 呼び出し可能オブジェクトが行全体を必要とする場合は、`selector=lambda row: row` を渡してください。すべての行が必要な場合は、クエリが単一のブール値またはカウントを返すように、チェック処理を SQL 側で記述してください。
 
-## ステップ7: `common.sql` ラッパーファミリー
+## ステップ7: `common.sql` ラッパーファミリー {#step-7-the-commonsql-wrapper-family}
 
 `ClickHouseSQLExecuteQueryOperator`、`ClickHouseSqlSensor`、およびその他の
 `ClickHouse` プレフィックス付きラッパーを使用していたコードは、最も作業が少なくて済みます:
@@ -391,7 +391,7 @@ SqlSensor(
 * 接続には、ステップ2でのポートおよびextrasの変更が引き続き必要です。ラッパーもネイティブ
   プロトコルを使用していたためです。
 
-## 確認すべき動作の違い
+## 確認すべき動作の違い {#behavior-differences-to-review}
 
 コードのコンパイルが通った後でも、実行時の動作が異なる点がいくつかあります。
 
@@ -411,7 +411,7 @@ SqlSensor(
 
 **接続の扱い。** hook は `run` または `get_client` の呼び出しごとに `clickhouse-connect` クライアントを作成します。これは、プラグインが `execute` ごとに新しいネイティブ接続を開いていたのと同じ考え方です。クライアントはプロセス全体で HTTP 接続プールを共有するため、`get_client()` から得たクライアントで `close()` を呼ぶことは必須ではなく、あくまで良い作法にすぎません。プールはタスクのプロセスが終了した時点で解放されます。クライアントはコンテキストマネージャーなので、`with hook.get_client() as client:` と書くのが最もすっきりします。
 
-## チェックリスト
+## チェックリスト {#checklist}
 
 1. Airflow が 2.11 以降であること。
 2. HTTP ポートに worker から到達できること。HTTP エンドポイント用の TLS 証明書が有効であること。
@@ -426,7 +426,7 @@ SqlSensor(
 11. `clickhouse_driver` の exception をキャッチしているコードを更新済みであること。
 12. `airflow-clickhouse-plugin` と `clickhouse-driver` をアンインストール済みであること。
 
-## AIコーディングアシスタントを使う
+## AIコーディングアシスタントを使う {#using-an-ai-coding-assistant}
 
 上記の Mapping は意図的に機械的な内容にしてあるため、コーディングアシスタントに DAG リポジトリへ適用させることができます。実際にうまく機能したプロンプトの例:
 
@@ -452,7 +452,7 @@ Show the diff and a summary of items flagged for human review.
 
 差分を確認してください。connection の変更、センサーのセマンティクス、XCom のコンシューマーは、自動書き換えが失敗しやすい箇所です。
 
-## 関連コンテンツ
+## 関連コンテンツ {#related-content}
 
 * [Apache Airflow を ClickHouse に接続する](/ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse)
 * [`clickhouse-connect` Python クライアント](/ja/integrations/language-clients/python/index)

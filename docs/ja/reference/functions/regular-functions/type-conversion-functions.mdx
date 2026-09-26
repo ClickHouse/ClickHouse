@@ -6,7 +6,7 @@ title: '型変換関数'
 doc_type: 'reference'
 ---
 
-## データ変換に関する一般的な問題
+## データ変換に関する一般的な問題 {#common-issues-with-data-conversion}
 
 ClickHouse は通常、[C++ プログラムと同じ動作](https://en.cppreference.com/w/cpp/language/implicit_conversion)をします。
 
@@ -49,7 +49,7 @@ SETTINGS cast_keep_nullable = 1
 └──────────────────┴─────────────────────┴──────────────────┘
 ```
 
-## `toString` 関数に関する注意事項
+## `toString` 関数に関する注意事項 {#to-string-functions}
 
 `toString` 関数ファミリーでは、数値、文字列 (固定長文字列を除く) 、日付、日時の間で変換できます。
 これらの関数はすべて 1 つの引数を受け取ります。
@@ -59,7 +59,7 @@ SETTINGS cast_keep_nullable = 1
 * 日時を数値に変換する場合、およびその逆の場合、日時は Unix epoch の開始からの秒数に対応します。
 * `DateTime` 型の引数に対する `toString` 関数では、タイムゾーン名 (たとえば `Europe/Amsterdam`) を含む 2 番目の String 型引数を指定できます。この場合、時刻は指定したタイムゾーンに従ってフォーマットされます。
 
-## `toDate`/`toDateTime` 関数に関する注意
+## `toDate`/`toDateTime` 関数に関する注意 {#to-date-and-date-time-functions}
 
 `toDate`/`toDateTime` 関数の日付および日時のフォーマットは、次のように定義されています。
 

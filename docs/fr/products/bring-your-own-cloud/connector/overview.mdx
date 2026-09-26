@@ -12,7 +12,7 @@ import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge
 
 Pour demander l’accès à la private preview, contactez l’équipe en charge de votre compte ClickHouse.
 
-## Ce que fait le connector
+## Ce que fait le connector {#what-the-connector-does}
 
 Le ClickHouse Connector est un composant que vous déployez dans votre propre environnement. Il permet à ClickHouse Cloud de gérer, superviser et prendre en charge des services ClickHouse dans un cluster Kubernetes que vous exploitez. Le connector n&#39;établit que des connexions sortantes et agit sous des identités dont la portée est limitée à ces services. Il est livré sous la forme d&#39;un binaire unique, `clicklink`, qui contient les démons ainsi que l&#39;outillage `clicklink clctl` permettant de les installer et de les exploiter.
 
@@ -26,7 +26,7 @@ Dans un terminal, `init` demande s&#39;il faut activer le mode managé et propos
 
 Toutes les connexions établies par le connector sont sortantes ; ClickHouse Cloud n&#39;en initie jamais vers votre environnement. La page [architecture](/fr/products/bring-your-own-cloud/connector/architecture) répertorie chaque connexion, son protocole et son mode d&#39;authentification.
 
-## Quand l&#39;utiliser
+## Quand l&#39;utiliser {#when-to-use-it}
 
 Déployez le connector lorsque vous souhaitez que ClickHouse Cloud exploite des services ClickHouse au sein de votre propre compte cloud, dans le respect des contraintes suivantes :
 
@@ -35,7 +35,7 @@ Déployez le connector lorsque vous souhaitez que ClickHouse Cloud exploite des 
 * Vos données restent dans des buckets et derrière des IAM roles que vous créez et supprimez vous-même. L&#39;executor ne détient aucun identifiant pour vos buckets ni pour vos IAM roles.
 * L&#39;accès du Support est limité dans le temps, activé par vous et révocable à tout moment. Chaque commande passée lors d&#39;une session de support est consignée dans un audit log qui vous appartient.
 
-## Fonctionnement
+## Fonctionnement {#how-it-works}
 
 Lors de l&#39;onboarding, ClickHouse enregistre votre environnement et fournit votre connector endpoint ainsi qu&#39;un jeton d&#39;inscription à usage unique. Vous exécutez `clicklink clctl init --enroll` une seule fois : depuis un poste de travail disposant d&#39;un accès kubeconfig pour une installation Kubernetes, ou sur l&#39;hôte pour une installation sur VM Linux. Cette commande consomme le jeton, obtient un certificat client mTLS, déploie et démarre les démons, puis vérifie leur health.
 
@@ -47,11 +47,11 @@ Deux actions restent à votre charge. Les updates des composants de plateforme d
 
 Le scraper lit les system tables autorisées par l&#39;allowlist à intervalle fixe et transmet les metrics, les métadonnées et l&#39;état de santé à votre connector endpoint via mTLS. Le troubleshooter maintient ouvert un canal de commandes sortant qui ne transporte rien tant que vous n&#39;avez pas activé de session d&#39;assistance. Le certificat mTLS se renouvelle de lui-même.
 
-## Exécution sans le mode managé
+## Exécution sans le mode managé {#run-without-managed-mode}
 
 Passez `--no-managed` à `clicklink clctl init`, ou répondez non à la question posée, pour n&#39;installer que le scraper et le troubleshooter. Le connector se contente alors d&#39;observer et de prendre en charge les clusters ClickHouse que vous exploitez vous-même ; ClickHouse ne peut ni créer, ni modifier, ni supprimer de services. Le connector se déploie néanmoins lui-même et provisionne des utilisateurs ClickHouse en lecture seule ainsi que des ServiceAccounts ; consultez le [modèle de privilèges](/fr/products/bring-your-own-cloud/connector/reference/privilege-model). C&#39;est également la configuration à retenir pour les cibles que le mode managé ne couvre pas. Le mode managé fonctionne sur Amazon EKS avec un stockage S3 ; l&#39;observability et le support fonctionnent sur n&#39;importe quel cluster Kubernetes conforme ou hôte Linux.
 
-## Aperçu des prérequis
+## Aperçu des prérequis {#requirements-at-a-glance}
 
 * **Une cible de déploiement.** Le mode managé nécessite un cluster Amazon EKS avec du stockage S3. L&#39;observability et le support seuls fonctionnent sur n&#39;importe quel cluster Kubernetes conforme (installé avec le Helm chart) ou sur n&#39;importe quel hôte Linux systemd, amd64 ou arm64.
 * **Enregistrement par ClickHouse.** ClickHouse enregistre votre environnement pour le mode managé et, pendant l&#39;onboarding, vous fournit votre connector endpoint ainsi qu&#39;un jeton d&#39;inscription à usage unique.
@@ -61,7 +61,7 @@ Passez `--no-managed` à `clicklink clctl init`, ou répondez non à la question
 * **Un listener natif ClickHouse joignable** pour les clusters que vous exploitez vous-même, observés par un déploiement de connector distinct fonctionnant sans l&#39;executor. Le scraper et le troubleshooter communiquent avec chaque cluster via le native protocol ; sur Kubernetes, ils détectent automatiquement le mode sécurisé (9440) ou plaintext (9000).
 * **Un accès admin ClickHouse pendant la configuration** pour les clusters que vous exploitez vous-même. Le provisioning initial crée les utilisateurs en lecture seule du connector. Le mot de passe admin, lorsqu&#39;il en existe un, est demandé une seule fois et n&#39;est jamais stocké.
 
-## Étapes suivantes
+## Étapes suivantes {#next-steps}
 
 * [Onboarding](/fr/products/bring-your-own-cloud/connector/onboarding) : installez et enregistrez le connector sur Kubernetes ou une VM Linux.
 * [Services managés](/fr/products/bring-your-own-cloud/connector/managed-services) : activez le mode managé, créez un service et suivez son cycle de vie, son statut et sa suppression.

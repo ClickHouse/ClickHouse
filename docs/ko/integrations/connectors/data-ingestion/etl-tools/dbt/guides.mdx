@@ -22,7 +22,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupp
 
 이 가이드는 나머지 [문서](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index), [features and configurations](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 페이지, [materializations 참고](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) 페이지와 함께 읽도록 구성되었습니다.
 
-## 시작하기 전에
+## 시작하기 전에 {#before-you-start}
 
 먼저 [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)의 README를 따르십시오. 이 문서에서는 dbt Core 1.x, dbt OSS, dbt v2 또는 dbt 플랫폼으로 프로젝트를 설정하는 방법, 로컬 ClickHouse(docker) 또는 ClickHouse Cloud를 가리키도록 지정하는 방법, `dbt seed`로 샘플 데이터를 로드하는 방법, 첫 `dbt build`를 실행하는 방법을 설명합니다. `dbt build`가 성공적으로 완료되면 ClickHouse 전용 예시와 구성을 확인하기 위해 이 페이지로 돌아오십시오.
 
@@ -39,7 +39,7 @@ README의 단계를 마치면 ClickHouse에 다음 두 개의 데이터베이스
 
 dbt 명령어가 아닌 모든 SQL 문은 ClickHouse에서 직접 실행하도록 작성되었습니다. 예를 들어 `clickhouse client`, ClickHouse Cloud SQL 콘솔 또는 원하는 SQL 클라이언트를 사용할 수 있습니다.
 
-## 프로젝트가 머티리얼라이즈되는 방식
+## 프로젝트가 머티리얼라이즈되는 방식 {#views-and-tables}
 
 Jaffle Shop은 `dbt_project.yml`에서 materializations를 구성하며, staging 모델은 view로, marts는 table로 생성됩니다.
 
@@ -108,7 +108,7 @@ SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 
 여기서 ClickHouse에 특화된 부분은 두 가지입니다. 이 model은 테이블 엔진을 선언하지 않으므로 어댑터가 `MergeTree`를 사용하고, sorting key도 선언하지 않으므로 어댑터가 `ORDER BY tuple()`을 사용합니다. 즉, 데이터가 전혀 정렬되지 않습니다. 샘플 프로젝트에서는 문제가 없지만, 실제 table이라면 두 가지 모두 직접 지정하는 것이 좋으며, 다음 섹션에서 바로 그 작업을 진행합니다. 어댑터가 지원하는 모든 테이블 구성은 [materializations 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)에서 확인할 수 있습니다.
 
-## seed로 데이터 로드하기
+## seed로 데이터 로드하기 {#seeds}
 
 Jaffle Shop은 dbt [seeds](https://docs.getdbt.com/docs/build/seeds)를 사용해 `seeds/jaffle-data`의 CSV 파일에서 원시 데이터를 로드합니다. seed는 작고 정적인 참조 데이터(코드 테이블, 매핑)를 위한 기능이며, warehouse를 채우는 용도가 아닙니다. 이 프로젝트는 별도의 수집 도구 없이도 바로 시작할 수 있도록 편의상 seed를 사용하며, 그래서 `--vars '{"load_source_data": true}'`를 전달하지 않으면 seed가 비활성화되어 있습니다.
 
@@ -177,7 +177,7 @@ SETTINGS index_granularity = 8192
 
 `dbt seed --full-refresh`는 테이블을 삭제한 뒤 재생성하므로, 이 가이드 뒷부분의 materialized view처럼 해당 테이블 데이터에 직접 의존하는 객체를 빌드하기 전에 실행하십시오.
 
-## ClickHouse용 테이블 구성하기
+## ClickHouse용 테이블 구성하기 {#table-configuration}
 
 `orders` 마트는 시작점으로 삼기에 가장 적합합니다. `customers` 마트와 프로젝트의 메트릭이 이 마트를 조회하며, timestamp를 가진 이벤트 형태의 테이블이기 때문입니다. `models/marts/orders.sql` 상단에 `config` 블록을 추가하여 engine, sorting key, 파티셔닝 방식을 지정하십시오:
 
@@ -249,7 +249,7 @@ ORDER BY partition;
 
 `engine`, `order_by`, `partition_by` 외에도 table 모델은 `primary_key`, `ttl`, `settings`, `query_settings`, `projections`, `indexes`를 지원하며, 컬럼은 모델 컨트랙트를 통해 `codec`과 `ttl`을 지정할 수 있습니다. 이들 모두에 대한 자세한 설명은 [materializations 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)에서 확인할 수 있습니다.
 
-## incremental 모델 생성
+## incremental 모델 생성 {#incremental}
 
 62,000행 정도라면 매 실행마다 `orders`를 처음부터 다시 구축해도 괜찮지만, 하루에 수백만 행씩 늘어나는 테이블에서는 그렇지 않습니다. dbt의 [incremental materialization](https://docs.getdbt.com/docs/build/incremental-models)은 마지막 실행 이후 변경된 행만 처리합니다. `orders` 모델을 변환하려면 다음 두 가지를 추가해야 합니다.
 
@@ -356,7 +356,7 @@ WHERE customer_id = 'clicky-0001';
 └─────────────────────┴───────────────────────┴────────────────┴───────────────┘
 ```
 
-### Internals
+### Internals {#internals}
 
 ClickHouse의 query log를 보면 어댑터가 incremental UPDATE를 위해 실행한 SQL 문을 확인할 수 있습니다:
 
@@ -420,7 +420,7 @@ flowchart TB
 
 2단계에서 전체 테이블을 복사하므로, 매우 큰 모델에서는 이 전략의 비용이 테이블을 재구성하는 것과 맞먹습니다. [제한 사항](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations)을 참조하십시오. 아래 전략들은 이러한 복사를 피합니다.
 
-### Append 전략
+### Append 전략 {#append-strategy}
 
 `append` 전략은 모델이 선택한 행을 대상 테이블(target table)에 곧바로 삽입합니다. 임시 테이블을 만들지도, 데이터를 복사하지도 않으므로 증분 실행 중에서는 비용이 가장 저렴합니다. 그 대가로 중복 제거 역시 전혀 이루어지지 않습니다. 증분 filter가 이미 테이블에 있는 행을 선택하면 그 행은 두 번 들어갑니다. 변경되지 않는 이벤트성 데이터에 사용하고, filter가 실제로 새로운 행만 선택하도록 반드시 확인하십시오.
 
@@ -495,7 +495,7 @@ query log을 보면 차이가 분명히 드러납니다. 이번에 `orders`를 �
   `>`와 일 단위로 truncated된 timestamp를 사용하면, 마지막으로 적재된 주문과 같은 날 그보다 늦게 도착한 주문은 전혀 반영되지 않습니다. 실제 프로젝트에서 `append` strategy를 사용할 때는 full precision timestamp 또는 단조 증가하는 수집 시각을 기준으로 filter하십시오.
 </Warning>
 
-### Delete and insert 전략
+### Delete and insert 전략 {#delete-insert-strategy}
 
 ClickHouse는 과거에 비동기 [뮤테이션](/ko/reference/statements/alter/index) 형태로만 업데이트와 삭제를 제한적으로 지원했습니다. 이 방식은 IO 부하가 매우 크므로 일반적으로 사용을 피해야 합니다. ClickHouse 22.8에서 [경량한 삭제](/ko/reference/statements/delete)가, ClickHouse 25.7에서 [경량 업데이트](/ko/reference/statements/update)가 도입되었습니다. 이를 통해 단일 삭제 또는 UPDATE SQL 문의 결과는 비동기적으로 구체화되더라도 사용자 관점에서는 즉시 반영된 것으로 확인됩니다.
 
@@ -549,7 +549,7 @@ flowchart TB
     class q1,q2,q3,q4 query;
 ```
 
-### Insert overwrite 전략 (실험적 기능)
+### Insert overwrite 전략 (실험적 기능) {#insert-overwrite-strategy}
 
 `insert_overwrite` 전략은 파티션 전체를 교체하므로, `orders`의 월별 파티션과 같은 `partition_by` 구성이 필요합니다. 이 전략은 다음 단계를 수행합니다:
 
@@ -598,7 +598,7 @@ flowchart TB
 
 [머티리얼라이즈 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-incremental)에서는 `microbatch` 전략과 `on_schema_change`를 비롯해 incremental 머티리얼라이즈의 나머지 옵션을 다룹니다.
 
-## 스냅샷 생성
+## 스냅샷 생성 {#snapshot}
 
 dbt [스냅샷](https://docs.getdbt.com/docs/build/snapshots)은 변경 가능한 테이블의 행이 시간에 따라 어떻게 변화하는지를 기록하므로, 분석가는 과거 임의 시점의 데이터 상태를 되짚어 볼 수 있습니다. 스냅샷은 [type-2 느리게 변화하는 차원(slowly changing dimensions)](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row)을 구현하며, 행의 각 버전은 그 버전이 유효했던 인터벌과 함께 저장됩니다.
 
@@ -689,7 +689,7 @@ ORDER BY customer_id, dbt_valid_from;
 
 내부적으로 어댑터는 새 버전의 snapshot을 `customers_snapshot__snapshot_upsert` 테이블에 생성한 뒤 `EXCHANGE TABLES`로 스왑합니다(서버가 테이블 exchange를 지원하지 않으면 삭제 후 rename 방식을 사용합니다). 따라서 읽는 쪽에서는 이전 버전 또는 새 버전의 snapshot 중 하나만 보게 됩니다. 구성 관련 참고 정보는 [materializations 페이지의 snapshot 섹션](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#snapshot)을 확인하십시오.
 
-## materialized view 사용하기
+## materialized view 사용하기 {#materialized-views}
 
 지금까지 다룬 방식은 모두 새로운 데이터를 모델에 반영하려면 `dbt run`을 실행해야 합니다. ClickHouse [materialized view](/ko/concepts/features/materialized-views/index)는 동작 방식이 다릅니다. materialized view는 일종의 insert trigger로, 원본 테이블에 삽입되는 모든 행 블록이 뷰의 `SELECT`를 거쳐 변환된 뒤 target table에 기록되며 별도의 스케줄링은 필요하지 않습니다. 어댑터는 `materialized_view` 머티리얼라이즈를 통해 이 기능을 제공합니다.
 
@@ -794,6 +794,6 @@ ORDER BY order_date, store_id;
 
 이후 `dbt run`을 실행하면 target table과 그 데이터는 그대로 유지되고 view definition만 갱신되며, 변경 내용이 허용하는 경우에는 `ALTER TABLE ... MODIFY QUERY`가 사용됩니다. 따라서 해당 모델을 프로젝트에 그대로 두어도 안전합니다. `dbt run --full-refresh`는 target table을 재구성하고 다시 backfill합니다(`catchup`이 `False`인 경우는 제외). 나머지 내용은 [materialized views 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view)에서 다룹니다. `on_schema_change`를 통한 schema changes, `catchup`으로 backfill 비활성화, 갱신 가능 구체화 뷰, 여러 view가 동일한 target에 데이터를 공급하는 구성, target table을 별도의 모델로 정의하는 방법 등입니다.
 
-## 추가 정보
+## 추가 정보 {#further-information}
 
 이 가이드는 dbt의 기본적인 내용만 다룹니다. ClickHouse에 특화되지 않은 내용은 모두 [dbt 문서](https://docs.getdbt.com/docs/introduction)를 참고하십시오. 어댑터의 경우 profile 설정과 전역 기능은 [features and configurations](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 페이지를, 위에서 사용한 모든 구성은 [materializations 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)를, dbt OSS, dbt v2 또는 dbt 플랫폼을 사용한다면 [dbt OSS, dbt v2 및 dbt 플랫폼 페이지](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)를 확인하십시오. [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)에 새로운 예시를 기여해 주시면 언제든 환영합니다.

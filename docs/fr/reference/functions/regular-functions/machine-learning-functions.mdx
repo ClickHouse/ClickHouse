@@ -6,19 +6,19 @@ title: 'Fonctions d’apprentissage automatique'
 doc_type: 'reference'
 ---
 
-## evalMLMethod
+## evalMLMethod {#evalmlmethod}
 
 La prédiction à l’aide de modèles de régression ajustés s’effectue avec la fonction `evalMLMethod`. Voir le lien sous `linearRegression`.
 
-## stochasticLinearRegression
+## stochasticLinearRegression {#stochasticlinearregression}
 
 La fonction d’agrégation [stochasticLinearRegression](/fr/reference/functions/aggregate-functions/stochasticLinearRegression) implémente la méthode de descente de gradient stochastique à l’aide d’un modèle linéaire et de la fonction de perte MSE. Elle utilise `evalMLMethod` pour effectuer des prédictions sur de nouvelles données.
 
-## stochasticLogisticRegression
+## stochasticLogisticRegression {#stochasticlogisticregression}
 
 La fonction d’agrégation [stochasticLogisticRegression](/fr/reference/functions/aggregate-functions/stochasticLogisticRegression) implémente une méthode de descente de gradient stochastique pour un problème de classification binaire. Elle utilise `evalMLMethod` pour effectuer des prédictions sur de nouvelles données.
 
-## naiveBayesClassifier
+## naiveBayesClassifier {#naivebayesclassifier}
 
 Classe le texte d’entrée à l’aide d’un modèle Naive Bayes utilisant des n-grams et le lissage de Laplace. Le modèle doit être configuré dans ClickHouse avant d’être utilisé.
 
@@ -58,7 +58,7 @@ SELECT naiveBayesClassifier('language', 'How are you?');
 
 ***
 
-### Détails d’implémentation
+### Détails d’implémentation {#implementation-details}
 
 **Algorithme**
 Utilise l’algorithme de classification Naive Bayes avec le [lissage de Laplace](https://en.wikipedia.org/wiki/Additive_smoothing) pour gérer les n-grammes non observés, en s’appuyant sur des probabilités de n-grammes comme décrit [ici](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
@@ -73,7 +73,7 @@ Utilise l’algorithme de classification Naive Bayes avec le [lissage de Laplace
 
 ***
 
-### Configuration du modèle
+### Configuration du modèle {#model-configuration}
 
 Vous trouverez [ici](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models) un exemple de code source permettant de créer un modèle Naive Bayes pour la détection de langue.
 

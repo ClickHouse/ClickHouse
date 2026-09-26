@@ -29,7 +29,7 @@ Il est utile de commencer par quelques définitions.
 **Sauvegardes et snapshots de base de données** : les sauvegardes assurent un stockage durable à long terme grâce à une copie distincte des données. Les snapshots ne créent pas de copie supplémentaire des données, sont généralement plus rapides et offrent de meilleurs RPO.
 
 <div id="database-backups">
-  ## Sauvegardes de base de données
+  ## Sauvegardes de base de données {#database-backups}
 </div>
 
 Disposer d&#39;une sauvegarde de votre service principal permet de restaurer efficacement les données en cas d&#39;indisponibilité du service principal.
@@ -60,13 +60,13 @@ Les sauvegardes actuellement disponibles pour le service sont répertoriées sur
 Cette section fournit également le statut de réussite ou d&#39;échec de chaque sauvegarde.
 
 <div id="restoring-from-a-backup">
-  ## Restauration à partir d’une sauvegarde
+  ## Restauration à partir d’une sauvegarde {#restoring-from-a-backup}
 </div>
 
 1. Les sauvegardes par défaut, stockées dans le bucket de stockage ClickHouse Cloud, peuvent être restaurées dans un nouveau service de la même région.
 2. Les sauvegardes externes (dans le stockage objet du client) peuvent être restaurées dans un nouveau service situé dans la même région ou dans une autre région.
 
-## Conseils sur la durée des sauvegardes et des restaurations
+## Conseils sur la durée des sauvegardes et des restaurations {#backup-and-restore-duration-guidance}
 
 La durée des sauvegardes et des restaurations varie considérablement selon la taille des données, la complexité du schéma et le nombre de tables. Les chiffres ci-dessous sont issus de tests internes et ne constituent pas des engagements de performance.
 
@@ -82,19 +82,19 @@ Comme les durées dépendent fortement de vos données, de votre schéma et de v
 </Note>
 
 <div id="recovery-process">
-  ## Procédure de récupération
+  ## Procédure de récupération {#recovery-process}
 </div>
 
 Cette section présente les différentes options de récupération ainsi que la procédure à suivre dans chaque cas.
 
 <div id="primary-service-data-corruption">
-  ### Corruption des données du service principal
+  ### Corruption des données du service principal {#primary-service-data-corruption}
 </div>
 
 Dans ce cas, les données [peuvent être restaurées](/fr/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup) depuis la sauvegarde vers un autre service de la même région.
 La sauvegarde peut dater de jusqu&#39;à 24 heures si vous utilisez la stratégie de sauvegarde par défaut, ou de jusqu&#39;à 6 heures (si vous utilisez des sauvegardes configurables avec une fréquence de 6 heures).
 
-#### Étapes de restauration
+#### Étapes de restauration {#restoration-steps}
 
 Pour restaurer à partir d’une sauvegarde existante
 
@@ -105,7 +105,7 @@ Pour restaurer à partir d’une sauvegarde existante
 <Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="Restaurer à partir d’une sauvegarde" />
 
 <div id="primary-region-downtime">
-  ### Indisponibilité de la région principale
+  ### Indisponibilité de la région principale {#primary-region-downtime}
 </div>
 
 Vous pouvez [exporter des sauvegardes](/fr/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) vers un bucket de stockage chez votre propre fournisseur cloud.
@@ -125,7 +125,7 @@ Cela peut impliquer :
 </Note>
 
 <div id="additional-options">
-  ## Options supplémentaires
+  ## Options supplémentaires {#additional-options}
 </div>
 
 Voici quelques options supplémentaires à envisager.

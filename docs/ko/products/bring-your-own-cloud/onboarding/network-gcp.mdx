@@ -17,13 +17,13 @@ GCP의 ClickHouse BYOC는 VPC Peering과 PSC(Private Service Connect)의 두 가
 
 VPC peering 및 PSC에 공통으로 필요한 단계입니다.
 
-### BYOC용 ClickHouse에 프라이빗 로드 밸런서 활성화
+### BYOC용 ClickHouse에 프라이빗 로드 밸런서 활성화 {#step-enable-private-load-balancer-for-clickhouse-byoc}
 
 ClickHouse Cloud 콘솔에서 BYOC 인프라의 **프라이빗 로드 밸런서**를 활성화하십시오.
 
 <Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC 프라이빗 로드 밸런서 활성화" border />
 
-## VPC peering 설정
+## VPC peering 설정 {#gcp-vpc-peering}
 
 [GCP VPC peering 기능](https://docs.cloud.google.com/vpc/docs/vpc-peering)을 미리 숙지하고, VPC peering의 제한 사항(예: 피어링된 VPC 네트워크 간에 서브넷 IP 범위가 겹치면 안 됨)도 확인하십시오. ClickHouse BYOC는 피어링을 통해 ClickHouse 서비스에 네트워크로 연결할 수 있도록 프라이빗 로드 밸런서를 사용합니다.
 
@@ -63,7 +63,7 @@ ClickHouse BYOC의 VPC peering을 생성하거나 삭제하려면 다음 단계�
   </Step>
 </Steps>
 
-## PSC(Private Service Connect) 설정
+## PSC(Private Service Connect) 설정 {#setup-psc}
 
 GCP PSC(Private Service Connect)는 VPC peering이나 인터넷 gateway 없이 ClickHouse BYOC 서비스에 안전한 프라이빗 연결을 제공합니다. 모든 트래픽은 GCP 네트워크 내에서만 흐르므로 공용 인터넷을 거치지 않습니다.
 

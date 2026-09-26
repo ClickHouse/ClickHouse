@@ -18,7 +18,7 @@ aplicación.
 
 <ClickStackIntegrates signals={['logs', 'traces']} />
 
-## Primeros pasos
+## Primeros pasos {#getting-started}
 
 <br />
 
@@ -71,7 +71,7 @@ aplicación.
   </Tab>
 </Tabs>
 
-### Opciones
+### Opciones {#options}
 
 * `apiKey` - Tu API key de ingesta de ClickStack.
 * `service` - El nombre del servicio con el que aparecerán los eventos en la UI de HyperDX.
@@ -91,9 +91,9 @@ aplicación.
 * `disableIntercom` - (Opcional) Indica si se debe deshabilitar la integración con Intercom (valor predeterminado: `false`)
 * `disableReplay` - (Opcional) Indica si se debe deshabilitar la reproducción de sesión (valor predeterminado: `false`)
 
-## Configuración adicional
+## Configuración adicional {#additional-configuration}
 
-### Asociar información del usuario o metadatos
+### Asociar información del usuario o metadatos {#attach-user-information-or-metadata}
 
 Asociar información del usuario le permitirá buscar/filtrar sesiones y eventos
 en la UI de HyperDX. Esto se puede hacer en cualquier momento durante la
@@ -114,7 +114,7 @@ HyperDX.setGlobalAttributes({
 });
 ```
 
-### Captura automáticamente errores en los límites de error de React
+### Captura automáticamente errores en los límites de error de React {#auto-capture-react-error-boundary-errors}
 
 Si usas React, puedes capturar automáticamente los errores que se produzcan en
 los límites de error de React pasando tu componente de límite de error
@@ -129,7 +129,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 HyperDX.attachToReactErrorBoundary(ErrorBoundary);
 ```
 
-### Enviar acciones personalizadas
+### Enviar acciones personalizadas {#send-custom-actions}
 
 Para rastrear de forma explícita un evento específico de la aplicación (p. ej., registro, envío,
 etc.), puedes llamar a la función `addAction` con un nombre de evento y metadatos
@@ -145,7 +145,7 @@ HyperDX.addAction('Form-Completed', {
 });
 ```
 
-### Habilita la captura de red de forma dinámica
+### Habilita la captura de red de forma dinámica {#enable-network-capture-dynamically}
 
 Para habilitar o deshabilitar la captura de red de forma dinámica, solo tienes que invocar la función `enableAdvancedNetworkCapture` o `disableAdvancedNetworkCapture` según sea necesario.
 
@@ -153,7 +153,7 @@ Para habilitar o deshabilitar la captura de red de forma dinámica, solo tienes 
 HyperDX.enableAdvancedNetworkCapture();
 ```
 
-### Habilitar la temporización de recursos para solicitudes CORS
+### Habilitar la temporización de recursos para solicitudes CORS {#enable-resource-timing-for-cors-requests}
 
 Si tu aplicación frontend realiza solicitudes a la API hacia un dominio distinto, puedes
 habilitar opcionalmente el encabezado [`Timing-Allow-Origin`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin) para que se envíe con la solicitud. Esto permitirá que ClickStack capture información detallada

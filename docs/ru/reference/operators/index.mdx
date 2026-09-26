@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 ClickHouse преобразует операторы в соответствующие им функции на этапе разбора запроса с учётом их приоритета, старшинства и ассоциативности.
 
-## Операторы доступа
+## Операторы доступа {#access-operators}
 
 `a[N]` — доступ к элементу массива. Функция `arrayElement(a, N)`.
 `N` также может быть массивом целых чисел; в этом случае элементы по всем указанным позициям возвращаются в виде массива,
@@ -18,13 +18,13 @@ ClickHouse преобразует операторы в соответствую
 
 `a.N` — доступ к элементу кортежа. Функция `tupleElement(a, N)`.
 
-## Оператор числового отрицания
+## Оператор числового отрицания {#numeric-negation-operator}
 
 `-a` — функция `negate (a)`.
 
 Для отрицания кортежей см. [tupleNegate](/ru/reference/functions/regular-functions/tuple-functions#tupleNegate).
 
-## Операторы умножения и деления
+## Операторы умножения и деления {#multiplication-and-division-operators}
 
 `a * b` – функция `multiply (a, b)`.
 
@@ -36,7 +36,7 @@ ClickHouse преобразует операторы в соответствую
 
 `a % b` – функция `modulo(a, b)`.
 
-## Операторы сложения и вычитания
+## Операторы сложения и вычитания {#addition-and-subtraction-operators}
 
 `a + b` — функция `plus(a, b)`.
 
@@ -46,73 +46,73 @@ ClickHouse преобразует операторы в соответствую
 
 Для вычитания кортежей: [tupleMinus](/ru/reference/functions/regular-functions/tuple-functions#tupleMinus).
 
-## Операторы сравнения
+## Операторы сравнения {#comparison-operators}
 
-### функция equals
+### функция equals {#equals-function}
 
 `a = b` — функция `equals(a, b)`.
 
 `a == b` — функция `equals(a, b)`.
 
-### Функция `notEquals`
+### Функция `notEquals` {#notequals-function}
 
 `a != b` — функция `notEquals(a, b)`.
 
 `a <> b` — функция `notEquals(a, b)`.
 
-### Функция lessOrEquals
+### Функция lessOrEquals {#lessorequals-function}
 
 `a <= b` — функция `lessOrEquals(a, b)`.
 
-### функция greaterOrEquals
+### функция greaterOrEquals {#greaterorequals-function}
 
 `a >= b` — функция `greaterOrEquals(a, b)`.
 
-### функция less
+### функция less {#less-function}
 
 `a < b` — функция `less(a, b)`.
 
-### функция greater
+### функция greater {#greater-function}
 
 `a > b` — функция `greater(a, b)`.
 
-### функция like
+### функция like {#like-function}
 
 `a LIKE b` — функция `like(a, b)`.
 
-### Функция notLike
+### Функция notLike {#notlike-function}
 
 `a NOT LIKE b` — функция `notLike(a, b)`.
 
-### Функция ilike
+### Функция ilike {#ilike-function}
 
 `a ILIKE b` — функция `ilike(a, b)`.
 
-### Функция match
+### Функция match {#match-function}
 
 `a REGEXP b` — функция `match(a, b)`.
 
 `a ~ b` — функция `match(a, b)` (сопоставление по регулярному выражению в стиле PostgreSQL).
 
-### Функция notMatch
+### Функция notMatch {#notmatch-function}
 
 `a !~ b` — функция `notMatch(a, b)` (проверяет, что `a` не соответствует регулярному выражению `b`).
 
-### Функция matchCaseInsensitive
+### Функция matchCaseInsensitive {#matchcaseinsensitive-function}
 
 `a ~* b` — функция `matchCaseInsensitive(a, b)` (регистронезависимое сопоставление по регулярному выражению).
 
-### Функция notMatchCaseInsensitive
+### Функция notMatchCaseInsensitive {#notmatchcaseinsensitive-function}
 
 `a !~* b` — функция `notMatchCaseInsensitive(a, b)` (проверяет, что `a` не соответствует регулярному выражению `b` без учёта регистра).
 
-### Функция BETWEEN
+### Функция BETWEEN {#between-function}
 
 `a BETWEEN b AND c` – То же, что и `a >= b AND a <= c`.
 
 `a NOT BETWEEN b AND c` – То же, что и `a < b OR a > c`.
 
-### Оператор `is not distinct from` (`<=>`)
+### Оператор `is not distinct from` (`<=>`) {#is-not-distinct-from}
 
 <Note>
   Начиная с версии 25.10, `<=>` можно использовать так же, как и любой другой оператор.
@@ -146,48 +146,48 @@ SELECT
 └──────────────────────────┴──────────────────────────┘
 ```
 
-## Операторы для работы со строками
+## Операторы для работы со строками {#operators-for-working-with-strings}
 
-### OVERLAY
+### OVERLAY {#overlay}
 
 * `OVERLAY(string PLACING replacement FROM offset)` - функция `overlay(string, replacement, offset)`.
 * `OVERLAY(string PLACING replacement FROM offset FOR length)` - функция `overlay(string, replacement, offset, length)`.
 * `OVERLAYUTF8(string PLACING replacement FROM offset)` - функция `overlayUTF8(string, replacement, offset)`.
 * `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - функция `overlayUTF8(string, replacement, offset, length)`.
 
-## Операторы для работы с наборами данных
+## Операторы для работы с наборами данных {#operators-for-working-with-data-sets}
 
 См. [операторы IN](/ru/reference/statements/in) и [оператор EXISTS](/ru/reference/operators/exists).
 
-### функция in
+### функция in {#in-function}
 
 `a IN ...` — функция `in(a, b)`.
 
-### Функция notIn
+### Функция notIn {#notin-function}
 
 `a NOT IN ...` — функция `notIn(a, b)`.
 
-### Функция globalIn
+### Функция globalIn {#globalin-function}
 
 `a GLOBAL IN ...` — функция `globalIn(a, b)`.
 
-### Функция globalNotIn
+### Функция globalNotIn {#globalnotin-function}
 
 `a GLOBAL NOT IN ...` — функция `globalNotIn(a, b)`.
 
-### функция in для подзапроса
+### функция in для подзапроса {#in-subquery-function}
 
 `a = ANY (subquery)` — функция `in(a, subquery)`.
 
-### функция notIn с подзапросом
+### функция notIn с подзапросом {#notin-subquery-function}
 
 `a != ANY (subquery)` — То же, что и `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
-### функция in для подзапроса
+### функция in для подзапроса {#in-subquery-function-1}
 
 `a = ALL (subquery)` — то же, что `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
-### функция notIn с подзапросом
+### функция notIn с подзапросом {#notin-subquery-function-1}
 
 `a != ALL (subquery)` — функция `notIn(a, subquery)`.
 
@@ -225,7 +225,7 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 └───┘
 ```
 
-### `SOME` / `ALL` для массивов
+### `SOME` / `ALL` для массивов {#some-all-on-arrays}
 
 Помимо формы с подзапросом, описанной выше, в правой части `SOME` / `ALL` может использоваться выражение массива (литерал массива, столбец типа массива или любое выражение, возвращающее массив). Это синтаксис квантификатора массива в стиле PostgreSQL. Он распознаётся на этапе разбора и переписывается в функции для работы с массивами, поэтому вручную ничего переписывать не нужно:
 
@@ -275,9 +275,9 @@ SELECT
   ```
 </Info>
 
-## Операторы для работы с датами и временем
+## Операторы для работы с датами и временем {#operators-for-working-with-dates-and-times}
 
-### EXTRACT
+### EXTRACT {#extract}
 
 ```sql
 EXTRACT(part FROM date);
@@ -363,7 +363,7 @@ FROM test.Orders;
 
 Больше примеров можно найти в [tests](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql).
 
-### INTERVAL
+### INTERVAL {#interval}
 
 Создаёт значение типа [Interval](/ru/reference/data-types/special-data-types/interval), которое используется в арифметических операциях со значениями типов [Date](/ru/reference/data-types/date) и [DateTime](/ru/reference/data-types/datetime).
 
@@ -437,7 +437,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 * тип данных [Interval](/ru/reference/data-types/special-data-types/interval)
 * функции преобразования типов [toInterval](/ru/reference/functions/regular-functions/type-conversion-functions#toIntervalYear)
 
-### Сложение даты и времени
+### Сложение даты и времени {#date-time-addition}
 
 Значение [Date](/ru/reference/data-types/date) или [Date32](/ru/reference/data-types/date32) можно сложить со значением [Time](/ru/reference/data-types/time) или [Time64](/ru/reference/data-types/time64) с помощью оператора `+`. В результате получается [DateTime](/ru/reference/data-types/datetime) или [DateTime64](/ru/reference/data-types/datetime64), представляющий дату с указанным временем суток. Эта операция коммутативна.
 
@@ -487,7 +487,7 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 └─────────────────────────┴────────────────┘
 ```
 
-### AT TIME ZONE и AT LOCAL
+### AT TIME ZONE и AT LOCAL {#at-time-zone}
 
 Постфиксные операторы `AT TIME ZONE` и `AT LOCAL` преобразуют значение `DateTime` или `DateTime64` в другой часовой пояс. Это синтаксический сахар для существующей функции [`toTimeZone`](/ru/reference/functions/regular-functions/date-time-functions#toTimezone):
 
@@ -542,19 +542,19 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 * [`toTimeZone`](/ru/reference/functions/regular-functions/date-time-functions#toTimezone)
 * [`timeZone`](/ru/reference/functions/regular-functions/date-time-functions#timezone)
 
-## Оператор логического AND
+## Оператор логического AND {#logical-and-operator}
 
 Синтаксис `SELECT a AND b` — вычисляет результат логической конъюнкции `a` и `b` с помощью функции [and](/ru/reference/functions/regular-functions/logical-functions#and).
 
-## Оператор логического ИЛИ
+## Оператор логического ИЛИ {#logical-or-operator}
 
 Синтаксис `SELECT a OR b` — вычисляет логическую дизъюнкцию `a` и `b` с помощью функции [or](/ru/reference/functions/regular-functions/logical-functions#or).
 
-## Оператор логического отрицания
+## Оператор логического отрицания {#logical-negation-operator}
 
 Синтаксис: `SELECT NOT a` — вычисляет логическое отрицание `a` с помощью функции [not](/ru/reference/functions/regular-functions/logical-functions#not).
 
-## Условный оператор
+## Условный оператор {#conditional-operator}
 
 `a ? b : c` — функция `if(a, b, c)`.
 
@@ -562,7 +562,7 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 
 Условный оператор вычисляет значения b и c, затем проверяет, выполняется ли условие a, и после этого возвращает соответствующее значение. Если `b` или `C` — функция [arrayJoin()](/ru/reference/functions/regular-functions/array-join), каждая строка будет продублирована независимо от условия `a`.
 
-## Условное выражение
+## Условное выражение {#conditional-expression}
 
 ```sql
 CASE [x]
@@ -578,36 +578,36 @@ END
 
 Функция `transform` не работает с `NULL`.
 
-## Оператор конкатенации
+## Оператор конкатенации {#concatenation-operator}
 
 `s1 || s2` — функция `concat(s1, s2)`.
 
-## Оператор создания лямбда-функции
+## Оператор создания лямбда-функции {#lambda-creation-operator}
 
 `x -> expr` – функция `lambda(x, expr)`.
 
 Следующие операторы не имеют приоритета, поскольку это скобки:
 
-## Оператор создания Array
+## Оператор создания Array {#array-creation-operator}
 
 `[x1, ...]` – Функция `array(x1, ...)`.
 
-## Оператор создания Tuple
+## Оператор создания Tuple {#tuple-creation-operator}
 
 `(x1, x2, ...)` — функция `tuple(x2, x2, ...)`.
 
-## Ассоциативность
+## Ассоциативность {#associativity}
 
 Все бинарные операторы имеют левую ассоциативность. Например, `1 + 2 + 3` преобразуется в `plus(plus(1, 2), 3)`.
 Иногда результат оказывается не таким, как вы ожидаете. Например, `SELECT 4 > 2 > 3` вернёт 0.
 
 Для повышения эффективности функции `and` и `or` принимают произвольное число аргументов. Соответствующие цепочки операторов `AND` и `OR` преобразуются в один вызов этих функций.
 
-## Проверка на `NULL`
+## Проверка на `NULL` {#checking-for-null}
 
 ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL`.
 
-### IS NULL
+### IS NULL {#is_null}
 
 * Для значений типа [Nullable](/ru/reference/data-types/nullable) оператор `IS NULL` возвращает:
   * `1`, если значение равно `NULL`.
@@ -628,7 +628,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 └──────────────┘
 ```
 
-### IS NOT NULL
+### IS NOT NULL {#is_not_null}
 
 * Для значений типа [Nullable](/ru/reference/data-types/nullable) оператор `IS NOT NULL` возвращает:
   * `0`, если значение — `NULL`.
@@ -649,7 +649,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 
 Можно повысить производительность, включив настройку [optimize&#95;functions&#95;to&#95;subcolumns](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [null](/ru/reference/data-types/nullable#finding-null) вместо чтения и обработки всех данных столбца. Запрос `SELECT n IS NOT NULL FROM table` преобразуется в `SELECT NOT n.null FROM TABLE`.
 
-## Проверка булевых значений
+## Проверка булевых значений {#checking-boolean-values}
 
 ClickHouse поддерживает операторы `IS TRUE`, `IS FALSE`, `IS UNKNOWN`, `IS NOT TRUE`, `IS NOT FALSE` и `IS NOT UNKNOWN`.
 Они используются с выражениями [Bool](/ru/reference/data-types/boolean) и `Nullable(Bool)`.

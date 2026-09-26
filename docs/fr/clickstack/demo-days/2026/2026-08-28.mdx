@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Demo days']
 ---
 
-## Variables de dashboard dans PromQL et Lucene
+## Variables de dashboard dans PromQL et Lucene {#dashboard-variables-in-promql-and-lucene}
 
 *Démo par [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -29,7 +29,7 @@ Les variables de dashboard sont passées en production cette semaine. Le feature
 
 **PR associées :** [#2994](https://github.com/hyperdxio/hyperdx/pull/2994) substitution des variables dans les charts PromQL, [#2995](https://github.com/hyperdxio/hyperdx/pull/2995) ajout des completions pour les variables PromQL, [#2997](https://github.com/hyperdxio/hyperdx/pull/2997) affichage d&#39;avertissements en cas d&#39;usage invalide des variables PromQL, [#2998](https://github.com/hyperdxio/hyperdx/pull/2998) ajout de l&#39;aperçu PromQL généré, [#2987](https://github.com/hyperdxio/hyperdx/pull/2987) distribution des références de variables Lucene en exact match, [#3008](https://github.com/hyperdxio/hyperdx/pull/3008) extension des variables avant la navigation vers la page Search via drill-down, [#2963](https://github.com/hyperdxio/hyperdx/pull/2963) prise en charge des valeurs de filter de dashboard indexées par variable, [#2964](https://github.com/hyperdxio/hyperdx/pull/2964) persistance et lecture du state des filters indexés par variable, [#3005](https://github.com/hyperdxio/hyperdx/pull/3005) confirmation avant d&#39;abandonner les modifications non enregistrées à la fermeture de l&#39;éditeur de filter, [#3009](https://github.com/hyperdxio/hyperdx/pull/3009) suppression du feature toggle des variables de dashboard
 
-## Liens de spans, dans les deux sens
+## Liens de spans, dans les deux sens {#span-links-in-both-directions}
 
 *Démo par [@karl-power](https://github.com/karl-power)*
 
@@ -47,7 +47,7 @@ Le lookup inverse recherche les rows dont les liens de spans contiennent l&#39;I
 
 **PR associées :** [#3011](https://github.com/hyperdxio/hyperdx/pull/3011) ajout des liens de spans inverses, affichage du détail des liens de spans
 
-## L&#39;observability des LLM prête à l&#39;emploi
+## L&#39;observability des LLM prête à l&#39;emploi {#llm-observability-out-of-the-box}
 
 *Démonstration par [@wrn14897](https://github.com/wrn14897)*
 
@@ -67,7 +67,7 @@ La portée est volontairement plus restreinte que celle d&#39;un outil d&#39;obs
 
 **PR associées :** [#2990](https://github.com/hyperdxio/hyperdx/pull/2990) dashboard d&#39;observability des LLM, vue de conversation des spans et sessions
 
-## Explorer les metrics dans l&#39;éditeur de chart
+## Explorer les metrics dans l&#39;éditeur de chart {#browsing-metrics-in-the-chart-editor}
 
 *Démo par [@MikeShi42](https://github.com/MikeShi42)*
 
@@ -83,7 +83,7 @@ Le contrôle reste discret pour l&#39;instant, le temps que la fonctionnalité s
 
 **PR associées :** [#3000](https://github.com/hyperdxio/hyperdx/pull/3000) ajout d&#39;un metrics explorer à l&#39;éditeur de chart, [#3025](https://github.com/hyperdxio/hyperdx/pull/3025) diffusion en stream des noms de metric depuis le primary index (ouverte), [#3054](https://github.com/hyperdxio/hyperdx/pull/3054) améliorations UX du dropdown des metrics
 
-## Volume de logs pour les requêtes SQL brutes dans Grafana
+## Volume de logs pour les requêtes SQL brutes dans Grafana {#log-volume-for-raw-sql-queries-in-grafana}
 
 *Demo par [@SpencerTorres](https://github.com/SpencerTorres)*
 
@@ -101,7 +101,7 @@ Il subsiste probablement des cas limites où le requête rewrite ne fonctionnera
 
 **PR associées :** [grafana/clickhouse-datasource#2141](https://github.com/grafana/clickhouse-datasource/pull/2141) affichage du volume de logs pour les requêtes du SQL Editor (ouverte)
 
-## Notification channels sur les pages d&#39;alertes
+## Notification channels sur les pages d&#39;alertes {#notification-channels-on-the-alerts-pages}
 
 *Démonstration par [@jordan-simonovski](https://github.com/jordan-simonovski)*
 
@@ -119,7 +119,7 @@ Avec ces contrôles supplémentaires, la page devenait chargée. Les actions de 
 
 **PR associées :** [#3001](https://github.com/hyperdxio/hyperdx/pull/3001) afficher chaque cible de notification sur les pages d&#39;alertes, [#2991](https://github.com/hyperdxio/hyperdx/pull/2991) afficher chaque notification channel sur la ligne de résumé, [#2984](https://github.com/hyperdxio/hyperdx/pull/2984) notifier directement les canaux configurés, sans passer par des chaînes de mention, [#2961](https://github.com/hyperdxio/hyperdx/pull/2961) empêcher les mentions en échec de consommer des slots de notification, [#3003](https://github.com/hyperdxio/hyperdx/pull/3003) attribuer le temps de notification d&#39;alerte à chaque cible, [#3002](https://github.com/hyperdxio/hyperdx/pull/3002) doter chaque row des pages d&#39;alertes des mêmes contrôles de fin de ligne, [#3016](https://github.com/hyperdxio/hyperdx/pull/3016) regrouper l&#39;en-tête de détail d&#39;alerte dans le menu de row partagé
 
-## Affichage de dizaines de milliers d&#39;alertes
+## Affichage de dizaines de milliers d&#39;alertes {#rendering-1000s-alerts}
 
 *Démo par [@pulpdrew](https://github.com/pulpdrew)*
 
@@ -133,7 +133,7 @@ La modification inclut également un script permettant de générer (seed) puis 
 
 **PR associées :** [#3012](https://github.com/hyperdxio/hyperdx/pull/3012) virtualisation de la liste de la page des alertes
 
-## Masquage des API keys derrière un affichage à la demande
+## Masquage des API keys derrière un affichage à la demande {#hiding-api-keys-behind-a-reveal}
 
 *Demo par [@brandon-pereira](https://github.com/brandon-pereira)*
 
@@ -147,7 +147,7 @@ La copie récupère toujours la valeur réelle : vous n&#39;avez donc pas besoin
 
 **PR associées :** [#2988](https://github.com/hyperdxio/hyperdx/pull/2988) masquage des secrets dans les extraits d&#39;API key et d&#39;installation MCP grâce à un composant partagé RevealSnippet
 
-## Notes de version dans le produit
+## Notes de version dans le produit {#release-notes-in-the-product}
 
 *Démo par [@jordan-simonovski](https://github.com/jordan-simonovski)*
 

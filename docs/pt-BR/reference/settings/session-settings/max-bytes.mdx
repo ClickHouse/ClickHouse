@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## max_bytes_before_external_distinct
+## max_bytes_before_external_distinct {#max_bytes_before_external_distinct}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -27,7 +27,7 @@ o menor deles é utilizado. Defina ambas as configurações como `0` para desabi
 
 Consulte [DISTINCT em memória externa](/pt-BR/reference/statements/select/distinct#distinct-in-external-memory).
 
-## max_bytes_before_external_group_by
+## max_bytes_before_external_group_by {#max_bytes_before_external_group_by}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -48,7 +48,7 @@ Valores possíveis:
   O valor recomendado é metade da memória disponível no sistema.
 </Note>
 
-## max_bytes_before_external_join
+## max_bytes_before_external_join {#max_bytes_before_external_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -56,7 +56,7 @@ Valores possíveis:
 
 Se for definido com um valor diferente de zero, o hash join será convertido automaticamente em grace hash join para permitir o spill em disco quando os dados do lado direito excederem essa quantidade de bytes. Junto com `max_bytes_ratio_before_external_join`, este é o gatilho de spill baseado em limiar para todo `join_algorithm` baseado em hash, incluindo `grace_hash`, que exige que um dos dois seja diferente de zero. Quando um limiar diferente de zero torna uma junção capaz de realizar spill, `enable_adaptive_memory_spill_scheduler` pode forçá-la a realizar spill sob pressão de memória antes que o limiar seja atingido; com ambas as configurações em `0`, a junção nunca realiza spill, portanto o scheduler não tem nada para acionar. A exceção é `legacy_join_size_limits_trigger_spilling`: quando habilitada, `grace_hash` independente ignora ambas e realiza spill com base em `max_rows_in_join` / `max_bytes_in_join`. Quando definido como 0 (padrão), esse limite absoluto em bytes fica desabilitado, mas o spill automático ainda pode ocorrer por meio de `max_bytes_ratio_before_external_join` (cujo valor padrão é `0.5`); defina ambos como `0` para desabilitar completamente o spill automático. Isso impede a otimização de leitura read in order por meio de join.
 
-## max_bytes_before_external_sort
+## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,13 +71,13 @@ Valores possíveis:
   O valor recomendado é metade da memória disponível no sistema
 * `0` — `ORDER BY` na memória externa desabilitado.
 
-## max_bytes_before_remerge_sort
+## max_bytes_before_remerge_sort {#max_bytes_before_remerge_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 No caso de ORDER BY com LIMIT, quando o uso de memória for maior que o limite especificado, execute etapas adicionais de mesclagem de blocos antes da mesclagem final para manter apenas as primeiras LIMIT linhas.
 
-## max_bytes_for_lazy_final
+## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
 <SettingsInfoBlock type="UInt64" default_value="256000000" />
 
@@ -85,14 +85,14 @@ No caso de ORDER BY com LIMIT, quando o uso de memória for maior que o limite e
 
 Número máximo de bytes no conjunto para a otimização lazy do FINAL. Se esse limite for excedido, volta para o FINAL normal.
 
-## max_bytes_in_distinct
+## max_bytes_in_distinct {#max_bytes_in_distinct}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 O número máximo de bytes do estado (em bytes não comprimidos) na memória
 usado por uma tabela hash ao utilizar DISTINCT.
 
-## max_bytes_in_join
+## max_bytes_in_join {#max_bytes_in_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -126,13 +126,13 @@ Valores possíveis:
 * Inteiro positivo.
 * 0 — O controle de memória está desabilitado.
 
-## max_bytes_in_set
+## max_bytes_in_set {#max_bytes_in_set}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 O número máximo de bytes (de dados não comprimidos) usados por um conjunto criado a partir de uma subconsulta na cláusula IN.
 
-## max_bytes_ratio_before_external_distinct
+## max_bytes_ratio_before_external_distinct {#max_bytes_ratio_before_external_distinct}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -147,7 +147,7 @@ aplicável de servidor ou de usuário, a razão não tem efeito.
 `max_memory_usage` não afeta esse cálculo. Para configurar o spill em relação a esse limite,
 use `max_bytes_before_external_distinct`, deixando espaço para uso adicional de memória.
 
-## max_bytes_ratio_before_external_group_by
+## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -160,7 +160,7 @@ Por exemplo, se definido como `0.6`, o `GROUP BY` permitirá usar 60% da memóri
 (para servidor/usuário/merges) no início da execução; depois disso,
 começará a usar agregação externa.
 
-## max_bytes_ratio_before_external_join
+## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -174,7 +174,7 @@ Se `max_bytes_before_external_join` e `max_bytes_ratio_before_external_join` est
 
 Tem efeito para todo `join_algorithm` baseado em hash, incluindo `grace_hash`, desde que um caminho temporário de dados esteja configurado.
 
-## max_bytes_ratio_before_external_sort
+## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -186,7 +186,7 @@ Por exemplo, se definido como `0.6`, o `ORDER BY` permitirá usar `60%` da memó
 
 Observe que `max_bytes_before_external_sort` continua sendo respeitado; o spill em disco será feito apenas se o bloco de ordenação for maior que `max_bytes_before_external_sort`.
 
-## max_bytes_to_read
+## max_bytes_to_read {#max_bytes_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -195,7 +195,7 @@ A restrição é verificada para cada fragmento de dados processado, aplicada ap
 expressão de tabela mais profunda e, ao ler de um servidor remoto, verificada apenas no
 servidor remoto.
 
-## max_bytes_to_read_leaf
+## max_bytes_to_read_leaf {#max_bytes_to_read_leaf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -217,14 +217,14 @@ A restrição é verificada para cada fragmento de dados processado.
   Essa configuração é instável com `prefer_localhost_replica=1`.
 </Note>
 
-## max_bytes_to_sort
+## max_bytes_to_sort {#max_bytes_to_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 O número máximo de bytes antes da ordenação. Se for necessário processar, na operação ORDER BY, mais bytes não comprimidos do que a quantidade especificada, o comportamento será
 determinado por `sort_overflow_mode`, que por padrão é definido como `throw`.
 
-## max_bytes_to_transfer
+## max_bytes_to_transfer {#max_bytes_to_transfer}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

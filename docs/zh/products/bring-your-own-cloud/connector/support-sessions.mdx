@@ -13,7 +13,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 support session 通过 ClickHouse 连接器向 ClickHouse 授予临时诊断访问权限。本页介绍会话的定义、如何启用和禁用会话、会话期间 ClickHouse 支持工程师可执行的操作，以及如何对其进行审计。
 
-## 什么是 support session
+## 什么是 support session {#what-a-support-session-is}
 
 support session 是一段有时限的窗口期，在此期间故障排查工具会接受 ClickHouse 支持工程师下发的命令。在会话之外，即使其 outbound WebSocket 仍处于连接状态，它也会拒绝一切命令。除此之外没有其他执行路径，而 ClickHouse 也无法替你开启会话。ClickHouse Cloud 绝不会主动连入你的环境；它只接收故障排查工具通过其 outbound 通道发送的内容。
 
@@ -30,7 +30,7 @@ gateway的传输方式取决于 target。VM gateway使用 self-signed TLS，由�
 
 你在执行 `clicklink clctl init` 时选择会话策略，其中包括操作员允许列表。
 
-## 启用和禁用会话
+## 启用和禁用会话 {#enabling-and-disabling-sessions}
 
 <Tabs>
   <Tab title="Kubernetes" id="sessions-kubernetes">
@@ -81,11 +81,11 @@ gateway的传输方式取决于 target。VM gateway使用 self-signed TLS，由�
   </Tab>
 </Tabs>
 
-## 会话过期
+## 会话过期 {#session-expiry}
 
 会话会自动过期。默认时长为 4 小时；`session enable --duration` 最长可接受 24 小时。过期时，或运行 `session disable` 后，故障排查工具将不再接受命令。禁用即可立即撤销访问权限：无需重启，也无需与 ClickHouse 协调。
 
-## 操作员允许列表
+## 操作员允许列表 {#operator-allowlist}
 
 每次gateway调用都会依据操作员电子邮件允许列表进行授权。匹配使用的是经验证的 OIDC 标记中验证的电子邮件，绝不使用客户端提供的值。
 
@@ -94,7 +94,7 @@ gateway的传输方式取决于 target。VM gateway使用 self-signed TLS，由�
 
 在这两种目标上，gateway都会在距上次读取超过 30 秒后的下一次请求时重新读取该文件。修改无需重启即可生效。
 
-## 操作员在会话期间可以执行哪些操作
+## 操作员在会话期间可以执行哪些操作 {#what-operators-can-do}
 
 会话处于活动状态期间，ClickHouse 支持工程师可以运行两类命令。
 
@@ -106,7 +106,7 @@ gateway的传输方式取决于 target。VM gateway使用 self-signed TLS，由�
 
 故障排查工具的 RBAC 不包含 `exec`、`delete` 或 `patch` 权限，因此操作员无法在你的 pod (容器组) 中打开 shell，也无法通过会话更改任何内容。完整的授权与 RBAC 清单参见[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)参考文档。
 
-## 审计日志
+## 审计日志 {#audit-log}
 
 会话期间执行的每条命令都会以每行一个 JSON 对象 (NDJSON) 的形式追加写入 `/var/log/clicklink/troubleshoot-audit.log`。被阻止的命令同样会被记录，并由 `blocked_by` 说明原因 (例如 `session inactive`) 。`submitted_by` 是命令通道上的组织 ID：也就是你自己的组织 ID。具体是哪位 ClickHouse 工程师，记录在 ClickHouse Cloud 一侧，而不在该文件中。一条会话命令记录如下所示：
 
@@ -140,11 +140,11 @@ kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-trouble
 
 审计日志只是环境中的一个普通文件；可以像处理其他主机或容器日志一样，将其发送到你自己的 SIEM。
 
-## 脱敏
+## 脱敏 {#redaction}
 
 故障排查工具返回的所有内容在离开您的环境前都会经过脱敏处理。内置模式可识别 IPv4 和 IPv6 地址、Bearer 令牌、AWS 访问密钥、电子邮件地址、JWT、SSH 私钥，以及嵌入连接字符串中的凭据。您可以在 `/etc/clicklink/redaction-patterns.yaml` 中扩展或覆盖这些模式；与内置模式同名的条目会将其替换。模式文件无效时，守护进程会拒绝启动，`clicklink clctl preflight` 也会验证该文件，因此脱敏配置损坏时会明确报错。
 
-## 相关页面
+## 相关页面 {#related-pages}
 
 * [Architecture](/zh/products/bring-your-own-cloud/connector/architecture)：连接器 建立的所有连接，以及会话相关的数据流。
 * [Configuration](/zh/products/bring-your-own-cloud/connector/configuration)：gateway、允许列表和脱敏设置。

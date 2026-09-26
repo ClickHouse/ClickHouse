@@ -15,13 +15,13 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 يمكن استخدام الدالة `url` في استعلامات `SELECT` و`INSERT` على البيانات الموجودة في جداول [URL](/ar/reference/engines/table-engines/special/url).
 
-## الصيغة
+## الصيغة {#syntax}
 
 ```sql
 url(URL [,format] [,structure] [,headers])
 ```
 
-## المعلمات
+## المعلمات {#parameters}
 
 | المعلمة     | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -30,11 +30,11 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | بنية الجدول بصيغة `'UserID UInt64, Name String'`. ويحدد أسماء الأعمدة وأنواعها. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                                                                                                                                                   |
 | `headers`   | الرؤوس بصيغة `'headers('key1'='value1', 'key2'='value2')'`. يمكنك تعيين رؤوس لاستدعاء HTTP.                                                                                                                                                                                                                                                                                                                                      |
 
-## القيمة المُعادة
+## القيمة المُعادة {#returned-value}
 
 جدول بالتنسيق والبنية المحدَّدين، ويحتوي على بيانات من `URL` المحدَّد.
 
-## أمثلة
+## أمثلة {#examples}
 
 الحصول على أول 3 أسطر من جدول يحتوي على أعمدة من النوع `String` والنوع [UInt32](/ar/reference/data-types/int-uint) من خادم HTTP يردّ بتنسيق [CSV](/ar/reference/formats/CSV/CSV).
 
@@ -50,7 +50,7 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
-## التوجيه وفق مخطط URL
+## التوجيه وفق مخطط URL {#scheme-dispatch}
 
 تعمل الدالة `url` كغلاف موحّد فوق دوال الجداول الأخرى الخاصة بالملفات وتخزين الكائنات: إذ تُوجِّه إلى الواجهة الخلفية المناسبة استنادًا إلى مخطط URL. يتيح لك ذلك القراءة من أي موقع مدعوم باستخدام صياغة موحّدة واحدة.
 
@@ -77,13 +77,13 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 
 وللسبب نفسه، يُنفَّذ أي استدعاء `url` موجَّه على العقدة التي استقبلت الاستعلام: إذ لا يُطبَّق عليه توزيع [parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/ar/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines). استخدم دالة cluster المقابلة مباشرةً عندما تريد توزيع القراءة على الـ replicas.
 
-## أنماط glob في URL
+## أنماط glob في URL {#globs-in-url}
 
 تُستخدم الأنماط داخل `{ }` لإنشاء مجموعة من الشظايا أو لتحديد عناوين التبديل الاحتياطي. للاطلاع على أنواع الأنماط المدعومة والأمثلة، راجع وصف الدالة [remote](/ar/reference/functions/table-functions/remote#globs-in-addresses).
 يُستخدم المحرف `|` داخل الأنماط لتحديد عناوين التبديل الاحتياطي. ويجري المرور عليها بالترتيب نفسه الوارد في النمط. ويكون عدد العناوين المُنشأة محدودًا بإعداد [glob&#95;expansion&#95;max&#95;elements](/ar/reference/settings/session-settings/other#glob_expansion_max_elements).
 للاطلاع على بنية glob للمسار ضمن URL (مثل `*` و `{a,b}` و `{N..M}` و `**`)، راجع [أنماط glob في المسار](/ar/reference/functions/table-functions/file#globs-in-path). لاحظ أن `?` يبدأ سلسلة الاستعلام في URL، ولا يمكن استخدامه كحرف بدل في مكوّن المسار.
 
-## أحرف البدل مع صفحات فهرس HTTP
+## أحرف البدل مع صفحات فهرس HTTP {#wildcards-with-http-index-pages}
 
 بالنسبة إلى `url` ومحرك الجدول `URL`، يمكن لـ ClickHouse توسيع أحرف البدل من خلال جلب صفحات فهرس HTTP ‏(HTML أو نص عادي) واستخراج عناوين URL من جسم الاستجابة. يتيح ذلك أنماطًا مثل `/**/` عندما يوفّر الخادم سردًا للدلائل.
 
@@ -106,7 +106,7 @@ FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
 SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 ```
 
-## الأعمدة الافتراضية
+## الأعمدة الافتراضية {#virtual-columns}
 
 * `_path` — المسار إلى `URL`. النوع: `LowCardinality(String)`.
 * `_file` — اسم مورد `URL`. النوع: `LowCardinality(String)`.
@@ -114,7 +114,7 @@ SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، فستكون القيمة `NULL`.
 * `_headers` - رؤوس استجابة HTTP. النوع: `Map(LowCardinality(String), LowCardinality(String))`.
 
-## إعداد use_hive_partitioning
+## إعداد use_hive_partitioning {#hive-style-partitioning}
 
 عند تعيين `use_hive_partitioning` إلى 1، سيكتشف ClickHouse التقسيم بنمط Hive في المسار (`/name=value/`) وسيتيح استخدام أعمدة التقسيم كأعمدة افتراضية في الاستعلام. وستكون لهذه الأعمدة الافتراضية الأسماء نفسها الموجودة في مسار التقسيم.
 
@@ -126,7 +126,7 @@ SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-## حلّ عناوين URL النسبية
+## حلّ عناوين URL النسبية {#resolving-relative-urls}
 
 يتيح الإعداد [url&#95;base](/ar/reference/settings/session-settings/url#url_base) تمرير عنوان URL نسبي إلى الدالة `url`. وعند تعيين `url_base` وكانت وسيطة الدالة مرجعًا نسبيًا، يُحلّ هذا المرجع بالاستناد إلى عنوان URL الأساسي وفقًا لـ [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
 
@@ -148,17 +148,17 @@ SET url_base = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/'
 SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ```
 
-## إعدادات التخزين
+## إعدادات التخزين {#storage-settings}
 
 * [engine&#95;url&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings/other#engine_url_skip_empty_files) - يسمح بتجاوز الملفات الفارغة أثناء القراءة. يكون معطّلًا افتراضيًا.
 * [enable&#95;url&#95;encoding](/ar/reference/settings/session-settings/enable#enable_url_encoding) - يسمح بتمكين/تعطيل فك ترميز/ترميز المسار في URI. يكون مُمكّنًا افتراضيًا.
 * [url&#95;base](/ar/reference/settings/session-settings/url#url_base) - عنوان URL الأساسي المستخدم في resolving عناوين URL نسبية المُمرَّرة إلى الدالة `url`.
 
-## الأذونات
+## الأذونات {#permissions}
 
 تتطلب الدالة `url` الإذن `CREATE TEMPORARY TABLE`. لذلك، لن تعمل مع المستخدمين الذين لديهم الإعداد [readonly](/ar/concepts/features/configuration/settings/permissions-for-queries#readonly) = 1. ويُشترط أن تكون القيمة على الأقل readonly = 2.
 
-## مواضيع ذات صلة
+## مواضيع ذات صلة {#related}
 
 * [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)
 

@@ -7,9 +7,9 @@ description: 'Despliegue ClickHouse en su propia infraestructura en la nube'
 doc_type: 'referencia'
 ---
 
-## Roles de IAM de AWS
+## Roles de IAM de AWS {#aws-iam-roles}
 
-### Rol de IAM Bootstrap
+### Rol de IAM Bootstrap {#bootstrap-iam-role}
 
 El rol de IAM Bootstrap tiene los siguientes permisos:
 
@@ -18,7 +18,7 @@ El rol de IAM Bootstrap tiene los siguientes permisos:
 * **Operaciones de IAM (por ejemplo, `iam:CreatePolicy`)**: Necesarias para que los controladores puedan crear roles adicionales (consulta la siguiente sección para obtener más detalles).
 * **Operaciones de EKS**: Limitadas a recursos con nombres que comienzan con el prefijo `clickhouse-cloud`.
 
-### Roles de IAM adicionales creados por el controlador
+### Roles de IAM adicionales creados por el controlador {#additional-iam-roles-created-by-the-controller}
 
 Además de `ClickHouseManagementRole`, creado mediante CloudFormation, el controlador creará varios roles adicionales.
 
@@ -44,9 +44,9 @@ Los roles **K8s-control-plane** y **k8s-worker** están pensados para que los as
 
 Por último, **`data-plane-mgmt`** permite que un componente del plano de control de ClickHouse Cloud reconcilie los Custom resources necesarios, como `ClickHouseCluster` y el Istio Virtual Service/Gateway.
 
-## Cuentas de servicio de GCP
+## Cuentas de servicio de GCP {#gcp-service-accounts}
 
-### Cuenta de servicio Bootstrap
+### Cuenta de servicio Bootstrap {#bootstrap-service-account}
 
 A la cuenta de servicio Bootstrap se le asignan roles personalizados de ámbito de proyecto con los siguientes permisos:
 
@@ -56,7 +56,7 @@ A la cuenta de servicio Bootstrap se le asignan roles personalizados de ámbito 
 * **Storage**: Se usa para administrar los buckets de Cloud Storage que se utilizan para las copias de seguridad de ClickHouse, el estado compartido y los datos de monitorización.
 * **Rol de IAM**: Administra las cuentas de servicio y los roles personalizados dentro del proyecto. Este rol no otorga la capacidad de crear claves de cuentas de servicio, vincular políticas de organización ni modificar recursos en otros proyectos.
 
-### Cuentas de servicio adicionales creadas por el controlador
+### Cuentas de servicio adicionales creadas por el controlador {#additional-service-accounts-created-by-the-controller}
 
 Además de la cuenta de servicio `clickhouse-management` creada mediante Terraform como parte del onboarding, cuando aprovisionas tu primer servicio BYOC, el plano de control de ClickHouse (autenticándose como `clickhouse-management`) crea cuentas de servicio adicionales en tu proyecto para cargas de trabajo específicas dentro del clúster. Cada una de ellas se crea con un conjunto de permisos reducido y de un único propósito.
 
@@ -72,9 +72,9 @@ Además de la cuenta de servicio `clickhouse-management` creada mediante Terrafo
 
 El state exporter, que publica eventos de estado de servicios y copias de seguridad en ClickHouse Cloud, queda deliberadamente fuera de esta lista: en GCP, su identidad de publicación es una cuenta de servicio propiedad de ClickHouse en un proyecto propiedad de ClickHouse, no una creada en el tuyo. Lo que sí se crea en tu proyecto es una vinculación de identidad de carga de trabajo que permite a la cuenta de servicio `state-exporter` dentro del clúster suplantarla. No interviene ningún material de claves, y la identidad que publica en Pub/Sub no tiene permisos en tu proyecto.
 
-## Roles e identidades de Azure
+## Roles e identidades de Azure {#azure-roles-and-identities}
 
-### Entidad de servicio de onboarding
+### Entidad de servicio de onboarding {#onboarding-service-principal}
 
 El onboarding mediante el [módulo de Terraform para Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) aprovisiona una aplicación multiinquilino como Aplicación empresarial (entidad de servicio) en su tenant, conforme a las directrices de Azure para la autenticación entre tenants. A la entidad de servicio se le asigna un rol personalizado de privilegios mínimos con ámbito en la suscripción de destino, cuyos permisos incluyen:
 
@@ -84,7 +84,7 @@ El onboarding mediante el [módulo de Terraform para Azure](https://github.com/C
 * **Identidad**: Administre las identidades administradas asignadas por el usuario y sus credenciales de identidad federada dentro de la suscripción.
 * **Autorización**: Administre las definiciones de roles personalizados y las asignaciones de roles. Todos los permisos están limitados a la suscripción de destino; el rol no puede acceder a recursos de otras suscripciones ni tenants.
 
-### Identidades administradas adicionales creadas por el controlador
+### Identidades administradas adicionales creadas por el controlador {#additional-managed-identities-created-by-the-controller}
 
 Al aprovisionar servicios BYOC, el plano de control de ClickHouse crea identidades administradas asignadas por el usuario en su suscripción. Cada una está federada con una cuenta de servicio de Kubernetes específica (identidad de carga de trabajo) y cuenta con un conjunto limitado de permisos para un único propósito:
 

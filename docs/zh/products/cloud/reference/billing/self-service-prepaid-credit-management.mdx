@@ -11,7 +11,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 如果您通过承诺合同购买了预付费额度，则可以管理这些额度在各个 ClickHouse 组织之间的分配方式。
 在 **预付费额度** 页面中，您可以查看余额并在组织之间转移额度。
 
-## 访问预付费额度
+## 访问预付费额度 {#access-prepaid-credits}
 
 在 ClickHouse Cloud 控制台中打开 **Settings**，然后在 **Account** 下选择 **预付费额度**。
 
@@ -29,7 +29,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   如果你所在的组织均没有预付费额度，该选项卡会显示空状态，并提供定价计算器的链接以及联系销售团队的表单。
 </Note>
 
-## 查看额度余额
+## 查看额度余额 {#view-credit-balances}
 
 该摘要展示你拥有上述访问权限的各组织的预付费额度合计。
 
@@ -46,7 +46,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 所有金额均以 ClickHouse Credits (CHC) 计量，1 CHC 相当于 $1 的用量。如果你以折扣价购买额度，获得的 CHC 数量可能多于实际支付的美元金额。
 
-### 组织余额
+### 组织余额 {#organization-balances}
 
 摘要下方表格中的每一行代表一个组织，数据反映该组织的全部预付费余额。
 
@@ -65,7 +65,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Prepaid credit summary metrics and balances by organization" size="lg" />
 
-## 转移额度
+## 转移额度 {#transfer-credits}
 
 额度转移 (也称为拆分) 是指将预付费额度从源组织转移到目标组织。
 
@@ -79,7 +79,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="额度转移面板，包含源额度授予、目标组织、转移金额以及转移后的余额" size="md" />
 
-### 转移规则
+### 转移规则 {#transfer-rules}
 
 * 只能转移**有效的预付费额度**，试用额度不可转移。
 * 额度转移会改变源组织和目标组织可用的预付费额度，但不会改变承诺合同项下授予的有效额度总量。
@@ -88,7 +88,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * 无法在 ClickHouse Cloud 组织与[自备 Cloud (BYOC)](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 组织之间转移额度。
 * 无法在通过不同云市场 (例如 AWS Marketplace 和 Google Cloud Marketplace) 计费的组织之间转移额度。
 
-### 转移后的 Marketplace 计费
+### 转移后的 Marketplace 计费 {#marketplace-billing-after-a-transfer}
 
 如果源组织通过有效的 AWS、Google Cloud 或 Azure Marketplace 契约进行计费，则后续行为取决于目标组织的计费配置：
 
@@ -100,7 +100,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 如需通过同一个 Marketplace 订阅结算两个组织的超额费用，请参阅[如何使用其他组织的 Marketplace 订阅](/zh/products/cloud/reference/billing/managing-payment-methods#steps-switch-org-different-org)。
 
-## 查看转移历史与通知
+## 查看转移历史与通知 {#review-transfer-history-and-notifications}
 
 转移完成后：
 

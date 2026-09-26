@@ -11,7 +11,7 @@ ClickHouse Connect는 기본 Python 및 Cython 구현 대신 컴파일된 Rust �
 
 이 코덱은 실험적 기능이며 선택적으로 사용할 수 있습니다. 기본값은 여전히 Python 코덱입니다.
 
-## 설치
+## 설치 {#installation}
 
 컴파일된 코덱은 `clickhouse-connect-core`라는 별도의 휠로 배포되며, `_ch_core` 확장 기능 모듈을 제공합니다. 평가 목적이라면 코덱과 PyArrow를 함께 설치하십시오:
 
@@ -31,7 +31,7 @@ pip install "clickhouse-connect[rust]"
 
 Rust 코덱을 선택했으나 컴파일된 모듈이 설치되어 있지 않으면, 클라이언트 생성 시 이 설치 명령을 안내하는 `NotSupportedError`가 발생합니다.
 
-## 코덱 활성화
+## 코덱 활성화 {#enabling-the-codec}
 
 `native_codec` 클라이언트 옵션으로 코덱을 선택합니다:
 
@@ -53,7 +53,7 @@ client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
 
 이 옵션은 `interface="chdb"` 클라이언트에서는 무시되며, 해당 클라이언트는 항상 Python 코덱을 사용합니다.
 
-## Rust 코덱을 사용해야 하는 경우
+## Rust 코덱을 사용해야 하는 경우 {#when-to-use-the-rust-codec}
 
 Rust 코덱은 `String`, `LowCardinality`, `Map`, `Array`, `JSON`, `Decimal`, `UUID`와 같은 텍스트, 컨테이너, 복합 타입이 포함된 대용량 DataFrame 결과에서 가장 유용합니다. 또한 대규모 행 및 컬럼 블록 스트림, 동시 실행 쿼리 워크로드, 대량 삽입에도 도움이 될 수 있습니다.
 
@@ -63,7 +63,7 @@ Rust 코덱은 `String`, `LowCardinality`, `Map`, `Array`, `JSON`, `Decimal`, `U
 
 코덱을 도입하기 전에 실제 워크로드로 벤치마크를 수행하십시오. 측정 중에는 `native_codec="rust_strict"`를 사용하여, 지원되지 않는 옵션이나 누락된 의존성이 있을 때 쿼리가 조용히 Python으로 라우팅되지 않고 예외가 발생하도록 하십시오.
 
-## 폴백 규칙
+## 폴백 규칙 {#fallback-rules}
 
 폴백 결정은 바이트를 읽거나 전송하기 전에 이루어지므로 스트림 도중에 코덱이 전환되는 일은 없습니다. 쿼리에서는 응답 본문(response body)을 소비하기 전에 선택이 이루어집니다. 삽입에서는 모든 컬럼 타입이 지원되는 경우에만 Rust 인코더가 선택되며, 그렇지 않으면 삽입 전체가 Python 코덱에서 실행됩니다.
 
@@ -73,7 +73,7 @@ SQLAlchemy 방언 리플렉션 SQL 문을 비롯한 드라이버 내부 메타�
 
 Rust 코덱이 감지한 잘못된 형식의 Native 페이로드는 `DataError`를 발생시킵니다.
 
-## 버전 관리
+## 버전 관리 {#versioning}
 
 `clickhouse-connect-core`는 `clickhouse-connect`와 별개로 버전이 관리됩니다. 드라이버는 `rust` 엑스트라를 통해 호환되는 버전 범위를 선언하며, 모듈은 Rust 코덱이 선택될 때 드라이버가 확인하는 바인딩 API 버전을 내보냅니다. 설치된 휠이 드라이버에 비해 너무 오래된 버전이면, 클라이언트 생성 시 업그레이드 명령을 안내하는 `NotSupportedError`가 발생합니다:
 
@@ -83,7 +83,7 @@ pip install --upgrade clickhouse-connect-core
 
 컴파일된 코덱의 수정 및 성능 개선 사항은 `clickhouse-connect-core` 릴리스로 제공되며, 호환되는 core 휠(wheel)로 업그레이드하여 적용할 수 있습니다. 드라이버의 Rust 통합과 관련된 변경 사항을 적용하려면 `clickhouse-connect`를 업그레이드해야 합니다.
 
-## 알려진 동작 차이
+## 알려진 동작 차이 {#known-behavior-differences}
 
 Rust 코덱은 Python 코덱과 셀 단위로 동일한 결과를 내는 것을 목표로 합니다. 현재 알려진 차이는 다음과 같습니다.
 

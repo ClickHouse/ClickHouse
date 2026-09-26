@@ -13,7 +13,7 @@ ClickHouse mediante el package comunitario
 explica cómo migrar un despliegue existente a `apache-airflow-providers-clickhousedb`. Para conocer el funcionamiento del
 provider en sí, consulta [Conectar Apache Airflow a ClickHouse](/es/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse).
 
-## ¿Por qué un provider nativo?
+## ¿Por qué un provider nativo? {#why-a-native-provider}
 
 Los providers son la forma en que Airflow se integra con sistemas de terceros. Se publican, se prueban y
 se documentan junto con el resto del ecosistema de Airflow, y de este en concreto se encarga la
@@ -34,7 +34,7 @@ operators específicos de ClickHouse.
   a todos los DAG a la vez.
 </Note>
 
-## De un vistazo
+## De un vistazo {#at-a-glance}
 
 |                                   | `airflow-clickhouse-plugin`                                                                    | `apache-airflow-providers-clickhousedb`                                                                                                                                 |
 | --------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -47,7 +47,7 @@ operators específicos de ClickHouse.
 | Hook                              | `ClickHouseHook` (`BaseHook`) y `ClickHouseDbApiHook` (`DbApiHook`)                            | Un único `ClickHouseHook` (`DbApiHook`)                                                                                                                                 |
 | Airflow mínimo                    | 2.0                                                                                            | 2.11                                                                                                                                                                    |
 
-## Paso 1: comprobar los prerequisites e instalar
+## Paso 1: comprobar los prerequisites e instalar {#step-1-check-prerequisites-and-install}
 
 El provider requiere Airflow 2.11 o posterior y `apache-airflow-providers-common-sql` 1.32.0 o
 posterior. Si utiliza una release anterior, actualice primero Airflow.
@@ -63,7 +63,7 @@ migra DAG por DAG. Elimine el plugin cuando ya nada lo importe:
 pip uninstall airflow-clickhouse-plugin clickhouse-driver
 ```
 
-## Paso 2: Actualizar las conexiones
+## Paso 2: Actualizar las conexiones {#step-2-update-connections}
 
 Este es el paso que hace que todo falle si lo omite. Todas las conexiones de ClickHouse existentes apuntan al
 puerto nativo, y el provider necesita el puerto HTTP.
@@ -86,7 +86,7 @@ tipo de conexión `clickhouse`, porque Airflow lo deduce del scheme del URI. En 
 claves adicionales; los valores de la cadena de consulta se analizan como JSON, por lo que `secure=true` sigue siendo un
 valor booleano.
 
-### Extras de conexión
+### Extras de conexión {#connection-extras}
 
 El plugin pasaba cada clave de `extra` directamente a `clickhouse_driver.Client`, por lo que las conexiones pueden
 llevar cualquier keyword argument de `clickhouse-driver`. El provider solo lee un conjunto fijo de claves y
@@ -150,7 +150,7 @@ Verifique cada connection migrada antes de modificar los DAG:
 airflow connections test clickhouse_default
 ```
 
-## Paso 3: Reemplazar los imports
+## Paso 3: Reemplazar los imports {#step-3-replace-imports}
 
 | Clase del plugin                                                                         | Reemplazo en el provider                                             |
 | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
@@ -174,7 +174,7 @@ el hook a partir de la connection por sí solas. Si usabas esas envolturas, la m
 línea de import, quitar el prefijo `ClickHouse` y pasar `conn_id` de forma explícita (véase el
 [paso 7](#step-7-the-commonsql-wrapper-family)).
 
-## Paso 4: de `ClickHouseOperator` a `SQLExecuteQueryOperator`
+## Paso 4: de `ClickHouseOperator` a `SQLExecuteQueryOperator` {#step-4-clickhouseoperator-to-sqlexecutequeryoperator}
 
 | argumento de `ClickHouseOperator`           | equivalente en `SQLExecuteQueryOperator`                | Notas                                                                                                                                                                                                                                                                                                                              |
 | ------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -241,7 +241,7 @@ update_income_aggregate = SQLExecuteQueryOperator(
 )
 ```
 
-### Resultados de múltiples sentencias
+### Resultados de múltiples sentencias {#multi-statement-results}
 
 El plugin enviaba a XCom el resultado de la **última** sentencia. `SQLExecuteQueryOperator` devuelve
 un resultado por sentencia cuando `sql` es una lista, por lo que el ejemplo anterior envía `[[], [(12345.0,)]]`
@@ -284,7 +284,7 @@ load_rows = SQLInsertRowsOperator(
 
 Pasa siempre `columns`; sin él, el operator busca la table mediante SQLAlchemy.
 
-### Conservar los tipos de columna
+### Conservar los tipos de columna {#keeping-column-types}
 
 `with_column_types=True` devolvía `(rows, [(name, type), ...])`. Puede reproducirlo con un handler; el cursor de
 `clickhouse-connect` expone los nombres de tipo de ClickHouse en `cursor.description`:
@@ -302,7 +302,7 @@ SQLExecuteQueryOperator(
 )
 ```
 
-## Paso 5: de `ClickHouseHook.execute` a los métodos de `DbApiHook`
+## Paso 5: de `ClickHouseHook.execute` a los métodos de `DbApiHook` {#step-5-clickhousehookexecute-to-dbapihook-methods}
 
 El hook del plugin exponía un único método, `execute`, que replicaba `clickhouse_driver.Client.execute`. El
 hook del provider es un `DbApiHook`, por lo que dispone de los métodos estándar que tiene cualquier otro provider SQL:
@@ -373,7 +373,7 @@ with hook.get_client() as client:
     columns = result.result_columns
 ```
 
-## Paso 6: de `ClickHouseSensor` a `SqlSensor`
+## Paso 6: de `ClickHouseSensor` a `SqlSensor` {#step-6-clickhousesensor-to-sqlsensor}
 
 Este es el único reemplazo en el que cambia la entrada del invocable.
 
@@ -420,7 +420,7 @@ SqlSensor(
 Si tu invocable necesita la fila completa, pasa `selector=lambda row: row`. Si necesita todas las filas, escribe
 la comprobación en SQL para que la consulta devuelva un único valor booleano o un recuento.
 
-## Paso 7: La familia de envolturas `common.sql`
+## Paso 7: La familia de envolturas `common.sql` {#step-7-the-commonsql-wrapper-family}
 
 El código que usaba `ClickHouseSQLExecuteQueryOperator`, `ClickHouseSqlSensor` y las demás
 envolturas con prefijo `ClickHouse` es el que requiere menos trabajo:
@@ -438,7 +438,7 @@ envolturas con prefijo `ClickHouse` es el que requiere menos trabajo:
 * La conexión sigue necesitando los cambios de puerto y de extras del paso 2. Las envolturas también
   usaban el protocolo nativo.
 
-## Diferencias de comportamiento a revisar
+## Diferencias de comportamiento a revisar {#behavior-differences-to-review}
 
 Incluso después de que el código compile, hay algunos aspectos que se comportan de forma distinta en tiempo de ejecución.
 
@@ -458,7 +458,7 @@ Incluso después de que el código compile, hay algunos aspectos que se comporta
 
 **Gestión de conexiones.** El hook crea un cliente de `clickhouse-connect` por cada llamada a `run` o `get_client`, igual que el plugin abría una nueva conexión nativa por cada `execute`. Los clientes comparten un grupo de conexiones HTTP a nivel de proceso, por lo que llamar a `close()` en un cliente obtenido con `get_client()` es una buena práctica más que un requisito; el grupo se libera cuando el proceso de la tarea termina. El cliente es un gestor de contexto, así que `with hook.get_client() as client:` es la forma más limpia.
 
-## Lista de comprobación
+## Lista de comprobación {#checklist}
 
 1. Airflow es 2.11 o posterior.
 2. El puerto HTTP es accesible desde los workers; los certificados TLS son válidos para el endpoint HTTP.
@@ -477,7 +477,7 @@ Incluso después de que el código compile, hay algunos aspectos que se comporta
 11. Actualizado el código que captura excepciones de `clickhouse_driver`.
 12. `airflow-clickhouse-plugin` y `clickhouse-driver` desinstalados.
 
-## Uso de un asistente de programación con IA
+## Uso de un asistente de programación con IA {#using-an-ai-coding-assistant}
 
 La correspondencia anterior es deliberadamente mecánica, de modo que un asistente de programación pueda aplicarla a un repositorio de DAG. Un prompt que ha dado buenos resultados:
 
@@ -503,7 +503,7 @@ Show the diff and a summary of items flagged for human review.
 
 Revise el diff. Los cambios en la connection, la semántica de los sensores y los consumers de XCom son los puntos donde las reescrituras automatizadas suelen fallar.
 
-## Contenido relacionado
+## Contenido relacionado {#related-content}
 
 * [Conectar Apache Airflow a ClickHouse](/es/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse)
 * [Client de Python `clickhouse-connect`](/es/integrations/language-clients/python/index)

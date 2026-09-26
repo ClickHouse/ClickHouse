@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', '확장 기능', '튜토리얼', '택시']
 ---
 
-## 개요
+## 개요 {#overview}
 
 이 튜토리얼은 [ClickHouse 튜토리얼]을 따르되, 모든 쿼리는
 pg&#95;clickhouse를 통해 실행합니다.
@@ -17,7 +17,7 @@ pg&#95;clickhouse를 통해 실행합니다.
 * ClickHouse Managed Postgres를 사용하는 경우 [Console에서](#from-console)를 선택하십시오.
 * 확장 기능을 직접 설치하고 구성하는 경우 [PSQL에서](#from-psql)를 선택하십시오.
 
-## ClickHouse 시작하기
+## ClickHouse 시작하기 {#start-clickhouse}
 
 먼저 ClickHouse 데이터베이스가 아직 없다면 생성하십시오. 빠르게
 시작하려면 Docker image를 사용하면 됩니다:
@@ -27,7 +27,7 @@ docker run -d --network host --name clickhouse -p 8123:8123 -p9000:9000 --ulimit
 docker exec -it clickhouse clickhouse-client
 ```
 
-## 테이블 생성하기
+## 테이블 생성하기 {#create-a-table}
 
 다음에서는 [ClickHouse 튜토리얼]의 예제를 바탕으로 The New York
 City taxi 데이터셋으로 간단한 데이터베이스를 만들어 보겠습니다:
@@ -92,7 +92,7 @@ PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 ```
 
-## 데이터 세트 추가
+## 데이터 세트 추가 {#add-the-data-set}
 
 그런 다음 데이터를 불러옵니다:
 
@@ -161,7 +161,7 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
-## 콘솔에서
+## 콘솔에서 {#from-console}
 
 ClickHouse Managed Postgres를 사용하는 경우 ClickHouse Cloud
 콘솔에서 `pg_clickhouse`를 구성하고 ClickHouse 서비스에 연결할 수
@@ -192,9 +192,9 @@ SELECT * FROM <schema>.<table>;
 이 튜토리얼의 택시 예시를 따라 하려면 `taxi` ClickHouse
 데이터베이스를 선택하고 `taxi` 대상 스키마로 가져오세요.
 
-## PSQL에서
+## PSQL에서 {#from-psql}
 
-### pg_clickhouse 설치
+### pg_clickhouse 설치 {#install-pg_clickhouse}
 
 [PGXN] 또는 [GitHub]에서 pg&#95;clickhouse를 빌드하여 설치합니다. 또는
 [pg&#95;clickhouse image]를 사용해 Docker 컨테이너를 실행할 수도 있으며, 이는
@@ -205,7 +205,7 @@ docker run -d --network host --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
 ```
 
-### pg_clickhouse 연결
+### pg_clickhouse 연결 {#connect-pg_clickhouse}
 
 이제 Postgres에 연결합니다:
 
@@ -348,7 +348,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 &quot;Foreign Scan&quot;이 실행 계획의 최상위에 표시된다는 점에 유의하십시오. 이는
 전체 쿼리가 ClickHouse로 푸시되었음을 의미합니다.
 
-## 데이터 분석
+## 데이터 분석 {#analyze-the-data}
 
 데이터를 분석하기 위해 몇 가지 쿼리를 실행해 보십시오. 아래 예시를 살펴보거나
 직접 SQL 쿼리를 실행해 보십시오.
@@ -504,7 +504,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
   Time: 17.450 ms
   ```
 
-## 딕셔너리 생성
+## 딕셔너리 생성 {#create-a-dictionary}
 
 ClickHouse 서비스의 테이블에 연결된 딕셔너리를 생성합니다. 이
 테이블과 딕셔너리는 New York City의 각 동네별로 한 행을 포함하는
@@ -605,7 +605,7 @@ CSV 파일을 기반으로 합니다.
    borough별로 합산합니다. 승차한 지역을 알 수 없는 운행도
    상당히 많다는 점에 유의하십시오.
 
-## 조인 수행
+## 조인 수행 {#perform-a-join}
 
 `taxi_zone_dictionary`를 `trips` 테이블과 조인하는 몇 가지 쿼리를 작성해 보겠습니다.
 

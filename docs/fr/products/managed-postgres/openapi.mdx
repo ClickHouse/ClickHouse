@@ -18,7 +18,7 @@ Vous connaissez déjà [OpenAPI] ? Récupérez vos [clés API] et accédez dire
 [référence de l’API ClickHouse Managed Postgres][pg-openapi]. Sinon, suivez ce guide pour une
 brève présentation.
 
-## Clés API
+## Clés API {#api-keys}
 
 L’utilisation de l’OpenAPI de ClickHouse nécessite une authentification ; consultez [clés API] pour savoir
 comment les créer. Utilisez-les ensuite comme identifiants d’authentification Basic, comme suit :
@@ -30,7 +30,7 @@ KEY_SECRET=mykeysecret
 curl -s --user "$KEY_ID:$KEY_SECRET" https://api.clickhouse.cloud/v1/organizations | jq
 ```
 
-## ID de l’organisation
+## ID de l’organisation {#organization-id}
 
 Ensuite, vous aurez besoin de l’ID de votre organisation.
 
@@ -75,11 +75,11 @@ ceci :
 }
 ```
 
-## CRUD
+## CRUD {#crud}
 
 Voyons le cycle de vie d’un service Postgres.
 
-### Créer
+### Créer {#create}
 
 Commencez par en créer un nouveau
 à l’aide de l’[API de création]. Elle nécessite les propriétés suivantes dans le corps JSON
@@ -142,7 +142,7 @@ y compris les données de connexion :
 }
 ```
 
-### Lecture
+### Lecture {#read}
 
 Utilisez l’`id` de la réponse pour récupérer à nouveau le service :
 
@@ -182,7 +182,7 @@ postgres=#
 
 Tapez `\q` pour quitter [psql].
 
-### Mise à jour
+### Mise à jour {#update}
 
 L’[API patch] permet de mettre à jour un sous-ensemble des propriétés d’un
 service Postgres géré via JSON Merge Patch [RFC 7396]. Les tags peuvent être particulièrement
@@ -259,7 +259,7 @@ les conséquences de cette modification :
 
   */}
 
-### Supprimer
+### Supprimer {#delete}
 
 Utilisez l’[API de suppression] pour supprimer un service Postgres.
 
@@ -284,18 +284,18 @@ En cas de succès, la réponse renverra le code d’état 200, par exemple :
 }
 ```
 
-## Monitoring
+## Monitoring {#monitoring}
 
 Deux points de terminaison compatibles avec Prometheus exposent des métriques de CPU, de mémoire, d’E/S, de connexion et de transaction pour les services ClickHouse Managed Postgres : l’un renvoie les métriques de tous les services de l’organisation, l’autre celles d’un seul service. Consultez la page [point de terminaison Prometheus] pour la configuration et la [référence des métriques] pour la liste complète des métriques.
 
-## Query insights
+## Query insights {#query-insights}
 
 La télémétrie par instruction qui alimente l’onglet [Query Insights] dans la console cloud
 est également accessible par programmation. Deux endpoints exposent les modèles de
 requête les plus lents d’un service : l’un répertorie tous les modèles classés par impact, l’autre
 renvoie un modèle précis avec ses exécutions récentes.
 
-### Lister les modèles de requête lentes
+### Lister les modèles de requête lentes {#list-slow-query-patterns}
 
 L’[API slow patterns] renvoie des métriques agrégées pour les modèles de requête les plus lents observés sur un intervalle de temps. Cet intervalle est obligatoire — transmettez
 `from_date` et `to_date` sous forme d’horodatages RFC 3339 :
@@ -353,7 +353,7 @@ Le `queryId` est le hachage signé sur 64 bits de l’instruction normalisée ; 
 souvent négatif. Renvoyez-le tel quel — y compris le `-` initial — pour récupérer un
 seul modèle de requête.
 
-### Obtenir un modèle de requête lente
+### Obtenir un modèle de requête lente {#get-slow-query-pattern}
 
 Fournissez un `queryId` issu de la réponse de la liste à la [slow pattern API] pour obtenir les métriques agrégées de ce modèle, ainsi que ses exécutions individuelles les plus récentes.
 Les champs `db_name`, `db_user` et `db_operation` qui identifient le modèle sont obligatoires :
@@ -410,7 +410,7 @@ CPU utilisateur et système, workers parallèles, JIT et WAL — les mêmes comp
 L&#39;exemple tronque les deux objets pour plus de concision ; l&#39;API renvoie le jeu complet
 de compteurs documenté dans [per-execution counters].
 
-## Journaux du serveur
+## Journaux du serveur {#server-logs}
 
 Les journaux du serveur PostgreSQL affichés dans la visionneuse de journaux de la console cloud sont également
 accessibles par programmation. L&#39;[API des journaux] renvoie des entrées de journal individuelles pour un

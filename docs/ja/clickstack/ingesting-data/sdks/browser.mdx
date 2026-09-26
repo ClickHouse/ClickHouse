@@ -18,7 +18,7 @@ ClickStack ブラウザ SDK を使用すると、フロントエンドアプリ�
 
 <ClickStackIntegrates signals={['logs', 'traces']} />
 
-## はじめに
+## はじめに {#getting-started}
 
 <br />
 
@@ -69,7 +69,7 @@ ClickStack ブラウザ SDK を使用すると、フロントエンドアプリ�
   </Tab>
 </Tabs>
 
-### オプション
+### オプション {#options}
 
 * `apiKey` - ClickStack のインジェスト API key。
 * `service` - イベントが HyperDX UI に表示される際のサービス名。
@@ -87,9 +87,9 @@ ClickStack ブラウザ SDK を使用すると、フロントエンドアプリ�
 * `disableIntercom` -  (任意) Intercom インテグレーションを無効にするかどうか (デフォルト `false`) 
 * `disableReplay` -  (任意) セッションリプレイを無効にするかどうか (デフォルト `false`)
 
-## 追加の設定
+## 追加の設定 {#additional-configuration}
 
-### ユーザー情報またはメタデータを関連付ける
+### ユーザー情報またはメタデータを関連付ける {#attach-user-information-or-metadata}
 
 ユーザー情報を関連付けると、HyperDX UI で
 セッションやイベントを検索・絞り込みできるようになります。これはクライアントの
@@ -112,7 +112,7 @@ HyperDX.setGlobalAttributes({
 });
 ```
 
-### React error boundary のエラーを自動的にキャプチャする
+### React error boundary のエラーを自動的にキャプチャする {#auto-capture-react-error-boundary-errors}
 
 React を使用している場合は、error boundary コンポーネントを
 `attachToReactErrorBoundary` 関数に渡すことで、React の error boundary 内で発生した
@@ -126,7 +126,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 HyperDX.attachToReactErrorBoundary(ErrorBoundary);
 ```
 
-### カスタムアクションを送信する
+### カスタムアクションを送信する {#send-custom-actions}
 
 特定のアプリケーションイベント (例: サインアップ、送信
 など) を明示的に追跡するには、イベント名と必要に応じて
@@ -142,7 +142,7 @@ HyperDX.addAction('Form-Completed', {
 });
 ```
 
-### ネットワークキャプチャを動的に有効にする
+### ネットワークキャプチャを動的に有効にする {#enable-network-capture-dynamically}
 
 ネットワークキャプチャを動的に有効または無効にするには、必要に応じて `enableAdvancedNetworkCapture` または `disableAdvancedNetworkCapture` 関数を呼び出すだけです。
 
@@ -150,7 +150,7 @@ HyperDX.addAction('Form-Completed', {
 HyperDX.enableAdvancedNetworkCapture();
 ```
 
-### CORS リクエストのリソースタイミングを有効にする
+### CORS リクエストのリソースタイミングを有効にする {#enable-resource-timing-for-cors-requests}
 
 フロントエンドアプリケーションが別ドメインに API リクエストを送信する場合は、必要に応じて
 `Timing-Allow-Origin`[ヘッダー](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin)をリクエストとともに送信するよう有効化できます。これにより ClickStack は、DNS ルックアップやレスポンスの

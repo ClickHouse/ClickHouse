@@ -13,9 +13,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 本页将指导您使用注册标记，在托管模式下完成连接器的验证；在该模式下，由 executor 执行由 ClickHouse Cloud 驱动的 service 生命周期。连接器可安装到 Kubernetes 集群 (Helm) 或 Linux VM (systemd) 。标记注册是标准流程。如果您的环境无法直接访问您的连接器端点，请参阅[隔离网络和 mirror 安装](#air-gapped-and-mirrored-installs)。如果要在不使用 executor 的情况下观测自行运行的 ClickHouse，请传入 `--no-managed`。
 
-## 前置条件
+## 前置条件 {#prerequisites}
 
-### 注册你的环境
+### 注册你的环境 {#registration}
 
 在进行注册 (enroll) 之前，客户团队会为你注册环境，并为你的组织启用托管模式。请向他们提供：
 
@@ -27,7 +27,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 随后，ClickHouse Cloud 会为你签发连接器端点和一个一次性注册标记。该标记本身即可标识你的环境，因此注册时无需额外的 ID。
 
-### 所有安装方式通用
+### 所有安装方式通用 {#prerequisites-every-install}
 
 * **连接器 v0.17.0 或更高版本。** 更早的发行版没有托管模式、`platform` 命令或 `instances create`。除非你传入 `--version`，安装程序会提供最新发行版。
 * **你的连接器端点和注册标记**，在[注册](#registration)时提供。
@@ -37,7 +37,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * **尚未部署 ClickHouse。** 托管安装从零个服务开始；由 executor 创建的服务会自行注册。在托管模式下，`init` 不会注册任何你自行运行的 ClickHouse (在 Kubernetes 上会拒绝 `--instance` 和 `--instance-namespace`) 。若要观测这类集群，请使用 `--no-managed` 单独安装一套连接器部署。借助 `--ch-user-suffix`，两套部署可以共用同一个实例，而不会在连接器的用户上发生冲突。该部署需要一个可访问的原生监听端口，安全端口 9440 或明文端口 9000，在 Kubernetes 上会自动检测。它还需要用于预配的 ClickHouse 管理员访问权限：一个无密码的 `default` 用户、通过 `--ch-admin-password-stdin` 或在提示符处输入的密码，或者对由 operator 管理的实例使用 CR 注入。
 * **cosign**，凡是下载发行制品的位置都需要。安装程序始终会校验 SHA-256 校验和。若已安装 cosign，还会校验发行版签名；设置 `CLICKLINK_REQUIRE_COSIGN=1` 后，缺少 cosign 时将拒绝继续执行。
 
-### Kubernetes (Helm) 安装
+### Kubernetes (Helm) 安装 {#prerequisites-kubernetes}
 
 * **一个 kubeconfig**，其当前 context 指向目标 EKS 集群。它必须能够创建和读取连接器命名空间、应用 Secrets、创建 ServiceAccounts、Roles 和 RoleBindings、安装 chart，并为 executor 授权集群级访问权限。
 * 工作站上具备 `eks:DescribeCluster` 和 `ec2:DescribeVpcs` 权限的 **AWS 凭证** (来自环境变量或 profile) 。`init` 会用它们读取集群 VPC 的 CIDR 块，用于配置 NetworkPolicy。若读取失败，它会发出警告，并将该列表留给你自行填写。
@@ -45,7 +45,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * **一个默认存储类**，或通过 `--storage-class` 指定的存储类；故障排查工具和 executor 会将状态保存在 PersistentVolumeClaims 上。
 * **镜像拉取权限**：集群节点必须能够拉取公共 ECR image，或你自行托管的 mirror。
 
-### Linux VM (systemd) 安装
+### Linux VM (systemd) 安装 {#prerequisites-vm}
 
 * **任意 systemd Linux 主机**，amd64 或 arm64。Linux 构建以 FIPS 模式运行。
 * 安装程序和 `init` 需要 **root 权限**。
@@ -56,7 +56,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   在 VM 上，`--skip-provision` 是绕过 Kubernetes API server 要求的唯一方式，且仅适用于 stage 环境。它会跳过 ClickHouse user 预配、executor 的授权、单元启用以及验证，因此仅凭它本身并不能得到一个正在运行的连接器。在 Kubernetes 上，它只跳过 ClickHouse user 预配。executor 的授权仍会应用，因为没有已授权的 ServiceAccount，chart 中的 executor 就无法调度。
 </Note>
 
-## 安装并注册
+## 安装并注册 {#install-and-enroll}
 
 <Steps>
   <Step title="获取连接器端点和注册标记" id="get-endpoint-and-token">
@@ -170,7 +170,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 </Steps>
 
-## 隔离网络与镜像安装
+## 隔离网络与镜像安装 {#air-gapped-and-mirrored-installs}
 
 根据您的环境能够访问的范围，有两部分内容可以独立地以带外方式完成。executor 不需要任何额外配置，它使用与其他组件相同的客户端证书和 API 凭据进行身份验证。其集群级 grant 通过 kubeconfig 授予，而非经由网络。
 
@@ -182,7 +182,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 安装程序同样支持从 mirror 安装：将发行制品和 `install.sh` 托管在您自己的 mirror 上，并通过 `CLICKLINK_MIRROR_URL` 指向它。
 
-### 手动下载和验证
+### 手动下载和验证 {#manual-download-and-verification}
 
 如果不想通过管道运行安装程序，可以自行下载并验证发布版本。该代码块会检测你的平台和架构；可直接在 macOS 或 Linux、amd64 或 arm64 上原样运行：
 
@@ -220,7 +220,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 在 VM 上，解压 tarball，然后在解压后的目录中运行 `sudo ./install.sh`。该脚本会在发行制品所在目录旁执行与 `--host` 相同的主机安装。
 
-## 如果出现失败
+## 如果出现失败 {#if-something-fails}
 
 重新运行相同的命令。`init` 是幂等的：重复运行会收敛到相同状态，保留现有配置和已暂存的文件，并跳过已完成的工作。若某个步骤中途失败，命令行客户端会打印出准确的恢复命令；这些命令可以安全地重复执行。
 

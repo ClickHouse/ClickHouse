@@ -11,7 +11,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 Si vous achetez des crédits prépayés dans le cadre d&#39;un contrat d&#39;engagement, vous pouvez gérer la répartition de ces crédits entre vos organisations ClickHouse.
 Utilisez la page **Prepaid credits** pour consulter les soldes et transférer des crédits d&#39;une organisation à une autre.
 
-## Accéder aux crédits prépayés
+## Accéder aux crédits prépayés {#access-prepaid-credits}
 
 Dans la console ClickHouse Cloud, ouvrez **Settings**, puis sélectionnez **Prepaid credits** sous **Account**.
 
@@ -29,7 +29,7 @@ La page affiche toutes les organisations dans lesquelles vous disposez de l&#39;
   Si aucune de vos organisations ne dispose de crédits prépayés, l&#39;onglet affiche un état vide comportant des liens vers le calculateur de prix et un formulaire de contact du service commercial.
 </Note>
 
-## Consulter les soldes de crédits
+## Consulter les soldes de crédits {#view-credit-balances}
 
 Le récapitulatif affiche les totaux de crédits prépayés pour l&#39;ensemble des organisations auxquelles vous avez accès, comme décrit ci-dessus.
 
@@ -46,7 +46,7 @@ Le récapitulatif affiche les totaux de crédits prépayés pour l&#39;ensemble 
 
 Tous les montants sont exprimés en ClickHouse Credits (CHC), où 1 CHC équivaut à $1 d&#39;utilisation. Si vous avez acheté des crédits à prix réduit, vous pouvez recevoir davantage de CHC que le montant payé en dollars.
 
-### Soldes par organisation
+### Soldes par organisation {#organization-balances}
 
 Chaque ligne du tableau situé sous le récapitulatif correspond à une organisation, les données reflétant l&#39;ensemble des soldes prépayés de cette organisation.
 
@@ -65,7 +65,7 @@ Chaque ligne du tableau situé sous le récapitulatif correspond à une organisa
 
 <Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Métriques récapitulatives et soldes des crédits prépayés par organisation" size="lg" />
 
-## Transférer des crédits
+## Transférer des crédits {#transfer-credits}
 
 Un transfert de crédits, également appelé split, déplace des crédits prépayés d&#39;une organisation source vers une organisation cible.
 
@@ -79,7 +79,7 @@ Pour transférer des crédits, vous devez disposer de la permission [Manage bill
 
 <Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="Panneau de transfert de crédits avec l'allocation source, l'organisation cible, le montant du transfert et les soldes obtenus" size="md" />
 
-### Règles de transfert
+### Règles de transfert {#transfer-rules}
 
 * Vous pouvez transférer uniquement des **crédits prépayés actifs**. Les crédits d&#39;essai ne sont pas transférables.
 * Un transfert de crédits modifie les crédits prépayés disponibles pour les organisations source et destination, mais ne change pas le total des crédits actifs accordés au titre de votre contrat d’engagement.
@@ -88,7 +88,7 @@ Pour transférer des crédits, vous devez disposer de la permission [Manage bill
 * Vous ne pouvez pas transférer de crédits entre des organisations ClickHouse Cloud et [Bring Your Own Cloud (BYOC)](/fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview).
 * Vous ne pouvez pas transférer de crédits entre des organisations facturées via des places de marché cloud différentes, telles qu&#39;AWS Marketplace et Google Cloud Marketplace.
 
-### Facturation via une marketplace après un transfert
+### Facturation via une marketplace après un transfert {#marketplace-billing-after-a-transfer}
 
 Si l&#39;organisation source est facturée via un contrat actif sur la marketplace AWS, Google Cloud ou Azure, c&#39;est la configuration de facturation de l&#39;organisation cible qui détermine le résultat :
 
@@ -100,7 +100,7 @@ Si l&#39;organisation source est facturée via un contrat actif sur la marketpla
 
 Pour facturer les dépassements des deux organisations via le même abonnement marketplace, consultez [comment utiliser l&#39;abonnement marketplace d&#39;une autre organisation](/fr/products/cloud/reference/billing/managing-payment-methods#steps-switch-org-different-org).
 
-## Consulter l&#39;historique des transferts et les notifications
+## Consulter l&#39;historique des transferts et les notifications {#review-transfer-history-and-notifications}
 
 Une fois le transfert terminé :
 

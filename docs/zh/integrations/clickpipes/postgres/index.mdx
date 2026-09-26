@@ -27,7 +27,7 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
     Postgres ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以借助 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
 
-## 前置条件
+## 前置条件 {#prerequisites}
 
     开始之前，你需要先确保 Postgres 数据库已正确配置。根据你的源 Postgres 实例，可以参考以下任一指南：
 
@@ -57,7 +57,7 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
     源 Postgres 数据库配置完成后，你就可以继续创建 ClickPipe。
 
-## 创建 ClickPipe
+## 创建 ClickPipe {#creating-your-clickpipe}
 
     请确保你已登录 ClickHouse Cloud 账户。如果你还没有账户，可以在[此处](https://cloud.clickhouse.com/)注册。
 
@@ -75,7 +75,7 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="选择 Postgres" size="lg" border />
 
-### 添加源 Postgres 数据库连接
+### 添加源 Postgres 数据库连接 {#adding-your-source-postgres-database-connection}
 
     4. 填写你在前置条件步骤中配置的源 Postgres 数据库的连接信息。
 
@@ -86,16 +86,16 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="填写连接信息" size="lg" border />
 
-#### &#x20;(可选) 设置 AWS Private Link
+#### &#x20;(可选) 设置 AWS Private Link {#optional-setting-up-aws-private-link}
 
     如果你的源 Postgres 数据库托管在 AWS 上，可以使用 AWS Private Link 连接该数据库。如果你希望数据传输保持私密，这会很有用。
     你可以参考[设置指南建立该连接](/zh/integrations/clickpipes/networking/aws-privatelink)。
 
-#### (可选) 修改 TLS 设置
+#### (可选) 修改 TLS 设置 {#optional-changing-tls-settings}
 
     <ChangingTLSSettings />
 
-#### (可选) 设置 SSH tunneling
+#### (可选) 设置 SSH tunneling {#optional-setting-up-ssh-tunneling}
 
     如果你的源 Postgres 数据库无法通过公网访问，可以填写 SSH 隧道的相关信息。
 
@@ -115,13 +115,13 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
     填写好连接信息后，点击 &quot;Next&quot;。
 
-### 配置复制设置
+### 配置复制设置 {#configuring-the-replication-settings}
 
     5. 请务必从下拉列表中选择你在前置条件步骤中创建的 replication slot。
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="选择 replication slot" size="lg" border />
 
-#### 高级设置
+#### 高级设置 {#advanced-settings}
 
     如有需要，你可以配置高级设置。下面简要说明了各项设置：
 
@@ -131,7 +131,7 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
     * **Snapshot number of rows per partition**：初始快照期间每个分区拉取的行数。当表中行数较多，且你希望控制每个分区拉取的行数时，该设置会很有用。
     * **Snapshot number of tables in parallel**：初始快照期间并行拉取的表数量。当表数量较多，且你希望控制并行拉取的表数量时，该设置会很有用。
 
-### 配置表
+### 配置表 {#configuring-the-tables}
 
     6. 在这里你可以为 ClickPipe 选择目标数据库。你可以选择已有的数据库，也可以新建一个数据库。
 
@@ -145,13 +145,13 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
     8. <SettingPartitionBy />
 
-### 检查权限并启动 ClickPipe
+### 检查权限并启动 ClickPipe {#review-permissions-and-start-the-clickpipe}
 
     9. 在权限下拉列表中选择 &quot;Full access&quot; 角色，然后点击 &quot;Complete Setup&quot;。
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="查看权限" size="lg" border />
 
-## 后续步骤
+## 后续步骤 {#whats-next}
 
     在设置好 ClickPipe 将数据从 PostgreSQL 复制到 ClickHouse Cloud 之后，你就可以专注于如何查询数据并对其建模，以获得最佳性能。请参阅[迁移指南](/zh/get-started/migrate/postgres/overview)评估哪种策略最适合你的需求，并参阅[去重策略 (使用 CDC) ](/zh/integrations/clickpipes/postgres/deduplication)和[排序键](/zh/integrations/clickpipes/postgres/ordering-keys)页面，了解 CDC 工作负载的最佳实践。
 

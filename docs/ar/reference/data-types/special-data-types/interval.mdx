@@ -39,7 +39,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## ملاحظات حول الاستخدام
+## ملاحظات حول الاستخدام {#usage-remarks}
 
 يمكنك استخدام القيم من النوع `Interval` في العمليات الحسابية مع القيم من النوع [Date](/ar/reference/data-types/date) و[DateTime](/ar/reference/data-types/datetime). على سبيل المثال، يمكنك إضافة 4 أيام إلى الوقت الحالي:
 
@@ -87,7 +87,7 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## التجميع
+## التجميع {#aggregation}
 
 عند تطبيق الدوال `sum` و`avg` و`min` و`max` و`any` على column من النوع `Interval`، فإنها تُرجع فاصلًا زمنيًا من النوع نفسه.
 تجمع `sum` عدد الوحدات، بينما تحسب `avg` متوسطها وتقرّب النتيجة إلى عدد صحيح
@@ -113,7 +113,7 @@ FROM VALUES('duration IntervalMillisecond',
 مع الوحدات الأصغر - إذ لا يتكوّن الشهر من عدد ثابت من الأيام - ولذا لا يمكن مزجها
 معها إطلاقًا.
 
-## الفواصل الزمنية المختلطة النوع
+## الفواصل الزمنية المختلطة النوع {#mixed-type-intervals}
 
 يمكن إنشاء فواصل زمنية مختلطة النوع، مثل عدة ساعات وعدة دقائق، باستخدام البنية `INTERVAL 'value' <from_kind> TO <to_kind>`.
 وتكون النتيجة قيمة من النوع `Tuple` تتكوّن من فاصلين زمنيين أو أكثر.
@@ -156,7 +156,7 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-## انظر أيضًا
+## انظر أيضًا {#see-also}
 
 * المشغّل [INTERVAL](/ar/reference/operators/index#interval)
 * دوال تحويل النوع [toInterval](/ar/reference/functions/regular-functions/type-conversion-functions#toIntervalYear)

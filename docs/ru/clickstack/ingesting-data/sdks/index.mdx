@@ -13,13 +13,13 @@ keywords: ['SDK ClickStack', 'языковые SDK ClickStack', 'SDK OpenTelemet
 
 В браузерных средах SDK также могут отвечать за сбор **данных сеанса**, включая события интерфейса, клики и навигацию, что позволяет воспроизводить пользовательские сеансы.
 
-## Как это работает
+## Как это работает {#how-it-works}
 
 1. Ваше приложение использует SDK ClickStack (например, для Node.js, Python, Go). Эти SDK основаны на SDK OpenTelemetry и включают дополнительные возможности и улучшения удобства использования.
 2. SDK собирает и экспортирует трассировки и журналы через OTLP (HTTP или gRPC).
 3. OpenTelemetry Collector получает телеметрию и записывает её в ClickHouse через настроенные экспортеры.
 
-## Поддерживаемые языки
+## Поддерживаемые языки {#supported-languages}
 
 <Info>
   **Совместимость с OpenTelemetry**
@@ -44,7 +44,7 @@ keywords: ['SDK ClickStack', 'языковые SDK ClickStack', 'SDK OpenTelemet
 | React Native | Мобильные приложения на React Native                 | [Документация](/ru/clickstack/ingesting-data/sdks/react-native) |
 | Ruby         | Приложения на Ruby on Rails и веб-сервисы            | [Документация](/ru/clickstack/ingesting-data/sdks/ruby)         |
 
-## Защита с помощью ключа API
+## Защита с помощью ключа API {#securing-api-key}
 
 <Info>
   **Не требуется для Управляемого ClickStack**
@@ -66,7 +66,7 @@ OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 ```
 
-## Интеграция с Kubernetes
+## Интеграция с Kubernetes {#kubernetes-integration}
 
 Все SDK поддерживают автоматическую корреляцию с метаданными Kubernetes (имя пода, пространство имен и т. д.) при работе в среде Kubernetes. Это позволяет:
 

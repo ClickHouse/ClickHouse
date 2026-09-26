@@ -14,11 +14,11 @@ O ClickHouse implementa a API HTTP do Prometheus em uma tabela [`TimeSeries`](/p
 
 Para expor as métricas do próprio ClickHouse para que um servidor Prometheus as colete, consulte o [endpoint de métricas do Prometheus](/pt-BR/concepts/features/interfaces/prometheus-metrics).
 
-## Pré-requisitos
+## Pré-requisitos {#prerequisites}
 
 As etapas de configuração diferem entre o ClickHouse Cloud e o ClickHouse autogerenciado. Siga a seção correspondente à sua implantação.
 
-### ClickHouse Cloud
+### ClickHouse Cloud {#prerequisites-cloud}
 
 <Note>
   O suporte a PromQL no ClickHouse Cloud está em private preview. Os serviços que participam do private preview já possuem a configuração `enable_time_series_table` e os endpoints da API do Prometheus configurados. Os demais serviços do ClickHouse Cloud não têm essa configuração, e não é possível habilitar o recurso por conta própria nesses serviços. O comando `SET enable_time_series_table` e a configuração `http_handlers` descritos nas próximas seções aplicam-se a implantações autogerenciadas.
@@ -26,7 +26,7 @@ As etapas de configuração diferem entre o ClickHouse Cloud e o ClickHouse auto
 
 Em um serviço que participa do private preview, prossiga para [Criar uma tabela TimeSeries](#create-a-timeseries-table). O serviço disponibiliza os caminhos de endpoint listados na [tabela de endpoints](#configure-prometheus-api).
 
-### Autogerenciado: habilite a configuração TimeSeries
+### Autogerenciado: habilite a configuração TimeSeries {#enable-the-timeseries-setting}
 
 Habilite a configuração `enable_time_series_table` para o usuário que cria e acessa a tabela:
 
@@ -36,7 +36,7 @@ SET enable_time_series_table = 1;
 
 Para solicitações à API HTTP, habilite `enable_time_series_table` no perfil do usuário da API.
 
-### Autogerenciado: configure os endpoints da API do Prometheus
+### Autogerenciado: configure os endpoints da API do Prometheus {#configure-prometheus-api}
 
 Configure um handler roteado por prefixo na porta HTTP principal do ClickHouse:
 
@@ -86,7 +86,7 @@ Configurações de roteamento e do handler:
 | `table`      | nenhum | O nome de uma tabela `TimeSeries`. Quando omitido, a solicitação deve fornecer o parâmetro de consulta `table`. O nome configurado pode incluir um banco de dados.                                          |
 | `database`   | nenhum | O banco de dados que contém a tabela. Uma solicitação pode fornecê-lo como parâmetro de consulta. Quando omitido, o ClickHouse usa o banco de dados de um valor `table` qualificado ou recorre a `default`. |
 
-### Crie uma tabela TimeSeries
+### Crie uma tabela TimeSeries {#create-a-timeseries-table}
 
 Crie um banco de dados e uma tabela `TimeSeries`:
 
@@ -95,7 +95,7 @@ CREATE DATABASE prometheus;
 CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 ```
 
-## Faça a ingestão de métricas com gravação remota
+## Faça a ingestão de métricas com gravação remota {#remote-write}
 
 O ClickHouse oferece suporte ao [protocolo gravação remota do Prometheus](https://prometheus.io/docs/specs/remote_write_spec/). Configure o Prometheus para gravar no handler:
 
@@ -118,7 +118,7 @@ remote_write:
 
 O ClickHouse confirma uma solicitação assíncrona de gravação remota somente depois que os dados são gravados em todas as tabelas internas da tabela `TimeSeries`, independentemente da configuração [`wait_for_async_insert`](/pt-BR/reference/settings/session-settings/wait-for#wait_for_async_insert): o protocolo de gravação remota considera uma gravação confirmada como durável. Se a gravação falhar, a solicitação retorna um erro e o Prometheus tenta novamente.
 
-## Consulta com PromQL
+## Consulta com PromQL {#promql-query-support}
 
 Use o endpoint de consulta instantânea para avaliar uma expressão PromQL em um momento específico:
 
@@ -168,7 +168,7 @@ A expressão é retornada serializada a partir da consulta analisada sintaticame
 
 Consulte os [recursos do PromQL compatíveis](/pt-BR/reference/functions/table-functions/prometheusQueryRange#supported-promql-features) para ver a lista de funções e operadores de agregação usados pela API HTTP, pelo dialeto `promql` e pelas funções de tabela.
 
-### Grafana
+### Grafana {#grafana}
 
 Configure uma fonte de dados do Prometheus com a URL base terminando antes de `/api/v1`:
 
@@ -196,7 +196,7 @@ Com `httpMethod: POST`, o Grafana envia os parâmetros da consulta no corpo da r
   Apenas os endpoints de consulta `/api/v1/query`, `/api/v1/query_range` e `/api/v1/format_query` e os endpoints de metadados `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` e `/api/v1/metadata` estão implementados. `/api/v1/series` requer pelo menos um seletor de séries `match[]`, oferece suporte aos parâmetros opcionais `start`, `end` e `limit` e retorna a união das séries correspondentes a cada seletor. `/api/v1/labels` aceita os mesmos parâmetros, com `match[]` sendo opcional, e retorna os nomes de rótulos ordenados das séries correspondentes (ou de todas as séries quando nenhum seletor é informado). `/api/v1/label/<name>/values` aceita os mesmos parâmetros que `/api/v1/labels` e retorna os valores ordenados de um rótulo, sendo que `<name>` pode opcionalmente usar o escaping `U__...` do Prometheus para nomes de rótulos que contenham caracteres fora de `[a-zA-Z0-9_]`. Esses endpoints cobrem o que uma fonte de dados Prometheus no Grafana usa para navegar por rótulos, variáveis de Template e preenchimento automático no construtor de consultas.
 </Note>
 
-### Pontos de entrada SQL
+### Pontos de entrada SQL {#sql-entry-points}
 
 O ClickHouse usa o mesmo conversor de PromQL para a API HTTP, o dialeto `promql` e as funções de tabela [`prometheusQuery`](/pt-BR/reference/functions/table-functions/prometheusQuery) e [`prometheusQueryRange`](/pt-BR/reference/functions/table-functions/prometheusQueryRange).
 
@@ -221,7 +221,7 @@ FROM prometheusQuery(
 );
 ```
 
-## Consultar metadados de métricas
+## Consultar metadados de métricas {#metadata}
 
 O endpoint `/prometheus/api/v1/metadata` retorna os metadados das métricas armazenados na tabela de destino `Metrics` da tabela `TimeSeries`: o tipo, o texto de ajuda e a unidade de cada família de métricas. Ele aceita os seguintes parâmetros do Prometheus na string de consulta da URL:
 
@@ -241,7 +241,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-## Leia métricas com leitura remota
+## Leia métricas com leitura remota {#remote-read}
 
 O ClickHouse oferece suporte ao [protocolo de leitura remota do Prometheus](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) em `/prometheus/api/v1/read`.
 

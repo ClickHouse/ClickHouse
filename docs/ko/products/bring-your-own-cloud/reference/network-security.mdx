@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-## ClickHouse 컨트롤 플레인과 BYOC VPC 간 연결
+## ClickHouse 컨트롤 플레인과 BYOC VPC 간 연결 {#connection-between-clickhouse-and-byoc}
 
 ClickHouse Cloud 컨트롤 플레인은 BYOC 배포를 운영하고 지원하기 위해 여러 유형의 연결을 유지합니다:
 
@@ -20,7 +20,7 @@ ClickHouse Cloud 컨트롤 플레인은 BYOC 배포를 운영하고 지원하기
 | **문제 해결 — ClickHouse 서비스**    | Tailscale                                                                           | ClickHouse 엔지니어는 진단을 위해 Tailscale을 통해 ClickHouse 서비스(예: 시스템 테이블)에 접근합니다.                                                                                                                                                                                                                                                                                                                       |
 | **문제 해결 — Kubernetes API 서버** | Tailscale                                                                           | ClickHouse 엔지니어는 클러스터 진단을 위해 Tailscale을 통해 Kubernetes API 서버에 접근합니다.                                                                                                                                                                                                                                                                                                                           |
 
-## 클라우드 제공업체 API와 Kubernetes API
+## 클라우드 제공업체 API와 Kubernetes API {#cloud-api-vs-kubernetes-api}
 
 서로 다른 두 제어 경로는 혼동하기 쉽습니다. 두 경로는 트래픽 출발지, 인증 방식, Tailscale 적용 가능 여부가 다릅니다.
 
@@ -36,14 +36,14 @@ ClickHouse Cloud 컨트롤 플레인은 BYOC 배포를 운영하고 지원하기
 
 클라우드 제공업체 API는 반대 방향에서, 즉 사용자 cluster 내부에서 실행되는 컨트롤러(load balancer 컨트롤러, CSI 드라이버, 자동 스케일러, DNS 컨트롤러, cert-manager)에 의해서도 호출됩니다. 이러한 호출은 cluster 내부 아이덴티티를 사용하며 사용자의 자체 이그레스 경로를 통해 나가므로, 감사 추적에는 관리 호출과 다른 아이덴티티 및 다른 소스 주소로 나타납니다. [아웃바운드 연결](#outbound-connections)을 참조하십시오.
 
-### 네트워크 출발지 기반 권한 경계
+### 네트워크 출발지 기반 권한 경계 {#network-origin-permission-boundaries}
 
 조직에서 네트워크 출발지를 기준으로 IAM role 수임 또는 Cloud API 호출을 제한하는 경우(예: `aws:SourceIp` 또는 `aws:SourceVpc`를 사용하는 AWS SCP 또는 역할 신뢰 조건), 이러한 조건으로 인해 ClickHouse의 자동화가 차단됩니다. 해당 호출은 사용자 네트워크가 아니라 ClickHouse Cloud 네트워크에서 정상적으로 발생하기 때문입니다. 이러한 조건에서 ClickHouse가 생성한 역할을 제외하거나, 출발지를 기준으로 허용 목록을 적용해야 한다면 현재 egress IP 범위를 ClickHouse에 문의하십시오.
 
 다음 섹션에서는 문제 해결 및 선택적 관리 액세스에 **Tailscale** 프라이빗 네트워크를 사용하는 방법을 설명합니다.
 
 <div id="tailscale-private-network">
-  ## Tailscale 프라이빗 네트워크
+  ## Tailscale 프라이빗 네트워크 {#tailscale-private-network}
 </div>
 
 Tailscale은 ClickHouse Cloud의 관리 서비스와 BYOC 배포 환경 간에 제로 트러스트 기반의 프라이빗 네트워크 연결을 제공합니다. 이 보안 채널을 통해 인바운드 공용 네트워크 액세스나 복잡한 VPN 구성 없이 ClickHouse 엔지니어가 문제 해결 및 관리 작업을 수행할 수 있습니다. 에이전트는 아웃바운드 전용 연결만 설정하며, Tailscale 조정 서비스에 연결하려면 아웃바운드 인터넷 액세스가 필요합니다.
@@ -62,7 +62,7 @@ Tailscale은 ClickHouse 컨트롤 플레인(ClickHouse의 VPC 내)과 BYOC 데�
   Tailscale은 **관리 및 문제 해결 작업에만** 사용됩니다. **쿼리 트래픽**이나 고객 데이터 접근에는 **절대 사용되지 않습니다**. 모든 고객 데이터는 사용자의 클라우드 계정 내에만 유지되며, Tailscale 연결을 통해 전송되지 않습니다.
 </Warning>
 
-### BYOC에서 Tailscale이 작동하는 방식
+### BYOC에서 Tailscale이 작동하는 방식 {#how-tailscale-works}
 
 <Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
 
@@ -79,7 +79,7 @@ Tailscale을 통해 액세스해야 하는 각 서비스 또는 엔드포인트�
    * Tailscale에서 들어오는 TLS 트래픽을 종료 처리
    * Kubernetes 클러스터 내의 적절한 IP로 트래픽을 라우팅
 
-### 네트워크 연결 프로세스
+### 네트워크 연결 프로세스 {#tailscale-connection-process}
 
 Tailscale 연결은 다음 단계로 이루어집니다:
 
@@ -98,7 +98,7 @@ Tailscale 연결은 다음 단계로 이루어집니다:
    * 직접 모드와 릴레이 모드 중 어느 것을 사용하든 트래픽은 암호화된 상태로 유지됩니다
 
 <div id="tailscale-security">
-  ### 보안 기능
+  ### 보안 기능 {#tailscale-security}
 </div>
 
 **아웃바운드 전용 연결**:
@@ -115,7 +115,7 @@ Tailscale 연결은 다음 단계로 이루어집니다:
 
 전체 데이터 액세스 정책(엔지니어가 확인할 수 있는 항목, 인증서 기반 인증, 고객 측 감사 포함)은 [ClickHouse data access](/ko/products/bring-your-own-cloud/reference/clickhouse-data-access)에서 확인하십시오.
 
-### 관리 서비스 액세스
+### 관리 서비스 액세스 {#management-services-access}
 
 기본적으로 ClickHouse 관리 서비스는 API 서버의 퍼블릭 엔드포인트를 통해 BYOC Kubernetes 클러스터에 액세스하며, 이를 제어하는 방식은 클라우드마다 다릅니다. AWS에서는 ClickHouse의 NAT gateway 주소만 포함된 IP 허용 목록으로, GCP와 Azure에서는 클라우드 IAM으로 제어합니다. 클라우드별 세부 사항은 [Kubernetes API 서버 노출](#kubernetes-api-server-exposure)을 참조하십시오.
 
@@ -125,7 +125,7 @@ Tailscale 연결은 다음 단계로 이루어집니다:
 * 이 경우 관리 서비스는 Tailscale을 통해 API 서버에 액세스하거나(사용자의 문제 해결 접근과 유사), AWS에서는 VPC Lattice를 통해 액세스합니다([Kubernetes API Private Connection](/ko/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection) 참조)
 * 기본적으로 퍼블릭 엔드포인트는 긴급 investigation 및 지원이 필요한 경우를 대비한 백업 메커니즘으로 유지되며, 프라이빗 액세스가 확인되면 ClickHouse와 협의하여 완전히 비활성화할 수 있습니다
 
-### 네트워크 트래픽 흐름
+### 네트워크 트래픽 흐름 {#tailscale-traffic-flow}
 
 **Tailscale 연결 흐름**:
 
@@ -143,7 +143,7 @@ Tailscale 연결은 다음 단계로 이루어집니다:
 
 BYOC에서 Tailscale이 구현되는 방식에 대한 더 자세한 기술적 내용은 [Building ClickHouse BYOC on AWS blog post](https://clickhouse.com/blog/building-clickhouse-byoc-on-aws#tailscale-connection)를 참조하십시오. 연결 후 ClickHouse 엔지니어가 읽을 수 있는 내용과 ClickHouse가 해당 접근을 어떻게 감사하는지는 [ClickHouse data access](/ko/products/bring-your-own-cloud/reference/clickhouse-data-access)를 참조하십시오.
 
-## 네트워크 경계
+## 네트워크 경계 {#network-boundaries}
 
 이 섹션에서는 BYOC 배포를 방화벽 관점에서 살펴봅니다. 즉, 양방향 어느 쪽으로든 BYOC 네트워크의 경계를 넘나드는 모든 연결을 다룹니다. AWS, GCP, Azure에 모두 적용되며, 클라우드마다 동작이 다를 때는 해당 클라우드를 명시합니다.
 
@@ -154,7 +154,7 @@ BYOC에서 Tailscale이 구현되는 방식에 대한 더 자세한 기술적 �
 * **Public**: 공용 인터넷에서 연결할 수 있는 endpoint.
 * **Private**: 프라이빗 경로를 통해서만 연결할 수 있는 endpoint — VPC/VNet peering, AWS PrivateLink, GCP Private Service Connect, Azure Private Link 또는 Tailscale.
 
-### 프로바이더별 대응 항목
+### 프로바이더별 대응 항목 {#provider-equivalents}
 
 이 페이지의 나머지 부분에서는 클라우드 중립적인 명칭을 사용합니다. 다음 표는 이러한 명칭을 각 프로바이더의 항목에 매핑한 것입니다:
 
@@ -172,7 +172,7 @@ BYOC에서 Tailscale이 구현되는 방식에 대한 더 자세한 기술적 �
 
 공용 인터넷으로 나가는 이그레스 트래픽은 모든 클라우드에서 소수의 고정된 NAT 주소를 통해 BYOC 네트워크를 빠져나가므로, 자체 이그레스 제어 정책에 해당 주소를 고정해 둘 수 있습니다. 배포 환경에 적용되는 현재 값은 ClickHouse 팀에 문의하십시오. AWS와 GCP에서는 프로바이더 자체 스토리지 API로 향하는 트래픽만 예외입니다. 이 트래픽은 위 표의 프라이빗 경로를 사용하며 NAT gateway를 거치지 않습니다.
 
-### 인바운드 연결
+### 인바운드 연결 {#inbound-connections}
 
 | 리스너                                            | 포트                                                                       | 소스                                         | 용도                                                  | 사용자 제어 항목                                                                                                                                                           |
 | ---------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -197,7 +197,7 @@ BYOC에서 Tailscale이 구현되는 방식에 대한 더 자세한 기술적 �
   배포별로 추가 프로토콜 포트를 활성화할 수 있습니다. certificate 인증 기반 네이티브 액세스와 Arrow Flight가 현재의 예시입니다. 따라서 이 표를 근거로 방화벽 규칙을 작성하기 전에 담당 ClickHouse 팀과 함께 해당 배포의 정확한 포트 구성을 확인하십시오.
 </Note>
 
-#### Kubernetes API 서버 노출
+#### Kubernetes API 서버 노출 {#kubernetes-api-server-exposure}
 
 ClickHouse 관리 서비스가 Kubernetes API 서버에 접근하는 방식과 그 액세스를 제한하는 요소는 클라우드별로 다릅니다:
 
@@ -209,13 +209,13 @@ ClickHouse 관리 서비스가 Kubernetes API 서버에 접근하는 방식과 �
   프라이빗 경로로 옮길 수 있는 것은 Kubernetes API 및 문제 해결 트래픽뿐입니다. 클라우드 제공업체 API로 향하는 관리 호출은 ClickHouse Cloud 네트워크에서 시작되므로 해당 경로로 라우팅할 수 없습니다 — [클라우드 제공업체 API와 Kubernetes API 비교](#cloud-api-vs-kubernetes-api)를 참조하십시오. 여기서는 사용자 클러스터 내부의 컨트롤러가 수행하는 제공업체 API calls도 함께 설명합니다.
 </Note>
 
-### 문제 해결 접근
+### 문제 해결 접근 {#troubleshooting-access}
 
 *Inbound, Private*
 
 ClickHouse Cloud 엔지니어는 모든 클라우드에서 문제 해결을 위해 오직 Tailscale을 통해서만 배포 환경에 접근하며, 공용 인터넷으로는 절대 접근하지 않습니다. 액세스는 적시(just-in-time) 방식의 인증서 기반으로 이루어집니다. 엔지니어가 내부 승인 workflow를 통해 액세스를 요청하면 플랫폼이 엔지니어별 단기 credential을 발급하며, 이 credential은 자동으로 만료됩니다. 공유되는 관리자 아이덴티티나 상시 액세스는 존재하지 않습니다. 엔지니어가 읽을 수 있는 테이블을 비롯한 전체 정책은 [ClickHouse data access](/ko/products/bring-your-own-cloud/reference/clickhouse-data-access)를 참조하십시오.
 
-### Outbound connections
+### Outbound connections {#outbound-connections}
 
 | 대상                                    | 포트                        | 시작 주체                                                                                            | 목적                                                | 경계를 넘는 데이터                                                                                                                                                                                                                                                                                                               |
 | ------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -228,7 +228,7 @@ ClickHouse Cloud 엔지니어는 모든 클라우드에서 문제 해결을 위�
 | 퍼블릭 ACME certificate authority        | TCP 443, DNS              | cert-manager                                                                                     | 사용자 service endpoint에 대한 TLS certificate issuance | 인증서 서명 요청 — public key만                                                                                                                                                                                                                                                                                                  |
 | ClickHouse Cloud 알림 수신                | TCP 443                   | AlertManager                                                                                     | 클러스터가 비정상일 때 ClickHouse SRE 호출                    | 알림 이름 및 서비스 식별자 — [Alerts](#alerts) 참조                                                                                                                                                                                                                                                                                   |
 
-### Billing scraper
+### Billing scraper {#billing-scraper}
 
 *Outbound, Private*
 
@@ -240,7 +240,7 @@ billing scraper는 ClickHouse에서 사용량 데이터를 수집하여 ClickHou
   이 스트림은 시스템 메트릭과 운영 메타데이터만 전달합니다. 테이블 행, 컬럼 값, 원시 쿼리 텍스트는 포함되지 않습니다.
 </Warning>
 
-### 알림
+### 알림 {#alerts}
 
 *Outbound, Public*
 
@@ -253,19 +253,19 @@ AlertManager는 ClickHouse 클러스터가 비정상 상태일 때 ClickHouse Cl
 
 메트릭은 사용자 클러스터에서 실행되는 Prometheus 및 Thanos 스택을 사용하며, 사용자 소유 계정의 버킷에 선택적으로 장기 보존할 수 있습니다. 이 보존 기능을 활성화하면 쓰기 작업이 BYOC 네트워크를 벗어나 provider의 storage API로 향하지만, 데이터는 사용자 계정 내에 그대로 유지됩니다. 로그는 현재 ClickHouse 노드에 연결된 노드 volume에 기록되며, 향후 업데이트에서는 BYOC 네트워크 내부에서 함께 실행되는 ClickHouse 기반 로그 저장소인 LogHouse에 기록될 예정입니다.
 
-### 서비스 상태
+### 서비스 상태 {#service-state}
 
 *Outbound, Public*
 
 State Exporter는 ClickHouse 서비스 및 Backup 상태 정보(백업 내용이 아니라 운영 상태 이벤트)를 ClickHouse Cloud가 소유한 큐로 전송합니다. 이때 AWS에서는 SQS, GCP에서는 Pub/Sub, Azure에서는 Service Bus를 사용합니다. 덕분에 ClickHouse Cloud 콘솔에서 사용자 계정에서 실행 중인 서비스의 상태를 확인할 수 있습니다.
 
-### 네트워크 내부 트래픽
+### 네트워크 내부 트래픽 {#intra-network-traffic}
 
 클러스터 내부 구성 요소 간 트래픽(ClickHouse와 ClickHouse Keeper 간, 연산자, 인그레스에서 ClickHouse 파드로, 모니터링 스크레이프)은 BYOC 네트워크를 벗어나지 않습니다. 각 클라우드 제공업체는 자사 인스턴스 간 트래픽을 네트워크 계층에서 암호화합니다. [AWS](https://docs.aws.amazon.com/whitepapers/latest/logical-separation/encrypting-data-at-rest-and--in-transit.html), [GCP](https://cloud.google.com/docs/security/encryption-in-transit), [Azure](https://learn.microsoft.com/azure/security/fundamentals/encryption-overview) 문서를 참고하십시오.
 
 이그레스는 기본적으로 보안 그룹, 방화벽 규칙, 네트워크 보안 그룹 계층에서 제한되지 않으며, 실제로 연결되는 대상은 [아웃바운드 연결](#outbound-connections)에 명시된 대상입니다. 이를 대신해 서비스별 이그레스 방화벽을 선택적으로 적용하여 대상 허용 목록을 강제할 수 있으니, 필요한 경우 ClickHouse 팀에 문의하십시오.
 
-### 경계 감사
+### 경계 감사 {#auditing-the-boundary}
 
 전체 data plane이 사용자 계정에서 실행되므로, 이 페이지에서 설명하는 흐름은 사용자가 보유한 도구로 관찰할 수 있습니다. 일부 소스는 기본적으로 활성화되어 있으며, 나머지는 직접 활성화해야 합니다:
 

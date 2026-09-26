@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
 
-## ملخص
+## ملخص {#synopsis}
 
 ```psql
 # CREATE EXTENSION chdb;
@@ -20,13 +20,13 @@ CREATE EXTENSION
 (1 row)
 ```
 
-## الوصف
+## الوصف {#description}
 
 يُنفّذ امتداد `chdb` استعلامات [chDB] في عملية مساعدة.
 
-## الدوال
+## الدوال {#functions}
 
-### `pgchdb_version`
+### `pgchdb_version` {#pgchdb_version}
 
 ```sql
 SELECT pgchdb_version();
@@ -40,7 +40,7 @@ SELECT version
  WHERE module_name = 'chdb';
 ```
 
-### `chdb_query`
+### `chdb_query` {#chdb_query}
 
 ```sql
 SELECT * FROM chdb_query('SELECT version()') AS (version text);
@@ -77,13 +77,13 @@ SELECT * FROM chdb_query(
 (5 rows)
 ```
 
-## ترميز النصوص
+## ترميز النصوص {#text-encoding}
 
 راجع [ترميز النصوص في توثيق `chdb_hook`][text encoding] لمعرفة كيفية ارتباط سلاسل البايتات في chDB بأنواع Postgres مثل `text` و`bytea` وغيرها.
 
-## الإعدادات
+## الإعدادات {#settings}
 
-### `chdb.max_memory`
+### `chdb.max_memory` {#chdbmax_memory}
 
 ```sql
 SET chdb.max_memory = '1 GB';
@@ -101,7 +101,7 @@ SET chdb.max_memory = '1 GB';
 
 القيمة الافتراضية هي `0`، وهي تعني عدم فرض أي حد على الذاكرة.
 
-### `chdb.max_threads`
+### `chdb.max_threads` {#chdmax_threads}
 
 ```sql
 SET chdb.max_threads = 4;
@@ -115,7 +115,7 @@ SET chdb.max_threads = 4;
 لتفادي استهلاك chDB لوحدة المعالجة المركزية بالكامل على حساب
 PostgreSQL.
 
-### `chdb.max_parsing_threads`
+### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
 
 ```sql
 SET chdb.max_parsing_threads = 2;
@@ -125,7 +125,7 @@ SET chdb.max_parsing_threads = 2;
 
 ننصح بضبط `chdb.max_parsing_threads` قبل تنفيذ استعلام يحلّل كمًا كبيرًا من البيانات، مثل تحميل البيانات من [دوال الجداول]، لمنع chDB من استهلاك كامل طاقة الـ CPU على حساب PostgreSQL.
 
-## سياسة الإصدارات
+## سياسة الإصدارات {#versioning-policy}
 
 يلتزم امتداد chdb بـ [الإصدار الدلالي][semver] في إصداراته العامة.
 
@@ -150,12 +150,12 @@ SET chdb.max_parsing_threads = 2;
 لترقية SQL، ويتعيّن على جميع قواعد البيانات الحالية التي تحتوي على الامتداد تنفيذ
 `ALTER EXTENSION chdb UPDATE` للاستفادة من الترقية.
 
-## المؤلفون
+## المؤلفون {#authors}
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## حقوق النشر
+## حقوق النشر {#copyright}
 
 حقوق النشر (c) 2026، ClickHouse
 

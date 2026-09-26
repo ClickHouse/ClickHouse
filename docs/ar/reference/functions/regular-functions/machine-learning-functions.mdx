@@ -6,19 +6,19 @@ title: 'دوال تعلّم الآلة'
 doc_type: 'reference'
 ---
 
-## evalMLMethod
+## evalMLMethod {#evalmlmethod}
 
 لإجراء التنبؤ باستخدام نماذج الانحدار المُقدَّرة، تُستخدَم الدالة `evalMLMethod`. راجع الرابط ضمن `linearRegression`.
 
-## stochasticLinearRegression
+## stochasticLinearRegression {#stochasticlinearregression}
 
 تُنفِّذ دالة التجميع [stochasticLinearRegression](/ar/reference/functions/aggregate-functions/stochasticLinearRegression) أسلوب الانحدار المتدرّج العشوائي باستخدام نموذج خطي ودالة خسارة MSE. وتستخدم `evalMLMethod` للتنبؤ بالبيانات الجديدة.
 
-## stochasticLogisticRegression
+## stochasticLogisticRegression {#stochasticlogisticregression}
 
 تُنفِّذ دالة التجميع [stochasticLogisticRegression](/ar/reference/functions/aggregate-functions/stochasticLogisticRegression) أسلوب الهبوط التدريجي العشوائي لمشكلة التصنيف الثنائي. وتستخدم `evalMLMethod` للتنبؤ بالبيانات الجديدة.
 
-## naiveBayesClassifier
+## naiveBayesClassifier {#naivebayesclassifier}
 
 يُصنّف النص المُدخل باستخدام نموذج Naive Bayes مع n-grams وتنعيم لابلاس. يجب تهيئة النموذج في ClickHouse قبل استخدامه.
 
@@ -58,7 +58,7 @@ SELECT naiveBayesClassifier('language', 'How are you?');
 
 ***
 
-### تفاصيل التنفيذ
+### تفاصيل التنفيذ {#implementation-details}
 
 **الخوارزمية**
 تستخدم خوارزمية التصنيف Naive Bayes مع [تنعيم لابلاس](https://en.wikipedia.org/wiki/Additive_smoothing) للتعامل مع تسلسلات n-gram غير المرصودة، وذلك بالاستناد إلى احتمالات n-gram كما هو موضح [هنا](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
@@ -73,7 +73,7 @@ SELECT naiveBayesClassifier('language', 'How are you?');
 
 ***
 
-### إعداد النموذج
+### إعداد النموذج {#model-configuration}
 
 يمكنك العثور على شيفرة مصدرية نموذجية لإنشاء نموذج Naive Bayes لاكتشاف اللغة [هنا](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models).
 

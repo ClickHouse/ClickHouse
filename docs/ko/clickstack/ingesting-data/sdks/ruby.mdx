@@ -12,9 +12,9 @@ import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrat
 
 *로그를 ClickStack으로 보내려면 [OpenTelemetry collector](/ko/clickstack/ingesting-data/collector)를 통해 전송하십시오.*
 
-## 시작하기
+## 시작하기 {#getting-started}
 
-### OpenTelemetry 패키지 설치
+### OpenTelemetry 패키지 설치 {#install-otel-packages}
 
 다음 명령으로 OpenTelemetry 패키지를 설치하십시오.
 
@@ -22,7 +22,7 @@ import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrat
 bundle add opentelemetry-sdk opentelemetry-instrumentation-all opentelemetry-exporter-otlp
 ```
 
-### OpenTelemetry + 로거 포매터 구성
+### OpenTelemetry + 로거 포매터 구성 {#configure-otel-logger-formatter}
 
 다음으로, OpenTelemetry tracing instrumentation을 초기화하고
 Rails 로거의 로그 메시지 포매터를 구성해야 로그가 자동으로
@@ -63,7 +63,7 @@ Rails.application.configure do
 end
 ```
 
-### 환경 변수 설정
+### 환경 변수 설정 {#configure-environment-variables}
 
 이제 OpenTelemetry collector를 통해 telemetry를 ClickStack으로 전송할 수 있도록 셸에서 다음 환경 변수를 설정해야 합니다:
 

@@ -169,7 +169,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
   </Step>
 
   <Step title="تهيئة عقد ClickHouse" id="configure-clickhouse-servers">
-### إعداد الخادم
+### إعداد الخادم {#server-setup}
 
     قم الآن بتعديل كل ملف تهيئة فارغ `config.xml` الموجود في
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. يجب تغيير الأسطر
@@ -255,7 +255,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
 
     يُشرح كل قسم من أقسام ملف الإعداد أعلاه بمزيد من التفاصيل في ما يلي.
 
-#### الشبكة والتسجيل
+#### الشبكة والتسجيل {#networking}
 
     <ListenHost />
 
@@ -274,7 +274,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     لمزيد من المعلومات حول تهيئة التسجيل، راجع التعليقات المضمّنة في
     [ملف التهيئة](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) الافتراضي لـ ClickHouse.
 
-#### تهيئة الكلستر
+#### تهيئة الكلستر {#cluster-config}
 
     يتم إعداد إعدادات الكلستر في مقطع `<remote_servers>`.
     هنا يُعرَّف اسم الكلستر `cluster_2S_2R`.
@@ -319,7 +319,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     ويعمل بوصفه template لاستعلامات DDL الموزَّعة، وهي الاستعلامات التي تُنفَّذ
     عبر الكلستر باستخدام جملة `ON CLUSTER`.
 
-#### تهيئة Keeper
+#### تهيئة Keeper {#keeper-config-explanation}
 
     يُخبر القسم `<ZooKeeper>` ClickHouse بمكان تشغيل ClickHouse Keeper (أو ZooKeeper).
     نظرًا لاستخدامنا Keeper cluster، يجب تحديد كل `<node>` من عقد الـ cluster،
@@ -349,7 +349,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
       فإننا نوصي بشدة، في بيئات الإنتاج، بتشغيل ClickHouse Keeper على مضيفات مخصصة.
     </Note>
 
-#### تهيئة الماكرو
+#### تهيئة الماكرو {#macros-config-explanation}
 
     بالإضافة إلى ذلك، يُستخدم قسم `<macros>` لتعريف استبدالات المعاملات للجداول المُكرَّرة. وتُدرج هذه الاستبدالات في `system.macros`، مما يتيح استخدام استبدالات مثل `{shard}` و`{replica}` في الاستعلامات.
 
@@ -360,7 +360,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
     </macros>
     ```
 
-### تهيئة المستخدم
+### تهيئة المستخدم {#cluster-configuration}
 
     عدِّل الآن كل ملف تهيئة فارغ `users.xml` الموجود في
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` بإضافة ما يلي:
@@ -414,7 +414,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
   <Step title="إعداد ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     بعد ذلك، ستُعِد ClickHouse Keeper، والذي يُستخدم للتنسيق.
 
-### إعداد Keeper
+### إعداد Keeper {#configuration-explanation}
 
     <KeeperConfig />
 
@@ -732,7 +732,7 @@ import CloudTip from '/snippets/ar/_cloud_tip.mdx';
   </Step>
 </Steps>
 
-## الخلاصة
+## الخلاصة {#conclusion}
 
 تتمثل ميزة بنية العُنقود هذه، التي تضم شاردين ونسختين متماثلتين، في أنها توفّر كلاً من قابلية التوسع وتحمل الأعطال.
 تُوزَّع البيانات عبر مضيفين منفصلين، مما يقلّل متطلبات التخزين وعمليات الإدخال/الإخراج لكل عقدة، بينما تُعالَج الاستعلامات بالتوازي عبر كلا الشاردين لتحسين الأداء وكفاءة استخدام الذاكرة.

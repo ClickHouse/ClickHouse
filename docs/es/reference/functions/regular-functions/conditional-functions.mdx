@@ -6,9 +6,9 @@ title: 'Funciones condicionales'
 doc_type: 'reference'
 ---
 
-## Descripción general
+## Descripción general {#overview}
 
-### Uso directo de resultados condicionales
+### Uso directo de resultados condicionales {#using-conditional-results-directly}
 
 Los condicionales siempre devuelven `0`, `1` o `NULL`. Por lo tanto, puedes usar los resultados condicionales directamente así:
 
@@ -25,7 +25,7 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-### Valores NULL en las expresiones condicionales
+### Valores NULL en las expresiones condicionales {#null-values-in-conditionals}
 
 Cuando intervienen valores `NULL` en expresiones condicionales, el resultado también será `NULL`.
 
@@ -61,7 +61,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-### sentencia CASE
+### sentencia CASE {#case-statement}
 
 La expresión CASE en ClickHouse ofrece una lógica condicional similar al operador CASE de SQL. Evalúa las condiciones y devuelve valores en función de la primera condición que se cumple.
 
@@ -164,7 +164,7 @@ WHERE number < 3
 3 rows in set. Elapsed: 0.001 sec.
 ```
 
-#### Consideraciones
+#### Consideraciones {#caveats}
 
 ClickHouse determina el tipo de resultado de una expresión CASE (o su equivalente interno, como `multiIf`) antes de evaluar cualquier condición. Esto es importante cuando las expresiones de retorno difieren en el tipo, por ejemplo, con distintas zonas horarias o tipos numéricos.
 

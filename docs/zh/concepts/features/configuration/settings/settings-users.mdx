@@ -80,7 +80,7 @@ doc_type: 'reference'
 </users>
 ```
 
-### user_name/password
+### user_name/password {#user-namepassword}
 
 密码可以指定为明文或 SHA256 (十六进制格式) 。
 
@@ -116,7 +116,7 @@ doc_type: 'reference'
 
   结果的第一行是密码，第二行是对应的 double SHA1 哈希值。
 
-### TOTP 身份验证配置
+### TOTP 身份验证配置 {#totp-authentication-configuration}
 
 基于时间的一次性密码 (TOTP) 可通过生成在有限时间内有效的临时访问码，用于对 ClickHouse 用户进行身份验证。
 这种 TOTP 身份验证方法符合 [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238) 标准，因此兼容 Google Authenticator、1Password 等常见 TOTP 应用及类似工具。

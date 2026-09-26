@@ -68,7 +68,7 @@ Une structure XML peut contenir soit `<id>`, soit `<key>`. La requête DDL ne do
 </Note>
 
 <div id="numeric-key">
-  ### Clé numérique
+  ### Clé numérique {#numeric-key}
 </div>
 
 Type : `UInt64`.
@@ -98,7 +98,7 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – Le nom de la colonne contenant les clés.
 
-### Clé composite
+### Clé composite {#composite-key}
 
 La clé peut être un `tuple` composé de champs de n’importe quel type. Le [layout](/fr/reference/statements/create/dictionary/layouts/overview) doit alors être `complex_key_hashed` ou `complex_key_cache`.
 
@@ -142,7 +142,7 @@ Pour une requête adressée à la fonction `dictGet*`, un tuple est utilisé com
 Lorsque la clé composite est constituée d’un seul attribut, la valeur de la clé peut être transmise directement, sans être encapsulée dans `tuple`. Par exemple, `dictGetString('dict_name', 'attr_name', 'key')` et `dictGetString('dict_name', 'attr_name', tuple('key'))` sont tous deux valides.
 
 <div id="attributes">
-  ## Attributs
+  ## Attributs {#attributes}
 </div>
 
 Exemple de configuration :

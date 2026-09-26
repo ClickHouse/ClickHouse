@@ -12,9 +12,9 @@ import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrat
 
 *如需将日志发送到 ClickStack，请通过 [OpenTelemetry collector](/zh/clickstack/ingesting-data/collector) 发送。*
 
-## 快速开始
+## 快速开始 {#getting-started}
 
-### 安装 OpenTelemetry 软件包
+### 安装 OpenTelemetry 软件包 {#install-otel-packages}
 
 使用以下命令安装 OpenTelemetry 软件包。
 
@@ -22,7 +22,7 @@ import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrat
 bundle add opentelemetry-sdk opentelemetry-instrumentation-all opentelemetry-exporter-otlp
 ```
 
-### 配置 OpenTelemetry + 日志记录器格式化器
+### 配置 OpenTelemetry + 日志记录器格式化器 {#configure-otel-logger-formatter}
 
 接下来，你需要初始化 OpenTelemetry 链路追踪插桩，
 并为 Rails logger 配置日志消息格式化器，以便日志能够
@@ -63,7 +63,7 @@ Rails.application.configure do
 end
 ```
 
-### 配置环境变量
+### 配置环境变量 {#configure-environment-variables}
 
 接下来，你需要在 shell 中配置以下环境变量，以便通过 OpenTelemetry Collector 将遥测数据发送到 ClickStack：
 

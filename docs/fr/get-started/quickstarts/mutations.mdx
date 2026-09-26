@@ -76,7 +76,7 @@ ALTER TABLE [<database>.]<table> UPDATE <column> = <expression> WHERE <filter_ex
 </Note>
 
 <div id="deleting-data">
-  ## Suppression de données
+  ## Suppression de données {#deleting-data}
 </div>
 
 Utilisez la commande `ALTER TABLE` pour supprimer des lignes :
@@ -106,7 +106,7 @@ Le `<filter_expr>` doit renvoyer une valeur UInt8 pour chaque ligne.
 Consultez la page de documentation de [l’instruction `DELETE`](/fr/reference/statements/delete) pour plus de détails.
 
 <div id="lightweight-deletes">
-  ## Suppressions légères
+  ## Suppressions légères {#lightweight-deletes}
 </div>
 
 Une autre option pour supprimer des lignes consiste à utiliser la commande `DELETE FROM`, appelée **suppression légère**. Les lignes supprimées sont immédiatement marquées comme telles et seront automatiquement exclues de toutes les requêtes suivantes ; vous n’avez donc pas besoin d’attendre la fusion des parts ni d’utiliser le mot-clé `FINAL`. Le nettoyage des données s’effectue de manière asynchrone en arrière-plan.

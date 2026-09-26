@@ -14,7 +14,7 @@ Para ello, crea una tabla temporal [Merge](/es/reference/engines/table-engines/s
   <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## Preparar las tablas
+## Preparar las tablas {#setup-tables}
 
 Vamos a aprender a usar esta función con la ayuda de la [base de datos de partidos ATP de TennisMyLife](https://github.com/Tennismylife/TML-Database).
 Vamos a procesar archivos CSV que contienen partidos desde la década de 1960, pero crearemos un esquema ligeramente distinto para cada década.
@@ -50,7 +50,7 @@ SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
 ```
 
-## Esquema de varias tablas
+## Esquema de varias tablas {#schema-multiple-tables}
 
 Podemos ejecutar la siguiente consulta para listar, una junto a otra, las columnas de cada tabla con sus tipos, de modo que sea más fácil ver las diferencias.
 
@@ -89,7 +89,7 @@ Veamos las diferencias:
 * En los años 80, `winner_seed` y `loser_seed` cambian de `Nullable(UInt8)` a `Nullable(UInt16)`.
 * En los años 90, `surface` cambia de `String` a `Enum('Hard', 'Grass', 'Clay', 'Carpet')` y se añaden las columnas `walkover` y `retirement`.
 
-## Consultar varias tablas con merge
+## Consultar varias tablas con merge {#querying-multiple-tables}
 
 Escribamos una consulta para encontrar los partidos que John McEnroe ganó contra alguien que era cabeza de serie n.º 1:
 
@@ -149,7 +149,7 @@ A continuación se muestra el resultado de ejecutar la consulta:
 └───────────────┴─────────────────────┴─────────────┘
 ```
 
-## ¿De qué tabla proceden las filas al usar merge?
+## ¿De qué tabla proceden las filas al usar merge? {#which-table-merge}
 
 ¿Y si queremos saber de qué tabla proceden las filas?
 Podemos usar la columna virtual `_table` para hacerlo, como se muestra en la siguiente consulta:

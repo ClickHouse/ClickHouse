@@ -11,7 +11,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 إذا اشتريت أرصدة مدفوعة مسبقًا بموجب عقد التزام، فيمكنك إدارة طريقة توزيع هذه الأرصدة على مؤسسات ClickHouse الخاصة بك.
 استخدم صفحة **Prepaid credits** لعرض الأرصدة ونقلها بين المؤسسات.
 
-## الوصول إلى الأرصدة المدفوعة مسبقًا
+## الوصول إلى الأرصدة المدفوعة مسبقًا {#access-prepaid-credits}
 
 في ClickHouse Cloud console، افتح **Settings**، ثم حدّد **Prepaid credits** ضمن **Account**.
 
@@ -29,7 +29,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   إذا لم تكن أي من مؤسساتك تمتلك أرصدة مدفوعة مسبقًا، فسيظهر في علامة التبويب محتوى فارغ مع روابط إلى حاسبة الأسعار ونموذج للتواصل مع فريق المبيعات.
 </Note>
 
-## عرض أرصدة الاعتمادات
+## عرض أرصدة الاعتمادات {#view-credit-balances}
 
 يعرض الملخص إجمالي الأرصدة المدفوعة مسبقًا عبر المؤسسات التي تملك فيها صلاحية الوصول الموضّحة أعلاه.
 
@@ -46,7 +46,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 جميع المبالغ محسوبة بوحدة ClickHouse Credits (CHC)، حيث تعادل 1 CHC استخدامًا بقيمة $1. وإذا اشتريت الأرصدة بخصم، فقد تحصل على عدد من وحدات CHC أكبر من المبلغ المدفوع بالدولار.
 
-### أرصدة المؤسسات
+### أرصدة المؤسسات {#organization-balances}
 
 يمثّل كل صف في الجدول الموجود أسفل الملخّص مؤسسة واحدة، وتعكس بياناته جميع الأرصدة المدفوعة مسبقًا لتلك المؤسسة.
 
@@ -65,7 +65,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="مقاييس ملخّص الاعتمادات المدفوعة مسبقًا والأرصدة حسب المؤسسة" size="lg" />
 
-## نقل الأرصدة
+## نقل الأرصدة {#transfer-credits}
 
 نقل الرصيد، ويُعرف أيضًا بالتقسيم (split)، هو نقل الأرصدة المدفوعة مسبقًا من المؤسسة المصدر إلى المؤسسة الهدف.
 
@@ -79,7 +79,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="لوحة نقل الأرصدة تعرض منحة المصدر، والمؤسسة الهدف، ومبلغ النقل، والأرصدة الناتجة" size="md" />
 
-### قواعد النقل
+### قواعد النقل {#transfer-rules}
 
 * يمكنك نقل **الأرصدة المدفوعة مسبقًا النشطة** فقط، ولا يمكنك نقل أرصدة الفترة التجريبية.
 * يؤدي نقل الأرصدة إلى تعديل الأرصدة المدفوعة مسبقًا المتاحة لدى المؤسسة المصدر والمؤسسة الوجهة، لكنه لا يغيّر إجمالي الأرصدة النشطة الممنوحة بموجب عقدك الملتزم به.
@@ -88,7 +88,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * لا يمكنك نقل الأرصدة بين مؤسسات ClickHouse Cloud ومؤسسات [Bring Your Own Cloud (BYOC)](/ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview).
 * لا يمكنك نقل الأرصدة بين مؤسسات تُفوتَر عبر أسواق سحابية مختلفة، مثل AWS Marketplace وGoogle Cloud Marketplace.
 
-### فوترة Marketplace بعد النقل
+### فوترة Marketplace بعد النقل {#marketplace-billing-after-a-transfer}
 
 إذا كانت فوترة المؤسسة المصدر تتم من خلال عقد نشط على AWS أو Google Cloud أو Azure Marketplace، فإن إعداد الفوترة في المؤسسة الهدف هو ما يحدد النتيجة:
 
@@ -100,7 +100,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لفوترة الاستخدامات الزائدة لكلتا المؤسستين من خلال اشتراك Marketplace نفسه، راجع [كيفية استخدام اشتراك Marketplace الخاص بمؤسسة أخرى](/ar/products/cloud/reference/billing/managing-payment-methods#steps-switch-org-different-org).
 
-## مراجعة سجل النقل والإشعارات
+## مراجعة سجل النقل والإشعارات {#review-transfer-history-and-notifications}
 
 بعد اكتمال عملية النقل:
 

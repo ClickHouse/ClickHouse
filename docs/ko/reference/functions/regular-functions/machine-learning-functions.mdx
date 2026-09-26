@@ -6,19 +6,19 @@ title: '머신러닝 함수'
 doc_type: 'reference'
 ---
 
-## evalMLMethod
+## evalMLMethod {#evalmlmethod}
 
 적합된 회귀 모델을 사용한 예측에는 `evalMLMethod` 함수를 사용합니다. 자세한 내용은 `linearRegression`의 링크를 참조하십시오.
 
-## stochasticLinearRegression
+## stochasticLinearRegression {#stochasticlinearregression}
 
 [stochasticLinearRegression](/ko/reference/functions/aggregate-functions/stochasticLinearRegression) 집계 함수는 선형 모델과 MSE 손실 함수를 사용한 확률적 경사 하강법을 구현합니다. 새 데이터 예측에는 `evalMLMethod`를 사용합니다.
 
-## stochasticLogisticRegression
+## stochasticLogisticRegression {#stochasticlogisticregression}
 
 [stochasticLogisticRegression](/ko/reference/functions/aggregate-functions/stochasticLogisticRegression) 집계 함수는 이진 분류 문제를 위한 확률적 경사 하강법을 구현합니다. 새 데이터 예측에는 `evalMLMethod`를 사용합니다.
 
-## naiveBayesClassifier
+## naiveBayesClassifier {#naivebayesclassifier}
 
 n-그램과 라플라스 스무딩을 사용하는 Naive Bayes 모델로 입력 텍스트를 분류합니다. 사용하기 전에 ClickHouse에서 모델을 미리 구성해야 합니다.
 
@@ -58,7 +58,7 @@ SELECT naiveBayesClassifier('language', 'How are you?');
 
 ***
 
-### 구현 세부 사항
+### 구현 세부 사항 {#implementation-details}
 
 **알고리즘**
 [이 문서](https://web.stanford.edu/~jurafsky/slp3/4.pdf)를 기반으로 한 n-그램 확률을 사용하며, 관측되지 않은 n-그램을 처리하기 위해 [라플라스 스무딩](https://en.wikipedia.org/wiki/Additive_smoothing)을 적용한 Naive Bayes 분류 알고리즘을 사용합니다.
@@ -73,7 +73,7 @@ SELECT naiveBayesClassifier('language', 'How are you?');
 
 ***
 
-### 모델 구성
+### 모델 구성 {#model-configuration}
 
 언어 감지를 위한 Naive Bayes 모델을 생성하는 예시 소스 코드는 [여기](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models)에서 확인할 수 있습니다.
 

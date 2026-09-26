@@ -8,13 +8,13 @@ title: 'Restrições nas configurações'
 doc_type: 'reference'
 ---
 
-## Visão geral
+## Visão geral {#overview}
 
 No ClickHouse, &quot;restrições&quot; em configurações se referem a limitações e regras
 que podem ser atribuídas às configurações. Essas restrições podem ser aplicadas para manter
 a estabilidade, a segurança e a previsibilidade do comportamento do seu banco de dados.
 
-## Definindo restrições
+## Definindo restrições {#defining-constraints}
 
 Restrições nas configurações podem ser definidas na seção `profiles` do arquivo de configuração `user.xml`.
 Elas impedem que os usuários alterem algumas configurações usando a
@@ -60,7 +60,7 @@ As restrições são definidas da seguinte forma:
 Se o usuário tentar violar as restrições, uma exceção será lançada e a
 configuração permanecerá inalterada.
 
-## Tipos de restrições
+## Tipos de restrições {#types-of-constraints}
 
 Há alguns tipos de restrições compatíveis com o ClickHouse:
 
@@ -94,7 +94,7 @@ caso contrário, não é permitido alterar configurações no modo `readonly=1`.
   ```
 </Note>
 
-### Não torne `readonly` alterável em modo somente leitura
+### Não torne `readonly` alterável em modo somente leitura {#readonly-changeable-in-readonly}
 
 <Warning>
   Mantenha `readonly` fora da lista `changeable_in_readonly` em todos os perfis, inclusive naqueles que você não atribui a ninguém: qualquer sessão pode selecionar um perfil pelo nome.
@@ -107,7 +107,7 @@ Isso vale para todos os perfis que você define, e não apenas para os que você
 * `SET profile` não passa por verificação de acesso, portanto qualquer sessão pode selecionar qualquer perfil pelo nome. Um perfil continua acessível mesmo quando você não o atribui a ninguém, embora o que ele altera ainda seja verificado em relação às restrições já ativas nessa sessão.
 * Via HTTP, requisições `GET` são forçadas a `readonly = 2` apenas quando o valor efetivo seria `0`. Portanto, um perfil que define `readonly = 1` mas também permite alterar `readonly` em modo somente leitura anula essa proteção, pois uma requisição `GET` pode mudá-lo para `0` e gravar dados.
 
-## Vários perfis de restrição
+## Vários perfis de restrição {#multiple-constraint-profiles}
 
 Se houver vários perfis ativos para um usuário, as restrições serão mescladas.
 O processo de merge depende de `settings_constraints_replace_previous`:
@@ -119,7 +119,7 @@ O processo de merge depende de `settings_constraints_replace_previous`:
   cada tipo de restrição não definido seja herdado do perfil anterior, e cada
   tipo de restrição definido seja substituído pelo valor do novo perfil.
 
-## Modo somente leitura
+## Modo somente leitura {#read-only}
 
 O modo somente leitura é habilitado pela configuração `readonly`, que não deve ser confundida com o tipo de
 CONSTRAINT `readonly`. Quando `readonly = 1`, uma configuração que normalmente seria recusada ainda pode ser alterada se
@@ -128,7 +128,7 @@ uma CONSTRAINT `changeable_in_readonly` permitir. Para saber o que significam os
 cada valor permite e como a interface HTTP a define, consulte
 [permissões para consultas](/pt-BR/concepts/features/configuration/settings/permissions-for-queries#readonly).
 
-### Exemplo
+### Exemplo {#example-read-only}
 
 Faça com que `users.xml` inclua as seguintes linhas:
 
@@ -171,7 +171,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
   até que sejam explicitamente substituídas para esses usuários.
 </Note>
 
-## Restrições para configurações do MergeTree
+## Restrições para configurações do MergeTree {#constraints-on-merge-tree-settings}
 
 É possível definir restrições para [configurações do MergeTree](/pt-BR/reference/settings/merge-tree-settings).
 Essas restrições são aplicadas quando uma tabela com a engine MergeTree é criada
@@ -180,7 +180,7 @@ ou quando suas configurações de armazenamento são alteradas.
 O nome da configuração do MergeTree deve ser precedido pelo prefixo `merge_tree_` quando
 for referenciado na seção `<constraints>`.
 
-### Exemplo
+### Exemplo {#example-mergetree}
 
 Você pode proibir a criação de novas tabelas com `storage_policy` especificada explicitamente
 

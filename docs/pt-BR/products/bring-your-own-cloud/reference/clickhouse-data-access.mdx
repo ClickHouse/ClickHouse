@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 Os funcionários da ClickHouse não têm acesso aos seus dados por padrão. Seus dados do ClickHouse, incluindo todas as tabelas de usuário e os resultados de consultas, permanecem na sua própria conta de nuvem. As únicas formas pelas quais a ClickHouse interage com a sua implantação estão descritas abaixo — nenhuma delas concede acesso aos dados das tabelas dos clientes.
 
-## Operações de rotina
+## Operações de rotina {#routine-operations}
 
 O control plane do ClickHouse Cloud executa sua implantação BYOC sem ler os dados do cliente. Os componentes que enviam dados para a infraestrutura da ClickHouse transportam apenas metadados operacionais:
 
@@ -21,11 +21,11 @@ O control plane do ClickHouse Cloud executa sua implantação BYOC sem ler os da
 
 O tráfego de consultas, o conteúdo das tabelas e os esquemas nunca trafegam por esses canais. Todo o seu conjunto de dados de monitoramento — o stack Prometheus e Thanos e seus logs — permanece na sua própria conta; a telemetria limitada descrita na tabela acima é o único dado de observabilidade exportado continuamente para sistemas da ClickHouse. Os painéis de monitoramento da ClickHouse e, mediante escalonamento aprovado, seus engenheiros também podem consultar esse stack e seus logs no próprio ambiente via Tailscale, sem que nada seja persistido do lado da ClickHouse — consulte [Acesso para solução de problemas](#troubleshooting-access). Consulte [limites de rede](/pt-BR/products/bring-your-own-cloud/reference/network-security#network-boundaries) para a referência completa dos fluxos de entrada e saída.
 
-## Acesso para solução de problemas
+## Acesso para solução de problemas {#troubleshooting-access}
 
 Quando engenheiros do ClickHouse precisam diagnosticar um problema na sua implantação, eles solicitam acesso just-in-time por meio de um processo interno de escalonamento e aprovação. O acesso aprovado é concedido por meio de um certificado com validade limitada e encaminhado pela [Tailscale](/pt-BR/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) — nunca pela internet pública.
 
-### O que os engenheiros podem ver
+### O que os engenheiros podem ver {#what-engineers-can-see}
 
 No ClickHouse, o acesso para solução de problemas aprovado é limitado às tabelas de sistema. Isso inclui:
 
@@ -33,15 +33,15 @@ No ClickHouse, o acesso para solução de problemas aprovado é limitado às tab
 * `system.tables`, `system.columns` e tabelas de sistema semelhantes — esquema e metadados
 * Outras tabelas `system.*` usadas para diagnóstico (por exemplo, partes, mutações e réplicas)
 
-### O que os engenheiros não podem ver
+### O que os engenheiros não podem ver {#what-engineers-cant-see}
 
 Os engenheiros não podem ler as tabelas de usuários dos clientes. No ClickHouse, o acesso se limita apenas às tabelas de sistema.
 
-### Diagnóstico de infraestrutura
+### Diagnóstico de infraestrutura {#infrastructure-diagnostics}
 
 O mesmo processo de escalonamento sujeito a aprovação pode conceder, separadamente, acesso com validade limitada a superfícies de infraestrutura via Tailscale: o Kubernetes API server e o stack de monitoramento e os logs dentro do cluster. Trata-se de uma superfície distinta do acesso ao ClickHouse descrito acima — ela não contém dados de tabelas de clientes, e nada que seja lido por meio dela é persistido no lado do ClickHouse.
 
-### Como o acesso é controlado
+### Como o acesso é controlado {#how-access-is-enforced}
 
 * **Aprovação obrigatória**: toda solicitação de acesso passa por um sistema interno de aprovação com aprovadores designados. Os engenheiros não podem conceder acesso a si próprios.
 * **Certificados com tempo de validade**: um certificado temporário com validade limitada é gerado para cada sessão aprovada. O acesso expira automaticamente.
@@ -49,7 +49,7 @@ O mesmo processo de escalonamento sujeito a aprovação pode conceder, separadam
 * **Somente leitura em tabelas de sistema**: a identidade do certificado é restrita a leituras em tabelas de sistema.
 * **Nada é persistido no lado do ClickHouse**: os resultados lidos durante uma sessão de solução de problemas — sejam de tabelas de sistema, do stack de monitoramento ou dos seus logs — chegam às ferramentas do engenheiro para serem exibidos, mas não são armazenados nem exportados de volta para a infraestrutura do ClickHouse.
 
-## Auditoria
+## Auditoria {#auditing}
 
 A atividade dos engenheiros é visível para você e auditada pelo ClickHouse:
 
@@ -57,11 +57,11 @@ A atividade dos engenheiros é visível para você e auditada pelo ClickHouse:
 * **Visível ao cliente (infraestrutura)**: o `system.query_log` não consegue mostrar as superfícies de infraestrutura acima. As chamadas à Kubernetes API aparecem nos logs de auditoria do Kubernetes do seu cluster, as chamadas à Cloud API na sua trilha de auditoria da nuvem, e as próprias conexões do Tailscale nos seus flow logs, onde você os tiver habilitado. Consulte [Auditoria da fronteira](/pt-BR/products/bring-your-own-cloud/reference/network-security#auditing-the-boundary) para saber onde cada um deles fica em cada nuvem, incluindo quais estão ativados por padrão.
 * **Do lado do ClickHouse**: a equipe de segurança do ClickHouse registra e audita internamente todas as solicitações de acesso, aprovações e conexões do Tailscale.
 
-## Controles futuros
+## Controles futuros {#future-controls}
 
 A aprovação pelo cliente — em que você aprova cada solicitação de acesso de engenheiro antes que ela entre em vigor — está no roadmap. Hoje, a aprovação é feita por meio do processo interno de escalonamento da ClickHouse.
 
-## Relacionados
+## Relacionados {#related}
 
 * [Segurança de rede do BYOC](/pt-BR/products/bring-your-own-cloud/reference/network-security) — como o Tailscale e os limites da rede funcionam
 * [Privilégio do BYOC](/pt-BR/products/bring-your-own-cloud/reference/privilege) — IAM roles criadas durante a configuração do BYOC

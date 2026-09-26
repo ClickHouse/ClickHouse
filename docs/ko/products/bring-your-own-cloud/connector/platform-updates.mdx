@@ -14,7 +14,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 관리형 클러스터에는 ClickHouse 서비스가 의존하는 소규모 플랫폼 계층이 함께 실행됩니다. ClickHouse Cloud는 이 계층에 대한 업데이트를 제안하지만, 사용자가 자신의 클러스터 자격 증명으로 각 업데이트를 승인하기 전까지 실행기는 어떤 변경도 적용하지 않습니다.
 
-## 플랫폼 업데이트란
+## 플랫폼 업데이트란 {#what-a-platform-update-is}
 
 플랫폼 계층은 snapshot controller, ClickHouse Operator, 모니터링 collector의 세 가지 구성 요소로 이루어집니다. 각 구성 요소가 이전 구성 요소의 사용자 지정 리소스 정의를 필요로 하므로 이 순서대로 설치됩니다. 서비스는 이들과 함께 제공되는 `gp3-encrypted`라는 이름의 StorageClass(암호화된 gp3 volume)를 사용합니다.
 
@@ -27,11 +27,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 실행기는 승인되지 않은 번들을 절대 적용하지 않습니다. 권한 부분이 누락되었거나, sha256이 승인된 값과 다르거나, 토큰이 만료된 플랫폼 동기화는 거부됩니다. 거부 시에는 승인이 필요하다는 사실과 스테이징된 번들의 sha256이 함께 보고됩니다. 현재 플랫폼에 없는 사용자 지정 리소스 정의를 필요로 하는 서비스 생성도 동일한 방식으로 실패하며, 실행해야 할 명령도 동일합니다.
 
-## 플랫폼 업데이트 승인
+## 플랫폼 업데이트 승인 {#approve-a-platform-update}
 
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="ClickHouse Connector 플랫폼 승인 흐름" />
 
-### 레지스트리 자격 증명
+### 레지스트리 자격 증명 {#registry-credentials}
 
 레지스트리 인증 방식은 해당 환경에 등록된 image 배포 모드에 따라 달라집니다.
 
@@ -127,7 +127,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   </Step>
 </Steps>
 
-## 승인 윈도우
+## 승인 윈도우 {#the-approval-window}
 
 승인 시 `pcm-platform` 아이덴티티에 대한 토큰이 발급되며, 이 토큰은 기본적으로 2시간 동안 유효합니다(`--ttl`로 변경 가능). 실행기는 이 토큰을 갱신하지 않습니다. 토큰이 만료되면 실행기는 더 이상 플랫폼 계층을 변경할 수 없으며, 다음 플랫폼 동기화 요청을 다시 승인 메시지와 함께 거부합니다. 이는 의도된 설계이며 네트워크 연결 여부와는 무관합니다. 커넥터가 오프라인인 상태에서 부여된 승인도 자체 시계에 따라 만료됩니다.
 
@@ -139,7 +139,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 동일한 번들을 다시 승인해도 안전하며, 기존 토큰은 새 토큰으로 대체됩니다. 스테이징된 번들은 동기화 이후에도 그대로 유지되므로, 다시 승인할 때 새로운 제안이 필요하지 않습니다.
 
-## 승인이 부여하는 권한
+## 승인이 부여하는 권한 {#what-the-approval-grants}
 
 권한 부분은 사용자가 직접 적용하므로 사용자의 권한으로 수행되며, 실행기는 그중 어떤 것도 적용하지 않습니다. `approve`는 여기에 번들의 sha256을 새기며, 실행기는 어떤 작업을 수행하기 전에 전달받은 번들의 모든 권한 객체가 존재하고 승인되었는지 검증합니다.
 
@@ -151,7 +151,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 실행기의 서비스 수명 주기 아이덴티티인 `pcm-executor`는 이와 별개이며 서비스 네임스페이스로 한정됩니다. 플랫폼 네임스페이스에는 쓸 수 없으나, 읽기는 접두사 가드의 제한을 받지 않습니다. 두 아이덴티티의 전체 목록은 [권한 모델](/ko/products/bring-your-own-cloud/connector/reference/privilege-model)을 참조하십시오.
 
-## 테스트 클러스터 재설정
+## 테스트 클러스터 재설정 {#resetting-a-test-cluster}
 
 `clicklink clctl platform reset`은 테스트 클러스터를 위한 명령입니다. 플랫폼 구성 요소를 제거하여 최초 설치 과정을 다시 수행해 볼 수 있도록 합니다. 변경 작업을 시작하기 전에 이 커넥터가 소유한 네임스페이스의 ClickHouse 클러스터 목록을 나열하며, 서비스가 하나라도 존재하면 실행을 거부합니다.
 

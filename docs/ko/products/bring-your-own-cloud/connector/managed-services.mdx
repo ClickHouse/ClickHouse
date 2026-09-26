@@ -14,7 +14,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 관리형 모드에서는 커넥터가 세 번째 구성 요소인 실행기를 함께 실행합니다. ClickHouse Cloud는 이 실행기를 통해 사용자의 Kubernetes 클러스터에서 ClickHouse 서비스를 운영합니다. 이 페이지에서는 서비스 생성 방법, 서비스 상태 확인 방법, ClickHouse Cloud가 해당 서비스로 수행하는 작업, 그리고 서비스가 폐기(retire)되는 과정을 다룹니다.
 
-## 관리형 모드의 동작 방식
+## 관리형 모드의 동작 방식 {#what-managed-mode-does}
 
 실행기는 스크레이퍼, troubleshooter와 동일한 `clicklink` 바이너리에 포함된 데몬입니다. 엔드포인트로 향하는 아웃바운드 WebSocket 채널을 유지하면서 ClickHouse Cloud로부터 수명 주기 명령어를 수신합니다. 실행기는 자신이 구성된 단일 Kubernetes 클러스터에 각 명령어를 적용하고, 해당 채널을 통해 결과를 보고합니다. 다른 구성 요소와 마찬가지로 아웃바운드 연결만 생성합니다. 즉, ClickHouse Cloud가 사용자 클러스터로 접속하는 일은 없으며, 실행기의 로컬 API는 루프백에 바인딩됩니다.
 
@@ -24,13 +24,13 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 VM에서 실행기는 나머지 두 구성 요소와 함께 `clicklink-executor` systemd unit으로 실행됩니다. Kubernetes에서는 커넥터 네임스페이스 내 단일 레플리카 배포로 동작합니다. 포트 8086으로 상태 확인과 메트릭을 제공하고, `127.0.0.1:9999`로 로컬 API를 제공합니다.
 
-## 관리형 모드 활성화
+## 관리형 모드 활성화 {#enable-managed-mode}
 
 관리형 모드는 등록할 때 선택합니다. `clicklink clctl init`에 `--managed`를 전달하거나, 터미널에 표시되는 프롬프트에 응답하십시오. VM에서 `init`은 해당 호스트의 kubeconfig에서 클러스터를 가져오며(EKS cluster가 두 개 이상 있는 경우 `--cluster-name`으로 지정), 실행기에 클러스터 전역 액세스 권한을 인라인으로 부여합니다. Kubernetes에서는 커넥터 엔드포인트의 CIDR을 `--egress-cidrs`로 전달하여 차트가 기본 거부(default-deny) NetworkPolicy를 활성화된 상태로 배치하도록 하십시오.
 
 설치 과정 자체는 달라지지 않습니다. 전체 흐름은 [온보딩](/ko/products/bring-your-own-cloud/connector/onboarding#install-and-enroll)을, 플래그는 [CLI 참고](/ko/products/bring-your-own-cloud/connector/reference/cli#init)를 확인하십시오.
 
-## 서비스 생성
+## 서비스 생성 {#create-a-service}
 
 엔드포인트를 통한 서비스 생성은 환경별로 활성화되므로, 시작하기 전에 계정 담당 팀에 문의하십시오.
 
@@ -118,7 +118,7 @@ AWS 자격 증명이 필요한 명령어는 `prepare`뿐이며, 이 명령어는
   </Step>
 </Steps>
 
-## 상태
+## 상태 {#status}
 
 실행기는 로컬 API를 통해 상태 조회에 응답하며, 이 API는 `127.0.0.1:9999`에 바인딩되고 자체 인증(authentication) 기능은 제공하지 않습니다. VM에서는 해당 호스트에서 명령어를 실행하십시오. Kubernetes에서는 먼저 포트 포워딩을 설정한 뒤, 명령어가 이를 바라보도록 지정하십시오:
 
@@ -140,7 +140,7 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
 
 실행기는 ClickHouse Cloud가 전송한 모든 명령어를 기록합니다. `clicklink clctl commands list`로 이를 출력할 수 있으며, `--status`(`pending`, `running`, `completed`, `failed`), `--action`(예: `create_instance`), `--cluster`로 필터링할 수 있습니다. `clicklink clctl commands get <id>`는 명령어 하나를 해당 stage 및 결과와 함께 출력합니다. 실패한 명령어의 `result`에는 오류 내용이 담겨 있어, 생성이 수렴하지 못한 이유나 어떤 [플랫폼 업데이트](/ko/products/bring-your-own-cloud/connector/platform-updates)가 승인을 기다리고 있는지를 확인할 수 있습니다.
 
-## 서비스 수명 주기
+## 서비스 수명 주기 {#service-lifecycle}
 
 서비스가 생성되고 나면 ClickHouse Cloud는 실행기를 통해 해당 서비스를 운영합니다. ClickHouse Cloud가 전송하는 명령어는 다음과 같습니다:
 
@@ -159,7 +159,7 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
 
 `instances scale`, `instances patch`, `instances delete` 하위 명령어는 ClickHouse Cloud를 거치지 않고 실행기의 로컬 API에 직접 명령어를 전송합니다. 계정 담당 팀이 요청하는 경우에만 실행하십시오. 각 명령어의 동작은 [CLI 참고](/ko/products/bring-your-own-cloud/connector/reference/cli#instances-scale)에 설명되어 있습니다.
 
-## 관리형 서비스의 지원 세션
+## 관리형 서비스의 지원 세션 {#support-sessions}
 
 실행기는 자신이 생성하는 각 서비스에 스크레이퍼를 연결합니다. 다만 Troubleshooter는 프로비저닝하지 않으므로, 직접 프로비저닝하기 전까지는 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)에서 관리형 서비스에 대한 진단을 실행할 수 없습니다. 직접 등록한 instance와 동일한 방식으로, 서비스 네임스페이스 `ns-<name>`을 지정하여 서비스마다 한 번씩 프로비저닝하십시오.
 
@@ -189,7 +189,7 @@ clicklink clctl instances list --endpoint http://127.0.0.1:9999
 
 ClickHouse 사용자에게는 위와 같이 SQL로 권한을 부여하십시오. `--ch-user-via cr`로 추가한 사용자는 유지되지 않습니다. 서비스 정의는 ClickHouse Cloud가 소유하며 이를 반복해서 다시 적용하기 때문입니다. 서비스가 삭제되면 실행기는 VM에서 Troubleshooter의 bundle을 제거합니다. Kubernetes에서는 [제거](/ko/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes)에 나열된 대로 직접 삭제하기 전까지 bundle 시크릿과 ServiceAccount가 그대로 남아 있습니다.
 
-## 서비스 삭제
+## 서비스 삭제 {#delete-a-service}
 
 커넥터 엔드포인트를 통한 고객용 삭제 명령은 제공되지 않습니다. 서비스 삭제는 계정 담당 팀에 요청하십시오. ClickHouse Cloud가 서비스를 종료하면 실행기가 해당 워크로드와 네임스페이스를 삭제합니다(`terminating`을 거쳐 `terminated`). AWS 측에는 아무런 변경도 가해지지 않습니다. 버킷, 그 안의 데이터, IAM role은 직접 제거하기 전까지 그대로 유지됩니다.
 
@@ -220,7 +220,7 @@ ClickHouse 사용자에게는 위와 같이 SQL로 권한을 부여하십시오.
 
 `--yes`가 없으면 기록 단계 이후 실행이 중단되며, 비우게 될 버킷의 이름을 알려 줍니다. `--dry-run`은 모든 정보를 읽기만 하고 아무것도 쓰지 않습니다. `--role-arn`으로 직접 지정한 역할이나 `prepare`가 생성하지 않은 버킷은 유지 대상으로 보고되며 전혀 건드리지 않습니다. 서비스의 네임스페이스에 아직 ClickHouse 클러스터가 남아 있으면 실행이 거부됩니다. 무엇이든 삭제하기 전에 모든 정보를 먼저 읽으므로, 거부된 실행은 아무것도 변경하지 않습니다.
 
-## 커넥터가 오프라인일 때
+## 커넥터가 오프라인일 때 {#when-the-connector-is-offline}
 
 실행 중인 서비스는 실행기에 의존하지 않습니다. 클러스터의 ClickHouse Operator가 서비스를 계속 실행 상태로 유지하므로, 커넥터 연결이 끊기더라도 이미 쿼리를 처리 중인 서비스는 전혀 영향을 받지 않습니다.
 

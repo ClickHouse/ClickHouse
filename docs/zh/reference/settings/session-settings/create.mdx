@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## create_if_not_exists
+## create_if_not_exists {#create_if_not_exists}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -21,19 +21,19 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 默认对 `CREATE` 语句启用 `IF NOT EXISTS`。如果指定了此设置或 `IF NOT EXISTS`，且具有给定名称的表已存在，则不会抛出异常。
 
-## create_index_ignore_unique
+## create_index_ignore_unique {#create_index_ignore_unique}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 忽略 CREATE UNIQUE INDEX 中的 UNIQUE 关键字。此设置用于 SQL 兼容性测试。
 
-## create_replicated_merge_tree_fault_injection_probability
+## create_replicated_merge_tree_fault_injection_probability {#create_replicated_merge_tree_fault_injection_probability}
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
 在 ZooKeeper 中创建 metadata 后，创建表期间发生故障注入的概率
 
-## create_table_empty_primary_key_by_default
+## create_table_empty_primary_key_by_default {#create_table_empty_primary_key_by_default}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,7 +41,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 允许在未指定 ORDER BY 和 PRIMARY KEY 的情况下创建主键为空的 *MergeTree 表
 
-## create_token_default_ttl_seconds
+## create_token_default_ttl_seconds {#create_token_default_ttl_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="1800" />
 

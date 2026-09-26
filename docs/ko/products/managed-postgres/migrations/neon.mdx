@@ -57,9 +57,9 @@ ClickPipes를 사용하면 수 테라바이트 규모의 Postgres 데이터베�
   </Step>
 </Steps>
 
-## 마이그레이션 고려 사항
+## 마이그레이션 고려 사항 {#migration-considerations}
 
-### 브랜치
+### 브랜치 {#branches}
 
 Neon은 즉각적인 copy-on-write 브랜치를 제공합니다. ClickHouse Managed Postgres는 local NVMe storage를 사용하여 빠르고 예측 가능하며 안정적인 Postgres 성능을 제공합니다.
 대신 브랜치 생성은 즉시 완료되지 않고, [Point-in-Time Recovery(PITR)](/ko/products/managed-postgres/backup-and-restore)를 통해 독립적인 배포로 생성됩니다. 일반적으로 몇 분 이내에 사용할 수 있습니다.
@@ -68,7 +68,7 @@ Neon은 즉각적인 copy-on-write 브랜치를 제공합니다. ClickHouse Mana
 
 일부 고객은 이 방식으로 수백 개의 개발 환경을 관리하고 있습니다. ClickHouse는 fork 및 sandbox 사용 경험을 지속적으로 개선하고 있습니다. [branching 문서](/ko/products/managed-postgres/branching)를 참조하십시오.
 
-### Neon Serverless Driver
+### Neon Serverless Driver {#neon-serverless}
 
 애플리케이션에서 Neon Serverless Driver를 사용하지 않는다면 이 섹션은 건너뛰어도 됩니다.
 
@@ -89,7 +89,7 @@ Neon은 즉각적인 copy-on-write 브랜치를 제공합니다. ClickHouse Mana
 
 자세한 내용은 [PgBouncer 호환성 매트릭스](https://www.pgbouncer.org/features.html)를 참조하십시오.
 
-### 연결 제한
+### 연결 제한 {#connection-limits}
 
 ClickHouse Managed Postgres는 기본적으로 500개의 직접(direct) Postgres 연결을 지원합니다. Neon workload가 이 수를 초과한다면 다음 방법을 사용할 수 있습니다.
 
@@ -98,7 +98,7 @@ ClickHouse Managed Postgres는 기본적으로 500개의 직접(direct) Postgres
 * 더 많은 직접 연결이 필요하면 `max_connections` 값을 늘립니다.
   * `max_connections`는 **Settings → Edit parameters**에서 변경할 수 있습니다. 일부 변경 사항은 재시작이 필요합니다. [구성 문서](/ko/products/managed-postgres/settings#changing-configuration)를 참조하십시오.
 
-### 마이그레이션 중 스키마 변경
+### 마이그레이션 중 스키마 변경 {#schema-changes}
 
 ClickPipes를 시작한 시점부터 컷오버까지의 기간은 가능한 한 짧게, 이상적으로는 며칠 이내로 유지하고, 이 기간 동안에는 스키마 변경을 피하십시오.
 

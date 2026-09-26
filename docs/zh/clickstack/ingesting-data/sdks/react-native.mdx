@@ -14,9 +14,9 @@ ClickStack React Native SDK 让你能够为 React Native
 
 <ClickStackIntegrates signals={['traces']} />
 
-## 入门
+## 入门 {#getting-started}
 
-### 通过 NPM 安装
+### 通过 NPM 安装 {#install-via-npm}
 
 使用以下命令安装 [ClickStack React Native 软件包](https://www.npmjs.com/package/@hyperdx/otel-react-native)。
 
@@ -24,7 +24,7 @@ ClickStack React Native SDK 让你能够为 React Native
 npm install @hyperdx/otel-react-native
 ```
 
-### 初始化 ClickStack
+### 初始化 ClickStack {#initialize-clickstack}
 
 尽早在应用生命周期内初始化该库：
 
@@ -58,7 +58,7 @@ HyperDXRum.setGlobalAttributes({
 });
 ```
 
-### 为低版本埋点
+### 为低版本埋点 {#instrument-lower-versions}
 
 要为运行在 0.68 以下版本 React Native 上的应用埋点，
 请编辑你的 `metro.config.js` 文件，强制 metro 使用浏览器专用
@@ -104,7 +104,7 @@ module.exports = {
 };
 ```
 
-## 视图导航
+## 视图导航 {#view-navigation}
 
 支持 [react-navigation](https://github.com/react-navigation/react-navigation) 5 和 6 版本。
 

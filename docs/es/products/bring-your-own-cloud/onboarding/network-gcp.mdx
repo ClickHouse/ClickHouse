@@ -17,13 +17,13 @@ ClickHouse BYOC en GCP admite dos opciones de conexión privada, entre ellas pee
 
 Pasos comunes necesarios tanto para el peering de VPC como para PSC.
 
-### Habilite el balanceador de carga privado para ClickHouse BYOC
+### Habilite el balanceador de carga privado para ClickHouse BYOC {#step-enable-private-load-balancer-for-clickhouse-byoc}
 
 En la consola de ClickHouse Cloud, habilite el **balanceador de carga privado** para su infraestructura BYOC.
 
 <Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC Habilitar balanceador de carga privado" border />
 
-## Configurar el peering de VPC
+## Configurar el peering de VPC {#gcp-vpc-peering}
 
 Le recomendamos familiarizarse con la [función de peering de VPC de GCP](https://docs.cloud.google.com/vpc/docs/vpc-peering) y tener en cuenta sus limitaciones (por ejemplo, los rangos de IP de las subredes no pueden superponerse entre redes de VPC con peering). ClickHouse BYOC utiliza un balanceador de carga privado para permitir la conectividad de red a través del peering con los servicios de ClickHouse.
 
@@ -63,7 +63,7 @@ Para crear o eliminar el peering de VPC para ClickHouse BYOC, siga estos pasos:
   </Step>
 </Steps>
 
-## Configurar PSC (Private Service Connect)
+## Configurar PSC (Private Service Connect) {#setup-psc}
 
 GCP PSC (Private Service Connect) proporciona una conexión segura y privada con tus servicios BYOC de ClickHouse, sin necesidad de peering de VPC ni gateways de Internet. Todo el tráfico circula dentro de la red de GCP, lo que garantiza que nunca transite por la Internet pública.
 

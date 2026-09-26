@@ -11,7 +11,7 @@ SaaS のデータ分析プラットフォームでは、組織、顧客、事業
 
 要件に応じて、マルチテナンシーを実装する方法はいくつかあります。以下では、ClickHouse Cloud を使用してこれらを実装する方法を紹介します。
 
-## 共有テーブル
+## 共有テーブル {#shared-table}
 
 このアプローチでは、すべてのテナントのデータを 1 つの共有テーブルに保存し、各テナントのデータを識別するためのフィールド (または複数フィールドの組み合わせ) を使用します。パフォーマンスを最大化するには、このフィールドを [主キー](/ja/reference/statements/create/table#primary-key) に含める必要があります。各テナントが自分に属するデータにのみアクセスできるようにするために、[ロールベースのアクセス制御](/ja/concepts/features/security/access-rights) を使用し、これを [行ポリシー](/ja/concepts/features/security/access-rights#row-policy-management) で実装します。
 
@@ -25,7 +25,7 @@ SaaS のデータ分析プラットフォームでは、組織、顧客、事業
 
 テナント間でデータ量に大きな差がある場合、小規模なテナントのクエリ性能に不要な影響が生じる可能性があります。なお、この問題はテナント識別用フィールドを主キーに含めることで大幅に軽減されます。
 
-### 例
+### 例 {#shared-table-example}
 
 これは、共有テーブルを用いたマルチテナンシーモデルの実装例です。
 
@@ -109,7 +109,7 @@ FROM events
    └───────────┴──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## テーブルを分ける
+## テーブルを分ける {#separate-tables}
 
 このアプローチでは、各テナントのデータを同じデータベース内の別々のテーブルに格納するため、テナントを識別するための特定のフィールドは不要です。ユーザーアクセスは [GRANT ステートメント](/ja/reference/statements/grant) によって制御されるため、各ユーザーは自分のテナントのデータを含むテーブルにのみアクセスできます。
 
@@ -119,7 +119,7 @@ FROM events
 
 このアプローチは数千ものテナントにはスケールしない点に注意してください。[使用制限](/ja/products/cloud/guides/best-practices/usagelimits) を参照してください。
 
-### 例
+### 例 {#separate-tables-example}
 
 これは、テーブル分離マルチテナンシーモデルの実装例です。
 
@@ -203,7 +203,7 @@ FROM default.events_tenant_1
    └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## データベースの分離
+## データベースの分離 {#separate-databases}
 
 各テナントのデータは、同じ ClickHouse サービス 内の個別のデータベースに保存されます。
 
@@ -213,7 +213,7 @@ FROM default.events_tenant_1
 
 このアプローチは数千規模のテナントにはスケールしない点に注意してください。[使用制限](/ja/products/cloud/guides/best-practices/usagelimits)を参照してください。
 
-### 例
+### 例 {#separate-databases-example}
 
 これは、データベースを分離するマルチテナンシーモデルの実装例です。
 
@@ -305,7 +305,7 @@ FROM tenant_1.events
    └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-## コンピュート-コンピュート分離
+## コンピュート-コンピュート分離 {#compute-compute-separation}
 
 前述の 3 つのアプローチは、[Warehouse](/ja/products/cloud/features/infrastructure/warehouses#what-is-a-warehouse) を使用することで、さらに分離できます。データは共通のオブジェクトストレージを通じて共有されますが、[コンピュート-コンピュート分離](/ja/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation) により、各テナントは CPU/メモリ比の異なる独自のコンピュートサービスを持つことができます。
 
@@ -313,7 +313,7 @@ FROM tenant_1.events
 
 Warehouse 内のサービス数自体に個別の上限はありませんが、Warehouse 内のすべてのサービスを合計したレプリカ数には制限がある点に注意してください。[使用制限](/ja/cloud/bestpractices/usage-limits)および [Warehouse のスケーリング](/ja/products/cloud/features/infrastructure/warehouses#scaling)を参照してください。
 
-## 個別のクラウドサービス
+## 個別のクラウドサービス {#separate-service}
 
 最も極端なアプローチは、テナントごとに別々の ClickHouse サービスを使用することです。
 
@@ -323,7 +323,7 @@ Warehouse 内のサービス数自体に個別の上限はありませんが、W
 
 このアプローチは管理が難しく、各サービスの実行にそれぞれ独自のインフラストラクチャが必要になるため、サービスごとに運用負荷も増えます。サービスは [ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) を介して管理でき、[公式 Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) を使ったオーケストレーションも可能です。
 
-### 例
+### 例 {#separate-service-example}
 
 これは、サービスを分離したマルチテナンシーモデルの実装例です。この例では、1 つの ClickHouse サービス上でテーブルとユーザーを作成していますが、同じ内容をすべてのサービスにも反映する必要があります。
 

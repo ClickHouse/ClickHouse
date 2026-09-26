@@ -361,7 +361,7 @@ import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.
     </Step>
   </Steps>
 
-  ## 다음 단계
+  ## 다음 단계 {#next-steps}
 
   ClickHouse에 대해 자세히 알아보려면 다음 문서를 참고하십시오:
 
@@ -385,7 +385,7 @@ import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.
     [&quot;Playground 사양&quot;](/ko/get-started/sample-datasets/playground#specifications)을 참조하십시오.
   </Note>
 
-  ## trips 테이블 생성
+  ## trips 테이블 생성 {#create-the-table-trips}
 
   먼저 택시 운행 데이터를 저장할 테이블을 생성합니다:
 
@@ -416,7 +416,7 @@ import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.
   PRIMARY KEY (pickup_datetime, dropoff_datetime);
   ```
 
-  ## 객체 스토리지에서 직접 데이터 로드하기
+  ## 객체 스토리지에서 직접 데이터 로드하기 {#load-the-data-directly-from-object-storage}
 
   데이터에 익숙해질 수 있도록 데이터의 작은 부분 집합(300만 개 행)을 먼저 가져와 볼 수 있습니다. 데이터는 객체 스토리지에 TSV 파일로 저장되어 있으며, `s3` 테이블 함수를 사용하면
   ClickHouse Cloud로 손쉽게 스트리밍할 수 있습니다.
@@ -485,7 +485,7 @@ import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.
     </Tab>
   </Tabs>
 
-  ## 샘플 쿼리
+  ## 샘플 쿼리 {#sample-queries}
 
   다음 쿼리는 위에서 설명한 샘플을 기준으로 실행됩니다. 아래 쿼리에서 테이블을 `nyc_taxi.trips`로 바꾸면 [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19)에서 전체 데이터셋으로 샘플 쿼리를 실행할 수 있습니다.
 
@@ -547,7 +547,7 @@ import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.
   ORDER BY passenger_count ASC
   ```
 
-  ## 사전 준비된 파티션 다운로드
+  ## 사전 준비된 파티션 다운로드 {#download-of-prepared-partitions}
 
   <Note>
     다음 단계에서는 원본 데이터셋에 대한 정보와 미리 준비된 파티션을 자가 관리형 ClickHouse 서버 환경에 로드하는 방법을 설명합니다.
@@ -573,7 +573,7 @@ import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.
     아래에 설명된 쿼리를 실행하려면 전체 테이블 이름인 `datasets.trips_mergetree`를 사용해야 합니다.
   </Info>
 
-  ## 단일 서버 결과
+  ## 단일 서버 결과 {#results-on-single-server}
 
   Q1:
 
@@ -657,7 +657,7 @@ import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.
   이 경우 쿼리 처리 시간은 무엇보다도 네트워크 지연 시간에 따라 결정됩니다.
   클러스터와 다른 데이터센터에 있는 클라이언트에서 쿼리를 실행했기 때문에 약 20ms의 지연 시간이 추가되었습니다.
 
-  ## 요약
+  ## 요약 {#summary}
 
   | 서버                 | Q1    | Q2    | Q3    | Q4    |
   | ------------------ | ----- | ----- | ----- | ----- |

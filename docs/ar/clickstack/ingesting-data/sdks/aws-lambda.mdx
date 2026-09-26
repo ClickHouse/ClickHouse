@@ -10,14 +10,14 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## تثبيت طبقات Lambda الخاصة بـ OpenTelemetry
+## تثبيت طبقات Lambda الخاصة بـ OpenTelemetry {#installing-the-otel-lambda-layers}
 
 يوفّر مشروع OpenTelemetry طبقات Lambda منفصلة من أجل:
 
 1. إضافة instrumentation تلقائيًا إلى شيفرة دالة Lambda الخاصة بك باستخدام auto-instrumentation من OpenTelemetry.
 2. إعادة توجيه السجلات والمقاييس وتتبع المجمّعة إلى ClickStack.
 
-### إضافة طبقة auto-instrumentation الخاصة باللغة
+### إضافة طبقة auto-instrumentation الخاصة باللغة {#adding-language-specific-auto-instrumentation}
 
 تقوم طبقات Lambda الخاصة باللغة والمخصّصة لـ auto-instrumentation بتجهيز شيفرة دالة Lambda لديك تلقائيًا بحزمة OpenTelemetry auto-instrumentation المناسبة للغتك.
 
@@ -98,7 +98,7 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
   </Tab>
 </Tabs>
 
-### تثبيت طبقة Lambda الخاصة بـ OpenTelemetry collector
+### تثبيت طبقة Lambda الخاصة بـ OpenTelemetry collector {#installing-the-otel-collector-layer}
 
 تتيح لك طبقة Lambda الخاصة بـ collector إعادة توجيه السجلات والمقاييس والتتبعات من دالة Lambda إلى ClickStack دون التأثير في أوقات الاستجابة بسبب كمون المُصدِّر.
 
@@ -207,7 +207,7 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 ```
 
-## التحقق من التثبيت
+## التحقق من التثبيت {#checking-the-installation}
 
 بعد نشر الطبقات، ينبغي أن ترى الآن التتبعات التي جُمعت تلقائيًا
 من دالة Lambda الخاصة بك في HyperDX. قد يتسبب المعالجان `decouple` و`batching`
@@ -215,22 +215,22 @@ OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 ولإرسال سجلات أو مقاييس مخصّصة، ستحتاج إلى إضافة OpenTelemetry SDKs الخاصة بلغتك إلى
 تعليماتك البرمجية.
 
-## استكشاف الأخطاء وإصلاحها
+## استكشاف الأخطاء وإصلاحها {#troubleshoting}
 
-### عدم إرسال التضمين البرمجي المخصّص
+### عدم إرسال التضمين البرمجي المخصّص {#custom-instrumentation-not-sending}
 
 إذا لم تكن ترى التتبعات التي عرّفتها يدويًا أو أي بيانات قياس عن بُعد أخرى، فقد
 تكون تستخدم إصدارًا غير متوافق من حزمة واجهة برمجة تطبيقات OpenTelemetry. تأكد من أن
 إصدار حزمة واجهة برمجة تطبيقات OpenTelemetry لديك يساوي على الأقل إصدار الحزمة
 المضمَّنة في AWS Lambda أو يكون أقدم منه.
 
-### تمكين سجلات التصحيح الخاصة بـ SDK
+### تمكين سجلات التصحيح الخاصة بـ SDK {#enabling-sdk-debug-logs}
 
 عيّن متغير البيئة `OTEL_LOG_LEVEL` إلى `DEBUG` لتمكين سجلات التصحيح من
 OpenTelemetry SDK. سيساعد ذلك على التأكد من أن طبقة auto-instrumentation
 تقوم بأداتة تطبيقك بشكل صحيح.
 
-### تمكين سجلات التصحيح الخاصة بالـ collector
+### تمكين سجلات التصحيح الخاصة بالـ collector {#enabling-collector-debug-logs}
 
 لاستكشاف مشكلات الـ collector وإصلاحها، يمكنك تمكين سجلات التصحيح عبر تعديل
 ملف تكوين الـ collector لإضافة المصدّر `logging`، وضبط مستوى سجلّات بيانات القياس عن بُعد

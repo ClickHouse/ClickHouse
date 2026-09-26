@@ -17,13 +17,13 @@ ClickHouse 在 GCP 上的 BYOC 支持两种私网连接方式：VPC 对等互连
 
 VPC 对等互连 和 PSC 共同需要执行的步骤。
 
-### 为 ClickHouse BYOC 启用私有负载均衡器
+### 为 ClickHouse BYOC 启用私有负载均衡器 {#step-enable-private-load-balancer-for-clickhouse-byoc}
 
 在 ClickHouse Cloud 控制台中，为您的 BYOC 基础设施启用**私网负载均衡器**。
 
 <Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC 启用私网负载均衡器" border />
 
-## 设置 VPC 对等互连
+## 设置 VPC 对等互连 {#gcp-vpc-peering}
 
 请先了解 [GCP VPC 对等互连 功能](https://docs.cloud.google.com/vpc/docs/vpc-peering)，并注意 VPC 对等互连的限制 (例如，已对等互连的 VPC 网络之间，子网 IP 范围不能重叠) 。ClickHouse BYOC 使用私网负载均衡器，通过对等互连为 ClickHouse 服务提供网络连通性。
 
@@ -63,7 +63,7 @@ VPC 对等互连 和 PSC 共同需要执行的步骤。
   </Step>
 </Steps>
 
-## 配置 PSC (Private Service Connect)
+## 配置 PSC (Private Service Connect) {#setup-psc}
 
 GCP PSC (Private Service Connect) 可为您的 ClickHouse BYOC 服务提供安全的私网连接，无需进行 VPC 对等互连 或使用互联网网关。所有流量均在 GCP 网络内传输，确保不会经过公网。
 

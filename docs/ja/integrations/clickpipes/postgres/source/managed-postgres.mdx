@@ -14,21 +14,21 @@ integration:
 
 ClickHouse Managed Postgres インスタンスからレプリケーションを開始する方法は 2 つあります。いずれの方法でも通常の Postgres ClickPipe が作成されるため、パイプが稼働を開始した後は [Postgres ClickPipe のドキュメント](/ja/integrations/clickpipes/postgres/index) の内容がそのまま適用されます。
 
-## オプション 1: Postgres サービスから ClickHouse へ同期する
+## オプション 1: Postgres サービスから ClickHouse へ同期する {#sync-to-clickhouse}
 
 ClickHouse Cloud コンソールで ClickHouse Managed Postgres サービスを開き、サイドバーの **Sync to ClickHouse** をクリックします。ウィザードではソース接続があらかじめ入力されており、宛先となる ClickHouse サービス、レプリケーション方式、レプリケーション対象のテーブルを選択できます。ユーザー、publication、ネットワークの設定は一切不要です。
 
 手順の詳細については、[Sync to ClickHouse](/ja/products/managed-postgres/sync-to-clickhouse/clickpipes) ガイドを参照してください。低レイテンシのレプリケーションを求める場合は、ファイルシステムレベルで読み取りを行うネイティブなレプリケーションエンジンである [WalShadow](/ja/products/managed-postgres/sync-to-clickhouse/walshadow) を選択することもできます (現在プライベートプレビュー) 。
 
-## オプション2: ClickPipes でソースとして ClickHouse Managed Postgres を選択する
+## オプション2: ClickPipes でソースとして ClickHouse Managed Postgres を選択する {#clickpipes-source}
 
 宛先側から始めたい場合は、対象の ClickHouse サービスを開き、**Data Sources** に移動して、ソースの一覧から **ClickHouse Managed Postgres** を選択します。あとは、他の Postgres ソースの場合と同様に、Postgres インスタンスの接続情報を入力するだけです。
 
-### 接続情報
+### 接続情報 {#connection-details}
 
 ClickHouse Managed Postgres サービスを開き、**Connect** をクリックすると、ホスト、ポート、データベース、ユーザー、パスワードを確認できます。**via PgBouncer** のトグルは使わず、Postgres への直接接続を使用してください。ClickPipes は PgBouncer やその他の接続プーラーを経由したレプリケーションをサポートしていません。詳細は [Connection](/ja/products/managed-postgres/connection) を参照してください。
 
-### 権限を持つユーザーの作成
+### 権限を持つユーザーの作成 {#creating-a-user-with-permissions}
 
 デフォルトの `postgres` ユーザーで接続できます。本番環境では、他の Postgres ソースと同様に、専用の読み取り専用レプリケーションユーザーを使用することを推奨します。`psql` でインスタンスに接続し、次を実行します。
 
@@ -70,7 +70,7 @@ ClickHouse Managed Postgres サービスを開き、**Connect** をクリック�
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-### 論理レプリケーション
+### 論理レプリケーション {#logical-replication}
 
 論理レプリケーションは、すべての ClickHouse Managed Postgres インスタンスであらかじめ有効になっています。`wal_level` 設定やパラメータグループを変更する必要はありません。次のコマンドで確認できます:
 
@@ -78,11 +78,11 @@ ClickHouse Managed Postgres サービスを開き、**Connect** をクリック�
 SHOW wal_level; -- should be logical
 ```
 
-### ネットワークアクセス
+### ネットワークアクセス {#network-access}
 
 ClickHouse Managed Postgres は、デフォルトで ClickPipes からの接続を受け付けます。Postgres サービスに [IP フィルタ](/ja/products/managed-postgres/security#ip-whitelisting) を設定している場合は、**ClickHouse サービス** のリージョンに対応する [ClickPipes の静的 IP アドレス](/ja/integrations/clickpipes/networking/static-ips) を許可リストに追加してください。
 
-### TLS
+### TLS {#tls}
 
 ClickHouse Managed Postgres インスタンスは、インスタンスごとに固有で、かつ公的には信頼されていない CA によって署名された証明書を提示します。ClickPipes はデフォルトで証明書検証を有効にしているため、以下のいずれかを実施するまで接続チェックは失敗します。
 
@@ -95,6 +95,6 @@ ClickHouse Managed Postgres インスタンスは、インスタンスごとに�
 clickhousectl cloud postgres certs get <postgres-service-id> --output pg-ca.pem
 ```
 
-## 次のステップ
+## 次のステップ {#whats-next}
 
 これで[ClickPipeを作成](/ja/integrations/clickpipes/postgres/index)し、ClickHouse Managed PostgresインスタンスからClickHouse Cloudへのデータ取り込みを開始できます。ClickHouse Managed PostgresからClickHouseへのNative CDCは追加費用なしでご利用いただけます。詳細は[料金](/ja/products/managed-postgres/pricing)をご覧ください。

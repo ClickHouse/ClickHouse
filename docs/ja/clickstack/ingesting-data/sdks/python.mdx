@@ -14,9 +14,9 @@ ClickStack は、テレメトリーデータ (ログと
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## はじめに
+## はじめに {#getting-started}
 
-### ClickStack OpenTelemetry インストルメンテーション パッケージをインストールする
+### ClickStack OpenTelemetry インストルメンテーション パッケージをインストールする {#install-clickstack-otel-instrumentation-package}
 
 次のコマンドで、[ClickStack OpenTelemetry パッケージ](https://pypi.org/project/hyperdx-opentelemetry/)をインストールします。
 
@@ -31,7 +31,7 @@ Python アプリケーションで使用しているパッケージ向けの Ope
 opentelemetry-bootstrap -a install
 ```
 
-### 環境変数を設定する
+### 環境変数を設定する {#configure-environment-variables}
 
 次に、OpenTelemetry Collector 経由でテレメトリーを ClickStack に送信するため、シェルで以下の環境変数を設定する必要があります。
 
@@ -54,7 +54,7 @@ opentelemetry-bootstrap -a install
 
 *`OTEL_SERVICE_NAME` 環境変数は、HyperDX アプリ内でサービスを識別するために使用されます。値には任意の名前を指定できます。*
 
-### OpenTelemetry Pythonエージェントを使用してアプリケーションを実行する
+### OpenTelemetry Pythonエージェントを使用してアプリケーションを実行する {#run-the-application-with-otel-python-agent}
 
 これで、OpenTelemetry Pythonエージェント (`opentelemetry-instrument`) を使用してアプリケーションを実行できます。
 
@@ -62,7 +62,7 @@ opentelemetry-bootstrap -a install
 opentelemetry-instrument python app.py
 ```
 
-#### `Gunicorn`、`uWSGI`、`uvicorn` を使用している場合
+#### `Gunicorn`、`uWSGI`、`uvicorn` を使用している場合 {#using-uvicorn-gunicorn-uwsgi}
 
 この場合、OpenTelemetry Pythonエージェントを動作させるには追加の設定変更が必要です。
 
@@ -95,9 +95,9 @@ pre-fork Webサーバーモードを使用するアプリケーションサー�
   </Tab>
 </Tabs>
 
-## 高度な設定
+## 高度な設定 {#advanced-configuration}
 
-#### ネットワークキャプチャ
+#### ネットワークキャプチャ {#network-capture}
 
 ネットワークキャプチャ機能を有効にすると、開発者は
 HTTPリクエストのヘッダーやボディ内のペイロードを効果的にデバッグできるようになります。これは
@@ -108,9 +108,9 @@ HTTPリクエストのヘッダーやボディ内のペイロードを効果的�
 export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
 ```
 
-## トラブルシューティング
+## トラブルシューティング {#troubleshooting}
 
-### ログレベルが原因でログが表示されない
+### ログレベルが原因でログが表示されない {#logs-not-appearing-due-to-log-level}
 
 デフォルトでは、OpenTelemetry のログ用ハンドラーは `logging.NOTSET` レベルを使用しており、実際には WARNING レベルとして扱われます。ロガーの作成時にログレベルを指定できます:
 
@@ -121,7 +121,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 ```
 
-### コンソールへのエクスポート
+### コンソールへのエクスポート {#exporting-to-the-console}
 
 OpenTelemetry Python SDK は通常、エラーが発生するとその内容をコンソールに表示します。
 ただし、エラーは発生していないのに、データが想定どおり HyperDX に表示されない場合は、

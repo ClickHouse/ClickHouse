@@ -17,14 +17,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 * [&quot;ClickHouse Cloud におけるバックアップの仕組み&quot;](/ja/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (機能概要ページ) を読んでいること
 
-## バックアップのステータス一覧
+## バックアップのステータス一覧 {#backup-status-list}
 
 バックアップは、デフォルトの毎日のスケジュールでも、ユーザーが選択した[カスタムスケジュール](/ja/products/cloud/guides/backups/configurable-backups)でも、サービスに設定されたスケジュールに従って実行されます。利用可能なバックアップはすべて、サービスの**Backups**タブから確認できます。ここでは、バックアップのステータス、所要時間、バックアップのサイズを確認できます。また、**Actions**カラムから特定のバックアップを復元することもできます。
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud のバックアップステータス一覧" border />
 
 <div id="understanding-backup-cost">
-  ## バックアップコストの把握
+  ## バックアップコストの把握 {#understanding-backup-cost}
 </div>
 
 異なるスケジュールが設定されていない限り、サービスは 24 時間ごとに 1 回バックアップされ、各バックアップは 24 時間保持されます。バックアップスケジュールを設定できるかどうかは、サービスおよびプランによって異なります。より多くのデータを保持するスケジュールを選択したり、バックアップ頻度を高くしたりすると、バックアップストレージに追加料金が発生する場合があります。
@@ -44,7 +44,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   サービス内のデータ量は時間の経過とともに増加するため、バックアップの見積もりコストも変動する点に注意してください。
 </Note>
 
-## バックアップを復元する
+## バックアップを復元する {#restore-a-backup}
 
 バックアップは、取得元の既存サービスではなく、新しい ClickHouse Cloud サービスに復元されます。
 
@@ -57,7 +57,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 <Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="サービスのプロビジョニングが進行中" border />
 
 <div id="working-with-your-restored-service">
-  ## 復元済みサービスの扱い
+  ## 復元済みサービスの扱い {#working-with-your-restored-service}
 </div>
 
 バックアップを復元すると、同様のサービスが 2 つ存在する状態になります。1 つは復元が必要だった**元のサービス**、もう 1 つはその元のサービスのバックアップから作成された新しい**復元済みサービス**です。
@@ -68,7 +68,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * 新しい復元済みサービスから元のサービスへデータを移行し、新しい復元済みサービスを削除します。
 
 <div id="use-the-new-restored-service">
-  ### **新しい復元済みサービス**を使用する
+  ### **新しい復元済みサービス**を使用する {#use-the-new-restored-service}
 </div>
 
 新しい復元済みサービスを使用するには、次の手順を実行します。
@@ -78,7 +78,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 3. 元のサービスを削除します。
 
 <div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
-  ### **新たに復元したサービス**から**元のサービス**へデータを移行する
+  ### **新たに復元したサービス**から**元のサービス**へデータを移行する {#migrate-data-from-the-newly-restored-service-back-to-the-original-service}
 </div>
 
 何らかの理由で、新たに復元したサービスを利用できない場合があります。たとえば、既存のサービスに接続しているユーザーやアプリケーションがまだある場合です。そのような場合は、新たに復元したデータを元のサービスへ移行することになります。移行は、次の手順で実施できます。
@@ -144,7 +144,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 データを元のサービスに正常に挿入したら、そのサービス内のデータを必ず確認してください。データを確認したら、新しい  サービスも削除してください。
 
 <div id="undeleting-or-undropping-tables">
-  ## テーブルの削除取り消し
+  ## テーブルの削除取り消し {#undeleting-or-undropping-tables}
 </div>
 
 `UNDROP` コマンドは、ClickHouse Cloud で [Shared Catalog](/ja/products/cloud/features/infrastructure/shared-catalog) を通じてサポートされています。
@@ -165,7 +165,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   レガシープラン: レガシープランをご利用のお客様には、24時間保持されるデフォルトの日次バックアップがストレージコストに含まれています。
 </Note>
 
-## バックアップの所要時間
+## バックアップの所要時間 {#backup-durations}
 
 バックアップと復元の所要時間は、データ量、スキーマの複雑さ、テーブル数によって大きく異なります。以下の数値は社内テストで得られた結果であり、パフォーマンスを保証するものではありません。
 
@@ -180,11 +180,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Note>
 
 <div id="configurable-backups">
-  ## 設定可能なバックアップ
+  ## 設定可能なバックアップ {#configurable-backups}
 </div>
 
 デフォルトとは異なるバックアップスケジュールを設定したい場合は、[設定可能なバックアップ](/ja/products/cloud/guides/backups/configurable-backups)をご覧ください。
 
-## ご自身のクラウドアカウントにバックアップをエクスポートする
+## ご自身のクラウドアカウントにバックアップをエクスポートする {#export-backups-to-your-own-cloud-account}
 
 バックアップをご自身のクラウドアカウントにエクスポートする場合は、[こちら](/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)を参照してください。

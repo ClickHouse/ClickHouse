@@ -22,7 +22,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
 すべてのオプションを手早く確認したい場合は、設定オプションの完全な一覧を[こちら](#all-yaml-options)で確認できます。
 
-## 共通設定
+## 共通設定 {#common-settings}
 
 設定画面の例：
 
@@ -54,14 +54,14 @@ secureJsonData:
 
 設定をUIから保存すると、`version` プロパティが追加される点に注意してください。これは、その設定がどのバージョンのプラグインで保存されたかを示します。
 
-### HTTP protocol
+### HTTP protocol {#http-protocol}
 
 HTTP protocol で接続を選択すると、追加の設定項目が表示されます。
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="追加の HTTP 設定オプション" border />
 
 <div id="http-path">
-  #### HTTP パス
+  #### HTTP パス {#http-path}
 </div>
 
 HTTP サーバーが別の URL パスで公開されている場合は、ここで設定できます。
@@ -73,7 +73,7 @@ jsonData:
 ```
 
 <div id="custom-http-headers">
-  #### カスタム HTTP ヘッダー
+  #### カスタム HTTP ヘッダー {#custom-http-headers}
 </div>
 
 サーバーに送信するリクエストに、カスタムヘッダーを追加できます。
@@ -102,7 +102,7 @@ secureJsonData:
   secureHttpHeaders.X-Example-Secure-Header: secure header value
 ```
 
-## 追加設定
+## 追加設定 {#additional-settings}
 
 これらの設定は任意です。
 
@@ -121,7 +121,7 @@ jsonData:
 ```
 
 <div id="opentelemetry">
-  ### OpenTelemetry
+  ### OpenTelemetry {#opentelemetry}
 </div>
 
 OpenTelemetry (OTel) は、このプラグインに密接に統合されています。
@@ -130,7 +130,7 @@ OpenTelemetryデータは、[exporter plugin](https://github.com/open-telemetry/
 
 また、強力なオブザーバビリティワークフローを実現する機能である[データリンク](/ja/integrations/connectors/data-visualization/grafana/query-builder#data-links)を有効にするには、これらのデフォルト設定を構成する必要があります。
 
-### ログ
+### ログ {#logs}
 
 [ログのクエリ構築](/ja/integrations/connectors/data-visualization/grafana/query-builder#logs)を高速化するために、ログクエリ用のデフォルトのデータベース/テーブルとカラムを設定できます。これにより、クエリビルダーに実行可能なログクエリが事前に読み込まれ、Explore ページでログをすばやく確認できるようになり、オブザーバビリティ用途での閲覧が効率化されます。
 
@@ -162,14 +162,14 @@ jsonData:
     messageColumn: <string> # the log's message/content.
 ```
 
-#### 「View logs」リンクを無効にする
+#### 「View logs」リンクを無効にする {#disabling-view-logs-links}
 
 ログ設定の**Trace ID correlation**セクションには、**「View logs」リンクを表示**トグルがあります。
 このトグルは、プラグインがクエリ結果のトレース ID フィールドに「View logs」の[データリンク](/ja/integrations/connectors/data-visualization/grafana/query-builder#data-links)を追加するかどうかを制御します。
 このトグルはデフォルトで有効になっています。同じ種類のクエリの「View logs」リンクにはログのデフォルト設定は不要ですが、トレースクエリの結果から別シグナルへ移動する「View logs」リンクには必要です。
 非表示にするには、トグルをオフにするか、YAML で`showLogLinks: false`を設定します。
 
-### トレース
+### トレース {#traces}
 
 [トレースのクエリビルダー](/ja/integrations/connectors/data-visualization/grafana/query-builder#traces)を高速化するには、トレースクエリ用のデフォルトのデータベース/テーブルとカラムを設定できます。これにより、実行可能なトレース検索クエリがクエリビルダーに事前に読み込まれ、Explore ページでオブザーバビリティデータをよりすばやく参照できるようになります。
 
@@ -207,7 +207,7 @@ jsonData:
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
-#### 「View トレース」リンクを無効にする
+#### 「View トレース」リンクを無効にする {#disabling-view-trace-links}
 
 トレース設定の **Trace ID correlation** セクションには、**Show &quot;View トレース&quot; links** トグルがあります。
 このトグルは、プラグインがクエリ結果の トレース ID フィールドに「View トレース」の[データリンク](/ja/integrations/connectors/data-visualization/grafana/query-builder#data-links)を追加するかどうかを制御します。
@@ -215,7 +215,7 @@ jsonData:
 リンクを非表示にするには、トグルをオフにするか、YAML で `showTraceLinks: false` を設定します。
 
 <div id="column-aliases">
-  ### カラムの別名
+  ### カラムの別名 {#column-aliases}
 </div>
 
 カラムに別名を付けると、異なる名前や型でデータをクエリできるようになり、便利です。
@@ -229,7 +229,7 @@ jsonData:
 * 選択するカラムを変換するために、関数をよく適用する
 
 <div id="table-defined-alias-columns">
-  #### テーブルで定義する ALIAS カラム
+  #### テーブルで定義する ALIAS カラム {#table-defined-alias-columns}
 </div>
 
 ClickHouse にはカラムのエイリアス機能が組み込まれており、Grafana でもそのまま利用できます。
@@ -248,7 +248,7 @@ CREATE TABLE alias_example (
 
 詳細については、[ALIAS](/ja/reference/statements/create/table#alias) カラム型のドキュメントを参照してください。
 
-#### カラム別名テーブル
+#### カラム別名テーブル {#column-alias-tables}
 
 デフォルトでは、Grafana は `DESC table` の応答に基づいてカラム候補を提示します。
 場合によっては、Grafana に表示されるカラムを完全に上書きしたいこともあります。
@@ -290,7 +290,7 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 どちらのエイリアス方式も、複雑な型変換や JSON フィールドの抽出に利用できます。
 
-## すべてのYAMLオプション
+## すべてのYAMLオプション {#all-yaml-options}
 
 以下は、このプラグインで利用できるYAML設定オプションの一覧です。
 一部のフィールドには値の例があり、その他はフィールドの型のみが示されています。

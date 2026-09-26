@@ -16,7 +16,7 @@ Os backups do banco de dados foram projetados para permitir que você restaure u
   ## Backups
 </div>
 
-### Como os backups funcionam no ClickHouse Cloud
+### Como os backups funcionam no ClickHouse Cloud {#how-backups-work-in-clickhouse-cloud}
 
 Os backups do ClickHouse Cloud são uma combinação de backups &quot;completos&quot; e &quot;incrementais&quot; que formam uma cadeia de backups. A cadeia começa com um backup completo, e os backups incrementais são feitos ao longo dos períodos programados seguintes para criar uma sequência de backups. Quando uma cadeia de backups atinge determinado tamanho, uma nova cadeia é iniciada. Toda essa cadeia de backups pode então ser usada para restaurar dados em um novo serviço, se necessário. Quando todos os backups incluídos em uma determinada cadeia ultrapassam o período de retenção definido para o serviço (mais sobre retenção abaixo), a cadeia é descartada.
 
@@ -26,14 +26,14 @@ No Dia 1, um backup completo é feito para iniciar a cadeia de backups. No Dia 2
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Exemplo de cadeia de backups no ClickHouse Cloud" />
 
-### Política de backup padrão
+### Política de backup padrão {#default-backup-policy}
 
 Os backups são contabilizados e cobrados separadamente do armazenamento nos níveis Basic, Scale e Enterprise.
 Atualmente, os serviços têm por padrão um backup diário com retenção de 24 horas. A configuração de backup pode variar conforme o serviço e o contrato.
 
 Consulte [&quot;Revisar e restaurar backups&quot;](/pt-BR/products/cloud/guides/backups/review-and-restore-backups) para mais detalhes.
 
-## Backups configuráveis
+## Backups configuráveis {#configurable-backups}
 
 <ScalePlanFeatureBadge feature="Backups configuráveis" linking_verb_are="True" />
 
@@ -52,7 +52,7 @@ O ClickHouse Cloud permite configurar o agendamento dos seus backups para servi�
 Consulte [&quot;Configurar agendamentos de backup&quot;](/pt-BR/products/cloud/guides/backups/configurable-backups) para ver as etapas de configuração dos seus backups.
 
 <div id="byob">
-  ## Backups com seu próprio bucket (BYOB)
+  ## Backups com seu próprio bucket (BYOB) {#byob}
 </div>
 
 O ClickHouse Cloud permite exportar backups para o armazenamento na conta do seu provedor de serviços em nuvem (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).
@@ -75,7 +75,7 @@ Também compartilhamos comandos de backup / restore que permitem exportar backup
 
 Consulte [&quot;Exportar backups para sua própria conta Cloud&quot;](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) para ver exemplos de como fazer backups completos e backups incrementais no armazenamento de objetos da AWS, GCP e Azure, bem como como restaurá-los.
 
-### Opções de backup
+### Opções de backup {#backup-options}
 
 Para exportar backups para sua própria conta Cloud, você tem duas opções:
 

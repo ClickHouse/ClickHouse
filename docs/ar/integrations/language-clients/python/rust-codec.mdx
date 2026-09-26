@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 برنامج الترميز هذا تجريبي ويُفعَّل اختيارياً، ويبقى برنامج ترميز بايثون هو الافتراضي.
 
-## التثبيت
+## التثبيت {#installation}
 
 يأتي الـ codec المُصرَّف في حزمة wheel منفصلة باسم `clickhouse-connect-core`، توفّر وحدة الـ extension‏ `_ch_core`. ولأغراض التقييم، ثبّت الـ codec وPyArrow معًا:
 
@@ -31,7 +31,7 @@ pip install "clickhouse-connect[rust]"
 
 في حال اختيار برنامج ترميز Rust دون تثبيت الوحدة المُصرَّفة، فإن إنشاء الـ client يثير الاستثناء `NotSupportedError` مع الإشارة إلى أمر التثبيت هذا.
 
-## تمكين الـ codec
+## تمكين الـ codec {#enabling-the-codec}
 
 حدّد الـ codec باستخدام خيار الـ client التالي `native_codec`:
 
@@ -53,7 +53,7 @@ client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
 
 يُتجاهل هذا الخيار مع عملاء `interface="chdb"`، إذ يستخدمون برنامج ترميز بايثون دائمًا.
 
-## متى تستخدم برنامج ترميز Rust
+## متى تستخدم برنامج ترميز Rust {#when-to-use-the-rust-codec}
 
 يكون برنامج ترميز Rust مفيدًا إلى أقصى حد مع نتائج DataFrame الكبيرة التي تتضمن أنواعًا نصية وحاوية وأنواعًا معقدة مثل `String` و`LowCardinality` و`Map` و`Array` و`JSON` و`Decimal` و`UUID`. كما يمكن أن يفيد تدفقات كتل الصفوف والأعمدة الكبيرة، وأحمال عمل الاستعلامات المتزامنة، وعمليات الإدراج المجمّعة.
 
@@ -63,7 +63,7 @@ client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
 
 قِس أداء حمل العمل الخاص بك قبل اعتماد الـ codec. واستخدم `native_codec="rust_strict"` أثناء القياس بحيث يُثار استثناء عند وجود خيار غير مدعوم أو اعتمادية مفقودة، بدلًا من توجيه الاستعلام إلى بايثون بصمت.
 
-## قواعد الاحتياط
+## قواعد الاحتياط {#fallback-rules}
 
 تُتَّخذ قرارات الاحتياط (fallback) قبل قراءة أي بايتات أو إرسالها، لذا لا يحدث تبديل للـ codec في منتصف الـ stream مطلقًا. ففي حالة الـ queries يجري الاختيار قبل استهلاك جسم الاستجابة، أما في حالة الـ inserts فلا يُختار مُرمِّز Rust إلا إذا كانت جميع أنواع الأعمدة مدعومة، وإلا نُفِّذت عملية الـ insert بأكملها باستخدام برنامج ترميز بايثون.
 
@@ -73,7 +73,7 @@ client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
 
 وتؤدي payloads الـ Native المشوّهة التي يكتشفها برنامج ترميز Rust إلى إطلاق `DataError`.
 
-## Versioning
+## Versioning {#versioning}
 
 تصدر إصدارات `clickhouse-connect-core` بشكل مستقل عن `clickhouse-connect`. يعلن driver عن نطاق التوافق عبر الإضافة `rust`، وتصدّر الوحدة إصدار واجهة برمجة تطبيقات binding الذي يتحقق منه driver عند اختيار برنامج ترميز Rust. وإذا كانت الحزمة (wheel) المثبّتة أقدم من أن يدعمها driver، فإن إنشاء العميل يثير `NotSupportedError` مع ذكر أمر الترقية:
 
@@ -83,7 +83,7 @@ pip install --upgrade clickhouse-connect-core
 
 تُشحن الإصلاحات وتحسينات الأداء في المرمِّز المُصرَّف ضمن إصدارات (releases) `clickhouse-connect-core`، ويمكن الحصول عليها بترقية (upgrade) حزمة wheel الأساسية إلى إصدار متوافق. أما التغييرات على تكامل driver مع Rust فتتطلب ترقية `clickhouse-connect`.
 
-## اختلافات سلوكية معروفة
+## اختلافات سلوكية معروفة {#known-behavior-differences}
 
 يهدف برنامج ترميز Rust إلى تحقيق تطابق خلية بخلية مع برنامج ترميز بايثون. وفيما يلي الاختلافات المعروفة.
 

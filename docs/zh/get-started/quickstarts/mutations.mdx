@@ -75,7 +75,7 @@ ALTER TABLE [<database>.]<table> UPDATE <column> = <expression> WHERE <filter_ex
 </Note>
 
 <div id="deleting-data">
-  ## 删除数据
+  ## 删除数据 {#deleting-data}
 </div>
 
 使用 `ALTER TABLE` 命令删除行：
@@ -105,7 +105,7 @@ ALTER TABLE [<database>.]<table> DELETE WHERE <filter_expr>
 有关更多详细信息，请参阅 [`DELETE` 语句](/zh/reference/statements/delete) 文档页面。
 
 <div id="lightweight-deletes">
-  ## 轻量级删除
+  ## 轻量级删除 {#lightweight-deletes}
 </div>
 
 删除行的另一种方式是使用 `DELETE FROM` 命令，这称为**轻量级删除**。被删除的行会立即标记为已删除，并会在后续所有查询中自动被过滤掉，因此你无需等待 parts 合并，也无需使用 `FINAL` 关键字。数据清理会在后台异步进行。

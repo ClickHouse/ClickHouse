@@ -13,7 +13,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 Une session d’assistance accorde à ClickHouse un accès temporaire à des fins de diagnostic via le ClickHouse Connector. Cette page explique ce qu’est une session, comment l’activer et la désactiver, ce que les ingénieurs du support ClickHouse peuvent faire pendant celle-ci et comment l’auditer.
 
-## Qu&#39;est-ce qu&#39;une session d&#39;assistance ?
+## Qu&#39;est-ce qu&#39;une session d&#39;assistance ? {#what-a-support-session-is}
 
 Une session d&#39;assistance est une fenêtre de temps limitée pendant laquelle l&#39;outil de diagnostic accepte les commandes des ingénieurs du support ClickHouse. En dehors d&#39;une session, il refuse toute commande, même lorsque son WebSocket sortant est connecté. Il n&#39;existe aucune autre voie d&#39;exécution, et ClickHouse ne peut pas ouvrir une session à votre place. ClickHouse Cloud ne se connecte jamais à votre environnement ; il reçoit uniquement ce que l&#39;outil de diagnostic envoie sur son canal sortant.
 
@@ -30,7 +30,7 @@ Le transport de la passerelle dépend de la cible. Une passerelle sur VM expose 
 
 Vous définissez votre posture de session, y compris la liste d’autorisation des opérateurs, lors de `clicklink clctl init`.
 
-## Activation et désactivation des sessions
+## Activation et désactivation des sessions {#enabling-and-disabling-sessions}
 
 <Tabs>
   <Tab title="Kubernetes" id="sessions-kubernetes">
@@ -81,11 +81,11 @@ Vous définissez votre posture de session, y compris la liste d’autorisation d
   </Tab>
 </Tabs>
 
-## Expiration de la session
+## Expiration de la session {#session-expiry}
 
 Les sessions expirent automatiquement. La durée par défaut est de 4 heures ; `session enable --duration` accepte une durée pouvant aller jusqu’à 24 heures. À l’expiration ou dès que vous exécutez `session disable`, l’outil de diagnostic cesse d’accepter les commandes. La désactivation révoque l’accès immédiatement : aucun redémarrage ni aucune coordination avec ClickHouse.
 
-## Liste d’autorisation des opérateurs
+## Liste d’autorisation des opérateurs {#operator-allowlist}
 
 Chaque appel vers la passerelle est autorisé selon une liste d’adresses e-mail d’opérateurs. La comparaison porte sur l’adresse e-mail attestée par le jeton OIDC validé, et jamais sur une valeur fournie par le client.
 
@@ -94,7 +94,7 @@ Chaque appel vers la passerelle est autorisé selon une liste d’adresses e-mai
 
 Sur les deux cibles, la passerelle relit le fichier lors de la requête suivante dès que 30 secondes se sont écoulées depuis la dernière lecture. Les modifications prennent effet sans redémarrage.
 
-## Ce que les opérateurs peuvent faire pendant une session
+## Ce que les opérateurs peuvent faire pendant une session {#what-operators-can-do}
 
 Tant qu&#39;une session est active, les ingénieurs du support ClickHouse peuvent exécuter deux types de commandes.
 
@@ -106,7 +106,7 @@ La liste d’autorisation par défaut couvre les tables `system` telles que `sys
 
 Le RBAC de l&#39;outil de diagnostic ne contient aucune permission `exec`, `delete` ou `patch` : les opérateurs ne peuvent donc pas ouvrir de shell dans vos pods ni modifier quoi que ce soit au cours d&#39;une session. L&#39;énumération complète des grants et du RBAC figure dans la référence [modèle de privilèges](/fr/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-## Audit log
+## Audit log {#audit-log}
 
 Chaque commande exécutée pendant une session est ajoutée à `/var/log/clicklink/troubleshoot-audit.log` sous la forme d&#39;un objet JSON par ligne (NDJSON). Les commandes bloquées sont elles aussi enregistrées, le champ `blocked_by` en précisant la raison (par exemple `session inactive`). `submitted_by` correspond à l&#39;Organization ID sur le canal de commande : votre propre org ID. L&#39;ingénieur ClickHouse concerné est enregistré côté ClickHouse Cloud, et non dans ce fichier. Une entrée de commande de session se présente ainsi :
 
@@ -140,11 +140,11 @@ kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-trouble
 
 Le journal d&#39;audit est un simple fichier situé dans votre environnement ; transmettez-le à votre propre SIEM comme n&#39;importe quel autre journal d&#39;hôte ou de conteneur.
 
-## Masquage
+## Masquage {#redaction}
 
 Tout ce que renvoie l’outil de diagnostic est masqué avant de quitter votre environnement. Des modèles intégrés couvrent les adresses IPv4 et IPv6, les jetons Bearer, les clés d&#39;accès AWS, les adresses e-mail, les JWT, les clés privées SSH et les informations d&#39;identification incluses dans les chaînes de connexion. Vous pouvez les étendre ou les remplacer dans `/etc/clicklink/redaction-patterns.yaml` ; une entrée portant le même nom qu&#39;un modèle intégré le remplace. Le démon refuse de démarrer si le fichier de modèles n&#39;est pas valide, et `clicklink clctl preflight` le valide : ainsi, une configuration de masquage défectueuse échoue explicitement.
 
-## Pages associées
+## Pages associées {#related-pages}
 
 * [Architecture](/fr/products/bring-your-own-cloud/connector/architecture) : toutes les connexions établies par le connecteur et les flux de données associés aux sessions.
 * [Configuration](/fr/products/bring-your-own-cloud/connector/configuration) : paramètres de passerelle, de liste d’autorisation et de masquage.

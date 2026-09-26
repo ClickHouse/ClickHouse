@@ -18,9 +18,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
   إذا كنت تبحث عن إعادة تشغيل الجلسات/المراقبة من جانب المتصفح، فستحتاج بدلًا من ذلك إلى تثبيت [تكامل المتصفح](/ar/clickstack/ingesting-data/sdks/browser).
 </Note>
 
-## التثبيت
+## التثبيت {#installing}
 
-### فعِّل خطاف أدوات الرصد (مطلوب للإصدار v15 وما دونه)
+### فعِّل خطاف أدوات الرصد (مطلوب للإصدار v15 وما دونه) {#enable-instrumentation-hook}
 
 للبدء، عليك تفعيل خطاف أدوات الرصد في Next.js عبر ضبط `experimental.instrumentationHook = true;` في ملف `next.config.js`.
 
@@ -47,7 +47,7 @@ const nextConfig = {
 module.exports = nextConfig;
 ```
 
-### ثبّت حزمة ClickHouse OpenTelemetry SDK
+### ثبّت حزمة ClickHouse OpenTelemetry SDK {#install-sdk}
 
 <Tabs>
   <Tab title="NPM">
@@ -63,7 +63,7 @@ module.exports = nextConfig;
   </Tab>
 </Tabs>
 
-### إنشاء ملفات أدوات الرصد
+### إنشاء ملفات أدوات الرصد {#create-instrumentation-files}
 
 أنشئ ملفًا باسم `instrumentation.ts` (أو `.js`) في الدليل الجذر لمشروع Next.js بالمحتوى التالي:
 
@@ -82,7 +82,7 @@ export async function register() {
 
 سيتيح ذلك لـ Next.js استيراد أدوات الرصد الخاصة بـ OpenTelemetry عند أي استدعاء لدالة بلا خادم.
 
-### إعداد متغيرات البيئة
+### إعداد متغيرات البيئة {#configure-environment-variables}
 
 إذا كنت ترسل التتبعات مباشرةً إلى ClickStack عبر OpenTelemetry، فستحتاج إلى تشغيل خادم
 Next.js باستخدام متغيرات البيئة التالية لتوجيه المقاطع إلى OTel collector:

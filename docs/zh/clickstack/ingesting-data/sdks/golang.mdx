@@ -14,9 +14,9 @@ ClickStack 使用 OpenTelemetry 标准收集遥测数据 (日志和
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## 快速开始
+## 快速开始 {#getting-started}
 
-### 安装 OpenTelemetry instrumentation 包
+### 安装 OpenTelemetry instrumentation 包 {#install-opentelemetry}
 
 要安装 OpenTelemetry 和 HyperDX 的 Go 包，请使用以下命令。建议查看[当前可用的 instrumentation 包](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/v1.4.0/instrumentation#instrumentation-packages)，并安装所需的包，以确保 trace 信息能够正确关联。
 
@@ -27,7 +27,7 @@ go get -u github.com/hyperdxio/opentelemetry-go
 go get -u github.com/hyperdxio/opentelemetry-logs-go
 ```
 
-### 原生 HTTP 服务器示例 (net/http)
+### 原生 HTTP 服务器示例 (net/http) {#native-http-server-example}
 
 在此示例中，我们将使用 `net/http/otelhttp`。
 
@@ -135,7 +135,7 @@ func ExampleHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### Gin 应用示例
+### Gin 应用示例 {#gin-application-example}
 
 在本示例中，我们将使用 `gin-gonic/gin`。
 
@@ -219,7 +219,7 @@ func main() {
 }
 ```
 
-### 配置环境变量
+### 配置环境变量 {#configure-environment-variables}
 
 接下来，你需要在 shell 中配置以下环境变量，以便通过 OpenTelemetry Collector 将遥测数据发送到 ClickStack：
 

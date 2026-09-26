@@ -11,7 +11,7 @@ ClickHouse Connect peut décoder les résultats de requête et encoder les inser
 
 Le codec est expérimental et son utilisation est optionnelle. Le codec Python reste celui utilisé par défaut.
 
-## Installation
+## Installation {#installation}
 
 Le codec compilé est distribué sous la forme d&#39;un wheel distinct nommé `clickhouse-connect-core`, qui fournit le module d&#39;extension `_ch_core`. Pour l&#39;évaluation, installez le codec et PyArrow ensemble :
 
@@ -31,7 +31,7 @@ Le codec, son packaging et son ensemble de dépendances sont expérimentaux. Une
 
 Si un codec Rust est sélectionné et que le module compilé n&#39;est pas installé, la création du Client lève une erreur `NotSupportedError` indiquant cette commande d&#39;installation.
 
-## Activation du codec
+## Activation du codec {#enabling-the-codec}
 
 Sélectionnez le codec via l&#39;option client `native_codec` :
 
@@ -53,7 +53,7 @@ La valeur par défaut peut également être définie via le paramètre commun `n
 
 L&#39;option est ignorée pour les clients `interface="chdb"`, qui utilisent toujours le codec Python.
 
-## Quand utiliser le codec Rust
+## Quand utiliser le codec Rust {#when-to-use-the-rust-codec}
 
 Le codec Rust est particulièrement utile pour les résultats DataFrame volumineux comportant du texte, des conteneurs et des types complexes tels que `String`, `LowCardinality`, `Map`, `Array`, `JSON`, `Decimal` et `UUID`. Il peut également bénéficier aux flux volumineux de blocs de lignes et de colonnes, aux charges de travail de requêtes concurrentes et aux insertions en masse.
 
@@ -63,7 +63,7 @@ Les appels `query()` bufferisés portant sur des résultats très larges ou enti
 
 Évaluez les performances sur votre propre charge de travail avant d&#39;adopter le codec. Utilisez `native_codec="rust_strict"` pendant vos mesures afin qu&#39;une option non prise en charge ou une dépendance manquante lève une erreur au lieu de rediriger silencieusement la requête vers Python.
 
-## Règles de fallback
+## Règles de fallback {#fallback-rules}
 
 Les décisions de fallback sont prises avant que le moindre octet ne soit lu ou envoyé : aucun changement de codec ne survient donc en cours de stream. Pour les requêtes, le choix intervient avant la consommation du response body. Pour les insertions, l&#39;encodeur Rust n&#39;est retenu que si tous les types de colonnes sont pris en charge ; sinon, l&#39;insertion s&#39;exécute intégralement avec le codec Python.
 
@@ -73,7 +73,7 @@ Les requêtes de metadata internes au driver, y compris les statements de reflec
 
 Les payloads Native malformés détectés par le codec Rust lèvent `DataError`.
 
-## Versioning
+## Versioning {#versioning}
 
 `clickhouse-connect-core` est versionné indépendamment de `clickhouse-connect`. Le driver déclare une plage de compatibilité via l&#39;extra `rust`, et le module expose une version de l&#39;API de binding que le driver vérifie lorsqu&#39;un codec Rust est sélectionné. Si le wheel installé est trop ancien pour le driver, la création du client lève une `NotSupportedError` indiquant la commande d&#39;upgrade à exécuter :
 
@@ -83,7 +83,7 @@ pip install --upgrade clickhouse-connect-core
 
 Les corrections et les améliorations de performances du codec compilé sont livrées dans les releases de `clickhouse-connect-core` et peuvent être obtenues par une simple mise à niveau vers un wheel core compatible. Les modifications de l&#39;intégration Rust du driver nécessitent en revanche une mise à niveau de `clickhouse-connect`.
 
-## Différences de comportement connues
+## Différences de comportement connues {#known-behavior-differences}
 
 Le codec Rust vise une parité cellule par cellule avec le codec Python. Les différences suivantes sont connues.
 

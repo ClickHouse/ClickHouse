@@ -57,9 +57,9 @@ Com o ClickPipes, os clientes podem migrar bancos de dados Postgres de vários t
   </Step>
 </Steps>
 
-## Considerações sobre a migração
+## Considerações sobre a migração {#migration-considerations}
 
-### Branches
+### Branches {#branches}
 
 O Neon oferece branching instantâneo com copy-on-write. O ClickHouse Managed Postgres usa local NVMe storage para entregar um desempenho de Postgres rápido, previsível e confiável.
 O trade-off é que os branches não são instantâneos: eles são criados como deployments independentes por meio do [Point-in-Time Recovery (PITR)](/pt-BR/products/managed-postgres/backup-and-restore) e, normalmente, ficam disponíveis em poucos minutos.
@@ -68,7 +68,7 @@ Para o desenvolvimento do dia a dia, recomendamos manter um database de desenvol
 
 Alguns clientes usam essa abordagem para gerenciar centenas de ambientes de desenvolvimento. Estamos aprimorando ativamente a experiência de forking e sandbox. Consulte a [documentação de branching](/pt-BR/products/managed-postgres/branching).
 
-### Neon Serverless Driver
+### Neon Serverless Driver {#neon-serverless}
 
 Se sua aplicação não utiliza o Neon Serverless Driver, você pode pular esta seção.
 
@@ -89,7 +89,7 @@ Antes de migrar:
 
 Para mais detalhes, consulte a [compatibility matrix do PgBouncer](https://www.pgbouncer.org/features.html).
 
-### Limites de conexão
+### Limites de conexão {#connection-limits}
 
 O ClickHouse Managed Postgres oferece suporte a 500 conexões diretas do Postgres por padrão. Se a sua workload do Neon exceder esse número, você pode:
 
@@ -98,7 +98,7 @@ O ClickHouse Managed Postgres oferece suporte a 500 conexões diretas do Postgre
 * Aumentar `max_connections` caso sejam necessárias mais conexões diretas.
   * `max_connections` pode ser alterado em **Settings → Edit parameters**. Algumas alterações exigem reinicialização. Consulte a [documentação de configuração](/pt-BR/products/managed-postgres/settings#changing-configuration).
 
-### Mudanças de schema durante a migração
+### Mudanças de schema durante a migração {#schema-changes}
 
 Mantenha o período entre o início do ClickPipes e a transição o mais curto possível — idealmente, não mais do que alguns dias — e evite mudanças de schema nesse intervalo.
 

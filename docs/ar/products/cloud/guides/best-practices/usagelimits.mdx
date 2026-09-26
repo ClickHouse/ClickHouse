@@ -33,7 +33,7 @@ Cloud حدودًا على عدة أبعاد تشغيلية.
   أو أن ننظر معًا في كيفية زيادتها بصورة مضبوطة.
 </Tip>
 
-## حدود الخدمة
+## حدود الخدمة {#service-limits}
 
 تنطبق الحدود أدناه على **خدمة مستقلة** (وبالنسبة لأعداد كائنات البيانات، على تخزين تلك الخدمة).
 
@@ -73,7 +73,7 @@ FROM system.server_settings
 WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
 
-## حدود الـ warehouse
+## حدود الـ warehouse {#warehouse-limits}
 
 الـ [warehouse](/ar/products/cloud/features/infrastructure/warehouses) هو مجموعة من الخدمات التي تتشارك البيانات نفسها.
 تنطبق حدود الـ warehouse على هذه المجموعة المشتركة ككل — لا على كل خدمة على حدة ولا على مستوى المؤسسة.
@@ -94,7 +94,7 @@ WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_
 
 ولأن الخدمات ضمن الـ warehouse تتشارك كتالوج واحدًا (الجداول وقواعد البيانات والـ عروض نفسها، وما إلى ذلك)، فإن [حدود كائنات البيانات على مستوى الخدمة](#service-limits) المذكورة أعلاه تُحتسب **مرة واحدة لكل warehouse** لا مضاعفةً لكل خدمة. أما الـ warehouses المنفصلة فهي معزولة عن بعضها، لذا يحتسب كل warehouse جداوله وقواعد بياناته الخاصة ضمن هذه الحدود.
 
-## حدود المؤسسة
+## حدود المؤسسة {#organization-limits}
 
 تنطبق هذه الحدود على مؤسسة ClickHouse Cloud بأكملها — أي على جميع الـ warehouses والخدمات التابعة لها مجتمعةً.
 

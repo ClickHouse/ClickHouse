@@ -17,13 +17,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 * 你已阅读[&quot;ClickHouse Cloud 中备份的工作方式&quot;](/zh/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (功能概览页面)
 
-## 备份状态列表
+## 备份状态列表 {#backup-status-list}
 
 无论采用默认的每日计划，还是您自行选择的[自定义计划](/zh/products/cloud/guides/backups/configurable-backups)，系统都会按照为您的服务配置的计划执行备份。您可以在服务的 **Backups** 选项卡中查看所有可用备份。在这里，您可以查看备份状态、耗时和备份大小。您还可以通过 **Actions** 列恢复特定备份。
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud 中的备份状态列表" border />
 
-## 了解备份成本
+## 了解备份成本 {#understanding-backup-cost}
 
 除非配置了其他计划，否则服务每 24 小时备份一次，且每个备份保留 24 小时。能否配置备份计划因服务和套餐而异。选择需要保留更多数据或提高备份频率的计划，可能会产生额外的备份存储费用。
 
@@ -42,7 +42,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   请注意，随着服务中的数据量随时间增长，备份的预计成本也会发生变化。
 </Note>
 
-## 恢复备份
+## 恢复备份 {#restore-a-backup}
 
 备份会恢复到新的 ClickHouse Cloud 服务，而不是恢复到创建该备份的现有服务。
 
@@ -55,7 +55,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 <Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="服务正在预配中" border />
 
 <div id="working-with-your-restored-service">
-  ## 使用已恢复的服务
+  ## 使用已恢复的服务 {#working-with-your-restored-service}
 </div>
 
 备份恢复后，您现在会有两个相似的服务：需要恢复的**原始服务**，以及一个从原始服务备份中恢复出来的新的**已恢复服务**。
@@ -66,7 +66,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * 将数据从新的已恢复服务迁回原始服务，并删除新的已恢复服务。
 
 <div id="use-the-new-restored-service">
-  ### 使用**新已恢复服务**
+  ### 使用**新已恢复服务** {#use-the-new-restored-service}
 </div>
 
 要使用这个新服务，请执行以下步骤：
@@ -76,7 +76,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 3. 删除原始服务。
 
 <div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
-  ### 将数据从**已恢复服务**迁移回**原始服务**
+  ### 将数据从**已恢复服务**迁移回**原始服务** {#migrate-data-from-the-newly-restored-service-back-to-the-original-service}
 </div>
 
 假设由于某种原因，你无法使用已恢复服务，例如仍有用户或应用连接到现有服务。此时，你可以选择将新恢复的数据迁移到原始服务。可按以下步骤完成迁移：
@@ -142,7 +142,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 在成功将数据插入原始服务后，请务必核实该服务中的数据。确认数据无误后，您还应删除这个新的  服务。
 
 <div id="undeleting-or-undropping-tables">
-  ## 取消删除或恢复表
+  ## 取消删除或恢复表 {#undeleting-or-undropping-tables}
 </div>
 
 ClickHouse Cloud 通过 [Shared Catalog](/zh/products/cloud/features/infrastructure/shared-catalog) 支持 `UNDROP` 命令。
@@ -163,7 +163,7 @@ ClickHouse Cloud 通过 [Shared Catalog](/zh/products/cloud/features/infrastruct
   旧版套餐：对于使用旧版套餐的客户，默认包含保留 24 小时的每日备份，费用计入存储成本。
 </Note>
 
-## 备份耗时
+## 备份耗时 {#backup-durations}
 
 备份和恢复耗时会因数据量、schema 复杂度和表数量而有显著差异。以下数据来自内部测试观察，并非性能承诺。
 
@@ -178,11 +178,11 @@ ClickHouse Cloud 通过 [Shared Catalog](/zh/products/cloud/features/infrastruct
 </Note>
 
 <div id="configurable-backups">
-  ## 可配置备份
+  ## 可配置备份 {#configurable-backups}
 </div>
 
 如果您想设置不同于默认备份计划的备份计划，请参阅[可配置备份](/zh/products/cloud/guides/backups/configurable-backups)。
 
-## 将备份导出到您自己的云账号
+## 将备份导出到您自己的云账号 {#export-backups-to-your-own-cloud-account}
 
 如需将备份导出到您自己的云账号，请参见[此处](/zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)。

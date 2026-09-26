@@ -14,9 +14,9 @@ ClickStack React Native SDK を使用すると、React Native
 
 <ClickStackIntegrates signals={['traces']} />
 
-## はじめに
+## はじめに {#getting-started}
 
-### NPM 経由でインストール
+### NPM 経由でインストール {#install-via-npm}
 
 [ClickStack React Native パッケージ](https://www.npmjs.com/package/@hyperdx/otel-react-native)をインストールするには、以下のコマンドを使用します。
 
@@ -24,7 +24,7 @@ ClickStack React Native SDK を使用すると、React Native
 npm install @hyperdx/otel-react-native
 ```
 
-### ClickStack を初期化する
+### ClickStack を初期化する {#initialize-clickstack}
 
 アプリのライフサイクルのできるだけ早い段階で、ライブラリを初期化してください。
 
@@ -62,7 +62,7 @@ HyperDXRum.setGlobalAttributes({
 });
 ```
 
-### 古いバージョンをインストルメントする
+### 古いバージョンをインストルメントする {#instrument-lower-versions}
 
 React Native 0.68 未満で動作するアプリケーションをインストルメントするには、
 `metro.config.js` ファイルを編集し、metro がブラウザー固有の
@@ -108,7 +108,7 @@ module.exports = {
 };
 ```
 
-## 画面ナビゲーション
+## 画面ナビゲーション {#view-navigation}
 
 [react-navigation](https://github.com/react-navigation/react-navigation) バージョン 5 および 6 に対応しています。
 

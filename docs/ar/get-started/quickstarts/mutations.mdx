@@ -76,7 +76,7 @@ ALTER TABLE [<database>.]<table> UPDATE <column> = <expression> WHERE <filter_ex
 </Note>
 
 <div id="deleting-data">
-  ## حذف البيانات
+  ## حذف البيانات {#deleting-data}
 </div>
 
 استخدم الأمر `ALTER TABLE` لحذف الصفوف:
@@ -106,7 +106,7 @@ ALTER TABLE [<database>.]<table> DELETE WHERE <filter_expr>
 راجع صفحة توثيق تعليمة [`DELETE`](/ar/reference/statements/delete) لمزيد من التفاصيل.
 
 <div id="lightweight-deletes">
-  ## الحذف الخفيف
+  ## الحذف الخفيف {#lightweight-deletes}
 </div>
 
 خيار آخر لحذف الصفوف هو استخدام الأمر `DELETE FROM`، ويُشار إليه باسم **الحذف الخفيف**. تُعلَّم الصفوف المحذوفة فورًا على أنها محذوفة، وتُستبعَد تلقائيًا من جميع الاستعلامات اللاحقة، لذلك لا تحتاج إلى انتظار دمج الأجزاء أو استخدام الكلمة المفتاحية `FINAL`. ويجري تنظيف البيانات بشكل غير متزامن في الخلفية.

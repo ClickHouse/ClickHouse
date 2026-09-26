@@ -16,7 +16,7 @@ ClickStack の NestJS インテグレーションでは、ロガーを作成す�
 *メトリクスや APM/トレースも送信するには、対応する言語の
 インテグレーションをアプリケーションに追加する必要があります。*
 
-## はじめに
+## はじめに {#getting-started}
 
 ルートの `AppModule` に `HyperDXNestLoggerModule` をインポートし、`forRoot()`
 メソッドで設定します。
@@ -58,7 +58,7 @@ export class CatsController {
 }
 ```
 
-### Nest のロガーを置き換える (ブートストラップ時を含む)
+### Nest のロガーを置き換える (ブートストラップ時を含む) {#replacing-the-nest-logger}
 
 <Info>
   **重要**

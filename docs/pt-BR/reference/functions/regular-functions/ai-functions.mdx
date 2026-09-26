@@ -29,7 +29,7 @@ Todas as funções compartilham uma infraestrutura comum que fornece:
 * **Aplicação de cotas**: Limites por consulta para tokens ([`ai_function_max_input_tokens_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) e chamadas de API ([`ai_function_max_api_calls_per_query`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Retentativas com backoff**: Falhas transitórias são repetidas ([`ai_function_max_retries`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_max_retries)) com backoff exponencial ([`ai_function_retry_initial_delay_ms`](/pt-BR/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 
-## Configuração
+## Configuração {#configuration}
 
 As funções de IA usam uma **coleção nomeada** que armazena as credenciais do provedor e a configuração. É possível criar e usar diferentes coleções nomeadas para funções distintas ou chamadas de função específicas. Por exemplo, talvez você queira definir uma coleção nomeada diferente para usar com as funções de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) em vez das funções de embedding (`aiEmbed`, `aiSimilarity`), que requerem endpoints diferentes e geralmente usam modelos diferentes.
 
@@ -51,7 +51,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     api_key = 'sk-...';
 ```
 
-### Parâmetros da coleção nomeada
+### Parâmetros da coleção nomeada {#named-collection-parameters}
 
 | Parâmetro     | Tipo   | Padrão | Descrição                                                                                                                                                                                                                                   |
 | ------------- | ------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -66,7 +66,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
   Qualquer API compatível com OpenAI (por exemplo, vLLM, Ollama, LiteLLM) pode ser usada definindo `provider = 'openai'` e apontando o `endpoint` para o seu serviço.
 </Note>
 
-### Selecionando credenciais
+### Selecionando credenciais {#selecting-credentials}
 
 Uma função determina a coleção nomeada a ser usada na seguinte ordem:
 
@@ -94,7 +94,7 @@ SELECT * FROM reviews
 WHERE aiFilter(body, 'the customer is angry about shipping');
 ```
 
-### Mapa de parâmetros
+### Mapa de parâmetros {#parameter-map}
 
 Cada função aceita, ao final, um `Map(String, String)` opcional de parâmetros. Todos os valores são strings (coloque os números entre aspas, por exemplo, `'0.2'`). Chaves desconhecidas são rejeitadas. Uma chave presente substitui o valor correspondente da coleção nomeada; uma chave ausente recorre à coleção nomeada (para `model`/`max_tokens`) ou ao padrão interno. A exceção são as funções de embedding (`aiEmbed`, `aiSimilarity`), que recebem `model` como um argumento posicional obrigatório (por exemplo, `aiEmbed(text, model[, params])`, `aiSimilarity(text1, text2, model[, params])`) e geram erro se ele for definido no mapa de parâmetros ou na coleção nomeada. Isso serve para garantir embeddings reproduzíveis.
 
@@ -111,11 +111,11 @@ Funções individuais aceitam parâmetros adicionais específicos de cada funç�
 SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
 ```
 
-### Configurações no nível da consulta
+### Configurações no nível da consulta {#query-level-settings}
 
 Todas as configurações relacionadas à IA estão listadas em [Settings](/pt-BR/reference/settings/session-settings) com o prefixo `ai_function_`.
 
-### Restringindo hosts de endpoint
+### Restringindo hosts de endpoint {#restricting-endpoint-hosts}
 
 A URL de `endpoint` em uma coleção nomeada de IA é um destino de saída ao qual o servidor se conecta com sua própria identidade, potencialmente enviando (se especificada) a `api_key` da coleção nomeada no cabeçalho da requisição. Por padrão, o ClickHouse permite qualquer host. Para restringir as funções a um conjunto específico de provedores, configure [`remote_url_allow_hosts`](/pt-BR/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) na configuração do servidor, por exemplo:
 
@@ -128,7 +128,7 @@ A URL de `endpoint` em uma coleção nomeada de IA é um destino de saída ao qu
 
 Observe que essa configuração vale para todo o servidor e se aplica a todas as funcionalidades que usam HTTP.
 
-### Segurança de transporte (HTTP vs HTTPS)
+### Segurança de transporte (HTTP vs HTTPS) {#transport-security}
 
 O transporte é determinado exclusivamente pelo esquema da URL do `endpoint`. Não há criptografia do payload da requisição no nível da aplicação; a proteção dos dados em trânsito depende inteiramente do esquema:
 
@@ -139,14 +139,14 @@ Por padrão, as funções de IA rejeitam um `endpoint` que enviaria dados em tex
 
 Observe que, em ambos os casos, o provedor recebe os dados de entrada em texto claro após a terminação de TLS; o TLS protege os dados apenas no caminho de rede entre o servidor e o provedor.
 
-## Provedores compatíveis
+## Provedores compatíveis {#supported-providers}
 
 | Provedor  | valor de `provider` | Funções de chat | Observações                    |
 | --------- | ------------------- | --------------- | ------------------------------ |
 | OpenAI    | `'openai'`          | Sim             | Provedor padrão.               |
 | Anthropic | `'anthropic'`       | Sim             | Usa o endpoint `/v1/messages`. |
 
-## Observabilidade
+## Observabilidade {#observability}
 
 A atividade da função de IA é rastreada pelos [ProfileEvents](/pt-BR/reference/system-tables/query_log) do ClickHouse:
 

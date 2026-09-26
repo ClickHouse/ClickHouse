@@ -28,7 +28,7 @@ ClickHouse Connect は、中核となるデータベースドライバーであ�
   標準の ClickHouse Connect クライアントは HTTPインターフェイス を使用します。これにより、HTTP ロードバランサー、プロキシ、および一般的なエンタープライズ向けネットワーク制御に対応できます。ClickHouse Connect には、実験的なインプロセスの [chDB](#embedded-chdb-backend) バックエンドもあります。
 </Note>
 
-## 要件と互換性
+## 要件と互換性 {#requirements-and-compatibility}
 
 | コンポーネント    | サポート対象バージョン                                                                   |
 | ---------- | ----------------------------------------------------------------------------- |
@@ -42,7 +42,7 @@ ClickHouse Connect は、中核となるデータベースドライバーであ�
 
 この package には、利用可能な環境向けのコンパイル済み wheel が含まれており、Cython 拡張機能をビルドできない場合は pure Python 実装にフォールバックします。PyArrow は Python 3.10 〜 3.14 をサポートしています。Python 3.14 では PyArrow 22 以降が必要です。
 
-## インストール
+## インストール {#installation}
 
 pip を使用して、[PyPI](https://pypi.org/project/clickhouse-connect/) から ClickHouse Connect をインストールします。
 
@@ -70,7 +70,7 @@ ClickHouse Connect は、ソースコードからインストールすること�
 * [GitHub リポジトリ](https://github.com/ClickHouse/clickhouse-connect) を `git clone` します。
 * プロジェクトのルートディレクトリに移動し、`pip install .` を実行します。ビルドシステムにより、オプションの C 拡張機能をコンパイルするための Cython が自動的にインストールされます。
 
-### ソースビルドモード
+### ソースビルドモード {#source-build-modes}
 
 ソースビルドは3つのモードをサポートします。デフォルトモードと必須モードでは、Cythonが利用できない場合や `cythonize()` が失敗した場合にビルドが失敗します。スキップモードではCythonをインポートしません。
 
@@ -98,24 +98,24 @@ python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in
 
 インストールされているバージョンは `clickhouse_connect.__version__` で確認できます。
 
-## サポートポリシー
+## サポートポリシー {#support-policy}
 
 問題を報告する前に、ClickHouse Connect を最新リリースに更新してください。問題の報告は [GitHub project](https://github.com/ClickHouse/clickhouse-connect/issues) に登録してください。ClickHouse Connect は、各ドライバーのリリース時点で[アクティブにサポートされている ClickHouse リリース](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md)を対象としています。古いサーバーバージョンでも動作することはよくありますが、新しいデータ型やプロトコル機能では、より新しいサーバーが必要になる場合があります。
 
-## 基本的な使い方
+## 基本的な使い方 {#basic-usage}
 
-### 接続情報を確認する
+### 接続情報を確認する {#gather-your-connection-details}
 
 <ConnectionDetails />
 
-### 接続する
+### 接続する {#establish-a-connection}
 
 ClickHouse に接続する方法として、次の 2 つの例を示します。
 
 * localhost 上の ClickHouse サーバーに接続する。
 * ClickHouse Cloud サービスに接続する。
 
-#### ClickHouse Connect クライアントインスタンスを使用して、localhost 上の ClickHouseサーバーに接続します:
+#### ClickHouse Connect クライアントインスタンスを使用して、localhost 上の ClickHouseサーバーに接続します: {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost}
 
 ```python
 import clickhouse_connect
@@ -127,7 +127,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-#### ClickHouse Connect クライアントインスタンスを使用して ClickHouse Cloud サービスに接続します。
+#### ClickHouse Connect クライアントインスタンスを使用して ClickHouse Cloud サービスに接続します。 {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service}
 
 <Tip>
   先ほど取得した接続情報を使用します。ClickHouse Cloud サービスでは TLS が必要なため、ポート 8443 を使用してください。
@@ -144,7 +144,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-### データベースを操作する
+### データベースを操作する {#interact-with-your-database}
 
 ClickHouse SQL コマンドを実行するには、クライアントの `command` メソッドを使用します。
 
@@ -175,7 +175,7 @@ print(result.result_rows)
 client.close()
 ```
 
-## 埋め込み chDB バックエンド
+## 埋め込み chDB バックエンド {#embedded-chdb-backend}
 
 Experimental の chDB バックエンドでは、HTTP サーバーを介さずに Python プロセス内で ClickHouse クエリを実行します。まず `chdb` extra をインストールし、`interface="chdb"` または `chdb://` DSN でバックエンドを選択します。
 

@@ -19,7 +19,7 @@ ClickHouse サービスと同様に ClickHouse Managed Postgres サービスを�
 [ClickHouse Managed Postgres API リファレンス][pg-openapi] に直接進んでください。
 そうでない場合は、このまま簡単な概要をご確認ください。
 
-## API キー
+## API キー {#api-keys}
 
 ClickHouse OpenAPI を使用するには認証が必要です。作成方法については
 [API keys] を参照してください。次に、以下のように Basic 認証の認証情報として使用します。
@@ -31,7 +31,7 @@ KEY_SECRET=mykeysecret
 curl -s --user "$KEY_ID:$KEY_SECRET" https://api.clickhouse.cloud/v1/organizations | jq
 ```
 
-## Organization ID
+## Organization ID {#organization-id}
 
 次に、Organization ID が必要になります。
 
@@ -75,11 +75,11 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 }
 ```
 
-## CRUD
+## CRUD {#crud}
 
 Postgres サービス のライフサイクルを見ていきましょう。
 
-### 作成
+### 作成 {#create}
 
 まず、[create API] を使って新しく作成します。このリクエストでは、JSONボディに次のプロパティを含める必要があります。
 
@@ -137,7 +137,7 @@ echo "$pg_created" | jq
 }
 ```
 
-### 取得
+### 取得 {#read}
 
 レスポンスの`id`を使って、サービスを再度取得します:
 
@@ -176,7 +176,7 @@ postgres=#
 
 [psql] を終了するには、`\q` と入力します。
 
-### 更新
+### 更新 {#update}
 
 [patch API] は、[RFC 7396] の JSON Merge Patch を使用して、Managed
 Postgres サービスのプロパティの一部を更新できます。複雑なデプロイメントでは、タグが特に重要になることがあります。その場合は、リクエストでタグだけを送信してください:
@@ -250,7 +250,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
 
   */}
 
-### 削除
+### 削除 {#delete}
 
 Postgres サービスを削除するには、[delete API] を使用します。
 
@@ -275,7 +275,7 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
 }
 ```
 
-## 監視
+## 監視 {#monitoring}
 
 Prometheus 互換のエンドポイントが 2 つあり、ClickHouse Managed Postgres サービスの CPU、メモリ、I/O、接続、
 およびトランザクションのメトリクスを公開しています。1 つは組織内のすべてのサービスの
@@ -283,13 +283,13 @@ Prometheus 互換のエンドポイントが 2 つあり、ClickHouse Managed Po
 [Prometheus エンドポイント] ページを、メトリクスの一覧については
 [メトリクス リファレンス] を参照してください。
 
-## クエリインサイト
+## クエリインサイト {#query-insights}
 
 Cloud
 Console の [クエリインサイト] タブの各ステートメントのテレメトリーは、プログラムからも利用できます。2 つのエンドポイントにより、サービス上の最も遅い
 クエリパターンを取得できます。1 つは影響度順にすべてのパターンを一覧表示し、もう 1 つは単一のパターンとその最近の実行結果を返します。
 
-### 低速クエリパターンの一覧
+### 低速クエリパターンの一覧 {#list-slow-query-patterns}
 
 [スローパターン API] は、一定の時間範囲内で観測された最も遅いクエリ
 パターンの集約メトリクスを返します。時間範囲の指定は必須です。
@@ -348,7 +348,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 負の値になります。単一のパターンを取得するには、先頭の `-` も含めて
 その値をそのまま渡してください。
 
-### 低速クエリパターンを取得する
+### 低速クエリパターンを取得する {#get-slow-query-pattern}
 
 リストレスポンスの `queryId` を [低速クエリパターン API] に渡すと、その
 パターンの集約メトリクスと、直近の個別実行結果を取得できます。
@@ -408,7 +408,7 @@ time、並列 worker 数、JIT、WAL — が含まれます。これらは、
 この例では簡潔にするため、両方のオブジェクトをトリムしています。API は
 [per-execution counters] に記載されている完全なカウンター セットを返します。
 
-## サーバーログ
+## サーバーログ {#server-logs}
 
 Cloud Console のログビューアで表示される PostgreSQL サーバーログは、
 プログラムからも利用できます。[logs API] は、指定した期間内のサービスの個々のログエントリを

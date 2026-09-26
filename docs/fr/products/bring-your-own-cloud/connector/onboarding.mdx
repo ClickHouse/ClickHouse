@@ -13,9 +13,9 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 Cette page vous guide depuis le jeton d’inscription jusqu’à un connector vérifié en mode managé, où l’executor applique le cycle de vie du service piloté par ClickHouse Cloud. Le connector s’installe sur un cluster Kubernetes (Helm) ou une VM Linux (systemd). L’inscription par token est le flux standard. Si votre environnement ne peut pas accéder directement à votre connector endpoint, consultez [les installations isolées et mises en miroir](#air-gapped-and-mirrored-installs). Pour observer une instance ClickHouse que vous exploitez vous-même, sans l’executor, utilisez `--no-managed`.
 
-## Prérequis
+## Prérequis {#prerequisites}
 
-### Enregistrer votre environnement
+### Enregistrer votre environnement {#registration}
 
 Avant l&#39;enrôlement, votre account team enregistre votre environnement et active le mode managé pour votre organisation. Communiquez-lui :
 
@@ -27,7 +27,7 @@ Avant l&#39;enrôlement, votre account team enregistre votre environnement et ac
 
 ClickHouse Cloud délivre ensuite votre connector endpoint ainsi qu&#39;un jeton d’inscription à usage unique. Ce token identifie votre environnement : l&#39;enrôlement ne nécessite donc aucun identifiant supplémentaire.
 
-### Pour toute installation
+### Pour toute installation {#prerequisites-every-install}
 
 * **Connector v0.17.0 ou ultérieur.** Les versions antérieures ne disposent ni du mode managé, ni des commandes `platform`, ni de `instances create`. L&#39;installateur propose la dernière version, sauf si vous passez `--version`.
 * **Votre connector endpoint et votre jeton d’inscription**, fournis lors de l&#39;[enregistrement](#registration).
@@ -37,7 +37,7 @@ ClickHouse Cloud délivre ensuite votre connector endpoint ainsi qu&#39;un jeton
 * **Pas encore de ClickHouse.** Une installation managed démarre sans aucun service ; ceux que l&#39;executor crée s&#39;enregistrent d&#39;eux-mêmes. En mode managé, `init` n&#39;enregistre aucun ClickHouse que vous exécutez vous-même (sur Kubernetes, il refuse `--instance` et `--instance-namespace`). Pour observer un tel cluster, installez un déploiement de connector distinct avec `--no-managed`. `--ch-user-suffix` permet aux deux déploiements de partager une instance sans entrer en conflit sur les utilisateurs du connector. Ce déploiement nécessite un listener native joignable, 9440 sécurisé ou 9000 en plaintext, détecté automatiquement sur Kubernetes. Il nécessite également un accès ClickHouse admin pour le provisioning : un utilisateur `default` sans password, un password transmis via `--ch-admin-password-stdin` ou saisi à l&#39;invite, ou une injection de CR pour les instances gérées par un opérateur.
 * **cosign** partout où vous téléchargez des artefacts de version. L&#39;installateur vérifie toujours le checksum SHA-256. Si cosign est installé, il vérifie en outre la signature de la version, et avec `CLICKLINK_REQUIRE_COSIGN=1` il refuse de poursuivre sans cosign.
 
-### Pour les installations Kubernetes (Helm)
+### Pour les installations Kubernetes (Helm) {#prerequisites-kubernetes}
 
 * **Un kubeconfig** dont le contexte courant pointe vers l&#39;EKS cluster. Il doit pouvoir créer et lire le namespace du connector, appliquer des Secrets, créer des ServiceAccounts, des Roles et des RoleBindings, installer le chart et accorder à l&#39;executor son accès cluster-wide.
 * **Des AWS identifiants** sur le poste de travail (environnement ou profil) disposant de `eks:DescribeCluster` et `ec2:DescribeVpcs`. `init` s&#39;en sert pour lire les blocs CIDR du VPC de votre cluster nécessaires à la NetworkPolicy. Si la lookup échoue, un avertissement est émis et la liste reste à compléter par vos soins.
@@ -45,7 +45,7 @@ ClickHouse Cloud délivre ensuite votre connector endpoint ainsi qu&#39;un jeton
 * **Une StorageClass par défaut**, ou une classe à transmettre via `--storage-class` ; le troubleshooter et l&#39;executor conservent leur état sur des PersistentVolumeClaims.
 * **Un accès au pull d&#39;images** : les nœuds du cluster doivent pouvoir récupérer l&#39;image ECR publique, ou un mirror que vous hébergez.
 
-### Pour les installations sur VM Linux (systemd)
+### Pour les installations sur VM Linux (systemd) {#prerequisites-vm}
 
 * **N&#39;importe quel hôte Linux avec systemd**, amd64 ou arm64. Les builds Linux s&#39;exécutent en mode FIPS.
 * **Accès root** pour l&#39;installeur et pour `init`.
@@ -56,7 +56,7 @@ ClickHouse Cloud délivre ensuite votre connector endpoint ainsi qu&#39;un jeton
   Sur une VM, `--skip-provision` est le seul moyen de contourner l&#39;exigence relative au Kubernetes API server, et il ne s&#39;applique qu&#39;à l&#39;étape. Il ignore le provisioning du ClickHouse user, le grant de l&#39;executor, l&#39;activation de l&#39;unité et la vérification : à lui seul, il ne produit donc aucun connector en fonctionnement. Sur Kubernetes, il ignore uniquement le provisioning du ClickHouse user. Le grant de l&#39;executor reste appliqué, car l&#39;executor du chart ne peut pas être planifié sans le ServiceAccount granted.
 </Note>
 
-## Installer et enregistrer
+## Installer et enregistrer {#install-and-enroll}
 
 <Steps>
   <Step title="Obtenez l’endpoint et le jeton d’inscription de votre connecteur" id="get-endpoint-and-token">
@@ -170,7 +170,7 @@ ClickHouse Cloud délivre ensuite votre connector endpoint ainsi qu&#39;un jeton
   </Step>
 </Steps>
 
-## Installations isolées et mises en miroir
+## Installations isolées et mises en miroir {#air-gapped-and-mirrored-installs}
 
 Deux éléments indépendants peuvent transiter hors bande, selon ce que votre environnement peut atteindre. L&#39;executor n&#39;a besoin de rien de plus : il s&#39;authentifie avec le même certificat client et les mêmes identifiants d&#39;API que les autres composants. Vous appliquez son grant cluster-wide via votre kubeconfig, et non par le réseau.
 
@@ -182,7 +182,7 @@ Sur Kubernetes, `--chart` accepte un nom de chart résolu via `--chart-repo`, un
 
 L&#39;installateur fonctionne également depuis un miroir : hébergez les artefacts de version et `install.sh` sur votre propre miroir, puis pointez dessus avec `CLICKLINK_MIRROR_URL`.
 
-### Téléchargement et vérification manuels
+### Téléchargement et vérification manuels {#manual-download-and-verification}
 
 Si vous préférez ne pas télécharger le programme d’installation via un pipe, récupérez et vérifiez vous-même la version. Le bloc détecte votre plateforme et votre architecture ; exécutez-le tel quel sur macOS ou Linux, amd64 ou arm64 :
 
@@ -220,7 +220,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 Sur une VM, extrayez l’archive tar et exécutez `sudo ./install.sh` depuis le répertoire extrait. En plus de ses artefacts de version, cette commande effectue la même installation sur l’hôte que `--host`.
 
-## En cas d&#39;échec
+## En cas d&#39;échec {#if-something-fails}
 
 Relancez la même commande. `init` est idempotente : les relances convergent vers le même état, conservent votre config et vos fichiers préparés, et ignorent le travail déjà effectué. Lorsqu&#39;une étape échoue en cours de route, la CLI affiche les commandes de récupération exactes ; elles peuvent être répétées sans risque.
 

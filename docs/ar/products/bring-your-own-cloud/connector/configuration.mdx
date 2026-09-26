@@ -12,7 +12,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 تتناول هذه الصفحة تغييرات التهيئة التي يُرجّح إجراؤها بعد تثبيت الموصل. يرد كل مفتاح، مع قيمته الافتراضية ومعناه، في [مرجع التهيئة](/ar/products/bring-your-own-cloud/connector/reference/configuration)؛ وترد خيارات سطر الأوامر في [مرجع CLI](/ar/products/bring-your-own-cloud/connector/reference/cli). أما إنشاء الخدمات وتوسيع نطاقها وحذفها فمشروح في [الخدمات المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services).
 
-## واجهات التهيئة
+## واجهات التهيئة {#configuration-surfaces}
 
 للموصل واجهة تهيئة واحدة لكل هدف تثبيت.
 
@@ -58,7 +58,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
   </Tab>
 </Tabs>
 
-## الوضع المُدار
+## الوضع المُدار {#managed-mode}
 
 يُشغّل الوضع المُدار المنفّذ، الذي يطبّق على عنقودك دورة حياة الخدمة التي تقودها ClickHouse Cloud. ويقوم `init` بتفعيله عند التسجيل ويملأ هوية العنقود (انظر [تفعيل الوضع المُدار](/ar/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)). أما المفاتيح أدناه فهي التي قد تحتاج إلى مراجعتها لاحقًا. ولتغيير الوضعية، أعد تنفيذ `init` مع `--force` و`--managed` أو `--no-managed`. وكما هو الحال في كل تنفيذ لـ `init`، يتطلب ذلك نقطة دخول: `--handoff` إذا احتفظت بالحزمة، أو `--enroll` مع رمز جديد (انظر [إعادة التنفيذ والاسترداد](/ar/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery)).
 
@@ -160,7 +160,7 @@ sudo systemctl disable --now clicklink-executor
   </Tab>
 </Tabs>
 
-## إضافة مثيلات ClickHouse أو تغييرها
+## إضافة مثيلات ClickHouse أو تغييرها {#clickhouse-instances}
 
 تُسجِّل الخدمات التي يُنشئها المنفّذ نفسها تلقائيًا، لذا لن تحتاج في الوضع المُدار إلى إضافتها هنا إطلاقًا. ينطبق هذا القسم على عملية نشر موصل منفصلة تعمل بدون المنفّذ، وتراقب ClickHouse الذي تُشغّله بنفسك. مرِّر `--ch-user-suffix` عند تنفيذ `init` الخاص بها إذا كانت عمليتا النشر تتشاركان النسخة نفسها. يُحدِّد كل مدخل ضمن `instances` نقطة نهاية للبروتوكول native في ClickHouse يقرأ منها موصل: `host` و`port` و`database` و`secure` و`cluster`، وعلى Kubernetes كذلك `namespace`. ويحدّ كل من `max_open_conns` و`max_idle_conns` سعة مجمّع الاتصالات. لا تُخزَّن بيانات الاعتماد أبدًا في التهيئة؛ إذ يستخرج كل مكوّن مستخدم ClickHouse الخاص به للقراءة فقط من حزمة الوصول التي يُنشئها التجهيز.
 
@@ -244,7 +244,7 @@ sudo systemctl disable --now clicklink-executor
   تعمل أوامر `access provision` نفسها مع `--force` على تدوير بيانات اعتماد ClickHouse الخاصة بالمثيل. راجع [العمليات](/ar/products/bring-your-own-cloud/connector/operations).
 </Tip>
 
-## قائمة السماح بالمشغّلين
+## قائمة السماح بالمشغّلين {#operator-allowlist}
 
 تتحكم قائمة سماح لعناوين البريد الإلكتروني للمشغّلين في الوصول إلى الجلسات المُدارة عبر Gateway. يجب أن يتضمن كل طلب إلى بوابة الجلسة رمز OIDC ID قصير الأجل، ويكون عنوان البريد الإلكتروني المُثبَت فيه مدرجًا في القائمة. تؤدي قائمة السماح الفارغة إلى إغلاق البوابة. على جهاز افتراضي، يمكن للمستخدم الجذر على المضيف أيضًا إدارة الجلسات مباشرةً من خلال ملف الجلسة المحلي؛ إذ تحكم قائمة السماح مسار البوابة فقط. راجع [جلسات الدعم](/ar/products/bring-your-own-cloud/connector/support-sessions) للاطلاع على نموذج الثقة الكامل.
 
@@ -274,7 +274,7 @@ sudo systemctl disable --now clicklink-executor
   </Tab>
 </Tabs>
 
-## سياسة الشبكة وحركة الخروج (egress)
+## سياسة الشبكة وحركة الخروج (egress) {#network-policy}
 
 على Kubernetes، يأتي المخطط مزوّدًا بكائن NetworkPolicy افتراضي يرفض كل الحركة، مع allowlist لحركة الخروج. ولا تصبح كائنات NetworkPolicy سارية المفعول إلا إذا كان الـ CNI لديك يفرضها. وفي ظل CNI يفرض السياسات، يقتصر الوصول على DNS العنقود ومساحات أسماء ClickHouse Service إلى أن تُملأ قائمتا CIDR معًا. وحتى ذلك الحين، لا يملك الموصل أي حركة خروج نحو نقطة نهاية الموصل أو خادم API الخاص بـ Kubernetes. ولا يهيّئ `init` السياسة في حالة enabled إلا عندما يعرف نطاقات CIDR الواقعة خلف نقطة نهاية الموصل لديك.
 
@@ -320,7 +320,7 @@ clctl:
 
 يتبقى مفتاحان للدخول: `metricsScrapeSelector` الذي يقصر دخول سحب المقاييس على مساحة أسماء واحدة لـ Prometheus استنادًا إلى الوسم، و`kubeletProbeCIDRs` الذي يسمح صراحةً بفحوصات سلامة kubelet في ظل سياسة الرفض الافتراضي الصارمة. راجع [مرجع التهيئة](/ar/products/bring-your-own-cloud/connector/reference/configuration) للاطلاع على قائمة المفاتيح الكاملة.
 
-## أنماط إخفاء المعلومات الحساسة
+## أنماط إخفاء المعلومات الحساسة {#redaction-patterns}
 
 يُخفي مستكشف الأخطاء وإصلاحها المعلومات الحساسة من مخرجاته قبل أن تغادر نطاقك. تغطي الأنماط المضمّنة `ipv4` و`ipv6` و`bearer-token` و`aws-access-key` و`email` و`jwt` و`ssh-private-key` و`connection-string-credentials`. أضف أنماطك الخاصة في ملف YAML. إذ تُطبَّق أولًا حسب ترتيبها في الملف، ثم الأنماط المضمّنة؛ ويستبدل الإدخال الذي يعيد استخدام `name` لنمط مضمّن ذلك النمط.
 
@@ -345,7 +345,7 @@ patterns:
   يرفض مستكشف الأخطاء وإصلاحها البدء إذا كان ملف الأنماط موجودًا لكنه غير صالح، ويسجل الإدخال المسبّب للمشكلة. أما الملف المهيّأ غير الموجود فيؤدي فقط إلى تسجيل تحذير واستخدام الأنماط المضمّنة. يتحقق `clicklink clctl preflight` من صحة الملف، لذا شغّله قبل إعادة تشغيل البرنامج الخفي.
 </Warning>
 
-## المرايا الخاصة ونقاط النهاية ضمن الحدود
+## المرايا الخاصة ونقاط النهاية ضمن الحدود {#private-mirrors}
 
 يُعيّن المخطط المنشور مسبقًا `image.repository` إلى صورة موصل عامة متعددة المعماريات وموقّعة باستخدام cosign، لذا لا تتطلب عمليات التثبيت العادية قيمًا للصورة. لفحص الإعدادات الافتراضية المنشورة:
 
@@ -372,7 +372,7 @@ clicklink clctl init --handoff handoff.yaml --target helm --managed \
 
 عندما تكون نقطة نهاية الموصل خلف مرجع تصديق خاص (CA) ضمن نطاقك، مرّر `--api-private-ca` إلى `init`. إذ يُهيّئ `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`، ويتحقق الموصل من نقطة النهاية باستخدام جذور النظام إضافةً إلى سلسلة CA من حزمة التسجيل. على جهاز افتراضي (VM)، يكون المكافئ هو `api.tls.ca_file` في `/etc/clicklink/config.yaml`: يثبّت `init` سلسلة الحزمة في `/etc/clicklink/tls/ca.crt`، ويلحقها الموصل بجذور النظام بالطريقة نفسها. للتسجيل وتوقيع الشهادات في بيئة معزولة هوائياً بالكامل، راجع [الإعداد الأوّلي](/ar/products/bring-your-own-cloud/connector/onboarding).
 
-## التخزين
+## التخزين {#storage}
 
 <Tabs>
   <Tab title="Kubernetes" id="storage-kubernetes">

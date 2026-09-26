@@ -11,7 +11,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-## Escalonamento horizontal manual
+## Escalonamento horizontal manual {#manual-horizontal-scaling}
 
 <ScalePlanFeatureBadge feature="Escalonamento horizontal manual" />
 
@@ -24,7 +24,7 @@ Os tiers **Scale** e **Enterprise** também oferecem suporte a serviços com uma
 </Note>
 
 <div id="horizontal-scaling-via-api">
-  ### Escalonamento horizontal via API
+  ### Escalonamento horizontal via API {#horizontal-scaling-via-api}
 </div>
 
 Para escalar horizontalmente um cluster, envie uma solicitação `PATCH` pela API para ajustar o número de réplicas. As capturas de tela abaixo mostram uma chamada de API para aumentar um cluster de `3` réplicas para `6` réplicas, e a resposta correspondente.
@@ -39,7 +39,7 @@ Para escalar horizontalmente um cluster, envie uma solicitação `PATCH` pela AP
 
 Se você enviar uma nova solicitação de escalonamento, ou várias solicitações em sequência, enquanto outra já estiver em andamento, o serviço de escalonamento ignorará os estados intermediários e convergirá para a contagem final de réplicas.
 
-### Escalonamento horizontal pela UI
+### Escalonamento horizontal pela UI {#horizontal-scaling-via-ui}
 
 Para escalar um serviço horizontalmente pela UI, você pode ajustar o número de réplicas do serviço na página **Settings**.
 

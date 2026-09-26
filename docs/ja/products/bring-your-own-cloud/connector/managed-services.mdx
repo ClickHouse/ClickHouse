@@ -14,7 +14,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 managed モードでは、コネクタは 3 つ目のコンポーネントである executor を実行します。ClickHouse Cloud はこれを介して、お使いの Kubernetes クラスター 内で ClickHouse サービス を運用します。このページでは、サービス の作成、その ステータス の確認、ClickHouse Cloud がそれに対して行う処理、そして廃止されるまでの流れについて説明します。
 
-## managed モードの動作
+## managed モードの動作 {#what-managed-mode-does}
 
 executor は、scraper やトラブルシューターと同じ `clicklink` バイナリに含まれるデーモンです。コネクタエンドポイントへのアウトバウンドの WebSocket チャネルを保持し、ClickHouse Cloud からライフサイクルコマンドを受信します。受信した各コマンドは、設定対象となっている単一の Kubernetes クラスターに適用され、その結果はそのチャネルを通じて報告されます。他のコンポーネントと同様に、アウトバウンド接続のみを行います。すなわち、ClickHouse Cloud からクラスターへ接続されることはなく、executor のローカル API はループバックにバインドされます。
 
@@ -24,13 +24,13 @@ managed モードは、プライベートプレビュー期間中、S3 storage �
 
 VM 上では、executor は他の 2 つのコンポーネントと並んで `clicklink-executor` systemd unit として動作します。Kubernetes 上では、コネクタのネームスペース内で単一レプリカのデプロイメントとして動作します。ヘルスと metrics をポート 8086 で、ローカル API を `127.0.0.1:9999` で提供します。
 
-## Managed モードを有効化する
+## Managed モードを有効化する {#enable-managed-mode}
 
 Managed モードは enroll 時に選択します。`clicklink clctl init` に `--managed` を渡すか、端末上でプロンプトに回答してください。VM 上では、`init` はこのホストの kubeconfig からクラスターを取得し (複数の EKS クラスター が含まれる場合は `--cluster-name` を指定) 、executor の クラスター全体への access を Inline で付与します。Kubernetes 上では、コネクタエンドポイント の CIDR を `--egress-cidrs` に渡すことで、チャート がデフォルト拒否の NetworkPolicy を有効な状態で配置します。
 
 インストール自体に変更はありません。全体の流れは [オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding#install-and-enroll) を、flags は [CLI reference](/ja/products/bring-your-own-cloud/connector/reference/cli#init) を参照してください。
 
-## サービスを作成する
+## サービスを作成する {#create-a-service}
 
 コネクタエンドポイント を通じたサービス作成は環境ごとに有効化されます。開始する前に アカウントチーム に確認してください。
 
@@ -118,7 +118,7 @@ AWS 認証情報 が必要なのは `prepare` のみで、S3 バケットと IAM
   </Step>
 </Steps>
 
-## Status
+## Status {#status}
 
 executor は、ローカル API 経由でステータスに関する問い合わせに応答します。この API は `127.0.0.1:9999` にバインドされ、API 自体には認証機構はありません。VM の場合は、ホスト上でコマンドを実行してください。Kubernetes の場合は、まずポートフォワードを開き、そこに向けてコマンドを実行します。
 
@@ -140,7 +140,7 @@ terminated状態のサービスは、[teardown](#delete-a-service) によって�
 
 executorは、ClickHouse Cloudから送信されたすべてのコマンドを記録します。`clicklink clctl commands list` でそれらを出力でき、`--status` (`pending`、`running`、`completed`、`failed`) 、`--action` (例: `create_instance`) 、`--cluster` によるフィルタが可能です。`clicklink clctl commands get <id>` は、特定のコマンドをそのstageおよび結果とともに出力します。失敗したコマンドの `result` にはエラー内容が格納されます。たとえば、createが収束しなかった理由や、どの[プラットフォーム更新](/ja/products/bring-your-own-cloud/connector/platform-updates)が承認待ちであるかといった情報です。
 
-## サービスのライフサイクル
+## サービスのライフサイクル {#service-lifecycle}
 
 サービスが作成されると、ClickHouse Cloud は executor を通じてそのサービスを運用します。送信されるコマンドは次のとおりです。
 
@@ -159,7 +159,7 @@ executorは、ClickHouse Cloudから送信されたすべてのコマンドを�
 
 `instances scale`、`instances patch`、`instances delete` の各サブコマンドは、ClickHouse Cloud を介さず、executor のローカル API に直接コマンドを送信します。これらはアカウントチームから依頼された場合にのみ実行してください。それぞれの動作については [CLI リファレンス](/ja/products/bring-your-own-cloud/connector/reference/cli#instances-scale)を参照してください。
 
-## マネージドサービス向けのサポートセッション
+## マネージドサービス向けのサポートセッション {#support-sessions}
 
 executor は、作成する各 サービス に scraper を組み込みます。一方、トラブルシューターはプロビジョニングしないため、手動でプロビジョニングするまでは [サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions) でマネージドサービスの診断を実行できません。自分で登録したインスタンスの場合と同様に、サービス のネームスペース `ns-<name>` を指定して、サービス ごとに一度プロビジョニングしてください:
 
@@ -189,7 +189,7 @@ executor は、作成する各 サービス に scraper を組み込みます。
 
 ClickHouse ユーザーへの権限付与は、上記のとおり SQL で行ってください。`--ch-user-via cr` で追加したユーザーは残りません。サービス の定義は ClickHouse Cloud が管理して再適用するためです。サービス を削除すると、executor は VM 上のトラブルシューターの bundle も削除します。Kubernetes の場合は、[アンインストール](/ja/products/bring-your-own-cloud/connector/operations#uninstall-kubernetes) に記載のとおり、bundle の Secret と ServiceAccount は手動で削除するまで残ります。
 
-## サービスの削除
+## サービスの削除 {#delete-a-service}
 
 コネクタエンドポイント経由で顧客が実行できる削除コマンドはありません。サービスの削除はアカウントチームに依頼してください。ClickHouse Cloud がサービスを終了し、executor がワークロードとそのネームスペースを削除します (`terminating`、その後 `terminated`) 。AWS 側には一切手が加えられません。バケット、そのデータ、および IAM role は、自分で削除するまで残り続けます。
 
@@ -220,7 +220,7 @@ ClickHouse ユーザーへの権限付与は、上記のとおり SQL で行っ�
 
 `--yes` を指定しない場合、実行は record ステップで停止し、空にする対象となるバケット名を表示します。`--dry-run` はすべてを読み取りますが、何も書き込みません。`--role-arn` で持ち込んだロールや、`prepare` が作成していないバケットは、保持対象として報告され、一切変更されません。サービスのネームスペースにまだ ClickHouse クラスターが存在する場合、実行は拒否されます。削除を行う前にすべてを読み取るため、拒否された実行では何も変更されません。
 
-## コネクタがオフラインの場合
+## コネクタがオフラインの場合 {#when-the-connector-is-offline}
 
 稼働中の サービス は executor に依存しません。クラスター内の ClickHouse operator がそれらを稼働させ続けるため、コネクタが切断されても、すでにクエリを処理しているものが中断されることはありません。
 

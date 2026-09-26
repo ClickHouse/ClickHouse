@@ -29,7 +29,7 @@ AI 函数是 ClickHouse 中的内置函数，可用于调用 AI 或生成嵌入�
 * **配额限制**：每次查询的标记数限制 ([`ai_function_max_input_tokens_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query)、[`ai_function_max_output_tokens_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) 以及 API 调用次数限制 ([`ai_function_max_api_calls_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)) 。
 * **退避重试**：遇到临时性故障时会自动重试 ([`ai_function_max_retries`](/zh/reference/settings/session-settings/ai-function#ai_function_max_retries)) ，并采用指数退避 ([`ai_function_retry_initial_delay_ms`](/zh/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)) 。
 
-## 配置
+## 配置 {#configuration}
 
 AI 函数会引用一个**命名集合**，其中存储了提供商凭据和配置信息。可以针对不同的函数或函数调用创建并使用不同的命名集合。例如，你可能希望为文本函数 (`aiGenerate`、`aiClassify`、`aiFilter`、`aiExtract`、`aiTranslate`、`aiRedact`) 定义一个命名集合，而为嵌入向量函数 (`aiEmbed`、`aiSimilarity`) 定义另一个，因为它们需要不同的端点，通常也会使用不同的模型。
 
@@ -51,7 +51,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     api_key = 'sk-...';
 ```
 
-### 命名集合参数
+### 命名集合参数 {#named-collection-parameters}
 
 | 参数            | 类型     | 默认值    | 描述                                                                                                            |
 | ------------- | ------ | ------ | ------------------------------------------------------------------------------------------------------------- |
@@ -66,7 +66,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
   将 `provider` 设为 `'openai'`，并把 `endpoint` 指向你的服务，即可使用任何与 OpenAI 兼容的 API (例如 vLLM、Ollama、LiteLLM) 。
 </Note>
 
-### 选择凭据
+### 选择凭据 {#selecting-credentials}
 
 函数会按以下顺序确定要使用的命名集合：
 
@@ -94,7 +94,7 @@ SELECT * FROM reviews
 WHERE aiFilter(body, 'the customer is angry about shipping');
 ```
 
-### 参数映射
+### 参数映射 {#parameter-map}
 
 每个函数都接受一个可选的末尾 `Map(String, String)` 参数映射。所有值都必须是字符串 (数字也要加引号，例如 `'0.2'`) 。未知键会被拒绝。已提供的键会覆盖对应的命名集合值；未提供的键则回退到命名集合 (对于 `model`/`max_tokens`) 或内置默认值。例外情况是嵌入向量函数 (`aiEmbed`、`aiSimilarity`)，它们将 `model` 作为必需的位置参数 (例如 `aiEmbed(text, model[, params])`、`aiSimilarity(text1, text2, model[, params])`) 传入；如果改为在参数映射或命名集合中设置，则会报错。这是为了确保嵌入向量可复现。
 
@@ -111,11 +111,11 @@ WHERE aiFilter(body, 'the customer is angry about shipping');
 SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
 ```
 
-### 查询级别设置
+### 查询级别设置 {#query-level-settings}
 
 所有与 AI 相关的设置均列在 [设置](/zh/reference/settings/session-settings) 中，前缀为 `ai_function_`。
 
-### 限制端点主机
+### 限制端点主机 {#restricting-endpoint-hosts}
 
 AI 命名集合中的 `endpoint` URL 是服务器以自身身份连接的出站目标端，并可能 (如果已指定) 在请求头中携带该命名集合的 `api_key`。默认情况下，ClickHouse 允许连接任意主机。要将函数限制为一组特定的提供商，请在服务器配置中设置 [`remote_url_allow_hosts`](/zh/reference/settings/server-settings/settings/remote#remote_url_allow_hosts)，例如：
 
@@ -128,7 +128,7 @@ AI 命名集合中的 `endpoint` URL 是服务器以自身身份连接的出站�
 
 请注意，此设置对整个服务器生效，并适用于所有使用 HTTP 的功能。
 
-### 传输安全 (HTTP 与 HTTPS)
+### 传输安全 (HTTP 与 HTTPS) {#transport-security}
 
 传输方式完全由 `endpoint` URL 的 scheme 决定。请求载荷本身没有应用层加密；传输中数据的保护完全取决于所使用的 scheme：
 
@@ -139,14 +139,14 @@ AI 命名集合中的 `endpoint` URL 是服务器以自身身份连接的出站�
 
 请注意，无论哪种情况，TLS 终止后提供商都会以明文接收输入数据；TLS 仅保护 服务器 与提供商之间网络路径上的数据。
 
-## 支持的提供商
+## 支持的提供商 {#supported-providers}
 
 | 提供商       | `provider` 值  | 聊天功能 | 说明                    |
 | --------- | ------------- | ---- | --------------------- |
 | OpenAI    | `'openai'`    | 是    | 默认提供商。                |
 | Anthropic | `'anthropic'` | 是    | 使用 `/v1/messages` 端点。 |
 
-## 可观测性
+## 可观测性 {#observability}
 
 可通过 ClickHouse [ProfileEvents](/zh/reference/system-tables/query_log) 跟踪 AI 函数活动：
 

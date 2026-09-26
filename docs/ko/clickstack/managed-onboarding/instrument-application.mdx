@@ -17,13 +17,13 @@ import InstrumentApplication from '/snippets/ko/clickstack/_instrument_applicati
 
 이 가이드는 [OpenTelemetry Collector 설정하기](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)를 이미 완료했고, 이 애플리케이션을 실행하는 머신에서 접근할 수 있는 ClickStack collector가 실행 중이라고 가정합니다. **해당 collector의 OTLP endpoint**와 배포 시 설정한 `OTLP_AUTH_TOKEN`을 반드시 기록해 두십시오. 계측하기 전에 해당 값을 `.env`에 입력합니다.
 
-## 사전 요구 사항
+## 사전 요구 사항 {#prerequisites}
 
 * 이 머신에서 접근할 수 있는 ClickStack collector. 아직 배포하지 않았다면 먼저 [OpenTelemetry Collector 설정하기](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)를 따르십시오.
 * 해당 collector의 OTLP/HTTP endpoint(일반적으로 포트 `4318`)와 여기에 설정한 `OTLP_AUTH_TOKEN`. 이를 `OTEL_EXPORTER_OTLP_ENDPOINT` 및 `OTEL_EXPORTER_OTLP_HEADERS=authorization=<token>`으로 사용하십시오.
 * Node 18+와 npm.
 
-## 리포지토리 복제
+## 리포지토리 복제 {#clone-the-repository}
 
 [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) 리포지토리를 복제하고 의존성을 설치한 후 env 템플릿을 복사합니다:
 
@@ -38,7 +38,7 @@ cp .env.example .env
 
 <InstrumentApplication />
 
-## 추가 자료
+## 추가 자료 {#further-reading}
 
 * [Kubernetes 모니터링](/ko/clickstack/managed-onboarding/monitoring-kubernetes): 클러스터에서 로그, 인프라 메트릭, Kubernetes 이벤트를 수집합니다.
 * [AWS CloudWatch 로그 모니터링](/ko/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry CloudWatch 수신기를 통해 CloudWatch 로그를 전달합니다.

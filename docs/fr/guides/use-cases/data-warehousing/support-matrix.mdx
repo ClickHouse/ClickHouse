@@ -11,7 +11,7 @@ Cette page présente des matrices de compatibilité complètes pour les intégra
 
 La prise en charge est présentée séparément pour ClickHouse Cloud et ClickHouse autogéré. Les fonctionnalités expérimentales sont désactivées par défaut dans ClickHouse Cloud et [doivent être demandées auprès du Support](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#13-experimental-features-in-production). Leur disponibilité dépend de la fonctionnalité concernée ; contactez donc le Support pour confirmer si une fonctionnalité expérimentale spécifique peut être activée. La configuration et les limitations propres au déploiement sont décrites dans la colonne Notes.
 
-## Prise en charge des formats de table ouverts
+## Prise en charge des formats de table ouverts {#format-support}
 
 ClickHouse s’intègre à quatre formats de table ouverts : [Apache Iceberg](/fr/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/fr/reference/engines/table-engines/integrations/deltalake), [Apache Hudi](/fr/reference/engines/table-engines/integrations/hudi) et [Apache Paimon](/fr/reference/functions/table-functions/paimon). Sélectionnez un format ci-dessous pour consulter sa matrice de compatibilité.
 
@@ -153,7 +153,7 @@ ClickHouse s’intègre à quatre formats de table ouverts : [Apache Iceberg](/
   </Tab>
 </Tabs>
 
-## Prise en charge des catalogues
+## Prise en charge des catalogues {#catalog-support}
 
 ClickHouse peut se connecter à des catalogues de données externes à l’aide du moteur de base de données [`DataLakeCatalog`](/fr/reference/engines/database-engines/datalake), qui expose le catalogue comme une base de données ClickHouse. Les tables enregistrées dans le catalogue apparaissent automatiquement et peuvent être interrogées avec du SQL standard.
 

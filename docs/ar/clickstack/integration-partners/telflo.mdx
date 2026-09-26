@@ -27,7 +27,7 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
 {/* vale off */}
 
-## ما هو Telflo؟
+## ما هو Telflo؟ {#what-is-telflo}
 
 {/* vale on */}
 
@@ -37,7 +37,7 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
 
 {/* vale off */}
 
-## لماذا Telflo + ClickStack؟
+## لماذا Telflo + ClickStack؟ {#why-telflo-clickstack}
 
 {/* vale on */}
 
@@ -58,7 +58,7 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
   * **يدير Telflo أسطول المجمّعات الذي يغذّيه**
 </Tip>
 
-## المتطلبات المسبقة
+## المتطلبات المسبقة {#prerequisites}
 
 * وجهة: [Open Source ClickStack](/ar/clickstack/getting-started/oss)، أو [Managed ClickStack](/ar/clickstack/getting-started/managed)، أو نسخة ClickHouse ذاتية الإدارة
 * حساب Telflo ([أنشئ حسابًا على telflo.com](https://telflo.com))
@@ -70,7 +70,7 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
 
 {/* vale off */}
 
-## دمج ClickStack مع Telflo
+## دمج ClickStack مع Telflo {#integrate-telflo-clickstack}
 
 {/* vale on */}
 
@@ -144,25 +144,25 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
   </Step>
 </Steps>
 
-## التكوين المتقدم
+## التكوين المتقدم {#advanced-configuration}
 
-### التوجيه المتعدد (Fan-out routing)
+### التوجيه المتعدد (Fan-out routing) {#fan-out-routing}
 
 يمكن إرسال بيانات القياس نفسها في الوقت ذاته إلى ClickStack للتخزين طويل الأجل، وإلى منصة أخرى أثناء عملية الترحيل، وإلى نظام SIEM لتحليل الأمان. أضِف المُصدِّرات (exporters) على لوحة العمل واربطها بالـ pipelines التي ينبغي أن تغذّيها، أو ابدأ من pipeline جاهز في [مكتبة المسارات الخاصة بـ Telflo](https://telflo.com/flows).
 
-### الضغط والأداء
+### الضغط والأداء {#compression-and-performance}
 
 * **مُصدِّرا OTLP/HTTP وOTLP**: أبقِ **Compression** على gzip.
 * **ClickHouse exporter**: أبقِ **Async Insert** مفعّلًا، واترك **Compression** على lz4، وأضِف معالج **Batch** قبله في السلسلة. راجع [تحسين عمليات الإدراج](/ar/clickstack/ingesting-data/collector#optimizing-inserts).
 
-## الخطوات التالية
+## الخطوات التالية {#next-steps}
 
 * **إنشاء لوحات المعلومات**: أنشئ تصورات في HyperDX للسجلات والمقاييس والتتبعات
 * **إعداد التنبيهات**: هيّئ التنبيهات في ClickStack للحالات الحرجة
 * **التحسين بمساعد الذكاء الاصطناعي**: اطلب منه تعديل خط معالجة بيانات أو اقتراح اختبارات
 * **الانتقال من مزوّد آخر**: تغطي [flows](https://telflo.com/flows) عملية التحويل، إذ تحلّ محل الوكلاء الموجودين بالفعل في أسطولك وترسل البيانات بشكل مزدوج إلى كلتا الواجهتين الخلفيتين أثناء مقارنتك بينهما
 
-## اقرأ المزيد
+## اقرأ المزيد {#read-more}
 
 * [وثائق Telflo](https://docs.telflo.com/docs)
 * [البداية السريعة: من لوحة فارغة إلى collector منشور](https://docs.telflo.com/docs/getting-started/quickstart)

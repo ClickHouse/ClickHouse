@@ -16,7 +16,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
   ## النسخ الاحتياطية
 </div>
 
-### كيف تعمل النسخ الاحتياطية في ClickHouse Cloud
+### كيف تعمل النسخ الاحتياطية في ClickHouse Cloud {#how-backups-work-in-clickhouse-cloud}
 
 تتكوّن النسخ الاحتياطية في ClickHouse Cloud من مزيج من النسخ الاحتياطية &quot;الكاملة&quot; و&quot;التزايدية&quot; التي تُشكّل سلسلة نسخ احتياطية. تبدأ السلسلة بنسخة احتياطية كاملة، ثم تؤخذ نسخ احتياطية تزايدية خلال الفترات الزمنية المجدولة التالية لتكوين تسلسل من النسخ الاحتياطية. وعندما تصل سلسلة النسخ الاحتياطية إلى طول معيّن، تبدأ سلسلة جديدة. ويمكن بعد ذلك استخدام هذه السلسلة كاملةً لاستعادة البيانات إلى خدمة جديدة عند الحاجة. وبمجرد أن تتجاوز جميع النسخ الاحتياطية ضمن سلسلة معيّنة مدة الاحتفاظ المحددة للخدمة (المزيد عن الاحتفاظ أدناه)، تُزال هذه السلسلة.
 
@@ -26,14 +26,14 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="مثال على سلسلة النسخ الاحتياطية في ClickHouse Cloud" />
 
-### سياسة النسخ الاحتياطي الافتراضية
+### سياسة النسخ الاحتياطي الافتراضية {#default-backup-policy}
 
 تُحتسب النسخ الاحتياطية وتُفوتر بشكل منفصل عن التخزين في فئات Basic وScale وEnterprise.
 تتضمن الخدمات حاليًا افتراضيًا نسخة احتياطية يومية واحدة مع فترة احتفاظ تبلغ 24 ساعة. قد تختلف إعدادات النسخ الاحتياطي حسب الخدمة والاتفاقية.
 
 راجع [&quot;مراجعة النسخ الاحتياطية واستعادتها&quot;](/ar/products/cloud/guides/backups/review-and-restore-backups) لمزيد من التفاصيل.
 
-## النسخ الاحتياطية القابلة للتهيئة
+## النسخ الاحتياطية القابلة للتهيئة {#configurable-backups}
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
 
@@ -51,7 +51,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 راجع [&quot;تهيئة جداول النسخ الاحتياطي&quot;](/ar/products/cloud/guides/backups/configurable-backups) للاطلاع على خطوات تهيئة نسخك الاحتياطية.
 
-## النسخ الاحتياطية بحاويتك الخاصة (BYOB)
+## النسخ الاحتياطية بحاويتك الخاصة (BYOB) {#byob}
 
 يتيح ClickHouse Cloud تصدير النسخ الاحتياطية إلى مساحة التخزين في حسابك لدى مزود الخدمة السحابية (CSP) (AWS S3 أو Google Cloud Storage أو Azure Blob Storage).
 إذا قمت بتهيئة النسخ الاحتياطية إلى الحاوية الخاصة بك، فسيواصل ClickHouse Cloud أيضًا إنشاء نسخه الاحتياطية الخاصة به افتراضيًا.
@@ -73,7 +73,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 راجع [&quot;تصدير النسخ الاحتياطية إلى حسابك السحابي الخاص&quot;](/ar/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) للاطلاع على أمثلة حول كيفية إنشاء نسخ احتياطية كاملة وتزايدية على تخزين الكائنات في AWS وGCP وAzure، وكذلك كيفية الاستعادة من هذه النسخ الاحتياطية.
 
-### خيارات النسخ الاحتياطي
+### خيارات النسخ الاحتياطي {#backup-options}
 
 لتصدير النسخ الاحتياطية إلى حسابك السحابي الخاص، لديك خياران:
 

@@ -80,7 +80,7 @@ Structure de la section `users` :
 </users>
 ```
 
-### user_name/password
+### user_name/password {#user-namepassword}
 
 Le mot de passe peut être spécifié en clair ou en SHA256 (format hexadécimal).
 
@@ -116,7 +116,7 @@ Le mot de passe peut être spécifié en clair ou en SHA256 (format hexadécimal
 
   La première ligne du résultat correspond au mot de passe. La deuxième ligne est le hash double SHA1 correspondant.
 
-### Configuration de l’authentification TOTP
+### Configuration de l’authentification TOTP {#totp-authentication-configuration}
 
 Le mot de passe à usage unique basé sur le temps (TOTP) peut être utilisé pour authentifier les utilisateurs de ClickHouse en générant des codes d’accès temporaires valables pendant une durée limitée.
 Cette méthode d’authentification TOTP est conforme à la norme [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238), ce qui la rend compatible avec des applications TOTP populaires comme Google Authenticator, 1Password et d’autres outils similaires.

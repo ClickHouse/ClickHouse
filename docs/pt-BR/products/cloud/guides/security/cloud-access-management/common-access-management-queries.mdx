@@ -17,7 +17,7 @@ import CommonUserRolesContent from '/snippets/pt-BR/_users-and-roles-common.mdx'
 
 Este artigo apresenta os conceitos básicos para definir usuários e funções SQL e aplicar esses privilégios e permissões a bancos de dados, tabelas, linhas e colunas.
 
-## Usuário admin
+## Usuário admin {#admin-user}
 
 Os serviços do ClickHouse Cloud têm um usuário admin, `default`, criado quando o serviço é criado. A senha é fornecida na criação do serviço e pode ser redefinida por usuários do ClickHouse Cloud que tenham a função **Admin**.
 
@@ -38,13 +38,13 @@ GRANT default_role TO clickhouse_admin;
   Esses usuários do SQL Console gerados automaticamente têm a função `default`.
 </Note>
 
-## Autenticação sem senha
+## Autenticação sem senha {#passwordless-authentication}
 
 Há duas funções disponíveis para o Console SQL: `sql_console_admin`, com permissões idênticas às de `default_role`, e `sql_console_read_only`, com permissões somente leitura.
 
 Os usuários Admin recebem a função `sql_console_admin` por padrão, então nada muda para eles. No entanto, a função `sql_console_read_only` permite conceder a usuários não Admin acesso somente leitura ou acesso total a qualquer instância. Um Admin precisa configurar esse acesso. As funções podem ser ajustadas com os comandos `GRANT` ou `REVOKE` para atender melhor aos requisitos específicos de cada instância, e todas as modificações feitas nessas funções serão mantidas.
 
-### Controle de acesso granular
+### Controle de acesso granular {#granular-access-control}
 
 <Tip>
   Prefira [funções de banco de dados gerenciadas na Cloud](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) para gerenciar o acesso ao banco de dados pelo console. As funções `sql-console-role:<email>` não são compatíveis com sessões JWT no SQL Console.

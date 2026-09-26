@@ -31,7 +31,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * 全新的 [CBO](https://github.com/ClickHouse/ClickHouse/pull/86353) (cost-based optimizer，基于代价的优化器)
 * 全新的[分布式查询执行](https://clickhouse.com/blog/multi-stage-distributed-query-execution-clickhouse-cloud)
 
-## 何时使用 按需计算
+## 何时使用 按需计算 {#when-to-use-on-demand-compute}
 
 在私有预览期间，可将 按需计算 用于符合条件的计算密集型 `SELECT` 查询，即希望在主服务的计算资源之外运行的查询：
 
@@ -42,7 +42,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 私有预览仅支持 `SELECT` 查询。工作线程不会执行 `INSERT` 查询、DDL、变更或后台操作。
 
-## 工作原理
+## 工作原理 {#how-it-works}
 
 1. 您向 ClickHouse Cloud 服务发送一个符合条件的 `SELECT` 查询，并请求特定数量的工作线程。您的端点、身份验证和 RBAC 配置均无需更改
 2. 随后您的集群会连接到该池，并申请指定数量的工作线程
@@ -53,9 +53,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在私有预览期间，每个工作线程拥有 `8 vCPUs` 和 `32 GiB` 内存。可使用 `distributed_plan_workers_num` 指定查询申请的工作线程数量。
 
-## 使用按需计算资源
+## 使用按需计算资源 {#using-on-demand-compute}
 
-### 设置
+### 设置 {#settings}
 
 使用以下设置即可开始使用按需计算：
 
@@ -70,7 +70,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   在预览期间，请在查询级别设置这些参数，或者单独创建一个使用不同设置的用户。这样可以一目了然地看出哪些语句使用了 按需计算。
 </Tip>
 
-### 示例
+### 示例 {#example}
 
 某些查询无法分发给工作线程执行：
 
@@ -121,7 +121,7 @@ SETTINGS
 
 该查询请求五个工作线程。ClickHouse 实际提供的工作线程数量取决于私有预览版的限制以及可用的工作线程池容量。
 
-### 并发查询
+### 并发查询 {#concurrent-queries}
 
 来自同一 ClickHouse Cloud 服务的并发查询可以共享已分配的工作线程。只有当某个查询请求的工作线程数超过该服务已分配的数量时，ClickHouse 才会申请额外的工作线程。
 
@@ -144,7 +144,7 @@ SELECT ... SETTINGS make_distributed_plan = 1, distributed_plan_workers_num = 5,
 
 该查询将在已有的三个工作线程以及两个新租用的工作线程上运行。
 
-### 当工作线程池无法满足请求时
+### 当工作线程池无法满足请求时 {#pool-capacity}
 
 在私有预览期间，工作线程的可用性采用尽力而为策略。如果可用的工作线程少于请求数量，查询将使用 ClickHouse 实际能分配的工作线程运行。例如，请求五个工作线程的查询可能仅以三个工作线程运行。
 
@@ -152,11 +152,11 @@ SELECT ... SETTINGS make_distributed_plan = 1, distributed_plan_workers_num = 5,
 
 请重试该查询。如果问题持续存在，请联系您的 ClickHouse 客户团队——预览工作线程池可能已耗尽或规格配置不当。
 
-## Monitoring
+## Monitoring {#monitoring}
 
 在 service 上使用 `system.query_log`，即可查看为查询分配了多少个工作线程。
 
-### 已分配的工作线程数
+### 已分配的工作线程数 {#worker-provided}
 
 ```sql
 SELECT
@@ -187,7 +187,7 @@ SETTINGS
     log_comment = 'on-demand-private-preview'
 ```
 
-## 可用区域
+## 可用区域 {#available-regions}
 
 按需计算按区域提供：工作线程与您的服务运行在同一区域。
 
@@ -198,7 +198,7 @@ SETTINGS
 
 如果列表中没有您所需的区域，请在[等待列表](https://clickhouse.com/cloud/on-demand-compute-waitlist)中提交申请。我们会根据需求开放更多区域。
 
-## 定价
+## 定价 {#pricing}
 
 在私有预览期间，按需计算 (On-Demand Compute) 免费使用，但设有用量上限 (参见[限制](#limitations)) 。如需提高该上限，请联系您的 ClickHouse 客户团队。
 
@@ -206,7 +206,7 @@ SETTINGS
 
 计划采用的计费模式与 ClickHouse Cloud 计算一致：按实际使用的计算量 (租用的工作线程时长) 计费，而非按扫描的数据量或读取的行数计费。
 
-## 限制
+## 限制 {#limitations}
 
 以下限制适用于私有预览阶段，此外可能还存在其他限制。如遇异常行为，请反馈给 ClickHouse 支持团队或您的客户团队。
 
@@ -219,7 +219,7 @@ SETTINGS
 * **性能。** 性能因查询而异。工作线程分配、分布式查询计划的生成以及查询计划各阶段的传输都会带来额外延迟。某些形态的查询，其性能可能不如在主服务上执行 (对于通常在一秒内即可完成的查询，在您的集群中执行的性能可能更好)
 * **查询兼容性。** 分布式查询计划器无法远程执行所有查询计划。不受支持的查询可能返回 `SUPPORT_IS_DISABLED` 异常。
 
-## Roadmap
+## Roadmap {#roadmap}
 
 On-Demand Compute 只是一个起点。正在推进或后续计划的工作包括：
 
@@ -233,7 +233,7 @@ On-Demand Compute 只是一个起点。正在推进或后续计划的工作包�
 * 面向 On-Demand Compute 的专用权限
 * 扩展数据湖工作负载 (写入、合并整理等)
 
-## 安全
+## 安全 {#security}
 
 工作线程来自同一区域内多个服务共享的预热池，因此有一条不可妥协的规则：一个工作线程同一时间只服务于一个服务，且绝不会从一个服务转交给另一个服务。
 
@@ -246,7 +246,7 @@ On-Demand Compute 只是一个起点。正在推进或后续计划的工作包�
 * **你现有的访问控制依然生效：** IP 访问列表和专用终结点仍与以往完全一致地管控你的服务端点。按需计算不会新增任何需要你配置或保护的端点。
 * **沿用你现有的身份验证和 RBAC：** 查询以与你服务上其他查询相同的用户和特权运行。工作线程不携带独立的身份或权限模型。
 
-### 网络隔离
+### 网络隔离 {#network-isolation}
 
 当某个工作线程被租用给你的 service 时，平台只允许该工作线程与你的 service 之间的网络流量，其余流量全部阻断。该限制在网络 layer 上实施，而不是在 query engine 中，因此它与查询本身、查询设置以及 optimizer 生成的执行 plan 都无关。
 
@@ -258,7 +258,7 @@ On-Demand Compute 只是一个起点。正在推进或后续计划的工作包�
 * **path 随工作线程一起消失。** 结束 lease 会销毁该工作线程，流量唯一被允许到达的目标也随之不存在。
 * **请求路径保持最小化。** 你的 service 只会访问工作线程分配服务，用于租用和续租工作线程。该 path 不承载任何查询数据，且仅限于 assignment API。
 
-### 内部身份验证与授权
+### 内部身份验证与授权 {#authentication-and-authorization}
 
 网络隔离决定哪些流量能够到达 工作线程，而身份验证决定调用方到达之后能做什么；两者相互独立地生效，调用方必须同时满足二者的要求。
 
@@ -278,7 +278,7 @@ On-Demand Compute 只是一个起点。正在推进或后续计划的工作包�
   这些 credentials 属于 ClickHouse Cloud 执行您的查询时的内部机制，绝不会暴露给您的 clients，也与您连接 ClickHouse 所用的身份验证方式无关：clients 仍使用您现有的 credentials 进行连接，查询 privileges 也仍由您 service 的 RBAC 管控。
 </Note>
 
-## FAQ
+## FAQ {#faq}
 
 <AccordionGroup>
   <Accordion title="按需计算是开源的吗？">

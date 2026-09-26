@@ -12,7 +12,7 @@ keywords: ['Apache Airflow', 'airflow-clickhouse-plugin', 'migration', 'clickhou
 기존 배포를 `apache-airflow-providers-clickhousedb`로 마이그레이션하는 방법을 설명합니다. provider 자체의 동작 방식은
 [Apache Airflow를 ClickHouse에 연결하기](/ko/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse)를 참조하십시오.
 
-## 왜 네이티브 provider인가?
+## 왜 네이티브 provider인가? {#why-a-native-provider}
 
 provider는 Airflow가 서드파티 시스템과 통합되는 방식입니다. provider는 Airflow 생태계의 나머지 구성 요소와
 함께 릴리스되고 테스트되며 문서화되며, 이 provider는 Airflow 커뮤니티가 ClickHouse 팀과 함께
@@ -32,7 +32,7 @@ provider로 전환하면 공식적으로 관리되는 package와 표준 `common.
   영향을 미칩니다.
 </Note>
 
-## 한눈에 보기
+## 한눈에 보기 {#at-a-glance}
 
 |               | `airflow-clickhouse-plugin`                                                     | `apache-airflow-providers-clickhousedb`                                                                                    |
 | ------------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -45,7 +45,7 @@ provider로 전환하면 공식적으로 관리되는 package와 표준 `common.
 | 후크            | `ClickHouseHook`(`BaseHook`) 및 `ClickHouseDbApiHook`(`DbApiHook`)               | `ClickHouseHook`(`DbApiHook`) 하나                                                                                           |
 | 최소 Airflow 버전 | 2.0                                                                             | 2.11                                                                                                                       |
 
-## 1단계: 사전 요구 사항 확인 및 설치
+## 1단계: 사전 요구 사항 확인 및 설치 {#step-1-check-prerequisites-and-install}
 
 이 provider를 사용하려면 Airflow 2.11 이상과 `apache-airflow-providers-common-sql` 1.32.0 이상이 필요합니다. 그보다 이전 버전을 사용하고 있다면 먼저 Airflow를 업그레이드하십시오.
 
@@ -59,7 +59,7 @@ pip install apache-airflow-providers-clickhousedb
 pip uninstall airflow-clickhouse-plugin clickhouse-driver
 ```
 
-## 2단계: 연결 업데이트
+## 2단계: 연결 업데이트 {#step-2-update-connections}
 
 이 단계를 건너뛰면 문제가 발생합니다. 기존 ClickHouse 연결은 모두 네이티브 포트를 가리키고 있지만,
 provider는 HTTP 포트가 필요합니다.
@@ -81,7 +81,7 @@ URI 형태로 저장된 연결(`clickhouse://user:pass@host:9000/db?secure=true`
 연결 유형을 가져오므로 이미 `clickhouse` 연결 유형으로 설정되어 있습니다. 이 경우 포트와 extra keys만 변경하면 됩니다.
 쿼리 문자열 값은 JSON으로 파싱되므로 `secure=true`는 Boolean 값으로 유지됩니다.
 
-### 연결 extra 옵션
+### 연결 extra 옵션 {#connection-extras}
 
 플러그인은 `extra`의 모든 키를 `clickhouse_driver.Client`에 그대로 전달했기 때문에, 연결에는 어떤 `clickhouse-driver` keyword argument든 포함될 수 있었습니다. provider는 고정된 키 집합만 읽고, 나머지는 `client_kwargs`를 통해 전달합니다. 다음과 같이 변환하십시오:
 
@@ -143,7 +143,7 @@ DAG를 수정하기 전에 마이그레이션된 각 connection을 검증하십�
 airflow connections test clickhouse_default
 ```
 
-## 3단계: import 교체
+## 3단계: import 교체 {#step-3-replace-imports}
 
 | 플러그인 클래스                                                                                 | provider 대체 대상                                                          |
 | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
@@ -163,7 +163,7 @@ airflow connections test clickhouse_default
 
 `ClickHouse` 접두사가 붙은 `common.sql` 래퍼는 플러그인의 후크를 주입하기 위한 용도로만 존재했습니다. provider가 `clickhouse` connection 유형을 등록하기 때문에, 접두사가 없는 `common.sql` 클래스는 connection에서 후크를 직접 확인합니다. 이러한 래퍼를 사용했다면, 마이그레이션은 대개 import 줄을 수정하고 `ClickHouse` 접두사를 제거한 뒤 `conn_id`를 명시적으로 전달하는 것으로 끝납니다([7단계](#step-7-the-commonsql-wrapper-family) 참조).
 
-## 4단계: `ClickHouseOperator`에서 `SQLExecuteQueryOperator`로
+## 4단계: `ClickHouseOperator`에서 `SQLExecuteQueryOperator`로 {#step-4-clickhouseoperator-to-sqlexecutequeryoperator}
 
 | `ClickHouseOperator` 인수       | `SQLExecuteQueryOperator` 대응 항목                         | 참고                                                                                                                                                                                                                                                                         |
 | ----------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -230,7 +230,7 @@ update_income_aggregate = SQLExecuteQueryOperator(
 )
 ```
 
-### 다중 SQL 문 결과
+### 다중 SQL 문 결과 {#multi-statement-results}
 
 plugin은 **마지막** SQL 문의 결과를 XCom에 푸시했습니다. `SQLExecuteQueryOperator`는 `sql`이 리스트일 때
 SQL 문마다 하나씩 결과를 반환하므로, plugin이 `[(12345.0,)]`를 푸시했던 것과 달리 위 예시는
@@ -271,7 +271,7 @@ load_rows = SQLInsertRowsOperator(
 
 항상 `columns`를 전달하십시오. 전달하지 않으면 연산자가 SQLAlchemy를 통해 테이블을 조회합니다.
 
-### 컬럼 타입 유지하기
+### 컬럼 타입 유지하기 {#keeping-column-types}
 
 `with_column_types=True`는 `(rows, [(name, type), ...])`를 반환했습니다. handler를 사용하면 이를 재현할 수 있으며, `clickhouse-connect` cursor는 `cursor.description`에 ClickHouse 타입 이름을 제공합니다:
 
@@ -288,7 +288,7 @@ SQLExecuteQueryOperator(
 )
 ```
 
-## Step 5: `ClickHouseHook.execute`에서 `DbApiHook` 메서드로
+## Step 5: `ClickHouseHook.execute`에서 `DbApiHook` 메서드로 {#step-5-clickhousehookexecute-to-dbapihook-methods}
 
 플러그인의 후크는 `clickhouse_driver.Client.execute`를 그대로 반영한 `execute` 메서드 하나만 노출했습니다.
 provider의 후크는 `DbApiHook`이므로, 다른 모든 SQL provider와 동일한 표준 메서드를 사용할 수 있습니다:
@@ -355,7 +355,7 @@ with hook.get_client() as client:
     columns = result.result_columns
 ```
 
-## Step 6: `ClickHouseSensor`에서 `SqlSensor`로
+## Step 6: `ClickHouseSensor`에서 `SqlSensor`로 {#step-6-clickhousesensor-to-sqlsensor}
 
 호출 가능 객체(callable)의 입력이 바뀌는 유일한 대체 작업입니다.
 
@@ -400,7 +400,7 @@ SqlSensor(
 
 호출 가능 객체에서 행 전체가 필요하다면 `selector=lambda row: row`를 전달하십시오. 모든 행이 필요하다면, 쿼리가 단일 불리언 값이나 개수를 반환하도록 검사 로직을 SQL로 작성하십시오.
 
-## 7단계: `common.sql` 래퍼 계열
+## 7단계: `common.sql` 래퍼 계열 {#step-7-the-commonsql-wrapper-family}
 
 `ClickHouseSQLExecuteQueryOperator`, `ClickHouseSqlSensor` 및 그 외 `ClickHouse` 접두사가 붙은 래퍼를 사용하던 코드는 손볼 부분이 가장 적습니다:
 
@@ -410,7 +410,7 @@ SqlSensor(
 * `ClickHouseDbApiHook`은 `ClickHouseHook`으로 바뀝니다. 생성자 인수 `schema`는 여전히 별칭으로 허용되며, ClickHouse의 네이티브 표기는 `database`이므로 둘 다 지정된 경우 `database`가 우선합니다.
 * connection에는 2단계에서 설명한 포트 및 extras 변경이 여전히 필요합니다. 래퍼 역시 native protocol을 사용했기 때문입니다.
 
-## 검토해야 할 동작 차이
+## 검토해야 할 동작 차이 {#behavior-differences-to-review}
 
 코드가 정상적으로 컴파일된 뒤에도 런타임 동작이 몇 가지 달라집니다.
 
@@ -430,7 +430,7 @@ SqlSensor(
 
 **연결 처리.** 후크는 `run` 또는 `get_client` 호출마다 `clickhouse-connect` 클라이언트를 생성하며, 이는 플러그인이 `execute`마다 새 native connection을 열었던 방식과 같습니다. 클라이언트들은 프로세스 전역 HTTP 연결 풀을 공유하므로, `get_client()`로 얻은 클라이언트에 `close()`를 호출하는 것은 필수는 아니지만 권장되는 습관입니다. 풀은 작업 프로세스가 종료될 때 해제됩니다. 클라이언트는 context manager이므로 `with hook.get_client() as client:` 형태가 가장 깔끔합니다.
 
-## 체크리스트
+## 체크리스트 {#checklist}
 
 1. Airflow 버전이 2.11 이상입니다.
 2. worker에서 HTTP 포트에 연결할 수 있으며, HTTP 엔드포인트용 TLS 인증서가 유효합니다.
@@ -449,7 +449,7 @@ SqlSensor(
 11. `clickhouse_driver` 예외를 처리하던 코드를 업데이트했습니다.
 12. `airflow-clickhouse-plugin`과 `clickhouse-driver`를 제거했습니다.
 
-## AI 코딩 어시스턴트 활용
+## AI 코딩 어시스턴트 활용 {#using-an-ai-coding-assistant}
 
 위의 매핑은 코딩 어시스턴트가 DAG 리포지토리에 그대로 적용할 수 있도록 의도적으로 기계적으로 구성했습니다. 다음 프롬프트가 효과적이었습니다:
 
@@ -475,7 +475,7 @@ Show the diff and a summary of items flagged for human review.
 
 diff를 검토하십시오. connection 변경, 센서 의미론, 그리고 XCom consumer는 자동화된 재작성이 잘못되기 쉬운 지점입니다.
 
-## 관련 콘텐츠
+## 관련 콘텐츠 {#related-content}
 
 * [Apache Airflow를 ClickHouse에 연결하기](/ko/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse)
 * [`clickhouse-connect` Python 클라이언트](/ko/integrations/language-clients/python/index)

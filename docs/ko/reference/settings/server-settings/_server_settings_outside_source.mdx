@@ -2,7 +2,7 @@
 title: 소스 외부 서버 설정
 ---
 
-## asynchronous_metric_log
+## asynchronous_metric_log {#asynchronous_metric_log}
 
 ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 
@@ -37,7 +37,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 
 <SystemLogParameters />
 
-## auth_use_forwarded_address
+## auth_use_forwarded_address {#auth_use_forwarded_address}
 
 프록시를 통해 연결된 클라이언트의 인증에 출발지 주소를 사용합니다.
 
@@ -47,7 +47,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
   전달된 주소는 쉽게 위조될 수 있으므로 이 설정은 각별한 주의를 기울여 사용해야 합니다. 이러한 인증을 허용하는 서버에는 직접 접근해서는 안 되며, 반드시 신뢰할 수 있는 프록시를 통해서만 접근해야 합니다.
 </Note>
 
-## 백업
+## 백업 {#backups}
 
 [`BACKUP` 및 `RESTORE`](/ko/concepts/features/backup-restore/overview) SQL 문을 실행할 때 사용하는 백업 관련 설정입니다.
 
@@ -103,7 +103,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 </backups>
 ```
 
-## background_schedule_pool_log
+## background_schedule_pool_log {#background_schedule_pool_log}
 
 다양한 백그라운드 풀을 통해 실행되는 모든 백그라운드 작업에 대한 정보를 포함합니다.
 
@@ -122,7 +122,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 </background_schedule_pool_log>
 ```
 
-## bcrypt_workfactor
+## bcrypt_workfactor {#bcrypt_workfactor}
 
 [Bcrypt 알고리즘](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/)을 사용하는 `bcrypt_password` 인증 유형의 작업 계수입니다.
 작업 계수는 해시를 계산하고 비밀번호를 검증하는 데 필요한 연산량과 시간을 결정합니다.
@@ -139,7 +139,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
   다른 인증 메서드를 고려하십시오.
 </Warning>
 
-## table_engines_require_grant
+## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge />
 
@@ -151,7 +151,7 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
   기본적으로는 이전 버전과의 호환성을 위해 특정 테이블 엔진으로 테이블을 생성할 때 grant를 무시합니다. 하지만 이 설정을 `true`로 지정하면 이 동작을 변경할 수 있습니다.
 </Note>
 
-## builtin_dictionaries_reload_interval
+## builtin_dictionaries_reload_interval {#builtin_dictionaries_reload_interval}
 
 내장 딕셔너리를 다시 로드하기 전까지의 인터벌(초)입니다.
 
@@ -163,7 +163,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-## 압축
+## 압축 {#compression}
 
 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진 테이블에 대한 데이터 압축 설정입니다.
 
@@ -218,7 +218,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 </compression>
 ```
 
-## 암호화
+## 암호화 {#encryption}
 
 [암호화 코덱](/ko/reference/statements/create/table/codec#encryption-codecs)에서 사용할 키를 가져오는 명령을 설정합니다. 키(또는 여러 키)는 환경 변수에 지정하거나 설정 파일에서 설정해야 합니다.
 
@@ -300,7 +300,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
   위에서 언급한 모든 내용은 `aes_256_gcm_siv`에도 적용됩니다(단, 키는 32바이트 길이여야 합니다).
 </Note>
 
-## error_log
+## error_log {#error_log}
 
 기본적으로 비활성화되어 있습니다.
 
@@ -335,7 +335,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 
 <SystemLogParameters />
 
-## custom_settings_prefixes
+## custom_settings_prefixes {#custom_settings_prefixes}
 
 [사용자 지정 설정](/ko/concepts/features/configuration/settings/settings-query-level#custom_settings)에 사용되는 프리픽스 목록입니다.
 프리픽스가 여러 개일 경우 쉼표로 구분하십시오.
@@ -350,7 +350,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 
 * [사용자 지정 설정](/ko/concepts/features/configuration/settings/settings-query-level#custom_settings)
 
-## core_dump
+## core_dump {#core_dump}
 
 코어 덤프 파일 크기에 대한 소프트 리밋을 설정합니다.
 
@@ -366,7 +366,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 </core_dump>
 ```
 
-## default_profile
+## default_profile {#default_profile}
 
 기본 설정 프로필입니다. 설정 프로필은 `user_config` 설정에 지정된 파일에 있습니다.
 
@@ -378,7 +378,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 <default_profile>default</default_profile>
 ```
 
-## dictionaries_config
+## dictionaries_config {#dictionaries_config}
 
 딕셔너리용 구성 파일의 경로입니다.
 
@@ -397,7 +397,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## user_defined_executable_functions_config
+## user_defined_executable_functions_config {#user_defined_executable_functions_config}
 
 실행형 사용자 정의 함수용 구성 파일의 경로입니다.
 
@@ -416,7 +416,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
-## graphite
+## graphite {#graphite}
 
 [Graphite](https://github.com/graphite-project)로 데이터를 전송합니다.
 
@@ -450,7 +450,7 @@ ClickHouse는 x초마다 내장 딕셔너리를 다시 로드합니다. 따라�
 </graphite>
 ```
 
-## graphite_rollup
+## graphite_rollup {#graphite_rollup}
 
 Graphite 데이터 축소를 위한 설정입니다.
 
@@ -478,7 +478,7 @@ Graphite 데이터 축소를 위한 설정입니다.
 </graphite_rollup_example>
 ```
 
-## http_handlers
+## http_handlers {#http_handlers}
 
 사용자 지정 HTTP 핸들러를 사용할 수 있습니다.
 새 HTTP 핸들러를 추가하려면 새 `<rule>`을 추가하면 됩니다.
@@ -543,7 +543,7 @@ Graphite 데이터 축소를 위한 설정입니다.
 </http_handlers>
 ```
 
-## http_server_default_response
+## http_server_default_response {#http_server_default_response}
 
 ClickHouse HTTP(s) server에 접속하면 기본적으로 표시되는 페이지입니다.
 기본값은 &quot;Ok.&quot;입니다(끝에 줄 바꿈 문자(line feed)가 포함됨).
@@ -560,7 +560,7 @@ ClickHouse HTTP(s) server에 접속하면 기본적으로 표시되는 페이지
 </http_server_default_response>
 ```
 
-## http_options_response
+## http_options_response {#http_options_response}
 
 `OPTIONS` HTTP 요청의 응답에 헤더를 추가할 때 사용됩니다.
 `OPTIONS` 메서드는 CORS Preflight 요청을 보낼 때 사용됩니다.
@@ -590,7 +590,7 @@ ClickHouse HTTP(s) server에 접속하면 기본적으로 표시되는 페이지
 </http_options_response>
 ```
 
-## hsts_max_age
+## hsts_max_age {#hsts_max_age}
 
 HSTS의 만료 기간(초)입니다.
 
@@ -604,7 +604,7 @@ HSTS의 만료 기간(초)입니다.
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-## interserver_listen_host
+## interserver_listen_host {#interserver_listen_host}
 
 ClickHouse 서버 간 데이터 교환을 허용할 호스트를 제한합니다.
 Keeper를 사용하는 경우, 동일한 제한이 서로 다른 Keeper 인스턴스 간 통신에도 적용됩니다.
@@ -626,7 +626,7 @@ Keeper를 사용하는 경우, 동일한 제한이 서로 다른 Keeper 인스�
 
 기본값:
 
-## interserver_http_credentials
+## interserver_http_credentials {#interserver_http_credentials}
 
 [복제](/ko/reference/engines/table-engines/mergetree-family/replication) 중 다른 서버에 연결할 때 사용하는 사용자 이름과 비밀번호입니다. 또한 서버는 이러한 자격 증명을 사용하여 다른 레플리카를 인증합니다.
 따라서 `interserver_http_credentials`는 클러스터의 모든 레플리카에서 동일해야 합니다.
@@ -679,7 +679,7 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 
 새 자격 증명이 모든 레플리카에 적용되면 기존 자격 증명은 제거해도 됩니다.
 
-## ldap_servers
+## ldap_servers {#ldap_servers}
 
 여기에 LDAP server와 해당 연결 매개변수를 나열하면 다음과 같이 사용할 수 있습니다.
 
@@ -746,7 +746,7 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 </my_ad_server>
 ```
 
-## listen_host
+## listen_host {#listen_host}
 
 요청을 받을 수 있는 호스트를 제한합니다. 서버가 모든 호스트의 요청에 응답하게 하려면 `::`를 지정하십시오.
 
@@ -757,7 +757,7 @@ ClickHouse는 구성을 업데이트하기 위해 모든 레플리카를 동시�
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## logger
+## logger {#logger}
 
 로그 메시지의 위치와 포맷입니다.
 
@@ -950,7 +950,7 @@ JSON 로깅 지원을 활성화하려면 다음 코드 조각을 사용하십시
 
 속성을 주석 처리하면 해당 로그 속성을 생략할 수 있습니다. 예를 들어 로그에 `query_id`가 출력되지 않도록 하려면 `<query_id>` 태그를 주석 처리하면 됩니다.
 
-## send_crash_reports
+## send_crash_reports {#send_crash_reports}
 
 ClickHouse 코어 개발팀에 크래시 보고서를 전송하기 위한 설정입니다.
 
@@ -972,7 +972,7 @@ ClickHouse 코어 개발팀에 크래시 보고서를 전송하기 위한 설정
 </send_crash_reports>
 ```
 
-## ssh_server
+## ssh_server {#ssh_server}
 
 호스트 키의 공개 키 부분은 처음 연결할 때
 SSH 클라이언트 측의 known&#95;hosts 파일에 기록됩니다.
@@ -990,7 +990,7 @@ SSH 클라이언트 측의 known&#95;hosts 파일에 기록됩니다.
 </ssh_server>
 ```
 
-## tcp_ssh_port
+## tcp_ssh_port {#tcp_ssh_port}
 
 PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 쿼리를 실행할 수 있는 SSH 서버의 포트입니다.
 
@@ -1000,7 +1000,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
 
-## storage_configuration
+## storage_configuration {#storage_configuration}
 
 스토리지를 여러 디스크로 구성할 수 있습니다.
 
@@ -1017,7 +1017,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 </storage_configuration>
 ```
 
-### 디스크 구성
+### 디스크 구성 {#configuration-of-disks}
 
 `disks` 구성은 다음 구조를 따릅니다:
 
@@ -1052,7 +1052,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
   디스크의 순서는 중요하지 않습니다.
 </Note>
 
-### 정책 설정
+### 정책 설정 {#configuration-of-policies}
 
 위의 하위 태그는 `policies`에 대해 다음 설정을 정의합니다.
 
@@ -1076,7 +1076,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 * *어떤* 볼륨에도 이 매개변수가 없으면 순서는 설정 파일에 기술된 순서에 따라 결정됩니다.
 * 볼륨의 우선순위는 동일할 수 없습니다.
 
-## macros
+## macros {#macros}
 
 복제된 테이블(Replicated Table)에 대한 매개변수 치환입니다.
 
@@ -1090,7 +1090,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 <macros incl="macros" optional="true" />
 ```
 
-## replica_group_name
+## replica_group_name {#replica_group_name}
 
 복제된 데이터베이스의 레플리카 그룹 이름입니다.
 
@@ -1105,7 +1105,7 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 <replica_group_name>backups</replica_group_name>
 ```
 
-## max_session_timeout
+## max_session_timeout {#max_session_timeout}
 
 최대 세션 timeout 값이며, 단위는 초입니다.
 
@@ -1115,7 +1115,7 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 <max_session_timeout>3600</max_session_timeout>
 ```
 
-## merge_tree
+## merge_tree {#merge_tree}
 
 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 세부 설정을 조정합니다.
 
@@ -1129,7 +1129,7 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 </merge_tree>
 ```
 
-## metric_log
+## metric_log {#metric_log}
 
 기본적으로는 비활성화되어 있습니다.
 
@@ -1164,7 +1164,7 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 
 <SystemLogParameters />
 
-## replicated_merge_tree
+## replicated_merge_tree {#replicated_merge_tree}
 
 [ReplicatedMergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 세부 조정을 위한 설정입니다. 이 설정이 더 높은 우선순위를 가집니다.
 
@@ -1178,7 +1178,7 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 </replicated_merge_tree>
 ```
 
-## opentelemetry_span_log
+## opentelemetry_span_log {#opentelemetry_span_log}
 
 [`opentelemetry_span_log`](/ko/reference/system-tables/opentelemetry_span_log) 시스템 테이블의 설정입니다.
 
@@ -1203,7 +1203,7 @@ DDL 쿼리는 동일한 그룹에 속한 레플리카만 기다립니다.
 </opentelemetry_span_log>
 ```
 
-## openSSL
+## openSSL {#openSSL}
 
 SSL 클라이언트/서버 구성.
 
@@ -1266,7 +1266,7 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
 </openSSL>
 ```
 
-## part_log
+## part_log {#part_log}
 
 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)와 관련된 이벤트를 로깅합니다. 예를 들어 데이터 추가나 머지와 같은 작업입니다. 이 로그를 사용하면 머지 알고리즘을 시뮬레이션하고 그 특성을 비교할 수 있습니다. 또한 머지 과정을 시각화할 수도 있습니다.
 
@@ -1289,7 +1289,7 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
 </part_log>
 ```
 
-## processors_profile_log
+## processors_profile_log {#processors_profile_log}
 
 [`processors_profile_log`](/ko/reference/system-tables/processors_profile_log) 시스템 테이블에 대한 설정입니다.
 
@@ -1310,7 +1310,7 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
 </processors_profile_log>
 ```
 
-## prometheus
+## prometheus {#prometheus}
 
 [Prometheus](https://prometheus.io)에서 스크래핑할 수 있도록 메트릭 데이터를 노출합니다.
 
@@ -1352,7 +1352,7 @@ SSL 지원은 `libpoco` 라이브러리에서 제공합니다. 사용 가능한 
 curl 127.0.0.1:9363/metrics
 ```
 
-## query_log
+## query_log {#query_log}
 
 [log&#95;queries=1](/ko/reference/settings/session-settings/log-queries#log_queries) 설정으로 수신된 쿼리를 로깅하는 설정입니다.
 
@@ -1380,7 +1380,7 @@ curl 127.0.0.1:9363/metrics
 </query_log>
 ```
 
-## query_metric_log
+## query_metric_log {#query_metric_log}
 
 기본적으로 비활성화되어 있습니다.
 
@@ -1415,7 +1415,7 @@ curl 127.0.0.1:9363/metrics
 
 <SystemLogParameters />
 
-## query_cache
+## query_cache {#query_cache}
 
 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache) 구성입니다.
 
@@ -1444,7 +1444,7 @@ curl 127.0.0.1:9363/metrics
 </query_cache>
 ```
 
-## query_thread_log
+## query_thread_log {#query_thread_log}
 
 [log&#95;query&#95;threads=1](/ko/reference/settings/session-settings/log-query#log_query_threads) 설정을 사용해 수신한 쿼리의 스레드를 로깅하는 설정입니다.
 
@@ -1469,7 +1469,7 @@ curl 127.0.0.1:9363/metrics
 </query_thread_log>
 ```
 
-## query_views_log
+## query_views_log {#query_views_log}
 
 [log&#95;query&#95;views=1](/ko/reference/settings/session-settings/log-query#log_query_views) 설정으로 수신된 쿼리에 따라 뷰(라이브, 구체화된 뷰 등)를 로깅하기 위한 설정입니다.
 
@@ -1494,7 +1494,7 @@ curl 127.0.0.1:9363/metrics
 </query_views_log>
 ```
 
-## text_log
+## text_log {#text_log}
 
 텍스트 메시지를 기록하는 [text&#95;log](/ko/reference/system-tables/text_log) 시스템 테이블 설정입니다.
 
@@ -1525,7 +1525,7 @@ curl 127.0.0.1:9363/metrics
 </clickhouse>
 ```
 
-## trace_log
+## trace_log {#trace_log}
 
 [trace&#95;log](/ko/reference/system-tables/trace_log) 시스템 테이블의 동작 설정입니다.
 
@@ -1547,7 +1547,7 @@ curl 127.0.0.1:9363/metrics
 </trace_log>
 ```
 
-## asynchronous_insert_log
+## asynchronous_insert_log {#asynchronous_insert_log}
 
 async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/system-tables/asynchronous_insert_log) 시스템 테이블(system table)의 설정입니다.
 
@@ -1571,7 +1571,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 </clickhouse>
 ```
 
-## crash_log
+## crash_log {#crash_log}
 
 [crash&#95;log](/ko/reference/system-tables/crash_log) 시스템 테이블에 대한 설정입니다.
 
@@ -1608,7 +1608,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 </crash_log>
 ```
 
-## create_union_system_log_tables
+## create_union_system_log_tables {#create_union_system_log_tables}
 
 시스템 로그 테이블과 함께 `all_...` 테이블(`system.query_log`에는 `system.all_query_log`, `system.text_log`에는 `system.all_text_log` 등)을 생성하도록 요청합니다. 이러한 테이블은 해당 로그 테이블과 그 교체된 버전(`query_log_0`, `query_log_1`, ...) 및/또는 클러스터 내 모든 레플리카의 동일한 테이블을 통합하며, `clusterAllReplicas(default, merge(system, '^query_log'))` 같은 구문을 기억하지 않아도 한 번에 모두 쿼리할 수 있습니다.
 
@@ -1640,7 +1640,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 </create_union_system_log_tables>
 ```
 
-## custom_cached_disks_base_directory
+## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
 
 이 설정은 사용자 지정(SQL로 생성된) 캐시 디스크의 캐시 경로를 지정합니다.
 `custom_cached_disks_base_directory`는 사용자 지정 디스크에 대해 `filesystem_caches_path`(`filesystem_caches_path.xml`에 있음)보다 우선순위가 높으며,
@@ -1659,7 +1659,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
 ```
 
-## backup_log
+## backup_log {#backup_log}
 
 `BACKUP` 및 `RESTORE` 작업 로깅을 위한 [backup&#95;log](/ko/reference/system-tables/backup_log) 시스템 테이블의 설정입니다.
 
@@ -1683,7 +1683,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 </clickhouse>
 ```
 
-## blob_storage_log
+## blob_storage_log {#blob_storage_log}
 
 [`blob_storage_log`](/ko/reference/system-tables/blob_storage_log) 시스템 테이블의 설정입니다.
 
@@ -1701,7 +1701,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 </blob_storage_log>
 ```
 
-## query_masking_rules
+## query_masking_rules {#query_masking_rules}
 
 정규식 기반 규칙으로, 쿼리는 물론 저장 전에 모든 로그 메시지에도 적용됩니다. 적용 대상은 server logs,
 [`system.query_log`](/ko/reference/system-tables/query_log), [`system.text_log`](/ko/reference/system-tables/text_log), [`system.processes`](/ko/reference/system-tables/processes) 테이블과 클라이언트로 전송되는 로그입니다. 이를 통해
@@ -1734,7 +1734,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 분산 쿼리의 경우 각 서버를 별도로 구성해야 합니다. 그렇지 않으면 다른
 노드로 전달되는 서브쿼리가 마스킹되지 않은 상태로 저장됩니다.
 
-## remote_servers
+## remote_servers {#remote_servers}
 
 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블 엔진과 `cluster` 테이블 함수에서 사용하는 클러스터 구성입니다.
 
@@ -1752,7 +1752,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 * [클러스터 디스커버리](/ko/guides/oss/deployment-and-scaling/cluster-discovery)
 * [복제된 데이터베이스 엔진](/ko/reference/engines/database-engines/replicated)
 
-## remote_url_allow_hosts
+## remote_url_allow_hosts {#remote_url_allow_hosts}
 
 URL 관련 스토리지 엔진과 테이블 함수에서 사용할 수 있도록 허용된 호스트 목록입니다.
 
@@ -1772,7 +1772,7 @@ URL 관련 스토리지 엔진과 테이블 함수에서 사용할 수 있도록
 </remote_url_allow_hosts>
 ```
 
-## 시간대
+## 시간대 {#timezone}
 
 서버의 시간대입니다.
 
@@ -1790,7 +1790,7 @@ URL 관련 스토리지 엔진과 테이블 함수에서 사용할 수 있도록
 
 * [session&#95;timezone](/ko/reference/settings/session-settings/other#session_timezone)
 
-## tcp_port
+## tcp_port {#tcp_port}
 
 TCP 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포트입니다.
 
@@ -1800,7 +1800,7 @@ TCP 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포트�
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp_port_secure
+## tcp_port_secure {#tcp_port_secure}
 
 클라이언트와 안전하게 통신할 때 사용하는 TCP 포트입니다. [OpenSSL](#openSSL) 설정과 함께 사용하십시오.
 
@@ -1810,7 +1810,7 @@ TCP 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포트�
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql_port
+## mysql_port {#mysql_port}
 
 MySQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포트입니다.
 
@@ -1825,7 +1825,7 @@ MySQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포�
 <mysql_port>9004</mysql_port>
 ```
 
-## postgresql_port
+## postgresql_port {#postgresql_port}
 
 PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 포트입니다.
 
@@ -1840,7 +1840,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 <postgresql_port>9005</postgresql_port>
 ```
 
-## url_scheme_mappers
+## url_scheme_mappers {#url_scheme_mappers}
 
 축약형 또는 기호형 URL 프리픽스를 전체 URL로 변환하는 구성입니다.
 
@@ -1860,7 +1860,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 </url_scheme_mappers>
 ```
 
-## user_defined_path
+## user_defined_path {#user_defined_path}
 
 사용자 정의 파일이 저장된 디렉터리입니다. SQL 사용자 정의 함수 [SQL 사용자 정의 함수](/ko/reference/functions/regular-functions/udf)에 사용됩니다.
 
@@ -1870,7 +1870,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 <user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
 ```
 
-## users_config
+## users_config {#users_config}
 
 다음이 포함된 파일의 경로입니다.
 
@@ -1885,7 +1885,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 <users_config>users.xml</users_config>
 ```
 
-## access_control_improvements
+## access_control_improvements {#access_control_improvements}
 
 액세스 제어 시스템의 선택적 개선 사항에 대한 설정입니다.
 
@@ -1917,7 +1917,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 </access_control_improvements>
 ```
 
-## s3queue_log
+## s3queue_log {#s3queue_log}
 
 `s3queue_log` 시스템 테이블에 대한 설정입니다.
 
@@ -1934,7 +1934,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 </s3queue_log>
 ```
 
-## dead_letter_queue
+## dead_letter_queue {#dead_letter_queue}
 
 &#39;dead&#95;letter&#95;queue&#39; 시스템 테이블에 대한 설정입니다.
 
@@ -1951,7 +1951,7 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 </dead_letter_queue>
 ```
 
-## zookeeper
+## zookeeper {#zookeeper}
 
 ClickHouse가 [ZooKeeper](http://zookeeper.apache.org/) 클러스터와 상호 작용할 수 있도록 하는 설정을 포함합니다. ClickHouse는 복제된 테이블(Replicated Table)을 사용할 때 레플리카의 메타데이터를 저장하기 위해 ZooKeeper를 사용합니다. 복제된 테이블을 사용하지 않는 경우 이 매개변수 섹션은 생략할 수 있습니다.
 
@@ -2014,7 +2014,7 @@ ClickHouse가 [ZooKeeper](http://zookeeper.apache.org/) 클러스터와 상호 �
 * [ZooKeeper 프로그래머 가이드](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 * [ClickHouse와 ZooKeeper 간의 보안 통신(선택 사항)](/ko/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)
 
-## use_minimalistic_part_header_in_zookeeper
+## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
 ZooKeeper에서 데이터 파트 헤더를 저장하는 방식입니다. 이 설정은 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/index) 계열에만 적용됩니다. 다음과 같이 지정할 수 있습니다.
 
@@ -2039,7 +2039,7 @@ ClickHouse는 서버의 모든 테이블에 이 설정을 사용합니다. 이 �
   이 설정으로 이미 저장된 데이터 파트 헤더는 이전의 비컴팩트 표현으로 복원할 수 없습니다.
 </Note>
 
-## distributed_ddl
+## distributed_ddl {#distributed_ddl}
 
 클러스터에서 [분산 DDL 쿼리](/ko/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`)의 실행을 관리합니다.
 [ZooKeeper](/ko/reference/settings/server-settings/settings/zookeeper#zookeeper)가 활성화된 경우에만 동작합니다.
@@ -2083,7 +2083,7 @@ ClickHouse는 서버의 모든 테이블에 이 설정을 사용합니다. 이 �
 </distributed_ddl>
 ```
 
-## access_control_path
+## access_control_path {#access_control_path}
 
 ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 저장하는 폴더 경로입니다.
 
@@ -2091,7 +2091,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 
 * [액세스 제어 및 계정 관리](/ko/concepts/features/security/access-rights#access-control-usage)
 
-## allow_plaintext_password
+## allow_plaintext_password {#allow_plaintext_password}
 
 평문 비밀번호 타입(안전하지 않음)을 허용할지 여부를 설정합니다.
 
@@ -2101,7 +2101,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-## allow_no_password
+## allow_no_password {#allow_no_password}
 
 보안상 안전하지 않은 no&#95;password 비밀번호 유형의 허용 여부를 설정합니다.
 
@@ -2111,7 +2111,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 <allow_no_password>1</allow_no_password>
 ```
 
-## allow_implicit_no_password
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 &#39;IDENTIFIED WITH no&#95;password&#39;를 명시적으로 지정한 경우를 제외하고, 비밀번호 없이 사용자를 생성하는 것을 금지합니다.
 
@@ -2121,7 +2121,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-## default_session_timeout
+## default_session_timeout {#default_session_timeout}
 
 기본 세션 타임아웃입니다. 단위는 초입니다.
 
@@ -2131,7 +2131,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 <default_session_timeout>60</default_session_timeout>
 ```
 
-## default_password_type
+## default_password_type {#default_password_type}
 
 `CREATE USER u IDENTIFIED BY 'p'`와 같은 쿼리에서 자동으로 설정할 비밀번호 유형을 지정합니다.
 
@@ -2151,7 +2151,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 <default_password_type>sha256_password</default_password_type>
 ```
 
-## user_directories
+## user_directories {#user_directories}
 
 다음 설정을 포함하는 설정 파일의 섹션입니다:
 
@@ -2210,7 +2210,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 </ldap>
 ```
 
-## top_level_domains_list
+## top_level_domains_list {#top_level_domains_list}
 
 추가할 사용자 지정 최상위 도메인 목록을 정의합니다. 각 항목의 형식은 `<name>/path/to/file</name>`입니다.
 
@@ -2226,7 +2226,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 
 * 사용자 지정 TLD 목록 이름을 받아, 첫 번째 유의미한 하위 도메인까지의 최상위 하위 도메인을 포함한 도메인 부분을 반환하는 함수 [`cutToFirstSignificantSubdomainCustom`](/ko/reference/functions/regular-functions/url-functions#cutToFirstSignificantSubdomainCustom) 및 그 변형.
 
-## 프록시
+## 프록시 {#proxy}
 
 현재 S3 스토리지, S3 테이블 함수, URL 함수에서 지원하는 HTTP 및 HTTPS 요청용 프록시 서버를 정의합니다.
 
@@ -2364,7 +2364,7 @@ ClickHouse는 요청 프로토콜에 대해 가장 우선순위가 높은 리졸
 환경 리졸버에 도달할 때까지 그다음으로 우선순위가 높은 리졸버 유형을 차례로 확인합니다.
 즉, 여러 리졸버 유형을 혼합해 사용할 수도 있습니다.
 
-## disable_tunneling_for_https_requests_over_http_proxy
+## disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
 
 기본적으로 `HTTP` 프록시를 통해 `HTTPS` 요청을 보낼 때는 터널링(즉, `HTTP CONNECT`)을 사용합니다. 이 설정을 사용하면 이를 비활성화할 수 있습니다.
 
@@ -2394,7 +2394,7 @@ IP 주소, 도메인, 하위 도메인, 그리고 전체 우회를 위한 `'*'` 
 </proxy>
 ```
 
-## workload_path
+## workload_path {#workload_path}
 
 모든 `CREATE WORKLOAD` 및 `CREATE RESOURCE` 쿼리의 저장 위치로 사용되는 디렉터리입니다. 기본적으로 server 작업 디렉터리 아래의 `/workload/` 폴더가 사용됩니다.
 
@@ -2411,7 +2411,7 @@ IP 주소, 도메인, 하위 도메인, 그리고 전체 우회를 위한 `'*'` 
 * [워크로드 계층 구조](/ko/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;zookeeper&#95;path](#workload_zookeeper_path)
 
-## workload_zookeeper_path
+## workload_zookeeper_path {#workload_zookeeper_path}
 
 모든 `CREATE WORKLOAD` 및 `CREATE RESOURCE` 쿼리의 저장소로 사용되는 ZooKeeper 노드의 경로입니다. 일관성을 위해 모든 SQL 정의는 이 단일 znode의 값으로 저장됩니다. 기본적으로 ZooKeeper는 사용되지 않으며, 정의는 [디스크](#workload_path)에 저장됩니다.
 
@@ -2426,7 +2426,7 @@ IP 주소, 도메인, 하위 도메인, 그리고 전체 우회를 위한 `'*'` 
 * [워크로드 계층 구조](/ko/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;path](#workload_path)
 
-## zookeeper_log
+## zookeeper_log {#zookeeper_log}
 
 [`zookeeper_log`](/ko/reference/system-tables/zookeeper_log) 시스템 테이블에 대한 설정입니다.
 

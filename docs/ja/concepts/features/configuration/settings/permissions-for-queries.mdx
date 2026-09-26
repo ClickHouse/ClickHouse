@@ -19,7 +19,7 @@ ClickHouse のクエリは、いくつかの種類に分類できます。
 
 以下の設定は、クエリの種類ごとにユーザー権限を制御します。
 
-## readonly
+## readonly {#readonly}
 
 セッションが実行できるクエリを制限します。この設定の値、デフォルト、および各値でどの設定を変更できるかについては
 [設定リファレンス](/ja/reference/settings/session-settings/other#readonly)を参照してください。本セクションでは、各値がどの種類のクエリを許可するかを説明します。
@@ -52,7 +52,7 @@ ClickHouse のクエリは、いくつかの種類に分類できます。
   [読み取り専用モードで変更可能にする](/ja/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly)ことを推奨しない旨も説明しています。
 </Note>
 
-## allow_ddl
+## allow_ddl {#allow_ddl}
 
 データベース、テーブル、ビュー、Dictionary、ユーザー定義関数、workload、resource、SQL で定義されたハンドラーに対する [DDL](https://en.wikipedia.org/wiki/Data_definition_language) クエリを許可または拒否します。
 
@@ -87,7 +87,7 @@ ClickHouse のクエリは、いくつかの種類に分類できます。
   `readonly = 1` および `readonly = 2` ではこれが拒否されます。
 </Info>
 
-## その他の関連する設定
+## その他の関連する設定 {#other-relevant-settings}
 
 * [`allow_introspection_functions`](/ja/reference/settings/session-settings/allow#allow_introspection_functions)
   は、`readonly` および `allow_ddl` とともに、権限の判定そのものに関与する3つ目の設定です。この設定が無効の場合、

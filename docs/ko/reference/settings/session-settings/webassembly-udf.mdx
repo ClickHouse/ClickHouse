@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-## webassembly_udf_input_split_memory_ratio
+## webassembly_udf_input_split_memory_ratio {#webassembly_udf_input_split_memory_ratio}
 
 <ExperimentalBadge />
 
@@ -32,7 +32,7 @@ WebAssembly UDF 인스턴스의 선형 메모리에서 한 번의 호출에 대�
 
 입력을 분할하지 않으려면 0으로 설정하십시오. 전체 파이프라인 블록이 한 번의 호출로 전달됩니다.
 
-## webassembly_udf_max_fuel
+## webassembly_udf_max_fuel {#webassembly_udf_max_fuel}
 
 <ExperimentalBadge />
 
@@ -42,7 +42,7 @@ WebAssembly UDF 인스턴스의 선형 메모리에서 한 번의 호출에 대�
 
 WebAssembly UDF 인스턴스 실행마다 적용되는 연료 제한입니다. 각 WebAssembly 명령어는 일정량의 연료를 소비합니다. 이 값은 런타임에 전달되기 전에 1024배로 조정되므로, `webassembly_udf_max_fuel = 1`은 대략 1024 연료 단위에 해당합니다. 유한한 제한을 두지 않으려면 0으로 설정합니다. 기본값이 true인 함수별 설정 `webassembly_udf_enable_fuel`이 true인 함수에만 적용됩니다.
 
-## webassembly_udf_max_input_block_size
+## webassembly_udf_max_input_block_size {#webassembly_udf_max_input_block_size}
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ WebAssembly UDF 인스턴스 실행마다 적용되는 연료 제한입니다. �
 
 대신 직렬화된 입력을 기준으로 호출 크기를 조정하려면 0으로 설정하십시오. 이는 전체 입력 block을 게스트 메모리에 직렬화하는 유일한 ABI인 `ABI BUFFERED_V1`에만 적용됩니다. 이 ABI의 block은 호출 입력이 모듈 선형 메모리의 `webassembly_udf_input_split_memory_ratio` 이내로 유지되도록 분할됩니다. `ROW_DIRECT`는 인수를 WebAssembly 값으로 전달하고 `ASSEMBLYSCRIPT`는 행마다 하나의 객체를 생성하므로, 둘 다 호출 크기를 결정할 직렬화된 입력이 없습니다. 따라서 0으로 설정하면 해당 파이프라인 블록은 그대로 유지됩니다.
 
-## webassembly_udf_max_instances
+## webassembly_udf_max_instances {#webassembly_udf_max_instances}
 
 <ExperimentalBadge />
 
@@ -64,7 +64,7 @@ WebAssembly UDF 인스턴스 실행마다 적용되는 연료 제한입니다. �
 
 함수당 동시에 실행할 수 있는 WebAssembly UDF 인스턴스의 최대 수입니다.
 
-## webassembly_udf_max_memory
+## webassembly_udf_max_memory {#webassembly_udf_max_memory}
 
 <ExperimentalBadge />
 

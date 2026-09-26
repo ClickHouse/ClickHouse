@@ -68,7 +68,7 @@ PRIMARY KEY Id
 </Note>
 
 <div id="numeric-key">
-  ### المفتاح الرقمي
+  ### المفتاح الرقمي {#numeric-key}
 </div>
 
 النوع: `UInt64`.
@@ -98,7 +98,7 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – اسم العمود الذي يتضمن المفاتيح.
 
-### مفتاح مركب
+### مفتاح مركب {#composite-key}
 
 يمكن أن يكون المفتاح `tuple` مكوَّنًا من حقول بأي أنواع. ويجب أن يكون [التخطيط](/ar/reference/statements/create/dictionary/layouts/overview) في هذه الحالة `complex_key_hashed` أو `complex_key_cache`.
 
@@ -142,7 +142,7 @@ PRIMARY KEY field1, field2
 عندما يتكوّن المفتاح المركب من سمة واحدة، يمكن تمرير قيمة المفتاح مباشرةً، من دون تغليفها داخل `tuple`. على سبيل المثال، كلٌّ من `dictGetString('dict_name', 'attr_name', 'key')` و `dictGetString('dict_name', 'attr_name', tuple('key'))` صحيح.
 
 <div id="attributes">
-  ## السمات
+  ## السمات {#attributes}
 </div>
 
 مثال على التهيئة:

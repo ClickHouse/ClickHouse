@@ -20,7 +20,7 @@ Os dialetos atualmente suportados são:
 
 A linguagem de consulta usada é controlada pela configuração `dialect`.
 
-## SQL padrão
+## SQL padrão {#standard-sql}
 
 SQL padrão é a linguagem de consulta padrão do ClickHouse.
 
@@ -28,7 +28,7 @@ SQL padrão é a linguagem de consulta padrão do ClickHouse.
 SET dialect = 'clickhouse'
 ```
 
-## Linguagem de consulta relacional em pipeline (PRQL)
+## Linguagem de consulta relacional em pipeline (PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -51,7 +51,7 @@ aggregate {
 
 Nos bastidores, o ClickHouse usa a transpilação de PRQL para SQL para executar consultas PRQL.
 
-## Linguagem de Consulta Kusto (KQL)
+## Linguagem de Consulta Kusto (KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ numbers(10) | project number
 
 Observe que as consultas KQL talvez não consigam acessar todas as funções definidas no ClickHouse.
 
-## Trino SQL
+## Trino SQL {#trino-sql}
 
 <ExperimentalBadge />
 

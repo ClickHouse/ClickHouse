@@ -27,7 +27,7 @@ import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.
 
 {/* vale off */}
 
-## ¿Qué es Telflo?
+## ¿Qué es Telflo? {#what-is-telflo}
 
 {/* vale on */}
 
@@ -37,7 +37,7 @@ Telflo también es accesible fuera del navegador, mediante una [interfaz de lín
 
 {/* vale off */}
 
-## ¿Por qué Telflo + ClickStack?
+## ¿Por qué Telflo + ClickStack? {#why-telflo-clickstack}
 
 {/* vale on */}
 
@@ -58,7 +58,7 @@ Telflo ofrece:
   * **Telflo opera la flota de collectors que lo alimenta**
 </Tip>
 
-## Prerequisitos
+## Prerequisitos {#prerequisites}
 
 * Un destino: [ClickStack de código abierto](/es/clickstack/getting-started/oss), [Managed ClickStack](/es/clickstack/getting-started/managed) o una instancia de ClickHouse autogestionada
 * Una cuenta de Telflo ([crea una cuenta en telflo.com](https://telflo.com))
@@ -70,7 +70,7 @@ Telflo ofrece:
 
 {/* vale off */}
 
-## Integrar ClickStack con Telflo
+## Integrar ClickStack con Telflo {#integrate-telflo-clickstack}
 
 {/* vale on */}
 
@@ -144,25 +144,25 @@ Telflo ofrece:
   </Step>
 </Steps>
 
-## Configuración avanzada
+## Configuración avanzada {#advanced-configuration}
 
-### Fan-out routing
+### Fan-out routing {#fan-out-routing}
 
 Los mismos datos de telemetría pueden enviarse a la vez a ClickStack para su almacenamiento a largo plazo, a otra plataforma durante una migración y a un SIEM para el análisis de seguridad. Añada los exporters en el lienzo y conéctelos a las canalizaciones que deban alimentarlos, o parta de una canalización predefinida de la [biblioteca de flujos de Telflo](https://telflo.com/flows).
 
-### Compresión y rendimiento
+### Compresión y rendimiento {#compression-and-performance}
 
 * **Exporters OTLP/HTTP y OTLP**: mantén **Compression** en gzip.
 * **ClickHouse exporter**: mantén **Async Insert** activado, deja **Compression** en lz4 y añade un processor **Batch** antes en la canalización. Consulta [Optimizar los inserts](/es/clickstack/ingesting-data/collector#optimizing-inserts).
 
-## Próximos pasos
+## Próximos pasos {#next-steps}
 
 * **Crear dashboards**: cree visualizaciones en HyperDX para logs, métricas y trazas
 * **Configurar alertas**: defina alertas en ClickStack para condiciones críticas
 * **Refinar con el asistente de IA**: pídale que ajuste una canalización o que proponga pruebas
 * **Si viene de otro proveedor**: los [flows](https://telflo.com/flows) se encargan de la conmutación, sustituyen los agentes ya instalados en su flota y envían los datos simultáneamente a ambos backends mientras usted los compara
 
-## Más información
+## Más información {#read-more}
 
 * [Documentación de Telflo](https://docs.telflo.com/docs)
 * [Quickstart: de un lienzo en blanco a un collector desplegado](https://docs.telflo.com/docs/getting-started/quickstart)

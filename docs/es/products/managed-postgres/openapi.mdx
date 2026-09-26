@@ -18,7 +18,7 @@ misma API también expone un [endpoint de Prometheus] para hacer scraping de las
 [referencia de la API de ClickHouse Managed Postgres][pg-openapi]. De lo contrario, sigue leyendo para ver un
 resumen rápido.
 
-## Claves de API
+## Claves de API {#api-keys}
 
 Para usar la OpenAPI de ClickHouse se requiere autenticación; consulta [API keys] para ver
 cómo crearlas. Luego úsalas como credenciales de autenticación Basic, así:
@@ -30,7 +30,7 @@ KEY_SECRET=mykeysecret
 curl -s --user "$KEY_ID:$KEY_SECRET" https://api.clickhouse.cloud/v1/organizations | jq
 ```
 
-## Organization ID
+## Organization ID {#organization-id}
 
 A continuación, necesitarás tu **Organization ID**.
 
@@ -75,11 +75,11 @@ como esto:
 }
 ```
 
-## CRUD
+## CRUD {#crud}
 
 Veamos el ciclo de vida de un servicio de Postgres.
 
-### Crear
+### Crear {#create}
 
 Primero, cree uno nuevo
 usando la [API de creación]. Requiere las siguientes propiedades en el cuerpo JSON
@@ -140,7 +140,7 @@ incluidos los datos de conexión:
 }
 ```
 
-### Leer
+### Leer {#read}
 
 Usa el `id` de la respuesta para volver a obtener el servicio:
 
@@ -180,7 +180,7 @@ postgres=#
 
 Escriba `\q` para salir de [psql].
 
-### Actualización
+### Actualización {#update}
 
 La [API de parches] permite actualizar un subconjunto de las propiedades de un
 servicio de Managed Postgres mediante JSON Merge Patch de [RFC 7396]. Las etiquetas pueden ser de especial
@@ -257,7 +257,7 @@ las consecuencias del cambio:
 
   */}
 
-### Eliminar
+### Eliminar {#delete}
 
 Usa la [API de eliminación] para eliminar un servicio de Postgres.
 
@@ -282,7 +282,7 @@ En caso de éxito, la respuesta devolverá el código de estado 200, por ejemplo
 }
 ```
 
-## Monitorización
+## Monitorización {#monitoring}
 
 Dos endpoints compatibles con Prometheus exponen métricas de CPU, memoria, E/S, conexión
 y transacción para los servicios de ClickHouse Managed Postgres: uno devuelve
@@ -290,14 +290,14 @@ métricas de todos los servicios de la organización y el otro de un solo
 servicio. Consulta la página de [endpoint de Prometheus] para la configuración y la
 [referencia de métricas] para ver la lista completa de métricas.
 
-## Query insights
+## Query insights {#query-insights}
 
 La telemetría por sentencia en la que se basa la pestaña [Query Insights] de la
 consola de la nube también está disponible programáticamente. Dos endpoints exponen los patrones de consulta más lentos de un
 servicio: uno enumera cada patrón ordenado por impacto; el
 otro devuelve un único patrón con sus ejecuciones recientes.
 
-### Listar patrones de consultas lentas
+### Listar patrones de consultas lentas {#list-slow-query-patterns}
 
 La [API de patrones lentos] devuelve métricas agregadas de los patrones de consulta
 más lentos observados dentro de una ventana de tiempo. La ventana es obligatoria: indica
@@ -356,7 +356,7 @@ El `queryId` es un hash con signo de 64 bits de la sentencia normalizada, por lo
 a menudo es negativo. Devuélvalo tal cual — con el `-` inicial y todo — para obtener
 un único patrón.
 
-### Obtener un patrón de consulta lenta
+### Obtener un patrón de consulta lenta {#get-slow-query-pattern}
 
 Pase un `queryId` de la respuesta de la lista a la [API de patrones lentos] para obtener las
 métricas agregadas de ese patrón junto con sus ejecuciones individuales más recientes.
@@ -413,7 +413,7 @@ tiempo de CPU en modo usuario y de sistema, workers paralelos, JIT y WAL —, lo
 
 El ejemplo recorta ambos objetos por brevedad; la API devuelve el conjunto completo de contadores documentado en [per-execution counters].
 
-## Logs del servidor
+## Logs del servidor {#server-logs}
 
 Los logs del servidor PostgreSQL disponibles en el visor de logs de la consola de la nube también están
 disponibles mediante programación. La [API de logs] devuelve entradas de log individuales de un

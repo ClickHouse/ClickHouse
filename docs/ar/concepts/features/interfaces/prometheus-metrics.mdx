@@ -14,7 +14,7 @@ doc_type: 'reference'
   إذا كنت تستخدم ClickHouse Cloud، فيمكنك عرض المقاييس لـ Prometheus عبر [تكامل Prometheus](/ar/products/cloud/features/monitoring/prometheus).
 </Note>
 
-## تهيئة منفذ المقاييس
+## تهيئة منفذ المقاييس {#configure-the-metrics-port}
 
 هيّئ منفذًا مخصصًا عندما يحتاج خادم Prometheus إلى سحب مقاييس ClickHouse الخاصة:
 
@@ -31,7 +31,7 @@ doc_type: 'reference'
 </prometheus>
 ```
 
-## تهيئة المعالِجات الموسّعة
+## تهيئة المعالِجات الموسّعة {#configure-extended-handlers}
 
 يمكن استخدام القسم `<prometheus.handlers>` لإنشاء معالِجات موسّعة أكثر على المنفذ نفسه.
 هذا القسم مشابه للقسم [`<http_handlers>`](/ar/concepts/features/interfaces/http) لكنه يعمل مع بروتوكولات prometheus:
@@ -60,7 +60,7 @@ doc_type: 'reference'
 </prometheus>
 ```
 
-## الإعدادات
+## الإعدادات {#settings}
 
 للاطلاع على السلوك الكامل لهذه الإعدادات، راجع [قسم Prometheus](/ar/reference/settings/server-settings/settings/other#prometheus) في مرجع إعدادات الخادم.
 
@@ -78,7 +78,7 @@ doc_type: 'reference'
 | `dimensional_metrics`        | true              | يعرض المقاييس من [`system.dimensional_metrics`](/ar/reference/system-tables/dimensional_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `labels`                     | لا شيء            | تسميات ثابتة تُضاف إلى كل مقياس معروض. يحدد كل عنصر فرعي تسمية واحدة: اسم العنصر هو اسم التسمية (ويجب أن يطابق `[a-zA-Z_][a-zA-Z0-9_]*`) وقيمة العنصر هي قيمة التسمية. تدعم قيم التسميات عمليات الاستبدال القياسية في الإعداد مثل السمة `from_env`. يُرفض اسم التسمية إذا بدأ بـ `__` (محجوز من قِبل Prometheus)، أو إذا تعارض مع تسمية تكتبها نقطة النهاية هذه بالفعل لأحد أقسامها المفعّلة. وبالتالي فإن المجموعة المحجوزة تتبع نطاق التصدير النشط لنقطة النهاية: `le` عندما يكون `histograms` مفعّلًا؛ وتسميات `ClickHouse_Info` (`name`، `version`، `version_describe`، `version_major`، `version_minor`، `version_patch`) عندما يكون `info` مفعّلًا؛ وأي تسمية تستخدمها عائلة مقاييس مُدرَّج تكراري أو مقاييس بُعدية معروضة (على سبيل المثال، `group` أو `direction` أو `operation_type`) عندما يكون `histograms` أو `dimensional_metrics` مفعّلًا. ولأن ذلك يتوقف على ما تعرضه نقطة النهاية فعليًا، فقد يكون الاسم صالحًا في نقطة نهاية ومرفوضًا في أخرى. |
 
-## التحقق من الـ نقطة نهاية
+## التحقق من الـ نقطة نهاية {#check-the-endpoint}
 
 ```bash
 curl http://127.0.0.1:9363/metrics

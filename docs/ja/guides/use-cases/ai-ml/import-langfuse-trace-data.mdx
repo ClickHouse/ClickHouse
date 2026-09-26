@@ -9,11 +9,11 @@ doc_type: 'guide'
 
 このガイドでは、[Langfuse Cloud](https://cloud.langfuse.com/) の LLM トレースデータを ClickHouse Cloud に取り込み、リアルタイム分析に活用するまでの手順を説明します。
 
-## Langfuse Cloud からのエクスポート
+## Langfuse Cloud からのエクスポート {#export-from-langfuse-cloud}
 
 [このガイド](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)に従って、Langfuse Cloud で定期エクスポート用の Blob Storage インテグレーションを設定します。トレースデータのオブジェクトストレージへのエクスポートは、最短 `20 minutes` 間隔のほか、`hourly`、`daily`、`weekly` のスケジュールでも設定できます。デフォルトでは、各エクスポートに `observations` (トレース属性で拡充済み) と `scores` が含まれます。
 
-### エクスポートされるファイルの構成
+### エクスポートされるファイルの構成 {#exported-file-layout}
 
 Langfuse Cloud の Blob Storage インテグレーションは、以下のディレクトリ構造で、出力先のバケットまたはストレージコンテナーにデータを書き込みます。
 
@@ -24,7 +24,7 @@ Langfuse Cloud の Blob Storage インテグレーションは、以下のディ
 └── manifests/         # one JSON file per completed run with export metadata
 ```
 
-## ClickHouse Cloud へのインポート
+## ClickHouse Cloud へのインポート {#import-into-clickhouse-cloud}
 
 Langfuse Cloud で Blob Storage インテグレーションを設定すると、トレースデータが定期的に対象のバケットまたはストレージコンテナーへエクスポートされます。このデータを ClickHouse Cloud にインポートするには、[ClickPipes](/ja/integrations/clickpipes) が提供するマネージドなオブジェクトストレージコネクタを利用できます。
 
@@ -34,7 +34,7 @@ Langfuse Cloud で Blob Storage インテグレーションを設定すると、
 | <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage のロゴ" className="integration-table-logo" width="24" height="24" /> **Google Cloud Storage**                                                                                                                          | [GCS ClickPipes](/ja/integrations/clickpipes/object-storage/google-cloud-storage/overview) を使用して連携します。 |
 | <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob Storage のロゴ" className="integration-table-logo" width="24" height="24" /> **Azure Blob Storage**                                                                                                                 | [ABS ClickPipes](/ja/integrations/clickpipes/object-storage/azure-blob-storage/overview) を使用して連携します。   |
 
-### ClickPipe を作成する
+### ClickPipe を作成する {#create-a-clickpipe}
 
 この例では、S3 ClickPipe を使用して、Langfuse Cloud から定期的にエクスポートされたデータを受け取る S3 バケットからデータをインポートします。この手順は、あらゆるオブジェクトストレージのエクスポート先に共通するひな形としても利用できます。データソースごとの詳細な手順については、[ClickPipes ドキュメント](/ja/integrations/clickpipes)を参照してください。
 
@@ -147,11 +147,11 @@ Langfuse Cloud で Blob Storage インテグレーションを設定すると、
   </Step>
 </Steps>
 
-### トレースデータのクエリ
+### トレースデータのクエリ {#query-trace-data}
 
 ClickPipes が稼働したら、Langfuse Cloud のトレースデータを ClickHouse Cloud 上で直接クエリできます。以下では、コストとレイテンシのロールアップ、単一トレースの再構築、スコアとモデルやプロンプトとの相関分析など、代表的なクエリパターンの例を紹介します。
 
-#### 時間バケット単位のメトリクスロールアップ
+#### 時間バケット単位のメトリクスロールアップ {#time-bucketed-metric-rollups}
 
 <Tip>
   `usage_details` や `cost_details` などの一部のフィールドは、`Map` 型のカラムとしてエクスポートされます。個々の値を取得するには、キーによるルックアップを使用します (例: `sum(cost_details['total'])`) 。
@@ -172,7 +172,7 @@ GROUP BY t, provided_model_name
 ORDER BY t;
 ```
 
-#### トレースの再構築
+#### トレースの再構築 {#trace-reconstruction}
 
 ```sql
 SELECT *
@@ -181,7 +181,7 @@ WHERE trace_id = '<trace_id>'
 ORDER BY start_time;
 ```
 
-#### 品質分析
+#### 品質分析 {#quality-analysis}
 
 ```sql
 SELECT
@@ -195,7 +195,7 @@ GROUP BY o.provided_model_name, s.name
 ORDER BY avg_score DESC;
 ```
 
-## 関連項目
+## 関連項目 {#see-also}
 
 * [Langfuse と ClickHouse](/ja/products/cloud/features/ai-ml/langfuse)
 * [Langfuse Cloud の Blob Storage へのエクスポート](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)

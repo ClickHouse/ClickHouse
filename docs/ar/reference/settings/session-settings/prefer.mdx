@@ -14,7 +14,7 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويتم توليدها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## prefer_column_name_to_alias
+## prefer_column_name_to_alias {#prefer_column_name_to_alias}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -74,7 +74,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 └────────┴─────────────┘
 ```
 
-## prefer_external_sort_block_bytes
+## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -82,7 +82,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 فضّل الحد الأقصى لحجم الكتلة بالبايتات للفرز الخارجي، وقلّل استهلاك الذاكرة أثناء الدمج.
 
-## prefer_global_in_and_join
+## prefer_global_in_and_join {#prefer_global_in_and_join}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -105,7 +105,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 * [الاستعلامات الفرعية الموزعة](/ar/reference/statements/in#distributed-subqueries) لمزيد من المعلومات حول كيفية استخدام `GLOBAL IN`/`GLOBAL JOIN`
 
-## prefer_localhost_replica
+## prefer_localhost_replica {#prefer_localhost_replica}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,7 +122,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   أما إذا كان يُستخدم على عنقود يحتوي على جزء واحد وعدة نسخ متماثلة، فسيكون لتعطيل هذا الإعداد آثار سلبية.
 </Note>
 
-## prefer_optimize_projection
+## prefer_optimize_projection {#prefer_optimize_projection}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -137,7 +137,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 * 0 — يتم اختيار الـ projections بناءً على تكلفتها التقديرية.
 * 1 — يتم اختيار PROJECTION قابل للاستخدام بغض النظر عن تكلفته التقديرية.
 
-## prefer_warmed_unmerged_parts_seconds
+## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
 
 <CloudOnlyBadge />
 

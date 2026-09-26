@@ -14,7 +14,7 @@ ClickHouse публикует собственные метрики на выд�
   Если вы используете ClickHouse Cloud, передавать метрики в Prometheus можно с помощью [интеграции с Prometheus](/ru/products/cloud/features/monitoring/prometheus).
 </Note>
 
-## Настройка порта метрик
+## Настройка порта метрик {#configure-the-metrics-port}
 
 Настройте выделенный порт, если серверу Prometheus требуется собирать собственные метрики ClickHouse:
 
@@ -31,7 +31,7 @@ ClickHouse публикует собственные метрики на выд�
 </prometheus>
 ```
 
-## Настройка расширенных handlers
+## Настройка расширенных handlers {#configure-extended-handlers}
 
 Секцию `<prometheus.handlers>` можно использовать для создания более расширенных handlers на том же порту.
 Эта секция аналогична [`<http_handlers>`](/ru/concepts/features/interfaces/http), но работает с Prometheus protocols:
@@ -60,7 +60,7 @@ ClickHouse публикует собственные метрики на выд�
 </prometheus>
 ```
 
-## Settings
+## Settings {#settings}
 
 Полное описание поведения этих настроек приведено в [разделе Prometheus](/ru/reference/settings/server-settings/settings/other#prometheus) справочника по настройкам сервера.
 
@@ -78,7 +78,7 @@ ClickHouse публикует собственные метрики на выд�
 | `dimensional_metrics`        | true         | Отдаёт метрики из [`system.dimensional_metrics`](/ru/reference/system-tables/dimensional_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `labels`                     | нет          | Постоянные labels, добавляемые к каждой отдаваемой метрике. Каждый дочерний элемент задаёт один label: имя элемента становится именем label (оно должно соответствовать `[a-zA-Z_][a-zA-Z0-9_]*`), а значение элемента — значением label. Значения labels поддерживают стандартные подстановки конфигурации, например атрибут `from_env`. Имя label отклоняется, если оно начинается с `__` (зарезервировано Prometheus) либо если оно конфликтует с label, который эта конечная точка уже записывает для одного из своих включённых разделов. Таким образом, зарезервированный набор определяется тем, что конечная точка экспортирует в данный момент: `le` — если включён `histograms`; labels `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) — если включён `info`; а также любой label, используемый отдаваемой histogram или семейством размерностных метрик (например, `group`, `direction` или `operation_type`) — если включён `histograms` или `dimensional_metrics`. Поскольку это зависит от того, что конечная точка отдаёт фактически, одно и то же имя может быть допустимым на одной конечной точке и отклонённым на другой. |
 
-## Проверьте конечную точку
+## Проверьте конечную точку {#check-the-endpoint}
 
 ```bash
 curl http://127.0.0.1:9363/metrics

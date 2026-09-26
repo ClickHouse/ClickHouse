@@ -12,7 +12,7 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 プライベートプレビューへのアクセスをリクエストするには、ClickHouseのアカウントチームにお問い合わせください。
 
-## コネクタの役割
+## コネクタの役割 {#what-the-connector-does}
 
 ClickHouse Connector は、お客様自身の環境内にデプロイするコンポーネントです。これにより、ClickHouse Cloud はお客様が運用する Kubernetes クラスター上の ClickHouse サービスを管理・監視・サポートできるようになります。コネクタはアウトバウンド接続のみを行い、これらのサービスにスコープが限定されたアイデンティティで動作します。コネクタは単一のバイナリ `clicklink` として提供され、各デーモンと、それらのインストールおよび運用を行う `clicklink clctl` ツールが含まれています。
 
@@ -26,7 +26,7 @@ ClickHouse Connector は、お客様自身の環境内にデプロイするコ�
 
 コネクタが行う接続はすべてアウトバウンドであり、ClickHouse Cloud からお客様の環境へ接続を開始することは一切ありません。[アーキテクチャ](/ja/products/bring-your-own-cloud/connector/architecture)のページでは、各接続とそのプロトコル、および認証方法を一覧しています。
 
-## 利用シーン
+## 利用シーン {#when-to-use-it}
 
 以下の制約のもとで、自社のクラウドアカウント内で ClickHouse サービスを ClickHouse Cloud に運用してもらいたい場合に、コネクタをデプロイします。
 
@@ -35,7 +35,7 @@ ClickHouse Connector は、お客様自身の環境内にデプロイするコ�
 * データは、自社で作成・削除する bucket 内、および自社の IAM role の背後に留まります。executor は自社の bucket や IAM role への認証情報を一切保持しません。
 * サポートアクセスは時間制限付きで、有効化するのは自社側で行い、いつでも取り消せます。サポートセッション中のコマンドはすべて、自社が所有する監査ログに記録されます。
 
-## 仕組み
+## 仕組み {#how-it-works}
 
 ClickHouse はオンボーディング時にお客様の環境を登録し、コネクタエンドポイントと使い捨ての登録トークンを発行します。`clicklink clctl init --enroll` は一度だけ実行します。Kubernetes にインストールする場合は kubeconfig にアクセスできる作業端末から、Linux VM にインストールする場合はそのホスト上で実行します。このコマンドは、トークンの引き換え、mTLS クライアント証明書の取得、デーモンのデプロイと起動、およびそれらのヘルス確認を行います。
 
@@ -47,11 +47,11 @@ managed モードを有効にすると executor がデプロイされ、その K
 
 scraper は許可リストに登録されたシステムテーブルを一定間隔で読み取り、メトリクス、メタデータ、ヘルスステータスを mTLS 経由でコネクタエンドポイントに送信します。トラブルシューターはアウトバウンドのコマンドチャネルを開いたまま維持しますが、サポートセッションを有効にするまで、そのチャネルには何も流れません。mTLS 証明書は自動的に更新されます。
 
-## managed モードなしで実行する
+## managed モードなしで実行する {#run-without-managed-mode}
 
 `clicklink clctl init` に `--no-managed` を渡すか、確認プロンプトで no と答えると、scraper と トラブルシューター のみがインストールされます。この場合、コネクタは自身で運用している ClickHouse クラスターの監視とサポートを行います。ClickHouse 側から サービス を作成、変更、削除することはできません。コネクタは引き続き自身をデプロイし、読み取り専用の ClickHouse ユーザーと ServiceAccount をプロビジョニングします。詳細は [権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model) を参照してください。これは、managed モードが対応していないターゲットで用いる構成でもあります。managed モードは S3 storage を使用する Amazon EKS 上でのみ動作しますが、オブザーバビリティとサポートは準拠した任意の Kubernetes クラスターまたは Linux ホスト上で動作します。
 
-## 要件の概要
+## 要件の概要 {#requirements-at-a-glance}
 
 * **デプロイ先。** Managed モードでは、S3 storage を備えた Amazon EKS クラスターが必要です。オブザーバビリティとサポートのみであれば、準拠した任意の Kubernetes クラスター (Helm チャートでインストール) 、または amd64 / arm64 の任意の systemd Linux ホストで動作します。
 * **ClickHouse による登録。** ClickHouse が Managed モード向けにお客様の環境を登録し、オンボーディング時にコネクタエンドポイントと単回利用の登録トークンを提供します。
@@ -61,7 +61,7 @@ scraper は許可リストに登録されたシステムテーブルを一定間
 * **到達可能な ClickHouse ネイティブ listener** (お客様自身が運用する クラスター向け。executor なしで稼働する別の コネクタ デプロイメントによって監視されます) 。scraper と トラブルシューター は各 クラスターとネイティブプロトコルで通信します。Kubernetes では、セキュア (9440) か平文 (9000) かを自動検出します。
 * **セットアップ中の ClickHouse admin アクセス** (お客様自身が運用する クラスター向け) 。初回の provisioning で コネクタ の読み取り専用ユーザーが作成されます。admin の password が設定されている場合は一度だけ入力を求められ、保存されることはありません。
 
-## 次のステップ
+## 次のステップ {#next-steps}
 
 * [オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding): Kubernetes または Linux VM にコネクタをインストールし、登録する方法。
 * [マネージドサービス](/ja/products/bring-your-own-cloud/connector/managed-services): managed モードの有効化、サービスの作成、そのライフサイクル、ステータス、削除までの流れ。

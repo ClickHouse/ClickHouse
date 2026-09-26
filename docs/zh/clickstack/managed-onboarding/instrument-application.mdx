@@ -17,13 +17,13 @@ import InstrumentApplication from '/snippets/zh/clickstack/_instrument_applicati
 
 本指南假定你已完成[设置 OpenTelemetry Collector](/zh/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)，并且已有一个正在运行、且可从运行此应用的机器访问到的 ClickStack collector。**请确保你已记录其 OTLP 端点**以及部署时设置的 `OTLP_AUTH_TOKEN`。添加埋点前，你需要将这些值填入 `.env`。
 
-## 前置条件
+## 前置条件 {#prerequisites}
 
 * 可从这台机器访问的 ClickStack collector。如果你尚未部署，请先参阅[设置 OpenTelemetry Collector](/zh/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)。
 * 该 collector 的 OTLP/HTTP 端点 (通常为端口 `4318`) ，以及你为其设置的 `OTLP_AUTH_TOKEN`。将它们分别用作 `OTEL_EXPORTER_OTLP_ENDPOINT` 和 `OTEL_EXPORTER_OTLP_HEADERS=authorization=<token>`。
 * Node 18+ 和 npm。
 
-## 克隆仓库
+## 克隆仓库 {#clone-the-repository}
 
 克隆 [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)，安装依赖项，然后复制环境变量模板：
 
@@ -38,7 +38,7 @@ cp .env.example .env
 
 <InstrumentApplication />
 
-## 延伸阅读
+## 延伸阅读 {#further-reading}
 
 * [监控 Kubernetes](/zh/clickstack/managed-onboarding/monitoring-kubernetes)：从集群中采集日志、基础设施指标和 Kubernetes 事件。
 * [监控 AWS CloudWatch 日志](/zh/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs)：通过 OpenTelemetry CloudWatch receiver 转发 CloudWatch 日志。

@@ -6,9 +6,9 @@ title: '条件函数'
 doc_type: 'reference'
 ---
 
-## 概览
+## 概览 {#overview}
 
-### 直接使用条件结果
+### 直接使用条件结果 {#using-conditional-results-directly}
 
 条件表达式的结果始终是 `0`、`1` 或 `NULL`。因此，你可以像下面这样直接使用条件结果：
 
@@ -25,7 +25,7 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-### 条件表达式中的 NULL 值
+### 条件表达式中的 NULL 值 {#null-values-in-conditionals}
 
 当条件表达式中包含 `NULL` 值时，结果也会是 `NULL`。
 
@@ -61,7 +61,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-### CASE 语句
+### CASE 语句 {#case-statement}
 
 ClickHouse 中的 CASE 表达式提供了类似 SQL CASE 运算符的条件逻辑。它会对条件进行求值，并根据第一个匹配的条件返回相应的值。
 
@@ -164,7 +164,7 @@ WHERE number < 3
 3 rows in set. Elapsed: 0.001 sec.
 ```
 
-#### 注意事项
+#### 注意事项 {#caveats}
 
 ClickHouse 会在评估任何条件之前，先确定 CASE 表达式 (或其内部等价形式，例如 `multiIf`) 的结果类型。当返回表达式的类型不一致时，例如使用了不同的时区或数值类型，这一点尤为重要。
 

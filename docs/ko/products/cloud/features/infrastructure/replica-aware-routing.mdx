@@ -24,13 +24,13 @@ Replica-aware 라우팅은 다음 두 인터페이스 모두에서 사용할 수
 
 두 방식은 각각 별도로 활성화되며, 프록시 뒤에서 동일한 일관된 해싱을 사용합니다.
 
-## 사전 요구 사항
+## 사전 요구 사항 {#prerequisites}
 
 * 서비스에는 **2개 이상의 레플리카**가 필요합니다. 레플리카가 1개뿐인 서비스에서는 고정할 대상이 없습니다.
 * **Enterprise** 티어 서비스여야 합니다.
 * 표준 ClickHouse Cloud 서비스와 [BYOC](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview)에서 지원됩니다.
 
-## Replica-aware 라우팅 구성
+## Replica-aware 라우팅 구성 {#configuring-replica-aware-routing}
 
 Enterprise 고객은 ClickHouse Cloud 콘솔의 서비스 설정 페이지에서 Replica-aware 라우팅을 활성화할 수 있습니다. 서비스를 연 다음 **Settings**로 이동하여 사용하려는 인터페이스의 토글을 켜십시오:
 
@@ -41,7 +41,7 @@ Enterprise 고객은 ClickHouse Cloud 콘솔의 서비스 설정 페이지에서
 
 이 토글은 Enterprise tier 요금제 전반에 순차적으로 배포되고 있습니다. 아직 해당 서비스에 표시되지 않는다면, 서비스 ID를 포함해 [support](https://clickhouse.com/support/program) 티켓을 등록하여 기능을 더 빨리 활성화하도록 요청하십시오.
 
-## HTTP 기반 라우팅
+## HTTP 기반 라우팅 {#http-based-routing}
 
 워크로드를 특정 레플리카에 고정하려면 [HTTPS 인터페이스](/ko/concepts/features/interfaces/http)를 통해 `X-ClickHouse-Replica-Tag` 헤더를 전송하십시오. 프록시는 헤더 값에 일관된 해싱을 적용하므로 레플리카 수가 변하지 않는 한 동일한 값을 사용하는 요청은 같은 레플리카로 전송됩니다. 다른 값은 독립적으로 해싱되며 같은 레플리카 또는 다른 레플리카에 할당될 수 있지만, 값이 *어느* 레플리카에 매핑될지는 선택할 수 없습니다.
 
@@ -63,7 +63,7 @@ clickhouse-go(v2)의 경우 `Protocol: clickhouse.HTTP`를 설정하고 [`HttpHe
   `X-ClickHouse-Replica-Tag`를 사용하면 ClickHouse HTTP 세션을 생성하지 않고도 특정 레플리카에 요청을 고정할 수 있습니다. 동시에 실행되는 요청에서도 `SESSION_IS_LOCKED` 오류 없이 동일한 태그를 재사용할 수 있습니다.
 </Info>
 
-## 네이티브 프로토콜 라우팅
+## 네이티브 프로토콜 라우팅 {#native-protocol-routing}
 
 [네이티브 프로토콜](/ko/interfaces/tcp)을 사용할 때는 라우팅 값을 `<routing-value>.sticky.<host>` 형식의 TLS 서버 이름으로 전달합니다. 연결은 평소와 같이 일반 서비스 호스트명으로 수행하면 됩니다. [ClickHouse Client](/ko/interfaces/client)는 `--tls-sni-override`로 라우팅 값을 전달받습니다:
 
@@ -77,7 +77,7 @@ clickhouse client \
 
 `--host`는 일반적인 서비스 호스트명이고, `--secure`는 TLS를 활성화하며, `--tls-sni-override`는 라우팅 값을 전달합니다. TLS는 필수입니다. 별도의 인증서나 DNS 항목은 필요하지 않습니다.
 
-## 읽기 후 쓰기 일관성(Read-after-write consistency)
+## 읽기 후 쓰기 일관성(Read-after-write consistency) {#read-after-write-consistency}
 
 멀티 레플리카 서비스에서는 한 레플리카에 수행한 쓰기가 복제가 완료되기 전까지 다른 레플리카에서 보이지 않을 수 있습니다. 쓰기 요청을 보낼 때 라우팅 값을 함께 지정하고, 이어지는 읽기에서 동일한 값을 재사용하십시오. 프록시가 두 요청을 같은 레플리카로 라우팅하므로, 다른 레플리카가 아직 뒤처져 있더라도 자신이 수행한 쓰기를 그대로 읽을 수 있습니다. 이 패턴은 데이터를 쓴 직후 동일한 데이터를 다시 읽는 워크로드, 예를 들어 대화형 애플리케이션이나 삽입 결과를 검사한 후 다음 단계로 진행하는 ETL 작업에 적합합니다.
 
@@ -121,29 +121,29 @@ clickhouse client \
 
 모든 레플리카에 걸쳐 더 폭넓은 보장이 필요하다면, ClickHouse Cloud에서 [`select_sequential_consistency`](/ko/reference/settings/session-settings#select_sequential_consistency)를 `1`로 설정할 수도 있습니다.
 
-## 연결된 레플리카 확인
+## 연결된 레플리카 확인 {#check-which-replica}
 
 동일한 라우팅 값으로 `SELECT hostName()` 예시 중 하나를 다시 실행하십시오. 레플리카 수가 변경되지 않았다면 동일한 호스트명이 반환됩니다. 다른 라우팅 값은 다른 레플리카에 매핑될 수 있습니다.
 
-## Replica-aware 라우팅의 한계
+## Replica-aware 라우팅의 한계 {#limitations-of-replica-aware-routing}
 
-### 레플리카 수가 변경되면 고정 연결도 변경됩니다
+### 레플리카 수가 변경되면 고정 연결도 변경됩니다 {#replica-aware-routing-does-not-guarantee-isolation}
 
 스케일 아웃 또는 스케일 인은 라우팅 hash ring을 변경합니다. 그러면 동일한 라우팅 값을 공유하는 요청이 다른 레플리카로 전달될 수 있습니다. 임시 테이블이나 세션 수준 설정에 의존하는 경우, 리매핑 후 이를 다시 생성할 수 있도록 준비하십시오. `SELECT hostName()`을 사용하면 현재 어느 레플리카에 연결되어 있는지 항상 확인할 수 있습니다.
 
-### Replica-aware 라우팅은 워크로드 격리가 아닙니다
+### Replica-aware 라우팅은 워크로드 격리가 아닙니다 {#not-workload-isolation}
 
 스티키 라우팅은 *어느 레플리카가* 요청을 처리할지만 제어합니다. 해당 레플리카는 여전히 다른 트래픽도 처리할 수 있습니다. 전용 컴퓨트가 필요하면 [컴퓨트-컴퓨트 분리](/ko/products/cloud/features/infrastructure/warehouses)를 사용하십시오.
 
-### 프라이빗 네트워킹
+### 프라이빗 네트워킹 {#private-networking}
 
 HTTP 기반 라우팅과 네이티브 프로토콜 라우팅 모두 일반 서비스 호스트명에서 [프라이빗 네트워킹](/ko/products/cloud/guides/security/connectivity/private-networking)과 함께 작동합니다. 추가 DNS 항목은 필요하지 않습니다.
 
-### 네이티브 프로토콜 라우팅에는 TLS가 필요합니다
+### 네이티브 프로토콜 라우팅에는 TLS가 필요합니다 {#native-protocol-routing-requires-tls}
 
 네이티브 프로토콜 라우팅에는 TLS가 필요하므로 `--secure` 옵션을 지정하십시오. 암호화되지 않은 네이티브 연결은 기존의 일반 로드 밸런싱 방식을 그대로 사용합니다.
 
-## 문제 해결
+## 문제 해결 {#troubleshooting}
 
 **동일한 라우팅 값을 사용했는데도 쿼리가 계속 다른 레플리카로 전달되는 경우**
 

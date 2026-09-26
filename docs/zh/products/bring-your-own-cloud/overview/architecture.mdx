@@ -28,14 +28,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Note>
 
 <div id="glossary">
-  ## 术语表
+  ## 术语表 {#glossary}
 </div>
 
 * **ClickHouse VPC:** ClickHouse Cloud 拥有的 VPC。
 * **Customer BYOC VPC:** 归客户云账户所有、由 ClickHouse Cloud 预配和管理，且专用于 ClickHouse Cloud BYOC 部署的 VPC。
 * **Customer VPC:** 归客户云账户所有的其他 VPC，用于运行需要连接到 Customer BYOC VPC 的应用程序。
 
-## 技术架构
+## 技术架构 {#architecture}
 
 BYOC 将运行在 ClickHouse VPC 中的 **ClickHouse 控制平面** 与完全运行在您的云账户中的 **数据平面** 分离开来。ClickHouse VPC 承载 ClickHouse Cloud 控制台、身份验证、用户管理、API、计费、基础设施管理组件 (如 BYOC 控制器) 以及告警/事件处理工具。这些服务负责对您的部署进行编排和监控，但并不存储您的数据。
 
@@ -57,25 +57,25 @@ ClickHouse Cloud 将在您的账户中部署的主要云资源包括：
 默认情况下，ClickHouse Cloud 会预配一个新的专用 VPC，并设置所需的 IAM 角色，以确保 Kubernetes 服务安全运行。对于有更高级网络或安全需求的组织，也可以选择自行管理 VPC 和 IAM 角色。这样可以更灵活地自定义网络配置，并更精细地控制权限。不过，选择自行管理这些资源也会增加您的运维责任。
 
 <div id="data-storage">
-  ### 数据存储
+  ### 数据存储 {#data-storage}
 </div>
 
 您的 ClickHouse 数据、备份、日志和监控数据都保留在您的云账户内；唯一导出到外部的数据是[网络边界](/zh/products/bring-your-own-cloud/reference/network-security#outbound-connections)中列出的有限范围内的用量和健康状况遥测数据。数据分区片段和备份存储在您的对象存储中 (例如亚马逊 S3) ，而日志则存储在附加到 ClickHouse 节点的存储卷上。在未来的更新中，日志将写入 LogHouse，这是一项基于 ClickHouse 的日志服务，也运行在您的 BYOC VPC 内。指标可以存储在本地，或为了长期保留而存储在您自己账户中的专用桶内 —— 对象存储位于 VPC/VNet 之外，通过提供商的存储 API 路径访问。ClickHouse VPC 与您的 BYOC VPC 之间的控制平面连接仅用于管理操作，绝不承载查询流量。默认情况下，ClickHouse 管理服务通过公网端点访问集群的 Kubernetes API，但该端点绝不会对外完全开放：在 AWS 上，通过 IP 允许列表仅允许 ClickHouse 的出口 IP 范围访问；在 GCP 上，由 Google Cloud IAM 进行授权；在 Azure 上，则由 Microsoft Entra ID 结合 Azure RBAC 进行授权。您也可以按部署改为启用私有连接，即 AWS VPC Lattice、GCP 上基于 DNS 的 GKE 控制平面端点或 Azure Private Link，如图所示。在所有云平台上，ClickHouse 工程师的故障排查访问以及指标和仪表盘数据均通过 Tailscale 传输；即使 Kubernetes API 路径为私有，Tailscale 也依然保留。
 
 <div id="control-plane-communication">
-  ### 控制平面通信
+  ### 控制平面通信 {#control-plane-communication}
 </div>
 
 ClickHouse VPC 通过 HTTPS (端口 443) 与你的 BYOC VPC 通信，用于服务管理操作，包括配置更改、健康检查和部署命令。这些流量仅承载用于编排的控制平面数据。关键遥测数据和告警会从你的 BYOC VPC 流向 ClickHouse VPC，以实现资源利用率与健康状况监控。
 
 <div id="key-requirements">
-  ## BYOC 的关键要求
+  ## BYOC 的关键要求 {#key-requirements}
 </div>
 
 BYOC 部署模型需要具备两个关键组成部分，以确保运行可靠、便于维护且安全：
 
 <div id="cross-account-iam-permissions">
-  ### 跨账户 IAM 权限
+  ### 跨账户 IAM 权限 {#cross-account-iam-permissions}
 </div>
 
 ClickHouse Cloud 需要跨账户 IAM 权限，以便在您的云账户中预配和管理资源。这使 ClickHouse 能够：
@@ -91,7 +91,7 @@ ClickHouse Cloud 需要跨账户 IAM 权限，以便在您的云账户中预配�
 有关所需具体权限的详细信息，请参阅 [BYOC Privilege Reference](/zh/products/bring-your-own-cloud/reference/privilege)。
 
 <div id="tailscale-private-network">
-  ### Tailscale 私有网络连接
+  ### Tailscale 私有网络连接 {#tailscale-private-network}
 </div>
 
 Tailscale 在 ClickHouse Cloud 与您的 BYOC 部署之间提供安全的零信任私有网络。ClickHouse 工程师的故障排查访问，以及 ClickHouse 用于监控您部署的指标和仪表盘，均通过该网络传输；启用私网 API 端点时，Kubernetes API 流量也经由该网络传输。此连接可实现：
@@ -112,7 +112,7 @@ Tailscale 在 ClickHouse Cloud 与您的 BYOC 部署之间提供安全的零信�
 
 有关 Tailscale 在 BYOC 中的工作方式及安全控制的详细信息，请参阅[网络安全文档](/zh/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)。
 
-### 为什么这些要求很重要
+### 为什么这些要求很重要 {#why-requirements-matter}
 
 这两个组件结合使用后，可让 ClickHouse Cloud 实现：
 

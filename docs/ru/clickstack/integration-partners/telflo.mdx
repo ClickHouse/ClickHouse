@@ -27,7 +27,7 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 
 {/* vale off */}
 
-## Что такое Telflo?
+## Что такое Telflo? {#what-is-telflo}
 
 {/* vale on */}
 
@@ -37,7 +37,7 @@ Telflo доступен не только в браузере, но и чере�
 
 {/* vale off */}
 
-## Почему Telflo + ClickStack?
+## Почему Telflo + ClickStack? {#why-telflo-clickstack}
 
 {/* vale on */}
 
@@ -58,7 +58,7 @@ Telflo предоставляет:
   * **Telflo управляет парком коллекторов, которые его наполняют**
 </Tip>
 
-## Предварительные требования
+## Предварительные требования {#prerequisites}
 
 * Пункт назначения: [ClickStack с открытым исходным кодом](/ru/clickstack/getting-started/oss), [Управляемый ClickStack](/ru/clickstack/getting-started/managed) или самоуправляемый экземпляр ClickHouse
 * Аккаунт Telflo ([создайте аккаунт на telflo.com](https://telflo.com))
@@ -70,7 +70,7 @@ Telflo предоставляет:
 
 {/* vale off */}
 
-## Интеграция ClickStack с Telflo
+## Интеграция ClickStack с Telflo {#integrate-telflo-clickstack}
 
 {/* vale on */}
 
@@ -144,25 +144,25 @@ Telflo предоставляет:
   </Step>
 </Steps>
 
-## Расширенная конфигурация
+## Расширенная конфигурация {#advanced-configuration}
 
-### Fan-out маршрутизация
+### Fan-out маршрутизация {#fan-out-routing}
 
 Одни и те же данные телеметрии могут одновременно отправляться в ClickStack для долговременного хранения, на другую платформу во время миграции и в SIEM для анализа безопасности. Добавьте экспортёры на холст и подключите их к конвейерам, которые должны передавать в них данные, либо начните с готового конвейера из [библиотеки потоков Telflo](https://telflo.com/flows).
 
-### Сжатие и производительность
+### Сжатие и производительность {#compression-and-performance}
 
 * **Экспортеры OTLP/HTTP и OTLP**: оставьте для **Compression** значение gzip.
 * **ClickHouse exporter**: оставьте **Async Insert** включённым, для **Compression** — значение lz4, и добавьте перед ним в конвейере процессор **Batch**. См. [Оптимизация вставок](/ru/clickstack/ingesting-data/collector#optimizing-inserts).
 
-## Дальнейшие шаги
+## Дальнейшие шаги {#next-steps}
 
 * **Создайте панели мониторинга**: создавайте визуализации в HyperDX для журналов, метрик и трейсов
 * **Настройте алерты**: настройте в ClickStack алерты для критических условий
 * **Доработайте с помощью AI assistant**: попросите его скорректировать конвейер или предложить тесты
 * **Переходите от другого поставщика**: [flows](https://telflo.com/flows) берут на себя cutover — заменяют агентов, уже развёрнутых на вашем парке машин, и параллельно отправляют данные в оба backend-соединения, пока вы их сравниваете
 
-## Дополнительные материалы
+## Дополнительные материалы {#read-more}
 
 * [Документация Telflo](https://docs.telflo.com/docs)
 * [Быстрый старт: от пустого холста до развёрнутого коллектора](https://docs.telflo.com/docs/getting-started/quickstart)

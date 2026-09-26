@@ -10,7 +10,7 @@ sidebarTitle: 'API 참조'
 
 이 문서는 ClickHouse Operator의 사용자 정의 리소스에 대한 자세한 API 참조를 제공합니다.
 
-## AdditionalPort
+## AdditionalPort {#additionalport}
 
 AdditionalPort는 ClickHouse 파드와 공개 헤드리스 Service에 노출할 추가 TCP 포트 하나를 선언합니다.
 
@@ -23,7 +23,7 @@ AdditionalPort는 ClickHouse 파드와 공개 헤드리스 Service에 노출할 
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## CABundleSelector
+## CABundleSelector {#cabundleselector}
 
 CABundleSelector는 클러스터 네임스페이스의 시크릿에서 CA 번들을 담고 있는 키를 선택하는 데 사용됩니다.
 
@@ -36,11 +36,11 @@ CABundleSelector는 클러스터 네임스페이스의 시크릿에서 CA 번들
 
 * [ClusterTLSSpec](#clustertlsspec)
 
-## ClickHouseCluster
+## ClickHouseCluster {#clickhousecluster}
 
 ClickHouseCluster는 `clickhouseclusters` API의 스키마입니다.
 
-### API 버전 및 Kind
+### API 버전 및 Kind {#clickhousecluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -56,11 +56,11 @@ kind: ClickHouseCluster
 
 * [ClickHouseClusterList](#clickhouseclusterlist)
 
-## ClickHouseClusterList
+## ClickHouseClusterList {#clickhouseclusterlist}
 
 ClickHouseClusterList에는 ClickHouseCluster 목록이 포함됩니다.
 
-### API 버전 및 Kind
+### API 버전 및 Kind {#clickhouseclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -71,7 +71,7 @@ kind: ClickHouseClusterList
 | ------- | ------------------------------------------ | -- | ---- | --- |
 | `items` | [ClickHouseCluster](#clickhousecluster) 배열 |    | true |     |
 
-## ClickHouseClusterSpec
+## ClickHouseClusterSpec {#clickhouseclusterspec}
 
 ClickHouseClusterSpec는 ClickHouseCluster의 원하는 상태를 정의합니다.
 
@@ -99,7 +99,7 @@ ClickHouseClusterSpec는 ClickHouseCluster의 원하는 상태를 정의합니�
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseClusterStatus
+## ClickHouseClusterStatus {#clickhouseclusterstatus}
 
 ClickHouseClusterStatus는 ClickHouseCluster의 현재 관찰된 상태를 정의합니다.
 
@@ -119,7 +119,7 @@ ClickHouseClusterStatus는 ClickHouseCluster의 현재 관찰된 상태를 정�
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseNetworkPolicySpec
+## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
 
 ClickHouseNetworkPolicySpec는 ClickHouse 클러스터에 대해 관리되는 NetworkPolicy를 구성합니다.
 관리형 정책은 클러스터 내부 트래픽을 포괄합니다.
@@ -136,7 +136,7 @@ ClickHouseNetworkPolicySpec는 ClickHouse 클러스터에 대해 관리되는 Ne
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClickHouseSettings
+## ClickHouseSettings {#clickhousesettings}
 
 ClickHouseSettings는 ClickHouse 서버 설정 옵션을 정의합니다.
 
@@ -154,7 +154,7 @@ ClickHouseSettings는 ClickHouse 서버 설정 옵션을 정의합니다.
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClusterTLSSpec
+## ClusterTLSSpec {#clustertlsspec}
 
 ClusterTLSSpec는 클러스터의 TLS 구성을 정의합니다.
 
@@ -170,7 +170,7 @@ ClusterTLSSpec는 클러스터의 TLS 구성을 정의합니다.
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## ConfigMapKeySelector
+## ConfigMapKeySelector {#configmapkeyselector}
 
 ConfigMapKeySelector는 ConfigMap의 키를 선택합니다.
 
@@ -183,7 +183,7 @@ ConfigMapKeySelector는 ConfigMap의 키를 선택합니다.
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## ContainerImage
+## ContainerImage {#containerimage}
 
 ContainerImage는 리포지토리, 태그 또는 해시를 포함하는 컨테이너 이미지를 정의합니다.
 
@@ -197,7 +197,7 @@ ContainerImage는 리포지토리, 태그 또는 해시를 포함하는 컨테�
 
 * [ContainerTemplateSpec](#containertemplatespec)
 
-## ContainerTemplateSpec
+## ContainerTemplateSpec {#containertemplatespec}
 
 ContainerTemplateSpec는 클러스터의 컨테이너에 대한 구성 재정의 항목을 설명합니다.
 
@@ -217,7 +217,7 @@ ContainerTemplateSpec는 클러스터의 컨테이너에 대한 구성 재정의
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## DefaultPasswordSelector
+## DefaultPasswordSelector {#defaultpasswordselector}
 
 DefaultPasswordSelector는 기본 사용자 비밀번호의 소스를 선택합니다.
 
@@ -231,7 +231,7 @@ DefaultPasswordSelector는 기본 사용자 비밀번호의 소스를 선택합�
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## EncryptionSettings
+## EncryptionSettings {#encryptionsettings}
 
 EncryptionSettings는 테이블 데이터의 저장 데이터 암호화(저장 시 암호화)를 활성화합니다. 이 설정이 있으면 연산자가 각 데이터 디스크를 감싸는
 암호화된 ClickHouse 스토리지 정책을 생성하며, 테이블은 `SETTINGS storage_policy`를 통해 이 정책을 사용하도록 설정합니다.
@@ -245,7 +245,7 @@ EncryptionSettings는 테이블 데이터의 저장 데이터 암호화(저장 �
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## ExternalSecret
+## ExternalSecret {#externalsecret}
 
 ExternalSecret는 동일한 네임스페이스에 있는 시크릿을 가리키는 참조입니다.
 
@@ -258,7 +258,7 @@ ExternalSecret는 동일한 네임스페이스에 있는 시크릿을 가리키�
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ExternalSecretPolicy
+## ExternalSecretPolicy {#externalsecretpolicy}
 
 ExternalSecretPolicy는 연산자가 외부 시크릿의 내용을 어떻게 다룰지 제어합니다.
 
@@ -271,11 +271,11 @@ ExternalSecretPolicy는 연산자가 외부 시크릿의 내용을 어떻게 다
 
 * [ExternalSecret](#externalsecret)
 
-## KeeperCluster
+## KeeperCluster {#keepercluster}
 
 KeeperCluster는 `keeperclusters` API의 스키마입니다.
 
-### API 버전 및 Kind
+### API 버전 및 Kind {#keepercluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -291,11 +291,11 @@ kind: KeeperCluster
 
 * [KeeperClusterList](#keeperclusterlist)
 
-## KeeperClusterList
+## KeeperClusterList {#keeperclusterlist}
 
 KeeperClusterList에는 KeeperCluster 목록이 포함되어 있습니다.
 
-### API 버전 및 Kind
+### API 버전 및 Kind {#keeperclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -306,7 +306,7 @@ kind: KeeperClusterList
 | ------- | ---------------------------------- | -- | ---- | --- |
 | `items` | [KeeperCluster](#keepercluster) 배열 |    | true |     |
 
-## KeeperClusterReference
+## KeeperClusterReference {#keeperclusterreference}
 
 KeeperClusterReference는 ClickHouseCluster에서 사용하는 KeeperCluster를 식별합니다.
 
@@ -319,7 +319,7 @@ KeeperClusterReference는 ClickHouseCluster에서 사용하는 KeeperCluster를 
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## KeeperClusterSpec
+## KeeperClusterSpec {#keeperclusterspec}
 
 KeeperClusterSpec는 KeeperCluster의 원하는 상태를 정의합니다.
 
@@ -342,7 +342,7 @@ KeeperClusterSpec는 KeeperCluster의 원하는 상태를 정의합니다.
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperClusterStatus
+## KeeperClusterStatus {#keeperclusterstatus}
 
 KeeperClusterStatus는 KeeperCluster의 관찰된 상태를 정의합니다.
 
@@ -362,7 +362,7 @@ KeeperClusterStatus는 KeeperCluster의 관찰된 상태를 정의합니다.
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperNetworkPolicySpec
+## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
 
 KeeperNetworkPolicySpec는 Keeper 클러스터에 적용되는 관리형 NetworkPolicy를 구성합니다.
 관리형 정책은 클러스터 내부 트래픽에 적용됩니다.
@@ -380,7 +380,7 @@ KeeperNetworkPolicySpec는 Keeper 클러스터에 적용되는 관리형 Network
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## KeeperSettings
+## KeeperSettings {#keepersettings}
 
 KeeperSettings는 ClickHouse Keeper 서버 구성을 정의합니다.
 
@@ -394,7 +394,7 @@ KeeperSettings는 ClickHouse Keeper 서버 구성을 정의합니다.
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## LoggerConfig
+## LoggerConfig {#loggerconfig}
 
 LoggerConfig는 server 로깅 구성을 정의합니다.
 
@@ -411,7 +411,7 @@ LoggerConfig는 server 로깅 구성을 정의합니다.
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## NamedTemplateMeta
+## NamedTemplateMeta {#namedtemplatemeta}
 
 NamedTemplateMeta는 이름이 필요한 템플릿 객체에서 지원되는 메타데이터 설정을 정의합니다.
 
@@ -425,7 +425,7 @@ NamedTemplateMeta는 이름이 필요한 템플릿 객체에서 지원되는 메
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
 
-## NetworkPolicyPolicy
+## NetworkPolicyPolicy {#networkpolicypolicy}
 
 NetworkPolicyPolicy는 연산자가 클러스터의 NetworkPolicy를 관리할지 결정합니다.
 
@@ -439,7 +439,7 @@ NetworkPolicyPolicy는 연산자가 클러스터의 NetworkPolicy를 관리할�
 * [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
 * [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
-## PDBPolicy
+## PDBPolicy {#pdbpolicy}
 
 PDBPolicy는 PodDisruptionBudget를 생성할지 여부를 제어합니다.
 
@@ -453,7 +453,7 @@ PDBPolicy는 PodDisruptionBudget를 생성할지 여부를 제어합니다.
 
 * [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-## PersistentVolumeClaimTemplate
+## PersistentVolumeClaimTemplate {#persistentvolumeclaimtemplate}
 
 PersistentVolumeClaimTemplate는 레플리카별 PersistentVolumeClaim에 사용하는 이름 있는 템플릿입니다.
 
@@ -466,7 +466,7 @@ PersistentVolumeClaimTemplate는 레플리카별 PersistentVolumeClaim에 사용
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## PodDisruptionBudgetSpec
+## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
 
 PodDisruptionBudgetSpec는 클러스터에 대해 생성되는 PDB를 구성합니다.
 `MinAvailable` 또는 `MaxUnavailable` 중 하나만 설정할 수 있습니다.
@@ -484,7 +484,7 @@ PodDisruptionBudgetSpec는 클러스터에 대해 생성되는 PDB를 구성합�
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## PodTemplateSpec
+## PodTemplateSpec {#podtemplatespec}
 
 PodTemplateSpec는 클러스터의 파드에 적용되는 파드 구성 재정의 항목을 설명합니다.
 
@@ -512,7 +512,7 @@ PodTemplateSpec는 클러스터의 파드에 적용되는 파드 구성 재정�
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## SecretKeySelector
+## SecretKeySelector {#secretkeyselector}
 
 SecretKeySelector는 시크릿의 키를 선택하는 데 사용됩니다.
 
@@ -525,7 +525,7 @@ SecretKeySelector는 시크릿의 키를 선택하는 데 사용됩니다.
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## TemplateMeta
+## TemplateMeta {#templatemeta}
 
 TemplateMeta는 템플릿 객체에 지원되는 메타데이터 설정을 정의합니다.
 
@@ -539,7 +539,7 @@ TemplateMeta는 템플릿 객체에 지원되는 메타데이터 설정을 정�
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbeContainer
+## VersionProbeContainer {#versionprobecontainer}
 
 VersionProbeContainer는 버전 프로브의 컨테이너 수준 재정의를 정의합니다.
 필드 이름과 JSON 태그는 `corev1.Container`와 일치하므로 SMP가 이름 기준으로 머지됩니다.
@@ -554,7 +554,7 @@ VersionProbeContainer는 버전 프로브의 컨테이너 수준 재정의를 �
 
 * [VersionProbePodSpec](#versionprobepodspec)
 
-## VersionProbeJobSpec
+## VersionProbeJobSpec {#versionprobejobspec}
 
 VersionProbeJobSpec는 버전 프로브에 대한 Job 수준의 재정의 설정을 정의합니다.
 
@@ -567,7 +567,7 @@ VersionProbeJobSpec는 버전 프로브에 대한 Job 수준의 재정의 설정
 
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbePodSpec
+## VersionProbePodSpec {#versionprobepodspec}
 
 VersionProbePodSpec는 버전 프로브의 파드 수준 재정의를 정의합니다.
 필드 이름과 JSON 태그는 전략적 머지 패치 호환성을 위해 corev1.PodSpec과 일치합니다.
@@ -583,7 +583,7 @@ VersionProbePodSpec는 버전 프로브의 파드 수준 재정의를 정의합�
 
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 
-## VersionProbePodTemplate
+## VersionProbePodTemplate {#versionprobepodtemplate}
 
 VersionProbePodTemplate는 버전 프로브 파드에 적용할 재정의 항목을 설명합니다.
 
@@ -596,7 +596,7 @@ VersionProbePodTemplate는 버전 프로브 파드에 적용할 재정의 항목
 
 * [VersionProbeJobSpec](#versionprobejobspec)
 
-## VersionProbeTemplate
+## VersionProbeTemplate {#versionprobetemplate}
 
 VersionProbeTemplate은 버전 감지 Job의 재정의 항목을 정의합니다.
 이 구조는 batchv1.JobTemplateSpec과 동일한 구조를 따르며, 지원되는 필드만 노출합니다.

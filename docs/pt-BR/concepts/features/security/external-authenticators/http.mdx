@@ -64,7 +64,7 @@ Encaminhamento de cabeçalhos:
 
 Esta parte define quais cabeçalhos serão encaminhados dos cabeçalhos de solicitação do cliente para o autenticador HTTP externo. Observe que os cabeçalhos serão comparados com os definidos na configuração sem diferenciar maiúsculas de minúsculas, mas serão encaminhados como estão, isto é, sem modificação.
 
-### Habilitando a autenticação HTTP em `users.xml`
+### Habilitando a autenticação HTTP em `users.xml` {#enabling-http-auth-in-users-xml}
 
 Para habilitar a autenticação HTTP para o usuário, especifique a seção `http_authentication` em vez de `password` ou de seções semelhantes na definição do usuário.
 
@@ -93,7 +93,7 @@ Exemplo (adicione em `users.xml`):
 </Note>
 
 <div id="enabling-http-auth-using-sql">
-  ### Habilitando a autenticação HTTP com SQL
+  ### Habilitando a autenticação HTTP com SQL {#enabling-http-auth-using-sql}
 </div>
 
 Quando o [Controle de Acesso e Gerenciamento de Contas via SQL](/pt-BR/concepts/features/security/access-rights#access-control-usage) está habilitado no ClickHouse, usuários identificados por autenticação HTTP também podem ser criados com instruções SQL.
@@ -109,7 +109,7 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ```
 
 <div id="passing-session-settings">
-  ### Passando configurações de sessão
+  ### Passando configurações de sessão {#passing-session-settings}
 </div>
 
 Se o corpo da resposta do servidor de autenticação HTTP estiver em formato JSON e contiver o subobjeto `settings`, o ClickHouse tentará interpretar seus pares chave-valor como valores do tipo string e defini-los como configurações de sessão da sessão atual do usuário autenticado. Se a análise falhar, o corpo da resposta do servidor será ignorado.

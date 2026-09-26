@@ -14,9 +14,9 @@ ClickStack는 텔레메트리 데이터(로그, 메트릭,
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## 시작하기
+## 시작하기 {#getting-started}
 
-### HyperDX OpenTelemetry 계측 패키지 설치
+### HyperDX OpenTelemetry 계측 패키지 설치 {#install-hyperdx-opentelemetry-instrumentation-package}
 
 [ClickStack OpenTelemetry 패키지](https://www.npmjs.com/package/@hyperdx/node-opentelemetry)를 설치하려면 다음 명령을 사용하세요.
 
@@ -34,7 +34,7 @@ ClickStack는 텔레메트리 데이터(로그, 메트릭,
   </Tab>
 </Tabs>
 
-### SDK 초기화
+### SDK 초기화 {#initializin-the-sdk}
 
 SDK를 초기화하려면 애플리케이션 엔트리 포인트의 최상단에서 `init` 함수를 호출해야 합니다.
 
@@ -66,7 +66,7 @@ SDK를 초기화하려면 애플리케이션 엔트리 포인트의 최상단에
 
 이렇게 하면 Node.js 애플리케이션의 트레이싱, 메트릭, 로그가 자동으로 수집됩니다.
 
-### 로그 수집 설정
+### 로그 수집 설정 {#setup-log-collection}
 
 기본적으로 `console.*` 로그는 자동으로 수집됩니다. `winston`이나 `pino` 같은 로거를 사용하는 경우,
 로그를 ClickStack으로 전송하려면 로거에 transport를 추가해야 합니다. 다른 종류의 로거를 사용한다면,
@@ -125,7 +125,7 @@ SDK를 초기화하려면 애플리케이션 엔트리 포인트의 최상단에
   </Tab>
 </Tabs>
 
-### 오류 수집 설정
+### 오류 수집 설정 {#setup-error-collection}
 
 ClickStack SDK는 전체 스택 트레이스와 코드 컨텍스트를 포함해 애플리케이션에서 처리되지 않은 예외와 오류를 자동으로 기록할 수 있습니다.
 
@@ -186,7 +186,7 @@ ClickStack SDK는 전체 스택 트레이스와 코드 컨텍스트를 포함해
   </Tab>
 </Tabs>
 
-## 문제 해결
+## 문제 해결 {#troubleshooting}
 
 SDK 사용 중 문제가 발생하면 `OTEL_LOG_LEVEL` 환경 변수를 `debug`로 설정해 자세한 로깅을 활성화할 수 있습니다.
 
@@ -194,9 +194,9 @@ SDK 사용 중 문제가 발생하면 `OTEL_LOG_LEVEL` 환경 변수를 `debug`�
 export OTEL_LOG_LEVEL=debug
 ```
 
-## 고급 계측 구성
+## 고급 계측 구성 {#advanced-instrumentation-configuration}
 
-### 콘솔 로그 수집
+### 콘솔 로그 수집 {#capture-console-logs}
 
 기본적으로 ClickStack SDK는 콘솔 로그를 수집합니다. `HDX_NODE_CONSOLE_CAPTURE` 환경 변수를 0으로
 설정하면 이 기능을 비활성화할 수 있습니다.
@@ -205,7 +205,7 @@ export OTEL_LOG_LEVEL=debug
 export HDX_NODE_CONSOLE_CAPTURE=0
 ```
 
-### 사용자 정보 또는 메타데이터 추가
+### 사용자 정보 또는 메타데이터 추가 {#attach-user-information-or-metadata}
 
 지정한 속성이나 식별자(예: 사용자 ID
 또는 이메일)와 관련된 모든 이벤트에 쉽게 태그를 지정하려면 `setTraceAttributes` 함수를 호출하면 됩니다. 이 함수를 호출한 이후 현재 트레이스와 연결된 모든
@@ -244,7 +244,7 @@ trace 속성을 사용하려면 `HDX_NODE_BETA_MODE` 환경
 export HDX_NODE_BETA_MODE=1
 ```
 
-### Google Cloud Run
+### Google Cloud Run {#google-cloud-run}
 
 애플리케이션을 Google Cloud Run에서 실행하는 경우, Cloud Trace가
 수신 요청에 샘플링 헤더를 자동으로 삽입하며, 현재 각 인스턴스에서
@@ -262,7 +262,7 @@ export HDX_NODE_BETA_MODE=1
 [Google Cloud Run documentation](https://cloud.google.com/run/docs/trace)을
 참조하십시오.
 
-### 자동 계측 라이브러리
+### 자동 계측 라이브러리 {#auto-instrumented-libraries}
 
 SDK는 다음 라이브러리를 자동으로 계측(trace)합니다:
 
@@ -284,9 +284,9 @@ SDK는 다음 라이브러리를 자동으로 계측(trace)합니다:
 * [`redis`](https://www.npmjs.com/package/redis)
 * [`winston`](https://www.npmjs.com/package/winston)
 
-## 다른 설치 방법
+## 다른 설치 방법 {#alternative-installation}
 
-### ClickStack OpenTelemetry CLI로 애플리케이션 실행
+### ClickStack OpenTelemetry CLI로 애플리케이션 실행 {#run-the-application-with-cli}
 
 또는 `opentelemetry-instrument` CLI나 Node.js의 `--require` 플래그를 사용하면 코드 변경 없이 애플리케이션을 자동 계측할 수 있습니다. CLI를 설치하면 자동 계측을 지원하는 라이브러리와 프레임워크를 더 폭넓게 사용할 수 있습니다.
 
@@ -331,7 +331,7 @@ SDK는 다음 라이브러리를 자동으로 계측(trace)합니다:
 
 *`OTEL_SERVICE_NAME` 환경 변수는 HyperDX 앱에서 서비스를 식별하는 데 사용되며, 원하는 이름으로 지정할 수 있습니다.*
 
-### 예외 캡처 활성화
+### 예외 캡처 활성화 {#enabling-exception-capturing}
 
 처리되지 않은 예외 캡처를 활성화하려면 `HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` 환경 변수를 1로 설정해야 합니다.
 
@@ -341,7 +341,7 @@ HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
 
 그 후 Express, Koa에서 발생하는 예외를 자동으로 수집하거나 예외를 수동으로 처리하려면 위의 [오류 수집 설정](#setup-error-collection) 섹션의 안내를 따르십시오.
 
-### 자동 계측 라이브러리
+### 자동 계측 라이브러리 {#auto-instrumented-libraries-2}
 
 다음 라이브러리는 위 설치 방법을 통해 자동으로 계측되어 추적됩니다:
 

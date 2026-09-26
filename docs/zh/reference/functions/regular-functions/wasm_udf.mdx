@@ -15,7 +15,7 @@ ClickHouse 支持创建以 WebAssembly 编写的用户自定义函数 (UDF) 。�
 
 <ExperimentalBadge />
 
-## 概述
+## 概述 {#overview}
 
 WebAssembly 模块是已编译的二进制文件，其中包含一个或多个可由 ClickHouse 调用的函数。
 可以将模块看作一个只需加载一次、却能重复多次使用的库或共享对象。
@@ -32,7 +32,7 @@ guest 代码会导出 ClickHouse 可调用的函数——这些函数既包括�
 编译完成后，需要将模块的二进制代码插入 `system.webassembly_modules` 表中，以将其加载到 ClickHouse。
 之后，你可以使用 `CREATE FUNCTION ... LANGUAGE WASM` 语句创建引用该模块导出函数的 UDF。
 
-## 前置条件
+## 前置条件 {#prerequisites}
 
 在 ClickHouse 配置中启用 WebAssembly 支持：
 
@@ -47,7 +47,7 @@ guest 代码会导出 ClickHouse 可调用的函数——这些函数既包括�
 
 * `wasmtime` (默认且目前唯一的实现) — 基于 [Wasmtime](https://github.com/bytecodealliance/wasmtime)
 
-## 快速入门
+## 快速入门 {#quick-start}
 
 本示例通过实现 [Collatz conjecture](https://en.wikipedia.org/wiki/Collatz_conjecture) 计算器，演示创建 WebAssembly UDF 的完整流程。
 
@@ -103,7 +103,7 @@ FORMAT TSV
 [0,1,7,2,5,8,16,3,19,6,14,9,9,17,17,4,12,20,20,7,7,15,15,10,23,10,111,18,18,18,106,5,26,13,13,21,21,21,34,8,109,8,29,16,16,16,104,11,24,24,24,11,11,112,112,19,32,19,32,19,19,107,107,6,27,27,27,14,14,14,102,22,115,22,14,22,22,35,35,9,22,110,110,9,9,30,30,17,30,17,92,17,17,105,105,12,118,25,25,25]
 ```
 
-## 通过系统表管理 WASM 模块
+## 通过系统表管理 WASM 模块 {#manage-wasm-modules-via-system-table}
 
 WebAssembly 模块存储在 `system.webassembly_modules` 表中，其结构如下：
 
@@ -114,7 +114,7 @@ WebAssembly 模块存储在 `system.webassembly_modules` 表中，其结构如�
 
 模块管理通过对该表执行标准 SQL 操作进行：
 
-### 插入模块
+### 插入模块 {#insert-a-module}
 
 ```sql
 INSERT INTO system.webassembly_modules (name, code)
@@ -130,7 +130,7 @@ SELECT 'my_module', base64Decode('...'), reinterpretAsUInt256(unhex('369f...c57d
 
 如果提供的哈希值与模块代码计算出的 SHA256 不一致，则插入会失败。在从 S3 或 HTTP 等外部来源加载模块时，这会很有用。
 
-### 在 cluster 中分发模块
+### 在 cluster 中分发模块 {#distribute-a-module-across-a-cluster}
 
 `system.webassembly_modules` 是按实例划分的表——`INSERT` 只会写入处理该 connection 的副本。`INSERT` statement 没有 `ON CLUSTER` 这种形式，因此后续执行 `CREATE FUNCTION ... ON CLUSTER` 时，会在没有该模块的副本上失败：
 
@@ -169,7 +169,7 @@ SELECT hostName(), name FROM clusterAllReplicas('default', system.webassembly_mo
 
 向 `system.webassembly_modules` 执行插入时，对于相同的 `(name, hash)` 组合是幂等的，因此重新运行分发式插入是安全的，也是在某个副本被替换后修复状态的合理方式。请注意，新加入的服务器不会自动补收已有模块——你必须针对更新后的集群重新运行插入，或者将该 binary 放到新 host 上的 `user_scripts/wasm/` 目录中。
 
-### 列出模块
+### 列出模块 {#list-modules}
 
 ```sql
 SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.webassembly_modules
@@ -179,7 +179,7 @@ SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.we
    └─────────┴──────────────────────────────────────────────────────────────────┘
 ```
 
-### 删除模块
+### 删除模块 {#delete-a-module}
 
 通过执行 `DELETE FROM system.webassembly_modules WHERE name = '...'` 语句删除模块。
 该谓词必须是精确匹配的 `name = 'literal'`，或用于删除所有名称匹配该模式的模块的 `name LIKE 'pattern'`；不接受其他形态。
@@ -193,7 +193,7 @@ DELETE FROM system.webassembly_modules WHERE name LIKE 'tmp\_%';
 
 如果现有 UDFs 中有任何一个引用了某个匹配模块，删除操作将失败，因此必须先删除这些 UDFs。
 
-## 创建 WebAssembly UDF
+## 创建 WebAssembly UDF {#create-a-webassembly-udf}
 
 **语法**：
 
@@ -224,7 +224,7 @@ RETURNS return_type
   * `serialization_format` String —— 用于序列化传递给模块的参数块并解析返回结果的格式。仅由 `ABI BUFFERED_V1` 使用。支持的值：`MsgPack`、`JSONEachRow`、`CSV`、`TSV`、`TSVRaw`、`RowBinary` 和 `Buffers`。默认值：`MsgPack`。像 `Buffers` 这样基于块的格式必须返回单列，且该列的类型必须与声明的函数签名匹配。
   * `webassembly_udf_enable_fuel` Bool —— 为该函数启用有限 fuel 预算。默认值：`true`。当为 `false` 时，查询级设置 `webassembly_udf_max_fuel` 会被该函数忽略。禁用 fuel 限制可能会提升性能。但是，对于不受信任或有缺陷的 guest 代码，这可能会增加失控执行的风险。
 
-## ABI 版本
+## ABI 版本 {#abis-versions}
 
 要与 ClickHouse 交互，WebAssembly 模块必须遵循受支持的 ABI (应用程序二进制接口) 之一。
 
@@ -232,7 +232,7 @@ RETURNS return_type
 * `BUFFERED_V1`：通过序列化处理复杂类型
 * `ASSEMBLYSCRIPT`：与 [AssemblyScript](https://www.assemblyscript.org) 模块按行互操作；支持数值类型和 `String`。
 
-### ABI ROW_DIRECT
+### ABI ROW_DIRECT {#abi-row_direct}
 
 按行直接调用导出的 WASM 函数。
 
@@ -255,7 +255,7 @@ CREATE FUNCTION my_func ARGUMENTS (Int32, UInt64, Float32) RETURNS Float64 ...
 
 WebAssembly 不区分有符号参数和无符号参数，而是通过不同的指令来解释这些值。因此，参数的大小必须严格一致，而是否有符号则由函数内部的操作决定。
 
-### ABI BUFFERED_V1
+### ABI BUFFERED_V1 {#abi-buffered_v1}
 
 <Note>
   此 ABI 仍处于实验阶段，未来的发行版中可能会有所变更。
@@ -418,7 +418,7 @@ SELECT str_reverse(toString(number + 100)) FROM numbers(3);
 201
 ```
 
-### ABI ASSEMBLYSCRIPT
+### ABI ASSEMBLYSCRIPT {#abi-assemblyscript}
 
 适用于由 [AssemblyScript](https://www.assemblyscript.org) 编译器生成的模块。每一行都会触发一次对导出函数的调用，将 ClickHouse 值映射为 AssemblyScript 基本类型和字符串对象。
 
@@ -467,7 +467,7 @@ CREATE FUNCTION as_greet
     ARGUMENTS (name String) RETURNS String;
 ```
 
-### 关于用 Rust 开发 UDF 的说明
+### 关于用 Rust 开发 UDF 的说明 {#note-for-developing-udfs-in-rust}
 
 对于 Rust 程序，我们提供了一个辅助 crate [clickhouse-wasm-udf](https://crates.io/crates/clickhouse-wasm-udf)，可简化为 ClickHouse 开发 WebAssembly UDF 的过程。该 crate 提供了内存管理功能，因此你无需手动实现 `clickhouse_create_buffer` 和 `clickhouse_destroy_buffer` 函数，只需将该 crate 添加为依赖即可。此外，还提供了宏 `#[clickhouse_wasm_udf]`，可将普通的 Rust 函数封装为所需的 ABI 格式。
 
@@ -486,7 +486,7 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 
 宏会生成一个包装函数，用于接收并返回缓冲区结构，并使用 `serde` 自动处理序列化和反序列化。
 
-## 模块可用的宿主 API
+## 模块可用的宿主 API {#host-api-available-to-modules}
 
 模块可导入并使用以下宿主函数：
 
@@ -496,7 +496,7 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 * `clickhouse_random(ptr: i32, size: i32)` — 用随机字节填充内存。
 * `env.abort(message: i32, fileName: i32, line: i32, column: i32)` — 为与 AssemblyScript 兼容的模块提供。调用它 (或触发会调用它的 AssemblyScript 运行时陷阱) 会以包含已解码消息和源代码位置的 `WASM_ERROR` 异常终止 UDF。未导入 &#96;env.abort&#96;&#96; 的模块不受影响。
 
-## 设置
+## 设置 {#settings}
 
 以下查询级设置用于控制 WebAssembly UDF 的执行：
 
@@ -517,6 +517,6 @@ SET webassembly_udf_max_fuel = 200000;
 SELECT my_wasm_udf(column) FROM table;
 ```
 
-## 另请参阅
+## 另请参阅 {#see-also}
 
 * [ClickHouse UDF 概述](/zh/reference/functions/regular-functions/udf)

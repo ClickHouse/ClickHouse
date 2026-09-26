@@ -18,9 +18,9 @@ import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrat
   如果您需要会话回放/浏览器端监控，请安装 [Browser integration](/zh/clickstack/ingesting-data/sdks/browser)。
 </Note>
 
-## 安装
+## 安装 {#installing}
 
-### 启用 插桩 hook (v15 及以下版本必需)
+### 启用 插桩 hook (v15 及以下版本必需) {#enable-instrumentation-hook}
 
 首先，你需要在 `next.config.js` 中将 `experimental.instrumentationHook` 设置为 `true;`，以启用 Next.js 的 插桩 hook。
 
@@ -47,7 +47,7 @@ const nextConfig = {
 module.exports = nextConfig;
 ```
 
-### 安装 ClickHouse OpenTelemetry SDK
+### 安装 ClickHouse OpenTelemetry SDK {#install-sdk}
 
 <Tabs>
   <Tab title="NPM">
@@ -63,7 +63,7 @@ module.exports = nextConfig;
   </Tab>
 </Tabs>
 
-### 创建 插桩 文件
+### 创建 插桩 文件 {#create-instrumentation-files}
 
 在 Next.js 项目根目录中创建一个名为 `instrumentation.ts` (或 `.js`) 的文件，内容如下：
 
@@ -82,7 +82,7 @@ export async function register() {
 
 这将使 Next.js 能够在调用任何无服务器函数时导入 OpenTelemetry 插桩。
 
-### 配置环境变量
+### 配置环境变量 {#configure-environment-variables}
 
 如果你通过 OpenTelemetry 将链路追踪数据直接发送到 ClickStack，则需要使用以下环境变量启动 Next.js
 服务器，以便将 spans 发送到 OTel collector：

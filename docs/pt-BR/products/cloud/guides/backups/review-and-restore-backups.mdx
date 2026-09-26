@@ -17,13 +17,13 @@ Este guia aborda como os backups funcionam no ClickHouse Cloud, quais opções v
 
 * Você leu [&quot;Como os backups funcionam no ClickHouse Cloud&quot;](/pt-BR/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (página de visão geral do recurso)
 
-## Lista de status de backups
+## Lista de status de backups {#backup-status-list}
 
 Os backups são executados de acordo com o agendamento configurado para seu serviço, seja o agendamento diário padrão ou um [agendamento personalizado](/pt-BR/products/cloud/guides/backups/configurable-backups) escolhido por você. Todos os backups disponíveis podem ser visualizados na aba **Backups** do serviço. Nela, você pode ver o status, a duração e o tamanho do backup. Você também pode restaurar um backup específico pela coluna **Actions**.
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="Lista de status de backups no ClickHouse Cloud" border />
 
-## Entendendo o custo dos backups
+## Entendendo o custo dos backups {#understanding-backup-cost}
 
 A menos que seja configurado um agendamento diferente, é feito backup dos serviços a cada 24 horas, e cada backup é retido por 24 horas. A capacidade de configurar agendamentos de backup varia conforme o serviço e o plano. Escolher um agendamento que exija a retenção de mais dados ou resulte em backups mais frequentes pode gerar cobranças adicionais de armazenamento para os backups.
 
@@ -42,7 +42,7 @@ Para estimar o custo total dos seus backups, é necessário definir um agendamen
   Tenha em mente que o custo estimado dos backups mudará à medida que o volume de dados no serviço aumentar ao longo do tempo.
 </Note>
 
-## Restaurar um backup
+## Restaurar um backup {#restore-a-backup}
 
 Os backups são restaurados em um novo serviço do ClickHouse Cloud, e não no serviço existente do qual o backup foi gerado.
 
@@ -55,7 +55,7 @@ O novo serviço aparecerá na lista de serviços como `Provisioning` até ficar 
 <Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="Provisionamento do serviço em andamento" border />
 
 <div id="working-with-your-restored-service">
-  ## Trabalhando com seu serviço restaurado
+  ## Trabalhando com seu serviço restaurado {#working-with-your-restored-service}
 </div>
 
 Depois que um backup for restaurado, você passará a ter dois serviços semelhantes: o **serviço original** que precisou ser restaurado e um novo **serviço restaurado**, restaurado a partir de um backup do original.
@@ -66,7 +66,7 @@ Quando a restauração do backup for concluída, faça uma das seguintes opçõe
 * Migre os dados do novo serviço restaurado de volta para o serviço original e remova o novo serviço restaurado.
 
 <div id="use-the-new-restored-service">
-  ### Use o **novo serviço restaurado**
+  ### Use o **novo serviço restaurado** {#use-the-new-restored-service}
 </div>
 
 Para usar o novo serviço, siga estas etapas:
@@ -76,7 +76,7 @@ Para usar o novo serviço, siga estas etapas:
 3. Remova o serviço original.
 
 <div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
-  ### Migre os dados do **serviço restaurado recentemente** de volta para o **serviço original**
+  ### Migre os dados do **serviço restaurado recentemente** de volta para o **serviço original** {#migrate-data-from-the-newly-restored-service-back-to-the-original-service}
 </div>
 
 Suponha que, por algum motivo, você não consiga trabalhar com o serviço restaurado recentemente — por exemplo, se ainda houver usuários ou aplicações conectadas ao serviço existente. Nesse caso, você pode optar por migrar os dados restaurados recentemente para o serviço original. A migração pode ser feita seguindo estas etapas:
@@ -142,7 +142,7 @@ Use a função `remoteSecure` para extrair os dados do novo serviço do ClickHou
 Depois de inserir os dados com sucesso no seu serviço original, verifique os dados no serviço. Você também deve excluir o novo  serviço assim que os dados forem verificados.
 
 <div id="undeleting-or-undropping-tables">
-  ## Recuperando tabelas excluídas ou removidas
+  ## Recuperando tabelas excluídas ou removidas {#undeleting-or-undropping-tables}
 </div>
 
 O comando `UNDROP` é compatível com o ClickHouse Cloud por meio do [Shared Catalog](/pt-BR/products/cloud/features/infrastructure/shared-catalog).
@@ -163,7 +163,7 @@ Para evitar que usuários removam tabelas acidentalmente, você pode usar instru
   Planos legados: para clientes em planos legados, os backups diários padrão, retidos por 24 horas, estão incluídos no custo de armazenamento.
 </Note>
 
-## Durações de backup
+## Durações de backup {#backup-durations}
 
 As durações de backup e restauração variam significativamente conforme o volume de dados, a complexidade do schema e o número de tabelas. Os números abaixo são observações de testes internos e não constituem compromissos de desempenho.
 
@@ -178,11 +178,11 @@ Como as durações dependem muito dos seus dados, schema e configuração de bac
 </Note>
 
 <div id="configurable-backups">
-  ## Backups configuráveis
+  ## Backups configuráveis {#configurable-backups}
 </div>
 
 Se você quiser definir uma programação de backups diferente da programação padrão, consulte [Backups configuráveis](/pt-BR/products/cloud/guides/backups/configurable-backups).
 
-## Exporte backups para sua própria conta na nuvem
+## Exporte backups para sua própria conta na nuvem {#export-backups-to-your-own-cloud-account}
 
 Se quiser exportar backups para sua própria conta na nuvem, consulte [este guia](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account).

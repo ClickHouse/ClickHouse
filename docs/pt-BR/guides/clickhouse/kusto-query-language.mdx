@@ -23,7 +23,7 @@ StormEvents
 `SET dialect = 'clickhouse'` alterna de volta. `SET` é a única instrução SQL reconhecida enquanto
 o dialeto KQL está ativo, portanto, uma sessão sempre pode sair dele.
 
-## Recursos compatíveis
+## Recursos compatíveis {#what-is-supported}
 
 Este é deliberadamente um subconjunto pequeno. Uma construção KQL é traduzida com a semântica
 documentada pelo Kusto ou rejeitada nominalmente com um erro de análise — nada é aproximado silenciosamente.
@@ -98,7 +98,7 @@ rejeitados em vez de simplesmente repassados, para que um nome do Kusto nunca as
 `range` é o exemplo mais claro — `range(1, 3, 1)` resulta em `[1, 2, 3]` no Kusto e `[1, 2]` no
 ClickHouse; portanto, usá-lo em KQL gera um erro, em vez de uma resposta incorreta.
 
-## Cobertura em relação à referência do Kusto
+## Cobertura em relação à referência do Kusto {#coverage-against-the-kusto-reference}
 
 Com base nos próprios índices da Microsoft
 ([operadores tabulares](https://learn.microsoft.com/en-us/kusto/query/queries),
@@ -115,7 +115,7 @@ Os operadores compatíveis são os abordados no tutorial da Microsoft *Learn com
 além de `datatable`, `range`, `print`, `union` e `join` — o suficiente para as consultas que
 esse tutorial e a KQL Quick Reference apresentam.
 
-## O que não é compatível
+## O que não é compatível {#what-is-not-supported}
 
 Rejeitado com erro de análise, em vez de ser traduzido incorretamente:
 
@@ -151,7 +151,7 @@ Rejeitado com erro de análise, em vez de ser traduzido incorretamente:
   `declare query_parameters`, `restrict access to`.
 * Literais de string ofuscados (`h"..."`) e literais multilinha (três backticks).
 
-## Comportamentos importantes
+## Comportamentos importantes {#behaviour-worth-knowing}
 
 * **Intervalos de tempo são valores `Interval`.** `1d` se torna `toIntervalNanosecond(86400000000000)`.
   Defina `interval_output_format = 'kusto'` para exibi-los no formato do Kusto (`1.00:00:00`), em vez
@@ -186,7 +186,7 @@ Rejeitado com erro de análise, em vez de ser traduzido incorretamente:
 * **Os agregados paramétricos do ClickHouse** (`quantileExact(0.5)(x)`) não têm sintaxe em KQL.
   Use uma alternativa nomeada, como `medianExact(x)`.
 
-## Como relatar um problema
+## Como relatar um problema {#reporting-a-problem}
 
 Uma consulta que é analisada, mas retorna algo que o Kusto não retornaria, é um bug — relate-o incluindo
 os dois resultados. Uma consulta rejeitada de que você precisa é uma solicitação de recurso; as listas

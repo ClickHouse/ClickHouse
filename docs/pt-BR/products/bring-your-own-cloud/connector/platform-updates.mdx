@@ -14,7 +14,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Um cluster gerenciado executa uma pequena camada de plataforma da qual os serviços ClickHouse dependem. O ClickHouse Cloud propõe atualizações para essa camada; o executor não aplica nada até que você aprove cada uma delas com suas próprias credenciais do cluster.
 
-## O que é uma atualização da plataforma
+## O que é uma atualização da plataforma {#what-a-platform-update-is}
 
 A camada de plataforma é composta por três componentes: o controlador de snapshots, o ClickHouse Operator e os coletores de monitoramento. Eles são instalados nessa ordem porque cada um depende das definições de recurso personalizado do anterior. Os serviços utilizam uma StorageClass chamada `gp3-encrypted` (volumes gp3 criptografados) que acompanha esses componentes.
 
@@ -27,11 +27,11 @@ Um pacote é aplicado em duas metades:
 
 O executor nunca aplica um pacote que você não tenha aprovado. Ele recusa uma sincronização de plataforma cuja metade de permissões esteja ausente, cujo sha256 seja diferente do aprovado ou cujo token tenha expirado. A recusa informa que a aprovação é necessária e indica o sha256 do pacote preparado. A criação de um serviço que precise de uma definição de recurso personalizado ausente na sua plataforma atual falha da mesma forma, com o mesmo comando a ser executado.
 
-## Aprovar uma atualização de plataforma
+## Aprovar uma atualização de plataforma {#approve-a-platform-update}
 
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="Fluxo de aprovação de plataforma do ClickHouse Connector" />
 
-### Credenciais de registry
+### Credenciais de registry {#registry-credentials}
 
 A autenticação no registry depende do modo de distribuição de imagens registrado para o seu ambiente:
 
@@ -127,7 +127,7 @@ Use o procedimento de workstation do Kubernetes abaixo somente em deployments co
   </Step>
 </Steps>
 
-## A janela de aprovação
+## A janela de aprovação {#the-approval-window}
 
 Uma aprovação emite um token para a identidade `pcm-platform`, válido por 2 horas por padrão (`--ttl` altera esse valor). O executor nunca o renova. Quando ele expira, o executor não consegue mais atuar sobre a camada de plataforma e recusa a próxima sincronização de plataforma, exibindo novamente a mensagem de aprovação. Isso é intencional e não depende de conectividade: uma aprovação concedida enquanto o connector está offline expira igualmente conforme seu próprio relógio.
 
@@ -139,7 +139,7 @@ Execute `approve` novamente sempre que:
 
 Aprovar o mesmo pacote novamente é seguro e substitui o token. O pacote preparado permanece no lugar após a sincronização, portanto uma nova aprovação não exige uma nova proposta.
 
-## O que a aprovação concede
+## O que a aprovação concede {#what-the-approval-grants}
 
 Você aplica a metade de permissões, portanto ela carrega a sua autoridade; o executor não aplica nada dela. O `approve` a carimba com o sha256 do pacote, e, antes de tocar em qualquer coisa, o executor verifica se todos os objetos de permissão do pacote que lhe foi enviado estão presentes e aprovados.
 
@@ -151,7 +151,7 @@ O executor aplica a metade de cargas de trabalho como `pcm-platform`. Essa ident
 
 A identidade de ciclo de vida de serviço do executor, `pcm-executor`, é separada e restrita aos espaços de nomes de serviço. Ela não pode escrever nos espaços de nomes da plataforma; suas leituras não são limitadas pela proteção de prefixo. Para a listagem completa de ambas as identidades, consulte o [modelo de privilégios](/pt-BR/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-## Redefinindo um cluster de teste
+## Redefinindo um cluster de teste {#resetting-a-test-cluster}
 
 O `clicklink clctl platform reset` existe para clusters de teste: ele desinstala os componentes da plataforma para que a primeira instalação possa ser testada novamente. Antes de alterar qualquer coisa, ele lista os clusters ClickHouse nos espaços de nomes pertencentes a este connector e recusa a operação caso exista algum serviço.
 

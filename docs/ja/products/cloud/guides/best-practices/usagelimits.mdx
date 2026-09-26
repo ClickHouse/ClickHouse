@@ -26,7 +26,7 @@ ClickHouse は高速性と信頼性を追求して設計されています。最
   これらのガードレールに抵触した場合、ユースケースの実装が最適化されていない可能性があります。[サポート](https://clickhouse.com/support/program)までお問い合わせください。ガードレールを超えないようユースケースを見直すお手伝いや、制御された形で上限を引き上げる方法の検討を喜んでサポートします。
 </Tip>
 
-## サービス制限
+## サービス制限 {#service-limits}
 
 以下の制限は**スタンドアロンサービス** (およびデータオブジェクト数については、そのサービスのストレージ) に適用されます。
 
@@ -66,7 +66,7 @@ FROM system.server_settings
 WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
 
-## ウェアハウスの制限
+## ウェアハウスの制限 {#warehouse-limits}
 
 [ウェアハウス](/ja/products/cloud/features/infrastructure/warehouses)とは、同じデータを共有するサービスの集合です。
 ウェアハウスの制限は、その共有グループ全体に対して適用されます。サービスごと、あるいは組織全体に適用されるものではありません。
@@ -87,7 +87,7 @@ WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_
 
 ウェアハウス内のサービスは 1 つのカタログ (同じテーブル、データベース、ビューなど) を共有するため、上記の [サービスレベルのデータオブジェクト制限](#service-limits)は、サービスごとに倍加されるのではなく、**ウェアハウスごとに 1 回**だけカウントされます。ウェアハウス同士は互いに分離されているため、各ウェアハウスは自身のテーブルやデータベースのみをこれらの制限の対象としてカウントします。
 
-## 組織の制限
+## 組織の制限 {#organization-limits}
 
 これらの制限は、ClickHouse Cloud の組織全体、つまりその組織に属するすべての ウェアハウス と サービス を合わせた単位で適用されます。
 

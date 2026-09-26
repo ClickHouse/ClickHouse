@@ -6,7 +6,7 @@ title: '类型转换函数'
 doc_type: 'reference'
 ---
 
-## 数据转换中的常见问题
+## 数据转换中的常见问题 {#common-issues-with-data-conversion}
 
 ClickHouse 通常采用[与 C++ 程序相同的行为](https://en.cppreference.com/w/cpp/language/implicit_conversion)。
 
@@ -49,7 +49,7 @@ SETTINGS cast_keep_nullable = 1
 └──────────────────┴─────────────────────┴──────────────────┘
 ```
 
-## `toString` 函数说明
+## `toString` 函数说明 {#to-string-functions}
 
 `toString` 函数家族支持在数字、字符串 (但不包括定长字符串) 、日期和日期时间之间进行转换。
 所有这些函数都只接受一个参数。
@@ -59,7 +59,7 @@ SETTINGS cast_keep_nullable = 1
 * 在将日期时间转换为数字或反向转换时，日期时间对应自 Unix 纪元开始以来的秒数。
 * `DateTime` 参数的 `toString` 函数可以接受第二个 String 参数，该参数包含时区名称，例如：`Europe/Amsterdam`。在这种情况下，时间会按照指定的时区进行格式化。
 
-## 关于 `toDate`/`toDateTime` 函数的说明
+## 关于 `toDate`/`toDateTime` 函数的说明 {#to-date-and-date-time-functions}
 
 `toDate`/`toDateTime` 函数的日期和日期时间格式定义如下：
 

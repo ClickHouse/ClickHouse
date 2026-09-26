@@ -14,7 +14,7 @@ Para almacenar métricas de Prometheus en ClickHouse y consultarlas con PromQL, 
   Si utilizas ClickHouse Cloud, puedes exponer las métricas a Prometheus mediante la [integración con Prometheus](/es/products/cloud/features/monitoring/prometheus).
 </Note>
 
-## Configurar el puerto de métricas
+## Configurar el puerto de métricas {#configure-the-metrics-port}
 
 Configure un puerto dedicado cuando un servidor Prometheus necesite recolectar (scrape) las métricas propias de ClickHouse:
 
@@ -31,7 +31,7 @@ Configure un puerto dedicado cuando un servidor Prometheus necesite recolectar (
 </prometheus>
 ```
 
-## Configurar handlers extendidos
+## Configurar handlers extendidos {#configure-extended-handlers}
 
 La sección `<prometheus.handlers>` permite definir handlers más extendidos en el mismo puerto.
 Esta sección es similar a [`<http_handlers>`](/es/concepts/features/interfaces/http), pero funciona con los protocolos de Prometheus:
@@ -60,7 +60,7 @@ Esta sección es similar a [`<http_handlers>`](/es/concepts/features/interfaces/
 </prometheus>
 ```
 
-## Settings
+## Settings {#settings}
 
 Para conocer el comportamiento completo de estos settings, consulta la [sección Prometheus](/es/reference/settings/server-settings/settings/other#prometheus) de la referencia de server settings.
 
@@ -78,7 +78,7 @@ Para conocer el comportamiento completo de estos settings, consulta la [sección
 | `dimensional_metrics`        | true                 | Expone métricas de [`system.dimensional_metrics`](/es/reference/system-tables/dimensional_metrics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `labels`                     | ninguno              | Labels constantes que se añaden a cada métrica expuesta. Cada elemento hijo define un label: el nombre del elemento es el nombre del label (que debe coincidir con `[a-zA-Z_][a-zA-Z0-9_]*`) y el valor del elemento es el valor del label. Los valores de los labels admiten las sustituciones de configuración estándar, como el atributo `from_env`. Un nombre de label se rechaza cuando empieza por `__` (reservado por Prometheus) o cuando entraría en conflicto con un label que este endpoint ya escribe para alguna de sus secciones habilitadas. Por tanto, el conjunto reservado depende de la superficie de exportación activa del endpoint: `le` cuando `histograms` está habilitado; los labels de `ClickHouse_Info` (`name`, `version`, `version_describe`, `version_major`, `version_minor`, `version_patch`) cuando `info` está habilitado; y cualquier label utilizado por un histograma expuesto o por una metric family dimensional (por ejemplo, `group`, `direction` u `operation_type`) cuando `histograms` o `dimensional_metrics` están habilitados. Como esto depende de lo que el endpoint expone realmente, un nombre puede ser válido en un endpoint y ser rechazado en otro. |
 
-## Comprobar el endpoint
+## Comprobar el endpoint {#check-the-endpoint}
 
 ```bash
 curl http://127.0.0.1:9363/metrics

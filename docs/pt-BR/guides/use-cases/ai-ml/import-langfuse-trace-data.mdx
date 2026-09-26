@@ -9,11 +9,11 @@ doc_type: 'guide'
 
 Este guia mostra como carregar dados de trace de LLM do [Langfuse Cloud](https://cloud.langfuse.com/) no ClickHouse Cloud para fazer analytics em tempo real.
 
-## Exportar do Langfuse Cloud
+## Exportar do Langfuse Cloud {#export-from-langfuse-cloud}
 
 Siga [este guia](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage) para configurar uma integração de Blob Storage no Langfuse Cloud e realizar exportações agendadas. Você pode agendar a exportação dos seus dados de trace para o armazenamento de objetos a cada `20 minutes`, no mínimo, ou com agendamento `hourly`, `daily` ou `weekly`. Por padrão, cada exportação inclui suas `observations` (enriquecidas com atributos de trace) e `scores`.
 
-### Estrutura dos arquivos exportados
+### Estrutura dos arquivos exportados {#exported-file-layout}
 
 A integração de Blob Storage do Langfuse Cloud grava os dados no bucket ou contêiner de armazenamento de destino usando a seguinte estrutura de diretórios:
 
@@ -24,7 +24,7 @@ A integração de Blob Storage do Langfuse Cloud grava os dados no bucket ou con
 └── manifests/         # one JSON file per completed run with export metadata
 ```
 
-## Importar para o ClickHouse Cloud
+## Importar para o ClickHouse Cloud {#import-into-clickhouse-cloud}
 
 Depois que uma integração de Blob Storage for configurada no Langfuse Cloud, os dados de trace serão exportados conforme um agendamento para o bucket ou contêiner de armazenamento de destino. Para importar esses dados para o ClickHouse Cloud, você pode usar o [ClickPipes](/pt-BR/integrations/clickpipes) e seus connectors gerenciados de armazenamento de objetos:
 
@@ -34,7 +34,7 @@ Depois que uma integração de Blob Storage for configurada no Langfuse Cloud, o
 | <img src="/images/integrations/logos/gcs.svg" alt="Logotipo do Google Cloud Storage" className="integration-table-logo" width="24" height="24" /> **Google Cloud Storage**                                                                                                                                                    | Integre usando os [GCS ClickPipes](/pt-BR/integrations/clickpipes/object-storage/google-cloud-storage/overview).  |
 | <img src="/images/integrations/logos/azureblobstorage.svg" alt="Logotipo do Azure Blob Storage" className="integration-table-logo" width="24" height="24" /> **Azure Blob Storage**                                                                                                                                           | Integre usando os [ClickPipes do ABS](/pt-BR/integrations/clickpipes/object-storage/azure-blob-storage/overview). |
 
-### Crie um ClickPipe
+### Crie um ClickPipe {#create-a-clickpipe}
 
 Este exemplo usa o S3 ClickPipe para importar dados de um bucket do S3 que recebe exportações agendadas do Langfuse Cloud e pode servir de modelo para qualquer destino de exportação em armazenamento de objetos. Para orientações específicas de cada fonte de dados, consulte a [documentação do ClickPipes](/pt-BR/integrations/clickpipes).
 
@@ -147,11 +147,11 @@ Este exemplo usa o S3 ClickPipe para importar dados de um bucket do S3 que receb
   </Step>
 </Steps>
 
-### Consultar dados de trace
+### Consultar dados de trace {#query-trace-data}
 
 Com os ClickPipes em execução, você pode consultar os dados de trace do Langfuse Cloud diretamente no ClickHouse Cloud. Os exemplos abaixo abordam alguns padrões de consulta comuns: agregações de custo e latência, reconstrução de um único trace e correlação de pontuações com modelos e prompts.
 
-#### Agregações de métricas por intervalos de tempo
+#### Agregações de métricas por intervalos de tempo {#time-bucketed-metric-rollups}
 
 <Tip>
   Alguns campos, como `usage_details` e `cost_details`, são exportados como colunas `Map`. Para ler um único valor, acesse-o pela chave (por exemplo, `sum(cost_details['total'])`).
@@ -172,7 +172,7 @@ GROUP BY t, provided_model_name
 ORDER BY t;
 ```
 
-#### Reconstrução de traces
+#### Reconstrução de traces {#trace-reconstruction}
 
 ```sql
 SELECT *
@@ -181,7 +181,7 @@ WHERE trace_id = '<trace_id>'
 ORDER BY start_time;
 ```
 
-#### Análise de qualidade
+#### Análise de qualidade {#quality-analysis}
 
 ```sql
 SELECT
@@ -195,7 +195,7 @@ GROUP BY o.provided_model_name, s.name
 ORDER BY avg_score DESC;
 ```
 
-## Veja também
+## Veja também {#see-also}
 
 * [Langfuse e ClickHouse](/pt-BR/products/cloud/features/ai-ml/langfuse)
 * [Exportação do Langfuse Cloud para Blob Storage](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)

@@ -20,7 +20,7 @@ Standard SQL に加えて、ClickHouse はデータのクエリに使用でき�
 
 使用するクエリ言語は、`dialect` 設定で制御します。
 
-## Standard SQL
+## Standard SQL {#standard-sql}
 
 Standard SQL は、ClickHouse のデフォルトのクエリ言語です。
 
@@ -28,7 +28,7 @@ Standard SQL は、ClickHouse のデフォルトのクエリ言語です。
 SET dialect = 'clickhouse'
 ```
 
-## パイプライン指向リレーショナルクエリ言語 (PRQL)
+## パイプライン指向リレーショナルクエリ言語 (PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -51,7 +51,7 @@ aggregate {
 
 内部的には、ClickHouse は PRQL を SQL にトランスパイルして、PRQL クエリを実行します。
 
-## Kusto クエリ言語 (KQL)
+## Kusto クエリ言語 (KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ numbers(10) | project number
 
 KQL クエリでは、ClickHouse で定義されているすべての関数を利用できるとは限りません。
 
-## Trino SQL
+## Trino SQL {#trino-sql}
 
 <ExperimentalBadge />
 

@@ -361,7 +361,7 @@ import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.
     </Step>
   </Steps>
 
-  ## 次のステップ
+  ## 次のステップ {#next-steps}
 
   ClickHouse の詳細については、以下のドキュメントを参照してください。
 
@@ -385,7 +385,7 @@ import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.
     [「Playground の仕様」](/ja/get-started/sample-datasets/playground#specifications)を参照してください。
   </Note>
 
-  ## trips テーブルを作成する
+  ## trips テーブルを作成する {#create-the-table-trips}
 
   まず、タクシーの乗車データを格納するテーブルを作成します。
 
@@ -416,7 +416,7 @@ import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.
   PRIMARY KEY (pickup_datetime, dropoff_datetime);
   ```
 
-  ## オブジェクトストレージから直接データを読み込む
+  ## オブジェクトストレージから直接データを読み込む {#load-the-data-directly-from-object-storage}
 
   まずはデータに慣れるため、データの一部 (300 万行) を取得して試すことができます。データはオブジェクトストレージ上の TSV ファイルとして格納されており、`s3` テーブル関数を使えば
   ClickHouse Cloud に簡単にストリーミングできます。
@@ -485,7 +485,7 @@ import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.
     </Tab>
   </Tabs>
 
-  ## サンプルクエリ
+  ## サンプルクエリ {#sample-queries}
 
   以下のクエリは、前述のサンプルを対象に実行します。以下のクエリで使用しているテーブルを `nyc_taxi.trips` に変更すれば、[sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19) で完全なデータセットに対してサンプルクエリを実行できます。
 
@@ -547,7 +547,7 @@ import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.
   ORDER BY passenger_count ASC
   ```
 
-  ## 事前準備済みパーティションのダウンロード
+  ## 事前準備済みパーティションのダウンロード {#download-of-prepared-partitions}
 
   <Note>
     以下の手順では、元のデータセットに関する情報と、あらかじめ用意されたパーティションをセルフマネージドのClickHouseサーバー環境に読み込む方法を説明します。
@@ -573,7 +573,7 @@ import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.
     以下のクエリを実行する場合は、完全なテーブル名 `datasets.trips_mergetree` を指定してください。
   </Info>
 
-  ## 単一サーバーでの結果
+  ## 単一サーバーでの結果 {#results-on-single-server}
 
   Q1:
 
@@ -657,7 +657,7 @@ import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.
   この場合、クエリの処理時間は主にネットワークレイテンシによって左右されます。
   今回はクラスターとは別のデータセンターにあるクライアントからクエリを実行したため、約 20 ms のレイテンシが上乗せされています。
 
-  ## まとめ
+  ## まとめ {#summary}
 
   | サーバー               | Q1    | Q2    | Q3    | Q4    |
   | ------------------ | ----- | ----- | ----- | ----- |

@@ -26,16 +26,16 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Note>
 
 <div id="request-access">
-  ## 申请访问权限
+  ## 申请访问权限 {#request-access}
 </div>
 
 若要开始引导流程，请[联系我们](https://clickhouse.com/cloud/bring-your-own-cloud)。我们的团队将指导您了解 BYOC 的相关要求，帮助您选择最合适的部署方案，并将您的账户加入允许列表。
 
 <div id="onboarding-process">
-  ## 引导流程
+  ## 引导流程 {#onboarding-process}
 </div>
 
-### 准备 AWS 账户/GCP 项目/Azure 订阅
+### 准备 AWS 账户/GCP 项目/Azure 订阅 {#prepare-an-aws-account}
 
 在您的组织下准备一个全新的 AWS 账户、GCP 项目或 Azure 订阅。
 
@@ -57,7 +57,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       运行 ClickHouse 所需的存储桶、VPC/VNet、Kubernetes 集群和计算资源不包含在此初始设置中。它们将在下一步中预配。
     </Note>
 
-#### AWS 的 Terraform 模块
+#### AWS 的 Terraform 模块 {#terraform-module-aws}
 
     如果您希望在 AWS 部署中使用 Terraform 而非 CloudFormation，请使用 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 模块：
 
@@ -76,7 +76,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       此模块此前以 tarball 形式发布在 `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`。该 URL 仍可使用，但已弃用——请改用上述 GitHub 模块。
     </Note>
 
-#### AWS 外部 ID
+#### AWS 外部 ID {#aws-external-id}
 
     在 AWS 上，设置期间创建的 IAM 角色会通过[外部 ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) 信任 ClickHouse Cloud，以防范混淆代理攻击。开始 Onboarding 时，ClickHouse Cloud 控制台会为您的 AWS 账户生成外部 ID，并在 CloudFormation 链接中预填该值；如果您使用 Terraform，请将同一值作为 `external_id` 传入。同一 AWS 账户中的所有 BYOC 基础设施共享同一个外部 ID。
 
@@ -102,7 +102,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="配置 BYOC 基础设施" background="black" />
 
-#### 预检验证
+#### 预检验证 {#preflight-validation}
 
     当您点击 **Set up Infrastructure** 时，ClickHouse Cloud 会在创建任何资源之前，针对您的账户运行一组**只读**的预检检查。如果全部通过，预配将继续进行。如果某项检查未通过，设置将暂停，控制台会明确显示问题所在，以便您在创建任何资源之前予以修复。
 
@@ -138,7 +138,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 </Steps>
 
-### 创建您的第一个 BYOC ClickHouse 服务
+### 创建您的第一个 BYOC ClickHouse 服务 {#create-clickhouse-service}
 
 在 BYOC 基础设施预配完成后，您就可以开始创建第一个 ClickHouse 服务。打开 ClickHouse Cloud 控制台，选择您的 BYOC 环境，并按照提示创建新服务。
 

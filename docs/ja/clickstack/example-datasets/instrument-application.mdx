@@ -21,14 +21,14 @@ HackerNews Analyzerは、公開されているClickHouseデモでホストされ
 
 これは、ローカルのDocker ClickStackに対してブラウザ専用アプリをインストルメントする[セッションリプレイ demo](/ja/clickstack/example-datasets/session-replay)とは異なるものです。ここでは、同じアプリでバックエンドのauto-instrumentation、ClickHouseクエリspan、セッションリプレイを利用できます。
 
-## 前提条件
+## 前提条件 {#prerequisites}
 
 * Node 18 以降と npm
 * ClickStack の OTLP/HTTP endpoint とインジェストトークン:
   * **ClickHouse Cloud:** service を開き、**ClickStack** → **OpenTelemetry exporter を設定** → **環境変数**の順に選択します。プロトコルは `http/protobuf` です。headers には `authorization=<ingestion token>` を指定し、`Bearer` プレフィックスは付けません。
   * **ローカル collector:** `http://localhost:4318` を使用します。collector が保護されていない場合は、`authorization=` を空のままにします。
 
-## リポジトリをクローンする
+## リポジトリをクローンする {#clone-the-repository}
 
 [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)をクローンし、依存関係をインストールして、環境変数テンプレートをコピーします。
 
@@ -43,7 +43,7 @@ cp .env.example .env
 
 <InstrumentApplication />
 
-## 詳しくはこちら
+## 詳しくはこちら {#learn-more}
 
 * [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer): このガイドでインストルメントするデモリポジトリ。
 * [セッションリプレイ](/ja/clickstack/features/session-replay): 機能の概要、SDK オプション、プライバシー制御。

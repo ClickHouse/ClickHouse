@@ -20,7 +20,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تُحدَّد لغة الاستعلام المستخدمة عبر الإعداد `dialect`.
 
-## SQL القياسية
+## SQL القياسية {#standard-sql}
 
 تُعد SQL القياسية لغة الاستعلام الافتراضية في ClickHouse.
 
@@ -28,7 +28,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 SET dialect = 'clickhouse'
 ```
 
-## Pipelined Relational Query Language (PRQL)
+## Pipelined Relational Query Language (PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -51,7 +51,7 @@ aggregate {
 
 في الخلفية، يستخدم ClickHouse الترجمة التحويلية من PRQL إلى SQL لتشغيل استعلامات PRQL.
 
-## Kusto Query Language (KQL)
+## Kusto Query Language (KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ numbers(10) | project number
 
 لاحظ أن استعلامات KQL قد لا تتمكن من الوصول إلى جميع الدوال المعرَّفة في ClickHouse.
 
-## Trino SQL
+## Trino SQL {#trino-sql}
 
 <ExperimentalBadge />
 

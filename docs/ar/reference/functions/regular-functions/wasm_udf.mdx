@@ -15,7 +15,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 <ExperimentalBadge />
 
-## نظرة عامة
+## نظرة عامة {#overview}
 
 وحدة WebAssembly هي ملف ثنائي مُجمَّع يحتوي على دالة واحدة أو أكثر يمكن استدعاؤها من ClickHouse.
 يمكنك التفكير في الوحدة على أنها مكتبة أو كائن مشترك تُحمّله مرة واحدة ثم تعيد استخدامه مرات عديدة.
@@ -32,7 +32,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 بعد التجميع، يُحمَّل الكود الثنائي للوحدة إلى ClickHouse عبر إدراجه في جدول `system.webassembly_modules`.
 بعد ذلك، يمكنك إنشاء UDFs تشير إلى الدوال التي تُصدِّرها الوحدة باستخدام العبارة `CREATE FUNCTION ... LANGUAGE WASM`.
 
-## المتطلبات الأساسية
+## المتطلبات الأساسية {#prerequisites}
 
 فعِّل دعم WebAssembly في إعدادات ClickHouse الخاصة بك:
 
@@ -47,7 +47,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 * `wasmtime` (الافتراضي، والوحيد حاليًا) — يستخدم [Wasmtime](https://github.com/bytecodealliance/wasmtime)
 
-## البدء السريع
+## البدء السريع {#quick-start}
 
 يوضح هذا المثال سير العمل الكامل لإنشاء WebAssembly UDF من خلال تنفيذ حاسبة [حدسية Collatz](https://en.wikipedia.org/wiki/Collatz_conjecture).
 
@@ -103,7 +103,7 @@ FORMAT TSV
 [0,1,7,2,5,8,16,3,19,6,14,9,9,17,17,4,12,20,20,7,7,15,15,10,23,10,111,18,18,18,106,5,26,13,13,21,21,21,34,8,109,8,29,16,16,16,104,11,24,24,24,11,11,112,112,19,32,19,32,19,19,107,107,6,27,27,27,14,14,14,102,22,115,22,14,22,22,35,35,9,22,110,110,9,9,30,30,17,30,17,92,17,17,105,105,12,118,25,25,25]
 ```
 
-## إدارة وحدات WASM عبر جدول النظام
+## إدارة وحدات WASM عبر جدول النظام {#manage-wasm-modules-via-system-table}
 
 تُخزَّن وحدات WebAssembly في جدول `system.webassembly_modules` بالبنية التالية:
 
@@ -114,7 +114,7 @@ FORMAT TSV
 
 تتم إدارة الوحدات عبر عمليات SQL القياسية على هذا الجدول:
 
-### إضافة وحدة
+### إضافة وحدة {#insert-a-module}
 
 ```sql
 INSERT INTO system.webassembly_modules (name, code)
@@ -130,7 +130,7 @@ SELECT 'my_module', base64Decode('...'), reinterpretAsUInt256(unhex('369f...c57d
 
 إذا لم تتطابق قيمة hash المُقدَّمة مع قيمة SHA256 المحسوبة لشفرة الوحدة، فستفشل عملية الإدراج. وقد يكون ذلك مفيدًا عند جلب الوحدات من مصادر خارجية مثل S3 أو HTTP.
 
-### توزيع وحدة عبر عنقود
+### توزيع وحدة عبر عنقود {#distribute-a-module-across-a-cluster}
 
 `system.webassembly_modules` هو جدول خاص بكل مثيل — لا تصل عملية `INSERT` إلا إلى النسخة المتماثلة التي تتولى الاتصال. ولا توجد صيغة `ON CLUSTER` لتعليمة `INSERT`، لذا سيفشل `CREATE FUNCTION ... ON CLUSTER` لاحقًا على النسخ المتماثلة التي لا تحتوي على الوحدة:
 
@@ -169,7 +169,7 @@ SELECT hostName(), name FROM clusterAllReplicas('default', system.webassembly_mo
 
 تكون عمليات الإدراج في `system.webassembly_modules` غير مؤثرة عند تكرارها بالنسبة إلى زوج `(name, hash)` نفسه، لذا فإن إعادة تنفيذ عملية الإدراج الموزعة آمنة وتُعد وسيلة مناسبة لإصلاح الحالة بعد استبدال نسخة متماثلة. لاحظ أن الخوادم المُضافة حديثًا لا تتلقى الوحدات الموجودة بأثر رجعي — يجب عليك إعادة تنفيذ عملية الإدراج على العنقود المُحدَّث، أو وضع الملف التنفيذي في الدليل `user_scripts/wasm/` على المضيف الجديد.
 
-### عرض الوحدات
+### عرض الوحدات {#list-modules}
 
 ```sql
 SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.webassembly_modules
@@ -179,7 +179,7 @@ SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.we
    └─────────┴──────────────────────────────────────────────────────────────────┘
 ```
 
-### حذف وحدة
+### حذف وحدة {#delete-a-module}
 
 يتم الحذف باستخدام العبارة `DELETE FROM system.webassembly_modules WHERE name = '...'`.
 يجب أن يكون شرط التصفية إما `name = 'literal'` لإجراء تطابق تام، أو `name LIKE 'pattern'` لحذف كل وحدة يطابق اسمها النمط؛ ولا تُقبل أي صيغ أخرى.
@@ -193,7 +193,7 @@ DELETE FROM system.webassembly_modules WHERE name LIKE 'tmp\_%';
 
 إذا كان أي من UDFs الحالية يشير إلى إحدى الوحدات المطابقة، فسيفشل الحذف، لذا يجب عليك حذف تلك الـ UDFs أولاً.
 
-## إنشاء دالة UDF باستخدام WebAssembly
+## إنشاء دالة UDF باستخدام WebAssembly {#create-a-webassembly-udf}
 
 **الصيغة**:
 
@@ -224,7 +224,7 @@ RETURNS return_type
   * `serialization_format` String — التنسيق المستخدم لتسلسل كتل الوسيطات المُمرّرة إلى الوحدة وتحليل النتيجة المُعادة. يُستخدم فقط بواسطة `ABI BUFFERED_V1`. القيم المدعومة: `MsgPack` و`JSONEachRow` و`CSV` و`TSV` و`TSVRaw` و`RowBinary` و`Buffers`. القيمة الافتراضية: `MsgPack`. يجب أن تُرجع التنسيقات المعتمدة على الكتل مثل `Buffers` عمودًا واحدًا يطابق نوعه توقيع الدالة المُصرَّح به.
   * `webassembly_udf_enable_fuel` Bool — يفعّل حصة وقود محدودة للدالة. القيمة الافتراضية: `true`. عند ضبطه على `false`، يُتجاهل إعداد الاستعلام `webassembly_udf_max_fuel` لهذه الدالة. قد يؤدي تعطيل حدود الوقود إلى تحسين الأداء. ومع ذلك، بالنسبة إلى شيفرة الضيف غير الموثوق بها أو التي تحتوي على أخطاء، فقد يزيد ذلك من خطر استمرار التنفيذ بلا قيود.
 
-## إصدارات ABI
+## إصدارات ABI {#abis-versions}
 
 للتفاعل مع ClickHouse، يجب أن تلتزم وحدات WebAssembly بإحدى واجهات التطبيق الثنائية (ABI) المدعومة.
 
@@ -232,7 +232,7 @@ RETURNS return_type
 * `BUFFERED_V1`: أنواع معقدة مع دعم التسلسل
 * `ASSEMBLYSCRIPT`: تكامل صفًا بصف مع وحدات [AssemblyScript](https://www.assemblyscript.org)؛ يدعم الأنواع الرقمية و`String`.
 
-### ABI ROW_DIRECT
+### ABI ROW_DIRECT {#abi-row_direct}
 
 يستدعي دالة WASM مُصدَّرة مباشرةً لكل صف.
 
@@ -255,7 +255,7 @@ CREATE FUNCTION my_func ARGUMENTS (Int32, UInt64, Float32) RETURNS Float64 ...
 
 لا يميّز WebAssembly بين الوسيطات الموقَّعة وغير الموقَّعة، بل يستخدم تعليمات مختلفة لتفسير القيم. لذلك، يجب أن يتطابق حجم الوسيطة تمامًا، بينما يتحدد ما إذا كانت موقَّعة أم غير موقَّعة من خلال العمليات داخل الدالة.
 
-### ABI BUFFERED_V1
+### ABI BUFFERED_V1 {#abi-buffered_v1}
 
 <Note>
   واجهة ABI هذه تجريبية وقد تتغير في الإصدارات المستقبلية.
@@ -418,7 +418,7 @@ SELECT str_reverse(toString(number + 100)) FROM numbers(3);
 201
 ```
 
-### ABI ASSEMBLYSCRIPT
+### ABI ASSEMBLYSCRIPT {#abi-assemblyscript}
 
 يستهدف الوحدات التي يُنتجها [AssemblyScript](https://www.assemblyscript.org) مصرّف. ويؤدي كل صف إلى استدعاء واحد للدالة المُصدَّرة، مع مواءمة قيم ClickHouse مع الأنواع البدائية وكائنات السلاسل النصية في AssemblyScript.
 
@@ -467,7 +467,7 @@ CREATE FUNCTION as_greet
     ARGUMENTS (name String) RETURNS String;
 ```
 
-### ملاحظة حول تطوير UDFs في Rust
+### ملاحظة حول تطوير UDFs في Rust {#note-for-developing-udfs-in-rust}
 
 بالنسبة إلى برامج Rust، نوفر crate مساعدة [clickhouse-wasm-udf](https://crates.io/crates/clickhouse-wasm-udf) لتبسيط تطوير WebAssembly UDFs لـ ClickHouse. توفّر هذه الـ crate دوالًا لإدارة الذاكرة، لذلك لا تحتاج إلى تنفيذ الدالتين `clickhouse_create_buffer` و`clickhouse_destroy_buffer` يدويًا، وإنما يكفي إضافة الـ crate كاعتمادية. كما تتوفر macro ‏`#[clickhouse_wasm_udf]` لتغليف دوال Rust العادية بالصيغة المطلوبة لـ ABI.
 
@@ -486,7 +486,7 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 
 ستولِّد وحدات الماكرو دالةً مغلِّفةً تقبل بُنى المخزن المؤقت وتُعيدها، وتتولى تلقائيًا عمليتَي التسلسل وفك التسلسل باستخدام `serde`.
 
-## واجهة برمجة التطبيقات المضيفة المتاحة للوحدات
+## واجهة برمجة التطبيقات المضيفة المتاحة للوحدات {#host-api-available-to-modules}
 
 يمكن للوحدات استيراد دوال المضيف التالية واستخدامها:
 
@@ -496,7 +496,7 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 * `clickhouse_random(ptr: i32, size: i32)` — يملأ الذاكرة ببايتات عشوائية.
 * `env.abort(message: i32, fileName: i32, line: i32, column: i32)` — متاح للوحدات المتوافقة مع AssemblyScript. يؤدي استدعاؤه (أو التسبب في trap لوقت تشغيل AssemblyScript يستدعيه) إلى إنهاء UDF مع استثناء `WASM_ERROR` يتضمن الرسالة المفككة وموقع المصدر. ولا تتأثر الوحدات التي لا تستورد `env.abort`.
 
-## الإعدادات
+## الإعدادات {#settings}
 
 تتحكم الإعدادات التالية على مستوى الاستعلام في تنفيذ WebAssembly UDF:
 
@@ -517,6 +517,6 @@ SET webassembly_udf_max_fuel = 200000;
 SELECT my_wasm_udf(column) FROM table;
 ```
 
-## انظر أيضًا
+## انظر أيضًا {#see-also}
 
 * [نظرة عامة على UDF في ClickHouse](/ar/reference/functions/regular-functions/udf)

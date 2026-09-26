@@ -16,11 +16,11 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 
 Команды `instances` и `commands`, а также `executor teardown`, обращаются к локальному API исполнителя. Его задают два глобальных флага: `--endpoint <url>` (по умолчанию `http://127.0.0.1:9999`, переменная окружения `CLCTL_ENDPOINT`) и `--cluster <name>` (переменная окружения `CLCTL_CLUSTER`), который указывает управляемый кластер, если он нужен команде. В Kubernetes сначала откройте `kubectl port-forward` к Развертыванию исполнителя; см. [управляемые сервисы](/ru/products/bring-your-own-cloud/connector/managed-services#status).
 
-## clicklink clctl init
+## clicklink clctl init {#init}
 
 Инициализирует коннектор с помощью токена регистрации, сохранённого пакета регистрации или подписанного сертификата, полученного вне основного канала. Один запуск подготавливает конфигурацию, настраивает доступ к ClickHouse, получает клиентский сертификат mTLS, выполняет развёртывание (Helm-чарт или модули systemd) и проверяет работоспособность. С флагом `--managed` он также включает исполнитель для обнаруженного EKS cluster и выдаёт исполнителю доступ в рамках всего кластера. Повторный запуск безопасен: `init` сохраняет конфигурацию и UUID кластера, атомарно перезаписывает учётные данные и повторно использует существующий клиентский ключ, если не указан `--force`. Полное описание процесса см. в разделе [онбординг](/ru/products/bring-your-own-cloud/connector/onboarding), а описание работы исполнителя — в разделе [управляемые сервисы](/ru/products/bring-your-own-cloud/connector/managed-services).
 
-### Точки входа
+### Точки входа {#init-entry-points}
 
 Требуется указать ровно одну точку входа.
 
@@ -30,7 +30,7 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 | `--handoff <path>`     | Выполняет начальную настройку из сохранённого пакета регистрации. Повторные запуски и восстановление используют этот вариант после создания `handoff.yaml`.                                                                                                                                                                                                                                                                                                |
 | `--signed-cert <path>` | Фаза 2 сценария для среды, изолированной от интернета: устанавливает клиентский сертификат, подписанный вне основного канала, и завершает поэтапную установку. Параметр `--chain <path>` при необходимости заменяет вместе с ним цепочку CA.                                                                                                                                                                                                               |
 
-### Общие флаги
+### Общие флаги {#init-common-flags}
 
 | Флаг                        | Описание                                                                                                                                                                                                                                                                                                                                                                                             |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -46,14 +46,14 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 | `--ch-user-suffix <suffix>` | Необязательный suffix для создаваемых имен пользователей ClickHouse (`pcm_scraper` становится `pcm_scraper_<suffix>`), чтобы второе развертывание коннектора могло использовать тот же экземпляр без конфликта с пользователями первого.                                                                                                                                                             |
 | `--ch-admin-password-stdin` | Читает пароль администратора ClickHouse из stdin, когда он требуется для SQL-настройки доступа; при запуске в терминале вместо этого выводится запрос.                                                                                                                                                                                                                                               |
 
-### Флаги подписания (только для фазы 1)
+### Флаги подписания (только для фазы 1) {#init-signing-flags}
 
 | Флаг                    | Описание                                                                                                                                                                                     |
 | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--no-auto-sign`        | Только для стадии: отключает автоматическое подписание CSR через конечную точку регистрации; предназначен для изолированных от интернета сред или сценариев подписания вне основного канала. |
 | `--sign-endpoint <url>` | Переопределяет конечную точку подписания при регистрации (по умолчанию: формируется из конечной точки bundle добавлением DNS-метки `enroll`). Должен быть HTTPS URL.                         |
 
-### Флаги только для Kubernetes
+### Флаги только для Kubernetes {#init-kubernetes-flags}
 
 Действуют только с `--target helm`.
 
@@ -70,7 +70,7 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 | `--api-private-ca`          | Ваша конечная точка коннектора использует сертификат, выданный CA пакета регистрации: задается `api.tls.caFile`, указывающий на смонтированную цепочку CA, которая добавляется к системным корневым сертификатам.                                                                                                                |
 | `--egress-cidrs <cidrs>`    | Список CIDR вашей конечной точки коннектора через запятую для NetworkPolicy чарта с политикой запрета по умолчанию: NetworkPolicy задается включенной с этими значениями в `networkPolicy.allowEgressCIDRs` (запрашивается в терминале в управляемом режиме). Без них политика задается отключенной, чтобы вы включили ее позже. |
 
-### Флаги только для ВМ
+### Флаги только для ВМ {#init-vm-flags}
 
 Действуют только с `--target systemd`.
 
@@ -81,7 +81,7 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 | `--cluster-name <name>` | Имя EKS cluster, которым управляет managed mode (по умолчанию: единственный EKS cluster в kubeconfig этого хоста; в терминале будет предложено указать). |
 | `--no-instance`         | Запуск с пустым registry экземпляров и пропуском промптов об экземплярах.                                                                                    |
 
-### Конфликты флагов
+### Конфликты флагов {#init-flag-conflicts}
 
 * `--handoff`, `--enroll` и `--signed-cert` взаимоисключающие; необходимо указать ровно один из них.
 * Флаги, предназначенные только для Kubernetes, не принимаются без `--target helm`; `--server`, `--ca-data`, `--cluster-name` и `--no-instance` не принимаются при `--target helm` (процесс Helm использует kubeconfig рабочей станции и определяет экземпляр внутри кластера).
@@ -91,7 +91,7 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 * `--operators` и `--no-gateway` взаимоисключающие.
 * При `--skip-provision` не принимаются `--ch-pod`, `--ch-user-suffix`, `--server`, `--ca-data` и `--ch-admin-password-stdin` (подготовка не выполняется).
 
-## clicklink clctl preflight
+## clicklink clctl preflight {#preflight}
 
 Запускает набор проверок коннектора, сгруппированных по категориям: config, files, network, clickhouse, systemd, access, disk, redaction. Каждая проверка возвращает один из статусов: pass, warn, fail или skip. Код выхода 0 означает, что все проверки успешно пройдены (предупреждения не блокируют выполнение); код выхода 2 означает, что как минимум одна проверка завершилась ошибкой.
 
@@ -110,7 +110,7 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 
 Флаги `--k8s-*` и флаги удаленного канала взаимоисключающие; выберите одну цель.
 
-## clicklink clctl troubleshoot session
+## clicklink clctl troubleshoot session {#troubleshoot-session}
 
 Включает, отключает и проверяет сеанс поддержки — ограниченный по времени период, в течение которого troubleshooter принимает команды. Без активного сеанса демон отклоняет любую команду, даже если его WebSocket подключён. См. [сеансы поддержки](/ru/products/bring-your-own-cloud/connector/support-sessions).
 
@@ -119,7 +119,7 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 * **Локальный файл** (по умолчанию): считывают и записывают файл состояния сеанса на хосте, где запущен troubleshooter (по умолчанию `/var/lib/clicklink/session.json`).
 * **Шлюз**: при использовании `--gateway-url` получают ID-токен OIDC и вместо этого обращаются к шлюзу сеанса troubleshooter с вашей рабочей станции.
 
-### Общие флаги
+### Общие флаги {#session-shared-flags}
 
 | Флаг                       | Описание                                                                                                                                                                                                                |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -132,7 +132,7 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 | `--token-file <path>`      | Файл с заранее выпущенным ID-токеном OIDC, используемым как Bearer-токен и заменяющим другие способы получения токена.                                                                                                  |
 | `--gateway-ca <path>`      | Набор CA для проверки сертификата шлюза (собственный сертификат). Если не задан, команда использует сертификат, закрепленный через `gateway trust`; самоподписанный шлюз без закрепленного сертификата отклоняется.     |
 
-### включение сеанса
+### включение сеанса {#session-enable}
 
 | Флаг               | Описание                                                                                                                                                                                                     |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -142,11 +142,11 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 
 Включить сеанс не получится, если он уже активен: сначала отключите его или дождитесь истечения срока действия.
 
-### отключение сеанса
+### отключение сеанса {#session-disable}
 
 Немедленно деактивирует сеанс. Если активного сеанса нет, команда ничего не делает.
 
-### Статус сеанса
+### Статус сеанса {#session-status}
 
 Показывает, активен ли сеанс, кто его включил и когда срок его действия истекает. `--output` (`-o`) задаёт формат вывода: `table` (по умолчанию) или `json`.
 
@@ -160,7 +160,7 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-## clicklink clctl troubleshoot gateway trust
+## clicklink clctl troubleshoot gateway trust {#gateway-trust}
 
 На ВМ шлюз сеанса использует самоподписанный TLS-сертификат. Эта команда сохраняет SHA-256-отпечаток сертификата в `~/.clicklink/clctl.yaml`, чтобы команды `session` могли его проверять; если закреплённый отпечаток перестаёт совпадать, подключение блокируется. Доверие устанавливается одним из двух способов вне канала:
 
@@ -181,7 +181,7 @@ clicklink clctl troubleshoot gateway trust \
 
 В Kubernetes закрепление не используется: предоставьте доступ к шлюзу через входной шлюз с сертификатом, выданным CA, или выполните проброс порта.
 
-## clicklink clctl troubleshoot audit tail
+## clicklink clctl troubleshoot audit tail {#audit-tail}
 
 Выводит последние записи журнала аудита troubleshooter в формате JSON, по одной записи в строке для каждой команды, принятой или заблокированной демоном. Журнал открывается только для чтения.
 
@@ -197,7 +197,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-## Настройка доступа
+## Настройка доступа {#access-provision}
 
 `clicklink clctl scraper access provision` и `clicklink clctl troubleshoot access provision` создают пакет доступа для каждого экземпляра компонента, а с `--force` выполняют его ротацию: пользователя ClickHouse только для чтения и его привилегии, а также ServiceAccount Kubernetes, RBAC и токен, используемые компонентом. `init` выполняет это встроенно при установке; автономные команды используются для повторного запуска и ротации учетных данных.
 
@@ -235,11 +235,11 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-## clicklink clctl executor access
+## clicklink clctl executor access {#executor-access}
 
 `init --managed` применяет cluster-wide grant исполнителя с вашими учётными данными. Если это невозможно, `init` выводит команды, которые нужно выполнить из kubeconfig с правами cluster admin: только `access apply` на ВМ (bundle уже подготовлен) либо `access grant`, а затем `access apply` в Kubernetes. См. [онбординг](/ru/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
 
-### executor access grant
+### executor access grant {#executor-access-grant}
 
 Формирует bundle доступа исполнителя уровня кластера в каталоге `<output-dir>/_cluster/`: один ServiceAccount, РольКластера и ClusterRoleBinding, а также ValidatingAdmissionPolicy, ограничивающую ServiceAccount пространствами имен, вложенными в префикс пространства имен исполнителя. Проверьте сформированный RBAC перед его применением.
 
@@ -254,7 +254,7 @@ clicklink clctl scraper access provision --target helm \
 | `--force`                              | Перезаписывает существующий bundle.                                                                                                                 |
 | `--dry-run`                            | Выводит план без записи файлов.                                                                                                                     |
 
-### executor access apply
+### executor access apply {#executor-access-apply}
 
 Применяет сформированный общекластерный bundle `grant`: домашнее Пространство имен ServiceAccount, сам ServiceAccount, РольКластера и ClusterRoleBinding, а также политику допуска, затем выпускает токен ServiceAccount и помещает его в bundle. Сервис при этом не регистрируется.
 
@@ -272,7 +272,7 @@ clicklink clctl executor access grant --cluster --sa-namespace <connector-namesp
 clicklink clctl executor access apply --cluster --output-dir <dir>
 ```
 
-## clicklink clctl executor prepare
+## clicklink clctl executor prepare {#executor-prepare}
 
 Подготавливает на вашей стороне всё, что необходимо для создания managed service, за один идемпотентный запуск, который прерывается на первой же ошибке. Команда выбирает или проверяет имя сервиса и создаёт бакеты для данных и резервных копий, а также роль IAM (или проверяет роль, которую вы предоставили). На ВМ она также формирует и применяет пакет доступа исполнителя для пространства имён сервиса; в Kubernetes bundle не используется, поскольку исполнитель работает под ServiceAccount своего пода. Затем команда выпускает пароль пользователя `default` (показывается один раз) и записывает тело запроса на создание для [`instances create`](#instances-create). См. [managed services](/ru/products/bring-your-own-cloud/connector/managed-services#create-a-service).
 
@@ -296,7 +296,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--output <fmt>`                                 | `text` (по умолчанию) или `json`. Ни один из форматов не содержит пароль.                                                                                                                                                               |
 | `--dry-run`                                      | Выполняет все шаги в режиме пробного запуска; ничего не создаётся и не записывается.                                                                                                                                                    |
 
-## clicklink clctl executor teardown
+## clicklink clctl executor teardown {#executor-teardown}
 
 Удаляет то, что `prepare` создал для сервиса, удалённого в ClickHouse Cloud. А именно: роль IAM, записанное имя и запись исполнителя о сервисе; на ВМ — также РольКластера и ClusterRoleBinding сервиса, локальный пакет доступа и запись в registry. Исполнитель должен быть запущен, а сервис — находиться в состоянии `terminated` (или `stale`); выполнение отклоняется, пока в пространстве имён сервиса ещё есть ClickHouse cluster. Созданные `prepare` бакеты вместе с их данными и резервными копиями сохраняются, если вы не запросите удаление, а сохранённым бакетам присваивается тег `clicklink:retained-from=<name>`. Команда считывает все данные, прежде чем что-либо удалить. См. [удалить сервис](/ru/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
@@ -316,9 +316,9 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--output <fmt>`                                 | `text` (по умолчанию) или `json`.                                                                                                                                                         |
 | `--dry-run`                                      | Выводит, что было бы удалено, и завершает работу, ничего не удаляя.                                                                                                                       |
 
-## clicklink clctl instances
+## clicklink clctl instances {#instances}
 
-### instances create
+### instances create {#instances-create}
 
 Отправляет подготовленный запрос на создание в ClickHouse Cloud через конечную точку вашего коннектора, используя собственные учётные данные коннектора. Создание включается для каждого окружения отдельно; см. [создание сервиса](/ru/products/bring-your-own-cloud/connector/managed-services#create-a-service). Выводит произносимое имя, присвоенное ClickHouse Cloud, state и подсказку `watch:`, в которой используется ваш Service name. Тело запроса на создание берётся либо из файла, записанного командой `prepare`, либо из четырёх флагов `--deployed-name`, `--data-bucket`, `--backup-bucket` и `--irsa-role-arn`, указанных вместе. Повторная попытка с теми же входными данными возвращает результат первого создания.
 
@@ -336,31 +336,31 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--wait`                                                                                            | Опрашивает локальный API исполнителя, пока сервис не перейдёт в состояние `running`. Сразу завершается с ошибкой при неудачном создании для этого имени, либо когда сервис переходит в `terminating`, `terminated` или `stale`.                                                        |
 | `--wait-timeout <dur>`                                                                              | Как долго `--wait` выполняет опрос до завершения с ошибкой (по умолчанию `30m`).                                                                                                                                                                                                       |
 
-### instances list
+### instances list {#instances-list}
 
 Выводит в формате JSON все сервисы, известные исполнителю. `--cluster <name>` выполняет фильтрацию по управляемому кластеру.
 
-### instances get
+### instances get {#instances-get}
 
 Выводит один сервис в формате JSON вместе с хранилищем, с которым он был создан. Параметр `--name <name>` обязателен, как и кластер: передайте `--cluster`, задайте `CLCTL_CLUSTER` или укажите его в `~/.clicklink/clctl.yaml`.
 
 Три подкоманды ниже отправляют команды напрямую в локальный API исполнителя, минуя ClickHouse Cloud. Запускайте их только по просьбе команды сопровождения аккаунта ClickHouse. Каждой из них нужны `--name <name>` и кластер (`--cluster`, `CLCTL_CLUSTER` или `~/.clicklink/clctl.yaml`), и каждая выводит команду в формате JSON. Передайте её `id` в [`commands get`](#commands-get), чтобы отслеживать выполнение; у неуспешной команды поле `result` содержит описание ошибки.
 
-### instances scale
+### instances scale {#instances-scale}
 
 Задаёт количество реплик сервера для одного сервиса с помощью `ScalingOverride`. Параметр `--server-replicas <n>` обязателен и должен быть больше нуля. Исполнитель отображает статус команды как выполняющуюся в момент применения override и как завершённую, когда реплики готовы.
 
-### instances patch
+### instances patch {#instances-patch}
 
 Изменяет один сервис на месте. `--create-nlb` — единственный доступный patch; без него команда завершается с сообщением `nothing to patch`. Он создаёт внутренний NLB в виде объекта Kubernetes `Service` (только на AWS), чтобы scraper за пределами кластера мог обращаться к серверам. При следующей синхронизации исполнитель выполнит дозагрузку хоста scraper&#39;а из load balancer.
 
-### instances delete
+### instances delete {#instances-delete}
 
 Удаляет один сервис из кластера. Останавливает сервис и дожидается упорядоченной остановки, выполняемой оператором. Затем удаляет рабочую нагрузку, пространство имен `ns-<name>` и артефакты scraper&#39;а, дожидается исчезновения пространства имен и помечает сервис как `terminated`. Бакеты сервиса и роль IAM сохраняются; их удаляет команда [`executor teardown`](#executor-teardown), используя ваши учетные данные. Повторный вызов уже завершенного удаления ничего не делает. Штатный способ — удалить сервис в ClickHouse Cloud; см. [удалить сервис](/ru/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
-## Команды clicklink clctl
+## Команды clicklink clctl {#commands}
 
-### commands list
+### commands list {#commands-list}
 
 Выводит команды, записанные исполнителем, в формате JSON, начиная с самых новых. У неудачно выполненной команды поле `result` содержит её ошибку; для синхронизации платформы, ожидающей вашего подтверждения, там указывается точная команда `platform approve`.
 
@@ -370,11 +370,11 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--action <action>` | Фильтрация по действию, например `create_instance` или `sync_platform`. |
 | `--cluster <name>`  | Фильтрация по управляемому кластеру.                                    |
 
-### commands get
+### commands get {#commands-get}
 
 `clicklink clctl commands get <id>` выводит одну команду с её стадией и результатом.
 
-## clicklink clctl platform approve
+## clicklink clctl platform approve {#platform-approve}
 
 Авторизует одно изменение платформы с использованием ваших собственных учетных данных кластера. Команда читает bundle, подготовленный исполнителем, вычисляет его хеш и рендерит каждый chart в нем ровно так же, как это сделает исполнитель. Она применяет половину с разрешениями в выбранном вами kube-контексте, при необходимости создает identity `pcm-platform` исполнителя и выпускает для него токен. Запросы к вашей конечной точке коннектора при этом не выполняются. Половина с разрешениями — это Namespaces, CustomResourceDefinitions, ServiceAccounts, РолиКластера и bindings, Roles и bindings, конфигурации webhook и admission, PriorityClasses и класс хранилища. Исполнитель затем применяет только половину с рабочими нагрузками и только пока этот токен действителен. См. [обновления платформы](/ru/products/bring-your-own-cloud/connector/platform-updates).
 
@@ -392,7 +392,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--bundle <path>`         | Переопределение: сформированный манифест платформы, переданный по внешнему каналу, читается вместо подготовленного bundle. Обычно не указывается.                                                                     |
 | `--dry-run`               | Рендерит и выводит состав половины с разрешениями, ничего не применяя и не выпуская токен.                                                                                                                            |
 
-## clicklink clctl platform reset
+## clicklink clctl platform reset {#platform-reset}
 
 Для тестовых кластеров без сервисов: удаляет релизы платформы в порядке, обратном порядку зависимостей, и удаляет bundle платформенных токенов исполнителя, чтобы первую установку можно было выполнить заново. Перед внесением каких-либо изменений выводит список кластеров ClickHouse в пространствах имён, принадлежащих этому коннектору, и прерывает работу, если такие кластеры найдены. CustomResourceDefinitions, RBAC и класс хранилища сохраняются. Перед следующей синхронизацией платформы снова выполните `platform approve`.
 
@@ -405,7 +405,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--secret-namespace <ns>`, `--secret-name <name>` | Установки в Kubernetes: вместо этого удалить Secret с bundle платформы в пространстве имён коннектора (имя по умолчанию `clicklink-platform-bundle`). |
 | `--dry-run`                                       | Проверяет наличие сервисов и выводит план сброса, не изменяя кластер.                                                                                 |
 
-## Флаги каналов удалённого доступа
+## Флаги каналов удалённого доступа {#channel-flags}
 
 `preflight`, `gateway trust` и `access provision` используют общий набор флагов для выбора способа подключения к целевой ВМ:
 

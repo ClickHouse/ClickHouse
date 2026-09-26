@@ -14,13 +14,13 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## البدء
+## البدء {#getting-started}
 
 <Note>
   حاليًا، هذا التكامل متوافق فقط مع **Java 8+**
 </Note>
 
-### تنزيل OpenTelemetry Java agent
+### تنزيل OpenTelemetry Java agent {#download-opentelemetry-java-agent}
 
 نزّل [`opentelemetry-javaagent.jar`](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar)
 وضع ملف JAR في الدليل الذي تفضّله. يحتوي ملف JAR على الوكيل
@@ -31,7 +31,7 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
 ```
 
-### اضبط متغيرات البيئة
+### اضبط متغيرات البيئة {#configure-environment-variables}
 
 بعد ذلك، ستحتاج إلى ضبط متغيرات البيئة التالية في shell لديك لإرسال بيانات القياس عن بُعد إلى ClickStack عبر OpenTelemetry Collector:
 
@@ -62,7 +62,7 @@ curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/
 
 يحتوي متغير البيئة `OTEL_EXPORTER_OTLP_HEADERS` على مفتاح API المتاح عبر تطبيق HyperDX ضمن `Team Settings → API Keys`.
 
-### شغّل التطبيق باستخدام OpenTelemetry Java agent
+### شغّل التطبيق باستخدام OpenTelemetry Java agent {#run-the-application-with-otel-java-agent}
 
 ```shell
 java -jar target/<APPLICATION_JAR_FILE>

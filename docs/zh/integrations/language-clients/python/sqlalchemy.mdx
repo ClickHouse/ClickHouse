@@ -15,7 +15,7 @@ ClickHouse Connect 内置了一个基于核心驱动构建的 `clickhousedb` SQL
 pip install "clickhouse-connect[sqlalchemy]"
 ```
 
-## 使用 SQLAlchemy 进行连接
+## 使用 SQLAlchemy 进行连接 {#sqlalchemy-connect}
 
 使用 `clickhousedb://` 或 `clickhousedb+connect://` 这两种 URL 格式之一创建引擎：
 
@@ -31,11 +31,11 @@ with engine.connect() as conn:
     print(version)
 ```
 
-### ClickHouse 会话 ID
+### ClickHouse 会话 ID {#sqlalchemy-session-ids}
 
 默认情况下，无论使用同步还是异步方言，每个池化连接都会生成一个独立的 ClickHouse 会话 ID。只要该连接的请求到达同一个 ClickHouse 服务器进程，通过 `SET` 修改的设置以及临时表就会在该连接上持续保留。命名会话状态和同一会话的重叠检查仅在进程内生效。在同一个服务器进程上，针对相同用户和会话 ID 的重叠请求会被立即拒绝并返回服务器错误码 373，而不会进入队列等待。如果您配置了固定的 `session_id`，请使用 `pool_size=1, max_overflow=0`，或在请求到达 ClickHouse 之前将访问串行化。在 ClickHouse Cloud 或其他采用负载均衡的部署中，具有相同会话 ID 的请求可能会被路由到不同的服务器，因此请勿将固定的 `session_id` 用作分布式状态或分布式互斥锁。
 
-### 异步连接
+### 异步连接 {#sqlalchemy-async-connections}
 
 异步方言要求 SQLAlchemy 2.0.44 或更高版本，并使用 ClickHouse Connect 原生的 `AsyncClient`。请先安装所需的依赖项，然后使用 `clickhousedb+async://` URL 创建异步引擎：
 
@@ -101,7 +101,7 @@ async def prepare_schema(engine, metadata):
         )
 ```
 
-### 每个查询的设置
+### 每个查询的设置 {#sqlalchemy-per-query-settings}
 
 通过 SQLAlchemy 的执行选项传递 ClickHouse 设置。可以在引擎、连接或语句上设置这些参数。对于相同的键，语句上的值优先于连接或引擎上的值。
 
@@ -116,7 +116,7 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
-### 按查询设置读取格式
+### 按查询设置读取格式 {#sqlalchemy-per-query-read-formats}
 
 通过 SQLAlchemy 的执行选项 `query_formats`，可为引擎、连接或语句设置 ClickHouse 读取格式。语句级格式会优先应用，并覆盖匹配的连接级或引擎级键及通配符。
 
@@ -131,7 +131,7 @@ with engine.connect() as conn:
     rows = conn.execute(stmt).all()
 ```
 
-### 错误处理
+### 错误处理 {#sqlalchemy-error-handling}
 
 驱动通过 SQLAlchemy 连接引发的错误，使用的是从 `clickhouse_connect.dbapi` 导出的 DB-API 类。这些类与 `clickhouse_connect.driver.exceptions` 中的对应类是同一个类对象，因此 SQLAlchemy 会将其包装为相应的 `sqlalchemy.exc.DBAPIError` 子类。`StreamFailureError` 属于 `OperationalError`，会被包装为 `sqlalchemy.exc.OperationalError`。
 
@@ -159,7 +159,7 @@ async def invalidate_safely(connection):
 
 在连接的失效处理任务仍在运行期间，请勿使用该连接。如果直接调用的 `await connection.invalidate()` 被取消，且 `connection.invalidated` 仍为 false，请再次 await `connection.invalidate()` 以完成清理，之后再使用或关闭该连接。
 
-### 服务器端参数
+### 服务器端参数 {#sqlalchemy-server-side-parameters}
 
 SQLAlchemy 通常会在客户端渲染参数。创建引擎时，可选择启用 ClickHouse 服务器端参数：
 
@@ -176,7 +176,7 @@ engine = create_engine(
 
 绑定名称必须是 ClickHouse ASCII BareWord 名称。以 `$` 开头和结尾的名称会被拒绝，因为核心驱动程序将其保留用于原始二进制查询参数。
 
-## Core 查询
+## Core 查询 {#sqlalchemy-core-queries}
 
 该方言支持 SQLAlchemy Core `SELECT` 查询，可使用 JOIN、过滤器、排序、LIMIT 和 OFFSET 以及 `DISTINCT` 和复合 SELECT。
 
@@ -211,7 +211,7 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
-### 字面量渲染
+### 字面量渲染 {#sqlalchemy-literal-rendering}
 
 当 SQLAlchemy 通过 `literal_binds` 或 `literal_execute` 内联绑定值时，方言会针对通用 String 类型和 ClickHouse 类型采用 ClickHouse 的引用规则。这同样适用于 `TypeDecorator` 包装器以及 `with_variant()` 选择。即使其他绑定参数保持不变，String 值中的百分号和反斜杠仍会保留。
 
@@ -223,7 +223,7 @@ SQLAlchemy 列类型必须与服务器 schema 保持一致。若在服务器端�
 
 如果重复使用某个命名的 datetime 参数，则该参数每次出现时都需要兼容的 `DateTime64` 绑定类型，才能保留小数部分。只要有一处未指定类型或类型冲突，就会保持整秒格式。请在每个 `bindparam` 上设置 `type_=DateTime64(6)`，或改用具有相应类型的不同参数名。
 
-### JSON type hints
+### JSON type hints {#sqlalchemy-json-type-hints}
 
 使用 `typed_paths` 映射声明带类型的 JSON 路径。路径类型可以是 ClickHouse SQLAlchemy 类型类、已配置的类型实例，或 ClickHouse 类型名称字符串。类型名称字符串支持没有 SQLAlchemy 构造函数的类型 (例如 `Dynamic`) ，也同样适用于复杂的已配置类型表达式，并能在命名 `Tuple` 中保留字段名称。
 
@@ -264,7 +264,7 @@ events = Table(
 
 构造函数对参数的排序与 ClickHouse 返回的规范形式一致。反射得到的类型、SQLAlchemy 类型副本以及 Alembic 自动生成均会保留该配置。
 
-### JSON 子列
+### JSON 子列 {#sqlalchemy-json-subcolumns}
 
 对于声明为或映射为 ClickHouse `JSON` 的列，请使用方括号逐段选择由存储支持的子列路径：
 
@@ -310,7 +310,7 @@ request_id = json_subcolumn(request, "id", type_=UInt32)
 
 每个片段都会分别加引号，包括包含空格或反引号的名称。对于 ClickHouse JSON 路径处理，反引号不会使点号成为字面量。启用 `json_type_escape_dots_in_keys` 后，键名中的字面点号应使用 ClickHouse 的 `%2E` 编码。对于名为 `a.b` 的键，应通过 `payload["a%2Eb"]` 而非 `payload["a.b"]` 访问。
 
-### ClickHouse 查询扩展
+### ClickHouse 查询扩展 {#sqlalchemy-query-extensions}
 
 从 `clickhouse_connect.cc_sqlalchemy` 导入 `select`，即可向静态类型检查器公开带类型的 ClickHouse 方法。标准的 `sqlalchemy.select` 在运行时也提供这些方法。
 
@@ -386,7 +386,7 @@ stmt = select(
 
 标准的 SQLAlchemy `values()` 构造会被编译为 ClickHouse 的 `VALUES` 表函数语法，包括在公共表表达式中使用时。CTE 形式需要 SQLAlchemy 2.0.42 或更高版本，其中新增了 `Values.cte()`。
 
-### Materialized CTE
+### Materialized CTE {#sqlalchemy-materialized-ctes}
 
 默认情况下，ClickHouse 会内联公共表表达式，因此被多次引用的 CTE 的主体会针对每次引用执行一次。向 `.cte()` 传入 `materialized=True`，即可生成 `WITH <name> AS MATERIALIZED (...)`，使主体只计算一次：
 
@@ -428,7 +428,7 @@ ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
 
 ClickHouse 不支持递归 materialized CTE。若同时设置 `recursive=True` 和 `materialized=True`，SQLAlchemy helpers 将引发 `ValueError`。
 
-## DDL 与反射
+## DDL 与反射 {#sqlalchemy-ddl-reflection}
 
 ClickHouse Connect 提供 ClickHouse 数据类型、表引擎、字典结构、数据库 DDL 和表反射功能。
 
@@ -479,7 +479,7 @@ engine_clause = SummingMergeTree("id", columns=("delta", "n_tx"))
 
 可以传入字符串、SQLAlchemy 列、映射的列属性，或由上述值组成的非空列表或元组。列表和元组中的字符串项会作为标识符加引号。单个标量字符串则直接作为原始 SQL 使用，例如 `"delta"` 或 `"(delta, n_tx)"`。服务器要求这些列以标识符形式指定。省略 `columns` 时，由 ClickHouse 自行选择要求和的列。反射和 Alembic 自动生成会保留显式指定的列列表。
 
-## 插入和基本 ORM 用法
+## 插入和基本 ORM 用法 {#sqlalchemy-inserts}
 
 支持 Core 插入以及简单的 ORM 模型。对于同步方言，在兼容的批量数据路径中优先使用 Core executemany 插入。对于异步批量插入，请使用[异步连接](#sqlalchemy-async-connections)中介绍的原生 `AsyncClient.insert()` 路径。
 
@@ -527,7 +527,7 @@ with Session(engine) as session:
     session.commit()
 ```
 
-## Alembic 迁移
+## Alembic 迁移 {#sqlalchemy-alembic}
 
 ClickHouse Connect 提供了适用于 ClickHouse schema 迁移的 Alembic 集成。使用以下命令安装：
 
@@ -565,7 +565,7 @@ ClickHouse 数据跳过索引不是 SQLAlchemy 索引。`Index`、`Column(index=
 
 请参阅完整的 [Alembic 示例](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md)。从 `clickhouse-sqlalchemy` 迁移的用户还应阅读[迁移指南](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md)。
 
-## 范围和限制
+## 范围和限制 {#scope-and-limitations}
 
 * ClickHouse 不通过此 HTTP 方言提供传统事务。`engine.begin()` 和 `Session.commit()` 用于组织 Python 端的工作，但 commit 和 rollback 在服务器端都是空操作。
 * 该方言未实现 `UPDATE`、两阶段事务、序列、`RETURNING` 以及高级隔离级别。需要执行服务器端变更时，请显式使用 ClickHouse SQL。

@@ -13,7 +13,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 Una sesión de soporte otorga a ClickHouse acceso temporal con fines de diagnóstico mediante ClickHouse Connector. Esta página explica qué es una sesión, cómo activarla y desactivarla, qué pueden hacer los ingenieros de soporte de ClickHouse durante una sesión y cómo auditarla.
 
-## Qué es una sesión de soporte
+## Qué es una sesión de soporte {#what-a-support-session-is}
 
 Una sesión de soporte es una ventana de tiempo acotada en la cual el solucionador de problemas acepta comandos de los ingenieros de soporte de ClickHouse. Fuera de una sesión, rechaza todos los comandos, incluso mientras su WebSocket saliente permanece conectado. No existe ninguna otra vía de ejecución, y ClickHouse no puede abrir una sesión en su nombre. ClickHouse Cloud nunca se conecta a su entorno; solo recibe lo que el solucionador de problemas envía por su canal saliente.
 
@@ -30,7 +30,7 @@ El transporte del gateway depende del destino. Un gateway en VM expone TLS autof
 
 Usted define su postura de sesión, incluida la lista de permitidos de operadores, durante `clicklink clctl init`.
 
-## Activación y desactivación de sesiones
+## Activación y desactivación de sesiones {#enabling-and-disabling-sessions}
 
 <Tabs>
   <Tab title="Kubernetes" id="sessions-kubernetes">
@@ -81,11 +81,11 @@ Usted define su postura de sesión, incluida la lista de permitidos de operadore
   </Tab>
 </Tabs>
 
-## Caducidad de la sesión
+## Caducidad de la sesión {#session-expiry}
 
 Las sesiones caducan automáticamente. La duración predeterminada es de 4 horas; `session enable --duration` acepta hasta 24 horas. Al caducar, o en cuanto ejecuta `session disable`, el solucionador de problemas deja de aceptar comandos. Deshabilitarla revoca el acceso de inmediato: no requiere reiniciar ni coordinarse con ClickHouse.
 
-## Lista de permitidos de operadores
+## Lista de permitidos de operadores {#operator-allowlist}
 
 Cada llamada al gateway se autoriza conforme a una lista de permitidos de correos electrónicos de operadores. El cotejo utiliza el correo electrónico acreditado por el token OIDC validado, nunca un valor que proporcione el client.
 
@@ -94,7 +94,7 @@ Cada llamada al gateway se autoriza conforme a una lista de permitidos de correo
 
 En ambos targets, el gateway vuelve a leer el archivo en la siguiente request una vez transcurridos 30 segundos desde la última lectura. Las modificaciones surten efecto sin reiniciar.
 
-## Qué pueden hacer los operadores durante una sesión
+## Qué pueden hacer los operadores durante una sesión {#what-operators-can-do}
 
 Mientras una sesión está activa, los ingenieros de soporte de ClickHouse pueden ejecutar dos tipos de comandos.
 
@@ -106,7 +106,7 @@ La lista de permitidos predeterminada abarca tablas de `system` como `system.par
 
 El RBAC del solucionador de problemas no contiene ningún permiso `exec`, `delete` ni `patch`, de modo que los operadores no pueden abrir una shell en sus pods ni modificar nada a través de una sesión. La enumeración completa de grants y RBAC se encuentra en la referencia del [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-## Log de auditoría
+## Log de auditoría {#audit-log}
 
 Cada comando ejecutado durante una sesión se añade a `/var/log/clicklink/troubleshoot-audit.log` como un objeto JSON por línea (NDJSON). Los comandos bloqueados también se registran, indicando en `blocked_by` el motivo (por ejemplo, `session inactive`). `submitted_by` es el Organization ID del canal de comandos: el ID de su propia organización. El ingeniero de ClickHouse concreto queda registrado del lado de ClickHouse Cloud, no en este archivo. Una entrada de comando de sesión tiene este aspecto:
 
@@ -140,11 +140,11 @@ kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-trouble
 
 El log de auditoría es un archivo plano dentro de su entorno; envíelo a su propio SIEM como cualquier otro log de host o de contenedor.
 
-## Redacción
+## Redacción {#redaction}
 
 Todo lo que devuelve el solucionador de problemas se censura antes de salir de su entorno. Los patrones integrados cubren direcciones IPv4 e IPv6, tokens Bearer, claves de acceso de AWS, direcciones de correo electrónico, JWT, claves privadas SSH y credenciales incluidas en cadenas de conexión. Puede ampliarlos o sobrescribirlos en `/etc/clicklink/redaction-patterns.yaml`; una entrada con el mismo nombre que un patrón integrado lo reemplaza. El daemon no se inicia si el archivo de patrones no es válido, y `clicklink clctl preflight` lo valida, de modo que una configuración de redacción incorrecta falla de forma explícita.
 
-## Páginas relacionadas
+## Páginas relacionadas {#related-pages}
 
 * [Arquitectura](/es/products/bring-your-own-cloud/connector/architecture): todas las conexiones que realiza el conector y el flujo de datos en las sesiones.
 * [Configuración](/es/products/bring-your-own-cloud/connector/configuration): configuración de gateway, allowlist y redacción.

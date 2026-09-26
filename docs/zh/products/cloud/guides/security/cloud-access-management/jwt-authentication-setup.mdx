@@ -40,7 +40,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
   基于 JWKS 的提供商接受 **RSA** 密钥，以及从 26.8 版本起接受 P-256、P-384 和 P-521 曲线上的 **EC** 密钥。JWKS 文档可以包含其他类型的密钥，但必须至少包含一个可用的密钥。
 </Note>
 
-## 工作原理
+## 工作原理 {#how-it-works}
 
 客户端 (您的身份提供商或应用程序) 生成 JWT，并使用其**私钥**对其签名。标记必须符合预期的[标记格式](/zh/concepts/features/security/external-authenticators/jwt#token-claims)。随后，ClickHouse 会使用您 JWKS URL 上发布的**公钥**验证该标记：
 
@@ -51,7 +51,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 添加或更新提供商时，ClickHouse 会验证并拉取 JWKS URL，因此会预先拒绝配置错误或无法访问的 URL。
 
 <div id="add-a-jwt-provider">
-  ## 添加 JWT 提供商
+  ## 添加 JWT 提供商 {#add-a-jwt-provider}
 </div>
 
 <Steps>
@@ -87,7 +87,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 </Warning>
 
 <div id="limits">
-  ## 限制
+  ## 限制 {#limits}
 </div>
 
 * 每个服务最多可配置 **五个** JWT 提供商。
@@ -95,7 +95,7 @@ ClickHouse Cloud 支持使用 JSON Web Token (JWT) 对服务连接进行身份�
 * JWKS URL 必须是公网 HTTPS 端点。私网、内部或链路本地地址均会被拒绝。
 
 <div id="related">
-  ## 相关内容
+  ## 相关内容 {#related}
 </div>
 
 * [JWT 身份验证](/zh/concepts/features/security/external-authenticators/jwt) — 标记声明、临时用户和客户端使用。

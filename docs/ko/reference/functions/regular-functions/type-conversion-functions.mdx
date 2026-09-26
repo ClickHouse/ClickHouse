@@ -6,7 +6,7 @@ title: '형 변환 함수'
 doc_type: 'reference'
 ---
 
-## 데이터 변환 시 일반적으로 발생하는 문제
+## 데이터 변환 시 일반적으로 발생하는 문제 {#common-issues-with-data-conversion}
 
 ClickHouse는 일반적으로 [C++ 프로그램과 동일한 동작 방식](https://en.cppreference.com/w/cpp/language/implicit_conversion)을 사용합니다.
 
@@ -49,7 +49,7 @@ SETTINGS cast_keep_nullable = 1
 └──────────────────┴─────────────────────┴──────────────────┘
 ```
 
-## `toString` 함수에 대한 참고 사항
+## `toString` 함수에 대한 참고 사항 {#to-string-functions}
 
 `toString` 계열 함수는 숫자, 문자열(고정 문자열 제외), 날짜, 날짜와 시간을 서로 변환할 수 있도록 합니다.
 이 함수들은 모두 하나의 인수를 받습니다.
@@ -59,7 +59,7 @@ SETTINGS cast_keep_nullable = 1
 * 날짜와 시간을 숫자로 변환하거나 그 반대로 변환할 때 날짜와 시간은 Unix epoch 시작 이후 경과한 초 수에 해당합니다.
 * `DateTime` 인수에 대한 `toString` 함수는 시간대 이름을 포함하는 두 번째 String 인수를 받을 수 있습니다. 예를 들어 `Europe/Amsterdam`입니다. 이 경우 시간은 지정된 시간대에 따라 포맷됩니다.
 
-## `toDate`/`toDateTime` 함수 관련 참고 사항
+## `toDate`/`toDateTime` 함수 관련 참고 사항 {#to-date-and-date-time-functions}
 
 `toDate`/`toDateTime` 함수의 날짜 형식과 날짜-시간 형식은 다음과 같이 정의됩니다.
 

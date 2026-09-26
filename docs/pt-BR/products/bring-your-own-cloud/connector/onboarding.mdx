@@ -13,9 +13,9 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Esta página orienta você desde o token de inscrição até um connector verificado em modo managed, no qual o executor aplica o ciclo de vida do serviço conduzido pelo ClickHouse Cloud. O connector é instalado em um cluster do Kubernetes (Helm) ou em uma VM Linux (systemd). A inscrição por token é o fluxo padrão. Quando o ambiente não puder acessar diretamente o connector endpoint do seu connector, consulte [instalações isoladas da internet e com espelhamento](#air-gapped-and-mirrored-installs). Para observar um ClickHouse que você mesmo executa, sem o executor, use `--no-managed`.
 
-## Pré-requisitos
+## Pré-requisitos {#prerequisites}
 
-### Registre seu ambiente
+### Registre seu ambiente {#registration}
 
 Antes de realizar a inscrição, sua account team registra seu ambiente e habilita o modo managed para sua organização. Forneça a ela:
 
@@ -27,7 +27,7 @@ Antes de realizar a inscrição, sua account team registra seu ambiente e habili
 
 Em seguida, o ClickHouse Cloud emite seu connector endpoint e um token de inscrição de uso único. O token identifica seu ambiente, portanto a inscrição não requer nenhum ID adicional.
 
-### Para toda instalação
+### Para toda instalação {#prerequisites-every-install}
 
 * **Connector v0.17.0 ou posterior.** Lançamentos anteriores não têm modo managed, comandos `platform` nem `instances create`. O instalador entrega o lançamento mais recente, a menos que você passe `--version`.
 * **Seu connector endpoint e token de inscrição**, fornecidos durante o [registro](#registration).
@@ -37,7 +37,7 @@ Em seguida, o ClickHouse Cloud emite seu connector endpoint e um token de inscri
 * **Nenhum ClickHouse ainda.** Uma instalação gerenciada começa sem serviços; os que o executor cria se registram sozinhos. No modo managed, o `init` não registra nenhum ClickHouse executado por você (no Kubernetes, ele recusa `--instance` e `--instance-namespace`). Para observar um cluster desse tipo, instale uma implantação de connector separada com `--no-managed`. O `--ch-user-suffix` permite que as duas implantações compartilhem uma instance sem conflitos entre os usuários do connector. Essa implantação precisa de um listener native acessível, 9440 seguro ou 9000 em plaintext, detectado automaticamente no Kubernetes. Ela também precisa de acesso de ClickHouse admin para o provisioning: um usuário `default` sem password, uma password informada com `--ch-admin-password-stdin` ou no prompt, ou injection de CR para instances gerenciadas por operator.
 * **cosign** em qualquer lugar onde você baixe release artifacts. O instalador sempre verifica o checksum SHA-256. Com o cosign instalado, ele também verifica a assinatura do lançamento e, com `CLICKLINK_REQUIRE_COSIGN=1`, recusa-se a prosseguir sem o cosign.
 
-### Para instalações no Kubernetes (Helm)
+### Para instalações no Kubernetes (Helm) {#prerequisites-kubernetes}
 
 * **Um kubeconfig** cujo contexto atual aponte para o cluster EKS. Ele deve ser capaz de criar e ler o espaço de nomes do connector, aplicar Secrets, criar ServiceAccounts, Roles e RoleBindings, instalar o chart e conceder ao executor seu acesso a todo o cluster.
 * **AWS credenciais** na workstation (ambiente ou perfil) com `eks:DescribeCluster` e `ec2:DescribeVpcs`. O `init` as utiliza para ler os blocos CIDR da VPC do seu cluster para a NetworkPolicy. Se o lookup falhar, ele emite um aviso e deixa essa lista para você preencher.
@@ -45,7 +45,7 @@ Em seguida, o ClickHouse Cloud emite seu connector endpoint e um token de inscri
 * **Uma StorageClass padrão**, ou uma classe a ser informada com `--storage-class`; o solucionador de problemas e o executor mantêm estado em PersistentVolumeClaims.
 * **Acesso de pull de imagens**: os nós do cluster devem conseguir extrair a imagem pública do ECR, ou um mirror hospedado por você.
 
-### Para instalações em Linux VM (systemd)
+### Para instalações em Linux VM (systemd) {#prerequisites-vm}
 
 * **Qualquer host Linux com systemd**, amd64 ou arm64. As compilações Linux são executadas em modo FIPS.
 * **Acesso root** para o instalador e para o `init`.
@@ -56,7 +56,7 @@ Em seguida, o ClickHouse Cloud emite seu connector endpoint e um token de inscri
   Em uma VM, `--skip-provision` é a única forma de contornar a exigência do Kubernetes API server, e vale apenas para stage. Ele ignora o provisioning do ClickHouse user, o grant do executor, a habilitação da unit e a verificação, ou seja, por si só não resulta em nenhum connector em execução. No Kubernetes, ele ignora apenas o provisioning do ClickHouse user. O grant do executor continua sendo aplicado, porque o executor do chart não consegue ser agendado sem a ServiceAccount com o grant concedido.
 </Note>
 
-## Instale e faça o registro
+## Instale e faça o registro {#install-and-enroll}
 
 <Steps>
   <Step title="Obtenha o endpoint do conector e o token de inscrição" id="get-endpoint-and-token">
@@ -170,7 +170,7 @@ Em seguida, o ClickHouse Cloud emite seu connector endpoint e um token de inscri
   </Step>
 </Steps>
 
-## Instalações isoladas da internet e com espelhamento
+## Instalações isoladas da internet e com espelhamento {#air-gapped-and-mirrored-installs}
 
 Duas partes independentes podem ser transferidas fora de banda, dependendo do que o seu ambiente consegue alcançar. O executor não precisa de nada adicional: ele se autentica com o mesmo certificado de cliente e as mesmas credenciais de API que os demais componentes. Você aplica o grant cluster-wide dele pelo seu kubeconfig, e não pela rede.
 
@@ -182,7 +182,7 @@ No Kubernetes, o `--chart` aceita um nome de chart resolvido por meio de `--char
 
 O instalador também funciona a partir de um mirror: hospede os release artifacts e o `install.sh` no seu próprio mirror e aponte para ele com `CLICKLINK_MIRROR_URL`.
 
-### Download e verificação manuais
+### Download e verificação manuais {#manual-download-and-verification}
 
 Se preferir não usar pipe para executar o instalador, baixe e verifique o lançamento manualmente. O bloco detecta sua plataforma e arquitetura; execute-o como está no macOS ou Linux, amd64 ou arm64:
 
@@ -220,7 +220,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 Em uma VM, extraia o tarball e execute `sudo ./install.sh` no diretório extraído. Ao lado dos release artifacts, ele realiza a mesma instalação no host que `--host`.
 
-## Se algo falhar
+## Se algo falhar {#if-something-fails}
 
 Execute novamente o mesmo comando. O `init` é idempotente: novas execuções convergem para o mesmo estado, preservam sua configuração existente e os arquivos preparados e ignoram o trabalho já concluído. Quando um passo falha no meio do processo, a CLI imprime os comandos de recuperação exatos; eles podem ser repetidos com segurança.
 

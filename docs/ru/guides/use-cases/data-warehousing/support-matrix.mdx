@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 Поддержка отдельно указана для ClickHouse Cloud и самоуправляемого ClickHouse. Экспериментальные возможности по умолчанию отключены в ClickHouse Cloud, и их [необходимо запрашивать через службу поддержки](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#13-experimental-features-in-production). Доступность зависит от конкретной возможности, поэтому обратитесь в службу поддержки, чтобы подтвердить возможность включения нужной экспериментальной возможности. Конфигурация и ограничения, зависящие от развертывания, описаны в столбце Notes.
 
-## Поддержка открытых табличных форматов
+## Поддержка открытых табличных форматов {#format-support}
 
 ClickHouse интегрируется с четырьмя открытыми табличными форматами: [Apache Iceberg](/ru/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/ru/reference/engines/table-engines/integrations/deltalake), [Apache Hudi](/ru/reference/engines/table-engines/integrations/hudi) и [Apache Paimon](/ru/reference/functions/table-functions/paimon). Выберите формат ниже, чтобы посмотреть матрицу поддержки.
 
@@ -153,7 +153,7 @@ ClickHouse интегрируется с четырьмя открытыми т�
   </Tab>
 </Tabs>
 
-## Поддержка каталогов
+## Поддержка каталогов {#catalog-support}
 
 ClickHouse может подключаться к внешним каталогам данных с помощью движка базы данных [`DataLakeCatalog`](/ru/reference/engines/database-engines/datalake), который представляет каталог в виде базы данных ClickHouse. Таблицы, зарегистрированные в каталоге, появляются автоматически, и их можно запрашивать с помощью стандартного SQL.
 

@@ -21,14 +21,14 @@ HackerNews Analyzer هو تطبيق Node.js يستعلم عن مجموعة بي�
 
 هذه مهمة مختلفة عن [العرض التجريبي لإعادة تشغيل الجلسة](/ar/clickstack/example-datasets/session-replay)، الذي يضيف instrumentation إلى تطبيق يعمل في المتصفح فقط باستخدام ClickStack محلي عبر Docker. هنا تحصل على auto-instrumentation للواجهة الخلفية، وspans لاستعلامات ClickHouse، وإعادة تشغيل الجلسة من التطبيق نفسه.
 
-## المتطلبات الأساسية
+## المتطلبات الأساسية {#prerequisites}
 
 * Node 18+ وnpm
 * نقطة نهاية لـ ClickStack OTLP/HTTP ورمز مميز للاستيعاب:
   * **ClickHouse Cloud:** افتح الخدمة، ثم **ClickStack** → **تهيئة exporter لـ OpenTelemetry** → **متغيرات البيئة**. البروتوكول هو `http/protobuf`. تكون headers بالشكل `authorization=<ingestion token>`، من دون بادئة `Bearer`.
   * **collector محلي:** استخدم `http://localhost:4318`. إذا كان collector غير مؤمَّن، فاترك `authorization=` فارغًا.
 
-## استنسخ المستودع
+## استنسخ المستودع {#clone-the-repository}
 
 استنسخ [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)، وثبّت التبعيات، وانسخ قالب ملف البيئة:
 
@@ -43,7 +43,7 @@ cp .env.example .env
 
 <InstrumentApplication />
 
-## تعرّف على المزيد
+## تعرّف على المزيد {#learn-more}
 
 * [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer): المستودع التجريبي الذي يوضّح هذا الدليل كيفية تزويده بأدوات القياس.
 * [إعادة تشغيل الجلسة](/ar/clickstack/features/session-replay): نظرة عامة على الميزة، وخيارات SDK، وعناصر التحكّم في الخصوصية.

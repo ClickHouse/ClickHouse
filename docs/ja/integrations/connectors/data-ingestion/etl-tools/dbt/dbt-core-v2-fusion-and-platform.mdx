@@ -32,11 +32,11 @@ ClickHouse は、dbt OSS、dbt v2、および dbt プラットフォームにお
 
 最新の状況は [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) (v1 に対する v2 の 互換性。領域ごとに 1 つのサブ issue) および [ClickHouse/dbt-clickhouse#555](https://github.com/ClickHouse/dbt-clickhouse/issues/555) (dbt v2) で追跡しています。
 
-#### dbt プラットフォームで ClickHouse を試す
+#### dbt プラットフォームで ClickHouse を試す {#request-access}
 
 プライベートベータを試してみたい場合は、[dbt Labs のプライベートベータ申込フォーム](https://docs.google.com/forms/d/e/1FAIpQLScjHwRchnKarq_RpNM7hATjphNFxqBEePmAwRtSpMWG1snGHA/viewform)から登録してください。このフォームは dbt Labs が管理しているため、送信された情報は ClickHouse ではなく dbt Labs に送られます。利用が有効化されたら、dbt ドキュメントの [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) に従って接続を設定してください。
 
-## 用語と提供状況
+## 用語と提供状況 {#terminology}
 
 dbt にはいくつかの形態があり、同じアダプターが複数の形態で動作する場合もあります。次の表では、それぞれの名称と現時点での ClickHouse のサポート状況を説明します。
 
@@ -47,7 +47,7 @@ dbt にはいくつかの形態があり、同じアダプターが複数の形�
 | **dbt v2**       | dbt OSS に、dbt Labs による追加機能(SQL の解釈、静的解析、LSP、VS Code 拡張機能、カラム認識)を加えたもの。クローズドソースであり、[dbt Product Licensing Agreement](https://www.getdbt.com/dbt-fusion-engine-license-agreement) に基づいてライセンスされます。    | **ベータ。** アダプターは v2 のバイナリ上で動作しますが、新しい SQL 機能は ClickHouse ではまだ利用できません。                                                                                                                                                                                                                                                    |
 | **dbt platform** | ホスト型の dbt(旧 dbt Cloud)。Studio IDE、スケジュール実行される job、環境、Catalog、Semantic Layer を提供します。このプラットフォームで動作するのは dbt v2 のみであるため、プラットフォーム上の ClickHouse は v2 アダプターを指します。                                         | **プライベートベータ。** [アクセスをリクエストする方法](#request-access)を参照してください。セットアップについては、dbt ドキュメントの [Connect ClickHouse](https://docs.getdbt.com/docs/platform/connect-data-platform/connect-clickhouse) を参照してください。                                                                                                                    |
 
-## ベータ状態
+## ベータ状態 {#beta-status}
 
 dbt v2 アダプターは、`dbt-clickhouse` の dbt Core 1.x インテグレーションテストスイートを基準に評価しています。ベータとは、主要な dbt ワークフローと ClickHouse Cloud の機能セットが、文書化された制約の範囲内で動作することを意味します。v1 との完全な互換性とセルフマネージドクラスターのサポートは、その後の対応となります。
 
@@ -57,7 +57,7 @@ dbt v2 アダプターは、`dbt-clickhouse` の dbt Core 1.x インテグレー
 
 GA はロードマップに含まれており、近日中に対応予定です。準備が整い次第、ドキュメントを更新します。
 
-### ベータの対象外
+### ベータの対象外 {#out-of-scope}
 
 以下に挙げる v1 とのパリティギャップに加えて、v2 固有の機能のうちいくつかは現時点ではスコープ外ですが、近日対応予定です。
 
@@ -65,13 +65,13 @@ GA はロードマップに含まれており、近日中に対応予定です�
 * **dbt v2 における ClickHouse SQL インテリジェンス** (ダイアレクトを認識したバリデーション、静的解析、LSP、VS Code 拡張機能でのカラム認識) 。現時点でアダプターは dbt v2 のバイナリ上で動作しますが、これらの機能はまだ含まれていません。それまでの間、ClickHouse プロジェクトでは静的解析は強制的に `off` となり、エンジンはカラムレベルのリネージを書き出しません。[#736](https://github.com/ClickHouse/dbt-clickhouse/issues/736) で追跡されています。
 * dbt プラットフォームにおける、ユーザー名とパスワード以外の**追加の認証方式**。
 
-## v1 と v2 の互換性
+## v1 と v2 の互換性 {#parity}
 
 以下の表は、`dbt-clickhouse`(v1)で利用できる機能と、dbt v2 アダプターでのステータスを比較したものです。注記がない限り、記載されているすべての機能は v1 でサポートされています。ステータス列は dbt v2 についての情報であり、dbt OSS にも同様に適用されます。未対応の各項目の進捗は [ClickHouse/dbt-clickhouse#660](https://github.com/ClickHouse/dbt-clickhouse/issues/660) で追跡されています。
 
 <Badge color="green">サポート済み</Badge> 現在利用可能 · <Badge color="yellow">部分的</Badge> 制限付きで利用可能 · <Badge color="red">未対応</Badge> 実装待ち。
 
-### Materializations
+### Materializations {#parity-materializations}
 
 | 機能                                       | 機能の内容                                          | dbt v2                              | Notes                                                                                            |
 | --------------------------------------------- | ---------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -85,7 +85,7 @@ GA はロードマップに含まれており、近日中に対応予定です�
 | `ephemeral`                                   | インラインの CTE で、object は作成されません。                  | <Badge color="green">サポート済み</Badge> |                                                                                                  |
 | `distributed_table`、`distributed_incremental` | Distributed engine の背後に配置された分片化された table。      | <Badge color="red">未対応</Badge>      |                                                                                                  |
 
-### モデル設定
+### モデル設定 {#parity-model-configuration}
 
 | Feature                                      | 機能の内容                              | dbt v2                              | Notes |
 | -------------------------------------------- | ---------------------------------- | ----------------------------------- | ----- |
@@ -97,7 +97,7 @@ GA はロードマップに含まれており、近日中に対応予定です�
 | インクリメンタルモデルでのスキーマ進化                          | `on_schema_change` によるカラムの追加または同期。 | <Badge color="green">サポート済み</Badge> |       |
 | カラムの `codec` と `ttl`                         | カラムごとの圧縮と有効期限。                     | <Badge color="green">サポート済み</Badge> |       |
 
-### テストとドキュメント
+### テストとドキュメント {#parity-testing-and-docs}
 
 | 機能               | 内容                           | dbt v2                              | 備考                                                                                                                                   |
 | ---------------- | ---------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -107,7 +107,7 @@ GA はロードマップに含まれており、近日中に対応予定です�
 | カタログおよびドキュメントの生成 | ドキュメントサイト向けのカラムメタデータ。        | <Badge color="green">サポート済み</Badge> |                                                                                                                                      |
 | カラムレベルのリネージ      | DAG全体を通じてカラムを追跡します。          | <Badge color="yellow">部分的</Badge>   | SQLコンパイラによるv2の新機能で、v1では利用できません。dbtプラットフォームのリネージは、`dbt_project.yml` で識別子のクオートを無効にした場合にのみ表示されます。エンジン側のリネージにはClickHouse SQLダイアレクトが必要です。 |
 
-### クラスターと Cloud
+### クラスターと Cloud {#parity-cluster-and-cloud}
 
 | 機能                             | 内容                                                           | dbt v2                              | 備考                                                                                                                                       |
 | ------------------------------ | ------------------------------------------------------------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -118,7 +118,7 @@ GA はロードマップに含まれており、近日中に対応予定です�
 | カスタム接続設定                       | プロファイルレベルの `custom_settings`。                                | <Badge color="green">サポート済み</Badge> |                                                                                                                                          |
 | ClickHouse サーバーバージョン           | 最小サーバーバージョン。                                                 | <Badge color="green">サポート済み</Badge> | 両エンジンとも 25.3 以降。v2 で `UUID` カラムを読み取るには 26.7 以降が必要です (これより古いサーバーでは `UUID` を Arrow に変換できません) 。                                             |
 
-### マクロと操作
+### マクロと操作 {#parity-macros-and-operations}
 
 | 機能                      | 内容                                                            | dbt v2                              | Notes                             |
 | ----------------------- | ------------------------------------------------------------- | ----------------------------------- | --------------------------------- |
@@ -130,7 +130,7 @@ GA はロードマップに含まれており、近日中に対応予定です�
 | `query-comment`         | クエリコメントの設定。                                                   | <Badge color="red">未対応</Badge>      | `query-comment: null` はまだ反映されません。 |
 | カタログインテグレーション (Iceberg) | external catalogs へのマテリアライズ。                                  | <Badge color="red">未対応</Badge>      | v1 でも未対応です。回避策はドキュメントに記載されています。   |
 
-### 接続と認証
+### 接続と認証 {#parity-connectivity-and-auth}
 
 | 機能                | 概要                                                                                                        | dbt v2                              | 備考                                               |
 | ----------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------ |

@@ -17,13 +17,13 @@ O [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) é uma a
 
 Este guia pressupõe que você concluiu [Setting up your OpenTelemetry Collector](/pt-BR/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) e tem um coletor do ClickStack em execução e acessível a partir da máquina em que esta aplicação é executada. **Certifique-se de ter anotado o endpoint OTLP** e o `OTLP_AUTH_TOKEN` que você definiu ao fazer o deploy dele. Você colocará esses valores em `.env` antes de instrumentar.
 
-## Pré-requisitos
+## Pré-requisitos {#prerequisites}
 
 * Um coletor do ClickStack acessível a partir desta máquina. Se você ainda não implantou um, siga primeiro [Configurando seu OpenTelemetry Collector](/pt-BR/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector).
 * O endpoint OTLP/HTTP desse coletor (geralmente na porta `4318`) e o `OTLP_AUTH_TOKEN` configurado nele. Use-os como `OTEL_EXPORTER_OTLP_ENDPOINT` e `OTEL_EXPORTER_OTLP_HEADERS=authorization=<token>`.
 * Node 18+ e npm.
 
-## Clone o repositório
+## Clone o repositório {#clone-the-repository}
 
 Clone o [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), instale as dependências e copie o modelo de arquivo de ambiente:
 
@@ -38,7 +38,7 @@ Você preencherá o `.env` nas próximas etapas e, em seguida, instrumentará a 
 
 <InstrumentApplication />
 
-## Leitura adicional
+## Leitura adicional {#further-reading}
 
 * [Monitoramento do Kubernetes](/pt-BR/clickstack/managed-onboarding/monitoring-kubernetes): colete logs, métricas de infraestrutura e eventos do Kubernetes de um cluster.
 * [Monitoramento de logs do AWS CloudWatch](/pt-BR/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): encaminhe logs do CloudWatch por meio do receiver CloudWatch do OpenTelemetry.

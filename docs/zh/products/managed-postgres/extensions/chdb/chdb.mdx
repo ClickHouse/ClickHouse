@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
 
-## 概要
+## 概要 {#synopsis}
 
 ```psql
 # CREATE EXTENSION chdb;
@@ -20,13 +20,13 @@ CREATE EXTENSION
 (1 row)
 ```
 
-## 描述
+## 描述 {#description}
 
 `chdb` 扩展会在一个辅助进程中运行 [chDB] 查询。
 
-## 函数
+## 函数 {#functions}
 
-### `pgchdb_version`
+### `pgchdb_version` {#pgchdb_version}
 
 ```sql
 SELECT pgchdb_version();
@@ -40,7 +40,7 @@ SELECT version
  WHERE module_name = 'chdb';
 ```
 
-### `chdb_query`
+### `chdb_query` {#chdb_query}
 
 ```sql
 SELECT * FROM chdb_query('SELECT version()') AS (version text);
@@ -77,13 +77,13 @@ SELECT * FROM chdb_query(
 (5 rows)
 ```
 
-## 文本编码
+## 文本编码 {#text-encoding}
 
 有关 chDB 字节字符串如何映射到 Postgres 的 `text`、`bytea` 等类型，请参阅 [`chdb_hook` 文档中的文本编码][text encoding]。
 
-## 设置
+## 设置 {#settings}
 
-### `chdb.max_memory`
+### `chdb.max_memory` {#chdbmax_memory}
 
 ```sql
 SET chdb.max_memory = '1 GB';
@@ -100,7 +100,7 @@ chDB 查询可使用的最大内存量，用于设置 chDB 的
 
 默认值为 `0`，表示不限制内存。
 
-### `chdb.max_threads`
+### `chdb.max_threads` {#chdmax_threads}
 
 ```sql
 SET chdb.max_threads = 4;
@@ -110,7 +110,7 @@ chDB 查询的最大查询处理线程数，用于设置 chDB 的 [`max_threads`
 
 我们强烈建议在执行大型查询前先设置 `chdb.max_threads`，避免 chDB 占满 CPU 资源，进而影响 PostgreSQL。
 
-### `chdb.max_parsing_threads`
+### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
 
 ```sql
 SET chdb.max_parsing_threads = 2;
@@ -120,7 +120,7 @@ chDB 在解析支持并行解析的输入格式时可使用的最大线程数，
 
 在执行需要解析大量数据的查询 (例如从 [table functions] 加载数据) 之前，建议先设置 `chdb.max_parsing_threads`，以避免 chDB 占满 CPU 资源而影响 PostgreSQL。
 
-## 版本控制策略
+## 版本控制策略 {#versioning-policy}
 
 chdb 扩展 的公开发布遵循[语义化版本控制][semver]。
 
@@ -137,12 +137,12 @@ chdb 扩展 的公开发布遵循[语义化版本控制][semver]。
 
 而递增次版本号或主版本号的发布则会附带 SQL 升级 scripts，所有已安装该 extension 的现有 database 都必须运行 `ALTER EXTENSION chdb UPDATE`，才能享受此次升级。
 
-## 作者
+## 作者 {#authors}
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## 版权
+## 版权 {#copyright}
 
 Copyright (c) 2026, ClickHouse
 

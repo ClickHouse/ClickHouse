@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
 
-## Synopsis
+## Synopsis {#synopsis}
 
 ```psql
 # CREATE EXTENSION chdb;
@@ -20,13 +20,13 @@ CREATE EXTENSION
 (1 row)
 ```
 
-## Description
+## Description {#description}
 
 L&#39;extension `chdb` exécute les requêtes [chDB] dans un processus auxiliaire.
 
-## Fonctions
+## Fonctions {#functions}
 
-### `pgchdb_version`
+### `pgchdb_version` {#pgchdb_version}
 
 ```sql
 SELECT pgchdb_version();
@@ -44,7 +44,7 @@ SELECT version
  WHERE module_name = 'chdb';
 ```
 
-### `chdb_query`
+### `chdb_query` {#chdb_query}
 
 ```sql
 SELECT * FROM chdb_query('SELECT version()') AS (version text);
@@ -88,14 +88,14 @@ Sortie :
 (5 rows)
 ```
 
-## Encodage du texte
+## Encodage du texte {#text-encoding}
 
 Consultez [Encodage du texte dans la documentation de `chdb_hook`][text encoding] pour savoir comment
 les byte strings de chDB sont mappées aux types Postgres `text`, `bytea` et autres.
 
-## Paramètres
+## Paramètres {#settings}
 
-### `chdb.max_memory`
+### `chdb.max_memory` {#chdbmax_memory}
 
 ```sql
 SET chdb.max_memory = '1 GB';
@@ -113,7 +113,7 @@ correspondant au nombre de mégaoctets, ou utilisez l&#39;une des unités de mé
 
 La valeur par défaut est `0`, ce qui ne limite pas la mémoire.
 
-### `chdb.max_threads`
+### `chdb.max_threads` {#chdmax_threads}
 
 ```sql
 SET chdb.max_threads = 4;
@@ -123,7 +123,7 @@ Le nombre maximal de threads de requête processing pour une requête chDB, util
 
 Il est fortement recommandé de définir `chdb.max_threads` avant d&#39;exécuter une requête volumineuse, afin d&#39;éviter que chDB ne sature le CPU au détriment de PostgreSQL.
 
-### `chdb.max_parsing_threads`
+### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
 
 ```sql
 SET chdb.max_parsing_threads = 2;
@@ -133,7 +133,7 @@ Le nombre maximal de threads que chDB peut utiliser pour parser les données dan
 
 Nous recommandons de définir `chdb.max_parsing_threads` avant d&#39;exécuter une requête qui parse un grand volume de données, par exemple lors du chargement de données depuis des [table functions], afin d&#39;éviter que chDB ne sature le CPU au détriment de PostgreSQL.
 
-## Politique de versionnage
+## Politique de versionnage {#versioning-policy}
 
 L&#39;extension chdb respecte le [versionnage sémantique][semver] pour ses
 releases publiques.
@@ -160,12 +160,12 @@ de scripts SQL de mise à niveau, et toutes les bases de données existantes con
 l&#39;extension devront exécuter `ALTER EXTENSION chdb UPDATE` pour profiter de la
 mise à niveau.
 
-## Auteurs
+## Auteurs {#authors}
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## Droits d&#39;auteur
+## Droits d&#39;auteur {#copyright}
 
 Copyright (c) 2026, ClickHouse
 

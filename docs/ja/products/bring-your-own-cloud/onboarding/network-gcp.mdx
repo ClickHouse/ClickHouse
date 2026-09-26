@@ -17,13 +17,13 @@ GCP 上の ClickHouse BYOC は、VPC ピアリング と PSC (Private Service Co
 
 VPC ピアリング と PSC の両方に共通して必要な手順です。
 
-### ClickHouse BYOC のプライベートロードバランサーを有効にする
+### ClickHouse BYOC のプライベートロードバランサーを有効にする {#step-enable-private-load-balancer-for-clickhouse-byoc}
 
 ClickHouse Cloud console で、BYOC インフラストラクチャの **プライベートロードバランサー** を有効にします。
 
 <Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC プライベートロードバランサーを有効にする" border />
 
-## VPC ピアリングを設定する
+## VPC ピアリングを設定する {#gcp-vpc-peering}
 
 事前に [GCP VPC ピアリング 機能](https://docs.cloud.google.com/vpc/docs/vpc-peering)を確認し、VPC ピアリングの制限事項 (たとえば、ピアリングされた VPC ネットワーク間ではサブネットの IP 範囲を重複させることはできません) に注意してください。ClickHouse BYOC では、ピアリング経由で ClickHouseサービス へのネットワーク接続を可能にするために、プライベートロードバランサーを使用します。
 
@@ -63,7 +63,7 @@ ClickHouse BYOC の VPC ピアリングを作成または削除するには、�
   </Step>
 </Steps>
 
-## PSC (Private Service Connect) を設定する
+## PSC (Private Service Connect) を設定する {#setup-psc}
 
 GCP PSC (Private Service Connect) を使用すると、VPC ピアリングやインターネットゲートウェイを介さずに、ClickHouse BYOC サービスへ安全なプライベート接続を確立できます。すべてのトラフィックは GCP ネットワーク内で処理されるため、パブリックインターネットを経由することはありません。
 

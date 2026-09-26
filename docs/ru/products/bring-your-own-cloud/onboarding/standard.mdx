@@ -26,16 +26,16 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </Note>
 
 <div id="request-access">
-  ## Запросите доступ
+  ## Запросите доступ {#request-access}
 </div>
 
 Чтобы начать процесс онбординга, [свяжитесь с нами](https://clickhouse.com/cloud/bring-your-own-cloud). Наша команда поможет вам разобраться с требованиями BYOC, выбрать наиболее подходящие варианты развертывания и добавить вашу учетную запись в список разрешенных.
 
 <div id="onboarding-process">
-  ## Онбординг
+  ## Онбординг {#onboarding-process}
 </div>
 
-### Подготовьте аккаунт AWS/проект GCP/подписку Azure
+### Подготовьте аккаунт AWS/проект GCP/подписку Azure {#prepare-an-aws-account}
 
 Подготовьте новый аккаунт AWS, проект GCP или подписку Azure в своей организации.
 
@@ -57,7 +57,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       Бакеты хранилища, VPC/VNet, кластер Kubernetes и вычислительные ресурсы, необходимые для запуска ClickHouse, не входят в первоначальную настройку. Они будут подготовлены на следующем шаге.
     </Note>
 
-#### Модуль Terraform для AWS
+#### Модуль Terraform для AWS {#terraform-module-aws}
 
     Если для развертываний в AWS вы предпочитаете Terraform вместо CloudFormation, используйте модуль [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -76,7 +76,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       Ранее модуль распространялся в виде архива tarball по адресу `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. Этот URL по-прежнему доступен, но устарел — используйте указанный выше модуль на GitHub.
     </Note>
 
-#### Внешний ID AWS
+#### Внешний ID AWS {#aws-external-id}
 
     В AWS роль IAM, созданная при настройке, доверяет ClickHouse Cloud, используя [внешний ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) для защиты от атак типа «confused deputy». При запуске онбординга консоль ClickHouse Cloud генерирует внешний ID для вашего аккаунта AWS и предварительно заполняет его в ссылке CloudFormation. Если вы используете Terraform, передайте то же значение в параметре `external_id`. Все инфраструктуры BYOC в рамках одного аккаунта AWS используют один и тот же внешний ID.
 
@@ -102,7 +102,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="Настройте инфраструктуру BYOC" background="black" />
 
-#### Предварительная проверка
+#### Предварительная проверка {#preflight-validation}
 
     Когда вы нажимаете **Set up Infrastructure**, ClickHouse Cloud выполняет в вашем аккаунте набор предварительных проверок **только для чтения**, прежде чем создавать какие-либо ресурсы. Если все проверки пройдены, подготовка инфраструктуры продолжается. Если проверка не пройдена, настройка приостанавливается, и консоль показывает, в чём именно проблема, чтобы вы могли устранить её до создания каких-либо ресурсов.
 
@@ -138,7 +138,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   </Step>
 </Steps>
 
-### Создайте свой первый BYOC-сервис ClickHouse
+### Создайте свой первый BYOC-сервис ClickHouse {#create-clickhouse-service}
 
 После того как ваша BYOC-инфраструктура будет подготовлена, можно запускать первый сервис ClickHouse. Откройте консоль ClickHouse Cloud, выберите свою BYOC-среду и следуйте подсказкам, чтобы создать новый сервис.
 

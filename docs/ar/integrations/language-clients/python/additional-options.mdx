@@ -9,7 +9,7 @@ doc_type: 'مرجع'
 
 يوفّر ClickHouse Connect عددًا من الخيارات الإضافية لحالات الاستخدام المتقدمة.
 
-## الإعدادات العامة
+## الإعدادات العامة {#global-settings}
 
 هناك عدد من الإعدادات التي تتحكم في سلوك ClickHouse Connect على مستوى عام. ويمكن الوصول إليها من الحزمة `common` ذات المستوى الأعلى:
 
@@ -45,7 +45,7 @@ print(common.get_setting("invalid_setting_action"))
 | `max_error_size`          | `1024`     | أي عدد صحيح غير سالب                  | الحد الأقصى لعدد الأحرف المضمّنة في خطأ العميل. استخدم `0` للرسالة كاملةً.                                                                                                                                                                                                                                                                                                                                        |
 | `http_buffer_size`        | `10485760` | بايت                                  | حجم المخزن المؤقت في الذاكرة لاستعلامات HTTP المتدفقة، والقيمة الافتراضية هي 10 MiB.                                                                                                                                                                                                                                                                                                                              |
 
-## الضغط
+## الضغط {#compression}
 
 يدعم ClickHouse Connect ضغط الاستجابة باستخدام lz4 وzstd وbrotli وgzip وdeflate. كما تدعم عمليات الإدراج Native كلاً من lz4 وzstd وbrotli وgzip. يوازن الضغط بين استهلاك وقت CPU وتقليل حجم النقل عبر الشبكة.
 
@@ -59,17 +59,17 @@ print(common.get_setting("invalid_setting_action"))
 
 يكون gzip أبطأ عمومًا من lz4 أو zstd في workloads الخاصة بـ ClickHouse.
 
-## دعم HTTP وكيل support
+## دعم HTTP وكيل support {#http-proxy-support}
 
 يتعرّف ClickHouse Connect على متغيرَي البيئة القياسيين `HTTP_PROXY` و`HTTPS_PROXY`. تنطبق هذه المتغيرات على جميع العملاء داخل العملية. لتهيئة وكيل لكل عميل على حدة، مرّر `http_proxy` أو `https_proxy` إلى `get_client` أو `get_async_client`.
 
 يستخدم العميل المتزامن `urllib3`. لاستخدام وكيل SOCKS، ثبّت PySocks ومرّر `urllib3.contrib.socks.SOCKSProxyManager` باعتباره الوسيط `pool_mgr` إلى `get_client`. لا يدعم العميل غير المتزامن الوسيط `pool_mgr`.
 
-## أنواع البيانات Variant وDynamic وJSON
+## أنواع البيانات Variant وDynamic وJSON {#variant-dynamic-json-data-types}
 
 يدعم ClickHouse Connect أنواع بيانات ClickHouse الحالية `Variant` و`Dynamic` و`JSON`. وقد أُزيل النوع القديم `Object('json')` في clickhouse-connect 0.14، وهو غير مدعوم.
 
-### ملاحظات الاستخدام
+### ملاحظات الاستخدام {#usage-notes}
 
 * تُقرأ قيم `Variant` باعتبارها نوع بايثون المطابق. وتختار عمليات الإدراج Native عضوًا بناءً على نوع قيمة بايثون.
 * عندما تتوافق عدة أعضاء في `Variant` مع نوع بايثون نفسه، غلّف القيمة باستخدام `clickhouse_connect.datatypes.dynamic.typed_variant(value, "TypeName")` لتحديد العضو صراحةً.

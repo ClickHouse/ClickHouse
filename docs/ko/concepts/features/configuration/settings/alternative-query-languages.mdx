@@ -20,7 +20,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 사용할 쿼리 언어는 `dialect` 설정으로 제어됩니다.
 
-## 표준 SQL
+## 표준 SQL {#standard-sql}
 
 표준 SQL은 ClickHouse에서 기본으로 사용하는 쿼리 언어입니다.
 
@@ -28,7 +28,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 SET dialect = 'clickhouse'
 ```
 
-## 파이프라인 기반 관계형 쿼리 언어(PRQL)
+## 파이프라인 기반 관계형 쿼리 언어(PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -51,7 +51,7 @@ aggregate {
 
 내부적으로는 ClickHouse가 PRQL을 SQL로 트랜스파일해 PRQL 쿼리를 실행합니다.
 
-## Kusto 쿼리 언어(KQL)
+## Kusto 쿼리 언어(KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ numbers(10) | project number
 
 KQL 쿼리에서는 ClickHouse에 정의된 모든 함수를 사용할 수 없을 수 있다는 점에 유의하십시오.
 
-## Trino SQL
+## Trino SQL {#trino-sql}
 
 <ExperimentalBadge />
 

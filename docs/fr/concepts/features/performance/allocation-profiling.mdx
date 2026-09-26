@@ -21,7 +21,7 @@ ClickHouse et Keeper vous permettent de contrôler l’échantillonnage à l’a
   Pour les versions antérieures, veuillez consulter [le guide de profilage des allocations pour les versions antérieures à 25.9](/fr/concepts/features/performance/allocation-profiling-old).
 </Note>
 
-## Échantillonnage des allocations
+## Échantillonnage des allocations {#sampling-allocations}
 
 Pour échantillonner et profiler les allocations, démarrez ClickHouse/Keeper avec la configuration `jemalloc_enable_global_profiler` activée :
 
@@ -41,7 +41,7 @@ Vous pouvez également activer l’échantillonnage pour chaque requête à l’
   Comme ClickHouse est une application qui effectue de nombreuses allocations, l’échantillonnage de jemalloc peut entraîner un surcoût en termes de performances.
 </Warning>
 
-## Stocker les échantillons jemalloc dans `system.trace_log`
+## Stocker les échantillons jemalloc dans `system.trace_log` {#storing-jemalloc-samples-in-system-trace-log}
 
 Vous pouvez stocker les échantillons jemalloc dans `system.trace_log` avec le type `JemallocSample`.
 Pour l’activer globalement, utilisez la config `jemalloc_collect_global_profile_samples_in_trace_log` :
@@ -60,7 +60,7 @@ Pour l’activer globalement, utilisez la config `jemalloc_collect_global_profil
 
 Vous pouvez également l’activer pour chaque requête à l’aide du paramètre `jemalloc_collect_profile_samples_in_trace_log`.
 
-### Exemple : analyser l’utilisation mémoire d’une requête
+### Exemple : analyser l’utilisation mémoire d’une requête {#example-analyzing-memory-usage-trace-log}
 
 Commencez par exécuter une requête avec le profileur jemalloc activé, puis collectez les échantillons dans `system.trace_log` :
 
@@ -178,7 +178,7 @@ GROUP BY ALL
 ORDER BY per_trace_sum ASC
 ```
 
-## Interface web jemalloc
+## Interface web jemalloc {#jemalloc-web-ui}
 
 <Note>
   Cette section s’applique aux versions 26.2+.
@@ -232,7 +232,7 @@ Vous pouvez également récupérer directement depuis l’interface des profils 
   </Tab>
 </Tabs>
 
-## Récupération des profils du tas depuis SQL
+## Récupération des profils du tas depuis SQL {#fetching-heap-profiles-from-sql}
 
 <Note>
   Cette section s’applique aux versions 26.2 et ultérieures.
@@ -252,7 +252,7 @@ Vous pouvez interroger la table directement — il n’est pas nécessaire de vi
 SELECT * FROM system.jemalloc_profile_text
 ```
 
-### Format de sortie
+### Format de sortie {#output-format}
 
 Le format de sortie est contrôlé par le paramètre `jemalloc_profile_text_output_format`, qui accepte trois valeurs :
 
@@ -274,12 +274,12 @@ SELECT * FROM system.jemalloc_profile_text
 SETTINGS jemalloc_profile_text_output_format = 'symbolized'
 ```
 
-### Paramètres supplémentaires
+### Paramètres supplémentaires {#fetching-heap-profiles-settings}
 
 * `jemalloc_profile_text_symbolize_with_inline` (Bool, par défaut : `true`) — Indique s’il faut inclure les frames inline lors de la symbolisation. Désactiver cette option accélère considérablement la symbolisation, mais réduit la précision, car les appels de fonctions inline n’apparaîtront pas dans les piles d’appels. Affecte uniquement les formats `symbolized` et `collapsed`.
 * `jemalloc_profile_text_collapsed_use_count` (Bool, par défaut : `false`) — Lors de l’utilisation du format `collapsed`, agrège par nombre d’allocations plutôt que par octets.
 
-### Exemple : générer un flame graph à partir d’une requête SQL
+### Exemple : générer un flame graph à partir d’une requête SQL {#example-flamegraph-from-sql}
 
 Comme le format de sortie par défaut est `collapsed`, vous pouvez rediriger directement la sortie vers FlameGraph :
 
@@ -293,7 +293,7 @@ Pour générer un flame graph en fonction du nombre d’allocations plutôt que 
 clickhouse-client -q "SELECT * FROM system.jemalloc_profile_text SETTINGS jemalloc_profile_text_collapsed_use_count = 1" | flamegraph.pl --color=mem --title="Allocation Count Flame Graph" --width 2400 > result.svg
 ```
 
-## Analyser la fragmentation depuis SQL
+## Analyser la fragmentation depuis SQL {#analyzing-fragmentation-from-sql}
 
 <Note>
   Cette section s&#39;applique aux versions 26.9 et ultérieures.
@@ -342,7 +342,7 @@ ORDER BY b.waste DESC, s.est_old_objects DESC
 SETTINGS allow_introspection_functions=1
 ```
 
-### Example : générer un flame graph de la fragmentation
+### Example : générer un flame graph de la fragmentation {#example-fragmentation-flamegraph}
 
 La même requête peut répartir le gaspillage de chaque size class entre ses backtraces, proportionnellement à leur nombre d&#39;anciennes allocations, puis afficher le résultat au format collapsed pour `flamegraph.pl`. Les size classes présentant du gaspillage mais dépourvues d&#39;échantillons suffisamment anciens sont regroupées sous un frame `[unattributed]`, de sorte que le total du flame graph corresponde au gaspillage total. Ne lisez `system.jemalloc_sampled_allocations` qu&#39;une seule fois par requête : chaque lecture déclenche le flush d&#39;un nouveau profile, si bien que deux subqueries verraient des données différentes.
 
@@ -371,7 +371,7 @@ SETTINGS allow_introspection_functions=1
 clickhouse-client -q "..." | flamegraph.pl --color=mem --title="Fragmentation Flame Graph" --width 2400 > result.svg
 ```
 
-## Vidage des profils du tas sur disque
+## Vidage des profils du tas sur disque {#flushing-heap-profiles}
 
 Si vous devez enregistrer des profils du tas sous forme de fichiers pour une analyse hors ligne avec `jeprof`, vous pouvez les vider sur disque.
 
@@ -405,7 +405,7 @@ MALLOC_CONF=prof_prefix:/data/my_current_profile
 
 Le fichier généré sera suffixé par le préfixe PID et le numéro de séquence.
 
-## Analyse des fichiers de profil du tas avec `jeprof`
+## Analyse des fichiers de profil du tas avec `jeprof` {#analyzing-heap-profile-files-with-jeprof}
 
 Après l’écriture des profils du tas sur disque, ils peuvent être analysés à l’aide de l’outil `jemalloc` appelé [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in). Il peut être installé de plusieurs façons :
 
@@ -414,7 +414,7 @@ Après l’écriture des profils du tas sur disque, ils peuvent être analysés 
 
 De nombreux formats de sortie sont disponibles. Exécutez `jeprof --help` pour obtenir la liste complète des options.
 
-### Profils du tas symbolisés
+### Profils du tas symbolisés {#symbolized-heap-profiles}
 
 À partir de la version 26.1+, ClickHouse génère automatiquement des profils du tas symbolisés lorsque vous lancez un flush avec `SYSTEM JEMALLOC FLUSH PROFILE`.
 Le profil symbolisé (avec l’extension `.symbolized`) contient des symboles de fonction intégrés et peut être analysé par `jeprof` sans nécessiter le binaire de ClickHouse.
@@ -465,7 +465,7 @@ Pour comparer deux profils, vous pouvez utiliser l&#39;argument `--base` :
 jeprof --base /path/to/first.heap.symbolized /path/to/second.heap.symbolized --output_format [ > output_file]
 ```
 
-### Exemples
+### Exemples {#examples}
 
 Utiliser des profils symbolisés (recommandé) :
 
@@ -495,7 +495,7 @@ jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --text > result
 jeprof /path/to/clickhouse /tmp/jemalloc_clickhouse.12345.0.heap --pdf > result.pdf
 ```
 
-### Génération d’un flame graph
+### Génération d’un flame graph {#generating-flame-graph}
 
 `jeprof` permet de générer des collapsed stack afin de créer des flame graphs.
 
@@ -521,7 +521,7 @@ cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Al
 
 Un autre outil intéressant est [speedscope](https://www.speedscope.app/), qui vous permet d’analyser les piles d’appels collectées de manière plus interactive.
 
-## Options supplémentaires pour le profileur
+## Options supplémentaires pour le profileur {#additional-options-for-profiler}
 
 `jemalloc` propose de nombreuses options liées au profileur. Elles peuvent être configurées en modifiant la variable d&#39;environnement `MALLOC_CONF`.
 Par exemple, l&#39;intervalle entre les échantillons d&#39;allocation peut être contrôlé avec `lg_prof_sample`.
@@ -529,7 +529,7 @@ Si vous souhaitez générer un profil du tas tous les N octets, vous pouvez l&#3
 
 Nous vous recommandons de consulter la [page de référence](https://jemalloc.net/jemalloc.3.html) de `jemalloc` pour obtenir la liste complète des options.
 
-## Autres ressources
+## Autres ressources {#other-resources}
 
 ClickHouse/Keeper exposent des `metrics` liées à `jemalloc` sous de nombreuses formes différentes.
 
@@ -539,7 +539,7 @@ ClickHouse/Keeper exposent des `metrics` liées à `jemalloc` sous de nombreuses
   Il est important de noter qu&#39;aucune de ces `metrics` n&#39;est synchronisée avec les autres et que leurs valeurs peuvent diverger.
 </Warning>
 
-### Table système `asynchronous_metrics`
+### Table système `asynchronous_metrics` {#system-table-asynchronous_metrics}
 
 ```sql
 SELECT *
@@ -550,13 +550,13 @@ FORMAT Vertical
 
 [Référence](/fr/reference/system-tables/asynchronous_metrics)
 
-### Table système `jemalloc_bins`
+### Table système `jemalloc_bins` {#system-table-jemalloc_bins}
 
 Contient des informations sur les allocations de mémoire effectuées via l’allocateur jemalloc dans différentes classes de taille (bins), agrégées sur l’ensemble des arenas.
 
 [Référence](/fr/reference/system-tables/jemalloc_bins)
 
-### Table système `jemalloc_stats` (26.2+)
+### Table système `jemalloc_stats` (26.2+) {#system-table-jemalloc_stats}
 
 Renvoie l’intégralité de la sortie de `malloc_stats_print()` dans une seule chaîne. Équivalent à la commande `SYSTEM JEMALLOC STATS`.
 
@@ -564,13 +564,13 @@ Renvoie l’intégralité de la sortie de `malloc_stats_print()` dans une seule 
 SELECT * FROM system.jemalloc_stats
 ```
 
-### Prometheus
+### Prometheus {#prometheus}
 
 Toutes les métriques liées à `jemalloc` de `asynchronous_metrics` sont également exposées via le point de terminaison Prometheus dans ClickHouse et Keeper.
 
 [Référence](/fr/reference/settings/server-settings/settings/other#prometheus)
 
-### Commande 4LW `jmst` dans Keeper
+### Commande 4LW `jmst` dans Keeper {#jmst-4lw-command-in-keeper}
 
 Keeper prend en charge la commande 4LW `jmst`, qui renvoie des [statistiques de base de l’allocateur](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics) :
 

@@ -13,7 +13,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 サポートセッションは、ClickHouse Connector を介して ClickHouse に一時的な診断アクセスを付与します。このページでは、セッションの概要、有効化と無効化の方法、セッション中に ClickHouse Support エンジニアが実行できる操作、およびその監査方法について説明します。
 
-## サポートセッションとは
+## サポートセッションとは {#what-a-support-session-is}
 
 サポートセッションとは、トラブルシューターが ClickHouse Support エンジニアからのコマンドを受け付ける、時間制限付きの期間です。セッション外では、送信方向の WebSocket が接続されていても、あらゆるコマンドを拒否します。これ以外の実行経路はなく、ClickHouse が代わりにセッションを開くこともできません。ClickHouse Cloud がお客様の環境へ接続することは一切なく、受け取るのはトラブルシューターが送信方向のチャネルを通じて送信した内容のみです。
 
@@ -30,7 +30,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 オペレーター 許可リスト を含むセッションの方針は、`clicklink clctl init` の実行時に選択します。
 
-## セッションの有効化と無効化
+## セッションの有効化と無効化 {#enabling-and-disabling-sessions}
 
 <Tabs>
   <Tab title="Kubernetes" id="sessions-kubernetes">
@@ -81,11 +81,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Tab>
 </Tabs>
 
-## セッションの有効期限
+## セッションの有効期限 {#session-expiry}
 
 セッションは自動的に期限切れになります。デフォルトの有効期間は4時間で、`session enable --duration` は最大24時間まで指定できます。期限が切れるか、`session disable` を実行した時点で、トラブルシューターはコマンドを受け付けなくなります。無効化するとアクセスは即座に取り消されます。再起動やClickHouseとの協調は必要ありません。
 
-## オペレーター許可リスト
+## オペレーター許可リスト {#operator-allowlist}
 
 すべてのゲートウェイ呼び出しは、オペレーターのメールアドレスの許可リストに基づき認可されます。照合には検証済みの OIDC トークンで証明されたメールアドレスが使用され、クライアントが提供した値が使われることはありません。
 
@@ -94,7 +94,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 いずれの環境でも、ゲートウェイは前回の読み取りから 30 秒が経過すると次のリクエスト時にファイルを再読み込みします。編集内容は再起動なしで反映されます。
 
-## セッション中にオペレーターが実行できること
+## セッション中にオペレーターが実行できること {#what-operators-can-do}
 
 セッションがアクティブな間、ClickHouse Support エンジニアは 2 種類のコマンドを実行できます。
 
@@ -106,7 +106,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 トラブルシューターの RBAC には `exec`、`delete`、`patch` の permission が含まれていないため、オペレーターがポッド内でシェルを開いたり、セッションを通じて何かを変更したりすることはできません。grant と RBAC の完全な一覧は [権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model) のリファレンスを参照してください。
 
-## 監査ログ
+## 監査ログ {#audit-log}
 
 セッション中に実行されたすべてのコマンドは、1行につき1つのJSONオブジェクト (NDJSON) の形式で `/var/log/clicklink/troubleshoot-audit.log` に追記されます。ブロックされたコマンドも記録され、`blocked_by` にその理由 (例: `session inactive`) が示されます。`submitted_by` はコマンドチャネル上の組織ID、すなわちご自身の組織IDです。個々のClickHouseエンジニアは、このファイルではなくClickHouse Cloud側に記録されます。セッションコマンドのエントリは次のようになります:
 
@@ -140,11 +140,11 @@ kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-trouble
 
 監査ログは環境内に配置される単純なファイルです。他のホストログやコンテナーログと同様に、自社の SIEM へ転送してください。
 
-## マスキング
+## マスキング {#redaction}
 
 トラブルシューターが返すすべての情報は、環境外に送信される前にマスキングされます。組み込みパターンは、IPv4 および IPv6 アドレス、Bearer トークン、AWS アクセスキー、メールアドレス、JWT、SSH 秘密鍵、接続文字列に埋め込まれた認証情報を対象とします。これらは `/etc/clicklink/redaction-patterns.yaml` で拡張またはオーバーライドできます。組み込みパターンと同じ名前のエントリは、そのパターンを置き換えます。パターンファイルが無効な場合、デーモンは起動を拒否し、`clicklink clctl preflight` によって検証されるため、マスキング設定が壊れている場合は明示的に失敗します。
 
-## 関連ページ
+## 関連ページ {#related-pages}
 
 * [Architecture](/ja/products/bring-your-own-cloud/connector/architecture): コネクタが確立するすべての接続と、セッションを中心としたデータフロー。
 * [Configuration](/ja/products/bring-your-own-cloud/connector/configuration): ゲートウェイ、許可リスト、機密情報のマスキングに関する設定。

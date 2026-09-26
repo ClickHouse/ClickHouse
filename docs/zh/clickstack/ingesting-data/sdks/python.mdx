@@ -14,9 +14,9 @@ ClickStack 使用 OpenTelemetry 标准收集遥测数据 (日志和
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## 入门
+## 入门 {#getting-started}
 
-### 安装 ClickStack OpenTelemetry 埋点包
+### 安装 ClickStack OpenTelemetry 埋点包 {#install-clickstack-otel-instrumentation-package}
 
 使用以下命令安装 [ClickStack OpenTelemetry 埋点包](https://pypi.org/project/hyperdx-opentelemetry/)。
 
@@ -31,7 +31,7 @@ OpenTelemetry Python SDK 附带的 `opentelemetry-bootstrap` 工具扫描应用�
 opentelemetry-bootstrap -a install
 ```
 
-### 配置环境变量
+### 配置环境变量 {#configure-environment-variables}
 
 接下来，你需要在 shell 中配置以下环境变量，以便通过 OpenTelemetry collector 将遥测数据发送到 ClickStack：
 
@@ -54,7 +54,7 @@ opentelemetry-bootstrap -a install
 
 *`OTEL_SERVICE_NAME` 环境变量用于在 HyperDX 应用中标识你的服务，你可以将其设置为任意名称。*
 
-### 使用 OpenTelemetry Python agent 运行应用
+### 使用 OpenTelemetry Python agent 运行应用 {#run-the-application-with-otel-python-agent}
 
 现在，你可以使用 OpenTelemetry Python agent (`opentelemetry-instrument`) 来运行应用。
 
@@ -62,7 +62,7 @@ opentelemetry-bootstrap -a install
 opentelemetry-instrument python app.py
 ```
 
-#### 如果你使用的是 `Gunicorn`、`uWSGI` 或 `uvicorn`
+#### 如果你使用的是 `Gunicorn`、`uWSGI` 或 `uvicorn` {#using-uvicorn-gunicorn-uwsgi}
 
 在这种情况下，OpenTelemetry Python agent 需要进行额外配置才能正常工作。
 
@@ -95,9 +95,9 @@ opentelemetry-instrument python app.py
   </Tab>
 </Tabs>
 
-## 高级配置
+## 高级配置 {#advanced-configuration}
 
-#### 网络捕获
+#### 网络捕获 {#network-capture}
 
 启用网络捕获功能后，开发人员便能够更高效地调试
 HTTP 请求头和请求体载荷。只需
@@ -107,9 +107,9 @@ HTTP 请求头和请求体载荷。只需
 export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
 ```
 
-## 故障排查
+## 故障排查 {#troubleshooting}
 
-### 由于日志级别设置导致日志未显示
+### 由于日志级别设置导致日志未显示 {#logs-not-appearing-due-to-log-level}
 
 默认情况下，OpenTelemetry 日志处理程序使用 `logging.NOTSET` 级别，
 该级别会默认采用 WARNING 级别。你可以在创建
@@ -122,7 +122,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 ```
 
-### 导出到控制台
+### 导出到控制台 {#exporting-to-the-console}
 
 OpenTelemetry Python SDK 通常会在出错时将错误信息显示在控制台中。
 不过，如果你没有遇到任何错误，却发现数据没有如预期那样出现在

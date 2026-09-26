@@ -31,7 +31,7 @@ On-Demand Compute は、まったく新しい機能群を活用しています�
 * 新しい [CBO](https://github.com/ClickHouse/ClickHouse/pull/86353) (オプティマイザ)
 * 新しい[分散クエリ実行](https://clickhouse.com/blog/multi-stage-distributed-query-execution-clickhouse-cloud)
 
-## On-Demand Compute を使用するタイミング
+## On-Demand Compute を使用するタイミング {#when-to-use-on-demand-compute}
 
 プライベートプレビュー期間中は、プライマリサービスのコンピュート外で実行したい、対象となるコンピュート負荷の高い `SELECT` クエリに On-Demand Compute を使用してください。
 
@@ -42,7 +42,7 @@ On-Demand Compute は、まったく新しい機能群を活用しています�
 
 プライベートプレビューでサポートされるのは `SELECT` クエリのみです。worker は `INSERT` クエリ、DDL、mutation、バックグラウンド処理を実行しません。
 
-## 仕組み
+## 仕組み {#how-it-works}
 
 1. 対象となる `SELECT` クエリを、指定した数の worker を要求しつつ ClickHouse Cloud サービスに送信します。エンドポイント、認証、RBAC の設定を変更する必要はありません
 2. 次に、クラスターがプールに接続し、指定された数の worker を要求します
@@ -53,9 +53,9 @@ On-Demand Compute は、まったく新しい機能群を活用しています�
 
 プライベートプレビュー期間中、各 worker は `8 vCPUs` と `32 GiB` のメモリを備えています。クエリが要求する worker の数は、`distributed_plan_workers_num` で指定します。
 
-## オンデマンドコンピュートの使用
+## オンデマンドコンピュートの使用 {#using-on-demand-compute}
 
-### Settings
+### Settings {#settings}
 
 on-demand compute の利用を開始するには、これらの設定を使用します:
 
@@ -70,7 +70,7 @@ on-demand compute の利用を開始するには、これらの設定を使用�
   プレビュー期間中は、設定をクエリレベルで指定するか、別の設定を持つユーザーを作成してください。そうすれば、どのステートメントが On-Demand Compute を使用しているかが一目で分かります。
 </Tip>
 
-### 例
+### 例 {#example}
 
 クエリによっては、workerに分散できないものがあります:
 
@@ -121,7 +121,7 @@ SETTINGS
 
 このクエリは5つのworkerをリクエストします。ClickHouseが実際に提供するworker数は、プライベートプレビューの上限と利用可能なプール容量によって決まります。
 
-### 同時実行クエリ
+### 同時実行クエリ {#concurrent-queries}
 
 同一の ClickHouse Cloud サービスから実行される同時実行クエリは、割り当て済みの worker を共有できます。ClickHouse が追加の worker をリクエストするのは、あるクエリがサービスに既に割り当てられている数を超える worker を要求した場合のみです。
 
@@ -144,7 +144,7 @@ SELECT ... SETTINGS make_distributed_plan = 1, distributed_plan_workers_num = 5,
 
 そのクエリは、既存の3つのworkerと、新たにリースされた2つのworkerの上で実行されます。
 
-### プールがリクエストを満たせない場合
+### プールがリクエストを満たせない場合 {#pool-capacity}
 
 プライベートプレビュー期間中、worker の可用性はベストエフォートです。リクエストした数より少ない worker しか利用できない場合、クエリは ClickHouse が割り当てられるだけの worker で実行されます。たとえば、5 つの worker をリクエストしても 3 つで実行されることがあります。
 
@@ -152,11 +152,11 @@ worker を 1 つもリースできない場合、クエリは失敗します。
 
 クエリを再試行してください。それでも解消しない場合は、ClickHouse のアカウントチームにお問い合わせください。プレビュー用の pool が枯渇しているか、スケール設定が適切でない可能性があります。
 
-## 監視
+## 監視 {#monitoring}
 
 サービスの `system.query_log` を使用すると、クエリにいくつの worker が割り当てられたかを確認できます。
 
-### 割り当てられたworker数
+### 割り当てられたworker数 {#worker-provided}
 
 ```sql
 SELECT
@@ -187,7 +187,7 @@ SETTINGS
     log_comment = 'on-demand-private-preview'
 ```
 
-## 利用可能なリージョン
+## 利用可能なリージョン {#available-regions}
 
 On-Demand Compute はリージョン単位で提供され、worker はお使いの service と同じリージョンで実行されます。
 
@@ -198,7 +198,7 @@ On-Demand Compute はリージョン単位で提供され、worker はお使い�
 
 お使いのリージョンが一覧にない場合は、[waitlist](https://clickhouse.com/cloud/on-demand-compute-waitlist) からリクエストしてください。需要に応じて対応リージョンを追加していきます。
 
-## 料金
+## 料金 {#pricing}
 
 プライベートプレビュー期間中は On-Demand Compute を無料で利用できますが、使用量に上限が設けられています ([制限事項](#limitations)を参照) 。上限の引き上げが必要な場合は、ClickHouse のアカウントチームにお問い合わせください。
 
@@ -206,7 +206,7 @@ On-Demand Compute はリージョン単位で提供され、worker はお使い�
 
 想定しているモデルは ClickHouse Cloud のコンピュートと同じで、スキャンしたデータ量や読み取り行数ではなく、使用したコンピュート (リースした worker の稼働時間) に対して課金されます。
 
-## 制限事項
+## 制限事項 {#limitations}
 
 プライベートプレビュー期間中は、以下の制限が適用されます。これ以外の制限が適用される場合もあります。予期しない動作が発生した場合は、ClickHouse Support または担当のアカウントチームにご報告ください。
 
@@ -219,7 +219,7 @@ On-Demand Compute はリージョン単位で提供され、worker はお使い�
 * **パフォーマンス。** パフォーマンスはクエリによって異なります。worker の割り当て、分散プランニング、plan ステージの転送によって latency が増加する可能性があります。クエリの形状によっては、プライマリ service で実行する場合よりも性能が低下することがあります (通常のサブ秒クエリは、おそらく自身のクラスターで実行したほうが高速です)
 * **クエリの互換性。** distributed planner はすべてのクエリプランをリモートで実行できるわけではありません。サポートされていないクエリでは `SUPPORT_IS_DISABLED` 例外が返される場合があります。
 
-## ロードマップ
+## ロードマップ {#roadmap}
 
 On-Demand Compute は基盤となる機能です。現在進行中、または次に予定している作業は以下のとおりです。
 
@@ -233,7 +233,7 @@ On-Demand Compute は基盤となる機能です。現在進行中、または�
 * On-Demand Compute 専用の permission
 * データレイク workload の拡張 (書き込み、compaction など)
 
-## Security
+## Security {#security}
 
 worker は同一リージョン内の service 間で共有される事前ウォームアップ済みの pool から供給されますが、ここには譲れないルールが 1 つあります。1 つの worker が同時に扱う service は 1 つだけであり、ある service から別の service へ引き渡されることは決してありません。
 
@@ -246,7 +246,7 @@ ClickHouse への接続方法は一切変わりません。クライアントは
 * **既存のアクセス制御がそのまま適用:** IP アクセスリストとプライベート エンドポイントは、これまでとまったく同じように service endpoint を制御します。On-Demand Compute によって、設定や保護が必要な endpoint が新たに増えることはありません。
 * **既存の authentication と RBAC:** クエリは、その service 上の他のクエリと同じ USER および privileges の下で実行されます。worker が独自の identity や permission モデルを持つことはありません。
 
-### ネットワーク分離
+### ネットワーク分離 {#network-isolation}
 
 worker が service に lease されている間、プラットフォームはその worker と service 間のネットワークトラフィックのみを許可し、それ以外はすべて遮断します。この制限は query engine ではなくネットワーク layer で適用されるため、クエリやその設定、optimizer が生成する plan に左右されることはありません。
 
@@ -258,7 +258,7 @@ worker が service に lease されている間、プラットフォームはそ
 * **path は worker とともに削除されます。** lease を終了すると worker は破棄され、トラフィックの到達が許可されていた唯一の対象がなくなります。
 * **リクエストの path は最小限に保たれます。** service は、worker を lease および更新するために worker assignment service へ到達します。この path はクエリデータを一切運ばず、assignment API に限定されています。
 
-### 内部の authentication と authorization
+### 内部の authentication と authorization {#authentication-and-authorization}
 
 ネットワーク分離は、何が worker に到達できるかを制御します。一方 authentication は、到達した caller がそこで何を行えるかを制御します。この 2 つは互いに独立して適用されるため、caller は両方の条件を満たす必要があります。
 
@@ -278,7 +278,7 @@ worker が service に lease されている間、プラットフォームはそ
   これらの credentials は、ClickHouse Cloud がお客様の クエリ を実行する仕組みの内部で使われるものです。お客様の clients に公開されることは一切なく、ClickHouse への authentication の方法とも無関係です。clients は従来どおり既存の credentials で接続でき、クエリ の privileges も引き続きお客様の service の RBAC によって制御されます。
 </Note>
 
-## よくある質問
+## よくある質問 {#faq}
 
 <AccordionGroup>
   <Accordion title="On-Demand Compute はオープンソースですか？">

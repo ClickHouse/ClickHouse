@@ -6,19 +6,19 @@ title: '机器学习函数'
 doc_type: 'reference'
 ---
 
-## evalMLMethod
+## evalMLMethod {#evalmlmethod}
 
 使用已拟合的回归模型进行预测时，可使用 `evalMLMethod` 函数。请参阅 `linearRegression` 中的链接。
 
-## stochasticLinearRegression
+## stochasticLinearRegression {#stochasticlinearregression}
 
 [stochasticLinearRegression](/zh/reference/functions/aggregate-functions/stochasticLinearRegression) 聚合函数实现了基于线性模型和 MSE 损失函数的随机梯度下降方法。使用 `evalMLMethod` 对新数据进行预测。
 
-## stochasticLogisticRegression
+## stochasticLogisticRegression {#stochasticlogisticregression}
 
 [stochasticLogisticRegression](/zh/reference/functions/aggregate-functions/stochasticLogisticRegression) 聚合函数实现了用于二元分类问题的随机梯度下降方法。使用 `evalMLMethod` 对新数据进行预测。
 
-## naiveBayesClassifier
+## naiveBayesClassifier {#naivebayesclassifier}
 
 使用带有 n-gram 和拉普拉斯平滑的朴素贝叶斯模型对输入文本进行分类。该模型必须先在 ClickHouse 中配置后方可使用。
 
@@ -58,7 +58,7 @@ SELECT naiveBayesClassifier('language', 'How are you?');
 
 ***
 
-### 实现细节
+### 实现细节 {#implementation-details}
 
 **算法**
 使用朴素贝叶斯分类算法，并结合 [拉普拉斯平滑](https://en.wikipedia.org/wiki/Additive_smoothing) 处理未见过的 n-gram；n-gram 概率的计算方法参考了[这份资料](https://web.stanford.edu/~jurafsky/slp3/4.pdf)。
@@ -73,7 +73,7 @@ SELECT naiveBayesClassifier('language', 'How are you?');
 
 ***
 
-### 模型配置
+### 模型配置 {#model-configuration}
 
 你可以在[这里](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models)找到用于创建语言检测朴素贝叶斯模型的示例源代码。
 

@@ -14,14 +14,14 @@ Esta función de tabla es Experimental y está deshabilitada de forma predetermi
 SET allow_experimental_eval_table_function = 1;
 ```
 
-## Sintaxis
+## Sintaxis {#syntax}
 
 ```sql
 eval(expression)
 eval(SELECT ...)
 ```
 
-## Argumentos
+## Argumentos {#arguments}
 
 * `expression` — Una expresión constante que devuelve una cadena de consulta. Se permiten parámetros de consulta y subconsultas escalares.
 * `SELECT ...` — Una consulta `SELECT` que devuelve una cadena de consulta. Esta forma es azúcar sintáctico de una subconsulta escalar: `eval(SELECT ...)` es equivalente a `eval((SELECT ...))`, por lo que la consulta debe devolver exactamente una fila y una columna.
@@ -35,13 +35,13 @@ El valor de la expresión debe tener uno de estos tipos:
 
 Si el valor es `NULL`, `eval` lanza una excepción.
 
-## Valor devuelto
+## Valor devuelto {#returned-value}
 
 Devuelve el resultado de la consulta `SELECT` generada en forma de tabla.
 
 El esquema de salida se determina cuando se analiza la función de tabla `eval`, por lo que las consultas externas pueden hacer referencia a los nombres y tipos reales de las columnas de la consulta generada.
 
-## Ejemplos
+## Ejemplos {#examples}
 
 Evalúe una expresión constante:
 
@@ -100,7 +100,7 @@ Resultado:
 └────────────┘
 ```
 
-## Restricciones
+## Restricciones {#restrictions}
 
 * La consulta generada debe ser una única consulta `SELECT`, sin opciones de salida como `INTO OUTFILE` o `FORMAT`. `eval` no ejecuta múltiples sentencias.
 * La consulta generada debe ser autocontenida: se resuelve en su propio ámbito y no puede hacer referencia a alias de `WITH` ni a columnas de la consulta externa.
@@ -109,7 +109,7 @@ Resultado:
 * El argumento se evalúa una vez durante el análisis de la consulta, no una vez por fila o bloque.
 * El registro de consultas de la consulta externa registra la consulta original que contiene `eval`; la consulta `SELECT` generada no se registra como una consulta de usuario independiente.
 
-## Relacionados
+## Relacionados {#related}
 
 * [función de tabla `view`](/es/reference/functions/table-functions/view)
 * configuración `allow_experimental_eval_table_function`

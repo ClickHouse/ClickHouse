@@ -20,7 +20,7 @@ Les dialectes actuellement pris en charge sont :
 
 Le langage de requête utilisé est déterminé par le paramètre `dialect`.
 
-## SQL standard
+## SQL standard {#standard-sql}
 
 Le SQL standard est le langage de requêtes par défaut de ClickHouse.
 
@@ -28,7 +28,7 @@ Le SQL standard est le langage de requêtes par défaut de ClickHouse.
 SET dialect = 'clickhouse'
 ```
 
-## Langage de requêtes relationnelles en pipeline (PRQL)
+## Langage de requêtes relationnelles en pipeline (PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -51,7 +51,7 @@ aggregate {
 
 En coulisses, ClickHouse s’appuie sur une transpilation de PRQL en SQL pour exécuter les requêtes PRQL.
 
-## Langage de requête Kusto (KQL)
+## Langage de requête Kusto (KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ numbers(10) | project number
 
 Notez que les requêtes KQL peuvent ne pas avoir accès à toutes les fonctions définies dans ClickHouse.
 
-## Trino SQL
+## Trino SQL {#trino-sql}
 
 <ExperimentalBadge />
 

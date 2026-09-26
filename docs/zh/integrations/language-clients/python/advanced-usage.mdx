@@ -7,11 +7,11 @@ title: '高级用法'
 doc_type: 'reference'
 ---
 
-## 底层 API
+## 底层 API {#raw-api}
 
 对于无需在 ClickHouse 数据与原生或第三方数据类型及结构之间进行转换的场景，ClickHouse Connect 客户端提供了一些方法，可直接使用 ClickHouse 连接。
 
-### 客户端 `raw_query` 方法
+### 客户端 `raw_query` 方法 {#client-rawquery-method}
 
 `Client.raw_query` 方法允许通过客户端连接直接使用 ClickHouse HTTP 查询接口。返回值是一个未经处理的 `bytes` 对象。它通过极简接口提供了便捷封装，支持参数绑定、错误处理、重试和 settings 管理：
 
@@ -27,11 +27,11 @@ doc_type: 'reference'
 
 如何处理返回的 `bytes` 对象由调用方负责。请注意，`Client.query_arrow` 只是对此方法的一个轻量封装，使用的是 ClickHouse `Arrow` 输出格式。
 
-### Client `raw_stream` 方法
+### Client `raw_stream` 方法 {#client-rawstream-method}
 
 同步 `Client.raw_stream` 方法与 `raw_query` 的 API 相同，但会返回一个由字节块组成的 `io.IOBase` 流。处理完成后请关闭该流。`AsyncClient.raw_stream` 需要使用 `await` 等待，并会返回一个可与 `async with` 和 `async for` 搭配使用的异步 `StreamContext`。
 
-### Client `raw_insert` 方法
+### Client `raw_insert` 方法 {#client-rawinsert-method}
 
 `Client.raw_insert` 方法允许通过客户端连接直接插入 `bytes` 对象或 `bytes` 对象生成器。由于它不会对插入载荷进行任何处理，因此性能非常高。该方法提供了用于指定设置和插入格式的选项：
 
@@ -47,7 +47,7 @@ doc_type: 'reference'
 
 调用方有责任确保 `insert_block` 采用指定的格式，并使用指定的压缩方法。ClickHouse Connect 会将这些原始插入用于文件上传和 PyArrow 表，并将解析工作交由 ClickHouse 服务器 处理。
 
-## 将查询结果保存为文件
+## 将查询结果保存为文件 {#saving-query-results-as-files}
 
 你可以使用 `raw_stream` 方法直接将文件从 ClickHouse 流式写入本地文件系统。例如，如果你想将某个查询的结果保存为 CSV 文件，可以使用以下代码片段：
 
@@ -83,7 +83,7 @@ if __name__ == "__main__":
 
 同样，你也可以将数据保存为 [TabSeparated](/zh/reference/formats/TabSeparated/TabSeparated) 等其他格式。有关所有可用格式选项的概述，请参阅 [输入和输出数据格式](/zh/reference/formats)。
 
-## 多线程、多进程和异步/事件驱动用例
+## 多线程、多进程和异步/事件驱动用例 {#multithreaded-multiprocess-and-asyncevent-driven-use-cases}
 
 ClickHouse Connect 非常适合用于多线程、多进程以及事件循环驱动/异步应用程序。所有查询和插入处理都在单个线程内完成，因此这些操作通常是线程安全的。 (未来可能会在较低层级为某些操作引入并行处理，以克服单线程带来的性能损耗；但即便如此，线程安全性仍会得到保证。)
 
@@ -91,7 +91,7 @@ ClickHouse Connect 非常适合用于多线程、多进程以及事件循环驱�
 
 此外，对于同时有两个或更多查询和/或插入“在进行中”的应用程序，还需要注意另外两个方面。第一是与查询/插入关联的 ClickHouse“会话”，第二是 ClickHouse Connect Client 实例使用的 HTTP 连接池。
 
-## AsyncClient
+## AsyncClient {#asyncclient}
 
 ClickHouse Connect 为 asyncio 应用程序提供了一个基于 aiohttp 的原生客户端。使用前，请先安装可选依赖项：
 
@@ -134,7 +134,7 @@ async with await client.query_rows_stream(
 
 与同步工厂不同，`get_async_client` 默认禁用自动生成会话 ID，以便并发协程共享同一个客户端。只有在你需要会话状态，且能够避免在该会话中并发执行查询时，才应显式传入 `session_id` 或设置 `autogenerate_session_id=True`。
 
-## 管理 ClickHouse 会话 ID
+## 管理 ClickHouse 会话 ID {#managing-clickhouse-session-ids}
 
 每个 ClickHouse 查询都在 ClickHouse “会话”的上下文中执行。目前，会话 主要有两个用途：
 
@@ -163,7 +163,7 @@ client = clickhouse_connect.get_client(
 
 在这种情况下，ClickHouse Connect 不会发送 `session_id`；服务器不会将不同的请求视为属于同一会话。临时表和会话级设置不会在请求之间保留。
 
-## 自定义 HTTP 连接池
+## 自定义 HTTP 连接池 {#customizing-the-http-connection-pool}
 
 ClickHouse Connect 使用 `urllib3` 连接池来管理与服务器之间的底层 HTTP 连接。默认情况下，同一进程中的所有同步客户端实例共享同一个连接池，这对于绝大多数使用场景已经足够。每个 multiprocessing 工作进程都有各自的进程本地默认连接池，并在该进程内创建的所有客户端之间复用。在 fork 之前创建的客户端会保留父进程的连接池，不应在子进程中使用。该默认连接池会为应用程序使用的每个 ClickHouse 服务器维护最多 8 个 HTTP Keep-Alive 连接。
 

@@ -12,9 +12,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 
 *لإرسال السجلات إلى ClickStack، يُرجى إرسالها عبر [OpenTelemetry Collector](/ar/clickstack/ingesting-data/collector).*
 
-## البدء
+## البدء {#getting-started}
 
-### تثبيت حزم OpenTelemetry
+### تثبيت حزم OpenTelemetry {#install-otel-packages}
 
 استخدم الأمر التالي لتثبيت حزمة OpenTelemetry.
 
@@ -22,7 +22,7 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 bundle add opentelemetry-sdk opentelemetry-instrumentation-all opentelemetry-exporter-otlp
 ```
 
-### تهيئة OpenTelemetry + مُنسِّق logger
+### تهيئة OpenTelemetry + مُنسِّق logger {#configure-otel-logger-formatter}
 
 بعد ذلك، ستحتاج إلى تهيئة آلية التتبّع في OpenTelemetry
 وضبط مُنسِّق رسائل السجل لـ logger الخاص بـ Rails بحيث يمكن ربط السجلات
@@ -63,7 +63,7 @@ Rails.application.configure do
 end
 ```
 
-### تهيئة متغيرات البيئة
+### تهيئة متغيرات البيئة {#configure-environment-variables}
 
 بعد ذلك، ستحتاج إلى تهيئة متغيرات البيئة التالية في الصدفة لإرسال بيانات القياس عن بُعد إلى ClickStack عبر OpenTelemetry Collector:
 

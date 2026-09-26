@@ -11,39 +11,39 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
 
-## Мониторинг и метрики
+## Мониторинг и метрики {#monitoring-and-metrics}
 
-### Как получить доступ к метрикам моего экземпляра ClickHouse Managed Postgres?
+### Как получить доступ к метрикам моего экземпляра ClickHouse Managed Postgres? {#metrics-access}
 
 Вы можете отслеживать использование CPU, памяти, IOPS и хранилища напрямую в консоли ClickHouse Cloud на вкладке **Мониторинг** вашего экземпляра ClickHouse Managed Postgres.
 
 Кроме того, вы можете ознакомиться с [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud) для подробного анализа ваших запросов на вкладке **Query Insights**.
 
-## Резервное копирование и восстановление
+## Резервное копирование и восстановление {#backup-and-recovery}
 
-### Какие варианты резервного копирования доступны?
+### Какие варианты резервного копирования доступны? {#backup-options}
 
 ClickHouse Managed Postgres включает автоматическое ежедневное резервное копирование с непрерывным архивированием WAL, что позволяет выполнять восстановление на определённый момент времени на любой момент в пределах 7-дневного периода хранения. Резервные копии хранятся в объектном хранилище.
 
 Подробные сведения о частоте резервного копирования, сроках хранения и выполнении восстановления на определённый момент времени см. в документации [Backup and restore](/ru/products/managed-postgres/backup-and-restore).
 
-## Инфраструктура и автоматизация
+## Инфраструктура и автоматизация {#infrastructure-and-automation}
 
-### Какие облачные провайдеры поддерживаются?
+### Какие облачные провайдеры поддерживаются? {#supported-cloud-providers}
 
 ClickHouse Managed Postgres доступен на AWS в статусе публичной беты. Для GCP доступна закрытая предварительная версия. Записаться в лист ожидания закрытой предварительной версии для GCP можно [здесь](https://clickhouse.com/cloud/postgres#gcp-waitlist), а узнать больше — из [анонса](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview). Подробности см. в разделе [Поддерживаемые облачные провайдеры](/ru/products/managed-postgres/overview#supported-cloud-providers).
 
-### Доступна ли поддержка Terraform для ClickHouse Managed Postgres?
+### Доступна ли поддержка Terraform для ClickHouse Managed Postgres? {#terraform-support}
 
 Да. Вы можете создавать сервисы ClickHouse Managed Postgres и управлять ими с помощью Terraform-провайдера ClickHouse, используя ресурс `clickhouse_postgres_service`. Подробности см. в [справочнике по Terraform](/ru/products/managed-postgres/terraform). Также вы можете использовать консоль ClickHouse Cloud или [OpenAPI](/ru/products/managed-postgres/openapi) для создания экземпляров и управления ими.
 
-## Расширения и конфигурация
+## Расширения и конфигурация {#extensions-and-configuration}
 
-### Какие расширения поддерживаются?
+### Какие расширения поддерживаются? {#extensions-supported}
 
 ClickHouse Managed Postgres включает более 90 расширений PostgreSQL, в том числе популярные PostGIS, pgvector, pg&#95;cron и многие другие. Полный список доступных расширений и инструкции по установке см. в документации [Расширения](/ru/products/managed-postgres/extensions).
 
-### Можно ли настраивать параметры конфигурации PostgreSQL?
+### Можно ли настраивать параметры конфигурации PostgreSQL? {#config-customization}
 
 Да, параметры конфигурации PostgreSQL и PgBouncer можно изменять на вкладке **Настройки** в консоли. Подробнее о доступных параметрах и о том, как их изменять, см. в документации [Настройки](/ru/products/managed-postgres/settings).
 
@@ -51,9 +51,9 @@ ClickHouse Managed Postgres включает более 90 расширений 
   Если вам нужен параметр, который пока недоступен, обратитесь в [поддержку](https://clickhouse.com/support/program), чтобы запросить его.
 </Tip>
 
-## Пул соединений
+## Пул соединений {#connection-pooling}
 
-### Почему через PgBouncer возникают ошибки `prepared statement does not exist`?
+### Почему через PgBouncer возникают ошибки `prepared statement does not exist`? {#prepared-statement-errors}
 
 ClickHouse Managed Postgres использует PgBouncer в режиме **transaction pooling**. В этом режиме backend-соединение Postgres выделяется вашему клиенту только на время одной транзакции, а затем возвращается в пул — следующая транзакция того же клиента может попасть на другое backend-соединение.
 
@@ -82,7 +82,7 @@ ERROR:  unnamed prepared statement does not exist
 
 Если ваша рабочая нагрузка зависит от подготовленных операторов, подключайтесь **напрямую к PostgreSQL** (порт 5432), а не через пулер PgBouncer — прямые подключения штатно поддерживают подготовленные операторы. Подробнее о выборе между pooled и direct конечными точками см. в разделе [Connection](/ru/products/managed-postgres/connection).
 
-### Что означает параметр `max_client_conn` в PgBouncer и как он соотносится с `max_connections` в Postgres?
+### Что означает параметр `max_client_conn` в PgBouncer и как он соотносится с `max_connections` в Postgres? {#pgbouncer-vs-pg-connections}
 
 Они отвечают за разные вещи:
 
@@ -91,13 +91,13 @@ ERROR:  unnamed prepared statement does not exist
 
 Типичный экземпляр ClickHouse Managed Postgres настроен так, что PgBouncer принимает примерно **в 10 раз больше клиентских соединений, чем есть backend-соединений Postgres** (например, 5000 клиентских / 500 backend-соединений). Если вы видите ошибки соединения на стороне пулера, гораздо вероятнее, что вы упираетесь в лимит backend-соединений для конкретного пула (`default_pool_size`), а не в основной лимит клиентских соединений.
 
-## Возможности базы данных
+## Возможности базы данных {#database-capabilities}
 
-### Могу ли я создать несколько баз данных и схем?
+### Могу ли я создать несколько баз данных и схем? {#multiple-databases-schemas}
 
 Да. ClickHouse Managed Postgres предоставляет всю нативную функциональность PostgreSQL, включая поддержку нескольких баз данных и схем в рамках одного экземпляра. Вы можете создавать базы данных и схемы и управлять ими с помощью стандартных команд PostgreSQL.
 
-### Поддерживается ли ролевое управление доступом (RBAC)?
+### Поддерживается ли ролевое управление доступом (RBAC)? {#rbac-support}
 
 У вас есть полный доступ с правами superuser к вашему экземпляру ClickHouse Managed Postgres, что позволяет создавать роли и управлять разрешениями с помощью стандартных команд PostgreSQL.
 
@@ -105,15 +105,15 @@ ERROR:  unnamed prepared statement does not exist
   Расширенные возможности RBAC с интеграцией в консоль планируются в этом году.
 </Note>
 
-## Обновления
+## Обновления {#upgrades}
 
-### Как выполняются обновления версий PostgreSQL?
+### Как выполняются обновления версий PostgreSQL? {#version-upgrades}
 
 Обновления как минорных, так и мажорных версий выполняются через переключение при отказе и обычно приводят лишь к нескольким секундам простоя. Вы можете настроить [запланированные обновления](/ru/products/managed-postgres/upgrades#scheduled-upgrades), чтобы контролировать дни и двухчасовое окно UTC, в течение которого применяются обновления. Подробную информацию см. в документации [Обновления](/ru/products/managed-postgres/upgrades).
 
-## Миграция
+## Миграция {#migration}
 
-### Какие инструменты доступны при миграции в ClickHouse Managed Postgres?
+### Какие инструменты доступны при миграции в ClickHouse Managed Postgres? {#migration-tools}
 
 ClickHouse Managed Postgres поддерживает несколько подходов к миграции:
 

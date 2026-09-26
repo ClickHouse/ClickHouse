@@ -29,7 +29,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 **النسخ الاحتياطية ولقطات قاعدة البيانات**: توفّر النسخ الاحتياطية تخزينًا طويل الأمد وموثوقًا مع نسخة منفصلة من البيانات. أمّا اللقطات فلا تُنشئ نسخة إضافية من البيانات، وعادةً ما تكون أسرع، وتوفّر قيم RPO أفضل.
 
 <div id="database-backups">
-  ## النسخ الاحتياطية لقاعدة البيانات
+  ## النسخ الاحتياطية لقاعدة البيانات {#database-backups}
 </div>
 
 يُعدّ الاحتفاظ بنسخة احتياطية من الخدمة الأساسية وسيلة فعّالة تتيح استخدام النسخة الاحتياطية والاستعادة منها عند توقّف الخدمة الأساسية.
@@ -60,13 +60,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 كما يوفّر هذا القسم حالة النجاح/الفشل لكل نسخة احتياطية.
 
 <div id="restoring-from-a-backup">
-  ## الاستعادة من نسخة احتياطية
+  ## الاستعادة من نسخة احتياطية {#restoring-from-a-backup}
 </div>
 
 1. يمكن استعادة النسخ الاحتياطية الافتراضية الموجودة في حاوية التخزين الخاصة بـ ClickHouse Cloud إلى خدمة جديدة في نفس المنطقة.
 2. يمكن استعادة النسخ الاحتياطية الخارجية (في التخزين الكائني الخاص بالعميل) إلى خدمة جديدة في نفس المنطقة أو في منطقة مختلفة.
 
-## إرشادات مدة النسخ الاحتياطي والاستعادة
+## إرشادات مدة النسخ الاحتياطي والاستعادة {#backup-and-restore-duration-guidance}
 
 تختلف مدة النسخ الاحتياطي والاستعادة بشكل كبير بحسب حجم البيانات وتعقيد المخطط وعدد الجداول. الأرقام أدناه هي ملاحظات من اختبارات داخلية وليست التزامات بالأداء.
 
@@ -82,20 +82,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="recovery-process">
-  ## عملية الاستعادة
+  ## عملية الاستعادة {#recovery-process}
 </div>
 
 يشرح هذا القسم خيارات الاستعادة المختلفة والإجراءات التي يمكن اتباعها في كل حالة.
 
 <div id="primary-service-data-corruption">
-  ### تلف بيانات الخدمة الأساسية
+  ### تلف بيانات الخدمة الأساسية {#primary-service-data-corruption}
 </div>
 
 في هذه الحالة، [يمكن استعادة البيانات](/ar/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup) من النسخة الاحتياطية إلى خدمة أخرى في المنطقة نفسها.
 قد يصل عمر النسخة الاحتياطية إلى 24 ساعة عند استخدام سياسة النسخ الاحتياطي الافتراضية، أو إلى 6 ساعات (عند استخدام النسخ الاحتياطية القابلة للتهيئة بتكرار كل 6 ساعات).
 
 <div id="restoration-steps">
-  #### خطوات الاستعادة
+  #### خطوات الاستعادة {#restoration-steps}
 </div>
 
 للاستعادة من نسخة احتياطية موجودة
@@ -107,7 +107,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="الاستعادة من نسخة احتياطية" />
 
 <div id="primary-region-downtime">
-  ### تعطل المنطقة الأساسية
+  ### تعطل المنطقة الأساسية {#primary-region-downtime}
 </div>
 
 يمكنك [تصدير النسخ الاحتياطية](/ar/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) إلى حاوية التخزين لدى موفر الخدمة السحابية الخاص بك.
@@ -127,7 +127,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="additional-options">
-  ## خيارات إضافية
+  ## خيارات إضافية {#additional-options}
 </div>
 
 هناك بعض الخيارات الإضافية التي يجدر أخذها في الاعتبار.

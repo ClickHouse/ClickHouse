@@ -2,7 +2,7 @@
 title: إعدادات الخادم خارج Source
 ---
 
-## asynchronous_metric_log
+## asynchronous_metric_log {#asynchronous_metric_log}
 
 يكون مفعّلًا افتراضيًا في عمليات النشر على ClickHouse Cloud.
 
@@ -37,7 +37,7 @@ title: إعدادات الخادم خارج Source
 
 <SystemLogParameters />
 
-## auth_use_forwarded_address
+## auth_use_forwarded_address {#auth_use_forwarded_address}
 
 استخدم عنوان المصدر في المصادقة للعملاء المتصلين عبر وكيل.
 
@@ -47,7 +47,7 @@ title: إعدادات الخادم خارج Source
   يجب استخدام هذا الإعداد بحذر شديد، لأن العناوين المُمرَّرة يمكن انتحالها بسهولة. ولا ينبغي الوصول مباشرةً إلى الخوادم التي تقبل هذا النوع من المصادقة، بل يجب أن يتم ذلك حصراً عبر وكيل موثوق.
 </Note>
 
-## النسخ الاحتياطية
+## النسخ الاحتياطية {#backups}
 
 إعدادات النسخ الاحتياطية، تُستخدم عند تنفيذ عبارتي [`BACKUP` و `RESTORE`](/ar/concepts/features/backup-restore/overview).
 
@@ -103,7 +103,7 @@ title: إعدادات الخادم خارج Source
 </backups>
 ```
 
-## background_schedule_pool_log
+## background_schedule_pool_log {#background_schedule_pool_log}
 
 يحتوي على معلومات حول جميع المهام الخلفية التي تُنفَّذ عبر مختلف مجمّعات المعالجة الخلفية.
 
@@ -122,7 +122,7 @@ title: إعدادات الخادم خارج Source
 </background_schedule_pool_log>
 ```
 
-## bcrypt_workfactor
+## bcrypt_workfactor {#bcrypt_workfactor}
 
 عامل العمل لنوع المصادقة `bcrypt_password` الذي يستخدم [خوارزمية Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 ويحدِّد عامل العمل مقدار العمليات الحسابية والوقت اللازمين لحساب قيمة التجزئة والتحقق من كلمة المرور.
@@ -139,7 +139,7 @@ title: إعدادات الخادم خارج Source
   العبء الحوسبي لـ bcrypt عند استخدام قيم مرتفعة لعامل العمل.
 </Warning>
 
-## table_engines_require_grant
+## table_engines_require_grant {#table_engines_require_grant}
 
 <CloudNotSupportedBadge />
 
@@ -151,7 +151,7 @@ title: إعدادات الخادم خارج Source
   افتراضيًا، وللحفاظ على backward compatibility، يتجاهل إنشاء جدول باستخدام table engine محدد متطلبات grant، ولكن يمكنك تغيير هذا السلوك بضبط هذه القيمة على true.
 </Note>
 
-## builtin_dictionaries_reload_interval
+## builtin_dictionaries_reload_interval {#builtin_dictionaries_reload_interval}
 
 الفاصل الزمني بالثواني قبل إعادة تحميل القواميس المضمّنة.
 
@@ -163,7 +163,7 @@ title: إعدادات الخادم خارج Source
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-## الضغط
+## الضغط {#compression}
 
 إعدادات ضغط البيانات للجداول التي تستخدم محرك [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -218,7 +218,7 @@ title: إعدادات الخادم خارج Source
 </compression>
 ```
 
-## التشفير
+## التشفير {#encryption}
 
 يحدِّد أمرًا للحصول على مفتاح لاستخدامه مع [مرمِّزات التشفير](/ar/reference/statements/create/table/codec#encryption-codecs). يجب كتابة المفتاح (أو المفاتيح) في متغيرات البيئة أو تعيينه في ملف الإعدادات.
 
@@ -300,7 +300,7 @@ title: إعدادات الخادم خارج Source
   يمكن أيضًا تطبيق كل ما ورد أعلاه على `aes_256_gcm_siv` (لكن يجب أن يكون طول المفتاح 32 بايت).
 </Note>
 
-## error_log
+## error_log {#error_log}
 
 يكون معطّلًا افتراضيًا.
 
@@ -335,7 +335,7 @@ title: إعدادات الخادم خارج Source
 
 <SystemLogParameters />
 
-## custom_settings_prefixes
+## custom_settings_prefixes {#custom_settings_prefixes}
 
 قائمة بالبادئات المستخدمة في [الإعدادات المخصّصة](/ar/concepts/features/configuration/settings/settings-query-level#custom_settings).
 تُفصل البادئات المتعددة بفواصل.
@@ -350,7 +350,7 @@ title: إعدادات الخادم خارج Source
 
 * [الإعدادات المخصّصة](/ar/concepts/features/configuration/settings/settings-query-level#custom_settings)
 
-## core_dump
+## core_dump {#core_dump}
 
 يضبط الحد المرن لحجم ملف تفريغ الذاكرة.
 
@@ -366,7 +366,7 @@ title: إعدادات الخادم خارج Source
 </core_dump>
 ```
 
-## default_profile
+## default_profile {#default_profile}
 
 ملف تعريف الإعدادات الافتراضي. توجد ملفات تعريف الإعدادات في الملف المحدد في الإعداد `user_config`.
 
@@ -378,7 +378,7 @@ title: إعدادات الخادم خارج Source
 <default_profile>default</default_profile>
 ```
 
-## dictionaries_config
+## dictionaries_config {#dictionaries_config}
 
 المسار إلى ملف إعدادات القواميس.
 
@@ -397,7 +397,7 @@ title: إعدادات الخادم خارج Source
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## user_defined_executable_functions_config
+## user_defined_executable_functions_config {#user_defined_executable_functions_config}
 
 مسار ملف الإعدادات الخاص بالدوال التنفيذية المعرّفة من قبل المستخدم.
 
@@ -416,7 +416,7 @@ title: إعدادات الخادم خارج Source
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
-## graphite
+## graphite {#graphite}
 
 إرسال البيانات إلى [Graphite](https://github.com/graphite-project).
 
@@ -450,7 +450,7 @@ title: إعدادات الخادم خارج Source
 </graphite>
 ```
 
-## graphite_rollup
+## graphite_rollup {#graphite_rollup}
 
 إعدادات لتقليل حجم بيانات Graphite.
 
@@ -478,7 +478,7 @@ title: إعدادات الخادم خارج Source
 </graphite_rollup_example>
 ```
 
-## http_handlers
+## http_handlers {#http_handlers}
 
 يسمح باستخدام معالِجات HTTP مخصّصة.
 لإضافة معالِج HTTP جديد، ما عليك سوى إضافة `<rule>` جديدة.
@@ -543,7 +543,7 @@ title: إعدادات الخادم خارج Source
 </http_handlers>
 ```
 
-## http_server_default_response
+## http_server_default_response {#http_server_default_response}
 
 الصفحة التي تُعرض تلقائيًا عند الوصول إلى خادم ClickHouse عبر HTTP(s).
 القيمة الافتراضية هي &quot;Ok.&quot; (مع محرف سطر جديد في النهاية)
@@ -560,7 +560,7 @@ title: إعدادات الخادم خارج Source
 </http_server_default_response>
 ```
 
-## http_options_response
+## http_options_response {#http_options_response}
 
 يُستخدم لإضافة ترويسات إلى الاستجابة لطلب HTTP من نوع `OPTIONS`.
 تُستخدم الطريقة `OPTIONS` عند إرسال طلبات CORS المسبقة.
@@ -590,7 +590,7 @@ title: إعدادات الخادم خارج Source
 </http_options_response>
 ```
 
-## hsts_max_age
+## hsts_max_age {#hsts_max_age}
 
 مدة صلاحية HSTS بالثواني.
 
@@ -604,7 +604,7 @@ title: إعدادات الخادم خارج Source
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-## interserver_listen_host
+## interserver_listen_host {#interserver_listen_host}
 
 قيد على المضيفات المسموح لها بتبادل البيانات بين خوادم ClickHouse.
 إذا كان Keeper مستخدمًا، فسيُطبَّق القيد نفسه على الاتصال بين مثيلات Keeper المختلفة.
@@ -626,7 +626,7 @@ title: إعدادات الخادم خارج Source
 
 القيمة الافتراضية:
 
-## interserver_http_credentials
+## interserver_http_credentials {#interserver_http_credentials}
 
 اسم مستخدم وكلمة مرور يُستخدمان للاتصال بالخوادم الأخرى أثناء [النسخ المتماثل](/ar/reference/engines/table-engines/mergetree-family/replication). بالإضافة إلى ذلك، يصادق الخادم النسخ المتماثلة الأخرى باستخدام بيانات الاعتماد هذه.
 لذلك يجب أن تكون `interserver_http_credentials` نفسها في جميع النسخ المتماثلة ضمن عنقود.
@@ -679,7 +679,7 @@ title: إعدادات الخادم خارج Source
 
 بعد تطبيق بيانات اعتماد جديدة على جميع النسخ المتماثلة، يمكن إزالة بيانات الاعتماد القديمة.
 
-## ldap_servers
+## ldap_servers {#ldap_servers}
 
 أدرِج هنا خوادم LDAP مع معلمات الاتصال الخاصة بها من أجل:
 
@@ -746,7 +746,7 @@ title: إعدادات الخادم خارج Source
 </my_ad_server>
 ```
 
-## listen_host
+## listen_host {#listen_host}
 
 قيد على المضيفات التي يمكن أن تَرِد منها الطلبات. إذا كنت تريد أن يستجيب الخادم لها جميعًا، فحدِّد `::`.
 
@@ -757,7 +757,7 @@ title: إعدادات الخادم خارج Source
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## logger
+## logger {#logger}
 
 موقع رسائل السجل وتنسيقها.
 
@@ -950,7 +950,7 @@ title: إعدادات الخادم خارج Source
 
 يمكن حذف خصائص السجل بالتعليق على الخاصية. على سبيل المثال، إذا كنت لا تريد أن يطبع السجل `query_id`، فيمكنك التعليق على الوسم `<query_id>`.
 
-## send_crash_reports
+## send_crash_reports {#send_crash_reports}
 
 إعدادات خاصة بإرسال تقارير التعطل إلى فريق المطورين الأساسيين في ClickHouse.
 
@@ -972,7 +972,7 @@ title: إعدادات الخادم خارج Source
 </send_crash_reports>
 ```
 
-## ssh_server
+## ssh_server {#ssh_server}
 
 سيُكتب الجزء العام من مفتاح المضيف في ملف known&#95;hosts
 على جانب عميل SSH عند أول اتصال.
@@ -990,7 +990,7 @@ title: إعدادات الخادم خارج Source
 </ssh_server>
 ```
 
-## tcp_ssh_port
+## tcp_ssh_port {#tcp_ssh_port}
 
 المنفذ الخاص بخادم SSH الذي يتيح للمستخدم الاتصال وتنفيذ الاستعلامات بشكل تفاعلي باستخدام العميل المضمّن عبر PTY.
 
@@ -1000,7 +1000,7 @@ title: إعدادات الخادم خارج Source
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
 
-## storage_configuration
+## storage_configuration {#storage_configuration}
 
 يتيح إعداد التخزين باستخدام عدة أقراص.
 
@@ -1017,7 +1017,7 @@ title: إعدادات الخادم خارج Source
 </storage_configuration>
 ```
 
-### إعداد `disks`
+### إعداد `disks` {#configuration-of-disks}
 
 يأتي إعداد `disks` وفق البنية الموضحة أدناه:
 
@@ -1052,7 +1052,7 @@ title: إعدادات الخادم خارج Source
   لا يهم ترتيب الأقراص.
 </Note>
 
-### تهيئة السياسات
+### تهيئة السياسات {#configuration-of-policies}
 
 تُعرِّف العلامات الفرعية أعلاه الإعدادات التالية لـ `policies`:
 
@@ -1076,7 +1076,7 @@ title: إعدادات الخادم خارج Source
 * إذا لم يُحدَّد هذا المعامل لأيٍّ من وحدات التخزين، فيُحدَّد ترتيبها بحسب ترتيب الوصف في ملف الإعدادات.
 * لا يجوز أن تكون أولويات وحدات التخزين متطابقة.
 
-## macros
+## macros {#macros}
 
 استبدالات المعلمات الخاصة بالجداول المتماثلة.
 
@@ -1090,7 +1090,7 @@ title: إعدادات الخادم خارج Source
 <macros incl="macros" optional="true" />
 ```
 
-## replica_group_name
+## replica_group_name {#replica_group_name}
 
 اسم مجموعة النسخ المتماثلة لقاعدة البيانات Replicated.
 
@@ -1105,7 +1105,7 @@ title: إعدادات الخادم خارج Source
 <replica_group_name>backups</replica_group_name>
 ```
 
-## max_session_timeout
+## max_session_timeout {#max_session_timeout}
 
 الحد الأقصى لمهلة الجلسة، بالثواني.
 
@@ -1115,7 +1115,7 @@ title: إعدادات الخادم خارج Source
 <max_session_timeout>3600</max_session_timeout>
 ```
 
-## merge_tree
+## merge_tree {#merge_tree}
 
 إعدادات الضبط الدقيق للجداول في [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -1129,7 +1129,7 @@ title: إعدادات الخادم خارج Source
 </merge_tree>
 ```
 
-## metric_log
+## metric_log {#metric_log}
 
 هو معطّل افتراضيًا.
 
@@ -1164,7 +1164,7 @@ title: إعدادات الخادم خارج Source
 
 <SystemLogParameters />
 
-## replicated_merge_tree
+## replicated_merge_tree {#replicated_merge_tree}
 
 الضبط الدقيق للجداول في [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). يتمتع هذا الإعداد بأولوية أعلى.
 
@@ -1178,7 +1178,7 @@ title: إعدادات الخادم خارج Source
 </replicated_merge_tree>
 ```
 
-## opentelemetry_span_log
+## opentelemetry_span_log {#opentelemetry_span_log}
 
 إعدادات جدول النظام [`opentelemetry_span_log`](/ar/reference/system-tables/opentelemetry_span_log).
 
@@ -1203,7 +1203,7 @@ title: إعدادات الخادم خارج Source
 </opentelemetry_span_log>
 ```
 
-## openSSL
+## openSSL {#openSSL}
 
 إعدادات SSL للعميل والخادم.
 
@@ -1266,7 +1266,7 @@ title: إعدادات الخادم خارج Source
 </openSSL>
 ```
 
-## part_log
+## part_log {#part_log}
 
 أحداث السجل المرتبطة بـ [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). على سبيل المثال، إضافة البيانات أو دمجها. يمكنك استخدام هذا السجل لمحاكاة خوارزميات الدمج ومقارنة خصائصها. كما يمكنك تصوّر عملية الدمج.
 
@@ -1289,7 +1289,7 @@ title: إعدادات الخادم خارج Source
 </part_log>
 ```
 
-## processors_profile_log
+## processors_profile_log {#processors_profile_log}
 
 إعدادات جدول النظام [`processors_profile_log`](/ar/reference/system-tables/processors_profile_log).
 
@@ -1310,7 +1310,7 @@ title: إعدادات الخادم خارج Source
 </processors_profile_log>
 ```
 
-## prometheus
+## prometheus {#prometheus}
 
 إتاحة بيانات المقاييس ليقوم [Prometheus](https://prometheus.io) بكشطها.
 
@@ -1352,7 +1352,7 @@ title: إعدادات الخادم خارج Source
 curl 127.0.0.1:9363/metrics
 ```
 
-## query_log
+## query_log {#query_log}
 
 إعداد لتسجيل الاستعلامات الواردة عند استخدام الإعداد [log&#95;queries=1](/ar/reference/settings/session-settings/log-queries#log_queries).
 
@@ -1380,7 +1380,7 @@ curl 127.0.0.1:9363/metrics
 </query_log>
 ```
 
-## query_metric_log
+## query_metric_log {#query_metric_log}
 
 يكون معطّلًا بشكل افتراضي.
 
@@ -1415,7 +1415,7 @@ curl 127.0.0.1:9363/metrics
 
 <SystemLogParameters />
 
-## query_cache
+## query_cache {#query_cache}
 
 تهيئة [ذاكرة التخزين المؤقت للاستعلامات](/ar/concepts/features/performance/caches/query-cache).
 
@@ -1444,7 +1444,7 @@ curl 127.0.0.1:9363/metrics
 </query_cache>
 ```
 
-## query_thread_log
+## query_thread_log {#query_thread_log}
 
 إعداد لتسجيل خيوط الاستعلامات المستلمة باستخدام الإعداد [log&#95;query&#95;threads=1](/ar/reference/settings/session-settings/log-query#log_query_threads).
 
@@ -1469,7 +1469,7 @@ curl 127.0.0.1:9363/metrics
 </query_thread_log>
 ```
 
-## query_views_log
+## query_views_log {#query_views_log}
 
 إعداد لتسجيل العروض (الحيّة، والمادية، وغيرها) استنادًا إلى الاستعلامات المستلمة مع الإعداد [log&#95;query&#95;views=1](/ar/reference/settings/session-settings/log-query#log_query_views).
 
@@ -1494,7 +1494,7 @@ curl 127.0.0.1:9363/metrics
 </query_views_log>
 ```
 
-## text_log
+## text_log {#text_log}
 
 إعدادات جدول النظام [text&#95;log](/ar/reference/system-tables/text_log) لتسجيل الرسائل النصية.
 
@@ -1525,7 +1525,7 @@ curl 127.0.0.1:9363/metrics
 </clickhouse>
 ```
 
-## trace_log
+## trace_log {#trace_log}
 
 إعدادات تشغيل جدول النظام [trace&#95;log](/ar/reference/system-tables/trace_log).
 
@@ -1547,7 +1547,7 @@ curl 127.0.0.1:9363/metrics
 </trace_log>
 ```
 
-## asynchronous_insert_log
+## asynchronous_insert_log {#asynchronous_insert_log}
 
 إعدادات [جدول النظام asynchronous&#95;insert&#95;log](/ar/reference/system-tables/asynchronous_insert_log) الخاصة بتسجيل عمليات الإدراج غير المتزامنة.
 
@@ -1571,7 +1571,7 @@ curl 127.0.0.1:9363/metrics
 </clickhouse>
 ```
 
-## crash_log
+## crash_log {#crash_log}
 
 إعدادات تشغيل جدول النظام [crash&#95;log](/ar/reference/system-tables/crash_log).
 
@@ -1608,7 +1608,7 @@ curl 127.0.0.1:9363/metrics
 </crash_log>
 ```
 
-## create_union_system_log_tables
+## create_union_system_log_tables {#create_union_system_log_tables}
 
 يطلب إنشاء جداول `all_...` بجانب جداول سجلات النظام (`system.all_query_log` لـ `system.query_log`، و`system.all_text_log` لـ `system.text_log`، وهكذا). ويكون هذا الجدول اتحادًا لجدول السجل المقابل وإصداراته المُدوَّرة (`query_log_0`، و`query_log_1`، ...) و/أو الجداول نفسها عبر جميع النسخ المتماثلة في العنقود، ويتيح الاستعلام عنها جميعًا دفعة واحدة دون الحاجة إلى تذكّر تراكيب مثل `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
@@ -1640,7 +1640,7 @@ curl 127.0.0.1:9363/metrics
 </create_union_system_log_tables>
 ```
 
-## custom_cached_disks_base_directory
+## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
 
 يحدّد هذا الإعداد مسار ذاكرة التخزين المؤقت للأقراص المخصّصة ذات التخزين المؤقت (المنشأة من SQL).
 تكون لـ `custom_cached_disks_base_directory` أولوية أعلى للأقراص المخصّصة من `filesystem_caches_path` (الموجود في `filesystem_caches_path.xml`)،
@@ -1659,7 +1659,7 @@ curl 127.0.0.1:9363/metrics
 <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
 ```
 
-## backup_log
+## backup_log {#backup_log}
 
 إعدادات جدول النظام [backup&#95;log](/ar/reference/system-tables/backup_log) لتسجيل عمليات `BACKUP` و`RESTORE`.
 
@@ -1683,7 +1683,7 @@ curl 127.0.0.1:9363/metrics
 </clickhouse>
 ```
 
-## blob_storage_log
+## blob_storage_log {#blob_storage_log}
 
 إعدادات لجدول النظام [`blob_storage_log`](/ar/reference/system-tables/blob_storage_log).
 
@@ -1701,7 +1701,7 @@ curl 127.0.0.1:9363/metrics
 </blob_storage_log>
 ```
 
-## query_masking_rules
+## query_masking_rules {#query_masking_rules}
 
 قواعد قائمة على التعبيرات النمطية، تُطبَّق على الاستعلامات وكذلك على جميع رسائل السجل قبل تخزينها في سجلات الخادم،
 وفي جداول [`system.query_log`](/ar/reference/system-tables/query_log)، [`system.text_log`](/ar/reference/system-tables/text_log)، [`system.processes`](/ar/reference/system-tables/processes)، وكذلك في السجلات المرسلة إلى العميل. يساعد ذلك على منع
@@ -1734,7 +1734,7 @@ curl 127.0.0.1:9363/metrics
 بالنسبة إلى الاستعلامات الموزعة، يجب تهيئة كل خادم على حدة، وإلا فستُخزَّن الاستعلامات الفرعية المُمرَّرة إلى
 العُقد الأخرى من دون إخفاء.
 
-## remote_servers
+## remote_servers {#remote_servers}
 
 إعدادات العناقيد المستخدمة في محرك الجدول [Distributed](/ar/reference/engines/table-engines/special/distributed) وفي وظيفة الجدول `cluster`.
 
@@ -1752,7 +1752,7 @@ curl 127.0.0.1:9363/metrics
 * [اكتشاف الكتلة](/ar/guides/oss/deployment-and-scaling/cluster-discovery)
 * [محرك قاعدة البيانات Replicated](/ar/reference/engines/database-engines/replicated)
 
-## remote_url_allow_hosts
+## remote_url_allow_hosts {#remote_url_allow_hosts}
 
 قائمة بالمضيفين المسموح باستخدامهم في محركات التخزين المرتبطة بـ URL ودوال الجداول.
 
@@ -1772,7 +1772,7 @@ curl 127.0.0.1:9363/metrics
 </remote_url_allow_hosts>
 ```
 
-## timezone
+## timezone {#timezone}
 
 المنطقة الزمنية للخادم.
 
@@ -1790,7 +1790,7 @@ curl 127.0.0.1:9363/metrics
 
 * [session&#95;timezone](/ar/reference/settings/session-settings/other#session_timezone)
 
-## tcp_port
+## tcp_port {#tcp_port}
 
 المنفذ المستخدَم للتواصل مع العملاء عبر بروتوكول TCP.
 
@@ -1800,7 +1800,7 @@ curl 127.0.0.1:9363/metrics
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp_port_secure
+## tcp_port_secure {#tcp_port_secure}
 
 منفذ TCP للاتصال الآمن ببرامج العميل. استخدمه مع إعدادات [OpenSSL](#openSSL).
 
@@ -1810,7 +1810,7 @@ curl 127.0.0.1:9363/metrics
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql_port
+## mysql_port {#mysql_port}
 
 المنفذ المخصّص للتواصل مع العملاء عبر بروتوكول MySQL.
 
@@ -1825,7 +1825,7 @@ curl 127.0.0.1:9363/metrics
 <mysql_port>9004</mysql_port>
 ```
 
-## postgresql_port
+## postgresql_port {#postgresql_port}
 
 المنفذ المستخدم للتواصل مع العملاء عبر بروتوكول PostgreSQL.
 
@@ -1840,7 +1840,7 @@ curl 127.0.0.1:9363/metrics
 <postgresql_port>9005</postgresql_port>
 ```
 
-## url_scheme_mappers
+## url_scheme_mappers {#url_scheme_mappers}
 
 إعداد لتحويل بادئات URL المختصرة أو الرمزية إلى عناوين URL كاملة.
 
@@ -1860,7 +1860,7 @@ curl 127.0.0.1:9363/metrics
 </url_scheme_mappers>
 ```
 
-## user_defined_path
+## user_defined_path {#user_defined_path}
 
 المجلد الذي يحتوي على الملفات التي يعرّفها المستخدم. يُستخدم مع دوال SQL المعرّفة من قِبل المستخدم [دوال SQL المعرّفة من قِبل المستخدم](/ar/reference/functions/regular-functions/udf).
 
@@ -1870,7 +1870,7 @@ curl 127.0.0.1:9363/metrics
 <user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
 ```
 
-## users_config
+## users_config {#users_config}
 
 مسار الملف الذي يحتوي على:
 
@@ -1885,7 +1885,7 @@ curl 127.0.0.1:9363/metrics
 <users_config>users.xml</users_config>
 ```
 
-## access_control_improvements
+## access_control_improvements {#access_control_improvements}
 
 إعدادات التحسينات الاختيارية في نظام التحكم في الوصول.
 
@@ -1917,7 +1917,7 @@ curl 127.0.0.1:9363/metrics
 </access_control_improvements>
 ```
 
-## s3queue_log
+## s3queue_log {#s3queue_log}
 
 إعدادات جدول النظام `s3queue_log`.
 
@@ -1934,7 +1934,7 @@ curl 127.0.0.1:9363/metrics
 </s3queue_log>
 ```
 
-## dead_letter_queue
+## dead_letter_queue {#dead_letter_queue}
 
 إعداد خاص بجدول النظام &#39;dead&#95;letter&#95;queue&#39;.
 
@@ -1951,7 +1951,7 @@ curl 127.0.0.1:9363/metrics
 </dead_letter_queue>
 ```
 
-## zookeeper
+## zookeeper {#zookeeper}
 
 يحتوي هذا القسم على إعدادات تتيح لـ ClickHouse التفاعل مع عنقود [ZooKeeper](http://zookeeper.apache.org/). يستخدم ClickHouse ‏ZooKeeper لتخزين البيانات الوصفية الخاصة بالنسخ المتماثلة عند استخدام الجداول المتماثلة. وإذا لم تكن الجداول المتماثلة مستخدمة، فيمكن حذف هذا القسم من المَعلمات.
 
@@ -2014,7 +2014,7 @@ curl 127.0.0.1:9363/metrics
 * [دليل المبرمج لـ ZooKeeper](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 * [اتصال آمن اختياري بين ClickHouse وZooKeeper](/ar/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)
 
-## use_minimalistic_part_header_in_zookeeper
+## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
 طريقة تخزين رؤوس أجزاء البيانات في ZooKeeper. لا ينطبق هذا الإعداد إلا على عائلة [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/index). ويمكن تحديده كما يلي:
 
@@ -2039,7 +2039,7 @@ curl 127.0.0.1:9363/metrics
   كما لا يمكن استعادة رؤوس أجزاء البيانات المخزّنة مسبقًا باستخدام هذا الإعداد إلى تمثيلها السابق (غير المضغوط).
 </Note>
 
-## distributed_ddl
+## distributed_ddl {#distributed_ddl}
 
 إدارة تنفيذ [استعلامات DDL الموزعة](/ar/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) على مستوى العنقود.
 يعمل فقط إذا كان [ZooKeeper](/ar/reference/settings/server-settings/settings/zookeeper#zookeeper) مفعّلًا.
@@ -2083,7 +2083,7 @@ curl 127.0.0.1:9363/metrics
 </distributed_ddl>
 ```
 
-## access_control_path
+## access_control_path {#access_control_path}
 
 مسار المجلد الذي يخزّن فيه ClickHouse server إعدادات المستخدمين والأدوار المُنشأة بواسطة أوامر SQL.
 
@@ -2091,7 +2091,7 @@ curl 127.0.0.1:9363/metrics
 
 * [Access Control and Account Management](/ar/concepts/features/security/access-rights#access-control-usage)
 
-## allow_plaintext_password
+## allow_plaintext_password {#allow_plaintext_password}
 
 يحدّد ما إذا كان يُسمح بأنواع كلمات المرور ذات النص الواضح (غير الآمنة) أم لا.
 
@@ -2101,7 +2101,7 @@ curl 127.0.0.1:9363/metrics
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-## allow_no_password
+## allow_no_password {#allow_no_password}
 
 يحدِّد ما إذا كان يُسمح بنوع كلمة المرور غير الآمن `no_password` أم لا.
 
@@ -2111,7 +2111,7 @@ curl 127.0.0.1:9363/metrics
 <allow_no_password>1</allow_no_password>
 ```
 
-## allow_implicit_no_password
+## allow_implicit_no_password {#allow_implicit_no_password}
 
 يمنع إنشاء مستخدم من دون كلمة مرور ما لم يُحدَّد &#39;IDENTIFIED WITH no&#95;password&#39; صراحةً.
 
@@ -2121,7 +2121,7 @@ curl 127.0.0.1:9363/metrics
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-## default_session_timeout
+## default_session_timeout {#default_session_timeout}
 
 المهلة الافتراضية لانتهاء الجلسة، بالثواني.
 
@@ -2131,7 +2131,7 @@ curl 127.0.0.1:9363/metrics
 <default_session_timeout>60</default_session_timeout>
 ```
 
-## default_password_type
+## default_password_type {#default_password_type}
 
 يحدّد نوع كلمة المرور الذي يُضبط تلقائيًا في استعلامات مثل `CREATE USER u IDENTIFIED BY 'p'`.
 
@@ -2151,7 +2151,7 @@ curl 127.0.0.1:9363/metrics
 <default_password_type>sha256_password</default_password_type>
 ```
 
-## user_directories
+## user_directories {#user_directories}
 
 قسم في ملف التكوين يحتوي على الإعدادات التالية:
 
@@ -2210,7 +2210,7 @@ curl 127.0.0.1:9363/metrics
 </ldap>
 ```
 
-## top_level_domains_list
+## top_level_domains_list {#top_level_domains_list}
 
 يحدّد قائمة بنطاقات المستوى الأعلى المخصّصة المطلوب إضافتها، بحيث يكون كل إدخال بالتنسيق `<name>/path/to/file</name>`.
 
@@ -2227,7 +2227,7 @@ curl 127.0.0.1:9363/metrics
 * الدالة [`cutToFirstSignificantSubdomainCustom`](/ar/reference/functions/regular-functions/url-functions#cutToFirstSignificantSubdomainCustom) وأشكالها المختلفة،
   التي تقبل اسم قائمة TLD مخصّصة، وتُرجع الجزء من النطاق الذي يشمل النطاقات الفرعية العليا حتى أول نطاق فرعي رئيسي.
 
-## الوكيل
+## الوكيل {#proxy}
 
 حدِّد خوادم وكيلة لطلبات HTTP وHTTPS، وهي مدعومة حاليًا في تخزين S3، ودوال الجداول S3، ودوال URL.
 
@@ -2363,7 +2363,7 @@ curl 127.0.0.1:9363/metrics
 فسيتحقق من نوع المحلِّل التالي في ترتيب الأولوية، إلى أن يصل إلى محلِّل البيئة.
 ويتيح هذا أيضًا استخدام مزيج من أنواع المحلِّلات.
 
-## disable_tunneling_for_https_requests_over_http_proxy
+## disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
 
 افتراضيًا، يُستخدَم النفق (أي `HTTP CONNECT`) لإرسال طلبات `HTTPS` عبر وكيل `HTTP`. يمكن استخدام هذا الإعداد لتعطيل ذلك.
 
@@ -2393,7 +2393,7 @@ curl 127.0.0.1:9363/metrics
 </proxy>
 ```
 
-## workload_path
+## workload_path {#workload_path}
 
 الدليل المُستخدَم لتخزين جميع استعلامات `CREATE WORKLOAD` و`CREATE RESOURCE`. يُستخدَم افتراضيًا المجلد `/workload/` ضمن دليل عمل الخادم.
 
@@ -2410,7 +2410,7 @@ curl 127.0.0.1:9363/metrics
 * [التسلسل الهرمي لأعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;zookeeper&#95;path](#workload_zookeeper_path)
 
-## workload_zookeeper_path
+## workload_zookeeper_path {#workload_zookeeper_path}
 
 المسار إلى عقدة في ZooKeeper، تُستخدم كمخزن لجميع استعلامات `CREATE WORKLOAD` و`CREATE RESOURCE`. ولضمان الاتساق، تُخزَّن جميع تعريفات SQL كقيمة لهذه العقدة الوحيدة من نوع znode. بشكل افتراضي، لا يُستخدم ZooKeeper، وتُخزَّن التعريفات على [disk](#workload_path).
 
@@ -2425,7 +2425,7 @@ curl 127.0.0.1:9363/metrics
 * [التسلسل الهرمي لأعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;path](#workload_path)
 
-## zookeeper_log
+## zookeeper_log {#zookeeper_log}
 
 إعدادات جدول النظام [`zookeeper_log`](/ar/reference/system-tables/zookeeper_log).
 

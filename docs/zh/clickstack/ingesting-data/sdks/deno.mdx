@@ -14,7 +14,7 @@ import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrat
   当前仅支持 OpenTelemetry 日志。如需链路追踪支持，[请参阅以下指南](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example)。
 </Note>
 
-## 日志
+## 日志 {#logging}
 
 可通过为 `std/log` 模块导出自定义日志记录器来启用日志功能。
 
@@ -40,7 +40,7 @@ log.setup({
 log.getLogger('my-otel-logger').info('Hello from Deno!');
 ```
 
-### 运行应用程序
+### 运行应用程序 {#run-the-application}
 
 <Tabs>
   <Tab title="托管 ClickStack">

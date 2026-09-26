@@ -26,16 +26,16 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Note>
 
 <div id="request-access">
-  ## アクセスを申請する
+  ## アクセスを申請する {#request-access}
 </div>
 
 オンボーディングを開始するには、[お問い合わせください](https://clickhouse.com/cloud/bring-your-own-cloud)。当社のチームがBYOCの要件をご案内し、最適なデプロイメントオプションの選定を支援するとともに、お客様のアカウントを許可リストに追加します。
 
 <div id="onboarding-process">
-  ## オンボーディング
+  ## オンボーディング {#onboarding-process}
 </div>
 
-### AWS アカウント/GCP プロジェクト/Azure サブスクリプションを準備する
+### AWS アカウント/GCP プロジェクト/Azure サブスクリプションを準備する {#prepare-an-aws-account}
 
 組織配下に新しい AWS アカウント、GCP プロジェクト、または Azure サブスクリプションを用意します。
 
@@ -57,7 +57,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       ClickHouseの実行に必要なStorage buckets、VPC/VNet、Kubernetes cluster、コンピュートリソースは、この初期セットアップには含まれません。これらは次のステップでプロビジョニングされます。
     </Note>
 
-#### AWS向けTerraform Module
+#### AWS向けTerraform Module {#terraform-module-aws}
 
     AWSデプロイメントでCloudFormationではなくTerraformを使用する場合は、[terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) moduleを使用してください。
 
@@ -76,7 +76,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       このモジュールは以前、`https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`でtarballとして配布されていました。このURLは現在も利用できますが、非推奨です。上記のGitHubモジュールを使用してください。
     </Note>
 
-#### AWS 外部ID
+#### AWS 外部ID {#aws-external-id}
 
     AWSでは、セットアップ時に作成されるIAMロールが、混乱した代理者問題を防ぐために[外部ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) を使用してClickHouse Cloudを信頼します。ClickHouse Cloud consoleは、オンボーディングを開始するとAWSアカウント用の外部IDを生成し、CloudFormationリンクにあらかじめ入力します。Terraformを使用する場合は、同じ値を`external_id`として渡してください。同じAWSアカウント上のすべてのBYOCインフラストラクチャは、同じ外部IDを共有します。
 
@@ -102,7 +102,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC インフラストラクチャをセットアップする" background="black" />
 
-#### 事前検証
+#### 事前検証 {#preflight-validation}
 
     **Set up Infrastructure** をクリックすると、ClickHouse Cloud はリソースを作成する前に、アカウントに対して一連の**読み取り専用**のプリフライトチェックを実行します。すべてのチェックに合格すると、プロビジョニングが続行されます。チェックに失敗した場合、セットアップは一時停止され、問題の内容が console に正確に表示されるため、リソースが作成される前に修正できます。
 
@@ -138,7 +138,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Step>
 </Steps>
 
-### 最初の BYOC ClickHouse サービスを作成する
+### 最初の BYOC ClickHouse サービスを作成する {#create-clickhouse-service}
 
 BYOC インフラストラクチャのプロビジョニングが完了したら、最初の ClickHouse サービスを起動する準備は整っています。ClickHouse Cloud コンソールを開き、BYOC 環境を選択して、画面の案内に従って新しいサービスを作成します。
 

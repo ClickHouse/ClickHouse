@@ -10,14 +10,14 @@ import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrat
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## Установка слоёв OpenTelemetry для Lambda
+## Установка слоёв OpenTelemetry для Lambda {#installing-the-otel-lambda-layers}
 
 Проект OpenTelemetry предоставляет отдельные слои Lambda для следующих задач:
 
 1. Автоматически инструментировать код вашей Lambda-функции с помощью средств автоинструментирования OpenTelemetry.
 2. Передавать собранные журналы, метрики и трассировку в ClickStack.
 
-### Добавление слоя автоинструментирования для конкретного языка
+### Добавление слоя автоинструментирования для конкретного языка {#adding-language-specific-auto-instrumentation}
 
 Слои автоинструментирования Lambda для конкретных языков автоматически добавляют в код вашей Lambda-функции пакет автоинструментирования OpenTelemetry для соответствующего языка.
 
@@ -98,7 +98,7 @@ import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrat
   </Tab>
 </Tabs>
 
-### Установка слоя Lambda для OpenTelemetry Collector
+### Установка слоя Lambda для OpenTelemetry Collector {#installing-the-otel-collector-layer}
 
 Слой Lambda для коллектора позволяет пересылать журналы, метрики и трассировку из вашей лямбда-функции в ClickStack без влияния на время отклика из-за задержки экспортера.
 
@@ -207,7 +207,7 @@ import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrat
 OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 ```
 
-## Проверка установки
+## Проверка установки {#checking-the-installation}
 
 После развертывания слоев вы должны увидеть в HyperDX трассировки, автоматически
 собранные из вашей Lambda-функции. Процессоры `decouple` и `batching`
@@ -215,19 +215,19 @@ OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 появляться не сразу. Чтобы отправлять собственные журналы или метрики, вам потребуется добавить в код инструментацию с помощью
 OpenTelemetry SDK для вашего языка.
 
-## Устранение неполадок
+## Устранение неполадок {#troubleshoting}
 
-### Пользовательское инструментирование не отправляется
+### Пользовательское инструментирование не отправляется {#custom-instrumentation-not-sending}
 
 Если вы не видите вручную определённую трассировку или другие данные
 телеметрии, возможно, вы используете несовместимую версию пакета OpenTelemetry API. Убедитесь, что версия вашего
 пакета OpenTelemetry API не выше версии, включённой в AWS Lambda.
 
-### Включение отладочных журналов SDK
+### Включение отладочных журналов SDK {#enabling-sdk-debug-logs}
 
 Установите для переменной окружения `OTEL_LOG_LEVEL` значение `DEBUG`, чтобы включить отладочные журналы OpenTelemetry SDK. Это поможет убедиться, что слой автоинструментирования корректно подключает инструментацию к вашему приложению.
 
-### Включение отладочного журнала коллектора
+### Включение отладочного журнала коллектора {#enabling-collector-debug-logs}
 
 Чтобы упростить отладку проблем с коллектором, можно включить отладочный журнал: для этого измените
 файл конфигурации коллектора, добавив экспортёр `logging`, и установите в разделе telemetry
