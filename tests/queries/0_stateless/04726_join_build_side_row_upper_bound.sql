@@ -156,7 +156,7 @@ SELECT 'degenerate-predicate leaf keeps orientation',
     EXPLAIN actions = 1, keep_logical_steps = 1
     SELECT count() FROM cross_04726 JOIN fact_04726 ON 1 WHERE cross_04726.name = 'nowhere'
     SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
-             query_plan_optimize_join_order_use_conflict_detector_c = 1
+             query_plan_optimize_join_order_conflict_detector = 'c'
 ) WHERE explain ILIKE '%Join:%';
 
 DROP TABLE cross_04726;
