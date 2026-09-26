@@ -899,8 +899,8 @@ static void reconcileSiblingPipelineHeaders(
 
     /// Children are converted to the common Merge header before being optimized, and are optimized
     /// independently afterwards, so a sibling can carry a column the step does not declare, and constant
-    /// folding can leave a column Const in one sibling and not in another. The target has the declared
-    /// columns, typed as in the first sibling. Siblings are matched by name, as in the conversion below.
+    /// folding can leave a column Const in one sibling and not in another.
+    /// Siblings are matched by name, which is the rule the conversion below resolves columns with.
     const auto & first = pipelines.front()->getHeader();
     ColumnsWithTypeAndName reference = declared_header.getColumnsWithTypeAndName();
     for (auto & column : reference)
