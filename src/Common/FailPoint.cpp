@@ -432,7 +432,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause) \
     REGULAR(aggregate_function_state_transfer_throw) \
     REGULAR(aggregate_function_state_transfer_throw_after_child) \
-    REGULAR(marks_loader_hold_task_until_canceled)
+    REGULAR(marks_loader_hold_task_until_canceled) \
+    REGULAR(remote_query_executor_exception_retryable) \
+    REGULAR(remote_query_executor_exception_after_sending_data)
 
 namespace FailPoints
 {

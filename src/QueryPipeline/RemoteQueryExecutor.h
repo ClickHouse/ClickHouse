@@ -145,6 +145,9 @@ public:
     /// Stage used when a remote replica is too old to receive the query plan and the executor sends SQL instead.
     void setQueryPlanFallbackStage(QueryProcessingStage::Enum stage_) { query_plan_fallback_stage = stage_; }
 
+    /// The read context must be recreated because the query is resent to a replica (shard-level retry).
+    bool recreate_read_context { false };
+
     int sendQueryAsync();
 
     struct ReadResult
@@ -367,6 +370,25 @@ private:
       */
     bool got_unknown_packet_from_replica = false;
 
+    size_t retry_count = 0;
+
+    /** Store the error code that triggered the last retry
+     * Used for logging the retry reason
+     */
+    int last_retry_error_code = 0;
+
+    bool should_retry = false;
+
+    /** Store connection pool with failover for retrying with different replicas
+     */
+    ConnectionPoolWithFailoverPtr connection_pool_with_failover;
+
+    /** The nested pool of the replica we are currently connected to.
+     * Captured when connections are created so that retryQuery() can deprioritize
+     * the failing replica via connection_pool_with_failover->incrementErrorCount().
+     */
+    ConnectionPoolPtr connected_replica_pool;
+
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     bool packet_in_progress = false;
 #endif
@@ -399,6 +421,13 @@ private:
 
     /// The body of finish(): cancels the query and drains the remaining packets.
     void finishUnlocked() TSA_REQUIRES(was_cancelled_mutex);
+
+    /// Retry query on a different replica after receiving a retryable error
+    ReadResult retryQuery();
+
+    bool isRetryableError(int error_code) const;
+
+    void resetQueryState() TSA_REQUIRES(was_cancelled_mutex);
 
     /// If wasn't sent yet, send request to cancel all connections to replicas
     void cancelUnlocked() TSA_REQUIRES(was_cancelled_mutex);

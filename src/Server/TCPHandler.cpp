@@ -141,6 +141,7 @@ namespace FailPoints
 {
 extern const char parallel_replicas_delay_announcement[];
 extern const char parallel_replicas_reading_response_timeout[];
+extern const char remote_query_executor_exception_after_sending_data[];
 extern const char tcp_handler_fail_connection_setup[];
 }
 }
@@ -187,6 +188,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int TCP_CONNECTION_LIMIT_REACHED;
     extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
 
     // We have to distinguish the case when query is killed by `KILL QUERY` statement
     // and when it is killed by `Protocol::Client::Cancel` packet.
@@ -1648,7 +1650,14 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
+                    {
                         sendData(state, block);
+
+                        fiu_do_on(FailPoints::remote_query_executor_exception_after_sending_data, {
+                            if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+                                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected TOO_MANY_SIMULTANEOUS_QUERIES error after sending data");
+                        });
+                    }
 
                     out->sync();
                 }

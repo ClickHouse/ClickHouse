@@ -283,6 +283,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_QUERY;
+    extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int BAD_ARGUMENTS;
     extern const int ABORTED;
     extern const int FAULT_INJECTED;
@@ -297,6 +298,7 @@ namespace FailPoints
     extern const char terminate_with_exception[];
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
+    extern const char remote_query_executor_exception_retryable[];
     extern const char trigger_sanitizer_error[];
 }
 
@@ -2290,6 +2292,11 @@ static BlockIO executeQueryImpl(
     Stopwatch start_watch{CLOCK_MONOTONIC};
 
     const auto & client_info = context->getClientInfo();
+
+    fiu_do_on(FailPoints::remote_query_executor_exception_retryable, {
+        if (!internal && client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+            throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES, "Injected TOO_MANY_SIMULTANEOUS_QUERIES error (retryable)");
+    });
 
     if (client_info.initial_query_start_time == 0)
     {

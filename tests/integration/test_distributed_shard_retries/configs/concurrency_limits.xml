@@ -1,0 +1,4 @@
+<!-- set a low concurrency limit for predictable concurrency errors -->
+<clickhouse>
+	<max_concurrent_queries>1</max_concurrent_queries>
+</clickhouse>

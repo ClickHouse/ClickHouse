@@ -65,6 +65,7 @@ HedgedConnectionsFactory::~HedgedConnectionsFactory()
     pool->updateSharedError(shuffled_pools);
 }
 
+
 std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode pool_mode, AsyncCallback async_callback)
 {
     size_t min_entries = skip_unavailable_shards ? 0 : 1;
@@ -330,6 +331,8 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
                 {
                     replicas[index].is_ready = true;
                     ++ready_replicas_count;
+                    if (!first_ready_replica_pool)
+                        first_ready_replica_pool = shuffled_pools[index].pool;
                     connection_out = &*result.entry;
                     return State::READY;
                 }
@@ -454,6 +457,8 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::setBestUsableReplica(C
         });
 
     replicas[indexes[0]].is_ready = true;
+    if (!first_ready_replica_pool)
+        first_ready_replica_pool = shuffled_pools[indexes[0]].pool;
     TryResult result = replicas[indexes[0]].connection_establisher->getResult();
     connection_out = &*result.entry;
     return State::READY;
