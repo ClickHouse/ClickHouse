@@ -158,6 +158,17 @@ def assert_took(took, should_take):
     assert took >= should_take * 0.80
 
 
+def local_read_settings(policy="default"):
+    # The default `pread_threadpool` does not account the reads that are served from the OS page
+    # cache in the local read throttler, and the data written by these tests is still in the page
+    # cache. Read it with a method that cannot tell a cached read from a device read, so that the
+    # throttler has something to account. `05111_local_read_throttler_page_cache` covers the
+    # accounting of `pread_threadpool` itself.
+    if policy != "default":
+        return {}
+    return {"local_filesystem_read_method": "pread"}
+
+
 @pytest.mark.parametrize(
     "policy,backup_storage,mode,setting,value,should_take",
     [
@@ -394,7 +405,7 @@ def test_read_throttling(policy, mode, setting, value, should_take):
         insert into data select * from numbers(1e6);
     """
     )
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, "select * from data", settings=local_read_settings(policy))
     assert_took(took, should_take)
 
 
@@ -440,7 +451,7 @@ def test_local_read_throttling_reload():
     """
     )
     # without bandwidth limit
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, "select * from data", settings=local_read_settings())
     assert_took(took, 0)
 
     # add bandwidth limit and reload config on fly
@@ -450,8 +461,36 @@ def test_local_read_throttling_reload():
     node.query("SYSTEM RELOAD CONFIG")
 
     # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, "select * from data", settings=local_read_settings())
     assert_took(took, 3)
+
+    # `pread_threadpool` serves the same (cached) data from the OS page cache, which must not be
+    # accounted in the server throttler created on reload, so this scan is not throttled.
+    query_id = f"page_cache_{uuid.uuid4().hex}"
+    node.query(
+        "select * from data",
+        query_id=query_id,
+        settings={
+            "local_filesystem_read_method": "pread_threadpool",
+            "use_page_cache_for_local_disks": 0,
+            "use_page_cache_for_disks_without_file_cache": 0,
+        },
+    )
+    node.query("SYSTEM FLUSH LOGS query_log")
+    duration, hit_bytes = map(
+        float,
+        node.query(
+            f"""
+            SELECT query_duration_ms / 1000.0, ProfileEvents['ThreadPoolReaderPageCacheHitBytes']
+            FROM system.query_log
+            WHERE type = 'QueryFinish' AND query_id = '{query_id}'
+            """
+        )
+        .strip()
+        .split("\t"),
+    )
+    assert hit_bytes > 0
+    assert duration < 3
 
     # update bandwidth back to 0
     node_update_config(
@@ -459,7 +498,7 @@ def test_local_read_throttling_reload():
     )
     node.query("SYSTEM RELOAD CONFIG")
 
-    _, took = elapsed(node, "select * from data")
+    _, took = elapsed(node, "select * from data", settings=local_read_settings())
     assert took < 3
 
 @pytest.mark.parametrize(
