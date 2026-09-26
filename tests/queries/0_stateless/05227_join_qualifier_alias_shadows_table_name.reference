@@ -20,3 +20,6 @@ a tuple subcolumn of an ALIAS column
 a CTE named like the alias is shadowed by it in FROM
 10	10
 10	10
+a Nested prefix
+[(1,10)]
+[(1,10)]

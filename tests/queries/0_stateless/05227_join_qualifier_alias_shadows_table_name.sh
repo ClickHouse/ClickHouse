@@ -104,3 +104,21 @@ WITH cte AS MATERIALIZED (SELECT * FROM ${db}.t1)
 SELECT cte.rev, a.rev FROM cte AS a INNER JOIN ${db}.t0 AS cte ON a.id = cte.id
 SETTINGS enable_analyzer = 1, enable_materialized_cte = 1
 "
+
+# A `Nested` prefix is resolved as a `nested` function of the columns under it rather than as a column.
+
+${CLICKHOUSE_CLIENT} -q "
+CREATE TABLE n0 (id UInt32, n Nested(k UInt32, v UInt32)) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE n1 (id UInt32, n Nested(k UInt32, v UInt32)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO n0 VALUES (1, [1], [10]);
+INSERT INTO n1 VALUES (1, [2], [20]);
+"
+
+echo 'a Nested prefix'
+${CLICKHOUSE_CLIENT} -q "
+SELECT n1.n FROM ${db}.n0 AS n1
+INNER JOIN ${db}.n0 AS right_0 ON n1.id = right_0.id
+INNER JOIN ${db}.n1 AS right_1 ON n1.id = right_1.id
+SETTINGS enable_analyzer = 1
+"
+${CLICKHOUSE_CLIENT} -q "SELECT n1.n FROM ${db}.n1 AS a INNER JOIN ${db}.n0 AS n1 ON a.id = n1.id SETTINGS enable_analyzer = 1"

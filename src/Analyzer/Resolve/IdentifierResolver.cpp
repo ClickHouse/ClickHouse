@@ -1167,7 +1167,8 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
   *
   * The resolved identifiers are the columns themselves or, for a subcolumn of a subquery projection or of
   * an `ALIAS` column and for a nested path of a compound expression, `getSubcolumn` / `tupleElement`
-  * wrappers around them; the wrappers are peeled, so that `SELECT t1.x.y ...` is treated like `t1.x`.
+  * wrappers around them, and for a `Nested` prefix a `nested` function of the columns under the prefix;
+  * the wrappers are peeled, so that `SELECT t1.x.y ...` is treated like `t1.x`.
   *
   * Any other pair of readings - a column of a subquery that is literally named `b.id`, two tables of the
   * same name in different databases, ... - is left alone, ambiguous as before.
@@ -1182,11 +1183,23 @@ static std::optional<JoinTableSide> choseSideByQualifierAliasFromJoin(
     {
         while (const auto * function = resolved_identifier->as<FunctionNode>())
         {
-            if ((function->getFunctionName() != "getSubcolumn" && function->getFunctionName() != "tupleElement")
-                || function->getArguments().getNodes().empty())
+            const auto & function_name = function->getFunctionName();
+            const auto & arguments = function->getArguments().getNodes();
+
+            /// `nested(names, column_1, ..., column_n)` over the columns of a `Nested` prefix of one table expression.
+            if (function_name == "nested")
+            {
+                if (arguments.size() < 2)
+                    return nullptr;
+
+                resolved_identifier = arguments[1];
+                continue;
+            }
+
+            if ((function_name != "getSubcolumn" && function_name != "tupleElement") || arguments.empty())
                 return nullptr;
 
-            resolved_identifier = function->getArguments().getNodes().front();
+            resolved_identifier = arguments.front();
         }
 
         const auto * column = resolved_identifier->as<ColumnNode>();
