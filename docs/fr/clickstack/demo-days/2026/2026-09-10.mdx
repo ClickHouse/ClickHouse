@@ -9,9 +9,9 @@ keywords: ['ClickStack', 'Demo days']
 
 ## Filtres de dashboard obligatoires
 
-*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+*Démonstration par [@pulpdrew](https://github.com/pulpdrew)*
 
-<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
 Les filtres de dashboard peuvent désormais être marqués comme obligatoires : les tiles ne se chargent alors qu&#39;une fois qu&#39;une valeur a été sélectionnée. Auparavant, tous les filtres étaient facultatifs, et l&#39;ouverture d&#39;un dashboard reposant sur une source volumineuse exécutait l&#39;ensemble de ses tiles sans aucun filtre, avant même que vous n&#39;ayez restreint quoi que ce soit.
 
@@ -33,7 +33,7 @@ Lorsqu&#39;un filtre obligatoire bloque l&#39;aperçu, le message affiché dans 
 
 *Démo par [@wrn14897](https://github.com/wrn14897)*
 
-<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng?start=143" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng?start=143" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
 Auparavant, une recherche lente affichait un indicateur d&#39;attente indéterminé pendant toute sa durée. Impossible de savoir si ClickHouse avait parcouru 5 % ou 95 % d&#39;une plage, ni même s&#39;il faisait quoi que ce soit — exactement la situation dans laquelle on se trouve lorsqu&#39;une source a une primary key inadaptée à la requête. Le footer de la Results Table, ainsi que la bande de l&#39;histogram indiquant les rows parcourues et le temps écoulé, remontent désormais les counters de progression propres à ClickHouse : depuis combien de temps la requête s&#39;exécute, combien de rows ont été parcourues, et un pourcentage. On se rapproche de ce qu&#39;affiche le ClickHouse CLI pendant qu&#39;une requête diffuse ses résultats.
 

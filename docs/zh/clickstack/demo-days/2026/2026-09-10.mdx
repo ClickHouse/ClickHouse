@@ -9,9 +9,9 @@ keywords: ['ClickStack', 'Demo days']
 
 ## 必填的 dashboard 过滤器
 
-*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
 
-<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
 现在可以将 dashboard 过滤器标记为必填，在为其选定值之前，卡片不会加载。此前所有过滤器都是可选的，打开一个基于大型 source 构建的 dashboard 时，在你尚未缩小范围之前，所有卡片就已经在无任何过滤条件的情况下运行了。
 
@@ -31,9 +31,9 @@ keywords: ['ClickStack', 'Demo days']
 
 ## 搜索页面上的实时查询进度
 
-*Demo by [@wrn14897](https://github.com/wrn14897)*
+*演示者：[@wrn14897](https://github.com/wrn14897)*
 
-<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng?start=143" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng?start=143" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
 此前，较慢的搜索在整个执行期间只会显示一个看不出进度的加载动画。你无从得知 ClickHouse 是刚扫描了某个区间的 5% 还是已经到了 95%，甚至无法确认它究竟是否在干活——而当某个 source 的 primary key 并不适合该 查询 时，遇到的正是这种情形。现在，结果表的 footer，以及 histogram 上显示已扫描 行 与 elapsed time 的那一栏，都会报告 ClickHouse 自身的 progress counters：查询 已运行多久、已扫描多少 行，以及完成百分比。这与 查询 流式返回时 ClickHouse 命令行客户端所展示的内容十分接近。
 

@@ -11,7 +11,7 @@ keywords: ['ClickStack', 'Demo days']
 
 *Demo por [@pulpdrew](https://github.com/pulpdrew)*
 
-<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
 Ahora los filtros de un dashboard pueden marcarse como obligatorios, de modo que los tiles no se cargan hasta que se selecciona un valor para ellos. Antes todos los filtros eran opcionales, y al abrir un dashboard construido sobre una source grande se ejecutaban todos sus tiles sin filtrar, antes de haber acotado nada.
 
@@ -33,7 +33,7 @@ Cuando un filtro obligatorio bloquea la vista previa, el mensaje del editor de t
 
 *Demo por [@wrn14897](https://github.com/wrn14897)*
 
-<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng?start=143" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng?start=143" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 
 Antes, una búsqueda lenta mostraba un indicador de carga indeterminado durante todo el proceso. No había forma de saber si ClickHouse había recorrido un 5 % o un 95 % de un rango, ni si estaba haciendo algo en absoluto, que es justamente la situación en la que te encuentras cuando una source tiene una primary key que no se ajusta a la consulta. El footer de la Results Table y la franja de filas escaneadas y tiempo transcurrido del histogram ahora informan los propios counters de progreso de ClickHouse: cuánto tiempo lleva ejecutándose la consulta, cuántas filas se han escaneado y un porcentaje. Es muy parecido a lo que muestra la ClickHouse CLI mientras una consulta transmite datos.
 
