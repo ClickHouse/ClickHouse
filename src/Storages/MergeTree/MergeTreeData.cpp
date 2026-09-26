@@ -10081,19 +10081,22 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     }
     else
     {
-        /// `DateTime` text parsing reads a broken-down `YYYY-MM-DD[ hh:mm:ss]` if four digits are followed by a non-digit,
-        /// and a Unix timestamp otherwise, which is read as an integer and cannot roll over.
+        /// `DateTime` text parsing reads a broken-down `YYYY-MM-DD[ hh:mm:ss]` if the fifth character is not a digit,
+        /// and a Unix timestamp otherwise, which is read as an integer and cannot roll over. A negative `DateTime64`
+        /// timestamp such as `'-123.5'` is always read as a timestamp.
         auto is_digit_at = [&](size_t pos) { return pos < literal.size() && isNumericASCII(literal[pos]); };
-        const bool is_broken_down = is_digit_at(0) && is_digit_at(1) && is_digit_at(2) && is_digit_at(3)
-            && literal.size() > 4 && !isNumericASCII(literal[4]);
+        auto is_separator_at = [&](size_t pos) { return pos < literal.size() && !isNumericASCII(literal[pos]); };
+        const bool is_broken_down = literal.size() > 4 && literal[0] != '-' && !isNumericASCII(literal[4]);
         if (is_broken_down)
         {
-            /// The broken-down reader takes the characters at the digit positions without checking them,
-            /// so `'2024-02-2/'` would be read as `2024-02-19`, and the comparison below would agree with it.
+            /// The broken-down reader takes the characters at their positions without checking them, so `'2024-02-2/'`
+            /// would be read as `2024-02-19` and `'20/4-03-01 00:00:00'` as `1994-03-01 00:00:00`, and the comparison
+            /// below would agree with it.
             const bool has_time = literal.size() > 10 && (literal[10] == ' ' || literal[10] == 'T');
-            if (!is_digit_at(5) || !is_digit_at(6) || !is_digit_at(8) || !is_digit_at(9)
-                || (has_time && (!is_digit_at(11) || !is_digit_at(12) || !is_digit_at(14) || !is_digit_at(15)
-                    || !is_digit_at(17) || !is_digit_at(18))))
+            if (!is_digit_at(0) || !is_digit_at(1) || !is_digit_at(2) || !is_digit_at(3)
+                || !is_digit_at(5) || !is_digit_at(6) || !is_separator_at(7) || !is_digit_at(8) || !is_digit_at(9)
+                || (has_time && (!is_digit_at(11) || !is_digit_at(12) || !is_separator_at(13) || !is_digit_at(14)
+                    || !is_digit_at(15) || !is_separator_at(16) || !is_digit_at(17) || !is_digit_at(18))))
                 throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
                                 "Partition value '{}' is not a valid value of type {}: expected a date and time "
                                 "in the YYYY-MM-DD hh:mm:ss format",

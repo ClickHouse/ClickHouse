@@ -97,6 +97,27 @@ DROP TABLE t_digits_datetime;
 DROP TABLE t_digits_datetime64;
 DROP TABLE t_digits_date;
 
+-- The year digits and the separators are not checked either: `'20/4-03-01 00:00:00'` named `1994-03-01 00:00:00`,
+-- `'2024-02019'` and `'2024-02-19 00100:00'` named `2024-02-19 00:00:00`.
+DROP TABLE IF EXISTS t_shape_datetime;
+DROP TABLE IF EXISTS t_shape_datetime64;
+CREATE TABLE t_shape_datetime (d DateTime('UTC'), x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+CREATE TABLE t_shape_datetime64 (d DateTime64(3, 'UTC'), x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+INSERT INTO t_shape_datetime VALUES ('1994-03-01 00:00:00', 1), ('2024-02-19 00:00:00', 2);
+INSERT INTO t_shape_datetime64 VALUES ('1994-03-01 00:00:00', 1), ('2024-02-19 00:00:00.500', 2), ('1969-12-31 23:57:56.500', 3), ('1970-01-01 03:25:45.500', 4);
+ALTER TABLE t_shape_datetime DROP PARTITION '20/4-03-01 00:00:00'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_shape_datetime DROP PARTITION '2024-02019'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_shape_datetime DROP PARTITION '2024-02-19 00100:00'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_shape_datetime64 DROP PARTITION '20/4-03-01 00:00:00'; -- { serverError INVALID_PARTITION_VALUE }
+SELECT 'shape, nothing dropped', (SELECT groupArray(x) FROM (SELECT x FROM t_shape_datetime ORDER BY x)), (SELECT groupArray(x) FROM (SELECT x FROM t_shape_datetime64 ORDER BY x));
+-- A date with a fractional part and `DateTime64` timestamps with a fractional part are still valid.
+ALTER TABLE t_shape_datetime64 DROP PARTITION '2024-02-19.5';
+ALTER TABLE t_shape_datetime64 DROP PARTITION '-123.5';
+ALTER TABLE t_shape_datetime64 DROP PARTITION '12345.5';
+SELECT 'shape, valid literals', groupArray(x) FROM (SELECT x FROM t_shape_datetime64 ORDER BY x);
+DROP TABLE t_shape_datetime;
+DROP TABLE t_shape_datetime64;
+
 -- A local time skipped by a daylight saving time shift is not a value of the type: it used to be read as `01:30:00`.
 DROP TABLE IF EXISTS t_datetime_dst;
 CREATE TABLE t_datetime_dst (d DateTime('Europe/Berlin'), x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
