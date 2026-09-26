@@ -64,6 +64,7 @@ namespace ProfileEvents
     extern const Event TextIndexTokensCacheNegativeHits;
     extern const Event TextIndexTokensCacheNegativeMisses;
     extern const Event TextIndexDiscardPatternScan;
+    extern const Event TextIndexPatternBypassCacheHits;
 }
 
 namespace DB
@@ -95,6 +96,7 @@ namespace Setting
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
     extern const SettingsFloat text_index_hint_max_selectivity;
     extern const SettingsBool use_text_index_negative_tokens_cache;
+    extern const SettingsBool use_text_index_pattern_bypass_cache;
 }
 
 /// The enum values are written verbatim into the text index header and must remain stable.
@@ -720,6 +722,19 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
         return;
 
     const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
+    const bool use_pattern_bypass_cache
+        = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_pattern_bypass_cache];
+    auto tokens_cache = condition_text.tokensCache();
+    auto cache_key = TextIndexTokensCache::hashPatternBypass(
+        index_id_for_caches, condition_text.getSearchPatternsHash(), max_postings_to_read);
+
+    if (use_pattern_bypass_cache && TextIndexTokensCache::isPatternBypass(tokens_cache->get(cache_key)))
+    {
+        analyzer->bypassPatternQueries();
+        ProfileEvents::increment(ProfileEvents::TextIndexPatternBypassCacheHits);
+        return;
+    }
+
     const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
     const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
 
@@ -774,6 +789,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                 /// Too many large-posting tokens matched.
                 /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
                 analyzer->bypassPatternQueries();
+                if (use_pattern_bypass_cache)
+                    tokens_cache->setPatternBypass(cache_key);
                 ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);
                 return;
             }
@@ -802,7 +819,11 @@ std::vector<String> MergeTreeIndexGranuleText::fillTokensFromCache(MergeTreeInde
     {
         if (cached_infos[i])
         {
-            if (TextIndexTokensCache::isNotFound(cached_infos[i]))
+            if (TextIndexTokensCache::isPatternBypass(cached_infos[i]))
+            {
+                /// A different cache-entry kind cannot satisfy a token lookup.
+            }
+            else if (TextIndexTokensCache::isNotFound(cached_infos[i]))
             {
                 if (use_negative_tokens_cache)
                 {
