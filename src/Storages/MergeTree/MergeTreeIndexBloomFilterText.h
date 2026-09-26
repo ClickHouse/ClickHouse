@@ -114,10 +114,16 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
 
     /// Tokens added to the bloom filters of the current granule, per index column.
     std::vector<BloomFilterAddedTokens> added_tokens;
-    size_t tokens_in_granule = 0;
-    bool remember_tokens = true;
-    size_t remembered_lookups = 0;
-    size_t remembered_hits = 0;
+
+    /// Whether to use `added_tokens`, per index column of the current granule.
+    struct RememberState
+    {
+        size_t tokens = 0;
+        bool enabled = true;
+        size_t lookups = 0;
+        size_t hits = 0;
+    };
+    std::vector<RememberState> remember_states;
     size_t repeated_tokens = 0;
 };
 

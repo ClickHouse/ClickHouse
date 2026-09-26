@@ -102,6 +102,7 @@ MergeTreeIndexAggregatorBloomFilterText::MergeTreeIndexAggregatorBloomFilterText
     , granule(
         std::make_shared<MergeTreeIndexGranuleBloomFilterText>(
             index_name, index_columns.size(), params))
+    , remember_states(index_columns.size())
 {
 }
 
@@ -112,14 +113,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilterText::getGranuleAndR
     new_granule.swap(granule);
 
     added_tokens.clear();
-    repeated_tokens += remembered_hits;
+    for (auto & state : remember_states)
+    {
+        repeated_tokens += state.hits;
+        state = {};
+    }
     if (repeated_tokens)
         ProfileEvents::increment(ProfileEvents::BloomFilterTextIndexRepeatedTokens, repeated_tokens);
     repeated_tokens = 0;
-    tokens_in_granule = 0;
-    remember_tokens = true;
-    remembered_lookups = 0;
-    remembered_hits = 0;
 
     return new_granule;
 }
@@ -127,13 +128,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilterText::getGranuleAndR
 void MergeTreeIndexAggregatorBloomFilterText::addTokens(std::string_view document, size_t col)
 {
     auto & bloom_filter = granule->bloom_filters[col];
+    auto & state = remember_states[col];
 
     static constexpr size_t min_tokens_to_remember = 1024;
-    if (tokens_in_granule < min_tokens_to_remember || !remember_tokens)
+    if (state.tokens < min_tokens_to_remember || !state.enabled)
     {
         forEachToken(*tokenizer, document.data(), document.size(), [&](const char * token, size_t size)
         {
-            ++tokens_in_granule;
+            ++state.tokens;
             bloom_filter.add(token, size);
             return false;
         });
@@ -152,24 +154,23 @@ void MergeTreeIndexAggregatorBloomFilterText::addTokens(std::string_view documen
 
     forEachToken(*tokenizer, begin, document.size(), [&](const char * token, size_t size)
     {
-        ++tokens_in_granule;
-        if (size == 0 || size > BloomFilterAddedTokens::max_token_size || !remember_tokens)
+        if (size == 0 || size > BloomFilterAddedTokens::max_token_size || !state.enabled)
         {
             bloom_filter.add(token, size);
             return false;
         }
 
         if (tokens.checkAndRemember(token, size, begin, end))
-            ++remembered_hits;
+            ++state.hits;
         else
             bloom_filter.add(token, size);
 
-        if (++remembered_lookups == lookups_per_check)
+        if (++state.lookups == lookups_per_check)
         {
-            repeated_tokens += remembered_hits;
-            remember_tokens = remembered_hits >= min_hits_per_check;
-            remembered_lookups = 0;
-            remembered_hits = 0;
+            repeated_tokens += state.hits;
+            state.enabled = state.hits >= min_hits_per_check;
+            state.lookups = 0;
+            state.hits = 0;
         }
         return false;
     });
