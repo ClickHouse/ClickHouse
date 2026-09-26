@@ -223,6 +223,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             scheduled_merge_parts->format(ostr, settings, state, frame);
             break;
         }
+        case Type::DROP_S3QUEUE_FAILED_FILES:
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
         {
             ostr << ' ';
@@ -978,6 +979,7 @@ void ASTSystemQuery::readJSON(const Poco::JSON::Object & json)
             if (!scheduled_merge_parts)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "`SYSTEM SCHEDULE_MERGE` requires 'scheduled_merge_parts' during AST JSON deserialization");
             break;
+        case Type::DROP_S3QUEUE_FAILED_FILES:
         case Type::FLUSH_OBJECT_STORAGE_QUEUE:
         case Type::REFRESH_VIEW:
         case Type::START_VIEW:
