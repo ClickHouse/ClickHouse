@@ -1,0 +1,79 @@
+-- Array: cast wrapper kept (this is the shape a large IN set takes)
+SELECT rand() IN _CAST([1, 2, 3], \'Array(UInt8)\') AS `in(rand(), [1, 2, 3])`
+FROM system.one AS __table1
+SELECT rand() IN _CAST([-1, -2, -3], \'Array(Int8)\') AS `in(rand(), [-1, -2, -3])`
+FROM system.one AS __table1
+SELECT rand() IN _CAST([1.5, 2.5], \'Array(Float64)\') AS `in(rand(), [1.5, 2.5])`
+FROM system.one AS __table1
+SELECT _CAST([1, 2, 3], \'Array(UInt8)\') AS `[1, 2, 3]`
+FROM system.one AS __table1
+SELECT _CAST([1, 2, NULL], \'Array(Nullable(UInt8))\') AS `[1, 2, NULL]`
+FROM system.one AS __table1
+SELECT _CAST([[1], [2, 3]], \'Array(Array(UInt8))\') AS `[[1], [2, 3]]`
+FROM system.one AS __table1
+SELECT _CAST([\'a\', \'b\'], \'Array(String)\') AS `[\'a\', \'b\']`
+FROM system.one AS __table1
+SELECT toLowCardinality(rand()) IN _CAST([1, 2, 3], \'Array(UInt8)\') AS `in(toLowCardinality(rand()), [1, 2, 3])`
+FROM system.one AS __table1
+SELECT _CAST([1, 2], \'Array(Int64)\') AS `CAST([1, 2], \'Array(Int64)\')`
+FROM system.one AS __table1
+SELECT _CAST([1], \'Array(Nullable(UInt8))\') AS `CAST([1], \'Array(Nullable(UInt8))\')`
+FROM system.one AS __table1
+-- Tuple: a bare IN set stays bare, a folded one and a bare tuple are wrapped
+SELECT (rand(), rand()) IN ((1, 2), (3, 4)) AS `in((rand(), rand()), ((1, 2), (3, 4)))`
+FROM system.one AS __table1
+SELECT rand() IN _CAST((1, 2, 3), \'Tuple(UInt8, UInt8, UInt8)\') AS `in(rand(), (1, 2, 3))`
+FROM system.one AS __table1
+SELECT _CAST((1, \'a\', NULL), \'Tuple(UInt8, String, Nullable(Nothing))\') AS `(1, \'a\', NULL)`
+FROM system.one AS __table1
+SELECT _CAST((1, 2), \'Tuple(Int64, Int64)\') AS `CAST((1, 2), \'Tuple(Int64, Int64)\')`
+FROM system.one AS __table1
+-- Nullable: null and non-null both keep the wrapper
+SELECT toNullable(rand()) IN _CAST([1, 2, 3], \'Array(UInt8)\') AS `in(toNullable(rand()), [1, 2, 3])`
+FROM system.one AS __table1
+SELECT _CAST(NULL, \'Nullable(UInt8)\') AS `in(CAST(NULL, \'Nullable(UInt32)\'), [1, 2, 3])`
+FROM system.one AS __table1
+SELECT _CAST(1, \'Nullable(UInt8)\') AS `in(CAST(1, \'Nullable(UInt32)\'), [1, 2, 3])`
+FROM system.one AS __table1
+SELECT _CAST(NULL, \'Nullable(Nothing)\') AS `NULL`
+FROM system.one AS __table1
+SELECT _CAST(1, \'Nullable(Int64)\') AS `CAST(1, \'Nullable(Int64)\')`
+FROM system.one AS __table1
+SELECT _CAST(1, \'Nullable(UInt8)\') AS `CAST(1, \'Nullable(UInt8)\')`
+FROM system.one AS __table1
+-- bare literals answered false: these witness an over-broad result-type test
+SELECT 1 AS `1`
+FROM system.one AS __table1
+SELECT -1 AS `-1`
+FROM system.one AS __table1
+SELECT \'str\' AS `\'str\'`
+FROM system.one AS __table1
+SELECT true AS true
+FROM system.one AS __table1
+-- an IN set that is neither Array nor folded: returns before the predicate
+SELECT toString(rand()) IN (\'a\', \'b\') AS `in(toString(rand()), (\'a\', \'b\'))`
+FROM system.one AS __table1
+-- folded constants: the source-expression check short-circuits before the predicate
+SELECT _CAST(\'a\', \'LowCardinality(String)\') AS `CAST(\'a\', \'LowCardinality(String)\')`
+FROM system.one AS __table1
+SELECT _CAST(1, \'LowCardinality(Nullable(UInt8))\') AS `CAST(1, \'LowCardinality(Nullable(UInt8))\')`
+FROM system.one AS __table1
+SETTINGS allow_suspicious_low_cardinality_types = 1
+SELECT _CAST([(\'a\', 1)], \'Map(String, Int64)\') AS `CAST(map(\'a\', 1), \'Map(String, Int64)\')`
+FROM system.one AS __table1
+SELECT _CAST(_CAST(1, \'UInt64\'), \'Variant(String, UInt64)\') AS `CAST(CAST(1, \'UInt64\'), \'Variant(UInt64, String)\')`
+FROM system.one AS __table1
+SELECT _CAST([1, 2], \'Dynamic\') AS `CAST([1, 2], \'Dynamic\')`
+FROM system.one AS __table1
+SELECT _CAST(1, \'Int8\') AS `CAST(1, \'Int8\')`
+FROM system.one AS __table1
+SELECT _CAST(\'2020-01-01\', \'Date\') AS `toDate(\'2020-01-01\')`
+FROM system.one AS __table1
+SELECT _CAST(\'2020-01-01 00:00:00.123\', \'DateTime64(3)\') AS `toDateTime64(\'2020-01-01 00:00:00.123\', 3)`
+FROM system.one AS __table1
+SELECT _CAST(\'1.5\', \'Decimal(18, 2)\') AS `toDecimal64(1.5, 2)`
+FROM system.one AS __table1
+-- the value that reaches a remote server is unchanged (why the wrapper exists)
+0
+0
+1
