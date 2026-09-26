@@ -70,11 +70,25 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int ACCESS_DENIED;
+    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 namespace FailPoints
 {
     extern const char datalake_simulate_missing_table_state[];
+}
+
+namespace
+{
+
+/// Whether listing the path failed because the reader refuses the path itself - a malformed or an
+/// unbounded glob, or a glob whose regexp RE2 cannot compile - rather than because of the endpoint.
+/// Such a path fails the same way whenever the table is read.
+bool isPathRefusedByReader(int code)
+{
+    return code == ErrorCodes::BAD_ARGUMENTS || code == ErrorCodes::CANNOT_COMPILE_REGEXP;
+}
+
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -110,9 +124,25 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     /// creating a file iterator just to get a sample path string.
     if (containsOnlyEnumGlobs(path.path))
     {
-        auto expanded = expandSelectionGlob(path.path);
-        if (!expanded.empty())
-            return expanded.front() + archive_suffix;
+        /// Mirror the split in `StorageObjectStorageSource::createFileIterator`: a pattern with
+        /// exactly one brace group is materialized there by `expandSelectionGlob`, so the sample
+        /// path has to obey the same limits. Otherwise analysis would infer hive partitioning -
+        /// and, for a table definition, persist it - from a path that the reader always refuses to
+        /// enumerate. Every other shape is matched by the reader as a regexp, where the product is
+        /// never built, so taking each group's first alternative is enough.
+        if (configuration->getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
+        {
+            auto expanded = expandSelectionGlob(path.path);
+            if (!expanded.empty())
+                return expanded.front() + archive_suffix;
+        }
+        /// A regexp is more permissive than a selector glob: a doubled brace like `{{a,b}}` is a
+        /// literal brace around an enum for it, and a comma outside a group is literal text. It is
+        /// also stricter: an empty alternative is literal text for it, and RE2 refuses an alternation
+        /// too large to compile. Such a path is listed instead, the same way the reader lists it, so
+        /// the sample path is never one the reader would not read.
+        else if (auto first = tryExpandSelectionGlobFirstMatchedByRegexp(path.path))
+            return *first + archive_suffix;
     }
 
     auto query_settings = configuration->getQuerySettings(context);
@@ -173,7 +203,17 @@ StorageObjectStorage::StorageObjectStorage(
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+
+    /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
     configuration->check(context);
+
+    /// A columnless CREATE in a catalog database must still reach `create(...)` for engines that can attach
+    /// and register an existing table (its schema read from storage); others keep requiring explicit columns.
+    const bool columnless_catalog_create = columns_in_table_or_function_definition.empty() && catalog
+        && configuration->supportsCreateFromExistingTableInCatalog();
+    const bool creating_new_storage = !is_table_function && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE
+        && (!columns_in_table_or_function_definition.empty() || columnless_catalog_create);
+
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
@@ -197,9 +237,9 @@ StorageObjectStorage::StorageObjectStorage(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
     }
 
-    if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
+    if (creating_new_storage)
     {
-        LOG_DEBUG(log, "Creating new storage with specified columns");
+        LOG_DEBUG(log, "Creating new storage{}", columns_in_table_or_function_definition.empty() ? "" : " with specified columns");
         configuration->create(
             object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }
@@ -270,6 +310,13 @@ StorageObjectStorage::StorageObjectStorage(
         }
         catch (...)
         {
+            /// A path the reader refuses - a malformed or an unbounded glob, or one whose regexp
+            /// cannot be compiled - fails the same way whenever the table is read, so it is reported
+            /// here as well instead of being downgraded to a listing failure that only leaves the
+            /// hive columns unresolved.
+            if (isPathRefusedByReader(getCurrentExceptionCode()))
+                throw;
+
             LOG_WARNING(
                 log,
                 "Failed to list object storage, cannot use hive partitioning. "
@@ -521,12 +568,28 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
         if (query_context->getSettingsRef()[Setting::throw_on_hive_partitioning_resolution_failure])
             throw;
 
+        /// A path the reader refuses is not an endpoint failure: reading the table fails the same
+        /// way, so the refusal is reported here rather than retried by every next query.
+        if (isPathRefusedByReader(getCurrentExceptionCode()))
+            throw;
+
         /// An endpoint failure degrades only the triggering query and is retried by the next one.
         LOG_WARNING(
             log,
             "Failed to list object storage, cannot use hive partitioning. "
             "Error: {}",
             getCurrentExceptionMessage(true));
+        return;
+    }
+
+    /// An empty listing is not a resolution: the prefix may simply not have data yet (e.g. the
+    /// table was created before the first file landed). Caching it would permanently disable hive
+    /// partitioning for this storage instance: once files appear, schema-declared partition
+    /// columns would silently read file defaults instead of the path values, and filters on them
+    /// would drop all rows. Stay unresolved, like endpoint failures, so the next query retries.
+    if (sample_path.empty())
+    {
+        LOG_TRACE(log, "An empty listing, hive partitioning resolution stays deferred until files appear");
         return;
     }
 
@@ -1145,6 +1208,12 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
+Pipe StorageObjectStorage::alterPartition(
+    const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
+{
+    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+}
+
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
@@ -1169,6 +1238,15 @@ void StorageObjectStorage::shutdown(bool)
 bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
 {
     return configuration->scheduleDataProcessingJob(assignee, *this);
+}
+
+void StorageObjectStorage::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & /*settings*/,
+    ContextPtr context) const
+{
+    configuration->checkAlterPartitionIsPossible(object_storage, context, commands);
 }
 
 }
