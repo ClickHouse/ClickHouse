@@ -711,6 +711,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          false)},
     {"analyze_index_with_space_filling_curves", trueOrFalseSetting},
     {"analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested", trueOrFalseSettingNoOracle},
+    {"analyzer_compatibility_allow_cte_redefinition", trueOrFalseSettingNoOracle},
     {"analyzer_compatibility_allow_non_aggregate_in_having", trueOrFalseSettingNoOracle},
     {"analyzer_compatibility_apply_final_to_all_joined_tables", trueOrFalseSettingNoOracle},
     {"analyzer_compatibility_join_using_top_level_identifier", trueOrFalseSetting},
@@ -1304,6 +1305,9 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"keeper_map_strict_mode", trueOrFalseSettingNoOracle},
     {"least_greatest_legacy_null_behavior", trueOrFalseSetting},
     {"legacy_column_name_of_tuple_literal", trueOrFalseSettingNoOracle},
+    /// No oracle: it restores the old meaning of `max_rows_in_join` / `max_bytes_in_join` (both
+    /// fuzzed below), so reaching one spills further instead of failing the query.
+    {"legacy_join_size_limits_trigger_spilling", trueOrFalseSettingNoOracle},
     {"lightweight_delete_mode",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -1627,6 +1631,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"parallel_replicas_filter_pushdown", trueOrFalseSetting},
     {"parallel_replicas_for_cluster_engines", trueOrFalseSetting},
     {"parallel_replicas_for_non_replicated_merge_tree", trueOrFalseSetting},
+    {"parallel_replicas_for_queries_with_multiple_tables", trueOrFalseSetting},
     {"parallel_replicas_index_analysis_only_on_coordinator", trueOrFalseSetting},
     {"parallel_replicas_insert_select_local_pipeline", trueOrFalseSettingNoOracle},
     {"parallel_replicas_local_plan", trueOrFalseSetting},
@@ -1651,6 +1656,9 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"prefer_column_name_to_alias", trueOrFalseSettingNoOracle},
     {"print_pretty_type_names", trueOrFalseSettingNoOracle},
     {"push_external_roles_in_interserver_queries", trueOrFalseSettingNoOracle},
+    /// No oracle: at precision 1 this reduces the reference vector to signs too, so the distance
+    /// ignores element magnitudes and legitimately returns different values.
+    {"qbit_one_bit_symmetric_distance", trueOrFalseSettingNoOracle},
     {"query_cache_compress_entries", trueOrFalseSetting},
     {"query_cache_for_subqueries", trueOrFalseSettingNoOracle},
     {"query_cache_nondeterministic_function_handling",
@@ -2353,6 +2361,19 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
         performanceSettings.insert({{entry, CHSetting(readerExecutorSizeRange, {"131072", "1048576", "'10M'"}, false)}});
         serverSettings.insert({{entry, CHSetting(readerExecutorSizeRange, {"131072", "1048576", "'10M'"}, false)}});
     }
+    /// Shares the same band, but `reader_executor_plan_look_ahead` must also be at least
+    /// `reader_executor_block_size`. Staying at or above that setting's ceiling keeps every draw
+    /// legal without coupling the two generators; same reason the oracle values start at 10 MiB.
+    const auto readerExecutorPlanLookAheadSetting = CHSetting(
+        [](RandomGenerator & rg, FuzzConfig &)
+        {
+            return std::to_string(rg.thresholdGenerator<uint64_t>(
+                0.2, 0.2, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024), DB::MAX_READER_EXECUTOR_SIZE));
+        },
+        {"'10M'", "'20M'", "'40M'"},
+        false);
+    performanceSettings.insert({{"reader_executor_plan_look_ahead", readerExecutorPlanLookAheadSetting}});
+    serverSettings.insert({{"reader_executor_plan_look_ahead", readerExecutorPlanLookAheadSetting}});
     for (const auto & entry : max_columns_values)
     {
         chassert(!fc.allow_query_oracles);
