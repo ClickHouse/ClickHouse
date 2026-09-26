@@ -575,7 +575,7 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
         configuration.username = checkAndGetLiteralArgument<String>(engine_args[3], "username");
         configuration.password = checkAndGetLiteralArgument<String>(engine_args[4], "password");
         if (engine_args.size() >= 6)
-            configuration.replace_query = checkAndGetLiteralArgument<UInt64>(engine_args[5], "replace_query");
+            configuration.replace_query = checkAndGetLiteralArgument<bool>(engine_args[5], "replace_query");
         if (engine_args.size() == 7)
             configuration.on_duplicate_clause = checkAndGetLiteralArgument<String>(engine_args[6], "on_duplicate_clause");
     }
