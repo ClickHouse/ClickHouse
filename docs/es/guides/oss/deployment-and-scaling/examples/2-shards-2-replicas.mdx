@@ -38,9 +38,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
 * Tienes Docker instalado en tu equipo
 
 <Steps>
-  <Step>
-    ## Configurar la estructura de directorios y el entorno de prueba
-
+  <Step title="Configurar la estructura de directorios y el entorno de prueba" id="set-up">
     <ExampleFiles />
 
     En este tutorial, utilizará [Docker compose](https://docs.docker.com/compose/) para
@@ -53,12 +51,12 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
     mkdir cluster_2S_2R
     cd cluster_2S_2R
 
-    # Crear directorios de clickhouse-keeper
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # Crear directorios de clickhouse-server
+    # Create clickhouse-server directories
     for i in {01..04}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -172,9 +170,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## Configurar nodos de ClickHouse
-
+  <Step title="Configurar nodos de ClickHouse" id="configure-clickhouse-servers">
     ### Configuración del servidor
 
     Ahora modifique cada archivo de configuración vacío `config.xml` ubicado en
@@ -296,11 +292,11 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
 
     ```xml
     <remote_servers>
-       <!-- nombre del clúster (no debe contener puntos) -->
+       <!-- cluster name (should not contain dots) -->
       <cluster_2S_2R>
           <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
           <shard>
-              <!-- Opcional. Indica si se deben escribir datos en una sola réplica. Valor predeterminado: false (escribir datos en todas las réplicas). -->
+              <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
               <internal_replication>true</internal_replication>
               <replica>
                   <host>clickhouse-01</host>
@@ -426,9 +422,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
     </Note>
   </Step>
 
-  <Step>
-    ## Configurar ClickHouse Keeper
-
+  <Step title="Configurar ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     A continuación, configure ClickHouse Keeper, que se usa para la coordinación.
 
     ### Configuración de Keeper
@@ -446,9 +440,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
     <CloudTip />
   </Step>
 
-  <Step>
-    ## Prueba la configuración
-
+  <Step title="Prueba la configuración" id="test-the-setup">
     Asegúrate de que Docker esté ejecutándose en tu equipo.
     Inicia el clúster con el comando `docker-compose up` desde la raíz del directorio `cluster_2S_2R`:
 
@@ -475,7 +467,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
     siguiente consulta. A continuación se muestra el comando para conectarse al primer nodo:
 
     ```bash
-    # Conectarse a cualquier nodo
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -531,9 +523,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
     En el siguiente paso, crearás una tabla en el clúster.
   </Step>
 
-  <Step>
-    ## Crear una base de datos
-
+  <Step title="Crear una base de datos" id="creating-a-database">
     Ahora que ha verificado que el clúster está correctamente configurado y en funcionamiento,
     volverá a crear la misma tabla que se usa en el tutorial del [conjunto de datos de ejemplo de precios de propiedades del Reino Unido](/es/get-started/sample-datasets/uk-price-paid).
     Consta de alrededor de 30 millones de filas con precios pagados
@@ -592,9 +582,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
     ```
   </Step>
 
-  <Step>
-    ## Crear una tabla en el clúster
-
+  <Step title="Crear una tabla en el clúster" id="creating-a-table">
     Ahora que ya se ha creado la base de datos, el siguiente paso es crear una tabla con replicación.
 
     Ejecute la siguiente consulta desde cualquiera de los clientes host:
@@ -666,9 +654,7 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
     ```
   </Step>
 
-  <Step>
-    ## Insertar datos en una tabla distribuida
-
+  <Step title="Insertar datos en una tabla distribuida" id="inserting-data-using-distributed">
     Para insertar datos en la tabla, no se puede usar `ON CLUSTER`, ya que no
     se aplica a consultas DML (lenguaje de manipulación de datos) como `INSERT`, `UPDATE`
     y `DELETE`. Para insertar datos, es necesario utilizar el
@@ -750,11 +736,11 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
 
     ```response
        ┌──count()─┐
-    1. │ 30212555 │ -- 30,21 millones
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
 
        ┌──count()─┐
-    1. │ 15105983 │ -- 15,11 millones
+    1. │ 15105983 │ -- 15.11 million
        └──────────┘
     ```
   </Step>
@@ -764,12 +750,12 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
   ## Conclusión
 </div>
 
-La ventaja de esta topología de clúster con 2 segmentos y 2 réplicas es que proporciona tanto escalabilidad como tolerancia a fallos.
-Los datos se distribuyen entre hosts independientes, lo que reduce los requisitos de almacenamiento y de E/S por nodo, mientras que las consultas se procesan en paralelo en ambos segmentos para mejorar el rendimiento y la eficiencia de memoria.
-Lo más importante es que el clúster puede tolerar la pérdida de un nodo y seguir respondiendo consultas sin interrupciones, ya que cada segmento dispone de una réplica de respaldo en otro nodo.
+La ventaja de esta topología de clúster con 2 segmentos y 2 réplicas es que ofrece tanto escalabilidad como tolerancia a fallos.
+Los datos se distribuyen entre hosts distintos, lo que reduce los requisitos de almacenamiento y de E/S por nodo, mientras que las consultas se procesan en paralelo en ambos segmentos para mejorar el rendimiento y el uso de memoria.
+Lo más importante es que el clúster puede tolerar la pérdida de un nodo y seguir atendiendo consultas sin interrupciones, ya que cada segmento tiene una réplica de respaldo disponible en otro nodo.
 
 La principal desventaja de esta topología de clúster es el mayor consumo de almacenamiento: requiere el doble de capacidad de almacenamiento que una configuración sin réplicas, ya que cada segmento está duplicado.
-Además, aunque el clúster puede soportar el fallo de un único nodo, la pérdida simultánea de dos nodos puede dejarlo inoperativo, según qué nodos fallen y cómo se distribuyan los segmentos.
-Esta topología ofrece un equilibrio entre disponibilidad y coste, por lo que resulta adecuada para entornos de producción en los que se requiere cierto grado de tolerancia a fallos sin asumir el coste de factores de replicación más altos.
+Además, aunque el clúster puede sobrevivir al fallo de un solo nodo, la pérdida simultánea de dos nodos puede dejarlo inoperativo, según qué nodos fallen y cómo se distribuyan los segmentos.
+Esta topología logra un equilibrio entre disponibilidad y coste, por lo que resulta adecuada para entornos de producción en los que se requiere cierto nivel de tolerancia a fallos sin asumir el coste de factores de replicación más altos.
 
-Para saber cómo ClickHouse Cloud procesa las consultas y ofrece tanto escalabilidad como tolerancia a fallos, consulte la sección [&quot;Réplicas paralelas&quot;](/es/products/cloud/features/infrastructure/parallel-replicas).
+Para saber cómo ClickHouse Cloud procesa las consultas, ofreciendo tanto escalabilidad como tolerancia a fallos, consulte la sección [&quot;Réplicas paralelas&quot;](/es/products/cloud/features/infrastructure/parallel-replicas).

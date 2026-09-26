@@ -7,7 +7,7 @@ title: 'Analizador'
 doc_type: 'referencia'
 ---
 
-En la versión `24.3` de ClickHouse, el nuevo analizador de consultas estaba habilitado de forma predeterminada.
+En la versión `24.3` de ClickHouse, el analizador de consultas estaba habilitado de forma predeterminada.
 Puede obtener más información sobre su funcionamiento [aquí](/es/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer).
 
 <div id="known-incompatibilities">
@@ -66,6 +66,8 @@ FROM numbers(10)
 WHERE number > 5
 GROUP BY n
 ```
+
+Como ayuda para la migración, el analizador puede replicar la antigua reescritura de `HAVING` a `WHERE` para conjunciones AND no agregadas. Habilita `analyzer_compatibility_allow_non_aggregate_in_having = 1` para activar este comportamiento. Esta configuración está disponible desde ClickHouse `26.7`. La configuración se ignora para `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` y `GROUPING SETS`. Las conjunciones que contienen funciones de agregación, `grouping` o no deterministas permanecen en `HAVING`; si alguna conjunción contiene una función de ventana o una función con estado (por ejemplo, `rowNumberInBlock`), la reescritura se desactiva para toda la cláusula `HAVING`, en consonancia con el comportamiento heredado.
 
 <div id="create-view-with-invalid-query">
   ### `CREATE VIEW` con una consulta no válida
@@ -146,7 +148,7 @@ Para garantizar resultados coherentes y previsibles, especialmente al migrar con
   #### Manejo de los modificadores de tipo de las columnas en la cláusula `USING`
 </div>
 
-En la nueva versión del analizador, se han estandarizado las reglas para determinar el supertipo común de las columnas especificadas en la cláusula `USING`, con el fin de producir resultados más predecibles,
+En el analizador, se han estandarizado las reglas para determinar el supertipo común de las columnas especificadas en la cláusula `USING`, con el fin de producir resultados más predecibles,
 especialmente al trabajar con modificadores de tipo como `LowCardinality` y `Nullable`.
 
 * `LowCardinality(T)` y `T`: Cuando una columna de tipo `LowCardinality(T)` se combina con una columna de tipo `T`, el supertipo común resultante será `T`, lo que en la práctica descarta el modificador `LowCardinality`.
@@ -232,7 +234,7 @@ A continuación se muestra la lista de funcionalidades que el analizador no admi
   ## Migración a Cloud
 </div>
 
-Estamos habilitando el nuevo analizador de consultas en todas las instancias donde actualmente está deshabilitado para permitir nuevas optimizaciones funcionales y de rendimiento. Este cambio impone reglas de ámbito de SQL más estrictas, por lo que los clientes deberán actualizar manualmente las consultas que no las cumplan.
+Estamos habilitando el analizador en todas las instancias donde actualmente está deshabilitado para permitir nuevas optimizaciones funcionales y de rendimiento. Este cambio impone reglas de ámbito de SQL más estrictas, por lo que los clientes deberán actualizar manualmente las consultas que no las cumplan.
 
 <div id="migration-workflow">
   ### Flujo de migración
@@ -294,6 +296,24 @@ SELECT user_id, device_id FROM table GROUP BY user_id
 SELECT user_id, any(device_id) FROM table GROUP BY user_id
 -- O
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
+```
+
+<div id="non-aggregated-columns-in-having">
+  ### Columnas no agregadas en HAVING
+</div>
+
+Error: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. código de excepción: 215
+
+Causa: El analizador anterior movía silenciosamente a `WHERE` las conjunciones con AND de `HAVING` que no eran de agregación, tratándolas como filtros de preagregación. El analizador se ajusta al SQL estándar: `HAVING` solo puede hacer referencia a claves de agregación y funciones de agregación.
+
+Solución: Mueva manualmente el predicado de `HAVING` a `WHERE`, o habilite `analyzer_compatibility_allow_non_aggregate_in_having = 1` (disponible desde ClickHouse `26.7`) para restaurar la reescritura heredada como ayuda para la migración. La configuración `compatibility` se ignora para `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` y `GROUPING SETS`. Las conjunciones que contienen funciones de agregación, `grouping` o funciones no deterministas permanecen en `HAVING`; si alguna conjunción contiene una función de ventana o una función con estado (por ejemplo, `rowNumberInBlock`), la reescritura se desactiva para todo el `HAVING`, en consonancia con el comportamiento heredado.
+
+```sql
+/* ORIGINAL QUERY */
+SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
+
+/* FIXED QUERY */
+SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
 <div id="duplicate-cte-names">

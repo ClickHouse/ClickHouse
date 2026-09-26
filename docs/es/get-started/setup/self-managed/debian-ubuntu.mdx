@@ -13,15 +13,11 @@ import Recommendations from '/snippets/es/recommendations.mdx';
 > Se recomienda usar paquetes `deb` oficiales precompilados para **Debian** o **Ubuntu**.
 
 <Steps>
-  <Step>
-    ## Revisar las recomendaciones
-
+  <Step title="Revisar las recomendaciones" id="review-recommendations">
     <Recommendations />
   </Step>
 
-  <Step>
-    ## Configurar el repositorio de Debian
-
+  <Step title="Configurar el repositorio de Debian" id="setup-the-debian-repository">
     Para instalar ClickHouse, ejecute los siguientes comandos:
 
     ```bash
@@ -61,10 +57,10 @@ import Recommendations from '/snippets/es/recommendations.mdx';
       # Actualizar las listas de paquetes de apt
       sudo apt-get update
 
-      # Instalar los paquetes de ClickHouse servidor y Client
+      # Instalar los paquetes de ClickHouse server y Client
       sudo apt-get install -y clickhouse-server clickhouse-client
 
-      # Iniciar el servicio de ClickHouse servidor
+      # Iniciar el servicio de ClickHouse server
       sudo service clickhouse-server start
 
       # Iniciar el Client de línea de comandos de ClickHouse
@@ -73,18 +69,14 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     </Accordion>
   </Step>
 
-  <Step>
-    ## Instalar ClickHouse servidor y Client
-
+  <Step title="Instalar ClickHouse server y Client" id="install-clickhouse-server-and-client">
     ```bash
     sudo apt-get install -y clickhouse-server clickhouse-client
     ```
   </Step>
 
-  <Step>
-    ## Iniciar ClickHouse
-
-    Para iniciar ClickHouse servidor, ejecute:
+  <Step title="Iniciar ClickHouse" id="start-clickhouse-server">
+    Para iniciar ClickHouse server, ejecute:
 
     ```bash
     sudo service clickhouse-server start
@@ -103,13 +95,11 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Instalar standalone ClickHouse Keeper
-
+  <Step title="Instalar standalone ClickHouse Keeper" id="install-standalone-clickhouse-keeper">
     <Tip>
       En entornos de producción, recomendamos encarecidamente ejecutar ClickHouse Keeper en nodos dedicados.
       En entornos de prueba, si decide ejecutar ClickHouse Server y ClickHouse Keeper en el mismo servidor,
-      no necesita instalar ClickHouse Keeper, ya que está incluido con ClickHouse servidor.
+      no necesita instalar ClickHouse Keeper, ya que está incluido con ClickHouse server.
     </Tip>
 
     Para instalar `clickhouse-keeper` en servidores standalone ClickHouse Keeper, ejecute:
@@ -119,9 +109,7 @@ import Recommendations from '/snippets/es/recommendations.mdx';
     ```
   </Step>
 
-  <Step>
-    ## Habilitar e iniciar ClickHouse Keeper
-
+  <Step title="Habilitar e iniciar ClickHouse Keeper" id="enable-and-start-clickhouse-keeper">
     ```bash
     sudo systemctl enable clickhouse-keeper
     sudo systemctl start clickhouse-keeper

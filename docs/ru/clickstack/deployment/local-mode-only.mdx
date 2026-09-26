@@ -34,19 +34,15 @@ import JSONSupport from '/snippets/ru/_json_support.mdx';
 <br />
 
 <Steps>
-  <Step>
-    ### Развертывание через Docker
-
-    В локальном режиме интерфейс HyperDX разворачивается на порту 8080.
+  <Step title="Развертывание с помощью Docker" id="deploy-with-docker">
+    В локальном режиме интерфейс HyperDX доступен на порту 8080.
 
     ```shell
     docker run -p 8080:8080 clickhouse/clickstack-local:latest
     ```
   </Step>
 
-  <Step>
-    ### Перейдите в интерфейс HyperDX
-
+  <Step title="Перейдите в интерфейс HyperDX" id="navigate-to-hyperdx-ui">
     Перейдите по адресу [http://localhost:8080](http://localhost:8080), чтобы открыть интерфейс HyperDX.
 
     **Вам не будет предложено создать пользователя, так как в этом режиме развертывания аутентификация не включена.**
@@ -55,7 +51,7 @@ import JSONSupport from '/snippets/ru/_json_support.mdx';
 
     <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Создание входа в систему" size="md" />
 
-    Создайте источник, оставьте все значения по умолчанию и заполните поле `Table` значением `otel_logs`. Все остальные настройки должны определиться автоматически, после чего можно нажать `Save New Source`.
+    Создайте источник, оставьте все значения по умолчанию и укажите в поле `Table` значение `otel_logs`. Все остальные настройки должны определиться автоматически, после чего можно нажать `Save New Source`.
 
     <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Создание источника логов" size="md" />
   </Step>

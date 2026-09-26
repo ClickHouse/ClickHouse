@@ -1,0 +1,44 @@
+-- scalar functions --
+15
+49
+-- a function is usable more than once in a statement, and composes --
+25
+16
+12
+-- no parameters, with or without the parentheses --
+1
+2
+-- default values --
+6	3
+-- named arguments, in any order --
+12-b.default-7	12-b.default-7
+1-y-2
+-- the body may declare its own lets, and sees the enclosing ones --
+22
+-- a parameter shadows an outer binding of the same name --
+1
+-- functions in pipeline operators --
+1	2
+2	4
+3	6
+2
+3
+6
+0	2
+1	2
+-- functions that return a table --
+2
+3
+2
+3
+2
+-- a tabular parameter --
+3
+5
+9
+-- view marks a parameterless function; it is accepted and changes nothing here --
+7
+-- a tabular function joins and unions like any other source --
+1	x	1	y
+1
+1

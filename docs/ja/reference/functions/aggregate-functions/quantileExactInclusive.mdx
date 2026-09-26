@@ -37,7 +37,7 @@ quantileExactInclusive(level)(expr)
 
 **引数**
 
-* `expr` — カラム値に対する式。結果の型は、数値データ型、Date、または DateTime である必要があります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+* `expr` — カラム値に対する式。結果の型は、数値データ型、`Date`、または `DateTime` である必要があります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
 
 **戻り値**
 
@@ -65,7 +65,7 @@ SELECT quantileExactInclusive(0.1)(number), quantileExactInclusive(0.9)(number) 
 
 ```response title=Response
 ┌─quantileExactInclusive(0.1)(number)─┬─quantileExactInclusive(0.9)(number)─┐
-│                                 0.9 │                                 8.1 │
+│                  0.8999999999999999 │                                 8.1 │
 └─────────────────────────────────────┴─────────────────────────────────────┘
 ```
 

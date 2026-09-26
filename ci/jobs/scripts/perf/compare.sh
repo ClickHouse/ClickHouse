@@ -8,6 +8,8 @@ trap 'kill $(jobs -pr) ${watchdog_pid:-} ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+# The server resolves a relative user_files_path against the resolved --path, not against the cwd.
+perf_wd="$(pwd -P)"
 
 # upstream/master
 LEFT_SERVER_PORT=9001
@@ -106,7 +108,7 @@ function configure
         --
         # server *config* directives overrides
         --path db0
-        --user_files_path db0/user_files
+        --user_files_path "$perf_wd/db0/user_files"
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --keeper_server.storage_path coordination0
         --tcp_port $LEFT_SERVER_PORT
@@ -327,7 +329,7 @@ function restart
         --
         # server *config* directives overrides
         --path left/db
-        --user_files_path left/db/user_files
+        --user_files_path "$perf_wd/left/db/user_files"
         --top_level_domains_path "$(left_or_right left top_level_domains)"
         --tcp_port $LEFT_SERVER_PORT
         # The perf-comparison config removes <http_port>; re-enable it on the
@@ -352,7 +354,7 @@ function restart
         --
         # server *config* directives overrides
         --path right/db
-        --user_files_path right/db/user_files
+        --user_files_path "$perf_wd/right/db/user_files"
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
         --http_port $RIGHT_SERVER_HTTP_PORT
@@ -541,8 +543,11 @@ function run_tests
                 # Only when the caller explicitly set CHPC_RUNS ("at least N
                 # runs"); otherwise the adaptive run policy decides.
                 ${CHPC_RUNS:+--runs "$CHPC_RUNS"}
+                # Setup queries marked do_not_check_in_pr="$PR_TO_TEST" may fail on the reference server.
+                ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"}
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
+                --stop-merges
 
                 "$test"
             )
@@ -600,14 +605,21 @@ function get_profiles
     # smaller.
     local query_log_columns="type, event_time, query_id, query_duration_ms, memory_usage, read_rows, read_bytes, written_rows, written_bytes, result_rows, result_bytes, query, exception_code, exception, ProfileEvents, Settings"
 
+    # The only consumer of the trace_log dump is the 'stacks' table below, which
+    # reads exactly these four columns. The dropped ones include the per-frame
+    # 'symbols' and 'lines' arrays - by far the largest fields, and unused because
+    # symbols are resolved through *-addresses.tsv instead. A full dump reaches
+    # tens of GBs and can exhaust the runner disk.
+    local trace_log_columns="query_id, trace, trace_type, size"
+
     clickhouse-client --port $LEFT_SERVER_PORT --query "select $query_log_columns from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
+    clickhouse-client --port $LEFT_SERVER_PORT --query "select $trace_log_columns from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > left-async-metric-log.tsv ||: &
 
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select $query_log_columns from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "select $trace_log_columns from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > right-async-metric-log.tsv ||: &
@@ -1022,7 +1034,8 @@ do
         --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT" \
         --binary left/clickhouse right/clickhouse \
         --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
-        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} --max-queries 0 --profile-seconds 0 \
+        ${CHPC_RUNS:+--runs "$CHPC_RUNS"} ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"} \
+        --max-queries 0 --profile-seconds 0 --stop-merges \
         --queries-to-run $confirm_indexes \
         > "analyze-confirm/$confirm_test-raw.tsv.tmp" \
         2> "analyze-confirm/$confirm_test-err.log"
@@ -1655,19 +1668,6 @@ create view addresses_src as
 create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
 
-create table unstable_run_traces engine File(TSVWithNamesAndTypes,
-        'unstable-run-traces.$version.rep') as
-    select
-        test, query_index, query_id,
-        count() value,
-        joinGet(addresses_join_$version, 'name', arrayJoin(trace))
-            || '(' || toString(trace_type) || ')' metric
-    from trace_log
-    join unstable_query_runs using query_id
-    group by test, query_index, query_id, metric
-    order by count() desc
-    ;
-
 create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
     select
         -- first goes the key used to split the file with grep
@@ -1770,8 +1770,8 @@ do
     {
         # The second grep is a heuristic for error messages like
         # "socket.timeout: timed out".
-        rg --no-filename --max-count=2 -i '\(Exception\|Error\):[^:]' "$log" \
-            || rg --no-filename --max-count=2 -i '^[^ ]\+: ' "$log" \
+        rg --no-filename --max-count=2 -i '(Exception|Error):[^:]' "$log" \
+            || rg --no-filename --max-count=2 -i '^[^ ]+: ' "$log" \
             || head -10 "$log"
     } | sed "s/^/$test\t/" >> run-errors.tsv ||:
 done
@@ -1789,14 +1789,70 @@ do
 done
 }
 
+# The `SELECT` list that brings one side of the asynchronous metric log to the flat
+# per-entity metric names the report has always used, e.g. `BlockReadBytes_sda`.
+#
+# `system.asynchronous_metric_log` gained a `key` column when the per-entity metrics
+# (per CPU core, block device, network interface, disk, ...) were collapsed into
+# key-value metrics. A comparison can put a server from before that change against a
+# server from after it, and once the change reaches master both sides carry the `key`
+# column, so every side is projected on its own according to the columns its own dump
+# has. A log without a `key` column is already in the flat form and is taken as is.
+function async_metric_log_select
+{
+    local log_file=$1
+
+    # `TSVWithNamesAndTypes` puts the column names on the first line. Read them without a
+    # pipeline: `set -o pipefail` would see the `SIGPIPE` of a writer whose reader stops at
+    # the first match, and report the pipeline as failed.
+    local header_columns=()
+    IFS=$'\t' read -r -a header_columns < "$log_file" ||:
+
+    local has_key=0
+    local column
+    for column in ${header_columns[@]+"${header_columns[@]}"}
+    do
+        if [ "$column" = "key" ]
+        then
+            has_key=1
+        fi
+    done
+
+    if [ "$has_key" = 1 ]
+    then
+        cat <<'SELECT_LIST'
+        multiIf(
+            key = '', metric,
+            startsWith(metric, 'OS') AND endsWith(metric, 'CPU'), concat(metric, key),
+            metric = 'Temperature' AND match(key, '^[0-9]+$'), concat(metric, key),
+            metric IN ('EDACCorrectable', 'EDACUncorrectable'), concat('EDAC', key, '_', substring(metric, 5)),
+            metric IN ('DeadBlobsQueueEstimate', 'MissingBlobsQueueEstimate'), concat(key, metric),
+            metric = 'AsyncLoggingQueueSize', concat('AsyncLogging', key, 'QueueSize'),
+            concat(metric, '_', key)) AS metric,
+        event_time,
+        value
+SELECT_LIST
+    else
+        echo "        metric, event_time, value"
+    fi
+}
+
 function report_metrics
 {
 rm -rf metrics ||:
 mkdir metrics
 
 clickhouse-local --query "
+create view left_async_metric_log as
+    select
+$(async_metric_log_select left-async-metric-log.tsv)
+    from file('left-async-metric-log.tsv', TSVWithNamesAndTypes)
+    ;
+
 create view right_async_metric_log as
-    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
+    select
+$(async_metric_log_select right-async-metric-log.tsv)
+    from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
     ;
 
 -- Use the right log as time reference because it may have higher precision.
@@ -1804,7 +1860,7 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     with (select min(event_time) from right_async_metric_log) as min_time
     select metric, r.event_time - min_time event_time, l.value as left, r.value as right
     from right_async_metric_log r
-    asof join file('left-async-metric-log.tsv', TSVWithNamesAndTypes) l
+    asof join left_async_metric_log l
     on l.metric = r.metric and r.event_time <= l.event_time
     order by metric, event_time
     ;
@@ -1852,12 +1908,21 @@ unset IFS
 function upload_results
 {
     # Prepare info for the CI checks table.
-    rm -f ci-checks.tsv
+    # Write to a sibling temporary path and publish by rename below, so the final
+    # path is only ever absent or complete. This is the last thing the job does
+    # and its failure is swallowed by the `||:` on the call, so a torn file left
+    # at the final path would be imported as if complete whenever the cut lands
+    # on a line boundary. A same-directory rename allocates no data blocks.
+    # The rename is chained with `&&` on purpose: `||:` on the call suppresses
+    # errexit for this whole function, so a separate `mv` statement would run
+    # after a failed write and publish the torn file.
+    # --- publish ci-checks.tsv atomically ---
+    rm -f ci-checks.tsv ci-checks.tsv.tmp
 
     clickhouse-local --query "
 create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes);
 
-create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
+create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv.tmp')
     as select
         $PR_TO_TEST :: UInt32 AS pull_request_number,
         '$SHA_TO_TEST' :: LowCardinality(String) AS commit_sha,
@@ -1903,7 +1968,9 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             array join map('old', left, 'new', right) as test_desc_
     )
 ;
-    " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS
+    " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS \
+        && mv ci-checks.tsv.tmp ci-checks.tsv
+    # --- end publish ci-checks.tsv ---
 
     # Upload some run attributes. I use this weird form because it is the same
     # form that can be used for historical data when you only have compare.log.

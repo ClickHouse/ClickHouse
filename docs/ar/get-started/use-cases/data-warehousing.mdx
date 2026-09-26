@@ -52,11 +52,11 @@ export const ExclusiveGroup = ({ name, children }) => {
       <Accordion title="إدخال البيانات" defaultOpen>
         بالنسبة إلى تحميلات البيانات المجمّعة، تستخدم عادةً مخزن كائنات مثل S3 أو GCS كوسيط. يتيح لك أداء ClickHouse في قراءة [Parquet](/ar/guides/clickhouse/data-formats/parquet) تحميل البيانات بمئات الملايين من الصفوف في الثانية باستخدام [S3 table engine](/ar/reference/engines/table-engines/integrations/s3). أما بالنسبة إلى البث في الوقت الفعلي، فإن [ClickPipes](/ar/integrations/clickpipes/home) يتصل مباشرةً بمنصات مثل Kafka وConfluent.
 
-        يمكنك أيضًا الترحيل من مستودعات البيانات الحالية مثل Snowflake وBigQuery وDatabricks عن طريق التصدير إلى تخزين الكائنات ثم التحميل إلى ClickHouse عبر [table engines](/ar/reference/engines/table-engines).
+        يمكنك أيضًا الترحيل من مستودعات البيانات الحالية مثل Snowflake وBigQuery وDatabricks عن طريق التصدير إلى تخزين الكائنات ثم تحميلها إلى ClickHouse عبر [table engines](/ar/reference/engines/table-engines).
       </Accordion>
 
       <Accordion title="الاستعلام">
-        يمكنك الاستعلام عن البيانات مباشرةً من مخازن الكائنات مثل S3 وGCS، أو من بحيرات البيانات باستخدام تنسيقات الجداول المفتوحة مثل [Iceberg](/ar/reference/engines/table-engines/integrations/iceberg) و[Delta Lake](/ar/reference/engines/table-engines/integrations/deltalake) و[Hudi](/ar/reference/engines/table-engines/integrations/hudi) — سواء مباشرةً أو عبر كتالوجات البيانات مثل [AWS Glue Catalog](/ar/guides/use-cases/data-warehousing/glue-catalog) و[Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog) و[Iceberg REST](/ar/guides/use-cases/data-warehousing/rest-catalog).
+        يمكنك الاستعلام عن البيانات مباشرةً من مخازن الكائنات مثل S3 وGCS، أو من بحيرات البيانات باستخدام تنسيقات الجداول المفتوحة مثل [Iceberg](/ar/reference/engines/table-engines/integrations/iceberg)، و[Delta Lake](/ar/reference/engines/table-engines/integrations/deltalake)، و[Hudi](/ar/reference/engines/table-engines/integrations/hudi) — سواء مباشرةً أو عبر كتالوجات البيانات مثل [AWS Glue Catalog](/ar/guides/use-cases/data-warehousing/glue-catalog)، و[Unity Catalog](/ar/guides/use-cases/data-warehousing/unity-catalog)، و[Iceberg REST](/ar/guides/use-cases/data-warehousing/rest-catalog).
 
         يوفّر ClickHouse Cloud [query cache](/ar/concepts/features/performance/caches/query-cache) و[sparse indexes](/ar/concepts/features/performance/skip-indexes/skipping-indexes) و[projections](/ar/concepts/features/projections/projections) بشكل افتراضي، بالإضافة إلى أكثر من 70 تنسيقًا للملفات ودوال SQL للتواريخ والمصفوفات وJSON والبيانات الجغرافية والتجميعات التقريبية على نطاق واسع.
       </Accordion>

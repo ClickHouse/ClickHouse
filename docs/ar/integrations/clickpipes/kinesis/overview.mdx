@@ -24,27 +24,27 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## إنشاء أول ClickPipe لك
 </div>
 
-1. انتقل إلى SQL Console لخدمة ClickHouse Cloud الخاصة بك.
+1. افتح SQL Console الخاصة بخدمة ClickHouse Cloud لديك.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="lg" border />
 
-2. حدِّد زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;Set up a ClickPipe&quot;
+2. حدِّد زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;إعداد ClickPipe&quot;
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="تحديد الواردات" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="تحديد عمليات الاستيراد" size="lg" border />
 
 3. حدِّد مصدر البيانات.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="تحديد نوع مصدر البيانات" size="lg" border />
 
-4. املأ النموذج بإدخال اسم لـ ClickPipe ووصف (اختياري) ودور IAM أو بيانات الاعتماد، بالإضافة إلى تفاصيل الاتصال الأخرى.
+4. املأ النموذج بإدخال اسم لـ ClickPipe ووصف له (اختياري)، ودور IAM أو بيانات الاعتماد الخاصة بك، بالإضافة إلى تفاصيل الاتصال الأخرى.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
 
-5. حدِّد Kinesis Stream وإزاحة البدء. ستعرض واجهة المستخدم مستندًا نموذجيًا من المصدر المحدد (Kafka topic، وما إلى ذلك). يمكنك أيضًا تمكين Enhanced Fan-out لـ Kinesis streams لتحسين أداء ClickPipe واستقراره (يمكنك العثور على مزيد من المعلومات حول Enhanced Fan-out [هنا](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
+5. حدِّد تدفق Kinesis وإزاحة البدء. ستعرض واجهة المستخدم مستندًا نموذجيًا من المصدر المحدد (Kafka topic، إلخ). يمكنك أيضًا تمكين Enhanced Fan-out لـ تدفقات Kinesis لتحسين أداء ClickPipe واستقراره (يمكنك العثور على مزيد من المعلومات حول Enhanced Fan-out [هنا](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="تعيين تنسيق البيانات والموضوع" size="lg" border />
 
-6. في الخطوة التالية، يمكنك اختيار ما إذا كنت تريد إدخال البيانات إلى ClickHouse table جديدة أو إعادة استخدام جدول موجود. اتبع الإرشادات الظاهرة على الشاشة لتعديل اسم الجدول والمخطط والإعدادات. ويمكنك رؤية معاينة فورية لتغييراتك في الجدول النموذجي في الأعلى.
+6. في الخطوة التالية، يمكنك اختيار ما إذا كنت تريد إدخال البيانات إلى جدول ClickHouse جديد أو إعادة استخدام جدول موجود. اتبع الإرشادات الظاهرة على الشاشة لتعديل اسم الجدول والمخطط والإعدادات. ويمكنك رؤية معاينة فورية لتغييراتك في الجدول النموذجي بالأعلى.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="تعيين الجدول والمخطط والإعدادات" size="lg" border />
 
@@ -52,34 +52,34 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="تعيين عناصر التحكم المتقدمة" size="lg" border />
 
-7. بدلاً من ذلك، يمكنك اختيار إدخال بياناتك في ClickHouse table موجودة. في هذه الحالة، ستتيح لك واجهة المستخدم تعيين الحقول من المصدر إلى حقول ClickHouse في جدول الوجهة المحددة.
+7. أو يمكنك اختيار إدخال بياناتك في جدول ClickHouse موجود. في هذه الحالة، ستتيح لك واجهة المستخدم تعيين حقول المصدر إلى حقول ClickHouse في الجدول الوجهة المحدد.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="استخدام جدول موجود" size="lg" border />
 
 8. أخيرًا، يمكنك تهيئة الأذونات لمستخدم ClickPipes الداخلي.
 
-**الأذونات:** سينشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى جدول الوجهة. يمكنك تحديد دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المحددة مسبقًا:
+**الأذونات:** سيُنشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى الجدول الوجهة. يمكنك تحديد دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المعرّفة مسبقًا:
 
-* `Full access`: مع وصول كامل إلى الـ عنقود. قد يكون ذلك مفيدًا إذا كنت تستخدم عرض مُجسَّد أو Dictionary مع جدول الوجهة.
-  * `Only destination table`: مع أذونات `INSERT` إلى جدول الوجهة فقط.
+* `Full access`: وصول كامل إلى العنقود. قد يكون ذلك مفيدًا إذا كنت تستخدم materialized view أو Dictionary مع الجدول الوجهة.
+  * `Only destination table`: مع أذونات `INSERT` على الجدول الوجهة فقط.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="الأذونات" border />
 
-9. بالنقر على &quot;Complete Setup&quot;، سيسجّل النظام ClickPipe الخاصة بك، وستتمكن من رؤيتها مدرجة في جدول الملخص.
+9. عند النقر على &quot;إكمال الإعداد&quot;، سيسجّل النظام ClickPipe الخاص بك، وستتمكن من رؤيته مُدرجًا في جدول الملخص.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="إشعار النجاح" size="sm" border />
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="إشعار الإزالة" size="lg" border />
 
-يوفّر جدول الملخص عناصر تحكم لعرض بيانات نموذجية من المصدر أو من جدول الوجهة في ClickHouse
+يوفر جدول الملخص عناصر تحكم لعرض بيانات نموذجية من المصدر أو من الجدول الوجهة في ClickHouse
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="عرض الوجهة" size="lg" border />
 
-وكذلك عناصر تحكم لإزالة ClickPipe وعرض ملخص لمهمة الإدخال.
+بالإضافة إلى عناصر تحكم لإزالة ClickPipe وعرض ملخص مهمة الإدخال.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="عرض النظرة العامة" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="عرض الملخص" size="lg" border />
 
-10. **تهانينا!** لقد أعددت أول ClickPipe لك بنجاح. إذا كانت هذه ClickPipe من نوع streaming، فستظل تعمل باستمرار، وتُدخل البيانات في الوقت الفعلي من مصدر البيانات البعيد. وإلا فستُدخل الدفعة ثم تكتمل.
+10. **تهانينا!** لقد أعددت أول ClickPipe بنجاح. إذا كان هذا ClickPipe من نوع streaming، فسيستمر في العمل بشكل متواصل مع إدخال البيانات في الوقت الفعلي من مصدر البيانات البعيد لديك. أما إذا لم يكن كذلك، فسيُدخل الدفعة ثم يكتمل.
 
 <div id="supported-data-formats">
   ## تنسيقات البيانات المدعومة
@@ -226,4 +226,4 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## المصادقة
 </div>
 
-للوصول إلى تدفقات Amazon Kinesis، يمكنك استخدام [بيانات اعتماد IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) أو [دور IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). ولمزيد من التفاصيل حول كيفية إعداد دور IAM، يمكنك [الرجوع إلى هذا الدليل](/ar/integrations/clickpipes/kinesis/auth) للاطلاع على معلومات حول كيفية إعداد دور يعمل مع ClickHouse Cloud.
+للوصول إلى تدفقات Kinesis من Amazon، يمكنك استخدام [بيانات اعتماد IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) أو [دور IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). ولمزيد من التفاصيل حول كيفية إعداد دور IAM، يمكنك [الرجوع إلى هذا الدليل](/ar/integrations/clickpipes/kinesis/auth) للاطلاع على معلومات حول كيفية إعداد دور متوافق مع ClickHouse Cloud

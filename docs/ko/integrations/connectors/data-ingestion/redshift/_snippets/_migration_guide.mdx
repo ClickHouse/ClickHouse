@@ -12,16 +12,16 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" size="md" alt="Redshift에서 ClickHouse로 마이그레이션하는 옵션" />
 
-ClickHouse 인스턴스 관점에서는 다음 3가지 방법을 사용할 수 있습니다.
+ClickHouse 인스턴스 관점에서는 다음과 같은 방법을 사용할 수 있습니다.
 
-1. 서드파티 ETL/ELT 도구 또는 서비스를 사용해 데이터를 ClickHouse로 **[PUSH](#push-data-from-redshift-to-clickhouse)**
+1. **[PUSH](#push-data-from-redshift-to-clickhouse)** 서드파티 ETL/ELT 도구 또는 서비스를 사용해 데이터를 ClickHouse로 전송
 
-2. ClickHouse JDBC Bridge를 활용해 Redshift에서 데이터를 **[가져오기](#pull-data-from-redshift-to-clickhouse)**
+2. **[PULL](#pull-data-from-redshift-to-clickhouse)** ClickHouse JDBC Bridge를 활용해 Redshift에서 데이터 가져오기
 
-3. S3 객체 스토리지를 사용해 &quot;언로드 후 로드&quot; 방식으로 **[피벗](#pivot-data-from-redshift-to-clickhouse-using-s3)**
+3. **[피벗](#pivot-data-from-redshift-to-clickhouse-using-s3)** S3 객체 스토리지를 사용해 &quot;언로드 후 로드&quot; 방식 적용
 
 <Note>
-  이 튜토리얼에서는 Redshift를 데이터 소스로 사용했습니다. 하지만 여기서 소개하는 마이그레이션 방식은 Redshift에만 한정되지 않으며, 호환되는 모든 데이터 소스에도 비슷한 단계를 적용할 수 있습니다.
+  이 튜토리얼에서는 Redshift를 데이터 소스로 사용했습니다. 하지만 여기서 소개하는 마이그레이션 방식은 Redshift에만 국한되지 않으며, 호환되는 모든 데이터 소스에도 유사한 단계를 적용할 수 있습니다.
 </Note>
 
 <div id="push-data-from-redshift-to-clickhouse">
@@ -79,9 +79,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
 이 옵션을 사용하려면 ClickHouse JDBC Bridge를 설정해야 합니다. ClickHouse JDBC Bridge는 JDBC 연결을 처리하고 ClickHouse 인스턴스와 데이터 소스 사이에서 프록시 역할을 하는 독립형 Java 애플리케이션입니다. 이 튜토리얼에서는 [샘플 데이터베이스](https://docs.aws.amazon.com/redshift/latest/dg/c_sampledb.html)가 미리 로드된 Redshift 인스턴스를 사용했습니다.
 
 <Steps>
-  <Step>
-    #### ClickHouse JDBC Bridge 배포
-
+  <Step title="ClickHouse JDBC Bridge 배포" id="deploy-clickhouse-jdbc-bridge">
     ClickHouse JDBC Bridge를 배포합니다. 자세한 내용은 [외부 데이터 소스용 JDBC](/ko/integrations/connectors/data-ingestion/jdbc-with-clickhouse) 사용자 가이드를 참조하십시오.
 
     <Note>
@@ -89,9 +87,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
     </Note>
   </Step>
 
-  <Step>
-    #### Redshift 데이터 소스 구성
-
+  <Step title="Redshift 데이터 소스 구성" id="configure-your-redshift-datasource">
     ClickHouse JDBC Bridge용 Redshift 데이터 소스를 구성합니다. 예: `/etc/clickhouse-jdbc-bridge/config/datasources/redshift.json `
 
     ```json
@@ -113,9 +109,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
     ```
   </Step>
 
-  <Step>
-    #### ClickHouse에서 Redshift 인스턴스 쿼리하기
-
+  <Step title="ClickHouse에서 Redshift 인스턴스 쿼리하기" id="query-your-redshift-instance-from-clickhouse">
     ClickHouse JDBC Bridge가 배포되어 실행 중이면 ClickHouse에서 Redshift 인스턴스를 쿼리할 수 있습니다.
 
     ```sql
@@ -153,9 +147,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
     ```
   </Step>
 
-  <Step>
-    #### Redshift에서 ClickHouse로 데이터 가져오기
-
+  <Step title="Redshift에서 ClickHouse로 데이터 가져오기" id="import-data-from-redshift-to-clickhouse">
     다음 예시는 `INSERT INTO ... SELECT` 문을 사용해 데이터를 가져오는 방법을 보여줍니다.
 
     ```sql
@@ -221,9 +213,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
 </div>
 
 <Steps>
-  <Step>
-    #### UNLOAD를 사용하여 데이터를 S3 버킷으로 내보내기
-
+  <Step title="UNLOAD를 사용하여 데이터를 S3 버킷으로 내보내기" id="export-data-into-an-s3-bucket-using-unload">
     Redshift의 [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) 기능을 사용해 데이터를 기존의 비공개 S3 버킷으로 내보냅니다:
 
     <Image img="/images/integrations/data-ingestion/redshift/s3-1.webp" size="md" alt="Redshift에서 S3로 UNLOAD" background="white" />
@@ -233,9 +223,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
     <Image img="/images/integrations/data-ingestion/redshift/s3-2.webp" size="md" alt="S3의 데이터" background="white" />
   </Step>
 
-  <Step>
-    #### ClickHouse에서 테이블 생성
-
+  <Step title="ClickHouse에서 테이블 생성" id="create-the-table-in-clickhouse">
     ClickHouse에서 테이블을 생성합니다:
 
     ```sql
@@ -261,9 +249,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
     이 방법은 특히 Parquet처럼 데이터 타입 정보가 포함된 포맷의 데이터에서 효과적입니다.
   </Step>
 
-  <Step>
-    #### S3 파일을 ClickHouse로 로드
-
+  <Step title="S3 파일을 ClickHouse로 로드" id="load-s3-files-into-clickhouse">
     `INSERT INTO ... SELECT` 문을 사용해 S3 파일을 ClickHouse로 로드합니다:
 
     ```sql
@@ -280,7 +266,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
     ```
 
     <Note>
-      이 예시에서는 CSV를 피벗 포맷으로 사용했습니다. 하지만 운영 워크로드에서는 압축을 지원하므로 전송 시간을 줄이고 스토리지 비용도 절감할 수 있어, 대규모 마이그레이션에 Apache Parquet를 권장합니다. (기본적으로 각 row group은 SNAPPY를 사용해 압축됩니다.) 또한 ClickHouse는 Parquet의 컬럼 지향 구조를 활용해 데이터 수집 속도를 높입니다.
+      이 예시에서는 CSV를 피벗 포맷으로 사용했습니다. 하지만 운영 워크로드에서는 압축을 지원하므로 전송 시간을 줄이고 스토리지 비용도 절감할 수 있어, 대규모 마이그레이션에는 Apache Parquet를 가장 적합한 옵션으로 권장합니다. (기본적으로 각 row group은 SNAPPY를 사용해 압축됩니다.) 또한 ClickHouse는 Parquet의 컬럼 지향 구조를 활용해 데이터 수집 속도를 높입니다.
     </Note>
   </Step>
 </Steps>

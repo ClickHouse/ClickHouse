@@ -213,7 +213,7 @@ StorageKafka::StorageKafka(
     auto task_count = thread_per_consumer ? num_consumers : 1;
     for (size_t i = 0; i < task_count; ++i)
     {
-        auto task = getContext()->getMessageBrokerSchedulePool().createTask(getStorageID(), log->name(), [this, i]{ threadFunc(i); });
+        auto task = getContext()->getMessageBrokerSchedulePool()->createTask(getStorageID(), log->name(), [this, i]{ threadFunc(i); });
         task->deactivate();
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
@@ -294,6 +294,13 @@ SinkToStoragePtr StorageKafka::write(const ASTPtr &, const StorageMetadataPtr & 
 
 void StorageKafka::startup()
 {
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        StreamingStorageRegistry::instance().registerTable(getStorageID());
+        LOG_INFO(log, "Streaming to views is disabled");
+        return;
+    }
+
     // Start the reader thread
     for (auto & task : tasks)
     {

@@ -557,7 +557,7 @@ Por esse motivo, a distribuição ClickStack do OTel collector usa o [batch proc
 
 Normalmente, os usuários precisam enviar lotes menores quando o throughput de um collector é baixo, mas ainda esperam que os dados cheguem ao ClickHouse com a menor latência fim a fim possível. Nesse caso, pequenos lotes são enviados quando o `timeout` do batch processor expira. Isso pode causar problemas e é nesses casos que as inserções assíncronas se tornam necessárias. Esse problema é raro se você estiver enviando dados para o ClickStack collector atuando como gateway — como ele agrega os dados, esse problema é mitigado. Consulte [Funções do collector](#collector-roles).
 
-Se não for possível garantir lotes grandes, você pode delegar o batching ao ClickHouse usando [Inserções assíncronas](/pt-BR/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). Com inserções assíncronas, os dados são inseridos primeiro em um buffer e depois gravados no armazenamento do banco de dados posteriormente, de forma assíncrona.
+Se não for possível garantir lotes grandes, você pode delegar o agrupamento em lotes ao ClickHouse usando [Inserções assíncronas](/pt-BR/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). Com inserções assíncronas, os dados são inseridos primeiro em um buffer e depois gravados no armazenamento do banco de dados posteriormente, de forma assíncrona.
 
 <Image img="/images/use-cases/observability/observability-6.webp" alt="Inserções assíncronas" size="md" />
 
@@ -565,7 +565,7 @@ Com [inserções assíncronas habilitadas](/pt-BR/concepts/features/operations/i
 
 Para habilitar inserções assíncronas para o collector, adicione `async_insert=1` à string de conexão. Recomendamos que os usuários usem `wait_for_async_insert=1` (o padrão) para obter garantias de entrega — consulte [aqui](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) para mais detalhes.
 
-Os dados de uma inserção assíncrona são inseridos quando o buffer do ClickHouse é descarregado. Isso ocorre quando [`async_insert_max_data_size`](/pt-BR/reference/settings/session-settings#async_insert_max_data_size) é excedido ou após [`async_insert_busy_timeout_ms`](/pt-BR/reference/settings/session-settings#async_insert_max_data_size) milissegundos desde a primeira consulta de INSERT. Se `async_insert_stale_timeout_ms` estiver definido com um valor diferente de zero, os dados serão inseridos após `async_insert_stale_timeout_ms milissegundos` desde a última consulta. Você pode ajustar essas configurações para controlar a latência fim a fim do pipeline. Outras configurações que podem ser usadas para ajustar o flush do buffer estão documentadas [aqui](/pt-BR/reference/settings/session-settings#async_insert). Em geral, os valores padrão são adequados.
+Os dados de uma inserção assíncrona são inseridos quando o buffer do ClickHouse é descarregado. Isso ocorre quando [`async_insert_max_data_size`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_max_data_size) é excedido ou após [`async_insert_busy_timeout_ms`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms) milissegundos desde a primeira consulta de INSERT. Se `async_insert_stale_timeout_ms` estiver definido com um valor diferente de zero, os dados serão inseridos após `async_insert_stale_timeout_ms milissegundos` desde a última consulta. Você pode ajustar essas configurações para controlar a latência fim a fim do pipeline. Outras configurações que podem ser usadas para ajustar o flush do buffer estão documentadas [aqui](/pt-BR/reference/settings/session-settings/async-insert#async_insert). Em geral, os valores padrão são adequados.
 
 <Info>
   **Considere inserções assíncronas adaptativas**
@@ -573,7 +573,7 @@ Os dados de uma inserção assíncrona são inseridos quando o buffer do ClickHo
   Nos casos em que há poucos agents em uso, com baixo throughput, mas requisitos rigorosos de latência fim a fim, [inserções assíncronas adaptativas](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) podem ser úteis. Em geral, elas não se aplicam a casos de uso de observabilidade com alto throughput, como os vistos no ClickHouse.
 </Info>
 
-Por fim, o comportamento anterior de desduplicação associado a inserções síncronas no ClickHouse não é habilitado por padrão ao usar inserções assíncronas. Se necessário, consulte a configuração [`async_insert_deduplicate`](/pt-BR/reference/settings/session-settings#async_insert_deduplicate).
+Por fim, o comportamento anterior de desduplicação associado a inserções síncronas no ClickHouse não é habilitado por padrão ao usar inserções assíncronas. Se necessário, consulte a configuração [`async_insert_deduplicate`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_deduplicate).
 
 Os detalhes completos sobre como configurar esse recurso podem ser encontrados nesta [página da documentação](/pt-BR/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts) ou neste [post de blog](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) com uma análise aprofundada.
 
@@ -626,9 +626,9 @@ Para instâncias agent responsáveis por enviar eventos a um gateway e apenas de
 | 10k/segundo  | 1 CPU, 1GiB                     |
 
 <div id="schema-choice">
-  ## Escolha de esquema: Map vs JSON
+  ## Escolha do schema: Map vs JSON
 </div>
 
-O collector do ClickStack cria tabelas que armazenam atributos em colunas `Map(LowCardinality(String), String)` por padrão. Esse é o esquema recomendado para workloads de observabilidade. Um esquema do tipo `JSON` está disponível em beta para avaliação em workloads com um conjunto pequeno e estável de chaves de atributo.
+O ClickStack collector cria tabelas que armazenam atributos em colunas `Map(LowCardinality(String), String)` por padrão. Este é o schema recomendado para workloads de observabilidade. Um schema do tipo `JSON` está disponível em beta para avaliação em workloads com um conjunto pequeno e estável de chaves de atributo.
 
-Para ver a comparação completa, quando cada um é mais apropriado, as variáveis de ambiente necessárias para habilitar o esquema do tipo JSON e o passo a passo da migração, consulte [Map vs JSON type](/pt-BR/clickstack/ingesting-data/schema/map-vs-json).
+Para ver a comparação completa, em quais casos cada um é mais adequado, as variáveis de ambiente necessárias para habilitar o schema do tipo JSON e o passo a passo da migração, consulte [Map vs tipo JSON](/pt-BR/clickstack/ingesting-data/schema/map-vs-json).

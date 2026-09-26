@@ -1,10 +1,13 @@
 #include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
+#include <base/EnumReflection.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/StringUtils.h>
+#include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -15,9 +18,12 @@
 #include <fmt/format.h>
 #include <unistd.h>
 
+#include <array>
 #include <cstdlib>
 #include <cstring>
 #include <optional>
+#include <string_view>
+#include <utility>
 
 
 namespace DB
@@ -32,17 +38,17 @@ namespace ErrorCodes
 namespace
 {
 
-/// Parse a string read off the native protocol wire into an "ip:port" SocketAddress WITHOUT resolving.
-/// ClientInfo::write always serializes the address as an IP literal plus a numeric port ("ip:port" or
-/// "[ipv6]:port", via SocketAddress::toString), but the value is attacker-controlled and may be
-/// corrupted or desynced. Poco's SocketAddress(String) constructor would resolve a non-numeric port
-/// via getservbyname() and a non-IP host via DNS::hostByName() - both reach a non-reentrant libc
-/// resolver family that base/harmful traps to an uncatchable SIGILL in debug/sanitizer builds. We split
-/// host and port exactly as Poco::Net::SocketAddress::init() does, require a numeric port <= 65535 and a
-/// host that parses as an IP literal, and build the address directly from the parsed IPAddress. Returns
-/// nullopt for anything else (empty, a leading-'/' UNIX-local form, a non-numeric/out-of-range port, or
-/// a non-IP host), so the caller decides whether to reject it or fall back to a default - never resolving.
-std::optional<Poco::Net::SocketAddress> tryParseIpEndpointFromWire(const String & host_and_port)
+/// Parse a numeric IP endpoint with a numeric port without hostname or service-name resolution.
+/// Expected forms are "ipv4:port" and "[ipv6]:port". A hostname or symbolic port can appear in the
+/// same syntax, but is rejected. Constructing `Poco::Net::SocketAddress` from a string would resolve
+/// these through DNS or `getservbyname`; instead, split the endpoint, parse the host as
+/// `Poco::Net::IPAddress`, and require a numeric port not exceeding 65535.
+///
+/// This helper is shared by `ClientInfo::read`, for untrusted `initial_address` values received over
+/// the native protocol, and `ClientInfo::getLastForwardedFor`, for `X-Forwarded-For` elements that
+/// contain a port. `ClientInfo::write` produces only the accepted numeric forms. Empty input,
+/// UNIX-local paths, malformed or out-of-range ports, and non-IP hosts return `nullopt`.
+std::optional<Poco::Net::SocketAddress> tryParseIpEndpoint(const String & host_and_port)
 {
     /// A leading '/' makes Poco build a UNIX_LOCAL address, whose host()/port() throw later.
     if (host_and_port.empty() || host_and_port.front() == '/')
@@ -142,36 +148,67 @@ String detectClientAgent()
 
 }
 
+/// `source` identifies the `forwarded_for` value that was parsed, so direct changes to the public field
+/// invalidate the cache. `address` stores either the parsed endpoint or `nullopt` for rejected input,
+/// allowing repeated calls to reuse successful and failed results and log an invalid value only once
+/// while the source is unchanged.
+struct ClientInfo::ForwardedForCache
+{
+    String source;
+    std::optional<Poco::Net::SocketAddress> address;
+};
+
 ClientInfo::ClientInfo()
 {
-    connection_address = std::make_shared<Poco::Net::SocketAddress>();
-    current_address = std::make_shared<Poco::Net::SocketAddress>();
-    initial_address = std::make_shared<Poco::Net::SocketAddress>();
+    connection_address = Poco::Net::SocketAddress();
+    current_address = Poco::Net::SocketAddress();
+    initial_address = Poco::Net::SocketAddress();
 }
 
 std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
 {
     if (forwarded_for.empty())
         return {};
+
+    /// Reuse successful and rejected results while the source value is unchanged.
+    if (last_forwarded_for_cache && last_forwarded_for_cache->source == forwarded_for)
+        return last_forwarded_for_cache->address;
+
+    /// Proxies append addresses to the comma-separated chain. Use the last element because it was added
+    /// by the proxy closest to ClickHouse; earlier elements may come from the client or other intermediaries.
     String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
     boost::trim(last);
 
-    /// IPv6 address with port
-    if (last[0] == '[')
-        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last};
+    /// The element is one of four shapes, distinguished exactly as before by the leading bracket and the
+    /// number of colons. Only the two shapes that carry a port need the endpoint splitting of
+    /// `tryParseIpEndpoint`; the other two are a bare address. Neither path resolves anything: a hostname
+    /// is a valid shape in every case (`example.com`, `example.com:80`) and is rejected, not looked up.
+    std::optional<Poco::Net::SocketAddress> address;
+    if (!last.empty())
+    {
+        const auto colons = std::count(last.begin(), last.end(), ':');
 
-    const auto colons = std::count(last.begin(), last.end(), ':');
+        /// IPv6 address with a port ("[ipv6]:port"), or IPv4 address (or a hostname) with a port.
+        if (last.front() == '[' || colons == 1)
+        {
+            address = tryParseIpEndpoint(last);
+        }
+        /// IPv6 address without a port (unbracketed, hence more than one colon),
+        /// or IPv4 address (or a hostname) without a port.
+        else
+        {
+            Poco::Net::IPAddress ip;
+            if (Poco::Net::IPAddress::tryParse(last, ip))
+                address.emplace(ip, 0);
+        }
+    }
 
-    /// IPv6 address without port
-    if (colons > 1)
-        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last, 0};
+    last_forwarded_for_cache = std::make_shared<const ForwardedForCache>(ForwardedForCache{forwarded_for, address});
 
-    /// IPv4 address with port
-    if (colons == 1)
-        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last};
+    if (!address)
+        LOG_DEBUG(getLogger("ClientInfo"), "Invalid address in `X-Forwarded-For` HTTP header: '{}'", last);
 
-    /// IPv4 address without port
-    return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last, 0};
+    return address;
 }
 
 String ClientInfo::getLastForwardedForHost() const
@@ -202,7 +239,7 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
     if (interface == Interface::TCP)
     {
         writeBinary(os_user, out);
-        writeBinary(client_hostname, out);
+        writeBinary(getClientHostName(), out);
         writeBinary(client_name, out);
         writeVarUInt(client_version_major, out);
         writeVarUInt(client_version_minor, out);
@@ -218,6 +255,16 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
 
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
             writeBinary(http_referer, out);
+
+        /// Suppressed when `with_trailing_fields = false`: the embedded `ClientInfo` of the persisted async
+        /// `Distributed` insert header must keep the pre-existing layout, or older binaries draining newer
+        /// queue files would misinterpret the rest of the header. There these are stored as trailing header
+        /// fields instead (see `DistributedSink`).
+        if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO)
+        {
+            writeBinary(http_handler_name, out);
+            writeBinary(http_request_url, out);
+        }
     }
 
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
@@ -310,6 +357,8 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
     if (empty())
         return;
 
+    resolve_client_hostname_on_demand = false;
+
     readBinary(initial_user, in);
     readBinary(initial_query_id, in);
 
@@ -322,11 +371,11 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
     /// the wire value is discarded; to stay compatible with the pre-validation native protocol (which
     /// documented a generic host:port) we accept it leniently and fall back to a default endpoint when it
     /// is not a plain IP literal, instead of rejecting otherwise-valid initiating clients.
-    auto parsed_address = tryParseIpEndpointFromWire(initial_address_string);
+    auto parsed_address = tryParseIpEndpoint(initial_address_string);
     if (!parsed_address && query_kind == QueryKind::SECONDARY_QUERY)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Malformed initial_address received over the network: expected an IP literal with a numeric port");
-    initial_address = std::make_shared<Poco::Net::SocketAddress>(parsed_address.value_or(Poco::Net::SocketAddress{}));
+    initial_address = Poco::Net::SocketAddress(parsed_address.value_or(Poco::Net::SocketAddress{}));
 
     if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
     {
@@ -360,6 +409,14 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
 
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
             readBinary(http_referer, in);
+
+        /// See the note in `write`: absent from the embedded `ClientInfo` of the persisted async
+        /// `Distributed` insert header, where they are stored as trailing header fields instead.
+        if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO)
+        {
+            readBinary(http_handler_name, in);
+            readBinary(http_request_url, in);
+        }
     }
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
@@ -444,6 +501,21 @@ void ClientInfo::setInitialQuery()
         client_name = std::string(VERSION_NAME) + " " + client_name;
 }
 
+void ClientInfo::setClientVersionFromConnectionIfUnknown()
+{
+    if (client_version_major != 0 || client_version_minor != 0 || client_version_patch != 0)
+        return;
+
+    if (connection_client_version_major == 0 && connection_client_version_minor == 0 && connection_client_version_patch == 0)
+        return;
+
+    client_version_major = connection_client_version_major;
+    client_version_minor = connection_client_version_minor;
+    client_version_patch = connection_client_version_patch;
+    if (client_tcp_protocol_version == 0)
+        client_tcp_protocol_version = connection_tcp_protocol_version;
+}
+
 bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patch) const
 {
     bool patch_equals = compare_patch ? client_version_patch == other.client_version_patch : true;
@@ -451,6 +523,13 @@ bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patc
            client_version_minor == other.client_version_minor &&
            patch_equals &&
            client_tcp_protocol_version == other.client_tcp_protocol_version;
+}
+
+const String & ClientInfo::getClientHostName() const
+{
+    if (resolve_client_hostname_on_demand)
+        return getFQDNOrHostName();
+    return client_hostname;
 }
 
 String ClientInfo::getVersionStr() const
@@ -466,7 +545,8 @@ void ClientInfo::fillOSUserHostNameAndVersionInfo()
     else
         os_user.clear();    /// Don't mind if we cannot determine user login.
 
-    client_hostname = getFQDNOrHostName();
+    resolve_client_hostname_on_demand = true;
+    client_hostname.clear();
 
     client_agent = detectClientAgent();
 
@@ -512,6 +592,12 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
         http_method = ClientInfo::HTTPMethod::GET;
     else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
         http_method = ClientInfo::HTTPMethod::POST;
+    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_PUT)
+        http_method = ClientInfo::HTTPMethod::PUT;
+    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_DELETE)
+        http_method = ClientInfo::HTTPMethod::DELETE;
+    else if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
+        http_method = ClientInfo::HTTPMethod::HEAD;
 
     http_user_agent = request.get("User-Agent", "");
     http_referer = request.get("Referer", "");
@@ -539,7 +625,128 @@ String toString(ClientInfo::HTTPMethod method)
             return "POST";
         case ClientInfo::HTTPMethod::OPTIONS:
             return "OPTIONS";
+        case ClientInfo::HTTPMethod::PUT:
+            return "PUT";
+        case ClientInfo::HTTPMethod::DELETE:
+            return "DELETE";
+        case ClientInfo::HTTPMethod::HEAD:
+            return "HEAD";
     }
+}
+
+namespace
+{
+
+template <typename Mapping, typename Values>
+constexpr bool everyValueIsNamed(const Mapping & mapping, const Values & values)
+{
+    for (const auto & value : values)
+    {
+        bool named = false;
+        for (const auto & entry : mapping)
+            named = named || entry.second == value;
+        if (!named)
+            return false;
+    }
+    return true;
+}
+
+template <typename Mapping>
+constexpr bool everyNameIsNonEmptyAndUnique(const Mapping & mapping)
+{
+    for (size_t i = 0; i < mapping.size(); ++i)
+    {
+        if (mapping[i].first.empty())
+            return false;
+        for (size_t j = i + 1; j < mapping.size(); ++j)
+            if (mapping[i].first == mapping[j].first)
+                return false;
+    }
+    return true;
+}
+
+/// The names `system.session_log.interface` publishes; renaming one changes a published value.
+constexpr std::array interface_names
+{
+    std::pair{std::string_view{"TCP"}, ClientInfo::Interface::TCP},
+    std::pair{std::string_view{"HTTP"}, ClientInfo::Interface::HTTP},
+    std::pair{std::string_view{"gRPC"}, ClientInfo::Interface::GRPC},
+    std::pair{std::string_view{"MySQL"}, ClientInfo::Interface::MYSQL},
+    std::pair{std::string_view{"PostgreSQL"}, ClientInfo::Interface::POSTGRESQL},
+    std::pair{std::string_view{"Local"}, ClientInfo::Interface::LOCAL},
+    std::pair{std::string_view{"TCP_Interserver"}, ClientInfo::Interface::TCP_INTERSERVER},
+    std::pair{std::string_view{"Prometheus"}, ClientInfo::Interface::PROMETHEUS},
+    std::pair{std::string_view{"Background"}, ClientInfo::Interface::BACKGROUND},
+    std::pair{std::string_view{"ArrowFlight"}, ClientInfo::Interface::ARROW_FLIGHT},
+};
+
+constexpr std::array http_method_names
+{
+    std::pair{std::string_view{"UNKNOWN"}, ClientInfo::HTTPMethod::UNKNOWN},
+    std::pair{std::string_view{"GET"}, ClientInfo::HTTPMethod::GET},
+    std::pair{std::string_view{"POST"}, ClientInfo::HTTPMethod::POST},
+    std::pair{std::string_view{"OPTIONS"}, ClientInfo::HTTPMethod::OPTIONS},
+    std::pair{std::string_view{"PUT"}, ClientInfo::HTTPMethod::PUT},
+    std::pair{std::string_view{"DELETE"}, ClientInfo::HTTPMethod::DELETE},
+    std::pair{std::string_view{"HEAD"}, ClientInfo::HTTPMethod::HEAD},
+};
+
+/// Assert that the mapping covers the enum rather than that it has some size: a count is satisfiable by editing the count.
+static_assert(interface_names.size() == magic_enum::enum_count<ClientInfo::Interface>());
+static_assert(everyValueIsNamed(interface_names, magic_enum::enum_values<ClientInfo::Interface>()));
+static_assert(everyNameIsNonEmptyAndUnique(interface_names));
+
+static_assert(http_method_names.size() == magic_enum::enum_count<ClientInfo::HTTPMethod>());
+static_assert(everyValueIsNamed(http_method_names, magic_enum::enum_values<ClientInfo::HTTPMethod>()));
+static_assert(everyNameIsNonEmptyAndUnique(http_method_names));
+
+template <typename Mapping>
+DataTypeEnum8::Values enumValues(const Mapping & mapping)
+{
+    DataTypeEnum8::Values values;
+    values.reserve(mapping.size());
+    for (const auto & [name, value] : mapping)
+        values.emplace_back(std::string{name}, static_cast<Int8>(value));
+    return values;
+}
+
+template <typename Mapping, typename Enum>
+constexpr bool isNamed(const Mapping & mapping, Enum value)
+{
+    for (const auto & entry : mapping)
+        if (entry.second == value)
+            return true;
+    return false;
+}
+
+}
+
+DataTypePtr getClientInterfaceEnum()
+{
+    return std::make_shared<DataTypeEnum8>(enumValues(interface_names));
+}
+
+DataTypePtr getReportedClientInterfaceEnum()
+{
+    auto values = enumValues(interface_names);
+    values.emplace_back("Unknown", 0);
+    return std::make_shared<DataTypeEnum8>(std::move(values));
+}
+
+Int8 reportedClientInterfaceEnumValue(ClientInfo::Interface interface)
+{
+    /// `Interface` starts at 1, so 0 is free for `Unknown`.
+    return isNamed(interface_names, interface) ? static_cast<Int8>(interface) : 0;
+}
+
+DataTypePtr getClientHTTPMethodEnum()
+{
+    return std::make_shared<DataTypeEnum8>(enumValues(http_method_names));
+}
+
+Int8 reportedClientHTTPMethodEnumValue(ClientInfo::HTTPMethod method)
+{
+    return isNamed(http_method_names, method) ? static_cast<Int8>(method) : static_cast<Int8>(ClientInfo::HTTPMethod::UNKNOWN);
 }
 
 }
