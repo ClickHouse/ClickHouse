@@ -1,4 +1,3 @@
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -20,15 +19,19 @@ namespace ErrorCodes
 
 std::string extractTimeZoneNameFromColumn(const IColumn * column, const String & column_name)
 {
-    if (const ColumnConst * time_zone_column = checkAndGetColumnConst<ColumnString>(column))
-        return time_zone_column->getValue<String>();
+    /// The name can arrive wrapped, e.g. from `now(toLowCardinality('UTC'))`. The column is absent
+    /// when the argument is not a constant, and the check below reports that.
+    const auto full_column = column ? column->convertToFullColumnIfLowCardinality() : nullptr;
+    /// The callers that validate this argument - `now`, `now64`, `toTimezone` and the shared
+    /// date/time helpers - accept `String` or `FixedString`, so accept both here as well.
+    const ColumnConst * time_zone_column = full_column ? checkAndGetColumnConstStringOrFixedString(full_column.get()) : nullptr;
 
-    if (const ColumnConst * time_zone_lc_column = checkAndGetColumnConst<ColumnLowCardinality>(column))
-        return time_zone_lc_column->getValue<String>();
+    if (!time_zone_column)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Illegal column {} of time zone argument of function, must be a constant string",
+                        column_name);
 
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
-                    "Illegal column {} of time zone argument of function, must be a constant string",
-                    column_name);
+    return time_zone_column->getValue<String>();
 }
 
 
