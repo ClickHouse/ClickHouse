@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <functional>
 #include <initializer_list>
+#include <set>
 #include <thread>
 #include <tuple>
 
@@ -16,9 +17,14 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Merges/DistinctSortedTransform.h>
+#include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
+#include <Processors/Transforms/DistinctLimitsCheckingTransform.h>
 #include <Processors/Transforms/ExternalDistinctTransform.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
@@ -51,9 +57,12 @@ struct ConnectedDistinct
 
     static constexpr UInt64 default_spill_threshold = 64 << 20;
 
-    explicit ConnectedDistinct(TemporaryDataOnDiskScopePtr tmp_data, UInt64 limit_hint = 0, UInt64 threshold = default_spill_threshold)
+    explicit ConnectedDistinct(
+        TemporaryDataOnDiskScopePtr tmp_data, UInt64 limit_hint = 0, UInt64 threshold = default_spill_threshold,
+        DistinctSetMemoryTracker::SharedCounter shared_set_bytes = nullptr)
         : transform(header, SizeLimits{}, limit_hint, Names{}, threshold,
-            std::move(tmp_data), /*min_free_disk_space_=*/ 0, /*max_block_size_rows_=*/ 2, /*preserve_input_order_=*/ false)
+            std::move(tmp_data), /*min_free_disk_space_=*/ 0, /*max_block_size_rows_=*/ 2, /*preserve_input_order_=*/ false,
+            std::move(shared_set_bytes))
     {
         connect(upstream, transform.getInputs().front());
         connect(transform.getOutputs().front(), downstream);
@@ -433,4 +442,95 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeFilteringWithSpareTableCapacit
             EXPECT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
         }
     }).join();
+}
+
+TEST_F(ExternalDistinctTransformTest, SpillingReleasesOnlyItsOwnSetMemory)
+{
+    withQueryThread([&]
+    {
+        auto shared_set_bytes = std::make_shared<std::atomic<UInt64>>(0);
+        ConnectedDistinct first(tmp_data, 0, ConnectedDistinct::default_spill_threshold, shared_set_bytes);
+        ConnectedDistinct second(tmp_data, 0, ConnectedDistinct::default_spill_threshold, shared_set_bytes);
+        ASSERT_NO_FATAL_FAILURE(second.hashChunk({10, 11}));
+        const auto second_bytes = shared_set_bytes->load();
+        ASSERT_GT(second_bytes, 0);
+        ASSERT_NO_FATAL_FAILURE(first.hashChunk({1, 2, 3, 4, 5, 6}));
+        ASSERT_GT(shared_set_bytes->load(), second_bytes);
+
+        first.upstream.push(makeChunk({5, 7, 8}));
+        ASSERT_EQ(first.transform.prepare(), IProcessor::Status::Ready);
+        std::ignore = CurrentMemoryTracker::alloc(ConnectedDistinct::default_spill_threshold / 2);
+        SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(ConnectedDistinct::default_spill_threshold / 2));
+        first.transform.work();
+        ASSERT_EQ(first.transform.prepare(), IProcessor::Status::UpdatePipeline);
+        /// Extracted suppression columns own the keys, so only the other stream's set remains counted.
+        EXPECT_EQ(shared_set_bytes->load(), second_bytes);
+        auto run = first.attachRun();
+        ASSERT_TRUE(run.sink);
+        first.downstream.close();
+        EXPECT_EQ(first.transform.prepare(), IProcessor::Status::Finished);
+    });
+}
+
+TEST_F(ExternalDistinctTransformTest, GlobalLimitsCombineHashingAndSpilledStreams)
+{
+    withQueryThread([&]
+    {
+        for (auto mode : {OverflowMode::THROW, OverflowMode::BREAK})
+        {
+            for (UInt64 row_limit : {5, 8})
+            {
+                SCOPED_TRACE(::testing::Message() << "mode=" << static_cast<int>(mode) << ", row_limit=" << row_limit);
+                const auto header = std::make_shared<const Block>(
+                    Block{ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")});
+                auto shared_set_bytes = std::make_shared<std::atomic<UInt64>>(0);
+                Pipes pipes;
+                for (UInt64 stream : {0, 1})
+                {
+                    const auto base = stream * 10;
+                    Chunks chunks;
+                    chunks.push_back(makeChunk({base, base + 1, base}));
+                    chunks.push_back(makeChunk({base + 1, base + 2, base + 3}));
+                    Pipe pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks)));
+                    /// One stream spills immediately, while the other emits its keys during hashing.
+                    const auto threshold = stream == 0 ? 1 : ConnectedDistinct::default_spill_threshold;
+                    pipe.addTransform(std::make_shared<ExternalDistinctTransform>(
+                        header, SizeLimits{}, 0, Names{}, threshold, tmp_data, 0, 2, false, shared_set_bytes));
+                    pipes.push_back(std::move(pipe));
+                }
+                auto pipe = Pipe::unitePipes(std::move(pipes));
+                pipe.addTransform(std::make_shared<DistinctLimitsCheckingTransform>(header, SizeLimits(row_limit, 0, mode), 2));
+                pipe.resize(1);
+                QueryPipeline pipeline(std::move(pipe));
+                PullingPipelineExecutor executor(pipeline);
+                std::set<UInt64> keys;
+                size_t rows = 0;
+                auto read = [&]
+                {
+                    Block block;
+                    while (executor.pull(block))
+                    {
+                        rows += block.rows();
+                        const auto & column = assert_cast<const ColumnUInt64 &>(*block.getByPosition(0).column);
+                        for (size_t i = 0; i < block.rows(); ++i)
+                            keys.insert(column.getElement(i));
+                    }
+                };
+                if (mode == OverflowMode::THROW && row_limit == 5)
+                    EXPECT_THROW(read(), Exception);
+                else
+                {
+                    ASSERT_NO_THROW(read());
+                    EXPECT_EQ(rows, keys.size());
+                    if (row_limit == 8)
+                        EXPECT_EQ(keys, (std::set<UInt64>{0, 1, 2, 3, 10, 11, 12, 13}));
+                    else
+                    {
+                        EXPECT_GE(rows, 5);
+                        EXPECT_LE(rows, 8);
+                    }
+                }
+            }
+        }
+    });
 }

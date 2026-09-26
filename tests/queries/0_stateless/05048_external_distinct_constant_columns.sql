@@ -9,9 +9,10 @@ SET max_bytes_ratio_before_external_distinct = 0;
 SELECT count(), sum(cityHash64(k)), min(c), max(c), min(s), max(s) FROM (SELECT DISTINCT 7 AS c, number % 300000 AS k, 'abc' AS s FROM numbers_mt(3000000)) SETTINGS max_bytes_before_external_distinct = 0;
 SELECT count(), sum(cityHash64(k)), min(c), max(c), min(s), max(s) FROM (SELECT DISTINCT 7 AS c, number % 300000 AS k, 'abc' AS s FROM numbers_mt(3000000)) SETTINGS max_bytes_before_external_distinct = 1, max_block_size = 65409, max_untracked_memory = 0, log_comment = '05048_external_distinct_constant_columns/spill';
 
--- The spill did happen for the query above.
+-- The spill did happen for the query above. A parallel final `DISTINCT` merges once per hash-scattered
+-- stream, so only the presence of a merge is asserted.
 SYSTEM FLUSH LOGS query_log;
-SELECT ProfileEvents['ExternalDistinctWritePart'] > 0, ProfileEvents['ExternalDistinctMerge']
+SELECT ProfileEvents['ExternalDistinctWritePart'] > 0, ProfileEvents['ExternalDistinctMerge'] > 0
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
     AND current_database = currentDatabase() AND log_comment = '05048_external_distinct_constant_columns/spill';
