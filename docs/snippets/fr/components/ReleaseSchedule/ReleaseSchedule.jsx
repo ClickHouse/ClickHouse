@@ -3,8 +3,6 @@ const ReleaseSchedule = ({ releases = [] }) => {
     borderLeft: "1px solid rgba(128, 128, 128, 0.35)",
     paddingLeft: 16,
   };
-  const assetBase = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : "";
-  const withBase = (path) => path && path.startsWith("/") ? assetBase + path : path;
 
   const StatusIndicator = ({ status }) => {
     const color =
@@ -40,13 +38,13 @@ const ReleaseSchedule = ({ releases = [] }) => {
         <tr>
           <th rowSpan={2} scope="col">Version</th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href={withBase("/fr/products/cloud/features/admin-features/upgrades#fast-release-channel-early-upgrades")}>Canal rapide</a>
+            <a href="/fr/products/cloud/features/admin-features/upgrades#fast-release-channel-early-upgrades">Canal rapide</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href={withBase("/fr/products/cloud/features/admin-features/upgrades#regular-release-channel")}>Canal régulier</a>
+            <a href="/fr/products/cloud/features/admin-features/upgrades#regular-release-channel">Canal régulier</a>
           </th>
           <th colSpan={2} scope="colgroup" style={groupStartStyle}>
-            <a href={withBase("/fr/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades")}>Canal lent</a>
+            <a href="/fr/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades">Canal lent</a>
           </th>
         </tr>
         <tr>
