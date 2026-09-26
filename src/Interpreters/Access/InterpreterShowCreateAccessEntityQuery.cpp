@@ -67,7 +67,7 @@ namespace
 
         for (const auto & authentication_method : user.authentication_methods)
         {
-            query->authentication_methods.push_back(authentication_method.toAST());
+            query->authentication_methods.push_back(authentication_method.toAST(attach_mode));
         }
 
         if (!user.settings.empty())

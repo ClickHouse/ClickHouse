@@ -1,17 +1,28 @@
 #include <memory>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Formats/NativeReader.h>
 #include <Core/ProtocolDefines.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/WriteBufferFromString.h>
+#include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Poco/Net/NetException.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/PODArray.h>
+#include <cstring>
+#include <base/scope_guard.h>
 #include <base/types.h>
+
+namespace ProfileEvents
+{
+    extern const Event StreamingExchangeReceiveBytes;
+    extern const Event StreamingExchangePacketsReceived;
+    extern const Event StreamingExchangeReceiveWaitMicroseconds;
+    extern const Event StreamingExchangeEarlyCloses;
+}
 
 namespace DB
 {
@@ -20,12 +31,7 @@ namespace ErrorCodes
 {
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int PROTOCOL_VERSION_MISMATCH;
-}
-
-StreamingExchangeSource::~StreamingExchangeSource()
-{
-    if (out && !out->isFinalized())
-        out->cancel();
+    extern const int EXCHANGE_PEER_DISCONNECTED;
 }
 
 void StreamingExchangeSource::onStart()
@@ -46,6 +52,11 @@ void StreamingExchangeSource::onStart()
     /// Initialize packet receive state
     packet_receive_state = ReceivingHeader;
     current_packet_header_bytes_filled = 0;
+
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+    /// Register the socket so the waiting source wakes on incoming data or peer close.
+    wait_events_epoll.add(socket->sockfd());
+#endif
 }
 
 void StreamingExchangeSource::connect()
@@ -67,7 +78,7 @@ void StreamingExchangeSource::sendHello()
         .source_version = StreamingExchangeProtocol::PROTOCOL_VERSION,
         .query_id = query_id,
         .stream_name = stream_name,
-        .jwt_token = jwt_token,
+        .auth_token = auth_token,
     };
     source_hello.write(body);
     body.finalize();
@@ -78,11 +89,9 @@ void StreamingExchangeSource::sendHello()
         .bytes_size = body_str.size(),
     };
 
-    WriteBufferFromPocoSocket hello_out(*socket);
-    hello_out.write(reinterpret_cast<const char *>(&header), sizeof(header));
-    if (!body_str.empty())
-        hello_out.write(body_str.data(), body_str.size());
-    hello_out.finalize();
+    String packet(reinterpret_cast<const char *>(&header), sizeof(header));
+    packet += body_str;
+    StreamingExchangeProtocol::sendAll(*socket, packet.data(), packet.size(), "SourceHello for " + stream_name);
 }
 
 void StreamingExchangeSource::receiveHello()
@@ -177,12 +186,38 @@ int StreamingExchangeSource::schedule()
     return socket->sockfd();
 }
 
+#if defined(OS_LINUX) || defined(OS_DARWIN)
+std::tuple<int, uint32_t, Int64> StreamingExchangeSource::scheduleForEvent()
+{
+    LOG_TEST(log, "Schedule exchange stream {}, fd: {}", stream_name, socket->sockfd());
+    /// `wait_events_epoll` becomes readable on socket data and on the output-update wakeup, so
+    /// a source whose peer sends nothing still notices that its output port was closed and
+    /// sends `NoMoreDataNeeded` upstream.
+    /// No timeout: socket events and port updates each wake the source explicitly; a timeout
+    /// would only hide a missed wakeup as a delay instead of a visible hang.
+    return {wait_events_epoll.getFileDescriptor(), EPOLLIN | EPOLLERR, -1};
+}
+#endif
+
+void StreamingExchangeSource::onUpdatePorts()
+{
+    /// Called by the executor on every port update while the source is not idle, possibly from
+    /// another thread. An extra wake is harmless: `tryGenerate` drains it and `prepare`
+    /// re-checks everything.
+    output_update_wakeup.notify();
+}
+
 void StreamingExchangeSource::sendNoMoreDataNeeded()
 {
-    if (!out)
-        out = std::make_unique<WriteBufferFromPocoSocket>(*socket);
-    writeIntBinary(StreamingExchangeProtocol::PacketType::NoMoreDataNeeded, *out);
-    out->next();
+    /// Sent blocking, under the handshake's send timeout: the source sends nothing else, so the send
+    /// buffer is empty and the packet never waits.
+    socket->setBlocking(true);
+    SCOPE_EXIT(socket->setBlocking(false));
+    const UInt64 packet = StreamingExchangeProtocol::PacketType::NoMoreDataNeeded;
+    StreamingExchangeProtocol::sendAll(
+        *socket, reinterpret_cast<const char *>(&packet), sizeof(packet), "NoMoreDataNeeded for " + stream_name);
+    /// Counted only when the sender got the packet: a sender that is already gone was not stopped early.
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeEarlyCloses);
 }
 
 void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, size_t & position)
@@ -190,10 +225,20 @@ void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, 
     while (position < buffer_size)
     {
         ssize_t received = StreamingExchangeProtocol::tryReceive(*socket, buffer + position, buffer_size - position, stream_name);
+        if (received < 0)
+            throw Exception(ErrorCodes::EXCHANGE_PEER_DISCONNECTED, "Failed to receive {} from {}, peer closed connection",
+                stream_name, StreamingExchangeProtocol::describePeer(*socket));
         if (received == 0)
         {
             /// Socket is not ready for reading, wait for epoll event.
+            if (!receive_wait)
+                receive_wait.emplace();
             break;
+        }
+        if (receive_wait)
+        {
+            ProfileEvents::increment(ProfileEvents::StreamingExchangeReceiveWaitMicroseconds, receive_wait->elapsedMicroseconds());
+            receive_wait.reset();
         }
 
         LOG_TEST(log, "Received {} bytes from exchange stream {}, fd: {}", received, stream_name, socket->sockfd());
@@ -206,7 +251,9 @@ void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, 
 void StreamingExchangeSource::tryReadHeader()
 {
     /// Read remaining size to header buffer
+    const size_t header_bytes_before = current_packet_header_bytes_filled;
     readFromSocket(reinterpret_cast<char*>(&current_packet_header) , sizeof(current_packet_header), current_packet_header_bytes_filled);
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeReceiveBytes, current_packet_header_bytes_filled - header_bytes_before);
     if (current_packet_header_bytes_filled == sizeof(current_packet_header))
     {
         if (current_packet_header.packet_type != StreamingExchangeProtocol::PacketType::Data)
@@ -217,8 +264,9 @@ void StreamingExchangeSource::tryReadHeader()
                 "Data packet body size {} exceeds limit {} on exchange stream {}",
                 current_packet_header.bytes_size, StreamingExchangeProtocol::MAX_DATA_PACKET_BODY_BYTES, stream_name);
 
-        current_packet_body.resize(current_packet_header.bytes_size);
-        current_packet_body_bytes_filled = 0;
+        current_packet_body.resize(sizeof(current_packet_header) + current_packet_header.bytes_size);
+        memcpy(current_packet_body.data(), &current_packet_header, sizeof(current_packet_header));
+        current_packet_body_bytes_filled = sizeof(current_packet_header);
         packet_receive_state = ReceivingBody;
 
         LOG_TEST(log, "Expecting packet with {} bytes from exchange stream {}, fd: {}", current_packet_header.bytes_size, stream_name, socket->sockfd());
@@ -228,16 +276,51 @@ void StreamingExchangeSource::tryReadHeader()
 void StreamingExchangeSource::tryReadBody()
 {
     /// Read remaining size of the packet
-    readFromSocket(current_packet_body.data() , current_packet_body.size(), current_packet_body_bytes_filled);
+    const size_t body_bytes_before = current_packet_body_bytes_filled;
+    readFromSocket(reinterpret_cast<char *>(current_packet_body.data()), current_packet_body.size(), current_packet_body_bytes_filled);
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeReceiveBytes, current_packet_body_bytes_filled - body_bytes_before);
     if (current_packet_body_bytes_filled == current_packet_body.size())
     {
         packet_receive_state = ReceivingHeader;
         current_packet_header_bytes_filled = 0;
-        packet_in = std::make_unique<ReadBufferFromMemory>(current_packet_body.data(), current_packet_body.size());
+        packet_in = std::make_unique<ReadBufferFromMemory>(
+            reinterpret_cast<const char *>(current_packet_body.data()) + sizeof(current_packet_header),
+            current_packet_body.size() - sizeof(current_packet_header));
+        ProfileEvents::increment(ProfileEvents::StreamingExchangePacketsReceived);
     }
 }
 
 std::optional<Chunk> StreamingExchangeSource::tryGenerate()
+{
+    /// Drain the wakeup pipe; otherwise it would stay readable and wake the source again at once.
+    output_update_wakeup.drain();
+
+    try
+    {
+        return readChunk();
+    }
+    catch (const Exception & e)
+    {
+        if (!cancellation || e.code() != ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+            throw;
+
+        /// The producer went away, most likely because the query is failing elsewhere. The driving
+        /// source learns why from the task statuses and reports it after the teardown, so record the
+        /// lost peer and end this stream instead of racing that report; the pipeline cannot finish
+        /// before the driving source. Once it is done nobody else reports: throw the record here.
+        const bool reported_by_driving_source = cancellation->recordCurrentException();
+        if (!reported_by_driving_source && !cancellation->isCancelledByPipeline())
+        {
+            cancellation->rethrowIfFailed();
+            throw;
+        }
+        LOG_TRACE(log, "Exchange stream {} lost its peer, leaving the report to the query: {}", stream_name, e.message());
+        finished_reading = true;
+        return std::nullopt;
+    }
+}
+
+std::optional<Chunk> StreamingExchangeSource::readChunk()
 {
     if (!was_on_start_called)
     {
@@ -250,7 +333,19 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
     {
         LOG_TRACE(log, "NoMoreDataNeeded from exchange stream {}, total rows: {}, bytes: {}", stream_name, rows_read, bytes_read);
 
-        sendNoMoreDataNeeded();
+        /// Best effort: nothing more is needed from the peer, so a peer that is gone is no failure
+        /// here; it notices the closed socket by itself. Any other error is this source's own.
+        try
+        {
+            sendNoMoreDataNeeded();
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+                throw;
+            LOG_TRACE(log, "Could not tell exchange stream {} that no more data is needed, the peer is gone: {}",
+                stream_name, e.message());
+        }
         finished_reading = true;
         return {};
     }
@@ -267,70 +362,37 @@ std::optional<Chunk> StreamingExchangeSource::tryGenerate()
     if (!packet_in)
         return Chunk(); /// Empty chunk means that we currently heve no data but we have not finished yet.
 
-    UInt64 flags = 0;
-    readVarUInt(flags, *packet_in);
-    const bool final_chunk = (flags & 1);
-    const bool has_aggregated_chunk_info = (flags & 2);
-    UInt64 num_rows = 0;
-    readVarUInt(num_rows, *packet_in);
-    UInt64 num_columns = 0;
-    readVarUInt(num_columns, *packet_in);
-    UInt64 chunk_num = 0;
-    if (has_aggregated_chunk_info)
-        readVarUInt(chunk_num, *packet_in);
-
-    /// The final packet is the empty end-of-stream marker. A final packet carrying rows would have
-    /// them dropped once finished_reading is set, so reject it as a protocol violation.
-    if (final_chunk && num_rows != 0)
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-            "Final data packet on exchange stream {} carries {} rows; it must be empty", stream_name, num_rows);
-
-    /// A data packet must carry exactly the header's columns, or values would be dropped while the
-    /// row count is kept. A header-less stream (e.g. SELECT count()) sends rows with zero columns.
-    const size_t expected_columns = output.getHeader().columns();
-    if (num_rows != 0 && num_columns != expected_columns)
-        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
-            "Data packet on exchange stream {} carries {} rows with {} columns, but the stream header has {} columns",
-            stream_name, num_rows, num_columns, expected_columns);
-
     std::optional<Chunk> result;
-    if (num_columns != 0)
+    if (output_is_serialized)
     {
-        auto compressed_buf = std::make_unique<CompressedReadBuffer>(*packet_in);
-        auto reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_TCP_PROTOCOL_VERSION);
-        Block block = reader->read();
-
-        result = Chunk(block.getColumns(), num_rows);
-        if (has_aggregated_chunk_info)
+        /// Hand the whole packet on as one row for the deserializers behind this source. Only the
+        /// end-of-stream marker is read here, because it ends this stream.
+        const auto prefix = StreamingExchangeProtocol::readDataPacketPrefix(packet_in->position(), packet_in->available(), stream_name);
+        rows_read += prefix.num_rows;
+        if (prefix.end_of_stream)
         {
-            auto info = std::make_shared<AggregatedChunkInfo>();
-            info->bucket_num = block.info.bucket_num;
-            info->is_overflows = block.info.is_overflows;
-            info->out_of_order_buckets = block.info.out_of_order_buckets;
-            info->chunk_num = chunk_num;
-            result->getChunkInfos().add(std::move(info));
+            finished_reading = true;
+            result = Chunk();
         }
-        rows_read += num_rows;
-
-        LOG_TEST(log, "Received chunk with {} rows and {} columns from exchange stream {}", num_rows, num_columns, stream_name);
-    }
-    else if (num_rows == 0)
-    {
-        LOG_TEST(log, "Received empty chunk from exchange stream {}", stream_name);
-        result = Chunk(output.getHeader().cloneEmptyColumns(), 0);
+        else
+        {
+            auto column = ColumnString::create();
+            column->getChars().swap(current_packet_body);
+            column->getOffsets().push_back(column->getChars().size());
+            result = Chunk(Columns{std::move(column)}, 1);
+        }
     }
     else
     {
-        LOG_TEST(log, "Received chunk with {} rows and no columns from exchange stream {}", num_rows, stream_name);
-        result = Chunk(Columns{}, num_rows);
+        auto packet = StreamingExchangeProtocol::readDataPacketBody(*packet_in, output.getHeader(), stream_name);
+        rows_read += packet.chunk.getNumRows();
+        if (packet.end_of_stream)
+            finished_reading = true;
+        result = std::move(packet.chunk);
     }
 
-    if (final_chunk)
-    {
-        finished_reading = true;
-        LOG_TRACE(log, "Finished reading from exchange stream {}, total rows: {}, bytes: {}",
-            stream_name, rows_read, bytes_read);
-    }
+    if (finished_reading)
+        LOG_TRACE(log, "Finished reading from exchange stream {}, total rows: {}, bytes: {}", stream_name, rows_read, bytes_read);
 
     packet_in.reset();
     packet_receive_state = ReceivingHeader;
