@@ -182,22 +182,15 @@ ActionsDAG splitAndFillPrewhereInfo(
 /// so it does not depend on the names the node reads through.
 static std::optional<UInt64> getNormalizedHash(const ActionsDAG::Node * node)
 {
-    try
-    {
-        auto dag = ActionsDAG::cloneSubDAG({node}, /*remove_aliases=*/ true);
-        for (const auto & dag_node : dag.getNodes())
-            if (dag_node.type == ActionsDAG::ActionType::ARRAY_JOIN || dag_node.type == ActionsDAG::ActionType::PLACEHOLDER)
-                return {};
-
-        auto normalized = ActionsDAG::buildFilterActionsDAG(dag.getOutputs(), {});
-        if (!normalized || normalized->getOutputs().size() != 1)
+    auto dag = ActionsDAG::cloneSubDAG({node}, /*remove_aliases=*/ true);
+    for (const auto & dag_node : dag.getNodes())
+        if (dag_node.type == ActionsDAG::ActionType::ARRAY_JOIN || dag_node.type == ActionsDAG::ActionType::PLACEHOLDER)
             return {};
-        return normalized->getOutputs()[0]->getHash();
-    }
-    catch (const Exception &)
-    {
+
+    auto normalized = ActionsDAG::buildFilterActionsDAG(dag.getOutputs(), {});
+    if (!normalized || normalized->getOutputs().size() != 1)
         return {};
-    }
+    return normalized->getOutputs()[0]->getHash();
 }
 
 static void setQueryConditionCacheAttribution(

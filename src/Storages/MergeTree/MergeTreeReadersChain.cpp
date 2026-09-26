@@ -303,9 +303,10 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     auto & first_reader = range_readers.front();
 
     size_t num_attributed_readers = 0;
-    for (size_t i = 0; i < range_readers.size(); ++i)
-        if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
-            num_attributed_readers = i + 1;
+    if (first_reader.getReader()->getMergeTreeReaderSettings().use_query_condition_cache)
+        for (size_t i = 0; i < range_readers.size(); ++i)
+            if (const auto * step = range_readers[i].getPrewhereInfo(); step && step->query_condition_cache_attribution_boundary)
+                num_attributed_readers = i + 1;
 
     try
     {
