@@ -117,7 +117,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t output_streams_ = 1);
 
     /// For Parallel aggregating.
     AggregatingTransform(
@@ -129,7 +129,8 @@ public:
         size_t temporary_data_merge_threads,
         bool should_produce_results_in_order_of_bucket_number_ = true,
         bool skip_merging_ = false,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr,
+        size_t output_streams_ = 1);
 
     ~AggregatingTransform() override;
 
@@ -200,6 +201,9 @@ private:
     std::list<TemporaryBlockStreamHolder> tmp_files;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
+    /// How many streams `AggregatingStep` spreads this transform's output over; 1 when it doesn't.
+    size_t output_streams = 1;
 
     void initGenerate();
 };
