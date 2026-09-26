@@ -409,8 +409,7 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
                 const auto nested_cast_type
                     = removeNullable(typeid_cast<const DataTypeArray &>(*removeNullable(columns[i].type)).getNestedType());
 
-                /// A floating-point element cast to an integer is a member only if the cast keeps its value.
-                /// A cast to a narrower floating-point type only rounds it, and the rounded element stays a member.
+                /// A float cast to a narrower float type is not masked: the rounded element stays a member.
                 if (isInteger(nested_init_type)
                     || isDate(nested_init_type)
                     || isDateTime(nested_init_type)
