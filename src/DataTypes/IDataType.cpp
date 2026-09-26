@@ -150,7 +150,11 @@ namespace
 std::unique_ptr<IDataType::SubcolumnInfo> makeSubcolumnInfo(const ISerialization::SubstreamPath & path, size_t prefix_len, const IDataType::SubcolumnInfo * nested)
 {
     auto result = std::make_unique<IDataType::SubcolumnInfo>();
-    result->data = ISerialization::createFromPath(path, prefix_len);
+    /// The selected leaf is the end of the whole path: when the rest of the name was resolved dynamically
+    /// it lives in `nested`, while `path[prefix_len - 1]` is only the prefix the dynamic type matched.
+    const ISerialization::Substream * selected_terminal
+        = nested && !nested->substreams_path.empty() ? &nested->substreams_path.back() : nullptr;
+    result->data = ISerialization::createFromPath(path, prefix_len, selected_terminal);
     result->substreams_path.assign(path.begin(), path.begin() + prefix_len);
     if (nested)
         result->substreams_path.insert(result->substreams_path.end(), nested->substreams_path.begin(), nested->substreams_path.end());
@@ -205,14 +209,22 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
                     {
                         /// Create requested subcolumn using dynamic subcolumn data.
                         auto tmp_subpath = subpath;
-                        if (tmp_subpath[i].creator)
+                        if (auto creator = tmp_subpath[i].creator)
                         {
+                            /// Offer the creator the leaf that was really selected, which lives at the end
+                            /// of the dynamically resolved path, not at `prefix_len - 1` of this one.
+                            if (!dynamic_subcolumn_info->substreams_path.empty())
+                            {
+                                if (auto specialized = creator->specializeForSelectedSubcolumn(dynamic_subcolumn_info->substreams_path.back()))
+                                    creator = std::move(specialized);
+                            }
+
                             /// Build the serialization before the type is wrapped, so that a creator
                             /// inspecting its prev_type argument sees the type the serialization
                             /// actually serializes. Same order as in ISerialization::createFromPath.
-                            dynamic_subcolumn_info->data.serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
-                            dynamic_subcolumn_info->data.type = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.type);
-                            dynamic_subcolumn_info->data.column = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.column);
+                            dynamic_subcolumn_info->data.serialization = creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
+                            dynamic_subcolumn_info->data.type = creator->create(dynamic_subcolumn_info->data.type);
+                            dynamic_subcolumn_info->data.column = creator->create(dynamic_subcolumn_info->data.column);
                         }
 
                         tmp_subpath[i].data = dynamic_subcolumn_info->data;
