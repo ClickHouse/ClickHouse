@@ -859,12 +859,12 @@ void Pipe::resizeGradual(size_t num_streams, size_t min_rows_per_output, size_t 
     addTransform(factory(numOutputPorts(), num_streams, numOutputPorts()));
 }
 
-void Pipe::calibrateWatermarks(size_t num_streams)
+void Pipe::calibrateWatermarks(size_t num_streams, const Field & initial_watermark)
 {
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calibrate watermarks of an empty Pipe");
 
-    addTransform(std::make_shared<CalibrateWatermarksProcessor>(getSharedHeader(), numOutputPorts(), num_streams));
+    addTransform(std::make_shared<CalibrateWatermarksProcessor>(getSharedHeader(), numOutputPorts(), num_streams, initial_watermark));
 }
 
 void Pipe::setSinks(const Pipe::ProcessorGetterSharedHeaderWithStreamKind & getter)
