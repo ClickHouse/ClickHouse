@@ -532,7 +532,7 @@ void StorageMaterializedView::readImpl(
 
     /// Subcolumns (e.g. `t.a`) are covered by the grant on their parent column, so map them
     /// back to top-level storage columns before the target-table access check below.
-    auto columns_for_access_check = target_storage_snapshot->getColumnNamesInStorageForAccessCheck(column_names);
+    auto columns_for_access_check = target_storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, context, storage->getStorageID());
 
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
@@ -542,7 +542,8 @@ void StorageMaterializedView::readImpl(
     /// view's own schema (the one the names were resolved against), not the target table's, which can diverge.
     const auto & select_table_id = view_metadata->select.select_table_id;
     if (!select_table_id.empty())
-        context->checkAccess(AccessType::SELECT, select_table_id, storage_snapshot->getColumnNamesInStorageForAccessCheck(column_names));
+        context->checkAccess(
+            AccessType::SELECT, select_table_id, storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, context, select_table_id));
 
     auto storage_id = storage->getStorageID();
 

@@ -150,7 +150,7 @@ ExecutableFunctionPtr FunctionJoinGet::prepare(const ColumnsWithTypeAndName &) c
     context->checkAccess(
         AccessType::SELECT,
         storage_join->getStorageID(),
-        metadata_snapshot->getColumns().getColumnNamesInStorageForAccessCheck(column_names));
+        metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(column_names, context, storage_join->getStorageID()));
 
     return std::make_unique<ExecutableFunctionJoinGet>(function_name, context, table_lock, storage_join, result_columns);
 }

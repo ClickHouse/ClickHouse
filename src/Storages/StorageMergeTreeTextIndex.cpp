@@ -491,7 +491,7 @@ void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const IS
     context->checkAccess(
         AccessType::SELECT,
         source_storage_id,
-        source_metadata_snapshot->getColumns().getColumnNamesInStorageForAccessCheck(index.getColumnsRequiredForIndexCalc()));
+        source_metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(index.getColumnsRequiredForIndexCalc(), context, source_storage_id));
 
     /// The index is built over all rows of a part, so it contains tokens of the rows a row policy hides,
     /// regardless of which columns the policy filters on. The policy cannot be applied to the dictionary.

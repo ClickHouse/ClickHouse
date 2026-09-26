@@ -60,10 +60,15 @@ $CLICKHOUSE_CLIENT -q "GRANT SELECT(a) ON $CLICKHOUSE_DATABASE.src_tuple TO $use
 run "tuple child: SELECT(a) authorizes a.b"
 $CLICKHOUSE_CLIENT -q "REVOKE SELECT(a) ON $CLICKHOUSE_DATABASE.src_tuple FROM $user;"
 
-# Tuple child only: SELECT(`a.b`) is the wrong grant here (a.b maps to a), so it must be denied.
+# Tuple child only: a grant on the exact subcolumn name takes precedence over its column, so SELECT(`a.b`) authorizes it.
 $CLICKHOUSE_CLIENT -q "GRANT SELECT(\`a.b\`) ON $CLICKHOUSE_DATABASE.src_tuple TO $user;"
-run "tuple child: SELECT(\`a.b\`) does not authorize a.b"
+run "tuple child: explicit SELECT(\`a.b\`) authorizes a.b"
 $CLICKHOUSE_CLIENT -q "REVOKE SELECT(\`a.b\`) ON $CLICKHOUSE_DATABASE.src_tuple FROM $user;"
+
+# Tuple child only: a table grant with the column `a` revoked must deny its subcolumn.
+$CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE.src_tuple TO $user; REVOKE SELECT(a) ON $CLICKHOUSE_DATABASE.src_tuple FROM $user;"
+run "tuple child: REVOKE SELECT(a) denies a.b"
+$CLICKHOUSE_CLIENT -q "REVOKE SELECT ON $CLICKHOUSE_DATABASE.src_tuple FROM $user;"
 
 # Real child only (tuple child invisible): `a.b` maps to itself, so SELECT(`a.b`) authorizes it.
 $CLICKHOUSE_CLIENT -q "GRANT SELECT(\`a.b\`) ON $CLICKHOUSE_DATABASE.src_real TO $user;"

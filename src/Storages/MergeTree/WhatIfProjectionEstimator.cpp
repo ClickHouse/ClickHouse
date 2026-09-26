@@ -672,7 +672,7 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
 {
     if (!stored.required_columns.empty())
         context->checkAccess(
-            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesInStorageForAccessCheck(stored.required_columns));
+            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(stored.required_columns, context, data.getStorageID()));
     context->checkAccess(AccessType::ALTER_ADD_PROJECTION, data.getStorageID());
 
     std::optional<ProjectionDescription> fresh;
@@ -692,7 +692,7 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     /// are not the ones stored at CREATE time, and a denial here must not read as drift
     if (!fresh->required_columns.empty())
         context->checkAccess(
-            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesInStorageForAccessCheck(fresh->required_columns));
+            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(fresh->required_columns, context, data.getStorageID()));
     return fresh;
 }
 

@@ -24,7 +24,10 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Access/AccessRights.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/StorageID.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -865,11 +868,14 @@ Names ColumnsDescription::getNamesOfPhysical() const
     return ret;
 }
 
-Names ColumnsDescription::getColumnNamesInStorageForAccessCheck(const Names & column_names) const
+Names ColumnsDescription::getColumnNamesForSelectAccessCheck(
+    const Names & column_names, const ContextPtr & context, const StorageID & table_id) const
 {
     Names result;
     result.reserve(column_names.size());
     NameSet seen;
+    std::shared_ptr<const AccessRights> access_rights;
+    String database;
     for (const auto & name : column_names)
     {
         /// Map `name` to the storage column that identifier resolution actually reads from, so the
@@ -888,12 +894,26 @@ Names ColumnsDescription::getColumnNamesInStorageForAccessCheck(const Names & co
         /// through `json`, so authorizing `json.a` instead would let a grant on `json.a` alone read
         /// `json`. Names that resolve to nothing (virtual or unknown columns) are left unchanged,
         /// which fails closed for the access check.
-        String name_in_storage = name;
-        if (auto column = tryGetColumnOrSubcolumn(GetColumnsOptions::All, name))
-            name_in_storage = column->getNameInStorage();
+        String name_to_check = name;
+        if (auto column = tryGetColumnOrSubcolumn(GetColumnsOptions::All, name); column && column->isSubcolumn())
+        {
+            /// A subcolumn inherits the grants of its column, like a column inherits the grants of its table. A grant or
+            /// revoke that names the subcolumn itself (e.g. ``GRANT SELECT(`json.a`)`` or ``REVOKE SELECT(`t.a`)``) takes
+            /// precedence, so the subcolumn name is checked as is when such an entry changes what the name inherits.
+            if (!access_rights)
+            {
+                access_rights = context->getAccess()->getAccessRightsWithImplicit();
+                database = table_id.hasDatabase() ? table_id.getDatabaseName() : context->getCurrentDatabase();
+            }
+            const auto & table = table_id.getTableName();
+            const bool has_explicit_entry = access_rights->isGranted(AccessType::SELECT, database, table, name)
+                != access_rights->isGrantedInherited(AccessType::SELECT, database, table, name);
+            if (!has_explicit_entry)
+                name_to_check = column->getNameInStorage();
+        }
 
-        if (seen.insert(name_in_storage).second)
-            result.push_back(std::move(name_in_storage));
+        if (seen.insert(name_to_check).second)
+            result.push_back(std::move(name_to_check));
     }
 
     return result;

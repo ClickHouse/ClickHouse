@@ -240,7 +240,8 @@ WhatIfCandidateResult evaluateIndex(
     context->checkAccess(
         AccessType::SELECT,
         storage_id,
-        storage_metadata->getColumns().getColumnNamesInStorageForAccessCheck(index_helper->getColumnsRequiredForIndexCalc()));
+        storage_metadata->getColumns().getColumnNamesForSelectAccessCheck(
+            index_helper->getColumnsRequiredForIndexCalc(), context, storage_id));
 
     /// The estimate (skip ratio) is derived from every row, including the rows a row policy hides
     if (getEffectiveRowPolicyFilter(data, context))

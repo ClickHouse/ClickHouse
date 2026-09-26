@@ -2097,7 +2097,8 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                             /// same dotted identifier can be a subcolumn of a `Tuple` column in one child and a
                             /// real column named `a.b` in another, and the check is against the child table.
                             auto child_metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
-                            const auto columns_in_storage = child_metadata_snapshot->getColumns().getColumnNamesInStorageForAccessCheck(columns_to_check);
+                            const auto columns_in_storage = child_metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(
+                                columns_to_check, query_context, StorageID(iterator->databaseName(), iterator->name()));
                             access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), columns_in_storage);
                         }
 

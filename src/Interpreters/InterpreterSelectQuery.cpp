@@ -476,8 +476,8 @@ void checkAccessRightsForSelect(
         context->checkAccess(
             AccessType::SELECT,
             table_id,
-            table_metadata->getColumns().getColumnNamesInStorageForAccessCheck(
-                syntax_analyzer_result.requiredSourceColumnsForAccessCheck()));
+            table_metadata->getColumns().getColumnNamesForSelectAccessCheck(
+                syntax_analyzer_result.requiredSourceColumnsForAccessCheck(), context, table_id));
     }
     else
     {

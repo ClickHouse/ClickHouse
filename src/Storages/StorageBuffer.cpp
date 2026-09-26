@@ -335,7 +335,8 @@ void StorageBuffer::read(
         local_context->checkAccess(
             AccessType::SELECT,
             destination->getStorageID(),
-            destination_metadata_snapshot->getColumns().getColumnNamesInStorageForAccessCheck(column_names));
+            destination_metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(
+                column_names, local_context, destination->getStorageID()));
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 

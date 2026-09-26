@@ -123,7 +123,7 @@ BlockIO createHypotheticalIndex(
         context->checkAccess(
             AccessType::SELECT,
             table_id,
-            metadata->getColumns().getColumnNamesInStorageForAccessCheck(index_desc.expression->getRequiredColumns()));
+            metadata->getColumns().getColumnNamesForSelectAccessCheck(index_desc.expression->getRequiredColumns(), context, table_id));
 
     /// validate() must run before get(): index creators assume their arguments were already
     /// validated and read them unguarded (e.g. set/bloom_filter index.arguments->children[0]),

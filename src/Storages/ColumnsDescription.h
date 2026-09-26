@@ -27,6 +27,8 @@
 namespace DB
 {
 
+struct StorageID;
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -225,17 +227,16 @@ public:
 
     Names getNamesOfPhysical() const;
 
-    /// Map subcolumn names (e.g. `t.a` for a `Tuple` column `t`) to their parent
-    /// storage column names for column-level access checks. Column-level grants are
-    /// stored against top-level storage columns only, so `GRANT SELECT(t)` must
-    /// implicitly cover `t.a`, `t.b`, etc. This includes dynamic subcolumns of
-    /// `Dynamic` / `JSON` / dynamic `Map` columns (e.g. `json.a.b`), which are resolved
-    /// by the same type-aware, first-matching-prefix logic as identifier resolution, so
-    /// the check authorizes exactly the column the query reads from. Names that are not
-    /// subcolumns (real columns, including columns literally containing a dot, or unknown
-    /// names such as virtual columns) are returned unchanged. The result is deduplicated
+    /// Returns the column names to pass to the `SELECT` access check on `table_id` when a query reads `column_names`.
+    /// A subcolumn (e.g. `t.a` for a `Tuple` column `t`) inherits the grants of its column, so it is mapped to the
+    /// parent storage column and `GRANT SELECT(t)` covers `t.a`, `t.b`, etc. This includes dynamic subcolumns of
+    /// `Dynamic` / `JSON` / dynamic `Map` columns (e.g. `json.a.b`), which are resolved by the same type-aware,
+    /// first-matching-prefix logic as identifier resolution, so the check authorizes exactly the column the query
+    /// reads from. A grant or revoke on the exact subcolumn name takes precedence over its column, so such a
+    /// subcolumn is returned unchanged. Names that are not subcolumns (real columns, including columns literally
+    /// containing a dot, or unknown names such as virtual columns) are returned unchanged. The result is deduplicated
     /// while preserving the order of first appearance.
-    Names getColumnNamesInStorageForAccessCheck(const Names & column_names) const;
+    Names getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const;
 
     bool hasPhysical(const String & column_name) const;
     bool hasNotAlias(const String & column_name) const;

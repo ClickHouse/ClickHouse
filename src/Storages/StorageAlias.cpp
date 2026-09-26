@@ -268,7 +268,8 @@ void StorageAlias::read(
             AccessType::SELECT,
             target_database,
             target_table,
-            target_metadata->getColumns().getColumnNamesInStorageForAccessCheck(column_names));
+            target_metadata->getColumns().getColumnNamesForSelectAccessCheck(
+                column_names, local_context, StorageID(target_database, target_table)));
 
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),

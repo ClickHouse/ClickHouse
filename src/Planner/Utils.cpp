@@ -632,7 +632,7 @@ NameSet checkAccessRights(
         query_context->checkAccess(
             AccessType::SELECT,
             storage_id,
-            storage_snapshot->getColumnNamesInStorageForAccessCheck(column_names));
+            storage_snapshot->getColumnNamesForSelectAccessCheck(column_names, query_context, storage_id));
     }
 
     return {};

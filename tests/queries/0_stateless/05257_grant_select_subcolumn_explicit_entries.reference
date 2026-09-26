@@ -1,0 +1,11 @@
+GRANT(p): p+ p.s+ p.o+ j.a- j.b-
+GRANT(p.s): p- p.s+ p.o- j.a- j.b-
+GRANT table, REVOKE(p): p- p.s- p.o- j.a+ j.b+
+GRANT table, REVOKE(p.s): p+ p.s- p.o+ j.a+ j.b+
+GRANT(p), REVOKE(p.s): p+ p.s+ p.o+ j.a- j.b-
+GRANT(p.s), REVOKE(p): p- p.s+ p.o- j.a- j.b-
+GRANT(j.a): p- p.s- p.o- j.a+ j.b-
+GRANT table, REVOKE(j.a): p+ p.s+ p.o+ j.a- j.b+
+role: GRANT(p): p+ p.s+ p.o+ j.a- j.b-
+role: GRANT table, REVOKE(p): p- p.s- p.o- j.a+ j.b+
+role: GRANT(p.s): p- p.s+ p.o- j.a- j.b-

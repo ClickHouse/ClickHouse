@@ -144,9 +144,9 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
     return *column;
 }
 
-Names StorageSnapshot::getColumnNamesInStorageForAccessCheck(const Names & column_names) const
+Names StorageSnapshot::getColumnNamesForSelectAccessCheck(const Names & column_names, const ContextPtr & context, const StorageID & table_id) const
 {
-    return metadata->getColumns().getColumnNamesInStorageForAccessCheck(column_names);
+    return metadata->getColumns().getColumnNamesForSelectAccessCheck(column_names, context, table_id);
 }
 
 Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
