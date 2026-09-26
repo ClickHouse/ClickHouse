@@ -2314,1262 +2314,1078 @@ void registerSystemCommandLambdas()
     using Type = ASTSystemQuery::Type;
     auto & factory = SystemCommandFactory::instance();
 
-    auto reg_fn = [&](Type type, auto && f) { factory.registerCommand(type, f()); };
+    /// Every command takes the same arguments. If `access` is set, it is checked before the command runs.
+    using Command = std::function<void(
+        InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr & system_context, BlockIO & result)>;
 
-    auto with_check_fn = [](std::optional<AccessType> access, auto && f)
+    auto reg = [&](Type type, std::optional<AccessType> access, Command command)
     {
-        return [=]()
-        {
-            return [=](SystemCommandFactory::Arguments & args)
+        factory.registerCommand(
+            type,
+            [access, command](SystemCommandFactory::Arguments & args) -> SystemCommandFactory::ExecuteFn
             {
-                auto & interpreter = args.interpreter;
-                auto system_context = args.system_context;
-
-                return [=, &interpreter] -> BlockIO
+                return [access, command, &interpreter = args.interpreter, system_context = args.system_context]() -> BlockIO
                 {
-                    BlockIO result;
-                    if (access.has_value())
-                    {
+                    if (access)
                         interpreter.getContext()->checkAccess(*access);
-                    }
-                    if constexpr (std::is_invocable_v<decltype(f)>)
-                    {
-                        f();
-                    }
-                    else if constexpr (std::is_invocable_v<decltype(f), LoggerPtr>)
-                    {
-                        f(interpreter.log);
-                    }
-                    else if constexpr (std::is_invocable_v<decltype(f), LoggerPtr, ASTSystemQuery &>)
-                    {
-                        f(interpreter.log, interpreter.query_ptr->as<ASTSystemQuery &>());
-                    }
-                    else if constexpr (std::is_invocable_v<decltype(f), LoggerPtr, ASTSystemQuery &, BlockIO &>)
-                    {
-                        f(interpreter.log, interpreter.query_ptr->as<ASTSystemQuery &>(), result);
-                    }
-                    else if constexpr (std::is_invocable_v<decltype(f), LoggerPtr, ASTSystemQuery &, InterpreterSystemQuery &, BlockIO &>)
-                    {
-                        f(interpreter.log, interpreter.query_ptr->as<ASTSystemQuery &>(), interpreter, result);
-                    }
-                    else if constexpr (std::is_invocable_v<decltype(f), LoggerPtr, ASTSystemQuery &, ContextMutablePtr>)
-                    {
-                        f(interpreter.log, interpreter.query_ptr->as<ASTSystemQuery &>(), system_context);
-                    }
-                    else if constexpr (
-                        std::is_invocable_v<decltype(f), LoggerPtr, ASTSystemQuery &, ContextMutablePtr, InterpreterSystemQuery &>)
-                    {
-                        f(interpreter.log, interpreter.query_ptr->as<ASTSystemQuery &>(), system_context, interpreter);
-                    }
-                    else if constexpr (std::is_invocable_v<decltype(f), LoggerPtr, ContextMutablePtr>)
-                    {
-                        f(interpreter.log, system_context);
-                    }
-                    else if constexpr (std::is_invocable_v<decltype(f), LoggerPtr, InterpreterSystemQuery &>)
-                    {
-                        f(interpreter.log, interpreter);
-                    }
-                    else
-                    {
-                        f(interpreter.log, interpreter.query_ptr->as<ASTSystemQuery &>(), interpreter);
-                    }
-                    return result;
-                };
-            };
-        };
-    };
-
-    auto with_startstop_fn = [](StorageActionBlockType action_type, bool start)
-    {
-        return [=]()
-        {
-            return [=](SystemCommandFactory::Arguments & args)
-            {
-                auto & interpreter = args.interpreter;
-                auto system_context = args.system_context;
-
-                return [=, &interpreter] -> BlockIO
-                {
                     BlockIO result;
-                    interpreter.startStopAction(action_type, start);
+                    command(interpreter, interpreter.query_ptr->as<ASTSystemQuery &>(), system_context, result);
                     return result;
                 };
-            };
-        };
+            });
     };
 
-    reg_fn(
-        Type::SYNC_FILE_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_SYNC_FILE_CACHE,
-            [](LoggerPtr log)
-            {
-                LOG_DEBUG(log, "Will perform 'sync' syscall (it can take time).");
-                sync();
-            }));
-    reg_fn(
-        Type::CLEAR_DNS_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_DNS_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            {
-                DNSResolver::instance().dropCache();
-                HostResolversPool::instance().dropCache();
-                /// Reinitialize clusters to update their resolved_addresses
-                system_context->reloadClusterConfig();
-            }));
-    reg_fn(
-        Type::CLEAR_CONNECTIONS_CACHE,
-        with_check_fn(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE, []() { HTTPConnectionPools::instance().dropCache(); }));
-    reg_fn(
-        Type::PREWARM_MARK_CACHE,
-        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.prewarmMarkCache(); }));
-    reg_fn(
-        Type::PREWARM_PRIMARY_INDEX_CACHE,
-        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.prewarmPrimaryIndexCache(); }));
-    reg_fn(
-        Type::CLEAR_MARK_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_MARK_CACHE, [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearMarkCache(); }));
-#if USE_AVRO
-    reg_fn(
-        Type::CLEAR_ICEBERG_METADATA_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearIcebergMetadataFilesCache(); }));
-#else
-    reg_fn(
-        Type::CLEAR_ICEBERG_METADATA_CACHE,
-        with_check_fn(
+    auto reg_start_stop = [&](Type type, StorageActionBlockType action_type, bool start)
+    {
+        reg(type,
             std::nullopt,
-            []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO"); }));
+            [action_type, start](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+            { interpreter.startStopAction(action_type, start); });
+    };
+
+    reg(Type::SYNC_FILE_CACHE,
+        AccessType::SYSTEM_SYNC_FILE_CACHE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            LOG_DEBUG(interpreter.log, "Will perform 'sync' syscall (it can take time).");
+            sync();
+        });
+    reg(Type::CLEAR_DNS_CACHE,
+        AccessType::SYSTEM_DROP_DNS_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        {
+            DNSResolver::instance().dropCache();
+            HostResolversPool::instance().dropCache();
+            /// Reinitialize clusters to update their resolved_addresses
+            system_context->reloadClusterConfig();
+        });
+    reg(Type::CLEAR_CONNECTIONS_CACHE,
+        AccessType::SYSTEM_DROP_CONNECTIONS_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { HTTPConnectionPools::instance().dropCache(); });
+    reg(Type::PREWARM_MARK_CACHE,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { interpreter.prewarmMarkCache(); });
+    reg(Type::PREWARM_PRIMARY_INDEX_CACHE,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { interpreter.prewarmPrimaryIndexCache(); });
+    reg(Type::CLEAR_MARK_CACHE,
+        AccessType::SYSTEM_DROP_MARK_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearMarkCache(); });
+#if USE_AVRO
+    reg(Type::CLEAR_ICEBERG_METADATA_CACHE,
+        AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearIcebergMetadataFilesCache(); });
+#else
+    reg(Type::CLEAR_ICEBERG_METADATA_CACHE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO"); });
 #endif
 #if USE_AVRO
-    reg_fn(
-        Type::CLEAR_PAIMON_METADATA_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_PAIMON_METADATA_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearPaimonMetadataFilesCache(); }));
+    reg(Type::CLEAR_PAIMON_METADATA_CACHE,
+        AccessType::SYSTEM_DROP_PAIMON_METADATA_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearPaimonMetadataFilesCache(); });
 #else
-    reg_fn(
-        Type::CLEAR_PAIMON_METADATA_CACHE,
-        with_check_fn(
-            std::nullopt,
-            []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Paimon"); }));
+    reg(Type::CLEAR_PAIMON_METADATA_CACHE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Paimon"); });
 #endif
 #if USE_AVRO
-    reg_fn(
-        Type::CLEAR_AVRO_SCHEMA_CACHE,
-        with_check_fn(AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE, []() { clearConfluentSchemaRegistryCache(); }));
+    reg(Type::CLEAR_AVRO_SCHEMA_CACHE,
+        AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &) { clearConfluentSchemaRegistryCache(); });
 #else
-    reg_fn(
-        Type::CLEAR_AVRO_SCHEMA_CACHE,
-        with_check_fn(
-            std::nullopt,
-            []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO"); }));
+    reg(Type::CLEAR_AVRO_SCHEMA_CACHE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO"); });
 #endif
 #if USE_PARQUET
-    reg_fn(
-        Type::CLEAR_PARQUET_METADATA_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearParquetMetadataCache(); }));
+    reg(Type::CLEAR_PARQUET_METADATA_CACHE,
+        AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearParquetMetadataCache(); });
 #else
-    reg_fn(
-        Type::CLEAR_PARQUET_METADATA_CACHE,
-        with_check_fn(
-            std::nullopt,
-            []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet"); }));
+    reg(Type::CLEAR_PARQUET_METADATA_CACHE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Parquet"); });
 #endif
-    reg_fn(
-        Type::CLEAR_POINT_IN_POLYGON_CACHE,
-        with_check_fn(AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE, []() { clearPointInPolygonCache(); }));
-    reg_fn(
-        Type::CLEAR_PRIMARY_INDEX_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearPrimaryIndexCache(); }));
-    reg_fn(
-        Type::CLEAR_UNCOMPRESSED_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearUncompressedCache(); }));
-    reg_fn(
-        Type::CLEAR_INDEX_MARK_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_MARK_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearIndexMarkCache(); }));
-    reg_fn(
-        Type::CLEAR_INDEX_UNCOMPRESSED_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearIndexUncompressedCache(); }));
-    reg_fn(
-        Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearVectorSimilarityIndexCache(); }));
-    reg_fn(
-        Type::CLEAR_TEXT_INDEX_TOKENS_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearTextIndexTokensCache(); }));
-    reg_fn(
-        Type::CLEAR_TEXT_INDEX_HEADER_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearTextIndexHeaderCache(); }));
-    reg_fn(
-        Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearTextIndexPostingsCache(); }));
-    reg_fn(
-        Type::CLEAR_TEXT_INDEX_CACHES,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            {
-                system_context->clearTextIndexTokensCache();
-                system_context->clearTextIndexHeaderCache();
-                system_context->clearTextIndexPostingsCache();
-            }));
-    reg_fn(
-        Type::CLEAR_MMAP_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_MMAP_CACHE,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearMMappedFileCache(); }));
-    reg_fn(
-        Type::CLEAR_QUERY_CONDITION_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.getContext()->clearQueryConditionCache(); }));
-    reg_fn(
-        Type::CLEAR_ENCRYPTION_HEADERS_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_ENCRYPTION_HEADERS_CACHE,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.getContext()->clearEncryptionHeaderCache(); }));
-    reg_fn(
-        Type::CLEAR_QUERY_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_QUERY_CACHE,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            { interpreter.getContext()->clearQueryResultCache(query.query_result_cache_tag); }));
+    reg(Type::CLEAR_POINT_IN_POLYGON_CACHE,
+        AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &) { clearPointInPolygonCache(); });
+    reg(Type::CLEAR_PRIMARY_INDEX_CACHE,
+        AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearPrimaryIndexCache(); });
+    reg(Type::CLEAR_UNCOMPRESSED_CACHE,
+        AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearUncompressedCache(); });
+    reg(Type::CLEAR_INDEX_MARK_CACHE,
+        AccessType::SYSTEM_DROP_MARK_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearIndexMarkCache(); });
+    reg(Type::CLEAR_INDEX_UNCOMPRESSED_CACHE,
+        AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearIndexUncompressedCache(); });
+    reg(Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE,
+        AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearVectorSimilarityIndexCache(); });
+    reg(Type::CLEAR_TEXT_INDEX_TOKENS_CACHE,
+        AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearTextIndexTokensCache(); });
+    reg(Type::CLEAR_TEXT_INDEX_HEADER_CACHE,
+        AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearTextIndexHeaderCache(); });
+    reg(Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE,
+        AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearTextIndexPostingsCache(); });
+    reg(Type::CLEAR_TEXT_INDEX_CACHES,
+        AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        {
+            system_context->clearTextIndexTokensCache();
+            system_context->clearTextIndexHeaderCache();
+            system_context->clearTextIndexPostingsCache();
+        });
+    reg(Type::CLEAR_MMAP_CACHE,
+        AccessType::SYSTEM_DROP_MMAP_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearMMappedFileCache(); });
+    reg(Type::CLEAR_QUERY_CONDITION_CACHE,
+        AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { interpreter.getContext()->clearQueryConditionCache(); });
+    reg(Type::CLEAR_ENCRYPTION_HEADERS_CACHE,
+        AccessType::SYSTEM_DROP_ENCRYPTION_HEADERS_CACHE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { interpreter.getContext()->clearEncryptionHeaderCache(); });
+    reg(Type::CLEAR_QUERY_CACHE,
+        AccessType::SYSTEM_DROP_QUERY_CACHE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.getContext()->clearQueryResultCache(query.query_result_cache_tag); });
 #if USE_EMBEDDED_COMPILER
-    reg_fn(
-        Type::CLEAR_COMPILED_EXPRESSION_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE,
-            []()
-            {
-                if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                    cache->clear();
-                /// Drop the static CHJIT slots so persistent LLVM state (`TargetMachine`, `Subtarget`,
-                /// `LLVMContext`-interned types/constants accumulated across compiles) is reclaimed too.
-                /// Each in-flight compile and each cache holder retains its own `shared_ptr<CHJIT>`, so
-                /// concurrent operations are not affected: the actual CHJIT survives until every user
-                /// has released its handle. After the cache->clear() above, the only remaining
-                /// references are from any concurrent in-flight compile (which will produce a holder
-                /// pinned to the old instance) — that holder will be evicted normally later, releasing
-                /// the old instance at that point.
-                resetExpressionJITInstance();
-                resetAggregatorJITInstance();
-                resetSortDescriptionJITInstance();
-                resetRegexpJITInstance();
-                /// Clearing the cache invokes `~JITModuleMemoryManager` for every entry, which runs LLVM's
-                /// per-module destructors and frees their bookkeeping into the dedicated JIT arena. Purge dirty
-                /// pages from that arena so the freed memory is returned to the OS without waiting for the
-                /// arena's decay timer.
-                JemallocJITArena::purge();
-            }));
+    reg(Type::CLEAR_COMPILED_EXPRESSION_CACHE,
+        AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
+                cache->clear();
+            /// Drop the static CHJIT slots so persistent LLVM state (`TargetMachine`, `Subtarget`,
+            /// `LLVMContext`-interned types/constants accumulated across compiles) is reclaimed too.
+            /// Each in-flight compile and each cache holder retains its own `shared_ptr<CHJIT>`, so
+            /// concurrent operations are not affected: the actual CHJIT survives until every user
+            /// has released its handle. After the cache->clear() above, the only remaining
+            /// references are from any concurrent in-flight compile (which will produce a holder
+            /// pinned to the old instance) — that holder will be evicted normally later, releasing
+            /// the old instance at that point.
+            resetExpressionJITInstance();
+            resetAggregatorJITInstance();
+            resetSortDescriptionJITInstance();
+            resetRegexpJITInstance();
+            /// Clearing the cache invokes `~JITModuleMemoryManager` for every entry, which runs LLVM's
+            /// per-module destructors and frees their bookkeeping into the dedicated JIT arena. Purge dirty
+            /// pages from that arena so the freed memory is returned to the OS without waiting for the
+            /// arena's decay timer.
+            JemallocJITArena::purge();
+        });
 #else
-    reg_fn(
-        Type::CLEAR_COMPILED_EXPRESSION_CACHE,
-        with_check_fn(
-            std::nullopt,
-            []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for JIT compilation"); }));
+    reg(Type::CLEAR_COMPILED_EXPRESSION_CACHE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for JIT compilation"); });
 #endif
 #if USE_AWS_S3
-    reg_fn(
-        Type::CLEAR_S3_CLIENT_CACHE,
-        with_check_fn(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE, []() { S3::ClientCacheRegistry::instance().clearCacheForAll(); }));
+    reg(Type::CLEAR_S3_CLIENT_CACHE,
+        AccessType::SYSTEM_DROP_S3_CLIENT_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { S3::ClientCacheRegistry::instance().clearCacheForAll(); });
 #else
-    reg_fn(
-        Type::CLEAR_S3_CLIENT_CACHE,
-        with_check_fn(
-            std::nullopt,
-            []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AWS S3"); }));
+    reg(Type::CLEAR_S3_CLIENT_CACHE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AWS S3"); });
 #endif
-    reg_fn(
-        Type::CLEAR_FILESYSTEM_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_FILESYSTEM_CACHE,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
+    reg(Type::CLEAR_FILESYSTEM_CACHE,
+        AccessType::SYSTEM_DROP_FILESYSTEM_CACHE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
 #if ENABLE_DISTRIBUTED_CACHE
-                const auto user_id = DistributedCache::getFilesystemCacheUserId(interpreter.getContext());
+            const auto user_id = DistributedCache::getFilesystemCacheUserId(interpreter.getContext());
 #else
                 const auto user_id = FileCache::getCommonOrigin().user_id;
                 (void)interpreter;
 #endif
 
-                if (query.filesystem_cache_name.empty())
+            if (query.filesystem_cache_name.empty())
+            {
+                for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
                 {
-                    for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
-                    {
-                        if (!cache_data->cache->isInitialized())
-                            continue;
+                    if (!cache_data->cache->isInitialized())
+                        continue;
 
-                        cache_data->cache->removeAllReleasable(user_id);
-                    }
+                    cache_data->cache->removeAllReleasable(user_id);
                 }
-                else
-                {
-                    auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
+            }
+            else
+            {
+                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
 
-                    if (cache->isInitialized())
+                if (cache->isInitialized())
+                {
+                    if (query.key_to_drop.empty())
                     {
-                        if (query.key_to_drop.empty())
-                        {
-                            cache->removeAllReleasable(user_id);
-                        }
+                        cache->removeAllReleasable(user_id);
+                    }
+                    else
+                    {
+                        auto key = FileCacheKey::fromKeyString(query.key_to_drop);
+                        if (query.offset_to_drop.has_value())
+                            cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
                         else
-                        {
-                            auto key = FileCacheKey::fromKeyString(query.key_to_drop);
-                            if (query.offset_to_drop.has_value())
-                                cache->removeFileSegment(key, query.offset_to_drop.value(), user_id);
-                            else
-                                cache->removeKey(key, user_id);
-                        }
+                            cache->removeKey(key, user_id);
                     }
                 }
-            }));
+            }
+        });
 #if ENABLE_DISTRIBUTED_CACHE
-    reg_fn(
-        Type::CLEAR_DISTRIBUTED_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE,
-            [](LoggerPtr log, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            { DistributedCache::clearDistributedCache(interpreter.getContext(), query, log); }));
+    reg(Type::CLEAR_DISTRIBUTED_CACHE,
+        AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { DistributedCache::clearDistributedCache(interpreter.getContext(), query, interpreter.log); });
 #else
-    reg_fn(
-        Type::CLEAR_DISTRIBUTED_CACHE,
-        with_check_fn(
-            std::nullopt,
-            []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without distributed cache support"); }));
+    reg(Type::CLEAR_DISTRIBUTED_CACHE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without distributed cache support"); });
 #endif
-    reg_fn(
-        Type::SYNC_FILESYSTEM_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE,
-            [](LoggerPtr, ASTSystemQuery & query, BlockIO & result)
+    reg(Type::SYNC_FILESYSTEM_CACHE,
+        AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO & result)
+        {
+            ColumnsDescription columns{NamesAndTypesList{
+                {"cache_name", std::make_shared<DataTypeString>()},
+                {"path", std::make_shared<DataTypeString>()},
+                {"size", std::make_shared<DataTypeUInt64>()},
+            }};
+            Block sample_block;
+            for (const auto & column : columns)
+                sample_block.insert({column.type->createColumn(), column.type, column.name});
+
+            MutableColumns res_columns = sample_block.cloneEmptyColumns();
+
+            auto fill_data = [&](const std::string & cache_name, const std::vector<FileSegment::Info> & file_segments)
             {
-                ColumnsDescription columns{NamesAndTypesList{
-                    {"cache_name", std::make_shared<DataTypeString>()},
-                    {"path", std::make_shared<DataTypeString>()},
-                    {"size", std::make_shared<DataTypeUInt64>()},
-                }};
-                Block sample_block;
-                for (const auto & column : columns)
-                    sample_block.insert({column.type->createColumn(), column.type, column.name});
-
-                MutableColumns res_columns = sample_block.cloneEmptyColumns();
-
-                auto fill_data = [&](const std::string & cache_name, const std::vector<FileSegment::Info> & file_segments)
+                for (const auto & file_segment : file_segments)
                 {
-                    for (const auto & file_segment : file_segments)
-                    {
-                        size_t i = 0;
-                        /// `file_segment.path` already reflects the real on-disk name (including the
-                        /// size suffix for downloaded segments); do not recompute it from the offset.
-                        res_columns[i++]->insert(cache_name);
-                        res_columns[i++]->insert(file_segment.path);
-                        res_columns[i++]->insert(file_segment.downloaded_size);
-                    }
-                };
-
-                if (query.filesystem_cache_name.empty())
-                {
-                    for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
-                    {
-                        auto file_segments = cache_data->cache->sync();
-                        fill_data(cache_data->cache->getName(), file_segments);
-                    }
+                    size_t i = 0;
+                    /// `file_segment.path` already reflects the real on-disk name (including the
+                    /// size suffix for downloaded segments); do not recompute it from the offset.
+                    res_columns[i++]->insert(cache_name);
+                    res_columns[i++]->insert(file_segment.path);
+                    res_columns[i++]->insert(file_segment.downloaded_size);
                 }
-                else
+            };
+
+            if (query.filesystem_cache_name.empty())
+            {
+                for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
                 {
-                    auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
-                    auto file_segments = cache->sync();
-                    fill_data(query.filesystem_cache_name, file_segments);
+                    auto file_segments = cache_data->cache->sync();
+                    fill_data(cache_data->cache->getName(), file_segments);
                 }
-
-                size_t num_rows = res_columns[0]->size();
-                auto source = std::make_shared<SourceFromSingleChunk>(
-                    std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
-                result.pipeline = QueryPipeline(std::move(source));
-            }));
-    reg_fn(
-        Type::CLEAR_DISK_METADATA_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_FILESYSTEM_CACHE,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
+            }
+            else
             {
-                auto metadata = interpreter.getContext()->getDisk(query.disk)->getMetadataStorage();
-                if (metadata)
-                    metadata->dropCache();
-            }));
-    reg_fn(
-        Type::CLEAR_PAGE_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_PAGE_CACHE, [](LoggerPtr, ContextMutablePtr system_context) { system_context->clearPageCache(); }));
-    reg_fn(
-        Type::CLEAR_SCHEMA_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_SCHEMA_CACHE,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                std::unordered_set<String> caches_to_drop;
-                if (query.schema_cache_storage.empty())
-                    caches_to_drop = {"FILE", "S3", "HDFS", "URL", "AZURE"};
-                else
-                    caches_to_drop = {query.schema_cache_storage};
+                auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
+                auto file_segments = cache->sync();
+                fill_data(query.filesystem_cache_name, file_segments);
+            }
 
-                if (caches_to_drop.contains("FILE"))
-                    StorageFile::getSchemaCache(interpreter.getContext()).clear();
+            size_t num_rows = res_columns[0]->size();
+            auto source = std::make_shared<SourceFromSingleChunk>(
+                std::make_shared<const Block>(std::move(sample_block)), Chunk(std::move(res_columns), num_rows));
+            result.pipeline = QueryPipeline(std::move(source));
+        });
+    reg(Type::CLEAR_DISK_METADATA_CACHE,
+        AccessType::SYSTEM_DROP_FILESYSTEM_CACHE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            auto metadata = interpreter.getContext()->getDisk(query.disk)->getMetadataStorage();
+            if (metadata)
+                metadata->dropCache();
+        });
+    reg(Type::CLEAR_PAGE_CACHE,
+        AccessType::SYSTEM_DROP_PAGE_CACHE,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->clearPageCache(); });
+    reg(Type::CLEAR_SCHEMA_CACHE,
+        AccessType::SYSTEM_DROP_SCHEMA_CACHE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            std::unordered_set<String> caches_to_drop;
+            if (query.schema_cache_storage.empty())
+                caches_to_drop = {"FILE", "S3", "HDFS", "URL", "AZURE"};
+            else
+                caches_to_drop = {query.schema_cache_storage};
+
+            if (caches_to_drop.contains("FILE"))
+                StorageFile::getSchemaCache(interpreter.getContext()).clear();
 #if USE_AWS_S3
-                if (caches_to_drop.contains("S3"))
-                    StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageS3Configuration::type_name).clear();
+            if (caches_to_drop.contains("S3"))
+                StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageS3Configuration::type_name).clear();
 #endif
 #if USE_HDFS
-                if (caches_to_drop.contains("HDFS"))
-                    StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageHDFSConfiguration::type_name).clear();
+            if (caches_to_drop.contains("HDFS"))
+                StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageHDFSConfiguration::type_name).clear();
 #endif
-                if (caches_to_drop.contains("URL"))
-                    StorageURL::getSchemaCache(interpreter.getContext()).clear();
+            if (caches_to_drop.contains("URL"))
+                StorageURL::getSchemaCache(interpreter.getContext()).clear();
 #if USE_AZURE_BLOB_STORAGE
-                if (caches_to_drop.contains("AZURE"))
-                    StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageAzureConfiguration::type_name).clear();
+            if (caches_to_drop.contains("AZURE"))
+                StorageObjectStorage::getSchemaCache(interpreter.getContext(), StorageAzureConfiguration::type_name).clear();
 #endif
-            }));
-    reg_fn(
-        Type::CLEAR_FORMAT_SCHEMA_CACHE,
-        with_check_fn(
-            AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE,
-            [](LoggerPtr log, ASTSystemQuery & query, ContextMutablePtr system_context)
-            {
-                std::unordered_set<String> caches_to_drop;
-                if (query.schema_cache_format.empty())
-                    caches_to_drop = {"Protobuf", "Files"};
-                else
-                    caches_to_drop = {query.schema_cache_format};
-#if USE_PROTOBUF
-                if (caches_to_drop.contains("Protobuf"))
-                    ProtobufSchemas::instance().clear();
-#endif
-                if (caches_to_drop.contains("Files"))
-                {
-                    fs::path format_schema_cached_dir = fs::path(system_context->getFormatSchemaPath()) / FormatSchemaInfo::CACHE_DIR_NAME;
-                    if (fs::exists(format_schema_cached_dir))
-                    {
-                        size_t count = 0;
-                        for (const auto & entry : fs::directory_iterator(format_schema_cached_dir))
-                        {
-                            if (entry.is_regular_file())
-                            {
-                                fs::remove(entry.path());
-                                count++;
-                            }
-                        }
-                        LOG_INFO(log, "Cleared format schema cache files {}", count);
-                    }
-                }
-            }));
-    reg_fn(
-        Type::RELOAD_DICTIONARY,
-        with_check_fn(
-            AccessType::SYSTEM_RELOAD_DICTIONARY,
-            [](LoggerPtr, ASTSystemQuery & query, ContextMutablePtr system_context, InterpreterSystemQuery & interpreter)
-            {
-                auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-                reloadDictionaryFromSystemQuery(external_dictionaries_loader, query, interpreter.getContext());
-
-                ExternalDictionariesLoader::resetAll();
-            }));
-    reg_fn(
-        Type::RELOAD_DICTIONARIES,
-        with_check_fn(
-            AccessType::SYSTEM_RELOAD_DICTIONARY,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            {
-                executeCommandsAndThrowIfError(
-                    {[&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoadInOrder(); },
-                     [&] { system_context->getEmbeddedDictionaries().reload(); }});
-                ExternalDictionariesLoader::resetAll();
-            }));
-    reg_fn(
-        Type::UNLOAD_DICTIONARY,
-        with_check_fn(
-            AccessType::SYSTEM_RELOAD_DICTIONARY,
-            [](LoggerPtr, ASTSystemQuery & query, ContextMutablePtr system_context, InterpreterSystemQuery & interpreter)
-            {
-                auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-                unloadDictionaryFromSystemQuery(external_dictionaries_loader, query, interpreter.getContext());
-                ExternalDictionariesLoader::resetAll();
-            }));
-    reg_fn(
-        Type::UNLOAD_DICTIONARIES,
-        with_check_fn(
-            AccessType::SYSTEM_RELOAD_DICTIONARY,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            {
-                auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-                external_dictionaries_loader.unloadAllDictionaries();
-                ExternalDictionariesLoader::resetAll();
-            }));
-    reg_fn(
-        Type::RELOAD_FUNCTION,
-        with_check_fn(
-            AccessType::SYSTEM_RELOAD_FUNCTION,
-            [](LoggerPtr, ASTSystemQuery & query, ContextMutablePtr system_context)
-            {
-                auto & external_user_defined_executable_functions_loader
-                    = system_context->getExternalUserDefinedExecutableFunctionsLoader();
-                external_user_defined_executable_functions_loader.reloadFunction(query.target_function);
-            }));
-    reg_fn(
-        Type::RELOAD_FUNCTIONS,
-        with_check_fn(
-            AccessType::SYSTEM_RELOAD_FUNCTION,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            {
-                auto & external_user_defined_executable_functions_loader
-                    = system_context->getExternalUserDefinedExecutableFunctionsLoader();
-                external_user_defined_executable_functions_loader.reloadAllTriedToLoad();
-            }));
-    reg_fn(
-        Type::RELOAD_EMBEDDED_DICTIONARIES,
-        with_check_fn(
-            AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES,
-            [](LoggerPtr, ContextMutablePtr system_context) { system_context->getEmbeddedDictionaries().reload(); }));
-    reg_fn(
-        Type::RELOAD_CONFIG,
-        with_check_fn(
-            AccessType::SYSTEM_RELOAD_CONFIG,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            {
-                if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
-                    throw Exception::createDeprecated(
-                        "SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
-                system_context->reloadConfig();
-            }));
-    reg_fn(
-        Type::RELOAD_USERS,
-        with_check_fn(
-            AccessType::SYSTEM_RELOAD_USERS,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            { system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL); }));
-    reg_fn(
-        Type::RELOAD_ASYNCHRONOUS_METRICS,
-        with_check_fn(
-            AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            {
-                auto * asynchronous_metrics = system_context->getAsynchronousMetrics();
-                if (asynchronous_metrics)
-                    asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
-            }));
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
-    reg_fn(
-        Type::RELOAD_DELTA_KERNEL_TRACING,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr log, ASTSystemQuery & query)
-            {
-                const auto & level_str = query.delta_kernel_tracing_level;
-                ffi::Level level = {};
-
-                if (level_str == "ERROR")
-                    level = ffi::Level::ERROR;
-                else if (level_str == "WARN")
-                    level = ffi::Level::WARN;
-                else if (level_str == "INFO")
-                    level = ffi::Level::INFO;
-                else if (level_str == "DEBUG")
-                    level = ffi::Level::DEBUG;
-                else if (level_str == "TRACE")
-                    level = ffi::Level::TRACE;
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid delta kernel tracing level: {}", level_str);
-
-                /// Reload tracing with the new level (can be called multiple times)
-                bool success = ffi::enable_event_tracing(tracingCallback, level);
-
-                if (success)
-                    LOG_INFO(log, "Delta kernel tracing level reloaded to {}", level_str);
-                else
-                    throw Exception(ErrorCodes::DELTA_KERNEL_ERROR, "Failed to reload delta kernel tracing level to {}", level_str);
-            }));
-#else
-    reg_fn(
-        Type::RELOAD_DELTA_KERNEL_TRACING,
-        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Delta Kernel support is not enabled"); }));
-#endif
-    reg_fn(
-        Type::RECONNECT_ZOOKEEPER,
-        with_check_fn(
-            AccessType::SYSTEM_RECONNECT_ZOOKEEPER,
-            [](LoggerPtr, ContextMutablePtr system_context)
-            { system_context->reconnectZooKeeper("triggered via SYSTEM RECONNECT ZOOKEEPER command"); }));
-    reg_fn(Type::STOP_MERGES, with_startstop_fn(ActionLocks::PartsMerge, false));
-    reg_fn(Type::START_MERGES, with_startstop_fn(ActionLocks::PartsMerge, true));
-    reg_fn(Type::STOP_TTL_MERGES, with_startstop_fn(ActionLocks::PartsTTLMerge, false));
-    reg_fn(Type::START_TTL_MERGES, with_startstop_fn(ActionLocks::PartsTTLMerge, true));
-    reg_fn(Type::STOP_MOVES, with_startstop_fn(ActionLocks::PartsMove, false));
-    reg_fn(Type::START_MOVES, with_startstop_fn(ActionLocks::PartsMove, true));
-    reg_fn(Type::STOP_FETCHES, with_startstop_fn(ActionLocks::PartsFetch, false));
-    reg_fn(Type::START_FETCHES, with_startstop_fn(ActionLocks::PartsFetch, true));
-    reg_fn(Type::STOP_REPLICATED_SENDS, with_startstop_fn(ActionLocks::PartsSend, false));
-    reg_fn(Type::START_REPLICATED_SENDS, with_startstop_fn(ActionLocks::PartsSend, true));
-    reg_fn(Type::STOP_REPLICATION_QUEUES, with_startstop_fn(ActionLocks::ReplicationQueue, false));
-    reg_fn(Type::START_REPLICATION_QUEUES, with_startstop_fn(ActionLocks::ReplicationQueue, true));
-    reg_fn(Type::STOP_DISTRIBUTED_SENDS, with_startstop_fn(ActionLocks::DistributedSend, false));
-    reg_fn(Type::START_DISTRIBUTED_SENDS, with_startstop_fn(ActionLocks::DistributedSend, true));
-    reg_fn(Type::STOP_PULLING_REPLICATION_LOG, with_startstop_fn(ActionLocks::PullReplicationLog, false));
-    reg_fn(Type::START_PULLING_REPLICATION_LOG, with_startstop_fn(ActionLocks::PullReplicationLog, true));
-    reg_fn(Type::STOP_CLEANUP, with_startstop_fn(ActionLocks::Cleanup, false));
-    reg_fn(Type::START_CLEANUP, with_startstop_fn(ActionLocks::Cleanup, true));
-    reg_fn(
-        Type::START_REPLICATED_DDL_QUERIES,
-        with_check_fn(
-            AccessType::SYSTEM_REPLICATION_QUEUES, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
-    reg_fn(
-        Type::STOP_REPLICATED_DDL_QUERIES,
-        with_check_fn(
-            AccessType::SYSTEM_REPLICATION_QUEUES, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
-    reg_fn(
-        Type::START_VIRTUAL_PARTS_UPDATE,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                if (!query.table)
-                {
-                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE);
-                }
-                else
-                {
-                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, query.getDatabase(), query.getTable());
-                }
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
-            }));
-    reg_fn(
-        Type::STOP_VIRTUAL_PARTS_UPDATE,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                if (!query.table)
-                {
-                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE);
-                }
-                else
-                {
-                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, query.getDatabase(), query.getTable());
-                }
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
-            }));
-    reg_fn(
-        Type::START_REDUCE_BLOCKING_PARTS,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                if (!query.table)
-                {
-                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
-                }
-                else
-                {
-                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
-                }
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
-            }));
-    reg_fn(
-        Type::STOP_REDUCE_BLOCKING_PARTS,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                if (!query.table)
-                {
-                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
-                }
-                else
-                {
-                    interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
-                }
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
-            }));
-    auto dup = with_check_fn(
-        std::nullopt,
-        [](LoggerPtr, InterpreterSystemQuery & interpreter)
+        });
+    reg(Type::CLEAR_FORMAT_SCHEMA_CACHE,
+        AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr & system_context, BlockIO &)
         {
-            /// `SYSTEM START VIEW` must undo both `SYSTEM STOP VIEW` and `SYSTEM PAUSE VIEW`.
-            /// Each call drops the corresponding lock (if any) and invokes `refresher->start()`;
-            /// `start` is idempotent so calling it twice is safe.
+            std::unordered_set<String> caches_to_drop;
+            if (query.schema_cache_format.empty())
+                caches_to_drop = {"Protobuf", "Files"};
+            else
+                caches_to_drop = {query.schema_cache_format};
+#if USE_PROTOBUF
+            if (caches_to_drop.contains("Protobuf"))
+                ProtobufSchemas::instance().clear();
+#endif
+            if (caches_to_drop.contains("Files"))
+            {
+                fs::path format_schema_cached_dir = fs::path(system_context->getFormatSchemaPath()) / FormatSchemaInfo::CACHE_DIR_NAME;
+                if (fs::exists(format_schema_cached_dir))
+                {
+                    size_t count = 0;
+                    for (const auto & entry : fs::directory_iterator(format_schema_cached_dir))
+                    {
+                        if (entry.is_regular_file())
+                        {
+                            fs::remove(entry.path());
+                            count++;
+                        }
+                    }
+                    LOG_INFO(interpreter.log, "Cleared format schema cache files {}", count);
+                }
+            }
+        });
+    reg(Type::RELOAD_DICTIONARY,
+        AccessType::SYSTEM_RELOAD_DICTIONARY,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr & system_context, BlockIO &)
+        {
+            auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+            reloadDictionaryFromSystemQuery(external_dictionaries_loader, query, interpreter.getContext());
+
+            ExternalDictionariesLoader::resetAll();
+        });
+    reg(Type::RELOAD_DICTIONARIES,
+        AccessType::SYSTEM_RELOAD_DICTIONARY,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        {
+            executeCommandsAndThrowIfError(
+                {[&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoadInOrder(); },
+                 [&] { system_context->getEmbeddedDictionaries().reload(); }});
+            ExternalDictionariesLoader::resetAll();
+        });
+    reg(Type::UNLOAD_DICTIONARY,
+        AccessType::SYSTEM_RELOAD_DICTIONARY,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr & system_context, BlockIO &)
+        {
+            auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+            unloadDictionaryFromSystemQuery(external_dictionaries_loader, query, interpreter.getContext());
+            ExternalDictionariesLoader::resetAll();
+        });
+    reg(Type::UNLOAD_DICTIONARIES,
+        AccessType::SYSTEM_RELOAD_DICTIONARY,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        {
+            auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+            external_dictionaries_loader.unloadAllDictionaries();
+            ExternalDictionariesLoader::resetAll();
+        });
+    reg(Type::RELOAD_FUNCTION,
+        AccessType::SYSTEM_RELOAD_FUNCTION,
+        [](InterpreterSystemQuery &, ASTSystemQuery & query, const ContextMutablePtr & system_context, BlockIO &)
+        {
+            auto & external_user_defined_executable_functions_loader = system_context->getExternalUserDefinedExecutableFunctionsLoader();
+            external_user_defined_executable_functions_loader.reloadFunction(query.target_function);
+        });
+    reg(Type::RELOAD_FUNCTIONS,
+        AccessType::SYSTEM_RELOAD_FUNCTION,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        {
+            auto & external_user_defined_executable_functions_loader = system_context->getExternalUserDefinedExecutableFunctionsLoader();
+            external_user_defined_executable_functions_loader.reloadAllTriedToLoad();
+        });
+    reg(Type::RELOAD_EMBEDDED_DICTIONARIES,
+        AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->getEmbeddedDictionaries().reload(); });
+    reg(Type::RELOAD_CONFIG,
+        AccessType::SYSTEM_RELOAD_CONFIG,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        {
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated(
+                    "SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
+            system_context->reloadConfig();
+        });
+    reg(Type::RELOAD_USERS,
+        AccessType::SYSTEM_RELOAD_USERS,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL); });
+    reg(Type::RELOAD_ASYNCHRONOUS_METRICS,
+        AccessType::SYSTEM_RELOAD_ASYNCHRONOUS_METRICS,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        {
+            auto * asynchronous_metrics = system_context->getAsynchronousMetrics();
+            if (asynchronous_metrics)
+                asynchronous_metrics->update(std::chrono::system_clock::now(), /*force_update*/ true);
+        });
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+    reg(Type::RELOAD_DELTA_KERNEL_TRACING,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            const auto & level_str = query.delta_kernel_tracing_level;
+            ffi::Level level = {};
+
+            if (level_str == "ERROR")
+                level = ffi::Level::ERROR;
+            else if (level_str == "WARN")
+                level = ffi::Level::WARN;
+            else if (level_str == "INFO")
+                level = ffi::Level::INFO;
+            else if (level_str == "DEBUG")
+                level = ffi::Level::DEBUG;
+            else if (level_str == "TRACE")
+                level = ffi::Level::TRACE;
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid delta kernel tracing level: {}", level_str);
+
+            /// Reload tracing with the new level (can be called multiple times)
+            bool success = ffi::enable_event_tracing(tracingCallback, level);
+
+            if (success)
+                LOG_INFO(interpreter.log, "Delta kernel tracing level reloaded to {}", level_str);
+            else
+                throw Exception(ErrorCodes::DELTA_KERNEL_ERROR, "Failed to reload delta kernel tracing level to {}", level_str);
+        });
+#else
+    reg(Type::RELOAD_DELTA_KERNEL_TRACING,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Delta Kernel support is not enabled"); });
+#endif
+    reg(Type::RECONNECT_ZOOKEEPER,
+        AccessType::SYSTEM_RECONNECT_ZOOKEEPER,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { system_context->reconnectZooKeeper("triggered via SYSTEM RECONNECT ZOOKEEPER command"); });
+    reg_start_stop(Type::STOP_MERGES, ActionLocks::PartsMerge, false);
+    reg_start_stop(Type::START_MERGES, ActionLocks::PartsMerge, true);
+    reg_start_stop(Type::STOP_TTL_MERGES, ActionLocks::PartsTTLMerge, false);
+    reg_start_stop(Type::START_TTL_MERGES, ActionLocks::PartsTTLMerge, true);
+    reg_start_stop(Type::STOP_MOVES, ActionLocks::PartsMove, false);
+    reg_start_stop(Type::START_MOVES, ActionLocks::PartsMove, true);
+    reg_start_stop(Type::STOP_FETCHES, ActionLocks::PartsFetch, false);
+    reg_start_stop(Type::START_FETCHES, ActionLocks::PartsFetch, true);
+    reg_start_stop(Type::STOP_REPLICATED_SENDS, ActionLocks::PartsSend, false);
+    reg_start_stop(Type::START_REPLICATED_SENDS, ActionLocks::PartsSend, true);
+    reg_start_stop(Type::STOP_REPLICATION_QUEUES, ActionLocks::ReplicationQueue, false);
+    reg_start_stop(Type::START_REPLICATION_QUEUES, ActionLocks::ReplicationQueue, true);
+    reg_start_stop(Type::STOP_DISTRIBUTED_SENDS, ActionLocks::DistributedSend, false);
+    reg_start_stop(Type::START_DISTRIBUTED_SENDS, ActionLocks::DistributedSend, true);
+    reg_start_stop(Type::STOP_PULLING_REPLICATION_LOG, ActionLocks::PullReplicationLog, false);
+    reg_start_stop(Type::START_PULLING_REPLICATION_LOG, ActionLocks::PullReplicationLog, true);
+    reg_start_stop(Type::STOP_CLEANUP, ActionLocks::Cleanup, false);
+    reg_start_stop(Type::START_CLEANUP, ActionLocks::Cleanup, true);
+    reg(Type::START_REPLICATED_DDL_QUERIES,
+        AccessType::SYSTEM_REPLICATION_QUEUES,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); });
+    reg(Type::STOP_REPLICATED_DDL_QUERIES,
+        AccessType::SYSTEM_REPLICATION_QUEUES,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); });
+    reg(Type::START_VIRTUAL_PARTS_UPDATE,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            if (!query.table)
+            {
+                interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE);
+            }
+            else
+            {
+                interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, query.getDatabase(), query.getTable());
+            }
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        });
+    reg(Type::STOP_VIRTUAL_PARTS_UPDATE,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            if (!query.table)
+            {
+                interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE);
+            }
+            else
+            {
+                interpreter.getContext()->checkAccess(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, query.getDatabase(), query.getTable());
+            }
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        });
+    reg(Type::START_REDUCE_BLOCKING_PARTS,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            if (!query.table)
+            {
+                interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
+            }
+            else
+            {
+                interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
+            }
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        });
+    reg(Type::STOP_REDUCE_BLOCKING_PARTS,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            if (!query.table)
+            {
+                interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
+            }
+            else
+            {
+                interpreter.getContext()->checkAccess(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
+            }
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+        });
+    auto start_views = [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+    {
+        /// `SYSTEM START VIEW` must undo both `SYSTEM STOP VIEW` and `SYSTEM PAUSE VIEW`.
+        /// Each call drops the corresponding lock (if any) and invokes `refresher->start()`;
+        /// `start` is idempotent so calling it twice is safe.
+        interpreter.startStopAction(ActionLocks::ViewRefresh, true);
+        interpreter.startStopAction(ActionLocks::ViewRefreshPause, true);
+    };
+    reg(Type::START_VIEW, std::nullopt, start_views);
+    reg(Type::START_VIEWS, std::nullopt, start_views);
+    reg_start_stop(Type::STOP_VIEW, ActionLocks::ViewRefresh, false);
+    reg_start_stop(Type::STOP_VIEWS, ActionLocks::ViewRefresh, false);
+    reg_start_stop(Type::PAUSE_VIEW, ActionLocks::ViewRefreshPause, false);
+    reg_start_stop(Type::PAUSE_VIEWS, ActionLocks::ViewRefreshPause, false);
+    reg(Type::START_REPLICATED_VIEW,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            for (const auto & task : interpreter.getRefreshTasks())
+                task->startReplicated();
+        });
+    reg(Type::STOP_REPLICATED_VIEW,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            for (const auto & task : interpreter.getRefreshTasks())
+                task->stopReplicated("SYSTEM STOP REPLICATED VIEW");
+        });
+    reg(Type::REFRESH_VIEW,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            for (const auto & task : interpreter.getRefreshTasks())
+                task->run();
+        });
+    reg(Type::WAIT_VIEW,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            for (const auto & task : interpreter.getRefreshTasks())
+                task->wait(interpreter.getContext());
+        });
+    reg(Type::CANCEL_VIEW,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            for (const auto & task : interpreter.getRefreshTasks())
+                task->cancel();
+        });
+    reg(Type::TEST_VIEW,
+        AccessType::SYSTEM_VIEWS,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            /// The parser keeps the literal text; resolving it needs the server timezone.
+            std::optional<Int64> fake_time;
+            if (query.fake_time_for_view)
+            {
+                ReadBufferFromString buf(*query.fake_time_for_view);
+                time_t time = 0;
+                readDateTimeText(time, buf);
+                assertEOF(buf);
+                fake_time = Int64(time);
+            }
+            for (const auto & task : interpreter.getRefreshTasks())
+                task->setFakeTime(fake_time);
+        });
+    reg(Type::STOP,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.controlBackgroundActivity(query); });
+    reg(Type::START,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.controlBackgroundActivity(query); });
+    reg(Type::PAUSE,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.controlBackgroundActivity(query); });
+    reg(Type::CANCEL,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.controlBackgroundActivity(query); });
+    reg(Type::REFRESH,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.controlBackgroundActivity(query); });
+    reg(Type::STOP_ALL_BACKGROUND,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            interpreter.startStopAction(ActionLocks::ViewRefresh, false);
+            interpreter.startStopAction(ActionLocks::StreamConsume, false);
+            for (const auto & streaming_storage : interpreter.getAccessibleStreamingStorages())
+                streaming_storage->cancelBackgroundActivity();
+        });
+    reg(Type::START_ALL_BACKGROUND,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
             interpreter.startStopAction(ActionLocks::ViewRefresh, true);
             interpreter.startStopAction(ActionLocks::ViewRefreshPause, true);
+            interpreter.startStopAction(ActionLocks::StreamConsume, true);
         });
-    reg_fn(Type::START_VIEW, dup);
-    reg_fn(Type::START_VIEWS, dup);
-    reg_fn(Type::STOP_VIEW, with_startstop_fn(ActionLocks::ViewRefresh, false));
-    reg_fn(Type::STOP_VIEWS, with_startstop_fn(ActionLocks::ViewRefresh, false));
-    reg_fn(Type::PAUSE_VIEW, with_startstop_fn(ActionLocks::ViewRefreshPause, false));
-    reg_fn(Type::PAUSE_VIEWS, with_startstop_fn(ActionLocks::ViewRefreshPause, false));
-    reg_fn(
-        Type::START_REPLICATED_VIEW,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                for (const auto & task : interpreter.getRefreshTasks())
-                    task->startReplicated();
-            }));
-    reg_fn(
-        Type::STOP_REPLICATED_VIEW,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                for (const auto & task : interpreter.getRefreshTasks())
-                    task->stopReplicated("SYSTEM STOP REPLICATED VIEW");
-            }));
-    reg_fn(
-        Type::REFRESH_VIEW,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                for (const auto & task : interpreter.getRefreshTasks())
-                    task->run();
-            }));
-    reg_fn(
-        Type::WAIT_VIEW,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                for (const auto & task : interpreter.getRefreshTasks())
-                    task->wait(interpreter.getContext());
-            }));
-    reg_fn(
-        Type::CANCEL_VIEW,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                for (const auto & task : interpreter.getRefreshTasks())
-                    task->cancel();
-            }));
-    reg_fn(
-        Type::TEST_VIEW,
-        with_check_fn(
-            AccessType::SYSTEM_VIEWS,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                /// The parser keeps the literal text; resolving it needs the server timezone.
-                std::optional<Int64> fake_time;
-                if (query.fake_time_for_view)
-                {
-                    ReadBufferFromString buf(*query.fake_time_for_view);
-                    time_t time = 0;
-                    readDateTimeText(time, buf);
-                    assertEOF(buf);
-                    fake_time = Int64(time);
-                }
-                for (const auto & task : interpreter.getRefreshTasks())
-                    task->setFakeTime(fake_time);
-            }));
-    reg_fn(
-        Type::STOP,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.controlBackgroundActivity(query); }));
-    reg_fn(
-        Type::START,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.controlBackgroundActivity(query); }));
-    reg_fn(
-        Type::PAUSE,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.controlBackgroundActivity(query); }));
-    reg_fn(
-        Type::CANCEL,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.controlBackgroundActivity(query); }));
-    reg_fn(
-        Type::REFRESH,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.controlBackgroundActivity(query); }));
-    reg_fn(
-        Type::STOP_ALL_BACKGROUND,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.startStopAction(ActionLocks::ViewRefresh, false);
-                interpreter.startStopAction(ActionLocks::StreamConsume, false);
-                for (const auto & streaming_storage : interpreter.getAccessibleStreamingStorages())
-                    streaming_storage->cancelBackgroundActivity();
-            }));
-    reg_fn(
-        Type::START_ALL_BACKGROUND,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.startStopAction(ActionLocks::ViewRefresh, true);
-                interpreter.startStopAction(ActionLocks::ViewRefreshPause, true);
-                interpreter.startStopAction(ActionLocks::StreamConsume, true);
-            }));
-    reg_fn(
-        Type::PAUSE_ALL_BACKGROUND,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                interpreter.startStopAction(ActionLocks::ViewRefreshPause, false);
-                interpreter.startStopAction(ActionLocks::StreamConsume, false);
-            }));
-    reg_fn(
-        Type::CANCEL_ALL_BACKGROUND,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                for (const auto & task : interpreter.getAccessibleRefreshTasks())
-                    task->cancel();
-                for (const auto & streaming_storage : interpreter.getAccessibleStreamingStorages())
-                    streaming_storage->cancelBackgroundActivity();
-            }));
-    reg_fn(
-        Type::REFRESH_ALL_BACKGROUND,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                for (const auto & task : interpreter.getAccessibleRefreshTasks())
-                    task->run();
-                for (const auto & streaming_storage : interpreter.getAccessibleStreamingStorages())
-                    streaming_storage->refreshBackgroundActivity();
-            }));
-    reg_fn(
-        Type::DROP_REPLICA,
-        with_check_fn(
-            std::nullopt, [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.dropReplica(query); }));
-    reg_fn(
-        Type::DROP_DATABASE_REPLICA,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.dropDatabaseReplica(query); }));
-    reg_fn(
-        Type::DROP_CATALOG_REPLICA,
-        with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
-    reg_fn(
-        Type::SYNC_REPLICA,
-        with_check_fn(
-            std::nullopt, [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.syncReplica(query); }));
-    reg_fn(
-        Type::SYNC_DATABASE_REPLICA,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.syncReplicatedDatabase(query); }));
-    reg_fn(
-        Type::REPLICA_UNREADY, with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
-    reg_fn(Type::REPLICA_READY, with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
-    reg_fn(
-        Type::SYNC_TRANSACTION_LOG,
-        with_check_fn(
-            AccessType::SYSTEM_SYNC_TRANSACTION_LOG,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.syncTransactionLog(); }));
-    reg_fn(
-        Type::FLUSH_DISTRIBUTED,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.flushDistributed(query); }));
-    reg_fn(
-        Type::FLUSH_OBJECT_STORAGE_QUEUE,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.flushObjectStorageQueue(query); }));
-    reg_fn(
-        Type::RESTART_REPLICAS,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery &, ContextMutablePtr system_context, InterpreterSystemQuery & interpreter)
-            { interpreter.restartReplicas(system_context); }));
-    reg_fn(
-        Type::RESTART_REPLICA,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery &, ContextMutablePtr system_context, InterpreterSystemQuery & interpreter)
-            { interpreter.restartReplica(interpreter.table_id, system_context); }));
-    reg_fn(
-        Type::RESTORE_REPLICA,
-        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.restoreReplica(); }));
-    reg_fn(
-        Type::RESTORE_DATABASE_REPLICA,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.restoreDatabaseReplica(query); }));
-    reg_fn(
-        Type::WAIT_LOADING_PARTS,
-        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.waitLoadingParts(); }));
-    reg_fn(
-        Type::WAIT_QUERY_RUNNER,
-        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.waitQueryRunner(); }));
-    reg_fn(
-        Type::SCHEDULE_MERGE,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.scheduleMerge(query); }));
-    reg_fn(
-        Type::SYNC_MERGES, with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.syncMerges(); }));
-    reg_fn(
-        Type::WAIT_BLOBS_CLEANUP,
-        with_check_fn(
-            AccessType::SYSTEM_WAIT_BLOBS_CLEANUP,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                auto disk_ptr = interpreter.getContext()->getDisk(query.disk);
-                auto * object_disk = dynamic_cast<DiskObjectStorage *>(disk_ptr.get());
-                if (!object_disk)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not an object storage disk", query.disk);
+    reg(Type::PAUSE_ALL_BACKGROUND,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            interpreter.startStopAction(ActionLocks::ViewRefreshPause, false);
+            interpreter.startStopAction(ActionLocks::StreamConsume, false);
+        });
+    reg(Type::CANCEL_ALL_BACKGROUND,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            for (const auto & task : interpreter.getAccessibleRefreshTasks())
+                task->cancel();
+            for (const auto & streaming_storage : interpreter.getAccessibleStreamingStorages())
+                streaming_storage->cancelBackgroundActivity();
+        });
+    reg(Type::REFRESH_ALL_BACKGROUND,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            for (const auto & task : interpreter.getAccessibleRefreshTasks())
+                task->run();
+            for (const auto & streaming_storage : interpreter.getAccessibleStreamingStorages())
+                streaming_storage->refreshBackgroundActivity();
+        });
+    reg(Type::DROP_REPLICA,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.dropReplica(query); });
+    reg(Type::DROP_DATABASE_REPLICA,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.dropDatabaseReplica(query); });
+    reg(Type::DROP_CATALOG_REPLICA,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); });
+    reg(Type::SYNC_REPLICA,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.syncReplica(query); });
+    reg(Type::SYNC_DATABASE_REPLICA,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.syncReplicatedDatabase(query); });
+    reg(Type::REPLICA_UNREADY,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); });
+    reg(Type::REPLICA_READY,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); });
+    reg(Type::SYNC_TRANSACTION_LOG,
+        AccessType::SYSTEM_SYNC_TRANSACTION_LOG,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { interpreter.syncTransactionLog(); });
+    reg(Type::FLUSH_DISTRIBUTED,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.flushDistributed(query); });
+    reg(Type::FLUSH_OBJECT_STORAGE_QUEUE,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.flushObjectStorageQueue(query); });
+    reg(Type::RESTART_REPLICAS,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { interpreter.restartReplicas(system_context); });
+    reg(Type::RESTART_REPLICA,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr & system_context, BlockIO &)
+        { interpreter.restartReplica(interpreter.table_id, system_context); });
+    reg(Type::RESTORE_REPLICA,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &) { interpreter.restoreReplica(); });
+    reg(Type::RESTORE_DATABASE_REPLICA,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.restoreDatabaseReplica(query); });
+    reg(Type::WAIT_LOADING_PARTS,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { interpreter.waitLoadingParts(); });
+    reg(Type::WAIT_QUERY_RUNNER,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { interpreter.waitQueryRunner(); });
+    reg(Type::SCHEDULE_MERGE,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.scheduleMerge(query); });
+    reg(Type::SYNC_MERGES,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &) { interpreter.syncMerges(); });
+    reg(Type::WAIT_BLOBS_CLEANUP,
+        AccessType::SYSTEM_WAIT_BLOBS_CLEANUP,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            auto disk_ptr = interpreter.getContext()->getDisk(query.disk);
+            auto * object_disk = dynamic_cast<DiskObjectStorage *>(disk_ptr.get());
+            if (!object_disk)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk '{}' is not an object storage disk", query.disk);
 
-                /// We wait 2 times here because a background blob cleanup round may already be running
-                /// and this query must guarantee that after it returns, all expected blobs have been cleaned up.
-                object_disk->waitBlobsCleanup();
-                object_disk->waitBlobsCleanup();
-            }));
-    reg_fn(
-        Type::RESTART_DISK,
-        with_check_fn(
-            std::nullopt,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.restartDisk(query.disk); }));
-    reg_fn(
-        Type::FLUSH_LOGS,
-        with_check_fn(
-            AccessType::SYSTEM_FLUSH_LOGS,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                auto system_logs = interpreter.getContext()->getSystemLogs();
-                system_logs.flush(query.tables);
-            }));
-    reg_fn(
-        Type::STOP_LISTEN,
-        with_check_fn(
-            AccessType::SYSTEM_LISTEN,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            { interpreter.getContext()->stopServers(query.server_type); }));
-    reg_fn(
-        Type::START_LISTEN,
-        with_check_fn(
-            AccessType::SYSTEM_LISTEN,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            { interpreter.getContext()->startServers(query.server_type); }));
-    reg_fn(
-        Type::FLUSH_ASYNC_INSERT_QUEUE,
-        with_check_fn(
-            AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                auto * queue = interpreter.getContext()->tryGetAsynchronousInsertQueue();
-                if (!queue)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot flush asynchronous insert queue because it is not initialized");
+            /// We wait 2 times here because a background blob cleanup round may already be running
+            /// and this query must guarantee that after it returns, all expected blobs have been cleaned up.
+            object_disk->waitBlobsCleanup();
+            object_disk->waitBlobsCleanup();
+        });
+    reg(Type::RESTART_DISK,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.restartDisk(query.disk); });
+    reg(Type::FLUSH_LOGS,
+        AccessType::SYSTEM_FLUSH_LOGS,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            auto system_logs = interpreter.getContext()->getSystemLogs();
+            system_logs.flush(query.tables);
+        });
+    reg(Type::STOP_LISTEN,
+        AccessType::SYSTEM_LISTEN,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.getContext()->stopServers(query.server_type); });
+    reg(Type::START_LISTEN,
+        AccessType::SYSTEM_LISTEN,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.getContext()->startServers(query.server_type); });
+    reg(Type::FLUSH_ASYNC_INSERT_QUEUE,
+        AccessType::SYSTEM_FLUSH_ASYNC_INSERT_QUEUE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            auto * queue = interpreter.getContext()->tryGetAsynchronousInsertQueue();
+            if (!queue)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot flush asynchronous insert queue because it is not initialized");
 
-                std::vector<StorageID> tables;
-                for (const auto & [database, table] : query.tables)
-                {
-                    tables.push_back(interpreter.getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
-                    interpreter.getContext()->getQueryContext()->addQueryAccessInfo(tables.back(), {});
-                }
+            std::vector<StorageID> tables;
+            for (const auto & [database, table] : query.tables)
+            {
+                tables.push_back(interpreter.getContext()->resolveStorageID({database, table}, Context::ResolveOrdinary));
+                interpreter.getContext()->getQueryContext()->addQueryAccessInfo(tables.back(), {});
+            }
 
-                queue->flush(tables);
-            }));
-    reg_fn(
-        Type::STOP_THREAD_FUZZER,
-        with_check_fn(
-            AccessType::SYSTEM_THREAD_FUZZER,
-            []()
-            {
-                ThreadFuzzer::stop();
-                CannotAllocateThreadFaultInjector::setFaultProbability(0);
-            }));
-    reg_fn(
-        Type::START_THREAD_FUZZER,
-        with_check_fn(
-            AccessType::SYSTEM_THREAD_FUZZER,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter)
-            {
-                ThreadFuzzer::start();
-                CannotAllocateThreadFaultInjector::setFaultProbability(
-                    interpreter.getContext()->getServerSettings()[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
-            }));
-    reg_fn(
-        Type::UNFREEZE,
-        with_check_fn(
-            AccessType::SYSTEM_UNFREEZE,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter, BlockIO & result)
-            {
-                /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
-                result = Unfreezer(interpreter.getContext()).systemUnfreeze(query.backup_name);
-            }));
+            queue->flush(tables);
+        });
+    reg(Type::STOP_THREAD_FUZZER,
+        AccessType::SYSTEM_THREAD_FUZZER,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            ThreadFuzzer::stop();
+            CannotAllocateThreadFaultInjector::setFaultProbability(0);
+        });
+    reg(Type::START_THREAD_FUZZER,
+        AccessType::SYSTEM_THREAD_FUZZER,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            ThreadFuzzer::start();
+            CannotAllocateThreadFaultInjector::setFaultProbability(
+                interpreter.getContext()->getServerSettings()[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
+        });
+    reg(Type::UNFREEZE,
+        AccessType::SYSTEM_UNFREEZE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO & result)
+        {
+            /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
+            result = Unfreezer(interpreter.getContext()).systemUnfreeze(query.backup_name);
+        });
 
     /// Outside the `USE_LIBFIU` guard below on purpose: this statement asks for a
     /// server that injects nothing, which a build without libfiu already is. Failing
     /// it would only make every caller - a test harness, above all - special-case a
     /// build flag to ask for a state that already holds.
-    reg_fn(Type::DISABLE_ALL_FAILPOINTS, with_check_fn(AccessType::SYSTEM_FAILPOINT, []() { FailPointInjection::disableAllFailPoints(); }));
+    reg(Type::DISABLE_ALL_FAILPOINTS,
+        AccessType::SYSTEM_FAILPOINT,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { FailPointInjection::disableAllFailPoints(); });
 #if USE_LIBFIU
-    reg_fn(
-        Type::ENABLE_FAILPOINT,
-        with_check_fn(
-            AccessType::SYSTEM_FAILPOINT,
-            [](LoggerPtr, ASTSystemQuery & query) { FailPointInjection::enableFailPoint(query.fail_point_name); }));
-    reg_fn(
-        Type::DISABLE_FAILPOINT,
-        with_check_fn(
-            AccessType::SYSTEM_FAILPOINT,
-            [](LoggerPtr, ASTSystemQuery & query) { FailPointInjection::disableFailPoint(query.fail_point_name); }));
-    reg_fn(
-        Type::ALLOCATE_MEMORY,
-        with_check_fn(
-            AccessType::SYSTEM_MEMORY,
-            [](LoggerPtr log, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
+    reg(Type::ENABLE_FAILPOINT,
+        AccessType::SYSTEM_FAILPOINT,
+        [](InterpreterSystemQuery &, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { FailPointInjection::enableFailPoint(query.fail_point_name); });
+    reg(Type::DISABLE_FAILPOINT,
+        AccessType::SYSTEM_FAILPOINT,
+        [](InterpreterSystemQuery &, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { FailPointInjection::disableFailPoint(query.fail_point_name); });
+    reg(Type::ALLOCATE_MEMORY,
+        AccessType::SYSTEM_MEMORY,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            auto holder = interpreter.getContext()->getSystemAllocatedMemoryHolder();
+            if (!holder)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
+            holder->alloc(query.untracked_memory_size);
+            LOG_DEBUG(interpreter.log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+        });
+    reg(Type::FREE_MEMORY,
+        AccessType::SYSTEM_MEMORY,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            auto holder = interpreter.getContext()->getSystemAllocatedMemoryHolder();
+            if (!holder)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
+            holder->free();
+            LOG_DEBUG(interpreter.log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
+        });
+    reg(Type::WAIT_FAILPOINT,
+        AccessType::SYSTEM_FAILPOINT,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            if (query.fail_point_action == ASTSystemQuery::FailPointAction::PAUSE)
             {
-                auto holder = interpreter.getContext()->getSystemAllocatedMemoryHolder();
-                if (!holder)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
-                holder->alloc(query.untracked_memory_size);
-                LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
-            }));
-    reg_fn(
-        Type::FREE_MEMORY,
-        with_check_fn(
-            AccessType::SYSTEM_MEMORY,
-            [](LoggerPtr log, InterpreterSystemQuery & interpreter)
+                LOG_TRACE(interpreter.log, "Waiting for failpoint {} to pause", query.fail_point_name);
+                FailPointInjection::waitForPause(query.fail_point_name);
+                LOG_TRACE(interpreter.log, "Failpoint {} has paused", query.fail_point_name);
+            }
+            else
             {
-                auto holder = interpreter.getContext()->getSystemAllocatedMemoryHolder();
-                if (!holder)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "SYSTEM ALLOCATE MEMORY is not enabled");
-                holder->free();
-                LOG_DEBUG(log, "Total allocated memory is {}", ReadableSize(total_memory_tracker.get()));
-            }));
-    reg_fn(
-        Type::WAIT_FAILPOINT,
-        with_check_fn(
-            AccessType::SYSTEM_FAILPOINT,
-            [](LoggerPtr log, ASTSystemQuery & query)
-            {
-                if (query.fail_point_action == ASTSystemQuery::FailPointAction::PAUSE)
-                {
-                    LOG_TRACE(log, "Waiting for failpoint {} to pause", query.fail_point_name);
-                    FailPointInjection::waitForPause(query.fail_point_name);
-                    LOG_TRACE(log, "Failpoint {} has paused", query.fail_point_name);
-                }
-                else
-                {
-                    LOG_TRACE(log, "Waiting for failpoint {} to resume", query.fail_point_name);
-                    FailPointInjection::waitForResume(query.fail_point_name);
-                    LOG_TRACE(log, "Failpoint {} has resumed", query.fail_point_name);
-                }
-            }));
-    reg_fn(
-        Type::NOTIFY_FAILPOINT,
-        with_check_fn(
-            AccessType::SYSTEM_FAILPOINT,
-            [](LoggerPtr log, ASTSystemQuery & query)
-            {
-                LOG_TRACE(log, "Notifying failpoint {}", query.fail_point_name);
-                FailPointInjection::notifyFailPoint(query.fail_point_name);
-                LOG_TRACE(log, "Notified failpoint {}", query.fail_point_name);
-            }));
+                LOG_TRACE(interpreter.log, "Waiting for failpoint {} to resume", query.fail_point_name);
+                FailPointInjection::waitForResume(query.fail_point_name);
+                LOG_TRACE(interpreter.log, "Failpoint {} has resumed", query.fail_point_name);
+            }
+        });
+    reg(Type::NOTIFY_FAILPOINT,
+        AccessType::SYSTEM_FAILPOINT,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            LOG_TRACE(interpreter.log, "Notifying failpoint {}", query.fail_point_name);
+            FailPointInjection::notifyFailPoint(query.fail_point_name);
+            LOG_TRACE(interpreter.log, "Notified failpoint {}", query.fail_point_name);
+        });
 #else
-    reg_fn(
-        Type::ENABLE_FAILPOINT,
-        with_check_fn(
-            std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support"); }));
-    reg_fn(
-        Type::DISABLE_FAILPOINT,
-        with_check_fn(
-            std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support"); }));
-    reg_fn(
-        Type::WAIT_FAILPOINT,
-        with_check_fn(
-            std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support"); }));
-    reg_fn(
-        Type::NOTIFY_FAILPOINT,
-        with_check_fn(
-            std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support"); }));
+    reg(Type::ENABLE_FAILPOINT,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support"); });
+    reg(Type::DISABLE_FAILPOINT,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support"); });
+    reg(Type::WAIT_FAILPOINT,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support"); });
+    reg(Type::NOTIFY_FAILPOINT,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without FIU support"); });
 #endif
-    reg_fn(Type::RESET_COVERAGE, with_check_fn(AccessType::SYSTEM, []() { resetCoverage(); }));
-    reg_fn(
-        Type::SET_COVERAGE_TEST,
-        with_check_fn(
-            AccessType::SYSTEM,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter)
-            {
-                LOG_INFO(getLogger("InterpreterSystemQuery"), "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
+    reg(Type::RESET_COVERAGE,
+        AccessType::SYSTEM,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &) { resetCoverage(); });
+    reg(Type::SET_COVERAGE_TEST,
+        AccessType::SYSTEM,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        {
+            LOG_INFO(getLogger("InterpreterSystemQuery"), "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
 #if WITH_COVERAGE_DEPTH
-                {
-                    /// Register (or re-register) the flush callback so coverage data is
-                    /// resolved and inserted into system.coverage_log when the previous
-                    /// test's counters are flushed.  We re-register on each call so the
-                    /// captured global context stays fresh after server restart scenarios,
-                    /// and so that the callback is available even on the very first call.
-                    ContextPtr global_ctx = interpreter.getContext()->getGlobalContext();
-                    registerCoverageFlushCallback(
-                        [global_ctx](
-                            std::string_view prev_test,
-                            const std::vector<CovCounter> & name_refs,
-                            const std::vector<IndirectCallEntry> & indirect_calls)
-                        {
-                            LOG_INFO(
-                                getLogger("CoverageCollection"),
-                                "Flushing coverage for test '{}': {} covered counters, {} indirect calls",
-                                prev_test,
-                                name_refs.size(),
-                                indirect_calls.size());
+            {
+                /// Register (or re-register) the flush callback so coverage data is
+                /// resolved and inserted into system.coverage_log when the previous
+                /// test's counters are flushed.  We re-register on each call so the
+                /// captured global context stays fresh after server restart scenarios,
+                /// and so that the callback is available even on the very first call.
+                ContextPtr global_ctx = interpreter.getContext()->getGlobalContext();
+                registerCoverageFlushCallback(
+                    [global_ctx](
+                        std::string_view prev_test,
+                        const std::vector<CovCounter> & name_refs,
+                        const std::vector<IndirectCallEntry> & indirect_calls)
+                    {
+                        LOG_INFO(
+                            getLogger("CoverageCollection"),
+                            "Flushing coverage for test '{}': {} covered counters, {} indirect calls",
+                            prev_test,
+                            name_refs.size(),
+                            indirect_calls.size());
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-                            DB::collectAndInsertCoverage(prev_test, name_refs, indirect_calls, global_ctx);
+                        DB::collectAndInsertCoverage(prev_test, name_refs, indirect_calls, global_ctx);
 #else
                             (void)prev_test;
                             (void)name_refs;
                             (void)indirect_calls;
                             (void)global_ctx;
 #endif
-                        });
-                }
+                    });
+            }
 #endif
-                (void)interpreter;
-                setCoverageTest(query.coverage_test_name);
-            }));
-    reg_fn(
-        Type::LOAD_PRIMARY_KEY,
-        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.loadPrimaryKeys(); }));
-    reg_fn(
-        Type::UNLOAD_PRIMARY_KEY,
-        with_check_fn(std::nullopt, [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.unloadPrimaryKeys(); }));
-    reg_fn(
-        Type::UNLOCK_SNAPSHOT, with_check_fn(std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); }));
+            (void)interpreter;
+            setCoverageTest(query.coverage_test_name);
+        });
+    reg(Type::LOAD_PRIMARY_KEY,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { interpreter.loadPrimaryKeys(); });
+    reg(Type::UNLOAD_PRIMARY_KEY,
+        std::nullopt,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { interpreter.unloadPrimaryKeys(); });
+    reg(Type::UNLOCK_SNAPSHOT,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented"); });
 #if USE_XRAY
-    reg_fn(
-        Type::INSTRUMENT_ADD,
-        with_check_fn(
-            AccessType::SYSTEM_INSTRUMENT_ADD,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.instrumentWithXRay(true, query); }));
-    reg_fn(
-        Type::INSTRUMENT_REMOVE,
-        with_check_fn(
-            AccessType::SYSTEM_INSTRUMENT_REMOVE,
-            [](LoggerPtr, ASTSystemQuery & query, InterpreterSystemQuery & interpreter) { interpreter.instrumentWithXRay(false, query); }));
+    reg(Type::INSTRUMENT_ADD,
+        AccessType::SYSTEM_INSTRUMENT_ADD,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.instrumentWithXRay(true, query); });
+    reg(Type::INSTRUMENT_REMOVE,
+        AccessType::SYSTEM_INSTRUMENT_REMOVE,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery & query, const ContextMutablePtr &, BlockIO &)
+        { interpreter.instrumentWithXRay(false, query); });
 #else
-    reg_fn(
-        Type::INSTRUMENT_ADD,
-        with_check_fn(
-            std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without XRay support"); }));
-    reg_fn(
-        Type::INSTRUMENT_REMOVE,
-        with_check_fn(
-            std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without XRay support"); }));
+    reg(Type::INSTRUMENT_ADD,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without XRay support"); });
+    reg(Type::INSTRUMENT_REMOVE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without XRay support"); });
 #endif
 #if USE_JEMALLOC
-    reg_fn(Type::JEMALLOC_PURGE, with_check_fn(AccessType::SYSTEM_JEMALLOC, []() { Jemalloc::purgeArenas(); }));
-    reg_fn(
-        Type::JEMALLOC_ENABLE_PROFILE,
-        with_check_fn(
-            std::nullopt,
-            []()
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Queries for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler' or "
-                    "enable it per query using setting 'jemalloc_enable_profiler'");
-            }));
-    reg_fn(
-        Type::JEMALLOC_DISABLE_PROFILE,
-        with_check_fn(
-            std::nullopt,
-            []()
-            {
-                throw Exception(
-                    ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Queries for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler' or "
-                    "enable it per query using setting 'jemalloc_enable_profiler'");
-            }));
-    reg_fn(
-        Type::JEMALLOC_FLUSH_PROFILE,
-        with_check_fn(
-            AccessType::SYSTEM_JEMALLOC,
-            [](LoggerPtr, ASTSystemQuery &, InterpreterSystemQuery & interpreter, BlockIO & result)
-            {
-                auto context = interpreter.getContext();
-                auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
-                auto format = context->getSettingsRef()[Setting::jemalloc_profile_text_output_format];
-                auto symbolize_with_inline = context->getSettingsRef()[Setting::jemalloc_profile_text_symbolize_with_inline];
+    reg(Type::JEMALLOC_PURGE,
+        AccessType::SYSTEM_JEMALLOC,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &) { Jemalloc::purgeArenas(); });
+    reg(Type::JEMALLOC_ENABLE_PROFILE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Queries for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler' or "
+                "enable it per query using setting 'jemalloc_enable_profiler'");
+        });
+    reg(Type::JEMALLOC_DISABLE_PROFILE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Queries for enabling/disabling global profiler are deprecated. Please use config 'jemalloc_enable_global_profiler' or "
+                "enable it per query using setting 'jemalloc_enable_profiler'");
+        });
+    reg(Type::JEMALLOC_FLUSH_PROFILE,
+        AccessType::SYSTEM_JEMALLOC,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO & result)
+        {
+            auto context = interpreter.getContext();
+            auto filename = std::string(Jemalloc::flushProfile("/tmp/jemalloc_clickhouse"));
+            auto format = context->getSettingsRef()[Setting::jemalloc_profile_text_output_format];
+            auto symbolize_with_inline = context->getSettingsRef()[Setting::jemalloc_profile_text_symbolize_with_inline];
 
-                std::string output_filename;
-                if (format == JemallocProfileFormat::Raw)
-                {
-                    output_filename = filename;
-                }
-                else if (format == JemallocProfileFormat::Symbolized)
-                {
-                    output_filename = filename + ".symbolized";
-                    symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
-                }
-                else
-                {
-                    output_filename = filename + ".collapsed";
-                    symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
-                }
-                auto col = ColumnString::create();
-                col->insertData(output_filename.data(), output_filename.size());
-                Columns columns;
-                columns.emplace_back(std::move(col));
-                Chunk chunk(std::move(columns), 1);
-                SharedHeader header = std::make_shared<Block>(
-                    Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "filename")});
-                auto filename_source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
-                result.pipeline = QueryPipeline(filename_source);
-            }));
+            std::string output_filename;
+            if (format == JemallocProfileFormat::Raw)
+            {
+                output_filename = filename;
+            }
+            else if (format == JemallocProfileFormat::Symbolized)
+            {
+                output_filename = filename + ".symbolized";
+                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+            }
+            else
+            {
+                output_filename = filename + ".collapsed";
+                symbolizeJemallocHeapProfile(filename, output_filename, format, symbolize_with_inline);
+            }
+            auto col = ColumnString::create();
+            col->insertData(output_filename.data(), output_filename.size());
+            Columns columns;
+            columns.emplace_back(std::move(col));
+            Chunk chunk(std::move(columns), 1);
+            SharedHeader header = std::make_shared<Block>(
+                Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "filename")});
+            auto filename_source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
+            result.pipeline = QueryPipeline(filename_source);
+        });
 #else
-    reg_fn(
-        Type::JEMALLOC_PURGE,
-        with_check_fn(
-            std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc"); }));
-    reg_fn(
-        Type::JEMALLOC_ENABLE_PROFILE,
-        with_check_fn(
-            std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc"); }));
-    reg_fn(
-        Type::JEMALLOC_DISABLE_PROFILE,
-        with_check_fn(
-            std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc"); }));
-    reg_fn(
-        Type::JEMALLOC_FLUSH_PROFILE,
-        with_check_fn(
-            std::nullopt, []() { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc"); }));
+    reg(Type::JEMALLOC_PURGE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc"); });
+    reg(Type::JEMALLOC_ENABLE_PROFILE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc"); });
+    reg(Type::JEMALLOC_DISABLE_PROFILE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc"); });
+    reg(Type::JEMALLOC_FLUSH_PROFILE,
+        std::nullopt,
+        [](InterpreterSystemQuery &, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without JEMalloc"); });
 #endif
-    reg_fn(
-        Type::RESET_DDL_WORKER,
-        with_check_fn(
-            AccessType::SYSTEM_RESET_DDL_WORKER,
-            [](LoggerPtr, InterpreterSystemQuery & interpreter) { interpreter.getContext()->getDDLWorker().requestToResetState(); }));
+    reg(Type::RESET_DDL_WORKER,
+        AccessType::SYSTEM_RESET_DDL_WORKER,
+        [](InterpreterSystemQuery & interpreter, ASTSystemQuery &, const ContextMutablePtr &, BlockIO &)
+        { interpreter.getContext()->getDDLWorker().requestToResetState(); });
 }
 
 void registerSystemCommands();
