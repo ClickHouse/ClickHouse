@@ -107,7 +107,7 @@ The embedded SQL console lets you query your ClickHouse data without leaving Fab
 
 ### Saved queries {#saved-queries}
 
-Save any query with a name to reuse it later. Saved queries are stored with the item, so everyone in the workspace works from the same set.
+Save any query with a name to reuse it later. In public preview, saved queries are personal to each user; shared saved queries for collaboration are on the roadmap.
 
 ### Go further with ClickHouse SQL {#go-further-with-clickhouse-sql}
 
@@ -187,54 +187,138 @@ The workload is monetized through the [ClickHouse Cloud offer on Azure Marketpla
 
 ## Getting started tutorial {#getting-started-tutorial}
 
-This walkthrough uses the built-in sample data of Fabric, so you can try the workload without bringing your own dataset.
+This walkthrough loads a public dataset into a Lakehouse, syncs it to ClickHouse, and queries it.
 
-### Load the sample data {#load-the-sample-data}
+### Load the NYC taxi data {#load-the-nyc-taxi-data}
 
-In your Fabric workspace, select **+ New item** and select **Sample lakehouse** to add the **Public holidays** sample. Confirm the `publicholidays` table appears under Tables.
+The tutorial uses the public NYC TLC yellow taxi trip records, a well-known dataset of pickups, drop-offs, and fares. One year is about 40 million rows and loads in a few minutes, which is enough to see how the workload behaves on real data. If you want a larger dataset later, the full 2013 to 2026 history is about 1.1 billion rows.
+
+1. Create a Lakehouse in your workspace, or use an existing one
+2. Select **+ New item** and create a **Notebook**
+3. Attach the Lakehouse to the notebook. It must be the notebook's default Lakehouse
+4. Paste the two cells below into the notebook and run them in order
+
+```python
+import os, requests
+
+YEARS = range(2024, 2025)   # one year (~40M rows). Use range(2013, 2027) for the full ~1.1B rows
+BASE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{y}-{m:02d}.parquet"
+DEST = "/lakehouse/default/Files/yellow_tripdata"
+os.makedirs(DEST, exist_ok=True)
+
+for y in YEARS:
+    for m in range(1, 13):
+        url = BASE.format(y=y, m=m)
+        out = f"{DEST}/{os.path.basename(url)}"
+        if os.path.exists(out):
+            continue
+        r = requests.get(url, timeout=300)
+        if r.status_code == 200:
+            open(out, "wb").write(r.content)
+            print("saved", out)
+```
+
+```python
+from pyspark.sql import functions as F
+
+COLS = {
+    "VendorID": "int", "tpep_pickup_datetime": "timestamp", "tpep_dropoff_datetime": "timestamp",
+    "passenger_count": "int", "trip_distance": "double", "RatecodeID": "int",
+    "store_and_fwd_flag": "string", "PULocationID": "int", "DOLocationID": "int",
+    "payment_type": "int", "fare_amount": "double", "extra": "double", "mta_tax": "double",
+    "tip_amount": "double", "tolls_amount": "double", "improvement_surcharge": "double",
+    "total_amount": "double", "congestion_surcharge": "double", "airport_fee": "double",
+}
+
+def normalize(df):
+    lower = {c.lower(): c for c in df.columns}
+    return df.select([
+        (F.col(lower[c.lower()]) if c.lower() in lower else F.lit(None)).cast(t).alias(c)
+        for c, t in COLS.items()
+    ])
+
+ROOT = next(m.source for m in notebookutils.fs.mounts() if m.mountPoint == "/default") + "/Files/yellow_tripdata"
+
+files = sorted(f for f in os.listdir(DEST) if f.endswith(".parquet"))
+for i, name in enumerate(files):
+    normalize(spark.read.parquet(f"{ROOT}/{name}")) \
+        .write.mode("overwrite" if i == 0 else "append").format("delta").saveAsTable("yellow_tripdata")
+
+print(spark.table("yellow_tripdata").count(), "rows")
+```
+
+The second cell normalizes the schema because the TLC files change column names and types across years. Pinning every column to one name and type means the same code works whether you load one year or all of them.
+
+<Note>
+To add more years, widen `YEARS` and re-run both cells. The first cell skips files it has already downloaded, and the second rebuilds the table.
+</Note>
+
+Confirm the `yellow_tripdata` table appears under Tables in the Lakehouse.
 
 <Frame>
-  ![Public holidays sample table in a Fabric Lakehouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-sample-lakehouse.webp)
+  ![The yellow_tripdata table and its columns in a Fabric Lakehouse](/images/integrations/tools/data-integration/microsoft-fabric/fabric-08-tutorial-lakehouse-table.webp)
 </Frame>
 
 ### Create a ClickHouse item and sync {#create-a-clickhouse-item-and-sync}
 
 1. Create a ClickHouse item in the same workspace, as described in [provisioning](#provisioning)
-2. Open **Sync**, pick your Lakehouse, and select the `publicholidays` table
-3. Order by the columns you filter on most: `countryOrRegion, date`
-4. Start the sync and the data populates shortly. A table this size finishes in seconds
+2. Open **Sync**, pick your Lakehouse, and select the `yellow_tripdata` table
+3. Set the sorting key to `PULocationID, tpep_pickup_datetime`
+4. Start the sync. One year finishes in a few minutes, and the table is queryable as soon as its status shows complete
+
+That sorting key matches how dashboards and agents filter this data, by pickup zone and then time, so those queries read a small slice of the table instead of scanning all of it.
 
 ### Query the data {#query-the-data}
 
-Open the SQL console and try:
+Open the SQL console and run these:
+
+<Frame>
+  ![The three tutorial queries in the embedded ClickHouse SQL console](/images/integrations/tools/data-integration/microsoft-fabric/fabric-09-tutorial-sample-queries.webp)
+</Frame>
 
 ```sql
--- Which countries have the most holidays?
-SELECT countryOrRegion, count() AS holidays
-FROM publicholidays
-GROUP BY countryOrRegion
-ORDER BY holidays DESC
-LIMIT 10;
+-- 1. Row count
+SELECT count() FROM yellow_tripdata;
 ```
 
 ```sql
--- Paid time off vs. observance days by year
+-- 2. Hourly fares: pickup location 186 on June 12, 2024
 SELECT
-    toYear(date) AS year,
-    countIf(isPaidTimeOff) AS paid_days,
-    count() AS all_days
-FROM publicholidays
-GROUP BY year
-ORDER BY year;
+    toHour(tpep_pickup_datetime) AS hr,
+    count() AS trip_count,
+    round(avg(fare_amount), 2) AS avg_fare
+FROM yellow_tripdata
+WHERE PULocationID = 186
+  AND tpep_pickup_datetime >= '2024-06-12'
+  AND tpep_pickup_datetime <  '2024-06-13'
+GROUP BY hr
+ORDER BY hr;
 ```
 
-Save the first query as **Holidays by country** to see saved queries in action.
+```sql
+-- 3. Daily trend: route 132 → 161 during June 2024
+SELECT
+    toDate(tpep_pickup_datetime) AS d,
+    count() AS trip_count,
+    round(avg(total_amount), 2) AS avg_total
+FROM yellow_tripdata
+WHERE PULocationID = 132
+  AND DOLocationID = 161
+  AND tpep_pickup_datetime >= '2024-06-01'
+  AND tpep_pickup_datetime <  '2024-07-01'
+GROUP BY d
+ORDER BY d;
+```
+
+The console reports rows and bytes read next to the elapsed time. The row count comes straight from table metadata without reading any data. The other two both filter on `PULocationID` first, the leading column of the sorting key, so ClickHouse reads only the matching slice of the table instead of scanning all of it.
+
+Save the tab as **Demo queries** to see it listed under **Saved queries**.
 
 ### Connect to MCP {#connect-to-mcp}
 
 1. On the **Connect** screen, enable **MCP** for the service
 2. Register the ClickHouse MCP server with the MCP client of your choice, as described in [getting started with the remote MCP server](/products/cloud/features/ai-ml/remote-mcp#getting-started)
-3. Ask: *"Which country has the most public holidays in 2026, and how many are paid time off?"*
+3. Ask: *"Which pickup zone had the most trips in June 2024, and what was the average fare?"*
 
 The agent answers by running governed, read-only SQL against your synced table.
 
@@ -260,6 +344,36 @@ The ClickHouse workload is in public preview. The limitations below are the curr
 * **Removing or downgrading a user in Fabric does not revoke their ClickHouse access.** Because roles are only applied when a user opens a ClickHouse item, a user who is removed from the workspace or downgraded may retain their existing access on the ClickHouse Cloud side, and if they never open the item again that change never propagates at all. To revoke access immediately and reliably, remove the user from the organization in the ClickHouse Cloud console.
 * **Workspace-level access.** Everyone in the workspace can use its ClickHouse items. Granular, per-table permission sync from OneLake is currently not supported.
 * **Console SSO requires an email on your Entra profile.** ClickHouse Cloud users need an email address; if your Microsoft Entra profile has none set, signing in to the Cloud console will fail.
+
+## Troubleshooting {#troubleshooting}
+
+### Email verification fails when opening a ClickHouse item {#email-verification-fails}
+
+**Error codes:** `email_not_found`, `email_domain_unverified`
+
+**Cause:** Provisioning a ClickHouse user requires an email address from a verified domain on the Microsoft Entra account. Member accounts always qualify, including those in personal or test tenants that only have the default `.onmicrosoft.com` domain. These errors almost always mean you are signed in as a **guest (B2B) account**:
+
+- `email_not_found` — your guest profile in this tenant has no email address set.
+- `email_domain_unverified` — your email belongs to your home tenant, which is not a
+  verified domain in the tenant you are using Fabric in.
+
+**Resolution:** Use a member account of the tenant, or contact your Fabric administrator to confirm your Microsoft Entra profile has an email address on one of the tenant's verified domains. See [Managing custom domain names in Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity/users/domains-manage).
+
+### Cannot sign in to the ClickHouse Cloud console {#cannot-sign-in-to-the-clickhouse-cloud-console}
+
+**Cause:** ClickHouse Cloud users require an email address. Sign-in from the workload fails if the Entra profile has no email set, and first-time console sign-in sends a verification code, so the address must have a real inbox. Default `.onmicrosoft.com` addresses often have no mailbox. The in-Fabric experience is unaffected; this only gates **Open in ClickHouse Cloud** and marketplace checkout.
+
+**Resolution:** Contact your Fabric administrator to add an email address with an active inbox to your Microsoft Entra profile, then retry.
+
+### Access denied when opening an item {#access-denied-when-opening-an-item}
+
+**Error code:** `item_access_denied`
+
+**Cause:** The signed-in user does not have access to the Fabric item, or a recent workspace role change has not been applied yet.
+
+**Resolution:** Confirm you are a member of the workspace with the right role. Role changes take effect the next time you open a ClickHouse item.
+
+
 
 ## Reference {#reference}
 

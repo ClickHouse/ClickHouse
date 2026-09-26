@@ -186,10 +186,10 @@ You can configure multiple `<case>` sections.
 **Actions when conditions are met**:
 
 - If a data part matches a condition set, ClickHouse uses the specified compression method.
-- If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
+- If a data part matches multiple condition sets, ClickHouse uses the last matched condition set (the `<case>` sections are checked in order, and each matching one overrides the previous choice).
 
 <Note>
-If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
+If no conditions are met for a data part, ClickHouse uses the size-aware built-in default: `LZ4` below 100 MB and `ZSTD(3)` at or above it. As for the `min_part_size` conditions above, the size is the one known when the codec has to be chosen, before the data is written: `0` for a freshly inserted part, and the size of the source parts for a merge or a mutation. A rewrite that shrinks its input, such as a `TTL DELETE` or a collapsing merge, is therefore classified by the input size and can produce a part below the threshold that is still `ZSTD(3)`.
 </Note>
 
 **Example**
@@ -200,7 +200,7 @@ If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
+        <level>10</level>
     </case>
 </compression>
 ```
@@ -1159,16 +1159,18 @@ SSL client/server configuration.
 
 Support for SSL is provided by the `libpoco` library. The available configuration options are explained in [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h). Default values can be found in [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp).
 
+The files referenced by `certificateFile`, `privateKeyFile` and `caConfig` are reloaded without a restart when they change or on `SYSTEM RELOAD CONFIG`. New connections use the reloaded certificates, established connections are not affected.
+
 Keys for server/client settings:
 
 | Option                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Default Value                              |
 |-------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------|
 | `cacheSessions` | Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.                                                                                                                                                                                                                                                                                                                                         | `false`                                    |
-| `caConfig` | Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). |                                            |
+| `caConfig` | Path to the file or directory that contains trusted CA certificates. If this points to a file, it must be in PEM format and can contain several CA certificates. If this points to a directory, it must contain one .pem file per CA certificate. The filenames are looked up by the CA subject name hash value. Details can be found in the man page of [SSL_CTX_load_verify_locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). Like `certificateFile` and `privateKeyFile`, the CA certificates are reloaded without a restart when the file changes or on `SYSTEM RELOAD CONFIG`. |                                            |
 | `certificateFile` | Path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.                                                                                                                                                                                                                                                                                                                                                |                                            |
 | `cipherList` | Supported OpenSSL encryptions.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`  |
 | `disableProtocols` | Protocols that are not allowed to be used.                                                                                                                                                                                                                                                                                                                                                                                                                             |                                            |
-| `extendedVerification` | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                    |
+| `extendedVerification` | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `true` for `openSSL.client`, `false` for `openSSL.server` |
 | `fips` | Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                    |
 | `invalidCertificateHandler` | Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                           | `RejectCertificateHandler`                 |
 | `loadDefaultCAFile` | Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                        | `true`                                     |
@@ -1562,6 +1564,10 @@ The option applies to all system log tables; it does not allow for a different c
 When the `cluster` setting is used, the table definition references the cluster, and the cluster has to exist for the table to be loaded. If you remove the cluster from the configuration, also drop the `all_...` tables (they will be recreated according to the new configuration at the next flush).
 </Note>
 
+<Warning>
+Once this section is enabled, the `all_...` names in the `system` database are reserved for this feature. Do not keep your own tables under these names: rename any such table before enabling the section.
+</Warning>
+
 **Example**
 
 ```xml
@@ -1621,10 +1627,10 @@ Example:
 
 ```xml
 <blob_storage_log>
-    <database>system</database
-    <table>blob_storage_log</table
+    <database>system</database>
+    <table>blob_storage_log</table>
     <partition_by>toYYYYMM(event_date)</partition_by>
-    <flush_interval_milliseconds>7500</flush_interval_milliseconds
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     <ttl>event_date + INTERVAL 30 DAY</ttl>
 </blob_storage_log>
 ```
@@ -1699,7 +1705,7 @@ For example:
 ## timezone {#timezone}
 The server's time zone.
 
-Specified as an IANA identifier for the UTC timezone or geographic location (for example, Africa/Abidjan).
+Specified as a name that `system.time_zones` lists - the [IANA Time Zone Database](https://www.iana.org/time-zones) that is shipped with the server, for example `Africa/Abidjan` - or as a fixed offset from UTC, spelled `Fixed/UTC±HH:MM:SS`, for example `Fixed/UTC+05:30:00`. A name that only the operating system's time zone database has is rejected, because ClickHouse ships its own copy of the database so that results do not depend on the host.
 
 The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. Besides, the time zone is used in functions that work with the time and date if they didn't receive the time zone in the input parameters.
 
@@ -1806,6 +1812,7 @@ Settings for optional improvements in the access control system.
 
 | Setting                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Default |
 |-------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| `enable_read_write_grants` | Enables separation of `READ` and `WRITE` privileges for external data sources such as `S3`, `HDFS`, `Kafka`, and others. Available starting with version 25.7. When set to `true`, you can grant `READ` and `WRITE` separately for sources instead of a single grant covering both. | `false` |
 | `on_cluster_queries_require_cluster_grant` | Sets whether `ON CLUSTER` queries require the `CLUSTER` grant.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `true`  |
 | `role_cache_expiration_time_seconds` | Sets the number of seconds since last access, that a role is stored in the Role Cache.                                                                                                                                                                                                                                                                                                                                                                                                                           | `600`   |
 | `select_from_information_schema_requires_grant` | Sets whether `SELECT * FROM information_schema.<table>` requires any grants and can be executed by any user. If set to true, then this query requires `GRANT SELECT ON information_schema.<table>`, just as for ordinary tables.                                                                                                                                                                                                                                                                                 | `true`  |
@@ -1827,6 +1834,7 @@ Example:
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+    <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>
 ```
 
