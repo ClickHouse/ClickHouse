@@ -3,6 +3,9 @@
 -- `Date` and `DateTime` arguments keep the `Date` and `DateTime` result types.
 -- https://github.com/ClickHouse/ClickHouse/issues/121771
 
+-- The setting has an effect only when the result type depends on the interval unit.
+SET to_start_of_interval_preserves_argument_type = 0;
+
 SET enable_extended_results_for_datetime_functions = 1;
 
 SELECT 'DateTime argument';

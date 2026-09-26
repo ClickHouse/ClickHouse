@@ -8,7 +8,7 @@ select toStartOfInterval(toDate32('2022-09-16'), INTERVAL 1 MONTH);
 select toStartOfInterval(toDate32('2022-09-16'), INTERVAL 1 WEEK);
 2022-09-12
 select toStartOfInterval(toDate32('2022-09-16'), INTERVAL 1 DAY);
-2022-09-16 00:00:00
+2022-09-16
 select toStartOfInterval(toDate32('2022-09-16'), INTERVAL 1 HOUR); -- {  serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select toStartOfInterval(toDate32('2022-09-16'), INTERVAL 1 MINUTE); -- {  serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select toStartOfInterval(toDate32('2022-09-16'), INTERVAL 1 SECOND); -- {  serverError ILLEGAL_TYPE_OF_ARGUMENT }
