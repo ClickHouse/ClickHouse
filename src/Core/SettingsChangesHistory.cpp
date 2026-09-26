@@ -1549,7 +1549,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
             {"shared_merge_tree_merge_coordinator_distribution_algorithm", "sainte_lague", "sainte_lague", "Keep Sainte-Lague distribution regardless of `compatibility`.", CompatibilitySetting::Ignore},
             {"unique_key_conflict_action", "overwrite", "overwrite", "New table setting: how an INSERT on a UNIQUE KEY table resolves a key already live in the partition (overwrite / ignore / abort)"},
-            {"unique_key_gc_interval_seconds", 60, 60, "New setting. Interval of the background GC that reclaims superseded delete-bitmap sidecar versions on UNIQUE KEY tables."},
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},

@@ -2,8 +2,8 @@
 
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
-#include <Storages/MergeTree/UniqueKey/IBitmapStore.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
 #include <Common/TransactionID.h>
@@ -14,6 +14,7 @@
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace DB
@@ -35,30 +36,76 @@ class MergeTreeData;
 
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
-/// MergeTree-backed bitmap store: one cumulative bitmap per part per commit, written into the part
-/// whose transaction produced it and named for the part it kills. A read at `snapshot_csn` takes
-/// the highest csn at or below it from an in-memory index, wherever the bytes happen to live.
-class MergeTreeBitmapStore : public IBitmapStore
+/// Versioned persistence and lookup of the delete bitmaps of a unique-key table.
+class DeleteBitmapStore
 {
 public:
-    /// `data_` must outlive this; the table owns the store. `cache_` may be null.
-    MergeTreeBitmapStore(const MergeTreeData & data_, DeleteBitmapCachePtr cache_);
+    DeleteBitmapStore(const MergeTreeData & data_, DeleteBitmapCachePtr cache_);
 
-    BitmapAndVersion readBitmap(const MergeTreePartInfo & part, CSN snapshot_csn) const override;
-    ConstDeleteBitmapPtr readLatestBitmap(const MergeTreePartInfo & part) const override;
-    std::vector<DeleteBitmapFileOps::BitmapFile> listBitmaps(const MergeTreePartInfo & part) const override;
+    using BitmapAndVersion = std::pair<ConstDeleteBitmapPtr, CSN>;
 
-    size_t removeObsoleteBitmaps(const MergeTreePartInfo & part, CSN oldest_snapshot_csn) override;
+    /// Read the bitmap whose csn <= snapshot_csn, or an empty bitmap if none exists.
+    BitmapAndVersion readBitmap(const MergeTreePartInfo & part, CSN snapshot_csn) const;
 
-    void loadPart(const MergeTreePartInfo & part, const IDataPartStorage & storage) override;
-    void dropPart(const IMergeTreeDataPart & part) override;
+    /// The newest committed bitmap
+    ConstDeleteBitmapPtr readLatestBitmap(const MergeTreePartInfo & part) const;
 
-    void registerStagedBitmaps(const MergeTreePartInfo & holder, const std::vector<MergeTreePartInfo> & targets) override;
-    void removeStagedBitmaps(const MergeTreePartInfo & holder, const std::vector<MergeTreePartInfo> & targets) override;
+    /// The files in `part`'s own directory, sorted by version. `system.parts` introspection, NOT a resolution
+    std::vector<DeleteBitmapFileOps::BitmapFile> listBitmaps(const MergeTreePartInfo & part) const;
 
-    bool isPinned(const IMergeTreeDataPart & part, const DataPartsAnyLock & lock) const override;
-    std::vector<CarriedBitmap> selectCarriedBitmaps(const std::vector<MergeTreePartInfo> & sources) const override;
-    void registerLinks(const MergeTreePartInfo & holder, const std::vector<BitmapLink> & links) override;
+    /// Index the bitmap files `part` holds. Announcing the same directory twice adds nothing the
+    /// second time.
+    void loadPart(const MergeTreePartInfo & part, const IDataPartStorage & storage);
+
+    /// Forget the index entry and the cached bitmaps of a part that is no longer in
+    /// {Active, Outdated}.
+    void dropPart(const IMergeTreeDataPart & part);
+
+    /// Record that `holder` holds a staged bitmap for each of `targets`, so reads of those find it
+    void registerStagedBitmaps(const MergeTreePartInfo & holder, const std::vector<MergeTreePartInfo> & targets);
+
+    /// Undo the two registrations above, for a write whose transaction ROLLED BACK. Only then:
+    /// the entry is keyed by target, so the holder's removal never reaches it, but forgetting a
+    /// committed holder's entry hides kills that are durable.
+    void removeStagedBitmaps(const MergeTreePartInfo & holder, const std::vector<MergeTreePartInfo> & targets);
+
+    /// One bitmap link: the part it kills into, and at which version. A bitmap sits in the part
+    /// that WROTE it, which need not be the target.
+    ///
+    /// `csn == 0` means the holder wrote it, so the version is the holder's own `creation_csn` --
+    /// unknown until the commit point, which is why the file name leaves it out. Non-zero means a
+    /// merge carried it in, and the name records the version it arrived with.
+    struct BitmapLink
+    {
+        MergeTreePartInfo target;
+        CSN csn = 0;
+
+        bool operator==(const BitmapLink & other) const = default;
+    };
+
+    /// One file a merge has to copy into its result: the link it will hold afterwards, and
+    /// where the bytes are until then. `held_in` is a live handle on the source part, so the
+    /// directory the copy reads from cannot be reclaimed while this is in hand.
+    struct CarriedBitmap
+    {
+        BitmapLink link;
+        std::shared_ptr<const IMergeTreeDataPart> held_in;
+        DeleteBitmapFileOps::BitmapFile file;
+    };
+
+    /// Whether removing `part` would take the only copy of some other part's kills with it.
+    /// Answering resolves parts, and `grabOldParts` asks while holding the parts lock, so the
+    /// caller passes the lock it has rather than letting this take a second one.
+    bool isPinned(const IMergeTreeDataPart & part, const DataPartsAnyLock & lock) const;
+
+    /// The bitmaps a merge has to copy into its result: everything its retiring `sources` hold
+    /// for a target that is NOT itself being merged. Throws if a source cannot be resolved -- it
+    /// may hold kills, and a merge that silently skips them resurrects rows.
+    std::vector<CarriedBitmap> selectCarriedBitmaps(const std::vector<MergeTreePartInfo> & sources) const;
+
+    /// Record that `holder` now holds each of `links`, at the version each already had. Both
+    /// directions; links already there are skipped.
+    void registerLinks(const MergeTreePartInfo & holder, const std::vector<BitmapLink> & links);
 
 private:
     /// A bitmap file sits in the part that WROTE it, for good -- nothing moves it afterwards -- so
@@ -89,7 +136,7 @@ private:
         bool operator==(const HeldBy & other) const = default;
     };
 
-    /// `BitmapLink` is interface currency, so its hash lives with the index that needs one.
+    /// `BitmapLink` is public currency, so its hash lives with the index that needs one.
     struct HashBitmapLink
     {
         size_t operator()(const BitmapLink & link) const
@@ -118,7 +165,7 @@ private:
     };
 
     /// The same links from the two ends: `inward` sorted by csn, `outward` keyed by the link
-    /// itself -- the sweep removes one per obsolete version, and scanning for it there was quadratic.
+    /// itself, so registering a link already there is a no-op instead of a duplicate.
     struct PartEntry
     {
         std::mutex mutex;
@@ -157,8 +204,6 @@ private:
 
     /// Every link between two parts. Scans `inward` by holder, which the csn order cannot answer.
     void removeAllLinks(const MergeTreePartInfo & holder, const MergeTreePartInfo & target);
-    /// `csn` is what the outward side records: 0 for a staged link, resolved or not.
-    void removeOutwardLink(const MergeTreePartInfo & holder, const MergeTreePartInfo & target, CSN csn);
 
     std::vector<BitmapLink> getOutwardLinks(const MergeTreePartInfo & holder) const;
 
@@ -191,8 +236,9 @@ private:
     /// not yet a committed one.
     static std::optional<Version> resolveOwnVersion(const DataPartPtr & holder);
 
-    /// The highest version <= `snapshot_csn`
-    std::optional<Version> versionAt(const MergeTreePartInfo & part, CSN snapshot_csn) const;
+    /// Every version <= `snapshot_csn`, oldest first. A version is a delta, so the read owes the
+    /// union of all of them and not just the newest.
+    std::vector<Version> versionsUpTo(const MergeTreePartInfo & part, CSN snapshot_csn) const;
 
     /// Read one version's bytes, from whichever of the two names its writer filed it under.
     DeleteBitmapPtr readVersion(const IMergeTreeDataPart & part, const Version & version) const;
@@ -203,5 +249,7 @@ private:
     /// Non-owning: the table owns this store.
     const MergeTreeData & data;
 };
+
+using DeleteBitmapStorePtr = std::shared_ptr<DeleteBitmapStore>;
 
 }

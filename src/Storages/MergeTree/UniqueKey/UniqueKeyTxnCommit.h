@@ -26,12 +26,13 @@ public:
     struct InsertRequest
     {
         IUniqueKeyInsertSink & sink;
-        StorageMergeTree & storage;
-        const StorageMetadataPtr & metadata_snapshot;
+        MergeTreeData & storage;
+        StorageMetadataPtr metadata_snapshot;
         ContextPtr context;
         /// Replaced in place when `ignore` filters the block and the part is rewritten.
         MergeTreeTemporaryPartPtr & temp_part;
-        BlockWithPartition & block_with_partition;
+        /// The rows `temp_part` was written from.
+        std::shared_ptr<const Block> block;
         const std::vector<DeduplicationHash> & deduplication_hashes;
         MergeTreeTransactionHolder & transaction;
     };
@@ -53,7 +54,7 @@ public:
     {
         MergeTreeTransactionHolder & transaction;
         const MergeTreeData::DataPartsVector & source_parts;
-        const MergeTreeMutableDataPartPtr & merged_part;
+        MergeTreeMutableDataPartPtr merged_part;
         const std::vector<ConstDeleteBitmapPtr> & snapshot_bitmaps;
     };
 
@@ -72,8 +73,8 @@ public:
         std::function<std::unique_ptr<PlainCommittingBlockHolder>()> allocate_marker_block;
     };
 
-    /// DELETE: Stages a 0-row marker part to carry the commit's csn, and installs one
-    /// cumulative kill bitmap per touched part.
+    /// DELETE: Stages a 0-row marker part to carry the commit's csn, and installs one delta
+    /// per touched part -- the rows this DELETE kills, and none it inherited.
     /// Returns the newly-dead rows committed.
     static size_t deleteRows(StorageMergeTree & storage, DeleteRequest request);
 

@@ -1681,7 +1681,7 @@ protected:
     friend class VersionMetadataOnKeeper; // for access to log
     friend class MutationsState; // for access to log
     friend class UniqueKeyDenseIndexOps; // for access to log + data_parts_by_info
-    friend class MergeTreeBitmapStore; // for access to outdated_data_parts_loading_finished
+    friend class DeleteBitmapStore; // for access to outdated_data_parts_loading_finished
 
     bool require_part_metadata;
 
@@ -2211,14 +2211,6 @@ protected:
     std::mutex refresh_parts_mutex;
 
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
-
-    /// Null on a table without a unique key, or when `unique_key_gc_interval_seconds = 0`.
-    BackgroundSchedulePoolTaskHolder unique_key_gc_task;
-
-    /// Periodic GC of superseded delete-bitmap sidecar versions. Mirrors `refresh_stats_task`:
-    /// started from `startup` and `changeSettings`, drained by `StorageMergeTree::shutdown`.
-    void startUniqueKeyGCTaskIfNeeded();
-    void runUniqueKeyGCRound() const;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;

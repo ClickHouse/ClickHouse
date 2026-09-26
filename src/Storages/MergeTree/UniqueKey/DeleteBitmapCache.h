@@ -23,7 +23,7 @@ struct DeleteBitmapWeightFunction
     }
 };
 
-/// Cache key for a deserialized `DeleteBitmap`: the part-identity string plus the bitmap version.
+/// Cache key for a deserialized `DeleteBitmap`: part identity, bitmap version, and version count.
 ///
 /// `part_id` is the caller's stable cache identity — the part UUID, or the `disk:path` fallback
 /// when the UUID is nil (see `IMergeTreeDataPart::getDeleteBitmapCacheIdentity`).
@@ -35,10 +35,11 @@ struct DeleteBitmapCacheKey
 {
     String part_id;
     BitmapVersion version;
+    size_t version_count = 1;
 
     bool operator==(const DeleteBitmapCacheKey & other) const
     {
-        return version == other.version && part_id == other.part_id;
+        return version == other.version && version_count == other.version_count && part_id == other.part_id;
     }
 };
 
@@ -50,6 +51,7 @@ struct DeleteBitmapCacheKeyHash
         hash.update(key.part_id.size());
         hash.update(key.part_id.data(), key.part_id.size());
         hash.update(key.version);
+        hash.update(key.version_count);
         return hash.get64();
     }
 };
@@ -71,9 +73,9 @@ public:
     {
     }
 
-    static DeleteBitmapCacheKey makeKey(const String & part_id, BitmapVersion version)
+    static DeleteBitmapCacheKey makeKey(const String & part_id, BitmapVersion version, size_t version_count = 1)
     {
-        return DeleteBitmapCacheKey{part_id, version};
+        return DeleteBitmapCacheKey{part_id, version, version_count};
     }
 
     /// Every version cached for one part, dropped together with the part. Without this a retired

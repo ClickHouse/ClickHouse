@@ -32,6 +32,7 @@
 #include <Storages/MergeTree/Backup.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
@@ -1842,6 +1843,16 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
 
     if (getDataPartStorage().existsFile(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME))
         result.emplace(INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
+
+    if (storage.hasUniqueKey())
+    {
+        for (const auto & file : DeleteBitmapFileOps::enumerateFiles(getDataPartStorage()))
+        {
+            auto file_name = file.fileName();
+            if (!checksums.files.contains(file_name))
+                result.emplace(std::move(file_name));
+        }
+    }
 
     return result;
 }

@@ -157,18 +157,3 @@ TEST(DeleteBitmapFileOpsTest, ACarriedBitmapRoundTripsUnderItsOwnVersion)
     EXPECT_EQ(files[0].target, "all_1_1_0");
     EXPECT_EQ(files[0].toString(), "12_for_all_1_1_0");
 }
-
-TEST(DeleteBitmapFileOpsTest, RemoveReportsWhetherTheFileWasThere)
-{
-    PartStorageFixture fx{"file_ops"};
-
-    DeleteBitmap bm;
-    bm.add(1);
-    const DeleteBitmapFileOps::BitmapFile file{3, "all_1_1_0"};
-    writeCarried(*fx.storage, file.version, file.target, bm);
-
-    EXPECT_TRUE(DeleteBitmapFileOps::removeBitmapFile(*fx.storage, file));
-    EXPECT_FALSE(std::filesystem::exists(fx.partFile(file.fileName())));
-    /// The gc counts what it unlinked, so a version whose file is already gone must report false
-    EXPECT_FALSE(DeleteBitmapFileOps::removeBitmapFile(*fx.storage, file));
-}

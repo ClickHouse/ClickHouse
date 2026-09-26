@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <base/types.h>
 
@@ -47,20 +48,15 @@ namespace DeleteBitmapFileOps
     /// `delete_bitmap_10_for_x` before `delete_bitmap_9_for_x` once a table crosses csn 10.
     void sortByVersion(std::vector<BitmapFile> & files);
 
-    /// Both writes are atomic (tmp-file + fsync + dir-sync rename) and neither is internally
-    /// synchronised: the caller serialises concurrent writers to one target. Both land before the
-    /// commit point, so the rename that publishes the part publishes them with it.
-    ///
-    /// Staged: `holder` wrote this itself, so the version is `holder`'s own csn -- which does not
-    /// exist yet, and is left out of the name.
-    void stageBitmap(
+    /// Stage a bitmap file for the given holder
+    MergeTreeDataPartChecksum stageBitmap(
         IDataPartStorage & holder,
-        const String & target_part_name,
+        const BitmapFile & file,
         const DeleteBitmap & bitmap);
 
     /// Copy a bitmap file under a carried name. The version travels with the bytes: renumbering
     /// it to the destination's csn would land a copy newest-by-number and stale-by-content.
-    void carryBitmap(
+    MergeTreeDataPartChecksum carryBitmap(
         const IDataPartStorage & from,
         const BitmapFile & from_file,
         IDataPartStorage & to,
@@ -70,9 +66,6 @@ namespace DeleteBitmapFileOps
     /// a failure.
     DeleteBitmapPtr tryReadBitmap(const IDataPartStorage & holder, const BitmapFile & file);
 
-    /// Reports whether the file was there: an indexed version can already have lost it. Only past
-    /// the GC floor, which is what makes a removal unobservable where an addition would not be.
-    bool removeBitmapFile(IDataPartStorage & holder, const BitmapFile & file);
 }
 
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/MergeTree/UniqueKey/IBitmapStore.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapStore.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Interpreters/Context_fwd.h>
@@ -46,8 +46,8 @@ public:
         /// The parts a staged bitmap was written for
         std::vector<MergeTreePartInfo> targets;
         /// The links to the bitmaps this write copied in rather than originated -- see
-        /// `IBitmapStore::selectCarriedBitmaps`. The bytes are already on disk by then.
-        std::vector<IBitmapStore::BitmapLink> carried;
+        /// `DeleteBitmapStore::selectCarriedBitmaps`. The bytes are already on disk by then.
+        std::vector<DeleteBitmapStore::BitmapLink> carried;
 
         /// Every target this write is now on the hook for, in either role.
         std::vector<MergeTreePartInfo> allTargets() const
@@ -85,19 +85,15 @@ MergeTreeTransactionHolder beginUniqueKeyTransaction(const ContextPtr & context,
 /// cannot be passed the wrong transaction.
 MergeTreeTransactionHolder beginUniqueKeyTransaction(const MergeTreeTransactionPtr & current, std::string_view operation);
 
-/// Unique-key's per-table transaction manager, built on top of the TransactionLog and IBitmapStore.
 class UniqueKeyTxnManager
 {
 public:
-    explicit UniqueKeyTxnManager(BitmapStorePtr bitmap_store_);
+    explicit UniqueKeyTxnManager(DeleteBitmapStorePtr delete_bitmap_store_);
 
-    IBitmapStore & bitmapStore() { return *bitmap_store; }
+    DeleteBitmapStore & deleteBitmapStore() { return *delete_bitmap_store; }
 
     /// Commit a write under a transaction, returning the commit sequence number of the commit point.
     CSN commitTransaction(MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write);
-
-    /// Reclaim delete-bitmap versions of `parts` that no live snapshot can still read.
-    size_t runGCRound(const std::vector<MergeTreePartInfo> & parts);
 
 private:
     /// The pessimistic write lock for a partition
@@ -107,7 +103,7 @@ private:
     std::mutex partition_locks_mutex;
     std::unordered_map<String, std::mutex> partition_locks;
 
-    BitmapStorePtr bitmap_store;
+    DeleteBitmapStorePtr delete_bitmap_store;
 
     LoggerPtr log;
 };

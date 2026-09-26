@@ -8,7 +8,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
-#include <Storages/MergeTree/UniqueKey/MergeTreeBitmapStore.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapStore.h>
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
@@ -59,35 +59,17 @@ void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
 
 }
 
-UniqueKeyTxnManager::UniqueKeyTxnManager(BitmapStorePtr bitmap_store_)
-    : bitmap_store(std::move(bitmap_store_))
+UniqueKeyTxnManager::UniqueKeyTxnManager(DeleteBitmapStorePtr delete_bitmap_store_)
+    : delete_bitmap_store(std::move(delete_bitmap_store_))
     , log(getLogger("UniqueKeyTxnManager"))
 {
-    chassert(bitmap_store, "UniqueKeyTxnManager requires a non-null bitmap store");
+    chassert(delete_bitmap_store, "UniqueKeyTxnManager requires a non-null delete bitmap store");
 }
 
 std::mutex & UniqueKeyTxnManager::partitionLock(const String & partition_id)
 {
     std::lock_guard registry_lock(partition_locks_mutex);
     return partition_locks[partition_id];
-}
-
-size_t UniqueKeyTxnManager::runGCRound(const std::vector<MergeTreePartInfo> & parts)
-{
-    const CSN oldest_snapshot = TransactionManager::instance().getOldestSnapshot();
-
-    size_t reclaimed = 0;
-    for (const auto & part : parts)
-    {
-        /// A sweep removes bitmap files, which makes it a writer in the part's partition like any
-        /// other. Without the guard a merge can pick a file to carry and find it gone by the time
-        /// it copies: the version it picked is the newest its SOURCES hold, which a part outside
-        /// the merge can already have superseded, putting it below the floor this round reclaims.
-        PartitionWriteGuard write_guard(partitionLock(part.getPartitionId()));
-        reclaimed += bitmap_store->removeObsoleteBitmaps(part, oldest_snapshot);
-    }
-
-    return reclaimed;
 }
 
 MergeTreeTransactionHolder beginUniqueKeyTransaction(const MergeTreeTransactionPtr & current, std::string_view operation)
@@ -144,8 +126,8 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
 
         /// Before the commit point, so the moment this part becomes visible its staged bitmaps
         /// are already discoverable from their targets.
-        bitmapStore().registerStagedBitmaps(holder.info, staged->targets);
-        bitmapStore().registerLinks(holder.info, staged->carried);
+        deleteBitmapStore().registerStagedBitmaps(holder.info, staged->targets);
+        deleteBitmapStore().registerLinks(holder.info, staged->carried);
         registered_holder = holder.info;
 
         /// Commit point
@@ -161,7 +143,7 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
         rollbackTransaction(txn);
 
         if (registered_holder && txn && txn->getState() == MergeTreeTransaction::ROLLED_BACK)
-            bitmapStore().removeStagedBitmaps(*registered_holder, staged->allTargets());
+            deleteBitmapStore().removeStagedBitmaps(*registered_holder, staged->allTargets());
 
         throw;
     }

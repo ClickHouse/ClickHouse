@@ -51,9 +51,9 @@ inline void writeCarried(
     IDataPartStorage & storage, UInt64 version, const String & target, const DeleteBitmap & bitmap)
 {
     const DeleteBitmapFileOps::BitmapFile staged{/*version=*/ 0, target};
-    DeleteBitmapFileOps::stageBitmap(storage, target, bitmap);
+    DeleteBitmapFileOps::stageBitmap(storage, staged, bitmap);
     DeleteBitmapFileOps::carryBitmap(storage, staged, storage, {version, target});
-    DeleteBitmapFileOps::removeBitmapFile(storage, staged);
+    storage.removeFileIfExists(staged.fileName());
 }
 
 }

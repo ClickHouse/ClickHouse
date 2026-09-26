@@ -388,24 +388,6 @@ void DeleteBitmap::merge(const DeleteBitmap & other)
     mergeAny(*std::get<R32Ptr>(bitmap), *std::get<R32Ptr>(other.bitmap));
 }
 
-ConstDeleteBitmapPtr DeleteBitmap::cumulateTwo(const ConstDeleteBitmapPtr & lhs, const ConstDeleteBitmapPtr & rhs)
-{
-    const bool has_lhs = !lhs->empty();
-    const bool has_rhs = rhs && !rhs->empty();
-
-    if (!has_lhs && !has_rhs)
-        return {};
-    if (!has_rhs)
-        return lhs;
-    if (!has_lhs)
-        return rhs;
-
-    auto merged = std::make_shared<DeleteBitmap>();
-    merged->merge(*lhs);
-    merged->merge(*rhs);
-    return merged;
-}
-
 void DeleteBitmap::subtract(const DeleteBitmap & other)
 {
     /// No upgrade: see the declaration.

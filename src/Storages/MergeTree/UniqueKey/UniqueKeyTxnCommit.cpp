@@ -10,6 +10,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/UniqueKey/BlockAllocation.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
@@ -25,7 +26,6 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include <Common/scope_guard_safe.h>
 #include <base/EnumReflection.h>
 
 #include <algorithm>
@@ -68,8 +68,8 @@ extern const MergeTreeSettingsUniqueKeyConflictAction unique_key_conflict_action
 class UniqueKeyCommitBase : public IUniqueKeyCommit
 {
 public:
-    explicit UniqueKeyCommitBase(IBitmapStore & store_)
-        : store(store_)
+    explicit UniqueKeyCommitBase(DeleteBitmapStore & delete_bitmap_store_)
+        : delete_bitmap_store(delete_bitmap_store_)
         , log(getLogger("UniqueKeyTxnCommit"))
     {
     }
@@ -88,42 +88,46 @@ public:
         /// Only when this write installs a bitmap of its own: a write that touches no target
         /// derives nothing from the physical set and so cannot shadow anything.
         if (!kills_per_part.empty())
-            rejectUndeterminedTransactions("cumulative delete bitmap");
+            rejectUndeterminedTransactions("delete bitmap");
 
-        auto versions = cumulativeKills();
+        auto kills = ownKills();
         auto carried = selectCarriedBitmaps();
 
         /// Before the first deref of `own_part`: a write that stages anything must publish the part
         /// that resolves it, and `own_kills` is a bitmap for that part itself.
-        if (!own_part && (own_kills || !versions.empty() || !carried.empty()))
+        if (!own_part && (own_kills || !kills.empty() || !carried.empty()))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "UNIQUE KEY write staged {} bitmap(s) but publishes no part to resolve them against",
-                versions.size() + carried.size() + (own_kills ? 1 : 0));
+                kills.size() + carried.size() + (own_kills ? 1 : 0));
 
-        if (own_kills && !versions.emplace(own_part->info, own_kills).second)
+        if (own_kills && !kills.emplace(own_part->info, own_kills).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "UNIQUE KEY write has both a delta and its own bitmap for part {}", own_part->name);
 
         StagedWrite staged;
-        for (const auto & [target, bitmap] : versions)
+        MergeTreeDataPartChecksums written;
+
+        for (const auto & [target, bitmap] : kills)
         {
             /// The name is the file's, not the index's: the store is keyed by info
-            DeleteBitmapFileOps::stageBitmap(
-                own_part->getDataPartStorage(), target.getPartNameV1(), *bitmap);
+            const DeleteBitmapFileOps::BitmapFile file{0, target.getPartNameV1()};
+            written.files[file.fileName()]
+                = DeleteBitmapFileOps::stageBitmap(own_part->getDataPartStorage(), file, *bitmap);
             staged.targets.push_back(target);
 
             LOG_TRACE(log, "UNIQUE KEY {} (partition {}): staged a {}-row delete bitmap for part {} in {}",
                 writeKind(), partitionId(), bitmap->cardinality(), target.getPartNameV1(), own_part->name);
         }
 
+        /// One file per version, never folded into one.
         staged.carried.reserve(carried.size());
         for (const auto & [link, held_in, file] : carried)
         {
             /// The version travels with the bytes: this part did not create the kills and its own
             /// csn says nothing about when they apply.
             const DeleteBitmapFileOps::BitmapFile in_result{link.csn, link.target.getPartNameV1()};
-            DeleteBitmapFileOps::carryBitmap(
+            written.files[in_result.fileName()] = DeleteBitmapFileOps::carryBitmap(
                 held_in->getDataPartStorage(), file, own_part->getDataPartStorage(), in_result);
             staged.carried.push_back(link);
 
@@ -133,38 +137,57 @@ public:
                 held_in->name, own_part->name);
         }
 
-        /// The bytes stop here: what the commit carries on is the links, and holding every
-        /// carried bitmap of the merge until it returns would be the whole merge's worth.
+        recordBitmapChecksums(written);
+
         return staged;
     }
 
 protected:
 
-    using CumulativeByPart = std::map<MergeTreePartInfo, ConstDeleteBitmapPtr>;
+    using KillsByPart = std::map<MergeTreePartInfo, ConstDeleteBitmapPtr>;
 
     /// Resolve conflicts with concurrent writes and fill the members below; `stage` writes
     /// what this leaves behind. False means there is nothing to commit.
     virtual bool resolveConflicts() = 0;
 
     /// What this write has to copy in rather than originate -- see
-    /// `IBitmapStore::selectCarriedBitmaps`. Only a merge has any.
-    virtual std::vector<IBitmapStore::CarriedBitmap> selectCarriedBitmaps() { return {}; }
+    /// `DeleteBitmapStore::selectCarriedBitmaps`. Only a merge has any.
+    virtual std::vector<DeleteBitmapStore::CarriedBitmap> selectCarriedBitmaps() { return {}; }
 
-    /// Turn every delta in `kills_per_part` into the cumulative version that may actually go to disk
-    CumulativeByPart cumulativeKills()
+    void recordBitmapChecksums(const MergeTreeDataPartChecksums & written)
     {
-        CumulativeByPart prepared;
+        if (written.files.empty())
+            return;
+
+        /// Packed storage cannot be told
+        auto & storage = own_part->getDataPartStorage();
+        if (storage.getType() != MergeTreeDataPartStorageType::Full)
+            return;
+
+        for (const auto & [name, checksum] : written.files)
+            own_part->checksums.files[name] = checksum;
+
+        {
+            auto out = storage.writeFile("checksums.txt", 4096, {});
+            own_part->checksums.write(*out);
+            out->sync();
+            out->finalize();
+        }
+
+        own_part->setBytesOnDisk(own_part->checksums.getTotalSizeOnDisk());
+    }
+
+    KillsByPart ownKills()
+    {
+        KillsByPart prepared;
 
         for (const auto & [part_info, kill] : kills_per_part)
-            if (auto bitmap = DeleteBitmap::cumulateTwo(store.readLatestBitmap(part_info), kill))
-                prepared.emplace(part_info, std::move(bitmap));
+            if (kill && !kill->empty())
+                prepared.emplace(part_info, kill);
 
         return prepared;
     }
 
-    /// A fold takes the newest COMMITTED version as its base, so an undetermined transaction -- one
-    /// that may already hold a csn below ours -- would be shadowed by what we publish, and a fold
-    /// cannot be undone. See `IBitmapStore::readLatestBitmap`.
     static void rejectUndeterminedTransactions(std::string_view what)
     {
         if (!TransactionManager::instance().hasUnknownStateTransactions())
@@ -177,7 +200,7 @@ protected:
             what);
     }
 
-    IBitmapStore & store;
+    DeleteBitmapStore & delete_bitmap_store;
     LoggerPtr log;
 
     /// The part generated by this write
@@ -188,18 +211,29 @@ protected:
     std::map<MergeTreePartInfo, ConstDeleteBitmapPtr> kills_per_part;
 };
 
+/// Rename `part` and make it active, but not visible to other transactions.
+static void addPartToActiveSet(MergeTreeData & storage, MergeTreeMutableDataPartPtr & part, const MergeTreeTransactionPtr & txn)
+{
+    /// Created outside the parts lock: on an exceptional path its destructor re-acquires it.
+    MergeTreeData::Transaction transaction(storage, txn.get());
+    {
+        auto parts_lock = storage.lockParts();
+        storage.renameTempPartAndAdd(part, transaction, parts_lock, /*rename_in_transaction=*/false);
+        transaction.commit(parts_lock);
+    }
+}
 
 class UniqueKeyTxnCommit::InsertCommit : public UniqueKeyCommitBase
 {
 public:
     explicit InsertCommit(InsertRequest & request)
-        : UniqueKeyCommitBase(request.storage.uniqueKeyTxnManager().bitmapStore())
+        : UniqueKeyCommitBase(request.storage.uniqueKeyTxnManager().deleteBitmapStore())
         , sink(request.sink)
-        , merge_tree(request.storage)
+        , storage(request.storage)
         , metadata_snapshot(request.metadata_snapshot)
         , context(request.context)
         , temp_part(request.temp_part)
-        , block_with_partition(request.block_with_partition)
+        , block(request.block)
         , transaction(request.transaction)
         , deduplication_hashes(request.deduplication_hashes)
     {
@@ -209,11 +243,10 @@ public:
     String partitionId() const override { return own_part->info.getPartitionId(); }
     std::string_view writeKind() const override { return "INSERT"; }
 
-    /// Rename this part and make it active, but not visible to other transactions
     const IMergeTreeDataPart & publish(
         const PartitionWriteGuard &, const MergeTreeTransactionPtr & txn, const StagedWrite &) override
     {
-        sink.addAllocatedPartToActiveSet(own_part, std::move(block_holder), txn);
+        addPartToActiveSet(storage, own_part, txn);
         return *own_part;
     }
 
@@ -229,39 +262,25 @@ private:
 
     std::vector<ProbeResult> probeActiveParts(const String & partition_id, const Settings & query_settings);
 
-    StorageMergeTree & storage() { return merge_tree; }
-
-    const Block & incomingBlock() const { return *block_with_partition.block; }
+    const Block & incomingBlock() const { return *block; }
 
     /// Rewrite the part without the conflicting rows.
     /// Return false (with `part_discarded`) when nothing survives the filter.
     bool rewritePartIgnoreConflicts(const IColumn::Filter & keep);
 
-    /// `resolveConflicts` registers the block before the probe so a retry short-circuits. A
-    /// commit that publishes nothing must undo that, or the retry is deduplicated away instead of
-    /// re-evaluated.
-    void dropOptimisticBlockRegistration()
-    {
-        if (!block_registered || deduplication_hashes.empty())
-            return;
-        if (auto * dedup_log = storage().getDeduplicationLog())
-            dedup_log->dropPart(own_part->info);
-    }
-
     IUniqueKeyInsertSink & sink;
-    StorageMergeTree & merge_tree;
-    const StorageMetadataPtr & metadata_snapshot;
+    MergeTreeData & storage;
+    StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
     MergeTreeTemporaryPartPtr & temp_part;
-    BlockWithPartition & block_with_partition;
+    std::shared_ptr<const Block> block;
     MergeTreeTransactionHolder & transaction;
 
-    /// For block deduplication: the block is registered before the probe so a retry short-circuits
+    /// Block deduplication. `resolveConflicts` allocates the block number and registers it in the
+    /// dedup log, and `publish` adds the part. Both run under the partition guard, so a partition has
+    /// at most one block number outstanding and no merge can select over a gap a later publish fills.
     const std::vector<DeduplicationHash> & deduplication_hashes;
-    std::unique_ptr<PlainCommittingBlockHolder> block_holder;
-    std::vector<std::string> block_dedup_conflicts;
-    bool block_registered = false;
-    UInt64 block_number = 0;
+    std::unique_ptr<BlockAllocation> allocation;
 
     /// The whole part is discarded after IGNORE
     bool part_discarded = false;
@@ -280,7 +299,7 @@ ProbeTargetPartPtr UniqueKeyTxnCommit::InsertCommit::makeSSTProbeTarget(const Me
 #if USE_ROCKSDB
     return std::make_shared<SSTProbeTargetPart>(
         target.get(),
-        store.readLatestBitmap(target->info),
+        delete_bitmap_store.readLatestBitmap(target->info),
         openSSTReaderFromStorage(target->getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, context->getReadSettings()));
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -315,14 +334,14 @@ bool UniqueKeyTxnCommit::InsertCommit::rewritePartIgnoreConflicts(const IColumn:
         return false;
     }
 
-    BlockWithPartition filtered_with_partition(
-        std::make_shared<Block>(std::move(filtered)), block_with_partition.partition.value);
+    /// From the part, not the sink's block: writing the part moved the partition value into it.
+    BlockWithPartition filtered_with_partition(std::make_shared<Block>(std::move(filtered)), own_part->partition.value);
     temp_part = sink.writeNewTempPart(filtered_with_partition, transaction.getTransaction());
     temp_part->finalize();
     own_part = temp_part->part;
-    own_part->info.min_block = block_number;
-    own_part->info.max_block = block_number;
-    own_part->setName(own_part->getNewName(own_part->info));
+    /// The dedup log registered the allocated block number, so the rewritten part takes it over
+    /// rather than the fresh one the writer assigns.
+    allocation->assignTo(*own_part);
     return true;
 }
 
@@ -359,8 +378,8 @@ std::vector<ProbeResult> UniqueKeyTxnCommit::InsertCommit::probeActiveParts(cons
     /// The latest parts and not a snapshot: the partition lock excludes concurrent writes
     std::vector<MergeTreeDataPartPtr> active_parts;
     {
-        auto parts_lock = storage().readLockParts();
-        active_parts = storage().getDataPartsVectorInPartitionForInternalUsage(
+        auto parts_lock = storage.readLockParts();
+        active_parts = storage.getDataPartsVectorInPartitionForInternalUsage(
             MergeTreeData::DataPartState::Active, partition_id, parts_lock);
     }
 
@@ -391,14 +410,9 @@ std::vector<ProbeResult> UniqueKeyTxnCommit::InsertCommit::probeActiveParts(cons
 
 bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
 {
-    /// Dedup BEFORE the probe, a contract 04183_unique_key_abort_dedup_replay pins: a replayed
-    /// block's keys are live in the part its own first attempt published, so probing first would
-    /// raise VIOLATED_CONSTRAINT under `abort` and turn an idempotent retry into an error.
-    block_dedup_conflicts = sink.allocateAndCheckBlockDedup(own_part, deduplication_hashes, block_holder);
-    if (!block_dedup_conflicts.empty())
+    allocation = sink.allocateBlock(own_part, deduplication_hashes);
+    if (!allocation->dedupConflicts().empty())
         return false;
-    block_registered = true;
-    block_number = own_part->info.min_block;
 
     /// TODO(unique-key): split the probe into two stages to shrink the lock scope
     const auto & partition_id = own_part->info.getPartitionId();
@@ -412,7 +426,7 @@ bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
 
     if (!conflict_rows.empty())
     {
-        const auto conflict_action = (*storage().getSettings())[MergeTreeSetting::unique_key_conflict_action].value;
+        const auto conflict_action = (*storage.getSettings())[MergeTreeSetting::unique_key_conflict_action].value;
 
         LOG_DEBUG(log, "UNIQUE KEY INSERT (partition {}): {} of {} row(s) conflict, applying {}",
             partitionId(), conflict_rows.size(), results.size(), conflict_action);
@@ -444,6 +458,7 @@ bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
         }
         case UniqueKeyConflictAction::Overwrite:
         {
+            /// `kills_per_part` holds const bitmaps; build the kills mutable here, then hand them over.
             std::map<MergeTreePartInfo, DeleteBitmapPtr> kills_by_target;
             for (size_t row : conflict_rows)
             {
@@ -466,16 +481,11 @@ bool UniqueKeyTxnCommit::InsertCommit::resolveConflicts()
 
 std::vector<std::string> UniqueKeyTxnCommit::InsertCommit::run()
 {
-    bool commit_published_the_part = false;
-    SCOPE_EXIT_SAFE({
-        if (!commit_published_the_part)
-            dropOptimisticBlockRegistration();
-    });
+    const CSN csn = storage.uniqueKeyTxnManager().commitTransaction(transaction, *this);
+    if (csn != INVALID_CSN)
+        allocation->commit();
 
-    const CSN csn = storage().uniqueKeyTxnManager().commitTransaction(transaction, *this);
-    commit_published_the_part = csn != INVALID_CSN;
-
-    return block_dedup_conflicts;
+    return allocation->dedupConflicts();
 }
 
 UniqueKeyTxnCommit::InsertOutcome UniqueKeyTxnCommit::insert(InsertRequest request)
@@ -497,7 +507,7 @@ public:
         StorageMergeTree & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeRequest & request_)
-        : UniqueKeyCommitBase(storage_.uniqueKeyTxnManager().bitmapStore())
+        : UniqueKeyCommitBase(storage_.uniqueKeyTxnManager().deleteBitmapStore())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , request(request_)
@@ -510,14 +520,14 @@ public:
     const DeleteBitmapPtr & lateKills() const { return own_kills; }
 
 protected:
-    std::vector<IBitmapStore::CarriedBitmap> selectCarriedBitmaps() override
+    std::vector<DeleteBitmapStore::CarriedBitmap> selectCarriedBitmaps() override
     {
         std::vector<MergeTreePartInfo> sources;
         sources.reserve(request.source_parts.size());
         for (const auto & source : request.source_parts)
             sources.push_back(source->info);
 
-        return store.selectCarriedBitmaps(sources);
+        return delete_bitmap_store.selectCarriedBitmaps(sources);
     }
 
     bool resolveConflicts() override
@@ -578,7 +588,7 @@ DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
     for (size_t i = 0; i < sources.size(); ++i)
     {
         auto newly_dead = std::make_shared<DeleteBitmap>();
-        newly_dead->merge(*store.readLatestBitmap(sources[i]->info));
+        newly_dead->merge(*delete_bitmap_store.readLatestBitmap(sources[i]->info));
         newly_dead->subtract(*snapshot_bitmaps[i]);
         if (newly_dead->empty())
             continue;
@@ -631,7 +641,7 @@ class UniqueKeyTxnCommit::DeleteCommit : public UniqueKeyCommitBase
 {
 public:
     DeleteCommit(StorageMergeTree & storage_, DeleteRequest & request_)
-        : UniqueKeyCommitBase(storage_.uniqueKeyTxnManager().bitmapStore())
+        : UniqueKeyCommitBase(storage_.uniqueKeyTxnManager().deleteBitmapStore())
         , storage(storage_)
         , request(request_)
     {
@@ -713,14 +723,7 @@ const IMergeTreeDataPart & UniqueKeyTxnCommit::DeleteCommit::publish(
     const PartitionWriteGuard &, const MergeTreeTransactionPtr & commit_txn, const StagedWrite &)
 {
     own_part->getDataPartStorage().precommitTransaction();
-
-    MergeTreeData & data = storage;
-    MergeTreeData::Transaction transaction(data, commit_txn.get());
-    {
-        auto parts_lock = data.lockParts();
-        data.renameTempPartAndAdd(own_part, transaction, parts_lock, /*rename_in_transaction=*/false);
-        transaction.commit(parts_lock);
-    }
+    addPartToActiveSet(storage, own_part, commit_txn);
     return *own_part;
 }
 

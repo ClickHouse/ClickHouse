@@ -132,7 +132,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
-#include <Storages/MergeTree/UniqueKey/MergeTreeBitmapStore.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapStore.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/PartitionPruner.h>
@@ -374,7 +374,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsSeconds refresh_statistics_interval;
-    extern const MergeTreeSettingsSeconds unique_key_gc_interval_seconds;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
@@ -903,7 +902,7 @@ MergeTreeData::MergeTreeData(
             bitmap_cache = ctx->getDeleteBitmapCache();
 
         unique_key_txn_manager = std::make_unique<UniqueKeyTxnManager>(
-            std::make_shared<MergeTreeBitmapStore>(*this, std::move(bitmap_cache)));
+            std::make_shared<DeleteBitmapStore>(*this, std::move(bitmap_cache)));
     }
 
     String reason;
@@ -4974,7 +4973,7 @@ bool MergeTreeData::isPinnedByDeleteBitmap(const IMergeTreeDataPart & part, cons
     if (!unique_key_txn_manager)
         return false;
 
-    return uniqueKeyTxnManager().bitmapStore().isPinned(part, lock);
+    return uniqueKeyTxnManager().deleteBitmapStore().isPinned(part, lock);
 }
 
 void MergeTreeData::loadUniqueKeyBitmaps(const DataPartPtr & part)
@@ -4982,7 +4981,7 @@ void MergeTreeData::loadUniqueKeyBitmaps(const DataPartPtr & part)
     if (!unique_key_txn_manager)
         return;
 
-    uniqueKeyTxnManager().bitmapStore().loadPart(part->info, part->getDataPartStorage());
+    uniqueKeyTxnManager().deleteBitmapStore().loadPart(part->info, part->getDataPartStorage());
 }
 
 void MergeTreeData::dropUniqueKeyBitmaps(const DataPartsVector & parts)
@@ -4992,63 +4991,9 @@ void MergeTreeData::dropUniqueKeyBitmaps(const DataPartsVector & parts)
 
     for (const auto & part : parts)
     {
-        uniqueKeyTxnManager().bitmapStore().dropPart(*part);
+        uniqueKeyTxnManager().deleteBitmapStore().dropPart(*part);
         LOG_TRACE(log, "Dropped the delete bitmaps of part {}", part->name);
     }
-}
-
-void MergeTreeData::startUniqueKeyGCTaskIfNeeded()
-{
-    if (unique_key_gc_task)
-        unique_key_gc_task->deactivate();
-
-    if (!hasUniqueKey())
-        return;
-
-    /// The round unlinks files, which a readonly table promises not to do.
-    if ((*getSettings())[MergeTreeSetting::table_readonly] || isStaticStorage())
-        return;
-
-    unique_key_gc_task = getContext()->getSchedulePool()->createTask(
-        getStorageID(), "MergeTreeData::uniqueKeyGC",
-        [this]
-        {
-            const UInt64 gc_interval_ms = (*getSettings())[MergeTreeSetting::unique_key_gc_interval_seconds].totalMilliseconds();
-            if (!gc_interval_ms)
-                return;
-
-            try
-            {
-                runUniqueKeyGCRound();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log, "Background delete-bitmap GC round failed");
-            }
-
-            unique_key_gc_task->scheduleAfter(gc_interval_ms);
-        });
-    unique_key_gc_task->activateAndSchedule();
-}
-
-void MergeTreeData::runUniqueKeyGCRound() const
-{
-    /// Re-read per round, not captured at task creation: MODIFY SETTING can flip it under an
-    /// already-scheduled task. Same reason `scheduleDataMovingJob` checks it in its body.
-    if ((*getSettings())[MergeTreeSetting::table_readonly] || isStaticStorage())
-        return;
-
-    std::vector<MergeTreePartInfo> part_infos;
-    {
-        auto parts_lock = readLockParts();
-        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
-            part_infos.push_back(part->info);
-    }
-
-    if (part_infos.empty())
-        return;
-
-    uniqueKeyTxnManager().runGCRound(part_infos);
 }
 
 size_t MergeTreeData::clearEmptyParts()
@@ -7140,13 +7085,6 @@ void MergeTreeData::changeSettings(
         UInt64 has_refresh_statistics_interval_changed
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
 
-        bool has_unique_key_gc_interval_changed
-            = (*storage_settings.get())[MergeTreeSetting::unique_key_gc_interval_seconds].totalSeconds() != (*copy)[MergeTreeSetting::unique_key_gc_interval_seconds].totalSeconds();
-
-        /// `startup` creates no task on a readonly table, so clearing the flag must create one.
-        bool has_table_readonly_changed
-            = (*storage_settings.get())[MergeTreeSetting::table_readonly] != (*copy)[MergeTreeSetting::table_readonly];
-
         storage_settings.set(std::move(copy));
 
         /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
@@ -7175,9 +7113,6 @@ void MergeTreeData::changeSettings(
         {
             startStatisticsCache();
         }
-
-        if (has_unique_key_gc_interval_changed || has_table_readonly_changed)
-            startUniqueKeyGCTaskIfNeeded();
     }
 }
 

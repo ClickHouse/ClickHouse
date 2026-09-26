@@ -97,10 +97,6 @@ public:
     /// In-place difference: `*this -= other`
     void subtract(const DeleteBitmap & other);
 
-    /// Union of two bitmaps, sharing an operand when the other adds nothing. Null when both are
-    /// empty: there is no version worth writing. `rhs` may be null, `lhs` may not.
-    static ConstDeleteBitmapPtr cumulateTwo(const ConstDeleteBitmapPtr & lhs, const ConstDeleteBitmapPtr & rhs);
-
     /// Number of set bits.
     size_t cardinality() const;
     /// True if no bits are set.
