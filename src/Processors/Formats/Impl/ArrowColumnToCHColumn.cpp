@@ -1919,6 +1919,7 @@ struct ReadColumnFromArrowColumnSettings
     bool allow_geoparquet_parser;
     bool enable_json_parsing;
     bool empty_timezone_as_utc;
+    bool input_datetime64_int64_as_ticks;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -2575,10 +2576,10 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
 #    undef DISPATCH
         case arrow::Type::INT64:
         {
-            /// Arrow Flight exports a `DateTime64` without an explicit time zone as raw `Int64` ticks,
-            /// so read it back as `DateTime64` directly; as a plain integer it would be cast to
-            /// `DateTime64` as whole seconds, corrupting the round-trip.
-            if (type_hint && isDateTime64(*type_hint))
+            /// Only the Arrow Flight SQL ingest path reads raw ticks back: it is the one exporting a
+            /// `DateTime64` without an explicit time zone this way. Generic Arrow input keeps the
+            /// contract that integer values are whole seconds.
+            if (settings.input_datetime64_int64_as_ticks && type_hint && isDateTime64(*type_hint))
                 return readColumnWithDateTime64Int64Data(arrow_column, type_hint, column_name);
             return readColumnWithNumericData<Int64>(arrow_column, column_name);
         }
@@ -2832,6 +2833,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_geoparquet_parser = allow_geoparquet_parser,
         .enable_json_parsing = enable_json_parsing,
         .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .input_datetime64_int64_as_ticks = false,
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -2883,7 +2885,8 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     bool allow_geoparquet_parser_,
     bool case_insensitive_matching_,
     bool is_stream_,
-    bool enable_json_parsing_)
+    bool enable_json_parsing_,
+    bool input_datetime64_int64_as_ticks_)
     : header(header_)
     , format_name(format_name_)
     , format_settings(format_settings_)
@@ -2894,6 +2897,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
     , case_insensitive_matching(case_insensitive_matching_)
     , is_stream(is_stream_)
     , enable_json_parsing(enable_json_parsing_)
+    , input_datetime64_int64_as_ticks(input_datetime64_int64_as_ticks_)
     , parquet_columns_to_clickhouse(parquet_columns_to_clickhouse_)
     , clickhouse_columns_to_parquet(clickhouse_columns_to_parquet_)
 {
@@ -2962,6 +2966,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
         .allow_geoparquet_parser = allow_geoparquet_parser,
         .enable_json_parsing = enable_json_parsing,
         .empty_timezone_as_utc = emptyTimezoneAsUTC(format_name, format_settings),
+        .input_datetime64_int64_as_ticks = input_datetime64_int64_as_ticks,
     };
 
     Columns columns;

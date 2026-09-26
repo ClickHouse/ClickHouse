@@ -33,7 +33,11 @@ public:
         bool allow_geoparquet_parser_,
         bool case_insensitive_matching_ = false,
         bool is_stream_ = false,
-        bool enable_json_parsing_ = true);
+        bool enable_json_parsing_ = true,
+        /// Only the Arrow Flight SQL ingest path may enable this: it exports a `DateTime64` without
+        /// an explicit time zone as raw `Int64` ticks, so it must read them back as ticks. Generic
+        /// Arrow input keeps the contract that `Int64`/`UInt64` values are whole seconds.
+        bool input_datetime64_int64_as_ticks_ = false);
 
     Chunk arrowTableToCHChunk(
         const std::shared_ptr<arrow::Table> & table,
@@ -96,6 +100,7 @@ private:
     bool case_insensitive_matching;
     bool is_stream;
     bool enable_json_parsing;
+    bool input_datetime64_int64_as_ticks;
 
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary

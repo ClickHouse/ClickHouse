@@ -254,10 +254,22 @@ def test_bare_datetime64_roundtrip_via_ingest():
 
     check = client.execute("SELECT * FROM datetime64_dst ORDER BY dt64")
     check_table = client.do_get(check.endpoints[0].ticket).read_all()
-    assert check_table.column("dt64")[0].as_py() == 1705314600123
-    assert check_table.column("dt64")[1].as_py() == 1705314600000
-    assert check_table.column("nullable_dt64")[0].as_py() == 1705314600123
-    assert check_table.column("nullable_dt64")[1].as_py() is None
+    assert check_table.column("dt64")[0].as_py() == 1705314600000
+    assert check_table.column("dt64")[1].as_py() == 1705314600123
+    assert check_table.column("nullable_dt64")[0].as_py() is None
+    assert check_table.column("nullable_dt64")[1].as_py() == 1705314600123
+
+    # Generic Arrow input keeps the whole-seconds contract: only the Arrow Flight ingest path
+    # reads `INT64` as raw ticks.
+    generic = pa.table({"dt64": pa.array([1705314601], type=pa.int64())})
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_file(sink, generic.schema) as ipc_writer:
+        ipc_writer.write_table(generic)
+    node.http_query("INSERT INTO datetime64_dst FORMAT Arrow", data=sink.getvalue().to_pybytes())
+
+    check = client.execute("SELECT dt64 FROM datetime64_dst WHERE dt64 = 1705314601000")
+    check_table = client.do_get(check.endpoints[0].ticket).read_all()
+    assert check_table.num_rows == 1
 
 
 #

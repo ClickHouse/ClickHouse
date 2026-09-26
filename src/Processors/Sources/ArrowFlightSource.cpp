@@ -206,7 +206,13 @@ Chunk ArrowFlightSource::generate()
                                     /* allow_missing_columns = */ true,
                                     /* null_as_default = */ true,
                                     FormatSettings::DateTimeOverflowBehavior::Throw,
-                                    /* allow_geoparquet_parser = */ false);
+                                    /* allow_geoparquet_parser = */ false,
+                                    /* case_insensitive_matching = */ false,
+                                    /* is_stream = */ false,
+                                    /* enable_json_parsing = */ true,
+                                    /// Arrow Flight exports a bare `DateTime64` as raw `Int64` ticks,
+                                    /// so the ingest path must read them back as ticks.
+                                    /* input_datetime64_int64_as_ticks = */ true);
 
     /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
     /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
