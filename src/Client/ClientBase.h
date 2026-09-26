@@ -25,8 +25,9 @@
 #include <filesystem>
 #include <functional>
 #include <optional>
-#include <string_view>
+#include <span>
 #include <string>
+#include <string_view>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -258,6 +259,17 @@ protected:
     /// Returns true if query processing was successful.
     bool processQueryText(const String & text);
 
+    /// Lets a concrete interactive client consume remote-only meta-commands before SQL parsing.
+    virtual bool tryProcessInteractiveClientCommand(std::string_view) { return false; }
+    virtual std::span<const std::string_view> getInteractiveClientCommandNames() const { return {}; }
+
+    /// A client whose query is owned by another thread can use this to close the
+    /// race between publishing itself and arming the per-query interrupt handler.
+    virtual bool isQueryCancellationRequested() const { return false; }
+
+    /// Called after format selection and before result bytes are written.
+    virtual void onOutputFormatSelected(std::string_view, bool) { }
+
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
     /// Used to check certain things that are considered unsafe for the embedded client
@@ -318,13 +330,25 @@ private:
 
     void applySettingsFromServerIfNeeded();
 
-    void startKeystrokeInterceptorIfExists();
-    void stopKeystrokeInterceptorIfExists();
-
     /// Execute a query and collect all results as a single string (rows separated by newlines)
     /// Returns empty string on exception
     std::string executeQueryForSingleString(const std::string & query);
     virtual bool supportsLocalMetaCommands() const { return false; }
+
+    /// Gives an interactive client a chance to execute a query on a worker
+    /// that can later be detached without moving a live receive stack.
+    virtual bool tryExecuteDetachableQuery(std::string_view, const ASTPtr &, size_t) { return false; }
+
+    /// Ctrl+B requests detachment; the owning worker acknowledges it at a checkpoint.
+    virtual bool supportsQueryDetachment() const { return false; }
+    virtual void requestQueryDetachment() { }
+    virtual void checkQueryDetachment() { }
+    virtual void onQueryProgress(const Progress &) { }
+    virtual void onQueryProfileEvents() { }
+
+    /// Specialized clients can redirect logs with query output and observe sink resets.
+    virtual std::unique_ptr<WriteBuffer> createDefaultLogsOutputBuffer();
+    virtual void onLogsOutputBufferReset() { }
 
     /// Implements the interactive `help`/`man` meta-command: looks `word` up in `system.documentation`
     /// and renders its embedded documentation, formatted from Markdown, in the terminal. When nothing
@@ -373,6 +397,9 @@ protected:
 
     void initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option);
     void initKeystrokeInterceptor();
+    void startKeystrokeInterceptorIfExists();
+    void stopKeystrokeInterceptorIfExists();
+    void replaceOutputBuffer(std::unique_ptr<WriteBuffer> output_buffer_) { std_out = std::move(output_buffer_); }
 
     String appendSmileyIfNeeded(const String & prompt);
 
@@ -455,7 +482,7 @@ protected:
     /// Buffer that reads from stdin in batch mode.
     std::unique_ptr<ReadBuffer> std_in;
     /// Console output.
-    std::unique_ptr<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>> std_out;
+    std::unique_ptr<WriteBuffer> std_out;
     std::unique_ptr<ShellCommand> pager_cmd;
 
     /// Wrapper for hooking into the flush event.
@@ -498,6 +525,10 @@ protected:
     bool progress_table_toggle_enabled = true;
     std::atomic_bool progress_table_toggle_on = false;
     bool need_render_profile_events = true;
+    /// Only an attached worker needs the shorter receive-poll interval.
+    bool poll_for_query_detachment = false;
+    /// Attached workers retain interactive summaries despite batch parsing semantics.
+    bool print_interactive_query_summary = false;
     bool written_first_block = false;
     /// How many rows have been read or written. `processed_rows_from_blocks` does not increment when data does not flow through client,
     /// like with `INSERT ... SELECT`. We can use progress reports by server in that case to track processed rows.
