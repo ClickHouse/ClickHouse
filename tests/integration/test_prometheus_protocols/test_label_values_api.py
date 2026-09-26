@@ -87,6 +87,17 @@ def setup():
             "INSERT INTO prometheus_no_bounds (metric_name, tags, samples) VALUES "
             "('cpu_usage', {'host': 'server1'}, [(toDateTime64(1000, 3), 0.5)])"
         )
+        # Timestamps are whole seconds: each series has one sample, at the second given by its `sample_time` label.
+        node.query(
+            "CREATE TABLE prometheus_datetime (samples Array(Tuple(DateTime, Float64))) ENGINE=TimeSeries"
+        )
+        node.query(
+            "INSERT INTO prometheus_datetime (metric_name, tags, samples) VALUES "
+            "('cpu_usage', {'sample_time': '1000'}, [(toDateTime(1000), 0.5)]), "
+            "('cpu_usage', {'sample_time': '1001'}, [(toDateTime(1001), 0.5)]), "
+            "('cpu_usage', {'sample_time': '1002'}, [(toDateTime(1002), 0.5)]), "
+            "('cpu_usage', {'sample_time': '1003'}, [(toDateTime(1003), 0.5)])"
+        )
         send_test_data()
         assert_eq_with_retry(node, "SELECT count() > 0 FROM timeSeriesData(prometheus)", "1")
         yield cluster
@@ -223,6 +234,17 @@ def test_label_values_time_range_is_ignored_without_stored_time_bounds():
     # Without stored min_time/max_time the time range is ignored (a superset is allowed by Prometheus).
     data = get_json_from_api("/no_bounds/api/v1/label/host/values?start=2000&end=3000")["data"]
     assert data == ["server1"]
+
+
+def test_label_values_fractional_time_range_with_datetime_timestamps():
+    # The table stores whole seconds while `start` and `end` have millisecond precision: the bounds are rounded
+    # towards the inside of the range, so [1000.5, 1002.5] means the seconds 1001 and 1002.
+    path = "/datetime/api/v1/label/sample_time/values"
+    assert get_json_from_api(f"{path}?start=1000.5&end=1002.5")["data"] == ["1001", "1002"]
+    assert get_json_from_api(f"{path}?start=1002.5")["data"] == ["1003"]
+    assert get_json_from_api(f"{path}?end=1000.5")["data"] == ["1000"]
+    # No whole second is in [1000.2, 1000.8].
+    assert get_json_from_api(f"{path}?start=1000.2&end=1000.8")["data"] == []
 
 
 def test_label_values_limit_reports_truncation():

@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -27,6 +28,7 @@
 
 #include <cstdlib>
 #include <memory>
+#include <algorithm>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -557,6 +559,18 @@ IExecutableFunction::IExecutableFunction()
     }
 }
 
+bool IExecutableFunction::isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const
+{
+    if (!isDeterministicInScopeOfQuery())
+        return false;
+
+    /// A lambda argument is as deterministic as its body: `arrayMap(i -> rand64(i), ...)` must run per output row.
+    return std::ranges::all_of(arguments, [](const auto & argument)
+    {
+        return allColumnFunctions(*argument.column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
+    });
+}
+
 ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
@@ -694,7 +708,7 @@ ColumnPtr IExecutableFunction::execute(
         }
 
         auto arguments_without_replicated = arguments;
-        if (has_full_columns || !common_replicated_indexes || !isDeterministicInScopeOfQuery())
+        if (has_full_columns || !common_replicated_indexes || !isCallDeterministicInScopeOfQuery(arguments))
         {
             convertReplicatedColumnsToFull(arguments_without_replicated);
             return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
@@ -771,7 +785,7 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
             return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 
         auto columns_without_sparse = arguments;
-        if (num_sparse_columns == 1 && num_full_columns == 0 && isDeterministicInScopeOfQuery())
+        if (num_sparse_columns == 1 && num_full_columns == 0 && isCallDeterministicInScopeOfQuery(arguments))
         {
             auto & arg_with_sparse = columns_without_sparse[sparse_column_position];
             ColumnPtr sparse_offsets;
