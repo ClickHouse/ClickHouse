@@ -3,6 +3,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 
 namespace DB
@@ -154,6 +155,13 @@ public:
 
     void mutate(const MutationCommands & commands, ContextPtr context) override { getNested()->mutate(commands, context); }
 
+    /// Answered together with `supportsLightweightUpdate` below: forwarding only the predicate would let
+    /// `UPDATE` pass the check and then fail with `Lightweight updates are not supported by storage TableProxy`.
+    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override
+    {
+        return getNested()->updateLightweight(commands, context);
+    }
+
     /// The capability predicates have to be forwarded as well: they are answered before the operation
     /// that would materialize the nested storage, so a lazy stand-in that keeps the `IStorage` defaults
     /// rejects `DELETE` and every mutation for the whole lifetime of the server process.
@@ -182,6 +190,10 @@ public:
     {
         getNested()->restoreDataFromBackup(restorer, data_path_in_backup, partitions);
     }
+
+    /// `RestorerFromBackup` calls it on the same object it restored the data into, after the data of all
+    /// tables has been restored, e.g. `EmbeddedRocksDB` reopens its read-only handles here.
+    void finalizeRestoreFromBackup() override { getNested()->finalizeRestoreFromBackup(); }
 
     CancellationCode killMutation(const String & mutation_id) override { return getNested()->killMutation(mutation_id); }
 

@@ -1,0 +1,7 @@
+--- lightweight UPDATE
+100
+--- lightweight DELETE through UPDATE
+9
+--- ALTER UPDATE respects alter_column_secondary_index_mode
+SUPPORT_IS_DISABLED
+1
