@@ -5,6 +5,8 @@ SET distributed_ddl_output_mode = 'none';
 
 DROP TABLE IF EXISTS t_projection_column_list_gate;
 DROP TABLE IF EXISTS t_projection_column_list_gate_create;
+DROP TABLE IF EXISTS t_projection_column_list_cluster_create ON CLUSTER test_shard_localhost FORMAT Null;
+DROP TABLE IF EXISTS t_projection_column_list_cluster_alter ON CLUSTER test_shard_localhost FORMAT Null;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 
 -- A local MergeTree may use the syntax without the compatibility override.
@@ -44,6 +46,45 @@ ALTER TABLE t_projection_column_list_gate
     ADD PROJECTION p (x CODEC(ZSTD)) AS (SELECT x ORDER BY x);
 SELECT count() FROM system.projections WHERE database = currentDatabase() AND table = 't_projection_column_list_gate';
 DROP TABLE t_projection_column_list_gate;
+
+-- Format 1 sends no initiator settings. A rejected query must fail before it is enqueued;
+-- timeout 0 would otherwise return success without waiting for the worker's error.
+SET distributed_ddl_entry_format_version = 1;
+SET distributed_ddl_task_timeout = 0;
+SET allow_projection_column_list_in_replicated_metadata = 0;
+CREATE TABLE t_projection_column_list_cluster_create ON CLUSTER test_shard_localhost
+    (x UInt64, PROJECTION p (x CODEC(ZSTD)) AS (SELECT x ORDER BY x))
+    ENGINE = MergeTree ORDER BY x; -- { serverError SUPPORT_IS_DISABLED }
+SELECT count() FROM system.tables
+    WHERE database = currentDatabase() AND name = 't_projection_column_list_cluster_create';
+
+CREATE TABLE t_projection_column_list_cluster_alter (x UInt64)
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_projection_column_list_cluster_alter', 'r1') ORDER BY x;
+ALTER TABLE t_projection_column_list_cluster_alter ON CLUSTER test_shard_localhost
+    ADD PROJECTION p (x CODEC(ZSTD)) AS (SELECT x ORDER BY x); -- { serverError SUPPORT_IS_DISABLED }
+SELECT count() FROM system.projections
+    WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_alter';
+
+-- The worker must accept both entries with its own default-off setting after the initiator opts in.
+-- Use replicated targets so both worker paths would hit the compatibility gate without the replay guard.
+SET distributed_ddl_task_timeout = 180;
+SET distributed_ddl_output_mode = 'throw';
+SET allow_projection_column_list_in_replicated_metadata = 1;
+CREATE TABLE t_projection_column_list_cluster_create ON CLUSTER test_shard_localhost
+    (x UInt64, PROJECTION p (x CODEC(ZSTD)) AS (SELECT x ORDER BY x))
+    ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_projection_column_list_cluster_create', 'r1')
+    ORDER BY x FORMAT Null;
+ALTER TABLE t_projection_column_list_cluster_alter ON CLUSTER test_shard_localhost
+    ADD PROJECTION p (x CODEC(ZSTD)) AS (SELECT x ORDER BY x) FORMAT Null;
+SELECT count() FROM system.projections
+    WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_create';
+SELECT count() FROM system.projections
+    WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_alter';
+DROP TABLE t_projection_column_list_cluster_create ON CLUSTER test_shard_localhost FORMAT Null;
+DROP TABLE t_projection_column_list_cluster_alter ON CLUSTER test_shard_localhost FORMAT Null;
+SET distributed_ddl_output_mode = 'none';
+SET distributed_ddl_entry_format_version = 5;
+SET allow_projection_column_list_in_replicated_metadata = 0;
 
 -- A Replicated database needs the same gate even for an ordinary MergeTree table.
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier}

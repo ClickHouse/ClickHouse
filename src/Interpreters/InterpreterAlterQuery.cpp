@@ -95,6 +95,7 @@ void checkProjectionColumnListReplicationCompatibility(
 {
     if (context->getSettingsRef()[Setting::allow_projection_column_list_in_replicated_metadata]
         || context->isRecoveryFromStoredMetadata()
+        || context->isDDLOrOnClusterInternal()
         || context->getClientInfo().is_replicated_database_internal)
         return;
 

@@ -1817,6 +1817,48 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
+void checkProjectionColumnListReplicationCompatibility(
+    const ASTCreateQuery & create, const ContextPtr & context, const DatabasePtr & database, bool is_fresh_definition)
+{
+    /// Workers replay the DDL entry with their own settings when the old entry format is used.
+    /// The initiator must check the syntax before enqueueing it, not the worker during replay.
+    if (!is_fresh_definition
+        || context->isRecoveryFromStoredMetadata()
+        || context->isDDLOrOnClusterInternal()
+        || context->getClientInfo().is_replicated_database_internal
+        || context->getSettingsRef()[Setting::allow_projection_column_list_in_replicated_metadata]
+        || !create.columns_list || !create.columns_list->projections)
+        return;
+
+    if (const auto metadata_txn = context->getZooKeeperMetadataTransaction();
+        metadata_txn && !metadata_txn->isInitialQuery())
+        return;
+#if CLICKHOUSE_CLOUD
+    if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
+        return;
+#endif
+
+    bool is_storage_replicated = create.storage && isReplicated(*create.storage);
+    if (create.targets)
+    {
+        for (const auto & inner_table_engine : create.targets->getInnerEngines())
+            is_storage_replicated |= isReplicated(*inner_table_engine);
+    }
+
+    if (!is_storage_replicated && create.cluster.empty()
+        && !(database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared")))
+        return;
+
+    for (const auto & projection_ast : create.columns_list->projections->children)
+    {
+        if (projection_ast->as<const ASTProjectionDeclaration &>().columns)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Projection column lists in replicated metadata require setting "
+                "allow_projection_column_list_in_replicated_metadata = 1. "
+                "Upgrade every replica before enabling it");
+    }
+}
+
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -2118,48 +2160,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         validateMaterializedViewColumnsAndEngine(create, properties, database);
     }
 
-    bool is_storage_replicated = false;
-    if (create.storage && isReplicated(*create.storage))
-        is_storage_replicated = true;
-
-    if (create.targets)
-    {
-        for (const auto & inner_table_engine : create.targets->getInnerEngines())
-        {
-            if (isReplicated(*inner_table_engine))
-                is_storage_replicated = true;
-        }
-    }
-
     /// Older replicas cannot parse the column-list syntax at all. Check before the CREATE
     /// enters a Replicated database or distributed DDL log, or a replicated table's metadata.
     /// RESTORE supplies a fresh definition despite using SECONDARY_CREATE for other checks.
     /// A secondary replay or stored ATTACH must keep accepting metadata already written.
-    bool check_replication_compatibility = (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup)
-        && !getContext()->isRecoveryFromStoredMetadata()
-        && !getContext()->getClientInfo().is_replicated_database_internal;
-    if (const auto metadata_txn = getContext()->getZooKeeperMetadataTransaction())
-        check_replication_compatibility &= metadata_txn->isInitialQuery();
-#if CLICKHOUSE_CLOUD
-    if (getContext()->getClientInfo().is_shared_catalog_internal)
-        check_replication_compatibility &= SharedDatabaseCatalog::isInitialQuery(getContext());
-#endif
-
-    if (check_replication_compatibility
-        && !getContext()->getSettingsRef()[Setting::allow_projection_column_list_in_replicated_metadata]
-        && (is_storage_replicated || !create.cluster.empty()
-            || (database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared")))
-        && create.columns_list && create.columns_list->projections)
-    {
-        for (const auto & projection_ast : create.columns_list->projections->children)
-        {
-            if (projection_ast->as<const ASTProjectionDeclaration &>().columns)
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Projection column lists in replicated metadata require setting "
-                    "allow_projection_column_list_in_replicated_metadata = 1. "
-                    "Upgrade every replica before enabling it");
-        }
-    }
+    checkProjectionColumnListReplicationCompatibility(
+        create, getContext(), database, isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup);
 
     bool allow_heavy_populate = getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create] && create.is_populate;
     if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
@@ -3721,6 +3727,15 @@ BlockIO InterpreterCreateQuery::execute()
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         {
+            if (!is_create_database)
+            {
+                /// Old DDL entry formats return from execute() without reaching createTable().
+                auto mode = getLoadingStrictnessLevel(
+                    create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_restore_from_backup);
+                checkProjectionColumnListReplicationCompatibility(
+                    create, getContext(), nullptr, isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup);
+            }
+
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
             /// run with no user by default.
             if (is_create_database && create.storage && create.storage->engine
