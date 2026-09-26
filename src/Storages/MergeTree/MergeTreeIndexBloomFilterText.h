@@ -85,8 +85,6 @@ public:
         return false;
     }
 
-    void reset() { slots.fill(0); }
-
 private:
     static constexpr size_t slots_degree = 12;
     /// Zero is never a key, because a key holds the size of its non-empty token.
@@ -121,14 +119,14 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
     MergeTreeIndexGranuleBloomFilterTextPtr granule;
 
     /// Tokens added to the bloom filters of the current granule, per index column. They are remembered only
-    /// after a granule has taken a thousand tokens, so a small granule neither uses nor resets them, and
+    /// after a granule has taken a thousand tokens, so a small granule does not use them, and
     /// only while enough of them repeat to pay for the lookups.
     std::vector<BloomFilterAddedTokens> added_tokens;
     size_t tokens_in_granule = 0;
-    bool added_tokens_used = false;
     bool remember_tokens = true;
     size_t remembered_lookups = 0;
     size_t remembered_hits = 0;
+    size_t repeated_tokens = 0;
 };
 
 

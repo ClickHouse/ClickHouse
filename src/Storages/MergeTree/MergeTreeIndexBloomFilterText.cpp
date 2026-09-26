@@ -112,14 +112,11 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilterText::getGranuleAndR
     new_granule.swap(granule);
 
     /// The remembered tokens were added to the bloom filters of the granule given away.
-    if (added_tokens_used)
-    {
-        for (auto & tokens : added_tokens)
-            tokens.reset();
-        added_tokens_used = false;
-    }
-    if (remembered_hits)
-        ProfileEvents::increment(ProfileEvents::BloomFilterTextIndexRepeatedTokens, remembered_hits);
+    added_tokens.clear();
+    repeated_tokens += remembered_hits;
+    if (repeated_tokens)
+        ProfileEvents::increment(ProfileEvents::BloomFilterTextIndexRepeatedTokens, repeated_tokens);
+    repeated_tokens = 0;
     tokens_in_granule = 0;
     remember_tokens = true;
     remembered_lookups = 0;
@@ -133,7 +130,7 @@ void MergeTreeIndexAggregatorBloomFilterText::addTokens(std::string_view documen
     auto & bloom_filter = granule->bloom_filters[col];
 
     /// The first tokens of a granule are added directly: remembering tokens pays off only in a granule
-    /// big enough for them to repeat, and a granule that did not remember any needs no reset.
+    /// big enough for them to repeat.
     static constexpr size_t min_tokens_to_remember = 1024;
     if (tokens_in_granule < min_tokens_to_remember || !remember_tokens)
     {
@@ -148,7 +145,6 @@ void MergeTreeIndexAggregatorBloomFilterText::addTokens(std::string_view documen
 
     if (added_tokens.size() != index_columns.size())
         added_tokens.resize(index_columns.size());
-    added_tokens_used = true;
 
     auto & tokens = added_tokens[col];
     const char * begin = document.data();
@@ -175,7 +171,7 @@ void MergeTreeIndexAggregatorBloomFilterText::addTokens(std::string_view documen
 
         if (++remembered_lookups == lookups_per_check)
         {
-            ProfileEvents::increment(ProfileEvents::BloomFilterTextIndexRepeatedTokens, remembered_hits);
+            repeated_tokens += remembered_hits;
             remember_tokens = remembered_hits >= min_hits_per_check;
             remembered_lookups = 0;
             remembered_hits = 0;
