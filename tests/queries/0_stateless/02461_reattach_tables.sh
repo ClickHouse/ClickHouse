@@ -159,4 +159,17 @@ check_if_detached "SELECT 1 WHERE (SELECT 1 AS t_reattach_cte) IN t_reattach_cte
 # table exists, so a same-named real table read by the seed term IS read by the query and must be detached.
 # Only the recursive members (after the first) resolve the name through the recursive temporary table.
 check_if_detached "WITH RECURSIVE t_reattach_cte AS (SELECT a FROM t_reattach_cte UNION ALL SELECT a + 1 FROM t_reattach_cte WHERE a < 2) SELECT * FROM t_reattach_cte" "t_reattach_cte"
+
+# With `enable_global_with_statement = 0` the analyzer does not look up CTEs or aliases of an enclosing
+# query, so a nested select running with it reads the real table even though the enclosing query declares a
+# CTE or an alias of the same name. The setting counts whether it comes from the nested select's own
+# `SETTINGS` or is inherited from an enclosing one; the first case is the control with the default value.
+check_if_not_detached "WITH t_reattach_cte AS (SELECT 1) SELECT (SELECT count() FROM t_reattach_cte)" "t_reattach_cte"
+check_if_detached "WITH t_reattach_cte AS (SELECT 1) SELECT (SELECT count() FROM t_reattach_cte SETTINGS enable_global_with_statement = 0)" "t_reattach_cte"
+check_if_detached "WITH t_reattach_cte AS (SELECT 1) SELECT * FROM (SELECT count() FROM t_reattach_cte) SETTINGS enable_global_with_statement = 0" "t_reattach_cte"
+check_if_detached "WITH (1, 2) AS t_reattach_cte SELECT (SELECT 1 IN t_reattach_cte SETTINGS enable_global_with_statement = 0)" "t_reattach_cte"
+
+# ... except for the `WITH` aliases of a query running with `enable_scopes_for_with_statement = 0`, which
+# the analyzer copies into every nested scope, so the alias still hides the table there.
+check_if_not_detached "WITH (1, 2) AS t_reattach_cte SELECT (SELECT 1 IN t_reattach_cte) SETTINGS enable_global_with_statement = 0, enable_scopes_for_with_statement = 0" "t_reattach_cte"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_cte"

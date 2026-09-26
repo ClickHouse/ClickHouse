@@ -231,6 +231,7 @@ namespace Setting
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_reads_from_query_cache;
+    extern const SettingsBool enable_scopes_for_with_statement;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsString framing_output_format;
@@ -1352,7 +1353,12 @@ struct CollectTablesData
         ExpectedObjectKind expected_kind = ExpectedObjectKind::Any;
     };
 
-    explicit CollectTablesData(ContextPtr context_) : context(std::move(context_)) {}
+    explicit CollectTablesData(ContextPtr context_)
+        : context(std::move(context_))
+        , global_with_statement(context->getSettingsRef()[Setting::enable_global_with_statement])
+        , scopes_for_with_statement(context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
+    {
+    }
 
     const ContextPtr context;
     std::vector<CollectedTable> tables;
@@ -1364,6 +1370,18 @@ struct CollectTablesData
     /// (see `mutationExpressionsDatabase`). Empty everywhere else, which keeps the session's current
     /// database.
     String default_database;
+
+    /// The effective `enable_global_with_statement` / `enable_scopes_for_with_statement` of the select being
+    /// walked: the query-level value, overridden by the `SETTINGS` clause of each enclosing select, because
+    /// the analyzer resolves a select in a context that carries its own `SETTINGS` and passes it down.
+    bool global_with_statement;
+    bool scopes_for_with_statement;
+
+    /// The `WITH` aliases the analyzer keeps in `IdentifierResolveScope::global_with_aliases`: those declared
+    /// by an enclosing select that runs with `enable_scopes_for_with_statement = 0`. They are copied into
+    /// every nested scope, so they stay visible even where `enable_global_with_statement = 0` hides the
+    /// aliases of the enclosing scopes.
+    std::unordered_set<String> global_with_aliases;
 
     void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, Context::StorageNamespace resolve_namespace, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any)
     {
@@ -2728,11 +2746,47 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
 
     if (const auto * select = ast->as<ASTSelectQuery>())
     {
+        /// The scope settings of this select and of everything nested in it; restored on the way out, so
+        /// that siblings and ancestors keep their own.
+        const bool saved_global_with_statement = data.global_with_statement;
+        const bool saved_scopes_for_with_statement = data.scopes_for_with_statement;
+        auto saved_global_with_aliases = data.global_with_aliases;
+        SCOPE_EXIT({
+            data.global_with_statement = saved_global_with_statement;
+            data.scopes_for_with_statement = saved_scopes_for_with_statement;
+            data.global_with_aliases = std::move(saved_global_with_aliases);
+        });
+
+        if (const auto * set_query = select->settings() ? select->settings()->as<ASTSetQuery>() : nullptr)
+        {
+            if (const auto * value = set_query->changes.tryGet("enable_global_with_statement"))
+                data.global_with_statement = SettingFieldBool(*value).value;
+            if (const auto * value = set_query->changes.tryGet("enable_scopes_for_with_statement"))
+                data.scopes_for_with_statement = SettingFieldBool(*value).value;
+        }
+
+        /// With `enable_global_with_statement = 0` the analyzer does not look up CTEs or aliases across a
+        /// query boundary (`QueryAnalyzer::tryResolveIdentifierInParentScopes`), so neither the CTEs nor the
+        /// aliases of the enclosing selects shadow a table here:
+        /// `WITH src AS (SELECT 1) SELECT (SELECT count() FROM src SETTINGS enable_global_with_statement = 0)`
+        /// reads the real table `src`. The same holds for a CTE body, which cannot see its sibling CTEs then.
+        /// Only the aliases in `global_with_aliases` are still copied into this scope.
+        if (!data.global_with_statement)
+        {
+            active_ctes.clear();
+            active_aliases = data.global_with_aliases;
+        }
+
         /// This select starts a new alias scope: its own aliases are added to those inherited from the
         /// enclosing scopes, and neither siblings nor ancestors ever see them (see `collectScopeAliasNames`).
         collectScopeAliasNames(ast, active_aliases);
 
         const ASTPtr with = select->with();
+
+        /// With `enable_scopes_for_with_statement = 0` this select's `WITH` aliases join the global ones
+        /// the analyzer copies into every nested scope (see `QueryAnalyzer::resolveQuery`).
+        if (with && !data.scopes_for_with_statement)
+            collectScopeAliasNames(with, data.global_with_aliases);
 
         /// Collect only the real CTE names declared in this select's WITH clause. Only the
         /// `WITH name AS (subquery)` form (`ASTWithElement`) introduces a name that shadows a table
