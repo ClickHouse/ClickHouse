@@ -30,7 +30,8 @@ env:
         type: boolean
 
 concurrency:
-  group: official-docker-library
+  group: CreateRelease
+  queue: max
 
 jobs:
   UpdateOfficialDocker:
