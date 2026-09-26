@@ -84,21 +84,21 @@ is_cloud=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options 
 
 # SYSTEM VIRTUAL PARTS UPDATE is a private feature, so only the access check is common to both
 # builds. Assert the grant holder is not denied, and pin the open-source outcome (the command is
-# not implemented there, so it stops at BAD_ARGUMENTS after the access check).
+# not implemented there, so it stops at SUPPORT_IS_DISABLED after the access check).
 vparts_allowed() {
     local out
     out=$(run --user "$1" --query "$2" 2>&1)
     if grep -qF ACCESS_DENIED <<< "$out"; then
         echo "FAIL: access denied: $out"
-    elif [ "$is_cloud" = 1 ] || grep -qF BAD_ARGUMENTS <<< "$out"; then
+    elif [ "$is_cloud" = 1 ] || grep -qF SUPPORT_IS_DISABLED <<< "$out"; then
         echo "ok"
     else
-        echo "FAIL: expected BAD_ARGUMENTS on the open-source build: $out"
+        echo "FAIL: expected SUPPORT_IS_DISABLED on the open-source build: $out"
     fi
 }
 
 # Same, for the no-table form: nothing executes on the unavailable cluster, so the grant holder gets a
-# silent success in both builds instead of BAD_ARGUMENTS.
+# silent success in both builds instead of SUPPORT_IS_DISABLED.
 vparts_global_allowed() {
     local out
     out=$(run_global "$2" "" --user "$1" 2>&1)
