@@ -1,0 +1,55 @@
+<test>
+    <settings>
+        <use_skip_indexes>1</use_skip_indexes>
+        <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- A wide column that no index covers, next to an indexed one. Wide parts only: a Compact part's
+         reader cannot serve incomplete granules, so the queries below would measure nothing there. -->
+    <create_query>
+        CREATE TABLE text_index_wide_column
+        (
+            id UInt64,
+            message String,
+            payload String,
+            INDEX idx message TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0
+    </create_query>
+
+    <!-- `needle` matches the first row of every other granule (62 rows of 1M), `spread` one
+         pseudo-random row of the same granules (61: in the shorter last granule that row falls past
+         its end), `common` every row. `payload` is 1055 bytes of hex that does not compress, so a row
+         read and then discarded costs real decompression. -->
+    <fill_query>
+        INSERT INTO text_index_wide_column
+        SELECT number,
+            concat('common w', toString(cityHash64(number) % 20000),
+                if(number % 8192 = 0 AND intDiv(number, 8192) % 2 = 0, ' needle', ''),
+                if(number % 8192 = cityHash64(intDiv(number, 8192), 'pos') % 8192 AND intDiv(number, 8192) % 2 = 0, ' spread', '')),
+            arrayStringConcat(arrayMap(i -> lower(hex(sipHash128(number, i))), range(32)), '-')
+        FROM numbers(1000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE text_index_wide_column FINAL</fill_query>
+
+    <!-- The matching rows need `payload`; the other 8191 rows of their granules do not. -->
+    <query>SELECT id, payload FROM text_index_wide_column WHERE hasToken(message, 'needle') FORMAT Null</query>
+    <query>SELECT argMax(payload, id) FROM text_index_wide_column WHERE hasToken(message, 'needle') FORMAT Null</query>
+    <!-- `%abc%` matches 21% of the rows. -->
+    <query>SELECT id, payload FROM text_index_wide_column WHERE hasToken(message, 'needle') AND payload LIKE '%abc%' FORMAT Null</query>
+    <query>SELECT id, payload FROM text_index_wide_column WHERE hasToken(message, 'needle') ORDER BY id DESC LIMIT 10 FORMAT Null</query>
+
+    <!-- A match at an arbitrary offset keeps the rows before it, so this shape gains least. -->
+    <query>SELECT id, payload FROM text_index_wide_column WHERE hasToken(message, 'spread') FORMAT Null</query>
+
+    <!-- Controls: no wide column to skip, and a predicate that matches everything. -->
+    <query>SELECT count() FROM text_index_wide_column WHERE hasToken(message, 'needle') FORMAT Null</query>
+    <query>SELECT id FROM text_index_wide_column WHERE hasToken(message, 'needle') FORMAT Null</query>
+    <query>SELECT id, payload FROM text_index_wide_column WHERE hasToken(message, 'common') FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS text_index_wide_column</drop_query>
+</test>

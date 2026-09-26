@@ -45,7 +45,9 @@ public:
         size_t max_rows_to_read,
         MutableColumns & res_columns) override;
 
-    bool canReadIncompleteGranules() const override { return false; }
+    /// The virtual columns are resolved from per-mark posting lists addressed by absolute row number,
+    /// so a read may start or stop inside a mark.
+    bool canReadIncompleteGranules() const override { return main_reader_can_read_incomplete_granules; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
 
     /// Sets a pre-computed granule from the skip index reader (Path 2: use_skip_indexes_on_data_read = 1).
@@ -106,6 +108,7 @@ private:
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
     MergeTreeIndexWithCondition index;
+    bool main_reader_can_read_incomplete_granules = false;
     std::shared_ptr<MergeTreeIndexConditionText> condition_text;
     std::vector<TextSearchQueryPtr> search_queries;
     TextIndexGranulePtr granule;
