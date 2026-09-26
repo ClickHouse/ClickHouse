@@ -93,6 +93,7 @@ namespace FailPoints
     extern const char mt_skip_scheduling_merge_once[];
     extern const char mt_alter_throw_in_start_mutation[];
     extern const char mt_alter_settings_throw_before_metadata_commit[];
+    extern const char mt_throw_after_renaming_empty_parts[];
     extern const char mt_alter_settings_pause_before_metadata_commit[];
     extern const char mt_alter_readonly_pause_after_metadata_commit[];
     extern const char mt_alter_readonly_throw_in_start_background_workers[];
@@ -3087,6 +3088,12 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
     } while (true);
 
     transaction.renameParts();
+
+    /// The parts are already renamed on disk, so the rollback has to deal with them, as when committing their metadata fails.
+    fiu_do_on(FailPoints::mt_throw_after_renaming_empty_parts,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after renaming empty parts");
+    });
 
     /// `covered_parts` above is only the precommit selection: `commit` reacquires the parts lock and
     /// recomputes the covered set, so it is the only authoritative answer to "what was removed".

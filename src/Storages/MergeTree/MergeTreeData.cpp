@@ -4444,9 +4444,14 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
                 continue;
             }
 
+            const bool is_rolled_back = part->version->getInfo().creation_csn == Tx::RolledBackCSN;
+
             /// First remove all covered parts, then remove covering empty part
             /// Avoids resurrection of old parts for MergeTree and issues with unexpected parts for Replicated
-            if (part->rows_count == 0 && !getCoveredOutdatedParts(part, parts_lock).empty())
+            /// An empty part of a rolled back transaction (e.g. `TRUNCATE` that failed to commit) never covered anything,
+            /// so it must not wait for the parts inside its range. It has no rollback mark on disk if the transaction
+            /// was implicit, so if it stays until a merge writes a part intersecting it, the table cannot be loaded.
+            if (part->rows_count == 0 && !is_rolled_back && !getCoveredOutdatedParts(part, parts_lock).empty())
             {
                 part->removal_state.store(DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS, std::memory_order_relaxed);
                 skipped_parts.push_back(part->info);
@@ -4456,8 +4461,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
             bool reached_removal_time = part_remove_time <= time_now && time_now - part_remove_time >= (*getSettings())[MergeTreeSetting::old_parts_lifetime].totalSeconds();
             if ((reached_removal_time && !has_skipped_mutation_parent(part)) || force
-                || (part->version->getInfo().creation_csn == Tx::RolledBackCSN
-                    && (*getSettings())[MergeTreeSetting::remove_rolled_back_parts_immediately]))
+                || (is_rolled_back && (*getSettings())[MergeTreeSetting::remove_rolled_back_parts_immediately]))
             {
                 if (part->removal_state.load(std::memory_order_relaxed) == DataPartRemovalState::REMOVE_ROLLED_BACK)
                     part->removal_state.store(DataPartRemovalState::REMOVE_RETRY, std::memory_order_relaxed);
