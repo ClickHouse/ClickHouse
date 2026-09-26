@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <enable_positional_arguments_for_projections>1</enable_positional_arguments_for_projections>
+        </default>
+    </profiles>
+</clickhouse>
