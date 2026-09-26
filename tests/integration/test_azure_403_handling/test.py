@@ -10,6 +10,7 @@ ReplicatedMergeTree so reportBroken() is observable (plain MergeTree's callback 
 """
 import os
 import time
+import uuid
 
 import pytest
 
@@ -23,7 +24,11 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
-    main_configs=[os.path.join(SCRIPT_DIR, "configs", "azure_disk.xml")],
+    main_configs=[
+        os.path.join(SCRIPT_DIR, "configs", "azure_disk.xml"),
+        os.path.join(SCRIPT_DIR, "configs", "blob_log.xml"),
+        os.path.join(SCRIPT_DIR, "configs", "text_log.xml"),
+    ],
     with_azurite=True,
     with_zookeeper=True,
 )
@@ -45,6 +50,12 @@ ERROR_KINDS = {
         "azure_inject_poco_timeout",
         "TransportException",
     ),
+    # Poco network/IO error (connection reset) -> TransportException, like timeout (r3767770811).
+    "network": (
+        "azure_inject_poco_network_error_once",
+        "azure_inject_poco_network_error",
+        "TransportException",
+    ),
 }
 
 ALL_FAILPOINTS = [fp for triple in ERROR_KINDS.values() for fp in triple[:2]] + [
@@ -55,6 +66,8 @@ ALL_FAILPOINTS = [fp for triple in ERROR_KINDS.values() for fp in triple[:2]] + 
 BROKEN_PART_LOG = "looks broken. Removing it and will try to fetch"
 # One line per failed Azure read attempt; substring matches both Read and Download variants.
 RETRY_LOG = "Exception caught during Azure"
+# One line per Azure write attempt that failed and was retried by the ClickHouse write loop.
+WRITE_RETRY_LOG = "Write at attempt"
 
 
 @pytest.fixture(scope="module")
@@ -254,20 +267,252 @@ def test_permanent_forbidden_on_write_fails(started_cluster):
 
 
 def test_transient_forbidden_on_write_succeeds(started_cluster):
-    # nosdk (SDK retry off) so the one-shot 403 must reach execWithRetry; the "Write at attempt" log proves the
-    # CH write loop recovered. stop_merges keeps the upload PUT the only in-flight Azure traffic.
-    _create_table("t_write_transient", stop_merges=True, policy="azure_policy_nosdk")
+    # nosdk (SDK retry off) so the one-shot 403 must reach execWithRetry; the WRITE_RETRY_LOG line proves the
+    # CH write loop recovered. The one-shot is process-global and any other Azure request takes it silently
+    # (403 is retryable in the SDK), so each round is a fresh table plus a fresh arming: repeat until the write
+    # is the request that takes it. Every round writes three setup parts before arming and the server logs
+    # asynchronously, so the witness is the line carrying this INSERT's own query id, read through the
+    # SYSTEM FLUSH LOGS drain rather than by grepping the log file.
+    retried = False
+    for _ in range(10):
+        _create_table("t_write_transient", stop_merges=True, policy="azure_policy_nosdk")
+        query_id = f"t_write_transient_{uuid.uuid4()}"
 
-    node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_response_once")
-    try:
-        node.query(
-            "INSERT INTO t_write_transient SELECT number + 300, toString(number) FROM numbers(100)"
+        node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_response_once")
+        try:
+            node.query(
+                "INSERT INTO t_write_transient SELECT number + 300, toString(number) FROM numbers(100)",
+                query_id=query_id,
+            )
+        finally:
+            node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response_once")
+
+        node.query("SYSTEM FLUSH LOGS text_log")
+        retried = (
+            node.query(
+                f"SELECT count() FROM system.text_log "
+                f"WHERE query_id = '{query_id}' AND message LIKE '%{WRITE_RETRY_LOG}%'"
+            ).strip()
+            != "0"
         )
-    finally:
-        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response_once")
+        if retried:
+            break
 
     assert node.query("SELECT count() FROM t_write_transient").strip() == "400"
-    assert node.contains_in_log(
-        "Write at attempt"
-    ), "the CH-level write retry loop was never exercised"
+    assert retried, "the CH-level write retry loop was never exercised"
     assert not node.contains_in_log(BROKEN_PART_LOG)
+
+
+def test_batch_delete_failure_logs_every_object(started_cluster):
+    # When the batch DELETE request itself fails (here a permanent 403), the per-object response loop is
+    # skipped, so removeObjectsBatchIfExists must still emit one system.blob_storage_log Delete event per
+    # object before rethrowing — otherwise those deletes vanish from the audit log. Assert exactly that:
+    # one failed Delete row per blob, scoped to this table's own objects, carrying the real Azure status
+    # code (403), not the placeholder -1.
+    node.query("DROP TABLE IF EXISTS t_batch_del SYNC")
+    node.query(
+        """
+        CREATE TABLE t_batch_del (k UInt64) ENGINE = MergeTree ORDER BY k
+        SETTINGS storage_policy = 'azure_policy', min_bytes_for_wide_part = 0
+        """
+    )
+    for i in range(3):
+        node.query(f"INSERT INTO t_batch_del SELECT number + {i * 100} FROM numbers(100)")
+
+    # The exact remote blobs backing this table, scoped by its UUID so residue from other tests in the
+    # module-scoped, append-only blob_storage_log cannot satisfy the assertion on its own.
+    table_uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_batch_del'"
+    ).strip()
+    expected_blobs = set(
+        node.query(
+            "SELECT remote_path FROM system.remote_data_paths "
+            f"WHERE disk_name = 'azure_disk' AND local_path LIKE '%{table_uuid}%'"
+        ).split()
+    )
+    assert expected_blobs, "the table must be backed by remote objects"
+
+    logged = set()
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_response")
+    try:
+        # Object removal on DROP is best-effort (and can run asynchronously), so the DROP itself may or
+        # may not surface the error. Keep the failpoint enabled and poll until every object's failed
+        # Delete event has been recorded, matching only this table's blobs and the injected 403.
+        try:
+            node.query("DROP TABLE t_batch_del SYNC")
+        except Exception:
+            pass
+
+        blob_list = ", ".join(f"'{p}'" for p in expected_blobs)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            node.query("SYSTEM FLUSH LOGS")
+            logged = set(
+                node.query(
+                    "SELECT remote_path FROM system.blob_storage_log "
+                    "WHERE event_type = 'Delete' AND error_code = 403 "
+                    f"AND remote_path IN ({blob_list})"
+                ).split()
+            )
+            if logged >= expected_blobs:
+                break
+            time.sleep(0.5)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response")
+
+    missing = expected_blobs - logged
+    assert not missing, (
+        f"expected one failed Delete event (error_code=403) per object, "
+        f"missing {len(missing)}/{len(expected_blobs)}: {sorted(missing)[:5]}"
+    )
+
+    node.query("DROP TABLE IF EXISTS t_batch_del SYNC")  # cleanup (failpoint disabled)
+
+
+def test_batch_delete_non_azure_failure_logs_every_object(started_cluster):
+    # Negative control for the catch(...) fallback in removeObjectsBatchIfExists: when SubmitBatch fails
+    # with a NON-Azure exception (an injected credential AuthenticationException, a std::exception that is
+    # NOT an Azure::Storage::StorageException), the batch path must still emit one Delete event per object
+    # before rethrowing, carrying the placeholder error_code = -1 (no HTTP status) plus the exception text.
+    node.query("DROP TABLE IF EXISTS t_batch_del_auth SYNC")
+    node.query(
+        """
+        CREATE TABLE t_batch_del_auth (k UInt64) ENGINE = MergeTree ORDER BY k
+        SETTINGS storage_policy = 'azure_policy', min_bytes_for_wide_part = 0
+        """
+    )
+    for i in range(3):
+        node.query(f"INSERT INTO t_batch_del_auth SELECT number + {i * 100} FROM numbers(100)")
+
+    table_uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_batch_del_auth'"
+    ).strip()
+    expected_blobs = set(
+        node.query(
+            "SELECT remote_path FROM system.remote_data_paths "
+            f"WHERE disk_name = 'azure_disk' AND local_path LIKE '%{table_uuid}%'"
+        ).split()
+    )
+    assert expected_blobs, "the table must be backed by remote objects"
+
+    logged = set()
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_auth_failure_on_request")
+    try:
+        try:
+            node.query("DROP TABLE t_batch_del_auth SYNC")
+        except Exception:
+            pass
+
+        blob_list = ", ".join(f"'{p}'" for p in expected_blobs)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            node.query("SYSTEM FLUSH LOGS")
+            logged = set(
+                node.query(
+                    "SELECT remote_path FROM system.blob_storage_log "
+                    "WHERE event_type = 'Delete' AND error_code = -1 "
+                    f"AND remote_path IN ({blob_list})"
+                ).split()
+            )
+            if logged >= expected_blobs:
+                break
+            time.sleep(0.5)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_auth_failure_on_request")
+
+    missing = expected_blobs - logged
+    assert not missing, (
+        f"expected one failed Delete event (error_code=-1) per object, "
+        f"missing {len(missing)}/{len(expected_blobs)}: {sorted(missing)[:5]}"
+    )
+
+    blob_list = ", ".join(f"'{p}'" for p in expected_blobs)
+    errors = node.query(
+        "SELECT DISTINCT error FROM system.blob_storage_log "
+        "WHERE event_type = 'Delete' AND error_code = -1 "
+        f"AND remote_path IN ({blob_list})"
+    )
+    assert "Authentication" in errors, f"expected the auth exception text in the log, got: {errors!r}"
+
+    node.query("DROP TABLE IF EXISTS t_batch_del_auth SYNC")  # cleanup (failpoint disabled)
+
+
+def test_batch_delete_failure_counts_profile_events(started_cluster):
+    # Bot finding r3773675098: removeObjectsBatchIfExists must count the batch in system.events
+    # (AzureDeleteObjects) even when the batch SubmitBatch itself fails. The increment now runs before the
+    # submit — mirroring the single-object removeObjectImpl and the S3 delete path — so a failed batch is
+    # still reflected in system.events, not only in system.blob_storage_log. Pre-fix (increment after the
+    # try/catch) the rethrow skipped it, so this counter stayed flat while the blobs were still logged;
+    # assert the counter now grows by at least one per object on the failed batch.
+    node.query("DROP TABLE IF EXISTS t_batch_del_events SYNC")
+    node.query(
+        """
+        CREATE TABLE t_batch_del_events (k UInt64) ENGINE = MergeTree ORDER BY k
+        SETTINGS storage_policy = 'azure_policy', min_bytes_for_wide_part = 0
+        """
+    )
+    for i in range(3):
+        node.query(f"INSERT INTO t_batch_del_events SELECT number + {i * 100} FROM numbers(100)")
+
+    table_uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 't_batch_del_events'"
+    ).strip()
+    expected_blobs = set(
+        node.query(
+            "SELECT remote_path FROM system.remote_data_paths "
+            f"WHERE disk_name = 'azure_disk' AND local_path LIKE '%{table_uuid}%'"
+        ).split()
+    )
+    assert expected_blobs, "the table must be backed by remote objects"
+
+    def azure_delete_objects():
+        # sum() so an absent event row reads as 0; system.events is a live global counter (no flush needed).
+        return int(
+            node.query(
+                "SELECT sum(value) FROM system.events WHERE event = 'AzureDeleteObjects'"
+            ).strip()
+        )
+
+    events_before = azure_delete_objects()
+
+    logged = set()
+    node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_response")
+    try:
+        try:
+            node.query("DROP TABLE t_batch_del_events SYNC")
+        except Exception:
+            pass
+
+        # Synchronize on the batch actually having been submitted: the increment now runs before the
+        # catch's blob_storage_log entries, so once every object's failed Delete row is visible the
+        # counter has definitely moved. Reuse the proven 403-batch poll for that barrier.
+        blob_list = ", ".join(f"'{p}'" for p in expected_blobs)
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            node.query("SYSTEM FLUSH LOGS")
+            logged = set(
+                node.query(
+                    "SELECT remote_path FROM system.blob_storage_log "
+                    "WHERE event_type = 'Delete' AND error_code = 403 "
+                    f"AND remote_path IN ({blob_list})"
+                ).split()
+            )
+            if logged >= expected_blobs:
+                break
+            time.sleep(0.5)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response")
+
+    missing = expected_blobs - logged
+    assert not missing, (
+        f"batch delete did not run for every object; missing {len(missing)}/{len(expected_blobs)}: "
+        f"{sorted(missing)[:5]}"
+    )
+
+    delta = azure_delete_objects() - events_before
+    assert delta >= len(expected_blobs), (
+        f"expected system.events AzureDeleteObjects to grow by >= {len(expected_blobs)} "
+        f"on the failed batch delete, got delta {delta}"
+    )
+
+    node.query("DROP TABLE IF EXISTS t_batch_del_events SYNC")  # cleanup (failpoint disabled)

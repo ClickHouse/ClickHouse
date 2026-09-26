@@ -4,6 +4,7 @@
 #include <Core/Defines.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <IO/WriteBufferFromFileBase.h>
 
 #include <unistd.h> /// for ::getpid
 

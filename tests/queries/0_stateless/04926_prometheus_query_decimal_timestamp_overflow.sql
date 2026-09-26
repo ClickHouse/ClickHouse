@@ -33,11 +33,11 @@ CREATE TABLE ts_tags (
 ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
 
 CREATE TABLE ts_metrics (
-    metric_family_name String,
+    metric_family String,
     type String,
     unit String,
     help String)
-ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+ENGINE = ReplacingMergeTree ORDER BY metric_family;
 
 CREATE TABLE ts_ns ENGINE = TimeSeries
 DATA ts_data TAGS ts_tags METRICS ts_metrics;
@@ -54,11 +54,11 @@ CREATE TABLE ts_tags3 (
 ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
 
 CREATE TABLE ts_metrics3 (
-    metric_family_name String,
+    metric_family String,
     type String,
     unit String,
     help String)
-ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+ENGINE = ReplacingMergeTree ORDER BY metric_family;
 
 CREATE TABLE ts_ms ENGINE = TimeSeries
 DATA ts_data3 TAGS ts_tags3 METRICS ts_metrics3;
@@ -77,49 +77,51 @@ CREATE TABLE ts_tags4 (
 ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
 
 CREATE TABLE ts_metrics4 (
-    metric_family_name String,
+    metric_family String,
     type String,
     unit String,
     help String)
-ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+ENGINE = ReplacingMergeTree ORDER BY metric_family;
 
 CREATE TABLE ts_us ENGINE = TimeSeries
 DATA ts_data4 TAGS ts_tags4 METRICS ts_metrics4;
 
 -- The last two samples sit 0.9 s apart, so a sub-second offset that is rescaled by the
 -- wrong factor selects a different sample.
-INSERT INTO ts_us (metric_name, tags, time_series) VALUES
+INSERT INTO ts_us (metric_name, tags, samples) VALUES
     ('m4', map('l', 'a'), [(toDateTime64(1000000, 4), 1.0), (toDateTime64(1000060, 4), 2.0), (toDateTime64(1000120, 4), 3.0),
                            (toDateTime64('1970-01-12 13:50:00.5000', 4, 'UTC'), 9.0),
                            (toDateTime64('1970-01-12 13:50:01.4000', 4, 'UTC'), 11.0)]);
 
-INSERT INTO ts_ns (metric_name, tags, time_series) VALUES
+INSERT INTO ts_ns (metric_name, tags, samples) VALUES
     ('foo', map('l', 'a'), [(toDateTime64('2023-12-31 00:00:00', 9, 'UTC'), 7.0)]);
 
-INSERT INTO ts_ms (metric_name, tags, time_series) VALUES
+INSERT INTO ts_ms (metric_name, tags, samples) VALUES
     ('foo', map('l', 'a'), [(toDateTime64('2023-12-31 00:00:00', 3, 'UTC'), 7.0)]);
 
 -- Rescaling a decimal argument up to the table's timestamp scale must report
--- DECIMAL_OVERFLOW instead of wrapping around to an unrelated timestamp.
+-- an error instead of wrapping around to an unrelated timestamp.
 
 -- Instant timestamp, Decimal64 field: raw 10^13 ticks at scale 3, table scale 9.
-SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toDecimal64(10000000000, 3)); -- { serverError DECIMAL_OVERFLOW }
+SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toDecimal64(10000000000, 3)); -- { serverError BAD_ARGUMENTS }
 
 -- The smallest scale-3 value whose scale-9 form exceeds Int64.
-SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toDecimal64(9223372036.855, 3)); -- { serverError DECIMAL_OVERFLOW }
+SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toDecimal64(9223372036.855, 3)); -- { serverError BAD_ARGUMENTS }
 
 -- Range start and end.
-SELECT * FROM prometheusQueryRange('ts_ns', '1 + 2', toDecimal64(10000000000, 3), 2000, 15); -- { serverError DECIMAL_OVERFLOW }
-SELECT * FROM prometheusQueryRange('ts_ns', '1 + 2', 1000, toDecimal64(10000000000, 3), 15); -- { serverError DECIMAL_OVERFLOW }
+SELECT * FROM prometheusQueryRange('ts_ns', '1 + 2', toDecimal64(10000000000, 3), 2000, 15); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM prometheusQueryRange('ts_ns', '1 + 2', 1000, toDecimal64(10000000000, 3), 15); -- { serverError BAD_ARGUMENTS }
 
 -- Range step: the duration instantiation of the same conversion.
-SELECT * FROM prometheusQueryRange('ts_ns', '1 + 2', 1000, 2000, toDecimal64(10000000000, 3)); -- { serverError DECIMAL_OVERFLOW }
+SELECT * FROM prometheusQueryRange('ts_ns', '1 + 2', 1000, 2000, toDecimal64(10000000000, 3)); -- { serverError BAD_ARGUMENTS }
 
 -- Valid values must keep converting exactly, in all three scale directions.
 SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toDecimal64(1704067200.000, 3));
 SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toDecimal64(9223372036.854, 3));
-SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toDecimal64(1704067200.123456789, 9));
-SELECT timestamp, value FROM prometheusQuery('ts_ms', '1 + 2', toDecimal64(1704067200.123456789, 9));
+-- A scale-9 argument must fit the precision of `Decimal64` (9 integer digits), because it is passed to the table
+-- function as a constant cast from its text form.
+SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toDecimal64(999999999.123456789, 9));
+SELECT timestamp, value FROM prometheusQuery('ts_ms', '1 + 2', toDecimal64(999999999.123456789, 9));
 SELECT timestamp, value FROM prometheusQuery('ts_ms', '1 + 2', toDecimal64(-1.500, 3));
 SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toDecimal32(1704067.20, 2));
 SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toDecimal32(-2.50, 2));
@@ -142,7 +144,7 @@ SELECT (SELECT groupArray(value) FROM prometheusQuery(ts_us, 'last_over_time(m4[
      = (SELECT groupArray(value) FROM prometheusQuery(ts_us, 'last_over_time(m4[1s])', 1000201.1));
 
 SELECT 'range query with offset, scale 4:';
-SELECT tags, time_series FROM prometheusQueryRange(ts_us, 'last_over_time(m4[1s] offset 500ms)', 1000201.6, 1000202.6, 1) ORDER BY ALL;
+SELECT tags, samples FROM prometheusQueryRange(ts_us, 'last_over_time(m4[1s] offset 500ms)', 1000201.6, 1000202.6, 1) ORDER BY ALL;
 
 -- Multiples of 3 take the no-op branch of the same conversion; keep them covered.
 SELECT 'offset with a scale that needs no rescaling:';

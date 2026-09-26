@@ -432,6 +432,26 @@ class LakeDataGenerator:
         LongType: [-9_223_372_036_854_775_808, 9_223_372_036_854_775_807],
     }
 
+    # Spark has no unsigned types, so every UInt maps to a signed type that is
+    # wider on the negative side and often narrower on the positive one (UInt8
+    # becomes SMALLINT). ClickHouse reads a value that does not fit by silently
+    # truncating it - -1 comes back as 255 - so Spark and ClickHouse hash
+    # different data with no error raised anywhere.
+    CH_INT_LIMITS = {
+        "UInt8": (0, 2**8 - 1),
+        "UInt16": (0, 2**16 - 1),
+        "UInt32": (0, 2**32 - 1),
+        "UInt64": (0, 2**64 - 1),
+        "UInt128": (0, 2**128 - 1),
+        "UInt256": (0, 2**256 - 1),
+        "Int8": (-(2**7), 2**7 - 1),
+        "Int16": (-(2**15), 2**15 - 1),
+        "Int32": (-(2**31), 2**31 - 1),
+        "Int64": (-(2**63), 2**63 - 1),
+        "Int128": (-(2**127), 2**127 - 1),
+        "Int256": (-(2**255), 2**255 - 1),
+    }
+
     def _take_nested_budget(self, n: int) -> int:
         # Nested containers multiply per-level counts (map of arrays of maps...), so an
         # unlucky min/max_nested draw explodes combinatorially. Cap the TOTAL container
@@ -468,25 +488,30 @@ class LakeDataGenerator:
             return self._rand_bool()
         if isinstance(dtype, (ByteType, ShortType, IntegerType, LongType)):
             next_limits = LakeDataGenerator.INT_LIMITS[type(dtype)]
+            # Stay inside the declared ClickHouse type as well, or the read back
+            # truncates and the Spark/ClickHouse hashes diverge. See CH_INT_LIMITS.
+            ch_limits = LakeDataGenerator.CH_INT_LIMITS.get(ch_hint)
+            if ch_limits is not None:
+                next_limits = [
+                    max(next_limits[0], ch_limits[0]),
+                    min(next_limits[1], ch_limits[1]),
+                ]
+            low, high = next_limits
             r = random.randint(1, 100)
             if r <= 10:
                 # Exact boundaries are almost never hit by uniform draws, but they are
                 # what stresses readers and narrowing casts
                 return random.choice(
                     [
-                        next_limits[0],
-                        next_limits[0] + 1,
-                        -1,
-                        0,
-                        1,
-                        next_limits[1] - 1,
-                        next_limits[1],
+                        value
+                        for value in (low, low + 1, -1, 0, 1, high - 1, high)
+                        if low <= value <= high
                     ]
                 )
             # Try reduced limits
             if r <= 55:
-                return self._rand_int(-100, 100)
-            return self._rand_int(next_limits[0], next_limits[1])
+                return self._rand_int(max(low, -100), min(high, 100))
+            return self._rand_int(low, high)
         if isinstance(dtype, FloatType):
             if random.randint(1, 100) <= 5:
                 # float32 boundaries and denormals; also values that overflow on
