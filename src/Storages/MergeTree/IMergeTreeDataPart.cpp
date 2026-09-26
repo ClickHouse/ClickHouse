@@ -1903,13 +1903,13 @@ namespace
 template <typename Storage>
 void writeInvalidatedSystemColumnsFileImpl(Storage & storage, bool storage_supports_hard_links, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings)
 {
-    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
-
+    /// An empty set means the caller has nothing new to invalidate. Keep the file inherited from
+    /// the source part (it is hardlinked/copied by the clone): removing it would resurrect stale
+    /// physically stored values that were disclaimed when the source part was adopted.
     if (columns.empty())
-    {
-        storage.removeFileIfExists(path);
         return;
-    }
+
+    const std::string path = part_dir / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
 
     /// Whether an existing file must be unlinked before it is rewritten depends on the storage.
     ///
