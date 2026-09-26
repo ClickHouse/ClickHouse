@@ -3203,9 +3203,9 @@ bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & pa
     const auto & columns = storage_snapshot->metadata->getColumns();
     std::vector<NameAndTypePair> storage_columns;
     NameSet seen_storage_columns;
-    for (const auto & name : query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames())
+    for (const auto & column_name : query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames())
     {
-        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
         if (!column || !seen_storage_columns.insert(column->getNameInStorage()).second)
             continue;
         storage_columns.push_back(columns.getPhysical(column->getNameInStorage()));
