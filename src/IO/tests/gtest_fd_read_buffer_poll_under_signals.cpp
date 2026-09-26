@@ -122,7 +122,7 @@ void checkEpollExpiresUnderPeriodicSignals(Int64 signal_period_nanoseconds)
         signal_period_nanoseconds,
         [](int read_fd) -> UInt64
         {
-            DB::Epoll epoll;
+            DB::Epoll epoll{DB::EpollNesting::Leaf};
             epoll.add(read_fd);
             epoll_event events[1];
             Stopwatch watch;
@@ -178,7 +178,7 @@ TEST(Epoll, ZeroTimeoutGetManyReadyProbe)
     int fds[2];
     ASSERT_EQ(pipe(fds), 0);
     {
-        DB::Epoll epoll;
+        DB::Epoll epoll{DB::EpollNesting::Leaf};
         epoll.add(fds[0]);
         epoll_event events[1];
         EXPECT_EQ(epoll.getManyReady(1, events, 0), 0u); /// non-blocking probe on an empty fd: nothing ready
