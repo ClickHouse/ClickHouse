@@ -1522,6 +1522,19 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
         return nullptr;
     }
 
+    /// `resolveStorages` pins only the `ReadFromTable` leaves, but expanded views and tables read
+    /// only inside folded scalar subqueries have no such leaf: their semantics are baked into the
+    /// plan. Mirror the hit path and revalidate the complete dependency set at this boundary, so
+    /// that a view replaced after the dependencies were collected is neither stored nor executed
+    /// with its old definition; see `05261_query_plan_cache_view_replaced_before_resolve`.
+    QueryPlan::ExpectedStorageIdentities resolved_identities;
+    if (!validateQueryPlanCacheEntry(entry, context, resolved_identities))
+    {
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "A dependency changed while the plan was being built, falling back to normal planning");
+        return nullptr;
+    }
+
     /// Store only now, after `resolveStorages` proved the plan still binds to the analyzed
     /// storages. Storing before it would leave a known-dead entry resident when the resolution
     /// loses a race with concurrent DDL: the entry is guaranteed to validation-miss on the next
