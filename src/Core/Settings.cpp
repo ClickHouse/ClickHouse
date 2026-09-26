@@ -2088,7 +2088,7 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
 
-This setting also controls the behavior of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization).
+This setting also controls the behavior of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization) and of [query_plan_window_top_k_prefilter](#query_plan_window_top_k_prefilter), which bounds a `rank()` window function by it.
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
 If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index).
@@ -6906,6 +6906,18 @@ Allow to merge filters in the query plan.
 )", 0) \
     DECLARE(Bool, query_plan_push_limit_by_into_sort, true, R"(
 Toggles a query-plan-level optimization for `ORDER BY ... LIMIT BY` queries. When `LIMIT BY` columns are a prefix of the `ORDER BY` clause, each parallel sorted stream applies `LIMIT BY` before the streams are merged into one, reducing rows processed by the final merge and later pipeline stages. Speeds up queries where `LIMIT BY` discards a large fraction of rows.
+
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
+    DECLARE(Bool, query_plan_window_top_k_prefilter, true, R"(
+Toggles a query-plan-level optimization for queries that bound a `rank()` or `row_number()` window function, such as `WHERE rk <= 100`. Each stream below the window drops rows whose rank already exceeds the bound before the window's sort, partition reshuffle and merge see them. Rows tying with the bound are always kept, so results are unchanged. Speeds up "top N per group" queries, where the window otherwise sorts every row to compute ranks the filter discards.
+
+The optimization is disabled when the rank bound is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, because the memory and CPU cost of the heap grows with the bound. It is also disabled when [max_rows_to_sort](#max_rows_to_sort) or [max_bytes_to_sort](#max_bytes_to_sort) is set, so that a query which exceeds those limits today keeps failing.
 
 Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
 
