@@ -72,7 +72,7 @@ public:
     void finish();
 
 private:
-    Epoll epoll;
+    Epoll epoll{EpollNesting::PipelinePoller};
     std::unordered_map<Key, TaskData> tasks;
 
     /// In-Flight timers

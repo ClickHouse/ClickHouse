@@ -445,7 +445,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
 {
     query_plan.addInterpreterContext(planner_context->getQueryContext());
-
+    query_plan.addDistributedPlanDecisionContext(planner_context->getMutableQueryContext());
     for (const auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
     {
         if (auto * table_node = table_expression->as<TableNode>())
@@ -2183,9 +2183,9 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         /// Contexts should be copied into the root query plan, because some functions may
         /// be created using them while this subquery plan will be destroyed after
         /// FutureSetFromSubquery::buildSetInplace(). Otherwise, function execution may fail
-        /// with a "Context has expired" exception.
-        for (const auto & context : subquery_plan.getInterpretersContexts())
-            query_plan.addInterpreterContext(context);
+        /// with a "Context has expired" exception. The set source is not united into this plan,
+        /// so its decision contexts are copied the same way.
+        query_plan.takeContextsFrom(subquery_plan);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
     }
 
@@ -2678,6 +2678,12 @@ void Planner::buildPlanForQueryNode()
 
     collectSets(query_tree, *planner_context);
     auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
+
+    /// The kill switch for a query joining multiple tables runs first: the checks below throw when
+    /// `enable_parallel_replicas = 2`, and a query for which parallel replicas are already disabled
+    /// must be executed without them instead of failing with a parallel-replicas-only exception.
+    /// It runs after `collectSets` so that the prepared sets it has to reach are already collected.
+    disableParallelReplicasForMultipleTablesQueryIfNeeded(query_tree, planner_context);
 
     if (query_context->canUseTaskBasedParallelReplicas())
     {
