@@ -221,7 +221,6 @@
                 "ko/concepts/features/interfaces/framing-formats",
                 "ko/concepts/features/interfaces/tcp",
                 "ko/concepts/features/interfaces/adbc",
-                "ko/concepts/features/interfaces/jdbc",
                 "ko/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"
@@ -233,7 +232,6 @@
                 "ko/concepts/features/interfaces/arrowflight"
               ]
             },
-            "ko/concepts/features/interfaces/cpp",
             "ko/concepts/features/interfaces/schema-inference",
             "ko/concepts/features/interfaces/documentation-search",
             "ko/concepts/features/interfaces/web-sql",
