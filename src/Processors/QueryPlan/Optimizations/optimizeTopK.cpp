@@ -392,7 +392,7 @@ void installTopKDynamicFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
     const auto & top_k_filter_info = *read_from_mergetree_step->getTopKFilterInfo();
     read_from_mergetree_step->clearPendingTopKDynamicFilter();
 
-    /// A projection read that took over the stamp reads `_part_offset` as `_parent_part_offset`.
+    /// A projection read inherits the stamp but reads a stored `_part_offset` as `_parent_part_offset`.
     const auto & read_columns = read_from_mergetree_step->getAllColumnNames();
     if (std::ranges::find(read_columns, top_k_filter_info.column_name) == read_columns.end())
         return;
