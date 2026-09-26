@@ -326,6 +326,10 @@ How many messages have been dropped from text_log due to the async log queue bei
 
 How many messages (accepted or dropped) have been sent to the async queue for the text_log
 
+### AzureClients {#azureclients}
+
+Number of created Azure blob storage container clients.
+
 ### AzureCommitBlockList {#azurecommitblocklist}
 
 Number of Azure blob storage API CommitBlockList calls
@@ -1786,7 +1790,31 @@ A timeout has exceeded while waiting for shards during synchronous insertion int
 
 ### DNSError {#dnserror}
 
-Total count of errors in DNS resolution
+Total count of errors in DNS resolution. It counts both the requests that failed among the ones counted by DNSRequests and DNSReverseRequests, and the failures that happen without a request, such as a host name resolving only to addresses that are then rejected by the `dns_allow_resolve_names_to_ipv4`/`dns_allow_resolve_names_to_ipv6` filter. Use DNSRequestError and DNSReverseError to get the numerators that match the corresponding request counters.
+
+### DNSRequestError {#dnsrequesterror}
+
+Total count of failed forward name resolution attempts among the attempts counted by DNSRequests. Both requests that ended with an error and requests that returned no addresses are counted. Unlike DNSError, this event has the same boundary as DNSRequests, so a failure rate can be derived from the two.
+
+### DNSRequestMicroseconds {#dnsrequestmicroseconds}
+
+Total time spent in the forward name resolution attempts counted by DNSRequests, including the failed ones counted by DNSRequestError.
+
+### DNSRequests {#dnsrequests}
+
+Total count of forward name resolution attempts (host name to addresses) made by the server. An attempt is counted when the name is handed to the system resolver, so names answered locally, for example from `/etc/hosts` or another NSS source, and names that the resolver rejects locally without sending a query, are counted as well. Names served from the internal DNS cache and host names that are already IP address literals are not counted.
+
+### DNSReverseError {#dnsreverseerror}
+
+Total count of failed reverse DNS requests among the requests counted by DNSReverseRequests. Both requests that ended with an error and requests that returned no PTR records are counted, because the resolver reports NXDOMAIN and other non-success statuses by returning an empty answer.
+
+### DNSReverseRequestMicroseconds {#dnsreverserequestmicroseconds}
+
+Total time spent in reverse DNS requests counted by DNSReverseRequests, including the failed ones counted by DNSReverseError.
+
+### DNSReverseRequests {#dnsreverserequests}
+
+Total count of reverse DNS requests (address to host names, PTR) sent to the resolver, for example to match a client address against a `host_regexp` in the users configuration. Requests served from the DNS cache are not counted.
 
 ### DuplicatedAsyncInserts {#duplicatedasyncinserts}
 
@@ -2323,6 +2351,10 @@ Number of closed server HTTP connections. Keep alive has not been negotiated
 ### HTTPServerConnectionsCreated {#httpserverconnectionscreated}
 
 Number of created server HTTP connections
+
+### HTTPServerConnectionsErrors {#httpserverconnectionserrors}
+
+Number of server HTTP connections terminated by an error: a network error, a malformed request, or an exception that escaped the request handler. A client that closes a kept-alive connection without sending another request is not an error and is not counted here.
 
 ### HTTPServerConnectionsExpired {#httpserverconnectionsexpired}
 
@@ -3307,6 +3339,10 @@ Total number of times memory allocator purge was requested
 ### MemoryAllocatorPurgeTimeMicroseconds {#memoryallocatorpurgetimemicroseconds}
 
 Total time spent for memory allocator purge
+
+### MemoryLargeAllocationTraced {#memorylargeallocationtraced}
+
+Number of times a stack trace was captured for a single charge to the global memory tracker at or above `min_allocation_size_to_log_stack_trace`.
 
 ### MemoryOvercommitWaitTimeMicroseconds {#memoryovercommitwaittimemicroseconds}
 
@@ -4523,6 +4559,18 @@ Number of ICacheHandle::get invocations in ReaderExecutor. Zero until the Reader
 ### ReaderExecutorCachePopulateRequests {#readerexecutorcachepopulaterequests}
 
 Number of ICacheHandle::put invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.
+
+### ReaderExecutorConcurrentDownloadWaitMicroseconds {#readerexecutorconcurrentdownloadwaitmicroseconds}
+
+Total time the ReaderExecutor spent blocked on concurrent downloaders of cache segments.
+
+### ReaderExecutorConcurrentDownloadWaits {#readerexecutorconcurrentdownloadwaits}
+
+Number of times the ReaderExecutor waited for a concurrent downloader to commit a cache segment range.
+
+### ReaderExecutorConcurrentDownloadWaitTimeouts {#readerexecutorconcurrentdownloadwaittimeouts}
+
+Number of those waits that came back short of the requested overlap. A short but non-empty return means the query advanced at the concurrent downloader's pace; an empty one falls back to reading from source.
 
 ### ReaderExecutorDecryptMicroseconds {#readerexecutordecryptmicroseconds}
 
@@ -5856,6 +5904,10 @@ Time spent in waiting for synchronous remote reads.
 
 Number of times any of the system logs have failed to flush to the corresponding system table. Attempts to flush are repeated.
 
+### SystemPartsEnumerationSlowdownSleeps {#systempartsenumerationslowdownsleeps}
+
+Number of sleeps of the test-only failpoint 'slowdown_system_parts_enumeration' while filling the tables of the system.parts family. Always zero outside of tests.
+
 ### SystemTimeMicroseconds {#systemtimemicroseconds}
 
 Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel mode. This is time spent in syscalls, excluding waiting time during blocking syscalls.
@@ -5895,6 +5947,10 @@ Number of advance operations performed in lazy posting list mode.
 ### TextIndexLazyBlocksSkippedResolved {#textindexlazyblocksskippedresolved}
 
 Number of packed blocks skipped because the output region was already resolved (all-ones for OR, all-zeros for AND) in lazy posting list mode.
+
+### TextIndexLazyBruteForceEarlyExits {#textindexlazybruteforceearlyexits}
+
+Number of brute-force intersections in lazy posting list mode that stopped early because one of the posting lists had no rows in the window, so the intersection is empty.
 
 ### TextIndexLazyBruteForceIntersections {#textindexlazybruteforceintersections}
 
@@ -6075,6 +6131,30 @@ Total time a query was sleeping to conform all throttling settings.
 ### TinyS3Clients {#tinys3clients}
 
 Number of S3 clients copies which reuse an existing auth provider from another client.
+
+### TLSHandshakeErrors {#tlshandshakeerrors}
+
+Number of failed TLS handshakes for outgoing (client) connections, for example because of an untrusted or expired peer certificate, a protocol or cipher mismatch, or the peer closing the connection mid-handshake.
+
+### TLSHandshakeMicroseconds {#tlshandshakemicroseconds}
+
+Total time spent performing TLS handshakes for outgoing (client) connections, including the failed ones counted by TLSHandshakeErrors. For a non-blocking socket a handshake is retried until it completes, and the time of all its attempts is summed up here.
+
+### TLSHandshakes {#tlshandshakes}
+
+Number of TLS handshakes completed for outgoing (client) connections, for example to object storage, to the target of a `url` table function, or to another ClickHouse server. Only the connections that use the Poco TLS implementation are counted; protocols carrying their own TLS stack, such as gRPC or the MySQL, PostgreSQL and Kafka client libraries, are not. Session resumption still performs a handshake and is counted here.
+
+### TLSServerHandshakeErrors {#tlsserverhandshakeerrors}
+
+Number of failed TLS handshakes for incoming (server) connections, for example because of a rejected client certificate, a protocol or cipher mismatch, or the client closing the connection mid-handshake. Port scanners and health checks that open a TCP connection to a secure port and close it are counted here as well.
+
+### TLSServerHandshakeMicroseconds {#tlsserverhandshakemicroseconds}
+
+Total time spent performing TLS handshakes for incoming (server) connections, including the failed ones counted by TLSServerHandshakeErrors. For a non-blocking socket a handshake is retried until it completes, and the time of all its attempts is summed up here.
+
+### TLSServerHandshakes {#tlsserverhandshakes}
+
+Number of TLS handshakes completed for incoming (server) connections, across the server protocols that use the Poco TLS implementation: native TCP, HTTPS, MySQL and PostgreSQL. gRPC carries its own TLS stack and is not counted. Session resumption still performs a handshake and is counted here.
 
 ### UncompressedCacheHits {#uncompressedcachehits}
 

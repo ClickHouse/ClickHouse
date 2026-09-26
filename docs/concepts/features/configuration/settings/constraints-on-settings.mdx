@@ -96,14 +96,14 @@ is enabled:
 ### Do not make `readonly` changeable in read-only mode {#readonly-changeable-in-readonly}
 
 <Warning>
-Keep `readonly` off the `changeable_in_readonly` list in every profile, and remember that profile restrictions apply system-wide, not per-user.
+Keep `readonly` off the `changeable_in_readonly` list in every profile, including profiles you assign to nobody: a profile's name is selectable by any session.
 </Warning>
 
-Don't mark `readonly` itself as `changeable_in_readonly`. If you do, a session that starts at `readonly = 1` can run `SET readonly = 0` and regain the ability to run the write queries its existing privileges already allow.
+Don't mark `readonly` itself as `changeable_in_readonly`. If you do, a session that starts at `readonly = 1` can run `SET readonly = 0` and regain the ability to run the write queries its existing privileges already allow, unless the same constraint also forbids `0`.
 
-This matters everywhere, not just for the profile assigned to the user:
-- Any session can switch to any profile via `SET profile`, since profile selection isn't access-checked (it's only limited by whatever settings constraints are already active).
-- Over HTTP, `GET` requests are forced to `readonly = 2` only when the effective value would otherwise be `0`. So a profile that sets `readonly = 1` but also lets `readonly` be changed in read-only mode defeats that protection — a `GET` request can flip it to `0` and write.
+This matters for every profile you define, not only the ones you assign:
+- `SET profile` is not access-checked, so any session can select any profile by name. A profile is reachable even when you assign it to nobody, although what it then changes is still checked against the constraints already active in that session.
+- Over HTTP, `GET` requests are forced to `readonly = 2` only when the effective value would otherwise be `0`. So a profile that sets `readonly = 1` but also lets `readonly` be changed in read-only mode defeats that protection, because a `GET` request can flip it to `0` and write.
 
 ## Multiple constraint profiles {#multiple-constraint-profiles}
 
