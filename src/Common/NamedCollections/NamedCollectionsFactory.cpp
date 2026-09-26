@@ -447,18 +447,17 @@ void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
         /// We only remove entries that have Nil UUIDs - entries with UUIDs belong to Atomic
         /// databases and must be removed via the UUID index (handled in the if branch above).
         auto & idx = dependencies.get<TableName>();
-        auto range = idx.equal_range(std::make_tuple(table_id.database_name, table_id.table_name));
-
-        /// Collect entries to erase - only those without UUIDs (non-Atomic database entries)
-        std::vector<decltype(range.first)> to_erase;
-        for (auto it = range.first; it != range.second; ++it)
+        /// Nothing here may allocate: a caller can reach this once the table's metadata is already
+        /// gone, where a throw cannot be undone. Hence a lookup key of references and an in-place
+        /// erase; erasing an element invalidates neither the rest of the range nor its end.
+        auto range = idx.equal_range(std::tie(table_id.database_name, table_id.table_name));
+        for (auto it = range.first; it != range.second;)
         {
             if (it->table_id.uuid == UUIDHelpers::Nil)
-                to_erase.push_back(it);
+                it = idx.erase(it);
+            else
+                ++it;
         }
-
-        for (auto it : to_erase)
-            idx.erase(it);
     }
 }
 
