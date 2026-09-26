@@ -194,6 +194,10 @@ public:
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return delegate->supportsEmptyFilesWithoutBlobs(); }
 
+    bool supportsInlineData() const override { return delegate->supportsInlineData(); }
+
+    bool appliesOperationsEagerly() const override { return delegate->appliesOperationsEagerly(); }
+
     bool areBlobPathsRandom() const override
     {
         return delegate->areBlobPathsRandom();
@@ -275,6 +279,11 @@ public:
         return delegate->isReadOnly();
     }
 
+    bool isRemote() const override
+    {
+        return delegate->isRemote();
+    }
+
     void updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description) override
     {
         delegate->updateCache(wrappedPaths(paths), recursive, enforce_fresh, serialized_cache_update_description);
@@ -303,6 +312,11 @@ public:
     int64_t recordAsRemoved(const StoredObjects & blobs) override
     {
         return delegate->recordAsRemoved(blobs);
+    }
+
+    bool hasPendingRemovalBlobs(const StoredObjects & blobs) const override
+    {
+        return delegate->hasPendingRemovalBlobs(blobs);
     }
 
     BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & cluster, int64_t max_count) override

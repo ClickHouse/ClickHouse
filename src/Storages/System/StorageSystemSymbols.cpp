@@ -1,7 +1,9 @@
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
 
 #include <base/demangle.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemSymbols.h>
@@ -19,7 +21,7 @@ namespace DB
 
 
 StorageSystemSymbols::StorageSystemSymbols(const StorageID & table_id_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(ColumnsDescription(
@@ -32,14 +34,23 @@ StorageSystemSymbols::StorageSystemSymbols(const StorageID & table_id_)
         {"address_begin", std::make_shared<DataTypeUInt64>(), "Start address of the symbol in the binary."},
         {"address_end", std::make_shared<DataTypeUInt64>(), "End address of the symbol in the binary."},
     }));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemSymbols::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 
 namespace
 {
 
-class SymbolsBlockSource : public ISource
+class SymbolsBlockSource final : public ISource
 {
 private:
     using Iterator = std::vector<SymbolIndex::Symbol>::const_iterator;
@@ -140,5 +151,9 @@ Pipe StorageSystemSymbols::read(
 }
 
 }
+
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemSymbols) }
 
 #endif

@@ -1,0 +1,46 @@
+Arrow null: nullable field, non-nullable field
+\N
+Arrow array: unreferenced null, nullable field, appended null, base null
+44
+44
+99
+44
+Arrow array: referenced null, appended null, base null
+Arrow map: unreferenced null, nullable field, appended null, base null
+444
+444
+999
+444
+Arrow map: referenced null, appended null, base null
+Arrow tuple: unreferenced null, nullable field, appended null, base null
+44
+44
+99
+44
+Arrow tuple: referenced null, appended null, base null
+ArrowStream null: nullable field, non-nullable field
+\N
+ArrowStream array: unreferenced null, nullable field, appended null, base null
+44
+44
+99
+44
+ArrowStream array: referenced null, appended null, base null
+ArrowStream array: replacement clears null, replacement adds null
+66
+ArrowStream map: unreferenced null, nullable field, appended null, base null
+444
+444
+999
+444
+ArrowStream map: referenced null, appended null, base null
+ArrowStream map: replacement clears null, replacement adds null
+666
+ArrowStream tuple: unreferenced null, nullable field, appended null, base null
+44
+44
+99
+44
+ArrowStream tuple: referenced null, appended null, base null
+ArrowStream tuple: replacement clears null, replacement adds null
+66

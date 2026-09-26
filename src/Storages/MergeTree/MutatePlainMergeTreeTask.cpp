@@ -2,12 +2,13 @@
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Core/Settings.h>
 
 namespace DB
@@ -51,7 +52,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     storage.writePartLog(
         PartLogElement::MUTATE_PART_START, {}, 0,
-        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, mutation_ids);
+        future_part->name, new_part, future_part->parts, merge_list_entry.get(), {}, mutation_ids, {});
 
     write_part_log = [this, mutation_ids] (const ExecutionStatus & execution_status)
     {
@@ -65,7 +66,7 @@ void MutatePlainMergeTreeTask::prepare()
             future_part->parts,
             merge_list_entry.get(),
             std::move(profile_counters_snapshot),
-            mutation_ids);
+            mutation_ids, {});
     };
 
     if (task_context->getSettingsRef()[Setting::enable_sharing_sets_for_mutations])
@@ -115,10 +116,22 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 new_part = mutate_task->getFuture().get();
                 auto & data_part_storage = new_part->getDataPartStorage();
+#if CLICKHOUSE_CLOUD
+                data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
+#endif
                 if (data_part_storage.hasActiveTransaction())
-                    data_part_storage.precommitTransaction();
+                    data_part_storage.commitTransaction();
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
+
+                /// `waitForMutation` considers the mutation done as soon as the mutated part is visible,
+                /// and it re-checks on any wakeup (a timeout or an unrelated notification), not only on
+                /// `updateMutationEntriesErrors`. Hold `mutation_wait_mutex` (which the waiter holds while
+                /// checking) from the commit until the part log entry is queued, otherwise a synchronous
+                /// mutation (`mutations_sync`) may return to the client between the two, and a subsequent
+                /// `SYSTEM FLUSH LOGS` misses the `MutatePart` row.
+                std::unique_lock mutation_wait_lock(storage.mutation_wait_mutex);
+
                 /// Hold data_parts_lock across both renameTempPartAndReplace and commit to prevent
                 /// a race with REPLACE PARTITION. Without this, there is a window where the mutation
                 /// result is PreActive (not yet committed): REPLACE PARTITION's
@@ -131,10 +144,17 @@ bool MutatePlainMergeTreeTask::executeStep()
                     transaction.commit(lock);
                 }
 
-                storage.updateMutationEntriesErrors(future_part, true, "", "");
                 mutate_task->updateProfileEvents();
 
+                /// Write the part log entry before reporting the mutation as done, otherwise a
+                /// synchronous mutation (mutations_sync) may return to the client before the
+                /// MutatePart row is queued, so a subsequent SYSTEM FLUSH LOGS misses it.
                 write_part_log({});
+
+                /// `updateMutationEntriesErrors` locks `mutation_wait_mutex` itself to notify the waiters.
+                mutation_wait_lock.unlock();
+
+                storage.updateMutationEntriesErrors(future_part, true, "", "");
 
                 state = State::NEED_FINISH;
                 return true;
@@ -146,9 +166,15 @@ bool MutatePlainMergeTreeTask::executeStep()
                 PreformattedMessage exception_message = getCurrentExceptionMessageAndPattern(/* with_stacktrace */ false);
                 LOG_ERROR(getLogger("MutatePlainMergeTreeTask"), exception_message);
                 String error_code_name(ErrorCodes::getName(getCurrentExceptionCode()));
-                storage.updateMutationEntriesErrors(future_part, false, exception_message.text, error_code_name);
                 mutate_task->updateProfileEvents();
+
+                /// Same ordering as the success path: queue the failed part log entry before
+                /// publishing the mutation error, otherwise a synchronous mutation (mutations_sync)
+                /// may return to the client (it also unblocks on the failure reason) before the
+                /// MutatePart row is queued, so a subsequent SYSTEM FLUSH LOGS misses it.
                 write_part_log(ExecutionStatus::fromCurrentException("", true));
+
+                storage.updateMutationEntriesErrors(future_part, false, exception_message.text, error_code_name);
                 tryLogCurrentException(__PRETTY_FUNCTION__);
                 throw;
             }

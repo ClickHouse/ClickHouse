@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# Tags: no-llvm-coverage
+# - no-llvm-coverage: flaky under coverage instrumentation. The internal 10 s
+#   `connect_timeout` / `handshake_timeout` in `clickhouse-benchmark` (see
+#   `DBMS_DEFAULT_CONNECT_TIMEOUT_SEC` and `handshake_timeout_ms`) can fire
+#   under the slowdown of LLVM source-based coverage + parallel test load.
+#   The resulting `Code: 209. DB::NetException: Timeout exceeded ... (SOCKET_TIMEOUT)`
+#   is not in the `grep -v` filter list and bleeds into stdout, tripping the
+#   "exception in stdout" detector. Same pattern fixed for
+#   `02550_benchmark_connections_credentials` (PR #103298).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

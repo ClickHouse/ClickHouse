@@ -1,0 +1,66 @@
+tokenbf equals
+Skip
+Parts: 1/2
+Granules: 1/4
+tokenbf non-existing
+Skip
+Parts: 0/2
+Granules: 0/4
+tokenbf CAST
+Skip
+Parts: 1/2
+Granules: 1/4
+tokenbf CAST default unsafe
+tokenbf typed zero safe
+Skip
+Parts: 1/2
+Granules: 1/4
+tokenbf reversed equals
+Skip
+Parts: 1/2
+Granules: 1/4
+tokenbf IS NOT NULL Dynamic
+Skip
+Parts: 1/2
+Granules: 1/4
+tokenbf IS NOT NULL typed
+Skip
+Parts: 1/2
+Granules: 1/4
+tokenbf IS NOT NULL nonexistent
+Skip
+Parts: 0/2
+Granules: 0/4
+tokenbf IS NOT NULL CAST unsafe
+tokenbf sub-object ^ not used
+ngrambf equals
+Skip
+Parts: 1/2
+Granules: 1/4
+ngrambf non-existing
+Skip
+Parts: 0/2
+Granules: 0/4
+ngrambf CAST
+Skip
+Parts: 1/2
+Granules: 1/4
+ngrambf CAST default unsafe
+ngrambf IS NOT NULL
+Skip
+Parts: 1/2
+Granules: 1/4
+result: tokenbf equals
+1
+result: tokenbf non-existing
+result: tokenbf AND
+1
+result: tokenbf OR
+1
+3
+result: tokenbf AND nonexistent
+result: tokenbf IS NOT NULL
+1
+result: tokenbf IS NOT NULL nonexistent
+result: ngrambf equals
+1

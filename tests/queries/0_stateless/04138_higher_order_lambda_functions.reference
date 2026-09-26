@@ -1,0 +1,50 @@
+--- arrayMap: basic and multi-array ---
+[2,4,6]
+[11,22,33]
+[110,240]
+--- arrayFilter / arrayExists / arrayAll ---
+[2,3]
+0
+1
+1
+0
+--- arrayCount / arraySum / arrayAvg / arrayMin / arrayMax ---
+2
+12
+4
+-3
+-1
+--- arrayFirst / arrayLast / arrayFirstIndex / arrayLastIndex ---
+2
+2
+2
+2
+--- arrayReduce (named aggregate, no lambda) ---
+6
+2
+3
+--- arrayFold with explicit accumulator type (avoid type mismatch) ---
+6
+123
+--- captured outer variable ---
+[101,102,103]
+--- lambda used in different operators ---
+[9,6,5,4,3,2,1,1]
+[9,5,4,3,1,1]
+--- arraySplit / arrayPartialSort ---
+[[1,2],[3],[4],[5]]
+--- nested higher-order: arrayMap over Array(Array(Int)) ---
+[6,14,10]
+--- arrayMap returning array changes result type ---
+[[1,2],[2,4],[3,6]]
+--- arrayMap returning tuples ---
+[(1,'1'),(2,'2'),(3,'3')]
+--- arrayFilter with tuple input ---
+[5]
+--- arrayMap inside aggregates (sum of map results) ---
+14
+--- arrayFilter in WHERE ---
+[4,5,6]
+[7,8,9]
+--- Errors: lambda with wrong number of arguments ---
+--- lambda returning incompatible type to fold accumulator ---

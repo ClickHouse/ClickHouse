@@ -30,6 +30,13 @@ namespace ErrorCodes
     extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
+namespace
+{
+    /// Cap the number of elements printed by the describe methods:
+    /// an uncapped list can be megabytes of text for tables with many parts.
+    constexpr size_t max_elements_to_describe = 100;
+}
+
 
 void RangesInDataPartDescription::serialize(WriteBuffer & out, UInt64 parallel_replicas_protocol_version) const
 {
@@ -46,9 +53,14 @@ void RangesInDataPartDescription::serialize(WriteBuffer & out, UInt64 parallel_r
 
 String RangesInDataPartDescription::describe() const
 {
-    String result;
-    result += fmt::format("{}[{}]", getPartOrProjectionName(), fmt::join(ranges, ","));
-    return result;
+    if (ranges.size() <= max_elements_to_describe)
+        return fmt::format("{}[{}]", getPartOrProjectionName(), fmt::join(ranges, ","));
+
+    return fmt::format(
+        "{}[{} and {} more]",
+        getPartOrProjectionName(),
+        fmt::join(ranges.begin(), ranges.begin() + max_elements_to_describe, ","),
+        ranges.size() - max_elements_to_describe);
 }
 
 String RangesInDataPartDescription::getPartOrProjectionName() const
@@ -81,7 +93,26 @@ void RangesInDataPartsDescription::serialize(WriteBuffer & out, UInt64 parallel_
 
 String RangesInDataPartsDescription::describe() const
 {
-    return fmt::format("{} parts: [{}]", this->size(), fmt::join(*this, ", "));
+    if (this->size() <= max_elements_to_describe)
+        return fmt::format("{} parts: [{}]", this->size(), fmt::join(*this, ", "));
+
+    return fmt::format(
+        "{} parts: [{} and {} more]",
+        this->size(),
+        fmt::join(this->begin(), this->begin() + max_elements_to_describe, ", "),
+        this->size() - max_elements_to_describe);
+}
+
+String RangesInDataPartsDescription::describeShort() const
+{
+    size_t num_ranges = 0;
+    size_t num_marks = 0;
+    for (const auto & part : *this)
+    {
+        num_ranges += part.ranges.size();
+        num_marks += part.ranges.getNumberOfMarks();
+    }
+    return fmt::format("{} parts, {} ranges, {} marks", this->size(), num_ranges, num_marks);
 }
 
 void RangesInDataPartsDescription::deserialize(ReadBuffer & in, UInt64 parallel_replicas_protocol_version)
@@ -107,12 +138,14 @@ RangesInDataPart::RangesInDataPart(
     const DataPartPtr & parent_part_,
     size_t part_index_in_query_,
     size_t part_starting_offset_in_query_,
-    const MarkRanges & ranges_)
+    const MarkRanges & ranges_,
+    const RangesInDataPartReadHints & read_hints_)
     : data_part{data_part_}
     , parent_part{parent_part_}
     , part_index_in_query{part_index_in_query_}
     , part_starting_offset_in_query{part_starting_offset_in_query_}
     , ranges{ranges_}
+    , read_hints{read_hints_}
 {
 }
 
@@ -141,11 +174,7 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
 
 size_t RangesInDataPart::getMarksCount() const
 {
-    size_t total = 0;
-    for (const auto & range : ranges)
-        total += range.end - range.begin;
-
-    return total;
+    return ranges.getNumberOfMarks();
 }
 
 size_t RangesInDataPart::getRowsCount() const

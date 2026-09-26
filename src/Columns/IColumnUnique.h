@@ -1,7 +1,6 @@
 #pragma once
 #include <optional>
 #include <Columns/IColumn.h>
-#include <Common/WeakHash.h>
 
 namespace DB
 {
@@ -27,10 +26,12 @@ public:
     /// Returns an empty dictionary with nullable nested type and all required special values.
     virtual MutableColumnPtr cloneEmptyNullable() const = 0;
 
-    /// Returns array with StringViewHash calculated for each row of getNestedNotNullableColumn() column.
-    /// Returns nullptr if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
+    /// Returns a span of StringViewHash calculated for each row of getNestedNotNullableColumn() column.
+    /// Returns an empty span if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
     /// Uses thread-safe cache.
-    virtual const UInt64 * tryGetSavedHash() const = 0;
+    /// The span is computed once and is not extended afterwards, so the dictionary may grow past its
+    /// end: a position outside the span has no saved hash and must be hashed from the key instead.
+    virtual std::span<const UInt64> tryGetSavedHash() const = 0;
 
     size_t size() const override { return getNestedNotNullableColumn()->size(); }
 
@@ -173,9 +174,9 @@ public:
         throwNotImplementedForColumnUnique("scatter");
     }
 
-    WeakHash32 getWeakHash32() const override
+    void computeHashInto(size_t /*row_begin*/, size_t /*row_end*/, UInt32 * /*hash_out*/, bool /*initial*/) const override
     {
-        throwNotImplementedForColumnUnique("getWeakHash32");
+        throwNotImplementedForColumnUnique("computeHashInto");
     }
 
     void updateHashFast(SipHash &) const override
@@ -186,6 +187,11 @@ public:
     void compareColumn(const IColumn &, size_t, PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &, int, int) const override
     {
         throwNotImplementedForColumnUnique("compareColumn");
+    }
+
+    [[nodiscard]] Int64 compareTrackAt(size_t, size_t, const IColumn &, int) const override
+    {
+        throwNotImplementedForColumnUnique("compareTrackAt");
     }
 
     bool hasEqualValues() const override
@@ -213,7 +219,7 @@ public:
      * @see DB::ReverseIndex
      * @see DB::ColumnUnique
      *
-     * The most common example uses https://clickhouse.com/docs/sql-reference/data-types/lowcardinality/ columns.
+     * The most common example uses https://clickhouse.com/docs/reference/data-types/lowcardinality columns.
      * Consider data type @e LC(String). The inner type here is @e String which is more or less a contiguous memory
      * region, so it can be easily represented as a @e std::string_view. So we pass that ref to this function and get its
      * index in the dictionary, which can be used to operate with the indices column.

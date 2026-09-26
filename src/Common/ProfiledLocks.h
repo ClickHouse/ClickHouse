@@ -5,157 +5,159 @@
 #include <Common/Stopwatch.h>
 #include <base/defines.h>
 
-#include <boost/noncopyable.hpp>
-
+#include <chrono>
 #include <mutex>
 #include <shared_mutex>
+#include <utility>
 
 
 namespace DB
 {
 
-/// RAII lock guard that measures both wait-time and hold-time for std::mutex.
-/// Increments the wait-event after the lock is acquired, and the hold-event when the guard is destroyed.
-class TSA_SCOPED_LOCKABLE ProfiledMutexLock final : private boost::noncopyable
+/// Shared implementation without TSA annotations; public wrappers below own the acquire/release annotations.
+template <typename MutexType, typename LockType>
+class ProfiledLockBase : private LockType
 {
-public:
-    ProfiledMutexLock(std::mutex & mutex, ProfileEvents::Event wait_event_, ProfileEvents::Event hold_event_) TSA_ACQUIRE(mutex)
-        : wait_event(wait_event_)
-        , hold_event(hold_event_)
+protected:
+    explicit ProfiledLockBase(MutexType & mutex, ProfileEvents::Event wait_event_)
+        : LockType(mutex, std::try_to_lock)
+        , wait_event(wait_event_)
     {
-        Stopwatch wait_watch;
-        std::unique_lock<std::mutex> l(mutex);
-        ProfileEvents::increment(wait_event, wait_watch.elapsedMicroseconds());
-        underlying_lock = std::move(l);
-        hold_watch.restart();
-    }
-
-    ~ProfiledMutexLock() TSA_RELEASE()
-    {
-        if (underlying_lock.owns_lock())
+        if (!LockType::owns_lock())
         {
-            UInt64 elapsed = hold_watch.elapsedMicroseconds();
-            underlying_lock.unlock();
-            ProfileEvents::increment(hold_event, elapsed);
+            lockAndProfileWait();
         }
     }
 
-    void unlock() TSA_RELEASE()
+    template <typename LockArg>
+    ProfiledLockBase(MutexType & mutex, ProfileEvents::Event wait_event_, LockArg && lock_arg)
+        : LockType(mutex, std::forward<LockArg>(lock_arg))
+        , wait_event(wait_event_)
     {
-        UInt64 elapsed = hold_watch.elapsedMicroseconds();
-        underlying_lock.unlock();
-        ProfileEvents::increment(hold_event, elapsed);
     }
 
-    void lock() TSA_ACQUIRE()
+    template <typename Rep, typename Period>
+    ProfiledLockBase(MutexType & mutex, ProfileEvents::Event wait_event_, std::chrono::duration<Rep, Period> timeout)
+        : LockType(mutex, std::try_to_lock)
+        , wait_event(wait_event_)
     {
-        Stopwatch wait_watch;
-        underlying_lock.lock();
-        ProfileEvents::increment(wait_event, wait_watch.elapsedMicroseconds());
-        hold_watch.restart();
-    }
-
-private:
-    std::unique_lock<std::mutex> underlying_lock;
-    ProfileEvents::Event wait_event;
-    ProfileEvents::Event hold_event;
-    Stopwatch hold_watch;
-};
-
-/// RAII lock guard that measures both wait-time and hold-time for exclusive (write) locks on SharedMutex.
-/// Increments the wait-event after the lock is acquired, and the hold-event when the guard is destroyed.
-class TSA_SCOPED_LOCKABLE ProfiledExclusiveLock final : private boost::noncopyable
-{
-public:
-    ProfiledExclusiveLock(SharedMutex & mutex, ProfileEvents::Event wait_event_, ProfileEvents::Event hold_event_) TSA_ACQUIRE(mutex)
-        : wait_event(wait_event_)
-        , hold_event(hold_event_)
-    {
-        Stopwatch wait_watch;
-        std::unique_lock<SharedMutex> l(mutex);
-        ProfileEvents::increment(wait_event, wait_watch.elapsedMicroseconds());
-        underlying_lock = std::move(l);
-        hold_watch.restart();
-    }
-
-    ~ProfiledExclusiveLock() TSA_RELEASE()
-    {
-        if (underlying_lock.owns_lock())
+        if (!LockType::owns_lock())
         {
-            UInt64 elapsed = hold_watch.elapsedMicroseconds();
-            underlying_lock.unlock();
-            ProfileEvents::increment(hold_event, elapsed);
+            tryLockAndProfileWait(timeout);
         }
     }
 
-    void unlock() TSA_RELEASE()
+    ~ProfiledLockBase() = default;
+
+    void unlockImpl() { LockType::unlock(); }
+
+    void lockImpl()
     {
-        UInt64 elapsed = hold_watch.elapsedMicroseconds();
-        underlying_lock.unlock();
-        ProfileEvents::increment(hold_event, elapsed);
+        if (LockType::try_lock())
+            return;
+
+        lockAndProfileWait();
     }
 
-    void lock() TSA_ACQUIRE()
+    void lockAndProfileWait()
     {
         Stopwatch wait_watch;
-        underlying_lock.lock();
+        LockType::lock();
         ProfileEvents::increment(wait_event, wait_watch.elapsedMicroseconds());
-        hold_watch.restart();
     }
 
-private:
-    std::unique_lock<SharedMutex> underlying_lock;
-    ProfileEvents::Event wait_event;
-    ProfileEvents::Event hold_event;
-    Stopwatch hold_watch;
-};
+    template <typename Rep, typename Period>
+    void tryLockAndProfileWait(std::chrono::duration<Rep, Period> timeout)
+    {
+        Stopwatch watch;
+        LockType::try_lock_for(timeout);
+        ProfileEvents::increment(wait_event, watch.elapsedMicroseconds());
+    }
 
-
-/// RAII lock guard that measures both wait-time and hold-time for shared (read) locks on SharedMutex.
-class TSA_SCOPED_LOCKABLE ProfiledSharedLock final : private boost::noncopyable
-{
 public:
-    ProfiledSharedLock(SharedMutex & mutex, ProfileEvents::Event wait_event_, ProfileEvents::Event hold_event_) TSA_ACQUIRE_SHARED(mutex)
-        : wait_event(wait_event_)
-        , hold_event(hold_event_)
-    {
-        Stopwatch wait_watch;
-        std::shared_lock<SharedMutex> l(mutex);
-        ProfileEvents::increment(wait_event, wait_watch.elapsedMicroseconds());
-        underlying_lock = std::move(l);
-        hold_watch.restart();
-    }
+    ProfiledLockBase(const ProfiledLockBase &) = delete;
+    ProfiledLockBase & operator=(const ProfiledLockBase &) = delete;
+    ProfiledLockBase(ProfiledLockBase &&) = default;
+    ProfiledLockBase & operator=(ProfiledLockBase &&) = default;
 
-    ~ProfiledSharedLock() TSA_RELEASE()
-    {
-        if (underlying_lock.owns_lock())
-        {
-            UInt64 elapsed = hold_watch.elapsedMicroseconds();
-            underlying_lock.unlock();
-            ProfileEvents::increment(hold_event, elapsed);
-        }
-    }
-
-    void unlock() TSA_RELEASE()
-    {
-        UInt64 elapsed = hold_watch.elapsedMicroseconds();
-        underlying_lock.unlock();
-        ProfileEvents::increment(hold_event, elapsed);
-    }
-
-    void lock() TSA_ACQUIRE()
-    {
-        Stopwatch wait_watch;
-        underlying_lock.lock();
-        ProfileEvents::increment(wait_event, wait_watch.elapsedMicroseconds());
-        hold_watch.restart();
-    }
+    using LockType::mutex;
+    using LockType::operator bool;
+    using LockType::owns_lock;
 
 private:
-    std::shared_lock<SharedMutex> underlying_lock;
     ProfileEvents::Event wait_event;
-    ProfileEvents::Event hold_event;
-    Stopwatch hold_watch;
 };
+
+template <typename MutexType>
+class TSA_SCOPED_LOCKABLE ProfiledExclusiveLock : private ProfiledLockBase<MutexType, std::unique_lock<MutexType>>
+{
+    using Base = ProfiledLockBase<MutexType, std::unique_lock<MutexType>>;
+
+public:
+    ProfiledExclusiveLock(MutexType & mutex, ProfileEvents::Event wait_event_) TSA_ACQUIRE(mutex)
+        : Base(mutex, wait_event_)
+    {
+    }
+
+    template <typename... Args>
+    ProfiledExclusiveLock(MutexType & mutex, ProfileEvents::Event wait_event_, Args &&... args)
+        : Base(mutex, wait_event_, std::forward<Args>(args)...)
+    {
+    }
+
+    ProfiledExclusiveLock(const ProfiledExclusiveLock &) = delete;
+    ProfiledExclusiveLock & operator=(const ProfiledExclusiveLock &) = delete;
+    ProfiledExclusiveLock(ProfiledExclusiveLock &&) = default;
+    ProfiledExclusiveLock & operator=(ProfiledExclusiveLock &&) = default;
+
+    ~ProfiledExclusiveLock() TSA_RELEASE() = default;
+
+    void unlock() TSA_RELEASE() { Base::unlockImpl(); }
+
+    void lock() TSA_ACQUIRE() { Base::lockImpl(); }
+
+    using Base::mutex;
+    using Base::operator bool;
+    using Base::owns_lock;
+};
+
+template <typename MutexType>
+class TSA_SCOPED_LOCKABLE ProfiledSharedLock : private ProfiledLockBase<MutexType, std::shared_lock<MutexType>>
+{
+    using Base = ProfiledLockBase<MutexType, std::shared_lock<MutexType>>;
+
+public:
+    ProfiledSharedLock(MutexType & mutex, ProfileEvents::Event wait_event_) TSA_ACQUIRE_SHARED(mutex)
+        : Base(mutex, wait_event_)
+    {
+    }
+
+    template <typename... Args>
+    ProfiledSharedLock(MutexType & mutex, ProfileEvents::Event wait_event_, Args &&... args)
+        : Base(mutex, wait_event_, std::forward<Args>(args)...)
+    {
+    }
+
+    ProfiledSharedLock(const ProfiledSharedLock &) = delete;
+    ProfiledSharedLock & operator=(const ProfiledSharedLock &) = delete;
+    ProfiledSharedLock(ProfiledSharedLock &&) = default;
+    ProfiledSharedLock & operator=(ProfiledSharedLock &&) = default;
+
+    ~ProfiledSharedLock() TSA_RELEASE() = default;
+
+    void unlock() TSA_RELEASE() { Base::unlockImpl(); }
+
+    void lock() TSA_ACQUIRE_SHARED() { Base::lockImpl(); }
+
+    using Base::mutex;
+    using Base::operator bool;
+    using Base::owns_lock;
+};
+
+template <typename MutexType, typename... Args>
+ProfiledExclusiveLock(MutexType &, ProfileEvents::Event, Args &&...) -> ProfiledExclusiveLock<MutexType>;
+
+template <typename MutexType, typename... Args>
+ProfiledSharedLock(MutexType &, ProfileEvents::Event, Args &&...) -> ProfiledSharedLock<MutexType>;
 
 }

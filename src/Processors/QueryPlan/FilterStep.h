@@ -6,6 +6,22 @@
 namespace DB
 {
 
+struct FilterDAGOutputPruningResult
+{
+    bool changed = false;
+    bool input_positions_changed = false;
+    std::vector<size_t> required_input_positions;
+};
+
+/// Prune filter DAG outputs by position and return the input positions needed to compute the remaining outputs and filter.
+FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
+    ActionsDAG & dag,
+    const String & filter_column_name,
+    bool & remove_filter_column,
+    const Block & input_header,
+    const std::vector<size_t> & required_output_positions,
+    bool remove_inputs);
+
 /// Implements WHERE, HAVING operations. See FilterTransform.
 class FilterStep : public ITransformingStep
 {
@@ -51,10 +67,11 @@ public:
     void decorrelateActions() { actions_dag.decorrelate(); }
 
     bool canRemoveUnusedColumns() const override;
-    RemovedUnusedColumns removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs) override;
+    RemoveUnusedColumnsResult removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs) override;
     bool canRemoveColumnsFromOutput() const override;
 
     void setPreventInputRemoval() { prevent_input_removal = true; }
+    bool isInputRemovalPrevented() const { return prevent_input_removal; }
 
     bool supportsDataflowStatisticsCollection() const override { return true; }
 

@@ -7,10 +7,13 @@
 --
 -- Uses `index_granularity = 1` so each row is a separate granule.
 -- Verifies behavior via EXPLAIN indexes = 1 (Condition and Granules lines).
+SET explain_query_plan_default = 'legacy';
 
 -- ============================================================
 -- Part 1: UInt64 — pruning works
 -- ============================================================
+
+SET use_primary_key = 1;
 
 DROP TABLE IF EXISTS t_multiply_mono;
 CREATE TABLE t_multiply_mono (key UInt64) ENGINE = MergeTree ORDER BY key SETTINGS index_granularity = 1;

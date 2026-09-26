@@ -50,11 +50,12 @@ std::unique_ptr<IQueryPlanStep> ObjectFilterStep::deserialize(Deserialization & 
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
 
-    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
     return std::make_unique<ObjectFilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name));
 }
 
+void registerObjectFilterStep(QueryPlanStepRegistry & registry);
 void registerObjectFilterStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("ObjectFilter", ObjectFilterStep::deserialize);
