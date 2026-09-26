@@ -35,15 +35,15 @@ Like [`multiSearchAllPositions`](#multiSearchAllPositions) but ignores case.
         "Case insensitive multi-search",
         "SELECT multiSearchAllPositionsCaseInsensitive('ClickHouse',['c','h'])",
         R"(
-┌─multiSearchA⋯['c', 'h'])─┐
-│ [1,6]                    │
-└──────────────────────────┘
+┌─multiSearchAllPositionsCaseInsensitive('ClickHouse', ['c', 'h'])─┐
+│ [1,6]                                                            │
+└──────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionMultiSearchAllPositionsCaseInsensitive>(documentation);
 }

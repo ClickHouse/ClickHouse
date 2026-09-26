@@ -1,4 +1,5 @@
 #include <Disks/StoragePolicy.h>
+#include <base/sort.h>
 #include <Disks/DiskFactory.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/createVolume.h>
@@ -89,7 +90,7 @@ StoragePolicy::StoragePolicy(
                 ErrorCodes::INVALID_CONFIG_PARAMETER,
                 "volume_priority values must cover the range from 1 to N (lowest priority specified) without gaps");
 
-        std::stable_sort(
+        ::stableSort(
             volumes.begin(), volumes.end(),
             [](const VolumePtr a, const VolumePtr b) { return a->volume_priority < b->volume_priority; });
     }
@@ -231,9 +232,20 @@ DiskPtr StoragePolicy::getAnyDisk() const
 DiskPtr StoragePolicy::tryGetDiskByName(const String & disk_name) const
 {
     for (auto && volume : volumes)
+    {
         for (auto && disk : volume->getDisks())
+        {
             if (disk->getName() == disk_name)
                 return disk;
+
+            /// If the requested name matches a wrapped (underlying) disk of a cache layer,
+            /// resolve to the cache disk. This provides backward compatibility for TTL TO DISK
+            /// and MOVE PARTITION TO DISK referencing base disk names (e.g. 's3' instead of 's3_cache').
+            if (disk->supportsCache() && disk->getCacheLayersNames().contains(disk_name))
+                return disk;
+        }
+    }
+
     return {};
 }
 
@@ -437,7 +449,7 @@ void StoragePolicy::buildVolumeIndices()
     {
         const VolumePtr & volume = volumes[index];
 
-        if (volume_index_by_volume_name.find(volume->getName()) != volume_index_by_volume_name.end())
+        if (volume_index_by_volume_name.contains(volume->getName()))
             throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                             "Volume names must be unique in storage policy {} ({} "
                             "is duplicated)" , backQuote(name), backQuote(volume->getName()));
@@ -448,7 +460,7 @@ void StoragePolicy::buildVolumeIndices()
         {
             const String & disk_name = disk->getName();
 
-            if (volume_index_by_disk_name.find(disk_name) != volume_index_by_disk_name.end())
+            if (volume_index_by_disk_name.contains(disk_name))
                 throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
                                 "Disk names must be unique in storage policy {} ({} "
                                 "is duplicated)" , backQuote(name), backQuote(disk_name));
@@ -497,7 +509,7 @@ StoragePolicySelector::StoragePolicySelector(
     }
 
     /// Add default policy if it isn't explicitly specified.
-    if (policies.find(DEFAULT_STORAGE_POLICY_NAME) == policies.end())
+    if (!policies.contains(DEFAULT_STORAGE_POLICY_NAME))
     {
         auto default_policy = std::make_shared<StoragePolicy>(DEFAULT_STORAGE_POLICY_NAME, config, config_prefix + "." + DEFAULT_STORAGE_POLICY_NAME, disks);
         policies.emplace(DEFAULT_STORAGE_POLICY_NAME, std::move(default_policy));

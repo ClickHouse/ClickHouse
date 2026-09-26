@@ -1,0 +1,20 @@
+<test>
+    <settings>
+        <max_threads>2</max_threads>
+    </settings>
+    <create_query>
+        create table ht_prefetch (a String, b String, c UInt64) engine=Memory
+    </create_query>
+
+    <fill_query>
+        insert into ht_prefetch select concat('key', toString(number)), concat('value', toString(rand())), rand() % 1000 from numbers(1e7)
+    </fill_query>
+
+    <query>
+        select a, b , avg(c) from ht_prefetch group by a, b format Null
+    </query>
+
+    <drop_query>
+        drop table if exists ht_prefetch
+    </drop_query>
+</test>

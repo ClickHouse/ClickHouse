@@ -13,7 +13,9 @@ void registerStorageNull(StorageFactory & factory);
 void registerStorageMerge(StorageFactory & factory);
 void registerStorageBuffer(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory);
+void registerStorageRemote(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory);
+void registerStorageQueryRunner(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory);
 void registerStorageDictionary(StorageFactory & factory);
@@ -21,10 +23,8 @@ void registerStorageSet(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
-void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageExecutable(StorageFactory & factory);
-void registerStorageWindowView(StorageFactory & factory);
 void registerStorageLoop(StorageFactory & factory);
 void registerStorageFuzzQuery(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory);
@@ -50,6 +50,7 @@ void registerStorageDeltaLake(StorageFactory & factory);
 
 #if USE_AVRO
 void registerStorageIceberg(StorageFactory & factory);
+void registerStoragePaimon(StorageFactory & factory);
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
@@ -77,6 +78,7 @@ void registerStorageYTsaurus(StorageFactory & factory);
 #endif
 
 void registerStorageRedis(StorageFactory & factory);
+void registerStorageBigQuery(StorageFactory & factory);
 
 
 #if USE_RDKAFKA
@@ -123,7 +125,9 @@ void registerStorages()
     registerStorageMerge(factory);
     registerStorageBuffer(factory);
     registerStorageDistributed(factory);
+    registerStorageRemote(factory);
     registerStorageMemory(factory);
+    registerStorageQueryRunner(factory);
     registerStorageFile(factory);
     registerStorageURL(factory);
     registerStorageDictionary(factory);
@@ -131,10 +135,8 @@ void registerStorages()
     registerStorageJoin(factory);
     registerStorageView(factory);
     registerStorageMaterializedView(factory);
-    registerStorageLiveView(factory);
     registerStorageGenerateRandom(factory);
     registerStorageExecutable(factory);
-    registerStorageWindowView(factory);
     registerStorageLoop(factory);
     registerStorageFuzzQuery(factory);
     registerStorageTimeSeries(factory);
@@ -154,6 +156,7 @@ void registerStorages()
 
 #if USE_AVRO
     registerStorageIceberg(factory);
+    registerStoragePaimon(factory);
 #endif
 
 #if USE_AWS_S3
@@ -184,6 +187,7 @@ void registerStorages()
 
     registerStorageYTsaurus(factory);
     registerStorageRedis(factory);
+    registerStorageBigQuery(factory);
 
 #if USE_RDKAFKA
     registerStorageKafka(factory);

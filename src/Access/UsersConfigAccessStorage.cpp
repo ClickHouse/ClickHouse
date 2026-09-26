@@ -1,34 +1,16 @@
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/UsersConfigParser.h>
-#include <Access/Quota.h>
-#include <Access/RowPolicy.h>
-#include <Access/User.h>
-#include <Access/Role.h>
-#include <Access/SettingsProfile.h>
 #include <Access/AccessControl.h>
-#include <Access/resolveSetting.h>
 #include <Access/AccessChangesNotifier.h>
-#include <Dictionaries/IDictionary.h>
 #include <Common/Config/ConfigReloader.h>
-#include <Common/SSHWrapper.h>
-#include <Common/StringUtils.h>
+#include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <Common/quoteString.h>
-#include <Common/transformEndianness.h>
 #include <Core/Settings.h>
-#include <Interpreters/executeQuery.h>
-#include <Parsers/Access/ASTGrantQuery.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Parsers/Access/ParserGrantQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/MD5Engine.h>
-#include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <cstring>
 #include <filesystem>
-#include <base/FnTraits.h>
-#include <base/range.h>
 
 
 namespace DB
@@ -81,11 +63,11 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
     {
         UsersConfigParser parser{access_control};
         auto allowed_profile_ids = UsersConfigParser::getAllowedIDs(config, "profiles", AccessEntityType::SETTINGS_PROFILE);
-        auto allowed_role_ids = UsersConfigParser::getAllowedIDs(config, "roles", AccessEntityType::ROLE);
+        auto role_ids_from_users_config = UsersConfigParser::getAllowedIDs(config, "roles", AccessEntityType::ROLE);
 
         std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
 
-        for (const auto & entity : parser.parseUsers(config, allowed_profile_ids, allowed_role_ids))
+        for (const auto & entity : parser.parseUsers(config, allowed_profile_ids, role_ids_from_users_config))
             all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
 
         for (const auto & entity : parser.parseQuotas(config))
@@ -97,7 +79,7 @@ void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfigu
         for (const auto & entity : parser.parseSettingsProfiles(config, allowed_profile_ids))
             all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
 
-        for (const auto & entity : parser.parseRoles(config, allowed_role_ids))
+        for (const auto & entity : parser.parseRoles(config, role_ids_from_users_config))
             all_entities.emplace_back(UsersConfigParser::generateID(*entity), entity);
 
         memory_storage.setAll(all_entities);
@@ -118,11 +100,12 @@ void UsersConfigAccessStorage::load(
     std::lock_guard lock{load_mutex};
     path = std::filesystem::path{users_config_path}.lexically_normal();
     config_reloader.reset();
+    auto zk_node_cache = std::make_unique<zkutil::ZooKeeperNodeCache>(get_zookeeper_function);
     config_reloader = std::make_unique<ConfigReloader>(
         users_config_path,
         std::vector{{include_from_path}},
         preprocessed_dir,
-        zkutil::ZooKeeperNodeCache(get_zookeeper_function),
+        std::move(zk_node_cache),
         std::make_shared<Poco::Event>(),
         [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
         {

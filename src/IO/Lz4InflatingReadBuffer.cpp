@@ -10,10 +10,6 @@ namespace ErrorCodes
 
 Lz4InflatingReadBuffer::Lz4InflatingReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
     : CompressedReadBufferWrapper(std::move(in_), buf_size, existing_memory, alignment)
-    , in_data(nullptr)
-    , out_data(nullptr)
-    , in_available(0)
-    , out_available(0)
 {
     size_t ret = LZ4F_createDecompressionContext(&dctx, LZ4F_VERSION);
 
@@ -32,58 +28,45 @@ Lz4InflatingReadBuffer::~Lz4InflatingReadBuffer()
 
 bool Lz4InflatingReadBuffer::nextImpl()
 {
-    if (eof_flag)
-        return false;
-
-    bool need_more_input = false;
-    size_t ret;
-
-    do
+    while (true)
     {
-        if (!in_available)
-        {
-            in->nextIfAtEnd();
-            in_available = in->buffer().end() - in->position();
-        }
+        if (!in_eof)
+            in_eof = in->eof();
 
-        in_data = reinterpret_cast<void *>(in->position());
-        out_data = reinterpret_cast<void *>(internal_buffer.begin());
+        void * in_data = reinterpret_cast<void *>(in->position());
+        size_t in_available = in->available();
+        chassert(in_available > 0 || in_eof);
 
-        out_available = internal_buffer.size();
+        void * out_data = reinterpret_cast<void *>(internal_buffer.begin());
+        size_t out_available = internal_buffer.size();
+        chassert(out_available > 0);
 
         size_t bytes_read = in_available;
         size_t bytes_written = out_available;
 
-        ret = LZ4F_decompress(dctx, out_data, &bytes_written, in_data, &bytes_read, /* LZ4F_decompressOptions_t */ nullptr);
+        size_t ret = LZ4F_decompress(dctx, out_data, &bytes_written, in_data, &bytes_read, /* LZ4F_decompressOptions_t */ nullptr);
 
-        in_available -= bytes_read;
-        out_available -= bytes_written;
+        if (LZ4F_isError(ret))
+            throw Exception(
+                ErrorCodes::LZ4_DECODER_FAILED,
+                "LZ4 decompression failed. LZ4F version: {}. Error: {}{}",
+                LZ4F_VERSION,
+                LZ4F_getErrorName(ret),
+                getExceptionEntryWithFileName(*in));
 
-        /// It may happen that we didn't get new uncompressed data
-        /// (for example if we read the end of frame). Load new data
-        /// in this case.
-        need_more_input = bytes_written == 0;
+        in->position() += bytes_read;
 
-        in->position() = in->buffer().end() - in_available;
+        if (bytes_written > 0)
+        {
+            working_buffer.resize(bytes_written);
+            return true;
+        }
+
+        if (bytes_read == 0)
+        {
+            chassert(in_eof);
+            return false;
+        }
     }
-    while (need_more_input && !LZ4F_isError(ret) && !in->eof());
-
-    working_buffer.resize(internal_buffer.size() - out_available);
-
-    if (LZ4F_isError(ret))
-        throw Exception(
-            ErrorCodes::LZ4_DECODER_FAILED,
-            "LZ4 decompression failed. LZ4F version: {}. Error: {}{}",
-            LZ4F_VERSION,
-            LZ4F_getErrorName(ret),
-            getExceptionEntryWithFileName(*in));
-
-    if (in->eof())
-    {
-        eof_flag = true;
-        return !working_buffer.empty();
-    }
-
-    return true;
 }
 }

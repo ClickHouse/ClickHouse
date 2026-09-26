@@ -4,6 +4,7 @@
 #if USE_ARROW || USE_PARQUET
 
 #include <Core/ColumnsWithTypeAndName.h>
+#include <Formats/FormatSettings.h>
 #include <Processors/Chunk.h>
 
 #include <arrow/table.h>
@@ -31,9 +32,64 @@ public:
         bool use_signed_indexes_for_dictionary = false;
         /// Always use (U)Int64 type for indexes in Arrow::Dictionary.
         bool use_64_bit_indexes_for_dictionary = false;
+        /// Output Date as UInt16 instead of Arrow DATE32 for backward compatibility.
+        bool output_date_as_uint16 = false;
+        /// What to do with a type having no conversion: reject it, or write one serialized value per row
+        /// into an Arrow `utf8`/`binary` column.
+        FormatSettings::ArrowUnsupportedTypes output_unsupported_types = FormatSettings::ArrowUnsupportedTypes::THROW;
+
+        /// Serializes the values of the types above. It has to be the query's own format settings, so that
+        /// the opaque payload is the one the caller's settings ask for - `output_format_binary_write_json_as_string`
+        /// changes the binary encoding of `JSON`, for one - and matches what the native Arrow IPC writer
+        /// produces for the same query. Unused unless `output_unsupported_types` writes an opaque column.
+        /// Carries an initializer like every other member, so that a caller listing only the leading fields
+        /// positionally does not trip `-Wmissing-field-initializers`.
+        FormatSettings format_settings{};
     };
 
+    static std::shared_ptr<arrow::Schema> calculateArrowSchema(
+        const ColumnsWithTypeAndName & header_columns,
+        const std::string & format_name,
+        const Chunk * chunk,
+        const Settings & settings,
+        std::optional<size_t> columns_num = std::nullopt,
+        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt
+    );
+
+    /// Because an arrow table can only have one dictionary per column, if the returned table is intended to be inserted into a larger table,
+    /// `cached_dictionary_values` should be provided to maintain this limitation.
+    static std::shared_ptr<arrow::Table> calculateArrowTable(
+        const ColumnsWithTypeAndName & header_columns,
+        const std::string & format_name,
+        const std::vector<Chunk> & chunks,
+        const Settings & settings,
+        size_t columns_num,
+        std::shared_ptr<arrow::Schema> schema,
+        std::unordered_map<std::string, MutableColumnPtr> * cached_dictionary_values = nullptr);
+
+
     CHColumnToArrowColumn(const Block & header, const std::string & format_name_, const Settings & settings_);
+    CHColumnToArrowColumn(const ColumnsWithTypeAndName & header_columns_, const std::string & format_name_, const Settings & settings_);
+
+        /// Makes a copy of this converter.
+    /// This can be useful to prepare for conversion in multiple threads.
+    std::unique_ptr<CHColumnToArrowColumn> clone(bool copy_arrow_schema = false) const;
+
+    /// Initializes the arrow schema if it is not initialized yet.
+    /// We can't do this in the constructor because the type of indexes for LowCardinality column can change between different chunks of data
+    /// but we must use the same arrow schema for all chunks.
+    /// So we use the type of indexes from the first chunk of data to generate the arrow schema
+    /// because it's better than getting the type of indexes from the header where it's always UInt8).
+    /// Anyway we use at least 32 bit for arrow indexes (see getArrowTypeForLowCardinalityIndexes) which should be enough for most cases.
+    void initializeArrowSchema(
+        const Chunk * chunk = nullptr,
+        std::optional<size_t> columns_num = std::nullopt,
+        const std::optional<std::unordered_map<String, Int64>> & column_to_field_id = std::nullopt);
+
+    /// Returns the arrow schema (if it's not initialized yet this function will initialize it from the header columns).
+    /// Arrow schemas are immutable (all members of class arrow::Schema are const), so
+    /// it's safe to pass `std::shared_ptr<arrow::Schema>` to other threads.
+    std::shared_ptr<arrow::Schema> getArrowSchema() const;
 
     void chChunkToArrowTable(
         std::shared_ptr<arrow::Table> & res,
@@ -43,19 +99,18 @@ public:
 
 private:
     ColumnsWithTypeAndName header_columns;
-    std::vector<std::shared_ptr<arrow::Field>> arrow_fields;
     const std::string format_name;
-    Settings settings;
+    const Settings settings;
+
+    /// We should initialize arrow schema on first call of chChunkToArrowTable, not in constructor
+    /// because LowCardinality column from header always has indexes type UInt8, so, we should get
+    /// proper indexes type from first chunk of data.
+    std::shared_ptr<arrow::Schema> arrow_schema;
 
     /// Map {column name : arrow dictionary}.
     /// To avoid converting dictionary from LowCardinality to Arrow
     /// Dictionary every chunk we save it and reuse.
     std::unordered_map<std::string, MutableColumnPtr> dictionary_values;
-
-    /// We should initialize arrow fields on first call of chChunkToArrowTable, not in constructor
-    /// because LowCardinality column from header always has indexes type UInt8, so, we should get
-    /// proper indexes type from first chunk of data.
-    bool is_arrow_fields_initialized = false;
 };
 
 }

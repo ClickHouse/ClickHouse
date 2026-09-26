@@ -14,6 +14,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+extern const int NOT_IMPLEMENTED;
+}
+
 inline void readTimeText(
     time_t & x,
     ReadBuffer & istr,
@@ -33,7 +39,7 @@ inline bool tryReadTimeText(
     const DateLUTImpl & time_zone,
     const DateLUTImpl & /*utc_time_zone*/)
 {
-    bool res;
+    bool res = false;
     res = tryReadTimeText(x, istr, time_zone);
 
     x = std::max<time_t>(0, x);
@@ -199,7 +205,11 @@ void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
         ReadBufferFromString buf(time_str);
         readTimeText(x, buf);
         if (!buf.eof())
-            throwUnexpectedDataAfterParsedValue(column, istr, settings, "Time");
+                throw Exception(
+                    ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                    "Unexpected data '{}' after parsed Time value '{}'",
+                    String(buf.position(), buf.buffer().end()),
+                    String(buf.buffer().begin(), buf.position()));
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
@@ -231,6 +241,11 @@ bool SerializationTime::tryDeserializeTextCSV(IColumn & column, ReadBuffer & ist
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));
     return true;
+}
+
+void SerializationTime::serializeTextHive(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Type Time is not supported by the HiveText output format");
 }
 
 }

@@ -16,9 +16,14 @@ inline bool functionIsInOperator(const std::string & name)
     return name == "in" || name == "notIn" || name == "nullIn" || name == "notNullIn";
 }
 
+inline bool functionIsGlobalInOperator(const std::string & name)
+{
+    return name == "globalIn" || name == "globalNotIn" || name == "globalNullIn" || name == "globalNotNullIn";
+}
+
 inline bool functionIsInOrGlobalInOperator(const std::string & name)
 {
-    return functionIsInOperator(name) || name == "globalIn" || name == "globalNotIn" || name == "globalNullIn" || name == "globalNotNullIn";
+    return functionIsInOperator(name) || functionIsGlobalInOperator(name);
 }
 
 inline bool functionIsLikeOperator(const std::string & name)
@@ -33,7 +38,7 @@ inline bool functionIsJoinGet(const std::string & name)
 
 inline bool functionIsDictGet(const std::string & name)
 {
-    return startsWith(name, "dictGet") || (name == "dictHas") || (name == "dictIsIn");
+    return startsWith(name, "dictGet") || (name == "dictHas") || (name == "dictIsIn") || startsWith(name, "naiveBayesClassifier");
 }
 
 inline bool checkFunctionIsInOrGlobalInOperator(const ASTFunction & func)

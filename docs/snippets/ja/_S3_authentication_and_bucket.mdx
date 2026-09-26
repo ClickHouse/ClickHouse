@@ -1,0 +1,210 @@
+---
+title: S3 の認証とバケット
+---
+
+<Accordion title="S3 バケットと IAM ユーザーを作成する">
+  この記事では、AWS IAM ユーザーの設定、S3 バケットの作成、および ClickHouse がそのバケットを S3 ディスクとして使用するための設定方法の基本について説明します。
+  必要なパーミッションの決定にあたっては、セキュリティチームと連携し、ここで示す内容を出発点として参考にしてください。
+
+  ### AWS IAM ユーザーの作成
+
+  以下の手順では、サービスアカウントユーザー (ログインユーザーではなく) を作成します。
+
+  1. AWS IAM Management Console にログインします。
+
+  2. `Users` メニューで、`Create user` を選択します。
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-1.webp" alt="AWS IAM Management Console - 新規ユーザーの追加" />
+    </Frame>
+  </div>
+
+  3. ユーザー名を入力し、認証情報のタイプを `Access key - Programmatic access` に設定して、`Next: Permissions` を選択します
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-2.webp" alt="IAM userのユーザー名とアクセスタイプの設定" />
+    </Frame>
+  </div>
+
+  4. ユーザーはどのグループにも追加せず、`Next: Tags` を選択します
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-3.webp" alt="IAMユーザーへのグループ割り当てをスキップ" />
+    </Frame>
+  </div>
+
+  5. タグを追加する必要がなければ、`Next: Review` を選択します
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-4.webp" alt="IAM user へのタグの割り当てをスキップ" />
+    </Frame>
+  </div>
+
+  6. `Create User` を選択します
+
+  <Note>
+    ユーザーに権限がないことを示す警告メッセージは無視してかまいません。次のセクションで、そのユーザーにバケットへの権限を付与します
+  </Note>
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-5.webp" alt="権限がないという警告付きでの IAM user の作成" />
+    </Frame>
+  </div>
+
+  7. ユーザーが作成されました。`show` をクリックし、アクセスキーとシークレットキーをコピーします。
+
+  <Note>
+    キーは必ず別の場所に保存してください。シークレットアクセスキーが表示されるのはこのときだけです。
+  </Note>
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-6.webp" alt="IAM ユーザーのアクセスキーを表示してコピーする" />
+    </Frame>
+  </div>
+
+  8. 「close」をクリックし、続いてユーザー一覧画面でそのユーザーを見つけます。
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-7.webp" alt="ユーザー一覧で新しく作成されたIAM userを見つける" />
+    </Frame>
+  </div>
+
+  9. ARN (Amazon Resource Name) をコピーし、バケットのアクセスポリシーを設定する際に使用できるよう保存します。
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-8.webp" alt="IAM user の ARN をコピー" />
+    </Frame>
+  </div>
+
+  ### S3バケットの作成
+
+  1. S3 バケットのセクションで、`Create bucket` を選択します
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-9.webp" alt="S3バケットの作成を開始" />
+    </Frame>
+  </div>
+
+  2. バケット名を入力し、他のオプションはそのままにします
+
+  <Note>
+    バケット名は、組織内だけでなくAWS全体で一意である必要があります。そうでない場合は、エラーになります。
+  </Note>
+
+  3. `Block all Public Access` は有効のままにしておきます。パブリックアクセスは不要です。
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-a.webp" alt="パブリックアクセスをブロックした状態でのS3バケット設定" />
+    </Frame>
+  </div>
+
+  4. ページ下部にある `Create Bucket` を選択します
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-b.webp" alt="S3 バケット作成の完了" />
+    </Frame>
+  </div>
+
+  5. リンクを選択し、ARN をコピーして、バケットのアクセスポリシーを設定する際に使えるよう保存します。
+
+  6. バケットが作成されたら、S3 バケット一覧で新しい S3 バケットを見つけて、そのリンクを選択します
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-c.webp" alt="バケット一覧で新しく作成した S3 バケットを見つける" />
+    </Frame>
+  </div>
+
+  7. `Create folder`を選択します
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-d.webp" alt="S3バケットに新しいフォルダを作成" />
+    </Frame>
+  </div>
+
+  8. ClickHouse S3 ディスクの保存先となるフォルダ名を入力し、`Create folder` を選択します
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-e.webp" alt="ClickHouse S3ディスク用のフォルダ名を設定" />
+    </Frame>
+  </div>
+
+  9. フォルダがバケット一覧に表示されているはずです
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-f.webp" alt="S3 bucket内に新しく作成されたフォルダ" />
+    </Frame>
+  </div>
+
+  10. 新しいフォルダのチェックボックスを選択し、`Copy URL` をクリックします。次のセクションの ClickHouse のストレージ構成で使用するため、コピーした URL を保存しておきます。
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-g.webp" alt="ClickHouse の設定用に S3 フォルダーの URL をコピーしているところ" />
+    </Frame>
+  </div>
+
+  11. `Permissions` タブを開き、`Bucket Policy` セクションで `Edit` ボタンをクリックします
+
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/_snippets/s3/s3-h.webp" alt="S3バケットのポリシー設定画面" />
+    </Frame>
+  </div>
+
+  12. バケットポリシーを追加します。例を以下に示します:
+
+  ```json
+  {
+    "Version" : "2012-10-17",
+    "Id" : "Policy123456",
+    "Statement" : [
+      {
+        "Sid" : "abc123",
+        "Effect" : "Allow",
+        "Principal" : {
+          "AWS" : "arn:aws:iam::921234567898:user/mars-s3-user"
+        },
+        "Action" : "s3:*",
+        "Resource" : [
+          "arn:aws:s3:::mars-doc-test",
+          "arn:aws:s3:::mars-doc-test/*"
+        ]
+      }
+    ]
+  }
+  ```
+
+  ```response
+  |Parameter | Description | Example Value |
+  |----------|-------------|----------------|
+  |Version | Version of the policy interpreter, leave as-is | 2012-10-17 |
+  |Sid | User-defined policy id | abc123 |
+  |Effect | Whether user requests will be allowed or denied | Allow |
+  |Principal | The accounts or user that will be allowed | arn:aws:iam::921234567898:user/mars-s3-user |
+  |Action | What operations are allowed on the bucket| s3:*|
+  |Resource | Which resources in the bucket will operations be allowed in | "arn:aws:s3:::mars-doc-test", "arn:aws:s3:::mars-doc-test/*" |
+  ```
+
+  <Note>
+    使用する権限については、セキュリティチームと連携して判断してください。以下はその出発点としてご検討ください。
+    ポリシーと設定の詳細については、AWS のドキュメントを参照してください。
+    https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
+  </Note>
+
+  13. ポリシー設定を保存します。
+</Accordion>

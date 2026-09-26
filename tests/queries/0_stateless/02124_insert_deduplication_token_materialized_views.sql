@@ -22,11 +22,11 @@ CREATE MATERIALIZED VIEW test_mv_c Engine=ReplicatedMergeTree('/clickhouse/table
 order by tuple() AS SELECT test, A, count() c FROM test group by test, A;
 
 SET max_partitions_per_insert_block = 1;
-INSERT INTO test SELECT 'case1', number%3, 1 FROM numbers(9) SETTINGS materialized_views_ignore_errors=1;
+INSERT INTO test SELECT 'case1', number%3, 1 FROM numbers(9) ORDER BY ALL SETTINGS materialized_views_ignore_errors=1;
 SET max_partitions_per_insert_block = 0;
-INSERT INTO test SELECT 'case1', number%3, 1 FROM numbers(9);
-INSERT INTO test SELECT 'case1', number%3, 2 FROM numbers(9);
-INSERT INTO test SELECT 'case1', number%3, 2 FROM numbers(9);
+INSERT INTO test SELECT 'case1', number%3, 1 FROM numbers(9) ORDER BY ALL;
+INSERT INTO test SELECT 'case1', number%3, 2 FROM numbers(9) ORDER BY ALL;
+INSERT INTO test SELECT 'case1', number%3, 2 FROM numbers(9) ORDER BY ALL;
 
 select
   (select count() from test where test='case1'),
@@ -40,11 +40,11 @@ select 'deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplicati
 set deduplicate_blocks_in_dependent_materialized_views=1;
 
 SET max_partitions_per_insert_block = 1;
-INSERT INTO test SELECT 'case2', number%3, 1 FROM numbers(9) SETTINGS materialized_views_ignore_errors=1;
+INSERT INTO test SELECT 'case2', number%3, 1 FROM numbers(9) ORDER BY ALL SETTINGS materialized_views_ignore_errors=1;
 SET max_partitions_per_insert_block = 0;
-INSERT INTO test SELECT 'case2', number%3, 1 FROM numbers(9);
-INSERT INTO test SELECT 'case2', number%3, 2 FROM numbers(9);
-INSERT INTO test SELECT 'case2', number%3, 2 FROM numbers(9);
+INSERT INTO test SELECT 'case2', number%3, 1 FROM numbers(9) ORDER BY ALL;
+INSERT INTO test SELECT 'case2', number%3, 2 FROM numbers(9) ORDER BY ALL;
+INSERT INTO test SELECT 'case2', number%3, 2 FROM numbers(9) ORDER BY ALL;
 
 select
   (select count() from test where test='case2'),
@@ -58,11 +58,11 @@ select 'deduplicate_blocks_in_dependent_materialized_views=0, insert_deduplicati
 set deduplicate_blocks_in_dependent_materialized_views=0;
 
 SET max_partitions_per_insert_block = 1;
-INSERT INTO test SELECT 'case3', number%3, 1 FROM numbers(9) SETTINGS insert_deduplication_token = 'case3test1', materialized_views_ignore_errors=1;
+INSERT INTO test SELECT 'case3', number%3, 1 FROM numbers(9) ORDER BY ALL SETTINGS insert_deduplication_token = 'case3test1', materialized_views_ignore_errors=1;
 SET max_partitions_per_insert_block = 0;
-INSERT INTO test SELECT 'case3', number%3, 1 FROM numbers(9) SETTINGS insert_deduplication_token = 'case3test1';
-INSERT INTO test SELECT 'case3', number%3, 2 FROM numbers(9) SETTINGS insert_deduplication_token = 'case3test2';
-INSERT INTO test SELECT 'case3', number%3, 2 FROM numbers(9) SETTINGS insert_deduplication_token = 'case3test2';
+INSERT INTO test SELECT 'case3', number%3, 1 FROM numbers(9) ORDER BY ALL SETTINGS insert_deduplication_token = 'case3test1';
+INSERT INTO test SELECT 'case3', number%3, 2 FROM numbers(9) ORDER BY ALL SETTINGS insert_deduplication_token = 'case3test2';
+INSERT INTO test SELECT 'case3', number%3, 2 FROM numbers(9) ORDER BY ALL SETTINGS insert_deduplication_token = 'case3test2';
 
 select
   (select count() from test where test='case3'),
@@ -75,11 +75,11 @@ select 'deduplicate_blocks_in_dependent_materialized_views=1, insert_deduplicati
 set deduplicate_blocks_in_dependent_materialized_views=1;
 
 SET max_partitions_per_insert_block = 1;
-INSERT INTO test SELECT 'case4', number%3, 1 FROM numbers(9) SETTINGS insert_deduplication_token = 'case4test1' ; -- { serverError TOO_MANY_PARTS }
+INSERT INTO test SELECT 'case4', number%3, 1 FROM numbers(9) ORDER BY ALL SETTINGS insert_deduplication_token = 'case4test1' ; -- { serverError TOO_MANY_PARTS }
 SET max_partitions_per_insert_block = 0;
-INSERT INTO test SELECT 'case4', number%3, 1 FROM numbers(9) SETTINGS insert_deduplication_token = 'case4test1';
-INSERT INTO test SELECT 'case4', number%3, 2 FROM numbers(9) SETTINGS insert_deduplication_token = 'case4test2';
-INSERT INTO test SELECT 'case4', number%3, 2 FROM numbers(9) SETTINGS insert_deduplication_token = 'case4test2';
+INSERT INTO test SELECT 'case4', number%3, 1 FROM numbers(9) ORDER BY ALL SETTINGS insert_deduplication_token = 'case4test1';
+INSERT INTO test SELECT 'case4', number%3, 2 FROM numbers(9) ORDER BY ALL SETTINGS insert_deduplication_token = 'case4test2';
+INSERT INTO test SELECT 'case4', number%3, 2 FROM numbers(9) ORDER BY ALL SETTINGS insert_deduplication_token = 'case4test2';
 
 select
   (select count() from test where test='case4'),

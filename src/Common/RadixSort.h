@@ -1,6 +1,5 @@
 #pragma once
 
-#include <string.h>
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
 #endif
@@ -8,7 +7,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
-#include <cassert>
 #include <type_traits>
 #include <memory>
 
@@ -16,6 +14,7 @@
 #include <base/extended_types.h>
 #include <base/sort.h>
 
+#include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/TargetSpecific.h>
 
 /** Radix sort, has the following functionality:
@@ -33,22 +32,6 @@
   */
 
 
-/** Used as a template parameter. See below.
-  */
-struct RadixSortAllocator
-{
-    static void * allocate(size_t size)
-    {
-        return ::operator new(size);
-    }
-
-    static void deallocate(void * ptr, size_t size)
-    {
-        ::operator delete(ptr, size);
-    }
-};
-
-
 /** A transformation that transforms the bit representation of a key into an unsigned integer number,
   *  that the order relation over the keys will match the order relation over the obtained unsigned numbers.
   * For floats this conversion does the following:
@@ -63,7 +46,7 @@ struct RadixSortFloatTransform
 
     static KeyBits forward(KeyBits x)
     {
-        return x ^ ((-(x >> (sizeof(KeyBits) * 8 - 1))) | (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)));
+        return static_cast<KeyBits>(x ^ ((-(x >> (sizeof(KeyBits) * 8 - 1))) | (KeyBits(1) << (sizeof(KeyBits) * 8 - 1))));
     }
 
     static KeyBits backward(KeyBits x)
@@ -96,11 +79,6 @@ struct RadixSortFloatTraits
 
     /// Converting a key into KeyBits is such that the order relation over the key corresponds to the order relation over KeyBits.
     using Transform = RadixSortFloatTransform<KeyBits>;
-
-    /// An object with the functions allocate and deallocate.
-    /// Can be used, for example, to allocate memory for a temporary array on the stack.
-    /// To do this, the allocator itself is created on the stack.
-    using Allocator = RadixSortAllocator;
 
     /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
@@ -144,7 +122,6 @@ struct RadixSortUIntTraits
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortIdentityTransform<KeyBits>;
-    using Allocator = RadixSortAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }
@@ -183,7 +160,6 @@ struct RadixSortIntTraits
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortSignedTransform<KeyBits>;
-    using Allocator = RadixSortAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }
@@ -266,7 +242,7 @@ private:
         {
             if (Traits::less(Traits::extractKey(*i), Traits::extractKey(*(i - 1))))
             {
-                Element * j;
+                Element * j = nullptr;
                 Element tmp = *i;
                 *i = *(i - 1);
                 for (j = i - 1; j > arr && Traits::less(Traits::extractKey(tmp), Traits::extractKey(*(j - 1))); --j)
@@ -289,10 +265,10 @@ private:
         /// For each of the NUM_PASSES bit ranges of the key, consider how many times each value of this bit range met.
         std::unique_ptr<CountType[]> histograms{new CountType[HISTOGRAM_SIZE * NUM_PASSES]{}};
 
-        typename Traits::Allocator allocator;
+        AllocatorWithMemoryTracking<typename Traits::Element> allocator;
 
         /// We will do several passes through the array. On each pass, the data is transferred to another array. Let's allocate this temporary array.
-        Element * swap_buffer = reinterpret_cast<Element *>(allocator.allocate(size * sizeof(Element)));
+        Element * swap_buffer = allocator.allocate(size);
 
         /// Transform the array and calculate the histogram.
         /// NOTE This is slightly suboptimal. Look at https://github.com/powturbo/TurboHist
@@ -302,7 +278,7 @@ private:
                 Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
 
             for (size_t pass = 0; pass < NUM_PASSES; ++pass)
-                ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
+                ++histograms[pass * HISTOGRAM_SIZE + static_cast<size_t>(extractPart(pass, arr[i]))];
         }
 
         {
@@ -337,7 +313,7 @@ private:
                     size_t positions[UNROLL_DISTANCE];
 
                     for (size_t p = 0; p < UNROLL_DISTANCE; p++)
-                        positions[p] = extractPart(pass, reader[i + p]);
+                        positions[p] = static_cast<size_t>(extractPart(pass, reader[i + p]));
 
                     for (size_t p = 0; p < UNROLL_DISTANCE; p++)
                     {
@@ -358,7 +334,7 @@ private:
             for (; i < size; i++)
             {
                 auto element = reader[i];
-                size_t pos = extractPart(pass, element);
+                auto pos = static_cast<size_t>(extractPart(pass, element));
 
                 if constexpr (SOFTWARE_PREFETCH)
                 {
@@ -366,7 +342,7 @@ private:
                     /// when we actually need it. This depends on CPU and memory subsystem.
                     if (i + PREFETCH_DISTANCE < size) [[likely]]
                     {
-                        size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                        auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
                         __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                     }
                 }
@@ -393,12 +369,12 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     auto element = reader[i];
-                    size_t pos = extractPart(pass, element);
+                    auto pos = static_cast<size_t>(extractPart(pass, element));
                     if constexpr (SOFTWARE_PREFETCH)
                     {
                         if (i + PREFETCH_DISTANCE < size) [[likely]]
                         {
-                            size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                            auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
                             __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                         }
                     }
@@ -411,12 +387,12 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     auto element = reader[i];
-                    size_t pos = extractPart(pass, element);
+                    auto pos = static_cast<size_t>(extractPart(pass, element));
                     if constexpr (SOFTWARE_PREFETCH)
                     {
                         if (i + PREFETCH_DISTANCE < size)
                         {
-                            size_t next_pos = extractPart(pass, reader[i + PREFETCH_DISTANCE]);
+                            auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
                             __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
                         }
                     }
@@ -436,7 +412,7 @@ private:
                 std::reverse(arr, arr + size);
         }
 
-        allocator.deallocate(swap_buffer, size * sizeof(Element));
+        allocator.deallocate(swap_buffer, size);
     }
 
 
@@ -517,7 +493,7 @@ private:
 
         for (ssize_t i = 0; /* guarded by 'finish' */; ++i)
         {
-            assert(i < buckets_for_recursion);
+            chassert(i < buckets_for_recursion);
 
             /// We look at i-1th index, because bucket pointers are shifted right on every loop iteration,
             ///  and all buckets before i was completely shifted to the beginning of the next bucket.
@@ -534,7 +510,7 @@ private:
                 if (tag != KeyBits(i))
                 {
                     /// Invariant: tag > i, because the elements with less tags are already at the right places.
-                    assert(tag > KeyBits(i));
+                    chassert(tag > KeyBits(i));
 
                     /// While the tag (digit) of the element is not that we need,
                     /// swap the element with the next element in the bucket for that tag.

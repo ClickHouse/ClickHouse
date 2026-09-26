@@ -26,7 +26,7 @@ Returns:
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     FunctionDocumentation::Description description_utf8 = R"(
 Returns a substring of UTF-8 encoded string `s` with a specified `offset` starting from the right.
@@ -46,7 +46,7 @@ Returns:
         {"Positive offset", "SELECT rightUTF8('Привет', 4)", "ивет"},
         {"Negative offset", "SELECT rightUTF8('Привет', -4)", "ет"}
     };
-    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, returned_value_utf8, examples_utf8, introduced_in, category};
+    FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};
 
     factory.registerFunction<FunctionLeftRight<false, SubstringDirection::Right>>(documentation, FunctionFactory::Case::Insensitive);
     factory.registerFunction<FunctionLeftRight<true, SubstringDirection::Right>>(documentation_utf8, FunctionFactory::Case::Sensitive);

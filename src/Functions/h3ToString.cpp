@@ -22,7 +22,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3ToString : public IFunction
+class FunctionH3ToString final : public IFunction
 {
 public:
     static constexpr auto name = "h3ToString";
@@ -34,6 +34,11 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -111,7 +116,32 @@ public:
 
 REGISTER_FUNCTION(H3ToString)
 {
-    factory.registerFunction<FunctionH3ToString>();
+    FunctionDocumentation::Description description = R"(
+Converts the `H3Index` representation of the index to the string representation.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3ToString(index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "H3 index number.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the string representation of the H3 index.",
+        {"String"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Convert H3 index to string",
+            "SELECT h3ToString(617420388352917503) AS h3_string",
+            R"(
+┌─h3_string───────┐
+│ 89184926cdbffff │
+└─────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3ToString>(documentation);
 }
 
 }

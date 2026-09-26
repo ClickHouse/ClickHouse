@@ -2,6 +2,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/JemallocCacheAllocator.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Common/CacheBase.h>
 
@@ -19,9 +20,9 @@ namespace DB
 
 struct UncompressedCacheCell
 {
-    Memory<> data;
-    size_t compressed_size;
-    UInt32 additional_bytes;
+    Memory<JemallocCacheAllocator> data;
+    size_t compressed_size{};
+    UInt32 additional_bytes{};
 };
 
 struct UncompressedSizeWeightFunction

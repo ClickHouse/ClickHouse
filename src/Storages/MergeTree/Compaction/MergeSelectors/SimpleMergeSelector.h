@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/Compaction/MergeSelectors/IMergeSelector.h>
+#include <Storages/MergeTree/Compaction/PartitionStatistics.h>
 
 /**
 We have a set of data parts that is dynamically changing - new data parts are added and there is background merging process.
@@ -161,18 +162,30 @@ public:
           */
         size_t min_age_to_force_merge = 0;
 
+        /// If it's not 0, a range in a partition whose youngest part is at least this old is merged
+        /// through the same early return as min_age_to_force_merge, which waives both the size-ratio
+        /// check and the min_parts_to_merge_at_once floor.
+        size_t min_partition_age_to_force_merge = 0;
+
         /** Heuristic:
           * From right side of range, remove all parts, that size is less than specified ratio of sum_size.
           */
         bool enable_heuristic_to_remove_small_parts_at_right = true;
         double heuristic_to_remove_small_parts_at_right_max_ratio = 0.01;
+
+        /** Heuristic:
+          * Lower max_parts_to_merge_at_once automatically when number of parts in partition approaching parts_to_throw_insert
+          */
+        bool enable_heuristic_to_lower_max_parts_to_merge_at_once = true;
+        size_t heuristic_to_lower_max_parts_to_merge_at_once_exponent = 5;
+        const PartitionsStatistics * partitions_stats = nullptr;
     };
 
     explicit SimpleMergeSelector(const Settings & settings_) : settings(settings_) {}
 
     PartsRanges select(
         const PartsRanges & parts_ranges,
-        const MergeSizes & max_merge_sizes,
+        const MergeConstraints & merge_constraints,
         const RangeFilter & range_filter) const override;
 
 private:

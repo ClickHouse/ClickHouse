@@ -1,5 +1,4 @@
 #include <Storages/MergeTree/MergeType.h>
-#include <base/EnumReflection.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -10,7 +9,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-MergeType checkAndGetMergeType(UInt32 merge_type)
+MergeType checkAndGetMergeType(std::underlying_type_t<MergeType> merge_type)
 {
     if (auto maybe_merge_type = magic_enum::enum_cast<MergeType>(merge_type))
         return *maybe_merge_type;
@@ -20,7 +19,7 @@ MergeType checkAndGetMergeType(UInt32 merge_type)
 
 bool isTTLMergeType(MergeType merge_type)
 {
-    return merge_type == MergeType::TTLDelete || merge_type == MergeType::TTLRecompress;
+    return merge_type == MergeType::TTLDelete || merge_type == MergeType::TTLRecompress || merge_type == MergeType::TTLDrop;
 }
 
 }

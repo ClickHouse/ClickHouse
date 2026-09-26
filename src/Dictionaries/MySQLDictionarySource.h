@@ -10,6 +10,7 @@
 #    include <Dictionaries/DictionaryStructure.h>
 #    include <Dictionaries/ExternalQueryBuilder.h>
 #    include <Dictionaries/IDictionarySource.h>
+#    include <Dictionaries/InvalidateQueryResponse.h>
 #    include <Processors/Sources/MySQLSource.h>
 
 namespace Poco
@@ -46,19 +47,19 @@ public:
         const Configuration & configuration_,
         mysqlxx::PoolWithFailoverPtr pool_,
         const Block & sample_block_,
-        const StreamSettings & settings_);
+        const MySQLStreamSettings & settings_);
 
     /// copy-constructor is provided in order to support cloneability
     MySQLDictionarySource(const MySQLDictionarySource & other);
     MySQLDictionarySource & operator=(const MySQLDictionarySource &) = delete;
 
-    QueryPipeline loadAll() override;
+    BlockIO loadAll() override;
 
-    QueryPipeline loadUpdatedAll() override;
+    BlockIO loadUpdatedAll() override;
 
-    QueryPipeline loadIds(const std::vector<UInt64> & ids) override;
+    BlockIO loadIds(const VectorWithMemoryTracking<UInt64> & ids) override;
 
-    QueryPipeline loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockIO loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -89,8 +90,8 @@ private:
     Block sample_block;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
-    mutable std::string invalidate_query_response;
-    const StreamSettings settings;
+    mutable InvalidateQueryResponse invalidate_query_response;
+    const MySQLStreamSettings settings;
 };
 
 }

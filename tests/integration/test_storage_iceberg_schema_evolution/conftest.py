@@ -11,26 +11,35 @@ from helpers.s3_tools import (
     LocalDownloader,
     prepare_s3_bucket,
 )
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
-def get_spark():
+def get_spark(log_dir=None):
     builder = (
-        pyspark.sql.SparkSession.builder.appName("spark_test")
+        pyspark.sql.SparkSession.builder.appName("test_storage_iceberg_schema_evolution")
         .config(
             "spark.sql.catalog.spark_catalog",
             "org.apache.iceberg.spark.SparkSessionCatalog",
         )
         .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.spark_catalog.type", "hadoop")
-        .config("spark.sql.catalog.spark_catalog.warehouse", "/iceberg_data")
+        .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files/iceberg_data")
         .config(
             "spark.sql.extensions",
             "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
         )
         .master("local")
     )
-    return builder.master("local").getOrCreate()
 
-@pytest.fixture(scope="session")
+    if log_dir:
+        props_path = write_spark_log_config(log_dir)
+        builder = builder.config(
+            "spark.driver.extraJavaOptions",
+            f"-Dlog4j2.configurationFile=file:{props_path}",
+        )
+
+    return builder.getOrCreate()
+
+@pytest.fixture(scope="package")
 def started_cluster_iceberg_schema_evolution():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)
@@ -49,7 +58,9 @@ def started_cluster_iceberg_schema_evolution():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )

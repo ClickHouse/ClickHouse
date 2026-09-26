@@ -1,5 +1,8 @@
 #pragma once
-#include <base/StringRef.h>
+
+#include <string>
+#include <string_view>
+#include <functional>
 
 namespace DB
 {
@@ -19,11 +22,6 @@ struct StringHashForHeterogeneousLookup
     auto operator()(const std::string & str) const
     {
         return hash_type()(str);
-    }
-
-    auto operator()(const StringRef str) const
-    {
-        return hash_type()(str.toView());
     }
 
     auto operator()(const char * data) const

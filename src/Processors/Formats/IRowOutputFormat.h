@@ -1,17 +1,18 @@
 #pragma once
 
 #include <Processors/Formats/IOutputFormat.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
+using DataTypes = VectorWithMemoryTracking<DataTypePtr>;
 
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
-using Serializations = std::vector<SerializationPtr>;
+using Serializations = VectorWithMemoryTracking<SerializationPtr>;
 
 class WriteBuffer;
 
@@ -63,6 +64,8 @@ protected:
     void finalizeImpl() override {}  /// Write something after resultset, totals end extremes.
 
     bool haveWrittenData() { return !first_row || getRowsReadBefore() != 0; }
+
+    void updateSerializationsIfNeeded(const Columns & columns);
 
     size_t num_columns;
     DataTypes types;

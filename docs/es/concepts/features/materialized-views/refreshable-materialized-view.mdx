@@ -1,0 +1,409 @@
+---
+slug: /materialized-view/refreshable-materialized-view
+title: 'Vista materializada actualizable'
+description: 'Cómo usar vistas materializadas para acelerar las consultas'
+keywords: ['vista materializada actualizable', 'actualización', 'vistas materializadas', 'acelerar las consultas', 'optimización de consultas']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Las [vistas materializadas actualizables](/es/reference/statements/create/view#refreshable-materialized-view) son conceptualmente similares a las vistas materializadas de las bases de datos OLTP tradicionales: almacenan el resultado de una consulta específica para recuperarlo rápidamente y reducir la necesidad de ejecutar repetidamente consultas que consumen muchos recursos. A diferencia de las [vistas materializadas incrementales](/es/concepts/features/materialized-views/incremental-materialized-view) de ClickHouse, estas requieren la ejecución periódica de la consulta sobre el conjunto de datos completo; los resultados se almacenan en una tabla de destino para su consulta. En teoría, este conjunto de resultados debería ser más pequeño que el conjunto de datos original, lo que permite que las consultas posteriores se ejecuten más rápido.
+
+El diagrama explica cómo funcionan las vistas materializadas actualizables:
+
+<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="Diagrama de vista materializada actualizable" />
+
+También puede ver el siguiente video:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/-KhFJSY8yrs?si=VPRSZb20vaYkuR_C" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="when-should-refreshable-materialized-views-be-used">
+  ## ¿Cuándo se deben usar las vistas materializadas actualizables?
+</div>
+
+Las vistas materializadas incrementales de ClickHouse son extremadamente potentes y, por lo general, escalan mucho mejor que el enfoque utilizado por las vistas materializadas actualizables, especialmente cuando se necesita realizar una agregación sobre una sola tabla. Al calcular la agregación únicamente sobre cada bloque de datos a medida que se inserta y fusionar los estados incrementales en la tabla final, la consulta solo se ejecuta sobre un subconjunto de los datos. Este método puede escalar hasta petabytes de datos y suele ser el método preferido.
+
+Sin embargo, hay casos de uso en los que este proceso incremental no es necesario o no resulta aplicable. Algunos problemas son incompatibles con un enfoque incremental o no requieren actualizaciones en tiempo real, por lo que una reconstrucción periódica es más apropiada. Por ejemplo, puede que quiera volver a calcular regularmente una vista completa sobre todo el conjunto de datos porque utiliza un JOIN complejo, lo cual es incompatible con un enfoque incremental.
+
+> Las vistas materializadas actualizables pueden ejecutar procesos por lotes que realizan tareas como la desnormalización. Se pueden crear dependencias entre vistas materializadas actualizables, de modo que una vista dependa de los resultados de otra y solo se ejecute cuando esta haya finalizado. Esto puede sustituir flujos de trabajo programados o DAG sencillos, como un job de [dbt](https://www.getdbt.com/). Para obtener más información sobre cómo establecer dependencias entre vistas materializadas actualizables, consulte [CREATE VIEW](/es/reference/statements/create/view#refresh-dependencies), sección `Dependencies`.
+
+<div id="how-do-you-refresh-a-refreshable-materialized-view">
+  ## ¿Cómo se actualiza una vista materializada actualizable?
+</div>
+
+Las vistas materializadas actualizables se actualizan automáticamente según un intervalo definido durante su creación.
+Por ejemplo, la siguiente vista materializada se actualiza cada minuto:
+
+```sql
+CREATE MATERIALIZED VIEW table_name_mv
+REFRESH EVERY 1 MINUTE TO table_name AS
+...
+```
+
+Si desea forzar la actualización de una vista materializada, puede usar la cláusula `SYSTEM REFRESH VIEW`:
+
+```sql
+SYSTEM REFRESH VIEW table_name_mv;
+```
+
+También puedes cancelar, detener o iniciar una vista.
+Para obtener más información, consulta la documentación sobre [la gestión de vistas materializadas actualizables](/es/reference/statements/system#managing-refreshable-materialized-views).
+
+<div id="when-was-a-refreshable-materialized-view-last-refreshed">
+  ## ¿Cuándo se actualizó por última vez una vista materializada actualizable?
+</div>
+
+Para saber cuándo se actualizó por última vez una vista materializada actualizable, puede consultar la tabla del sistema [`system.view_refreshes`](/es/reference/system-tables/view_refreshes), como se muestra a continuación:
+
+```sql
+SELECT database, view, status,
+       last_success_time, last_refresh_time, next_refresh_time,
+       read_rows, written_rows
+FROM system.view_refreshes;
+```
+
+```text
+┌─database─┬─view─────────────┬─status────┬───last_success_time─┬───last_refresh_time─┬───next_refresh_time─┬─read_rows─┬─written_rows─┐
+│ database │ table_name_mv    │ Scheduled │ 2024-11-11 12:10:00 │ 2024-11-11 12:10:00 │ 2024-11-11 12:11:00 │   5491132 │       817718 │
+└──────────┴──────────────────┴───────────┴─────────────────────┴─────────────────────┴─────────────────────┴───────────┴──────────────┘
+```
+
+<div id="how-can-i-change-the-refresh-rate">
+  ## ¿Cómo puedo cambiar la frecuencia de actualización?
+</div>
+
+Para cambiar la frecuencia de actualización de una vista materializada actualizable, utilice la sintaxis [`ALTER TABLE...MODIFY REFRESH`](/es/reference/statements/alter/view#alter-table--modify-refresh-statement).
+
+```sql
+ALTER TABLE table_name_mv
+MODIFY REFRESH EVERY 30 SECONDS;
+```
+
+Una vez hecho esto, puedes usar la consulta [¿Cuándo se actualizó por última vez una vista materializada actualizable?](/es/concepts/features/materialized-views/refreshable-materialized-view#when-was-a-refreshable-materialized-view-last-refreshed) para comprobar que la frecuencia se ha actualizado:
+
+```text
+┌─database─┬─view─────────────┬─status────┬───last_success_time─┬───last_refresh_time─┬───next_refresh_time─┬─read_rows─┬─written_rows─┐
+│ database │ table_name_mv    │ Scheduled │ 2024-11-11 12:22:30 │ 2024-11-11 12:22:30 │ 2024-11-11 12:23:00 │   5491132 │       817718 │
+└──────────┴──────────────────┴───────────┴─────────────────────┴─────────────────────┴─────────────────────┴───────────┴──────────────┘
+```
+
+<div id="using-append-to-add-new-rows">
+  ## Uso de `APPEND` para añadir nuevas filas
+</div>
+
+La funcionalidad `APPEND` permite añadir nuevas filas al final de la tabla en lugar de reemplazar toda la vista.
+
+Uno de los usos de esta funcionalidad es capturar instantáneas de valores en un momento determinado. Por ejemplo, imaginemos que tenemos una tabla `events` alimentada por un flujo de mensajes de [Kafka](https://kafka.apache.org/), [Redpanda](https://www.redpanda.com/) u otra plataforma de datos en streaming.
+
+```sql
+SELECT *
+FROM events
+LIMIT 10
+```
+
+```response
+Query id: 7662bc39-aaf9-42bd-b6c7-bc94f2881036
+
+┌──────────────────ts─┬─uuid─┬─count─┐
+│ 2008-08-06 17:07:19 │ 0eb  │   547 │
+│ 2008-08-06 17:07:19 │ 60b  │   148 │
+│ 2008-08-06 17:07:19 │ 106  │   750 │
+│ 2008-08-06 17:07:19 │ 398  │   875 │
+│ 2008-08-06 17:07:19 │ ca0  │   318 │
+│ 2008-08-06 17:07:19 │ 6ba  │   105 │
+│ 2008-08-06 17:07:19 │ df9  │   422 │
+│ 2008-08-06 17:07:19 │ a71  │   991 │
+│ 2008-08-06 17:07:19 │ 3a2  │   495 │
+│ 2008-08-06 17:07:19 │ 598  │   238 │
+└─────────────────────┴──────┴───────┘
+```
+
+Este conjunto de datos tiene `4096` valores en la columna `uuid`. Podemos escribir la siguiente consulta para encontrar los que tienen el mayor recuento total:
+
+```sql
+SELECT
+    uuid,
+    sum(count) AS count
+FROM events
+GROUP BY ALL
+ORDER BY count DESC
+LIMIT 10
+```
+
+```response
+┌─uuid─┬───count─┐
+│ c6f  │ 5676468 │
+│ 951  │ 5669731 │
+│ 6a6  │ 5664552 │
+│ b06  │ 5662036 │
+│ 0ca  │ 5658580 │
+│ 2cd  │ 5657182 │
+│ 32a  │ 5656475 │
+│ ffe  │ 5653952 │
+│ f33  │ 5653783 │
+│ c5b  │ 5649936 │
+└──────┴─────────┘
+```
+
+Supongamos que queremos registrar el recuento de cada `uuid` cada 10 segundos y almacenarlo en una nueva tabla llamada `events_snapshot`. El esquema de `events_snapshot` tendría este aspecto:
+
+```sql
+CREATE TABLE events_snapshot (
+    ts DateTime32,
+    uuid String,
+    count UInt64
+)
+ENGINE = MergeTree
+ORDER BY uuid;
+```
+
+A continuación, podríamos crear una vista materializada actualizable para poblar esta tabla:
+
+```sql
+CREATE MATERIALIZED VIEW events_snapshot_mv
+REFRESH EVERY 10 SECOND APPEND TO events_snapshot
+AS SELECT
+    now() AS ts,
+    uuid,
+    sum(count) AS count
+FROM events
+GROUP BY ALL;
+```
+
+Luego podemos consultar `events_snapshot` para obtener el recuento a lo largo del tiempo de un `uuid` específico:
+
+```sql
+SELECT *
+FROM events_snapshot
+WHERE uuid = 'fff'
+ORDER BY ts ASC
+FORMAT PrettyCompactMonoBlock
+```
+
+```response
+┌──────────────────ts─┬─uuid─┬───count─┐
+│ 2024-10-01 16:12:56 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:00 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:10 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:20 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:30 │ fff  │ 5674669 │
+│ 2024-10-01 16:13:40 │ fff  │ 5947912 │
+│ 2024-10-01 16:13:50 │ fff  │ 6203361 │
+│ 2024-10-01 16:14:00 │ fff  │ 6501695 │
+└─────────────────────┴──────┴─────────┘
+```
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Veamos ahora cómo usar vistas materializadas actualizables con algunos conjuntos de datos de ejemplo.
+
+<div id="stack-overflow">
+  ### Stack Overflow
+</div>
+
+La [guía de desnormalización de datos](/es/guides/clickhouse/data-modelling/denormalization) muestra varias técnicas para desnormalizar datos usando un conjunto de datos de Stack Overflow. Cargamos datos en las siguientes tablas: `votes`, `users`, `badges`, `posts` y `postlinks`.
+
+En esa guía, mostramos cómo desnormalizar los datos de `postlinks` en la tabla `posts` con la siguiente consulta:
+
+```sql
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts_types_codecs_ordered.Id = postlinks.PostId;
+```
+
+Luego mostramos cómo hacer una inserción puntual de estos datos en la tabla `posts_with_links`, pero en un sistema de producción querríamos ejecutar esta operación periódicamente.
+
+Tanto la tabla `posts` como `postlinks` podrían actualizarse. Por lo tanto, en lugar de intentar implementar este JOIN mediante vistas materializadas incrementales, puede ser suficiente simplemente programar esta consulta para que se ejecute a intervalos fijos, por ejemplo, una vez por hora, almacenando los resultados en una tabla `post_with_links`.
+
+Aquí es donde resulta útil una vista materializada actualizable, y podemos crear una con la siguiente consulta:
+
+```sql
+CREATE MATERIALIZED VIEW posts_with_links_mv
+REFRESH EVERY 1 HOUR TO posts_with_links AS
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts_types_codecs_ordered.Id = postlinks.PostId;
+```
+
+La vista se ejecutará de inmediato y, a partir de entonces, cada hora, según la configuración, para garantizar que se reflejen las actualizaciones de la tabla de origen. Es importante destacar que, cuando la consulta vuelve a ejecutarse, el conjunto de resultados se actualiza de forma atómica y transparente.
+
+<Note>
+  La sintaxis aquí es idéntica a la de una vista materializada incremental, salvo que incluimos una cláusula [`REFRESH`](/es/reference/statements/create/view#refreshable-materialized-view):
+</Note>
+
+<div id="imdb">
+  ### IMDb
+</div>
+
+En la [guía de integración de dbt y ClickHouse](/es/integrations/connectors/data-ingestion/etl-tools/dbt/index) rellenamos un conjunto de datos de IMDb con las siguientes tablas: `actors`, `directors`, `genres`, `movie_directors`, `movies` y `roles`.
+
+A continuación, podemos escribir la siguiente consulta para obtener un resumen de cada actor, ordenado por el mayor número de apariciones en películas.
+
+```sql
+SELECT
+  id, any(actor_name) AS name, uniqExact(movie_id) AS movies,
+  round(avg(rank), 2) AS avg_rank, uniqExact(genre) AS genres,
+  uniqExact(director_name) AS directors, max(created_at) AS updated_at
+FROM (
+  SELECT
+    imdb.actors.id AS id,
+    concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
+    imdb.movies.id AS movie_id, imdb.movies.rank AS rank, genre,
+    concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
+    created_at
+  FROM imdb.actors
+  INNER JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
+  LEFT JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
+  LEFT JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
+  LEFT JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
+  LEFT JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
+)
+GROUP BY id
+ORDER BY movies DESC
+LIMIT 5;
+```
+
+```text
+┌─────id─┬─name─────────┬─num_movies─┬───────────avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│  45332 │ Mel Blanc    │        909 │ 5.7884792542982515 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers │        672 │  5.540605094212635 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London   │        549 │ 2.8057034230202023 │            18 │            208 │ 2024-11-11 12:01:35 │
+│ 356804 │ Bud Osborne  │        544 │ 1.9575342420755093 │            16 │            157 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi  │        544 │                  0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴──────────────┴────────────┴────────────────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.393 sec. Processed 5.45 million rows, 86.82 MB (13.87 million rows/s., 221.01 MB/s.)
+Peak memory usage: 1.38 GiB.
+```
+
+No tarda mucho en devolver un resultado, pero supongamos que queremos que sea aún más rápido y menos costoso en términos computacionales.
+Supongamos que este conjunto de datos también recibe actualizaciones constantes: se estrenan películas continuamente y también aparecen nuevos actores y directores.
+
+Ha llegado el momento de usar una vista materializada actualizable, así que primero creemos una tabla de destino para los resultados:
+
+```sql
+CREATE TABLE imdb.actor_summary
+(
+        `id` UInt32,
+        `name` String,
+        `num_movies` UInt16,
+        `avg_rank` Float32,
+        `unique_genres` UInt16,
+        `uniq_directors` UInt16,
+        `updated_at` DateTime
+)
+ENGINE = MergeTree
+ORDER BY num_movies
+```
+
+Y ahora podemos definir la vista:
+
+```sql
+CREATE MATERIALIZED VIEW imdb.actor_summary_mv
+REFRESH EVERY 1 MINUTE TO imdb.actor_summary AS
+SELECT
+        id,
+        any(actor_name) AS name,
+        uniqExact(movie_id) AS num_movies,
+        avg(rank) AS avg_rank,
+        uniqExact(genre) AS unique_genres,
+        uniqExact(director_name) AS uniq_directors,
+        max(created_at) AS updated_at
+FROM
+(
+        SELECT
+        imdb.actors.id AS id,
+        concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
+        imdb.movies.id AS movie_id,
+        imdb.movies.rank AS rank,
+        genre,
+        concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
+        created_at
+        FROM imdb.actors
+    INNER JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
+    LEFT JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
+    LEFT JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
+    LEFT JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
+    LEFT JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
+)
+GROUP BY id
+ORDER BY num_movies DESC;
+```
+
+La vista se ejecutará de inmediato y, a partir de entonces, cada minuto según la configuración, para garantizar que se reflejen las actualizaciones de la tabla de origen. ¡Nuestra consulta anterior para obtener un resumen de los actores pasa a ser sintácticamente más simple y considerablemente más rápida!
+
+```sql
+SELECT *
+FROM imdb.actor_summary
+ORDER BY num_movies DESC
+LIMIT 5
+```
+
+```text
+┌─────id─┬─name─────────┬─num_movies─┬──avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│  45332 │ Mel Blanc    │        909 │ 5.7884793 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers │        672 │  5.540605 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London   │        549 │ 2.8057034 │            18 │            208 │ 2024-11-11 12:01:35 │
+│ 356804 │ Bud Osborne  │        544 │ 1.9575342 │            16 │            157 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi  │        544 │         0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴──────────────┴────────────┴───────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.007 sec.
+```
+
+Supongamos que añadimos a nuestros datos de origen a un nuevo actor, &quot;Clicky McClickHouse&quot;, ¡que resulta haber aparecido en muchísimas películas!
+
+```sql
+INSERT INTO imdb.actors VALUES (845466, 'Clicky', 'McClickHouse', 'M');
+INSERT INTO imdb.roles SELECT
+        845466 AS actor_id,
+        id AS movie_id,
+        'Himself' AS role,
+        now() AS created_at
+FROM imdb.movies
+LIMIT 10000, 910;
+```
+
+En menos de 60 segundos, nuestra tabla de destino se actualiza para reflejar la prolífica carrera interpretativa de Clicky:
+
+```sql
+SELECT *
+FROM imdb.actor_summary
+ORDER BY num_movies DESC
+LIMIT 5;
+```
+
+```text
+┌─────id─┬─name────────────────┬─num_movies─┬──avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│ 845466 │ Clicky McClickHouse │        910 │ 1.4687939 │            21 │            662 │ 2024-11-11 12:53:51 │
+│  45332 │ Mel Blanc           │        909 │ 5.7884793 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers        │        672 │  5.540605 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London          │        549 │ 2.8057034 │            18 │            208 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi         │        544 │         0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴─────────────────────┴────────────┴───────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 filas en el conjunto. Elapsed: 0.006 sec.
+```

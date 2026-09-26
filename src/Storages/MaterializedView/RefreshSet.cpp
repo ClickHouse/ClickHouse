@@ -38,18 +38,21 @@ RefreshSet::Handle::~Handle()
 
 void RefreshSet::Handle::rename(StorageID new_id, std::optional<StorageID> new_inner_table_id)
 {
-    std::lock_guard lock(parent_set->mutex);
-    RefreshTaskPtr task = *iter;
-    parent_set->removeDependenciesLocked(task, dependencies);
-    parent_set->removeTaskLocked(id, iter);
-    if (inner_table_id)
-        parent_set->removeInnerTableLocked(*inner_table_id, inner_table_iter);
-    id = new_id;
-    inner_table_id = new_inner_table_id;
-    iter = parent_set->addTaskLocked(id, task);
-    if (inner_table_id)
-        inner_table_iter = parent_set->addInnerTableLocked(*inner_table_id, task);
-    parent_set->addDependenciesLocked(task, dependencies);
+    StorageID old_id = id;
+    {
+        std::lock_guard lock(parent_set->mutex);
+        RefreshTaskPtr task = *iter;
+        parent_set->removeDependenciesLocked(task, dependencies);
+        parent_set->removeTaskLocked(id, iter);
+        if (inner_table_id)
+            parent_set->removeInnerTableLocked(*inner_table_id, inner_table_iter);
+        id = new_id;
+        inner_table_id = new_inner_table_id;
+        iter = parent_set->addTaskLocked(id, task);
+        if (inner_table_id)
+            inner_table_iter = parent_set->addInnerTableLocked(*inner_table_id, task);
+        parent_set->addDependenciesLocked(task, dependencies);
+    }
 }
 
 void RefreshSet::Handle::changeDependencies(std::vector<StorageID> deps)
@@ -203,7 +206,7 @@ bool RefreshSet::refreshesStopped() const
     return refreshes_stopped.load();
 }
 
-void RefreshSet::joinBackgroundTasks(std::chrono::steady_clock::time_point deadline)
+bool RefreshSet::joinBackgroundTasks(std::chrono::steady_clock::time_point deadline)
 {
     std::vector<RefreshTaskPtr> remaining_tasks;
     std::chrono::steady_clock::time_point stopped_at;
@@ -234,7 +237,11 @@ void RefreshSet::joinBackgroundTasks(std::chrono::steady_clock::time_point deadl
             names += remaining_tasks[i]->getInfo().view_id.getNameForLogs();
         }
         LOG_ERROR(getLogger("RefreshSet"), "{} view refreshes failed to stop in {:.3}s: {}", remaining_tasks.size(), elapsed_seconds, names);
+
+        return false;
     }
+
+    return true;
 }
 
 RefreshSet::Handle::Handle(RefreshSet * parent_set_, StorageID id_, std::optional<StorageID> inner_table_id_, RefreshTaskList::iterator iter_, RefreshTaskList::iterator inner_table_iter_, std::vector<StorageID> dependencies_)

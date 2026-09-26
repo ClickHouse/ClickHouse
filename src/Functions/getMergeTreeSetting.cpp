@@ -1,9 +1,12 @@
+#include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/FieldToDataType.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Core/Field.h>
 // #include <Core/ServerSettings.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -20,12 +23,18 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetMergeTreeSetting : public IFunction, WithContext
+class FunctionGetMergeTreeSetting final : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "getMergeTreeSetting";
 
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionGetMergeTreeSetting>(context_); }
+    /// The function is `SELECT value FROM system.merge_tree_settings WHERE name = ...`, so it requires the
+    /// grant that query needs, down to the columns it reads.
+    static FunctionPtr create(ContextPtr context_)
+    {
+        context_->checkAccess(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE, "merge_tree_settings", Strings{"name", "value"});
+        return std::make_shared<FunctionGetMergeTreeSetting>(context_);
+    }
     explicit FunctionGetMergeTreeSetting(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override { return name; }
@@ -70,7 +79,7 @@ private:
                             "The argument of function {} should be a constant string with the name of a setting",
                             String{name});
 
-        std::string_view setting_name{column->getDataAt(0).toView()};
+        std::string_view setting_name{column->getDataAt(0)};
 
         return getContext()->getMergeTreeSettings().get(setting_name);
     }
@@ -82,6 +91,8 @@ REGISTER_FUNCTION(GetMergeTreeSetting)
 {
     FunctionDocumentation::Description description = R"(
 Returns the current value of a MergeTree setting.
+
+Requires the `SELECT` privilege on `system.merge_tree_settings`, just like reading that table.
 )";
     FunctionDocumentation::Syntax syntax = "getMergeTreeSetting(setting_name)";
     FunctionDocumentation::Arguments arguments = {
@@ -103,7 +114,7 @@ SELECT getMergeTreeSetting('index_granularity');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGetMergeTreeSetting>(documentation);
 }

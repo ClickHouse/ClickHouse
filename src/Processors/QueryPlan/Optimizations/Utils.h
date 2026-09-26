@@ -1,7 +1,10 @@
 #pragma once
 
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+
+#include <type_traits>
 
 namespace DB
 {
@@ -57,5 +60,92 @@ bool makeFilterNodeOnTopOf(
 
 bool isPassthroughActions(const ActionsDAG & actions_dag);
 
+namespace QueryPlanOptimizations
+{
 
+enum class FilterResult
+{
+    UNKNOWN,
+    TRUE,
+    FALSE,
+};
+
+[[nodiscard]] FilterResult getFilterResult(const ColumnWithTypeAndName & column);
+
+[[nodiscard]] bool dagContainsNonReadySet(const ActionsDAG & dag);
+
+[[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
+
+/// True if optimizeExchanges will lift a plain gather above this step, so a scatter/gather pair separated
+/// by it still collapses. Shared with findGatherOverRead, which has to predict that rewrite.
+[[nodiscard]] bool canHoistGatherThroughStep(const IQueryPlanStep & step);
+
+[[nodiscard]] FilterResult filterResultForNotMatchedRows(
+    const ActionsDAG & filter_dag,
+    const String & filter_column_name,
+    const Block & input_stream_header,
+    bool allow_unknown_function_arguments = false);
+
+[[nodiscard]] FilterResult filterResultForMatchedRows(
+    ActionsDAG pre_actions_dag,
+    const ActionsDAG & filter_dag,
+    const String & filter_column_name);
+
+struct NoOp
+{
+};
+
+/// Is this step a wrapper that can be skipped over? Only an `ExpressionStep` whose outputs are a
+/// permutation of its inputs - renamed or reordered, nothing computed, nothing forwarded twice.
+///
+/// The renames are the point, so this cannot be `isPassthroughActions` above: that one wants
+/// `getOutputs() == getInputs()`, and a rename makes the output an `ALIAS` node rather than the `INPUT`
+/// it stands for. Every analyzer query is bracketed by such steps - `Change column names to column
+/// identifiers` on the way in, `Project names` on the way out - so demanding identity here means never
+/// recognising a wrapper at all.
+///
+/// Its two users have to agree on it, which is why it is shared: `calculateHashTableCacheKeys` lets such
+/// a step adopt its child's key, and `considerEnablingParallelReplicas` looks through it when locating
+/// the boundary the replicas would ship from. A step invisible to one and visible to the other would be
+/// instrumented in one plan and matched in the other. It is narrower than "contributes nothing to the
+/// key": a full `SortingStep` contributes nothing yet must remain a boundary of its own.
+bool isPassthroughExpressionWithRenames(const IQueryPlanStep & step);
+
+template <typename Func1, typename Func2 = NoOp>
+void traverseQueryPlan(Stack & stack, QueryPlan::Node & root, Func1 && on_enter, Func2 && on_leave = {})
+{
+    stack.clear();
+    stack.push_back({.node = &root});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
+        if constexpr (!std::is_same_v<Func1, NoOp>)
+        {
+            if (frame.next_child == 0)
+            {
+                on_enter(*frame.node);
+            }
+        }
+
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        if constexpr (!std::is_same_v<Func2, NoOp>)
+        {
+            on_leave(*frame.node);
+        }
+
+        stack.pop_back();
+    }
+}
+
+}
 }

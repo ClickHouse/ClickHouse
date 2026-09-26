@@ -46,5 +46,17 @@ def test_event_time_microseconds_field(started_cluster):
         "SELECT count() > 0 ? 'ok' : 'fail' FROM system.asynchronous_metric_log"
     )
     assert "ok\n" in node1.query(test_query)
+
+    # Tests that event_date is correctly calculated from event_time.
+    # Previously, event_time was incorrectly cast to UInt16 before being passed to toDayNum,
+    # which would truncate the timestamp and produce incorrect dates.
+    test_query_incorrect = """
+                           SELECT count()
+                           FROM system.asynchronous_metric_log
+                           WHERE event_date != toDate(event_time) \
+                           """
+    result_incorrect = node1.query(test_query_incorrect).strip()
+    assert result_incorrect == "0", f"Found {result_incorrect} rows with incorrect event_date"
+
     node1.query("DROP TABLE replica.test")
     node1.query("DROP DATABASE replica")

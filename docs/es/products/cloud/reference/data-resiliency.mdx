@@ -1,0 +1,148 @@
+---
+slug: /cloud/data-resiliency
+sidebarTitle: 'Resiliencia de datos'
+title: 'Resiliencia de datos'
+description: 'Esta guía ofrece una descripción general de la recuperación ante desastres.'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'resiliencia de datos', 'recuperación ante desastres']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Esta página describe las recomendaciones de recuperación ante desastres para ClickHouse Cloud y ofrece orientación para que los clientes se recuperen de una interrupción.
+Actualmente, ClickHouse Cloud no admite la conmutación por error automática ni la sincronización automática entre varias regiones geográficas.
+
+<Tip>
+  Los clientes deben realizar pruebas periódicas de restauración de copias de seguridad para comprender el RTO específico según el tamaño y la configuración de su servicio.
+</Tip>
+
+<div id="definitions">
+  ## Definiciones
+</div>
+
+Conviene repasar primero algunas definiciones.
+
+**RPO (Objetivo de punto de recuperación)**: La pérdida máxima de datos aceptable, medida en tiempo, tras un evento disruptivo. Ejemplo: un RPO de 30 min significa que, en caso de fallo, la DB debería poder restaurarse a un estado cuyos datos no tengan más de 30 min de antigüedad. Esto, por supuesto, depende de la frecuencia con la que se realicen las copias de seguridad.
+
+**RTO (Objetivo de tiempo de recuperación)**: El tiempo máximo de inactividad permitido antes de que deban reanudarse las operaciones normales tras una interrupción. Ejemplo: un RTO de 30 min significa que, en caso de fallo, el equipo puede restaurar los datos y las aplicaciones y reanudar las operaciones normales en un plazo de 30 min.
+
+**Copias de seguridad e instantáneas de base de datos**: Las copias de seguridad proporcionan almacenamiento duradero a largo plazo con una copia independiente de los datos. Las instantáneas no crean una copia adicional de los datos, suelen ser más rápidas y ofrecen mejores RPO.
+
+<div id="database-backups">
+  ## Copias de seguridad de la base de datos
+</div>
+
+Tener una copia de seguridad de su servicio principal es una forma eficaz de poder restaurarlo en caso de indisponibilidad del servicio principal.
+ClickHouse Cloud admite las siguientes capacidades de copia de seguridad.
+
+1. **Copias de seguridad predeterminadas**
+
+De forma predeterminada, ClickHouse Cloud realiza una [copia de seguridad](/es/products/cloud/guides/backups/index) de su servicio cada 24 horas.
+Estas copias de seguridad se almacenan en la misma región que el servicio y se realizan en el bucket de almacenamiento del CSP (cloud service provider) de ClickHouse.
+En caso de que los datos del servicio principal se corrompan, la copia de seguridad puede usarse para restaurarlos en un servicio nuevo.
+
+2. **Copias de seguridad externas (en el bucket de almacenamiento del propio cliente)**
+
+Puede [exportar copias de seguridad](/es/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) a su propio almacenamiento de objetos en su cuenta, en la misma región o en otra región.
+La compatibilidad con la exportación de copias de seguridad entre nubes estará disponible próximamente.
+Se aplicarán los cargos de transferencia de datos correspondientes a las copias de seguridad entre regiones y entre nubes.
+
+<Note>
+  Esta función no está disponible actualmente en servicios PCI/ HIPAA
+</Note>
+
+3. **Copias de seguridad configurables**
+
+Los clientes pueden [configurar copias de seguridad](/es/products/cloud/guides/backups/configurable-backups) para que se realicen con mayor frecuencia, hasta cada 6 horas, con el fin de mejorar el RPO.
+Los clientes también pueden configurar una retención más prolongada.
+
+Las copias de seguridad disponibles actualmente para el servicio se muestran en la página “backups” de la consola de ClickHouse Cloud.
+Esta sección también muestra el estado de éxito o fallo de cada copia de seguridad.
+
+<div id="restoring-from-a-backup">
+  ## Restauración desde una copia de seguridad
+</div>
+
+1. Las copias de seguridad predeterminadas, en el bucket de ClickHouse Cloud, pueden restaurarse en un servicio nuevo de la misma región.
+2. Las copias de seguridad externas (en el almacenamiento de objetos del cliente) pueden restaurarse en un servicio nuevo de la misma región o de una diferente.
+
+<div id="backup-and-restore-duration-guidance">
+  ## Guía sobre la duración de las copias de seguridad y la restauración
+</div>
+
+La duración de las copias de seguridad y de la restauración depende de varios factores, como el tamaño de la base de datos, así como el esquema y el número de tablas que contiene.
+
+En nuestras pruebas, hemos visto que las copias de seguridad más pequeñas, de ~1 TB, pueden tardar entre 10 y 15 minutos o más en completarse.
+Las copias de seguridad de menos de 20 TB suelen completarse en una hora, y hacer una copia de seguridad de ~50 TB de datos debería llevar entre 2 y 3 horas.
+Las copias de seguridad se benefician de economías de escala a medida que aumenta el tamaño, y hemos visto que copias de seguridad de hasta 1 PB para algunos servicios internos se completan en menos de 10 horas.
+
+Recomendamos hacer pruebas con su propia base de datos o con datos de muestra para obtener estimaciones más precisas, ya que la duración real depende de varios factores, como se ha indicado anteriormente.
+
+La duración de la restauración es similar a la de las copias de seguridad para tamaños equivalentes.
+Como se ha mencionado anteriormente, recomendamos hacer pruebas con su propia base de datos para hacerse una idea de cuánto tardará en restaurarse la copia de seguridad.
+
+<Note>
+  Actualmente NO hay soporte para la conmutación por error automática entre 2 instancias de ClickHouse Cloud, ya sea en la misma región o en regiones diferentes.
+  Actualmente NO existe sincronización automática de datos entre diferentes servicios de ClickHouse Cloud en la misma región o en regiones diferentes; es decir, no hay replicación Active-Active.
+</Note>
+
+<div id="recovery-process">
+  ## Proceso de recuperación
+</div>
+
+En esta sección se explican las distintas opciones de recuperación y el proceso que puede seguirse en cada caso.
+
+<div id="primary-service-data-corruption">
+  ### Corrupción de datos del servicio principal
+</div>
+
+En este caso, los datos [se pueden restaurar](/es/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup) a otro servicio de la misma región a partir de la copia de seguridad.
+La copia de seguridad puede tener hasta 24 horas de antigüedad si se usa la política de copia de seguridad predeterminada, o hasta 6 horas (si se usan copias de seguridad configurables con una frecuencia de 6 horas).
+
+<div id="restoration-steps">
+  #### Pasos de restauración
+</div>
+
+Para restaurar a partir de una copia de seguridad existente
+
+1. Vaya a la sección “Backups” de la consola de ClickHouse Cloud.
+2. Haga clic en los tres puntos de “Actions” de la copia de seguridad específica desde la que desea restaurar.
+3. Asigne un nombre al nuevo servicio y restáurelo a partir de esta copia de seguridad
+
+<Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="Restaurar a partir de una copia de seguridad" />
+
+<div id="primary-region-downtime">
+  ### Caída de la región primaria
+</div>
+
+Puede [exportar copias de seguridad](/es/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) a un bucket de su propio proveedor de nube.
+Si le preocupan las interrupciones regionales, le recomendamos exportar las copias de seguridad a una región distinta.
+Tenga en cuenta que se aplicarán cargos por transferencia de datos entre regiones.
+
+Si la región primaria deja de estar disponible, la copia de seguridad en otra región puede restaurarse en un servicio nuevo de una región distinta.
+
+Una vez restaurada la copia de seguridad en otro servicio, deberá asegurarse de actualizar cualquier configuración de DNS, balanceador de carga o cadena de conexión para que apunte al nuevo servicio.
+Esto puede implicar:
+
+* Actualizar variables de entorno o secretos
+* Reiniciar los servicios de la aplicación para establecer nuevas conexiones
+
+<Note>
+  Actualmente no se admite Backup / restore en un bucket externo para servicios que utilizan [Cifrado transparente de datos (TDE)](/es/products/cloud/guides/security/cmek#transparent-data-encryption-tde).
+</Note>
+
+<div id="additional-options">
+  ## Opciones adicionales
+</div>
+
+Hay algunas opciones adicionales que conviene tener en cuenta.
+
+1. **Escritura dual en clusters separados**
+
+En esta opción, puede configurar 2 clusters independientes en distintas regiones y escribir en ambos a la vez.
+Esta opción implica un costo más alto, ya que requiere ejecutar varios servicios, pero ofrece una mayor disponibilidad si una de las regiones deja de estar disponible.
+
+2. **Utilizar la replicación del CSP**
+
+Con esta opción, utilizaría la replicación nativa del almacenamiento de objetos del proveedor de servicios en la nube para copiar los datos.
+Por ejemplo, con BYOB puede exportar la copia de seguridad a un bucket de su propiedad en la región primary y replicarlo en otra región mediante [AWS cross region replication](https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication.html).

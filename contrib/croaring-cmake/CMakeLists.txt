@@ -7,8 +7,10 @@ set(SRCS
     "${LIBRARY_DIR}/src/isadetection.c"
     "${LIBRARY_DIR}/src/memory.c"
     "${LIBRARY_DIR}/src/roaring.c"
+    "${LIBRARY_DIR}/src/roaring64.c"
     "${LIBRARY_DIR}/src/roaring_array.c"
     "${LIBRARY_DIR}/src/roaring_priority_queue.c"
+    "${LIBRARY_DIR}/src/art/art.c"
     "${LIBRARY_DIR}/src/containers/array.c"
     "${LIBRARY_DIR}/src/containers/bitset.c"
     "${LIBRARY_DIR}/src/containers/containers.c"
@@ -23,6 +25,12 @@ set(SRCS
     "${LIBRARY_DIR}/src/containers/run.c")
 
 add_library(_roaring ${SRCS})
+
+# croaring expects bswap64() in portability.h from FreeBSD's byteswap.h,
+# but there is only bswap_64 and __bswap64.
+if (OS_FREEBSD)
+    target_compile_definitions(_roaring PRIVATE bswap64=__bswap64)
+endif()
 
 target_include_directories(_roaring PRIVATE "${LIBRARY_DIR}/include/roaring")
 target_include_directories(_roaring SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include")

@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-fasttest
+-- Tags: no-parallel, no-fasttest, use-rocksdb
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

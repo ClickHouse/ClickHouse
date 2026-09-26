@@ -17,7 +17,7 @@ Positions: 3 0 1
            INPUT :: 1 -> __table1.value String : 1
            INPUT :: 2 -> __table2.value String : 2
   Positions: 0 1 2
-    FilledJoin
+    FilledJoin (Filled JOIN)
     Header: __table1.id UInt64
             __table1.value String
             __table2.value String

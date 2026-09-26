@@ -1,0 +1,4 @@
+rewrite	4000
+scan	4000
+rewrite_ne	1000
+scan_ne	1000

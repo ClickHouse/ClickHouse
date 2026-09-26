@@ -1,1 +1,0 @@
-`nation_key` Nullable(Int32), `name` Nullable(String), `region_key` Nullable(Int32), `comment_col` Nullable(String)

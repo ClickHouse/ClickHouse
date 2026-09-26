@@ -38,11 +38,11 @@ def test_multiple_iceberg_files(started_cluster_iceberg_with_spark, format_versi
         f"/iceberg_data/default/{TABLE_NAME}/",
     )
 
-    # ['/iceberg_data/default/test_multiple_iceberg_files/data/00000-1-35302d56-f1ed-494e-a85b-fbf85c05ab39-00001.parquet',
-    # '/iceberg_data/default/test_multiple_iceberg_files/metadata/version-hint.text',
-    # '/iceberg_data/default/test_multiple_iceberg_files/metadata/3127466b-299d-48ca-a367-6b9b1df1e78c-m0.avro',
-    # '/iceberg_data/default/test_multiple_iceberg_files/metadata/snap-5220855582621066285-1-3127466b-299d-48ca-a367-6b9b1df1e78c.avro',
-    # '/iceberg_data/default/test_multiple_iceberg_files/metadata/v1.metadata.json']
+    # ['/var/lib/clickhouse/user_files/iceberg_data/default/test_multiple_iceberg_files/data/00000-1-35302d56-f1ed-494e-a85b-fbf85c05ab39-00001.parquet',
+    # '/var/lib/clickhouse/user_files/iceberg_data/default/test_multiple_iceberg_files/metadata/version-hint.text',
+    # '/var/lib/clickhouse/user_files/iceberg_data/default/test_multiple_iceberg_files/metadata/3127466b-299d-48ca-a367-6b9b1df1e78c-m0.avro',
+    # '/var/lib/clickhouse/user_files/iceberg_data/default/test_multiple_iceberg_files/metadata/snap-5220855582621066285-1-3127466b-299d-48ca-a367-6b9b1df1e78c.avro',
+    # '/var/lib/clickhouse/user_files/iceberg_data/default/test_multiple_iceberg_files/metadata/v1.metadata.json']
     assert len(files) == 5
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)

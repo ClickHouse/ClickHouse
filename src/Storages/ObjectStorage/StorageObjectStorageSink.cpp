@@ -1,6 +1,9 @@
+#include <IO/CompressionMethod.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
@@ -13,6 +16,7 @@ namespace Setting
 {
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -53,16 +57,17 @@ namespace
 StorageObjectStorageSink::StorageObjectStorageSink(
     const std::string & path_,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
-    ContextPtr context)
+    ContextPtr context,
+    const String & format,
+    const String & compression_method)
     : SinkToStorage(sample_block_)
     , path(path_)
     , sample_block(sample_block_)
 {
     const auto & settings = context->getSettingsRef();
-    const auto chosen_compression_method = chooseCompressionMethod(path, configuration->compression_method);
+    const auto chosen_compression_method = chooseCompressionMethod(path, compression_method);
 
     auto buffer = object_storage->writeObject(
         StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
@@ -71,10 +76,10 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         std::move(buffer),
         chosen_compression_method,
         static_cast<int>(settings[Setting::output_format_compression_level]),
-        static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
+        static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
+        settings[Setting::snappy_mode]);
 
-    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        configuration->format, *write_buf, *sample_block, context, format_settings_);
+    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, *sample_block, context, format_settings_);
 }
 
 void StorageObjectStorageSink::consume(Chunk & chunk)
@@ -171,14 +176,16 @@ SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String
         file_path = *new_key;
     }
 
+    last_written_object_path = file_path;
+
     return std::make_shared<StorageObjectStorageSink>(
         file_path,
         object_storage,
-        configuration,
         format_settings,
         std::make_shared<Block>(partition_strategy->getFormatHeader()),
-        context
-    );
+        context,
+        configuration->format,
+        configuration->compression_method);
 }
 
 }

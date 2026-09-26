@@ -1,4 +1,3 @@
-#include <base/StringRef.h>
 #include <base/types.h>
 
 #include <Columns/ColumnArray.h>
@@ -75,11 +74,11 @@ struct ValueHandler<ColumnVector<T>>
 template <>
 struct ValueHandler<ColumnString>
 {
-    using ValueType = StringRef;
+    using ValueType = std::string_view;
 
-    static StringRef getValue(const ColumnString & col, size_t pos) { return col.getDataAt(pos); }
+    static std::string_view getValue(const ColumnString & col, size_t pos) { return col.getDataAt(pos); }
 
-    static void insertValue(ColumnString & col, StringRef value) { col.insertData(value.data, value.size); }
+    static void insertValue(ColumnString & col, std::string_view value) { col.insertData(value.data(), value.size()); }
 
     static void insertDefault(ColumnString & col) { col.insertDefault(); }
 };
@@ -87,15 +86,15 @@ struct ValueHandler<ColumnString>
 template <>
 struct ValueHandler<ColumnFixedString>
 {
-    using ValueType = StringRef;
+    using ValueType = std::string_view;
 
-    static StringRef getValue(const ColumnFixedString & col, size_t pos)
+    static std::string_view getValue(const ColumnFixedString & col, size_t pos)
     {
         const size_t fixed_size = col.getN();
-        return StringRef(&col.getChars()[pos * fixed_size], fixed_size);
+        return std::string_view{reinterpret_cast<const char *>(&col.getChars()[pos * fixed_size]), fixed_size};
     }
 
-    static void insertValue(ColumnFixedString & col, StringRef value) { col.insertData(value.data, value.size); }
+    static void insertValue(ColumnFixedString & col, std::string_view value) { col.insertData(value.data(), value.size()); }
 
     static void insertDefault(ColumnFixedString & col) { col.insertDefault(); }
 };
@@ -221,7 +220,7 @@ void processImpl(ConstColumnInfo<ColumnT> source, ConstColumnInfo<ColumnT> exclu
         result.null_map->resize(current_result_offset);
 }
 
-class FunctionArrayExcept : public IFunction
+class FunctionArrayExcept final : public IFunction
 {
 public:
     static constexpr auto name = "arrayExcept";
@@ -264,6 +263,15 @@ public:
                 arguments[1].type->getName());
         }
 
+        const auto is_supported_type = [](const DataTypePtr & type)
+        {
+            const WhichDataType column_type(type->getColumnType());
+            return column_type.isInteger() || column_type.isFloat() || column_type.isStringOrFixedString();
+        };
+
+        if (!is_supported_type(source_nested))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}. Consider arrayFilter(x -> NOT has (exclude), source)", arguments[0].type->getName());
+
         return arguments[0].type;
     }
 
@@ -272,16 +280,25 @@ public:
         if (return_type->onlyNull())
             return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        auto source_full_col = arguments[0].column->convertToFullColumnIfConst();
         const bool exclude_is_const = isColumnConst(*arguments[1].column);
 
         // We expect some form of arrays for both params
-        const ColumnArray * source_col = checkAndGetColumn<ColumnArray>(source_full_col.get());
         const ColumnArray * exclude_col = exclude_is_const
             ? typeid_cast<const ColumnArray *>(&typeid_cast<const ColumnConst *>(arguments[1].column.get())->getDataColumn())
             : checkAndGetColumn<ColumnArray>(arguments[1].column.get());
 
-        if (!source_col || !exclude_col)
+        if (!exclude_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments must be arrays");
+
+        if (exclude_col->getData().empty())
+        {
+            return exclude_is_const ? arguments[0].column : arguments[0].column->convertToFullColumnIfConst();
+        }
+
+        auto source_full_col = arguments[0].column->convertToFullColumnIfConst();
+        const ColumnArray * source_col = checkAndGetColumn<ColumnArray>(source_full_col.get());
+
+        if (!source_col)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments must be arrays");
 
         // With a little twist that they might be nullable...
@@ -397,14 +414,14 @@ The operation maintains these properties:
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same type as the input array containing elements from `source` that weren't found in `except`. ", {"Array(T)"}};
 
     FunctionDocumentation::Examples examples
-        = {{"basic", "SELECT arrayExcept([1, 2, 3, 2, 4], [3, 5])", "[1, 2, 2, 4]"},
-           {"with_nulls1", "SELECT arrayExcept([1, NULL, 2, NULL], [2])", "[1, NULL, NULL]"},
+        = {{"basic", "SELECT arrayExcept([1, 2, 3, 2, 4], [3, 5])", "[1,2,2,4]"},
+           {"with_nulls1", "SELECT arrayExcept([1, NULL, 2, NULL], [2])", "[1,NULL,NULL]"},
            {"with_nulls2", "SELECT arrayExcept([1, NULL, 2, NULL], [NULL, 2, NULL])", "[1]"},
-           {"strings", "SELECT arrayExcept(['apple', 'banana', 'cherry'], ['banana', 'date'])", "['apple', 'cherry']"}};
+           {"strings", "SELECT arrayExcept(['apple', 'banana', 'cherry'], ['banana', 'date'])", "['apple','cherry']"}};
 
     FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayExcept>(documentation);
 }

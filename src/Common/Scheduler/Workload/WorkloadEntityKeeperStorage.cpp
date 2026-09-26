@@ -8,12 +8,19 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
+
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredWorkloadEntity;
+}
 
 namespace DB
 {
@@ -30,11 +37,21 @@ namespace ErrorCodes
 }
 
 WorkloadEntityKeeperStorage::WorkloadEntityKeeperStorage(
-    const ContextPtr & global_context_, const String & zookeeper_path_)
-    : WorkloadEntityStorageBase(global_context_)
+    const ContextPtr & global_context_, const String & zookeeper_path_, std::unique_ptr<IWorkloadEntityStorage> next_storage_)
+    : WorkloadEntityStorageBase(global_context_, std::move(next_storage_))
     , zookeeper_getter{[global_context_]() { return global_context_->getZooKeeper(); }}
     , zookeeper_path{zookeeper_path_}
     , watch{std::make_shared<WatchEvent>()}
+    , zookeeper_watch(std::make_shared<Coordination::WatchCallback>(
+      [my_watch = watch](const Coordination::WatchResponse & response)
+      {
+          if (response.type == Coordination::Event::CHANGED)
+          {
+              std::unique_lock lock{my_watch->mutex};
+              my_watch->triggered++;
+              my_watch->cv.notify_one();
+          }
+      }))
 {
     log = getLogger("WorkloadEntityKeeperStorage");
     if (zookeeper_path.empty())
@@ -88,9 +105,11 @@ zkutil::ZooKeeperPtr WorkloadEntityKeeperStorage::getZooKeeper()
     return zookeeper;
 }
 
-void WorkloadEntityKeeperStorage::loadEntities()
+void WorkloadEntityKeeperStorage::loadEntities(const Poco::Util::AbstractConfiguration & config)
 {
-    /// loadEntities() is called at start from Server::main(), so it's better not to stop here on no connection to ZooKeeper or any other error.
+    auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::loadEntities");
+    WorkloadEntityStorageBase::loadEntities(config);
+    /// loadEntities() is called at startup and on configuration reload, so it's better not to stop here on no connection to ZooKeeper or any other error.
     /// However the watching thread must be started anyway in case the connection will be established later.
     try
     {
@@ -108,8 +127,9 @@ void WorkloadEntityKeeperStorage::loadEntities()
 void WorkloadEntityKeeperStorage::processWatchQueue()
 {
     LOG_DEBUG(log, "Started watching thread");
-    setThreadName("WrkldEntWatch");
+    DB::setThreadName(ThreadName::WORKLOAD_ENTRY_WATCH);
 
+    auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::processWatchQueue");
     UInt64 handled = 0;
     while (watching_flag)
     {
@@ -161,9 +181,10 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::storeEnt
     bool /*replace_if_exists*/,
     const Settings &)
 {
+    auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::storeEntityImpl");
     LOG_DEBUG(log, "Storing workload entity {}", backQuote(entity_name));
 
-    String new_data = serializeAllEntities(Event{entity_type, entity_name, create_entity_query});
+    String new_data = serializeLocalEntities(Event{entity_type, entity_name, create_entity_query});
     auto zookeeper = getZooKeeper();
 
     Coordination::Stat stat;
@@ -188,9 +209,10 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
     const String & entity_name,
     bool /*throw_if_not_exists*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("WorkloadEntityKeeperStorage::removeEntityImpl");
     LOG_DEBUG(log, "Removing workload entity {}", backQuote(entity_name));
 
-    String new_data = serializeAllEntities(Event{entity_type, entity_name, {}});
+    String new_data = serializeLocalEntities(Event{entity_type, entity_name, {}});
     auto zookeeper = getZooKeeper();
 
     Coordination::Stat stat;
@@ -210,23 +232,14 @@ WorkloadEntityStorageBase::OperationResult WorkloadEntityKeeperStorage::removeEn
 
 std::pair<String, Int32> WorkloadEntityKeeperStorage::getDataAndSetWatch(const zkutil::ZooKeeperPtr & zookeeper)
 {
-    const auto data_watcher = [my_watch = watch](const Coordination::WatchResponse & response)
-    {
-        if (response.type == Coordination::Event::CHANGED)
-        {
-            std::unique_lock lock{my_watch->mutex};
-            my_watch->triggered++;
-            my_watch->cv.notify_one();
-        }
-    };
-
     Coordination::Stat stat;
     String data;
-    bool exists = zookeeper->tryGetWatch(zookeeper_path, data, &stat, data_watcher);
+    Coordination::WatchCallbackPtrOrEventPtr labelled_watch{zookeeper_watch, ProfileEvents::ZooKeeperWatchTriggeredWorkloadEntity};
+    bool exists = zookeeper->tryGetWatch(zookeeper_path, data, &stat, labelled_watch);
     if (!exists)
     {
         createRootNodes(zookeeper);
-        data = zookeeper->getWatch(zookeeper_path, &stat, data_watcher);
+        data = zookeeper->getWatch(zookeeper_path, &stat, labelled_watch);
     }
     return {data, stat.version};
 }
@@ -263,7 +276,7 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid workload entity query in keeper storage: {}", query->getID());
     }
 
-    setAllEntities(new_entities);
+    setLocalEntities(new_entities);
     current_version = version;
 
     LOG_DEBUG(log, "Workload entities refreshing is done");

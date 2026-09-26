@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
+#include <Poco/SplitterChannel.h>
 #include <Poco/Util/Application.h>
 
 #include <boost/program_options/positional_options.hpp>
@@ -116,5 +117,12 @@ private:
     std::set<String> multidisk_commands = {"copy", "packed-io", "switch-disk", "cd"};
 
     std::unique_ptr<DisksClient> client{};
+
+    LoggerPtr fatal_log;
+    Poco::AutoPtr<Poco::SplitterChannel> fatal_channel_ptr;
+    Poco::AutoPtr<Poco::Channel> fatal_console_channel_ptr;
+    Poco::AutoPtr<Poco::Channel> fatal_file_channel_ptr;
+    Poco::Thread signal_listener_thread;
+    std::unique_ptr<Poco::Runnable> signal_listener;
 };
 }
