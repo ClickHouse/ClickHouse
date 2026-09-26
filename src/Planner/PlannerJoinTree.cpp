@@ -2809,6 +2809,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     query_plan.addStep(std::move(alias_column_step));
                 }
 
+                /// The decorrelation joins the outer values to this read under the names of the correlated columns.
+                if (is_correlated_prewhere && query_plan.isInitialized())
+                {
+                    for (const auto & correlated_column : select_query_info.query_tree->as<QueryNode &>().getCorrelatedColumns())
+                    {
+                        const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(correlated_column);
+                        const auto & correlated_name
+                            = column_identifier ? *column_identifier : correlated_column->as<ColumnNode &>().getColumnName();
+                        if (query_plan.getCurrentHeader()->has(correlated_name))
+                            throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
+                                "PREWHERE that references a column of an outer query is not supported for a table with a column named {}",
+                                correlated_name);
+                    }
+                }
+
                 for (auto && [filter_info, description] : where_filters)
                 {
                     if (query_plan.isInitialized() &&

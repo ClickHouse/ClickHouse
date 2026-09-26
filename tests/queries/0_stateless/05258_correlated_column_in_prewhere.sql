@@ -3,6 +3,7 @@
 
 DROP TABLE IF EXISTS t_prewhere_outer;
 DROP TABLE IF EXISTS t_prewhere_outer_final;
+DROP TABLE IF EXISTS t_prewhere_outer_clash;
 
 CREATE TABLE t_prewhere_outer (value UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_prewhere_outer VALUES (10), (11);
@@ -27,11 +28,11 @@ WHERE exists(SELECT 1 FROM t_prewhere_outer AS t2 PREWHERE arrayMap(x -> x + t2.
 ORDER BY value;
 
 SELECT value FROM t_prewhere_outer AS t1
-WHERE exists(SELECT 1 FROM t_prewhere_outer AS t2 PREWHERE t2.value = t1.value)
+WHERE exists(SELECT 1 FROM t_prewhere_outer AS t2 PREWHERE t2.value = t1.value AND t2.value > 10)
 ORDER BY value;
 
 SELECT value FROM t_prewhere_outer AS t1
-WHERE exists(SELECT 1 FROM t_prewhere_outer AS t2 PREWHERE t2.value + 1 = t1.value + 1)
+WHERE exists(SELECT 1 FROM t_prewhere_outer AS t2 PREWHERE t2.value + 1 = t1.value + 1 AND t2.value > 10)
 ORDER BY value;
 
 -- A scalar subquery and a `merge` table.
@@ -43,7 +44,7 @@ SELECT value FROM t_prewhere_outer AS t1
 WHERE exists(SELECT 1 FROM merge(currentDatabase(), '^t_prewhere_outer$') AS t2 PREWHERE arrayMap(x -> x + t1.value, [1])[1] = 12)
 ORDER BY value;
 
--- Refused instead of ignored: a table without PREWHERE support, FINAL, a JOIN.
+-- Refused instead of ignored: a table without PREWHERE support, FINAL, a JOIN, a column named like the generated name of the outer column.
 SELECT count() FROM t_prewhere_outer AS t1 WHERE exists(SELECT 1 PREWHERE t1.value = 12); -- { serverError ILLEGAL_PREWHERE }
 
 CREATE TABLE t_prewhere_outer_final (value UInt64) ENGINE = ReplacingMergeTree ORDER BY value;
@@ -54,5 +55,11 @@ WHERE exists(SELECT 1 FROM t_prewhere_outer_final AS t2 FINAL PREWHERE arrayMap(
 SELECT count() FROM t_prewhere_outer AS t1
 WHERE exists(SELECT 1 FROM t_prewhere_outer AS t2 INNER JOIN t_prewhere_outer AS t3 ON t2.value = t3.value PREWHERE t1.value + 1 = 12); -- { serverError NOT_IMPLEMENTED }
 
+CREATE TABLE t_prewhere_outer_clash (`__table1.value` UInt64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_prewhere_outer_clash VALUES (1);
+SELECT count() FROM t_prewhere_outer AS t1
+WHERE exists(SELECT 1 FROM t_prewhere_outer_clash AS t2 PREWHERE t1.value + 1 = 12); -- { serverError ILLEGAL_PREWHERE }
+
+DROP TABLE t_prewhere_outer_clash;
 DROP TABLE t_prewhere_outer_final;
 DROP TABLE t_prewhere_outer;
