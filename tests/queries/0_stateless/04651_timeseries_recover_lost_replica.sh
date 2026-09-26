@@ -11,31 +11,9 @@
 #                           (same reason as 04341).
 # Tag no-fasttest: Fast test has no Keeper (same reason as 04341).
 #
-# Regression test for: a diverged TimeSeries table wedges DatabaseReplicated::recoverLostReplica
-# forever, so the replica never finishes recovery and the database stays unusable.
-#
-# Recovery drops a table that does not store data on disk (DatabaseReplicated.cpp, the
-# `drop_broken_tables || !table->storesDataOnDisk()` branch). StorageTimeSeries has no
-# storesDataOnDisk override, so a diverged TimeSeries table takes that branch. The inner-table
-# special case right below it used to name only MaterializedView, and it is the
-# only place in recovery that hands a ZooKeeperMetadataTransaction to the inner DROP. Without it
-# the inner DROP was deferred to the background dropTableFinally task, which has no transaction,
-# so the DROP was re-routed into the replicated DDL log and rejected with
-# `It's not initial query. ON CLUSTER is not allowed for Replicated database.` (Code 80) forever,
-# and waitTableFinallyDropped never returned.
-#
-# Expected (after fix):  the replica recovers, the TimeSeries table and its 3 inner tables are
-#                        back, the inner tables were really dropped and re-created (so they are
-#                        empty again), and no Code 80 inner-drop rejection is logged.
-# Observed (before fix): recovery never completes -- the table count stays at 3 (only the
-#                        orphaned inner tables), `ts` is gone, and DatabaseCatalog logs
-#                        `Cannot drop table <db>.ts (<uuid>). Will retry later.: Code: 80 ...`
-#                        every 5 seconds.
-#
-# The external-target part runs FIRST on purpose: it needs the replicated DDL queue, and once the
-# inner-target part has wedged recovery on an unfixed build that queue no longer drains, so the
-# reverse order would make an unfixed build sit in DDL timeouts instead of failing on the
-# reference diff.
+# Control case for a diverged `TimeSeries` table with external target tables. It still owns the
+# recent-samples inner table and its feeding materialized view, so recovery must drop both inner
+# tables without a replicated `DDL` rejection. The inner-target regression has its own test.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -132,7 +110,7 @@ ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS ${DB} SYNC"
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB} ENGINE = Replicated('${ZK_PATH}', 's1', 'r1')"
 
 # ---------------------------------------------------------------------------------------------
-# Part 1: a TimeSeries table with EXTERNAL target tables. It still owns inner tables (the
+# A TimeSeries table with EXTERNAL target tables. It still owns inner tables (the
 # on-by-default recent samples table and its feeding materialized view), so dropInnerTableIfAny
 # adds their drops to the metadata transaction. This shape already recovered before the fix, so
 # it is the control case.
@@ -170,58 +148,7 @@ ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts_ext"
 ${CLICKHOUSE_CLIENT} -q "SELECT comment = '' FROM system.tables WHERE database = '${DB}' AND name = 'ts_ext'"
 count_inner_drop_rejections ts_ext
 
-# ---------------------------------------------------------------------------------------------
-# Part 2: a TimeSeries table with INNER target tables -- the shape that used to wedge recovery.
-# ---------------------------------------------------------------------------------------------
-
-${CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${DB}.ts ENGINE = TimeSeries"
-
-# The outer TimeSeries table plus its 3 inner tables (data, tags, metrics).
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
-
-# Fill one inner table, so that afterwards the inner tables can be shown to be genuinely NEW rather
-# than the pre-existing ones left in place. The inner table names cannot show this: they embed the
-# OUTER table's UUID (getTimeSeriesInnerTableName), which recovery preserves, and neither can their
-# own UUIDs -- the Keeper CREATE carries explicit `<KIND> INNER UUID` clauses and recovery replays it
-# as an ATTACH, so the inner UUIDs are preserved too. The row count is the discriminator: the drop
-# and re-create leaves the inner tables empty, so a regression that made the eager inner drop a
-# silent no-op would leave these rows in place.
-SAMPLES_TABLE=$(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.samples.%'")
-${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.\`${SAMPLES_TABLE}\` (bucket) SELECT toDateTime(number) FROM numbers(50)"
-${CLICKHOUSE_CLIENT} -q "SELECT sum(total_rows) FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.%'"
-
-RECOVERIES_BEFORE=$(count_recovery_completions)
-diverge_from_keeper ts
-force_recovery
-wait_for_recovery ts "$RECOVERIES_BEFORE"
-
-# Before the fix this stays at 3: only the orphaned inner tables survive, `ts` never comes back.
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
-# `ts` specifically exists again (a count of 4 made only of inner tables would be wrong).
-${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts"
-${CLICKHOUSE_CLIENT} -q "SELECT comment = '' FROM system.tables WHERE database = '${DB}' AND name = 'ts'"
-# The inner tables really were dropped and re-created, so they are empty again. If the eager inner
-# drop silently did nothing, the 50 rows inserted above would still be here.
-${CLICKHOUSE_CLIENT} -q "SELECT sum(total_rows) FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.%'"
-# Recovery may attach the outer table before its inner targets. Once recovery completes, target
-# access must still validate and resolve the restored samples table, not merely leave `ts` visible.
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM timeSeriesSamples('${DB}', 'ts')"
-
-# Vacuity guard: assert recovery actually ran and actually took the DROP branch for `ts`. Without
-# this the assertions above would also pass on a run where recovery never triggered at all.
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
-${CLICKHOUSE_CLIENT} -q "
-    SELECT count() > 0
-    FROM system.text_log
-    WHERE logger_name = 'DatabaseReplicated (${DB})'
-      AND message LIKE 'Will DROP TABLE ts,%'
-    SETTINGS max_rows_to_read = 0"
-
-count_inner_drop_rejections ts
-
-# Best-effort, time-bounded cleanup. On an unfixed build the wedged inner drop never completes, so
-# DROP DATABASE blocks; without the bound the test would be killed by the runner timeout instead of
-# reporting its reference diff. Recovery also creates the two side databases it exiles the
+# Best-effort, time-bounded cleanup after recovery. Recovery also creates side databases to exile
 # data-bearing tables into (DatabaseReplicated::BROKEN_TABLES_SUFFIX and
 # BROKEN_REPLICATED_TABLES_SUFFIX), so drop those too rather than leaving them behind.
 timeout 30 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB} SYNC" 2>/dev/null || true
