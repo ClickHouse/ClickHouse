@@ -2134,8 +2134,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Older replicas cannot parse the column-list syntax at all. Check before the CREATE
     /// enters a Replicated database or distributed DDL log, or a replicated table's metadata.
     /// A secondary replay or stored ATTACH must keep accepting metadata already written.
-    if (isFreshTableDefinition(mode, create.attach_short_syntax)
+    bool check_replication_compatibility = isFreshTableDefinition(mode, create.attach_short_syntax)
         && !getContext()->isRecoveryFromStoredMetadata()
+        && !getContext()->getClientInfo().is_replicated_database_internal;
+    if (const auto metadata_txn = getContext()->getZooKeeperMetadataTransaction())
+        check_replication_compatibility &= metadata_txn->isInitialQuery();
+#if CLICKHOUSE_CLOUD
+    if (getContext()->getClientInfo().is_shared_catalog_internal)
+        check_replication_compatibility &= SharedDatabaseCatalog::isInitialQuery(getContext());
+#endif
+
+    if (check_replication_compatibility
         && !getContext()->getSettingsRef()[Setting::allow_projection_column_list_in_replicated_metadata]
         && (is_storage_replicated || !create.cluster.empty()
             || (database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared")))
