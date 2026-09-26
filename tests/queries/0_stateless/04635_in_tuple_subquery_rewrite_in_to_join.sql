@@ -4,7 +4,7 @@
 -- tuple comparison, making the reported error depend on an unrelated setting.
 
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET rewrite_in_to_join = 1;
 
 SELECT count() FROM numbers(1) WHERE (number, number) IN (SELECT 1); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
