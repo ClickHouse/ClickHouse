@@ -71,7 +71,7 @@ public:
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
             TokenizerPtr token_extactor_,
-            NameSet columns_shadowing_map_subcolumns_);
+            StorageMetadataPtr metadata_snapshot_);
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
@@ -153,7 +153,7 @@ private:
 
     std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
-    NameSet columns_shadowing_map_subcolumns;
+    StorageMetadataPtr metadata_snapshot;
 
     RPN rpn;
 };

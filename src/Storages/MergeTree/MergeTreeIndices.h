@@ -359,8 +359,6 @@ struct IMergeTreeIndex
     Names getColumnsRequiredForIndexCalc() const;
     const NamesAndTypesList & getColumnsWithTypesRequiredForIndexCalc() const;
 
-    NameSet getColumnsShadowingMapSubcolumns() const;
-
     StorageMetadataPtr metadata_snapshot;
     const IndexDescription & index;
 };
@@ -441,6 +439,12 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
+
+/// Parse `<map>.key_<key>`, refusing the shape when a column or a readable static subcolumn of the table claims that
+/// exact name: subcolumn names are flat, so a Tuple element or a typed JSON path can claim it and a predicate then
+/// reads the claimant. A Map key subcolumn is generated per key on demand, so it is absent here and stays parseable.
+std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
+    const String & column_name, const ColumnsDescription & columns);
 
 /// Check if an index substream file exists for the part. Returns true if the file is listed
 /// directly in checksums.txt (original or hashed name) OR if it's a virtual file inside

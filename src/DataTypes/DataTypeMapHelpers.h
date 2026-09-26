@@ -23,16 +23,11 @@ void extractKeyValueFromMap(
     size_t start,
     size_t end);
 
-/// Whether the name has the `map.key_<serialized_key>` shape used for a single Map key subcolumn.
-bool looksLikeMapSubcolumnName(const String & column_name);
-
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>`.
 /// Returns {map_column_name, serialized_key} if the column name has the expected format.
 ///
-/// Dots are legal in column names, so a real column `m.key_x` may exist beside a Map `m`. It shadows
-/// the subcolumn: a predicate reads that column, not the map, so pass such names in
-/// `shadowing_columns` and the shape is refused.
-std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
-    const String & column_name, const NameSet & shadowing_columns);
+/// This validates the spelling only. A caller that has a table in hand must also refuse a name some
+/// column of that table claims, for which `tryParseMapSubcolumnName` in MergeTreeIndices.h exists.
+std::optional<std::pair<String, String>> tryParseMapSubcolumnNameShape(const String & column_name);
 
 }
