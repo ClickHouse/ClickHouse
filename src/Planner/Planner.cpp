@@ -223,7 +223,6 @@ bool readsFromClusterEngine(const QueryNode & query_node)
     return false;
 }
 
-
 /** Check that table and table function table expressions from planner context support transactions.
   *
   * There is precondition that table expression data for table expression nodes is collected in planner context.

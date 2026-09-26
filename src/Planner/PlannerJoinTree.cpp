@@ -125,7 +125,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsDistributedProductMode distributed_product_mode;
@@ -608,7 +607,7 @@ bool applyTrivialCountIfPossible(
     if (!num_rows)
         return false;
 
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    if (query_context->isParallelReplicasEnabled() && settings[Setting::max_parallel_replicas] > 1)
     {
         /// Imagine the situation when we have a query with parallel replicas and
         /// this code executed on the remote server.
@@ -730,7 +729,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
 
     /// Disable parallel replicas: otherwise each remote shard would independently
     /// rewrite and the final result would be multiplied by the replica count.
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    if (query_context->isParallelReplicasEnabled() && settings[Setting::max_parallel_replicas] > 1)
     {
         if (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE ||
             settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
@@ -2897,7 +2896,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             /// with parallel replicas. Propagate only the parallel replicas switch (not the whole context,
             /// which would clobber the subquery's own settings and bound resources) to the subquery.
             if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
-                && !settings[Setting::allow_experimental_parallel_reading_from_replicas])
+                && !query_context->isParallelReplicasEnabled())
             {
                 disableParallelReplicasForSubqueries(table_expression);
             }
