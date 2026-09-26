@@ -269,9 +269,7 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
 
 /// Storage names of columns an on-fly mutation step recomputes rather than forwards from disk.
 ///
-/// `mutation_version` identifies those steps exactly, and is the only field that does:
-/// `perform_alter_conversions` is true for a mutation step too unless a pending `ALTER MODIFY
-/// COLUMN` precedes it, and `columns_overwritten_by_chain` is empty in that same common case.
+/// `is_mutation_step` identifies those steps; not every one of them has a `mutation_version`.
 ///
 /// An `UPDATE`'s assignment targets are top-level columns, so `result_name` is already the storage
 /// name the skip test keys on; an output naming no column of the table simply never matches.
@@ -281,7 +279,7 @@ static NameSet collectColumnsComputedByMutationSteps(const RangeReaders & range_
     for (const auto & reader : range_readers)
     {
         const auto * prewhere_info = reader.getPrewhereInfo();
-        if (!prewhere_info || !prewhere_info->actions || !prewhere_info->mutation_version.has_value())
+        if (!prewhere_info || !prewhere_info->actions || !prewhere_info->is_mutation_step)
             continue;
 
         for (const auto * output : prewhere_info->actions->getActionsDAG().getOutputs())
@@ -435,12 +433,8 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     ///
     /// A column a PREWHERE step consumes and projects out is absent from `previous_header` and
     /// survives only in `result.additional_columns`, so the parent is looked for in both.
-    ///
-    /// A mutation step is excluded: a materialized mutation feeds a chained command the pre-update
-    /// subcolumn too, so moving it only on the on-fly side would make the two disagree.
-    const bool is_on_fly_mutation_step = prewhere_info && prewhere_info->mutation_version.has_value();
-    if (!is_on_fly_mutation_step && !columns_computed_by_mutation_steps.empty()
-        && !(previous_header.empty() && result.additional_columns.empty()))
+    NameSet derived_from_mutation_result;
+    if (!columns_computed_by_mutation_steps.empty() && !(previous_header.empty() && result.additional_columns.empty()))
     {
         const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
         const auto & storage_snapshot = merge_tree_reader->getStorageSnapshot();
@@ -459,6 +453,7 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
                 if (parent_available && columns_computed_by_mutation_steps.contains(name_in_storage))
                 {
                     read_columns[pos] = nullptr;
+                    derived_from_mutation_result.insert(name_and_type.name);
                     /// `fillMissingColumns` learns which parents exist from this set alone, so a
                     /// parent held only by `result.additional_columns` has to be named here too.
                     previous_step_columns.insert(name_in_storage);
@@ -497,6 +492,12 @@ void MergeTreeReadersChain::executeActionsBeforePrewhere(
     auto patch_max_version = getMaxPatchVersionForStep(range_reader);
     const auto & result_header = range_reader.getReadSampleBlock();
     auto columns_for_patches = getColumnsForPatches(result_header, read_columns);
+
+    /// A slot derived from its parent gets the parent's patches, applied in version order around the
+    /// mutation step; patching it again here would put an older patch back over the mutation.
+    if (!derived_from_mutation_result.empty())
+        for (auto & columns_for_patch : columns_for_patches)
+            std::erase_if(columns_for_patch, [&](const ColumnForPatch & column) { return derived_from_mutation_result.contains(column.column_name); });
 
     auto apply_patches = [&](ColumnForPatch::Order order)
     {

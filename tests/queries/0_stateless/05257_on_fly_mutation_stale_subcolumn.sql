@@ -54,20 +54,6 @@ SYSTEM START MERGES t_stale_subcolumn_map;
 ALTER TABLE t_stale_subcolumn_map UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
 SELECT 'materialized', id, m.keys, m.values, data.f FROM t_stale_subcolumn_map ORDER BY id;
 
-SELECT 'a subcolumn that a later command reads is left to the mutation chain';
-
-DROP TABLE IF EXISTS t_stale_subcolumn_chain;
-CREATE TABLE t_stale_subcolumn_chain (id UInt8, a Array(UInt32), b UInt64, y UInt8)
-ENGINE = MergeTree ORDER BY id;
-INSERT INTO t_stale_subcolumn_chain VALUES (1, [1, 2], 0, 0);
-SYSTEM STOP MERGES t_stale_subcolumn_chain;
-ALTER TABLE t_stale_subcolumn_chain UPDATE a = [7, 8, 9] WHERE 1;
-ALTER TABLE t_stale_subcolumn_chain UPDATE b = a.size0 WHERE 1;
-SELECT 'pending', id, b FROM t_stale_subcolumn_chain ORDER BY id;
-SYSTEM START MERGES t_stale_subcolumn_chain;
-ALTER TABLE t_stale_subcolumn_chain UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
-SELECT 'materialized', id, b FROM t_stale_subcolumn_chain ORDER BY id;
-
 SELECT 'with a lightweight delete pending as well';
 
 DROP TABLE IF EXISTS t_stale_subcolumn_delete;
@@ -126,5 +112,20 @@ SYSTEM START MERGES t_stale_subcolumn_partial;
 ALTER TABLE t_stale_subcolumn_partial UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
 SELECT 'materialized', id, a.size0 FROM t_stale_subcolumn_partial PREWHERE a = [7, 8, 9] ORDER BY id;
 
-DROP TABLE t_stale_subcolumn, t_stale_subcolumn_wide, t_stale_subcolumn_map, t_stale_subcolumn_chain,
-    t_stale_subcolumn_delete, t_stale_subcolumn_nested, t_stale_subcolumn_missing, t_stale_subcolumn_partial;
+SELECT 'lightweight updates older and newer than the pending UPDATE';
+
+DROP TABLE IF EXISTS t_stale_subcolumn_patch;
+CREATE TABLE t_stale_subcolumn_patch (id UInt8, a Array(UInt32), y UInt8) ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+INSERT INTO t_stale_subcolumn_patch VALUES (1, [1, 2], 0), (2, [1], 0);
+SYSTEM STOP MERGES t_stale_subcolumn_patch;
+UPDATE t_stale_subcolumn_patch SET a = [1, 1, 1, 1] WHERE id = 1;
+ALTER TABLE t_stale_subcolumn_patch UPDATE a = [7, 8, 9] WHERE 1;
+UPDATE t_stale_subcolumn_patch SET a = [5, 5] WHERE id = 2;
+SELECT 'pending', id, a, a.size0 FROM t_stale_subcolumn_patch ORDER BY id;
+SYSTEM START MERGES t_stale_subcolumn_patch;
+ALTER TABLE t_stale_subcolumn_patch UPDATE y = y WHERE 1 SETTINGS mutations_sync = 2;
+SELECT 'materialized', id, a, a.size0 FROM t_stale_subcolumn_patch ORDER BY id;
+
+DROP TABLE t_stale_subcolumn, t_stale_subcolumn_wide, t_stale_subcolumn_map, t_stale_subcolumn_delete,
+    t_stale_subcolumn_nested, t_stale_subcolumn_missing, t_stale_subcolumn_partial, t_stale_subcolumn_patch;
