@@ -3,6 +3,8 @@
 #include <Parsers/IParserBase.h>
 #include <Core/Field.h>
 
+#include <string_view>
+
 
 namespace DB
 {
@@ -15,6 +17,9 @@ public:
     ParserPrometheusQuery(const String & database_name_, const String & table_name_, const Field & evaluation_time_);
 
     const char * getName() const override { return "PromQL Statement"; }
+
+    /// Returns true if parsing failed exactly at the end of the input.
+    static bool isIncompleteAtEOF(std::string_view query);
 
 protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

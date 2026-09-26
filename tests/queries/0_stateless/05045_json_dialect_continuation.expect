@@ -1,0 +1,60 @@
+#!/usr/bin/expect -f
+
+# Regression test: the single-line continuation probe must mirror how the
+# `clickhouse_json` dialect is actually parsed. Its statements are not
+# parser-based -- `parseQuery` scans the raw text for one balanced top-level
+# JSON object -- so an object whose braces are still open at the end of input
+# is an unfinished statement: <ENTER> must fold it into the edit buffer
+# instead of committing (which would execute the statements preceding it).
+# A balanced object is complete and must be submitted.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    -i $any_spawn_id eof { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --enable_json_ast_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# A `SET` switching to `clickhouse_json` followed by an unfinished JSON object:
+# the first <ENTER> must not commit the buffer (the `SET` would already run).
+# The pause between the sends is required: two immediate sends arrive in one
+# pty read and replxx folds them as a paste, regardless of the probe.
+send -- "SET dialect = 'clickhouse_json'; \{\"type\": \"bogus\"\r"
+sleep 1
+send -- "\}\r"
+expect "Unknown AST node type in JSON: 'bogus'"
+expect ":) "
+
+# The session dialect is `clickhouse_json` now. A fresh unfinished object must
+# fold the same way; balancing it completes the statement, and the executor
+# reports the malformed AST.
+send -- "\{\"a\": 1,\r"
+sleep 1
+send -- "\"b\": 2\}\r"
+expect "JSON object missing 'type' field"
+expect ":) "
+
+# The `SET` escape hatch back to SQL must still be parsed as SQL.
+send -- "SET dialect = 'clickhouse';\r"
+expect ":) "
+send -- "SELECT 42;\r"
+expect "42"
+expect ":) "
+
+send -- "exit\r"
+expect eof
