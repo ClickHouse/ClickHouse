@@ -157,7 +157,7 @@ void checkProjectionCodecOldDistributedDDLCompatibility(
     if (!has_modify_column)
         return;
 
-    /// A missing table cannot be inspected for projection codecs.
+    /// A missing table cannot be inspected for projection codecs or prepared type changes.
     if (!table)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "MODIFY COLUMN ... ON CLUSTER with distributed_ddl_entry_format_version = 1 requires the table "
@@ -185,12 +185,37 @@ void checkProjectionCodecOldDistributedDDLCompatibility(
                 break;
             }
 
-    /// `MODIFY COLUMN` can acquire a new type during preparation (for example, `ADD ENUM VALUES`).
-    /// The initiator's metadata cannot prove that the command is type-preserving on every worker.
-    if (has_existing_codec)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "MODIFY COLUMN ... ON CLUSTER can revalidate an existing projection CODEC on the worker; "
-            "distributed_ddl_entry_format_version = 1 does not carry codec validation settings. Use version >= 2");
+    if (!has_existing_codec)
+        return;
+
+    /// Use the same preparation as the local ALTER path. It resolves type changes such as
+    /// `ADD ENUM VALUES` that have no explicit type in the AST.
+    AlterCommands commands;
+    for (const auto & child : alter.command_list->children)
+    {
+        const auto & command = child->as<const ASTAlterCommand &>();
+        if (command.type != ASTAlterCommand::MODIFY_COLUMN)
+            continue;
+
+        auto parsed = AlterCommand::parse(&command);
+        if (!parsed)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parse MODIFY COLUMN for distributed DDL compatibility check");
+        commands.push_back(std::move(*parsed));
+    }
+
+    bool share_nested = true;
+    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get()))
+        share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
+    commands.prepare(*metadata, share_nested);
+
+    for (const auto & command : commands)
+    {
+        /// A locally ignored IF EXISTS command may run on a worker with different metadata.
+        if (command.data_type || command.ignore)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "MODIFY COLUMN ... ON CLUSTER can revalidate an existing projection CODEC on the worker; "
+                "distributed_ddl_entry_format_version = 1 does not carry codec validation settings. Use version >= 2");
+    }
 }
 
 void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)

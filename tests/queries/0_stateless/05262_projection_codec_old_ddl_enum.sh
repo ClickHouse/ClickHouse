@@ -27,10 +27,10 @@ v2=(--distributed_ddl_entry_format_version=2 --distributed_ddl_task_timeout=180
     --distributed_ddl_output_mode=throw --allow_projection_column_list_in_replicated_metadata=1
     --allow_suspicious_codecs=1)
 
-# A dedicated metadata-only command remains available in format 1.
+# A metadata-only `MODIFY COLUMN` remains available in format 1.
 ${CLICKHOUSE_CLIENT} "${v1_safe[@]}" -q "
     ALTER TABLE ${table} ON CLUSTER test_shard_localhost
-        COMMENT COLUMN x 'unchanged type' FORMAT Null"
+        MODIFY COLUMN x COMMENT 'unchanged type' FORMAT Null"
 
 if output=$(${CLICKHOUSE_CLIENT} "${v1[@]}" -q "
     ALTER TABLE ${table} ON CLUSTER test_shard_localhost
