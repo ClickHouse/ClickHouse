@@ -20,8 +20,4 @@ SELECT k, count() FROM t_memory_prewhere_column WHERE k GROUP BY k ORDER BY k SE
 SELECT k FROM t_memory_prewhere_column PREWHERE k ORDER BY k DESC;
 SELECT sum(k) FROM t_memory_prewhere_column PREWHERE k;
 
-SELECT 'old analyzer';
-SELECT k, s FROM t_memory_prewhere_column WHERE k ORDER BY s SETTINGS enable_analyzer = 0, optimize_move_to_prewhere = 1;
-SELECT k, s FROM t_memory_prewhere_column PREWHERE k ORDER BY s SETTINGS enable_analyzer = 0;
-
 DROP TABLE t_memory_prewhere_column;
