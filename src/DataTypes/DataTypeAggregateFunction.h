@@ -58,7 +58,7 @@ public:
 
     Field getDefault() const override;
 
-    /// Compares name, parameters, and argument types.
+    /// Compares name, state version, parameters, and argument types.
     /// When ignore_variant is false (default), also compares the state variant (Aggregation vs Window).
     static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant = false);
 
