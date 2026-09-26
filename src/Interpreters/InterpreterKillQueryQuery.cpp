@@ -38,12 +38,14 @@ namespace Setting
 {
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsBool kill_throw_if_noop;
 }
 
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
+    extern const int NOTHING_TO_KILL;
 }
 
 
@@ -323,7 +325,8 @@ public:
 BlockIO InterpreterKillQueryQuery::execute()
 {
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
-
+    const bool kill_throw_if_noop
+        = getContext()->getSettingsRef()[Setting::kill_throw_if_noop] && !getContext()->isDDLOrOnClusterInternal();
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
@@ -351,12 +354,18 @@ BlockIO InterpreterKillQueryQuery::execute()
             ? std::move(own_block)
             : getSelectResult("query_id, user, query", "system.processes");
         if (processes_block.empty())
+        {
+            if (kill_throw_if_noop)
+                throw Exception(ErrorCodes::NOTHING_TO_KILL, "No query to kill");
             return res_io;
+        }
 
         ProcessList & process_list = getContext()->getProcessList();
         QueryDescriptors queries_to_stop = reduced
             ? selfKillDescriptors(processes_block, *self_kill)
             : extractQueriesExceptMeAndCheckAccess(processes_block, getContext());
+        if (queries_to_stop.empty() && kill_throw_if_noop)
+            throw Exception(ErrorCodes::NOTHING_TO_KILL, "No query to kill");
 
         auto header = processes_block.cloneEmpty();
         header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
@@ -390,7 +399,11 @@ BlockIO InterpreterKillQueryQuery::execute()
     {
         Block mutations_block = getSelectResult("database, table, mutation_id, command", "system.mutations");
         if (mutations_block.empty())
+        {
+            if (kill_throw_if_noop)
+                throw Exception(ErrorCodes::NOTHING_TO_KILL, "No mutation to kill");
             return res_io;
+        }
 
         const ColumnString & database_col = typeid_cast<const ColumnString &>(*mutations_block.getByName("database").column);
         const ColumnString & table_col = typeid_cast<const ColumnString &>(*mutations_block.getByName("table").column);
@@ -569,7 +582,10 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     String select_query = "SELECT " + columns + " FROM " + table;
     auto & where_expression = query_ptr->as<ASTKillQueryQuery>()->where_expression;
     if (where_expression)
-        select_query += " WHERE " + where_expression->formatWithSecretsOneLine();
+        select_query += " WHERE (" + where_expression->formatWithSecretsOneLine() + ")";
+
+    if (table == "system.processes")
+        select_query += where_expression ? " AND query_id != currentQueryID()" : " WHERE query_id != currentQueryID()";
 
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();

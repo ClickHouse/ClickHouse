@@ -128,7 +128,10 @@ def test_phantom_parts_to_do_in_mutations(started_cluster):
         r_corrupt.get()
 
     # Kill stuck mutations and wait for running queries to finish
-    node.query("KILL MUTATION WHERE database = 'default' AND table LIKE 'phantom_r%'")
+    node.query(
+        "KILL MUTATION WHERE database = 'default' AND table LIKE 'phantom_r%' "
+        "SETTINGS kill_throw_if_noop = false"
+    )
 
     for _ in range(60):
         running = int(

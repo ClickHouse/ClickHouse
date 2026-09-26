@@ -21,7 +21,7 @@ function thread2()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = 'hello_01003'" --format Null;
+        $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = 'hello_01003' SETTINGS kill_throw_if_noop = false" --format Null;
         sleep 0.$RANDOM
     done
 }
