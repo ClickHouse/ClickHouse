@@ -8,6 +8,7 @@
 #include <type_traits>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
+#include <Compression/ICompressionCodec_fwd.h>
 
 #include <Core/Block.h>
 #include <Processors/Chunk.h>
@@ -527,7 +528,24 @@ public:
     std::list<TemporaryBlockStreamHolder> detachTemporaryData();
 
     /// Part of automatic parallel replicas implementation.
-    size_t estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const;
+    /// Serializes a sample of the aggregate states through a compressing buffer, so that the caller can
+    /// estimate how many bytes the states would take on the wire.
+    struct CompressedStateSizeEstimate
+    {
+        /// Serialized size of all the states, extrapolated from the sample. Uncompressed, like the `bytes`
+        /// counter of the other statistics kinds - the caller applies the compression ratio below to it.
+        size_t bytes = 0;
+        /// Serialized size of the sample the extrapolation is based on, and the size of the same sample
+        /// after compression. Their quotient is the compression ratio of the states. `compressed_bytes`
+        /// never exceeds `sample_bytes`: a sample too small to outweigh the per-block framing of the
+        /// compressed format is reported as incompressible rather than as expanding.
+        size_t sample_bytes = 0;
+        size_t compressed_bytes = 0;
+    };
+    /// `wire_codec` is the codec the states are sent with (`network_compression_method`); the factory's
+    /// default codec is used when it is not set.
+    CompressedStateSizeEstimate estimateSizeOfCompressedState(
+        AggregatedDataVariants & result, ssize_t bucket, const CompressionCodecPtr & wire_codec = nullptr) const;
 
     const ColumnNumbers & getKeysPositions() const { return keys_positions; }
     const DataTypes & getKeyTypes() const { return key_types; }

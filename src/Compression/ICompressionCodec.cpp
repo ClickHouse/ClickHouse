@@ -1,6 +1,7 @@
 #include <Compression/ICompressionCodec.h>
 
 #include <Compression/CompressionCodecMultiple.h>
+#include <Core/Defines.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <base/unaligned.h>
@@ -116,6 +117,15 @@ UInt32 ICompressionCodec::readDecompressedBlockSize(const char * source) const
 uint8_t ICompressionCodec::readMethod(const char * source)
 {
     return static_cast<uint8_t>(source[0]);
+}
+
+
+size_t compressionMatchWindowSize(const ICompressionCodec & codec)
+{
+    /// `LZ4` and `LZ4HC` share the method byte.
+    if (codec.getMethodByte() == static_cast<uint8_t>(CompressionMethodByte::LZ4))
+        return 64 * 1024;
+    return DBMS_DEFAULT_BUFFER_SIZE;
 }
 
 }
