@@ -102,4 +102,28 @@ $CLICKHOUSE_LOCAL --config-file "$config" --path "$path" --query "
     RESTORE TABLE default.t FROM File('$root/backups/b1') FORMAT Null" 2>&1 \
     | grep -om1 'setting for the server to enable it'
 
+# A refused CREATE is dropped, so a replica refused here leaves nothing behind in Keeper and can be
+# created again. The coordination service runs inside the process, so this case is a single run, and
+# --ignore-error prints no errors, so the refusal is read back from system.errors.
+keeper="$root/keeper.xml"
+cat > "$keeper" <<EOF
+<clickhouse>
+    <zookeeper>
+        <implementation>testkeeper</implementation>
+    </zookeeper>
+</clickhouse>
+EOF
+new_path
+$CLICKHOUSE_LOCAL --config-file "$keeper" --path "$path" --ignore-error --query "
+    SET enable_funnel_functions = 1;
+    CREATE DATABASE mem ENGINE = Memory;
+    CREATE TABLE mem.r1 (c $state) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r1') ORDER BY tuple();
+    CREATE TABLE r2 ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r2') ORDER BY tuple();
+    SELECT last_error_message FROM system.errors WHERE name = 'UNKNOWN_AGGREGATE_FUNCTION';
+    CREATE TABLE mem.r2 ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/r', 'r2') ORDER BY tuple();
+    SELECT 'created again: ' || toString(count()) FROM mem.r2" > "$root/keeper.out" 2>&1
+echo -n "new replica with columns from Keeper: "
+grep -om1 'setting for the server to enable it' "$root/keeper.out"
+grep -om1 'created again: 0' "$root/keeper.out"
+
 rm -rf "${root:?}"

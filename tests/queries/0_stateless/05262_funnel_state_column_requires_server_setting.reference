@@ -32,3 +32,5 @@ temporary table: 0
 table in a Memory database: 0
 restore from a backup: 0
 restore from a backup: setting for the server to enable it
+new replica with columns from Keeper: setting for the server to enable it
+created again: 0
