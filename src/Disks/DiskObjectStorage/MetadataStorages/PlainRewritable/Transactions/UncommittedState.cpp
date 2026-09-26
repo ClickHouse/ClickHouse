@@ -154,6 +154,11 @@ std::optional<DirectoryRemoteInfo> UncommittedState::getDirectoryRemoteInfo(cons
     return tx_snapshot->getDirectoryRemoteInfo(path);
 }
 
+bool UncommittedState::existsFileOrDirectory(const std::string & path) const
+{
+    return tx_snapshot->existsDirectory(path) || tx_snapshot->existsFile(path);
+}
+
 std::shared_ptr<Preconditions> UncommittedState::getTxPreconditions() const
 {
     return preconditions;
