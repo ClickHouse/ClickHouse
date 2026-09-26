@@ -362,15 +362,12 @@ public:
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
     /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
     /// or memoizing the result. The executed read analyzes again after its final mode is known.
-    AnalysisResultPtr selectRangesToReadForEstimation() const;
+    /// `allow_query_condition_cache_ = false` also bypasses the query condition cache: an estimate runs
+    /// before `tryOptimizeTopK`, so the `use_query_condition_cache_for_top_k` gate is not yet known.
+    AnalysisResultPtr selectRangesToReadForEstimation(bool allow_query_condition_cache_) const;
 
-    /// Analyze the ranges to read for a throwaway pre-plan estimate, without consulting or populating
-    /// the query condition cache and without caching the analysis on the step. Used for the automatic
-    /// parallel-replicas sizing of a query which may still become a TopK read: that estimate runs before
-    /// `tryOptimizeTopK`, so it cannot know whether the `use_query_condition_cache_for_top_k` gate
-    /// applies, and the read that actually executes analyzes again with the gate that matches its final
-    /// shape.
-    AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache() const;
+    /// Range analysis charges whole granules, so an estimate must not enforce a throwing read row limit.
+    bool hasThrowingReadRowLimit() const;
 
     /// How many compressed bytes this step reads off disk, based on index analysis (which is run here
     /// if it has not run yet, and memoized as usual). Where a per-column estimate cannot be made
