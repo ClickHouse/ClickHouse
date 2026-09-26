@@ -1,0 +1,8 @@
+session_1_read_query_log_offered: no
+agent_internal_queries_are_logged: yes
+agent_internal_queries_carry_the_log_comment_marker: no
+agent_internal_queries_carry_the_query_id_marker: yes
+user_query_carries_neither_marker: yes
+session_2_read_query_log_offered: yes
+user_query_is_returned: yes
+assistant_queries_are_returned: no
