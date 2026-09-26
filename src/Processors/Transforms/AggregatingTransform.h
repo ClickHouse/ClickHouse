@@ -133,6 +133,7 @@ public:
         SharedHeader header,
         AggregatingTransformParamsPtr params_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        size_t output_streams_ = 1,
         AggregationQueryResultPreviewsPtr query_result_previews_ = nullptr);
 
     /// For Parallel aggregating.
@@ -146,6 +147,7 @@ public:
         bool should_produce_results_in_order_of_bucket_number_ = true,
         bool skip_merging_ = false,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr,
+        size_t output_streams_ = 1,
         AggregationQueryResultPreviewsPtr query_result_previews_ = nullptr);
 
     ~AggregatingTransform() override;
@@ -221,6 +223,9 @@ private:
     std::list<TemporaryBlockStreamHolder> tmp_files;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
+    /// How many streams `AggregatingStep` spreads this transform's output over; 1 when it doesn't.
+    size_t output_streams = 1;
 
     void initGenerate();
     void tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num_bytes);
