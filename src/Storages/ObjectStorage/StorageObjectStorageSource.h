@@ -159,7 +159,8 @@ protected:
         size_t max_block_size,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
-        bool need_only_count);
+        bool need_only_count,
+        std::atomic_bool * iterator_consumed = nullptr);
 
     ReaderHolder createReader();
 
