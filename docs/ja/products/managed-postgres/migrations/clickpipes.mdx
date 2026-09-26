@@ -7,12 +7,12 @@ keywords: ['postgres', 'postgresql', '論理レプリケーション', '移行',
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
-ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Postgres サービス に移行するための ClickPipes をご利用いただけるようになりました。この組み込みインテグレーションにより、ソースデータベースへの接続、スキーマのエクスポート、Managed Postgres へのインポート、継続的なレプリケーションの設定をスムーズに行えます。
+ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Postgres サービスに移行するための ClickPipes をご利用いただけるようになりました。この組み込みインテグレーションにより、ソースデータベースへの接続、スキーマのエクスポート、Managed Postgres へのインポート、継続的なレプリケーションの設定をスムーズに行えます。
 
 <div id="prerequisites">
   ## 前提条件
@@ -63,21 +63,53 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 
 インジェスト方法を選択します。
 
-* **Initial load + CDC** — 既存データをコピーした後、継続的な変更を反映してターゲットを同期し続けます。
-* **Initial load only** — 一回限りのコピーで、継続的なレプリケーションは行いません。
+* **初期ロード + CDC** — 既存データをコピーした後、継続的な変更を反映してターゲットを同期し続けます。
+* **初期ロード only** — 一回限りのコピーで、継続的なレプリケーションは行いません。
 * **CDC only** — 初期コピーをスキップし、この時点以降の新しい変更だけをレプリケートします。
 
 <Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="ステップ 1: インジェスト方法のオプションを含むソースデータベース接続フォーム" size="lg" border />
 
 **Next** をクリックします。
 
-<div id="step-2-export-schema">
-  ## ステップ2: データベースのスキーマをエクスポートする
+<div id="automated-schema-migration">
+  ## 自動スキーマ移行
 </div>
 
-ウィザードには、ソースの接続情報があらかじめ入力された `pg_dump` コマンドが表示されます。これをターミナルで実行します。
+<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="ステップ 2: 宛先データベースセレクターを使用した自動スキーマ移行" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="ステップ2: スキーマのエクスポート用 `pg_dump` コマンド" size="lg" border />
+このオプションを選択すると、ClickPipe の作成後、[Setup フェーズ](/ja/integrations/clickpipes/postgres/lifecycle#setup)中にソースデータベースのスキーマが自動的に取得され、Managed Postgres サービスに適用されます。
+
+この機能では、後でウィザードで選択するテーブルにかかわらずソースデータベース内のすべてのデータベースオブジェクトを取得するため、**空の宛先データベース**が前提となります。宛先データベースに既存のデータがある場合や、より細かく設定したい場合は、代わりに[**手動**](#manual-schema-migration)モードを選択する必要があります。
+
+ドロップダウンから宛先データベースを選択するか、**新しいデータベースを作成**をクリックして作成します。
+
+<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="新しい Postgres データベースを作成するダイアログ" size="lg" border />
+
+<div id="monitoring">
+  ### 監視
+</div>
+
+ClickPipes の詳細ビューで、スキーマ移行の進行状況を確認できます。**ログ**にはスキーマ移行のステータスが表示され、発生したエラーも表示されます。
+
+このモードには、次の制限があります。
+
+* SSH トンネリングを使用するパイプでは、自動スキーマ移行を使用できません。スキーマは[手動でエクスポートおよびインポート](#manual-schema-migration)する必要があります。
+
+<div id="manual-schema-migration">
+  ## 手動スキーマ移行
+</div>
+
+移行先データベースにすでにデータが存在する場合や、自動モードで想定されるクリーンな状態ではなく、よりカスタマイズしたセットアップを行う場合は、ここで**手動**モードを選択できます。
+
+<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="ステップ2: pg_dumpエクスポートコマンドによる手動スキーマ移行" size="lg" border />
+
+<div id="step-2-export-schema">
+  ### データベーススキーマをエクスポートする
+</div>
+
+ウィザードには、ソースへの接続情報があらかじめ入力された `pg_dump` コマンドが表示されます。これをターミナルで実行します。
+
+<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="ステップ 2: スキーマのエクスポート用 `pg_dump` コマンド" size="lg" border />
 
 ```shell
 pg_dump \
@@ -88,21 +120,21 @@ pg_dump \
   -f pg.sql
 ```
 
-これにより、現在のディレクトリに `pg.sql` が作成されます。
+これにより、`pg.sql` が現在のディレクトリに作成されます。
 
-<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="pg_dump 実行後のターミナル出力" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="`pg_dump` 実行後のターミナル出力" size="lg" border />
 
 **Next** をクリックします。
 
 <div id="step-3-import-schema">
-  ## ステップ3: スキーマを Managed Postgres サービスにインポートする
+  ### Managed Postgres サービスにスキーマをインポートする
 </div>
 
-ドロップダウンから宛先データベースを選択するか、新しくプロビジョニングする場合は **新しいデータベースを作成** をクリックします。
+ドロップダウンから宛先データベースを選択するか、**新しいデータベースを作成** をクリックして新しく作成します。
 
-ウィザードには、スキーマダンプを Managed Postgres サービスに適用するための `psql` コマンドが表示されます。これをターミナルで実行してください。
+ウィザードには、スキーマダンプを Managed Postgres サービスに適用するための `psql` コマンドが表示されます。これをターミナルで実行します。
 
-<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="ステップ3: スキーマインポート用の psql コマンド" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="ステップ 3: スキーマのインポート用 `psql` コマンド" size="lg" border />
 
 ```shell
 psql \
@@ -113,9 +145,9 @@ psql \
   -f pg.sql
 ```
 
-<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="psql でスキーマをインポートした後のターミナル出力" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="`psql` によるスキーマのインポート実行後のターミナル出力" size="lg" border />
 
-**次へ** をクリックします。
+**Next** をクリックします。
 
 <div id="step-4-ingestion-settings">
   ## Step 4: インジェスト設定を構成する
@@ -227,5 +259,5 @@ SELECT pg_drop_replication_slot('<slot_name>');
 </div>
 
 * [Managed Postgres クイックスタート](/ja/products/managed-postgres/quickstart)
-* [Managed Postgres 接続情報](/ja/products/managed-postgres/connection)
-* [ClickPipes Postgres よくある質問](/ja/integrations/clickpipes/postgres/faq)
+* [Managed Postgres の接続情報](/ja/products/managed-postgres/connection)
+* [ClickPipes Postgres のよくある質問](/ja/integrations/clickpipes/postgres/faq)

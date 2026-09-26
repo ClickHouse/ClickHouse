@@ -42,14 +42,18 @@ def started_cluster():
         assert instance_console_unset.contains_in_log(
             "Starting console logger in level trace"
         )
-        assert instance_console_unset.contains_in_log(
+        # The "Restored ..." line is logged at the very end of startup, right before
+        # ports are opened. Logging is async by default, so the background writer may
+        # not have flushed it to the log file yet when the instance becomes ready.
+        # Poll for it instead of a one-shot grep.
+        instance_console_unset.wait_for_log_line(
             "Restored console logger level to logger.level"
         )
         # ... and when it is explicitly configured it is restored to that value.
         assert instance_console_set.contains_in_log(
             "Starting console logger in level trace"
         )
-        assert instance_console_set.contains_in_log(
+        instance_console_set.wait_for_log_line(
             "Restored console logger level to warning"
         )
         yield cluster
@@ -63,7 +67,7 @@ def test_server_no_logging(started_cluster):
 
     assert not instance.contains_in_log("HTTP Request for HTTPHandler-factory")
 
-    # shutdown Clickhouse
+    # shutdown ClickHouse
     instance.stop_clickhouse()
 
     assert instance.contains_in_log("Set root logger in level trace before shutdown")

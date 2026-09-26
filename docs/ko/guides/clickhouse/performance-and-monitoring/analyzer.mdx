@@ -7,7 +7,7 @@ title: '분석기'
 doc_type: '참고'
 ---
 
-ClickHouse 버전 `24.3`부터 새 쿼리 분석기가 기본적으로 활성화되었습니다.
+ClickHouse 버전 `24.3`부터 분석기가 기본적으로 활성화되었습니다.
 작동 방식에 대한 자세한 내용은 [여기](/ko/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer)에서 확인할 수 있습니다.
 
 <div id="known-incompatibilities">
@@ -66,6 +66,8 @@ FROM numbers(10)
 WHERE number > 5
 GROUP BY n
 ```
+
+마이그레이션을 돕기 위해 분석기는 집계되지 않은 AND 결합 조건에 대해 이전의 `HAVING`-`WHERE` 재작성을 복제할 수 있습니다. 이 동작을 사용하려면 `analyzer_compatibility_allow_non_aggregate_in_having = 1`을 활성화하십시오. 이 설정은 ClickHouse `26.7`부터 사용할 수 있습니다. 이 설정은 `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, `GROUPING SETS`에서는 무시됩니다. aggregate, `grouping` 또는 비결정적 함수를 포함하는 결합 조건은 `HAVING`에 남습니다. 결합 조건 중 하나라도 윈도 함수 또는 상태 저장 함수(예: `rowNumberInBlock`)를 포함하면 전체 `HAVING`에 대한 재작성이 비활성화되며, 이는 레거시 동작과 일치합니다.
 
 <div id="create-view-with-invalid-query">
   ### 잘못된 쿼리로 `CREATE VIEW`
@@ -146,11 +148,11 @@ FULL JOIN t2 USING (payload);
   #### `USING` 절의 컬럼 타입 수정자 처리
 </div>
 
-새 버전의 분석기에서는 `USING` 절에 지정된 컬럼의 공통 상위 타입(common supertype)을 결정하는 규칙이 표준화되어, 더 예측 가능한 결과를 얻을 수 있습니다.
+분석기에서는 `USING` 절에 지정된 컬럼의 공통 supertype을 결정하는 규칙이 표준화되어, 더 예측 가능한 결과를 얻을 수 있습니다.
 특히 `LowCardinality` 및 `Nullable` 같은 타입 수정자를 다룰 때 그렇습니다.
 
-* `LowCardinality(T)` and `T`: 타입이 `LowCardinality(T)`인 컬럼을 타입이 `T`인 컬럼과 조인하면, 결과 공통 상위 타입은 `T`가 되며 `LowCardinality` 수정자는 사실상 제거됩니다.
-* `Nullable(T)` and `T`: 타입이 `Nullable(T)`인 컬럼을 타입이 `T`인 컬럼과 조인하면, 결과 공통 상위 타입은 `Nullable(T)`가 되어 널 허용 속성이 유지됩니다.
+* `LowCardinality(T)` and `T`: 타입이 `LowCardinality(T)`인 컬럼을 타입이 `T`인 컬럼과 조인하면, 결과 공통 supertype은 `T`가 되며 `LowCardinality` 수정자는 사실상 제거됩니다.
+* `Nullable(T)` and `T`: 타입이 `Nullable(T)`인 컬럼을 타입이 `T`인 컬럼과 조인하면, 결과 공통 supertype은 `Nullable(T)`가 되어 널 허용 속성이 유지됩니다.
 
 예시:
 
@@ -161,7 +163,7 @@ FULL OUTER JOIN VALUES('id String', ('b')) AS t2
 USING (id);
 ```
 
-이 쿼리에서는 `id`의 공통 상위 유형(common supertype)이 `String`으로 결정되고, `t1`의 `LowCardinality` 수정자는 제거됩니다.
+이 쿼리에서는 `id`의 공통 supertype이 `String`으로 결정되고, `t1`의 `LowCardinality` 수정자는 제거됩니다.
 
 <div id="projection-column-names-changes">
   ### 프로젝션 컬럼 이름 변경 사항
@@ -232,7 +234,7 @@ SELECT toTypeName(if(0, [2, 3, 4], 'String'))
   ## Cloud 마이그레이션
 </div>
 
-새로운 기능 및 성능 최적화를 지원하기 위해 현재 쿼리 분석기가 비활성화되어 있는 모든 인스턴스에서 이를 활성화하고 있습니다. 이 변경으로 SQL 범위 규칙이 더 엄격해지므로, 규정을 준수하지 않는 쿼리는 사용자가 수동으로 업데이트해야 합니다.
+기능 및 성능 최적화를 지원하기 위해 현재 분석기가 비활성화되어 있는 모든 인스턴스에서 이를 활성화하고 있습니다. 이 변경으로 SQL 범위 규칙이 더 엄격해지므로, 규정을 준수하지 않는 쿼리는 사용자가 수동으로 업데이트해야 합니다.
 
 <div id="migration-workflow">
   ### 마이그레이션 워크플로
@@ -294,6 +296,24 @@ SELECT user_id, device_id FROM table GROUP BY user_id
 SELECT user_id, any(device_id) FROM table GROUP BY user_id
 -- 또는
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
+```
+
+<div id="non-aggregated-columns-in-having">
+  ### HAVING의 비집계 컬럼
+</div>
+
+오류: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. 예외 코드: 215
+
+원인: 이전 분석기는 `HAVING`의 비집계 AND 결합 조건을 사전 집계(pre-aggregation) 필터로 간주하고 자동으로 `WHERE`로 옮겼습니다. 분석기는 표준 SQL을 따릅니다. 즉, `HAVING`에서는 집계 키와 집계 함수만 참조할 수 있습니다.
+
+해결 방법: 프레디케이트를 `HAVING`에서 `WHERE`로 수동으로 옮기거나, `analyzer_compatibility_allow_non_aggregate_in_having = 1`(ClickHouse `26.7`부터 사용 가능)을 활성화하여 마이그레이션을 돕기 위한 레거시 재작성을 복원하십시오. 이 compatibility setting은 `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, `GROUPING SETS`에서는 무시됩니다. 집계, `grouping`, 또는 비결정적 함수가 포함된 조건은 `HAVING`에 남아 있습니다. 조건 중 하나라도 윈도 함수 또는 상태 저장 함수(예: `rowNumberInBlock`)를 포함하면 전체 `HAVING`에 대한 재작성이 비활성화되며, 이는 레거시 동작과 일치합니다.
+
+```sql
+/* ORIGINAL QUERY */
+SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
+
+/* FIXED QUERY */
+SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
 <div id="duplicate-cte-names">

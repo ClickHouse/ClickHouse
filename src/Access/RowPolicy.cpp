@@ -1,8 +1,7 @@
 #include <Access/RowPolicy.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <boost/range/algorithm/equal.hpp>
 
 
@@ -14,26 +13,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_PREWHERE;
 }
 
-namespace
-{
-    /// `arrayJoin` inside a nested subquery has its own scope and does not multiply the outer rows.
-    bool expressionContainsArrayJoin(const ASTPtr & ast)
-    {
-        if (!ast)
-            return false;
-        if (const auto * function = ast->as<ASTFunction>(); function && function->name == "arrayJoin")
-            return true;
-        for (const auto & child : ast->children)
-        {
-            if (!child->as<ASTSelectQuery>() && expressionContainsArrayJoin(child))
-                return true;
-        }
-        return false;
-    }
-}
-
 void checkRowPolicyFilterExpression(const ASTPtr & expression)
 {
+    /// `arrayJoin` changes the number of rows, while a row policy filter must yield one verdict per row.
     if (expressionContainsArrayJoin(expression))
         throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "arrayJoin is not allowed in a row policy filter expression");
 }

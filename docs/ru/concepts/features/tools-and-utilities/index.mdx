@@ -5,17 +5,51 @@ sidebarTitle: 'Список инструментов и утилит'
 slug: /operations/utilities/
 title: 'Список инструментов и утилит'
 doc_type: 'landing-page'
+mode: wide
 ---
 
-| Инструмент/утилита                                                                          | Описание                                                                                                       |
-| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local)                 | Позволяет выполнять SQL-запросы к данным без запуска сервера ClickHouse, подобно `awk`.                        |
-| [clickhouse-benchmark](/ru/concepts/features/tools-and-utilities/clickhouse-benchmark)         | Нагружает сервер пользовательскими запросами и настройками.                                                    |
-| [clickhouse-format](/ru/concepts/features/tools-and-utilities/clickhouse-format)               | Позволяет форматировать входные запросы.                                                                       |
-| [ClickHouse obfuscator](/ru/concepts/features/tools-and-utilities/clickhouse-obfuscator)       | Обфусцирует данные.                                                                                            |
-| [ClickHouse compressor](/ru/concepts/features/tools-and-utilities/clickhouse-compressor)       | Сжимает и распаковывает данные.                                                                                |
-| [clickhouse-disks](/ru/concepts/features/tools-and-utilities/clickhouse-disks)                 | Предоставляет операции с файлами, аналогичные операциям файловой системы, между различными дисками ClickHouse. |
-| [clickhouse-odbc-bridge](/ru/concepts/features/tools-and-utilities/odbc-bridge)                | Прокси-сервер для ODBC-драйвера.                                                                               |
-| [clickhouse&#95;backupview](/ru/concepts/features/tools-and-utilities/backupview)              | Модуль Python для анализа резервных копий ClickHouse.                                                          |
-| [clickhouse-keeper-client](/ru/concepts/features/tools-and-utilities/clickhouse-keeper-client) | Клиентское приложение для взаимодействия с ClickHouse Keeper.                                                  |
-| [Keeper HTTP API](/ru/concepts/features/tools-and-utilities/clickhouse-keeper-http-api)        | HTTP API и встроенная панель мониторинга для ClickHouse Keeper.                                                |
+<CardGroup cols={2}>
+  <Card title="clickhouse_backupview" href="/ru/concepts/features/tools-and-utilities/backupview">
+    Модуль Python для анализа резервных копий ClickHouse.
+  </Card>
+
+  <Card title="clickhouse-benchmark" href="/ru/concepts/features/tools-and-utilities/clickhouse-benchmark">
+    Нагружает сервер пользовательскими запросами и настройками.
+  </Card>
+
+  <Card title="clickhouse-compressor" href="/ru/concepts/features/tools-and-utilities/clickhouse-compressor">
+    Сжимает и распаковывает данные.
+  </Card>
+
+  <Card title="clickhouse-disks" href="/ru/concepts/features/tools-and-utilities/clickhouse-disks">
+    Предоставляет файловые операции с файлами на разных дисках ClickHouse.
+  </Card>
+
+  <Card title="clickhouse-format" href="/ru/concepts/features/tools-and-utilities/clickhouse-format">
+    Позволяет форматировать входные запросы.
+  </Card>
+
+  <Card title="clickhouse-keeper-client" href="/ru/concepts/features/tools-and-utilities/clickhouse-keeper-client">
+    Клиентское приложение для взаимодействия с ClickHouse Keeper.
+  </Card>
+
+  <Card title="Keeper HTTP API" href="/ru/concepts/features/tools-and-utilities/clickhouse-keeper-http-api">
+    HTTP API и встроенная панель мониторинга для ClickHouse Keeper.
+  </Card>
+
+  <Card title="clickhouse-local" href="/ru/concepts/features/tools-and-utilities/clickhouse-local">
+    Позволяет выполнять SQL-запросы к данным без запуска сервера ClickHouse, аналогично `awk`.
+  </Card>
+
+  <Card title="clickhouse-obfuscator" href="/ru/concepts/features/tools-and-utilities/clickhouse-obfuscator">
+    Обфусцирует данные.
+  </Card>
+
+  <Card title="clickhouse-odbc-bridge" href="/ru/concepts/features/tools-and-utilities/odbc-bridge">
+    Прокси-сервер для драйвера ODBC.
+  </Card>
+
+  <Card title="clickhouse-static-files-disk-uploader" href="/ru/concepts/features/tools-and-utilities/static-files-disk-uploader">
+    Подготавливает каталог данных для таблицы, использующей диск `web`.
+  </Card>
+</CardGroup>

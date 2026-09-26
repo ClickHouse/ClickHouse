@@ -16,7 +16,7 @@ doc_type: 'reference'
 
 * ثبّت الحزمة `clickhouse-common-static-dbg`.
 
-* اضبط الإعداد [allow&#95;introspection&#95;functions](/ar/reference/settings/session-settings#allow_introspection_functions) على القيمة 1.
+* اضبط الإعداد [allow&#95;introspection&#95;functions](/ar/reference/settings/session-settings/allow#allow_introspection_functions) على القيمة 1.
 
   لأسباب أمنية، تكون دوال الاستبطان معطّلة افتراضيًا.
 
@@ -45,7 +45,11 @@ doc_type: 'reference'
 لتمكين دالة الاستبطان هذه:
 
 * ثبّت الحزمة `clickhouse-common-static-dbg`.
-* اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings#allow_introspection_functions) على `1`.
+* اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions) على `1`.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تعيد نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -53,13 +57,13 @@ doc_type: 'reference'
 addressToLine(address_of_binary_instruction)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `address_of_binary_instruction` — عنوان التعليمة في عملية قيد التشغيل. [`UInt64`](/ar/reference/data-types/int-uint)
 
 **القيمة المعادة**
 
-تعيد اسم ملف الشيفرة المصدرية ورقم السطر، مفصولين بنقطتين، على سبيل المثال: `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`. وتعيد اسم ملف تنفيذي إذا تعذر العثور على معلومات تصحيح الأخطاء، أو سلسلة فارغة إذا كان العنوان غير صالح. [`String`](/ar/reference/data-types/string)
+تعيد اسم ملف الشيفرة المصدرية ورقم السطر، مفصولين بنقطتين، على سبيل المثال: `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`. وتعيد اسم ملف تنفيذي إذا تعذر العثور على معلومات التصحيح، أو سلسلة فارغة إذا كان العنوان غير صالح. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -67,7 +71,7 @@ addressToLine(address_of_binary_instruction)
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -87,7 +91,7 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) \G;
+SELECT addressToLine(94784076370703) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -106,7 +110,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -134,7 +138,11 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 لتمكين دالة الاستبطان هذه:
 
 * ثبّت الحزمة `clickhouse-common-static-dbg`.
-* اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings#allow_introspection_functions) على `1`.
+* اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions) على `1`.
+
+<Note>
+  هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسيطات نفسها.
+</Note>
 
 **البنية**
 
@@ -142,7 +150,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 addressToLineWithInlines(address_of_binary_instruction)
 ```
 
-**الوسائط**
+**وسيطة الدالة**
 
 * `address_of_binary_instruction` — عنوان تعليمة في عملية قيد التشغيل. [`UInt64`](/ar/reference/data-types/int-uint)
 
@@ -228,17 +236,21 @@ WHERE
   ## addressToSymbol
 </div>
 
-استُحدث في: v20.1.0
+أُضيف في: v20.1.0
 
 يحوّل عنوانًا في الذاكرة الافتراضية داخل عملية خادم ClickHouse إلى رمز من ملفات الكائنات الخاصة بـ ClickHouse.
 
-**الصيغة**
+<Note>
+  هذه الدالة غير حتمية: قد تُرجع نتائج مختلفة للوسيطة نفسها.
+</Note>
+
+**البنية**
 
 ```sql
 addressToSymbol(address_of_binary_instruction)
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `address_of_binary_instruction` — عنوان التعليمة ضمن عملية قيد التشغيل. [`UInt64`](/ar/reference/data-types/int-uint)
 
@@ -252,7 +264,7 @@ addressToSymbol(address_of_binary_instruction)
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -272,7 +284,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) \G;
+SELECT addressToSymbol(94138803686098) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -293,7 +305,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -335,20 +347,20 @@ clone
 demangle(symbol)
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `symbol` — رمز من ملف كائن. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-يُعيد اسم دالة C++، أو سلسلة نصية فارغة إذا لم يكن الرمز صالحًا. [`String`](/ar/reference/data-types/string)
+يُعيد اسم دالة C++، أو سلسلة فارغة إذا لم يكن الرمز صالحًا. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
 **استرجاع أول سلسلة نصية من جدول النظام `trace_log`**
 
 ```sql title=Query
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -368,7 +380,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -389,7 +401,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
 ```
 
 ```response title=Response
@@ -460,7 +472,12 @@ SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
 
 أُضيف في: v20.12.0
 
-يُصدر رسالة trace log في server log لكل [كتلة](/ar/resources/develop-contribute/introduction/architecture#block).
+يُصدر رسالة trace log في server log.
+
+لا تقبل الدالة سوى وسيطة ثابتة، لذا يُقيَّم الاستدعاء أثناء تحليل الاستعلام ويُستبدل
+بنتيجته. ولذلك تُصدر الرسالة مرة واحدة أثناء تحليل الاستعلام، وليس مرة لكل
+[كتلة](/ar/resources/develop-contribute/introduction/architecture#block) تتم معالجتها: لا يؤثر عدد الصفوف والإعداد `max_block_size`
+في عدد الرسائل التي تظهر في السجل.
 
 **البنية**
 
@@ -468,7 +485,7 @@ SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
 logTrace(message)
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `message` — الرسالة التي تُسجَّل في سجل الخادم. [`const String`](/ar/reference/data-types/string)
 

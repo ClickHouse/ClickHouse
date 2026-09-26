@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/RegexpJIT/RegexpProgram.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -26,6 +27,11 @@
 #include <llvm/IR/Intrinsics.h>
 #include <llvm/IR/Module.h>
 #include <llvm/IR/Verifier.h>
+
+namespace ProfileEvents
+{
+    extern const Event CompileRegexpFunction;
+}
 
 namespace DB
 {
@@ -679,15 +685,18 @@ std::shared_ptr<CompiledRegexpHolder> compileMatcher(const RegexpProgram & progr
     /// The raw pointer stays valid even after `jit` is moved from, because `regexp_jit_instance` keeps the
     /// `CHJIT` alive.
     CHJIT * jit_ptr = jit.get();
+    std::shared_ptr<CompiledRegexpHolder> holder;
     try
     {
-        return std::make_shared<CompiledRegexpHolder>(compiled_module, std::move(jit), func, program.num_captures);
+        holder = std::make_shared<CompiledRegexpHolder>(compiled_module, std::move(jit), func, program.num_captures);
     }
     catch (...)
     {
         jit_ptr->deleteCompiledModule(compiled_module);
         throw;
     }
+
+    return holder;
 }
 
 }
@@ -721,6 +730,8 @@ RegexpJITMatcher getRegexpJITMatcher(
             return {};
     }
 
+    /// Set inside the loader, so it stays false on a cache hit, where nothing is compiled.
+    bool compiled_here = false;
     std::shared_ptr<CompiledRegexpHolder> holder;
     try
     {
@@ -728,13 +739,16 @@ RegexpJITMatcher getRegexpJITMatcher(
         {
             auto [entry, _] = cache->getOrSet(key, [&]() -> std::shared_ptr<CompiledExpressionCacheEntry>
             {
-                return compileMatcher(*program);
+                auto compiled = compileMatcher(*program);
+                compiled_here = true;
+                return compiled;
             });
             holder = std::static_pointer_cast<CompiledRegexpHolder>(entry);
         }
         else
         {
             holder = compileMatcher(*program);
+            compiled_here = true;
         }
     }
     catch (...)
@@ -743,6 +757,10 @@ RegexpJITMatcher getRegexpJITMatcher(
         tryLogCurrentException(getLogger("CompileRegexp"), "Failed to JIT-compile a regular expression, falling back to RE2");
         return {};
     }
+
+    /// Must stay below the catch above: every throw it swallows leaves the caller on the interpreted loop.
+    if (compiled_here)
+        ProfileEvents::increment(ProfileEvents::CompileRegexpFunction);
 
     RegexpJITMatcher result;
     result.func = holder->func;

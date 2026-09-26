@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['clickpipes', 'openapi', 'واجهة برمجة تطبيقات', 'برمجي', 'rest', 'curl']
 ---
 
-يمكن إنشاء جميع أنواع ClickPipes وتحديثها وحذفها برمجيًا باستخدام [ClickHouse Cloud OpenAPI](/ar/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes). تتناول هذه الصفحة المصادقة ونقاط النهاية المتاحة لـ ClickPipes، مع أمثلة على طلبات `curl` لكل نوع من أنواع ClickPipe.
+يمكن إنشاء جميع أنواع ClickPipes وتحديثها وحذفها برمجيًا باستخدام [ClickHouse Cloud OpenAPI](/ar/products/cloud/api-reference/clickpipes/list-clickpipes). تتناول هذه الصفحة المصادقة ونقاط النهاية المتاحة لـ ClickPipes، مع أمثلة على طلبات `curl` لكل نوع من أنواع ClickPipe.
 
 <div id="authentication">
   ## المصادقة
@@ -57,7 +57,7 @@ https://api.clickhouse.cloud/v1
 | `GET`   | `/organizations/{organizationId}/clickpipes/cdcScaling` | الحصول على تحجيم ClickPipes الخاصة بـ CDC |
 | `PATCH` | `/organizations/{organizationId}/clickpipes/cdcScaling` | تحديث تحجيم ClickPipes الخاصة بـ CDC      |
 
-للاطلاع على مخططات الطلبات والاستجابات الكاملة لكل نقطة نهاية، راجع [Swagger UI](/ar/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+للاطلاع على مخططات الطلبات والاستجابات الكاملة لكل نقطة نهاية، راجع [مرجع واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 <div id="examples">
   ## أمثلة
@@ -117,7 +117,7 @@ curl -u "$KEY_ID:$KEY_SECRET" \
   ## إنشاء ClickPipes
 </div>
 
-يختلف نص طلب `POST /clickpipes` باختلاف نوع المصدر. توضّح الأمثلة أدناه البنية الخاصة بكل نوع ClickPipe مدعوم. للاطلاع على مخططات JSON المعتمدة، راجع [Swagger UI](/ar/api-reference/organization/get-list-of-available-organizations#tag/ClickPipes).
+يختلف نص طلب `POST /clickpipes` باختلاف نوع المصدر. توضّح الأمثلة أدناه البنية الخاصة بكل نوع ClickPipe مدعوم. للاطلاع على مخططات JSON المعتمدة، راجع [مرجع واجهة برمجة تطبيقات](/ar/products/cloud/api-reference/clickpipes/list-clickpipes).
 
 <div id="create-kafka">
   ### Kafka

@@ -17,7 +17,7 @@ doc_type: 'reference'
 
 この関数では、リザーバサイズが最大 8192 の [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) と、サンプリング用の乱数生成器を使用します。
 結果は決定論的ではありません。
-正確な quantile を取得するには、[`quantileExact`](/ja/reference/functions/aggregate-functions/quantileExact#quantileExact) 関数を使用してください。
+正確な 分位点 を取得するには、[`quantileExact`](/ja/reference/functions/aggregate-functions/quantileExact#quantileExact) 関数を使用してください。
 
 1 つのクエリ内で異なるレベルを持つ複数の `quantile*` 関数を使用する場合、内部状態は結合されません (つまり、クエリは本来よりも非効率に動作します) 。
 この場合は、[`quantiles`](/ja/reference/functions/aggregate-functions/quantiles#quantiles) 関数を使用してください。
@@ -34,15 +34,15 @@ quantile(level)(expr)
 
 **Parameters**
 
-* `level` — 任意。quantile のレベルです。0 から 1 までの定数の浮動小数点数を指定します。`level` の値には `[0.01, 0.99]` の範囲を使用することを推奨します。デフォルト値: 0.5。`level=0.5` の場合、この関数は median を計算します。[`Float`](/ja/reference/data-types/float)
+* `level` — 任意。分位点 のレベルです。0 から 1 までの定数の浮動小数点数を指定します。`level` の値には `[0.01, 0.99]` の範囲を使用することを推奨します。デフォルト値: 0.5。`level=0.5` の場合、この関数は median を計算します。[`Float`](/ja/reference/data-types/float)
 
 **Arguments**
 
-* `expr` — カラム値に対する式。結果のデータ型は数値型、Date、または DateTime である必要があります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+* `expr` — カラム値に対する式。結果のデータ型は数値型、`Date`、`DateTime`、または `DateTime64` である必要があります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Int128`](/ja/reference/data-types/int-uint) または [`UInt128`](/ja/reference/data-types/int-uint) または [`Int256`](/ja/reference/data-types/int-uint) または [`UInt256`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **戻り値**
 
-指定したレベルの近似 quantile 値。[`Float64`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
+指定したレベルの近似 分位点 値。数値引数は `Float64` を返し、`Decimal`、`Date`、`DateTime`、`DateTime64` の引数は入力フォーマットを保持します。[`Float64`](/ja/reference/data-types/float) または [`Decimal*`](/ja/reference/data-types/decimal) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
 
 **Examples**
 

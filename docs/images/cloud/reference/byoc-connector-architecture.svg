@@ -1,0 +1,139 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 930" font-family="Inter, -apple-system, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="ah-n" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#7d7d7d"/>
+    </marker>
+    <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#3b82f6"/>
+    </marker>
+  </defs>
+
+  <!-- ===== Boundaries ===== -->
+  <rect x="40" y="50" width="760" height="810" rx="14" fill="#8a8a8a" fill-opacity="0.06" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="64" y="86" font-size="16" font-weight="700" fill="#7d7d7d">Your environment</text>
+
+  <rect x="1020" y="50" width="260" height="810" rx="14" fill="#8a8a8a" fill-opacity="0.06" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="1044" y="86" font-size="16" font-weight="700" fill="#7d7d7d">ClickHouse Cloud</text>
+
+  <!-- ===== Your ClickHouse services ===== -->
+  <rect x="80" y="115" width="220" height="150" rx="10" fill="#8a8a8a" fill-opacity="0.10" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="190" y="145" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Your ClickHouse services</text>
+  <rect x="100" y="163" width="180" height="38" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
+  <text x="190" y="187" text-anchor="middle" font-size="12" fill="#7d7d7d">ClickHouse service</text>
+  <rect x="100" y="209" width="180" height="38" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
+  <text x="190" y="233" text-anchor="middle" font-size="12" fill="#7d7d7d">ClickHouse service</text>
+
+  <!-- Services use object storage through the per-service role -->
+  <line x1="96" y1="265" x2="96" y2="309" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="212" y="287" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">service data</text>
+  <text x="212" y="304" text-anchor="middle" font-size="11" fill="#7d7d7d">credentials via the per-service role</text>
+
+  <!-- ===== Your cloud account ===== -->
+  <rect x="80" y="315" width="220" height="165" rx="10" fill="#8a8a8a" fill-opacity="0.10" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="190" y="345" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Your cloud account</text>
+  <rect x="100" y="362" width="180" height="46" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
+  <text x="190" y="381" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">Object storage</text>
+  <text x="190" y="398" text-anchor="middle" font-size="11" fill="#7d7d7d">service data</text>
+  <rect x="100" y="416" width="180" height="46" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25"/>
+  <text x="190" y="435" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">IAM role per service</text>
+  <text x="190" y="452" text-anchor="middle" font-size="11" fill="#7d7d7d">assumed by that service only</text>
+
+  <!-- Operators prepare the cloud account -->
+  <line x1="96" y1="530" x2="96" y2="486" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="212" y="502" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">prepare</text>
+  <text x="212" y="519" text-anchor="middle" font-size="11" fill="#7d7d7d">buckets and IAM role</text>
+
+  <!-- ===== Your operators ===== -->
+  <rect x="80" y="530" width="220" height="80" rx="10" fill="#8a8a8a" fill-opacity="0.10" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="190" y="563" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Your operators</text>
+  <text x="190" y="585" text-anchor="middle" font-size="11" fill="#7d7d7d">workstation inside your environment</text>
+
+  <!-- ===== Kubernetes API ===== -->
+  <rect x="80" y="650" width="220" height="105" rx="10" fill="#8a8a8a" fill-opacity="0.10" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="190" y="697" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Kubernetes API</text>
+  <text x="190" y="718" text-anchor="middle" font-size="11" fill="#7d7d7d">cluster state</text>
+
+  <!-- ===== Connector namespace / host ===== -->
+  <rect x="460" y="105" width="300" height="725" rx="12" fill="#8a8a8a" fill-opacity="0.05" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <text x="610" y="137" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Connector</text>
+  <text x="610" y="156" text-anchor="middle" font-size="11" fill="#7d7d7d">Kubernetes namespace or Linux host</text>
+
+  <!-- Scraper -->
+  <rect x="490" y="180" width="240" height="85" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="610" y="214" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Scraper</text>
+  <text x="610" y="236" text-anchor="middle" font-size="11" fill="#7d7d7d">collects metrics and health signals</text>
+
+  <!-- Troubleshooter -->
+  <rect x="490" y="350" width="240" height="280" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="610" y="387" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Troubleshooter</text>
+  <text x="610" y="409" text-anchor="middle" font-size="11" fill="#7d7d7d">diagnostics for support sessions</text>
+
+  <!-- Session gateway (inside troubleshooter) -->
+  <rect x="510" y="530" width="200" height="80" rx="8" fill="#8a8a8a" fill-opacity="0.16" stroke="#7d7d7d" stroke-width="1.25"/>
+  <text x="610" y="562" text-anchor="middle" font-size="13" font-weight="600" fill="#7d7d7d">Session gateway</text>
+  <text x="610" y="583" text-anchor="middle" font-size="11" fill="#7d7d7d">reachable only from inside</text>
+
+  <!-- Executor -->
+  <rect x="490" y="700" width="240" height="110" rx="10" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="610" y="737" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Executor</text>
+  <text x="610" y="759" text-anchor="middle" font-size="11" fill="#7d7d7d">applies lifecycle changes you enabled</text>
+  <text x="610" y="781" text-anchor="middle" font-size="10" fill="#7d7d7d">managed mode: create, update, delete</text>
+
+  <!-- ===== Local arrows (neutral) ===== -->
+  <!-- Scraper reads ClickHouse -->
+  <line x1="490" y1="222" x2="306" y2="222" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="395" y="205" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">native protocol</text>
+  <text x="395" y="242" text-anchor="middle" font-size="11" fill="#7d7d7d">read-only user</text>
+
+  <!-- Operators reach the session gateway -->
+  <line x1="300" y1="570" x2="504" y2="570" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="405" y="553" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">identity token</text>
+  <text x="405" y="588" text-anchor="middle" font-size="10" fill="#7d7d7d">pinned TLS on VM</text>
+  <text x="405" y="602" text-anchor="middle" font-size="10" fill="#7d7d7d">port-forward on K8s</text>
+
+  <!-- Troubleshooter reads Kubernetes state -->
+  <path d="M530 630 L530 675 L306 675" fill="none" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="395" y="658" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">reads cluster state</text>
+  <text x="395" y="695" text-anchor="middle" font-size="11" fill="#7d7d7d">read-only</text>
+
+  <!-- Executor writes through the Kubernetes API -->
+  <line x1="490" y1="735" x2="306" y2="735" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+  <text x="395" y="718" text-anchor="middle" font-size="12" font-weight="600" fill="#7d7d7d">scoped writes</text>
+  <text x="395" y="753" text-anchor="middle" font-size="10" fill="#7d7d7d">service namespaces</text>
+  <text x="395" y="766" text-anchor="middle" font-size="10" fill="#7d7d7d">platform namespaces</text>
+  <text x="395" y="779" text-anchor="middle" font-size="10" fill="#7d7d7d">after approval</text>
+
+  <!-- ===== Connector API endpoint ===== -->
+  <rect x="1045" y="190" width="210" height="620" rx="10" fill="#3b82f6" fill-opacity="0.10" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="1150" y="495" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Connector API endpoint</text>
+  <text x="1150" y="518" text-anchor="middle" font-size="11" fill="#7d7d7d">your dedicated HTTPS endpoint</text>
+
+  <!-- ===== Outbound arrows (accent) ===== -->
+  <!-- Scraper -> API endpoint -->
+  <line x1="730" y1="222" x2="1039" y2="222" stroke="#3b82f6" stroke-width="1.75" marker-end="url(#ah-a)"/>
+  <text x="910" y="205" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">HTTPS</text>
+  <text x="910" y="242" text-anchor="middle" font-size="11" fill="#3b82f6">mTLS + request signing</text>
+
+  <!-- Troubleshooter -> API endpoint, its own outbound channel -->
+  <line x1="730" y1="460" x2="1039" y2="460" stroke="#3b82f6" stroke-width="1.75" marker-end="url(#ah-a)"/>
+  <text x="910" y="426" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">troubleshooter WebSocket</text>
+  <text x="910" y="443" text-anchor="middle" font-size="11" fill="#3b82f6">mTLS + request signing</text>
+  <text x="910" y="482" text-anchor="middle" font-size="11" font-weight="600" fill="#3b82f6">diagnostics,</text>
+  <text x="910" y="498" text-anchor="middle" font-size="11" font-weight="600" fill="#3b82f6">support sessions only</text>
+
+  <!-- Executor -> API endpoint, a separate outbound channel -->
+  <line x1="730" y1="755" x2="1039" y2="755" stroke="#3b82f6" stroke-width="1.75" marker-end="url(#ah-a)"/>
+  <text x="910" y="721" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">executor WebSocket</text>
+  <text x="910" y="738" text-anchor="middle" font-size="11" fill="#3b82f6">mTLS + request signing</text>
+  <text x="910" y="777" text-anchor="middle" font-size="11" font-weight="600" fill="#3b82f6">lifecycle commands,</text>
+  <text x="910" y="793" text-anchor="middle" font-size="11" font-weight="600" fill="#3b82f6">managed mode only</text>
+
+  <!-- ===== Legend ===== -->
+  <g>
+    <line x1="64" y1="895" x2="112" y2="895" stroke="#3b82f6" stroke-width="1.75" marker-end="url(#ah-a)"/>
+    <text x="124" y="899" font-size="12" fill="#7d7d7d">outbound, authenticated (mTLS + request signing)</text>
+    <line x1="480" y1="895" x2="528" y2="895" stroke="#7d7d7d" stroke-width="1.75" marker-end="url(#ah-n)"/>
+    <text x="540" y="899" font-size="12" fill="#7d7d7d">local, inside your environment</text>
+    <text x="810" y="899" font-size="12" font-weight="600" fill="#7d7d7d">All connections are initiated from your environment.</text>
+  </g>
+</svg>

@@ -183,7 +183,7 @@ CREATE TABLE stackoverflow.posts
   `ParentId` String,
   `CommunityOwnedDate` DateTime64(3, 'UTC'),
   `ClosedDate` DateTime64(3, 'UTC'),
-  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --índice aqui
+  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --index here
 )
 ENGINE = MergeTree
 PARTITION BY toYear(CreationDate)
@@ -263,7 +263,7 @@ Também mostramos uma animação de como o índice minmax de omissão descarta t
   ## Documentação relacionada
 </div>
 
-* [Guia de índices de omissão de dados](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes)
-* [Exemplos de índice de omissão de dados](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes-examples)
-* [Manipulação de índices de omissão de dados](/pt-BR/reference/statements/alter/skipping-index)
+* [Guia sobre índices de omissão de dados](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes)
+* [Exemplos de índices de omissão de dados](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [Como manipular índices de omissão de dados](/pt-BR/reference/statements/alter/skipping-index)
 * [Informações sobre a tabela do sistema](/pt-BR/reference/system-tables/data_skipping_indices)

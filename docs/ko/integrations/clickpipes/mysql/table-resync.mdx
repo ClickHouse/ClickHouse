@@ -14,21 +14,17 @@ integration:
 
 버튼 한 번으로 개별 테이블을 resync하는 기능은 현재 개발 중이지만, 이 가이드에서는 현재 MySQL ClickPipe에서 이를 수행하는 방법을 안내합니다.
 
-<div id="removing-table">
-  ### 1. 파이프에서 테이블 제거
-</div>
+<Steps>
+  <Step title="파이프에서 테이블 제거" id="removing-table">
+    이 단계는 [테이블 제거 가이드](/ko/integrations/clickpipes/mysql/remove-table)를 따르면 됩니다.
+  </Step>
 
-이는 [테이블 제거 가이드](/ko/integrations/clickpipes/mysql/remove-table)를 따라 수행할 수 있습니다.
+  <Step title="ClickHouse에서 테이블 TRUNCATE 또는 삭제" id="truncate-drop-table">
+    이 단계는 다음 단계에서 이 테이블을 다시 추가할 때 데이터가 중복되는 것을 방지하기 위한 것입니다. ClickHouse Cloud의 **SQL 콘솔** 탭으로 이동하여 쿼리를 실행하면 됩니다.
+    테이블이 이미 ClickHouse에 존재하고 비어 있지 않으면 테이블 추가가 차단되도록 검증이 적용되어 있다는 점에 유의하십시오.
+  </Step>
 
-<div id="truncate-drop-table">
-  ### 2. ClickHouse에서 테이블을 TRUNCATE하거나 삭제
-</div>
-
-이 단계는 다음 단계에서 이 테이블을 다시 추가할 때 데이터가 중복되지 않도록 하기 위한 것입니다. ClickHouse Cloud의 **SQL 콘솔** 탭으로 이동해 쿼리를 실행하면 됩니다.
-테이블이 ClickHouse에 이미 존재하고 비어 있지 않은 경우에는 테이블 추가가 차단되도록 유효성 검사가 적용됩니다.
-
-<div id="add-table-again">
-  ### 3. 테이블을 ClickPipe에 다시 추가합니다
-</div>
-
-이 작업은 [테이블 추가 가이드](/ko/integrations/clickpipes/mysql/add-table)를 따르면 됩니다.
+  <Step title="테이블을 ClickPipe에 다시 추가" id="add-table-again">
+    이 단계는 [테이블 추가 가이드](/ko/integrations/clickpipes/mysql/add-table)를 따르면 됩니다.
+  </Step>
+</Steps>

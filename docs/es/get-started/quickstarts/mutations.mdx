@@ -1,6 +1,7 @@
 ---
 slug: /guides/developer/mutations
 sidebarTitle: 'Actualización y eliminación de datos'
+searchable: true
 keywords: ['UPDATE', 'DELETE', 'mutaciones']
 title: 'Actualización y eliminación de datos de ClickHouse'
 description: 'Describe cómo realizar operaciones de actualización y eliminación en ClickHouse'
@@ -123,7 +124,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 Algunas notas sobre las eliminaciones ligeras:
 
 * Esta función solo está disponible para la familia de motores de tabla `MergeTree`.
-* Las eliminaciones ligeras son síncronas de forma predeterminada y esperan a que todas las réplicas procesen la eliminación. Este comportamiento se controla mediante la [configuración `lightweight_deletes_sync`](/es/reference/settings/session-settings#lightweight_deletes_sync).
+* Las eliminaciones ligeras son síncronas de forma predeterminada y esperan a que todas las réplicas procesen la eliminación. Este comportamiento se controla mediante la [configuración `lightweight_deletes_sync`](/es/reference/settings/session-settings/lightweight#lightweight_deletes_sync).
 
 <div className="mt-8">
   <BackToQuickstarts />

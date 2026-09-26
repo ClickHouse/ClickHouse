@@ -36,9 +36,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
 * Docker est installé sur votre machine
 
 <Steps>
-  <Step>
-    ## Configurer la structure de répertoires et l&#39;environnement de test
-
+  <Step title="Configurer la structure de répertoires et l’environnement de test" id="set-up">
     <ExampleFiles />
 
     Dans ce tutoriel, vous utiliserez [Docker compose](https://docs.docker.com/compose/) pour
@@ -140,9 +138,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## Configurer les nœuds ClickHouse
-
+  <Step title="Configurer les nœuds ClickHouse" id="configure-clickhouse-servers">
     ### Configuration du serveur
 
     Modifiez maintenant chaque fichier de configuration vide `config.xml` situé dans
@@ -371,7 +367,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
 
-    Dans cet exemple, le default user est configuré sans mot de passe par souci de simplicité.
+    Dans cet exemple, l&#39;utilisateur par défaut est configuré sans mot de passe par souci de simplicité.
     En pratique, cette pratique est déconseillée.
 
     <Note>
@@ -379,9 +375,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     </Note>
   </Step>
 
-  <Step>
-    ## Configurer ClickHouse Keeper
-
+  <Step title="Configurer ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     ### Configuration de ClickHouse Keeper
 
     <KeeperConfig />
@@ -397,9 +391,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     <CloudTip />
   </Step>
 
-  <Step>
-    ## Tester la configuration
-
+  <Step title="Tester la configuration" id="test-the-setup">
     Assurez-vous que Docker est en cours d’exécution sur votre machine.
     Démarrez le cluster à l’aide de la commande `docker-compose up` depuis la racine du répertoire `cluster_1S_2R` :
 
@@ -478,9 +470,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     À l’étape suivante, vous créerez une table dans le cluster.
   </Step>
 
-  <Step>
-    ## Créer une base de données
-
+  <Step title="Créer une base de données" id="creating-a-database">
     Maintenant que vous avez vérifié que le cluster est correctement configuré et fonctionne, vous
     allez recréer la même table que celle utilisée dans le tutoriel du [jeu de données d’exemple sur les prix de l’immobilier au Royaume-Uni](/fr/get-started/sample-datasets/uk-price-paid).
     Il contient environ 30 millions de lignes correspondant aux prix payés
@@ -537,9 +527,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     ```
   </Step>
 
-  <Step>
-    ## Créer une table sur le cluster
-
+  <Step title="Créer une table sur le cluster" id="creating-a-table">
     Maintenant que la base de données a été créée, créez une table sur le cluster.
     Exécutez la requête suivante depuis n’importe quel client hôte :
 
@@ -592,9 +580,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     ```
   </Step>
 
-  <Step>
-    ## Insérer des données
-
+  <Step title="Insérer des données" id="inserting-data">
     Le jeu de données étant volumineux et son ingestion complète prenant quelques minutes, nous n&#39;insérerons dans un premier temps qu&#39;un petit sous-ensemble.
 
     Insérez un sous-ensemble réduit des données à l&#39;aide de la requête ci-dessous depuis `clickhouse-01` :

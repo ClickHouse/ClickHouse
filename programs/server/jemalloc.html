@@ -475,6 +475,7 @@
                 <button class="tab" onclick="switchTab('operations', event)">Operations</button>
                 <button class="tab" onclick="switchTab('profile', event)">Global Profiler</button>
                 <button class="tab" onclick="switchTab('query-profile', event)">Query Profiler</button>
+                <button class="tab" onclick="switchTab('fragmentation', event)">Fragmentation</button>
                 <button class="tab" onclick="switchTab('raw', event)">Raw Output</button>
             </div>
             <div id="tab-summary" class="tab-content active">
@@ -513,6 +514,12 @@
                     <div id="query-profile-stats"></div>
                 </div>
             </div>
+            <div id="tab-fragmentation" class="tab-content">
+                <div class="section">
+                    <div class="section-title">Fragmentation</div>
+                    <div id="fragmentation-stats"></div>
+                </div>
+            </div>
             <div id="tab-raw" class="tab-content">
                 <div class="section">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -536,6 +543,8 @@
             document.querySelector('.connection-params').style.display = 'none';
             document.querySelector('[onclick*="query-profile"]').style.display = 'none';
             document.getElementById('tab-query-profile').style.display = 'none';
+            document.querySelector('[onclick*="fragmentation"]').style.display = 'none';
+            document.getElementById('tab-fragmentation').style.display = 'none';
             const autoRefreshLabel = document.querySelector('label[for="refresh-interval"]');
             if (autoRefreshLabel) autoRefreshLabel.parentElement.style.display = 'none';
         }
@@ -2652,6 +2661,291 @@ SETTINGS jemalloc_enable_profiler = 1,
             }
         }
 
+        function renderFragmentationStats() {
+            const container = document.getElementById('fragmentation-stats');
+            container.innerHTML = `
+                <div class="metric-card">
+                    <div class="metric-label">Slab Fragmentation</div>
+                    <p style="margin-top: 1rem; font-size: 0.9rem; line-height: 1.6;">
+                        A slab cannot be freed while even one of its allocations is live, so a few long-lived
+                        small allocations can pin slabs full of free regions. Waste is measured per (arena, size class) from
+                        <code>system.jemalloc_arena_bins</code>; the long-lived allocations likely holding it
+                        are estimated from profiler samples (<code>system.jemalloc_sampled_allocations</code>).
+                    </p>
+                </div>
+                <div style="margin-top: 1.5rem; display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap;">
+                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                        <label for="frag-min-age" style="font-size: 0.85rem; font-weight: 600; color: var(--color);">Min allocation age (seconds)</label>
+                        <input type="number" id="frag-min-age" value="60" min="0" style="padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-background); color: var(--color); font-size: 0.9rem; font-family: monospace; width: 12rem;">
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                        <label for="frag-min-waste" style="font-size: 0.85rem; font-weight: 600; color: var(--color);">Min class waste (MiB)</label>
+                        <input type="number" id="frag-min-waste" value="1" min="0" style="padding: 0.5rem 0.75rem; border: 1px solid var(--border-color); border-radius: 4px; background: var(--card-background); color: var(--color); font-size: 0.9rem; font-family: monospace; width: 12rem;">
+                    </div>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; height: 38px; font-size: 0.85rem; color: var(--color); cursor: pointer;">
+                        <input type="checkbox" id="frag-exclude-dedicated" checked>
+                        Exclude dedicated long-lived arenas (MergeTree metadata, JIT, caches)
+                    </label>
+                    <button id="frag-report-btn" class="btn btn-primary" onclick="getFragmentationReport()" style="padding: 0.5rem 1.5rem; height: 38px;">Analyze</button>
+                    <button id="frag-flamegraph-btn" class="btn btn-secondary" onclick="getFragmentationFlameGraph()" style="padding: 0.5rem 1.5rem; height: 38px;">Flame Graph</button>
+                </div>
+                <div id="frag-summary-result" style="margin-top: 1.5rem;"></div>
+                <div id="frag-waste-result" style="margin-top: 1.5rem;"></div>
+                <div id="frag-pinners-result" style="margin-top: 1.5rem;"></div>
+                <div id="frag-flamegraph-result" style="margin-top: 1.5rem;"></div>
+            `;
+        }
+
+        function fragmentationParams() {
+            const minAgeNs = Math.max(0, Number(document.getElementById('frag-min-age').value) || 0) * 1e9;
+            /// Floor of one byte: zero would admit empty bins (waste 0, util 0/0 = nan).
+            const minWaste = Math.max(1, (Number(document.getElementById('frag-min-waste').value) || 0) * 1048576);
+            const excludeDedicated = document.getElementById('frag-exclude-dedicated').checked;
+            const purposeCond = excludeDedicated ? ` AND purpose = ''` : '';
+            return { minAgeNs, minWaste, excludeDedicated, purposeCond };
+        }
+
+        /// Estimated live sampled allocations per (arena, size class, stack), unbiased by `weight`.
+        function fragmentationPinnersSubquery(minAgeNs) {
+            return `SELECT arena, size_class, sum(weight) AS est_old_objects, arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack FROM system.jemalloc_sampled_allocations WHERE age_ns > ${minAgeNs} GROUP BY arena, size_class, trace`;
+        }
+
+        /// (arena, size class) cells that have at least one old-enough sample; waste in other
+        /// cells cannot be attributed to a stack.
+        function fragmentationCoveredCellsSubquery(minAgeNs) {
+            return `SELECT DISTINCT arena, size_class FROM system.jemalloc_sampled_allocations WHERE age_ns > ${minAgeNs}`;
+        }
+
+        async function renderFragmentationSummary(minAgeNs, minWaste, purposeCond) {
+            const summaryDiv = document.getElementById('frag-summary-result');
+            /// One scan of the bins table per query so each group of terms comes from one
+            /// stats snapshot. The breakdown is process-wide (active - allocated only
+            /// exists globally) and needs no profiler; the coverage terms flush a heap
+            /// profile and use the same filters as the tables and the flame graph below.
+            const breakdownQuery = `SELECT
+                (SELECT sumIf(value, metric = 'jemalloc.active') - sumIf(value, metric = 'jemalloc.allocated') FROM system.asynchronous_metrics WHERE metric IN ('jemalloc.active', 'jemalloc.allocated')) AS active_minus_allocated,
+                sumIf(waste, NOT large) AS slab_waste,
+                sumIf(waste, NOT large AND purpose != '') AS slab_waste_dedicated,
+                sumIf(greatest(allocations - deallocations - curregs, 0), NOT large) AS live_promoted,
+                greatest(sumIf(allocations - deallocations, large), 0) AS live_large,
+                minIf(slab_size, NOT large) AS page_size
+                FROM system.jemalloc_arena_bins`;
+            const response = await fetch(buildUrl(breakdownQuery), fetchOptions);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            const [activeMinusAllocated, slabWaste, slabWasteDedicated, livePromoted, liveLarge, pageSize] = (await response.text()).trim().split('\t').map(Number);
+            /// A sampled small allocation is served from its own extent: one page for the
+            /// allocation plus one page of cache-oblivious padding (jemalloc default).
+            /// Regular large allocations carry the same one-page padding.
+            const samplingOverhead = livePromoted * 2 * pageSize;
+            const largePadding = liveLarge * pageSize;
+            const skew = Math.max(0, activeMinusAllocated - slabWaste - samplingOverhead - largePadding);
+            summaryDiv.innerHTML = `
+                <div class="metric-card">
+                    <div class="metric-label">Waste Breakdown</div>
+                    <p style="margin-top: 0.75rem; font-size: 0.9rem; line-height: 1.8; font-family: monospace;">
+                        active &minus; allocated (the Summary "fragmentation"): <b>${formatBytes(activeMinusAllocated)}</b><br>
+                        &nbsp;&nbsp;&#9500;&#9472; slab waste (all arenas and size classes): <b>${formatBytes(slabWaste)}</b> (${formatBytes(slabWasteDedicated)} in dedicated arenas)<br>
+                        &nbsp;&nbsp;&#9500;&#9472; profiler sampling overhead: <b>${formatBytes(samplingOverhead)}</b> &mdash; ${formatNumber(livePromoted)} live samples &times; 2&times;${formatBytes(pageSize)} (page + cache-oblivious pad); after disarming the profiler it drains only as the sampled allocations are freed<br>
+                        &nbsp;&nbsp;&#9500;&#9472; large-allocation padding: <b>${formatBytes(largePadding)}</b> &mdash; ${formatNumber(liveLarge)} live large allocations &times; one page (cache-oblivious)<br>
+                        &nbsp;&nbsp;&#9492;&#9472; remainder: <b>${formatBytes(skew)}</b> &mdash; skew between stats snapshots (the terms above are read at different moments)
+                    </p>
+                    <p id="frag-coverage" style="margin-top: 0.5rem; font-size: 0.85rem; line-height: 1.6;">Computing sampling coverage...</p>
+                </div>
+            `;
+
+            /// Reading the sampled allocations flushes a heap profile, which fails when
+            /// the profiler is unavailable; keep that failure out of the breakdown above.
+            const coverageP = document.getElementById('frag-coverage');
+            try {
+                const filterCond = `waste >= ${minWaste}${purposeCond}`;
+                const coverageQuery = `SELECT
+                    sumIf(waste, ${filterCond}) AS slab_waste_selected,
+                    sumIf(waste, ${filterCond} AND (arena, index) IN (${fragmentationCoveredCellsSubquery(minAgeNs)})) AS slab_waste_covered
+                    FROM system.jemalloc_arena_bins WHERE NOT large`;
+                const coverageResponse = await fetch(buildUrl(coverageQuery), fetchOptions);
+                if (!coverageResponse.ok) {
+                    throw new Error(`HTTP ${coverageResponse.status}: ${coverageResponse.statusText}`);
+                }
+                const [slabWasteSelected, slabWasteCovered] = (await coverageResponse.text()).trim().split('\t').map(Number);
+                const coverage = slabWasteSelected > 0 ? (100 * slabWasteCovered / slabWasteSelected).toFixed(0) : '0';
+                coverageP.innerHTML = `
+                    The filters above select <b>${formatBytes(slabWasteSelected)}</b> of the slab waste; sampling covers
+                    <b>${formatBytes(slabWasteCovered)}</b> of that (${coverage}%): size classes without an old-enough sample
+                    appear as <code>[unattributed]</code> in the flame graph and are absent from the stacks table.
+                    Lower <code>jemalloc_profiler_sampling_rate</code> for better coverage &mdash; at the price of
+                    sampling overhead, which grows with the number of live samples.
+                `;
+            } catch (error) {
+                console.error('Error computing sampling coverage:', error);
+                coverageP.innerHTML = `<span class="error">Cannot compute sampling coverage: ${escapeHtml(error.message)}</span>`;
+            }
+        }
+
+        function renderFragStackCell(stack) {
+            const frames = stack.split(';');
+            const full = frames.map(escapeHtml).join('\n');
+            return `<details><summary style="cursor: pointer; font-family: monospace; font-size: 0.8rem;">${escapeHtml(frames.slice(-3).reverse().join(' <- '))}</summary><pre style="font-size: 0.75rem; overflow-x: auto; margin-top: 0.5rem;">${full}</pre></details>`;
+        }
+
+        async function getFragmentationReport() {
+            readConnectionParams();
+            const button = document.getElementById('frag-report-btn');
+            const wasteDiv = document.getElementById('frag-waste-result');
+            const pinnersDiv = document.getElementById('frag-pinners-result');
+            const { minAgeNs, minWaste, excludeDedicated, purposeCond } = fragmentationParams();
+
+            button.disabled = true;
+            button.textContent = 'Analyzing...';
+            wasteDiv.innerHTML = '<p>Fetching per-arena waste...</p>';
+            pinnersDiv.innerHTML = '';
+
+            try {
+                /// A summary failure must not suppress the profiler-independent waste
+                /// table below.
+                try {
+                    await renderFragmentationSummary(minAgeNs, minWaste, purposeCond);
+                } catch (error) {
+                    console.error('Error building fragmentation summary:', error);
+                    document.getElementById('frag-summary-result').innerHTML = `<div class="error">Error: ${escapeHtml(error.message)}</div>`;
+                }
+
+                const wasteQuery = `SELECT arena, purpose, size, curslabs, curregs, round(util, 3) AS util, waste FROM system.jemalloc_arena_bins WHERE NOT large AND waste >= ${minWaste}${purposeCond} ORDER BY waste DESC LIMIT 100`;
+                const wasteResponse = await fetch(buildUrl(wasteQuery), fetchOptions);
+                if (!wasteResponse.ok) {
+                    throw new Error(`HTTP ${wasteResponse.status}: ${wasteResponse.statusText}`);
+                }
+                const wasteText = (await wasteResponse.text()).trim();
+
+                if (!wasteText) {
+                    wasteDiv.innerHTML = `<div class="metric-card">No small size class wastes more than ${formatBytes(minWaste)}${excludeDedicated ? ' outside the dedicated arenas' : ''}.</div>`;
+                    return;
+                }
+
+                const wasteData = wasteText.split('\n').map((line, i) => {
+                    const r = line.split('\t');
+                    return { _idx: i, arena: Number(r[0]), purpose: r[1], size: Number(r[2]), curslabs: Number(r[3]), curregs: Number(r[4]), util: Number(r[5]), waste: Number(r[6]) };
+                });
+                _tableData['frag-waste-table'] = wasteData;
+                const shownWaste = wasteData.reduce((sum, row) => sum + row.waste, 0);
+                wasteDiv.innerHTML = `
+                    <div class="section-title">Waste by (arena, size class)</div>
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <table id="frag-waste-table">
+                            <thead style="position: sticky; top: 0; background: var(--table-header-bg); z-index: 10;">
+                                <tr>
+                                    ${makeSortableTh('Arena', 'arena', 'frag-waste-table')}
+                                    ${makeSortableTh('Purpose', 'purpose', 'frag-waste-table', '')}
+                                    ${makeSortableTh('Class size', 'size', 'frag-waste-table')}
+                                    ${makeSortableTh('Curslabs', 'curslabs', 'frag-waste-table')}
+                                    ${makeSortableTh('Curregs', 'curregs', 'frag-waste-table')}
+                                    ${makeSortableTh('Util', 'util', 'frag-waste-table')}
+                                    ${makeSortableTh('Waste', 'waste', 'frag-waste-table')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${applySortToData('frag-waste-table', wasteData).map(row => `<tr data-idx="${row._idx}"><td class="number">${row.arena}</td><td>${escapeHtml(row.purpose)}</td><td class="number">${formatBytes(row.size)}</td><td class="number">${formatNumber(row.curslabs)}</td><td class="number">${formatNumber(row.curregs)}</td><td class="number">${row.util}</td><td class="number">${formatBytes(row.waste)}</td></tr>`).join('')}
+                            </tbody>
+                            <tfoot>
+                                <tr style="font-weight: 600;"><td colspan="6">Total (${wasteData.length} rows shown)</td><td class="number">${formatBytes(shownWaste)}</td></tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                `;
+
+                /// The attribution query needs the profiler; its failure must leave the
+                /// already-rendered waste table intact.
+                try {
+                    pinnersDiv.innerHTML = '<p>Attributing stacks...</p>';
+                    const pinnerQuery = `SELECT b.arena, b.size, b.waste, round(s.est_old_objects) AS est_old_objects, s.stack FROM system.jemalloc_arena_bins AS b INNER JOIN (${fragmentationPinnersSubquery(minAgeNs)}) AS s ON s.size_class = b.index AND s.arena = b.arena WHERE b.large = 0 AND b.waste >= ${minWaste}${purposeCond} ORDER BY b.waste DESC, s.est_old_objects DESC LIMIT 100 SETTINGS allow_introspection_functions = 1`;
+                    const pinnerResponse = await fetch(buildUrl(pinnerQuery), fetchOptions);
+                    if (!pinnerResponse.ok) {
+                        throw new Error(`HTTP ${pinnerResponse.status}: ${pinnerResponse.statusText}`);
+                    }
+                    const pinnerText = (await pinnerResponse.text()).trim();
+
+                    if (!pinnerText) {
+                        pinnersDiv.innerHTML = `<div class="metric-card">No sampled allocations older than the minimum age in the wasteful size classes. Run the suspected workload with <code>jemalloc_enable_profiler = 1</code> (or enable the global profiler) and keep it running long enough to age.</div>`;
+                        return;
+                    }
+
+                    const pinnerData = pinnerText.split('\n').map((line, i) => {
+                        const r = line.split('\t');
+                        return { _idx: i, arena: Number(r[0]), size: Number(r[1]), waste: Number(r[2]), objects: Number(r[3]), stack: r.slice(4).join('\t') };
+                    });
+                    _tableData['frag-pinner-table'] = pinnerData;
+                    pinnersDiv.innerHTML = `
+                        <div class="section-title">Long-lived allocations in the wasteful size classes (likely holding the slabs)</div>
+                        <table id="frag-pinner-table">
+                            <thead>
+                                <tr>
+                                    ${makeSortableTh('Arena', 'arena', 'frag-pinner-table')}
+                                    ${makeSortableTh('Class size', 'size', 'frag-pinner-table')}
+                                    ${makeSortableTh('Class waste', 'waste', 'frag-pinner-table')}
+                                    ${makeSortableTh('Est. old objects', 'objects', 'frag-pinner-table')}
+                                    <th>Stack (leaf first, expand for full)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${applySortToData('frag-pinner-table', pinnerData).map(row => `<tr data-idx="${row._idx}"><td class="number">${row.arena}</td><td class="number">${formatBytes(row.size)}</td><td class="number">${formatBytes(row.waste)}</td><td class="number">${formatNumber(row.objects)}</td><td>${renderFragStackCell(row.stack)}</td></tr>`).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                } catch (error) {
+                    console.error('Error attributing stacks:', error);
+                    pinnersDiv.innerHTML = `<div class="error">Error: ${escapeHtml(error.message)}</div>`;
+                }
+            } catch (error) {
+                console.error('Error building fragmentation report:', error);
+                wasteDiv.innerHTML = `<div class="error">Error: ${escapeHtml(error.message)}</div>`;
+                pinnersDiv.innerHTML = '';
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Analyze';
+            }
+        }
+
+        async function getFragmentationFlameGraph() {
+            readConnectionParams();
+            const button = document.getElementById('frag-flamegraph-btn');
+            const resultDiv = document.getElementById('frag-flamegraph-result');
+            const { minAgeNs, minWaste, excludeDedicated, purposeCond } = fragmentationParams();
+
+            button.disabled = true;
+            button.textContent = 'Building...';
+
+            try {
+                /// Each stack weighted by its estimated share of the (arena, size class) waste;
+                /// cells the LEFT JOIN misses (no old-enough sample) are emitted as [unattributed]
+                /// so the flame graph totals the full slab waste instead of silently dropping it.
+                /// Both branches must come from the same scan of the sampled allocations: every
+                /// scan flushes a fresh profile dump, so two independent subqueries could observe
+                /// different dumps and double-count or drop a cell.
+                const query = `SELECT format('{} {}', if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))), toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste)))) FROM system.jemalloc_arena_bins AS b LEFT JOIN (${fragmentationPinnersSubquery(minAgeNs)}) AS s ON s.size_class = b.index AND s.arena = b.arena WHERE b.large = 0 AND b.waste >= ${minWaste}${purposeCond} SETTINGS allow_introspection_functions = 1`;
+                const response = await fetch(buildUrl(query), fetchOptions);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const collapsedData = (await response.text()).trim();
+
+                if (!collapsedData) {
+                    resultDiv.innerHTML = `<div class="error" style="margin-top: 1rem;">No small size class wastes more than ${formatBytes(minWaste)}${excludeDedicated ? ' outside the dedicated arenas' : ''}.</div>`;
+                    return;
+                }
+
+                const lines = collapsedData.split('\n');
+                const flameGraphOnclick = `downloadFlameGraphFromProfile('frag-flamegraph-result', 'fragmentation-flamegraph', 'waste bytes')`;
+                renderProfileOutputCard('frag-flamegraph-result', 'Slab Waste (Collapsed)', lines, 'Collapsed', flameGraphOnclick, 'fragmentation');
+            } catch (error) {
+                console.error('Error building fragmentation flame graph:', error);
+                resultDiv.innerHTML = `<div class="error" style="margin-top: 1rem;">Error: ${escapeHtml(error.message)}</div>`;
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Flame Graph';
+            }
+        }
+
         async function loadStats(isManualRefresh = false) {
             if (!isKeeper) readConnectionParams();
             const loading = document.getElementById('loading');
@@ -2684,7 +2978,10 @@ SETTINGS jemalloc_enable_profiler = 1,
                 renderOperationsStats(stats.raw);
                 if (isFirstLoad || isManualRefresh) {
                     renderProfileStats();
-                    if (!isKeeper) renderQueryProfileStats();
+                    if (!isKeeper) {
+                        renderQueryProfileStats();
+                        renderFragmentationStats();
+                    }
                 }
                 const rawStatsEl = document.getElementById('raw-stats');
                 rawStatsEl.textContent = stats.raw.replace(/\\n/g, '\n');
