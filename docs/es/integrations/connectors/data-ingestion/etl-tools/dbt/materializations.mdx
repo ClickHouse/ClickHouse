@@ -332,28 +332,20 @@ costosa y lenta.
   #### La estrategia Delete+Insert
 </div>
 
-ClickHouse añadió las &quot;eliminaciones ligeras&quot; como una funcionalidad experimental en la versión 22.8. Las eliminaciones ligeras son significativamente
-más rápidas que las operaciones
-ALTER TABLE ... DELETE
-porque no requieren reescribir las partes de datos de ClickHouse. La estrategia incremental `delete+insert`
-utiliza eliminaciones ligeras para implementar
-materializaciones incrementales con un rendimiento significativamente mejor que la estrategia &quot;heredada&quot;. Sin embargo, hay advertencias importantes
-al usar esta estrategia:
+La estrategia `delete+insert` utiliza [eliminaciones ligeras](/es/concepts/features/operations/delete/lightweight-delete) para eliminar las filas afectadas y después inserta las nuevas. Como no copia toda la tabla, ofrece un rendimiento significativamente superior al de la estrategia «heredado». Al configurar `use_lw_deletes: true` en el perfil, `delete+insert` se convierte en la estrategia incremental predeterminada.
 
-* Las eliminaciones ligeras deben estar habilitadas en tu servidor de ClickHouse mediante la configuración
-  `allow_experimental_lightweight_delete=1`, o
-  debes establecer `use_lw_deletes=true` en tu perfil (lo que habilitará esa configuración para tus sesiones de dbt)
-* Las eliminaciones ligeras ya están listas para producción, pero puede haber problemas de rendimiento y de otro tipo en versiones de ClickHouse
-  anteriores a la 23.3.
-* Esta estrategia opera directamente sobre la tabla/relación afectada (sin crear tablas intermedias ni temporales),
-  por lo que, si surge algún problema durante la operación, es
-  probable que los datos del modelo incremental queden en un estado no válido
-* Al usar eliminaciones ligeras, dbt-clickhouse habilita la configuración `allow_nondeterministic_mutations`. En algunos casos
-  muy raros, al usar incremental&#95;predicates no deterministas,
-  esto podría dar lugar a una condición de carrera para los elementos actualizados/eliminados (y a los mensajes de log relacionados en los logs de ClickHouse).
-  Para garantizar resultados coherentes, los
-  predicados incrementales solo deben incluir subconsultas sobre datos que no se modificarán durante la materialización
-  incremental.
+Hay consideraciones importantes al utilizar esta estrategia:
+
+* Opera directamente sobre la tabla afectada sin crear tablas intermedias ni temporales, por lo que, si se produce un
+  issue durante la operación, es probable que los datos del modelo incremental queden en un estado no válido.
+* Requiere el ajuste de ClickHouse `allow_nondeterministic_mutations`. El adaptador lo habilita automáticamente para sus
+  propias sesiones siempre que sea posible. Cuando no puede habilitarse (por ejemplo, porque es de solo lectura para tu usuario de dbt), el comportamiento
+  depende de cómo se haya elegido la estrategia: los modelos que dependen de la estrategia predeterminada recurren silenciosamente a la estrategia
+  heredado, los modelos que configuran explícitamente `delete+insert` o `microbatch` fallan en tiempo de ejecución y `use_lw_deletes: true` en
+  el perfil falla al establecer la conexión.
+* En casos muy poco frecuentes, el uso de `incremental_predicates` no deterministas podría provocar una condición de carrera en los
+  elementos actualizados o eliminados. Para garantizar resultados coherentes, los predicados incrementales solo deben incluir subconsultas sobre
+  datos que no se modificarán durante la materialización incremental.
 
 <div id="microbatch-strategy">
   #### La estrategia Microbatch (requiere dbt-core &gt;= 1.9)
@@ -428,10 +420,73 @@ Dado su alcance, esta materialización tiene su propia página dedicada. **[Ve a
   ## Materialización: diccionario (experimental)
 </div>
 
-Consulte las pruebas
-en https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test&#95;dictionary.py para ver
-ejemplos de cómo
-implementar materializaciones para diccionarios de ClickHouse
+Un modelo de dbt puede crearse como un [diccionario](/es/concepts/features/dictionaries/index) de ClickHouse. En cada `dbt run`, el diccionario se reemplaza por la definición actual del modelo mediante `CREATE OR REPLACE DICTIONARY`.
+
+<div id="incremental-configurations">
+  ### Configuraciones
+</div>
+
+| Opción                 | Descripción                                                                                                                                                                                                                                                                                        | Obligatorio    |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `fields`               | La estructura del diccionario, como una lista de pares `(name, type)`.                                                                                                                                                                                                                             | Sí             |
+| `primary_key`          | La clave primaria del diccionario. Debe coincidir con el tipo de clave que espera el diseño seleccionado (por ejemplo, una clave compleja para los diseños `COMPLEX_KEY_*`).                                                                                                                       | Sí             |
+| `layout`               | El [diseño](/es/reference/statements/create/dictionary/layouts/overview) utilizado para almacenar el diccionario en memoria, como `HASHED()`, `COMPLEX_KEY_HASHED()` o `DIRECT()`.                                                                                                                    | Sí             |
+| `source_type`          | De dónde obtiene el diccionario sus datos: `clickhouse` (predeterminado; usa el SQL del modelo o la opción `table`) o `http`.                                                                                                                                                                      |                |
+| `lifetime`             | La cláusula [`LIFETIME`](/es/reference/statements/create/dictionary/lifetime) que controla la frecuencia de actualización del diccionario, por ejemplo, `MIN 0 MAX 300`. Es opcional desde dbt-clickhouse 1.10.0; omítala para diseños que no la utilizan, como `DIRECT()`.                           |                |
+| `table`                | Solo para la fuente `clickhouse`. Lee de una tabla existente en lugar del SQL del modelo.                                                                                                                                                                                                          |                |
+| `update_field`         | Solo para la fuente `clickhouse`. Actualiza el diccionario de forma incremental obteniendo solo las filas cuyo valor en esta columna haya cambiado desde la actualización anterior. Consulte [LIFETIME](/es/reference/statements/create/dictionary/lifetime). Disponible desde dbt-clickhouse 1.10.0. |                |
+| `update_lag`           | Solo para la fuente `clickhouse`. Número de segundos que se restan de la hora de la actualización anterior al usar `update_field`, para tener en cuenta las actualizaciones tardías. Disponible desde dbt-clickhouse 1.10.0.                                                                       |                |
+| `connection_overrides` | Solo para la fuente `clickhouse`. Sobrescrituras de las credenciales utilizadas en la cláusula `SOURCE` del diccionario, por ejemplo, `{'user': 'dictionary_reader'}`.                                                                                                                             |                |
+| `url`, `format`        | Solo para la fuente `http`. La URL del archivo de origen y su formato de entrada.                                                                                                                                                                                                                  | Sí para `http` |
+| `range`                | La cláusula `RANGE` para diseños `RANGE_HASHED()`, por ejemplo, `'min start max stop'`.                                                                                                                                                                                                            |                |
+
+<div id="dictionary-clickhouse-source-example">
+  ### Ejemplo con una fuente de ClickHouse
+</div>
+
+El SQL del modelo se convierte en la consulta de la fuente del diccionario:
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('id', 'UInt64'),
+           ('name', 'String'),
+       ],
+       primary_key='id',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 300'
+) }}
+
+select id, name from {{ source('raw', 'people') }}
+```
+
+<div id="dictionary-http-source-example">
+  ### Ejemplo con una fuente HTTP
+</div>
+
+Al usar `source_type='http'` (o la opción `table`), el SQL del modelo no se utiliza como fuente, pero dbt sigue requiriendo un cuerpo; use `select 1` como marcador de posición:
+
+```sql
+{{ config(
+       materialized='dictionary',
+       fields=[
+           ('LocationID', 'UInt16 DEFAULT 0'),
+           ('Borough', 'String'),
+           ('Zone', 'String'),
+       ],
+       primary_key='LocationID',
+       layout='HASHED()',
+       lifetime='MIN 0 MAX 0',
+       source_type='http',
+       url='https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv',
+       format='CSVWithNames'
+) }}
+
+select 1
+```
+
+Consulta las [pruebas de diccionarios](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/dictionary/test_dictionary.py) para ver más ejemplos, incluidos los diccionarios de tipo range y direct.
 
 <div id="materialization-distributed-table">
   ## Materialización: distributed_table (experimental)

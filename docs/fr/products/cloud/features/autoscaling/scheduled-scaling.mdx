@@ -7,18 +7,18 @@ title: 'Scheduled scaling'
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
 Les services ClickHouse Cloud s’adaptent automatiquement en fonction de l’utilisation du CPU et de la mémoire, mais de nombreuses charges de travail suivent des schémas prévisibles : pics quotidiens d’ingestion, traitements par lots exécutés la nuit ou trafic en forte baisse le week-end. Pour ces cas d’usage, Scheduled Scaling vous permet de définir précisément quand votre service doit augmenter ou réduire sa capacité, indépendamment des métriques en temps réel.
 
-Avec Scheduled Scaling, vous configurez directement dans la console ClickHouse Cloud un ensemble de règles basées sur le temps. Chaque règle spécifie une heure, une récurrence (quotidienne, hebdomadaire ou personnalisée) et la taille cible — soit le nombre de réplicas (horizontal), soit le palier mémoire (vertical). À l’heure planifiée, ClickHouse Cloud applique automatiquement le changement afin que votre service soit correctement dimensionné avant l’arrivée de la demande, plutôt que de réagir après coup.
+Avec Scheduled Scaling, vous configurez directement dans la console ClickHouse Cloud un ensemble de règles basées sur le temps. Chaque règle spécifie les jours où elle est active, une heure de début et de fin en UTC, ainsi que les paramètres à appliquer pendant cette période : le nombre de réplicas (horizontal), la mémoire minimale et maximale par réplique (vertical) et si le service peut rester inactif. Pendant que cette période est active, ClickHouse Cloud applique ces paramètres, puis revient à votre configuration de mise à l’échelle par défaut lorsqu’elle prend fin afin que votre service soit correctement dimensionné avant l’arrivée de la demande, plutôt que de réagir après coup.
 
-Cela se distingue de l’autoscaling basé sur les métriques, qui réagit dynamiquement à la pression sur le CPU et la mémoire. Scheduled Scaling est déterministe : vous savez exactement quand la mise à l’échelle aura lieu et à quelle taille. Les deux approches sont complémentaires — un service peut avoir une planification de mise à l’échelle de référence tout en bénéficiant de l’autoscaling dans cette plage si les charges de travail fluctuent de manière inattendue.
+Cela se distingue de l’autoscaling basé sur les métriques, qui réagit dynamiquement à la pression sur le CPU et la mémoire. Scheduled Scaling est déterministe : vous savez exactement quand la mise à l’échelle aura lieu et à quelle taille. Les deux approches sont complémentaires — un service peut avoir une planification de mise à l’échelle de référence tout en bénéficiant de l’autoscaling dans cette période si les charges de travail fluctuent de manière inattendue.
 
-Scheduled Scaling est actuellement disponible en **Private Preview**. Pour l’activer pour votre organisation, contactez l’équipe de support ClickHouse.
+Scheduled Scaling est actuellement disponible en **Beta**.
 
 <div id="setting-up-a-scaling-schedule">
   ## Configurer une planification de mise à l’échelle
@@ -32,11 +32,11 @@ Pour configurer une planification, accédez à votre service dans la console Cli
 
 Chaque règle nécessite :
 
-* **Heure :** heure à laquelle l’action de mise à l’échelle doit avoir lieu (dans votre fuseau horaire local)
-* **Récurrence :** fréquence de répétition de la règle (par ex. chaque jour ouvré, chaque dimanche)
-* **Taille cible :** nombre de réplicas ou quantité de mémoire à atteindre
+* **Jours actifs :** les jours de la semaine auxquels la règle s’applique
+* **Heure de début et de fin :** la période pendant laquelle la règle s’applique, indiquée en **UTC** et sur des heures entières. Une période dont l’heure de fin est antérieure à l’heure de début se prolonge pendant la nuit jusqu’au jour suivant
+* **Paramètres à appliquer :** le nombre de réplicas, la mémoire minimale et maximale par réplique, ainsi que la durée minimale d’inactivité (ou l’absence de mise en veille) à utiliser lorsque la période est active
 
-Plusieurs règles peuvent être combinées pour former une planification hebdomadaire complète. Par exemple, vous pouvez passer à 5 réplicas chaque jour ouvré à 6 h, puis revenir à 2 réplicas à 20 h.
+Plusieurs règles peuvent être combinées pour former une planification hebdomadaire complète, à condition que leurs périodes ne se chevauchent pas. Par exemple, une seule règle couvrant du lundi au vendredi, de 06:00 à 20:00 UTC, peut maintenir votre service à une taille plus importante pendant la journée de travail, votre configuration par défaut s’appliquant en dehors de cette période.
 
 <div id="use-cases">
   ## Cas d’usage

@@ -8,6 +8,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
+#include <Functions/h3GeometryToCells.h>
 #include <Functions/IFunction.h>
 
 #include <boost/geometry.hpp>
@@ -16,17 +17,13 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionHelpers.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
-#include <Common/CurrentThread.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <constants.h>
 #include <h3api.h>
-
-static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
 
 namespace DB
 {
@@ -34,29 +31,11 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int ILLEGAL_COLUMN;
-    extern const int QUERY_WAS_CANCELLED;
-    extern const int INCORRECT_DATA;
 }
 
 namespace
 {
-
-SphericalPointInRadians toRadianPoint(const SphericalPoint & degree_point)
-{
-    Float64 lon = get<0>(degree_point) * M_PI / 180.0;
-    Float64 lat = get<1>(degree_point) * M_PI / 180.0;
-    return SphericalPointInRadians(lon, lat);
-}
-
-LatLng toH3LatLng(const SphericalPointInRadians & point)
-{
-    LatLng result;
-    result.lat = point.get<1>();
-    result.lng = point.get<0>();
-    return result;
-}
 
 [[noreturn]] void throwInvalidContainmentFlag(Int64 flags, std::string_view function_name)
 {
@@ -103,11 +82,11 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        /// Resolved from the executing thread rather than captured: this instance can be stored in table
-        /// metadata and then run by any later query.
-        QueryStatusPtr process_list_element;
-        if (auto query_context = CurrentThread::tryGetQueryContext())
-            process_list_element = query_context->getProcessListElementSafe();
+        /// One polygon can expand to hundreds of millions of cells, so the executor's between-blocks check
+        /// cannot bound this call. Resolved from the executing thread rather than captured: this instance
+        /// can be stored in table metadata and then run by any later query.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
 
         const bool is_const_geometry = isColumnConst(*arguments[0].column);
 
@@ -144,7 +123,7 @@ public:
                     toString(MAX_H3_RES));
         }
 
-        /// H3 polygonToCellsExperimental expects uint32_t flags.
+        /// H3's containment mode is a `uint32_t` flag mask.
         /// Fast path: UInt8 literals (0..3) and UInt32 columns; otherwise cast to Int64 and validate 0..3.
         /// All flag values are validated before geometry conversion.
         auto col_flags_materialized = arguments[2].column->convertToFullColumnIfConst();
@@ -189,9 +168,6 @@ public:
         auto & dst_data = *dst_data_column;
         auto & dst_offsets = dst_offsets_column->getData();
 
-        size_t current_offset = 0;
-
-
         callOnGeometryDataType<SphericalPoint>(arguments[0].type, [&] (const auto & type)
         {
             using TypeConverter = std::decay_t<decltype(type)>;
@@ -230,8 +206,6 @@ public:
             if (is_const_geometry)
                 const_multi_polygon = to_multi_polygon(std::move(geometries[0]));
 
-            VectorWithMemoryTracking<H3Index> hindex_vec;
-
             for (size_t row = 0; row < input_rows_count; ++row)
             {
                 const UInt8 resolution = data_resolution[row];
@@ -247,114 +221,13 @@ public:
                 const SphericalMultiPolygon & multi_polygon =
                     is_const_geometry ? const_multi_polygon : row_multi_polygon;
 
-                if (process_list_element && process_list_element->isKilled())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
-
-                const size_t row_start_offset = current_offset;
-                for (const auto & polygon : multi_polygon)
-                {
-                    VectorWithMemoryTracking<LatLng> exterior;
-                    exterior.reserve(polygon.outer().size());
-                    for (const auto & point : polygon.outer())
-                        exterior.push_back(toH3LatLng(toRadianPoint(point)));
-
-                    VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holes;
-                    holes.reserve(polygon.inners().size());
-                    for (const auto & inner : polygon.inners())
-                    {
-                        VectorWithMemoryTracking<LatLng> hole;
-                        hole.reserve(inner.size());
-                        for (const auto & point : inner)
-                            hole.push_back(toH3LatLng(toRadianPoint(point)));
-                        holes.emplace_back(std::move(hole));
-                    }
-
-                    GeoPolygonContainer polygon_wrapper(std::move(exterior), std::move(holes));
-
-                    int64_t polygon_size = 0;
-                    H3Error size_err = maxPolygonToCellsSizeExperimental(
-                        polygon_wrapper.unwrap(), resolution, flags, &polygon_size);
-                    if (size_err != E_SUCCESS)
-                        throw Exception(ErrorCodes::INCORRECT_DATA,
-                            "Failed to estimate H3 polygon to cells size in function {}: {}",
-                            getName(), describeH3Error(size_err));
-
-                    const size_t vec_size = static_cast<size_t>(polygon_size);
-                    const size_t row_size_so_far = current_offset - row_start_offset;
-                    if (vec_size > MAX_ARRAY_SIZE || row_size_so_far + vec_size > MAX_ARRAY_SIZE)
-                        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                            "The result of function {} (array of {} elements) will be too large with resolution = {}",
-                            getName(), row_size_so_far + vec_size, toString(resolution));
-
-                    hindex_vec.assign(vec_size, 0);
-                    H3Error fill_err = polygonToCellsExperimental(
-                        polygon_wrapper.unwrap(),
-                        resolution,
-                        flags,
-                        static_cast<int64_t>(vec_size),
-                        hindex_vec.data());
-                    if (fill_err != E_SUCCESS)
-                        throw Exception(ErrorCodes::INCORRECT_DATA,
-                            "Failed to compute H3 polygon to cells in function {}: {}",
-                            getName(), describeH3Error(fill_err));
-
-                    /// Go through PODArray::reserve: it grows capacity geometrically, IColumn::reserve sizes it exactly.
-                    dst_data.getData().reserve(dst_data.size() + vec_size);
-                    for (auto hindex : hindex_vec)
-                    {
-                        if (hindex != 0)
-                        {
-                            ++current_offset;
-                            dst_data.insert(hindex);
-                        }
-                    }
-                }
-
-                if (current_offset - row_start_offset > MAX_ARRAY_SIZE)
-                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
-                        "The result of function {} (array of {} elements) will be too large with resolution = {}",
-                        getName(), current_offset - row_start_offset, toString(resolution));
-
-                dst_offsets[row] = current_offset;
+                appendH3Cells(multi_polygon, resolution, flags, function_name, budget, dst_data);
+                dst_offsets[row] = dst_data.size();
             }
         });
 
         return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
     }
-
-private:
-    class GeoPolygonContainer
-    {
-    private:
-        VectorWithMemoryTracking<LatLng> mainLoopVerts;
-        VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> holeVerts;
-
-        mutable GeoLoop mutableMainLoop{};
-        mutable GeoPolygon mutablePolygon{};
-        mutable VectorWithMemoryTracking<GeoLoop> mutableHoles;
-
-    public:
-        explicit GeoPolygonContainer(VectorWithMemoryTracking<LatLng> && mainLoop,
-                                     VectorWithMemoryTracking<VectorWithMemoryTracking<LatLng>> && holes = {})
-            : mainLoopVerts(std::move(mainLoop)), holeVerts(std::move(holes)) {}
-
-        const GeoPolygon * unwrap() const
-        {
-            mutableMainLoop = {static_cast<int>(mainLoopVerts.size()),
-                               const_cast<LatLng*>(mainLoopVerts.data())};
-
-            mutableHoles.clear();
-            mutableHoles.reserve(holeVerts.size());
-            for (const auto & hole : holeVerts)
-                mutableHoles.push_back({static_cast<int>(hole.size()),
-                                        const_cast<LatLng*>(hole.data())});
-
-            mutablePolygon = {mutableMainLoop,
-                              static_cast<int>(mutableHoles.size()),
-                              mutableHoles.data()};
-            return &mutablePolygon;
-        }
-    };
 };
 
 REGISTER_FUNCTION(h3PolygonToCellsWithContainment)
@@ -365,7 +238,9 @@ REGISTER_FUNCTION(h3PolygonToCellsWithContainment)
             "using H3's experimental algorithm with selectable containment mode. "
             "Flags: 0=CONTAINMENT_CENTER, 1=CONTAINMENT_FULL, 2=CONTAINMENT_OVERLAPPING, "
             "3=CONTAINMENT_OVERLAPPING_BBOX. The flags argument is passed to the H3 API as UInt32; "
-            "use integer literals (0..3) or toUInt32. Other native integer types are converted with an accurate cast. See H3 docs.",
+            "use integer literals (0..3) or toUInt32. Other native integer types are converted with an accurate cast. "
+            "Every vertex must be on the sphere: longitude in -180..180 and latitude in -90..90 degrees. "
+            "The order of the returned cells is not guaranteed. See H3 docs.",
         .syntax = "h3PolygonToCellsWithContainment(geometry, resolution, flags)",
         .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::Geo});

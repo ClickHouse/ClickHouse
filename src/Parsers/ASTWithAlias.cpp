@@ -56,6 +56,10 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         {
             ostr.write('(');
             frame.need_parens = false;
+            /// The `(` just emitted already isolates this `expr AS alias` from an enclosing
+            /// function-argument list, so a descendant IN must not add isolating parens of its own.
+            frame.current_function = nullptr;
+            frame.list_element_index = 0;
         }
         formatImplWithoutAlias(ostr, settings, state, frame);
         if (!alias.empty())

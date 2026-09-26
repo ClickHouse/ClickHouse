@@ -52,6 +52,10 @@ SQL 콘솔에서 사용할 수 있는 역할은 두 가지입니다. `default_ro
   ### 세분화된 접근 제어
 </div>
 
+<Tip>
+  콘솔에서 데이터베이스 액세스를 관리하려면 [클라우드 관리형 데이터베이스 역할](/ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles)(베타)을 사용하는 것이 좋습니다. `sql-console-role:<email>` 역할은 [JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)과 호환되지 않습니다.
+</Tip>
+
 이 접근 제어 기능은 사용자 수준의 세분화 수준으로 수동 구성할 수도 있습니다. 사용자에게 새 `sql_console_*` 역할을 할당하기 전에, 네임스페이스 `sql-console-role:<email>`에 맞는 SQL 콘솔 사용자별 데이터베이스 역할을 먼저 생성해야 합니다. 예시는 다음과 같습니다:
 
 ```sql

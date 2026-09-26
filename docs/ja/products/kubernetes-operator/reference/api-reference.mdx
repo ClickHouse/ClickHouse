@@ -99,14 +99,15 @@ ClickHouseClusterSpec は ClickHouseCluster の望ましい状態を定義しま
 | `dataVolumeClaimSpec`            | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | ClickHouse データ用の永続ストレージの仕様。                                                                                                                                                                                  | false    |                |
 | `additionalVolumeClaimTemplates` | [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate) array                                                               | JBOD / マルチディスクストレージ用の、ポッドごとの追加 PVC テンプレート。<br />各エントリは StatefulSet の volumeClaimTemplate に反映され、`/var/lib/clickhouse/disks/<name>` にマウントされ、<br />生成される JBOD storage policy に追加されます。<br />ディスクのセットは作成時に固定されます。 | false    |                |
 | `labels`                         | object (keys:string, values:string)                                                                                                 | リソースに追加されるラベル。                                                                                                                                                                                               | false    |                |
-| `annotations`                    | object (keys:string, values:string)                                                                                                 | リソースに追加される annotations。                                                                                                                                                                                      | false    |                |
+| `annotations`                    | object (keys:string, values:string)                                                                                                 | リソースに追加されるアノテーション。                                                                                                                                                                                      | false    |                |
 | `podDisruptionBudget`            | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget は各 分片 に対して作成される PDB を設定します。<br />未設定の場合、オペレーターは単一レプリカの<br />分片には maxUnavailable=1、複数レプリカの 分片 には minAvailable=1 をデフォルトで設定します。                                                             | false    |                |
-| `settings`                       | [ClickHouseSettings](#clickhousesettings)                                                                                           | ClickHouse サーバー の設定パラメーター。                                                                                                                                                                                 | false    | &#123;  &#125; |
-| `clusterDomain`                  | string                                                                                                                              | ClusterDomain は、DNS 名前解決 に使用される Kubernetes のクラスター ドメイン接尾辞です。                                                                                                                                           | false    | cluster.local  |
-| `upgradeChannel`                 | string                                                                                                                              | UpgradeChannel は、major version の upgrade チェックに使用する リリースチャネル を指定します。<br />空の場合は、minor updates のみが提案されます。使用可能な値は stable、lts、または特定の major.minor バージョン (例: 25.8) です。                                      | false    |                |
-| `versionProbeTemplate`           | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | バージョン検出 に対する VersionProbeTemplate overrides。                                                                                                                                                   | false    |                |
+| `networkPolicy`                  | [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)                                                                         | NetworkPolicy はクラスター用に管理される NetworkPolicy を設定します。                                                                                                                                                            | false    |                |
+| `settings`                       | [ClickHouseSettings](#clickhousesettings)                                                                                           | ClickHouse サーバー の設定パラメーター。                                                                                                                                                                                   | false    | &#123;  &#125; |
+| `clusterDomain`                  | string                                                                                                                              | ClusterDomain は、DNS 名前解決 に使用される Kubernetes のクラスター ドメイン接尾辞です。                                                                                                                                                 | false    | cluster.local  |
+| `upgradeChannel`                 | string                                                                                                                              | UpgradeChannel は、major version の upgrade チェックに使用する リリースチャネル を指定します。<br />空の場合は、minor updates のみが提案されます。使用可能な値は stable、lts、または特定の major.minor バージョン (例: 25.8) です。                                             | false    |                |
+| `versionProbeTemplate`           | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | バージョン検出 に対する VersionProbeTemplate overrides。                                                                                                                                                                 | false    |                |
 | `externalSecret`                 | [ExternalSecret](#externalsecret)                                                                                                   | ExternalSecret は、クラスター secrets を含む外部管理の Secret へのオプション参照です。<br />この secret はクラスターと同じネームスペース内に存在する必要があります。                                                                                                    | false    |                |
-| `additionalPorts`                | [AdditionalPort](#additionalport) array                                                                                             | AdditionalPorts は、ClickHouse ポッド と公開ヘッドレス Service で公開する追加の TCP ポートを宣言します。<br />オペレーターは Kubernetes リソースにポートを追加するだけで、ClickHouse サーバー がそれらのポートで待ち受けるようには設定しません。                                               | false    |                |
+| `additionalPorts`                | [AdditionalPort](#additionalport) array                                                                                             | AdditionalPorts は、ClickHouse ポッド とパブリックなヘッドレス Service で公開する追加の TCP ポートを宣言します。<br />オペレーターは Kubernetes リソースにポートを追加するだけで、ClickHouse サーバー がそれらのポートで待ち受けるようには設定しません。                                                 | false    |                |
 
 Appears in:
 
@@ -133,6 +134,26 @@ ClickHouseClusterStatus は、ClickHouseCluster の観測された状態を定�
 以下に登場します:
 
 * [ClickHouseCluster](#clickhousecluster)
+
+<div id="clickhousenetworkpolicyspec">
+  ## ClickHouseNetworkPolicySpec
+</div>
+
+ClickHouseNetworkPolicySpec は、ClickHouse クラスター用に管理される NetworkPolicy を設定します。
+この管理対象ポリシーは、クラスター内部のトラフィックを対象とします。
+
+* レプリカ間の接続
+* operator からクラスターへのアクセス
+
+クライアント接続やメトリクスのスクレイピングなど、その他のイングレスには、ユーザー定義の NetworkPolicy が必要です。
+
+| フィールド    | 種類                                          | 説明                                                                                              | 必須    | デフォルト    |
+| -------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----- | -------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | operator が、クラスターのポッドへのイングレスを制限する NetworkPolicy を管理するかどうかを制御します。<br />未設定の場合、デフォルトは「Disabled」です。 | false | Disabled |
+
+次に含まれます。
+
+* [ClickHouseClusterSpec](#clickhouseclusterspec)
 
 <div id="clickhousesettings">
   ## ClickHouseSettings
@@ -354,16 +375,17 @@ KeeperClusterSpec は、KeeperCluster の望ましい状態を定義します。
 | Field                  | Type                                                                                                                                | Description                                                                                                                                                                          | Required | Default       |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | ------------- |
 | `replicas`             | integer                                                                                                                             | クラスター内のレプリカ数                                                                                                                                                                         | false    | 3             |
-| `podTemplate`          | [PodTemplateSpec](#podtemplatespec)                                                                                                 | Keeper ポッドスペックに渡されるパラメーター。                                                                                                                                                             | false    |               |
-| `containerTemplate`    | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | Keeper コンテナースペックに渡されるパラメーター。                                                                                                                                                           | false    |               |
+| `podTemplate`          | [PodTemplateSpec](#podtemplatespec)                                                                                                 | Keeper ポッドスペックに渡されるパラメーター。                                                                                                                                                           | false    |               |
+| `containerTemplate`    | [ContainerTemplateSpec](#containertemplatespec)                                                                                     | Keeper コンテナースペックに渡されるパラメーター。                                                                                                                                                         | false    |               |
 | `dataVolumeClaimSpec`  | [PersistentVolumeClaimSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#persistentvolumeclaimspec-v1-core) | ClickHouse Keeper データ用の永続ストレージ仕様。                                                                                                                                                    | false    |               |
 | `labels`               | object (keys:string, values:string)                                                                                                 | リソースに追加されるラベル。                                                                                                                                                                       | false    |               |
-| `annotations`          | object (keys:string, values:string)                                                                                                 | リソースに追加される annotations。                                                                                                                                                              | false    |               |
+| `annotations`          | object (keys:string, values:string)                                                                                                 | リソースに追加されるアノテーション。                                                                                                                                                              | false    |               |
 | `podDisruptionBudget`  | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)                                                                                 | PodDisruptionBudget は、Keeper クラスター用に作成される PDB を設定します。<br />未設定の場合、オペレーターは既定で maxUnavailable=replicas/2 を使用します<br />(2F+1 クラスターでクォーラムを維持するため)。単一レプリカのクラスターでは maxUnavailable=1 を使用します。 | false    |               |
+| `networkPolicy`        | [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)                                                                                 | NetworkPolicy は、Keeper クラスター用に管理される NetworkPolicy を設定します。                                                                                                                            | false    |               |
 | `settings`             | [KeeperSettings](#keepersettings)                                                                                                   | ClickHouse Keeper サーバーの設定パラメーター。                                                                                                                                                     | false    |               |
 | `clusterDomain`        | string                                                                                                                              | ClusterDomain は、DNS 名前解決に使用される Kubernetes クラスターのドメイン接尾辞です。                                                                                                                           | false    | cluster.local |
 | `upgradeChannel`       | string                                                                                                                              | UpgradeChannel は、メジャーバージョンのアップグレード確認に使用するリリースチャネルを指定します。<br />空の場合、マイナーアップデートのみが提案されます。指定可能な値は stable、lts、または特定の major.minor バージョン (例: 25.8) です。                                     | false    |               |
-| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | バージョン検出ジョブ用の VersionProbeTemplate を上書きします。<br />非推奨: Keeper のバージョンプローブジョブは使用されません。このフィールドは後方互換性のために保持されています。                                                                         | false    |               |
+| `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate)                                                                                       | バージョン検出ジョブ用の VersionProbeTemplate を上書きします。<br />非推奨: Keeper のバージョンプローブ Job は使用されません。このフィールドは後方互換性のために保持されています。                                                                         | false    |               |
 
 以下に表示されます:
 
@@ -390,6 +412,27 @@ KeeperClusterStatus は、KeeperCluster の観測された状態を定義しま�
 次に記載されています:
 
 * [KeeperCluster](#keepercluster)
+
+<div id="keepernetworkpolicyspec">
+  ## KeeperNetworkPolicySpec
+</div>
+
+KeeperNetworkPolicySpec は、Keeper クラスター向けに管理される NetworkPolicy を設定します。
+管理対象のポリシーは、クラスター内部のトラフィックを対象とします。
+
+* レプリカ間の接続
+* operator からクラスターへのアクセス
+* この Keeper クラスターを参照する ClickHouse クラスターからのアクセス
+
+メトリクスのスクレイピングを含むその他のイングレスには、ユーザー定義の NetworkPolicy が必要です。
+
+| フィールド    | Type                                        | 説明                                                                                                        | 必須    | デフォルト    |
+| -------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ----- | -------- |
+| `policy` | [NetworkPolicyPolicy](#networkpolicypolicy) | Policy は、Keeper ポッドへのイングレスを制限する NetworkPolicy を operator が管理するかどうかを制御します。<br />未設定の場合、デフォルトは「Disabled」です。 | false | Disabled |
+
+以下に記載されています。
+
+* [KeeperClusterSpec](#keeperclusterspec)
 
 <div id="keepersettings">
   ## KeeperSettings
@@ -441,6 +484,22 @@ NamedTemplateMeta は、名前を必要とするテンプレートオブジェ�
 以下で使用されます:
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
+
+<div id="networkpolicypolicy">
+  ## NetworkPolicyPolicy
+</div>
+
+NetworkPolicyPolicy は、operator がクラスターの NetworkPolicy を管理するかどうかを制御します。
+
+| フィールド      | 説明                                                                                      |
+| ---------- | --------------------------------------------------------------------------------------- |
+| `Enabled`  | NetworkPolicyEnabled を指定すると、operator はクラスターのポッドへのイングレスを制限する NetworkPolicy を管理します。<br /> |
+| `Disabled` | NetworkPolicyDisabled を指定すると、管理対象の NetworkPolicy が無効になり、存在する場合は operator が削除します。<br />  |
+
+使用箇所:
+
+* [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
+* [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
 <div id="pdbpolicy">
   ## PDBPolicy

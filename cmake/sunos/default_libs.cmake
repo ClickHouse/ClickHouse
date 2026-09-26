@@ -13,7 +13,10 @@ set (DEFAULT_LIBS "-nodefaultlibs")
 # (no toolchain file in contrib/compiler-rt-cmake/), so we use -lgcc_s.
 set (BUILTINS_LIBRARY "-lgcc_s")
 
-set (DEFAULT_LIBS "${DEFAULT_LIBS} ${BUILTINS_LIBRARY} -lc -lm -lrt -lpthread -ldl -lsocket -lnsl -lsendfile -lproc -lumem")
+# On linux/darwin, we use lld, which isn't sensitive to the order of
+# dependencies. On illumos, we use ld, which is. Set `-z rescan-now` so that we
+# don't have to explicitly manage the dependency graph in DEPENDS.
+set (DEFAULT_LIBS "${DEFAULT_LIBS} -Wl,-z,rescan-now ${BUILTINS_LIBRARY} -lc -lm -lrt -lpthread -ldl -lsocket -lnsl -lsendfile -lproc -lumem")
 
 message(STATUS "Default libraries: ${DEFAULT_LIBS}")
 

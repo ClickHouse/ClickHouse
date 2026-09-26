@@ -170,6 +170,9 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     /* single_point_ = */ false,
                     /* skip_analysis_ = */ false,
                     /* expand_tuple_key_elements_ = */ true);
+                /// Key column positions are in the expanded key when tuple key elements were expanded.
+                const auto * key_expansion = dynamic_key_condition.getKeyTupleExpansion();
+                dynamic_key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(key_expansion ? key_expansion->data_types : primary_key.data_types);
 
                 ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     data_part,

@@ -22,7 +22,9 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/checkDataPart.h>
+#include <Common/FailPoint.h>
 #include <Common/ThrottlerArray.h>
+#include <base/sleep.h>
 
 namespace DB
 {
@@ -30,6 +32,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_sequential_source_sleep_before_read[];
 }
 
 namespace Setting
@@ -224,6 +231,10 @@ try
 
     if (isCancelled())
         return {};
+
+    /// Used in tests to emulate a merge whose single reading step is very slow
+    /// (e.g. applying huge patch parts), to check that shutdown does not wait for it.
+    fiu_do_on(FailPoints::merge_tree_sequential_source_sleep_before_read, { sleepForSeconds(10); });
 
     auto read_result = readers_chain.read(current_rows_to_read, mark_ranges, patch_ranges);
     if (!read_result.num_rows)
@@ -457,6 +468,9 @@ public:
                 /* single_point_ = */ false,
                 /* skip_analysis_ = */ false,
                 /* expand_tuple_key_elements_ = */ true);
+            /// Key column positions are in the expanded key when tuple key elements were expanded.
+            const auto * key_expansion = key_condition.getKeyTupleExpansion();
+            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(key_expansion ? key_expansion->data_types : primary_key.data_types);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
             if (!key_condition.alwaysFalse())

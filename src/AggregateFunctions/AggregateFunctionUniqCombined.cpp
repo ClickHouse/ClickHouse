@@ -71,10 +71,10 @@ void registerAggregateFunctionUniqCombined(AggregateFunctionFactory & factory)
 Calculates the approximate number of different argument values.
 It provides the result deterministically (it does not depend on the query processing order).
 
-:::note
+<Note>
 Since it uses a 32-bit hash for non-String types, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (the error will raise quickly after a few tens of billions of distinct values).
 In the case cardinalities are larger than `UINT_MAX`, you should use [`uniqCombined64`](/reference/functions/aggregate-functions/uniqCombined64) instead.
-:::
+</Note>
 
 Compared to the uniq function, the uniqCombined function:
 - Consumes several times less memory
@@ -144,9 +144,9 @@ It is the same as [`uniqCombined`](/reference/functions/aggregate-functions/uniq
 
 This function provides the result deterministically (it does not depend on the query processing order).
 
-:::note
+<Note>
 Since it uses 64-bit hash for all types, the result does not suffer from very high error for cardinalities significantly larger than `UINT_MAX` like [`uniqCombined`](/reference/functions/aggregate-functions/uniqCombined) does, which uses a 32-bit hash for non-String types.
-:::
+</Note>
 
 Compared to the [uniq](/reference/functions/aggregate-functions/uniq) function, the uniqCombined64 function:
 - Consumes several times less memory

@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 740" font-family="Inter, -apple-system, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#3b82f6"/>
+    </marker>
+    <marker id="ah-stop" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M4 0 L6.5 0 L6.5 10 L4 10 z" fill="#e05252"/>
+    </marker>
+  </defs>
+
+  <!-- ===== Boundaries ===== -->
+  <rect x="40" y="50" width="460" height="600" rx="14" fill="#8a8a8a" fill-opacity="0.06" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="64" y="86" font-size="16" font-weight="700" fill="#7d7d7d">Your service</text>
+
+  <rect x="700" y="50" width="580" height="600" rx="14" fill="#8a8a8a" fill-opacity="0.06" stroke="#7d7d7d" stroke-width="1.5" stroke-dasharray="7 5"/>
+  <text x="724" y="86" font-size="16" font-weight="700" fill="#7d7d7d">ClickHouse Cloud</text>
+  <text x="724" y="106" font-size="11" fill="#7d7d7d">shared worker pool, your region</text>
+
+  <!-- ===== Your service ===== -->
+  <rect x="80" y="200" width="380" height="140" rx="10" fill="#8a8a8a" fill-opacity="0.10" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="270" y="238" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Your service compute</text>
+  <text x="270" y="262" text-anchor="middle" font-size="11" fill="#7d7d7d">your endpoint, authentication, and RBAC</text>
+  <text x="270" y="281" text-anchor="middle" font-size="11" fill="#7d7d7d">do not change</text>
+  <text x="270" y="309" text-anchor="middle" font-size="11" fill="#7d7d7d">requests workers per query</text>
+
+  <!-- ===== What isolation means ===== -->
+  <rect x="80" y="420" width="380" height="190" rx="10" fill="#8a8a8a" fill-opacity="0.05" stroke="#7d7d7d" stroke-width="1.25" stroke-dasharray="4 4"/>
+  <text x="270" y="452" text-anchor="middle" font-size="13" font-weight="600" fill="#7d7d7d">What isolation means here</text>
+  <text x="270" y="478" text-anchor="middle" font-size="11" fill="#7d7d7d">A worker accepts traffic from exactly</text>
+  <text x="270" y="497" text-anchor="middle" font-size="11" fill="#7d7d7d">one service at a time.</text>
+  <text x="270" y="524" text-anchor="middle" font-size="11" fill="#7d7d7d">The restriction is applied by the platform</text>
+  <text x="270" y="543" text-anchor="middle" font-size="11" fill="#7d7d7d">at the network layer, not by the query engine,</text>
+  <text x="270" y="562" text-anchor="middle" font-size="11" fill="#7d7d7d">so a query cannot opt out of it.</text>
+  <text x="270" y="589" text-anchor="middle" font-size="11" fill="#7d7d7d">It is removed when the assignment ends.</text>
+
+  <!-- ===== Worker assignment service ===== -->
+  <rect x="740" y="140" width="500" height="76" rx="10" fill="#8a8a8a" fill-opacity="0.10" stroke="#7d7d7d" stroke-width="1.5"/>
+  <text x="990" y="172" text-anchor="middle" font-size="14" font-weight="600" fill="#7d7d7d">Worker assignment service</text>
+  <text x="990" y="195" text-anchor="middle" font-size="11" fill="#7d7d7d">assigns workers to services and renews assignments</text>
+
+  <!-- ===== Workers assigned to your service ===== -->
+  <rect x="740" y="260" width="500" height="150" rx="10" fill="#3b82f6" fill-opacity="0.06" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="990" y="288" text-anchor="middle" font-size="13" font-weight="600" fill="#3b82f6">Assigned to your service</text>
+
+  <rect x="770" y="300" width="380" height="42" rx="8" fill="#3b82f6" fill-opacity="0.12" stroke="#3b82f6" stroke-width="1.25"/>
+  <text x="960" y="326" text-anchor="middle" font-size="12" fill="#7d7d7d">Worker</text>
+
+  <rect x="770" y="352" width="380" height="42" rx="8" fill="#3b82f6" fill-opacity="0.12" stroke="#3b82f6" stroke-width="1.25"/>
+  <text x="960" y="378" text-anchor="middle" font-size="12" fill="#7d7d7d">Worker</text>
+
+  <line x1="1180" y1="321" x2="1180" y2="373" stroke="#3b82f6" stroke-width="1.75" marker-start="url(#ah-a)" marker-end="url(#ah-a)"/>
+
+  <!-- ===== Unassigned worker ===== -->
+  <rect x="740" y="440" width="500" height="56" rx="8" fill="#8a8a8a" fill-opacity="0.10" stroke="#7d7d7d" stroke-width="1.25"/>
+  <text x="990" y="465" text-anchor="middle" font-size="12" fill="#7d7d7d">Worker</text>
+  <text x="990" y="483" text-anchor="middle" font-size="11" fill="#7d7d7d">unassigned, waiting in the pool</text>
+
+  <!-- ===== Another service's worker ===== -->
+  <rect x="740" y="520" width="500" height="56" rx="8" fill="#8a8a8a" fill-opacity="0.14" stroke="#7d7d7d" stroke-width="1.25" stroke-dasharray="5 4"/>
+  <text x="990" y="545" text-anchor="middle" font-size="12" fill="#7d7d7d">Worker</text>
+  <text x="990" y="563" text-anchor="middle" font-size="11" fill="#7d7d7d">assigned to another service</text>
+
+  <text x="740" y="620" font-size="11" fill="#7d7d7d">Workers hold no persistent data. When an assignment ends the worker is destroyed and replaced.</text>
+
+  <!-- ===== Permitted paths ===== -->
+  <line x1="466" y1="215" x2="734" y2="178" stroke="#3b82f6" stroke-width="1.75" marker-end="url(#ah-a)"/>
+  <text x="600" y="215" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">request / renew assignment</text>
+
+  <path d="M466 255 L620 255 L620 335 L734 335" fill="none" stroke="#3b82f6" stroke-width="1.75" marker-start="url(#ah-a)" marker-end="url(#ah-a)"/>
+  <text x="543" y="245" text-anchor="middle" font-size="12" font-weight="600" fill="#3b82f6">query execution</text>
+  <text x="543" y="277" text-anchor="middle" font-size="11" fill="#3b82f6">private to your service</text>
+
+  <!-- ===== Blocked paths ===== -->
+  <path d="M466 295 L600 295 L600 468 L734 468" fill="none" stroke="#e05252" stroke-width="1.75" stroke-dasharray="7 5" marker-end="url(#ah-stop)"/>
+  <text x="648" y="458" text-anchor="middle" font-size="12" fill="#e05252">no network path</text>
+
+  <path d="M466 325 L560 325 L560 548 L734 548" fill="none" stroke="#e05252" stroke-width="1.75" stroke-dasharray="7 5" marker-end="url(#ah-stop)"/>
+  <text x="647" y="538" text-anchor="middle" font-size="12" fill="#e05252">no network path</text>
+
+  <!-- ===== Legend ===== -->
+  <g>
+    <line x1="64" y1="700" x2="112" y2="700" stroke="#3b82f6" stroke-width="1.75" marker-end="url(#ah-a)"/>
+    <text x="124" y="704" font-size="12" fill="#7d7d7d">permitted while the worker is assigned to your service</text>
+    <line x1="470" y1="700" x2="518" y2="700" stroke="#e05252" stroke-width="1.75" stroke-dasharray="7 5" marker-end="url(#ah-stop)"/>
+    <text x="530" y="704" font-size="12" fill="#7d7d7d">blocked at the network layer</text>
+    <text x="820" y="704" font-size="12" font-weight="600" fill="#7d7d7d">A worker serves one service at a time.</text>
+  </g>
+</svg>
