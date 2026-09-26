@@ -226,6 +226,13 @@ void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k
     params.top_k = std::move(top_k);
 }
 
+void AggregatingStep::setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker)
+{
+    if (!params.top_k)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set a top-K threshold tracker on an aggregation without the top-K optimization");
+    params.top_k->threshold_tracker = std::move(threshold_tracker);
+}
+
 std::vector<size_t> AggregatingStep::getStepGroups() const
 {
     return {

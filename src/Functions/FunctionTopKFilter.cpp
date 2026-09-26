@@ -40,6 +40,20 @@ bool hasEmptyTuple(const DataTypePtr & type)
     return false;
 }
 
+/// `lessOrEquals` and `greaterOrEquals` are false for NaN, while the sort places NaN first or last by
+/// `nulls_direction`, so the comparison functions would drop NaN rows that rank before the threshold.
+/// The column comparison path places NaN the way the sort does. Container types (`Tuple`, `Array`,
+/// `Map`) compare their elements lexicographically, so a float anywhere inside them matters too.
+bool hasFloatingPoint(const DataTypePtr & type)
+{
+    if (isFloat(type))
+        return true;
+
+    bool found = false;
+    type->forEachChild([&](const IDataType & child) { found = found || isFloat(child); });
+    return found;
+}
+
 }
 
 namespace ErrorCodes
@@ -110,7 +124,8 @@ public:
             auto current_threshold = threshold_tracker->getValue();
             auto data_type = arguments[0].type;
 
-            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type))
+            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type)
+                || hasFloatingPoint(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);
@@ -122,7 +137,7 @@ public:
     }
 
 private:
-    /// Fast path: vectorized less/greater for non-nullable, non-collation types.
+    /// Fast path: vectorized less/greater for non-nullable, non-collation types without NaN.
     ColumnPtr executeVectorized(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,
@@ -135,7 +150,7 @@ private:
         return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, false);
     }
 
-    /// General path for `Nullable`, collation-aware, and non-vectorizable `Tuple` types.
+    /// General path for `Nullable`, collation-aware, floating-point, and non-vectorizable `Tuple` types.
     ColumnPtr executeGeneral(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,

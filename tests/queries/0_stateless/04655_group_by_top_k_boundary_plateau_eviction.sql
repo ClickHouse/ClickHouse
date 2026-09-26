@@ -14,6 +14,9 @@ SET max_rows_to_group_by = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;
 SET enable_group_by_top_k_optimization = 1;
+-- The assertions below count the rows the heap itself rejects. With the dynamic filter the reading
+-- step drops the rows beyond the heap boundary before they reach the aggregation, so keep it off here.
+SET enable_group_by_top_k_dynamic_filtering = 0;
 -- One stream, so the assertions below describe a single heap.
 SET max_threads = 1;
 SET log_queries = 1;

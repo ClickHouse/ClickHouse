@@ -53,6 +53,10 @@ public:
     bool removesFilterColumn() const { return remove_filter_column; }
 
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
+    bool hasConditionForQueryConditionCache() const { return condition.has_value(); }
+    void resetConditionForQueryConditionCache() { condition.reset(); }
+    /// Folds a plan-level salt into the already set condition hash (see `updateQueryConditionCache`).
+    void saltConditionForQueryConditionCache(UInt64 salt);
 
     static bool canUseType(const DataTypePtr & type);
 
