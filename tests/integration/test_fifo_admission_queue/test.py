@@ -14,8 +14,10 @@ admission queue (per-waiter CV with notify_one — no thundering herd). These te
    it is saturated
 """
 
+import os
 import re
 import socket
+import sys
 import time
 import urllib.parse
 import uuid
@@ -24,13 +26,28 @@ from multiprocessing.dummy import Pool
 import pytest
 import requests
 
+import grpc
+
 from helpers.cluster import ClickHouseCluster
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+grpc_protocol_pb2_dir = os.path.join(script_dir, "grpc_protocol_pb2")
+if grpc_protocol_pb2_dir not in sys.path:
+    sys.path.append(grpc_protocol_pb2_dir)
+import clickhouse_grpc_pb2  # Execute grpc_protocol_pb2/generate.py to generate these modules.
+import clickhouse_grpc_pb2_grpc
+
+GRPC_PORT = 9100
 
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
     "node",
     main_configs=["configs/server.xml"],
+    # Bug in TSAN reproduces with gRPC https://github.com/grpc/grpc/issues/29550#issuecomment-1188085387
+    env_variables={
+        "TSAN_OPTIONS": "report_atomic_races=0 " + os.getenv("TSAN_OPTIONS", default="")
+    },
 )
 
 # The admission queue is opt-in, so the disconnect-aware `replace_running_query`
@@ -665,6 +682,77 @@ def test_prometheus_client_disconnect_while_waiting_in_queue(started_cluster):
 
         pool.close()
         pool.join()
+
+
+def test_grpc_client_cancel_while_waiting_in_queue(started_cluster):
+    """
+    A gRPC client that cancels its call (or goes away) while the query waits in the
+    admission queue must lose its place in the queue, like HTTP and native clients do.
+
+    The server learns about that through `grpc::ServerContext::AsyncNotifyWhenDone`:
+    a call reported as done before the server sent its final status was cancelled by
+    the client. Before that, the liveness callback only looked at the `cancel` field of
+    a later `QueryInfo`, which a unary `ExecuteQuery` call can never send, so the waiter
+    stayed queued for the whole `queue_max_wait_ms` (30 s here) and then ran its query.
+    """
+    prefix = uuid.uuid4().hex[:8]
+    blocker_ids = [f"grpc_cancel_blocker_{prefix}_{i}" for i in range(2)]
+    waiter_id = f"grpc_cancel_waiter_{prefix}"
+
+    pool = Pool(4)
+
+    def run_blocker(qid):
+        node.query(
+            "SELECT sleep(30) FORMAT Null",
+            settings={
+                "function_sleep_max_microseconds_per_block": 0,
+                "queue_max_wait_ms": 60000,
+            },
+            query_id=qid,
+        )
+
+    channel = grpc.insecure_channel(f"{node.ip_address}:{GRPC_PORT}")
+    try:
+        grpc.channel_ready_future(channel).result(timeout=10)
+        stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(channel)
+
+        for qid in blocker_ids:
+            pool.apply_async(run_blocker, (qid,))
+
+        for qid in blocker_ids:
+            wait_for_query_start(node, qid)
+
+        query_info = clickhouse_grpc_pb2.QueryInfo(
+            query="SELECT 1",
+            query_id=waiter_id,
+            settings={"queue_max_wait_ms": "30000"},
+        )
+        call = stub.ExecuteQuery.future(query_info)
+
+        wait_for_queue_length(node, 1)
+
+        # Cancels only this call (`RST_STREAM`); the channel itself stays connected.
+        call.cancel()
+
+        # Wait for the alive check to detect the cancellation (interval=500ms, give 1.5s).
+        time.sleep(1.5)
+
+        queue_len = get_prometheus_metric(node, "QueryAdmissionQueueLength")
+        assert queue_len == 0, f"Expected queue length 0 after the gRPC call was cancelled, got {queue_len}"
+    finally:
+        for qid in blocker_ids:
+            node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+
+        pool.close()
+        pool.join()
+        channel.close()
+
+    # The cancelled waiter must not have been admitted once the blockers were gone.
+    node.query("SYSTEM FLUSH LOGS query_log")
+    started = node.query(
+        f"SELECT count() FROM system.query_log WHERE query_id = '{waiter_id}' AND type = 'QueryStart'"
+    ).strip()
+    assert started == "0", f"The cancelled gRPC waiter was admitted, QueryStart count: {started}"
 
 
 def check_client_disconnect_while_replacing_query(target):

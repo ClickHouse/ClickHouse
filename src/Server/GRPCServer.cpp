@@ -392,6 +392,40 @@ namespace
 
     using CompletionCallback = std::function<void(bool)>;
 
+    /// A boolean state protected by mutex able to wait until other thread sets it to a specific value.
+    class BoolState
+    {
+    public:
+        explicit BoolState(bool initial_value) : value(initial_value) {}
+
+        bool get() const
+        {
+            std::lock_guard lock{mutex};
+            return value;
+        }
+
+        void set(bool new_value)
+        {
+            std::lock_guard lock{mutex};
+            if (value == new_value)
+                return;
+            value = new_value;
+            changed.notify_all();
+        }
+
+        void wait(bool wanted_value) const
+        {
+            std::unique_lock lock{mutex};
+            changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
+        }
+
+    private:
+        bool value;
+        mutable std::mutex mutex;
+        mutable std::condition_variable changed;
+    };
+
+
     /// Requests a connection and provides low-level interface for reading and writing.
     class BaseResponder
     {
@@ -450,7 +484,20 @@ namespace
         /// Makes the pending operations of this call complete (with `ok` set to false).
         void cancel() { grpc_context.TryCancel(); }
 
+        /// Whether gRPC has reported the call as done. Before the server sends the final status this
+        /// can only mean the client cancelled the call or went away (or the deadline expired).
+        bool isDone() const { return done.get(); }
+
+        /// The tag passed to `AsyncNotifyWhenDone` is owned by the responder, and gRPC delivers it once
+        /// the started call is finished or cancelled, so a started responder must not be destroyed
+        /// before that. The caller must make sure the call ends: either by finishing it, or by `cancel`.
+        void waitUntilDone() const { done.wait(true); }
+
     protected:
+        /// Must be called by `start` before requesting the call. gRPC delivers the tag only for a call
+        /// which has actually started, so a responder that never got a call is destroyed freely.
+        void notifyWhenDone() { grpc_context.AsyncNotifyWhenDone(&on_done); }
+
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
         {
             /// It would be better to pass callbacks to gRPC calls.
@@ -479,6 +526,10 @@ namespace
         std::unordered_map<size_t, CompletionCallback> callbacks;
         size_t next_callback_id = 0;
         std::mutex mutex;
+
+        /// Set on queue_thread when gRPC delivers the `AsyncNotifyWhenDone` tag.
+        BoolState done{false};
+        CompletionCallback on_done = [this](bool) { done.set(true); };
     };
 
     enum CallType
@@ -525,6 +576,7 @@ namespace
                   grpc::ServerCompletionQueue & notification_queue,
                   const CompletionCallback & callback) override
         {
+            notifyWhenDone();
             grpc_service.RequestExecuteQuery(&grpc_context, &query_info.emplace(), &response_writer, &new_call_queue, &notification_queue, getCallbackPtr(callback));
         }
 
@@ -565,6 +617,7 @@ namespace
                   grpc::ServerCompletionQueue & notification_queue,
                   const CompletionCallback & callback) override
         {
+            notifyWhenDone();
             grpc_service.RequestExecuteQueryWithStreamInput(&grpc_context, &reader, &new_call_queue, &notification_queue, getCallbackPtr(callback));
         }
 
@@ -596,6 +649,7 @@ namespace
                   grpc::ServerCompletionQueue & notification_queue,
                   const CompletionCallback & callback) override
         {
+            notifyWhenDone();
             grpc_service.RequestExecuteQueryWithStreamOutput(&grpc_context, &query_info.emplace(), &writer, &new_call_queue, &notification_queue, getCallbackPtr(callback));
         }
 
@@ -636,6 +690,7 @@ namespace
                   grpc::ServerCompletionQueue & notification_queue,
                   const CompletionCallback & callback) override
         {
+            notifyWhenDone();
             grpc_service.RequestExecuteQueryWithStreamIO(&grpc_context, &reader_writer, &new_call_queue, &notification_queue, getCallbackPtr(callback));
         }
 
@@ -692,40 +747,6 @@ namespace
         }
 
         std::function<std::pair<const void *, size_t>(void)> callback;
-    };
-
-
-    /// A boolean state protected by mutex able to wait until other thread sets it to a specific value.
-    class BoolState
-    {
-    public:
-        explicit BoolState(bool initial_value) : value(initial_value) {}
-
-        bool get() const
-        {
-            std::lock_guard lock{mutex};
-            return value;
-        }
-
-        void set(bool new_value)
-        {
-            std::lock_guard lock{mutex};
-            if (value == new_value)
-                return;
-            value = new_value;
-            changed.notify_all();
-        }
-
-        void wait(bool wanted_value) const
-        {
-            std::unique_lock lock{mutex};
-            changed.wait(lock, [this, wanted_value]() { return value == wanted_value; });
-        }
-
-    private:
-        bool value;
-        mutable std::mutex mutex;
-        mutable std::condition_variable changed;
     };
 
 
@@ -1104,8 +1125,9 @@ namespace
             return block;
         });
 
-        /// For admission queue disconnect detection.
-        query_context->setConnectionAliveCheck([this]() -> bool { return !want_to_cancel.load(); });
+        /// For admission queue disconnect detection: the call is done before we send the final status
+        /// only if the client cancelled it or disconnected.
+        query_context->setConnectionAliveCheck([this]() -> bool { return !want_to_cancel.load() && !responder->isDone(); });
 
         /// Start executing the query.
         const auto * query_end = end;
@@ -1554,15 +1576,21 @@ namespace
 
     void Call::close()
     {
-        /// A speculative read started by `readQueryInfo` may still be in flight. Its completion
-        /// handler writes into `next_query_info_while_reading` and is dispatched through a tag
-        /// owned by the responder, so both have to outlive it.
-        if (reading_query_info.get())
+        if (responder)
         {
-            /// If the call has not been finished, nothing would complete that read on its own.
+            /// If the call has not been finished, nothing would complete its pending operations
+            /// (and deliver the `AsyncNotifyWhenDone` tag) on its own.
             if (!responder_finished)
                 responder->cancel();
-            reading_query_info.wait(false);
+
+            /// A speculative read started by `readQueryInfo` may still be in flight. Its completion
+            /// handler writes into `next_query_info_while_reading` and is dispatched through a tag
+            /// owned by the responder, so both have to outlive it.
+            if (reading_query_info.get())
+                reading_query_info.wait(false);
+
+            /// The same applies to the `AsyncNotifyWhenDone` tag.
+            responder->waitUntilDone();
         }
 
         responder.reset();
@@ -1959,7 +1987,7 @@ public:
         std::lock_guard lock{mutex};
         should_stop = true;
 
-        if (current_calls.empty())
+        if (current_calls.empty() && cancelled_responders.empty())
         {
             /// If there are no current calls then we call shutdownQueue() to signal the queue to stop waiting for next events.
             /// The following line will make CompletionQueue::Next() stop waiting if the queue is empty and return false instead.
@@ -2000,7 +2028,16 @@ private:
         std::lock_guard lock{mutex};
         auto responder = std::move(responders_for_new_calls[call_type]);
         if (should_stop)
+        {
+            /// A call which has started will deliver the `AsyncNotifyWhenDone` tag owned by the
+            /// responder, so keep the responder until then.
+            if (responder_started_ok)
+            {
+                responder->cancel();
+                cancelled_responders.push_back(std::move(responder));
+            }
             return;
+        }
         makeResponderForNewCall(call_type);
         if (responder_started_ok)
         {
@@ -2038,9 +2075,12 @@ private:
 
             std::lock_guard lock{mutex};
             finished_calls.clear(); /// Destroy finished calls.
+            std::erase_if(cancelled_responders, [](const auto & responder) { return responder->isDone(); });
 
             /// If (should_stop == true) we continue processing while there are current calls.
-            if (should_stop && current_calls.empty())
+            /// `grpc::Server::Shutdown` waits for all started calls to be released, so the cancelled responders
+            /// must be destroyed before it, and that happens only when this thread delivers their tags.
+            if (should_stop && current_calls.empty() && cancelled_responders.empty())
                 shutdownQueue();
         }
 
@@ -2071,6 +2111,8 @@ private:
     std::vector<std::unique_ptr<BaseResponder>> responders_for_new_calls;
     std::map<Call *, std::unique_ptr<Call>> current_calls;
     std::vector<std::unique_ptr<Call>> finished_calls;
+    /// Responders of calls which started after `stop`, waiting for gRPC to deliver their `AsyncNotifyWhenDone` tag.
+    std::vector<std::unique_ptr<BaseResponder>> cancelled_responders;
     bool should_stop = false;
     mutable std::mutex mutex;
 };

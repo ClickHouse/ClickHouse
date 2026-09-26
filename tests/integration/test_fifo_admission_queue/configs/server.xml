@@ -5,6 +5,8 @@
     <!-- Pick up runtime config changes quickly so the admission-queue drain tests
          (which rely on the background ConfigReloader) are snappy. -->
     <config_reload_interval_ms>1000</config_reload_interval_ms>
+    <!-- For `test_grpc_client_cancel_while_waiting_in_queue`. -->
+    <grpc_port>9100</grpc_port>
     <prometheus>
         <port>9363</port>
         <handlers>
