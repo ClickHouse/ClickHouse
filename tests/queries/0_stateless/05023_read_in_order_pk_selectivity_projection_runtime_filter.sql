@@ -2,7 +2,9 @@
 -- The filter below matches ~74% of the projection granules (more than the 0.5 threshold), so the
 -- PK-selectivity guard would fire on the single-part projection read (deliberately not exempt) and
 -- insert a full sort - unless the retained runtime filter marks the read as prunable at data-read
--- time (`mayPruneRangesOnDataRead`), which keeps the in-order read.
+-- time (`mayPruneRangesOnDataRead`), which keeps the in-order read. A carried-over descriptor is kept
+-- only if its key column is prunable through the projection's own primary key or skip indexes, so the
+-- join key `a` is part of the projection's primary key.
 
 DROP TABLE IF EXISTS projection_runtime_filter_probe SYNC;
 DROP TABLE IF EXISTS projection_runtime_filter_build SYNC;
@@ -11,7 +13,7 @@ CREATE TABLE projection_runtime_filter_probe
 (
     a UInt64,
     path String,
-    PROJECTION by_path (SELECT a, path ORDER BY path)
+    PROJECTION by_path (SELECT a, path ORDER BY (path, a))
 )
 ENGINE = MergeTree ORDER BY a
 SETTINGS index_granularity = 1024;
