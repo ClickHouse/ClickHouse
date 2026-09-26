@@ -217,14 +217,18 @@ IProcessor::Status IMergingTransformBase::prepare()
         {
             for (auto & input : inputs)
             {
-                if (!input.isFinished())
-                {
-                    input.setNeeded();
-                    if (input.hasData())
-                        std::ignore = input.pull();
+                if (input.isFinished())
+                    continue;
 
+                input.setNeeded();
+                if (input.hasData())
+                    std::ignore = input.pull();
+
+                /// `isFinished()` is masked by a buffered chunk, so an input can report
+                /// not-finished here and be finished right after the pull. A finished producer
+                /// emits no further event, so waiting on such an input would never wake up.
+                if (!input.isFinished())
                     return Status::NeedData;
-                }
             }
         }
 
