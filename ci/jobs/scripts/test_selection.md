@@ -1,0 +1,96 @@
+# Precise stateless selection
+
+Every targeted job selects its tests on its own, inside the job, with no
+shared state between jobs. All inputs read from CIDB are pinned to one cutoff
+(`Targeting.selection_cutoff`), so the jobs of an attempt select the same tests:
+previous failures count only checks that started before the cutoff, and coverage
+snapshots are taken as of the cutoff minus `coverage_settle_hours`, so an export
+still inserting its rows is ignored. The first attempt of a run uses the workflow
+start time resolved by the config job. A rerun, including a rerun of failed jobs
+only, uses the start time of its attempt from the GitHub API, so it picks up the
+failures and coverage recorded since. Selection failures fail the job.
+No keyword
+or broad-only replacement is used. Changed tests and previous failures remain
+mandatory even when they exceed the temporary ceiling; the manifest reports the
+overflow explicitly. Changes to CI scripts do not add a fixed smoke-test list
+to the selection. Deleted and renamed fixtures select their surviving owning tests.
+
+PRs without eligible changed source lines do not query or validate coverage;
+changed tests and previous failures still populate the manifest. When coverage
+is needed, the canary chooses a qualifying source region from the current
+snapshots and exercises the production query and scorer against it.
+
+The query admits regions no wider than 40 lines with at most 150 distinct test
+owners. These are conservative initial limits, not a validated recall claim.
+The final ceiling is 250 tests and the operational target remains below 100.
+`SelectionConfig` is shared by queries, scoring, diagnostics, and monitoring. Change the selector version when changing the persisted contract.
+
+Each targeted job attaches its selection as `stateless-selection.json` to its
+report. It records the cutoff, commit and selector identity, configuration, coverage
+snapshots, source diff coordinates, and an ordered `tests` list. Each test has
+its selection reasons, score, and compact coverage evidence: matching regions,
+owner counts, changed lines or hunks, and observation counts. Rejected candidates
+retain their scores, evidence, and rejection reason; mandatory overflow is
+reported explicitly. Test names are stored once. Full SQL queries, unrelated
+diff lines, duplicate candidate lists, and experimental scoring diagnostics are
+omitted from the manifest.
+
+## Coverage publication
+
+Coverage collection and export preserve recorded file paths. The selector
+normalizes diff paths and explicitly queries both bare and dotted spellings,
+preserving filtering by `file`. It combines their observations under one
+repository-relative path before scoring. Absolute paths and parent traversal
+are rejected when interpreting selection inputs. Generated protobuf coverage
+under `ci/tmp/build/` remains in the export; selection only considers changed
+source paths under `src/`, `programs/`, and `base/`.
+
+Each shard runs a post-export smoke check through the production selector query
+and scorer against its uploaded coverage. The export step fails if the selector
+cannot retrieve and score a precise source region.
+
+CIDB still has the legacy eight-column `checks_coverage_lines` schema. Until an
+external migration adds durable workflow/shard identity to coverage rows, the
+selector uses the latest three usable `(check_start_time, check_name)` snapshots
+per shard, searching 14 days and requiring a snapshot within 72 hours for every
+shard. At least 100 exported tests are required for a usable shard snapshot.
+These temporary keys are **not** workflow-run IDs; shards can start in different
+hours. New exports retain second-resolution timestamps. Selecting complete
+workflow runs directly in CIDB remains dependent on that schema migration.
+
+Snapshots are found by listing the distinct `check_start_time` values in the window and counting exported tests only for the newest five timestamps at a time, because counting over the whole window reads tens of GB of `test_name` and times out when CIDB is busy. These queries use a 180 s timeout and the query cache, as they only read settled exports and return the same result for every job and pull request.
+
+If a CIDB request of the selection still times out on every attempt, the targeted job is `SKIPPED` instead of failing, so it does not skip the jobs that wait for it. It adds a workflow warning and a comment that is shown in the summary table of the pull request comment, and it is not cached, so a rerun or the next commit selects again. Any other selection failure is still an `ERROR`.
+
+## Validation and rollout
+
+Run deterministic smoke without network access:
+
+```bash
+python3 -m ci.jobs.scripts.test_selection_smoke
+```
+
+A targeted job runs it before selecting only when the pull request changes the selection code (`Targeting.SELECTION_SOURCES`).
+
+Operational monitoring uses the production query and scorer:
+
+```bash
+python3 -m ci.jobs.scripts.test_selection_smoke --live
+```
+
+Entry counts do not affect scoring. `min_depth` is an LLVM function entry count, not call depth: 254 is censored and 255 unavailable. The query still fetches it and the scorer validates it.
+
+PRs run targeted checks in three configurations: AMD ASan with database disk
+and distributed plan, AMD TSan with S3 storage, and ARM ASan. Each job repeats
+the complete related test list up to 50 times with randomized settings and a
+30-minute budget with setup time deducted. The runner stops gracefully, allowing
+in-flight tests and cleanup to finish. The failure limit can stop execution earlier.
+Targeted jobs run only in the PR workflow. Master continues to run the full
+functional suite.
+
+Validation on 2026-09-05 passed the live production canary with fresh snapshots
+from all eight shards. A pre-PR replay attempt for
+https://github.com/ClickHouse/ClickHouse/pull/117331 was rejected because its newest
+coverage was from 2026-08-27. The earlier exploratory ranking example used newer
+coverage and cannot establish historical recall. Neither the 60–90-day quality
+gate nor per-configuration repetition budgets have been validated yet.
