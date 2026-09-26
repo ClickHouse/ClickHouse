@@ -1639,8 +1639,6 @@ ExpressionActionsPtr getCombinedIndicesExpression(
 {
     ASTPtr combined_expr_list = key.expression_list_ast->clone();
 
-    /// Equal expressions share one result column, so a result is computed from a map subcolumn only if the key does not read
-    /// it and every index that reads it is a bloom_filter.
     NameSet names_with_declared_type(key.column_names.begin(), key.column_names.end());
     NameSet names_from_subcolumn;
     for (const auto & index : indices)
@@ -1649,11 +1647,12 @@ ExpressionActionsPtr getCombinedIndicesExpression(
             combined_expr_list->children.push_back(index_expr->clone());
 
         /// A bloom_filter granule holds hashes computed for the type of the column it is given, so it is the same whether the
-        /// element type is LowCardinality or not. `set` and `text` build for the index's declared type.
+        /// element type is LowCardinality or not. `set` and `text`, for example, build for the index's declared type.
         auto & names = index->index.type == "bloom_filter" ? names_from_subcolumn : names_with_declared_type;
         names.insert(index->index.column_names.begin(), index->index.column_names.end());
     }
 
+    /// Equal expressions share one result column.
     for (const auto & name : names_with_declared_type)
         names_from_subcolumn.erase(name);
 
