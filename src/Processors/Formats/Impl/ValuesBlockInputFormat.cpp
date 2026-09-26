@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int TYPE_MISMATCH;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_READ_ALL_DATA;
@@ -585,12 +586,12 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     parser_type_for_column[column_idx] = ParserType::SingleExpressionEvaluation;
 
     /// Try to deduce template of expression and use it to parse the following rows
+    std::exception_ptr template_exception;
     if (shouldDeduceNewTemplate(column_idx))
     {
         if (templates[column_idx])
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Template for column {} already exists and it was not evaluated yet",
                                 std::to_string(column_idx));
-        std::exception_ptr exception;
         try
         {
             Exception::SuppressErrorCodesScope suppress_error_codes;
@@ -627,15 +628,15 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
         }
         catch (...)
         {
-            exception = std::current_exception();
+            template_exception = std::current_exception();
         }
         if (!format_settings.values.interpret_expressions)
         {
-            if (exception)
+            if (template_exception)
             {
                 try
                 {
-                    std::rethrow_exception(exception);
+                    std::rethrow_exception(template_exception);
                 }
                 catch (Exception & e)
                 {
@@ -671,7 +672,26 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// to the nearest representable floating-point value like CAST, consistent with the streaming
     /// literal path and the `values` table function (issue #43144). This is not a pruning/comparison
     /// path, so the lossy float conversion is safe here. See `convert_inexact_floats` in the header.
-    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
+    Field value;
+    try
+    {
+        value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings, /*strict=*/false, /*convert_inexact_floats=*/true);
+    }
+    catch (const Exception & e)
+    {
+        /// `TYPE_MISMATCH` only means there is no rule for these types, so it must not hide a template
+        /// that already evaluated the same expression and found the value itself out of range.
+        if (e.code() == ErrorCodes::TYPE_MISMATCH && template_exception
+            && getExceptionErrorCode(template_exception) == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
+            std::rethrow_exception(template_exception);
+        throw;
+    }
+
+    /// A non-null value converted to Null means the conversion failed, not that the user wrote NULL.
+    /// `null_as_default` must not silently turn an overflow the template already diagnosed into a default.
+    if (value.isNull() && !expression_value.isNull() && template_exception
+        && getExceptionErrorCode(template_exception) == ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE)
+        std::rethrow_exception(template_exception);
 
     /// Check that we are indeed allowed to insert a NULL.
     if (value.isNull() && !canContainNull(type))
