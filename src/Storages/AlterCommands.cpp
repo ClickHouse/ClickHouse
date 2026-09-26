@@ -791,6 +791,20 @@ void AlterCommand::apply(
         return if_exists && !metadata.columns.has(column_name);
     };
 
+    /// validate() screens these column names too, but against a model that tracks only ADD/DROP/MODIFY/RENAME
+    /// COLUMN - not MODIFY QUERY, which replaces a materialized view's columns with its new query's output.
+    auto skip_absent_column_or_fail = [&](std::string_view action) -> bool
+    {
+        if (should_skip_column_operation())
+            return true;
+        if (metadata.columns.has(column_name))
+            return false;
+
+        auto message = PreformattedMessage::create("Wrong column name. Cannot find column {} to {}", backQuote(column_name), action);
+        metadata.columns.appendHintsMessage(message.text, column_name);
+        throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+    };
+
     if (type == ADD_COLUMN)
     {
         ColumnDescription column(column_name, data_type);
@@ -852,7 +866,7 @@ void AlterCommand::apply(
     }
     else if (type == MODIFY_COLUMN)
     {
-        if (should_skip_column_operation())
+        if (skip_absent_column_or_fail("modify"))
             return;
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
@@ -971,7 +985,7 @@ void AlterCommand::apply(
     }
     else if (type == COMMENT_COLUMN)
     {
-        if (should_skip_column_operation())
+        if (skip_absent_column_or_fail("comment"))
             return;
 
         metadata.columns.modify(column_name,

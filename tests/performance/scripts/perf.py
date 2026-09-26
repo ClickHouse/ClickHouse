@@ -1273,6 +1273,12 @@ print(f"profile-total\t{profile_total_seconds}")
 
 reportStageEnd("run")
 
+# Start merges before the teardown: a drop query such as `ALTER TABLE ... DROP INDEX`
+# creates a mutation and waits for it, and mutations do not run while merges are stopped.
+if stop_merges:
+    for c in all_connections:
+        c.execute("SYSTEM START MERGES")
+
 # Run drop queries
 if not args.keep_created_tables and not args.use_existing_tables:
     drop_queries = substitute_parameters(drop_query_templates)
@@ -1289,7 +1295,3 @@ if not args.keep_created_tables and not args.use_existing_tables:
             print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
 
     reportStageEnd("drop-2")
-
-if stop_merges:
-    for c in all_connections:
-        c.execute("SYSTEM START MERGES")

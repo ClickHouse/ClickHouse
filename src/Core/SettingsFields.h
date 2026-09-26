@@ -386,15 +386,15 @@ struct SettingFieldURI final
     bool changed = false;
 
     explicit SettingFieldURI(const Poco::URI & uri = {}) : value(uri) {}
-    explicit SettingFieldURI(const String & str) : SettingFieldURI(Poco::URI{str}) {}
-    explicit SettingFieldURI(const char * str) : SettingFieldURI(Poco::URI{str}) {}
+    explicit SettingFieldURI(const String & str) : SettingFieldURI(parseURI(str)) {}
+    explicit SettingFieldURI(const char * str) : SettingFieldURI(parseURI(str)) {}
     explicit SettingFieldURI(const Field & f) : SettingFieldURI(f.safeGet<String>()) {}
     SettingFieldURI(const SettingFieldURI &) = default;
     SettingFieldURI & operator=(const SettingFieldURI &) = default;
 
     SettingFieldURI & operator =(const Poco::URI & x) { value = x; changed = true; return *this; }
-    SettingFieldURI & operator =(const String & str) { *this = Poco::URI{str}; return *this; }
-    SettingFieldURI & operator =(const char * str) { *this = Poco::URI{str}; return *this; }
+    SettingFieldURI & operator =(const String & str) { *this = parseURI(str); return *this; }
+    SettingFieldURI & operator =(const char * str) { *this = parseURI(str); return *this; }
     SettingFieldURI & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
 
     bool isChanged() const { return changed; }
@@ -409,6 +409,11 @@ struct SettingFieldURI final
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
+
+    /// `Poco::URI` reports a malformed string with a `Poco::SyntaxException`, which is not a `DB::Exception`, so
+    /// the name of the setting could not be added to it and the user would see a bare "Syntax error: ...".
+    /// Convert it here so that a rejected URI is reported like any other rejected setting value.
+    static Poco::URI parseURI(const String & str);
 };
 
 
@@ -634,6 +639,26 @@ public:
 
     SettingFieldNonZeroUInt64 & operator=(UInt64 x);
     SettingFieldNonZeroUInt64 & operator=(const Field & f);
+
+    void parseFromString(const String & str);
+    void readBinary(ReadBuffer & in);
+
+private:
+    void checkValueNonZero() const;
+};
+
+/// For quantities that are bounded by a 32-bit counter, where a wider value could only ever be
+/// narrowed on use. Unlike `SettingFieldUInt32`, an out-of-range value is rejected rather than
+/// silently wrapped: `readIntText` defaults to `DO_NOT_CHECK_OVERFLOW`, so `SettingFieldUInt32`
+/// turns "10000000000" into 1410065408, which is exactly the wrap this type exists to prevent.
+struct SettingFieldNonZeroUInt32 : public SettingFieldUInt32
+{
+public:
+    explicit SettingFieldNonZeroUInt32(UInt32 x = 1);
+    explicit SettingFieldNonZeroUInt32(const Field & f);
+
+    SettingFieldNonZeroUInt32 & operator=(UInt32 x);
+    SettingFieldNonZeroUInt32 & operator=(const Field & f);
 
     void parseFromString(const String & str);
     void readBinary(ReadBuffer & in);
