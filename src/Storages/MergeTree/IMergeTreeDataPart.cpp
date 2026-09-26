@@ -1047,14 +1047,10 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     {
         auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
-        /// Physical, not usability: marks cached before an ALTER made this index unreadable still have
-        /// to be evicted, so the keys must be derived from what is actually on disk.
-        auto index_format = skip_index->getPhysicalFormat(*this, index_name);
 
-        if (!index_format)
-            continue;
-
-        for (const auto & substream : index_format.substreams)
+        /// Not what this part holds: resolving that needs I/O, which must not run during part
+        /// destruction. Evicting an absent key is a no-op, so the superset is free.
+        for (const auto & substream : skip_index->getPotentialSubstreams())
         {
             auto full_stream_name = index_name + substream.suffix;
             auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);
@@ -1523,6 +1519,17 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             if (auto * constant_granularity = dynamic_cast<MergeTreeIndexGranularityConstant *>(index_granularity.get()))
                 constant_granularity->fixFromRowsCount(rows_count);
 
+            /// A patch part that holds rows names the parts it patches, so an index without source
+            /// parts is not a patch that applies to nothing - it is a file that lost its content.
+            /// Failing here is what keeps the acknowledged update recoverable: an empty index reports
+            /// data version 0, so `clearUnusedPatchParts` would find the patch materialized everywhere
+            /// and delete the only copy of it. An empty index belongs to an empty part alone (the
+            /// covering parts `cloneEmpty` creates).
+            if (info.isPatch() && rows_count > 0 && patch_part_index && patch_part_index->empty())
+                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Patch part {} has {} rows, but its index in {} references no source parts",
+                    name, rows_count, PatchPartIndex::FILENAME);
+
             loadExistingRowsCount(); /// Must be called after loadRowsCount() as it uses the value of `rows_count`.
             loadPartitionAndMinMaxIndex();
 
@@ -1552,10 +1559,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         /// Don't scare people with broken part error if it's retryable.
         if (!isRetryableException(std::current_exception()))
         {
-            auto message = getCurrentExceptionMessage(true);
-            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
-                getDataPartStorage().getFullPath(), message);
-
             if (Exception * e = current_exception_cast<Exception *>())
             {
                 /// Probably there is something wrong with files of this part.
@@ -1575,6 +1578,10 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
                 if (isEmpty())
                     e->addMessage("Part is empty");
             }
+
+            auto message = getCurrentExceptionMessage(true);
+            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
+                getDataPartStorage().getFullPath(), message);
         }
 
         throw;
@@ -1591,9 +1598,9 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     MutableDataPartStoragePtr projection_storage;
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        projection_storage = intent == PartDirIntent::CreateFresh
-            ? getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection)
-            : getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+        projection_storage = intent == PartDirIntent::OpenExisting
+            ? getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection)
+            : getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection);
     }
     if (intent == PartDirIntent::CreateFresh && projection_storage->exists())
     {
@@ -2077,7 +2084,15 @@ void IMergeTreeDataPart::loadPatchPartIndex()
         return;
 
     if (auto in = readFileIfExists(PatchPartIndex::FILENAME))
+    {
         patch_part_index = PatchPartIndex::readBinary(*in);
+
+        /// The file holds nothing but this index, so bytes left over mean its content is not what was
+        /// written. One corruption shape makes this check the difference between a loud and a silent
+        /// failure: a zeroed block parses as an index of format version `V1` with no source parts at
+        /// all, and everything after those nine bytes would otherwise be ignored.
+        assertEOF(*in);
+    }
     else
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", PatchPartIndex::FILENAME, name);
 }
@@ -2242,27 +2257,20 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std:
 
                 auto recovered = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
 
-                /// The default codec is the column's generic-compression stage. For a column coded
-                /// with the default codec alone the recovered frame codec is that stage itself; for a
-                /// pipeline (`CODEC(Delta, Default)`) the frame is a `Multiple` chain and the default
-                /// codec is its single generic-compression stage (a valid pipeline has at most one).
-                /// A structural substream (`Array` offsets, null map, ...) is written with the
-                /// generic stages only, dropping the rest of the pipeline, so search for the generic
-                /// stage instead of matching the declared pipeline by position. `NONE` counts too:
-                /// it is not a generic compression, but a default of `NONE` produces a plain `NONE`
-                /// frame that identifies the default exactly.
+                /// The default is the chain's generic or encryption stage, searched for because structural substreams drop type-specific ones.
+                /// A bare `NONE` frame counts too.
                 if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(recovered.get()))
                 {
                     for (const auto & stage : multiple->getCodecs())
                     {
-                        if (stage->isGenericCompression())
+                        if (stage->isGenericCompression() || stage->isEncryption())
                         {
                             result = stage;
                             break;
                         }
                     }
                 }
-                else if (recovered->isGenericCompression() || recovered->isNone())
+                else if (recovered->isGenericCompression() || recovered->isNone() || recovered->isEncryption())
                     result = recovered;
 
                 /// No generic-compression stage in the frame: it cannot prove the default codec
@@ -2884,6 +2892,10 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
 {
+    /// Volume merge flags can change during selection; check them for each part.
+    if (!storage_policy->hasAnyVolumeWithDisabledMerges())
+        return true;
+
     auto disk_name = getDataPartStorage().getDiskName();
     return !storage_policy->getVolumeByDiskName(disk_name)->areMergesAvoided();
 }
