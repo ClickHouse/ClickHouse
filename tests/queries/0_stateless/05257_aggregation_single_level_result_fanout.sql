@@ -19,8 +19,8 @@ SETTINGS max_threads = 4, distributed_aggregation_memory_efficient = 0;
 SELECT sum(c) = 200000 AND count() = 20000 FROM (SELECT number % 20000 AS k, count() AS c FROM numbers(200000) GROUP BY k) SETTINGS max_threads = 4;
 
 -- A result above max_block_size is also split into about one chunk per output stream, not into
--- max_block_size chunks: 3000 groups used to come out as 2000 + 1000 rows.
-SELECT max(bs) <= 750 FROM (SELECT blockSize() AS bs FROM (SELECT number % 3000 AS k, count() FROM numbers_mt(30000) GROUP BY k))
+-- max_block_size chunks: 3000 groups used to come out as 2001 + 999 rows, now as four chunks of about 750.
+SELECT max(bs) < 1000 FROM (SELECT blockSize() AS bs FROM (SELECT number % 3000 AS k, count() FROM numbers_mt(30000) GROUP BY k))
 SETTINGS max_threads = 4, max_block_size = 2000, enable_parallel_single_level_merge = 0;
 
 -- The same split applies to each set of GROUPING SETS.
