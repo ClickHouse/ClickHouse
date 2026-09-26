@@ -4,6 +4,8 @@
 #include <Interpreters/Context.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
+#include <Processors/QueryPlan/RuntimeFilterBuildOptions.h>
+
 
 namespace DB
 {

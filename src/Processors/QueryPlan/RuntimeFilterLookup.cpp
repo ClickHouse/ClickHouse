@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
@@ -247,22 +248,16 @@ std::optional<Range> detail::RuntimeFilterIndexAnalysis::getRange() const
 
 namespace
 {
-bool typeContainsFloat(const DataTypePtr & type)
+/// Whether `equals` can answer differently from the bitwise comparison a hash table performs on keys:
+/// NaN is not equal to itself, and -0.0 is equal to 0.0. A JSON column counts as a whole, because a
+/// float can appear on a path discovered while reading, which is not among the type's static children.
+bool equalsCanDisagreeWithHashTable(const IDataType & type)
 {
-    const auto nested_type = removeNullable(recursiveRemoveLowCardinality(type));
-    if (WhichDataType(nested_type).isNativeFloat())
-        return true;
-
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_type.get()))
-    {
-        for (const auto & element_type : tuple_type->getElements())
-        {
-            if (typeContainsFloat(element_type))
-                return true;
-        }
-    }
-
-    return false;
+    bool result = false;
+    auto check = [&](const IDataType & nested) { result |= isFloat(nested) || isObject(nested); };
+    check(type);
+    type.forEachChild(check);
+    return result;
 }
 
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
@@ -406,9 +401,10 @@ void ExactSetRuntimeFilter<negate>::finishInsert()
     }
 
     /// If only one element is in the set then use `equals` instead of set lookup.
-    /// If the argument is `Nullable` or contains a float, use `Set` because it handles `NULL`
-    /// values and uses the same NaN membership semantics as JOIN keys.
-    if (set.getTotalRowCount() == 1 && !argument_can_have_nulls && !typeContainsFloat(filter_column_target_type))
+    /// If the argument is `Nullable`, use `Set` because it can handle `NULL` values.
+    /// If `equals` can disagree with the hash table, use `Set`: this filter must not reject a row the join matches.
+    if (set.getTotalRowCount() == 1 && !argument_can_have_nulls
+        && !equalsCanDisagreeWithHashTable(*filter_column_target_type))
     {
         lookup_state = Single{set.getSetElements().front()};
         return;
