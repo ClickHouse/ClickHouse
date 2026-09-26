@@ -1630,9 +1630,9 @@ static bool isTopKFilterFunction(const ActionsDAG::Node * node)
         && node->function_base->getName() == "__topKFilter";
 }
 
-/// TopK dynamic filtering can push `__topKFilter` into the WHERE `ActionsDAG` as
-/// `and(__topKFilter(...), <predicate>)`. Plain `SELECT ... WHERE <predicate>` entries
-/// are keyed on `<predicate>` alone, so strip internal TopK nodes before probing reuse.
+/// Plain `SELECT ... WHERE <predicate>` entries are keyed on `<predicate>` alone, so strip internal
+/// TopK nodes before probing reuse. `__topKFilter` is merged into the PREWHERE after the pass that
+/// builds this DAG, so the shapes stripped here no longer originate from that optimizer path.
 /// Returns the predicate-only node; the caller turns it into a cache key (which, for a condition
 /// involving the current time, is the hash of the derived deterministic condition, not the node's
 /// own hash).
@@ -1654,6 +1654,11 @@ static const ActionsDAG::Node * getTopKReusePredicateOnlyNode(const ActionsDAG::
 
         if (where_children.empty())
             return nullptr;
+
+        /// Nothing was stripped, so this root is already the node a plain
+        /// `SELECT ... WHERE <predicate>` keys on.
+        if (where_children.size() == node->children.size())
+            return node;
 
         /// The common TopK shape is `and(__topKFilter(...), <WHERE-root>)`, where the WHERE root is a
         /// single (possibly nested `and`) node, so stripping the internal `__topKFilter` leaves exactly

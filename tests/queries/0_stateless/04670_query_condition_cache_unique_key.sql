@@ -23,7 +23,7 @@
 -- a snapshot-aware cache) makes this test fail, which is the point: that work has to look at the
 -- mask and bitmap interaction rather than just flipping the flag.
 
-SET allow_experimental_unique_key = 1;
+SET enable_unique_key = 1;
 SET async_insert = 0;
 SET use_query_condition_cache = 1;
 SET enable_analyzer = 1;
