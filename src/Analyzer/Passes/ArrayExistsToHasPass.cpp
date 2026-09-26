@@ -175,7 +175,7 @@ public:
         if (!types_compatible)
             return;
 
-        auto has_function = createInternalFunctionHasOverloadResolver();
+        auto has_function = createInternalFunctionHasOverloadResolver(getContext());
 
         array_exists_function_arguments_nodes[0] = std::move(array_exists_function_arguments_nodes[1]);
         array_exists_function_arguments_nodes[1] = std::move(has_constant_element_argument);

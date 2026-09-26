@@ -64,8 +64,16 @@ public:
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMapToArrayAdapter>(context); }
 
+    /// Only some Impl types accept a context; the rest stay default-constructed.
     explicit FunctionMapToArrayAdapter(const ContextPtr & context)
-        : enable_lazy_columns_replication(context->getSettingsRef()[Setting::enable_lazy_columns_replication])
+        : impl([&]
+        {
+            if constexpr (std::is_constructible_v<Impl, ContextPtr>)
+                return Impl(context);
+            else
+                return Impl();
+        }())
+        , enable_lazy_columns_replication(context->getSettingsRef()[Setting::enable_lazy_columns_replication])
     {
     }
 
