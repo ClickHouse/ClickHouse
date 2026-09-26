@@ -60,7 +60,7 @@ inside_part_read() {
 # it is the only signal that reports where the query stopped. A limit that stops timing out at all
 # is already too generous, so the ladder ends there. The elapsed value is not asserted, because it
 # is everything before the read plus one mark, so it tracks machine load.
-timeout_err="${CLICKHOUSE_TMP}/04746_timeout_err.txt"
+timeout_err="${CLICKHOUSE_TMP}/05270_timeout_err.txt"
 for limit in 1 2 4 8 16 32 64; do
     ${CLICKHOUSE_CLIENT} --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
         --max_execution_time "$limit" --timeout_overflow_mode throw \
@@ -73,7 +73,7 @@ echo -n 'timeout observed '
 inside_part_read "$timeout_err"
 
 query_id="compact_read_cancel_${CLICKHOUSE_DATABASE}_$$"
-kill_err="${CLICKHOUSE_TMP}/04746_kill_err.txt"
+kill_err="${CLICKHOUSE_TMP}/05270_kill_err.txt"
 ${CLICKHOUSE_CLIENT} --query_id "$query_id" \
     --max_block_size 100000000 --preferred_block_size_bytes 0 --max_threads 1 \
     -q "$read_query" >/dev/null 2>"$kill_err" &
@@ -156,8 +156,11 @@ text_query="SELECT count() FROM t_text_read_cancel WHERE $text_pred"
 # Assert the text index is what serves the query: if it silently fell back to a full scan the
 # reader under test would never run. Analysing the predicate costs about as much per term as
 # reading does, so this asks the same question of a single term: whether the index is usable for
-# this predicate shape does not depend on how many terms are conjoined.
-${CLICKHOUSE_CLIENT} --use_skip_indexes_on_data_read 0 --query_plan_direct_read_from_text_index 1 -q "
+# this predicate shape does not depend on how many terms are conjoined. Only the plan does: a
+# count() over a single text predicate is answered from the index without scanning the part, so
+# that rewrite is disabled here.
+${CLICKHOUSE_CLIENT} --use_skip_indexes_on_data_read 0 --query_plan_direct_read_from_text_index 1 \
+    --query_plan_optimize_count_from_text_index 0 -q "
 SELECT 'text index used', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_text_read_cancel WHERE hasAnyTokens(s, ['filler', 'tok1']))
 WHERE explain ILIKE '%Name: idx_s%'"
@@ -185,7 +188,7 @@ WHERE explain ILIKE '%Name: idx_s%'"
 # finish and leave the diagnostic absent for the opposite reason, which this retry cannot tell apart
 # and would answer by pausing longer still. Load only slows the walk, so that margin is smallest on
 # an idle machine.
-text_err="${CLICKHOUSE_TMP}/04746_text_err.txt"
+text_err="${CLICKHOUSE_TMP}/05270_text_err.txt"
 text_reading=0
 for text_settle in 0 0.25 0.5 1 2 4; do
     text_query_id="text_read_cancel_${CLICKHOUSE_DATABASE}_$$_${text_settle}"
