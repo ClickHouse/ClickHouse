@@ -91,6 +91,9 @@ void drainConsumer(
 using Messages = std::vector<cppkafka::Message>;
 size_t eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler = [](const cppkafka::Error & /*err*/) {});
 
+/// A memory limit describes the state of the server, not the message being read.
+bool isMemoryLimitError(int code);
+
 SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const String & schema_name);
 
 bool checkDependencies(const StorageID & table_id, const ContextPtr& context);
