@@ -230,6 +230,10 @@ The option applies to all system log tables; it does not allow for a different c
 When the `cluster` setting is used, the table definition references the cluster, and the cluster has to exist for the table to be loaded. If you remove the cluster from the configuration, also drop the `all_...` tables (they will be recreated according to the new configuration at the next flush).
 </Note>
 
+<Warning>
+Once this section is enabled, the `all_...` names in the `system` database are reserved for this feature. Do not keep your own tables under these names: rename any such table before enabling the section.
+</Warning>
+
 **Example**
 
 ```xml
@@ -947,7 +951,7 @@ Keys for server/client settings:
 | `certificateFile` | Path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.                                                                                                                                                                                                                                                                                                                                                |                                            |
 | `cipherList` | Supported OpenSSL encryptions.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`  |
 | `disableProtocols` | Protocols that are not allowed to be used.                                                                                                                                                                                                                                                                                                                                                                                                                             |                                            |
-| `extendedVerification` | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `false`                                    |
+| `extendedVerification` | If enabled, verify that the certificate CN or SAN matches the peer hostname.                                                                                                                                                                                                                                                                                                                                                                                           | `true` for `openSSL.client`, `false` for `openSSL.server` |
 | `fips` | Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.                                                                                                                                                                                                                                                                                                                                                                                 | `false`                                    |
 | `invalidCertificateHandler` | Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                           | `RejectCertificateHandler`                 |
 | `loadDefaultCAFile` | Wether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `/etc/ssl/cert.pem` (resp. the directory `/etc/ssl/certs`) or in file (resp. directory) specified by the environment variable `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                        | `true`                                     |
@@ -1015,7 +1019,7 @@ Keys for server/client settings:
 
 ## openSSL.client.extendedVerification {#openssl.client.extendedverification}
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />If enabled, verify that the certificate CN or SAN matches the peer hostname.
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />If enabled, verify that the certificate CN or SAN matches the peer hostname.
 
 ## openSSL.client.fips {#openssl.client.fips}
 
@@ -1027,7 +1031,7 @@ Keys for server/client settings:
 
 ## openSSL.client.loadDefaultCAFile {#openssl.client.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Determines whether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Determines whether the default CA certificates will be used. ClickHouse looks for them in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`), in the file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`), and in other well-known locations of various distributions. If no CA certificates are found on the filesystem, no explicit `caConfig` is configured, and the binary was built with embedded CA certificates (the default, controlled by the `ENABLE_EMBEDDED_CA_CERTIFICATES` build option), the embedded certificates are used instead, so TLS works even in a minimal environment without any files, e.g. in a container built "from scratch". In builds without embedded CA certificates, an error is thrown in this case.
 
 ## openSSL.client.preferServerCiphers {#openssl.client.preferserverciphers}
 
@@ -1083,7 +1087,7 @@ Keys for server/client settings:
 
 ## openSSL.server.loadDefaultCAFile {#openssl.server.loaddefaultcafile}
 
-<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Determines whether built-in CA certificates for OpenSSL will be used. ClickHouse assumes that builtin CA certificates are in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`) or in file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`).
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Determines whether the default CA certificates will be used. ClickHouse looks for them in the file `</etc/ssl/cert.pem>` (resp. the directory `</etc/ssl/certs>`), in the file (resp. directory) specified by the environment variable `<SSL_CERT_FILE>` (resp. `<SSL_CERT_DIR>`), and in other well-known locations of various distributions. If no CA certificates are found on the filesystem, no explicit `caConfig` is configured, and the binary was built with embedded CA certificates (the default, controlled by the `ENABLE_EMBEDDED_CA_CERTIFICATES` build option), the embedded certificates are used instead, so TLS works even in a minimal environment without any files, e.g. in a container built "from scratch". In builds without embedded CA certificates, an error is thrown in this case.
 
 ## openSSL.server.preferServerCiphers {#openssl.server.preferserverciphers}
 
@@ -1613,7 +1617,7 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 
 The server's time zone.
 
-Specified as an IANA identifier for the UTC timezone or geographic location (for example, Africa/Abidjan).
+Specified as a name that `system.time_zones` lists - the [IANA Time Zone Database](https://www.iana.org/time-zones) that is shipped with the server, for example `Africa/Abidjan` - or as a fixed offset from UTC, spelled `Fixed/UTC±HH:MM:SS`, for example `Fixed/UTC+05:30:00`. A name that only the operating system's time zone database has is rejected, because ClickHouse ships its own copy of the database so that results do not depend on the host.
 
 The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. Besides, the time zone is used in functions that work with the time and date if they didn't receive the time zone in the input parameters.
 

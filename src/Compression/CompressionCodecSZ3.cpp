@@ -31,7 +31,7 @@ public:
     CompressionCodecSZ3(UInt8 float_size_, SZ3::ALGO algorithm_, SZ3::EB error_bound_mode_, double error_value_);
 
     uint8_t getMethodByte() const override;
-    ASTPtr getCodecDesc() const override;
+    ASTPtr getCodecDescription() const override;
 
     UInt32 getAdditionalSizeAtTheEndOfBuffer() const override { return 0; }
 
@@ -102,7 +102,7 @@ CompressionCodecSZ3::CompressionCodecSZ3(UInt8 float_size_, SZ3::ALGO algorithm_
 {
 }
 
-ASTPtr CompressionCodecSZ3::getCodecDesc() const
+ASTPtr CompressionCodecSZ3::getCodecDescription() const
 {
     return makeCodecDescription(
         "SZ3",
@@ -118,7 +118,7 @@ uint8_t CompressionCodecSZ3::getMethodByte() const
 
 void CompressionCodecSZ3::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, true);
+    getCodecDescription()->updateTreeHash(hash, true);
     hash.update(float_width);
 }
 

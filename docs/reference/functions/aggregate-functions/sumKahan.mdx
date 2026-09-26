@@ -13,6 +13,7 @@ Introduced in: v1.1.0
 Calculates the sum of the numbers with [Kahan compensated summation algorithm](https://en.wikipedia.org/wiki/Kahan_summation_algorithm).
 Slower than [`sum`](/reference/functions/aggregate-functions/sum) function.
 The compensation works only for [Float](/reference/data-types/float) types.
+For the [Decimal](/reference/data-types/decimal) and [Interval](/reference/data-types/special-data-types/interval) types, which are backed by integers, the exact summation of `sum` is used instead.
     
 
 **Syntax**
@@ -23,11 +24,11 @@ sumKahan(x)
 
 **Arguments**
 
-- `x` — Input value. [`Integer`](/reference/data-types/int-uint) or [`Float`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
+- `x` — Input value. [`Integer`](/reference/data-types/int-uint) or [`Float`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal) or [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Returned value**
 
-Returns the sum of numbers. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
+Returns the sum of numbers. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal) or [`Interval`](/reference/data-types/special-data-types/interval)
 
 **Examples**
 
