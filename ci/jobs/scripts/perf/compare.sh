@@ -548,6 +548,9 @@ function run_tests
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
                 --stop-merges
+                # LEFT is master HEAD and RIGHT is the pull request, so one side
+                # may not know a setting the other one added.
+                --allow-settings-version-skew
 
                 "$test"
             )
@@ -1036,6 +1039,7 @@ do
         --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
         ${CHPC_RUNS:+--runs "$CHPC_RUNS"} ${PR_TO_TEST:+--pr-number "$PR_TO_TEST"} \
         --max-queries 0 --profile-seconds 0 --stop-merges \
+        --allow-settings-version-skew \
         --queries-to-run $confirm_indexes \
         > "analyze-confirm/$confirm_test-raw.tsv.tmp" \
         2> "analyze-confirm/$confirm_test-err.log"

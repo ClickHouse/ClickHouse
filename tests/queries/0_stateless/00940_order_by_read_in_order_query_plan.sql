@@ -1,5 +1,5 @@
 SET explain_query_plan_default = 'legacy';
-SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_optimize_lazy_materialization = 0, optimize_sorting_by_input_stream_properties = 1;
+SET optimize_read_in_order = 1, query_plan_read_in_order = 1, query_plan_optimize_lazy_materialization = 0, optimize_sorting_by_input_stream_properties = 1, read_in_order_max_primary_key_ratio = 1.0;
 -- Parallel replicas add plan steps around the read, which shifts the indentation of every
 -- `sort description` row matched below.
 SET enable_parallel_replicas = 0;

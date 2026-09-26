@@ -1,0 +1,3 @@
+guard_exempted_by_runtime_filter	0
+guard_fires_without_runtime_filter	1
+result_rows	222
