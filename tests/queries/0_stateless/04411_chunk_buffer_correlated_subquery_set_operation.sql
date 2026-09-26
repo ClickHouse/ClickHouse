@@ -14,7 +14,7 @@ SET force_primary_key_reverse_order = 0;
 
 -- Correlated subqueries are only supported by the analyzer.
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 -- Parallel replicas change the decorrelation execution path and row distribution; pin it off so the
 -- per-part _part_offset row counts are deterministic (same as the sibling decorrelation test 03734).
 SET enable_parallel_replicas = 0;

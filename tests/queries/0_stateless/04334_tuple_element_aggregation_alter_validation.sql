@@ -6,7 +6,7 @@
 -- Disable force_primary_key_reverse_order: `ALTER TABLE ... MODIFY ORDER BY` cannot express `DESC`, so it would change the direction of a forced descending key
 SET force_primary_key_reverse_order = 0;
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 DROP TABLE IF EXISTS t_alter_nullable_tuple;
 
