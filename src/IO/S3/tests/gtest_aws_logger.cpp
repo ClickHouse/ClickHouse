@@ -104,6 +104,30 @@ TEST(IOTestAwsLogger, LogStreamDoesNotMute404OutsideScope)
     EXPECT_NE(recording.captured().find("HTTP response code: 404"), std::string::npos);
 }
 
+/// `AWSClient::AdjustClockSkew` speculates about signing before every retry -> no output
+TEST(IOTestAwsLogger, LogStreamMutesClockSkewSpeculation)
+{
+    ScopedAWSClientLoggerRecording recording;
+    DB::S3::AWSLogger aws_logger(false);
+
+    Aws::OStringStream oss;
+    oss << "If the signature check failed. This could be because of a time skew. Attempting to adjust the signer.";
+    aws_logger.LogStream(Aws::Utils::Logging::LogLevel::Warn, "AWSClient", oss);
+    EXPECT_TRUE(recording.captured().empty());
+}
+
+/// The message that reports an actually detected clock skew is kept
+TEST(IOTestAwsLogger, LogStreamDoesNotMuteDetectedClockSkew)
+{
+    ScopedAWSClientLoggerRecording recording;
+    DB::S3::AWSLogger aws_logger(false);
+
+    Aws::OStringStream oss;
+    oss << "Computed time difference as 42 milliseconds. Adjusting signer with the skew.";
+    aws_logger.LogStream(Aws::Utils::Logging::LogLevel::Info, "AWSClient", oss);
+    EXPECT_NE(recording.captured().find("Adjusting signer with the skew"), std::string::npos);
+}
+
 /// Scope + 403 -> outputs
 TEST(IOTestAwsLogger, LogStreamDoesNotMuteNon404InsideExpect404Scope)
 {
