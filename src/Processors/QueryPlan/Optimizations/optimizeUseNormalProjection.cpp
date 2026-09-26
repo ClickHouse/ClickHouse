@@ -37,6 +37,7 @@ namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
 }
 
@@ -444,9 +445,9 @@ UseProjectionsResult optimizeUseNormalProjections(
             query.dag->removeUnusedActions();
     }
 
-    const bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+    const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
 
-    if (!force_optimize_projection)
+    if (!relax_projection_checks)
     {
         /// A normal projection can help in two ways:
         ///     1. Pruning rows via a filter
@@ -488,7 +489,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         parent_reading_select_result->selected_ranges = parts.size();
     }
 
-    if (!force_optimize_projection)
+    if (!relax_projection_checks)
     {
         /// /// Nothing to read. Ignore projections.
         if (parent_reading_select_result->parts_with_ranges.empty())
@@ -614,10 +615,10 @@ UseProjectionsResult optimizeUseNormalProjections(
         bool sort_order_helps = projection_sort_order_useful(projection);
 
         /// Consider projections with equal read cost only if:
-        /// - `force_optimize_projection` is enabled, or
+        /// - `force_optimize_projection` or `prefer_optimize_projection` is enabled, or
         /// - the parent reading's `selected_marks` becomes zero, or
         /// - the projection's sort order matches the query's ORDER BY,
-        if (candidate.sum_marks > parent_reading_marks)
+        if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -629,7 +630,7 @@ UseProjectionsResult optimizeUseNormalProjections(
             LOG_DEBUG(logger, "{}", stat.description);
             continue;
         }
-        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection && !sort_order_helps)
+        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !relax_projection_checks && !sort_order_helps)
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",
@@ -721,9 +722,20 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// parts, and the projection parts are in one-to-one correspondence with them, so the copied value
     /// discriminates projection entries equally well. (The analysis-side consult is gated separately,
     /// by passing the stamp into `analyzeProjectionCandidate` above.)
+    ///
+    /// Likewise, `registerLeftSideIndexAnalysisSecondPass` has already attached the join runtime filter
+    /// descriptors for the second-pass granule pruning to the replaced read. Carry them over as well,
+    /// otherwise a JOIN whose left side is served from a normal projection would silently lose the
+    /// pruning that `enable_join_runtime_filters_index_analysis` asks for. Each descriptor is re-checked
+    /// against the projection's own primary key and skip indexes and dropped if it cannot prune there.
     if (projection_reading)
+    {
         if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
+        {
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
+            projection_reading_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading);
+        }
+    }
 
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
     filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);

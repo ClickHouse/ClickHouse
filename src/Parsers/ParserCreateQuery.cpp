@@ -714,10 +714,11 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        /// For TABLE we only allow SETTINGS without ENGINE in order to support default_table_engine
-        /// Special handling is provided in InterpreterSetQuery::applySettingsFromQuery to differentiate between engine and query settings
-        /// For DATABASE we currently don't allow SETTINGS without ENGINE (it could be implemented in a similar fashion if necessary)
-        if ((engine_kind == TABLE_ENGINE || parsed_engine_keyword) && s_settings.ignore(pos, expected))
+        /// SETTINGS without ENGINE is allowed for both TABLE and DATABASE, so that the engine can come
+        /// from `default_table_engine` for a table and from the only default database engine (`Atomic`)
+        /// for a database. Special handling is provided in `InterpreterSetQuery::applySettingsFromQuery`
+        /// to differentiate between engine and query settings.
+        if (s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
                 return false;
@@ -2013,6 +2014,23 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 ```
 
 ### SETTINGS {#settings}
+
+The `SETTINGS` clause may be used without an `ENGINE` clause, in which case the default database engine
+(`Atomic`) is used. It may hold both settings of the database engine and ordinary query settings; each
+name is dispatched to whichever of the two it belongs to.
+
+#### disk {#disk}
+
+The disk used to store the table metadata files of the database. It can name a disk from the server
+configuration, or define one inline with the `disk` function, the same way a single table does:
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+Applies to database engines that store table metadata on disk (`Atomic`, `Ordinary`). If unspecified,
+the disk defined in the `database_disk.disk` server setting is used.
 
 #### lazy_load_tables {#lazy-load-tables}
 
@@ -3322,6 +3340,8 @@ Typically the first refresh is started immediately after the materialized view i
 
 If the refreshable materialized view is in a [Replicated database](/reference/engines/database-engines/replicated), the replicas coordinate with each other such that only one replica performs the refresh at each scheduled time. [ReplicatedMergeTree](/reference/engines/table-engines/mergetree-family/replication) table engine is required, so that all replicas see the data produced by the refresh.
 
+`RANDOMIZE FOR` is applied by each replica independently, so the replicas do not agree on the exact time of the next refresh and whichever one comes first performs it. This means a random replica refreshes each time, and that `next_refresh_time` in [`system.view_refreshes`](/reference/system-tables/view_refreshes) reports the time this replica would refresh at, not necessarily the time the refresh actually happens. Because the earliest of several random times is earlier than one random time on average, refreshes happen slightly earlier inside the `RANDOMIZE FOR` window the more replicas there are.
+
 In `APPEND` mode, coordination can be disabled using `SETTINGS all_replicas = 1`. This makes replicas do refreshes independently of each other. In this case ReplicatedMergeTree is not required.
 
 In non-`APPEND` mode, only coordinated refreshing is supported. For uncoordinated, use `Atomic` database and `CREATE ... ON CLUSTER` query to create refreshable materialized views on all replicas.
@@ -3780,6 +3800,7 @@ If the table was detached permanently, it won't be reattached at the server star
 ### With Specified Path to Table Data {#with-specified-path-to-table-data}
 
 The query creates a new table with provided structure and attaches table data from the provided directory in `user_files`.
+The user needs the `READ ON FILE` and `WRITE ON FILE` privileges for this query: it reads the directory and moves it to the data path of the new table.
 
 **Syntax**
 
