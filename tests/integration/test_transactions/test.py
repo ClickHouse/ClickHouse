@@ -510,8 +510,8 @@ def test_recover_removal_tid_of_part_covered_by_non_txn_part(start_cluster):
 
     assert node.query("SELECT n FROM mt4 ORDER BY n") == "1\n3\n"
 
-    empty_tid = "(0,0,'00000000-0000-0000-0000-000000000000')"
-    non_txn_tid = "(1,1,'00000000-0000-0000-0000-000000000000')"
+    empty_tid = "(0,0,'00000000-0000-0000-0000-000000000000',0)"
+    non_txn_tid = "(1,1,'00000000-0000-0000-0000-000000000000',0)"
 
     # The empty covering parts survived the kill and were created without a transaction: DROP PARTITION
     # covers each dropped part with one empty part of the same block range at the next level.  They are
