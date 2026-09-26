@@ -29,6 +29,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char merge_tree_background_task_marked_for_deletion[];
+    extern const char mt_background_executor_pretend_busy[];
 }
 
 namespace ErrorCodes
@@ -188,6 +189,8 @@ size_t MergeTreeBackgroundExecutor<Queue>::getMaxTasksCount() const
 template <class Queue>
 bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
 {
+    fiu_do_on(FailPoints::mt_background_executor_pretend_busy, { return false; });
+
     LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
 
     if (shutdown)

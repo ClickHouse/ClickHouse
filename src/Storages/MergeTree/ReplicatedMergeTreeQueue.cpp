@@ -2050,7 +2050,7 @@ Int64 ReplicatedMergeTreeQueue::getNextMutationVersion(
 
 ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(
     const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_, std::unique_lock<SharedMutex> & /* state_lock */)
-    : entry(entry_), queue(queue_)
+    : entry(entry_), queue(queue_), previous_last_attempt_time(entry_->last_attempt_time)
 {
     if (auto drop_range = entry->getDropRange(queue.format_version))
     {
@@ -2151,6 +2151,17 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
         erase_and_check(actual_part);
 
     entry->replace_range_actual_new_part_names.clear();
+}
+
+
+void ReplicatedMergeTreeQueue::rollbackAttemptForRejectedEntry(const SelectedEntryPtr & selected_entry)
+{
+    std::lock_guard lock(state_mutex);
+
+    auto & entry = *selected_entry->log_entry;
+    chassert(entry.num_tries > 0);
+    --entry.num_tries;
+    entry.last_attempt_time = selected_entry->currently_executing_holder->previous_last_attempt_time;
 }
 
 
