@@ -1,0 +1,16 @@
+-- ToUnicode leaves invalid xn-- labels untouched instead of emitting replacement characters
+xn--zn7c.com
+xn--hdhxn--
+a.b.c.xn--pokxncvks
+xn--a.ß
+-- ToASCII and ToUnicode reject double-encoded ACE labels, the raw Punycode codec does not
+
+xn--xn---epa.com
+xn--zca-
+xn--zca
+xn--zca.xn-
+xn---ଊ
+-- The bidi rule rejects labels which mix Arabic-Indic digits with strong LTR characters
+
+
+
