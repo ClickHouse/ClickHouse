@@ -94,7 +94,21 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
     bool has_patches = std::ranges::any_of(parts_visible_for_merge, [](const auto & part) { return part->info.isPatch(); });
 
     if (has_patches)
+    {
         data_versions_by_partition = getDataVersionsByPartition(parts_visible_for_merge);
+
+        /// A selected mutate task and a running merge that applies patch parts each own a data version that no part
+        /// carries yet: the merge takes its result version from those patches, and the mutation's version need not
+        /// still be in 'current_mutations_by_version', because KILL MUTATION erases it while the task keeps running.
+        chassert(merge_mutate_lock.owns_lock()); /// guards both maps read below
+        for (const auto & [part, future_version] : storage.currently_mutating_part_future_versions)
+            data_versions_by_partition[part->info.getPartitionId()].push_back(future_version);
+
+        for (const auto & [part, future_version] : storage.currently_merging_part_future_versions)
+            data_versions_by_partition[part->info.getPartitionId()].push_back(future_version);
+
+        sortDataVersions(data_versions_by_partition);
+    }
 
     /// The patch parts that a merge applies must be visible to that merge itself, and nothing here
     /// checks their visibility later, so they are taken from the active parts that the transaction sees.
