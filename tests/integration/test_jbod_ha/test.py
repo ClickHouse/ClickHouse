@@ -1,17 +1,44 @@
-import json
 import random
-import re
-import string
-import threading
 import time
-from multiprocessing.dummy import Pool
 
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+
+
+def _umount_with_retry(node, mount_point, retries=15, delay=0.1, jitter=1.0):
+    """Run ``umount`` on a container mount point, retrying briefly on EBUSY.
+
+    The disk health check thread (controlled by ``local_disk_check_period_ms``)
+    periodically opens files under storage paths, so ``umount`` can transiently
+    fail with ``target is busy``. Only that error is retried; anything else, and
+    the final attempt, propagates unchanged so genuine failures still surface.
+
+    ``jitter`` must span a whole check period: sleeping a fixed amount would
+    keep every retry at the same phase of the checker loop, so a first collision
+    could repeat. Sleeping ``delay`` plus a uniform sample over one period makes
+    the next attempt's phase independent of the current one.
+    """
+    for _ in range(retries - 1):
+        try:
+            node.exec_in_container(
+                ["bash", "-c", "umount {}".format(mount_point)],
+                privileged=True,
+                user="root",
+            )
+            return
+        except Exception as e:
+            if "target is busy" not in str(e):
+                raise
+            time.sleep(delay + random.uniform(0, jitter))
+    node.exec_in_container(
+        ["bash", "-c", "umount {}".format(mount_point)],
+        privileged=True,
+        user="root",
+    )
+
 
 node1 = cluster.add_instance(
     "node1",
@@ -108,11 +135,7 @@ def test_jbod_ha(start_cluster):
         # Mimic disk recovery
         #
         # NOTE: this will unmount only proc from /test_jbod_ha_jbod1 and leave tmpfs
-        node1.exec_in_container(
-            ["bash", "-c", "umount  /test_jbod_ha_jbod1"],
-            privileged=True,
-            user="root",
-        )
+        _umount_with_retry(node1, "/test_jbod_ha_jbod1")
 
         node1.restart_clickhouse()
         time.sleep(5)
@@ -160,14 +183,10 @@ def test_jbod_ha_fetch_partition(start_cluster):
         assert int(node2.query("select count(p) from tbl")) == 10
 
         # Mimic disk recovery, just in case we add more tests later
-        node2.exec_in_container(
-            ["bash", "-c", "umount  /test_jbod_ha_jbod1"],
-            privileged=True,
-            user="root",
-        )
+        _umount_with_retry(node2, "/test_jbod_ha_jbod1")
 
         node2.restart_clickhouse()
 
     finally:
         for node in [node1, node2]:
-            node.query("DROP TABLE IF EXISTS tbl SYNC".format(i + 1))
+            node.query("DROP TABLE IF EXISTS tbl SYNC")

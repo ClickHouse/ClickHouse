@@ -18,8 +18,10 @@ UntrackedMemoryCounter::~UntrackedMemoryCounter()
 
 UntrackedMemoryRegistry & UntrackedMemoryRegistry::instance()
 {
-    static UntrackedMemoryRegistry registry;
-    return registry;
+    /// Never destroyed: a thread owning a `ThreadStatus` can outlive static destruction, and
+    /// `~UntrackedMemoryCounter` would then write into a destroyed registry. Reachable, so not a leak.
+    static UntrackedMemoryRegistry * registry = new UntrackedMemoryRegistry;
+    return *registry;
 }
 
 void UntrackedMemoryRegistry::add(UntrackedMemoryCounter * counter)

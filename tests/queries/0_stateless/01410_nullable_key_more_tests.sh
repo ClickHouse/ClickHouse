@@ -11,7 +11,7 @@ test_func()
 
     curl -d@- -sS "${CLICKHOUSE_URL}" <<< "drop table if exists table_with_nullable_keys"
 
-    curl -d@- -sS "${CLICKHOUSE_URL}" <<< "create table table_with_nullable_keys (nullable_int Nullable(UInt32), nullable_str Nullable(String), nullable_lc LowCardinality(Nullable(String)), nullable_ints Array(Nullable(UInt32)), nullable_misc Tuple(Nullable(String), Nullable(UInt32)), nullable_val Map(UInt32, Nullable(String)), value UInt8) engine $engine order by (nullable_int, nullable_str, nullable_lc, nullable_ints, nullable_misc, nullable_val) settings allow_nullable_key = 1, index_granularity = 1"
+    curl -d@- -sS "${CLICKHOUSE_URL}" <<< "create table table_with_nullable_keys (nullable_int Nullable(UInt32), nullable_str Nullable(String), nullable_lc LowCardinality(Nullable(String)), nullable_ints Array(Nullable(UInt32)), nullable_misc Tuple(Nullable(String), Nullable(UInt32)), nullable_val Map(UInt32, Nullable(String)), value UInt8) engine $engine order by (nullable_int, nullable_str, nullable_lc, nullable_ints, nullable_misc, nullable_val) settings allow_nullable_key = 1, allow_tuple_element_aggregation = false, index_granularity = 1"
 
     curl -d@- -sS "${CLICKHOUSE_URL}" <<< "insert into table_with_nullable_keys select * replace (cast(nullable_val as Map(UInt32, Nullable(String))) as nullable_val) from generateRandom('nullable_int Nullable(UInt32), nullable_str Nullable(String), nullable_lc Nullable(String), nullable_ints Array(Nullable(UInt32)), nullable_misc Tuple(Nullable(String), Nullable(UInt32)), nullable_val Array(Tuple(UInt32, Nullable(String))), value UInt8', 1, 30, 30) limit 1024"
 

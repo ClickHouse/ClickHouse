@@ -1,0 +1,94 @@
+---
+sidebar_label: '通过 ClickPipes 连接'
+sidebar_position: 3
+sidebarTitle: '通过 ClickPipes 连接'
+slug: /integrations/estuary/clickpipes
+description: '通过 ClickPipes 集成 Estuary 和 ClickHouse'
+title: '使用 ClickPipes 摄取 Estuary 数据'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://estuary.dev'
+keywords: ['estuary', 'data ingestion', 'etl', 'pipeline', 'data integration', 'clickpipes']
+---
+
+import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Estuary 可通过 Kafka ClickPipe 连接到 ClickHouse。
+
+使用此集成时，无需维护自己的 Kafka 生态系统。Estuary 会以类似 Kafka 消息的方式发送新数据。您可以配置 Kafka ClickPipe，使用 Estuary 的 broker 和 Schema Registry 信息来消费这些消息。
+
+如需了解替代方案，请参阅 [Estuary 的原生 ClickHouse 集成](/zh/integrations/connectors/data-ingestion/community-integrations/estuary-native)。
+
+<div id="setup-guide">
+  ## 设置指南
+</div>
+
+**前置条件**
+
+您需要：
+
+* 一个 [Estuary 账户](https://dashboard.estuary.dev/register)
+* Estuary 中一个或多个从所需数据源拉取数据的 [**capture**](https://docs.estuary.dev/concepts/captures/)
+* 一个具有 ClickPipe 权限的 ClickHouse Cloud 账户
+
+<Steps>
+  <Step title="创建 Estuary 物化" id="1-create-an-estuary-materialization">
+    要将 Estuary 中源 collection 的数据传输到 ClickHouse，首先需要创建一个**物化**。
+
+    1. 在 Estuary 控制台中，前往 [目标端](https://dashboard.estuary.dev/materializations)页面。
+    2. 单击 **+ 新建物化**。
+    3. 选择 **ClickHouse Kafka API** connector。
+    4. 填写“物化”“端点”和“源 collection”部分的信息：
+       * **物化详细信息：**为物化指定唯一名称，并选择数据平面 (云提供商和区域)
+       * **端点配置：**提供安全的**身份验证令牌**
+       * **源 collection：**关联现有的 **capture**，或选择要向 ClickHouse 提供的数据 collection
+    5. 单击 **下一步**，然后单击 **保存并发布**。
+    6. 在物化详情页面中，记下 ClickHouse 物化的全名。格式类似于 `your-tenant/your-unique-name/dekaf-clickhouse`。
+
+    Estuary 将开始以 Kafka 消息的形式流式传输所选 collection。ClickHouse 可使用 Estuary 的 broker 信息和您提供的身份验证令牌，通过 Kafka ClickPipe 访问这些数据。
+  </Step>
+
+  <Step title="输入 Kafka 连接信息" id="2-enter-kafka-connection-details">
+    在 ClickHouse 中设置新的 Kafka ClickPipe，并输入连接信息：
+
+    1. 在 ClickHouse Cloud 控制台中，选择 **数据源**。
+    2. 创建新的 **ClickPipe**。
+    3. 选择 **Apache Kafka** 作为数据源。
+    4. 使用 Estuary 的 broker 和 registry 信息填写 Kafka 连接信息：
+       * 为 ClickPipe 命名
+       * broker 使用：`dekaf.estuary-data.com:9092`
+       * 身份验证保留默认的 `SASL/PLAIN` 选项
+       * 用户名请输入 Estuary 中物化的全名 (例如 `your-tenant/your-unique-name/dekaf-clickhouse`)
+       * 密码请输入为该物化提供的身份验证令牌
+    5. 启用 Schema Registry 选项：
+       * schema URL 使用：`https://dekaf.estuary-data.com`
+       * schema 密钥与 broker 用户名相同 (即物化名称)
+       * secret 与 broker 密码相同 (即身份验证令牌)
+  </Step>
+
+  <Step title="配置传入数据" id="3-configure-incoming-data">
+    1. 选择一个 Kafka **topic** (即 Estuary 中的一个数据 collection) 。
+    2. 选择 **offset**。
+    3. ClickHouse 将检测 topic 中的消息。您可以继续前往 **解析信息** 部分配置表信息。
+    4. 选择创建新表，或将数据加载到匹配的现有表中。
+    5. 将源字段映射到表列，确认列名、类型以及是否可为 null。
+    6. 在最后的 **详细信息和设置** 部分，您可以为专用数据库用户选择权限。
+
+    确认配置无误后，创建 ClickPipe。
+
+    ClickHouse 将配置新的数据源，并开始消费来自 Estuary 的消息。根据需要创建任意数量的 ClickPipes，以流式传输所有所需的数据 collection。
+  </Step>
+</Steps>
+
+<div id="additional-resources">
+  ## 其他资源
+</div>
+
+如需了解如何配置与 Estuary 的 ClickPipe 集成，请参阅 Estuary 文档：
+
+* 有关 ClickPipes 集成，请参阅 Estuary 的 [ClickHouse 物化文档](https://docs.estuary.dev/reference/Connectors/materialization-connectors/Dekaf/clickhouse/)。
+* Estuary 通过 **Dekaf** 将数据作为 Kafka 消息公开。有关 Dekaf 的更多信息，请参阅 [Estuary 指南](https://docs.estuary.dev/guides/dekaf_reading_collections_from_kafka/)。

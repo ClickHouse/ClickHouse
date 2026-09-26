@@ -65,6 +65,8 @@ private:
     const std::string row_between_delimiter;
 
     std::unique_ptr<TemplateFormatReader> format_reader;
+    /// Error recovery consumes the row-between delimiter before returning to normal row parsing.
+    bool row_between_delimiter_already_skipped = false;
 };
 
 class TemplateFormatReader

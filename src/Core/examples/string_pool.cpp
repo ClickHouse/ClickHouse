@@ -30,9 +30,9 @@ int mainEntryExampleStringPool(int argc, char ** argv)
     size_t n = std::stol(argv[1]);
     size_t elems_show = 1;
 
-    using Vec = std::vector<std::string>;
-    using Set = std::unordered_map<std::string, int>;
-    using RefsSet = std::unordered_map<std::string_view, int, StringViewHash>;
+    using Vec = std::vector<std::string>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    using Set = std::unordered_map<std::string, int>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    using RefsSet = std::unordered_map<std::string_view, int, StringViewHash>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
     using DenseSet = ::google::dense_hash_map<std::string, int>;
     using RefsDenseSet = ::google::dense_hash_map<std::string_view, int, StringViewHash>;
     using RefsHashMap = HashMap<std::string_view, int, StringViewHash>;

@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey SETTINGS auto_statistics_types='uniq,tdigest';
 CREATE TABLE customer(c_custkey Int32, c_nationkey Int32) ENGINE MergeTree ORDER BY c_custkey SETTINGS auto_statistics_types='uniq,tdigest';
 SET materialize_statistics_on_insert = 1;
@@ -11,6 +12,7 @@ SET enable_parallel_replicas=0;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET join_algorithm = 'hash,parallel_hash';
 SET use_statistics = 1;
+SET join_runtime_filter_min_probe_rows=0;
 
 SELECT '-- Check that filter on c_nationkey is moved to PREWHERE';
 SELECT REGEXP_REPLACE(trimLeft(explain), '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')

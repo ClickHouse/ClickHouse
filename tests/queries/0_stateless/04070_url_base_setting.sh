@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
 
 # Test url_base setting for resolving relative URLs.
 # The queries will fail with connection errors, but the debug-level log from
@@ -88,7 +89,7 @@ run_and_check "SELECT * FROM url('../a.csv?foo=bar', CSV, 'c String') SETTINGS u
 
 # URL engine: path-relative URL with url_base should resolve correctly
 $CLICKHOUSE_CLIENT --send_logs_level=debug -n -q "
-SET url_base = 'http://base.invalid/dir/', http_connection_timeout = 1, http_max_tries = 1;
+SET url_base = 'http://base.invalid/dir/', $FAST;
 CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_url (c String) ENGINE = URL('data.csv', CSV);
 SELECT * FROM ${CLICKHOUSE_TEST_UNIQUE_NAME}_url;
 " 2>&1 | grep -oF 'http://base.invalid/dir/data.csv' | head -1
@@ -101,7 +102,7 @@ run_and_check "SELECT * FROM url('', CSV, 'c String') SETTINGS url_base = 'http:
 # DETACH/ATTACH (and server restart) after url_base is unset or changed.
 # Use FORMAT TabSeparatedRaw so single quotes are not escaped in the output.
 $CLICKHOUSE_CLIENT -n -q "
-SET url_base = 'http://base.invalid/dir/';
+SET url_base = 'http://base.invalid/dir/', $FAST;
 DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_persist;
 CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_persist (c String) ENGINE = URL('persist.csv', CSV);
 SET url_base = '';
@@ -120,7 +121,7 @@ run_and_check "SELECT * FROM url('//other.invalid/a/../b.csv', CSV, 'c String') 
 $CLICKHOUSE_CLIENT -n -q "
 DROP NAMED COLLECTION IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_nc;
 CREATE NAMED COLLECTION ${CLICKHOUSE_TEST_UNIQUE_NAME}_nc AS url='persist.csv', format='CSV';
-SET url_base = 'http://base.invalid/dir/';
+SET url_base = 'http://base.invalid/dir/', $FAST;
 DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_nc_persist;
 CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_nc_persist (c String) ENGINE = URL(${CLICKHOUSE_TEST_UNIQUE_NAME}_nc);
 SET url_base = '';
@@ -137,7 +138,7 @@ DROP NAMED COLLECTION IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_nc;
 $CLICKHOUSE_CLIENT -n -q "
 DROP NAMED COLLECTION IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_secret;
 CREATE NAMED COLLECTION ${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_secret AS url='http://abs.invalid/data.csv', format='CSV';
-SET url_base = 'http://base.invalid/dir/';
+SET url_base = 'http://base.invalid/dir/', $FAST;
 DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_nc_secret;
 CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_nc_secret (c String) ENGINE = URL(${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_secret);
 SHOW CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_nc_secret FORMAT TabSeparatedRaw;
@@ -152,7 +153,7 @@ DROP NAMED COLLECTION IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_secret;
 $CLICKHOUSE_CLIENT -n -q "
 DROP NAMED COLLECTION IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_creds;
 CREATE NAMED COLLECTION ${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_creds AS url='persist.csv', format='CSV';
-SET url_base = 'http://user:pass@base.invalid/dir/';
+SET url_base = 'http://user:pass@base.invalid/dir/', $FAST;
 DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_nc_creds;
 CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_nc_creds (c String) ENGINE = URL(${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_creds);
 SHOW CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_nc_creds FORMAT TabSeparatedRaw;
@@ -162,7 +163,7 @@ DROP NAMED COLLECTION IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_nc_creds;
 
 # URL engine: credentials introduced by url_base must also NOT leak into positional engine args.
 $CLICKHOUSE_CLIENT -n -q "
-SET url_base = 'http://user:pass@base.invalid/dir/';
+SET url_base = 'http://user:pass@base.invalid/dir/', $FAST;
 DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_pos_creds;
 CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_pos_creds (c String) ENGINE = URL('persist.csv', CSV);
 SHOW CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_pos_creds FORMAT TabSeparatedRaw;
@@ -171,3 +172,10 @@ DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_url_pos_creds;
 
 # Invalid url_base (no scheme) should produce an error
 $CLICKHOUSE_CLIENT --query "SELECT * FROM url('data.csv', CSV, 'c String') SETTINGS url_base = 'example.invalid/def/', $FAST" 2>&1 | grep -oF 'must contain a scheme' | head -1
+
+# The rejected value is not echoed back: it can carry a credential, and the message reaches the client,
+# the exception column of the query log and the server log, none of which the display-secrets setting
+# gates. (last line counts the leaks; clickhouse-local is used because the client also prints back the
+# query it was given, which is the caller's own input rather than something the message disclosed)
+$CLICKHOUSE_LOCAL --query "SELECT * FROM url('data.csv', CSV, 'c String') SETTINGS url_base = 'user:SEKRIT_PW@example.invalid/def/', $FAST" 2>&1 | grep -oF 'must contain a scheme' | head -1
+$CLICKHOUSE_LOCAL --query "SELECT * FROM url('data.csv', CSV, 'c String') SETTINGS url_base = 'user:SEKRIT_PW@example.invalid/def/', $FAST" 2>&1 | grep -c SEKRIT_PW ||:

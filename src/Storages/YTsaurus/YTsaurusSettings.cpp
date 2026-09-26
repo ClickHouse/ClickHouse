@@ -82,9 +82,9 @@ void YTsaurusSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & 
     }
 }
 
-std::vector<std::string_view> YTsaurusSettings::getAllRegisteredNames() const
+VectorWithMemoryTracking<std::string_view> YTsaurusSettings::getAllRegisteredNames() const
 {
-    std::vector<std::string_view> all_settings;
+    VectorWithMemoryTracking<std::string_view> all_settings;
     for (const auto & setting_field : impl->all())
         all_settings.push_back(setting_field.getName());
     return all_settings;

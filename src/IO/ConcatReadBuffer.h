@@ -43,6 +43,20 @@ public:
         current = buffers.begin();
     }
 
+    bool poll(size_t timeout_microseconds) override
+    {
+        if (hasPendingData())
+            return true;
+
+        if (buffers.end() == current)
+            return true;
+
+        if (!working_buffer.empty())
+            (*current)->position() = position();
+
+        return (*current)->poll(timeout_microseconds);
+    }
+
 protected:
     Buffers buffers;
     Buffers::iterator current;

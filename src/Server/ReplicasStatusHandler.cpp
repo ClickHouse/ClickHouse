@@ -8,7 +8,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTPHandlerFactory.h>
-#include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/HTTPResponseHeaderWriter.h>
 #include <Server/IServer.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -55,7 +54,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
         bool ok = true;
         WriteBufferFromOwnString message;
 
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         /// Iterate through all the replicated tables.
         for (const auto & db : databases)

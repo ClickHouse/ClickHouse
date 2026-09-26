@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
@@ -433,9 +434,6 @@ static void extractNameImpl(const ActionsDAG::Node & node, String & res, Context
         if (!isString(removeNullable(removeLowCardinality(value->result_type))))
             return;
 
-        if (value->column->size() != 1)
-            return;
-
         /// Only inserted if the key doesn't exists already
         auto candidate = value->column->getDataAt(0);
         /// Only one name is allowed
@@ -468,14 +466,11 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (!isPathNode(node.children.at(0)))
             return;
 
-        auto value = node.children.at(1)->column;
+        const auto & value = node.children.at(1)->column;
         if (!value)
             return;
 
-        const IColumn * column = value.get();
-        if (const auto * column_const = typeid_cast<const ColumnConst *>(column))
-            column = &column_const->getDataColumn();
-
+        const IColumn * column = &value->getDataColumn();
         const ColumnSet * column_set = typeid_cast<const ColumnSet *>(column);
         if (!column_set)
             return;
@@ -515,9 +510,6 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (!isString(removeNullable(removeLowCardinality(value->result_type))))
             return;
 
-        if (value->column->size() != 1)
-            return;
-
         /// Only inserted if the key doesn't exists already
         res.insert({std::string{value->column->getDataAt(0)}, ZkPathType::Exact});
     }
@@ -533,9 +525,8 @@ static void extractPathImpl(const ActionsDAG::Node & node, Paths & res, ContextP
         if (!isString(removeNullable(removeLowCardinality(value->result_type))))
             return;
 
-        if (value->column->size() != 1)
-            return;
-
+        /// `ActionsDAG::addColumn` normalizes ColumnConst nodes to size 0; the underlying
+        /// data column still holds the literal, so read it directly without a size guard.
         String pattern{value->column->getDataAt(0)};
         bool has_metasymbol = false;
         String prefix{}; // pattern prefix before the first metasymbol occurrence
@@ -860,3 +851,6 @@ void ReadFromSystemZooKeeper::initializePipeline(QueryPipelineBuilder & pipeline
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemZooKeeper) }

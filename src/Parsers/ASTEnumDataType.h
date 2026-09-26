@@ -22,6 +22,11 @@ public:
     ASTPtr clone() const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
+    /// `values` are stored directly (not as AST children), so the generic `ASTDataType` JSON
+    /// serialization would drop them. Serialize/restore them explicitly under a distinct type tag.
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
 protected:
     /// Outputs: Enum8('name1' = 1, 'name2' = 2, ...)
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

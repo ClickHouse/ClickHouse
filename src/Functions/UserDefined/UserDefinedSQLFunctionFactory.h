@@ -35,7 +35,7 @@ public:
     bool has(const String & function_name) const;
 
     /// Get all user defined functions registered names.
-    Strings getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     /// Check whether any UDFs have been registered
     bool empty() const;
@@ -47,6 +47,10 @@ public:
     void restore(RestorerFromBackup & restorer, const String & data_path_in_backup);
 
     void loadFunctions(IUserDefinedSQLObjectsStorage & function_storage, WasmModuleManager & wasm_module_manager);
+
+    /// On startup, for each persisted driver-based function, re-run the driver if its dynamic
+    /// configuration file is missing. Should be called after the regular `loadFunctions` call.
+    void reloadDriverBasedFunctions(const ContextMutablePtr & context, IUserDefinedSQLObjectsStorage & function_storage);
 
 private:
     UserDefinedSQLFunctionFactory();
