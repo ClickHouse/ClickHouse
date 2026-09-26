@@ -84,3 +84,26 @@ SELECT k, uniqExact(n) AS u
 FROM (SELECT if(number < 400000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(480000))
 GROUP BY k ORDER BY k
 SETTINGS max_threads = 1;
+
+-- Selective predicate: many partial states of the large key are empty and must be merged as a no-op.
+SELECT k, uniqExactIf(n, n < 200000) AS u, uniqExact(if(n < 200000, n, NULL)) AS nu
+FROM (SELECT if(number < 400000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(480000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 16, group_by_two_level_threshold = 8;
+
+-- -OrNull and -OrDefault forward the deferred merge too, on the keyed merge, the state-block merge
+-- from remote shards and the spilled-state merge.
+SELECT k, uniqExactOrNull(n) AS u, uniqExactIfOrDefault(n, n % 3 != 0) AS d
+FROM (SELECT if(number < 400000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(480000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 16, group_by_two_level_threshold = 8;
+
+SELECT k, uniqExactOrNull(n) AS u, uniqExactIfOrDefault(n, n % 3 != 0) AS d
+FROM remote('127.0.0.{1,2}', view(SELECT if(number < 400000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(480000)))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 16, distributed_aggregation_memory_efficient = 0;
+
+SELECT k, uniqExactOrNull(n) AS u, uniqExactIfOrDefault(n, n % 3 != 0) AS d
+FROM (SELECT if(number < 400000, toUInt64(0), number % 4) AS k, number AS n FROM numbers_mt(480000))
+GROUP BY k ORDER BY k
+SETTINGS max_threads = 16, group_by_two_level_threshold = 8, max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0;

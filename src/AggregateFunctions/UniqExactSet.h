@@ -396,6 +396,10 @@ public:
         /// single-level one), which is cheaper than any parallel merge.
         if (isSingleLevel() && size() == 0)
             return false;
+        /// An empty source (e.g. `uniqExactIf` where the predicate never matched, or all-`NULL` input under the
+        /// `Nullable` adapter) makes `merge` a no-op; deferring it would only convert it to two-level for nothing.
+        if (other.isSingleLevel() && other.size() == 0)
+            return false;
         return isTwoLevel() || other.isTwoLevel() || worthConvertingToTwoLevel(size() + other.size());
     }
 
