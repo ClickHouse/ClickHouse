@@ -1,0 +1,26 @@
+<clickhouse>
+    <profiles>
+        <default/>
+    </profiles>
+    <users>
+        <default>
+            <password/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </default>
+        <bc.user>
+            <password/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </bc.user>
+    </users>
+    <quotas>
+        <default/>
+    </quotas>
+</clickhouse>
