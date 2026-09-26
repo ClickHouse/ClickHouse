@@ -1356,7 +1356,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read paths from object shared data with ADVANCED serialization version because seek_stream_to_mark_callback is not initialized");
 
     DeserializeBinaryBulkSettings deserialization_settings;
-    deserialization_settings.object_and_dynamic_read_statistics = false;
+    deserialization_settings.read_statistics = false;
     deserialization_settings.position_independent_encoding = true;
     deserialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
     deserialization_settings.data_part_type = MergeTreeDataPartType::Compact;
@@ -1589,7 +1589,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data data");
 
                 DeserializeBinaryBulkSettings deserialization_settings;
-                deserialization_settings.object_and_dynamic_read_statistics = false;
+                deserialization_settings.read_statistics = false;
                 deserialization_settings.position_independent_encoding = true;
                 deserialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
                 deserialization_settings.data_part_type = MergeTreeDataPartType::Compact;
