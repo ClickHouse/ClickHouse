@@ -130,24 +130,27 @@ private:
     size_t position_in_data = 0;
 };
 
-/// Fails the response body on the very first read, so that `readBigAt` takes its retry path
-/// while the session of the failed request is still owned by the response stream.
-class ThrowingHTTPBasicStreamBuf : public Poco::Net::HTTPBasicStreamBuf
+/// Fails on the very first read, so that `readBigAt` takes its retry path while the session of
+/// the failed request is still owned by the body of the response.
+class ThrowingResponseBody : public DB::ReadBuffer
 {
 public:
-    explicit ThrowingHTTPBasicStreamBuf(std::atomic<bool> & read_attempted_)
-        : BasicBufferedStreamBuf(1, IOS::in), read_attempted(read_attempted_)
+    ThrowingResponseBody(std::atomic<bool> & read_attempted_, CountedSessionPtr session_)
+        : DB::ReadBuffer(nullptr, 0), read_attempted(read_attempted_), session(std::move(session_))
     {
     }
 
-private:
-    std::atomic<bool> & read_attempted;
+    bool supportsExternalBufferMode() const override { return true; }
 
-    int readFromDevice(char_type *, std::streamsize) override
+private:
+    bool nextImpl() override
     {
         read_attempted = true;
         throw std::runtime_error("injected response body failure");
     }
+
+    std::atomic<bool> & read_attempted;
+    CountedSessionPtr session;
 };
 
 using GetObjectFn = std::function<Aws::S3::Model::GetObjectOutcome(const Aws::S3::Model::GetObjectRequest & request)>;
@@ -310,8 +313,7 @@ TEST_F(ReadBufferFromS3Test, ReadBigAtReleasesSessionBeforeRetryBackoff)
     std::atomic<bool> retry_request_sent = false;
     std::atomic<bool> released_before_retry = false;
 
-    const auto failing_stream_buf = std::make_shared<ThrowingHTTPBasicStreamBuf>(first_request_failed);
-    const auto good_stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("1234567890");
+    const std::string body = "1234567890";
 
     size_t requests = 0;
     client->getObjectImpl = [&](const Aws::S3::Model::GetObjectRequest &) -> Aws::S3::Model::GetObjectOutcome
@@ -320,16 +322,18 @@ TEST_F(ReadBufferFromS3Test, ReadBigAtReleasesSessionBeforeRetryBackoff)
         if (!is_first)
             retry_request_sent = true;
 
-        std::streambuf * sb = is_first
-            ? static_cast<std::streambuf *>(failing_stream_buf.get())
-            : static_cast<std::streambuf *>(good_stream_buf.get());
-
-        /// Owned by the response stream, exactly as a pooled session is.
+        /// Owned by the body of the response, exactly as a pooled session is.
         auto session = std::make_shared<CountedSession>();
+        std::unique_ptr<DB::ReadBuffer> response_body;
+        if (is_first)
+            response_body = std::make_unique<ThrowingResponseBody>(first_request_failed, std::move(session));
+        else
+            response_body = std::make_unique<FakeResponseBody>(body, std::move(session));
+
         auto response_stream = Aws::Utils::Stream::ResponseStream(
-            Aws::New<DB::SessionAwareIOStream<CountedSessionPtr>>("test response stream", std::move(session), sb));
+            Aws::New<DB::StdStreamFromReadBuffer>("test response stream", std::move(response_body), body.size()));
         Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
-            std::move(response_stream), Aws::Http::HeaderValueCollection());
+            std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", std::to_string(body.size())}});
         return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
     };
 
