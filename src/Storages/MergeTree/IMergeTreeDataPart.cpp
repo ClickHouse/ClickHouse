@@ -955,6 +955,14 @@ std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const String & c
     return getColumnsDescription().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
+std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumnForTable(const String & column_name, const ColumnsDescription & table_columns) const
+{
+    if (table_columns.hasPhysical(column_name))
+        return getColumnsDescription().tryGetPhysical(column_name);
+
+    return tryGetColumn(column_name);
+}
+
 SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name) const
 {
     auto serialization = tryGetSerialization(column_name);

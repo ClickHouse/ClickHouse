@@ -443,7 +443,7 @@ void MergeTreePrefetchedReadPool::fillPerPartStatistics()
         auto update_stat_for_column = [&](const auto & column_name)
         {
             size_t column_size = 0;
-            auto column = read_info.data_part_info->tryGetColumn(column_name);
+            auto column = read_info.data_part_info->getDataPart()->tryGetColumnForTable(column_name, storage_snapshot->metadata->getColumns());
             if (column)
             {
                 if (column->isSubcolumn() && settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading])
