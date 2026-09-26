@@ -456,11 +456,17 @@ const FileCache::OriginInfo & FileCache::getCommonOrigin()
 
 FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::path & filename) const
 {
+    return getCommonOriginWithSegmentKeyType(
+        system_cache_extensions.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data);
+}
+
+FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(FileSegmentKeyType segment_type) const
+{
     auto origin = FileCache::getCommonOrigin();
     if (!use_split_cache)
         return origin;
 
-    origin.segment_type = system_cache_extensions.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
+    origin.segment_type = segment_type;
     return origin;
 }
 
@@ -2733,6 +2739,17 @@ std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const Key & key, c
 {
     std::vector<FileSegment::Info> file_segments;
     auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::THROW_LOGICAL, OriginInfo(user_id));
+    for (const auto & [_, file_segment_metadata] : *locked_key)
+        file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment));
+    return file_segments;
+}
+
+std::vector<FileSegment::Info> FileCache::tryGetFileSegmentInfos(const Key & key, const UserID & user_id)
+{
+    std::vector<FileSegment::Info> file_segments;
+    auto locked_key = metadata.lockKeyMetadata(key, CacheMetadata::KeyNotFoundPolicy::RETURN_NULL, OriginInfo(user_id));
+    if (!locked_key)
+        return file_segments;
     for (const auto & [_, file_segment_metadata] : *locked_key)
         file_segments.push_back(FileSegment::getInfo(file_segment_metadata->file_segment));
     return file_segments;

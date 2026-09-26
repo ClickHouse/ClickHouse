@@ -43,6 +43,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"query_cache_on_disk_cache_name", "", "", "New setting to store entries of the query cache on disk in the named filesystem cache."},
+            {"query_cache_on_disk_codec", "ZSTD(3)", "ZSTD(3)", "New setting to control the compression codec of query cache entries on disk."},
+            {"enable_writes_to_query_cache_on_disk", true, true, "New setting to control whether query results are written to the query cache on disk."},
+            {"enable_reads_from_query_cache_on_disk", true, true, "New setting to control whether query results are read from the query cache on disk."},
             {"enable_join_runtime_filters_index_analysis", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."},
             {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
             {"reader_executor_plan_look_ahead", 16777216, 16777216, "New experimental ReaderExecutor setting: how far ahead cache residency is resolved into the held read plan."},
