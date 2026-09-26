@@ -1411,6 +1411,26 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         LOG_INFO(log, "Unable to get interserver IO address, error {}", e.what());
     }
 
+    /// `replica_host` replaces the interserver IO host in the host IDs that Replicated DBs publish,
+    /// so claim it too: otherwise the first `ON CLUSTER` query may see this replica as inactive.
+    if (context->hasReplicaHost())
+    {
+        /// Use the same form as the cluster of a Replicated DB, which publishes IPv6 literals in brackets.
+        String replica_host = context->getReplicaHost();
+        if (replica_host.contains(':') && !replica_host.starts_with('['))
+            replica_host = '[' + replica_host + ']';
+
+        HostID replica_host_id = {replica_host, port};
+        all_host_ids.emplace(replica_host_id.toString());
+        LOG_INFO(log, "Add replica host ID {}", replica_host_id.toString());
+        if (maybe_secure_port)
+        {
+            HostID replica_secure_host_id = {replica_host, *maybe_secure_port};
+            all_host_ids.emplace(replica_secure_host_id.toString());
+            LOG_INFO(log, "Add replica secure host ID {}", replica_secure_host_id.toString());
+        }
+    }
+
     createReplicaDirs(zookeeper, all_host_ids);
 
     if (reinitialized)
