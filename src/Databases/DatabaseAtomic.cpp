@@ -13,7 +13,14 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Core/ServerSettings.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Common/Macros.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -32,6 +39,12 @@ namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_replica_name;
+    extern const ServerSettingsString default_replica_path;
 }
 
 namespace ErrorCodes
@@ -353,9 +366,22 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
+    /// A loaded table answers for the macros it was loaded with, the stored definition for the current ones, which
+    /// `SYSTEM RELOAD CONFIG` may have changed since. A table nothing has loaded is not loaded under the lock to be asked.
+    auto check_can_be_renamed = [this](const DatabaseAtomic & db, const String & name, const StoragePtr & storage, const StorageID & new_id)
+    {
+        const auto * proxy = typeid_cast<const StorageTableProxy *>(storage.get());
+        if (!proxy || proxy->isLoaded())
+            storage->checkTableCanBeRenamed(new_id);
+        if (proxy || isReplicatedMergeTree(*storage))
+            checkStoredDefinitionCanBeRenamed(
+                parseQueryFromMetadata(log, getContext(), db.getDisk(), db.getObjectMetadataPath(name)),
+                storage->getStorageID(), new_id, /*whole_database=*/ false, getContext());
+    };
+
     StorageID old_table_id = table->getStorageID();
     StorageID new_table_id = {other_db.database_name, to_table_name, old_table_id.uuid};
-    table->checkTableCanBeRenamed({new_table_id});
+    check_can_be_renamed(*this, table_name, table, new_table_id);
     assert_can_move_mat_view(table);
     StoragePtr other_table;
     StorageID other_table_new_id = StorageID::createEmpty();
@@ -365,7 +391,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         if (dictionary && !other_table->isDictionary())
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
         other_table_new_id = {database_name, table_name, other_table->getStorageID().uuid};
-        other_table->checkTableCanBeRenamed(other_table_new_id);
+        check_can_be_renamed(other_db, to_table_name, other_table, other_table_new_id);
         assert_can_move_mat_view(other_table);
     }
 
@@ -754,6 +780,34 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         checkTableNameLengthUnlocked(new_name, table.first, getContext());
     for (const auto & detached_table : snapshot_detached_tables)
         checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
+
+    /// Refused before anything is moved. A loaded table answers for the macros it was loaded with, and every table's
+    /// stored definition for the current ones, which `SYSTEM RELOAD CONFIG` may have changed since; that is also the
+    /// only answer for a table nothing has loaded and for a detached one. Editing the metadata of a detached table
+    /// is the way to move one whose path binds the database name, and the check reads the edited file. While the
+    /// server starts, the Ordinary-to-Atomic conversion renames its temporary database back to the name the
+    /// definitions were written under, so a stored definition is not asked then, as
+    /// `StorageReplicatedMergeTree::checkTableCanBeRenamed` does not ask either.
+    const bool server_starting = getContext()->getApplicationType() == Context::ApplicationType::SERVER
+        && !getContext()->isServerCompletelyStarted();
+    for (const auto & table : tables)
+    {
+        const auto * proxy = typeid_cast<const StorageTableProxy *>(table.second.get());
+        if (!proxy || proxy->isLoaded())
+            table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
+        /// Asking a proxy whether it replicates would load it, and an `Alias` would resolve its target under this lock.
+        if (!server_starting && (proxy || isReplicatedMergeTree(*table.second)))
+            checkStoredDefinitionCanBeRenamed(
+                parseQueryFromMetadata(log, getContext(), getDisk(), getObjectMetadataPath(table.first)),
+                table.second->getStorageID(), StorageID(new_name, table.first, table.second->getStorageID().uuid),
+                /*whole_database=*/ true, getContext());
+    }
+    if (!server_starting)
+        for (const auto & [detached_table_name, snapshot] : snapshot_detached_tables)
+            checkStoredDefinitionCanBeRenamed(
+                parseQueryFromMetadata(log, getContext(), getDisk(), snapshot.metadata_path),
+                StorageID(database_name, detached_table_name, snapshot.uuid), StorageID(new_name, detached_table_name, snapshot.uuid),
+                /*whole_database=*/ true, getContext());
 
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];

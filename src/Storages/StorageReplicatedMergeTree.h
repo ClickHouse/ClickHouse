@@ -208,6 +208,8 @@ public:
 
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
 
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override;
+
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
