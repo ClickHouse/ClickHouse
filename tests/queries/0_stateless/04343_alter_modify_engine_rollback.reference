@@ -1,0 +1,3 @@
+ENGINE = MergeTree
+MergeTree
+2

@@ -27,6 +27,7 @@
                 "reference/statements/alter/constraint",
                 "reference/statements/alter/database-comment",
                 "reference/statements/alter/delete",
+                "reference/statements/alter/engine",
                 "reference/statements/alter/named-collection",
                 "reference/statements/alter/order-by",
                 "reference/statements/alter/partition",
