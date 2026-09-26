@@ -1,0 +1,10 @@
+= the policy is deferred after FINAL =
+1
+= the stale version stays hidden =
+= float atoms are excluded from index analysis =
+= NaN payloads dedup as one key =
+1
+= nullable float sorting key =
+1
+= tuple with float in sorting key =
+1
