@@ -452,7 +452,7 @@ SELECT * FROM dt64_mongo;
 └─────────────────────────┘
 ```
 
-The wrapper is understood only where the target type is already known to be `DateTime64`: a declared column, or a `DateTime64` variant of a `Variant`/`Nullable` type. It is deliberately not part of JSON schema inference, so a `DateTime64` type is never inferred from it, and it is not accepted by an auto-inferred schema, by the `Dynamic` and `JSON` data types, or by the `JSONExtract` functions, which return the default value for it. Feed those the datetime as a JSON string instead.
+The wrapper is understood only where the target type is already known to be `DateTime64`: a declared column, or a `DateTime64` variant of a `Variant`/`Nullable` type. It is deliberately not part of JSON schema inference, so a `DateTime64` type is never inferred from it: schema inference fails on a sampled row containing it, and skipping an unknown field containing it (`input_format_skip_unknown_fields`) fails too. It is also not accepted by the `Dynamic` and `JSON` data types, or by the `JSONExtract` functions, which return the default value for it. Feed those the datetime as a JSON string instead. Note that a column whose type was inferred as `DateTime64` from rows that do not contain the wrapper is a `DateTime64` column like a declared one, so later rows beyond the inference sample (see `input_format_max_rows_to_read_for_schema_inference`) may use the wrapper for it.
 
 This is also not the output format of the official MongoDB export tools: `mongodump` writes BSON, which is read by the [`BSONEachRow`](/interfaces/formats/BSONEachRow) format, and `mongoexport` writes Extended JSON, where a datetime is an object such as `{"$date": "..."}`, which is not accepted here.
 
