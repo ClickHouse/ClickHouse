@@ -5341,9 +5341,9 @@ Enables or disables optimization by transforming some functions to reading subco
 
 These functions can be transformed:
 
-- [length](/reference/functions/regular-functions/array-functions#length) to read the [size0](/reference/data-types/array#array-size) subcolumn.
-- [empty](/reference/functions/regular-functions/array-functions#empty) to read the [size0](/reference/data-types/array#array-size) subcolumn.
-- [notEmpty](/reference/functions/regular-functions/array-functions#notEmpty) to read the [size0](/reference/data-types/array#array-size) subcolumn.
+- [length](/reference/functions/regular-functions/array-functions#length) to read the [size0](/reference/data-types/array#array-size) subcolumn for arrays or the `size` subcolumn for `String` columns.
+- [empty](/reference/functions/regular-functions/array-functions#empty) to read the [size0](/reference/data-types/array#array-size) subcolumn for arrays or the `size` subcolumn for `String` columns.
+- [notEmpty](/reference/functions/regular-functions/array-functions#notEmpty) to read the [size0](/reference/data-types/array#array-size) subcolumn for arrays or the `size` subcolumn for `String` columns.
 - [isNull](/reference/functions/regular-functions/functions-for-nulls#isNull) to read the [null](/reference/data-types/nullable#finding-null) subcolumn.
 - [isNotNull](/reference/functions/regular-functions/functions-for-nulls#isNotNull) to read the [null](/reference/data-types/nullable#finding-null) subcolumn.
 - [count](/reference/functions/aggregate-functions/count) to read the [null](/reference/data-types/nullable#finding-null) subcolumn.
@@ -5353,10 +5353,30 @@ These functions can be transformed:
 - [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike) to read the [keys](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 - [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike) to read the [values](/reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
+String filters in `WHERE` and `PREWHERE` can also use the `size` subcolumn when the full String is needed elsewhere, if [`optimize_string_size_subcolumn_with_full_read`](#optimize_string_size_subcolumn_with_full_read) is enabled.
+On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, this can avoid reading String payloads for rejected granules.
+On legacy `single_stream` parts, `size` is virtual and requires the regular String stream. When both the String and its size are needed, the reader reads them together to avoid scanning that stream twice.
+
 Possible values:
 
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
+)", 0) \
+    DECLARE(Bool, optimize_string_size_subcolumn_with_full_read, false, R"(
+Allows `length`, `empty`, and `notEmpty` filters on `String` columns in `WHERE` and `PREWHERE` to read the `size` subcolumn when the query also needs the full String.
+Requires [`optimize_functions_to_subcolumns`](#optimize_functions_to_subcolumns) to be enabled.
+
+On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, filtering on sizes can avoid reading String payloads for rejected granules.
+The optimization is disabled by default because reading sizes separately can add overhead when the filter does not reject whole granules.
+Enable it for workloads where measurements show a benefit, such as clustered or sufficiently rare String-length outliers.
+
+On legacy `single_stream` parts, `size` is virtual and still requires the regular String stream. The reader reads the String and its size together to avoid scanning that stream twice.
+This setting does not disable size-subcolumn rewrites when the full String is not needed, and does not affect explicit subcolumn access.
+
+Possible values:
+
+- 0 - Disabled (default).
+- 1 - Enabled.
 )", 0) \
     DECLARE(Bool, optimize_using_constraints, false, R"(
 Use [constraints](/reference/statements/create/table#constraints) for query optimization. The default is `false`.

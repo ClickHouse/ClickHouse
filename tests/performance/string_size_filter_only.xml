@@ -1,0 +1,211 @@
+<test>
+    <!--
+         Select the full String but filter on empty(s). The matching rows are clustered in the
+         first 1% of the sorted data, so reading s.size in PREWHERE can avoid reading the 1 KiB
+         String payload for the remaining rows.
+    -->
+    <settings>
+        <max_insert_threads>4</max_insert_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_uncompressed_cache>0</use_uncompressed_cache>
+    </settings>
+
+    <!-- The reference build for this PR does not have the new setting yet. -->
+    <create_query do_not_check_in_pr="121377">
+        SELECT getSetting('optimize_string_size_subcolumn_with_full_read')
+    </create_query>
+
+    <create_query>
+        CREATE TABLE string_size_filter_only_perf
+        (
+            id UInt64,
+            s String
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS
+            string_serialization_version = 'with_size_stream',
+            ratio_of_defaults_for_sparse_serialization = 1,
+            index_granularity = 8192,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO string_size_filter_only_perf
+        SELECT
+            number AS id,
+            if(number &lt; 5000, '', randomString(1024)) AS s
+        FROM numbers_mt(500000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE string_size_filter_only_perf FINAL SETTINGS mutations_sync = 1</fill_query>
+
+    <!-- Target: the PREWHERE filter reads only s.size before the full String is materialized. -->
+    <query tag='String size filter-only optimization'>
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE empty(s)
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 1,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <!-- Control: the filter reads the full String when the full-String size optimization is disabled. -->
+    <query tag='String size filter-only control'>
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE empty(s)
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 0,
+            optimize_move_to_prewhere = 0
+    </query>
+
+
+    <!-- Most granules survive: enabling split reads must not be assumed to help this workload. -->
+    <query tag='String size nonselective filter-only optimization'>
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE notEmpty(s)
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 1,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <query tag='String size nonselective filter-only control'>
+        SELECT s
+        FROM string_size_filter_only_perf
+        PREWHERE notEmpty(s)
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 0,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS string_size_filter_only_perf</drop_query>
+
+    <!--
+         Compare the legacy fallback and both textual predicate orders with multi-step PREWHERE.
+         The optimizer may reorder predicates; textual order does not establish the read order.
+         The optimized plan should avoid traversing the legacy String stream more than once.
+    -->
+    <create_query>
+        CREATE TABLE string_size_filter_only_legacy_perf
+        (
+            id UInt64,
+            s String
+        )
+        ENGINE = MergeTree
+        ORDER BY id
+        SETTINGS
+            serialization_info_version = 'with_types',
+            string_serialization_version = 'single_stream',
+            ratio_of_defaults_for_sparse_serialization = 0,
+            index_granularity = 8192,
+            min_bytes_for_wide_part = 0,
+            min_rows_for_wide_part = 0
+    </create_query>
+
+    <!-- Nonempty rows stay 1 KiB long; one in ten has a guaranteed LIKE match. -->
+    <fill_query>
+        INSERT INTO string_size_filter_only_legacy_perf
+        SELECT
+            number AS id,
+            if(number &lt; 5000, '', concat(if(number % 10 = 0, 'foo', 'bar'), randomString(1021))) AS s
+        FROM numbers_mt(500000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE string_size_filter_only_legacy_perf FINAL SETTINGS mutations_sync = 1</fill_query>
+
+    <!-- Legacy empty(s) needs the full stream even when the size subcolumn rewrite is enabled. -->
+    <query tag='Legacy String size filter-only optimization'>
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE empty(s)
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 1,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <query tag='Legacy String size filter-only control'>
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE empty(s)
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 0,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <!-- Multi-predicate legacy workload with the size predicate written first. -->
+    <query tag='Legacy String size-first filter-only optimization'>
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE notEmpty(s) AND id > 0 AND like(s, '%foo%')
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            enable_multiple_prewhere_read_steps = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 1,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <!-- Control: evaluate the same predicates without the full-String size rewrite. -->
+    <query tag='Legacy String size-first filter-only control'>
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE notEmpty(s) AND id > 0 AND like(s, '%foo%')
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            enable_multiple_prewhere_read_steps = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 0,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <!-- The same satisfiable workload with the full-String predicate written first. -->
+    <query tag='Legacy String full-first filter-only optimization'>
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE like(s, '%foo%') AND id > 0 AND notEmpty(s)
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            enable_multiple_prewhere_read_steps = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 1,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <!-- Control for the reverse order. -->
+    <query tag='Legacy String full-first filter-only control'>
+        SELECT s
+        FROM string_size_filter_only_legacy_perf
+        PREWHERE like(s, '%foo%') AND id > 0 AND notEmpty(s)
+        FORMAT Null
+        SETTINGS
+            max_threads = 1,
+            enable_multiple_prewhere_read_steps = 1,
+            optimize_functions_to_subcolumns = 1,
+            optimize_string_size_subcolumn_with_full_read = 0,
+            optimize_move_to_prewhere = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS string_size_filter_only_legacy_perf</drop_query>
+</test>
