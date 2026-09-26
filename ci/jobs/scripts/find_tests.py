@@ -3,6 +3,7 @@ import ast
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -418,7 +419,8 @@ class Targeting:
                 test_base_name = self._derive_test_name(fpath)
                 if test_base_name is not None:
                     print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
-                    # Add '.' suffix to precisely match this test only
+                    # The '.' suffix marks a whole-test name; `selection_pattern`
+                    # turns it into the selector that runs only this test.
                     result.add(f"{test_base_name}.")
                     continue
 
@@ -437,7 +439,8 @@ class Targeting:
                     print(
                         f"Detected changed data file '{fpath}' owned by test '{base_name}'"
                     )
-                    # Add '.' suffix to precisely match this test only
+                    # The '.' suffix marks a whole-test name; `selection_pattern`
+                    # turns it into the selector that runs only this test.
                     result.add(f"{base_name}.")
             else:
                 print(
@@ -2056,6 +2059,34 @@ class Targeting:
         """
         assert self.info.pr_number > 0, "Find tests by diff applicable for PRs only"
         return self._parse_diff_lines(self.get_diff_text())
+
+    @classmethod
+    def selection_pattern(cls, test):
+        """Render a selected stateless test as a `clickhouse-test` positional selector.
+
+        Those arguments are regexes, and `TestSuite.get_selected_tests` searches them
+        against the suite file name *including* its extension, so a selector that stops
+        short of the whole file name also selects every test whose name extends this one
+        (`01655_plan_optimizations` picks up `01655_plan_optimizations_merge_filters`).
+        Spell the file name out: anchored, escaped, one known extension.
+        """
+        name = cls.normalize_stateless_test_name(test).rstrip(".")
+        # Per-test coverage names a test by its file name, extension included.
+        for extension in cls._TEST_FILE_EXTENSIONS:
+            if name.endswith(extension):
+                name = name[: -len(extension)]
+                break
+        extensions = "|".join(re.escape(ext) for ext in cls._TEST_FILE_EXTENSIONS)
+        return f"^{re.escape(name)}(?:{extensions})$"
+
+    @staticmethod
+    def selection_args(tests):
+        """Render selectors as the argument list of a `clickhouse-test` command line.
+
+        `run_tests` executes that command line through bash, whose quote removal would
+        otherwise consume the regex syntax before `clickhouse-test` parses it.
+        """
+        return " ".join(shlex.quote(test) for test in tests) if tests else ""
 
     # min_depth stores the raw entry-counter call count (capped at 254; 255 = not tracked).
     # A low call count means the function was called rarely during the test → more specific.
