@@ -191,7 +191,7 @@ ClickHouse는 최신 하드웨어에서 효율을 극대화하도록 설계되�
 쿼리 실행은 다음 방식으로 추가 병렬화됩니다.
 
 1. **SIMD 벡터화**: 열 지향 데이터에 대한 연산은 [CPU SIMD 명령어](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data)(예: [AVX512](https://en.wikipedia.org/wiki/AVX-512))를 사용하므로 값을 배치 단위로 처리할 수 있습니다.
-2. **클러스터 수준 병렬성**: 분산 환경에서는 각 노드가 로컬에서 쿼리 처리를 수행합니다. [부분 집계 상태](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states)는 쿼리를 시작한 노드로 스트리밍되어 머지됩니다. 쿼리의 `GROUP BY` 키가 세그먼트 분할 키와 일치하면 머지를 [최소화하거나 완전히 피할 수 있습니다](/ko/reference/settings/session-settings#distributed_group_by_no_merge).
+2. **클러스터 수준 병렬성**: 분산 환경에서는 각 노드가 로컬에서 쿼리 처리를 수행합니다. [부분 집계 상태](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states)는 쿼리를 시작한 노드로 스트리밍되어 머지됩니다. 쿼리의 `GROUP BY` 키가 세그먼트 분할 키와 일치하면 머지를 [최소화하거나 완전히 피할 수 있습니다](/ko/reference/settings/session-settings/distributed#distributed_group_by_no_merge).
 
 <br />
 

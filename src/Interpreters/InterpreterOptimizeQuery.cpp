@@ -51,7 +51,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     table->updateExternalDynamicMetadataIfExists(getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
-    auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
+    auto storage_snapshot = table->getStorageSnapshotWithoutData(metadata_snapshot, getContext());
 
     /// Handle OPTIMIZE TABLE ... MANIFEST for Iceberg tables
     if (ast.manifest)
@@ -64,7 +64,7 @@ BlockIO InterpreterOptimizeQuery::execute()
         if (!object_storage_table)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
 
-        auto * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage_table->getExternalMetadata(getContext()));
+        auto iceberg_metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage_table->getExternalMetadata(getContext()));
         if (!iceberg_metadata)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "OPTIMIZE MANIFEST is only supported for Iceberg tables");
 
@@ -136,9 +136,6 @@ BlockIO InterpreterOptimizeQuery::execute()
         merge_tree_data->optimizeDryRun(part_names, metadata_snapshot, ast.deduplicate, column_names, ast.cleanup, getContext());
         return {};
     }
-
-    if (auto * snapshot_data = dynamic_cast<MergeTreeData::SnapshotData *>(storage_snapshot->data.get()))
-        snapshot_data->parts = {};
 
     table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
     return {};

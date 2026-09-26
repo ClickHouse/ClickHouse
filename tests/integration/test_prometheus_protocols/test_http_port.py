@@ -2,11 +2,11 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from .prometheus_test_utils import (
+    convert_metrics_metadata_to_protobuf,
     convert_read_request_to_protobuf,
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
     execute_range_query_via_http_api,
-    extract_error_from_http_api_response,
     get_response_to_http_api,
     receive_protobuf_from_remote_read,
     send_protobuf_to_remote_write,
@@ -129,6 +129,30 @@ def test_main_http_prefixed_query_range_api():
     assert metric_name in data
 
 
+def test_main_http_prefixed_metadata_api():
+    metric_name = "main_http_prefixed_metadata_target"
+    help_text = "Metadata routed through the main HTTP port"
+
+    send_protobuf_to_remote_write(
+        node.ip_address,
+        MAIN_HTTP_PORT,
+        "/prometheus/api/v1/write",
+        convert_metrics_metadata_to_protobuf([(metric_name, "COUNTER", help_text, "")]),
+    )
+
+    url = (
+        f"http://{node.ip_address}:{MAIN_HTTP_PORT}"
+        f"/prometheus/api/v1/metadata?metric={metric_name}"
+    )
+    response = get_response_to_http_api(url)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"] == {
+        metric_name: [{"type": "counter", "help": help_text, "unit": ""}]
+    }
+
+
 def test_main_http_prefixed_label_values_api():
     timestamp = 1_700_001_275.0
     metric_name = "main_http_prefixed_label_values_target"
@@ -145,8 +169,10 @@ def test_main_http_prefixed_label_values_api():
         f"&end={int(timestamp + 1)}"
     )
     response = get_response_to_http_api(url)
-    error = extract_error_from_http_api_response(response)
-    assert "label values endpoint is not implemented" in error
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["data"] == [label_value]
 
 
 def test_main_http_prefixed_and_bare_share_table():

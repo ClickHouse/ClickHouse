@@ -280,3 +280,86 @@ def test_iceberg_history_dropped_log_entry_falls_back_to_commit_time(
     assert without_log[newer_id][0] == newer["timestamp-ms"], (
         f"snapshot still in the log changed: {without_log[newer_id][0]}"
     )
+
+
+def test_iceberg_history_repeated_snapshot_id_uses_last_log_entry(
+    started_cluster_iceberg_no_spark,
+):
+    """A snapshot-id listed twice in snapshot-log reports the LAST time it became current.
+
+    Iceberg appends a snapshot-log entry every time current-snapshot-id changes, so a rollback
+    (or set_current_snapshot) legitimately leaves the same snapshot-id in the log more than once.
+    made_current_at means "when this snapshot became current", so the LAST matching entry is the
+    correct value; getHistory used to stop at the first match and report the original time.
+
+    The rollback is handcrafted: ClickHouse has no rollback support and MetadataGenerator only ever
+    appends a fresh entry, so no ClickHouse write path can produce a repeated id. Timestamps are laid
+    out relative to the newer commit, as in the sibling test above, because the real INSERTs land
+    only a few hundred milliseconds apart.
+    """
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    table_name = "test_history_repeated_log_id_" + get_uuid_str()
+
+    create_iceberg_table(
+        "local",
+        instance,
+        table_name,
+        started_cluster_iceberg_no_spark,
+        "(x Int)",
+        format_version=2,
+    )
+    instance.query(f"INSERT INTO {table_name} VALUES (1);")
+    instance.query(f"INSERT INTO {table_name} VALUES (2);")
+
+    meta, prev = _read_latest_metadata(instance, table_name)
+    assert len(meta.get("snapshots", [])) == 2, f"expected two snapshots, got: {meta.get('snapshots')}"
+
+    older, newer = sorted(meta["snapshots"], key=lambda s: s["timestamp-ms"])
+    older_id, newer_id = str(older["snapshot-id"]), str(newer["snapshot-id"])
+
+    newer_ms = newer["timestamp-ms"]
+    first_ms = newer_ms - 2000  # when `older` originally became current
+    again_ms = newer_ms + 1000  # when the rollback made `older` current AGAIN - must win
+    # A snapshot cannot become current before it is committed, and the real INSERTs land only a few
+    # hundred milliseconds apart, so move the commit time back with the log entry (as the sibling
+    # test above does). getHistory does not read it for a repeated id, but the fixture must stay a
+    # metadata file a real writer could have produced.
+    older["timestamp-ms"] = first_ms
+    assert first_ms >= older["timestamp-ms"], "became-current must not precede the commit time"
+    assert len({first_ms, newer_ms, again_ms}) == 3, "the three timestamps must be distinguishable"
+
+    meta["snapshot-log"] = [
+        {"snapshot-id": older["snapshot-id"], "timestamp-ms": first_ms},
+        {"snapshot-id": newer["snapshot-id"], "timestamp-ms": newer_ms},
+        {"snapshot-id": older["snapshot-id"], "timestamp-ms": again_ms},
+    ]
+    # Keep the rest of the metadata consistent with the rolled-back state. getHistory does not read
+    # these, but a metadata file labelled "rollback" must not be internally inconsistent.
+    meta["current-snapshot-id"] = older["snapshot-id"]
+    meta["refs"]["main"]["snapshot-id"] = older["snapshot-id"]
+    meta["last-updated-ms"] = again_ms
+    # A NEW metadata version, never an in-place edit: use_iceberg_metadata_files_cache defaults to 1,
+    # so a rewritten version that was already read would not be re-read.
+    _write_next_metadata(instance, table_name, meta, prev)
+
+    history = _history(instance, table_name)
+    assert history[older_id][0] == again_ms, (
+        f"expected the LAST snapshot-log entry {again_ms} for the repeated snapshot-id, "
+        f"got {history[older_id][0]} (the first entry is {first_ms})"
+    )
+    assert history[older_id][0] != first_ms, (
+        "made_current_at must not report the first matching snapshot-log entry when the id repeats"
+    )
+    # A snapshot listed once is unaffected.
+    assert history[newer_id][0] == newer_ms, (
+        f"non-repeated snapshot changed: {history[newer_id][0]}, expected {newer_ms}"
+    )
+    # Production now agrees with the shared last-entry-wins helper.
+    expected, _, _ = _expected_made_current_at_ms(meta)
+    assert history[older_id][0] == expected[older_id], (
+        f"made_current_at {history[older_id][0]} disagrees with the expected "
+        f"{expected[older_id]} for the repeated snapshot-id"
+    )
+    # The rollback moved is_current_ancestor: `older` is current, so `newer` is no longer reachable.
+    assert history[older_id][1] == "1", f"rolled-back-to snapshot must be an ancestor: {history}"
+    assert history[newer_id][1] == "0", f"abandoned snapshot must not be an ancestor: {history}"

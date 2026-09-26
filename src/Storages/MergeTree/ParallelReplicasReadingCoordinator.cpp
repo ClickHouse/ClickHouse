@@ -20,6 +20,7 @@
 #include <fmt/format.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
@@ -210,6 +211,12 @@ public:
     virtual void doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement) = 0;
     virtual void markReplicaAsUnavailable(size_t replica_number) = 0;
     virtual bool isReadingCompleted() const = 0;
+
+    /// Cheap hint used to avoid calling `isReadingCompleted`, which is O(parts x ranges), on every
+    /// response. `isReadingCompleted` stays the authority, so neither answer can be unsafe: a
+    /// spurious `false` only costs one exact scan, and a spurious `true` only misses an early
+    /// release and falls back to the previous behaviour. The default is deliberately the latter.
+    virtual bool mayHaveUnassignedRanges() const { return true; }
     virtual bool initializedWithEmptyRanges() const { return false; }
     /// The working set of parts for this stream — what the coordinator will actually serve in
     /// handleRequest. Captured from the first announcement (in the snapshot-pinned topology that
@@ -275,6 +282,8 @@ public:
 
     bool isReadingCompleted() const override;
 
+    bool mayHaveUnassignedRanges() const override { return !state_initialized || assigned_marks < total_marks; }
+
     bool initializedWithEmptyRanges() const override { return state_initialized && all_parts_to_read.empty(); }
 
     RangesInDataPartsDescription getRegisteredParts() const override
@@ -291,6 +300,12 @@ private:
 
     bool state_initialized{false};
     size_t finished_replicas{0};
+
+    /// Marks in the working set, and how many of them have been handed out. Only used by
+    /// `mayHaveUnassignedRanges` to avoid the exact scan; under-counting `assigned_marks` merely
+    /// delays the exact check, it cannot make it be skipped while ranges remain.
+    size_t total_marks{0};
+    size_t assigned_marks{0};
 
     LoggerPtr log;
 
@@ -442,6 +457,12 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
 
     std::ranges::sort(
         all_parts_to_read, [](const Part & lhs, const Part & rhs) { return BiggerPartsFirst()(lhs.description, rhs.description); });
+
+    total_marks = 0;
+    for (const auto & part : all_parts_to_read)
+        for (const auto & range : part.description.ranges)
+            total_marks += range.getNumberOfMarks();
+
     state_initialized = true;
     source_replica_for_parts_snapshot = announcement.replica_num;
 
@@ -449,8 +470,16 @@ void DefaultCoordinator::initializeReadingState(InitialAllRangesAnnouncement ann
     if (mark_segment_size == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Zero value provided for `mark_segment_size`");
 
-    LOG_TRACE(log, "Reading state is fully initialized: {}, mark_segment_size: {}, min_marks_per_request: {}",
-              fmt::join(all_parts_to_read, "; "), mark_segment_size, announced_min_marks_per_request);
+    LOG_TRACE(log, "Reading state is fully initialized: {} parts, {} marks, mark_segment_size: {}, min_marks_per_request: {}",
+              all_parts_to_read.size(), total_marks, mark_segment_size, announced_min_marks_per_request);
+
+    static constexpr size_t max_parts_to_log = 100;
+    if (all_parts_to_read.size() <= max_parts_to_log)
+        LOG_TEST(log, "Reading state: {}", fmt::join(all_parts_to_read, "; "));
+    else
+        LOG_TEST(log, "Reading state: {} and {} more parts",
+                 fmt::join(all_parts_to_read.begin(), all_parts_to_read.begin() + max_parts_to_log, "; "),
+                 all_parts_to_read.size() - max_parts_to_log);
 }
 
 void DefaultCoordinator::markReplicaAsUnavailable(size_t replica_number)
@@ -496,6 +525,7 @@ void DefaultCoordinator::updateQueryProgress()
 void DefaultCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
     LOG_TRACE(log, "Initial request: {}", announcement.describe());
+    LOG_TEST(log, "Initial request ranges: {}", announcement.description.describe());
 
     const auto replica_num = announcement.replica_num;
 
@@ -868,6 +898,7 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
 
     stats[request.replica_num].number_of_requests += 1;
     stats[request.replica_num].sum_marks += current_mark_size;
+    assigned_marks += current_mark_size;
 
     stats[request.replica_num].assigned_to_me += assigned_to_me;
     stats[request.replica_num].stolen_by_hash += stolen_by_hash;
@@ -909,6 +940,7 @@ ParallelReadResponse DefaultCoordinator::handleRequest(ParallelReadRequest reque
         assigned_to_me,
         stolen_by_hash,
         stolen_unassigned);
+    LOG_TEST(log, "Response ranges for replica {}: {}", request.replica_num, response.description.describe());
 
     return response;
 }
@@ -990,7 +1022,8 @@ void InOrderCoordinator::markReplicaAsUnavailable(size_t replica_number)
 
 void InOrderCoordinator::doHandleInitialAllRangesAnnouncement(InitialAllRangesAnnouncement announcement)
 {
-    LOG_TRACE(log, "Received an announcement : {}", announcement.describe());
+    LOG_TRACE(log, "Received an announcement: {}", announcement.describe());
+    LOG_TEST(log, "Announcement ranges: {}", announcement.description.describe());
 
     ++stats[announcement.replica_num].number_of_requests;
 
@@ -1077,6 +1110,7 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
         = announced_min_marks_per_request > 0 ? announced_min_marks_per_request : request.min_marks_per_request;
 
     LOG_TRACE(log, "Got read request: {}", request.describe());
+    LOG_TEST(log, "Read request ranges: {}", request.description.describe());
 
     ParallelReadResponse response;
     response.description = request.description;
@@ -1166,6 +1200,7 @@ ParallelReadResponse InOrderCoordinator::handleRequest(ParallelReadRequest reque
     stats[request.replica_num].sum_marks += overall_number_of_marks;
 
     LOG_TRACE(log, "Going to respond to replica {} with {}", request.replica_num, response.describe());
+    LOG_TEST(log, "Response ranges for replica {}: {}", request.replica_num, response.description.describe());
     return response;
 }
 
@@ -1175,6 +1210,20 @@ ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement(InitialAl
 {
     ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleAnnouncementMicroseconds);
+
+    OpenTelemetry::SpanHolder span("ParallelReplicasReadingCoordinator::handleInitialAllRangesAnnouncement");
+    if (span.isTraceEnabled())
+    {
+        span.addAttribute("clickhouse.replica_num", announcement.replica_num);
+        span.addAttributeIfNotEmpty("clickhouse.stream_id", announcement.stream_id);
+        span.addAttribute("clickhouse.mode", magic_enum::enum_name(announcement.mode));
+        span.addAttribute("clickhouse.parts", announcement.description.size());
+
+        size_t marks_announced = 0;
+        for (const auto & part : announcement.description)
+            marks_announced += part.ranges.getNumberOfMarks();
+        span.addAttribute("clickhouse.marks", marks_announced);
+    }
 
     InitialAllRangesAnnouncementResponse response;
     response.stream_id = announcement.stream_id;
@@ -1245,6 +1294,14 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 {
     ProfileEvents::increment(ProfileEvents::ParallelReplicasNumRequests);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::ParallelReplicasHandleRequestMicroseconds);
+
+    OpenTelemetry::SpanHolder span("ParallelReplicasReadingCoordinator::handleRequest");
+    if (span.isTraceEnabled())
+    {
+        span.addAttribute("clickhouse.replica_num", request.replica_num);
+        span.addAttributeIfNotEmpty("clickhouse.stream_id", request.stream_id);
+        span.addAttribute("clickhouse.mode", magic_enum::enum_name(request.mode));
+    }
 
     ParallelReadResponse response;
     response.finish = true;
@@ -1333,6 +1390,26 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
 
             if (replicas_used.insert(replica_num).second)
                 ProfileEvents::increment(ProfileEvents::ParallelReplicasUsedCount);
+
+            /// This response may have handed out the last ranges there were. Reading completion is a
+            /// property of the coordinator's own state, not of the protocol, but it used to be
+            /// evaluated only when some replica asked for work and was told `finish`. If the
+            /// initiator stops pulling before that happens - a `LIMIT` satisfied by the local
+            /// replica, say - nobody asks again, so the replicas that got nothing are never told to
+            /// stop and are left waiting on a read task that will not come. Check here too, so they
+            /// are released as soon as there is provably nothing left to assign.
+            ///
+            /// `replicas_used` already contains `replica_num` (inserted just above), so the replica
+            /// this response is for is excluded from cancellation and still gets the `finish = true`
+            /// round-trip the protocol owes it.
+            ///
+            /// `isReadingCompleted` walks every part and range, so gate it on an O(1) check that
+            /// only ever errs towards doing the exact scan.
+            if (!coordinator->mayHaveUnassignedRanges() && isReadingCompleted())
+            {
+                reading_assignment_has_been_completed = !is_reading_completed.exchange(true);
+                replicas_to_exclude = replicas_used;
+            }
         }
         else
         {
@@ -1374,6 +1451,15 @@ ParallelReadResponse ParallelReplicasReadingCoordinator::handleRequest(ParallelR
             (*read_completed_callback)(replicas_to_exclude);
             read_completed_callback.reset();
         }
+    }
+
+    if (span.isTraceEnabled())
+    {
+        size_t marks_assigned = 0;
+        for (const auto & part : response.description)
+            marks_assigned += part.ranges.getNumberOfMarks();
+        span.addAttribute("clickhouse.marks_assigned", marks_assigned);
+        span.addAttribute("clickhouse.finish", static_cast<UInt64>(response.finish));
     }
 
     return response;
@@ -1465,6 +1551,29 @@ ParallelReplicasReadingCoordinator::~ParallelReplicasReadingCoordinator()
 {
     // the profile event is not in constructor to check that coordinator is destroyed
     ProfileEvents::increment(ProfileEvents::ParallelReplicasQueryCount);
+
+    /// The span itself is emitted by the member's destructor.
+    if (summary_span.isTraceEnabled())
+    {
+        summary_span.addAttribute("clickhouse.replicas_count", replicas_count);
+        summary_span.addAttribute("clickhouse.replicas_used", replicas_used.size());
+        summary_span.addAttribute("clickhouse.unavailable_replicas", unavailable_replicas.size());
+        summary_span.addAttribute("clickhouse.streams", stream_to_coordinator.size());
+        summary_span.addAttribute("clickhouse.reading_completed", static_cast<UInt64>(is_reading_completed.load()));
+
+        size_t total_requests = 0;
+        size_t total_marks_assigned = 0;
+        for (const auto & [_, coordinator] : stream_to_coordinator)
+        {
+            for (const auto & stat : coordinator->stats)
+            {
+                total_requests += stat.number_of_requests;
+                total_marks_assigned += stat.sum_marks;
+            }
+        }
+        summary_span.addAttribute("clickhouse.requests", total_requests);
+        summary_span.addAttribute("clickhouse.marks_assigned", total_marks_assigned);
+    }
 }
 
 void ParallelReplicasReadingCoordinator::setProgressCallback(ProgressCallback callback)

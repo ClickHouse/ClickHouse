@@ -96,17 +96,41 @@ class IcebergSchemaProcessor : private WithContext
     using TransformDagKey = std::tuple<Int32, Int32, String>; /// old_id, new_id, timezone
 
 public:
+    /// Where a schema copy being registered comes from. metadata.json is the authoritative source;
+    /// the 'schema' key of a manifest file header is only a snapshot of the table schema at the time
+    /// the manifest was written. A schema that came from a manifest is never authoritative: it is
+    /// replaced by the metadata.json copy of the same schema-id whenever that one is registered, and
+    /// it may be ignored if it conflicts with an already registered metadata.json copy.
+    enum class SchemaSource
+    {
+        Metadata,
+        ManifestFile,
+    };
+
+    /// A processor without a context presents `timestamptz` with the default of `iceberg_timezone_for_timestamptz`.
+    IcebergSchemaProcessor() = default;
     explicit IcebergSchemaProcessor(ContextPtr context_, bool allow_geo_parser_ = false) : WithContext(context_), allow_geo_parser(allow_geo_parser_) {}
 
-    void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_);
-    std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id, ContextPtr context_);
+    /// The ClickHouse types of `timestamptz` fields depend on `iceberg_timezone_for_timestamptz` of `context_`.
+    /// The methods below that take an optional `context_` fall back to the context the processor was created with.
+    void addIcebergTableSchema(
+        Poco::JSON::Object::Ptr schema_ptr,
+        ContextPtr context_,
+        SchemaSource source = SchemaSource::Metadata,
+        bool tolerate_conflicting_manifest_schemas = false);
+    void addIcebergTableSchema(
+        Poco::JSON::Object::Ptr schema_ptr,
+        SchemaSource source = SchemaSource::Metadata,
+        bool tolerate_conflicting_manifest_schemas = false);
+    std::shared_ptr<NamesAndTypesList> getClickHouseTableSchemaById(Int32 id, ContextPtr context_ = nullptr);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(ContextPtr context_, Int32 old_id, Int32 new_id);
-    NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id, ContextPtr context_);
-    std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id, ContextPtr context_) const;
-    NamesAndTypesList tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids, ContextPtr context_) const;
+    std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
+    NameAndTypePair getFieldCharacteristics(Int32 schema_version, Int32 source_id, ContextPtr context_ = nullptr);
+    std::optional<NameAndTypePair> tryGetFieldCharacteristics(Int32 schema_version, Int32 source_id, ContextPtr context_ = nullptr) const;
+    NamesAndTypesList tryGetFieldsCharacteristics(Int32 schema_id, const std::vector<Int32> & source_ids, ContextPtr context_ = nullptr) const;
     std::optional<Int32> tryGetColumnIDByName(Int32 schema_id, const std::string & name) const;
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
-    bool hasClickhouseTableSchemaById(Int32 id, ContextPtr context_) const;
+    bool hasClickHouseTableSchemaById(Int32 id, ContextPtr context_ = nullptr) const;
 
     static DataTypePtr getSimpleType(const String & type_name, ContextPtr context_, bool allow_geo_parser = true);
 
@@ -125,7 +149,11 @@ public:
 
     ColumnMapperPtr getColumnMapperById(Int32 id) const;
 
+    void updateLastColumnId(Int32 last_column_id_);
+
 private:
+    std::atomic<Int64> last_column_id{-1};
+
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::map<SchemaTimezoneKey, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids TSA_GUARDED_BY(mutex);
     std::map<TransformDagKey, std::shared_ptr<ActionsDAG>> transform_dags_by_ids TSA_GUARDED_BY(mutex);
@@ -134,6 +162,16 @@ private:
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
     std::optional<String> current_materialization_timezone TSA_GUARDED_BY(mutex);
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
+    /// Schema-ids whose registered copy came from a manifest file header and has not been confirmed
+    /// by an identical metadata.json copy yet. Such a copy is replaced when metadata.json binds the
+    /// schema-id to a different schema, and two manifest headers disagreeing on such a schema-id is
+    /// an error, because no authoritative copy is left to decide between them.
+    std::unordered_set<Int32> manifest_sourced_schema_ids TSA_GUARDED_BY(mutex);
+
+    /// Forget the schema registered for `schema_id` together with everything derived from it: the
+    /// per-field lookups and the cached schema transformation DAGs in either direction. They are
+    /// keyed by schema-id and never rebuilt once populated, so a stale entry would keep answering.
+    void dropCachedSchema(Int32 schema_id) TSA_REQUIRES(mutex);
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(
@@ -161,9 +199,9 @@ private:
 
     /// Must be called under exclusive `mutex`. Materializes ClickHouse types for `(schema_id, timezone)`.
     /// Callers must only invoke this when `(schema_id, timezone)` is not already present.
-    void materializeClickhouseSchemaLocked(Int32 schema_id, Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_) TSA_REQUIRES(mutex);
+    void materializeClickHouseSchemaLocked(Int32 schema_id, Poco::JSON::Object::Ptr schema_ptr, ContextPtr context_) TSA_REQUIRES(mutex);
     /// Must be called under exclusive `mutex`. Ensures `(schema_id, timezone)` is materialized.
-    void ensureClickhouseSchemaMaterializedLocked(Int32 schema_id, ContextPtr context_) TSA_REQUIRES(mutex);
+    void ensureClickHouseSchemaMaterializedLocked(Int32 schema_id, ContextPtr context_) TSA_REQUIRES(mutex);
 
     mutable SharedMutex mutex;
     bool allow_geo_parser = true;

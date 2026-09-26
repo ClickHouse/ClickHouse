@@ -29,7 +29,7 @@ void registerTableFunctionFilesystem(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFilesystem>(
         {.description = R"DOCS_MD(
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge/>
 

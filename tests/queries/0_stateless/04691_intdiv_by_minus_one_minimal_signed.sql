@@ -32,7 +32,7 @@ INSERT INTO t_intdiv_min SELECT number FROM numbers(100);
 INSERT INTO t_intdiv_min SELECT number FROM numbers(100);
 INSERT INTO t_intdiv_min SELECT number + 9223372036854775806 FROM numbers(100);
 
-SELECT DISTINCT intDiv(x, -1) AS d FROM t_intdiv_min ORDER BY d ASC; -- { serverError ILLEGAL_DIVISION }
+SELECT DISTINCT intDiv(x, -1) AS d FROM t_intdiv_min ORDER BY d ASC FORMAT Null; -- { serverError ILLEGAL_DIVISION }
 
 DROP TABLE t_intdiv_min;
 

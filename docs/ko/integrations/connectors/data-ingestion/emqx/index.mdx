@@ -29,15 +29,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </div>
 
 * 매우 가벼운 publish/subscribe 메시징 전송 프로토콜로 설계된 [MQTT protocol](https://mqtt.org/)에 익숙하다고 가정합니다.
-* 대규모 IoT 디바이스의 event streaming을 지원하는 실시간 메시지 처리 engine으로 EMQX 또는 EMQX Cloud를 사용하고 있다고 가정합니다.
+* 대규모 IoT 디바이스의 이벤트 스트리밍을 지원하는 실시간 메시지 처리 엔진으로 EMQX 또는 EMQX Cloud를 사용하고 있다고 가정합니다.
 * 디바이스 데이터를 저장할 ClickHouse Cloud 인스턴스를 준비했다고 가정합니다.
-* EMQX Cloud 배포에 연결해 MQTT 데이터를 게시하는 MQTT 클라이언트 테스트 도구로 [MQTT X](https://mqttx.app/)를 사용합니다. 또는 MQTT broker에 연결할 수 있는 다른 방법을 사용해도 됩니다.
+* EMQX Cloud 배포에 연결해 MQTT 데이터를 게시하는 MQTT 클라이언트 테스트 도구로 [MQTT X](https://mqttx.app/)를 사용합니다. 또는 MQTT 브로커에 연결할 수 있는 다른 방법을 사용해도 됩니다.
 
 <div id="get-your-clickhouse-cloudservice">
   ## ClickHouse Cloud 서비스 준비하기
 </div>
 
-이 설정에서는 AWS의 N. Virginia(us-east-1)에 ClickHouse 인스턴스를 배포했으며, EMQX Cloud 인스턴스도 동일한 리전에 배포했습니다.
+이 설정에서는 AWS의 N. Virginia(us-east-1)에 ClickHouse 인스턴스를 배포했으며, EMQX Cloud 인스턴스도 동일한 지역에 배포했습니다.
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_1.webp" size="sm" border alt="AWS 리전 선택을 보여주는 ClickHouse Cloud 서비스 배포 인터페이스" />
 
@@ -51,7 +51,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 그 후 실행 중인 ClickHouse 인스턴스를 확인할 수 있습니다. ClickHouse Cloud 인스턴스의 연결 주소를 확인하려면 &quot;Connect&quot;를 클릭하십시오.
 
-<Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_4.webp" size="lg" border alt="연결 옵션이 있는 ClickHouse Cloud 실행 인스턴스 dashboard" />
+<Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_4.webp" size="lg" border alt="연결 옵션이 있는 ClickHouse Cloud 실행 인스턴스 대시보드" />
 
 EMQX Cloud와 통합하기 위한 데이터베이스와 테이블을 생성하려면 &quot;Connect to SQL Console&quot;을 클릭하십시오.
 

@@ -1,6 +1,7 @@
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/KeeperStorageImpl.h>
 #include <Coordination/KeeperMemNodesStorage.h>
+#include <Coordination/KeeperLSMTNodesStorage.h>
 #include <Coordination/KeeperStorage_fwd.h>
 
 #include <algorithm>
@@ -102,9 +103,7 @@ bool fixupACL(
         }
         else if (request_acl.scheme == "world" && request_acl.id == "anyone")
         {
-            /// Save world:anyone ACLs to support specific permissions
-            if (request_acl.permissions != Coordination::ACL::All)
-                result_acls.push_back(request_acl);
+            result_acls.push_back(request_acl);
             valid_found = true;
         }
         else if (request_acl.scheme == "digest")
@@ -119,6 +118,14 @@ bool fixupACL(
             result_acls.push_back(new_acl);
         }
     }
+
+    /// ZooKeeper ORs the entries of an ACL list, so dropping one can only narrow the result. A list
+    /// consisting only of world:anyone with all permissions grants everyone everything, which is
+    /// exactly what the empty list (ACL id 0) means here, so it is the one list that can be dropped.
+    if (std::ranges::all_of(result_acls, [](const Coordination::ACL & acl)
+            { return acl.scheme == "world" && acl.id == "anyone" && acl.permissions == Coordination::ACL::All; }))
+        result_acls.clear();
+
     return valid_found;
 }
 
@@ -186,6 +193,22 @@ auto callOnConcreteRequestType(Coordination::ZooKeeperRequest & zk_request, F fu
     }
 }
 
+bool isRemoveNodeDelta(const KeeperDelta & delta)
+{
+    if (const auto * op = std::get_if<LSMTDelta>(&delta.operation))
+        return op->new_node.action == Coordination::Storage::NodeAction::Remove;
+    else
+        return std::holds_alternative<RemoveNodeDelta>(delta.operation);
+}
+
+bool isCreateNodeDelta(const KeeperDelta & delta)
+{
+    if (const auto * op = std::get_if<LSMTDelta>(&delta.operation))
+        return op->new_node.action == Coordination::Storage::NodeAction::Create;
+    else
+        return std::holds_alternative<CreateNodeDelta>(delta.operation);
+}
+
 bool takeNodeStatsFromUpdateDelta(std::string_view path, const KeeperStorage::DeltaRange & deltas, Coordination::Stat & out_stat)
 {
     for (auto it = deltas.end(); it != deltas.begin();)
@@ -197,6 +220,14 @@ bool takeNodeStatsFromUpdateDelta(std::string_view path, const KeeperStorage::De
         {
             update_delta->new_stats.setResponseStat(out_stat);
             return true;
+        }
+        if (const auto * lsmt_delta = std::get_if<LSMTDelta>(&it->operation))
+        {
+            if (lsmt_delta->new_node.action == Coordination::Storage::NodeAction::Update)
+            {
+                lsmt_delta->new_node.stats.setResponseStat(out_stat);
+                return true;
+            }
         }
     }
     return false;
@@ -266,12 +297,18 @@ process(const Coordination::ZooKeeperSyncRequest & zk_request, KeeperStorage & /
 
 /// CREATE Request ///
 static std::pair<KeeperResponsesForSessions, Int64> processWatches(
-    const Coordination::ZooKeeperCreateRequest & zk_request,
-    KeeperStorage::DeltaRange /*deltas*/,
+    const Coordination::ZooKeeperCreateRequest & /*zk_request*/,
+    KeeperStorage::DeltaRange deltas,
     KeeperStorage & storage,
     int64_t /*session_id*/)
 {
-    return storage.processWatchesImpl(zk_request.getPath(), Coordination::Event::CREATED);
+    for (const auto & delta : deltas)
+    {
+        if (isCreateNodeDelta(delta))
+            return storage.processWatchesImpl(delta.path, Coordination::Event::CREATED);
+    }
+
+    return {};
 }
 
 template <typename Storage>
@@ -399,26 +436,45 @@ static Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperC
         return response;
     }
 
+    /// Extract information from the Delta that creates the node.
+    bool found_delta = false;
     std::string created_path;
-    auto create_delta_it = std::find_if(
-        deltas.begin(),
-        deltas.end(),
-        [](const auto & delta)
-        { return std::holds_alternative<CreateNodeDelta>(delta.operation); });
-
-    if (create_delta_it != deltas.end())
+    Coordination::Stat * response_stat = nullptr;
+    if (response->getOpNum() == Coordination::OpNum::Create2 ||
+        response->getOpNum() == Coordination::OpNum::CreateTTL ||
+        response->getOpNum() == Coordination::OpNum::CreateContainer)
+        response_stat = &static_cast<Coordination::ZooKeeperCreate2Response &>(*response).zstat;
+    for (const KeeperDelta & delta : deltas)
     {
-        created_path = create_delta_it->path;
-        if (response->getOpNum() == Coordination::OpNum::Create2 ||
-            response->getOpNum() == Coordination::OpNum::CreateTTL ||
-            response->getOpNum() == Coordination::OpNum::CreateContainer)
-            std::get<CreateNodeDelta>(create_delta_it->operation).stat.setResponseStat(static_cast<Coordination::ZooKeeperCreate2Response &>(*response).zstat);
+        if (const auto * lsmt_op = std::get_if<LSMTDelta>(&delta.operation))
+        {
+            if (lsmt_op->new_node.action == Coordination::Storage::NodeAction::Create)
+            {
+                found_delta = true;
+                if (response_stat)
+                    lsmt_op->new_node.stats.setResponseStat(*response_stat);
+            }
+        }
+        else if (const auto * create_op = std::get_if<CreateNodeDelta>(&delta.operation))
+        {
+            found_delta = true;
+            if (response_stat)
+                create_op->stat.setResponseStat(*response_stat);
+        }
+        if (found_delta)
+        {
+            created_path = delta.path;
+            break;
+        }
     }
+
     if (const auto result = storage.commit(std::move(deltas)); result != Coordination::Error::ZOK)
     {
         response->error = result;
         return response;
     }
+    if (!found_delta)
+        onStorageInconsistency("Unexpected deltas for Create request");
 
     response->path_created = std::move(created_path);
     response->error = Coordination::Error::ZOK;
@@ -492,7 +548,7 @@ static std::pair<KeeperResponsesForSessions, Int64> processWatches(
 {
     for (const auto & delta : deltas)
     {
-        if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
+        if (isRemoveNodeDelta(delta))
             return storage.processWatchesImpl(zk_request.getPath(), Coordination::Event::DELETED);
     }
     return {};
@@ -637,7 +693,7 @@ static std::pair<KeeperResponsesForSessions, Int64> processWatches(
     Int64 total_removed_watches = 0;
     for (const auto & delta : deltas)
     {
-        if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
+        if (isRemoveNodeDelta(delta))
         {
             auto [new_responses, removed_watches] = storage.processWatchesImpl(delta.path, Coordination::Event::DELETED);
             responses.insert(responses.end(), std::make_move_iterator(new_responses.begin()), std::make_move_iterator(new_responses.end()));
@@ -685,6 +741,11 @@ static Coordination::Error preprocess(
     bool visited_all = storage.nodes.visitUncommittedRecursive(zk_request.path, zk_request.remove_nodes_limit,
             [&](std::string_view path, typename Storage::UncommittedNodeRef && uncommitted_ref)
             {
+                /// Note: this might be called with storage_mutex locked, make sure to not try to
+                /// lock it again or we'll deadlock.
+                /// (If needed, we could change KeeperLSMTNodesStorage::visitUncommittedRecursive
+                ///  to defer these calls until after unlocking the mutex.)
+
                 if (check_acl && !storage.checkACL(uncommitted_ref.get()->stats.acl_id, Coordination::ACL::Delete, session_id, /*committed=*/false))
                 {
                     error = Coordination::Error::ZNOAUTH;
@@ -1491,15 +1552,26 @@ static Coordination::Error preprocess(
     return Coordination::Error::ZOK;
 }
 
+/// Cuts the deltas of the next subrequest, up to its `SubDeltaEnd` marker, off the front of `deltas`
+/// and drops the marker. `preprocess` appends the marker after every subrequest, so a range without
+/// it does not match the request that is being processed: the markers were lost, and stepping past
+/// the end of the range to look for them is undefined behavior. This runs on the raft commit and
+/// replay threads, so treat it like every other mismatch between a request and its deltas.
+///
+/// `FailedMultiDelta` is the other marker `preprocess` emits, and the callers handle it before they
+/// get here: it is the sole delta of a failed multi request. Inside a subrequest slice it is out of
+/// place, and `commit` would ignore it and report the subrequest as successful, so the walk stops on
+/// both markers and rejects the failure marker instead of passing it on as an ordinary delta.
 static KeeperStorage::DeltaRange extractSubdeltas(KeeperStorage::DeltaRange & deltas)
 {
-    auto it = deltas.begin();
-
-    for (; it != deltas.end(); ++it)
-    {
-        if (std::holds_alternative<SubDeltaEnd>(it->operation))
-            break;
-    }
+    auto it = std::ranges::find_if(
+        deltas,
+        [](const auto & delta)
+        { return std::holds_alternative<SubDeltaEnd>(delta.operation) || std::holds_alternative<FailedMultiDelta>(delta.operation); });
+    if (it == deltas.end())
+        onStorageInconsistency("Missing SubDeltaEnd marker for a Multi subrequest");
+    if (std::holds_alternative<FailedMultiDelta>(it->operation))
+        onStorageInconsistency("Unexpected failure marker inside a subrequest of a Multi request");
 
     KeeperStorage::DeltaRange result{deltas.begin(), it};
     ++it;
@@ -1523,10 +1595,34 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
 
     const auto & subrequests = zk_request.requests;
 
-    // the deltas will have at least SubDeltaEnd or FailedMultiDelta
-    chassert(!deltas.empty());
+    /// `preprocess` appends at least `SubDeltaEnd` or `FailedMultiDelta` for every subrequest, so the
+    /// range is empty only for a multi request that has no subrequests. Such a request is accepted -
+    /// ZooKeeper answers it with an empty successful response, and a client that builds a transaction
+    /// from a list that turns out to be empty sends exactly that - so answer it the same way here.
+    /// `processWatches` below already handles the empty range, and this runs on the raft commit
+    /// thread, where an exception terminates the process.
+    ///
+    /// The success return is reserved for the true zero-subrequest case: a multi request with
+    /// subrequests but without deltas means that the markers of the preprocessing were lost, and
+    /// answering it with an empty success would silently drop every suboperation, so it goes through
+    /// the storage inconsistency path like every other request whose deltas do not match.
+    if (deltas.empty())
+    {
+        if (!subrequests.empty())
+            onStorageInconsistency("Unexpected empty deltas for Multi request with subrequests");
+
+        response->error = Coordination::Error::ZOK;
+        return response;
+    }
+
     if (const auto * failed_multi = std::get_if<FailedMultiDelta>(&deltas.front().operation))
     {
+        /// `preprocess` puts the failure marker last and the caller rolls back everything before it,
+        /// so the marker is the only delta of a failed multi request. Anything else in the range is
+        /// a delta that no subrequest response would account for, so it cannot be dropped silently.
+        if (std::next(deltas.begin()) != deltas.end())
+            onStorageInconsistency("Unexpected deltas after the failure marker of a Multi request");
+
         const size_t subrequests_count = subrequests.size();
 
         for (size_t i = 0; i < subrequests_count; ++i)
@@ -1549,6 +1645,12 @@ process(const Coordination::ZooKeeperMultiRequest & zk_request, Storage & storag
         response->responses.push_back(callOnConcreteRequestType(
             *multi_subrequest, [&](const auto & subrequest) { return process(subrequest, storage, std::move(subdeltas), session_id); }));
     }
+
+    /// Every delta of the transaction belongs to one of the subrequests above. Deltas left after the
+    /// last marker belong to no subrequest: they are already applied to the storage, and no response
+    /// would account for them, so they cannot be silently ignored either.
+    if (!deltas.empty())
+        onStorageInconsistency("Unexpected deltas after the last subrequest of a Multi request");
 
     response->error = Coordination::Error::ZOK;
     return response;
@@ -1688,6 +1790,11 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
         transaction = &uncommitted_transactions.emplace_back(TransactionInfo{.zxid = new_last_zxid, .nodes_digest = current_digest, .log_idx = log_idx});
     }
 
+    /// Backpressure: sleep if the nodes storage's background work fell behind. Done here rather
+    /// than inside the storage's prepare methods to make sure no locks are held: sleeping under
+    /// storage_mutex would stall the background work that the throttling is waiting for.
+    nodes.throttleWrite();
+
     bool request_finalized = false;
     const auto finalize = [&](bool rolled_back)
     {
@@ -1723,8 +1830,15 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
         request_finalized = true;
     };
 
+    const int uncaught_exceptions_before = std::uncaught_exceptions();
     SCOPE_EXIT({
-        if (!request_finalized)
+        /// The most common way to leave without finalizing is an exception thrown while preprocessing.
+        /// Don't abort in that case: let the exception propagate to `KeeperStateMachine::preprocess`,
+        /// whose handler logs the message and the stack trace before aborting. (We can't log it here:
+        /// `std::current_exception` is null while unwinding towards a handler that hasn't been entered
+        /// yet, so all we could print is the useless "Finalize not called" line, and aborting here
+        /// would destroy the only clue about what actually went wrong.)
+        if (!request_finalized && std::uncaught_exceptions() == uncaught_exceptions_before)
         {
             LOG_FATAL(getLogger("KeeperStorage"), "Finalize not called before returning");
             std::abort();
@@ -1896,7 +2010,7 @@ KeeperResponsesForSessions KeeperStorageImpl<NS>::processRequest(
     {
         for (const auto & delta : deltas)
         {
-            if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
+            if (isRemoveNodeDelta(delta))
             {
                 auto [responses, cnt_removed_watches] = processWatchesImpl(delta.path, Coordination::Event::DELETED);
                 total_watches_count -= cnt_removed_watches;
@@ -2313,5 +2427,6 @@ KeeperStorageImpl<NS>::~KeeperStorageImpl()
 }
 
 template class KeeperStorageImpl<KeeperMemNodesStorage>;
+template class KeeperStorageImpl<KeeperLSMTNodesStorage>;
 
 }

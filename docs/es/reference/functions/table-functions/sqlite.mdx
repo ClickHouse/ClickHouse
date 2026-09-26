@@ -25,7 +25,7 @@ sqlite('db_path', 'table_name')
 * `db_path` — Ruta de acceso a un archivo con una base de datos SQLite. [String](/es/reference/data-types/string).
 * `table_name` — Nombre de una tabla en la base de datos SQLite, o una consulta que se pasa a SQLite tal cual (consulta [Pasar una consulta en lugar de un nombre de tabla](#passing-a-query)). [String](/es/reference/data-types/string).
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor devuelto
 </div>
 
@@ -47,7 +47,7 @@ Esa tabla es de solo lectura: no se permite hacer `INSERT` en ella. El motor de 
 <Note>
   La forma de subconsulta `(SELECT ...)` la analiza ClickHouse y vuelve a serializarla antes de enviarla a SQLite. Por lo tanto, debe ser SQL de ClickHouse válido. Para pasar sintaxis específica de SQLite que ClickHouse no analiza, use la forma `query('...')`, cuyo texto se envía a SQLite literalmente.
 
-  Cualquier `WHERE`, `LIMIT`, agregación, etc. externo de la consulta de ClickHouse que la rodea **no** hace pushdown en la consulta pasada; se aplica en ClickHouse después de recuperar el resultado completo de la consulta. Para restringir los datos leídos desde SQLite, coloque el filtro dentro de la consulta pasada. Con [`external_table_strict_query = 1`](/es/reference/settings/session-settings#external_table_strict_query), un filtro externo sobre el que no se puede hacer pushdown se rechaza con una excepción, en lugar de aplicarse localmente.
+  Cualquier `WHERE`, `LIMIT`, agregación, etc. externo de la consulta de ClickHouse que la rodea **no** hace pushdown en la consulta pasada; se aplica en ClickHouse después de recuperar el resultado completo de la consulta. Para restringir los datos leídos desde SQLite, coloque el filtro dentro de la consulta pasada. Con [`external_table_strict_query = 1`](/es/reference/settings/session-settings/external-table#external_table_strict_query) un filtro externo sobre el que no se puede hacer pushdown se rechaza con una excepción, en lugar de aplicarse localmente.
 </Note>
 
 <div id="example">

@@ -267,14 +267,15 @@ libhdfs3 поддерживает HA для NameNode в HDFS.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
 * `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер неизвестен, значение — `NULL`.
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
+* `_etag` — ETag файла. Тип: `LowCardinality(String)`. В HDFS нет нативного ETag, поэтому значение синтезируется на основе времени изменения и размера файла в виде `<mtime_seconds>_<size>`. Поскольку `libhdfs3` предоставляет время изменения только с точностью до секунды, перезапись в пределах той же секунды с сохранением того же размера даёт то же значение; поэтому этот синтезированный ETag не используется в качестве ключа кэша содержимого.
 
 <div id="storage-settings">
   ## Настройки хранилища
 </div>
 
-* [hdfs&#95;truncate&#95;on&#95;insert](/ru/reference/settings/session-settings#hdfs_truncate_on_insert) - позволяет обрезать файл перед вставкой в него. По умолчанию отключено.
-* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ru/reference/settings/session-settings#hdfs_create_new_file_on_insert) - позволяет создавать новый файл при каждой вставке, если у формата есть суффикс. По умолчанию отключено.
-* [hdfs&#95;skip&#95;empty&#95;files](/ru/reference/settings/session-settings#hdfs_skip_empty_files) - позволяет пропускать пустые файлы при чтении. По умолчанию отключено.
+* [hdfs&#95;truncate&#95;on&#95;insert](/ru/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - позволяет обрезать файл перед вставкой в него. По умолчанию отключено.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ru/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - позволяет создавать новый файл при каждой вставке, если у формата есть суффикс. По умолчанию отключено.
+* [hdfs&#95;skip&#95;empty&#95;files](/ru/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - позволяет пропускать пустые файлы при чтении. По умолчанию отключено.
 
 **См. также**
 
