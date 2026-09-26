@@ -293,19 +293,25 @@ private:
             static_assert(std::is_same_v<TimeColumnType, ColumnDateTime64>);
             /// There is no 64-bit vector multiply-high instruction, so these loops stay scalar.
             const libdivide::divider<Int64, libdivide::BRANCHFULL> scale_divider(scale_multiplier);
+            /// The whole seconds rounded towards negative infinity, see `wholeSecondsRoundedDown`.
+            auto whole_seconds = [&](Int64 value)
+            {
+                const Int64 whole = value / scale_divider;
+                return whole * scale_multiplier > value ? whole - 1 : whole;
+            };
             if (divisor == 1)
             {
                 /// A one-second interval never consults the LUT, so it needs no range check.
 #pragma clang loop vectorize(disable)
                 for (size_t i = 0; i != size; ++i)
-                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(static_cast<Int64>(time_data[i]) / scale_divider);
+                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(whole_seconds(static_cast<Int64>(time_data[i])));
                 return true;
             }
             const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor);
 #pragma clang loop vectorize(disable)
             for (size_t i = 0; i != size; ++i)
             {
-                const Int64 t = static_cast<Int64>(time_data[i]) / scale_divider;
+                const Int64 t = whole_seconds(static_cast<Int64>(time_data[i]));
                 /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
                 /// (e.g. `Asia/Kolkata` is +5:53:28 before 1906), so the rounding is not modular there.
                 if (unlikely(!DateLUTImpl::isTimeInLUTRange(t) || (t < 0 && !valid_before_epoch)))
