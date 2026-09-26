@@ -189,7 +189,7 @@ FunctionHasPhraseOverloadResolver::buildImpl(const ColumnsWithTypeAndName & argu
 
     const auto tokenizer_name = arguments.size() < 3 || !arguments[arg_tokenizer].column
         ? SplitByNonAlphaTokenizer::getExternalName()
-        : arguments[arg_tokenizer].column->convertToFullColumnIfLowCardinality()->getDataAt(0);
+        : arguments[arg_tokenizer].column->getDataAt(0);
     auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
     static const UnorderedSetWithMemoryTracking<ITokenizer::Type> supported_types = {
         ITokenizer::Type::SplitByNonAlpha,

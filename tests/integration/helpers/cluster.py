@@ -1,5 +1,6 @@
 import base64
 import errno
+import glob
 import http.client
 import json
 import logging
@@ -94,6 +95,17 @@ DEFAULT_ENV_NAME = ".env"
 # `temp_dir` is relative to tests/integration; anchoring it here makes it independent of
 # the cwd, which differs between a CI job and a native pytest run.
 TEMP_ABS_DIR = p.abspath(p.join(HELPERS_DIR, "..", temp_dir))
+
+# Per-module coverage (a `WITH_COVERAGE_DEPTH` build). When this is set, every ClickHouse
+# process of a cluster (servers, Keeper, bridges) gets `CLICKHOUSE_COVERAGE_TEST_NAME` = the
+# running test module, arms coverage for it at startup, and appends every flush (exit, crash,
+# `SYSTEM SET COVERAGE TEST`) to `coverage/` next to its log; see `initCoverageFromEnvironment`.
+# No SQL is needed for that, so a protected `default` user, a failing startup or any kind of
+# restart does not lose coverage. The cluster moves the files here on shutdown, and the CI job
+# exports them into the same CIDB tables as the stateless per-test coverage.
+PER_TEST_COVERAGE_DIR = os.environ.get("CLICKHOUSE_TESTS_PER_TEST_COVERAGE_DIR")
+# The harness queries must not show up in `system.query_log`, which some tests count.
+COVERAGE_QUERY_SETTINGS = {"log_queries": 0}
 
 # Marker of the one docker failure mode that looks exactly like a broken server: the
 # container keeps running but has no network interface at all, so every connection to it
@@ -601,6 +613,35 @@ def extract_test_name(base_path):
     return name
 
 
+def escape_sql_string(value):
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+# Started clusters, so that clusters shared between modules (e.g. created in `conftest.py`)
+# can be re-armed when the next module starts; see `arm_per_test_coverage_for_module`.
+started_clusters = []
+
+
+def current_coverage_test_name():
+    """The running test module relative to tests/integration, e.g. `test_storage_s3/test.py`.
+
+    Not the cluster's `base_path`: a cluster may be created in `conftest.py` and serve
+    several modules, and some tests pass an arbitrary `base_path`.
+    """
+    current = os.environ.get("PYTEST_CURRENT_TEST")
+    return current.split("::")[0] if current else None
+
+
+def arm_per_test_coverage_for_module():
+    """Attribute the coverage of the already running servers to the module that starts now."""
+    if not PER_TEST_COVERAGE_DIR:
+        return
+    for cluster in started_clusters:
+        for instance in cluster.instances.values():
+            if instance.coverage_test_name is not None:
+                instance.arm_per_test_coverage(restarted=False)
+
+
 def find_binary(name):
     def is_executable(path):
         return os.access(path, os.X_OK) and os.path.isfile(path)
@@ -699,6 +740,8 @@ class ClickHouseCluster:
         # docker-compose removes everything non-alphanumeric from project names so we do it too.
         self.project_name = re.sub(r"[^a-z0-9]", "", project_name.lower())
         self.instances_dir_name = get_instances_dir(self.name)
+        # The module whose name the processes arm themselves with; see `PER_TEST_COVERAGE_DIR`.
+        self.coverage_env_test_name = None
         xdist_worker = os.getenv("PYTEST_XDIST_WORKER")
         if xdist_worker:
             self.project_name += f"-{xdist_worker}"
@@ -2307,8 +2350,10 @@ class ClickHouseCluster:
         # %c enables continuous mode: counters are memory-mapped into the file,
         # so the profile survives SIGKILL / `docker kill` intact instead of being
         # lost or half-written by an exit-time dump interrupted by the kill.
+        # Continuous mode releases the static counter section that per-module
+        # coverage reads inside the server, so the two are mutually exclusive.
         env_variables["LLVM_PROFILE_FILE"] = (
-            "/debug/it-%c%4m.profraw"
+            "/debug/it-%4m.profraw" if PER_TEST_COVERAGE_DIR else "/debug/it-%c%4m.profraw"
         )
 
         clickhouse_start_command = clickhouse_start_cmd
@@ -3825,6 +3870,15 @@ class ClickHouseCluster:
         except Exception:
             logging.warning("Cleanup failed:{e}")
 
+        if PER_TEST_COVERAGE_DIR:
+            # The processes arm themselves with it on every start. A cluster that outlives
+            # the module is re-armed over SQL; see `arm_per_test_coverage_for_module`.
+            self.coverage_env_test_name = current_coverage_test_name()
+            coverage_env = {"CLICKHOUSE_COVERAGE_TEST_NAME": self.coverage_env_test_name or ""}
+            self.env_variables.update(coverage_env)
+            for instance in self.instances.values():
+                instance.env_variables.update(coverage_env)
+
         try:
             for instance in list(self.instances.values()):
                 logging.debug(f"Setup directory for instance: {instance.name}")
@@ -4460,8 +4514,10 @@ class ClickHouseCluster:
                 instance.client = Client(
                     instance.ip_address, command=self.client_bin_path
                 )
+                instance.arm_per_test_coverage()
 
             self.is_up = True
+            started_clusters.append(self)
             self.save_logs()
 
         except BaseException as e:
@@ -4471,6 +4527,24 @@ class ClickHouseCluster:
             self.save_logs()
             self.shutdown()
             raise
+
+    def collect_per_test_coverage(self) -> None:
+        """Move the coverage files of all processes of this cluster to `PER_TEST_COVERAGE_DIR`.
+
+        They lie in `coverage/` next to the log of each process (`<instance>/logs`,
+        `keeper<N>/log`), and the next start of the cluster wipes these directories.
+        """
+        if not PER_TEST_COVERAGE_DIR:
+            return
+        os.makedirs(PER_TEST_COVERAGE_DIR, exist_ok=True)
+        for path in glob.glob(p.join(self.instances_dir, "*", "*", "coverage", "*.tsv")):
+            process_dir = p.basename(p.dirname(p.dirname(p.dirname(path))))
+            target = p.join(
+                PER_TEST_COVERAGE_DIR, f"{self.project_name}_{process_dir}_{p.basename(path)}"
+            )
+            with open(path, "rb") as source, open(target, "ab") as destination:
+                shutil.copyfileobj(source, destination)
+            os.remove(path)
 
     def save_logs(self) -> None:
         # Launch the `docker-compose logs` in background to collect all the logs
@@ -4497,6 +4571,8 @@ class ClickHouseCluster:
         failure_logs = []
 
         if self.up_called:
+            if self in started_clusters:
+                started_clusters.remove(self)
             if kill:
                 try:
                     # NOTE: no --timeout, rely on stop_grace_period
@@ -4553,6 +4629,9 @@ class ClickHouseCluster:
                 logging.debug(
                     "Down + remove orphans failed during shutdown. {}".format(repr(e))
                 )
+
+            # The processes have exited, which flushed their coverage.
+            self.collect_per_test_coverage()
 
             # Finish `docker compose logs --follow` process, just in case
             # It should be already finished because of the `docker compose down`
@@ -5121,6 +5200,9 @@ class ClickHouseInstance:
         self.name = name
         self.base_cmd = cluster.base_cmd
         self.docker_id = cluster.get_instance_docker_id(self.name)
+        # The module the server attributes its coverage to, None when it is not armed.
+        # See `arm_per_test_coverage`.
+        self.coverage_test_name = None
         self.cluster = cluster  # type: ClickHouseCluster
         self.hostname = hostname if hostname is not None else self.name
 
@@ -5233,8 +5315,18 @@ class ClickHouseInstance:
         # and there is no other way to kill clickhouse properly (easily), since
         # clickhosue is spawned with --daemon, and it is not a child neither in
         # the same session.
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
-            self.clickhouse_start_command_in_daemon
+        #
+        # With per-module coverage the trap waits for the server to exit: otherwise this shell,
+        # and with it the container, exits right after the signal, the kernel kills the server
+        # in the middle of its shutdown, and the coverage it flushes at exit is lost. That was
+        # the whole coverage of every module whose `stay_alive` servers are only stopped by the
+        # cluster shutdown. `docker compose stop` still escalates after `stop_grace_period`.
+        # The watchdog renames itself, so `clickhouse` matches only the server.
+        wait_for_server = (
+            "; while pkill -0 clickhouse; do sleep 0.1; done" if PER_TEST_COVERAGE_DIR else ""
+        )
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill clickhouse{}; pkill tail' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
+            wait_for_server, self.clickhouse_start_command_in_daemon
         )
 
         self.path = p.join(self.cluster.instances_dir, name)
@@ -5302,6 +5394,44 @@ class ClickHouseInstance:
             "SELECT value FROM system.build_options WHERE name = 'WITH_COVERAGE'"
         )
         return "ON" in with_coverage.upper()
+
+    def arm_per_test_coverage(self, restarted=True):
+        """Attribute the coverage of this server to the running test module.
+
+        A server arms itself on every start with the module the cluster was started in.
+        This switches it over SQL when a cluster serves several modules (`restarted=False`
+        at the start of the next one, or after a restart, which reverts to the first
+        module); the switch flushes the counters of the previous module.
+        """
+        if not PER_TEST_COVERAGE_DIR:
+            return
+        if restarted:
+            self.coverage_test_name = self.cluster.coverage_env_test_name
+        test_name = current_coverage_test_name()
+        if not test_name or test_name == self.coverage_test_name:
+            return
+        try:
+            self.query(
+                f"SYSTEM SET COVERAGE TEST {escape_sql_string(test_name)}",
+                timeout=300,
+                settings=COVERAGE_QUERY_SETTINGS,
+            )
+            self.coverage_test_name = test_name
+        except Exception as e:
+            logging.warning(f"Cannot switch per-module coverage of {self.name} to {test_name}: {e}")
+
+    def flush_per_test_coverage(self):
+        """Flush the coverage of a server that is about to be killed, which skips the flush at exit."""
+        if not PER_TEST_COVERAGE_DIR or self.coverage_test_name is None:
+            return
+        try:
+            self.query(
+                f"SYSTEM SET COVERAGE TEST {escape_sql_string(self.coverage_test_name)}",
+                timeout=300,
+                settings=COVERAGE_QUERY_SETTINGS,
+            )
+        except Exception as e:
+            logging.warning(f"Cannot flush per-module coverage of {self.name}: {e}")
 
     def is_built_with_thread_sanitizer(self):
         return self.is_built_with_sanitizer("thread")
@@ -5748,6 +5878,9 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return False
 
+            if kill:
+                self.flush_per_test_coverage()
+
             # Under LLVM coverage the server runs several times slower and writes its
             # .profraw only on a graceful shutdown (the libprofile atexit handler, or
             # dumpCoverageReportIfPossible() on the forced-shutdown path). Escalating to
@@ -5891,6 +6024,7 @@ class ClickHouseInstance:
                 if pid is None:
                     raise Exception("ClickHouse server is not running. Check logs.")
                 exec_query_with_retry(self, "select 20", retry_count=10, silent=True)
+                self.arm_per_test_coverage()
                 return
             except QueryRuntimeException as err:
                 last_err = err
@@ -6324,6 +6458,9 @@ class ClickHouseInstance:
             ports = [9000]
         self.wait_until_any_port_is_ready(ports, timeout=start_timeout, connection_timeout=connection_timeout)
         self.is_up = True
+        # On the first start the cluster creates the client and arms the server itself.
+        if self.client is not None:
+            self.arm_per_test_coverage()
 
     def wait_until_any_port_is_ready(self, ports, timeout=None, connection_timeout=None):
         if not ports:
