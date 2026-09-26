@@ -300,12 +300,12 @@ struct GeometryDecodeCache
 
     /// For single-type columns (Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon):
     std::variant<
-        std::vector<SphericalPoint>,
-        std::vector<SphericalRing>,
-        std::vector<SphericalLineString>,
-        std::vector<SphericalMultiLineString>,
-        std::vector<SphericalPolygon>,
-        std::vector<SphericalMultiPolygon>> decoded;
+        VectorWithMemoryTracking<SphericalPoint>,
+        VectorWithMemoryTracking<SphericalRing>,
+        VectorWithMemoryTracking<SphericalLineString>,
+        VectorWithMemoryTracking<SphericalMultiLineString>,
+        VectorWithMemoryTracking<SphericalPolygon>,
+        VectorWithMemoryTracking<SphericalMultiPolygon>> decoded;
 
     /// For Geometry (Variant) columns: each nested column decoded separately.
     /// Discriminator mapping (sorted alphabetically by type name):
@@ -314,12 +314,12 @@ struct GeometryDecodeCache
     struct GeometryVariantData
     {
         const ColumnVariant * column_variant = nullptr;
-        std::vector<SphericalLineString> linestrings;         /// discriminator 0
-        std::vector<SphericalMultiLineString> multilinestrings; /// discriminator 1
-        std::vector<SphericalMultiPolygon> multipolygons;     /// discriminator 2
-        std::vector<SphericalPoint> points;                   /// discriminator 3
-        std::vector<SphericalPolygon> polygons;               /// discriminator 4
-        std::vector<SphericalRing> rings;                     /// discriminator 5
+        VectorWithMemoryTracking<SphericalLineString> linestrings;         /// discriminator 0
+        VectorWithMemoryTracking<SphericalMultiLineString> multilinestrings; /// discriminator 1
+        VectorWithMemoryTracking<SphericalMultiPolygon> multipolygons;     /// discriminator 2
+        VectorWithMemoryTracking<SphericalPoint> points;                   /// discriminator 3
+        VectorWithMemoryTracking<SphericalPolygon> polygons;               /// discriminator 4
+        VectorWithMemoryTracking<SphericalRing> rings;                     /// discriminator 5
     };
     std::optional<GeometryVariantData> geometry_data;
 
@@ -792,9 +792,13 @@ void ProjectionIndexS2::fillProjectionDescription(
     const IAST * index_expr,
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
-    const ContextPtr & query_context) const
+    const ContextPtr & query_context,
+    const MergeTreeSettings & projection_settings) const
 {
     (void) partition_key;
+    /// The projection metadata is built by hand below, not by `fillProjectionDescriptionByQuery`,
+    /// so the implicit min-max index settings do not apply.
+    (void) projection_settings;
 
     if (columns.has("_part_index") || columns.has("_part_offset") || columns.has("_parent_part_offset"))
     {
@@ -1066,11 +1070,8 @@ std::optional<ActionsDAG> ProjectionIndexS2::tryRewriteFilterForQuery(const Acti
         const auto * cell_id_input = &rewritten.addInput("cell_id", uint64_type);
 
         auto arr_type = std::make_shared<DataTypeArray>(uint64_type);
-        ColumnWithTypeAndName arr_col;
-        arr_col.name = "s2_covering";
-        arr_col.type = arr_type;
-        arr_col.column = arr_type->createColumnConst(1, cell_ids);
-        const auto * arr_node = &rewritten.addColumn(std::move(arr_col));
+        auto arr_column = arr_type->createColumnConst(1, cell_ids);
+        const auto * arr_node = &rewritten.addColumn(std::move(arr_column), arr_type, "s2_covering");
 
         auto s2_covering_fn = FunctionFactory::instance().get("__s2CoveringIntersects", context);
         const auto * predicate = &rewritten.addFunction(s2_covering_fn, {cell_id_input, arr_node}, {});

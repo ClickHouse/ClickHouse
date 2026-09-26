@@ -87,3 +87,13 @@ undrop table 02681_undrop_multiple;
 select * from 02681_undrop_multiple order by id;
 undrop table 02681_undrop_multiple; -- { serverError TABLE_ALREADY_EXISTS }
 drop table 02681_undrop_multiple sync;
+
+select 'test undrop in a database that stores no metadata on disk';
+create database {CLICKHOUSE_DATABASE_1:Identifier} engine = Atomic;
+create table {CLICKHOUSE_DATABASE_1:Identifier}.t (id Int32) Engine=MergeTree() order by id;
+drop table {CLICKHOUSE_DATABASE_1:Identifier}.t;
+drop database {CLICKHOUSE_DATABASE_1:Identifier};
+create database {CLICKHOUSE_DATABASE_1:Identifier} engine = Memory;
+select count() from system.dropped_tables where database = {CLICKHOUSE_DATABASE_1:String};
+undrop table {CLICKHOUSE_DATABASE_1:Identifier}.t; -- { serverError UNKNOWN_TABLE }
+drop database {CLICKHOUSE_DATABASE_1:Identifier};

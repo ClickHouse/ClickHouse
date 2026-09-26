@@ -4,10 +4,14 @@ Output: a, b, x, y
 Join (JOIN FillRightFirst)
 │  t1 ⋈ t2
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Cost: estimated no stats
+│  Selectivity: estimated (NDV) no stats
+│  Output rows: estimated no stats
+│  Left: rows estimated no stats
+│  Right: rows estimated no stats
 │  Join conditions: a = x
-│  Output:
-│    Left:  a, b
-│    Right: x, y
+│  Input (left): a, b
+│  Input (right): x, y
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -22,10 +26,14 @@ Output: a, b, x, y
 Join (JOIN FillRightFirst)
 │  t1 ⋈ t2
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Cost: estimated no stats
+│  Selectivity: estimated (NDV) no stats
+│  Output rows: estimated no stats
+│  Left: rows estimated no stats
+│  Right: rows estimated no stats
 │  Join conditions: a <=> x
-│  Output:
-│    Left:  a, b
-│    Right: x, y
+│  Input (left): a, b
+│  Input (right): x, y
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -84,18 +92,12 @@ CreatingSets (Create sets before main query execution)
 Output: a, b
 
 CreatingSets (Create sets before main query execution)
-├──ReadFromMergeTree (default.t1)
-│     Read type: Default
-│     Parts: 1 | Granules: 1
-│     Output: a, b
-│     Prewhere filter
-│     Prewhere filter column:  b IN subquery1 AND a IN subquery2
-└──CreatingSet (Create set for subquery)
-   │  Set: subquery1
-   └──ReadFromMergeTree (default.t2)
-         Read type: Default
-         Parts: 1 | Granules: 1
-         Output: y
+└──ReadFromMergeTree (default.t1)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: a, b
+      Prewhere filter
+      Prewhere filter column:  b IN subquery1 AND a IN subquery2
 --- IN with Set engine ---
 Output: a, b
 

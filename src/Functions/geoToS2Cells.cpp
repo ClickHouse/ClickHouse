@@ -202,92 +202,100 @@ public:
                 constexpr bool is_linestring = std::is_same_v<ColumnToLineStringsConverter<SphericalPoint>, Converter>;
                 constexpr bool is_multilinestring = std::is_same_v<ColumnToMultiLineStringsConverter<SphericalPoint>, Converter>;
                 constexpr bool is_polygon = std::is_same_v<ColumnToPolygonsConverter<SphericalPoint>, Converter>;
+                constexpr bool is_multipoint = std::is_same_v<ColumnToMultiPointsConverter<SphericalPoint>, Converter>;
                 // else: MultiPolygon
 
-                auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
-                for (size_t i = 0; i < input_rows_count; ++i)
+                if constexpr (is_multipoint)
                 {
-                    const auto max_cells_val = col_max_cells->getUInt(i);
-                    const auto min_level_val = col_min_level->getUInt(i);
-                    const auto max_level_val = col_max_level->getUInt(i);
-
-                    if (min_level_val > 30 || max_level_val > 30 || min_level_val > max_level_val || max_cells_val < 1)
-                        throw Exception(
-                            ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid S2 covering parameters in function {}: max_cells must be >= 1, "
-                            "min_level and max_level must be in [0, 30], and min_level <= max_level",
-                            getName());
-
-                    const auto max_cells = static_cast<int>(max_cells_val);
-                    const auto min_level = static_cast<int>(min_level_val);
-                    const auto max_level = static_cast<int>(max_level_val);
-
-                    const bool using_rdp = has_rdp_arg && (col_using_rdp->getUInt(i) != 0);
-                    const double rdp_epsilon = using_rdp ? rdpEpsilonForLevel(max_level) : 0.0;
-
-                    std::optional<S2CellUnion> covering;
-
-                    if constexpr (is_point)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must not be MultiPoint", getName());
+                }
+                else
+                {
+                    auto geometries = Converter::convert(arguments[0].column->convertToFullColumnIfConst());
+                    for (size_t i = 0; i < input_rows_count; ++i)
                     {
-                        covering = buildPointCovering(geometries[i], max_level);
-                    }
-                    else if constexpr (is_linestring)
-                    {
-                        covering = buildLineStringCovering(geometries[i], max_cells, min_level, max_level);
-                    }
-                    else if constexpr (is_multilinestring)
-                    {
-                        covering = buildMultiLineStringCovering(geometries[i], max_cells, min_level, max_level);
-                    }
-                    else if constexpr (is_ring)
-                    {
-                        if (using_rdp)
+                        const auto max_cells_val = col_max_cells->getUInt(i);
+                        const auto min_level_val = col_min_level->getUInt(i);
+                        const auto max_level_val = col_max_level->getUInt(i);
+
+                        if (min_level_val > 30 || max_level_val > 30 || min_level_val > max_level_val || max_cells_val < 1)
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid S2 covering parameters in function {}: max_cells must be >= 1, "
+                                "min_level and max_level must be in [0, 30], and min_level <= max_level",
+                                getName());
+
+                        const auto max_cells = static_cast<int>(max_cells_val);
+                        const auto min_level = static_cast<int>(min_level_val);
+                        const auto max_level = static_cast<int>(max_level_val);
+
+                        const bool using_rdp = has_rdp_arg && (col_using_rdp->getUInt(i) != 0);
+                        const double rdp_epsilon = using_rdp ? rdpEpsilonForLevel(max_level) : 0.0;
+
+                        std::optional<S2CellUnion> covering;
+
+                        if constexpr (is_point)
                         {
-                            SphericalRing simplified = simplifyRing(geometries[i], rdp_epsilon);
-                            covering = buildRingCovering(simplified, max_cells, min_level, max_level);
+                            covering = buildPointCovering(geometries[i], max_level);
+                        }
+                        else if constexpr (is_linestring)
+                        {
+                            covering = buildLineStringCovering(geometries[i], max_cells, min_level, max_level);
+                        }
+                        else if constexpr (is_multilinestring)
+                        {
+                            covering = buildMultiLineStringCovering(geometries[i], max_cells, min_level, max_level);
+                        }
+                        else if constexpr (is_ring)
+                        {
+                            if (using_rdp)
+                            {
+                                SphericalRing simplified = simplifyRing(geometries[i], rdp_epsilon);
+                                covering = buildRingCovering(simplified, max_cells, min_level, max_level);
+                            }
+                            else
+                            {
+                                covering = buildRingCovering(geometries[i], max_cells, min_level, max_level);
+                            }
+                        }
+                        else if constexpr (is_polygon)
+                        {
+                            if (using_rdp)
+                            {
+                                SphericalPolygon simplified = simplifyPolygon(geometries[i], rdp_epsilon);
+                                covering = buildPolygonCovering(simplified, max_cells, min_level, max_level);
+                            }
+                            else
+                            {
+                                covering = buildPolygonCovering(geometries[i], max_cells, min_level, max_level);
+                            }
                         }
                         else
                         {
-                            covering = buildRingCovering(geometries[i], max_cells, min_level, max_level);
+                            /// MultiPolygon
+                            if (using_rdp)
+                            {
+                                SphericalMultiPolygon simplified = simplifyMultiPolygon(geometries[i], rdp_epsilon);
+                                covering = buildMultiPolygonCovering(simplified, max_cells, min_level, max_level);
+                            }
+                            else
+                            {
+                                covering = buildMultiPolygonCovering(geometries[i], max_cells, min_level, max_level);
+                            }
                         }
-                    }
-                    else if constexpr (is_polygon)
-                    {
-                        if (using_rdp)
-                        {
-                            SphericalPolygon simplified = simplifyPolygon(geometries[i], rdp_epsilon);
-                            covering = buildPolygonCovering(simplified, max_cells, min_level, max_level);
-                        }
-                        else
-                        {
-                            covering = buildPolygonCovering(geometries[i], max_cells, min_level, max_level);
-                        }
-                    }
-                    else
-                    {
-                        /// MultiPolygon
-                        if (using_rdp)
-                        {
-                            SphericalMultiPolygon simplified = simplifyMultiPolygon(geometries[i], rdp_epsilon);
-                            covering = buildMultiPolygonCovering(simplified, max_cells, min_level, max_level);
-                        }
-                        else
-                        {
-                            covering = buildMultiPolygonCovering(geometries[i], max_cells, min_level, max_level);
-                        }
-                    }
 
-                    if (covering)
-                    {
-                        auto ids = extractCellIds(*covering);
-                        for (const auto & id : ids)
-                            data_vec.push_back(id);
-                        offsets_vec[i] = data_vec.size();
-                    }
-                    else
-                    {
-                        /// Invalid geometry — return empty array.
-                        offsets_vec[i] = data_vec.size();
+                        if (covering)
+                        {
+                            auto ids = extractCellIds(*covering);
+                            for (const auto & id : ids)
+                                data_vec.push_back(id);
+                            offsets_vec[i] = data_vec.size();
+                        }
+                        else
+                        {
+                            /// Invalid geometry — return empty array.
+                            offsets_vec[i] = data_vec.size();
+                        }
                     }
                 }
             });

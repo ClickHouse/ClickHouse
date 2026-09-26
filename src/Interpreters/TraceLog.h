@@ -35,7 +35,7 @@ struct TraceLogElement
     ThreadName thread_name = ThreadName::UNKNOWN;
     String query_id{};
     std::vector<UInt64> trace{};
-    /// Allocation size in bytes for TraceType::Memory and TraceType::MemorySample.
+    /// Size in bytes for the memory trace types, zero for the others.
     Int64 size{};
     /// Allocation ptr for TraceType::MemorySample.
     UInt64 ptr{};
@@ -48,7 +48,7 @@ struct TraceLogElement
     ProfileEvents::Count increment{};
 
     /// Instrumentation values
-    UInt64 instrumented_point_id;
+    UInt64 instrumented_point_id{};
     Int32 function_id = -1;
     String function_name{};
     String handler{};

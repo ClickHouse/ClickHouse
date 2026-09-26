@@ -3,6 +3,7 @@
 #if USE_PARQUET
 
 #include <Formats/FormatSettings.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/Parquet/ReadManager.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -32,10 +33,9 @@ struct ParquetBucketSplitter : public IBucketSplitter
 {
     ParquetBucketSplitter() = default;
     std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) override;
-    std::vector<FileBucketInfoPtr> splitToBucketsByCount(size_t target_count, ReadBuffer & buf, const FormatSettings & format_settings_) override;
 };
 
-class ParquetV3BlockInputFormat : public IInputFormat
+class ParquetV3BlockInputFormat final : public IInputFormat
 {
 public:
     ParquetV3BlockInputFormat(
@@ -49,6 +49,8 @@ public:
         const std::optional<RelativePathWithMetadata> & object_with_metadata_ = std::nullopt);
 
     void resetParser() override;
+
+    void resetReadBuffer() override;
 
     String getName() const override { return "ParquetV3BlockInputFormat"; }
 
@@ -92,7 +94,7 @@ private:
     parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher) const;
 };
 
-class NativeParquetSchemaReader : public ISchemaReader
+class NativeParquetSchemaReader final : public ISchemaReader
 {
 public:
     NativeParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings);

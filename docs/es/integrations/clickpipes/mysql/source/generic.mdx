@@ -1,0 +1,152 @@
+---
+sidebarTitle: 'Generic MySQL'
+description: 'Configure cualquier instancia de MySQL como origen para ClickPipes'
+slug: /integrations/clickpipes/mysql/source/generic
+title: 'Guía de configuración del origen Generic MySQL'
+doc_type: 'guide'
+keywords: ['generic mysql', 'clickpipes', 'binary logging', 'ssl tls', 'mysql 8.x']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+<Info>
+  Si utiliza uno de los proveedores compatibles (en la barra lateral), consulte la guía específica de ese proveedor.
+</Info>
+
+<div id="enable-binlog-retention">
+  ## Habilitar la retención del binlog
+</div>
+
+Los binlogs contienen información sobre las modificaciones de datos realizadas en una instancia de servidor MySQL y son necesarios para la replicación.
+
+<div id="binlog-v8-x">
+  ### MySQL 8.x y versiones posteriores
+</div>
+
+Para habilitar el binlog en su instancia de MySQL, asegúrese de que estén configuradas las siguientes opciones:
+
+```sql
+log_bin = ON                        -- valor predeterminado
+binlog_format = ROW                 -- valor predeterminado
+binlog_row_image = FULL             -- valor predeterminado
+binlog_row_metadata = FULL
+binlog_expire_logs_seconds = 86400  -- 1 día o más; el valor predeterminado es 30 días
+```
+
+Para comprobar estos ajustes, ejecute los siguientes comandos SQL:
+
+```sql
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'binlog_row_metadata';
+SHOW VARIABLES LIKE 'binlog_expire_logs_seconds';
+```
+
+Si los valores no coinciden, puedes ejecutar los siguientes comandos SQL para establecerlos:
+
+```sql
+SET PERSIST log_bin = ON;
+SET PERSIST binlog_format = ROW;
+SET PERSIST binlog_row_image = FULL;
+SET PERSIST binlog_row_metadata = FULL;
+SET PERSIST binlog_expire_logs_seconds = 86400;
+```
+
+Si ha cambiado la configuración `log_bin`, DEBE REINICIAR la instancia de MySQL para que los cambios surtan efecto.
+
+Después de cambiar la configuración, continúe con [la configuración del usuario de base de datos](#configure-database-user).
+
+<div id="binlog-v5-x">
+  ### MySQL 5.7
+</div>
+
+Para habilitar el registro binario en su instancia de MySQL 5.7, asegúrese de que estén configurados los siguientes ajustes:
+
+```sql
+server_id = 1            -- o mayor; cualquier valor excepto 0
+log_bin = ON
+binlog_format = ROW      -- valor predeterminado
+binlog_row_image = FULL  -- valor predeterminado
+expire_logs_days = 1     -- o mayor; 0 significaría que los logs se conservan indefinidamente
+```
+
+Para comprobar estos ajustes, ejecute los siguientes comandos SQL:
+
+```sql
+SHOW VARIABLES LIKE 'server_id';
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'expire_logs_days';
+```
+
+Si los values no coinciden, puedes establecerlos en el archivo de configuración (normalmente en `/etc/my.cnf` o `/etc/mysql/my.cnf`):
+
+```ini
+[mysqld]
+server_id = 1
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+expire_logs_days = 1
+```
+
+DEBES REINICIAR la instancia de MySQL para que los cambios se apliquen.
+
+<Note>
+  La exclusión de columnas y los cambios de esquema no son compatibles con MySQL 5.7 ni con versiones anteriores. Estas funciones dependen de metadatos de tabla que no están disponibles en el binlog antes de [MySQL 8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/).
+</Note>
+
+<div id="configure-database-user">
+  ## Configurar un usuario de base de datos
+</div>
+
+Conéctese a su instancia de MySQL como usuario root y ejecute los siguientes comandos:
+
+1. Cree un usuario específico para ClickPipes:
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some_secure_password';
+   ```
+
+2. Otorgue permisos sobre el esquema. El siguiente ejemplo muestra los permisos para la base de datos `clickpipes`. Repita estos comandos para cada base de datos y host que desee replicar:
+
+   ```sql
+   GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
+   ```
+
+3. Otorgue permisos de replicación al usuario:
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<Note>
+  Asegúrese de sustituir `clickpipes_user` y `some_secure_password` por el nombre de usuario y la contraseña que desee.
+</Note>
+
+<div id="ssl-tls-configuration">
+  ## Configuración de SSL/TLS (recomendada)
+</div>
+
+Los certificados SSL garantizan conexiones seguras con tu base de datos MySQL. La configuración depende del tipo de certificado:
+
+**Autoridad de certificación de confianza (DigiCert, Let&#39;s Encrypt, etc.)** - no se requiere ninguna configuración adicional.
+
+**Autoridad de certificación interna** - Obtén el archivo del certificado raíz de la CA de tu equipo de TI. En la UI de ClickPipes, súbelo al crear un nuevo ClickPipe para MySQL.
+
+**MySQL autohospedado** - Copia el certificado de CA desde tu servidor MySQL (normalmente en `/var/lib/mysql/ca.pem`) y súbelo en la UI al crear un nuevo ClickPipe para MySQL. Usa la dirección IP del servidor como host.
+
+**MySQL autohospedado sin acceso al servidor** - Ponte en contacto con tu equipo de TI para obtener el certificado. Como último recurso, usa el selector &quot;Skip Certificate Verification&quot; en la UI de ClickPipes (no se recomienda por motivos de seguridad).
+
+Para obtener más información sobre las opciones de SSL/TLS, consulta nuestras [FAQ](/es/integrations/clickpipes/mysql/faq#tls-certificate-validation-error).
+
+<div id="whats-next">
+  ## ¿Qué sigue?
+</div>
+
+Ahora puede [crear su ClickPipe](/es/integrations/clickpipes/mysql/index) y comenzar a ingestar datos desde su instancia de MySQL en ClickHouse Cloud.
+Asegúrese de anotar los detalles de conexión que usó al configurar su instancia de MySQL, ya que los necesitará durante el proceso de creación del ClickPipe.

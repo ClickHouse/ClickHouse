@@ -245,10 +245,13 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
     VirtualFields shared_virtual_fields;
     shared_virtual_fields.emplace("_sample_factor", 1.0);
 
-    bool has_limit_below_one_block = sum_rows < block_size.max_block_size_rows;
+    /// Lazy materialization reads a precomputed set of rows — no filter is applied here,
+    /// so `sum_rows` is a hard upper bound. Treat it as a hard limit.
+    bool has_hard_limit_below_one_block = sum_rows < block_size.max_block_size_rows;
 
     auto pool = std::make_shared<MergeTreeReadPoolInOrder>(
-        has_limit_below_one_block,
+        has_hard_limit_below_one_block,
+        /* has_soft_limit_below_one_block */ false,
         MergeTreeReadType::InOrder,
         ranges_in_data_parts,
         mutations_snapshot,

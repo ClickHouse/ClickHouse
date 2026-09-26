@@ -19,9 +19,17 @@
   (setup! [this test]
     (locking table-created?
       (when (compare-and-set! table-created? false true)
-        (chc/with-connection [c conn] false
-          (j/query c "DROP TABLE IF EXISTS set ON CLUSTER test_cluster")
-          (j/query c "CREATE TABLE set ON CLUSTER test_cluster (value Int64) Engine=ReplicatedMergeTree ORDER BY value")))))
+        ;; Retry the distributed DDL. It can transiently fail (e.g. a JDBC
+        ;; BatchUpdateException) while the cluster is still forming or a nemesis
+        ;; has nodes partitioned, since `ON CLUSTER` needs all replicas. Without
+        ;; a retry, a single failed CREATE crashes the whole test here, because
+        ;; jepsen only tolerates exceptions from invoke!, not setup!.
+        (util/timeout 300000
+                      (throw (RuntimeException. "Timed out creating the set table"))
+          (util/retry 5
+            (chc/with-connection [c conn] true
+              (j/query c "DROP TABLE IF EXISTS set ON CLUSTER test_cluster")
+              (j/query c "CREATE TABLE set ON CLUSTER test_cluster (value Int64) Engine=ReplicatedMergeTree ORDER BY value")))))))
 
   (invoke! [this test op]
     (chc/with-exception op

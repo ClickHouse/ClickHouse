@@ -101,6 +101,8 @@ public:
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "First argument of function {} must not be LineString or MultiLineString",
                         getName());
+                else if constexpr (std::is_same_v<ColumnToMultiPointsConverter<Point>, Converter>)
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must not be MultiPoint", getName());
                 else
                 {
                     constexpr bool is_point = std::is_same_v<ColumnToPointsConverter<Point>, Converter>;

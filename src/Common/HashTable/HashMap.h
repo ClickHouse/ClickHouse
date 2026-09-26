@@ -66,6 +66,7 @@ struct HashMapCell
     using value_type = Pair;
     using mapped_type = Mapped;
     using key_type = Key;
+    using external_key_type = std::conditional_t<std::is_same_v<Key, PackedStringRef>, std::string_view, const Key &>;
 
     value_type value;
 
@@ -74,7 +75,7 @@ struct HashMapCell
     HashMapCell(const value_type & value_, const State &) : value(value_) {}
 
     /// Get the key (externally).
-    const Key & getKey() const { return value.first; }
+    external_key_type getKey() const { return static_cast<external_key_type>(value.first); }
     Mapped & getMapped() { return value.second; }
     const Mapped & getMapped() const { return value.second; }
     const value_type & getValue() const { return value; }
@@ -82,9 +83,9 @@ struct HashMapCell
     /// Get the key (internally).
     static const Key & getKey(const value_type & value) { return value.first; }
 
-    bool keyEquals(const Key & key_) const { return bitEquals(value.first, key_); }
-    bool keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(value.first, key_); }
-    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(value.first, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(value.first, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/) const { return bitEquals(value.first, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return bitEquals(value.first, key_); }
 
     void setHash(size_t /*hash_value*/) {}
     size_t getHash(const Hash & hash) const { return hash(value.first); }
@@ -162,17 +163,17 @@ namespace std
 }
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
-struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
+struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState> // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `saved_hash` is set by `setHash` immediately after placement construction on insert; on the hot aggregation/join path we must avoid the redundant store
 {
     using Base = HashMapCell<Key, TMapped, Hash, TState>;
 
     size_t saved_hash;
 
-    using Base::Base;
+    using Base::Base; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the cell type above
 
-    bool keyEquals(const Key & key_) const { return bitEquals(this->value.first, key_); }
-    bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->value.first, key_); }
-    bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_) const { return bitEquals(this->value.first, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->value.first, key_); }
+    bool ALWAYS_INLINE keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
 
     void setHash(size_t hash_value) { saved_hash = hash_value; }
     size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }
@@ -228,7 +229,7 @@ public:
             }
 
             typename Self::LookupResult res_it;
-            bool inserted;
+            bool inserted = false;
             that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
             func(res_it->getMapped(), it->getMapped(), inserted);
         }
@@ -292,7 +293,7 @@ public:
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;
-        bool inserted;
+        bool inserted = false;
         this->emplace(x, it, inserted);
 
         /** It may seem that initialization is not necessary for POD-types (or __has_trivial_constructor),
@@ -319,7 +320,7 @@ public:
     void ALWAYS_INLINE insertIfNotPresent(const Key & x, const typename Cell::Mapped & value)
     {
         LookupResult it;
-        bool inserted;
+        bool inserted = false;
         this->emplace(x, it, inserted);
         if (inserted)
         {
@@ -331,7 +332,7 @@ public:
     void ALWAYS_INLINE insertIfNotPresent(const Key & x, size_t hash, const typename Cell::Mapped & value)
     {
         LookupResult it;
-        bool inserted;
+        bool inserted = false;
         this->emplace(x, it, inserted, hash);
         if (inserted)
         {

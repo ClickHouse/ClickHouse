@@ -1,0 +1,420 @@
+---
+position: 4
+slug: /clickhouse-operator/guides/monitoring
+title: ClickHouse Operator の監視
+keywords: ['kubernetes', 'prometheus', '監視', 'メトリクス']
+description: 'operator のメトリクスとヘルスエンドポイントをスクレイプし、保護して活用する方法。'
+doc_type: 'guide'
+---
+
+operator は Prometheus 互換のメトリクスと Kubernetes のヘルスプローブを公開しているため、リコンサイルの動作を観測し、処理が停滞したコントローラーを検出し、障害時にアラートを設定できます。
+
+このガイドでは、operator が公開する内容、スクレイプ方法、そして日常的に役立つクエリについて説明します。
+
+<Note>
+  このガイドの対象は **operator プロセス自体** (controller manager) です。ClickHouse server のメトリクス (クエリ、パーツ、レプリケーションラグ) については、[ClickHouse の Prometheus エンドポイント](/ja/reference/settings/server-settings/settings#prometheus) を使って個別にスクレイプしてください。
+</Note>
+
+<div id="endpoints">
+  ## エンドポイント
+</div>
+
+operator のプロセスは、manager ポッド内で 2 つの HTTP エンドポイントを公開します。
+
+| エンドポイント | デフォルトポート                             | パス                    | 用途                                |
+| ------- | ------------------------------------ | --------------------- | --------------------------------- |
+| メトリクス   | `8080` (Helm) / `0` で無効 (バイナリのデフォルト) | `/metrics`            | Prometheus エクスポジション形式             |
+| ヘルスプローブ | `8081`                               | `/healthz`, `/readyz` | Kubernetes の liveness と readiness |
+
+operator のバイナリを直接実行する場合、メトリクスエンドポイントは**デフォルトで無効**です (`--metrics-bind-address=0`)。Helm チャートでは、`metrics.enable: true` と `metrics.port: 8080` によって有効になります。
+
+ヘルスプローブエンドポイントは常に有効です。デプロイメントテンプレートでは、`/healthz` と `/readyz` がポート `8081` のポッドの liveness probe および readiness probe に割り当てられます。
+
+<div id="operator-binary-flags">
+  ## Operator バイナリのフラグ
+</div>
+
+関連する `manager` フラグ ([`cmd/main.go`](https://github.com/ClickHouse/clickhouse-operator/blob/main/cmd/main.go) で定義) :
+
+| フラグ                           | デフォルト                                 | 説明                                                                                                  |
+| ----------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `--metrics-bind-address`      | `0` (無効)                              | メトリクスエンドポイントのバインドアドレスです。HTTPS の場合は `:8443`、HTTP の場合は `:8080` に設定します。メトリクスサーバーを無効にする場合は `0` のままにします。 |
+| `--metrics-secure`            | `true`                                | 認証・認可付きで、HTTPS 経由でメトリクスを提供します。プレーン HTTP にするには `false` に設定します。                                       |
+| `--metrics-cert-path`         | empty                                 | メトリクスサーバー用の TLS 証明書ファイル (`tls.crt`、`tls.key`) が格納されたディレクトリです。                                       |
+| `--metrics-cert-name`         | `tls.crt`                             | `--metrics-cert-path` 内の証明書ファイル名です。                                                                 |
+| `--metrics-cert-key`          | `tls.key`                             | `--metrics-cert-path` 内の秘密鍵ファイル名です。                                                                 |
+| `--enable-http2`              | `false`                               | メトリクス **および webhook** サーバーで HTTP/2 を有効にします。CVE-2023-44487 / CVE-2023-39325 の緩和のため、デフォルトでは無効になっています。 |
+| `--leader-elect`              | `false` (バイナリ)  / `true` (Helm チャート)  | リーダー選出を有効にし、一度に 1 つのレプリカだけがリコンサイルするようにします。Helm チャートでは、このフラグはデフォルトで `manager.args` に設定されます。          |
+| `--health-probe-bind-address` | `:8081`                               | `/healthz` と `/readyz` のバインドアドレスです。                                                                 |
+
+<Note>
+  フラグのヘルプテキストにある `8443` (HTTPS) / `8080` (HTTP) という慣例は、あくまで目安です。Helm チャートでは `metrics.port: 8080` と `metrics.secure: true` の両方を設定するため、`8080` で HTTPS を提供します。ポート番号に基づくモード判定はありません。HTTPS と HTTP のどちらを使うかを決めるのは `--metrics-secure` です。
+</Note>
+
+<div id="enable-metrics-via-helm">
+  ## Helm でメトリクスを有効にする
+</div>
+
+この chart は、メトリクス用の `Service` と、必要に応じて prometheus-operator 向けの `ServiceMonitor` をすでに作成します。
+
+メトリクスエンドポイント 自体はデフォルトで有効です (`metrics.enable: true`、ポート `8080`、`metrics.secure: true` により HTTPS 経由で提供) 。通常、変更が必要なのは `prometheus.enable` だけで、これを有効にすると chart が `ServiceMonitor` を作成します。
+
+```yaml
+# values.yaml — minimal override
+prometheus:
+  enable: true
+```
+
+cert-manager を使用しない場合は、追加で `certManager.enable: false` を設定してください。その場合、ServiceMonitor は `insecureSkipVerify: true` でスクレイプを行い、ベアラートークン認証のみに依存します。
+
+メトリクス関連のデフォルト設定一式は次のとおりです。
+
+```yaml
+metrics:
+  enable: true
+  port: 8080
+  secure: true            # HTTPS with authn/authz enforced on every scrape
+
+certManager:
+  enable: true            # Issues the metrics server certificate
+
+prometheus:
+  enable: false           # Set to true to render the ServiceMonitor
+  scraping_annotations: false   # Alternative: prometheus.io/scrape pod annotations
+```
+
+適用:
+
+```bash
+helm upgrade --install clickhouse-operator \
+  oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+  -n clickhouse-operator-system --create-namespace \
+  -f values.yaml
+```
+
+インストール後、チャートによって次が作成されます:
+
+* `Service/<resource-prefix>-metrics-service` — ポート `8080` を公開します (`metrics.secure: true` の場合は HTTPS) 。
+* `ServiceMonitor/<resource-prefix>-controller-manager-metrics-monitor` — `prometheus.enable: true` の場合に作成されます。
+* `ClusterRole/<resource-prefix>-metrics-reader` — 非リソース URL `/metrics` に対する `get` 権限。
+
+<div id="securing-the-metrics-endpoint">
+  ## メトリクス エンドポイントの保護
+</div>
+
+`metrics.secure: true` の場合、メトリクス サーバーはすべてのスクレイプに対して、TLS **および** Kubernetes の認証/認可を必須にします。スクレーパーは次の条件を満たす必要があります。
+
+1. 有効な Kubernetes ベアラートークン を提示する。
+2. 非リソース URL `/metrics` への `get` を許可するクラスター ロールにバインドされた ServiceAccount に属している。
+
+このチャートには、そのようなクラスター ロールが含まれています。
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: clickhouse-operator-metrics-reader
+rules:
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get
+```
+
+これを、スクレーパー (通常は Prometheus) が使用する ServiceAccount に紐付けます：
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-clickhouse-operator-metrics-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: clickhouse-operator-metrics-reader
+subjects:
+  - kind: ServiceAccount
+    name: <prometheus-sa>
+    namespace: <prometheus-namespace>
+```
+
+<Warning>
+  メトリクスエンドポイントから `401 Unauthorized` または `403 Forbidden` が返される場合、スクレーパーは HTTPS を使用しているものの、Kubernetes の ベアラートークン がないか認可されていない、またはその ServiceAccount に上記のバインディングが付与されていない可能性があります。`metrics.secure: false` を設定してセキュリティを無効にすることは、共有クラスターでは**推奨されません**。そのポッドにネットワーク経由で到達できる人であれば、誰でもそのエンドポイントをスクレイプできてしまうためです。
+</Warning>
+
+<div id="servicemonitor-reference">
+  ## ServiceMonitor リファレンス
+</div>
+
+`prometheus.enable: true` の場合、チャートは以下のような ServiceMonitor をレンダリングします:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: <release>-controller-manager-metrics-monitor
+  namespace: <operator-namespace>
+  labels:
+    control-plane: controller-manager
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  endpoints:
+    - path: /metrics
+      port: https           # "http" when metrics.secure: false
+      scheme: https
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+      tlsConfig:
+        serverName: <release>-metrics-service.<operator-namespace>.svc
+        ca:
+          secret:
+            name: metrics-server-cert
+            key: ca.crt
+        cert:
+          secret:
+            name: metrics-server-cert
+            key: tls.crt
+        keySecret:
+          name: metrics-server-cert
+          key: tls.key
+```
+
+Prometheus インスタンスで cert-manager が実行されていない場合は、`tlsConfig.insecureSkipVerify: true` を設定し、ベアラートークン認証のみに依存してください — `certManager.enable: false` の場合、チャートではすでにこのように設定されています。
+
+<div id="standalone-prometheus-example">
+  ## スタンドアロンの Prometheus の例
+</div>
+
+kube-prometheus-stack を使用しない場合は、リポジトリに [`examples/prometheus_secure_metrics_scraper.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/prometheus_secure_metrics_scraper.yaml) という自己完結型のサンプルが用意されています。これにより、ServiceAccount、必要な RBAC、および operator の ServiceMonitor を選択する `Prometheus` CR が作成されます。
+
+<div id="health-probe-endpoints">
+  ## ヘルスプローブのエンドポイント
+</div>
+
+| Path       | 使用先                        | 戻り値                           |
+| ---------- | -------------------------- | ----------------------------- |
+| `/healthz` | Kubernetes liveness probe  | プローブサーバーがリッスンしている限り `200 OK`。 |
+| `/readyz`  | Kubernetes readiness probe | プローブサーバーがリッスンしている限り `200 OK`。 |
+
+どちらのエンドポイントにも、同じ簡易的な Ping チェック (`sigs.k8s.io/controller-runtime` の `healthz.Ping`) が登録されています。したがって、プローブの失敗が意味するのは「マネージャープロセスが `:8081` で HTTP を提供していない」ということであり、「コントローラーが不健全である」という意味ではありません。コントローラーレベルの問題を検出するには、代わりに[reconciliation メトリクス](#reconciliation-activity)を使用してください。
+
+どちらのエンドポイントも、デフォルトではポート `8081` で提供されます。デプロイメントには次のように設定されています。
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 15
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
+```
+
+プローブの失敗が繰り返し発生する場合、通常はプローブ用の server 自体が起動していないことを意味します。たとえば、起動時の早い段階で manager が終了した場合です。manager のログで、`unable to start manager`、RBAC の失敗、または `cache did not sync` のエラーを確認してください。
+
+<div id="metrics-catalog">
+  ## メトリクスカタログ
+</div>
+
+この operator はカスタムの Prometheus collector を登録しません。以下はすべて、基盤となる `controller-runtime` および `client-go` ライブラリによって公開されるものです。特に有用な series を用途別にまとめると、次のとおりです。
+
+<div id="reconciliation-activity">
+  ### リコンサイルのアクティビティ
+</div>
+
+| メトリクス                                              | 型      | ラベル                                                                        |
+| -------------------------------------------------- | ------ | -------------------------------------------------------------------------- |
+| `controller_runtime_reconcile_total`               | カウンター  | `controller`, `result` (`success` / `error` / `requeue` / `requeue_after`) |
+| `controller_runtime_reconcile_errors_total`        | カウンター  | `controller`                                                               |
+| `controller_runtime_reconcile_time_seconds_bucket` | ヒストグラム | `controller`                                                               |
+| `controller_runtime_active_workers`                | Gauge  | `controller`                                                               |
+| `controller_runtime_max_concurrent_reconciles`     | Gauge  | `controller`                                                               |
+
+`controller` ラベルは、`For(...)` に登録されたリソース型をもとに `controller-runtime` が導出します。現在の `internal/controller/clickhouse` および `internal/controller/keeper` のコードでは、これはそれぞれ `clickhousecluster` と `keepercluster` になります。operator をカスタマイズしている場合は、`/metrics` を一回限りスクレイプして確認してください。
+
+<div id="work-queue">
+  ### ワークキュー
+</div>
+
+| メトリック                                         | 型      | ラベル                              |
+| --------------------------------------------- | ------ | -------------------------------- |
+| `workqueue_depth`                             | Gauge  | `name`, `controller`, `priority` |
+| `workqueue_adds_total`                        | カウンター  | `name`, `controller`             |
+| `workqueue_retries_total`                     | カウンター  | `name`, `controller`             |
+| `workqueue_unfinished_work_seconds`           | Gauge  | `name`, `controller`             |
+| `workqueue_longest_running_processor_seconds` | Gauge  | `name`, `controller`             |
+| `workqueue_queue_duration_seconds_bucket`     | ヒストグラム | `name`, `controller`             |
+| `workqueue_work_duration_seconds_bucket`      | ヒストグラム | `name`, `controller`             |
+
+`name` と `controller` のラベルには、同じ値 (コントローラー名) が設定されます。
+
+<div id="api-server-traffic">
+  ### API サーバーのトラフィック
+</div>
+
+| メトリクス                        | 型     | ラベル                      |
+| ---------------------------- | ----- | ------------------------ |
+| `rest_client_requests_total` | カウンター | `code`, `method`, `host` |
+
+<div id="leader-election">
+  ### リーダー選出
+</div>
+
+| メトリクス                           | 型     | ラベル                                  |
+| ------------------------------- | ----- | ------------------------------------ |
+| `leader_election_master_status` | Gauge | `name` (= `d4ceba06.clickhouse.com`) |
+
+Helm チャートではデフォルトで `--leader-elect` が有効になっているため、このメトリクスは標準的な Helm インストールでは利用できます。フラグを付けずにバイナリを直接実行した場合、このメトリクスは出力されません。
+
+<div id="runtime">
+  ### ランタイム
+</div>
+
+標準の Go プロセスおよびランタイム collector — `go_goroutines`, `go_memstats_*`, `process_cpu_seconds_total`, `process_resident_memory_bytes` など。
+
+<div id="useful-promql-queries">
+  ## 役立つPromQLクエリ
+</div>
+
+<div id="health-overview">
+  ### ヘルス概要
+</div>
+
+```promql
+# Reconciliation rate per controller
+sum by (controller) (rate(controller_runtime_reconcile_total[5m]))
+
+# Error rate per controller (alert if > 0 sustained)
+sum by (controller) (rate(controller_runtime_reconcile_errors_total[5m]))
+
+# p99 reconcile latency
+histogram_quantile(
+  0.99,
+  sum by (le, controller) (rate(controller_runtime_reconcile_time_seconds_bucket[5m]))
+)
+```
+
+<div id="backlog-detection">
+  ### バックログの検知
+</div>
+
+```promql
+# Pending items in the work queue — a sustained value > 0 indicates a backlog,
+# but short spikes during large reconciles are normal.
+avg_over_time(workqueue_depth[10m])
+
+# Reconciles that have been running for a long time
+workqueue_longest_running_processor_seconds > 60
+```
+
+<div id="throttling-and-api-pressure">
+  ### スロットリングとAPIへの負荷
+</div>
+
+```promql
+# Throttled requests to the API server
+sum by (code, host) (rate(rest_client_requests_total{code=~"4..|5.."}[5m]))
+```
+
+<div id="leader-status-ha-deployment">
+  ### リーダーのステータス (HA 構成)
+</div>
+
+```promql
+# Should be exactly 1 across the replica set (Helm install enables --leader-elect by default)
+sum(leader_election_master_status{name="d4ceba06.clickhouse.com"})
+```
+
+<div id="suggested-alerts">
+  ## 推奨アラート
+</div>
+
+PrometheusRule のひな形 (しきい値はご利用の環境に合わせて調整してください) :
+
+```yaml
+groups:
+  - name: clickhouse-operator
+    rules:
+      - alert: ClickHouseOperatorReconcileErrors
+        # > 0.1 errors/s sustained = > ~6 errors/min, filters transient conflicts.
+        expr: sum by (controller) (rate(controller_runtime_reconcile_errors_total[5m])) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'ClickHouse operator is failing to reconcile {{ $labels.controller }}'
+
+      - alert: ClickHouseOperatorWorkqueueBacklog
+        # avg_over_time avoids alerting on transient bursts during large reconciles.
+        expr: avg_over_time(workqueue_depth[10m]) > 5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Operator work queue backlog sustained for 30m'
+
+      - alert: ClickHouseOperatorReconcileSlow
+        expr: |
+          histogram_quantile(
+            0.99,
+            sum by (le, controller) (rate(controller_runtime_reconcile_time_seconds_bucket[10m]))
+          ) > 30
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'p99 reconcile latency for {{ $labels.controller }} > 30s'
+
+      - alert: ClickHouseOperatorNoLeader
+        expr: absent(leader_election_master_status{name="d4ceba06.clickhouse.com"}) == 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'No leader for the ClickHouse operator (HA deployment)'
+```
+
+最後のルールは、リーダー選出 が有効な場合にのみ意味があります。
+
+<div id="verifying-the-setup">
+  ## セットアップの確認
+</div>
+
+`clickhouse-operator-system` にチャートがインストールされていることを前提に、エンドツーエンドで簡単に確認します。
+
+```bash
+NS=clickhouse-operator-system
+
+# The metrics Service exists and selects the manager pod
+kubectl -n $NS get svc -l control-plane=controller-manager
+
+# The ServiceMonitor exists (only with prometheus.enable=true)
+kubectl -n $NS get servicemonitor -l control-plane=controller-manager
+
+# Manager pod is Ready (readiness probe answers)
+kubectl -n $NS get pod -l control-plane=controller-manager
+
+# Direct scrape from inside the cluster (with the metrics-reader binding)
+kubectl -n $NS run curl-metrics --rm -it --restart=Never \
+  --image=curlimages/curl:8.10.1 -- sh -c '
+    TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+    curl -sk -H "Authorization: Bearer $TOKEN" \
+      https://<release>-metrics-service.'$NS'.svc:8080/metrics \
+      | head -20
+  '
+```
+
+スクレイプで Prometheus エクスポジション形式 のメトリクスが返される場合、エンドポイントと RBAC は正しく設定されています。
+
+<div id="related-guides">
+  ## 関連ガイド
+</div>
+
+* [インストール](/ja/products/kubernetes-operator/install/helm) — 監視に関連する Helm values。
+* [設定](/ja/products/kubernetes-operator/guides/configuration) — metrics server と共通の TLS 設定。

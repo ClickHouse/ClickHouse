@@ -3,6 +3,7 @@
 #include <numeric>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTProjectionDeclaration.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ProjectionIndex/ProjectionIndexBasic.h>
 #include <Storages/MergeTree/ProjectionIndex/ProjectionIndexCommitOrder.h>
 #include <Storages/MergeTree/ProjectionIndex/ProjectionIndexS2.h>
@@ -13,6 +14,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
+}
+
+std::shared_ptr<MergeTreeSettings> IProjectionIndex::getDefaultSettings() const
+{
+    return std::make_shared<MergeTreeSettings>();
 }
 
 IProjectionIndex::~IProjectionIndex() = default;
