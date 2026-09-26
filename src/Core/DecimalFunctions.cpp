@@ -1,4 +1,5 @@
 #include <Core/DecimalFunctions.h>
+#include <Common/ErrnoException.h>
 
 
 namespace DB

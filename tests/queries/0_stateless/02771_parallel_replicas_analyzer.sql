@@ -17,6 +17,8 @@ INSERT INTO join_inner_table__fuzz_146_replicated
     SELECT CAST('833c9e22-c245-4eb5-8745-117a9a1f26b1', 'UUID') AS id, CAST(rowNumberInAllBlocks(), 'String') AS key, *
     FROM generateRandom('number Int64, value1 String, value2 String, time Int64', 1, 10, 2) LIMIT 10;
 
+SET automatic_parallel_replicas_mode = 0;
+
 -- Simple query with analyzer and pure parallel replicas
 SELECT number
 FROM join_inner_table__fuzz_146_replicated
@@ -29,7 +31,7 @@ FROM join_inner_table__fuzz_146_replicated
 SYSTEM FLUSH LOGS query_log;
 SELECT is_initial_query, ProfileEvents['ParallelReplicasQueryCount'] as c, query
 FROM system.query_log
-WHERE event_date >= yesterday()
+WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND type = 'QueryFinish'
   AND query_id =
       (

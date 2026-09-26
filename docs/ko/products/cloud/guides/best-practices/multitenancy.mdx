@@ -1,0 +1,405 @@
+---
+slug: /cloud/bestpractices/multi-tenancy
+sidebarTitle: '멀티 테넌시'
+title: '멀티 테넌시'
+description: '멀티 테넌시 구현을 위한 모범 사례'
+doc_type: 'guide'
+keywords: ['멀티테넌시', '격리', '모범 사례', '아키텍처', '멀티 테넌트']
+---
+
+SaaS 데이터 분석 플랫폼에서는 조직, 고객, 사업부와 같은 여러 테넌트가 각자의 데이터를 논리적으로 분리한 상태로 동일한 데이터베이스 인프라를 공유하는 것이 일반적입니다. 이를 통해 서로 다른 사용자가 같은 플랫폼 안에서 자신의 데이터에 안전하게 액세스할 수 있습니다.
+
+요구 사항에 따라 멀티 테넌시를 구현하는 방식은 여러 가지가 있습니다. 아래에서는 ClickHouse Cloud에서 이를 구현하는 방법을 안내합니다.
+
+<div id="shared-table">
+  ## 공유 테이블
+</div>
+
+이 접근 방식에서는 모든 테넌트의 데이터를 하나의 공유 테이블에 저장하고, 각 테넌트의 데이터를 식별하는 데 필드(또는 여러 필드의 조합)를 사용합니다. 성능을 극대화하려면 이 필드를 [기본 키(primary key)](/ko/reference/statements/create/table#primary-key)에 포함해야 합니다. 또한 각 테넌트는 자신에게 속한 데이터에만 접근할 수 있어야 하므로 [역할 기반 접근 제어](/ko/concepts/features/security/access-rights)를 사용하며, 이는 [행 정책(row policies)](/ko/concepts/features/security/access-rights#row-policy-management)으로 구현됩니다.
+
+> **이 접근 방식은 관리가 가장 단순하므로 권장합니다. 특히 모든 테넌트가 동일한 데이터 스키마를 공유하고 데이터 양이 중간 수준(&lt; TBs)일 때 적합합니다.**
+
+모든 테넌트 데이터를 하나의 테이블로 통합하면 데이터 압축을 최적화하고 메타데이터 오버헤드를 줄일 수 있어 스토리지 효율성이 향상됩니다. 또한 모든 데이터를 중앙에서 관리하므로 스키마 업데이트도 간소화됩니다.
+
+이 방법은 특히 많은 수의 테넌트(잠재적으로 수백만 개)를 처리할 때 매우 효과적입니다.
+
+하지만 테넌트마다 데이터 스키마가 다르거나 시간이 지나면서 차이가 더 커질 것으로 예상된다면, 다른 접근 방식이 더 적합할 수 있습니다.
+
+테넌트 간 데이터 양의 차이가 큰 경우, 규모가 작은 테넌트는 불필요하게 쿼리 성능 저하의 영향을 받을 수 있습니다. 다만 이 문제는 테넌트 필드를 기본 키에 포함하면 대부분 완화됩니다.
+
+<div id="shared-table-example">
+  ### 예시
+</div>
+
+이는 공유 테이블을 사용하는 멀티 테넌시 모델 구현 예시입니다.
+
+먼저, 기본 키(primary key)에 `tenant_id` 필드를 포함하는 공유 테이블을 생성하겠습니다.
+
+```sql
+--- events 테이블 생성. tenant_id를 기본 키의 일부로 사용
+CREATE TABLE events
+(
+    tenant_id UInt32,                 -- 테넌트 식별자
+    id UUID,                    -- 고유 이벤트 ID
+    type LowCardinality(String), -- 이벤트 유형
+    timestamp DateTime,          -- 이벤트 타임스탬프
+    user_id UInt32,               -- 이벤트를 발생시킨 사용자 ID
+    data String,                 -- 이벤트 데이터
+)
+ORDER BY (tenant_id, timestamp)
+```
+
+더미 데이터를 삽입해 보겠습니다.
+
+```sql
+-- 더미 행 삽입
+INSERT INTO events (tenant_id, id, type, timestamp, user_id, data)
+VALUES
+(1, '7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+(1, '846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+(1, '6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+(2, '7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+(2, '6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+(2, '43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+(1, '83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+(1, '975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}'),
+(2, 'f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+(2, '5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}'),
+```
+
+그런 다음 `user_1`과 `user_2` 두 사용자를 생성해 보겠습니다.
+
+```sql
+-- 사용자 생성 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+`user_1` 및 `user_2`가 각자 자신의 테넌트 데이터에만 접근할 수 있도록 [행 정책 생성](/ko/reference/statements/create/row-policy)을 사용합니다.
+
+```sql
+-- 행 정책(Row Policy) 생성
+CREATE ROW POLICY user_filter_1 ON default.events USING tenant_id=1 TO user_1
+CREATE ROW POLICY user_filter_2 ON default.events USING tenant_id=2 TO user_2
+```
+
+그런 다음 공용 role을 사용해 공유 테이블에 [`GRANT SELECT`](/ko/reference/statements/grant#usage) 권한을 부여합니다.
+
+```sql
+-- 역할 생성
+CREATE ROLE user_role
+
+-- events 테이블에 읽기 전용 권한 부여.
+GRANT SELECT ON default.events TO user_role
+GRANT user_role TO user_1
+GRANT user_role TO user_2
+```
+
+이제 `user_1`로 연결해 간단한 select를 실행할 수 있습니다. 첫 번째 테넌트의 행만 반환됩니다.
+
+```sql
+-- user_1로 로그됨
+SELECT *
+FROM events
+```
+
+```response
+   ┌─tenant_id─┬─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │         1 │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │         1 │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │         1 │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │         1 │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │         1 │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └───────────┴──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="separate-tables">
+  ## 별도 테이블
+</div>
+
+이 접근 방식에서는 각 테넌트의 데이터가 동일한 데이터베이스 내의 별도 테이블에 저장되므로, 테넌트를 식별하기 위한 별도의 필드가 필요하지 않습니다. 사용자 액세스는 [GRANT SQL 문](/ko/reference/statements/grant)을 통해 적용되며, 각 사용자는 자신의 테넌트 데이터가 포함된 테이블에만 액세스할 수 있습니다.
+
+> **테넌트마다 데이터 스키마가 다른 경우에는 별도 테이블을 사용하는 것이 좋은 선택입니다.**
+
+매우 큰 데이터셋을 보유한 소수의 테넌트가 있고 쿼리 성능이 중요한 시나리오에서는 이 접근 방식이 공유 테이블 모델보다 더 나은 성능을 낼 수 있습니다. 다른 테넌트의 데이터를 필터링할 필요가 없으므로 쿼리를 더 효율적으로 처리할 수 있습니다. 또한 프라이머리 키에 추가 필드(예: tenant ID)를 포함할 필요가 없으므로 프라이머리 키도 더 최적화할 수 있습니다.
+
+이 접근 방식은 수천 개의 테넌트로는 확장되지 않는다는 점에 유의하십시오. [usage limits](/ko/products/cloud/guides/best-practices/usagelimits)를 참조하십시오.
+
+<div id="shared-table-example">
+  ### 예시
+</div>
+
+다음은 별도 테이블 멀티테넌시(multi-tenancy) 모델 구현의 예시입니다.
+
+먼저 `tenant_1`의 이벤트용 테이블과 `tenant_2`의 이벤트용 테이블, 두 개의 테이블을 생성합니다.
+
+```sql
+-- 테넌트 1을 위한 테이블 생성 
+CREATE TABLE events_tenant_1
+(
+    id UUID,                    -- 고유 이벤트 ID
+    type LowCardinality(String), -- 이벤트 유형
+    timestamp DateTime,          -- 이벤트 발생 타임스탬프
+    user_id UInt32,               -- 이벤트를 트리거한 사용자 ID
+    data String,                 -- 이벤트 데이터
+)
+ORDER BY (timestamp, user_id) -- 프라이머리 키는 다른 속성에 집중할 수 있음
+
+-- 테넌트 2를 위한 테이블 생성 
+CREATE TABLE events_tenant_2
+(
+    id UUID,                    -- 고유 이벤트 ID
+    type LowCardinality(String), -- 이벤트 유형
+    timestamp DateTime,          -- 이벤트 발생 타임스탬프
+    user_id UInt32,               -- 이벤트를 트리거한 사용자 ID
+    data String,                 -- 이벤트 데이터
+)
+ORDER BY (timestamp, user_id) -- 프라이머리 키는 다른 속성에 집중할 수 있음
+```
+
+가짜 데이터를 삽입해 보겠습니다.
+
+```sql
+INSERT INTO events_tenant_1 (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+
+INSERT INTO events_tenant_2 (id, type, timestamp, user_id, data)
+VALUES
+('7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+('43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+('5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}')
+```
+
+이제 `user_1`과 `user_2`, 두 명의 사용자를 생성합니다.
+
+```sql
+-- 사용자 생성 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+그런 다음 해당 테이블에 대해 `GRANT SELECT` 권한을 부여합니다.
+
+```sql
+-- events 테이블에 읽기 전용 권한 부여.
+GRANT SELECT ON default.events_tenant_1 TO user_1
+GRANT SELECT ON default.events_tenant_2 TO user_2
+```
+
+이제 `user_1`로 접속하여 해당 사용자에 해당하는 테이블에서 간단한 select를 실행할 수 있습니다. 첫 번째 테넌트의 행만 반환됩니다.
+
+```sql
+-- user_1로 로그됨
+SELECT *
+FROM default.events_tenant_1
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="separate-databases">
+  ## 별도의 데이터베이스
+</div>
+
+각 테넌트의 데이터는 동일한 ClickHouse 서비스 내의 별도 데이터베이스에 저장됩니다.
+
+> **이 방식은 각 테넌트에 많은 수의 테이블과 경우에 따라 materialized view가 필요하고, 데이터 스키마도 서로 다른 경우에 유용합니다. 다만 테넌트 수가 많아지면 관리가 어려워질 수 있습니다.**
+
+구현 방식은 별도 테이블 접근 방식과 비슷하지만, 테이블 수준이 아니라 데이터베이스 수준에서 권한을 부여합니다.
+
+이 방식은 수천 개의 테넌트 규모로는 확장하기 어렵습니다. [usage limits](/ko/products/cloud/guides/best-practices/usagelimits)를 참조하십시오.
+
+<div id="shared-table-example">
+  ### 예시
+</div>
+
+이는 데이터베이스를 분리하는 멀티 테넌시 모델 구현의 예시입니다.
+
+먼저 `tenant_1`용 데이터베이스와 `tenant_2`용 데이터베이스, 이렇게 2개의 데이터베이스를 생성합니다.
+
+```sql
+-- tenant_1용 데이터베이스 생성
+CREATE DATABASE tenant_1;
+
+-- tenant_2용 데이터베이스 생성
+CREATE DATABASE tenant_2;
+```
+
+```sql
+-- tenant_1용 테이블 생성
+CREATE TABLE tenant_1.events
+(
+    id UUID,                    -- 고유한 이벤트 ID
+    type LowCardinality(String), -- 이벤트 유형
+    timestamp DateTime,          -- 이벤트 타임스탬프
+    user_id UInt32,               -- 이벤트를 발생시킨 사용자 ID
+    data String,                 -- 이벤트 데이터
+)
+ORDER BY (timestamp, user_id);
+
+-- tenant_2용 테이블 생성
+CREATE TABLE tenant_2.events
+(
+    id UUID,                    -- 고유한 이벤트 ID
+    type LowCardinality(String), -- 이벤트 유형
+    timestamp DateTime,          -- 이벤트 타임스탬프
+    user_id UInt32,               -- 이벤트를 발생시킨 사용자 ID
+    data String,                 -- 이벤트 데이터
+)
+ORDER BY (timestamp, user_id);
+```
+
+더미 데이터를 삽입해 보겠습니다.
+
+```sql
+INSERT INTO tenant_1.events (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+
+INSERT INTO tenant_2.events (id, type, timestamp, user_id, data)
+VALUES
+('7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+('43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+('5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}')
+```
+
+그런 다음 사용자 두 명 `user_1`과 `user_2`를 생성합니다.
+
+```sql
+-- 사용자 생성 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+그런 다음 해당 테이블에 대해 `GRANT SELECT` 권한을 부여하십시오.
+
+```sql
+-- events 테이블에 읽기 전용 권한 부여.
+GRANT SELECT ON tenant_1.events TO user_1
+GRANT SELECT ON tenant_2.events TO user_2
+```
+
+이제 `user_1`로 연결한 다음 해당 데이터베이스의 events 테이블에서 간단한 SELECT 쿼리를 실행할 수 있습니다. 첫 번째 테넌트의 행만 반환됩니다.
+
+```sql
+-- user_1로 로그인한 상태
+SELECT *
+FROM tenant_1.events
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="compute-compute-separation">
+  ## 컴퓨트-컴퓨트 분리
+</div>
+
+위에서 설명한 세 가지 접근 방식은 [웨어하우스](/ko/products/cloud/features/infrastructure/warehouses#what-is-a-warehouse)를 사용해 한층 더 격리할 수도 있습니다. 데이터는 공통 객체 스토리지를 통해 공유되지만, [컴퓨트-컴퓨트 분리](/ko/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation)를 통해 각 테넌트는 서로 다른 CPU/메모리 비율의 자체 컴퓨트 서비스를 사용할 수 있습니다.
+
+웨어하우스의 모든 서비스가 [액세스 제어를 공유](/ko/products/cloud/features/infrastructure/warehouses#database-credentials)하므로 사용자 관리는 앞서 설명한 방식과 유사합니다.
+
+웨어하우스에서 생성할 수 있는 하위 서비스 수는 적은 수로 제한된다는 점에 유의하십시오. 자세한 내용은 [웨어하우스 제한 사항](/ko/products/cloud/features/infrastructure/warehouses#limitations)을 참조하십시오.
+
+<div id="separate-service">
+  ## 별도의 클라우드 서비스
+</div>
+
+가장 극단적인 접근 방식은 테넌트마다 별도의 ClickHouse 서비스를 사용하는 것입니다.
+
+> **이 방법은 흔하지는 않지만, 법적 요구 사항, 보안 또는 지리적 근접성 때문에 테넌트 데이터를 서로 다른 리전에 저장해야 할 때 적절한 해결책이 될 수 있습니다.**
+
+사용자가 해당 테넌트의 데이터에 접근할 수 있도록 각 서비스마다 사용자 계정을 생성해야 합니다.
+
+이 접근 방식은 각 서비스가 실행에 필요한 자체 인프라를 갖춰야 하므로 관리가 더 어렵고 서비스별 오버헤드도 발생합니다. 서비스는 [ClickHouse Cloud API](/ko/products/cloud/features/admin-features/api/api-overview)를 통해 관리할 수 있으며, [공식 Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)를 통해 오케스트레이션할 수도 있습니다.
+
+<div id="shared-table-example">
+  ### 예시
+</div>
+
+이는 분리된 서비스 멀티 테넌시 모델 구현 예시입니다. 이 예시에서는 하나의 ClickHouse 서비스에서 테이블과 사용자를 생성하는 방법을 보여주며, 동일한 작업을 모든 서비스에서도 수행해야 합니다.
+
+먼저 테이블 `events`를 생성하겠습니다
+
+```sql
+-- tenant_1을 위한 테이블 생성
+CREATE TABLE events
+(
+    id UUID,                    -- 고유 이벤트 ID
+    type LowCardinality(String), -- 이벤트 유형
+    timestamp DateTime,          -- 이벤트 타임스탬프
+    user_id UInt32,               -- 이벤트를 발생시킨 사용자 ID
+    data String,                 -- 이벤트 데이터
+)
+ORDER BY (timestamp, user_id);
+```
+
+예시 데이터를 삽입해 보겠습니다.
+
+```sql
+INSERT INTO events (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+```
+
+그런 다음 `user_1` 사용자 두 명을 생성합니다
+
+```sql
+-- 사용자 생성 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+```
+
+그런 다음 해당 테이블에 대해 `GRANT SELECT` 권한을 부여합니다.
+
+```sql
+-- events 테이블에 읽기 전용 권한 부여.
+GRANT SELECT ON events TO user_1
+```
+
+이제 테넌트 1용 서비스에 `user_1`로 연결한 다음 간단한 select를 실행할 수 있습니다. 첫 번째 테넌트의 행만 반환됩니다.
+
+```sql
+-- user_1로 로그인한 상태
+SELECT *
+FROM events
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```

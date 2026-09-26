@@ -5,7 +5,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # Test that clickstack UI is accessible and serves correct content
-${CLICKHOUSE_CURL} --compressed -sS "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/clickstack" | grep -oF 'ClickStack'
+${CLICKHOUSE_CURL} --compressed -sS "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/clickstack" | grep -oF 'ClickStack' | head -n 1
 
 # Test that clickstack serves with gzip encoding
 ${CLICKHOUSE_CURL} -sS -I "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/clickstack" | grep -oF 'Content-Encoding: gzip'

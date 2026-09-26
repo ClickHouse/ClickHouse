@@ -41,7 +41,7 @@ void tryLogCurrentExceptionImpl(Logger logger, const std::string & start_of_mess
             }
         }
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch) Ok: logging itself failed, nothing more to do
     {
     }
 
@@ -54,7 +54,7 @@ void tryLogCurrentExceptionImpl(Logger logger, const std::string & start_of_mess
     {
         e.markAsLogged();
     }
-    catch (...) // NOLINT(bugprone-empty-catch)
+    catch (...) // NOLINT(bugprone-empty-catch) Ok: only DB::Exception can be marked as logged
     {
     }
 }

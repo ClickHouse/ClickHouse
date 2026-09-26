@@ -1,0 +1,39 @@
+---
+title: Quando usar JSON
+---
+
+<div id="when-to-use-json-type">
+  ## Quando usar o tipo `JSON`
+</div>
+
+O tipo `JSON` foi projetado para consultar, filtrar e agregar campos específicos em objetos JSON com estruturas dinâmicas ou imprevisíveis. Ele faz isso dividindo objetos JSON em subcolunas separadas, o que reduz drasticamente a quantidade de dados lidos e acelera as consultas em campos selecionados em comparação com alternativas como `Map` ou o parsing de strings.
+
+**No entanto, isso envolve trade-offs importantes:**
+
+* `INSERT`s mais lentos - Dividir JSON em subcolunas, realizar inferência de tipos e gerenciar estruturas de armazenamento flexíveis torna os inserts mais lentos em comparação com armazenar JSON como uma simples coluna `String`.
+* Mais lento ao ler objetos inteiros - Se você precisa recuperar documentos JSON completos (em vez de campos específicos), o tipo `JSON` é mais lento do que ler de uma coluna `String`. A sobrecarga de reconstruir objetos a partir de subcolunas separadas não traz nenhum benefício quando você não está fazendo consultas no nível de campo.
+* Sobrecarga de armazenamento - Manter subcolunas separadas acrescenta uma sobrecarga estrutural em comparação com armazenar JSON como um único valor em string.
+
+<div id="use-json-type">
+  ### Use o tipo `JSON` quando:
+</div>
+
+* Seus dados têm uma estrutura dinâmica ou imprevisível, com chaves que variam entre documentos
+* Os tipos de campo ou os esquemas mudam ao longo do tempo ou variam entre registros
+* Você precisa consultar, filtrar ou agregar dados em caminhos específicos dentro de objetos JSON cuja estrutura não pode ser prevista antecipadamente
+* Seu caso de uso envolve dados semiestruturados, como logs, eventos ou conteúdo gerado por usuários, com esquemas inconsistentes
+
+<div id="use-string-type">
+  ### Use uma coluna `String` (ou tipos estruturados) quando:
+</div>
+
+* A estrutura dos seus dados é conhecida e consistente — nesse caso, use colunas normais ou os tipos `Tuple`, `Array`, `Dynamic` ou `Variant`
+* Documentos `JSON` são tratados como blobs opacos, apenas armazenados e recuperados integralmente, sem análise em nível de campo
+* Você não precisa consultar nem filtrar campos individuais do JSON dentro do banco de dados
+* O `JSON` é simplesmente um formato de transporte/armazenamento e não é analisado no ClickHouse
+
+<Tip>
+  Se o `JSON` for um documento opaco que não é analisado dentro do banco de dados e é apenas armazenado e recuperado, ele deve ser armazenado como um campo `String`. Os benefícios do tipo `JSON` só se materializam quando você precisa consultar, filtrar ou agregar com eficiência campos específicos em estruturas `JSON` dinâmicas.
+
+  Você também pode combinar abordagens — use colunas padrão para campos previsíveis de nível superior e uma coluna `JSON` para seções dinâmicas do payload.
+</Tip>

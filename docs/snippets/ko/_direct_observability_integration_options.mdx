@@ -1,0 +1,47 @@
+---
+title: 관측성 직접 통합 옵션
+---
+
+<div id="direct-grafana">
+  ### Grafana 플러그인 직접 통합
+</div>
+
+Grafana용 ClickHouse 데이터 소스 플러그인을 사용하면 시스템 테이블을 통해 ClickHouse의 데이터를 직접 시각화하고 탐색할 수 있습니다. 이 방식은 성능 모니터링과 세부적인 시스템 분석을 위한 사용자 지정 대시보드 생성에 적합합니다.
+플러그인 설치 및 구성에 대한 자세한 내용은 ClickHouse [data source plugin](/ko/integrations/connectors/data-visualization/grafana/index)을 참조하십시오. 사전 구축된 대시보드와 알림 규칙이 포함된 Prometheus-Grafana mix-in을 사용한 전체 모니터링 구성은 [Monitor ClickHouse with the new Prometheus-Grafana mix-in](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in)을 참조하십시오.
+
+<div id="direct-datadog">
+  ### Datadog 직접 통합
+</div>
+
+Datadog는 시스템 테이블(system tables)을 직접 쿼리하는 에이전트용 ClickHouse Monitoring 플러그인을 제공합니다. 이 통합은 clusterAllReplicas 기능을 통해 클러스터 인식을 지원하는 종합적인 데이터베이스 모니터링을 제공합니다.
+
+<Note>
+  이 통합은 비용 최적화를 위한 유휴(idle) 동작과 호환되지 않고 클라우드 프록시 계층의 운영상 제한도 있어 ClickHouse Cloud 배포에는 권장되지 않습니다.
+</Note>
+
+<div id="system-tables">
+  ### 시스템 테이블 직접 사용하기
+</div>
+
+ClickHouse 시스템 테이블, 특히 `system.query_log`에 연결해 직접 쿼리하면 쿼리 성능을 심층적으로 분석할 수 있습니다. SQL 콘솔 또는 clickhouse client를 사용하면 느린 쿼리를 식별하고, 리소스 사용량을 분석하며, 조직 전반의 사용 패턴을 추적할 수 있습니다.
+
+**쿼리 성능 분석**
+
+시스템 테이블의 쿼리 로그를 사용해 쿼리 성능을 분석할 수 있습니다.
+
+**예시 쿼리**: 모든 클러스터 레플리카에서 실행 시간이 가장 긴 상위 5개 쿼리 찾기:
+
+```sql
+SELECT
+    type,
+    event_time, 
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```

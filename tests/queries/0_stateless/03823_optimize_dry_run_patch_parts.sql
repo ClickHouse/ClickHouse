@@ -21,13 +21,13 @@ SELECT 'data with patches applied';
 SELECT * FROM t_dry_run_patches ORDER BY id;
 
 SELECT 'parts before dry run';
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_dry_run_patches' AND active ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_dry_run_patches' AND active ORDER BY name;
 
 OPTIMIZE TABLE t_dry_run_patches DRY RUN PARTS 'all_1_1_0', 'all_2_2_0';
 
 -- After DRY RUN, parts and data must remain unchanged: no merge committed.
 SELECT 'parts after dry run with patches';
-SELECT name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_dry_run_patches' AND active ORDER BY name;
+SELECT replaceRegexpOne(name, 'patch-[0-9a-f]+', 'patch-<hash>') AS name, rows FROM system.parts WHERE database = currentDatabase() AND table = 't_dry_run_patches' AND active ORDER BY name;
 
 SELECT 'data after dry run';
 SELECT * FROM t_dry_run_patches ORDER BY id;
@@ -44,7 +44,7 @@ SELECT
     ProfileEvents['MergeWrittenRows'],
     ProfileEvents['PatchesAppliedInAllReadTasks']
 FROM system.query_log
-WHERE current_database = currentDatabase() AND query LIKE 'OPTIMIZE TABLE t_dry_run_patches DRY RUN PARTS%' AND type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query LIKE 'OPTIMIZE TABLE t_dry_run_patches DRY RUN PARTS%' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds;
 
 DROP TABLE t_dry_run_patches SYNC;

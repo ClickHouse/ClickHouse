@@ -29,7 +29,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionNested : public IFunction
+class FunctionNested final : public IFunction
 {
 public:
     static constexpr auto name = "nested";
@@ -54,6 +54,11 @@ public:
     bool useDefaultImplementationForConstants() const override
     {
         return true;
+    }
+
+    bool useDefaultImplementationForLowCardinalityColumns() const override
+    {
+        return false;
     }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
@@ -126,10 +131,10 @@ private:
 
             if (!type)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} for function {} must be {}-dimentional array. Actual {}",
+                    "Argument {} for function {} must be {}-dimensional array. Actual {}",
                     i + 1,
-                    array_depth,
                     getName(),
+                    array_depth,
                     argument.type->getName());
 
             names.push_back(std::string{column.getDataAt(i)});
@@ -156,7 +161,7 @@ private:
 
         if (array_col->size() != 1)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "First argument for function {} must be constant column with N-dimentional array of strings, "
+                "First argument for function {} must be constant column with N-dimensional array of strings, "
                 "where the all arrays except the most inner one must have size = 1. "
                 "The size of array at depth {} is {}",
                 getName(), array_depth, array_col->size());
@@ -208,7 +213,7 @@ REGISTER_FUNCTION(Nested)
 {
     factory.registerFunction<FunctionNested>(FunctionDocumentation{
         .description=R"(
-This is a function used internally by the ClickHouse engine and not meant to be used directly.
+This is a function used internally by ClickHouse and not meant to be used directly.
 
 Returns the array of tuples from multiple arrays.
 
@@ -217,7 +222,7 @@ The other arguments must be arrays of the same size.
 )",
         .examples{{"nested", "SELECT nested(['keys', 'values'], ['key_1', 'key_2'], ['value_1','value_2'])", ""}},
         .introduced_in = {23, 2},
-        .category = FunctionDocumentation::Category::Other
+        .category = FunctionDocumentation::Category::Internal
     });
 }
 

@@ -26,6 +26,10 @@ function wait_part()
 
 function restore_failpoints()
 {
+    # Unconditionally: nothing above guarantees the ONCE failpoint was consumed, and a fail point
+    # left armed is server-global state that fires in whatever test runs next.
+    $CLICKHOUSE_CLIENT -q "system disable failpoint replicated_queue_fail_next_entry" ||:
+
     if [ -z "$failed_replica" ]; then
         return
     fi
@@ -107,4 +111,4 @@ trap '' EXIT
 
 $CLICKHOUSE_CLIENT -q "system flush logs part_log"
 # check for error "Different number of files: 5 compressed (expected 3) and 2 uncompressed ones (expected 2). (CHECKSUM_DOESNT_MATCH)"
-$CLICKHOUSE_CLIENT -q "select part_name, merge_reason, event_type, errorCodeToName(error) from system.part_log where database = '$CLICKHOUSE_DATABASE' and error != 0 and errorCodeToName(error) != 'NO_REPLICA_HAS_PART' order by event_time_microseconds"
+$CLICKHOUSE_CLIENT -q "select part_name, merge_reason, event_type, errorCodeToName(error) from system.part_log where event_date >= yesterday() AND event_time >= now() - 600 AND database = '$CLICKHOUSE_DATABASE' and error != 0 and errorCodeToName(error) != 'NO_REPLICA_HAS_PART' order by event_time_microseconds"

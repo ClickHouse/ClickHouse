@@ -1,6 +1,5 @@
 from collections import defaultdict
 import datetime
-import inspect
 import json
 import random
 import time
@@ -10,8 +9,6 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -410,7 +407,7 @@ def test_inserts_and_moves(started_cluster, engine, ttl_rule, request):
             ) ENGINE = {engine}
             ORDER BY tuple()
             {ttl_rule}
-            SETTINGS storage_policy='small_jbod_with_external'
+            SETTINGS storage_policy='small_jbod_with_external', max_replicated_merges_in_queue=0
         """)
         node1.query(f"SYSTEM STOP MERGES {table_name}")
         node1.query(f"SYSTEM STOP MOVES {table_name}")
@@ -463,7 +460,7 @@ def test_inserts_and_moves(started_cluster, engine, ttl_rule, request):
             ) ENGINE = {engine}
             ORDER BY tuple()
             {ttl_rule}
-            SETTINGS storage_policy='small_jbod_with_external'
+            SETTINGS storage_policy='small_jbod_with_external', max_replicated_merges_in_queue=0
         """)
         # Disabling MOVES and MERGES to get full control over the course of the scenario
         node1.query(f"SYSTEM STOP MERGES {table_name}")
@@ -584,7 +581,7 @@ def test_delete(started_cluster, engine, ttl_rule, request):
             ) ENGINE = {engine}
             ORDER BY tuple()
             {ttl_rule}
-            SETTINGS storage_policy='only_jbod1'
+            SETTINGS storage_policy='only_jbod1', max_replicated_merges_in_queue=0
         """)
         node1.query(f"SYSTEM STOP MERGES {table_name}")
         node1.query(f"SYSTEM STOP MOVES {table_name}")
@@ -608,6 +605,7 @@ def test_delete(started_cluster, engine, ttl_rule, request):
         time.sleep(SOON_SECONDS*2)    # wait for expiration and a bit more for MOVE to kick in (it won't)
         assert node1.query(f"SELECT count() FROM {table_name}").strip() == "60"
         # Check 3. MERGES actually deletes data
+        node1.query(f"ALTER TABLE {table_name} MODIFY SETTING max_replicated_merges_in_queue=1000")
         node1.query(f"SYSTEM START MERGES {table_name}")
         node1.query(f"OPTIMIZE TABLE {table_name} FINAL",
                     settings={'mutations_sync': 1})
@@ -1125,7 +1123,7 @@ def test_merges_to_disk(started_cluster, engine, request):
             ) ENGINE = {engine}
             ORDER BY tuple()
             TTL d1 TO DISK 'external'
-            SETTINGS storage_policy='small_jbod_with_external'
+            SETTINGS storage_policy='small_jbod_with_external', max_replicated_merges_in_queue=0
         """)
 
         node1.query(f"SYSTEM STOP MERGES {table_name}")
@@ -1154,6 +1152,7 @@ def test_merges_to_disk(started_cluster, engine, request):
         # 2. Wait for expiration and re-enable & trigger MERGES to see that it applied TTL policy and the data has moved
         # NOTE: Merge operation will merge all outstanding parts to the disk with the highest id, which is 'external' in this case
         time.sleep(SOON_SECONDS)
+        node1.query(f"ALTER TABLE {table_name} MODIFY SETTING max_replicated_merges_in_queue=1000")
         node1.query(f"SYSTEM START MERGES {table_name}")
         node1.query(f"OPTIMIZE TABLE {table_name}",
                     settings={'mutations_sync': 1})
@@ -1190,9 +1189,12 @@ def test_moves_with_full_disk(started_cluster, engine, request):
         # This test checks that if the target disk is full, the data will be placed onto the available disk,
         # and later moved to the correct destination once possible.
         # TEMP table to fill up the disk
+        # Pin the codec to `LZ4` so the filler fills `jbod2` to the same size regardless of the server
+        # default codec: ZSTD(3) compresses `randomPrintableASCII` ~15-20% smaller, which would leave
+        # enough free space on `jbod2` that the target part no longer spills onto `jbod1`.
         node1.query(f"""
             CREATE TABLE {temp_table_name} (
-                s1 String
+                s1 String CODEC(LZ4)
             ) ENGINE = MergeTree()
             ORDER BY tuple()
             SETTINGS storage_policy='only_jbod2'
@@ -1265,9 +1267,12 @@ def test_merges_with_full_disk(started_cluster, engine, request):
         # NOTE: MERGE operation is sensitive to not-having enough free space at 'jbod1' - its data sizes are imbalanced (or 'jbod1' is more full than expected), this test might flap by hanging in OPTIMIZE
 
         # TEMP table to fill up the disk
+        # Pin the codec to `LZ4` so the filler fills `jbod2` to the same size regardless of the server
+        # default codec: ZSTD(3) compresses `randomPrintableASCII` ~15-20% smaller, which would leave
+        # enough free space on `jbod2` that the target part no longer spills onto `jbod1`.
         node1.query(f"""
             CREATE TABLE {temp_table_name} (
-                s1 String
+                s1 String CODEC(LZ4)
             ) ENGINE = MergeTree()
             ORDER BY tuple()
             SETTINGS storage_policy='only_jbod2'

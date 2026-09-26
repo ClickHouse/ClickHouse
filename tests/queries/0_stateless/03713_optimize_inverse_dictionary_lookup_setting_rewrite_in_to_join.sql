@@ -54,15 +54,15 @@ INSERT INTO t VALUES
     (4, 'd'),
     (5, 'R');
 
-SELECT 'Equality, LHS - plan';
+SELECT 'Less, LHS - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
-WHERE dictGetString('colors', 'name', color_id) = 'red'
+WHERE dictGetString('colors', 'name', color_id) < 'red'
 ORDER BY color_id, payload;
 
-SELECT 'Equality, LHS';
+SELECT 'Less, LHS';
 SELECT color_id, payload
 FROM t
-WHERE dictGetString('colors', 'name', color_id) = 'red'
+WHERE dictGetString('colors', 'name', color_id) < 'red'
 ORDER BY color_id, payload;

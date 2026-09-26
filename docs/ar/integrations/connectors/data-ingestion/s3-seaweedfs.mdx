@@ -1,0 +1,164 @@
+---
+sidebarTitle: 'SeaweedFS'
+slug: /integrations/seaweedfs
+description: 'استخدم تخزين الكائنات المتوافق مع S3 من SeaweedFS مع ClickHouse'
+title: 'استخدام SeaweedFS'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+keywords: ['s3', 'seaweedfs', 'تخزين الكائنات', 'تحميل البيانات', 'تخزين متوافق']
+---
+
+import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+تتوافق دالة الجدول `s3` ونوع القرص `S3` في ClickHouse مع [SeaweedFS](https://github.com/seaweedfs/seaweedfs)، وهو مخزن كائنات موزّع مفتوح المصدر مزوّد ببوابة متوافقة مع S3. يدعم SeaweedFS طلبات نمط المسار مباشرةً، لذا يعمل المخزن المستضاف ذاتيًا دون الحاجة إلى DNS بأحرف بديلة. كما يدعم SeaweedFS جداول Iceberg: إذ تخزّن حاويات التخزين للجداول بياناتها كملفات Parquet، بينما يوفّر كتالوج Iceberg REST المدمج البيانات الوصفية للجداول. راجع [دليل كتالوج SeaweedFS](/ar/guides/use-cases/data-warehousing/seaweedfs-catalog) للاستعلام عنها عبر نقطة النهاية نفسها.
+
+استخدم [SeaweedFS 4.42](https://github.com/seaweedfs/seaweedfs/releases/tag/4.42) أو إصدارًا أحدث. قد تحذف الإصدارات الأقدم كائنًا تُثبَّت عملية كتابته في الوقت الذي يُزال فيه مجلده الأب لكونه فارغًا، فتظهر الرسالة `Object ... suddenly disappeared` مباشرةً بعد نجاح الكتابة.
+
+<div id="running-seaweedfs-locally">
+  ## تشغيل SeaweedFS محليًا
+</div>
+
+لإعداد بيئة اختبار محلية، أنشئ ملفًا باسم `s3config.json` يحتوي على بيانات اعتماد S3:
+
+```json
+{
+  "identities": [
+    {
+      "name": "analyst",
+      "credentials": [
+        {
+          "accessKey": "your_access_key_id",
+          "secretKey": "your_secret_access_key"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
+```
+
+ثم شغّل حزمة SeaweedFS بالكامل في حاوية واحدة — تنشئ العلامة `-bucket` حاوية التخزين عند بدء التشغيل:
+
+```bash
+docker run -d --name seaweedfs -p 8333:8333 \
+  -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
+  chrislusf/seaweedfs:latest \
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse -admin.port=12646
+```
+
+يبقي الخيار `-admin.port=12646` منفذ gRPC الإداري الذي ينشئه SeaweedFS اعتمادًا عليه أدنى من نطاق المنافذ المؤقتة في Linux، إذ قد تحجزه وصلة عند بدء التشغيل أولًا لولا ذلك.
+
+تعمل نقطة نهاية S3 على المنفذ 8333؛ انتظر حتى تستجيب قبل المتابعة:
+
+```bash
+until curl -s -o /dev/null http://localhost:8333; do sleep 1; done
+```
+
+يمكن إنشاء المزيد من حاويات التخزين في أي وقت باستخدام `echo "s3.bucket.create -name mybucket" | docker exec -i seaweedfs weed shell`.
+
+بشكل افتراضي، يُؤكَّد إجراء الكتابة بمجرد تسليمه إلى نظام التشغيل. لضمان مزامنة كل عملية كتابة مع القرص باستخدام fsync قبل تأكيدها، فعّل fsync على حاوية التخزين:
+
+```bash
+echo "fs.configure -locationPrefix=/buckets/clickhouse/ -fsync -apply" | \
+  docker exec -i seaweedfs weed shell
+```
+
+<div id="s3-backed-mergetree">
+  ## ‏MergeTree المستند إلى S3
+</div>
+
+يتوافق إعداد MergeTree المستند إلى S3 مع بعض التعديلات الطفيفة:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://seaweedfs:8333/clickhouse/tables/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region></region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        <policies>
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  تحتوي نقطة النهاية على اسم حاوية التخزين (`clickhouse`) متبوعًا ببادئة المسار (`tables/`) لبيانات الجدول. لا يتطلب SeaweedFS منطقة، لذا يمكن ترك الوسم فارغًا. استبدل `seaweedfs` بالمضيف الذي يشغّل بوابة S3.
+</Tip>
+
+تضع الجداول بياناتها بعد ذلك على SeaweedFS عبر سياسة التخزين:
+
+```sql
+CREATE TABLE trips (id UInt64, rider String, fare Float64)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main';
+```
+
+للاحتفاظ بنسخة مخبأة محليًا من البيانات كثيرة القراءة، أنشئ الجدول باستخدام `SETTINGS disk = 's3_cache'` بدلًا من ذلك، إذ إن قرص التخزين المؤقت المعرّف أعلاه يغلّف قرص S3.
+
+<div id="the-s3-table-function">
+  ## دالة الجدول s3
+</div>
+
+تقرأ دالة الجدول `s3` الكائنات وتكتبها باستخدام نقطة النهاية نفسها:
+
+```sql
+INSERT INTO FUNCTION s3(
+    'http://seaweedfs:8333/clickhouse/sample/trips.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+)
+SELECT number AS id, concat('rider_', toString(number % 10)) AS rider, number * 1.5 AS fare
+FROM numbers(1000);
+
+SELECT count()
+FROM s3(
+    'http://seaweedfs:8333/clickhouse/sample/*.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+);
+```
+
+تُستخدم أنماط glob لقراءة عدة كائنات.
+
+<div id="backup-and-restore">
+  ## النسخ الاحتياطي والاستعادة
+</div>
+
+يقبل الأمران `BACKUP` و`RESTORE` نقطة نهاية SeaweedFS كوجهة S3:
+
+```sql
+BACKUP TABLE trips
+TO S3('http://seaweedfs:8333/clickhouse/backups/trips1', 'your_access_key_id', 'your_secret_access_key');
+
+--- DROP TABLE trips;
+
+RESTORE TABLE trips
+FROM S3('http://seaweedfs:8333/clickhouse/backups/trips1', 'your_access_key_id', 'your_secret_access_key');
+```

@@ -4,18 +4,23 @@
 --- These tests verify the caching of a deserialized text index posting lists in the consecutive executions.
 
 SET enable_analyzer = 1;
+SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_postings_cache = 1;
 SET log_queries = 1;
 SET max_rows_to_read = 0;
+SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
 (
     id UInt32,
     message String,
-    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 128) GRANULARITY 1
+    -- posting_list_block_size is pinned: with a smaller randomized value the posting list of a token
+    -- is split into several blocks, and each block is a separate postings cache entry, which changes
+    -- the expected cache hit/miss counts.
+    INDEX idx(message) TYPE text(tokenizer = array, dictionary_block_size = 128, posting_list_block_size = 128)
 )
 ENGINE = MergeTree
 ORDER BY (id)
@@ -30,7 +35,7 @@ CREATE VIEW text_index_cache_stats AS (
   SELECT
     concat('cache_hits = ', ProfileEvents['TextIndexPostingsCacheHits'], ', cache_misses = ', ProfileEvents['TextIndexPostingsCacheMisses'])
   FROM system.query_log
-  WHERE query_kind ='Select'
+  WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_kind ='Select'
       AND current_database = currentDatabase()
       AND endsWith(trimRight(query), concat('hasAnyTokens(message, \'', {filter:String}, '\');'))
       AND type='QueryFinish'

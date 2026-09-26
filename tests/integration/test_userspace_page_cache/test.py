@@ -188,6 +188,97 @@ def test_basics(started_cluster):
     node.query("drop table a;" "system drop page cache;")
 
 
+def test_cache_arena_isolation(started_cluster):
+    """Test that page cache allocations land in the dedicated jemalloc cache arena
+    and that SYSTEM DROP PAGE CACHE reclaims arena pages."""
+    node = cluster.instances["node1"]
+
+    # Skip if jemalloc is not available
+    jemalloc_enabled = node.query(
+        "SELECT value IN ('ON', '1') FROM system.build_options WHERE name = 'USE_JEMALLOC'"
+    ).strip()
+    if jemalloc_enabled != "1":
+        pytest.skip("jemalloc not available")
+
+    node.query(
+        "CREATE TABLE IF NOT EXISTS t_arena_page_cache (k Int64 CODEC(NONE)) "
+        "ENGINE MergeTree ORDER BY k SETTINGS storage_policy = 's3';"
+        "SYSTEM STOP MERGES t_arena_page_cache;"
+        "INSERT INTO t_arena_page_cache SELECT * FROM numbers(1000000);"
+    )
+
+    # Start clean
+    node.query("SYSTEM DROP PAGE CACHE")
+    node.query("SYSTEM DROP MARK CACHE")
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+
+    # Record baseline arena state
+    baseline_pactive = int(
+        node.query(
+            "SELECT value FROM system.asynchronous_metrics "
+            "WHERE metric = 'jemalloc.cache_arena.pactive'"
+        )
+    )
+
+    # Populate page cache + mark cache via S3 read
+    node.query(
+        "SELECT sum(k) FROM t_arena_page_cache "
+        "SETTINGS use_page_cache_for_disks_without_file_cache=1"
+    )
+
+    # Verify page cache is populated
+    page_cache_bytes = int(
+        node.query(
+            "SELECT value FROM system.metrics WHERE metric = 'PageCacheBytes'"
+        )
+    )
+    assert page_cache_bytes > 0, f"Expected PageCacheBytes > 0, got {page_cache_bytes}"
+
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+
+    # Verify cache arena has more active pages than baseline
+    current_pactive = int(
+        node.query(
+            "SELECT value FROM system.asynchronous_metrics "
+            "WHERE metric = 'jemalloc.cache_arena.pactive'"
+        )
+    )
+    assert current_pactive > baseline_pactive, (
+        f"Expected cache arena pactive to increase: "
+        f"baseline={baseline_pactive}, current={current_pactive}"
+    )
+
+    # Drop page cache and mark cache (both trigger arena purge)
+    node.query("SYSTEM DROP PAGE CACHE")
+    node.query("SYSTEM DROP MARK CACHE")
+
+    # Verify page cache is empty
+    page_cache_bytes_after = int(
+        node.query(
+            "SELECT value FROM system.metrics WHERE metric = 'PageCacheBytes'"
+        )
+    )
+    assert page_cache_bytes_after == 0, (
+        f"Expected PageCacheBytes = 0, got {page_cache_bytes_after}"
+    )
+
+    node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+
+    # Verify cache arena pages decreased after clearing
+    final_pactive = int(
+        node.query(
+            "SELECT value FROM system.asynchronous_metrics "
+            "WHERE metric = 'jemalloc.cache_arena.pactive'"
+        )
+    )
+    assert final_pactive < current_pactive, (
+        f"Expected cache arena pactive to decrease after drop + purge: "
+        f"before={current_pactive}, after={final_pactive}"
+    )
+
+    node.query("DROP TABLE t_arena_page_cache SYNC")
+
+
 def test_size_adjustment(started_cluster):
     if is_sanitizer:
         pytest.skip("sanitizer build has higher memory consumption; also it is slow")

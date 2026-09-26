@@ -1,5 +1,6 @@
 # docker build -t clickhouse/mysql-php-client .
 # MySQL PHP client docker container
+# Rebuild to enable SBOM/provenance attestations (see #97903, #98511)
 
 FROM php:8.4-cli-alpine
 
