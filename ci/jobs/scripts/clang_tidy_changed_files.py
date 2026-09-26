@@ -56,6 +56,24 @@ HEADER_SUFFIXES = (".h", ".hpp")
 # many direct includers are analyzed instead.
 MAX_INCLUDERS_PER_HEADER = 3
 
+# Files that decide what the clang-tidy checks report, or how this one selects
+# and judges its work, without being analyzed themselves. A change to them alone
+# touches no translation unit, yet it can make the full check fail on `master`,
+# or break this gate. So instead of being skipped, such a change is validated on
+# the fixed `CANARY_TRANSLATION_UNITS`: they are analyzed, and every diagnostic
+# located in them is reported. `master` is clean under the full check, so a
+# diagnostic there is one the change introduced - a newly enabled check firing,
+# or this module misparsing clang-tidy output.
+TIDY_CONFIG_PATHS = (
+    ".clang-tidy",
+    "cmake/clang_tidy.cmake",
+    "ci/jobs/scripts/clang_tidy_changed_files.py",
+)
+CANARY_TRANSLATION_UNITS = (
+    "base/base/JSON.cpp",
+    "src/Common/Exception.cpp",
+)
+
 # Upper bound on the translation units one run analyzes, so that a sweeping
 # change cannot turn the merge-queue gate back into a multi-hour build. Beyond
 # it the selection is truncated and the job says so; the full check still covers
@@ -90,11 +108,11 @@ CRASH_MARKERS = ("PLEASE submit a bug report", "Stack dump:")
 
 _DIAGNOSTIC_RE = re.compile(
     r"^(?P<file>[^\s:][^:]*):(?P<line>\d+):(?P<column>\d+): "
-    r"(?P<level>error|warning|note): (?P<message>.*)$"
+    r"(?P<level>fatal error|error|warning|note): (?P<message>.*)$"
 )
 # A message clang-tidy prints without a source location, e.g. `error: unknown
 # check`, or a missing entry in the compilation database.
-_BARE_ERROR_RE = re.compile(r"^error: (?P<message>.*)$")
+_BARE_ERROR_RE = re.compile(r"^(fatal )?error: (?P<message>.*)$")
 # clang-tidy's own bookkeeping, printed between and after the diagnostics. It
 # ends the diagnostic above it rather than belonging to it, so that a reported
 # finding does not carry a tree-wide warning count in its text.
@@ -142,16 +160,38 @@ def is_analyzed_path(path):
     return root in ANALYZED_ROOTS and path.endswith(SOURCE_SUFFIXES + HEADER_SUFFIXES)
 
 
+def is_tidy_config_path(path):
+    """True for a file that changes what the clang-tidy checks report."""
+    return path in TIDY_CONFIG_PATHS
+
+
+def normalize_changed_path(path):
+    return path.removeprefix("./").removeprefix("/")
+
+
 def analyzable_changed_files(changed_files, repo_dir):
     """The change's C/C++ files clang-tidy can analyze, repo-relative and sorted.
 
-    Paths that no longer exist are dropped: `changed_files` carries removed
-    files and the pre-rename path of a rename, and neither can be analyzed.
+    `changed_files` carries removed files and the pre-rename path of a rename.
+    A translation unit that no longer exists cannot be analyzed and is dropped.
+    A header that no longer exists is kept: the translation units that still
+    include it by its old path now fail to compile, and finding them is the
+    point of selecting it.
     """
     return sorted(
         path
-        for path in {f.removeprefix("./") for f in changed_files}
-        if is_analyzed_path(path) and os.path.isfile(f"{repo_dir}/{path}")
+        for path in {normalize_changed_path(f) for f in changed_files}
+        if is_analyzed_path(path)
+        and (path.endswith(HEADER_SUFFIXES) or os.path.isfile(f"{repo_dir}/{path}"))
+    )
+
+
+def changed_tidy_config_files(changed_files):
+    """The change's files from `TIDY_CONFIG_PATHS`, sorted."""
+    return sorted(
+        path
+        for path in {normalize_changed_path(f) for f in changed_files}
+        if is_tidy_config_path(path)
     )
 
 
@@ -179,11 +219,13 @@ def include_needles(header):
     return ["/".join(parts[i:]) for i in range(1, len(parts))]
 
 
-def find_includers(header, repo_dir, limit):
+def find_includers(header, repo_dir, limit, is_built):
     """Translation units that include `header` directly, at most `limit` of them.
 
     Only direct includers, and only a few of them: this is the coverage a
     header-only change gets, not the transitive closure the full check has.
+    Candidates are filtered by `is_built` before the limit is applied, so that
+    includers the build does not compile cannot crowd out ones it does.
     """
     pathspecs = [
         f"{root}/*{suffix}" for root in ANALYZED_ROOTS for suffix in SOURCE_SUFFIXES
@@ -206,31 +248,46 @@ def find_includers(header, repo_dir, limit):
             check=False,
         )
         includers = sorted(
-            line.strip() for line in completed.stdout.splitlines() if line.strip()
+            line.strip()
+            for line in completed.stdout.splitlines()
+            if line.strip() and is_built(line.strip())
         )
         if includers:
             return includers[:limit]
     return []
 
 
-def select_translation_units(changed, repo_dir, compile_commands):
+def select_translation_units(changed, repo_dir, compile_commands, config_changed=()):
     """Pick the translation units to analyze for `changed`.
 
     Returns `(translation_units, notes)`: the selected paths as the compilation
     database spells them, and human-readable notes about what the selection
-    could and could not cover.
+    could and could not cover. When `config_changed` is not empty, the
+    `CANARY_TRANSLATION_UNITS` are selected as well.
     """
     selected = {}
     notes = []
     unbuilt = []
     uncovered_headers = []
 
+    def lookup(path):
+        return compile_commands.get(os.path.normpath(f"{repo_dir}/{path}"))
+
     def add(path, reason):
-        entry = compile_commands.get(os.path.normpath(f"{repo_dir}/{path}"))
+        entry = lookup(path)
         if entry is None:
             return False
         selected.setdefault(entry["file"], reason)
         return True
+
+    if config_changed:
+        for canary in CANARY_TRANSLATION_UNITS:
+            # A fixed list: a canary missing from the build is a bug in this
+            # module, and skipping it would leave the change unvalidated.
+            if not add(canary, f"canary for changed {', '.join(config_changed)}"):
+                raise RuntimeError(
+                    f"Canary translation unit {canary} is not in the compilation database"
+                )
 
     for path in changed:
         if path.endswith(SOURCE_SUFFIXES):
@@ -245,7 +302,12 @@ def select_translation_units(changed, repo_dir, compile_commands):
         ):
             continue
 
-        includers = find_includers(path, repo_dir, MAX_INCLUDERS_PER_HEADER)
+        includers = find_includers(
+            path,
+            repo_dir,
+            MAX_INCLUDERS_PER_HEADER,
+            lambda includer: lookup(includer) is not None,
+        )
         covered = [inc for inc in includers if add(inc, f"includes changed {path}")]
         if not covered:
             uncovered_headers.append(path)
@@ -320,7 +382,7 @@ def parse_diagnostics(output):
     current = None
     for line in output.splitlines():
         match = _DIAGNOSTIC_RE.match(line)
-        if match and match.group("level") in ("error", "warning"):
+        if match and match.group("level") in ("fatal error", "error", "warning"):
             current = {
                 "file": match.group("file"),
                 "level": match.group("level"),
@@ -514,8 +576,10 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
     """Run the limited clang-tidy check and report it as a single `Result`."""
     stop_watch = Utils.Stopwatch()
     changed = analyzable_changed_files(changed_files, repo_dir)
+    config_changed = changed_tidy_config_files(changed_files)
     print(f"Changed files clang-tidy analyzes: {changed}")
-    if not changed:
+    print(f"Changed clang-tidy configuration files: {config_changed}")
+    if not changed and not config_changed:
         return Result.create_from(
             name=RESULT_NAME,
             status=Result.Status.SKIPPED,
@@ -525,7 +589,7 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
 
     compile_commands = load_compile_commands(build_dir)
     translation_units, notes = select_translation_units(
-        changed, repo_dir, compile_commands
+        changed, repo_dir, compile_commands, config_changed
     )
     for note in notes:
         print(f"NOTE: {note}")
@@ -560,7 +624,8 @@ def run(changed_files, repo_dir, build_dir, temp_dir):
     filter_regex = header_filter_regex(
         [path for path in changed if path.endswith(HEADER_SUFFIXES)]
     )
-    changed_real_paths = {os.path.realpath(f"{repo_dir}/{path}") for path in changed}
+    reported = changed + (list(CANARY_TRANSLATION_UNITS) if config_changed else [])
+    changed_real_paths = {os.path.realpath(f"{repo_dir}/{path}") for path in reported}
     workers = max_workers(len(translation_units))
     print(
         f"Running [{tidy}] on {len(translation_units)} translation unit(s) "

@@ -231,6 +231,7 @@ It is thorough, but it takes hours, which is why it is not part of the merge que
 It configures the same build, but analyzes only the translation units the pull request touches: the changed `.cpp` files, and for a changed header either the `.cpp` file of the same name or, when the header has none, a few of its direct includers.
 It reports only the diagnostics located in the changed files, so a diagnostic that was already present on `master` cannot fail an unrelated pull request.
 That narrower scope is the trade-off: a change to a widely included header is only spot-checked here, and the full job is what covers the rest of the tree.
+A change to the `clang-tidy` configuration or to the check itself touches no translation unit, so instead it analyzes a small fixed set of translation units and reports every diagnostic found in them.
 
 Both jobs can be run locally:
 

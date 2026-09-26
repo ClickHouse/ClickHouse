@@ -5,6 +5,8 @@ from ci.defs.defs import JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
 from ci.jobs.scripts.clang_tidy_changed_files import (
     is_analyzed_path as is_analyzed_by_clang_tidy,
+    is_tidy_config_path,
+    normalize_changed_path as normalize_tidy_path,
 )
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
@@ -763,9 +765,9 @@ def should_skip_merge_queue_job(job_name):
     The merge queue runs a small, fixed set of jobs (style check, fast test, the
     `amd_binary` build, the stateless flaky check, the docs examples, and the
     limited clang-tidy check). Two of them are conditional. The limited
-    clang-tidy check has nothing to analyze when the change touches no C or C++
-    file, so a docs- or test-only PR does not need to claim a large runner for
-    it. And the flaky check reruns the PR's new/changed stateless
+    clang-tidy check has nothing to analyze when the change touches neither a C
+    or C++ file nor the clang-tidy configuration or the check's own logic, so a
+    docs- or test-only PR does not need to claim a large runner for it. And the flaky check reruns the PR's new/changed stateless
     tests as a drift guard, so a PR that changes no stateless tests has nothing
     for it to do. Filter it out here, at config time, so such a PR does not
     schedule the runner, restore `CH_AMD_BINARY`, and enter the test container
@@ -790,7 +792,8 @@ def should_skip_merge_queue_job(job_name):
         # compute, rather than passing on an empty one.
         changed_files = _info_cache.get_changed_files()
         if changed_files is not None and not any(
-            is_analyzed_by_clang_tidy(f.removeprefix("./").removeprefix("/"))
+            is_analyzed_by_clang_tidy(normalize_tidy_path(f))
+            or is_tidy_config_path(normalize_tidy_path(f))
             for f in changed_files
         ):
             return (
