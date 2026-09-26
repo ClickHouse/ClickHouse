@@ -39,15 +39,15 @@ SELECT 'skip index, no filter', count(), sum(y) FROM t_skip_granularity_near_max
 SELECT 'skip index, filtered', count(), sum(y) FROM t_skip_granularity_near_max WHERE y = 500 SETTINGS force_data_skipping_indices = 'i';
 
 -- A top-K read consults the index while it reads rows, through a different code path than the filter
--- above. The settings keep that path armed while the suite randomizes them.
+-- above. The settings keep that path armed: the suite randomizes them, and a row limit turns it off.
 SELECT 'skip index, top-K read', y FROM t_skip_granularity_near_max ORDER BY y LIMIT 1
 SETTINGS max_block_size = 64, max_threads = 1, use_skip_indexes_on_data_read = 1,
          use_skip_indexes_for_top_k = 1, use_top_k_dynamic_filtering = 1,
-         enable_parallel_replicas = 0;
+         enable_parallel_replicas = 0, max_rows_to_read = 0;
 
 -- That granule starts at the part's smallest value, so a top-K threshold can never exclude it, and no
 -- row or mark count separates a read that consulted the granules from one that did not. This arm only
--- asserts the granule filter is selected for `MergeTreeDataSelectExecutor::getMinMaxIndexGranules`.
+-- asserts that the plan selects the granule filter.
 SELECT 'skip index, top-K granule filter', countIf(explain LIKE '%Filter TopK Granules%')
 FROM (EXPLAIN indexes = 1 SELECT y FROM t_skip_granularity_near_max ORDER BY y LIMIT 1
       SETTINGS max_block_size = 64, max_threads = 1, use_skip_indexes_on_data_read = 1,
@@ -103,6 +103,29 @@ FROM (EXPLAIN indexes = 1 SELECT y FROM t_topk_across_parts ORDER BY y LIMIT 184
                query_plan_max_limit_for_top_k_optimization = 0);
 
 DROP TABLE t_topk_across_parts;
+
+DROP TABLE IF EXISTS t_topk_one_index_granule;
+
+-- A top-K read gives every mark its own range, and here all of them share the part's only index
+-- granule, which has to be read once rather than once per range.
+CREATE TABLE t_topk_one_index_granule (x UInt64, y UInt64, INDEX i y TYPE minmax GRANULARITY 18446744073709551615)
+ENGINE = MergeTree() ORDER BY x
+SETTINGS index_granularity = 1;
+
+INSERT INTO t_topk_one_index_granule SELECT number, number FROM numbers(2048);
+
+SELECT 'top-K one index granule', y FROM t_topk_one_index_granule ORDER BY y LIMIT 1
+SETTINGS max_threads = 1, use_skip_indexes_on_data_read = 1, use_skip_indexes_for_top_k = 1,
+         use_top_k_dynamic_filtering = 1, enable_parallel_replicas = 0, max_rows_to_read = 0,
+         log_comment = '04798_topk_one_index_granule';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Reading the granule once per range takes about 400 MB here.
+SELECT 'top-K one index granule, memory bounded', memory_usage < 50000000 FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '04798_topk_one_index_granule' AND type = 'QueryFinish';
+
+DROP TABLE t_topk_one_index_granule;
 
 DROP TABLE IF EXISTS t_skip_granularity_one;
 

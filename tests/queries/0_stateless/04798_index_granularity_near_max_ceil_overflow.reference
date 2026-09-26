@@ -22,6 +22,8 @@ top-K across parts	1
 top-K across parts	2
 top-K across parts	3
 top-K across parts, granule filter	1
+top-K one index granule	0
+top-K one index granule, memory bounded	1
 skip index granularity 1, filtered	1	500
 skip index drops all but one granule	1
 reverse	4095
