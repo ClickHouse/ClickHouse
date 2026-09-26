@@ -358,6 +358,12 @@ struct FormatSettings
         bool write_map_as_array_of_tuples = false;
         bool read_map_as_array_of_tuples = false;
         bool json_type_escape_dots_in_keys = false;
+        /// Not a user-facing setting. Whether the JSON field tokenizer (`skipJSONField`, `readJSONField`)
+        /// accepts the MongoDB shell `ISODate("...")` / `new ISODate("...")` wrapper, which only a target
+        /// type already known to be `DateTime64` can consume. Off by default, so skipping unknown fields,
+        /// schema inference, `Dynamic`, `JSON` and `JSONExtract` stay strict; `Variant` turns it on to
+        /// tokenize a value for its `DateTime64` arms.
+        bool allow_mongodb_isodate_wrapper = false;
         size_t max_row_size_for_json_each_row = 0;
     } json{};
 
