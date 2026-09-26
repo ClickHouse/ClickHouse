@@ -15,6 +15,11 @@ class ActionsDAG;
 struct RelationStats
 {
     std::optional<UInt64> estimated_rows = {};
+    /// Sound upper bound on the row count, available even when no point estimate is.
+    /// Unset means "no bound known"; a set value is always >= the true row count.
+    std::optional<UInt64> estimated_rows_upper = {};
+    /// `estimated_rows` is known to be <= the true row count. False unless proven.
+    bool estimated_rows_is_lower_bound = false;
     std::optional<Float64> avg_row_bytes = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 

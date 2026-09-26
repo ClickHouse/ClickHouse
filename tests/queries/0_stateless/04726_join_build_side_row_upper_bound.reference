@@ -1,0 +1,15 @@
+greedy	1
+dpsub	1
+dpsize	1
+dphyp	1
+unmeasured right side keeps orientation	1
+overstated right side keeps orientation	1
+deleted right side keeps orientation	1
+one-row leaf preserves the composite bound	1
+degenerate-predicate leaf keeps orientation	1
+arrayJoin-expanded side keeps orientation	1
+single-side ON condition keeps orientation	1
+nested sub-join keeps orientation	1
+build side rows	0	4
+rows	0
+rows non-empty filter	25

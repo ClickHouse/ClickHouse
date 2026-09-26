@@ -52,7 +52,7 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
-        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats));
+        components.push_back(std::make_shared<DPJoinEntry>(i, rel.estimated_rows, rel.column_stats, rel.estimated_rows_upper));
     }
 
     std::vector<JoinActionRef *> applied_edges;
