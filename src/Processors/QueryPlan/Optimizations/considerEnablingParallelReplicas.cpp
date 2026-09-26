@@ -50,6 +50,7 @@ extern const Event AutoParallelReplicasCostModelEvaluated;
 extern const Event AutoParallelReplicasApplied;
 extern const Event AutoParallelReplicasSkippedEarly;
 extern const Event AutoParallelReplicasRejectedByThreshold;
+extern const Event AutoParallelReplicasRejectedByCostModel;
 extern const Event AutoParallelReplicasBytesPerReplica;
 }
 
@@ -145,8 +146,8 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                 /// identified as the parallel-replicas pattern at all, so walk down to it through
                 /// anything with a single child and do not ask what those steps do. Requiring them to be
                 /// pass-through wrappers would make a branch we cannot see through look like a second
-                /// node to instrument, and the whole query would be skipped with "Top node for parallel
-                /// replicas plan is already found". `readingFromParallelReplicas` in
+                /// node to instrument, and the whole query would be skipped as having "more than one local
+                /// branch". `readingFromParallelReplicas` in
                 /// `optimizeReadInOrder` walks the same chain for the same reason.
                 if (branchReadsFromOtherReplicas(child))
                 {
@@ -173,7 +174,12 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
                 if (replicas_plan_top_node)
                 {
                     // TODO(nickitat): support multiple read steps with parallel replicas
-                    LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node for parallel replicas plan is already found");
+                    LOG_TRACE(
+                        getLogger("AutoParallelReplicas"),
+                        "The plan built with parallel replicas has more than one local branch ({} and {}), only one is supported. "
+                        "Skipping optimization",
+                        replicas_plan_top_node->step->getName(),
+                        node->step->getName());
                     return nullptr;
                 }
 
@@ -200,6 +206,10 @@ QueryPlan::Node * findTopNodeOfReplicasPlan(QueryPlan::Node * plan_with_parallel
         stack.pop_back();
     }
 
+    if (!replicas_plan_top_node)
+        LOG_TRACE(
+            getLogger("AutoParallelReplicas"),
+            "The plan built with parallel replicas contains no read from the other replicas. Skipping optimization");
     return replicas_plan_top_node;
 }
 
@@ -864,10 +874,8 @@ void considerEnablingParallelReplicas(
     const auto * final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!final_node_in_replica_plan)
     {
+        /// `findTopNodeOfReplicasPlan` has logged why.
         ProfileEvents::increment(ProfileEvents::AutoParallelReplicasPlanNotSuitable);
-        LOG_TRACE(
-            getLogger("AutoParallelReplicas"),
-            "The plan built with parallel replicas contains no read from the other replicas. Skipping optimization");
         return;
     }
     LOG_TRACE(getLogger("AutoParallelReplicas"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
@@ -1101,6 +1109,14 @@ void considerEnablingParallelReplicas(
                 /// there did not get the optimization applied to it.
                 ProfileEvents::increment(ProfileEvents::AutoParallelReplicasApplied);
                 return;
+            }
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByCostModel);
+                LOG_TRACE(
+                    getLogger("AutoParallelReplicas"),
+                    "The cost model does not favour parallel replicas for hash {}. Not enabling parallel replicas reading",
+                    single_replica_plan_node_hash);
             }
         }
     }
