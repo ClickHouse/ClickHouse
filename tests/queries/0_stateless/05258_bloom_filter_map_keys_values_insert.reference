@@ -25,13 +25,13 @@ INSERT INTO t_lc SELECT number, map(concat('k', toString(intDiv(number, 1000))),
 FROM numbers(10000) SETTINGS max_block_size = 100000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 SELECT (SELECT count() FROM t_lc WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_lc WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 0);
 1000	1000
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_lc WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_lc WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
 Granules: 10/10
 Name: ik
 Granules: 1/10
 SELECT (SELECT count() FROM t_lc WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_lc WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 0);
 1000	1000
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_lc WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_lc WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
 Granules: 10/10
 Name: iv
 Granules: 1/10
@@ -41,7 +41,7 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1000, index_granular
 INSERT INTO t_plain SELECT * FROM t_lc SETTINGS max_block_size = 100000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 SELECT (SELECT count() FROM t_plain WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_plain WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 0);
 1000	1000
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_plain WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_plain WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
 Granules: 10/10
 Name: ik
 Granules: 1/10
@@ -55,7 +55,7 @@ ALTER TABLE t_mut ADD INDEX ik mapKeys(m) TYPE bloom_filter GRANULARITY 1;
 ALTER TABLE t_mut UPDATE m = map(concat('n', toString(intDiv(id, 1000))), 'w') WHERE id >= 5000, MATERIALIZE INDEX ik SETTINGS mutations_sync = 2;
 SELECT (SELECT count() FROM t_mut WHERE has(mapKeys(m), 'n7') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_mut WHERE has(mapKeys(m), 'n7') SETTINGS use_skip_indexes = 0);
 1000	1000
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mut WHERE has(mapKeys(m), 'n7') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mut WHERE has(mapKeys(m), 'n7') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
 Granules: 10/10
 Name: ik
 Granules: 1/10
@@ -72,7 +72,7 @@ SELECT (SELECT count() FROM t_order WHERE has(mapKeys(m), 'k3') SETTINGS use_ski
 1000	1000
 SELECT (SELECT count() FROM t_order WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_order WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 0);
 1000	1000
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_order WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_order WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
 Granules: 10/10
 Name: iv
 Granules: 1/10
@@ -88,11 +88,11 @@ SELECT (SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k3') SETTINGS ignore_
        (SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k3') SETTINGS ignore_data_skipping_indices = 'ik,is,im'),
        (SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 0);
 1000	1000	1000	1000	1000
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'is,im,it') WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'is,im,it') WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
 Granules: 10/10
 Name: ik
 Granules: 1/10
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'ik,im,it') WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'ik,im,it') WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
 Granules: 10/10
 Name: is
 Granules: 1/10
@@ -103,7 +103,7 @@ SELECT (SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k4') SETTINGS ignore_
        (SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k4') SETTINGS ignore_data_skipping_indices = 'ik,is,im'),
        (SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k4') SETTINGS use_skip_indexes = 0);
 1000	1000	1000	1000	1000
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k4') SETTINGS use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'is,im,it') WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_mixed WHERE has(mapKeys(m), 'k4') SETTINGS use_skip_indexes_on_data_read = 0, ignore_data_skipping_indices = 'is,im,it') WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
 Granules: 10/10
 Name: ik
 Granules: 1/10
@@ -115,7 +115,7 @@ INSERT INTO t_nested SELECT * FROM t_lc SETTINGS max_block_size = 100000, min_in
 SELECT (SELECT count() FROM t_nested WHERE formatRowNoNewline('JSONEachRow', mapKeys(m)) = '{"mapKeys(m)":["k3","common"]}' SETTINGS use_skip_indexes = 1),
        (SELECT count() FROM t_nested WHERE formatRowNoNewline('JSONEachRow', mapKeys(m)) = '{"mapKeys(m)":["k3","common"]}' SETTINGS use_skip_indexes = 0);
 1000	1000
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_nested WHERE formatRowNoNewline('JSONEachRow', mapKeys(m)) = '{"mapKeys(m)":["k3","common"]}' SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_nested WHERE formatRowNoNewline('JSONEachRow', mapKeys(m)) = '{"mapKeys(m)":["k3","common"]}' SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
 Granules: 10/10
 Name: ic
 Granules: 1/10
@@ -128,7 +128,7 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1000, index_granular
 INSERT INTO t_text SELECT * FROM t_lc SETTINGS max_block_size = 100000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
 SELECT (SELECT count() FROM t_text WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_text WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 0);
 1000	1000
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_text WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
+SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_text WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
 Granules: 10/10
 Name: it
 Granules: 1/10
