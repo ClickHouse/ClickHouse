@@ -1,0 +1,10 @@
+DNSRequests increased
+DNSRequestMicroseconds increased
+DNSRequestError increased
+TLSHandshakes increased
+TLSHandshakeMicroseconds increased
+TLSServerHandshakes increased
+TLSServerHandshakeMicroseconds increased
+HTTPServerConnectionsErrors increased
+TLSServerHandshakeErrors increased
+TLSHandshakeErrors increased
