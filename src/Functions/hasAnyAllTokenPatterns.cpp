@@ -75,9 +75,17 @@ struct TokenLikeMatcher
             case Kind::Equals: return token.size() == literal.size() && hasLiteralAt(token, 0);
             case Kind::StartsWith: return token.size() >= literal.size() && hasLiteralAt(token, 0);
             case Kind::EndsWith: return token.size() >= literal.size() && hasLiteralAt(token, token.size() - literal.size());
-            case Kind::Contains: return token.find(literal) != std::string_view::npos;
+            case Kind::Contains: return containsLiteral(token);
             case Kind::Regexp: return regexp->match(token.data(), token.size());
         }
+    }
+
+    bool containsLiteral(std::string_view token) const
+    {
+        for (size_t pos = 0; pos + literal.size() <= token.size(); ++pos)
+            if (hasLiteralAt(token, pos))
+                return true;
+        return false;
     }
 
     /// Compares the first byte before calling memcmp, because most tokens differ there.
