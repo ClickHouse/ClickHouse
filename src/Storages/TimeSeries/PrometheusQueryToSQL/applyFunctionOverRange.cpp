@@ -201,9 +201,17 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
-            /// TODO:
-            /// stddev_over_time
-            /// stdvar_over_time
+            {"stddev_over_time",
+             {
+                 "timeSeriesStddevToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
+            {"stdvar_over_time",
+             {
+                 "timeSeriesStdvarToGrid",
+                 /* drop_metric_name = */ true,
+             }},
         };
 
         auto it = impl_map.find(function_name);
