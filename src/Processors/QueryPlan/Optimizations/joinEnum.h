@@ -165,6 +165,15 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
         if ((nel & left) && (nel & right))
             continue;
 
+        /// A cross product joins its sides on nothing, so the components it separates are genuinely
+        /// disconnected and DPsub has no business stitching them: linking them here would only let
+        /// it enumerate orderings of a graph it is not built for. Left unlinked, the full set is
+        /// never assembled and `solve` hands the query to the next algorithm in the chain, which is
+        /// what already happens without a conflict detector. One-sided predicates (`ON t.x = 5`)
+        /// are still linked - those are real joins whose kind DPsub has to preserve.
+        if (isCrossOrComma(op.kind))
+            continue;
+
         const UInt left_mask = static_cast<UInt>(1) << *rep_left;
         const UInt right_mask = static_cast<UInt>(1) << *rep_right;
 
