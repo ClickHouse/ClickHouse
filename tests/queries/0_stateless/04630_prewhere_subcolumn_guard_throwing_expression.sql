@@ -374,7 +374,10 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 INSERT INTO t_prewhere_guard_alter
 SELECT number, tuple(if(number % 3 = 0, '', 'y'), if(number % 3 = 0, 'bad', toString(number % 100))) FROM numbers(10000);
-ALTER TABLE t_prewhere_guard_alter MODIFY COLUMN payload Tuple(safe String, val UInt64) SETTINGS mutations_sync = 0;
+-- The ALTER must not wait for the mutation, which fails. A SETTINGS clause after MODIFY COLUMN would be parsed
+-- as column settings, so the query setting is set here.
+SET alter_sync = 0;
+ALTER TABLE t_prewhere_guard_alter MODIFY COLUMN payload Tuple(safe String, val UInt64);
 
 SELECT 'pending MODIFY COLUMN, guard over the same storage column';
 SELECT count() FROM t_prewhere_guard_alter PREWHERE payload.safe != '' AND toUInt64(payload.val) > 50;
