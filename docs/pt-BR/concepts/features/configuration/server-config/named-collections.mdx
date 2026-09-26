@@ -6,23 +6,23 @@ title: 'Coleções nomeadas'
 doc_type: 'referência'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<CloudNotSupportedBadge />
-
 Coleções nomeadas oferecem uma forma de armazenar coleções de pares chave-valor para
 serem usadas na configuração de integrações com fontes externas. Você pode usar coleções nomeadas com
 dicionários, tabelas, funções de tabela e armazenamento de objetos.
+
+<Note>
+  Coleções nomeadas criadas por DDL podem ser habilitadas em alguns serviços do ClickHouse Cloud. Entre em contato com o Suporte para confirmar a disponibilidade. Coleções nomeadas definidas em arquivos de configuração não estão disponíveis porque os usuários não podem modificar arquivos de configuração do servidor no ClickHouse Cloud.
+</Note>
 
 Coleções nomeadas podem ser configuradas com DDL ou em arquivos de configuração e são aplicadas
 quando o ClickHouse é iniciado. Elas simplificam a criação de objetos e o ocultamento de credenciais
 de usuários sem acesso administrativo.
 
 As chaves em uma coleção nomeada devem corresponder aos nomes dos parâmetros da
-função, mecanismo de tabela, banco de dados etc. correspondentes. Nos exemplos abaixo, há um link para
+função, motor de tabela, banco de dados etc. correspondentes. Nos exemplos abaixo, há um link para
 a lista de parâmetros de cada tipo.
 
-Os parâmetros definidos em uma coleção nomeada podem ser substituídos em SQL, como mostrado nos exemplos
+Os parâmetros definidos em uma coleção nomeada podem ser sobrescritos em SQL, como mostrado nos exemplos
 abaixo. Essa capacidade pode ser limitada usando as palavras-chave `[NOT] OVERRIDABLE`, atributos XML
 e/ou a opção de configuração `allow_named_collection_override_by_default`.
 
@@ -103,6 +103,16 @@ seção `named_collections_storage` do arquivo de configuração. O exemplo a se
 ```
 
 O parâmetro de configuração opcional `update_timeout_ms` é, por padrão, `5000`.
+
+Você pode verificar o tipo de armazenamento ativo por meio de `system.server_settings` e `getServerSetting`:
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+Alterar o tipo de armazenamento exige reiniciar o servidor; `SYSTEM RELOAD CONFIG` não altera o backend ativo.
 
 <div id="storing-named-collections-in-configuration-files">
   ## Armazenar coleções nomeadas em arquivos de configuração

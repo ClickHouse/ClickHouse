@@ -5,8 +5,6 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
 
@@ -16,8 +14,6 @@
 #include <Functions/FunctionFactory.h>
 
 #include <Interpreters/Context.h>
-
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -45,50 +41,125 @@ struct ExpressionUsage
     /// Subcolumn names from the nested() first argument. Empty if not a nested() expression.
     std::vector<std::string> nested_subcolumn_names;
 
+    /// Filled after pruning: the column type of the ARRAY JOIN expression, which references must adopt.
+    DataTypePtr pruned_type;
+
+    /// Filled after pruning: old 1-based tupleElement index -> new 1-based index.
+    std::unordered_map<UInt64, UInt64> index_remap;
+
     bool hasNested() const { return !nested_subcolumn_names.empty(); }
 
     bool isUsed() const { return fully_used || !used_subcolumns.empty(); }
 };
 
-/// Key: (ArrayJoinNode raw ptr, column name) → ExpressionUsage.
-using ArrayJoinUsageMap = std::unordered_map<const IQueryTreeNode *, std::unordered_map<std::string, ExpressionUsage>>;
+struct ArrayJoinUsage
+{
+    ArrayJoinNode * array_join_node = nullptr;
 
-/// Set of ArrayJoinNode raw pointers that we are tracking.
-using ArrayJoinNodeSet = std::unordered_set<const IQueryTreeNode *>;
+    /// Keyed by the ARRAY JOIN column name.
+    std::unordered_map<std::string, ExpressionUsage> expressions;
+};
 
-/// Map: (ArrayJoinNode raw ptr, column name) → post-pruning column DataType.
-using UpdatedTypeMap = std::unordered_map<const IQueryTreeNode *, UnorderedMapWithMemoryTracking<std::string, DataTypePtr>>;
+/// Keyed by ArrayJoinNode raw pointer.
+using ArrayJoinUsageMap = std::unordered_map<const IQueryTreeNode *, ArrayJoinUsage>;
 
-/// Map: (ArrayJoinNode raw ptr, column name, old 1-based index) → new 1-based index.
-using IndexRemapMap = std::unordered_map<const IQueryTreeNode *, std::unordered_map<std::string, std::unordered_map<UInt64, UInt64>>>;
+/// Returns the usage entry of a ColumnNode that references a tracked ARRAY JOIN expression, or nullptr.
+ExpressionUsage * findReferencedExpression(const ColumnNode & column_node, ArrayJoinUsageMap & usage_map)
+{
+    auto source = column_node.getColumnSourceOrNull();
+    if (!source)
+        return nullptr;
 
-/// Visitor that marks which ARRAY JOIN expressions and nested subcolumns are used.
+    auto usage_it = usage_map.find(source.get());
+    if (usage_it == usage_map.end())
+        return nullptr;
+
+    auto expr_it = usage_it->second.expressions.find(column_node.getColumnName());
+    if (expr_it == usage_it->second.expressions.end())
+        return nullptr;
+
+    return &expr_it->second;
+}
+
+/// Collects every ARRAY JOIN node of the tree, including those inside subqueries, CTEs and UNION branches.
+class CollectArrayJoinNodesVisitor : public InDepthQueryTreeVisitorWithContext<CollectArrayJoinNodesVisitor>
+{
+public:
+    using Base = InDepthQueryTreeVisitorWithContext<CollectArrayJoinNodesVisitor>;
+
+    CollectArrayJoinNodesVisitor(ContextPtr context_, ArrayJoinUsageMap & usage_map_, std::unordered_set<const IQueryTreeNode *> & definition_nodes_)
+        : Base(std::move(context_))
+        , usage_map(usage_map_)
+        , definition_nodes(definition_nodes_)
+    {
+    }
+
+    void enterImpl(const QueryTreeNodePtr & node)
+    {
+        auto * array_join_node = node->as<ArrayJoinNode>();
+        if (!array_join_node)
+            return;
+
+        /// Unaligned ARRAY JOIN pads shorter arrays, so removing an array can change the number of result rows.
+        if (getSettings()[Setting::enable_unaligned_array_join])
+            return;
+
+        ArrayJoinUsage usage;
+        usage.array_join_node = array_join_node;
+
+        for (const auto & join_expr : array_join_node->getJoinExpressions().getNodes())
+        {
+            auto * column_node = join_expr->as<ColumnNode>();
+            if (!column_node || !column_node->hasExpression())
+                continue;
+
+            ExpressionUsage expr_usage;
+
+            auto * function_node = column_node->getExpression()->as<FunctionNode>();
+            if (function_node && function_node->getFunctionName() == "nested")
+            {
+                const auto & args = function_node->getArguments().getNodes();
+                if (args.size() >= 2)
+                {
+                    if (auto * names_constant = args[0]->as<ConstantNode>())
+                    {
+                        const auto & names_array = names_constant->getValue().safeGet<Array>();
+                        for (const auto & name : names_array)
+                            expr_usage.nested_subcolumn_names.push_back(name.safeGet<String>());
+                    }
+                }
+            }
+
+            definition_nodes.insert(join_expr.get());
+            usage.expressions[column_node->getColumnName()] = std::move(expr_usage);
+        }
+
+        if (!usage.expressions.empty())
+            usage_map[node.get()] = std::move(usage);
+    }
+
+private:
+    ArrayJoinUsageMap & usage_map;
+    std::unordered_set<const IQueryTreeNode *> & definition_nodes;
+};
+
+/// Marks which ARRAY JOIN expressions and nested subcolumns are referenced anywhere in the tree.
 class MarkUsedArrayJoinColumnsVisitor : public InDepthQueryTreeVisitorWithContext<MarkUsedArrayJoinColumnsVisitor>
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<MarkUsedArrayJoinColumnsVisitor>;
 
-    MarkUsedArrayJoinColumnsVisitor(ContextPtr context_, ArrayJoinUsageMap & usage_map_, const ArrayJoinNodeSet & tracked_nodes_)
+    MarkUsedArrayJoinColumnsVisitor(ContextPtr context_, ArrayJoinUsageMap & usage_map_, const std::unordered_set<const IQueryTreeNode *> & definition_nodes_)
         : Base(std::move(context_))
         , usage_map(usage_map_)
-        , tracked_nodes(tracked_nodes_)
+        , definition_nodes(definition_nodes_)
     {
     }
 
-    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child)
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & child [[maybe_unused]])
     {
-        /// Skip visiting the join expressions list of a tracked ARRAY JOIN node —
-        /// those are the expression definitions, not references.
-        if (tracked_nodes.contains(parent.get()))
-        {
-            auto * array_join_node = parent->as<ArrayJoinNode>();
-            if (array_join_node && child.get() == array_join_node->getJoinExpressionsNode().get())
-                return false;
-        }
-
-        /// If the parent is tupleElement whose first argument is a column from a tracked
-        /// ARRAY JOIN, skip visiting children — enterImpl already handles the tupleElement
-        /// by marking only the specific subcolumn.
+        /// tupleElement(array_join_column, ...) is handled as a whole in enterImpl:
+        /// visiting the column child would mark the expression as fully used.
         auto * function_node = parent->as<FunctionNode>();
         if (function_node && function_node->getFunctionName() == "tupleElement")
         {
@@ -97,8 +168,7 @@ public:
             {
                 if (auto * column_node = arguments[0]->as<ColumnNode>())
                 {
-                    auto source = column_node->getColumnSourceOrNull();
-                    if (source && tracked_nodes.contains(source.get()))
+                    if (findReferencedExpression(*column_node, usage_map))
                         return false;
                 }
             }
@@ -124,66 +194,55 @@ public:
             if (!column_node || !constant_node)
                 return;
 
-            auto source = column_node->getColumnSourceOrNull();
-            if (!source || !tracked_nodes.contains(source.get()))
+            auto * expr_usage = findReferencedExpression(*column_node, usage_map);
+            if (!expr_usage || expr_usage->fully_used)
                 return;
 
-            auto map_it = usage_map.find(source.get());
-            if (map_it == usage_map.end())
-                return;
-
-            auto expr_it = map_it->second.find(column_node->getColumnName());
-            if (expr_it == map_it->second.end() || expr_it->second.fully_used)
-                return;
-
-            if (expr_it->second.hasNested())
+            if (expr_usage->hasNested())
             {
                 const auto & value = constant_node->getValue();
                 if (value.getType() == Field::Types::String)
                 {
-                    expr_it->second.used_subcolumns.insert(value.safeGet<String>());
+                    expr_usage->used_subcolumns.insert(value.safeGet<String>());
                 }
                 else if (value.getType() == Field::Types::UInt64)
                 {
                     /// tupleElement uses 1-based indexing.
                     UInt64 index = value.safeGet<UInt64>();
-                    if (index >= 1 && index <= expr_it->second.nested_subcolumn_names.size())
-                        expr_it->second.used_subcolumns.insert(expr_it->second.nested_subcolumn_names[index - 1]);
+                    if (index >= 1 && index <= expr_usage->nested_subcolumn_names.size())
+                        expr_usage->used_subcolumns.insert(expr_usage->nested_subcolumn_names[index - 1]);
                     else
-                        expr_it->second.fully_used = true;
+                        expr_usage->fully_used = true;
                 }
                 else
                 {
-                    expr_it->second.fully_used = true;
+                    expr_usage->fully_used = true;
                 }
             }
             else
-                expr_it->second.fully_used = true;
+                expr_usage->fully_used = true;
 
             return;
         }
 
         /// Case 2: direct reference to an ARRAY JOIN column — mark fully used.
+        /// The ARRAY JOIN expression itself is a ColumnNode with the same name and source, but it is
+        /// the definition, not a reference. Its expression is still visited, because it may reference
+        /// columns of a preceding ARRAY JOIN or contain a subquery with its own ARRAY JOIN.
+        if (definition_nodes.contains(node.get()))
+            return;
+
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
             return;
 
-        auto source = column_node->getColumnSourceOrNull();
-        if (!source || !tracked_nodes.contains(source.get()))
-            return;
-
-        auto map_it = usage_map.find(source.get());
-        if (map_it == usage_map.end())
-            return;
-
-        auto expr_it = map_it->second.find(column_node->getColumnName());
-        if (expr_it != map_it->second.end())
-            expr_it->second.fully_used = true;
+        if (auto * expr_usage = findReferencedExpression(*column_node, usage_map))
+            expr_usage->fully_used = true;
     }
 
 private:
     ArrayJoinUsageMap & usage_map;
-    const ArrayJoinNodeSet & tracked_nodes;
+    const std::unordered_set<const IQueryTreeNode *> & definition_nodes;
 };
 
 /// Prune unused subcolumn arguments from a nested() function and build an index remap
@@ -191,9 +250,8 @@ private:
 void pruneNestedFunctionArguments(
     ColumnNode & column_node,
     FunctionNode & function_node,
-    const ExpressionUsage & expr_usage,
-    const ContextPtr & context,
-    std::unordered_map<UInt64, UInt64> & index_remap)
+    ExpressionUsage & expr_usage,
+    const ContextPtr & context)
 {
     auto & nested_args = function_node.getArguments().getNodes();
     const auto & subcolumn_names = expr_usage.nested_subcolumn_names;
@@ -217,7 +275,7 @@ void pruneNestedFunctionArguments(
 
     /// Build old 1-based index → new 1-based index remap.
     for (size_t new_idx = 0; new_idx < indices_to_keep.size(); ++new_idx)
-        index_remap[indices_to_keep[new_idx] + 1] = new_idx + 1;
+        expr_usage.index_remap[indices_to_keep[new_idx] + 1] = new_idx + 1;
 
     /// Build pruned names array and arguments.
     Array pruned_names_array;
@@ -246,22 +304,16 @@ void pruneNestedFunctionArguments(
     column_node.setColumnType(std::move(new_column_type));
 }
 
-/// Visitor that updates reference ColumnNode types, rewrites stale numeric tupleElement
+/// Updates reference ColumnNode types, rewrites stale numeric tupleElement
 /// indices, and re-resolves tupleElement functions after nested() arguments have been pruned.
 class UpdateArrayJoinReferenceTypesVisitor : public InDepthQueryTreeVisitorWithContext<UpdateArrayJoinReferenceTypesVisitor>
 {
 public:
     using Base = InDepthQueryTreeVisitorWithContext<UpdateArrayJoinReferenceTypesVisitor>;
 
-    UpdateArrayJoinReferenceTypesVisitor(
-        ContextPtr context_,
-        const UpdatedTypeMap & updated_types_,
-        const ArrayJoinNodeSet & tracked_nodes_,
-        const IndexRemapMap & index_remap_)
+    UpdateArrayJoinReferenceTypesVisitor(ContextPtr context_, ArrayJoinUsageMap & usage_map_)
         : Base(std::move(context_))
-        , updated_types(updated_types_)
-        , tracked_nodes(tracked_nodes_)
-        , index_remap(index_remap_)
+        , usage_map(usage_map_)
     {
     }
 
@@ -279,19 +331,9 @@ public:
         if (!column_node)
             return;
 
-        auto source = column_node->getColumnSourceOrNull();
-        if (!source || !tracked_nodes.contains(source.get()))
+        auto * expr_usage = findReferencedExpression(*column_node, usage_map);
+        if (!expr_usage || !expr_usage->pruned_type)
             return;
-
-        auto node_it = updated_types.find(source.get());
-        if (node_it == updated_types.end())
-            return;
-
-        auto type_it = node_it->second.find(column_node->getColumnName());
-        if (type_it == node_it->second.end())
-            return;
-
-        const auto & new_type = type_it->second;
 
         /// Rewrite numeric tupleElement index if pruning changed positions.
         auto * constant_node = arguments[1]->as<ConstantNode>();
@@ -301,118 +343,48 @@ public:
             if (value.getType() == Field::Types::UInt64)
             {
                 UInt64 old_index = value.safeGet<UInt64>();
-
-                auto remap_node_it = index_remap.find(source.get());
-                if (remap_node_it != index_remap.end())
-                {
-                    auto remap_col_it = remap_node_it->second.find(column_node->getColumnName());
-                    if (remap_col_it != remap_node_it->second.end())
-                    {
-                        auto remap_it = remap_col_it->second.find(old_index);
-                        if (remap_it != remap_col_it->second.end() && remap_it->second != old_index)
-                            arguments[1] = std::make_shared<ConstantNode>(remap_it->second);
-                    }
-                }
+                auto remap_it = expr_usage->index_remap.find(old_index);
+                if (remap_it != expr_usage->index_remap.end() && remap_it->second != old_index)
+                    arguments[1] = std::make_shared<ConstantNode>(remap_it->second);
             }
         }
 
-        if (column_node->getColumnType()->equals(*new_type))
+        if (column_node->getColumnType()->equals(*expr_usage->pruned_type))
             return;
 
-        column_node->setColumnType(new_type);
+        column_node->setColumnType(expr_usage->pruned_type);
 
         auto tuple_element_function = FunctionFactory::instance().get("tupleElement", getContext());
         function_node->resolveAsFunction(tuple_element_function->build(function_node->getArgumentColumns()));
     }
 
 private:
-    const UpdatedTypeMap & updated_types;
-    const ArrayJoinNodeSet & tracked_nodes;
-    const IndexRemapMap & index_remap;
+    ArrayJoinUsageMap & usage_map;
 };
 
 }
 
 void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    auto * top_query_node = query_tree_node->as<QueryNode>();
-    if (!top_query_node)
-        return;
-
-    const auto & settings = context->getSettingsRef();
-    if (settings[Setting::enable_unaligned_array_join])
-        return;
-
     /// Step 1: Find all ARRAY JOIN nodes and build the usage map.
     ArrayJoinUsageMap usage_map;
-    ArrayJoinNodeSet tracked_nodes;
+    std::unordered_set<const IQueryTreeNode *> definition_nodes;
 
-    auto table_expressions = extractTableExpressions(top_query_node->getJoinTreeNodeTyped(), /*add_array_join=*/ true);
-    for (const auto & table_expr : table_expressions)
-    {
-        auto * array_join_node = table_expr->as<ArrayJoinNode>();
-        if (!array_join_node)
-            continue;
+    CollectArrayJoinNodesVisitor collector(context, usage_map, definition_nodes);
+    collector.visit(query_tree_node);
 
-        auto & expressions_usage = usage_map[table_expr.get()];
-
-        for (const auto & join_expr : array_join_node->getJoinExpressions().getNodes())
-        {
-            auto * column_node = join_expr->as<ColumnNode>();
-            if (!column_node || !column_node->hasExpression())
-                continue;
-
-            ExpressionUsage expr_usage;
-
-            auto * function_node = column_node->getExpression()->as<FunctionNode>();
-            if (function_node && function_node->getFunctionName() == "nested")
-            {
-                const auto & args = function_node->getArguments().getNodes();
-                if (args.size() >= 2)
-                {
-                    if (auto * names_constant = args[0]->as<ConstantNode>())
-                    {
-                        const auto & names_array = names_constant->getValue().safeGet<Array>();
-                        for (const auto & name : names_array)
-                            expr_usage.nested_subcolumn_names.push_back(name.safeGet<String>());
-                    }
-                }
-            }
-
-            expressions_usage[column_node->getColumnName()] = std::move(expr_usage);
-        }
-
-        if (!expressions_usage.empty())
-            tracked_nodes.insert(table_expr.get());
-    }
-
-    if (tracked_nodes.empty())
+    if (usage_map.empty())
         return;
 
     /// Step 2: Mark used expressions and subcolumns.
-    MarkUsedArrayJoinColumnsVisitor visitor(context, usage_map, tracked_nodes);
+    MarkUsedArrayJoinColumnsVisitor visitor(context, usage_map, definition_nodes);
     visitor.visit(query_tree_node);
 
     /// Step 3: Prune.
-    UpdatedTypeMap updated_types;
-    IndexRemapMap index_remap;
-
-    for (auto & [node_ptr, expressions_usage] : usage_map)
+    for (auto & [_, usage] : usage_map)
     {
-        /// Find the ArrayJoinNode among our table_expressions.
-        ArrayJoinNode * array_join_node = nullptr;
-        for (const auto & te : table_expressions)
-        {
-            if (te.get() == node_ptr)
-            {
-                array_join_node = te->as<ArrayJoinNode>();
-                break;
-            }
-        }
-        if (!array_join_node)
-            continue;
-
-        auto & join_expressions = array_join_node->getJoinExpressions().getNodes();
+        auto & expressions_usage = usage.expressions;
+        auto & join_expressions = usage.array_join_node->getJoinExpressions().getNodes();
 
         /// 3a: Remove entire unused ARRAY JOIN expressions.
         {
@@ -459,24 +431,24 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
             if (!function_node)
                 continue;
 
-            pruneNestedFunctionArguments(
-                *column_node, *function_node, expr_usage, context,
-                index_remap[node_ptr][column_node->getColumnName()]);
+            pruneNestedFunctionArguments(*column_node, *function_node, expr_usage, context);
         }
 
         /// Collect post-pruning types for step 3c.
-        auto & type_map = updated_types[node_ptr];
         for (const auto & join_expr : join_expressions)
         {
             auto * col_node = join_expr->as<ColumnNode>();
             if (!col_node)
                 continue;
-            type_map[col_node->getColumnName()] = col_node->getColumnType();
+
+            auto expr_it = expressions_usage.find(col_node->getColumnName());
+            if (expr_it != expressions_usage.end())
+                expr_it->second.pruned_type = col_node->getColumnType();
         }
     }
 
     /// 3c: Update types of reference ColumnNodes, rewrite numeric indices, and re-resolve tupleElement functions.
-    UpdateArrayJoinReferenceTypesVisitor type_updater(context, updated_types, tracked_nodes, index_remap);
+    UpdateArrayJoinReferenceTypesVisitor type_updater(context, usage_map);
     type_updater.visit(query_tree_node);
 }
 

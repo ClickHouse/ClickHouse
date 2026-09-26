@@ -1,0 +1,8 @@
+-- /db/events.CSV (unquoted): table 'events' rendered as CSV (111)
+111
+-- /db/%60events.CSV%60 (back-quoted): the literal table 'events.CSV' (222, default TSV)
+222
+-- /db/%60events.JSON%60 (back-quoted): the literal table 'events.JSON' is reachable (333, default TSV)
+333
+-- /db/%60events.JSON%60?format=JSONEachRow: format chosen via URL parameter, not the path
+{"x":333}

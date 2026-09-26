@@ -7,6 +7,9 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <CloudOnlyBadge />
 
@@ -36,22 +39,16 @@ ClickHouse は、JSON Web Token (JWT) を使用してユーザーを認証でき
 
 ClickHouse に提示されるすべての JWT には、次のクレームが含まれている必要があります。
 
-| クレーム  | 説明                                                      |
-| ----- | ------------------------------------------------------- |
-| `alg` | 署名アルゴリズム (ヘッダークレーム) 。サポートされる値: `HS256`、`RS256`、`ES256`。 |
-| `exp` | 有効期限。一時ユーザーの `valid_until` を設定します。                      |
-| `iat` | 発行時刻。同じ アイデンティティ に対する古いトークンのリプレイを防ぐために使用されます。           |
-| `iss` | issuer。プロバイダーで想定される issuer と照合されます。                     |
-| `sub` | Subject。生成されるユーザー名の一部になります。                             |
-| `aud` | audience。プロバイダーで想定される audience と照合されます。                 |
+| クレーム  | 説明                                                                                                  |
+| ----- | --------------------------------------------------------------------------------------------------- |
+| `alg` | 署名アルゴリズム (ヘッダークレーム) 。サポートされる値: `RS256`。バージョン 26.8 以降では、EC アルゴリズム `ES256`、`ES384`、`ES512` もサポートされます。 |
+| `exp` | 有効期限。一時ユーザーの `valid_until` を設定します。                                                                  |
+| `iat` | 発行時刻。同じ アイデンティティ に対する古いトークンのリプレイを防ぐために使用されます。                                                       |
+| `iss` | issuer。プロバイダーで想定される issuer と照合されます。                                                                 |
+| `sub` | Subject。生成されるユーザー名の一部になります。                                                                         |
+| `aud` | audience。プロバイダーで想定される audience と照合されます。                                                             |
 
 JWKS ベースの鍵解決を使用する場合は、`kid` (key ID) ヘッダークレームも必須です。
-
-<Info>
-  **JWKS モードでサポートされるのは RSA 鍵のみです**
-
-  静的鍵プロバイダーは `HS256`、`RS256`、`ES256` のいずれも受け入れますが、JWKS ベースのプロバイダーが受け入れるのは、`kty` が `RSA` の JWK のみです (つまり、`RS256` で署名されたトークンのみ) 。HMAC (`HS256`) または EC (`ES256`) 鍵で署名されたトークンは JWKS endpoint では検証できないため、拒否されます。
-</Info>
 
 <div id="other-recognized-claims">
   ### その他の認識済みクレーム
@@ -251,6 +248,26 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 この組み込み認証器の権限上限は、`default_role` ロールおよび `default` ユーザーに設定されています。つまり、JWT ユーザーの実効権限はこの 2 つが持つ権限との積集合になるため、トークンによって `default_role` と `default` に許可されている範囲を超えて権限を昇格させることはできません。
 
 この認証器を使用するために、追加の設定は必要ありません。サービスの作成時に自動的にプロビジョニングされます。
+
+<div id="enabling-jwt-authentication-for-your-service">
+  ## サービスで JWT 認証を有効にする
+</div>
+
+<BetaBadge />
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="カスタム identity provider による JWT 認証" />
+
+組み込みの 認証器 に加えて、独自の identity provider (Microsoft Entra や Okta など) が発行する JWT を受け入れるよう、ClickHouse Cloud サービスを設定できます。これはベータ機能であり、ClickHouse バージョン 26.4 以降を実行するサービスでは Enterprise プランで利用できます。Cloud Console の **Settings → Security → JWT authentication** からご自身で設定できます。手順については [JWT authentication setup](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) を参照してください。各プロバイダーは、以下によって定義されます。
+
+| パラメータ        | 説明                                                                                                                                                                                                                                                                                                          |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 名前           | サービス上のプロバイダーの一意の名前。                                                                                                                                                                                                                                                                                         |
+| issuer       | identity provider が発行するトークンの `iss` クレームの値。通常はプロバイダーの URL です (例: `https://your-tenant.okta.com`) 。ClickHouse は、発行者がこの値と一致しないトークンを拒否します。                                                                                                                                                                      |
+| audience     | identity provider がこのサービス向けのトークンに設定する `aud` クレームの値。ClickHouse は、異なるオーディンス向けに発行されたトークンを拒否します。                                                                                                                                                                                                                |
+| JWKS URL     | identity provider が JSON Web Key Set を公開する HTTPS エンドポイント (例: `https://idp.example.com/.well-known/jwks.json`) 。ClickHouse はこのエンドポイントから公開鍵を取得してトークン署名を検証します。[必須クレーム](#required-claims)で説明しているとおり、JWKS 検証では RSA 鍵 (`RS256`) に加え、バージョン 26.8 以降では P-256、P-384、P-521 曲線の EC 鍵 (`ES256`、`ES384`、`ES512`) も使用できます。 |
+| ロールクレーム (任意) | 一時ユーザーの ClickHouse ロールを格納するトークンクレームの名前。デフォルトのクレーム名 `clickhouse:roles` を使用するには空白のままにします。このクレームには、`["analyst", "reader"]` のようにロール名の JSON 配列を含める必要があります。                                                                                                                                                       |
 
 <div id="interserver-communication">
   ## サーバー間通信

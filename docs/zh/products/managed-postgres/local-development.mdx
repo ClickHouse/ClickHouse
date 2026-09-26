@@ -2,12 +2,12 @@
 slug: /cloud/managed-postgres/local-development
 sidebarTitle: '本地开发'
 title: '本地开发环境'
-description: '使用 Docker 在本地运行 PostgreSQL，加快针对 Managed Postgres 的开发'
+description: '使用 Docker 在本地运行 PostgreSQL，加快针对 ClickHouse Managed Postgres 的开发'
 keywords: ['managed postgres', '本地开发', 'docker', 'postgresql', '种子数据', '迁移']
 doc_type: 'guide'
 ---
 
-Managed Postgres 基于标准 PostgreSQL 构建，可与现有的 PostgreSQL 生态系统兼容。对于大多数开发任务，你可以直接基于在 Docker 中运行的本地 PostgreSQL 实例进行开发和测试，而无需使用云端部署。
+ClickHouse Managed Postgres 基于标准 PostgreSQL 构建，可与现有的 PostgreSQL 生态系统兼容。对于大多数开发任务，你可以直接基于在 Docker 中运行的本地 PostgreSQL 实例进行开发和测试，而无需使用云端部署。
 
 这种方法能提供更快的反馈回路，简化 onboarding，减少对共享基础设施的依赖，并让你能够在不影响生产系统的情况下安全地进行试验。
 
@@ -18,7 +18,7 @@ Managed Postgres 基于标准 PostgreSQL 构建，可与现有的 PostgreSQL 生
 * 包含有代表性的开发数据。
 * 支持常规的应用开发和测试工作流。
 
-由于 Managed Postgres 是标准 PostgreSQL，现有的迁移框架、schema 管理工具以及数据填充方式都可以直接使用，无需修改。
+由于 ClickHouse Managed Postgres 是标准 PostgreSQL，现有的迁移框架、schema 管理工具以及数据填充方式都可以直接使用，无需修改。
 
 <div id="example-development-flow">
   ## 开发流程示例
@@ -28,15 +28,15 @@ Managed Postgres 基于标准 PostgreSQL 构建，可与现有的 PostgreSQL 生
 
 ```mermaid
 graph LR
-    A[应用应用程序的<br/>schema] --> B[Docker 中的本地 PostgreSQL] --> C[应用 schema]
+    A[Apply the application<br/>schema] --> B[Local PostgreSQL in Docker] --> C[Apply schema]
 ```
 
 ```mermaid
 graph LR
-    A[恢复已脱敏的租户<br/>数据集] -.-> B[生成种子数据] -.-> C[在本地进行开发和测试]
+    A[Restore sanitized tenant<br/>dataset] -.-> B[Generate seed data] -.-> C[Develop and test locally]
 ```
 
-Managed Postgres 可无缝融入现有的 PostgreSQL 开发工作流。针对本地 PostgreSQL 实例进行开发，团队可以快速迭代、保持环境可复现，并确保应用部署到 Managed Postgres 后也能保持一致的行为表现。
+ClickHouse Managed Postgres 可无缝融入现有的 PostgreSQL 开发工作流。针对本地 PostgreSQL 实例进行开发，团队可以快速迭代、保持环境可复现，并确保应用部署到 ClickHouse Managed Postgres 后也能保持一致的行为表现。
 
 <div id="run-postgresql-locally-with-docker">
   ## 使用 Docker 在本地运行 PostgreSQL
@@ -44,7 +44,7 @@ Managed Postgres 可无缝融入现有的 PostgreSQL 开发工作流。针对本
 
 创建本地开发环境最简单的方法，是在 Docker 中运行 PostgreSQL。
 
-选择与您的 Managed Postgres 部署相对应的 PostgreSQL 版本：
+选择与您的 ClickHouse Managed Postgres 部署相对应的 PostgreSQL 版本：
 
 ```yaml title="docker-compose.yml"
 services:

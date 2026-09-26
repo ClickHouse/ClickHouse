@@ -32,7 +32,7 @@ hdfs(URI, format, structure)
 | `format`    | El [formato](/es/reference/formats/index) del archivo.                                                                                                                                                           |
 | `structure` | Estructura de la tabla. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                               |
 
-<div id="returned_value">
+<div id="returned-value">
   ## Valor devuelto
 </div>
 
@@ -55,7 +55,7 @@ LIMIT 2
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="globs_in_path">
+<div id="globs-in-path">
   ## Globs en la ruta
 </div>
 
@@ -138,9 +138,9 @@ SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
   ## Configuración de almacenamiento
 </div>
 
-* [hdfs&#95;truncate&#95;on&#95;insert](/es/reference/settings/session-settings#hdfs_truncate_on_insert) - permite truncar el archivo antes de insertar datos en él. Deshabilitado de forma predeterminada.
-* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/es/reference/settings/session-settings#hdfs_create_new_file_on_insert) - permite crear un archivo nuevo en cada inserción si el formato incluye un sufijo. Deshabilitado de forma predeterminada.
-* [hdfs&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings#hdfs_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Deshabilitado de forma predeterminada.
+* [hdfs&#95;truncate&#95;on&#95;insert](/es/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - permite truncar el archivo antes de insertar datos en él. Deshabilitado de forma predeterminada.
+* [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/es/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - permite crear un archivo nuevo en cada inserción si el formato incluye un sufijo. Deshabilitado de forma predeterminada.
+* [hdfs&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings/hdfs#hdfs_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Deshabilitado de forma predeterminada.
 
 <div id="related">
   ## Relacionado

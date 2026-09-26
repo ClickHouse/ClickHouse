@@ -42,9 +42,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
-    [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
+    [nats_commit_on_select = false,]
     [nats_handle_error_mode = 'default']
 ```
 
@@ -65,28 +66,31 @@ Paramètres facultatifs :
 * `nats_reconnect_wait` – Durée d’attente, en millisecondes, entre chaque tentative de reconnexion. Par défaut : `2000`.
 * `nats_server_list` - Liste de serveurs pour la connexion. Peut être spécifiée pour se connecter à un cluster NATS.
 * `nats_skip_broken_messages` - Tolérance de l’analyseur de messages NATS aux messages incompatibles avec le schéma par bloc. Par défaut : `0`. Si `nats_skip_broken_messages = N`, alors le moteur ignore *N* messages NATS qui ne peuvent pas être analysés (un message équivaut à une ligne de données).
-* `nats_max_block_size` - Nombre de lignes collectées par poll(s) pour vider les données depuis NATS. Par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings#max_insert_block_size).
-* `nats_flush_interval_ms` - Délai d’expiration pour le vidage des données lues depuis NATS. Par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings#stream_flush_interval_ms).
-* `nats_username` - Nom d’utilisateur NATS.
-* `nats_password` - Mot de passe NATS.
-* `nats_token` - Jeton d’authentification NATS.
-* `nats_credential_file` - Chemin vers un fichier d’identifiants NATS.
+* `nats_max_block_size` - Nombre de lignes collectées par poll(s) pour vider les données depuis NATS. Par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `nats_flush_interval_ms` - Délai d’expiration pour le vidage des données lues depuis NATS. Par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings/stream#stream_flush_interval_ms).
+* `nats_wait_for_flush_interval` - Si `true`, un cycle de streaming en arrière-plan reste ouvert pendant tout l’intervalle de vidage (`nats_flush_interval_ms`, ou `stream_flush_interval_ms` sinon) au lieu de se terminer dès que la queue du consommateur est vidée, ce qui permet d’accumuler davantage de messages dans un seul bloc au prix d’une latence d’ingestion supplémentaire pouvant aller jusqu’à un intervalle de vidage. Par défaut : `false` (comportement de vidage immédiat à faible latence).
+* `nats_username` - Nom d’utilisateur NATS. Lorsqu’il est stocké dans une collection nommée définie dans le fichier de configuration du serveur, la requête ne peut pas remplacer `nats_url` ou `nats_server_list` de la collection.
+* `nats_password` - Mot de passe NATS. Lorsqu’il est stocké dans une collection nommée définie dans le fichier de configuration du serveur, la requête ne peut pas remplacer `nats_url` ou `nats_server_list` de la collection.
+* `nats_token` - Jeton d’authentification NATS. Lorsqu’il est stocké dans une collection nommée définie dans le fichier de configuration du serveur, la requête ne peut pas remplacer `nats_url` ou `nats_server_list` de la collection.
+* `nats_credential_file` - Chemin vers un fichier d’identifiants NATS. Il est accepté uniquement depuis une collection nommée définie dans le fichier de configuration du serveur, dont `nats_url` et `nats_server_list` ne sont pas remplacés par la requête, car le serveur ouvre le chemin avec ses propres privilèges. Dans une requête, transmettez plutôt le contenu du fichier dans `nats_credentials`.
+* `nats_credentials` - Contenu des identifiants NATS (la même charge utile que dans un fichier `.creds` avec le JWT utilisateur et la seed). Comme c’est la seule syntaxe qu’une requête peut utiliser, elle remplace un `nats_credential_file` hérité d’une collection nommée au lieu d’entrer en conflit avec lui, sauf si l’opérateur a verrouillé ce chemin avec `<nats_credential_file overridable="false">`. Une chaîne vide ne peut pas lui être attribuée pour supprimer les identifiants fournis par une collection nommée.
 * `nats_startup_connect_tries` - Nombre de tentatives de connexion au démarrage. Par défaut : `5`.
 * `nats_max_rows_per_message` — Nombre maximal de lignes écrites dans un message NATS pour les formats basés sur les lignes. (par défaut : `1`).
+* `nats_commit_on_select` - Valider les messages lorsqu’une requête est effectuée. S’applique uniquement à JetStream ; NATS core ne comporte pas d’accusés de réception. Par défaut : `0`.
 * `nats_handle_error_mode` — Comment gérer les erreurs pour le moteur NATS. Valeurs possibles : default (une exception sera levée en cas d’échec de l’analyse d’un message), stream (le message d’exception et le message brut seront enregistrés dans les colonnes virtuelles `_error` et `_raw_message`).
 
 Connexion SSL :
 
 Pour une connexion sécurisée, utilisez `nats_secure = 1`.
-La vérification du certificat est contrôlée par la variable d&#39;environnement `CLICKHOUSE_NATS_TLS_SECURE` ;
-Si le certificat est expiré, autosigné, manquant ou autrement invalide, désactivez la vérification en définissant `CLICKHOUSE_NATS_TLS_SECURE=0`.
+La vérification du certificat est contrôlée par la variable d’environnement `CLICKHOUSE_NATS_TLS_SECURE` ;
+Si le certificat est expiré, auto-signé, manquant ou invalide pour une autre raison, désactivez la vérification en définissant `CLICKHOUSE_NATS_TLS_SECURE=0`.
 
-Écriture dans la table NATS :
+Écriture dans une table NATS :
 
-Si la table lit uniquement à partir d&#39;un seul sujet, toute insertion sera publiée sur ce même sujet.
-Cependant, si la table lit à partir de plusieurs sujets, nous devons préciser sur quel sujet nous voulons publier.
-C&#39;est pourquoi, lors d&#39;une insertion dans une table avec plusieurs sujets, le paramètre `stream_like_engine_insert_queue` est nécessaire.
-Vous pouvez sélectionner l&#39;un des sujets depuis lesquels la table lit et y publier vos données. Par exemple :
+Si la table lit depuis un seul sujet, tout insert publiera vers ce même sujet.
+En revanche, si la table lit depuis plusieurs sujets, il faut préciser vers quel sujet nous souhaitons publier.
+C’est pourquoi, lors de l’insertion dans une table comportant plusieurs sujets, le paramètre `stream_like_engine_insert_queue` est nécessaire.
+Vous pouvez sélectionner l’un des sujets depuis lesquels la table lit et y publier vos données. Par exemple :
 
 ```sql
 CREATE TABLE queue (
@@ -118,8 +122,8 @@ CREATE TABLE queue (
              date_time_input_format = 'best_effort';
 ```
 
-La configuration du serveur NATS peut être ajoutée dans le fichier de configuration de ClickHouse.
-Plus précisément, vous pouvez y ajouter votre mot de passe pour le moteur NATS :
+Vous pouvez ajouter la configuration du serveur NATS à l’aide du fichier de configuration ClickHouse.
+Plus précisément, vous pouvez ajouter votre mot de passe pour le moteur NATS :
 
 ```xml
 <nats>
@@ -193,7 +197,7 @@ Le moteur NATS prend en charge tous les [formats](/fr/reference/formats/index) p
 Le nombre de lignes dans un message NATS dépend du fait que le format soit basé sur des lignes ou sur des blocs :
 
 * Pour les formats basés sur des lignes, le nombre de lignes dans un message NATS peut être contrôlé en définissant `nats_max_rows_per_message`.
-* Pour les formats basés sur des blocs, il n’est pas possible de diviser un bloc en parties plus petites, mais le nombre de lignes dans un bloc peut être contrôlé par le paramètre général [max&#95;block&#95;size](/fr/reference/settings/session-settings#max_block_size).
+* Pour les formats basés sur des blocs, il n’est pas possible de diviser un bloc en parties plus petites, mais le nombre de lignes dans un bloc peut être contrôlé par le paramètre général [max&#95;block&#95;size](/fr/reference/settings/session-settings/max#max_block_size).
 
 <div id="using-jetstream">
   ## Utilisation de JetStream
@@ -236,7 +240,7 @@ Avant d’utiliser le moteur NATS avec NATS JetStream, vous devez créer un stre
                 Direct Get: true
          Allows Msg Delete: true
               Allows Purge: true
-    Allows Per-Message TTL: false
+  Allows Per-Message TTL: false
             Allows Rollups: false
 
   Limits:
@@ -287,7 +291,7 @@ Avant d’utiliser le moteur NATS avec NATS JetStream, vous devez créer un stre
 
   State:
 
-    Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
+  Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
       Acknowledgment Floor: Consumer sequence: 0 Stream sequence: 0
           Outstanding Acks: 0 out of maximum 1,000
       Redelivered Messages: 0
@@ -296,7 +300,7 @@ Avant d’utiliser le moteur NATS avec NATS JetStream, vous devez créer un stre
   ```
 </Accordion>
 
-Après avoir créé le stream et le durable pull consommateur, nous pouvons créer une table avec le moteur NATS. Pour cela, vous devez renseigner : nats&#95;stream, nats&#95;consumer&#95;name et nats&#95;subjects :
+Après avoir créé le stream et le durable pull consommateur, nous pouvons créer une table avec le moteur NATS. Pour cela, vous devez renseigner : nats&#95;stream, nats&#95;consumer&#95;name et nats&#95;subjects:
 
 ```SQL
 CREATE TABLE nats_jet_stream (
@@ -309,5 +313,7 @@ CREATE TABLE nats_jet_stream (
               nats_subjects = 'stream_subject',
               nats_format = 'JSONEachRow';
 ```
+
+Les tables JetStream garantissent une livraison au moins une fois : un message n’est acquitté qu’après avoir été inséré dans les vues matérialisées dépendantes. Ainsi, un message dont l’insertion échoue ou est interrompue reste non acquitté et est livré à nouveau. NATS Core (sans JetStream) ne prend en charge ni les accusés de réception ni la relecture ; il garantit donc une livraison au plus une fois, et un message interrompu est perdu.
 
 {/*AUTOGENERATED_END*/}

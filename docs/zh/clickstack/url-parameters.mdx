@@ -1,0 +1,284 @@
+---
+slug: /use-cases/observability/clickstack/url-parameters
+title: '深度链接'
+sidebarTitle: '深度链接'
+description: '使用 URL 查询参数直接链接到 ClickStack 页面'
+doc_type: 'reference'
+keywords: ['ClickStack', 'URL 参数', '查询参数', '深度链接', '永久链接', 'HyperDX']
+---
+
+您可以通过 URL 查询参数使用深度链接打开 ClickStack 页面，从外部系统 (如告警通知、运行手册、CI 作业或聊天消息) 直接跳转到特定搜索、仪表盘或面板。
+
+本页示例使用 `<YOUR_CLICKSTACK_URL>`。请将其替换为您的 ClickStack URL：例如，本地开源部署可使用 `http://localhost:8080`，ClickHouse Cloud 中的托管 ClickStack 可使用 `https://hyperdx.clickhouse.cloud`。
+
+<Note>
+  为便于阅读，示例中的查询参数未经 URL 编码。以编程方式构造链接时，请对每个查询参数值进行 URL 编码。
+</Note>
+
+<Info>
+  **托管 ClickStack 服务 ID 参数**
+
+  在 ClickHouse Cloud 中使用托管 ClickStack 时，若通过链接访问的已验证用户有权使用多个 ClickHouse Cloud 服务，链接应包含 `?chcServiceId=` 参数，以指定要加载的 ClickHouse Cloud 服务。
+
+  示例：在特定 Cloud 服务中打开搜索
+
+  ```text
+  https://hyperdx.clickhouse.cloud/search?chcServiceId=abc123
+  ```
+</Info>
+
+<div id="search">
+  ## 搜索 — `/search`
+</div>
+
+主要的日志/trace 搜索视图。有关搜索语法的详细信息，请参阅[搜索](/zh/clickstack/features/search)。
+
+| 参数              | 格式                                                                         | 描述                                                              |
+| --------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `source`        | string                                                                     | 要搜索的数据源——可接受数据源 ID 或数据源**名称** (例如 `Logs`) 。此页面仅支持日志和 trace 数据源。 |
+| `where`         | string                                                                     | 过滤查询文本，可使用 Lucene 或 SQL 语法 (请参阅 `whereLanguage`) 。              |
+| `whereLanguage` | `lucene` | `sql`                                                           | `where` 所使用的查询语言。                                               |
+| `select`        | string                                                                     | 要在结果表中显示的 SQL 列/表达式列表。                                          |
+| `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | 除 `where` 外额外应用的结构化分面过滤器。                                       |
+| `orderBy`       | string                                                                     | 结果表的 SQL 排序表达式。                                                 |
+| `mode`          | `results` | `delta` | `pattern`                                            | 当前启用的分析模式。`delta` 仅适用于链路追踪数据源。                                  |
+| `isLive`        | `true` | `false`                                                           | 是否启用实时尾随 (默认为 `true`) 。                                         |
+| `traceId`       | string                                                                     | 直接跳转到指定 trace ID 的 trace 瀑布视图。                                 |
+| `from`, `to`    | 纪元毫秒                                                                       | 绝对时间范围。若省略，默认为最近 15 分钟。                                         |
+
+也可通过 `/search/<savedSearchId>` 直接打开已保存的搜索。
+
+<div id="example-search-errors">
+  ### 示例：在指定时间范围内搜索 `Logs` 源中 `checkout` 服务的错误
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/search?source=Logs&from=1735689600000&to=1735693200000&where=level:error&filters=[{"type":"sql","condition":"ServiceName IN ('checkout')"}]
+```
+
+<div id="example-search-trace">
+  ### 示例：直接跳转到 trace 的瀑布视图
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/search?source=Traces&traceId=ba7217967eb90d040b7eb39f97ecc5c4
+```
+
+<div id="saved-searches">
+  ## 已保存的搜索 — `/search/list`
+</div>
+
+已保存搜索的列表。
+
+| 参数    | 格式     | 描述              |
+| ----- | ------ | --------------- |
+| `tag` | string | 仅显示带有此标签的已保存搜索。 |
+
+<div id="example-saved-searches-tag">
+  ### 示例：列出带有 `production` 标签的已保存搜索
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/search/list?tag=production
+```
+
+<div id="dashboards">
+  ## 仪表盘 — `/dashboards/<dashboardId>`
+</div>
+
+已保存的仪表盘。省略 `<dashboardId>` (`/dashboards`) 可打开一个临时的未保存仪表盘。有关创建仪表盘的详细信息，请参阅[仪表盘](/zh/clickstack/features/dashboards/overview)。
+
+| 参数                  | 格式                                                                                                                                  | 描述                                             |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `from`, `to`        | 纪元毫秒                                                                                                                                | 应用于所有卡片的时间范围。若省略，默认为最近 15 分钟。                  |
+| `where`             | 字符串                                                                                                                                 | 应用于所有卡片的仪表盘级过滤器查询文本。                           |
+| `whereLanguage`     | `lucene` | `sql`                                                                                                                    | 编写 `where` 时使用的查询语言。                           |
+| `filters`           | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]`                                                          | 结构化仪表盘过滤器配置值，用于在 `ServiceName` 过滤器下拉列表中选择两个项目。 |
+| `granularity`       | `auto` | `30 second` | `1 minute` | `5 minute` | `10 minute` | `15 minute` | `30 minute` | `1 hour` | `12 hour` | `1 day` | `7 day` | 时间序列卡片的分桶大小。`auto` 会根据所选时间范围选择分桶大小。            |
+| `highlightedTileId` | 字符串                                                                                                                                 | 滚动到并突出显示指定卡片——从告警跳转时非常有用。                 |
+
+<div id="example-dashboard-highlight">
+  ### 示例：打开指定时间范围的仪表盘，并高亮显示某个卡片
+</div>
+
+适用于从告警通知直接跳转到触发该告警的卡片。
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/64f1c2a1e8b9f3a1b0d2e5c7?from=1735689600000&to=1735693200000&highlightedTileId=chart-1
+```
+
+<div id="dashboards-list">
+  ## 仪表盘列表 — `/dashboards/list`
+</div>
+
+| 参数    | 格式     | 描述          |
+| ----- | ------ | ----------- |
+| `tag` | string | 按标签筛选仪表盘列表。 |
+
+<div id="example-dashboards-list-tag">
+  ### 示例：列出标有 `infra` 标签的仪表盘
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/dashboards/list?tag=infra
+```
+
+<div id="chart-explorer">
+  ## Chart Explorer — `/chart`
+</div>
+
+用于临时创建和共享图表的构建器。
+
+| 参数           | 格式   | 描述                                                           |
+| ------------ | ---- | ------------------------------------------------------------ |
+| `config`     | JSON | 完整的图表配置 (source、select、where、图表类型等) 。通常由应用内的“共享”链接生成，而非手动编写。 |
+| `from`, `to` | 纪元毫秒 | 时间范围。省略时，默认使用最近 15 分钟。                                       |
+
+<div id="example-chart-config">
+  ### 示例：打开指定时间范围内的 p99 延迟图表配置
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/chart?granularity=auto&from=1785759381784&to=1785762981785&config={"name":"","select":[{"aggFn":"quantile","aggCondition":"","aggConditionLanguage":"lucene","valueExpression":"Duration","level":0.99,"alias":"p99"}],"where":"","whereLanguage":"lucene","displayType":"line","alignDateRangeToGranularity":true,"source":"68814eb5d40a9d0449afc1f2","connection":"68814b6fd40a9d0449afbe78","groupBy":"ServiceName"}
+```
+
+<div id="alerts">
+  ## 告警 — `/alerts`
+</div>
+
+有关创建和管理告警的详细信息，请参阅[告警](/zh/clickstack/features/alerts)。
+
+| 参数        | 格式     | 描述              |
+| --------- | ------ | --------------- |
+| `search`  | string | 按告警名称或描述进行全文过滤。 |
+| `tag`     | string | 按标签过滤。          |
+| `creator` | string | 按告警创建者名称过滤。     |
+
+<div id="example-alerts-filter">
+  ### 示例：列出带有 `on-call` 标签的告警
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/alerts?tag=on-call
+```
+
+<div id="session-replay">
+  ## 会话回放 — `/sessions`
+</div>
+
+浏览和播放会话回放。有关功能详情，请参阅[会话回放](/zh/clickstack/features/session-replay)。
+
+| 参数              | 格式               | 描述                          |
+| --------------- | ---------------- | --------------------------- |
+| `sessionSource` | string           | 会话源 ID 或名称。                 |
+| `where`         | string           | 用于筛选会话列表的查询文本。              |
+| `whereLanguage` | `lucene` | `sql` | `where` 所用的查询语言。            |
+| `from`, `to`    | 纪元毫秒             | 会话列表的时间范围。若省略，默认为最近 15 分钟。  |
+| `sid`           | string           | 通过 ID 打开指定会话。               |
+| `sfrom`, `sto`  | 纪元毫秒             | 已打开会话的时间窗口 (与 `sid` 配合使用) 。 |
+
+<div id="example-sessions-time-range">
+  ### 示例：在指定时间范围内浏览会话回放
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/sessions?from=1735689600000&to=1735693200000
+```
+
+<div id="example-sessions-open">
+  ### 示例：在录制时段打开指定的会话回放
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/sessions?sid=6712abf0e4b0f2a1c3d4e5f6&sfrom=1735689600000&sto=1735690200000
+```
+
+<div id="service-map">
+  ## 服务地图 — `/service-map`
+</div>
+
+功能详情请参阅[服务地图](/zh/clickstack/service-maps)。
+
+| 参数               | 格式      | 说明                                                   |
+| ---------------- | ------- | ---------------------------------------------------- |
+| `source`         | string  | 链路追踪数据源 ID 或名称。                                      |
+| `samplingFactor` | integer | 链路追踪采样除数 (`1` = 100% 的链路追踪，`2` = 50%，`4` = 25%，等等) 。 |
+| `from`, `to`     | 纪元毫秒    | 时间范围。省略时默认为最近 15 分钟。                                 |
+
+<div id="example-service-map">
+  ### 示例：查看指定时间范围内的服务地图
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/service-map?from=1735689600000&to=1735693200000
+```
+
+<div id="services">
+  ## 服务 — `/services`
+</div>
+
+按服务查看 HTTP、数据库和错误仪表盘。
+
+| 参数              | 格式                                                                         | 描述                              |
+| --------------- | -------------------------------------------------------------------------- | ------------------------------- |
+| `tab`           | `http` | `database` | `errors`                                             | 显示的服务仪表盘子选项卡。默认值：`http`         |
+| `source`        | string                                                                     | 链路追踪数据源 ID。                     |
+| `service`       | string                                                                     | 所选服务名称。                         |
+| `where`         | string                                                                     | 过滤查询文本。                         |
+| `whereLanguage` | `lucene` | `sql`                                                           | `where` 所用的查询语言 (本页默认为 `sql`) 。 |
+| `filters`       | `{"type":"sql","condition":"<column> IN ('<value1>', '<value2>', ...)"}[]` | 仪表盘过滤栏配置值。                      |
+| `from`, `to`    | 纪元毫秒                                                                       | 时间范围。如未指定，默认为最近 15 分钟。          |
+
+<div id="example-services-database">
+  ### 示例：查看服务在指定时间范围内的数据库仪表板
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/services?tab=database&service=checkout&from=1735689600000&to=1735693200000
+```
+
+<div id="example-services-errors">
+  ### 示例：查看服务的错误仪表板
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/services?tab=errors&service=payments
+```
+
+<div id="kubernetes">
+  ## Kubernetes — `/kubernetes`
+</div>
+
+| 参数                                     | 格式                             | 描述                                  |
+| -------------------------------------- | ------------------------------ | ----------------------------------- |
+| `logSource`, `metricSource`            | string                         | 日志和指标数据源 ID。仅提供其中一个时，另一个默认使用关联的数据源。 |
+| `tab`                                  | 例如 `pods`、`nodes`、`namespaces` | 当前活动的子视图。                           |
+| `q`                                    | string                         | 资源列表的 Lucene 查询。                    |
+| `podName`, `nodeName`, `namespaceName` | string                         | 打开特定 pod (容器组) 、节点或命名空间的详情面板。       |
+| `from`, `to`                           | 纪元毫秒                           | 时间范围。省略时，默认为最近 15 分钟。               |
+
+<div id="example-kubernetes-pod">
+  ### 示例：打开特定 pod (容器组) 的详情面板
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/kubernetes?tab=pods&podName=checkout-7d9f8b5c-2xk9p
+```
+
+<div id="notebooks">
+  ## 笔记本 — `/notebook/<notebookId>`
+</div>
+
+<Info>
+  **仅适用于托管 ClickStack**
+
+  笔记本仅在托管 ClickStack 部署中可用。有关该功能的详细信息，请参阅 [AI Notebooks](/zh/clickstack/notebooks)。
+</Info>
+
+<div id="example-notebook-open">
+  ### 示例：在指定的 Cloud 服务中打开特定 notebook
+</div>
+
+```text
+<YOUR_CLICKSTACK_URL>/notebook/64f1c2a1e8b9f3a1b0d2e5c7?chcServiceId=abc123
+```

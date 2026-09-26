@@ -1,5 +1,6 @@
 #pragma once
 
+#include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Interpreters/FileCache/Guards.h>
@@ -128,7 +129,7 @@ public:
 
     DownloaderId getDownloader() const;
 
-    State wait(size_t offset, size_t timeout_ms = 60000);
+    State wait(size_t offset, size_t timeout_ms);
 
     bool isDownloaded() const;
 
@@ -199,6 +200,10 @@ public:
     static void complete(FileSegmentPtr && file_segment, bool allow_background_download, bool force_shrink_to_downloaded_size);
 
     void completePartAndResetDownloader();
+
+    /// Wake the `wait`ers after the downloader moves the write offset forward. Keep the downloader role
+    /// and the state unchanged. Example waiter: a reader that streams a partially-downloaded prefix.
+    void notifyDownloadProgress();
 
     void resetDownloader();
 
@@ -373,6 +378,11 @@ struct FileSegmentsHolder final : private boost::noncopyable
 
     void reset();
 
+    /// Move the first segment into its own new holder and return it, leaving the rest in this one.
+    /// The hold gauge is unchanged (ownership transfers); the returned holder completes its segment
+    /// on destruction. Used by the ReaderExecutor cache to hand one segment to each reader/writer.
+    std::shared_ptr<FileSegmentsHolder> popHolder();
+
 private:
     FileSegments file_segments{};
 
@@ -380,6 +390,7 @@ private:
 };
 
 using FileSegmentsHolderPtr = std::unique_ptr<FileSegmentsHolder>;
+using FileSegmentsHolderSharedPtr = std::shared_ptr<FileSegmentsHolder>;
 
 String toString(const FileSegments & file_segments, bool with_state = false);
 
