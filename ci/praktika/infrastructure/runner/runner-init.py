@@ -41,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 77
+    version: int = 78
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -70,6 +70,7 @@ class RunnerConfig:
     free_blocks_threshold_percent: int = 5
 
     RUNNER_VERSION_LABEL = "runner-init version"
+    LOW_DISK_SPACE_LABEL = "runner-init low disk space"
 
     def __post_init__(self):
         self.runner_url = f"https://github.com/{self.runner_org}"
@@ -242,6 +243,10 @@ class Runner:
         if self.total_errors > config.max_total_errors:
             self.collect_logs("configure")
             raise Exception(f"Too many errors ({self.total_errors})")
+
+        # Checked before every job on all runners, including macOS: a host that
+        # boots still full has to refuse the next job, not just the one after it.
+        Runner.check_free_disk_space()
 
         if config.init_environment == Environment.MACOS:
             self._exit_if_init_script_upgraded()
@@ -449,23 +454,36 @@ class Runner:
             return
 
     @staticmethod
-    def check_post_run() -> None:
-        if config.init_environment == Environment.MACOS:
-            return
-        result = subprocess.run(["df", "/"], capture_output=True, text=True, check=True)
+    def check_free_disk_space() -> None:
+        # `-k` pins the unit to 1 KiB so `free_blocks_threshold` means the same
+        # everywhere: BSD `df` (macOS) reports 512-byte blocks by default, and
+        # GNU `df` switches to 512 under `POSIXLY_CORRECT` or `$BLOCKSIZE`.
+        result = subprocess.run(
+            ["df", "-k", "/"], capture_output=True, text=True, check=True
+        )
         if config.verbose:
-            log(f"df / output:\n{result.stdout}", "post-run")
+            log(f"df -k / output:\n{result.stdout}", "disk-space")
         last = result.stdout.splitlines()[-1].split()
 
         free_blocks = int(last[3])
         free_percent = int(last[3]) * 100 // int(last[1])
 
+        error = None
         if free_blocks < config.free_blocks_threshold:
-            raise RuntimeError(f"Out of disk space: {free_blocks} blocks on rootfs")
-        if free_percent < config.free_blocks_threshold_percent:
-            raise RuntimeError(
-                f"Out of disk space: {free_percent}% of free space on rootfs"
-            )
+            error = f"Out of disk space: {free_blocks} blocks on rootfs"
+        elif free_percent < config.free_blocks_threshold_percent:
+            error = f"Out of disk space: {free_percent}% of free space on rootfs"
+        if error:
+            log(f"{config.LOW_DISK_SPACE_LABEL}: {error}\n{result.stdout.strip()}", "disk-space")
+            raise RuntimeError(error)
+
+    @staticmethod
+    def check_post_run() -> None:
+        Runner.check_free_disk_space()
+
+        # Docker is not installed on the macOS runners
+        if config.init_environment == Environment.MACOS:
+            return
 
         run_bash(
             """
