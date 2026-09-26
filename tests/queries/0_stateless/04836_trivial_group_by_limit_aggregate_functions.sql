@@ -17,6 +17,8 @@
 -- inert (the tables are bounded by the key space; see the last query).
 
 SET optimize_trivial_group_by_limit_query = 1;
+-- The `GROUP BY` top-K heap takes this shape over from the kept-keys cutoff wherever it applies.
+SET enable_group_by_top_k_optimization = 0;
 SET max_threads = 16;
 SET max_block_size = 1000;
 

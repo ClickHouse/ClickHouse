@@ -5095,9 +5095,9 @@ Enables or disables the optimization of a trivial query `SELECT ... FROM table G
 
 With no aggregate functions in the projection, the cap is applied by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'` (this form also applies on the shards of distributed queries). With aggregate functions in the projection, the cap is applied only when the server performs the complete aggregation locally: once any aggregation thread exceeds the cap, all threads are restricted to a single shared set of `n + offset` kept keys, so the aggregate values of the returned keys stay exact.
 
-The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), and when the user has already set a tighter `max_rows_to_group_by`.
+The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), when the user has already set a tighter `max_rows_to_group_by`, and with [exact_rows_before_limit](#exact_rows_before_limit) (the cap would make `rows_before_limit_at_least` report at most `n + offset`).
 
-The aggregate-function form excludes the `GROUP BY` top-K heap of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization) on the same query, so the two are arbitrated by the key types: the cutoff is applied when all keys are fixed-width values (numbers, dates, `UUID`, `IPv4`/`IPv6`, enums, decimals, also `Nullable` and `LowCardinality` of them), where it is several times faster; `String`-like keys are left to the top-K heap when it applies (it does not apply when `max_rows_to_group_by` is set), because it is faster on them.
+The aggregate-function form excludes the `GROUP BY` top-K heap of [enable_group_by_top_k_optimization](#enable_group_by_top_k_optimization) on the same query. The heap is faster, so the cutoff is applied only when the heap does not apply: when it is disabled, when `n + offset` exceeds [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization), when `max_rows_to_group_by` is set, or when the query plan is serialized.
 
 Possible values:
 

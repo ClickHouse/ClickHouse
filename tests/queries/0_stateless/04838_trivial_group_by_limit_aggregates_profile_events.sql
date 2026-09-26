@@ -16,6 +16,8 @@
 -- `enable_analyzer = 1` is pinned because the aggregate cutoff is armed by the planner of
 -- the analyzer; with the old analyzer the events never fire.
 SET enable_analyzer = 1;
+-- The `GROUP BY` top-K heap takes this shape over from the kept-keys cutoff wherever it applies.
+SET enable_group_by_top_k_optimization = 0;
 
 SELECT toUInt64(number) AS k, count() AS c, sum(number) AS s FROM numbers_mt(1000000) GROUP BY k LIMIT 5 FORMAT Null
 SETTINGS optimize_trivial_group_by_limit_query = 1, max_threads = 4, max_block_size = 8192,

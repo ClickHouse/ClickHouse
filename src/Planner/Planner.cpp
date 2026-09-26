@@ -78,7 +78,6 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TrivialGroupByLimit.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/AggregationUtils.h>
@@ -934,14 +933,13 @@ void applyTopKPushdownToPartialAggregation(
 /// The `GROUP BY` top-K heap (`enable_group_by_top_k_optimization`) and the shared kept-keys
 /// cutoff target the same `GROUP BY ... LIMIT n` shape and exclude each other: both top-K entry
 /// points (`applyTopKPushdownToPartialAggregation` and `tryOptimizeGroupByTopK`) bail out on
-/// `max_rows_to_group_by > 0`, so arming the cutoff takes the heap away from the query. The CI
-/// performance comparison shows which one should win depends on the keys: the cutoff is 7-9x
-/// faster on numerous fixed-width keys (`GROUP BY number % 100000000 LIMIT 10`, `uniq(number)
-/// GROUP BY number LIMIT 100`), where the heap's per-row eviction dominates, and 11-16% slower
-/// on high-cardinality `String` keys (`GROUP BY URL LIMIT 10`, ClickBench Q17), where the
-/// row-by-row lookup path the aggregation runs on after the cap costs more than the heap.
+/// `max_rows_to_group_by > 0`, so arming the cutoff takes the heap away from the query. Measured
+/// head to head on the same build, the heap is as fast or faster on every key type: 1.4-1.6x on
+/// `GROUP BY number % 100000000 LIMIT 10` (CI performance comparison), up to 1.3x on `String`
+/// and `LowCardinality(Nullable(UInt64))` keys. So the cutoff only serves the queries the heap
+/// does not apply to.
 /// Returns true when the heap would apply to this query and should be left in charge.
-bool preferGroupByTopKOverKeptKeysCutoff(const Settings & settings, UInt64 limit, const Names & keys, const Block & header)
+bool preferGroupByTopKOverKeptKeysCutoff(const Settings & settings, UInt64 limit)
 {
     if (!settings[Setting::enable_group_by_top_k_optimization])
         return false;
@@ -963,17 +961,7 @@ bool preferGroupByTopKOverKeptKeysCutoff(const Settings & settings, UInt64 limit
     if (limit > Aggregator::Params::TopKParams::max_k)
         return false;
 
-    /// Fixed-width keys hash and compare cheaply and are aggregated by the fixed-size hash map
-    /// methods, where the cutoff wins. Anything else (`String`, `FixedString`, arrays, tuples,
-    /// their `LowCardinality` and `Nullable` forms) goes through the string or serialized
-    /// methods, where the heap wins.
-    for (const auto & key : keys)
-    {
-        if (!removeNullable(header.getByName(key).type)->isValueRepresentedByNumber())
-            return true;
-    }
-
-    return false;
+    return true;
 }
 
 void addAggregationStep(QueryPlan & query_plan,
@@ -2975,10 +2963,8 @@ void Planner::buildPlanForQueryNode()
                         || (user_max_rows == *trivial_group_by_limit && query_settings[Setting::group_by_overflow_mode] != OverflowMode::ANY)))
                     trivial_group_by_limit.reset();
 
-                /// Leave the `GROUP BY` top-K heap in charge of the shapes where it is faster.
-                if (trivial_group_by_limit
-                    && preferGroupByTopKOverKeptKeysCutoff(
-                        query_settings, *trivial_group_by_limit, aggregation_analysis_result.aggregation_keys, *query_plan.getCurrentHeader()))
+                /// Leave the `GROUP BY` top-K heap in charge wherever it applies: it is faster.
+                if (trivial_group_by_limit && preferGroupByTopKOverKeptKeysCutoff(query_settings, *trivial_group_by_limit))
                     trivial_group_by_limit.reset();
             }
 

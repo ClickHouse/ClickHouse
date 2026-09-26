@@ -13,6 +13,8 @@
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET optimize_trivial_group_by_limit_query = 1;
+-- The `GROUP BY` top-K heap takes this shape over from the kept-keys cutoff wherever it applies.
+SET enable_group_by_top_k_optimization = 0;
 
 -- A single aggregating stream, converted to a two-level table and spilling as soon as the
 -- aggregation starts, so that every block consumed after the cap goes through a flush and a

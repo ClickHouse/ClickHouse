@@ -4,6 +4,9 @@
 -- cutoff must restrict them the same way. The values of the kept keys must match the
 -- full aggregation exactly.
 
+-- The `GROUP BY` top-K heap takes this shape over from the kept-keys cutoff wherever it applies.
+SET enable_group_by_top_k_optimization = 0;
+
 DROP TABLE IF EXISTS t_04839;
 
 CREATE TABLE t_04839
