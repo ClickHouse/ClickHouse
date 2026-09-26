@@ -1,4 +1,4 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-parallel
 
 -- Test for query condition cache correctness with CTE constant folding.
 -- When constants are folded from CTE expressions, different constant values must produce

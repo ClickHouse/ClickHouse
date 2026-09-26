@@ -178,10 +178,9 @@ ActionsDAG splitAndFillPrewhereInfo(
     return std::move(split_result.second);
 }
 
-/// Hash of `node` with aliases collapsed and column identifiers mapped to storage columns, as
-/// `ReadFromMergeTree::applyFilters` does, so it does not depend on the renames the node reads through.
-static std::optional<UInt64> getNormalizedHash(
-    const ActionsDAG::Node * node, const std::unordered_map<std::string, ColumnWithTypeAndName> & node_name_to_input_node_column)
+/// Hash of `node` with aliases collapsed and function names re-derived from their children,
+/// so it does not depend on the names the node reads through.
+static std::optional<UInt64> getNormalizedHash(const ActionsDAG::Node * node)
 {
     try
     {
@@ -190,7 +189,7 @@ static std::optional<UInt64> getNormalizedHash(
             if (dag_node.type == ActionsDAG::ActionType::ARRAY_JOIN || dag_node.type == ActionsDAG::ActionType::PLACEHOLDER)
                 return {};
 
-        auto normalized = ActionsDAG::buildFilterActionsDAG(dag.getOutputs(), node_name_to_input_node_column);
+        auto normalized = ActionsDAG::buildFilterActionsDAG(dag.getOutputs(), {});
         if (!normalized || normalized->getOutputs().size() != 1)
             return {};
         return normalized->getOutputs()[0]->getHash();
@@ -222,10 +221,9 @@ static void setQueryConditionCacheAttribution(
     if (condition_root.type != ActionsDAG::ActionType::FUNCTION || condition_root.function_base->getName() != "and")
         return;
 
-    auto node_name_to_input_node_column = query_info.buildNodeNameToInputNodeColumn();
     std::unordered_set<UInt64> filter_atom_hashes;
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(outputs.front()))
-        if (auto hash = getNormalizedHash(atom, node_name_to_input_node_column))
+        if (auto hash = getNormalizedHash(atom))
             filter_atom_hashes.insert(*hash);
 
     std::vector<UInt64> conjunct_hashes;
@@ -233,7 +231,7 @@ static void setQueryConditionCacheAttribution(
     {
         if (!VirtualColumnUtils::isDeterministic(conjunct))
             break;
-        auto hash = getNormalizedHash(conjunct, node_name_to_input_node_column);
+        auto hash = getNormalizedHash(conjunct);
         if (!hash || !filter_atom_hashes.contains(*hash))
             break;
         conjunct_hashes.push_back(conjunct->getHash());

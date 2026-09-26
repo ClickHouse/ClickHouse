@@ -16,6 +16,8 @@ DROP TABLE IF EXISTS build;
 DROP TABLE IF EXISTS widened;
 DROP TABLE IF EXISTS probe_small_key;
 DROP TABLE IF EXISTS build_small_key;
+DROP TABLE IF EXISTS collide;
+DROP TABLE IF EXISTS collide_build;
 
 -- The join key `k` is not in the sorting key, so only the query condition cache can skip granules of
 -- `probe`. Each arm below uses its own IN list, so each arm has its own cache entries.
@@ -82,6 +84,18 @@ SETTINGS query_plan_convert_outer_join_to_inner_join = 1, enable_join_runtime_fi
 SELECT count() FROM widened WHERE v > 5 SETTINGS use_query_condition_cache = 1;
 SELECT count() FROM widened WHERE v > 5 SETTINGS use_query_condition_cache = 0;
 
+SELECT 'a column named like the qualified name of another column';
+-- A column named like the qualified name of another column must not share its cache verdicts.
+CREATE TABLE collide (k UInt64, `__table1.k` UInt64, pad String) ENGINE = MergeTree ORDER BY tuple()
+SETTINGS index_granularity = 128, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO collide SELECT number, 20000 - number, repeat('x', 16) FROM numbers(20000);
+CREATE TABLE collide_build (k UInt64) ENGINE = Memory;
+INSERT INTO collide_build VALUES (1), (2), (19998), (19999);
+SELECT count() FROM collide AS a INNER JOIN collide_build AS b ON a.k = b.k WHERE a.`__table1.k` IN (1, 2) AND b.k IN (1, 2);
+SELECT count() FROM collide AS a INNER JOIN collide_build AS b ON a.k = b.k WHERE a.k IN (1, 2) AND b.k IN (1, 2);
+SELECT count() FROM collide AS a INNER JOIN collide_build AS b ON a.k = b.k WHERE a.k IN (1, 2) AND b.k IN (1, 2)
+SETTINGS use_query_condition_cache = 0;
+
 SELECT 'explicit PREWHERE extended by push-down';
 SELECT count(), sum(length(p.pad)) FROM probe AS p INNER JOIN build AS b ON p.k = b.k PREWHERE p.pad != '' WHERE p.k IN (100, 5006, 12345)
 SETTINGS optimize_prewhere_after_pushdown = 1;
@@ -93,9 +107,11 @@ SETTINGS optimize_prewhere_after_pushdown = 1, use_query_condition_cache = 0;
 SELECT 'runtime filters of a multi-key join and of an ANTI join';
 SELECT count(), sum(length(p.pad)) FROM probe AS p INNER JOIN build AS b ON p.k = b.k AND p.pad = b.pad WHERE p.k IN (100, 5000, 12352, 13);
 SELECT count(), sum(length(p.pad)) FROM probe AS p INNER JOIN build AS b ON p.k = b.k AND p.pad = b.pad WHERE p.k IN (100, 5000, 12352, 13);
-SELECT count(), sum(length(p.pad)) FROM probe AS p LEFT ANTI JOIN build AS b ON p.k = b.k WHERE p.k IN (100, 5000, 12352, 13);
-SELECT count(), sum(length(p.pad)) FROM probe AS p LEFT ANTI JOIN build AS b ON p.k = b.k WHERE p.k IN (100, 5000, 12352, 13);
-SELECT count(), sum(length(p.pad)) FROM probe AS p LEFT ANTI JOIN build AS b ON p.k = b.k WHERE p.k IN (100, 5000, 12352, 13)
+SELECT count(), sum(length(p.pad)) FROM probe AS p LEFT ANTI JOIN build AS b ON p.k = b.k WHERE p.k IN (101, 5002, 12353, 14)
+SETTINGS log_comment = 'qcc_anti_1';
+SELECT count(), sum(length(p.pad)) FROM probe AS p LEFT ANTI JOIN build AS b ON p.k = b.k WHERE p.k IN (101, 5002, 12353, 14)
+SETTINGS log_comment = 'qcc_anti_2';
+SELECT count(), sum(length(p.pad)) FROM probe AS p LEFT ANTI JOIN build AS b ON p.k = b.k WHERE p.k IN (101, 5002, 12353, 14)
 SETTINGS use_query_condition_cache = 0;
 
 SELECT 'a PREWHERE read in a single step records nothing';
@@ -118,7 +134,7 @@ SETTINGS use_query_condition_cache = 0;
 
 SELECT 'query condition cache hits and pruned reads';
 SYSTEM FLUSH LOGS query_log;
-SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0 AS hit, read_rows < 20000 AS pruned
+SELECT log_comment, ProfileEvents['QueryConditionCacheHits'] > 0 AS hit, read_rows < 1000 AS pruned
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
     AND current_database = currentDatabase() AND log_comment LIKE 'qcc\_%'
@@ -129,3 +145,5 @@ DROP TABLE build;
 DROP TABLE widened;
 DROP TABLE probe_small_key;
 DROP TABLE build_small_key;
+DROP TABLE collide;
+DROP TABLE collide_build;

@@ -22,6 +22,10 @@ a condition widened after index analysis is not attributed
 0	0	0
 194
 194
+a column named like the qualified name of another column
+0
+2
+2
 explicit PREWHERE extended by push-down
 2	32
 2	32
@@ -29,9 +33,9 @@ explicit PREWHERE extended by push-down
 runtime filters of a multi-key join and of an ANTI join
 3	48
 3	48
-1	16
-1	16
-1	16
+3	48
+3	48
+3	48
 a PREWHERE read in a single step records nothing
 3	48
 3	48
@@ -40,6 +44,8 @@ a runtime filter ordered before the static condition
 4	64
 4	64
 query condition cache hits and pruned reads
+qcc_anti_1	0	0
+qcc_anti_2	1	1
 qcc_no_cache	0	0
 qcc_no_join_1	0	0
 qcc_no_join_2	1	1
