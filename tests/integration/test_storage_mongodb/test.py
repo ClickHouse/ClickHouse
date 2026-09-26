@@ -1497,3 +1497,43 @@ def test_url_validation(started_cluster):
     )
 
     assert node.query("SELECT COUNT() FROM url_validation_table") == "100\n"
+
+
+def test_handshake_metadata(started_cluster):
+    # ClickHouse identifies itself in the MongoDB connection handshake as a wrapping library
+    # (https://github.com/mongodb/specifications/blob/master/source/mongodb-handshake/handshake.md#wrapping-libraries),
+    # so that MongoDB server operators can tell ClickHouse connections apart in mongod/mongos logs.
+    mongo_connection = get_mongo_connection(started_cluster)
+    db = mongo_connection["test"]
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
+    drop_mongo_collection_if_exists(db, "handshake_metadata_table")
+    handshake_metadata_table = db["handshake_metadata_table"]
+    handshake_metadata_table.insert_many([{"key": i} for i in range(0, 10)])
+
+    node = started_cluster.instances["node"]
+    clickhouse_version = node.query("SELECT version()").strip()
+
+    node.query(
+        f"CREATE OR REPLACE TABLE handshake_metadata_table(key UInt64) ENGINE = MongoDB('mongo1', 'test', 'handshake_metadata_table', 'root', '{mongo_pass}')"
+    )
+    assert node.query("SELECT COUNT() FROM handshake_metadata_table") == "10\n"
+
+    # mongod logs the metadata received in the handshake of every new connection as a JSON line
+    # with `"msg": "client metadata"`. Other connections (e.g. from pymongo) are logged too, hence the sets.
+    driver_names = set()
+    driver_versions = set()
+    for line in started_cluster.get_container_logs("mongo1").splitlines():
+        if '"client metadata"' not in line:
+            continue
+        driver = json.loads(line)["attr"]["client"]["driver"]
+        driver_names.add(driver["name"])
+        driver_versions.add(driver["version"])
+
+    assert "mongoc / mongocxx / ClickHouse" in driver_names, driver_names
+    assert any(
+        version.endswith(f" / {clickhouse_version}") for version in driver_versions
+    ), driver_versions
+
+    node.query("DROP TABLE handshake_metadata_table")
+    handshake_metadata_table.drop()
