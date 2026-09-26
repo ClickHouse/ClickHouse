@@ -22,7 +22,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 للحصول على نظرة عامة سريعة على جميع الخيارات، يمكن العثور على قائمة كاملة بخيارات الإعداد [هنا](#all-yaml-options).
 
-## الإعدادات الشائعة {#common-settings}
+## الإعدادات الشائعة
 
 مثال على شاشة التهيئة:
 
@@ -55,7 +55,7 @@ secureJsonData:
 لاحظ أنه تُضاف خاصية `version` عند حفظ التهيئة من واجهة المستخدم. ويُظهر ذلك إصدار المكوّن الإضافي الذي حُفظت به التهيئة.
 
 <div id="http-protocol">
-  ### بروتوكول HTTP {#http-protocol}
+  ### بروتوكول HTTP
 </div>
 
 ستظهر إعدادات إضافية إذا اخترت الاتصال عبر بروتوكول HTTP.
@@ -63,7 +63,7 @@ secureJsonData:
 <Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="خيارات إعداد HTTP إضافية" border />
 
 <div id="http-path">
-  #### مسار HTTP {#http-path}
+  #### مسار HTTP
 </div>
 
 إذا كان خادم HTTP لديك مُتاحًا ضمن مسار URL مختلف، يمكنك إضافته هنا.
@@ -75,7 +75,7 @@ jsonData:
 ```
 
 <div id="custom-http-headers">
-  #### رؤوس HTTP مخصّصة {#custom-http-headers}
+  #### رؤوس HTTP مخصّصة
 </div>
 
 يمكنك إضافة رؤوس مخصّصة إلى الطلبات المُرسلة إلى الخادم لديك.
@@ -104,7 +104,7 @@ secureJsonData:
   secureHttpHeaders.X-Example-Secure-Header: secure header value
 ```
 
-## إعدادات إضافية {#additional-settings}
+## إعدادات إضافية
 
 هذه الإعدادات الإضافية اختيارية.
 
@@ -123,7 +123,7 @@ jsonData:
 ```
 
 <div id="opentelemetry">
-  ### OpenTelemetry {#opentelemetry}
+  ### OpenTelemetry
 </div>
 
 يأتي OpenTelemetry ‏(OTel) مدمجًا بشكل وثيق في المكوّن الإضافي.
@@ -132,7 +132,7 @@ jsonData:
 
 ويجب أيضًا تهيئة هذه الإعدادات الافتراضية لتمكين [روابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links)، وهي ميزة تتيح مسارات عمل observability قوية.
 
-### السجلات {#logs}
+### السجلات
 
 لتسريع [إنشاء استعلامات السجلات](/ar/integrations/connectors/data-visualization/grafana/query-builder#logs)، يمكنك تعيين قاعدة بيانات/جدول افتراضي، بالإضافة إلى أعمدة لاستعلام السجلات. سيؤدي ذلك إلى تحميل منشئ الاستعلام مسبقًا باستعلام سجلات جاهز للتشغيل، مما يجعل التصفح في صفحة Explore أسرع لسيناريوهات observability.
 
@@ -164,14 +164,14 @@ jsonData:
     messageColumn: <string> # the log's message/content.
 ```
 
-#### تعطيل روابط &quot;View logs&quot; {#disabling-view-logs-links}
+#### تعطيل روابط &quot;View logs&quot;
 
 يتضمن قسم **ربط معرّف التتبّع** في تهيئة السجلات مفتاح التبديل **إظهار روابط &quot;View logs&quot;**.
 يتحكم هذا المفتاح في ما إذا كان المكوّن الإضافي تُرفق روابط &quot;View logs&quot; [لروابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links) بحقول معرّف التتبّع في نتائج الاستعلام.
 يكون مفتاح التبديل مفعّلًا افتراضيًا. لا يتطلب رابط &quot;View logs&quot; لنوع الاستعلام نفسه إعدادات افتراضية للسجلات، بينما يتطلبها رابط &quot;View logs&quot; متعدد الإشارات من نتائج استعلامات التتبّع.
 أوقف مفتاح التبديل، أو اضبط `showLogLinks: false` في YAML لإخفائها.
 
-### التتبعات {#traces}
+### التتبعات
 
 لتسريع [إنشاء الاستعلامات للتتبعات](/ar/integrations/connectors/data-visualization/grafana/query-builder#traces)، يمكنك تعيين قاعدة بيانات/جدول افتراضيين، بالإضافة إلى الأعمدة الخاصة باستعلام التتبع. سيؤدي ذلك إلى التحميل المسبق لمنشئ الاستعلام باستعلام بحث عن تتبع قابل للتشغيل، مما يسرّع التصفح في صفحة Explore لأغراض observability.
 
@@ -209,7 +209,7 @@ jsonData:
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
-#### تعطيل روابط &quot;View trace&quot; {#disabling-view-trace-links}
+#### تعطيل روابط &quot;View trace&quot;
 
 يحتوي قسم **ربط معرّف التتبّع** في تهيئة التتبعات على مفتاح التبديل **إظهار روابط &quot;View trace&quot;**.
 يتحكم هذا المفتاح في إرفاق المكوّن الإضافي لروابط &quot;View trace&quot; من [روابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links) بحقول معرّف التتبّع في نتائج الاستعلامات.
@@ -217,7 +217,7 @@ jsonData:
 أوقف مفتاح التبديل، أو اضبط `showTraceLinks: false` في YAML، لإخفائها.
 
 <div id="column-aliases">
-  ### الأسماء المستعارة للأعمدة {#column-aliases}
+  ### الأسماء المستعارة للأعمدة
 </div>
 
 يُعدّ استخدام الأسماء المستعارة للأعمدة طريقةً عملية للاستعلام عن بياناتك بأسماء وأنواع مختلفة.
@@ -231,7 +231,7 @@ jsonData:
 * تطبّق كثيرًا دوالًا لتحويل الأعمدة التي تختارها
 
 <div id="table-defined-alias-columns">
-  #### أعمدة ALIAS المعرّفة على الجدول {#table-defined-alias-columns}
+  #### أعمدة ALIAS المعرّفة على الجدول
 </div>
 
 يوفّر ClickHouse دعمًا مدمجًا للأسماء المستعارة للأعمدة، ويعمل مع Grafana مباشرةً.
@@ -250,7 +250,7 @@ CREATE TABLE alias_example (
 
 لمزيد من المعلومات، اطّلع على وثائق نوع العمود [ALIAS](/ar/reference/statements/create/table#alias).
 
-#### جداول الأسماء المستعارة للأعمدة {#column-alias-tables}
+#### جداول الأسماء المستعارة للأعمدة
 
 يوفّر Grafana، افتراضيًا، اقتراحات للأعمدة استنادًا إلى الاستجابة من `DESC table`.
 في بعض الحالات، قد ترغب في تجاوز الأعمدة التي يراها Grafana بالكامل.
@@ -292,7 +292,7 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 يمكن استخدام كلا نوعَي الأسماء المستعارة لإجراء تحويلات معقدة للأنواع أو لاستخراج حقول JSON.
 
-## جميع خيارات YAML {#all-yaml-options}
+## جميع خيارات YAML
 
 فيما يلي جميع خيارات تهيئة YAML التي يوفّرها المكوّن الإضافي.
 تتضمن بعض الحقول قيمًا نموذجية، بينما يكتفي بعضها الآخر بعرض نوع الحقل.

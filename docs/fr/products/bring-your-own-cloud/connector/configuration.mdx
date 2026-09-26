@@ -12,7 +12,7 @@ import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge
 
 Cette page présente les modifications de configuration les plus courantes après l’installation du connector. Chaque clé, avec sa valeur par défaut et sa signification, figure dans la [référence de configuration](/fr/products/bring-your-own-cloud/connector/reference/configuration) ; les options de ligne de commande figurent dans la [référence CLI](/fr/products/bring-your-own-cloud/connector/reference/cli). La création, le scaling et la suppression de services sont traités dans [services managés](/fr/products/bring-your-own-cloud/connector/managed-services).
 
-## Points de configuration {#configuration-surfaces}
+## Points de configuration
 
 Le connecteur dispose d&#39;un point de configuration pour chaque cible d&#39;installation.
 
@@ -58,7 +58,7 @@ Le connecteur dispose d&#39;un point de configuration pour chaque cible d&#39;in
   </Tab>
 </Tabs>
 
-## Mode managé {#managed-mode}
+## Mode managé
 
 Le mode managé exécute l&#39;executor, qui applique à votre cluster le cycle de vie de service piloté par ClickHouse Cloud. `init` l&#39;active lors de l&#39;inscription et renseigne l&#39;identity du cluster (voir [activer le mode managé](/fr/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)). Les clés ci-dessous sont celles que vous pourriez avoir à ajuster par la suite. Pour modifier la posture, relancez `init` avec `--force` et `--managed` ou `--no-managed`. Comme toute exécution d&#39;`init`, cela nécessite un entry point : `--handoff` si vous avez conservé le bundle, ou `--enroll` avec un nouveau jeton (voir [relances et recovery](/fr/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery)).
 
@@ -160,7 +160,7 @@ Sur Kubernetes, définissez `executor.enabled: false` dans les values et appliqu
   </Tab>
 </Tabs>
 
-## Ajouter ou modifier des instances ClickHouse {#clickhouse-instances}
+## Ajouter ou modifier des instances ClickHouse
 
 Les services créés par l&#39;executor s&#39;enregistrent eux-mêmes : en mode managé, vous n&#39;avez donc jamais à les ajouter ici. Cette section concerne un déploiement de connector distinct, exécuté sans l&#39;executor, qui observe le ClickHouse que vous exploitez vous-même. Passez `--ch-user-suffix` lors de son `init` lorsque les deux déploiements partagent une instance. Chaque entrée sous `instances` désigne un endpoint ClickHouse en protocole natif depuis lequel le connector lit : `host`, `port`, `database`, `secure`, `cluster`, et sur Kubernetes `namespace`. `max_open_conns` et `max_idle_conns` limitent le connection pool. Les identifiants ne figurent jamais dans la configuration : chaque composant résout son ClickHouse user en lecture seule à partir du bundle d&#39;accès créé lors du provisioning.
 
@@ -244,7 +244,7 @@ Les services créés par l&#39;executor s&#39;enregistrent eux-mêmes : en mode 
   Les mêmes commandes `access provision`, avec `--force`, renouvellent les identifiants ClickHouse d&#39;une instance. Consultez la page [opérations](/fr/products/bring-your-own-cloud/connector/operations).
 </Tip>
 
-## Liste d&#39;autorisation des opérateurs {#operator-allowlist}
+## Liste d&#39;autorisation des opérateurs
 
 Une liste d&#39;autorisation d&#39;adresses e-mail d&#39;opérateurs conditionne les sessions gérées par la passerelle. Chaque requête envoyée à la passerelle de sessions doit inclure un jeton d&#39;identité OIDC à courte durée de vie dont l&#39;adresse e-mail attestée figure dans cette liste. Une liste d&#39;autorisation vide ferme la passerelle. Sur une VM, root sur l&#39;hôte peut également gérer les sessions directement via le fichier de sessions local ; la liste d&#39;autorisation ne régit que le chemin passant par la passerelle. Consultez les [sessions de support](/fr/products/bring-your-own-cloud/connector/support-sessions) pour connaître le modèle de confiance complet.
 
@@ -274,7 +274,7 @@ Une liste d&#39;autorisation d&#39;adresses e-mail d&#39;opérateurs conditionne
   </Tab>
 </Tabs>
 
-## Politique réseau et egress {#network-policy}
+## Politique réseau et egress
 
 Sur Kubernetes, le chart fournit une NetworkPolicy en mode « refus par défaut » assortie d&#39;une allowlist d&#39;egress. Les objets NetworkPolicy ne prennent effet que si votre CNI les applique. Avec un CNI qui les applique, seuls le DNS du cluster et les namespaces du ClickHouse Service restent joignables tant que les deux listes de CIDR ne sont pas renseignées. D&#39;ici là, le connector n&#39;a aucun egress vers votre connector endpoint ni vers le Kubernetes API server. `init` n&#39;active la politique que lorsqu&#39;il connaît les CIDR situés derrière votre connector endpoint.
 
@@ -320,7 +320,7 @@ L&#39;exemple porte sur la plage `private.googleapis.com`, qui couvre un fournis
 
 Il reste deux clés d&#39;ingress : `metricsScrapeSelector` limite l&#39;ingress de scrape des metrics à un seul espace de noms Prometheus au moyen d&#39;un label, et `kubeletProbeCIDRs` autorise explicitement les sondes de santé du kubelet dans le cadre d&#39;un refus par défaut strict. Consultez la [référence de configuration](/fr/products/bring-your-own-cloud/connector/reference/configuration) pour la liste complète des clés.
 
-## Motifs de masquage {#redaction-patterns}
+## Motifs de masquage
 
 L’outil de diagnostic masque sa sortie avant qu’elle ne quitte votre périmètre. Les motifs intégrés couvrent `ipv4`, `ipv6`, `bearer-token`, `aws-access-key`, `email`, `jwt`, `ssh-private-key` et `connection-string-credentials`. Ajoutez vos propres motifs dans un fichier YAML. Ils sont appliqués en premier, dans l’ordre du fichier, suivis des motifs intégrés ; une entrée qui réutilise le `name` d’un motif intégré remplace ce dernier.
 
@@ -345,7 +345,7 @@ Sur une VM, le fichier est `/etc/clicklink/redaction-patterns.yaml`. L’install
   L’outil de diagnostic refuse de démarrer lorsqu’un fichier de patterns est présent mais non valide, et consigne l’entrée en cause. Un fichier configuré mais absent ne génère qu’un avertissement dans les log et les motifs intégrés sont utilisés. `clicklink clctl preflight` valide le fichier ; exécutez-le avant de redémarrer le démon.
 </Warning>
 
-## Miroirs privés et endpoints internes au périmètre {#private-mirrors}
+## Miroirs privés et endpoints internes au périmètre
 
 Le chart publié définit par défaut `image.repository` sur l’image publique multi-architecture du connecteur, signée avec cosign ; les installations standard ne nécessitent donc aucune valeur d’image. Pour consulter les valeurs par défaut publiées :
 
@@ -372,7 +372,7 @@ clicklink clctl init --handoff handoff.yaml --target helm --managed \
 
 Lorsque l&#39;endpoint de votre connector se trouve derrière une CA privée au sein de votre périmètre, transmettez `--api-private-ca` à `init`. Cette option configure `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt`, et le connector vérifie l&#39;endpoint par rapport aux racines système ainsi qu&#39;à la chaîne de CA de votre bundle d&#39;inscription. Sur une VM, l&#39;équivalent est `api.tls.ca_file` dans `/etc/clicklink/config.yaml` : `init` installe la chaîne du bundle dans `/etc/clicklink/tls/ca.crt`, et le connector l&#39;ajoute aux racines système de la même manière. Pour une inscription entièrement en environnement isolé du réseau et la signature de certificats, consultez [l&#39;onboarding](/fr/products/bring-your-own-cloud/connector/onboarding).
 
-## Stockage {#storage}
+## Stockage
 
 <Tabs>
   <Tab title="Kubernetes" id="storage-kubernetes">

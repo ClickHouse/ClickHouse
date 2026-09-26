@@ -18,7 +18,7 @@ La fonction de table JDBC renvoie une table connectée via le pilote JDBC.
 Cette fonction de table nécessite l’exécution d’un programme distinct, [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge).
 Elle prend en charge les types Nullable (d’après le DDL de la table distante interrogée).
 
-## Syntaxe {#syntax}
+## Syntaxe
 
 ```sql
 jdbc(datasource, external_database, external_table)
@@ -26,7 +26,7 @@ jdbc(datasource, external_table)
 jdbc(named_collection)
 ```
 
-## Exemples {#examples}
+## Exemples
 
 Au lieu d’un nom de base de données externe, on peut spécifier un schéma :
 

@@ -32,7 +32,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 
 Если требуется реплицировать несколько таблиц, настоятельно рекомендуется использовать движок базы данных [MaterializedPostgreSQL](/ru/reference/engines/database-engines/materialized-postgresql) вместо движка таблицы и параметр `materialized_postgresql_tables_list`, который задает таблицы для репликации (также появится возможность добавить `schema` базы данных). Это значительно эффективнее с точки зрения нагрузки на CPU, количества соединений и числа слотов репликации в удаленной базе данных PostgreSQL.
 
-## Создание таблицы {#creating-a-table}
+## Создание таблицы
 
 ```sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
@@ -48,7 +48,7 @@ PRIMARY KEY key;
 * `user` — пользователь PostgreSQL.
 * `password` — пароль пользователя.
 
-## TLS/SSL {#tls-ssl}
+## TLS/SSL
 
 Параметры TLS/SSL передаются в `libpq` и могут быть заданы через [именованную коллекцию](/ru/concepts/features/configuration/server-config/named-collections) или в качестве завершающих аргументов движка в формате ключ-значение: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` или `verify-full`; если не задан, используется значение `prefer` по умолчанию в `libpq`), а также сертификаты и ключ в одном из двух вариантов. `sslrootcert` (CA‑сертификат), `sslcert` (клиентский сертификат) и `sslkey` (закрытый ключ клиента) — это пути к локальным файлам сервера; они принимаются только из именованной коллекции, определённой в файле конфигурации сервера. Вместо них `sslrootcert_pem`, `sslcert_pem` и `sslkey_pem` принимают буквальное содержимое соответствующего файла, могут быть указаны в SQL и маскируются в журналах и запросах `SHOW` так же, как пароль.
 
@@ -63,7 +63,7 @@ PRIMARY KEY key;
 
 Параметры TLS/SSL входят в параметры подключения к PostgreSQL и задаются при создании таблицы.
 
-## Требования {#requirements}
+## Требования
 
 1. Параметр [wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) должен иметь значение `logical`, а параметр `max_replication_slots` — значение не менее `2` в конфигурационном файле PostgreSQL.
 
@@ -73,7 +73,7 @@ PRIMARY KEY key;
 
 4. Движок таблицы `MaterializedPostgreSQL` работает только с PostgreSQL версии &gt;= 11, поскольку для его реализации требуется функция PostgreSQL [pg&#95;replication&#95;slot&#95;advance](https://pgpedia.info/p/pg_replication_slot_advance.html).
 
-## Виртуальные столбцы {#virtual-columns}
+## Виртуальные столбцы
 
 * `_version` — Счётчик транзакций. Тип: [UInt64](/ru/reference/data-types/int-uint).
 

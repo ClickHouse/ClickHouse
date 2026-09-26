@@ -33,7 +33,7 @@ CREATE TOKEN
 인증한 사용자가 토큰을 이용해 동일한 계정에 대해 장기간 유효한 비밀번호를 생성할 수 있기 때문입니다. 동일한 권한으로
 이에 상응하는 `ALTER USER <current user> ADD IDENTIFIED ...` SQL 문도 실행할 수 있습니다.
 
-## 결과 {#result}
+## 결과
 
 이 쿼리는 두 개의 컬럼으로 구성된 행 하나를 반환합니다:
 
@@ -52,7 +52,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 [비밀번호 복잡성 규칙](/ko/reference/statements/create/user#identification)을 검사할 필요가 없으며 실제로 검사하지도 않습니다.
 해당 규칙은 사람이 직접 정한 비밀번호를 제약하기 위해 존재합니다.
 
-## VALID UNTIL 및 VALID FOR 절 {#valid-until-clause}
+## VALID UNTIL 및 VALID FOR 절
 
 토큰의 수명을 제한합니다. [`CREATE USER`](/ko/reference/statements/create/user#valid-until-clause)의 인증 메서드에 사용되는 동일한 이름의 절과 정확히 같은 방식으로 동작합니다. `VALID UNTIL`은 절대 날짜와 시간을 지정하고, `VALID FOR`는 [인터벌](/ko/reference/data-types/special-data-types/interval)을 지정하며, 이 값은 쿼리가 실행되는 시점의 현재 시간에 더해집니다.
 
@@ -64,7 +64,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 * `CREATE TOKEN VALID FOR INTERVAL 30 DAY`
 * `CREATE TOKEN VALID UNTIL 'infinity'`
 
-## GRANTS 절 {#grants-clause}
+## GRANTS 절
 
 토큰으로 인증된 세션의 접근 권한을 나열된 권한과의 교집합으로 제한합니다. [`CREATE USER`의 `GRANTS` 절](/ko/reference/statements/create/user#grants-clause)과 정확히 동일하게 동작하며, 그 제약 사항까지 그대로 적용됩니다. 특히 이 제한은 쿼리를 수신한 노드에서만 적용되며 클러스터의 다른 노드로는 전파되지 않습니다. 이 절은 접근 권한을 추가하지 않습니다. 즉, 사용자에게 부여되지 않은 권한은 토큰에서도 사용할 수 없습니다. 이 절을 지정하지 않으면 토큰은 해당 사용자의 모든 접근 권한을 갖습니다.
 
@@ -75,7 +75,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 
 이 권한 제한과 시간 제한은 모두 토큰의 세션이 남긴 결과물에는 적용되지 않습니다. [보안 고려 사항](#security-considerations)을 참고하십시오.
 
-## 토큰 관리 {#managing-tokens}
+## 토큰 관리
 
 토큰은 사용자의 인증 메서드이므로 [`SHOW CREATE USER`](/ko/reference/statements/show#show-create-user)의 출력에 (`VALID UNTIL` 및 `GRANTS` 절과 함께, 시크릿은 제외하고) 표시되며, [`system.users`](/ko/reference/system-tables/users) 테이블의 `auth_type`, `auth_params`, `auth_grants` 컬럼에도 나타납니다.
 
@@ -85,7 +85,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 
 `CREATE TOKEN`은 `ON CLUSTER` 절을 지원하지 않습니다. 액세스 엔터티가 로컬에 저장되는 클러스터 전체에서 토큰이 동작하도록 하려면 복제된 액세스 스토리지를 사용하거나, 모든 노드에서 이에 상응하는 `ALTER USER ... ADD IDENTIFIED WITH sha256_hash` 문을 실행하십시오.
 
-## 보안 고려 사항 {#security-considerations}
+## 보안 고려 사항
 
 `VALID UNTIL`과 `GRANTS`는 해당 토큰으로 인증하는 세션을 제한합니다. 그러나 그 세션이 남긴 결과물까지 제한하지는 않습니다.
 

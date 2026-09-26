@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويجري توليدها تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## max_bytes_before_external_distinct {#max_bytes_before_external_distinct}
+## max_bytes_before_external_distinct
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -27,7 +27,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 راجع [DISTINCT في الذاكرة الخارجية](/ar/reference/statements/select/distinct#distinct-in-external-memory).
 
-## max_bytes_before_external_group_by {#max_bytes_before_external_group_by}
+## max_bytes_before_external_group_by
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -48,7 +48,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
   القيمة الموصى بها هي نصف ذاكرة النظام المتاحة.
 </Note>
 
-## max_bytes_before_external_join {#max_bytes_before_external_join}
+## max_bytes_before_external_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -56,7 +56,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا تم تعيينه إلى قيمة غير صفرية، فسيتم تلقائيًا تحويل hash join إلى grace hash join لتمكين الكتابة إلى القرص عندما تتجاوز البيانات الموجودة على الجانب الأيمن هذا العدد من البايتات. ويشكّل هذا الإعداد، مع `max_bytes_ratio_before_external_join`، محفّز الكتابة إلى القرص القائم على العتبة لكل `join_algorithm` قائم على التجزئة، بما في ذلك `grace_hash` الذي يتطلب أن يكون أحد الإعدادين غير صفري. وبمجرد أن تجعل عتبة غير صفرية عملية الربط قابلة للكتابة إلى القرص، يمكن لـ `enable_adaptive_memory_spill_scheduler` أن يجبرها على الكتابة إلى القرص تحت ضغط الذاكرة قبل بلوغ العتبة؛ أما إذا كان كلا الإعدادين `0` فلن تكتب عملية الربط إلى القرص أبدًا، ومن ثم لا يكون لدى المجدول ما يطلقه. والاستثناء هو `legacy_join_size_limits_trigger_spilling`: فعند تفعيله، يتجاهل `grace_hash` المستقل كلا الإعدادين ويكتب إلى القرص بناءً على `max_rows_in_join` / `max_bytes_in_join` بدلًا منهما. وعند تعيينه إلى 0 (القيمة الافتراضية)، يتم تعطيل عتبة البايتات المطلقة هذه، ولكن قد تظل الكتابة التلقائية إلى القرص تحدث عبر `max_bytes_ratio_before_external_join` (الذي تبلغ قيمته الافتراضية `0.5`)؛ اضبط كليهما على `0` لتعطيل الكتابة التلقائية إلى القرص بالكامل. وهو يمنع تحسين القراءة بالترتيب عبر join.
 
-## max_bytes_before_external_sort {#max_bytes_before_external_sort}
+## max_bytes_before_external_sort
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,13 +71,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
   القيمة الموصى بها هي نصف ذاكرة النظام المتاحة
 * `0` — تعطيل `ORDER BY` باستخدام الذاكرة الخارجية.
 
-## max_bytes_before_remerge_sort {#max_bytes_before_remerge_sort}
+## max_bytes_before_remerge_sort
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 في حالة استخدام ORDER BY مع LIMIT، وعندما يتجاوز استخدام الذاكرة العتبة المحددة، تُنفَّذ خطوات إضافية لدمج الكتل قبل الدمج النهائي للإبقاء فقط على أول LIMIT صفوف.
 
-## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
+## max_bytes_for_lazy_final
 
 <SettingsInfoBlock type="UInt64" default_value="256000000" />
 
@@ -85,13 +85,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأقصى لعدد البايتات في المجموعة ضمن تحسين FINAL المؤجل. وإذا تم تجاوزه، فسيتم الرجوع إلى FINAL العادي.
 
-## max_bytes_in_distinct {#max_bytes_in_distinct}
+## max_bytes_in_distinct
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 الحد الأقصى لعدد بايتات الحالة في الذاكرة (بالبايتات غير المضغوطة) التي يستخدمها جدول تجزئة عند استخدام DISTINCT.
 
-## max_bytes_in_join {#max_bytes_in_join}
+## max_bytes_in_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -125,14 +125,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * عدد صحيح موجب.
 * 0 — يكون التحكم في الذاكرة معطّلًا.
 
-## max_bytes_in_set {#max_bytes_in_set}
+## max_bytes_in_set
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 الحد الأقصى لعدد البايتات (من بيانات غير مضغوطة) التي تستخدمها المجموعة في العبارة `IN`
 والناتجة عن استعلام فرعي.
 
-## max_bytes_ratio_before_external_distinct {#max_bytes_ratio_before_external_distinct}
+## max_bytes_ratio_before_external_distinct
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -147,7 +147,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 لا يؤثر `max_memory_usage` في هذا الحساب. ولتهيئة الكتابة بالنسبة إلى ذلك الحد،
 استخدم `max_bytes_before_external_distinct`، مع ترك مساحة لاستهلاك ذاكرة إضافي.
 
-## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
+## max_bytes_ratio_before_external_group_by
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -160,7 +160,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 (لـ server/user/merges) في بداية التنفيذ، وبعد ذلك سيبدأ
 باستخدام التجميع الخارجي.
 
-## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
+## max_bytes_ratio_before_external_join
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -174,7 +174,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يكون له تأثير مع كل `join_algorithm` قائم على التجزئة، بما في ذلك `grace_hash`، شريطة أن يكون قد جرى تهيئة مسار بيانات مؤقت.
 
-## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
+## max_bytes_ratio_before_external_sort
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -186,7 +186,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 لاحظ أن `max_bytes_before_external_sort` يظل معمولًا به، ولن تتم الكتابة إلى القرص إلا إذا كانت كتلة الفرز أكبر من `max_bytes_before_external_sort`.
 
-## max_bytes_to_read {#max_bytes_to_read}
+## max_bytes_to_read
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -195,7 +195,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 أعمق تعبير جدول، وعند القراءة من خادم بعيد، لا يُتحقَّق منه إلا على
 الخادم البعيد.
 
-## max_bytes_to_read_leaf {#max_bytes_to_read_leaf}
+## max_bytes_to_read_leaf
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -217,7 +217,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
   هذا الإعداد غير مستقر مع `prefer_localhost_replica=1`.
 </Note>
 
-## max_bytes_to_sort {#max_bytes_to_sort}
+## max_bytes_to_sort
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -225,7 +225,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 كمية من البايتات غير المضغوطة تتجاوز المقدار المحدد، فسيُحدَّد السلوك
 وفقًا لـ `sort_overflow_mode`، والذي يُضبط افتراضيًا على `throw`.
 
-## max_bytes_to_transfer {#max_bytes_to_transfer}
+## max_bytes_to_transfer
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

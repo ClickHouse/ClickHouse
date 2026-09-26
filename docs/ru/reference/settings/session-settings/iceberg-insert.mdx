@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
+## iceberg_insert_max_bytes_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
@@ -26,7 +26,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 размером данных, записанных в файл к текущему моменту, тогда как свойство Iceberg задаёт целевой размер
 итогового файла; кроме того, `iceberg_insert_max_rows_in_data_file` ограничивает файл независимо от его размера.
 
-## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
+## iceberg_insert_max_partitions
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -34,7 +34,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Максимально допустимое количество партиций для одной операции вставки в движке таблицы Iceberg.
 
-## iceberg_insert_max_rows_in_data_file {#iceberg_insert_max_rows_in_data_file}
+## iceberg_insert_max_rows_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 

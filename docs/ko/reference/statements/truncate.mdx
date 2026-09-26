@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 ClickHouse에서 `TRUNCATE` SQL 문은 테이블이나 데이터베이스의 구조는 유지한 채 모든 데이터를 빠르게 제거할 때 사용됩니다.
 
-## TRUNCATE TABLE {#truncate-table}
+## TRUNCATE TABLE
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
@@ -41,7 +41,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 * [`Buffer`](/ko/reference/engines/table-engines/special/buffer)
 * [`Null`](/ko/reference/engines/table-engines/special/null)
 
-## 모든 테이블을 TRUNCATE {#truncate-all-tables}
+## 모든 테이블을 TRUNCATE
 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
@@ -59,7 +59,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 
 데이터베이스에 있는 모든 테이블의 모든 데이터를 제거합니다.
 
-## TRUNCATE DATABASE {#truncate-database}
+## TRUNCATE DATABASE
 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]

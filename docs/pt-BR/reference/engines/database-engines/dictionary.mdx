@@ -10,14 +10,14 @@ doc_type: 'reference'
 
 O motor de banco de dados `Dictionary` expõe cada [dicionário](/pt-BR/reference/statements/create/dictionary) configurado como uma tabela somente leitura. Ele é útil quando uma consulta precisa ler dados de dicionários ou fazer join com eles usando a sintaxe comum de tabelas.
 
-## Criando um banco de dados {#creating-a-database}
+## Criando um banco de dados
 
 ```sql
 CREATE DATABASE dictionaries
 ENGINE = Dictionary;
 ```
 
-## Uso {#usage}
+## Uso
 
 Após criar o banco de dados, use o nome de um dicionário configurado como nome da tabela:
 
@@ -28,7 +28,7 @@ FROM dictionaries.products;
 
 O banco de dados não possui tabelas próprias. Suas tabelas são os dicionários configurados no servidor, portanto não há suporte para criar, remover ou alterar tabelas nesse banco de dados. Gerencie os dicionários diretamente com [`CREATE DICTIONARY`](/pt-BR/reference/statements/create/dictionary) ou pela configuração do servidor.
 
-## Veja também {#see-also}
+## Veja também
 
 * [Dicionários](/pt-BR/concepts/features/dictionaries/index)
 * [Motor de tabela `Dictionary`](/pt-BR/reference/engines/table-engines/special/dictionary)

@@ -14,7 +14,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## prefer_column_name_to_alias {#prefer_column_name_to_alias}
+## prefer_column_name_to_alias
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -74,7 +74,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 └────────┴─────────────┘
 ```
 
-## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
+## prefer_external_sort_block_bytes
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -82,7 +82,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 外部排序时优先使用最大块字节数，以减少合并期间的内存使用量。
 
-## prefer_global_in_and_join {#prefer_global_in_and_join}
+## prefer_global_in_and_join
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -105,7 +105,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 
 * [分布式子查询](/zh/reference/statements/in#distributed-subqueries)，了解有关如何使用 `GLOBAL IN`/`GLOBAL JOIN` 的更多信息
 
-## prefer_localhost_replica {#prefer_localhost_replica}
+## prefer_localhost_replica
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,7 +122,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
   如果它用于只有单个 сегмент 但包含多个副本的集群，禁用此设置会带来负面影响。
 </Note>
 
-## prefer_optimize_projection {#prefer_optimize_projection}
+## prefer_optimize_projection
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -137,7 +137,7 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 * 0 — 按预估代价选择 projection。
 * 1 — 无论预估代价如何，都选择可用的 projection。
 
-## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
+## prefer_warmed_unmerged_parts_seconds
 
 <CloudOnlyBadge />
 

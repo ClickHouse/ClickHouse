@@ -17,7 +17,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
   Scale 和 Enterprise 层级既支持单副本服务，也支持多副本服务。单副本 Scale 服务以及采用标准 `1:4` profile 的 Enterprise 服务支持自助式垂直自动扩缩容。采用自定义 profile 的 Enterprise 服务需要支持团队协助进行垂直调整。Scale 和 Enterprise 服务可横向扩缩容至多个副本。基础版层级服务仅有一个副本，规模固定，且不支持垂直或水平扩缩容。有关更多信息，请参阅[大型单副本服务](/zh/products/cloud/features/large-single-replica-services)。
 </Note>
 
-## 选择计算方案 {#choosing-a-compute-option}
+## 选择计算方案
 
 请根据实际需求选择：是要调整现有 service 的容量、在专用 compute 上隔离某类 workload，还是为符合条件的查询临时追加 compute。
 
@@ -31,7 +31,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
   扩缩容的支持情况因 service 层级和 profile 而异。[横向自动扩缩容](/zh/products/cloud/features/autoscaling/horizontal-autoscaling)目前处于私有预览阶段。按需计算同样处于私有预览阶段，且仅支持符合条件的 `SELECT` 查询。
 </Note>
 
-## ClickHouse Cloud 中扩缩容的工作方式 {#how-scaling-works-in-clickhouse-cloud}
+## ClickHouse Cloud 中扩缩容的工作方式
 
 ClickHouse Cloud 为 Scale 和 Enterprise 层级服务提供手动水平扩缩容。Scale 层级服务还支持垂直自动扩缩容；Enterprise 层级服务是否支持垂直自动扩缩容取决于 profile，如下所述。[横向自动扩缩容](/zh/products/cloud/features/autoscaling/horizontal-autoscaling)已在私有预览中面向 Scale 和 Enterprise 层级服务提供。
 
@@ -51,7 +51,7 @@ ClickHouse Cloud 为 Scale 和 Enterprise 层级服务提供手动水平扩缩�
   这样既能兼顾现有查询顺利完成，也能避免旧副本保留过久。
 </Note>
 
-## 了解更多 {#learn-more}
+## 了解更多
 
 * [垂直自动扩缩容](/zh/products/cloud/features/autoscaling/vertical) — 根据使用情况自动调整 CPU 和内存资源
 * [横向自动扩缩容](/zh/products/cloud/features/autoscaling/horizontal-autoscaling) — 根据工作负载需求自动调整副本数量

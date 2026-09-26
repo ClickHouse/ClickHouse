@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/Exp
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## webassembly_udf_input_split_memory_ratio {#webassembly_udf_input_split_memory_ratio}
+## webassembly_udf_input_split_memory_ratio
 
 <ExperimentalBadge />
 
@@ -32,7 +32,7 @@ Un batch nunca se reduce por debajo de una sola fila, por lo que una fila cuyo t
 
 Establézcalo en 0 para dejar la entrada sin dividir: todo el bloque del pipeline se pasa en una llamada.
 
-## webassembly_udf_max_fuel {#webassembly_udf_max_fuel}
+## webassembly_udf_max_fuel
 
 <ExperimentalBadge />
 
@@ -42,7 +42,7 @@ Establézcalo en 0 para dejar la entrada sin dividir: todo el bloque del pipelin
 
 Límite de fuel por ejecución de cada instancia de WebAssembly UDF. Cada instrucción de WebAssembly consume cierta cantidad de fuel. El valor se escala en 1024 antes de pasarse al entorno de ejecución, por lo que `webassembly_udf_max_fuel = 1` corresponde a aproximadamente 1024 unidades de fuel. Establézcalo en 0 para no tener ningún límite finito. Se aplica solo a las funciones cuyo ajuste por función `webassembly_udf_enable_fuel` es true, que es el valor predeterminado.
 
-## webassembly_udf_max_input_block_size {#webassembly_udf_max_input_block_size}
+## webassembly_udf_max_input_block_size
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ Número máximo de filas que se pasan a una WebAssembly UDF en una única llamad
 
 Establézcalo en 0 para dimensionar las llamadas según su entrada serializada. Esto se aplica únicamente a `ABI BUFFERED_V1`, la única ABI que serializa un bloque de entrada completo en la memoria del guest: sus bloques se dividen de modo que la entrada de una llamada se mantenga dentro del valor de `webassembly_udf_input_split_memory_ratio` de la memoria lineal del módulo. `ROW_DIRECT` pasa sus argumentos como valores de WebAssembly y `ASSEMBLYSCRIPT` construye un objeto por fila, por lo que ninguna de las dos tiene una entrada serializada con la que dimensionar una llamada, y 0 deja intacto su bloque del pipeline.
 
-## webassembly_udf_max_instances {#webassembly_udf_max_instances}
+## webassembly_udf_max_instances
 
 <ExperimentalBadge />
 
@@ -64,7 +64,7 @@ Establézcalo en 0 para dimensionar las llamadas según su entrada serializada. 
 
 Número máximo de instancias de WebAssembly UDF que pueden ejecutarse en paralelo por función.
 
-## webassembly_udf_max_memory {#webassembly_udf_max_memory}
+## webassembly_udf_max_memory
 
 <ExperimentalBadge />
 

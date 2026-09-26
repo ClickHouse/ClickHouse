@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## iceberg_data_file_size_lower_threshold_compaction {#iceberg_data_file_size_lower_threshold_compaction}
+## iceberg_data_file_size_lower_threshold_compaction
 
 <SettingsInfoBlock type="UInt64" default_value="402653184" />
 
@@ -23,7 +23,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 デフォルト値は、Iceberg テーブルプロパティ `write.target-file-size-bytes` のドキュメント記載のデフォルト値 (512 MiB) の `0.75` です。これは `rewrite_data_files` プロシージャが `min-file-size-bytes` オプションを導出する方法と同じです。詳細は https://iceberg.apache.org/docs/1.5.2/configuration/ を参照してください。
 
-## iceberg_data_file_size_upper_threshold_compaction {#iceberg_data_file_size_upper_threshold_compaction}
+## iceberg_data_file_size_upper_threshold_compaction
 
 <SettingsInfoBlock type="UInt64" default_value="966367641" />
 

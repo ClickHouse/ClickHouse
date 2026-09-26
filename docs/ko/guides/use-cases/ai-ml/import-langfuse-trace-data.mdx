@@ -9,11 +9,11 @@ doc_type: 'guide'
 
 이 가이드에서는 [Langfuse Cloud](https://cloud.langfuse.com/)의 LLM 트레이스 데이터를 ClickHouse Cloud로 로드하여 실시간 분석에 활용하는 과정을 단계별로 안내합니다.
 
-## Langfuse Cloud에서 내보내기 {#export-from-langfuse-cloud}
+## Langfuse Cloud에서 내보내기
 
 [이 가이드](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)에 따라 Langfuse Cloud에서 예약 내보내기에 사용할 Blob Storage 통합을 구성하십시오. 트레이스 데이터(trace data)를 객체 스토리지로 내보내는 작업은 최소 `20 minutes` 간격으로 예약하거나 `hourly`, `daily`, `weekly` 주기로 예약할 수 있습니다. 기본적으로 각 내보내기에는 트레이스 속성으로 보강된 `observations`와 `scores`가 포함됩니다.
 
-### 내보낸 파일 구성 {#exported-file-layout}
+### 내보낸 파일 구성
 
 Langfuse Cloud의 Blob Storage 통합은 대상 버킷 또는 스토리지 컨테이너에 다음과 같은 디렉터리 구조로 데이터를 기록합니다.
 
@@ -24,7 +24,7 @@ Langfuse Cloud의 Blob Storage 통합은 대상 버킷 또는 스토리지 컨�
 └── manifests/         # one JSON file per completed run with export metadata
 ```
 
-## ClickHouse Cloud로 가져오기 {#import-into-clickhouse-cloud}
+## ClickHouse Cloud로 가져오기
 
 Langfuse Cloud에서 Blob Storage 통합을 구성하면 트레이스 데이터가 일정에 따라 대상 버킷 또는 스토리지 컨테이너로 내보내집니다. 이 데이터를 ClickHouse Cloud로 가져오려면 [ClickPipes](/ko/integrations/clickpipes)와 ClickPipes에서 제공하는 관리형 객체 스토리지 커넥터를 사용하면 됩니다.
 
@@ -34,7 +34,7 @@ Langfuse Cloud에서 Blob Storage 통합을 구성하면 트레이스 데이터�
 | <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage 로고" className="integration-table-logo" width="24" height="24" /> **Google Cloud Storage**                                                                                                                     | [GCS ClickPipes](/ko/integrations/clickpipes/object-storage/google-cloud-storage/overview)를 사용하여 통합합니다. |
 | <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure Blob Storage 로고" className="integration-table-logo" width="24" height="24" /> **Azure Blob Storage**                                                                                                            | [ABS ClickPipes](/ko/integrations/clickpipes/object-storage/azure-blob-storage/overview)를 사용하여 통합합니다.   |
 
-### ClickPipe 생성 {#create-a-clickpipe}
+### ClickPipe 생성
 
 이 예시에서는 S3 ClickPipe를 사용하여 Langfuse Cloud의 예약 내보내기 데이터가 저장되는 S3 버킷에서 데이터를 가져옵니다. 이 방법은 모든 객체 스토리지 내보내기 대상에 기본 템플릿으로 적용할 수 있습니다. 데이터 소스별 안내는 [ClickPipes 문서](/ko/integrations/clickpipes)를 참조하십시오.
 
@@ -147,11 +147,11 @@ Langfuse Cloud에서 Blob Storage 통합을 구성하면 트레이스 데이터�
   </Step>
 </Steps>
 
-### 트레이스 데이터 쿼리 {#query-trace-data}
+### 트레이스 데이터 쿼리
 
 ClickPipes가 실행되면 ClickHouse Cloud에서 Langfuse Cloud 트레이스 데이터를 직접 쿼리할 수 있습니다. 아래 예시에서는 비용 및 지연 시간 롤업, 단일 트레이스 재구성, 점수(score)와 모델 및 프롬프트 간 상관관계 분석 등 자주 사용되는 쿼리 패턴을 다룹니다.
 
-#### 시간 버킷별 메트릭 롤업 {#time-bucketed-metric-rollups}
+#### 시간 버킷별 메트릭 롤업
 
 <Tip>
   `usage_details`, `cost_details` 등 일부 필드는 `Map` 컬럼으로 내보내집니다. 개별 값을 읽으려면 키로 조회하세요(예: `sum(cost_details['total'])`).
@@ -172,7 +172,7 @@ GROUP BY t, provided_model_name
 ORDER BY t;
 ```
 
-#### 트레이스 재구성 {#trace-reconstruction}
+#### 트레이스 재구성
 
 ```sql
 SELECT *
@@ -181,7 +181,7 @@ WHERE trace_id = '<trace_id>'
 ORDER BY start_time;
 ```
 
-#### 품질 분석 {#quality-analysis}
+#### 품질 분석
 
 ```sql
 SELECT
@@ -195,7 +195,7 @@ GROUP BY o.provided_model_name, s.name
 ORDER BY avg_score DESC;
 ```
 
-## 관련 항목 {#see-also}
+## 관련 항목
 
 * [Langfuse와 ClickHouse](/ko/products/cloud/features/ai-ml/langfuse)
 * [Langfuse Cloud Blob Storage 내보내기](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)

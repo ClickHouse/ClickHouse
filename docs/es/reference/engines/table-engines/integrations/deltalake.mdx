@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 Este motor proporciona una integración con tablas existentes de [Delta Lake](https://github.com/delta-io/delta) en S3 y en almacenamiento de GCP y Azure, y admite tanto lecturas como escrituras (escrituras para S3 y GCS desde la v25.10, para Azure desde la v26.9).
 
-## Crear una tabla DeltaLake {#create-table}
+## Crear una tabla DeltaLake
 
 De forma predeterminada, la tabla Delta Lake ya debe existir en el almacenamiento de S3, GCP o Azure, y los siguientes comandos se conectan a ella sin definiciones DDL de columnas. Con `allow_delta_lake_create_table = 1`, un `CREATE TABLE` con columnas explícitas sobre una ubicación que no tiene `_delta_log` crea en su lugar una nueva tabla Delta Lake escribiendo el commit inicial a través de `delta-kernel-rs` (aún no se admite la creación de una tabla particionada) y, dentro de una base de datos `DataLakeCatalog` de Unity, la tabla también se registra en el catálogo.
 
@@ -113,7 +113,7 @@ De forma predeterminada, la tabla Delta Lake ya debe existir en el almacenamient
   </Tab>
 </Tabs>
 
-## Escribir datos con una tabla DeltaLake {#insert-data}
+## Escribir datos con una tabla DeltaLake
 
 Una vez que haya creado una tabla con el motor de tabla DeltaLake, puede insertar datos en ella con:
 
@@ -132,11 +132,11 @@ Las escrituras de Delta Lake son una funcionalidad Beta deshabilitada de forma p
   La autenticación con Workload Identity de Azure (`extra_credentials(client_id = ..., tenant_id = ...)`) no es compatible con delta kernel.
 </Note>
 
-### Caché de datos {#data-cache}
+### Caché de datos
 
 El motor de tabla `DeltaLake` y la función de tabla admiten la caché de datos, al igual que los almacenamientos `S3`, `AzureBlobStorage` y `HDFS`. Consulta [&quot;motor de tabla S3&quot;](/es/reference/engines/table-engines/integrations/s3#data-cache) para más detalles.
 
-## Véase también {#see-also}
+## Véase también
 
 * [función de tabla DeltaLake](/es/reference/functions/table-functions/deltalake)
 

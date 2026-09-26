@@ -18,20 +18,20 @@ Chaque valeur indiquée est dérivée des données de la table ; la lecture de n
 
 Si une politique de lignes s’applique à la table pour l’utilisateur courant, la lecture de `codec_block_counts` génère `ACCESS_DENIED`, car les décomptes incluraient des lignes masquées par la politique. Les autres colonnes restent lisibles ; `system.parts_columns` les indique indépendamment des politiques de lignes.
 
-## Syntaxe {#syntax}
+## Syntaxe
 
 ```sql
 mergeTreeCodecBlockCounts(database, table)
 ```
 
-## Arguments {#arguments}
+## Arguments
 
 | Argument   | Description                               |
 | ---------- | ----------------------------------------- |
 | `database` | Le nom de la base de données de la table. |
 | `table`    | Le nom de la table MergeTree.             |
 
-## Valeur renvoyée {#returned-value}
+## Valeur renvoyée
 
 Un objet table comportant une ligne par (partie active, colonne, sous-flux) de la table source :
 
@@ -42,7 +42,7 @@ Un objet table comportant une ligne par (partie active, colonne, sous-flux) de l
 * `data_uncompressed_bytes` ([Nullable(UInt64)](/fr/reference/data-types/nullable)) — Taille des données non compressées du sous-flux, en octets. `NULL` pour les parties `Compact`.
 * `codec_block_counts` ([Map(String, UInt64)](/fr/reference/data-types/map)) — Nombre de blocs compressés de ce sous-flux, regroupés par codec. Vide pour les parties `Compact`, dont les colonnes partagent un même fichier de données et ne disposent donc pas d’une attribution de codec par flux.
 
-## Exemple d&#39;utilisation {#usage-example}
+## Exemple d&#39;utilisation
 
 ```sql
 CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a

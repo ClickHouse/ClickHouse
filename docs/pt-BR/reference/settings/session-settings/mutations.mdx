@@ -12,13 +12,13 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## mutations_max_literal_size_to_replace {#mutations_max_literal_size_to_replace}
+## mutations_max_literal_size_to_replace
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
 O tamanho máximo, em bytes, de um literal serializado que pode ser substituído em consultas `UPDATE` e `DELETE`. Só tem efeito se pelo menos uma das duas configurações acima estiver habilitada. Valor padrão: 16384 (16 KiB).
 
-## mutations_sync {#mutations_sync}
+## mutations_sync
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

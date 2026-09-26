@@ -19,7 +19,7 @@ O motor PostgreSQL permite consultas `SELECT` e `INSERT` em dados armazenados em
   Conheça nosso serviço [ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/overview). Com armazenamento NVMe fisicamente no mesmo local que a computação, ele oferece desempenho até 10x mais rápido para cargas de trabalho limitadas por disco em comparação com alternativas que usam armazenamento conectado à rede, como o EBS, e permite replicar seus dados do Postgres para o ClickHouse usando o conector Postgres CDC no ClickPipes.
 </Tip>
 
-## Criando uma tabela {#creating-a-table}
+## Criando uma tabela
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -75,7 +75,7 @@ Alguns parâmetros podem ser substituídos por argumentos de chave-valor:
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-### TLS/SSL {#tls-ssl}
+### TLS/SSL
 
 Os parâmetros TLS/SSL são encaminhados ao `libpq` e podem ser definidos como chaves de uma coleção nomeada ou como argumentos chave-valor finais: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full`), além dos certificados e da chave, em uma de duas formas. Quando não são definidos, aplicam-se os padrões do `libpq` (`sslmode=prefer`).
 
@@ -107,35 +107,35 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 -----END CERTIFICATE-----');
 ```
 
-## Configurações {#settings}
+## Configurações
 
 O pool de conexões usado pelo motor de tabela `PostgreSQL` (e pela função de tabela [`postgresql`](/pt-BR/reference/functions/table-functions/postgresql)) pode ser configurado para cada tabela com uma cláusula `SETTINGS`. Quando uma configuração não é especificada, o valor padrão é o da configuração `postgresql_*` correspondente no nível da consulta.
 
-### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
+### `postgresql_connection_pool_size`
 
 Tamanho do pool de conexões (se todas as conexões estiverem em uso, a consulta aguardará até que alguma delas seja liberada). Deve ser maior que zero.
 
 Valor padrão: `16`.
 
-### `postgresql_connection_pool_wait_timeout` {#postgresql-connection-pool-wait-timeout}
+### `postgresql_connection_pool_wait_timeout`
 
 Tempo limite, em milissegundos, para push/pop no pool de conexões quando o pool está vazio. `0` significa que a operação bloqueia quando o pool está vazio.
 
 Valor padrão: `5000`.
 
-### `postgresql_connection_pool_retries` {#postgresql-connection-pool-retries}
+### `postgresql_connection_pool_retries`
 
 Número de tentativas de nova tentativa ao obter/devolver conexões do pool.
 
 Valor padrão: `2`.
 
-### `postgresql_connection_pool_auto_close_connection` {#postgresql-connection-pool-auto-close-connection}
+### `postgresql_connection_pool_auto_close_connection`
 
 Feche a conexão antes de devolvê-la ao pool.
 
 Valor padrão: `false`.
 
-### `postgresql_connection_attempt_timeout` {#postgresql-connection-attempt-timeout}
+### `postgresql_connection_attempt_timeout`
 
 Tempo limite de conexão, em segundos, para uma única tentativa de conexão ao endpoint do PostgreSQL. O valor é passado como parâmetro `connect_timeout` na URL de conexão.
 
@@ -154,7 +154,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgr
 SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_close_connection = 1;
 ```
 
-## Detalhes de implementação {#implementation-details}
+## Detalhes de implementação
 
 As consultas `SELECT` no PostgreSQL são executadas como `COPY (SELECT ...) TO STDOUT` dentro de uma transação PostgreSQL somente leitura, com commit após cada consulta `SELECT`.
 
@@ -162,7 +162,7 @@ Cláusulas `WHERE` simples, como `=`, `!=`, `>`, `>=`, `<`, `<=` e `IN`, são ex
 
 Todas as junções, agregações, ordenações, condições `IN [ array ]` e a restrição de amostragem `LIMIT` são executadas no ClickHouse somente após a conclusão da consulta ao PostgreSQL.
 
-## Passando uma consulta em vez de um nome de tabela {#passing-a-query}
+## Passando uma consulta em vez de um nome de tabela
 
 Em vez de um nome de tabela, o argumento `table` pode ser uma consulta `SELECT` passada ao PostgreSQL como está. A estrutura da tabela é inferida a partir do resultado da consulta. A consulta pode ser escrita como uma subconsulta ou encapsulada na função `query`:
 
@@ -217,9 +217,9 @@ No exemplo abaixo, a réplica `example01-1` tem a maior prioridade:
 </postgresql>
 ```
 
-## Exemplo de uso {#usage-example}
+## Exemplo de uso
 
-### Tabela no PostgreSQL {#table-in-postgresql}
+### Tabela no PostgreSQL
 
 ```text
 postgres=# CREATE TABLE "public"."test" (
@@ -242,7 +242,7 @@ int_id | int_nullable | float | str  | float_nullable
 (1 row)
 ```
 
-### Criando uma tabela no ClickHouse e conectando-a à tabela do PostgreSQL criada acima {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
+### Criando uma tabela no ClickHouse e conectando-a à tabela do PostgreSQL criada acima
 
 Este exemplo usa o [PostgreSQL motor de tabela](/pt-BR/reference/engines/table-engines/integrations/postgresql) para conectar a tabela do ClickHouse à tabela do PostgreSQL e usar instruções SELECT e INSERT no banco de dados PostgreSQL:
 
@@ -256,7 +256,7 @@ CREATE TABLE default.postgresql_table
 ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-### Inserindo dados iniciais de uma tabela do PostgreSQL em uma tabela do ClickHouse usando uma consulta SELECT {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
+### Inserindo dados iniciais de uma tabela do PostgreSQL em uma tabela do ClickHouse usando uma consulta SELECT
 
 A [função de tabela postgresql](/pt-BR/reference/functions/table-functions/postgresql) copia os dados do PostgreSQL para o ClickHouse. Isso costuma ser usado para melhorar o desempenho das consultas sobre esses dados, executando consultas ou análises no ClickHouse em vez de no PostgreSQL, e também pode ser usado para migrar dados do PostgreSQL para o ClickHouse. Como vamos copiar os dados do PostgreSQL para o ClickHouse, usaremos um motor de tabela MergeTree no ClickHouse e o chamaremos de postgresql&#95;copy:
 
@@ -276,7 +276,7 @@ INSERT INTO default.postgresql_copy
 SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-### Inserindo dados incrementais da tabela PostgreSQL na tabela do ClickHouse {#inserting-incremental-data-from-postgresql-table-into-clickhouse-table}
+### Inserindo dados incrementais da tabela PostgreSQL na tabela do ClickHouse
 
 Se depois do insert inicial você quiser realizar uma sincronização contínua entre a tabela PostgreSQL e a tabela do ClickHouse, poderá usar uma cláusula WHERE no ClickHouse para inserir apenas os dados adicionados ao PostgreSQL com base em um timestamp ou em um ID de sequência exclusivo.
 
@@ -294,7 +294,7 @@ SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'p
 WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
 ```
 
-### Selecionando dados da tabela resultante no ClickHouse {#selecting-data-from-the-resulting-clickhouse-table}
+### Selecionando dados da tabela resultante no ClickHouse
 
 ```sql
 SELECT * FROM postgresql_copy WHERE str IN ('test');
@@ -306,7 +306,7 @@ SELECT * FROM postgresql_copy WHERE str IN ('test');
 └────────────────┴──────┴────────┘
 ```
 
-### Usando um esquema diferente do padrão {#using-non-default-schema}
+### Usando um esquema diferente do padrão
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";
@@ -326,7 +326,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 * [A função de tabela `postgresql`](/pt-BR/reference/functions/table-functions/postgresql)
 * [Usando PostgreSQL como fonte de um dicionário](/pt-BR/reference/statements/create/dictionary/sources/postgresql)
 
-## Conteúdo relacionado {#related-content}
+## Conteúdo relacionado
 
 * Blog: [ClickHouse and PostgreSQL - uma combinação perfeita para o universo dos dados - parte 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * Blog: [ClickHouse and PostgreSQL - uma combinação perfeita para o universo dos dados - parte 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

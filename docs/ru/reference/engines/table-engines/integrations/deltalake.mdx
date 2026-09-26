@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 Этот движок обеспечивает интеграцию с существующими таблицами [Delta Lake](https://github.com/delta-io/delta) в хранилищах S3, GCP и Azure и поддерживает как чтение, так и запись (запись в S3 и GCS — начиная с v25.10, в Azure — с v26.9).
 
-## Создание таблицы DeltaLake {#create-table}
+## Создание таблицы DeltaLake
 
 По умолчанию таблица Delta Lake должна уже существовать в хранилище S3, GCP или Azure, а приведённые ниже команды подключаются к ней без DDL-определений столбцов. При `allow_delta_lake_create_table = 1` команда `CREATE TABLE` с явно заданными столбцами для расположения без `_delta_log` вместо этого создаёт новую таблицу Delta Lake, записывая начальный коммит через `delta-kernel-rs` (создание секционированных таблиц пока не поддерживается); кроме того, в базе данных Unity `DataLakeCatalog` таблица регистрируется в каталоге.
 
@@ -113,7 +113,7 @@ doc_type: 'reference'
   </Tab>
 </Tabs>
 
-## Запись данных с помощью таблицы DeltaLake {#insert-data}
+## Запись данных с помощью таблицы DeltaLake
 
 После создания таблицы на движке таблицы DeltaLake вы можете вставлять в неё данные с помощью:
 
@@ -132,11 +132,11 @@ VALUES (1, 'John', 'Smith', 'M', 32);
   Аутентификация Azure Workload Identity (`extra_credentials(client_id = ..., tenant_id = ...)`) не поддерживается Delta Kernel.
 </Note>
 
-### Кэширование данных {#data-cache}
+### Кэширование данных
 
 Движок таблицы `DeltaLake` и табличная функция поддерживают кэширование данных, как и хранилища `S3`, `AzureBlobStorage` и `HDFS`. Подробнее см. в разделе [&quot;движок таблицы S3&quot;](/ru/reference/engines/table-engines/integrations/s3#data-cache).
 
-## См. также {#see-also}
+## См. также
 
 * [Табличная функция deltaLake](/ru/reference/functions/table-functions/deltalake)
 

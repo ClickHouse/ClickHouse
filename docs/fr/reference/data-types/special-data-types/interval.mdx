@@ -39,7 +39,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## Remarques d’utilisation {#usage-remarks}
+## Remarques d’utilisation
 
 Vous pouvez utiliser des valeurs de type `Interval` dans des opérations arithmétiques avec des valeurs de type [Date](/fr/reference/data-types/date) et [DateTime](/fr/reference/data-types/datetime). Par exemple, vous pouvez ajouter 4 jours à l’instant actuel :
 
@@ -87,7 +87,7 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## Agrégation {#aggregation}
+## Agrégation
 
 Appliquées à une colonne `Interval`, les fonctions `sum`, `avg`, `min`, `max` et `any` renvoient un intervalle du même type.
 `sum` additionne le nombre d&#39;unités, tandis que `avg` en calcule la moyenne et arrondit le résultat à un nombre entier
@@ -113,7 +113,7 @@ la somme d&#39;une minute et d&#39;une seconde donne 61 secondes. `Month`, `Quar
 commune avec les unités plus petites (un mois ne compte pas un nombre fixe de jours) et ne peuvent donc en aucun cas
 être combinées avec elles.
 
-## Intervalles de type mixte {#mixed-type-intervals}
+## Intervalles de type mixte
 
 Les intervalles de type mixte, par exemple avec plusieurs heures et plusieurs minutes, peuvent être créés à l’aide de la syntaxe `INTERVAL 'value' <from_kind> TO <to_kind>`.
 Le résultat est un tuple de deux intervalles ou plus.
@@ -156,7 +156,7 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-## Voir aussi {#see-also}
+## Voir aussi
 
 * opérateur [INTERVAL](/fr/reference/operators/index#interval)
 * fonctions de conversion de type [toInterval](/fr/reference/functions/regular-functions/type-conversion-functions#toIntervalYear)

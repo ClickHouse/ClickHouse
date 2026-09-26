@@ -11,7 +11,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 ClickHouse поддерживает большинство известных текстовых и двоичных форматов данных. Это позволяет легко интегрировать его практически в любой
 конвейер обработки данных, чтобы использовать преимущества ClickHouse.
 
-## Форматы ввода {#input-formats}
+## Форматы ввода
 
 Форматы ввода используются для:
 
@@ -34,14 +34,14 @@ ClickHouse поддерживает большинство известных т
 прочитайте полный [анализ бенчмарка](https://www.clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient).
 Полные результаты тестов доступны на онлайн-панели мониторинга [FastFormats](https://fastformats.clickhouse.com/).
 
-## Форматы вывода {#output-formats}
+## Форматы вывода
 
 Поддерживаемые форматы вывода используются для:
 
 * Представления результатов запроса `SELECT`
 * Выполнения операций `INSERT` в таблицы с файловой поддержкой
 
-## Обзор форматов {#formats-overview}
+## Обзор форматов
 
 Поддерживаемые форматы:
 
@@ -152,7 +152,7 @@ ClickHouse поддерживает большинство известных т
 
 Дополнительные настройки для JSON описаны на странице [Настройки формата JSON](/ru/reference/formats/JSON/format-settings).
 
-## Схема формата {#formatschema}
+## Схема формата
 
 Имя файла, содержащего схему формата, задаётся настройкой `format_schema`.
 Эту настройку необходимо указать при использовании форматов `Cap'n Proto` и `Protobuf`.
@@ -169,7 +169,7 @@ ClickHouse поддерживает большинство известных т
 должно находиться в каталоге, указанном в [format&#95;schema&#95;path](/ru/reference/settings/server-settings/settings/format#format_schema_path)
 в конфигурации сервера.
 
-## Пропуск ошибок {#skippingerrors}
+## Пропуск ошибок
 
 Некоторые форматы, такие как `CSV`, `TabSeparated`, `TSKV`, `JSONEachRow`, `Template`, `CustomSeparated` и `Protobuf`, могут пропускать некорректную строку, если возникает ошибка разбора, и продолжать разбор с начала следующей строки. См. настройки [input&#95;format&#95;allow&#95;errors&#95;num](/ru/reference/settings/formats/input-format#input_format_allow_errors_num) и
 [input&#95;format&#95;allow&#95;errors&#95;ratio](/ru/reference/settings/formats/input-format#input_format_allow_errors_ratio).

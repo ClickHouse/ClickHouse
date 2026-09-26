@@ -13,14 +13,14 @@ doc_type: 'reference'
 
 它允许在指定集群中由多个节点并行处理来自 [Amazon S3](https://aws.amazon.com/s3/) 和 Google Cloud Storage [Google Cloud Storage](https://cloud.google.com/storage/) 的文件。在发起节点上，它会与集群中的所有节点建立连接，展开 S3 文件路径中的星号，并动态分发每个文件。在工作节点上，它会向发起节点请求下一个要处理的任务并执行处理。此过程会不断重复，直到所有任务都完成。
 
-## 语法 {#syntax}
+## 语法
 
 ```sql
 s3Cluster(cluster_name, url[, NOSIGN | access_key_id, secret_access_key,[session_token]][, format][, structure][, compression_method][, headers][, extra_credentials])
 s3Cluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
-## 参数 {#arguments}
+## 参数
 
 | 参数                                      | 描述                                                                                                                                                                                                                                                   |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -44,11 +44,11 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 | `no_sign_request`             | 默认禁用。                                                                                                                                                               |
 | `expiration_window_seconds`   | 默认值为 120。                                                                                                                                                           |
 
-## 返回值 {#returned-value}
+## 返回值
 
 一个具有指定结构的表，用于读取或写入指定文件中的数据。
 
-## 示例 {#examples}
+## 示例
 
 使用 `cluster_simple` 集群中的所有节点，查询 `/root/data/clickhouse` 和 `/root/data/database/` 文件夹中所有文件的数据：
 
@@ -82,15 +82,15 @@ SELECT count(*) FROM s3Cluster(
 )
 ```
 
-## 访问私有和公共存储桶 {#accessing-private-and-public-buckets}
+## 访问私有和公共存储桶
 
 用户可以采用与[此处](/zh/reference/functions/table-functions/s3#accessing-public-buckets)文档中 `s3` 函数相同的访问方式。
 
-## 优化性能 {#optimizing-performance}
+## 优化性能
 
 有关如何优化 s3 函数性能的详细信息，请参阅[详细指南](/zh/integrations/connectors/data-ingestion/AWS/performance)。
 
-## 相关 {#related}
+## 相关
 
 * [S3 引擎](/zh/reference/engines/table-engines/integrations/s3)
 * [s3 表函数](/zh/reference/functions/table-functions/s3)

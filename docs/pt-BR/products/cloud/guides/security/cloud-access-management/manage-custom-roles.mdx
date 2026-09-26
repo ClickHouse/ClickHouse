@@ -13,7 +13,7 @@ Este guia é destinado a usuários com a Função Admin no ClickHouse Cloud.
 
 Os clientes do ClickHouse Cloud podem selecionar funções de sistema predefinidas ou criar funções personalizadas para atribuir aos usuários. Para mais informações sobre as funções de sistema e as permissões associadas, consulte [Console roles and permissions](/pt-BR/products/cloud/reference/security/console-roles). Este guia fornece detalhes sobre como gerenciar funções personalizadas.
 
-## Criar funções personalizadas {#create-custom-role}
+## Criar funções personalizadas
 
 As funções personalizadas podem incluir uma combinação de permissões de organização, serviço e banco de dados. As permissões podem ser aplicadas a todos os serviços e bancos de dados ou a um subconjunto deles.
 
@@ -65,7 +65,7 @@ As funções personalizadas podem incluir uma combinação de permissões de org
   </Step>
 </Steps>
 
-## Gerenciar funções de banco de dados {#manage-database-roles}
+## Gerenciar funções de banco de dados
 
 Além das permissões do console, as funções personalizadas podem incluir uma política `Data` que controla o acesso aos bancos de dados dos serviços selecionados. Isso permite gerenciar o acesso ao console e aos bancos de dados em um só lugar, em vez de manter funções separadas em cada banco de dados.
 
@@ -79,7 +79,7 @@ Quando você adiciona uma política `Data` a uma função personalizada, o Click
   As funções de banco de dados gerenciadas pelo Cloud substituem as funções [`sql-console-role:<email>`](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) atribuídas manualmente, que não são compatíveis com sessões JWT no SQL Console.
 </Warning>
 
-### Pré-requisitos {#manage-database-roles-prerequisites}
+### Pré-requisitos
 
 As funções de banco de dados personalizadas em um serviço dependem da [autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) e não são aplicadas enquanto ela estiver desabilitada. Antes de adicionar uma política `Data` a uma função, navegue até o serviço, abra `Settings` e localize o cartão `JWT authentication` na seção `Security`. Certifique-se de que o controle `SQL Console` esteja habilitado.
 
@@ -119,7 +119,7 @@ As funções de banco de dados personalizadas em um serviço dependem da [autent
   </Step>
 </Steps>
 
-### Verificar funções de banco de dados {#verify-database-roles}
+### Verificar funções de banco de dados
 
 As funções gerenciadas pelo console são criadas no banco de dados com o prefixo `cloud:` e o tipo de armazenamento `cloud`, e podem levar até 10 minutos para aparecer após a criação. Para listá-las, consulte a tabela `system.roles` no serviço:
 
@@ -134,7 +134,7 @@ SELECT * FROM system.roles;
 ```
 
 <div id="update-custom-role">
-  ## Atualizar funções personalizadas {#update-custom-role}
+  ## Atualizar funções personalizadas
 </div>
 
 As funções personalizadas podem ser atualizadas após serem criadas. Os usuários perderão todas as permissões removidas da função e receberão todas as permissões adicionadas.
@@ -151,7 +151,7 @@ As funções personalizadas podem ser atualizadas após serem criadas. Os usuár
 6. Selecione `Edit role`
 
 <div id="delete-custom-role">
-  ## Excluir funções personalizadas {#delete-custom-role}
+  ## Excluir funções personalizadas
 </div>
 
 As funções personalizadas podem ser excluídas a qualquer momento.

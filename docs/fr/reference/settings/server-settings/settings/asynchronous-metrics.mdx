@@ -12,15 +12,15 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-## asynchronous_metrics_enable_heavy_metrics {#asynchronous_metrics_enable_heavy_metrics}
+## asynchronous_metrics_enable_heavy_metrics
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Active le calcul des métriques asynchrones coûteuses.
 
-## asynchronous_metrics_keeper_metrics_only {#asynchronous_metrics_keeper_metrics_only}
+## asynchronous_metrics_keeper_metrics_only
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Fait en sorte que les métriques asynchrones ne calculent que les métriques liées à Keeper.
 
-## asynchronous_metrics_key_values_mode {#asynchronous_metrics_key_values_mode}
+## asynchronous_metrics_key_values_mode
 
 <SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
 
@@ -36,7 +36,7 @@ Une famille de métriques clé-valeur introduite après la version 26.8 n’a pa
 
 Le paramètre est appliqué à la volée : il est relu à chaque mise à jour des métriques asynchrones ; `SYSTEM RELOAD CONFIG` suffit donc pour changer de forme sans redémarrage.
 
-## asynchronous_metrics_update_period_s {#asynchronous_metrics_update_period_s}
+## asynchronous_metrics_update_period_s
 
 <SettingsInfoBlock type="UInt32" default_value="1" changeable_without_restart="No" />Période, en secondes, de mise à jour des métriques asynchrones.
 

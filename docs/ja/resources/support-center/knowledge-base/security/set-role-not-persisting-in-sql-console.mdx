@@ -16,7 +16,7 @@ ClickHouse Cloud SQL Console で `SET ROLE` を実行すると、1 つのクエ�
   コンソールからデータベースアクセスを管理するには、[Cloud 管理のデータベースロール](/ja/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) の使用を推奨します。`sql-console-role:<email>` ロールは SQL console 内の JWT セッションと互換性がありません。
 </Tip>
 
-## 症状 {#symptoms}
+## 症状
 
 次の現象が1つ以上発生する場合があります。
 
@@ -35,7 +35,7 @@ SELECT
     defaultRoles();
 ```
 
-## この現象が発生する理由 {#why-this-happens}
+## この現象が発生する理由
 
 SQL Console は、複数のレプリカを持つ ClickHouse Cloud サービスに対し、ステートレスな HTTP 接続を介してクエリを送信します。連続するクエリで同じ接続またはレプリカが使用されるとは限りません。
 
@@ -43,7 +43,7 @@ SQL Console は、複数のレプリカを持つ ClickHouse Cloud サービス�
 
 このため、SQL Console では `SET ROLE` を永続的なアクセス制御の仕組みとして使用しないでください。
 
-## SQL Console のユーザーロールの仕組み {#how-sql-console-user-roles-work}
+## SQL Console のユーザーロールの仕組み
 
 ユーザーが SQL Console を開くと、ClickHouse Cloud は次の命名規則に従ってデータベースユーザーを作成します。
 
@@ -65,7 +65,7 @@ sql-console-role:user@example.com
 | `sql_console_admin` and `sql_console_read_only` | 組み込みの SQL Console ロール                         | はい、ClickHouse Cloud により管理 |
 | `sql-console-role:<email>`                      | 管理者が作成するユーザーごとのカスタムロール                        | はい、ユーザーのサインイン時に適用される      |
 
-## 永続的な権限を設定する {#configure-persistent-permissions}
+## 永続的な権限を設定する
 
 `sql_console_admin` ロールを持つ SQL Console ユーザーや、`ACCESS MANAGEMENT` 権限を持つ別のユーザーなど、サービスに対する管理権限を持つユーザーとして、以下のステートメントを実行します。
 
@@ -127,7 +127,7 @@ sql-console-role:user@example.com
   </Step>
 </Steps>
 
-## 管理対象ロールを変更しない {#avoid-modifying-managed-roles}
+## 管理対象ロールを変更しない
 
 カスタム権限を付与するために、`sql_console_admin` や `sql_console_read_only` を変更しないでください。これらの組み込みロールは ClickHouse Cloud によって管理されています。ユーザーごとの権限には、代わりに `sql-console-role:<email>` を使用してください。
 

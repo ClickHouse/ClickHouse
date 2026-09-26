@@ -18,20 +18,20 @@ Todos los valores indicados se derivan de los datos de la tabla, por lo que leer
 
 Si se aplica una política de filas a la tabla para el usuario actual, la lectura de `codec_block_counts` genera `ACCESS_DENIED`, ya que los recuentos incluirían filas que la política oculta. Las demás columnas siguen siendo legibles; `system.parts_columns` las informa independientemente de las políticas de filas.
 
-## Sintaxis {#syntax}
+## Sintaxis
 
 ```sql
 mergeTreeCodecBlockCounts(database, table)
 ```
 
-## Argumentos {#arguments}
+## Argumentos
 
 | Argumento  | Descripción                                |
 | ---------- | ------------------------------------------ |
 | `database` | El nombre de la base de datos de la tabla. |
 | `table`    | El nombre de la tabla MergeTree.           |
 
-## Valor devuelto {#returned-value}
+## Valor devuelto
 
 Un objeto de tabla con una fila por cada combinación de (parte activa, columna y subflujo) de la tabla de origen:
 
@@ -42,7 +42,7 @@ Un objeto de tabla con una fila por cada combinación de (parte activa, columna 
 * `data_uncompressed_bytes` ([Nullable(UInt64)](/es/reference/data-types/nullable)) — Tamaño de los datos sin comprimir en el subflujo, en bytes. `NULL` para las partes `Compact`.
 * `codec_block_counts` ([Map(String, UInt64)](/es/reference/data-types/map)) — Número de bloques comprimidos de este subflujo, agrupados por códec. Vacío para las partes `Compact`, cuyas columnas comparten un archivo de datos y, por tanto, no tienen una atribución de códec por flujo.
 
-## Ejemplo de uso {#usage-example}
+## Ejemplo de uso
 
 ```sql
 CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a

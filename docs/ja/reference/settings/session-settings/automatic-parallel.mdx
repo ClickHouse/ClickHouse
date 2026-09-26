@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## automatic_parallel_replicas_min_bytes_per_replica {#automatic_parallel_replicas_min_bytes_per_replica}
+## automatic_parallel_replicas_min_bytes_per_replica
 
 <ExperimentalBadge />
 
@@ -25,7 +25,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 並列レプリカを自動的に有効化するための、レプリカごとの読み取りバイト数のしきい値です (`automatic_parallel_replicas_mode`=1 の場合にのみ適用されます) 。0 はしきい値なしを意味します。
 読み取る合計バイト数は、収集された統計情報に基づいて推定されます。
 
-## automatic_parallel_replicas_mode {#automatic_parallel_replicas_mode}
+## automatic_parallel_replicas_mode
 
 <ExperimentalBadge />
 

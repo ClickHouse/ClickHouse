@@ -14,7 +14,7 @@ keywords: ['merge', 'table function', 'query patterns', 'table engine', 'data ac
   <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## 设置表 {#setup-tables}
+## 设置表
 
 我们将借助 [TennisMyLife 的 ATP 比赛数据库](https://github.com/Tennismylife/TML-Database) 学习如何使用这个函数。
 我们将处理包含自 20 世纪 60 年代以来比赛数据的 CSV 文件，不过会为每个年代创建略有不同的 schema。
@@ -50,7 +50,7 @@ SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
 ```
 
-## 多个表的 schema {#schema-multiple-tables}
+## 多个表的 schema
 
 我们可以运行以下查询，并排列出每个表中的列及其类型，以便更直观地看出差异。
 
@@ -89,7 +89,7 @@ SETTINGS output_format_pretty_max_value_width=25;
 * 1980s 将 `winner_seed` 和 `loser_seed` 的类型从 `Nullable(UInt8)` 改为 `Nullable(UInt16)`。
 * 1990s 将 `surface` 从 `String` 改为 `Enum('Hard', 'Grass', 'Clay', 'Carpet')`，并新增了 `walkover` 和 `retirement` 列。
 
-## 使用合并查询多个表 {#querying-multiple-tables}
+## 使用合并查询多个表
 
 让我们编写一个查询，找出 John McEnroe 战胜头号种子选手的比赛：
 
@@ -149,7 +149,7 @@ AND multiIf(
 └───────────────┴─────────────────────┴─────────────┘
 ```
 
-## 使用合并时，这些行来自哪个表？ {#which-table-merge}
+## 使用合并时，这些行来自哪个表？
 
 如果我们想知道这些行来自哪个表，可以怎么做？
 我们可以使用 `_table` 虚拟列，如下查询所示：

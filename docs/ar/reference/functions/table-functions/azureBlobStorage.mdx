@@ -15,7 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 يوفّر واجهة مشابهة للجداول لتنفيذ select/insert على الملفات في [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs). دالة الجدول هذه مشابهة لـ [دالة s3](/ar/reference/functions/table-functions/s3).
 
-## الصياغة {#syntax}
+## الصياغة
 
 <Tabs>
   <Tab title="سلسلة اتصال">
@@ -43,7 +43,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   </Tab>
 </Tabs>
 
-## وسيطات الدالة {#arguments}
+## وسيطات الدالة
 
 | Argument                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -60,7 +60,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 | `partition_columns_in_data_file` | اختياري. يُستخدم فقط مع استراتيجية التقسيم `HIVE`. يحدد لـ ClickHouse ما إذا كان ينبغي توقّع كتابة أعمدة التقسيم داخل ملف البيانات. القيمة الافتراضية `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `extra_credentials`              | استخدم `client_id` و`tenant_id` للمصادقة. إذا تم توفير `extra_credentials`، فستُعطى لهما الأولوية على `account_name` و`account_key`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
-## المجموعات المسماة {#named-collections}
+## المجموعات المسماة
 
 يمكن أيضًا تمرير الوسائط باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). في هذه الحالة، تكون المفاتيح التالية مدعومة:
 
@@ -106,13 +106,13 @@ FROM azureBlobStorage(azure_my_data, blob_path = 'other_data/*.csv', format = 'C
 LIMIT 5;
 ```
 
-## القيمة المعادة {#returned-value}
+## القيمة المعادة
 
 جدول ذو البنية المحددة لقراءة البيانات من الملف المحدد أو كتابتها فيه.
 
-## أمثلة {#examples}
+## أمثلة
 
-### القراءة بصيغة `storage_account_url` {#reading-with-storage-account-url}
+### القراءة بصيغة `storage_account_url`
 
 ```sql
 SELECT *
@@ -127,7 +127,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-### القراءة باستخدام صيغة `connection_string` {#reading-with-connection-string}
+### القراءة باستخدام صيغة `connection_string`
 
 ```sql
 SELECT *
@@ -140,7 +140,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-### الكتابة باستخدام التقسيمات {#writing-with-partitions}
+### الكتابة باستخدام التقسيمات
 
 يشير المسار الذي يحتوي على `{_partition_id}` إلى استراتيجية التقسيم `WILDCARD`. لا يستخدم المسار الذي يحتوي على نمط glob آخر استراتيجية تقسيم ويتجاهل `PARTITION BY`. يستخدم المسار الذي لا يحتوي على نمط glob استراتيجية `HIVE` عندما يكون `file_like_engine_default_partition_strategy` مضبوطًا على `HIVE`؛ وإلا فلا يستخدم استراتيجية تقسيم.
 
@@ -177,16 +177,16 @@ FROM azureBlobStorage(
 └─────────┴─────────┴─────────┘
 ```
 
-## الأعمدة الافتراضية {#virtual-columns}
+## الأعمدة الافتراضية
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
 * `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، تكون القيمة `NULL`.
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
 
-## الكتابة مع التقسيم {#partitioned-write}
+## الكتابة مع التقسيم
 
-### استراتيجية التقسيم {#partition-strategy}
+### استراتيجية التقسيم
 
 مدعومة فقط مع استعلامات `INSERT`.
 
@@ -226,7 +226,7 @@ SELECT _path, * FROM azureBlobStorage(
    └─────────────────────────────────────────────────────────────────────────────────┴────┴──────┴─────────┘
 ```
 
-## إعداد use_hive_partitioning {#hive-style-partitioning}
+## إعداد use_hive_partitioning
 
 هذا تلميح لـ ClickHouse لتحليل الملفات المُقسَّمة بأسلوب Hive عند القراءة. ولا يؤثر في الكتابة. ولجعل عمليتَي القراءة والكتابة متناظرتين، استخدم الوسيط `partition_strategy`.
 
@@ -240,7 +240,7 @@ SELECT _path, * FROM azureBlobStorage(
 SELECT * FROM azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-## استخدام Shared Access Signatures (SAS) {#using-shared-access-signatures-sas-sas-tokens}
+## استخدام Shared Access Signatures (SAS)
 
 Shared Access Signature ‏(SAS) هو URI يمنح وصولًا مقيّدًا إلى حاوية أو ملف في Azure Storage. استخدمه لتوفير وصول محدود زمنيًا إلى موارد حساب التخزين من دون مشاركة مفتاح حساب التخزين. مزيد من التفاصيل [هنا](https://learn.microsoft.com/en-us/rest/api/storageservices/delegate-access-with-shared-access-signature).
 
@@ -272,7 +272,7 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 1 row in set. Elapsed: 0.153 sec.
 ```
 
-## مواضيع ذات صلة {#related}
+## مواضيع ذات صلة
 
 * [محرك الجدول AzureBlobStorage](/ar/reference/engines/table-engines/integrations/azureBlobStorage)
 

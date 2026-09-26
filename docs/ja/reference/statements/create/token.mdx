@@ -29,7 +29,7 @@ CREATE TOKEN
 これが独立した権限になっているのは、トークンが属するアカウントのセキュリティレベルを低下させるためです。ハードウェアキーや証明書で認証されたユーザーであっても、トークンを使えば同じアカウントに対して長期間有効なパスワードを作成できてしまいます。同じ権限で、同等の
 `ALTER USER <current user> ADD IDENTIFIED ...` ステートメントも実行できます。
 
-## 結果 {#result}
+## 結果
 
 このクエリは、2つのカラムを持つ1行を返します:
 
@@ -46,7 +46,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 
 このシークレットは32文字の長さで、暗号学的に安全な乱数ソースから生成されるため、[パスワードの複雑性ルール](/ja/reference/statements/create/user#identification)によるチェックを受ける必要はなく、実際にチェックもされません。これらのルールは、人間が選んだパスワードを制約するために存在しています。
 
-## VALID UNTIL 句と VALID FOR 句 {#valid-until-clause}
+## VALID UNTIL 句と VALID FOR 句
 
 トークンの有効期間を制限します。これらは [`CREATE USER`](/ja/reference/statements/create/user#valid-until-clause) における認証方式の対応する句とまったく同じように動作します。`VALID UNTIL` には絶対的な日付と時刻を指定し、`VALID FOR` には [interval](/ja/reference/data-types/special-data-types/interval) を指定します。指定した interval は、クエリ実行時の現在時刻に加算されます。
 
@@ -58,7 +58,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 * `CREATE TOKEN VALID FOR INTERVAL 30 DAY`
 * `CREATE TOKEN VALID UNTIL 'infinity'`
 
-## GRANTS 句 {#grants-clause}
+## GRANTS 句
 
 トークンで認証されたセッションのアクセス権を、列挙された権限との積集合に制限します。動作は [`CREATE USER` の `GRANTS` 句](/ja/reference/statements/create/user#grants-clause)と完全に同じで、その制限事項も引き継ぎます。特に、この制限はクエリを受け取ったノードでのみ適用され、クラスターの他のノードには伝播しません。この句によってアクセス権が追加されることはありません。ユーザーに付与されていない権限は、トークンでも使用不可のままです。この句を指定しない場合、トークンはユーザーのすべてのアクセス権を持ちます。
 
@@ -69,7 +69,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 
 この制限も有効期限も、トークンのセッションが残したものには適用されません。[セキュリティ上の考慮事項](#security-considerations)を参照してください。
 
-## トークンの管理 {#managing-tokens}
+## トークンの管理
 
 トークンはユーザーの認証方式の一つであるため、[`SHOW CREATE USER`](/ja/reference/statements/show#show-create-user) (`VALID UNTIL` 句および `GRANTS` 句とともに、ただしシークレットは除く) や、[`system.users`](/ja/reference/system-tables/users) テーブルの `auth_type`、`auth_params`、`auth_grants` カラムに表示されます。
 
@@ -79,7 +79,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 
 `CREATE TOKEN` は `ON CLUSTER` 句をサポートしていません。アクセスエンティティがローカルに保存されているクラスター全体でトークンを機能させるには、レプリケーションされたアクセスストレージを使用するか、同等の `ALTER USER ... ADD IDENTIFIED WITH sha256_hash` ステートメントをすべてのノードで実行してください。
 
-## セキュリティ上の考慮事項 {#security-considerations}
+## セキュリティ上の考慮事項
 
 `VALID UNTIL` と `GRANTS` が制約するのは、トークンで認証するセッションであり、そのセッションが残したものまでは制約しません。
 

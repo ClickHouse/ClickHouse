@@ -21,14 +21,14 @@ HackerNews Analyzer 是一个 Node.js 应用，用于查询托管在公网 Click
 
 这与[会话回放演示](/zh/clickstack/example-datasets/session-replay)不同，后者为本地 Docker ClickStack 上仅在浏览器中运行的应用添加插桩。这里，您可以从同一应用获得后端自动插桩、ClickHouse 查询 span 和会话回放。
 
-## 前置条件 {#prerequisites}
+## 前置条件
 
 * Node 18+ 和 npm
 * ClickStack OTLP/HTTP 端点和摄取令牌：
   * **ClickHouse Cloud：**打开服务，然后依次选择 **ClickStack** → **配置 OpenTelemetry exporter** → **环境变量**。协议为 `http/protobuf`。请求头为 `authorization=<ingestion token>`，不带 `Bearer` 前缀。
   * **本地 collector：**使用 `http://localhost:4318`。如果 collector 未启用安全保护，请将 `authorization=` 留空。
 
-## 克隆代码仓库 {#clone-the-repository}
+## 克隆代码仓库
 
 克隆 [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)，安装依赖项并复制环境变量模板：
 
@@ -43,7 +43,7 @@ cp .env.example .env
 
 <InstrumentApplication />
 
-## 了解更多 {#learn-more}
+## 了解更多
 
 * [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer)：本指南中进行插桩的演示仓库。
 * [会话回放](/zh/clickstack/features/session-replay)：功能概览、SDK 选项和隐私控制。

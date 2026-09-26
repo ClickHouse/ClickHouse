@@ -13,10 +13,10 @@ import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureB
 Les sauvegardes de base de données sont conçues pour vous permettre de restaurer un service à un état antérieur à partir de la dernière sauvegarde réussie.
 
 <div id="backups">
-  ## Sauvegardes {#backups}
+  ## Sauvegardes
 </div>
 
-### Fonctionnement des sauvegardes dans ClickHouse Cloud {#how-backups-work-in-clickhouse-cloud}
+### Fonctionnement des sauvegardes dans ClickHouse Cloud
 
 Les sauvegardes de ClickHouse Cloud combinent des sauvegardes « complètes » et « incrémentielles » qui forment une chaîne de sauvegarde. La chaîne commence par une sauvegarde complète, puis des sauvegardes incrémentielles sont effectuées au cours des périodes planifiées suivantes afin de constituer une séquence de sauvegardes. Lorsqu’une chaîne de sauvegarde atteint une certaine longueur, une nouvelle chaîne est créée. L’ensemble de cette chaîne de sauvegardes peut ensuite être utilisé pour restaurer les données vers un nouveau service, si nécessaire. Une fois que toutes les sauvegardes d’une chaîne donnée ont dépassé la durée de rétention définie pour le service (plus d’informations sur la rétention ci-dessous), la chaîne est supprimée.
 
@@ -27,7 +27,7 @@ Le jour 1, une sauvegarde complète est effectuée pour démarrer la chaîne de 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Exemple de chaîne de sauvegarde dans ClickHouse Cloud" />
 
 <div id="default-backup-policy">
-  ### Politique de sauvegarde par défaut {#default-backup-policy}
+  ### Politique de sauvegarde par défaut
 </div>
 
 Les sauvegardes sont comptabilisées et facturées séparément du stockage dans les niveaux Basic, Scale et Enterprise.
@@ -36,7 +36,7 @@ Actuellement, les services disposent par défaut d’une sauvegarde quotidienne 
 Voir [&quot;Consulter et restaurer les sauvegardes&quot;](/fr/products/cloud/guides/backups/review-and-restore-backups) pour plus de détails.
 
 <div id="configurable-backups">
-  ## Sauvegardes configurables {#configurable-backups}
+  ## Sauvegardes configurables
 </div>
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
@@ -55,7 +55,7 @@ ClickHouse Cloud vous permet de configurer la planification de vos sauvegardes p
 
 Consultez [&quot;Configurer les planifications de sauvegarde&quot;](/fr/products/cloud/guides/backups/configurable-backups) pour savoir comment configurer vos sauvegardes.
 
-## Sauvegardes BYOB (Bring Your Own Bucket) {#byob}
+## Sauvegardes BYOB (Bring Your Own Bucket)
 
 ClickHouse Cloud permet d’exporter des sauvegardes vers le stockage du compte de votre propre fournisseur de services cloud (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).
 Si vous configurez les sauvegardes vers votre propre bucket, ClickHouse Cloud continue également à effectuer ses propres sauvegardes par défaut.
@@ -77,7 +77,7 @@ Nous présentons également des commandes de sauvegarde et de restauration qui v
 
 Consultez [« Exporter des sauvegardes vers votre propre compte cloud »](/fr/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) pour voir des exemples montrant comment effectuer des sauvegardes complètes et incrémentielles vers le stockage d’objets AWS, GCP et Azure, ainsi que comment restaurer à partir de ces sauvegardes.
 
-### Options de sauvegarde {#backup-options}
+### Options de sauvegarde
 
 Pour exporter des sauvegardes vers votre propre compte cloud, vous avez deux possibilités :
 

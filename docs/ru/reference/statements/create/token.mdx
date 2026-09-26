@@ -37,7 +37,7 @@ CREATE TOKEN
 аккаунта. Та же привилегия разрешает и эквивалентный
 оператор `ALTER USER <current user> ADD IDENTIFIED ...`.
 
-## Результат {#result}
+## Результат
 
 Запрос возвращает одну строку с двумя столбцами:
 
@@ -55,7 +55,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 Секрет имеет длину 32 символа и генерируется криптографически стойким источником случайных значений, поэтому его не требуется проверять (и он не проверяется) на соответствие
 [правилам сложности паролей](/ru/reference/statements/create/user#identification) — эти правила нужны для того, чтобы ограничивать пароли, придуманные людьми.
 
-## Секции VALID UNTIL и VALID FOR {#valid-until-clause}
+## Секции VALID UNTIL и VALID FOR
 
 Ограничивают время жизни токена. Они работают точно так же, как соответствующие секции метода аутентификации
 в [`CREATE USER`](/ru/reference/statements/create/user#valid-until-clause): `VALID UNTIL` принимает абсолютные дату
@@ -73,7 +73,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 * `CREATE TOKEN VALID FOR INTERVAL 30 DAY`
 * `CREATE TOKEN VALID UNTIL 'infinity'`
 
-## Секция GRANTS {#grants-clause}
+## Секция GRANTS
 
 Ограничивает права доступа сеансов, аутентифицированных с помощью токена, пересечением с перечисленными
 привилегиями. Работает точно так же, как [секция `GRANTS` в `CREATE USER`](/ru/reference/statements/create/user#grants-clause),
@@ -90,7 +90,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 Ни это ограничение, ни ограничение по времени не распространяются на то, что остаётся после сеансов токена — см.
 [Риски для безопасности](#security-considerations).
 
-## Управление токенами {#managing-tokens}
+## Управление токенами
 
 Токен — это метод аутентификации пользователя, поэтому он отображается в выводе
 [`SHOW CREATE USER`](/ru/reference/statements/show#show-create-user) (вместе с секциями `VALID UNTIL` и `GRANTS`,
@@ -114,7 +114,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 (или выполните на каждом узле эквивалентный оператор `ALTER USER ... ADD IDENTIFIED WITH sha256_hash`), чтобы
 токен работал в кластере, объекты управления доступом которого хранятся локально.
 
-## Риски для безопасности {#security-considerations}
+## Риски для безопасности
 
 `VALID UNTIL` и `GRANTS` ограничивают сеансы, которые аутентифицируются с помощью токена. Но они не ограничивают
 то, что эти сеансы оставляют после себя:

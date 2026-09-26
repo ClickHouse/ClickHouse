@@ -39,7 +39,7 @@ ORDER BY total DESC
 LIMIT 3
 ```
 
-## FROM クエリ {#from-queries}
+## FROM クエリ
 
 クエリは `FROM` 句から開始でき、このようなクエリでは `SELECT` 句は任意です。`SELECT` 句を省略した場合、`SELECT *` が記述されているものとしてクエリが実行されます。
 
@@ -55,9 +55,9 @@ FROM orders |> WHERE amount > 100;
 
 最後のテーブルのサンプルオフセットがクエリレベルの `OFFSET` とも解釈できる場合、`SELECT` 句は省略できません。これは、`FROM t SAMPLE 1/10 OFFSET 5` では `OFFSET` が `SAMPLE` に属する一方、`FROM t SAMPLE 1/10 SELECT * OFFSET 5` ではクエリレベルの `OFFSET` となるためです。両者を区別するには、明示的な `SELECT` が必要です。クエリレベルの `OFFSET` の前に置けない句でクエリが続く場合は曖昧さがないため、通常どおり `SELECT` 句は任意です: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`。
 
-## 演算子 {#operators}
+## 演算子
 
-### WHERE {#where}
+### WHERE
 
 `|> WHERE condition` は入力行をフィルタリングします。集約の後に適用した場合は、`HAVING` と同様に機能します。
 
@@ -67,7 +67,7 @@ FROM orders
 |> WHERE total > 100
 ```
 
-### SELECT {#select}
+### SELECT
 
 `|> SELECT [DISTINCT] expr1 [AS alias1], ...` は、指定した式のみを出力カラムとして残します。
 
@@ -77,7 +77,7 @@ FROM orders |> SELECT customer, amount * 2 AS doubled
 
 通常のクエリの `SELECT` 句と同じ位置で、式リストの末尾にカンマを付けることができます。この場合、カンマの後にはクエリの終端または次の `|>` 演算子を続けられます: `FROM orders |> SELECT customer, amount, |> LIMIT 1`。同様のことが `EXTEND` 演算子および `AGGREGATE` 演算子にも当てはまります。
 
-### EXTEND {#extend}
+### EXTEND
 
 `|> EXTEND expr1 [AS alias1], ...` は、指定した式を入力カラムに追加します。これは `SELECT *, expr1 AS alias1, ...` と同等です。
 
@@ -85,7 +85,7 @@ FROM orders |> SELECT customer, amount * 2 AS doubled
 FROM orders |> EXTEND amount * 10 AS big
 ```
 
-### SET {#set}
+### SET
 
 `|> SET column1 = expr1, ...` は、指定したカラムの値を置き換えます。これは `SELECT * REPLACE (expr1 AS column1, ...)` と同等です。
 
@@ -93,7 +93,7 @@ FROM orders |> EXTEND amount * 10 AS big
 FROM orders |> SET amount = amount + 1000
 ```
 
-### DROP {#drop}
+### DROP
 
 `|> DROP column1, ...` は、指定したカラムを削除します。これは `SELECT * EXCEPT (column1, ...)` と同等です。
 
@@ -101,7 +101,7 @@ FROM orders |> SET amount = amount + 1000
 FROM orders |> DROP cancelled
 ```
 
-### AS {#as}
+### AS
 
 `|> AS alias` は次の演算子の入力に別名を付け、その演算子内から参照できるようにします。主に JOIN で使用します：
 
@@ -112,7 +112,7 @@ FROM orders
 |> JOIN orders AS o ON agg.customer = o.customer
 ```
 
-### AGGREGATE {#aggregate}
+### AGGREGATE
 
 `|> AGGREGATE agg1 [AS alias1], ... [GROUP BY expr1 [AS alias1], ...]` は入力行を集計します。出力カラムは、グループ化に使用したカラムの後に集計カラムが続きます。`GROUP BY` を指定しない場合、入力全体が1行に集計されます。
 
@@ -121,11 +121,11 @@ FROM orders |> AGGREGATE count() AS c, sum(amount) AS total GROUP BY customer;
 FROM orders |> AGGREGATE count() AS c;
 ```
 
-### DISTINCT {#distinct}
+### DISTINCT
 
 `|> DISTINCT` は重複行を除外します。これは `SELECT DISTINCT *` と同等です。
 
-### ORDER BY {#order-by}
+### ORDER BY
 
 `|> ORDER BY expr1 [ASC/DESC], ...` は入力行をソートします。`ORDER BY ALL`、`WITH FILL`、`INTERPOLATE` を含め、`ORDER BY` 句の完全な構文がサポートされています。
 
@@ -135,7 +135,7 @@ FROM orders |> SELECT customer, amount |> ORDER BY ALL;
 FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
 ```
 
-### LIMIT と OFFSET {#limit-and-offset}
+### LIMIT と OFFSET
 
 `|> LIMIT length [OFFSET offset]` および `|> OFFSET offset` は、返される行数を制限します。
 
@@ -143,7 +143,7 @@ FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
 FROM orders |> ORDER BY amount DESC |> LIMIT 3 OFFSET 1
 ```
 
-### JOIN と ARRAY JOIN {#join-and-array-join}
+### JOIN と ARRAY JOIN
 
 `|> [GLOBAL] [ANY/ALL/ASOF/SEMI/ANTI] [INNER/LEFT/RIGHT/FULL/CROSS] JOIN table [ON expr | USING (columns)]` は、入力を別のテーブル、サブクエリ、またはテーブル関数と結合します。すべての種類の [JOIN](/ja/reference/statements/select/join) および [ARRAY JOIN](/ja/reference/statements/select/array-join) がサポートされています。`FROM` 句と同様に、1 つの演算子に複数の JOIN を含めることができます。
 
@@ -160,7 +160,7 @@ FROM customers
 
 通常のクエリの `FROM` 句と同様に、`ARRAY JOIN` の直後ではカンマによるクロス JOIN はサポートされません。`ARRAY JOIN` の直後のカンマは、常にその式リストの一部として解釈されます。
 
-### UNION、INTERSECT、EXCEPT {#union-intersect-and-except}
+### UNION、INTERSECT、EXCEPT
 
 `|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]`、`|> INTERSECT [ALL/DISTINCT] ...`、`|> EXCEPT [ALL/DISTINCT] ...` は、入力と他のクエリの結果を結合します。
 
@@ -173,7 +173,7 @@ FROM orders
 
 オペランドを囲む括弧は単一のクエリでは任意ですが、集合演算の後に別のパイプ演算子でチェーンを続ける場合は必須です。そうしないと、次の演算子が最後のオペランドに適用されるのか、結果全体に適用されるのかが不明確になります。
 
-## 注記 {#notes}
+## 注記
 
 * クエリの `WITH` 句は、スカラー別名と CTE のいずれについても、後続するすべてのパイプ演算子で引き続き可視です: `WITH 10 AS threshold FROM t |> WHERE x < threshold`。
 * `INSERT ... SELECT` では、`INSERT` の前に記述した `WITH` 句は、生成される最も外側の `SELECT` に付加されます。手書きのネストされたサブクエリの場合と同様に、解釈時には `enable_global_with_statement` 設定 (デフォルトで有効) を介して内側のパイプステージにも適用されます。この設定が無効な場合、`INSERT` スコープの `WITH` に含まれる別名と CTE は、手書きのサブクエリ内で可視にならないのと同様に、パイプステージ内でも可視になりません。

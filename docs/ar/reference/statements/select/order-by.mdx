@@ -25,14 +25,14 @@ doc_type: 'reference'
 تُعاد الصفوف ذات القيم المتطابقة في تعبيرات الفرز بترتيب عشوائي وغير حتمي.
 وإذا حُذفت عبارة `ORDER BY` من جملة `SELECT`، فسيكون ترتيب الصفوف أيضًا عشوائيًا وغير حتمي.
 
-## فرز القيم الخاصة {#sorting-of-special-values}
+## فرز القيم الخاصة
 
 هناك نهجان لترتيب `NaN` و`NULL` عند الفرز:
 
 * افتراضيًا أو مع المُعدِّل `NULLS LAST`: تأتي القيم أولًا، ثم `NaN`، ثم `NULL`.
 * مع المُعدِّل `NULLS FIRST`: يأتي `NULL` أولًا، ثم `NaN`، ثم القيم الأخرى.
 
-### مثال {#example}
+### مثال
 
 للجدول
 
@@ -70,7 +70,7 @@ doc_type: 'reference'
 
 عند فرز الأعداد ذات الفاصلة العائمة، تكون قيم `NaN` منفصلة عن القيم الأخرى. وبغضّ النظر عن ترتيب الفرز، تأتي قيم `NaN` في النهاية. وبعبارة أخرى، عند الفرز تصاعديًا تُوضَع كما لو كانت أكبر من جميع الأعداد الأخرى، بينما عند الفرز تنازليًا تُوضَع كما لو كانت أصغر من سائر القيم.
 
-## دعم قواعد الترتيب {#collation-support}
+## دعم قواعد الترتيب
 
 لفرز قيم [String](/ar/reference/data-types/string)، يمكنك تحديد قواعد الترتيب (المقارنة). مثال: `ORDER BY SearchPhrase COLLATE 'tr'` - لفرز `keyword` بترتيب تصاعدي باستخدام الأبجدية التركية، مع تجاهل حالة الأحرف، على افتراض أن السلاسل مرمّزة بترميز UTF-8. يمكن تحديد `COLLATE` أو عدم تحديده لكل تعبير في ORDER BY بشكل مستقل. إذا تم تحديد `ASC` أو `DESC`، فيتم وضع `COLLATE` بعده. عند استخدام `COLLATE`، يكون الفرز دائمًا غير حساس لحالة الأحرف.
 
@@ -78,7 +78,7 @@ doc_type: 'reference'
 
 نوصي باستخدام `COLLATE` فقط للفرز النهائي لعدد صغير من الصفوف، لأن الفرز باستخدام `COLLATE` أقل كفاءة من الفرز العادي حسب البايتات.
 
-## أمثلة على قواعد الترتيب {#collation-examples}
+## أمثلة على قواعد الترتيب
 
 مثال يقتصر على قيم [String](/ar/reference/data-types/string) فقط:
 
@@ -234,7 +234,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 └───┴─────────┘
 ```
 
-## تفاصيل التنفيذ {#implementation-details}
+## تفاصيل التنفيذ
 
 يُستخدم قدر أقل من ذاكرة RAM إذا جرى تحديد [LIMIT](/ar/reference/statements/select/limit) صغير بما يكفي إلى جانب `ORDER BY`. بخلاف ذلك، تكون كمية الذاكرة المستخدمة متناسبة مع حجم البيانات المطلوب فرزها. لا يقلل نطاق [`LIMIT ... AFTER ... UNTIL`](/ar/reference/statements/select/limit#limit-after-until) ذلك، لأن حجم النطاق غير معروف حتى تُفرَز البيانات. في المعالجة الموزعة للاستعلامات، إذا تم حذف [GROUP BY](/ar/reference/statements/select/group-by)، يُنفَّذ جزء من الفرز على الخوادم البعيدة، ثم تُدمَج النتائج على الخادم الذي أرسل الطلب. وهذا يعني أنه في الفرز الموزع قد يكون حجم البيانات المطلوب فرزها أكبر من مقدار الذاكرة المتاح على خادم واحد.
 
@@ -244,7 +244,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 يعمل الفرز الخارجي بكفاءة أقل بكثير من الفرز داخل ذاكرة RAM.
 
-## تحسين قراءة البيانات {#optimization-of-data-reading}
+## تحسين قراءة البيانات
 
 إذا كان لتعبير `ORDER BY` بادئة تتطابق مع مفتاح فرز الجدول، يمكنك تحسين الاستعلام باستخدام إعداد [optimize&#95;read&#95;in&#95;order](/ar/reference/settings/session-settings/optimize#optimize_read_in_order).
 
@@ -264,7 +264,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 في الجداول التي تستخدم المحرك `MaterializedView`، يعمل هذا التحسين مع العروض مثل `SELECT ... FROM merge_tree_table ORDER BY pk`. لكنه غير مدعوم في استعلامات مثل `SELECT ... FROM view ORDER BY pk` إذا كان استعلام العرض لا يحتوي على عبارة `ORDER BY`.
 
-## مُعدِّل ORDER BY Expr WITH FILL {#order-by-expr-with-fill-modifier}
+## مُعدِّل ORDER BY Expr WITH FILL
 
 يمكن أيضًا دمج هذا المُعدِّل مع [مُعدِّل LIMIT ... WITH TIES](/ar/reference/statements/select/limit#limit--with-ties-modifier) ومع صيغة النطاق [LIMIT ... AFTER ... UNTIL](/ar/reference/statements/select/limit#limit-after-until).
 
@@ -580,7 +580,7 @@ SELECT n, source, inter FROM (
 └─────┴──────────┴───────┘
 ```
 
-## الملء للمجموعات بحسب بادئة الترتيب {#filling-grouped-by-sorting-prefix}
+## الملء للمجموعات بحسب بادئة الترتيب
 
 قد يكون من المفيد ملء الصفوف التي تتطابق قيمها في أعمدة معيّنة بشكل مستقل — ومن الأمثلة الجيدة على ذلك ملء القيم المفقودة في السلاسل الزمنية.
 لنفترض وجود جدول السلاسل الزمنية التالي:
@@ -632,7 +632,7 @@ INTERPOLATE ( value AS 9999 )
 هنا، جرى إدراج القيمة `9999` في العمود `value` فقط لجعل الصفوف التي جرى ملؤها أكثر وضوحًا.
 يُتحكَّم في هذا السلوك عبر ضبط `use_with_fill_by_sorting_prefix` (مفعّل افتراضيًا)
 
-## محتوى ذو صلة {#related-content}
+## محتوى ذو صلة
 
 * المدونة: [العمل مع بيانات السلاسل الزمنية في ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 

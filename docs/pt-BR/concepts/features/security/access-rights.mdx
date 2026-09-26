@@ -37,7 +37,7 @@ Recomendamos usar o fluxo de trabalho baseado em SQL. Os dois métodos de config
 
 Para ver todos os usuários, funções, perfis etc. e todas as permissões concedidas, use a instrução [`SHOW ACCESS`](/pt-BR/reference/statements/show#show-access).
 
-## Visão geral {#access-control-usage}
+## Visão geral
 
 Por padrão, o servidor ClickHouse fornece a conta de usuário `default`, que não pode usar o controle de acesso e gerenciamento de contas via SQL, mas tem todos os direitos e permissões. A conta de usuário `default` é usada sempre que o nome de usuário não é definido, por exemplo, ao fazer login pelo cliente ou em consultas distribuídas. No processamento de consultas distribuídas, a conta de usuário padrão é usada se a configuração do servidor ou do cluster não especificar as propriedades de [usuário e senha](/pt-BR/reference/engines/table-engines/special/distributed).
 
@@ -47,13 +47,13 @@ Se você começou a usar o ClickHouse agora, considere o seguinte cenário:
 2. Faça login na conta de usuário `default` e crie todos os usuários necessários. Não se esqueça de criar uma conta de administrador (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`).
 3. [Restrinja as permissões](/pt-BR/concepts/features/configuration/settings/permissions-for-queries) do usuário `default` e desative para ele o controle de acesso e gerenciamento de contas via SQL.
 
-### Propriedades da solução atual {#access-control-properties}
+### Propriedades da solução atual
 
 * Você pode conceder permissões para bancos de dados e tabelas mesmo que eles não existam.
 * Se uma tabela for excluída, os privilégios correspondentes a ela não são revogados. Isso significa que, mesmo que você crie uma nova tabela com o mesmo nome mais tarde, todos os privilégios continuarão válidos. Para revogar os privilégios correspondentes à tabela excluída, você precisa executar, por exemplo, a consulta `REVOKE ALL PRIVILEGES ON db.table FROM ALL`.
 * Não há configurações de validade para privilégios.
 
-### Conta de usuário {#user-account-management}
+### Conta de usuário
 
 Uma conta de usuário é uma entidade de acesso que permite autorizar alguém no ClickHouse. Uma conta de usuário contém:
 
@@ -74,7 +74,7 @@ Consultas de gerenciamento:
 * [SHOW CREATE USER](/pt-BR/reference/statements/show#show-create-user)
 * [SHOW USERS](/pt-BR/reference/statements/show#show-users)
 
-### Configurações aplicáveis {#access-control-settings-applying}
+### Configurações aplicáveis
 
 As configurações podem ser definidas de diferentes maneiras: para uma conta de usuário, nas funções concedidas a ela e em perfis de configurações. No login do usuário, se uma configuração estiver definida para diferentes entidades de acesso, o valor e as restrições dessa configuração serão aplicados da seguinte forma (da maior para a menor prioridade):
 
@@ -83,7 +83,7 @@ As configurações podem ser definidas de diferentes maneiras: para uma conta de
 3. As configurações de perfis de configurações atribuídos a um usuário ou às funções padrão dele. Se uma configuração estiver definida em alguns perfis, a ordem de aplicação dessa configuração será indefinida.
 4. Configurações aplicadas a todo o servidor por padrão ou a partir do [perfil padrão](/pt-BR/reference/settings/server-settings/settings/default#default_profile).
 
-### Função {#role-management}
+### Função
 
 Uma função é um contêiner de entidades de acesso que podem ser atribuídas a uma conta de usuário.
 
@@ -105,7 +105,7 @@ Consultas de gerenciamento:
 
 Privilégios podem ser concedidos a uma função por meio da consulta [GRANT](/pt-BR/reference/statements/grant). Para revogar privilégios de uma função, o ClickHouse fornece a consulta [REVOKE](/pt-BR/reference/statements/revoke).
 
-#### Política de linha {#row-policy-management}
+#### Política de linha
 
 Uma política de linha é um filtro que define quais linhas ficam disponíveis para um usuário ou uma função. Uma política de linha contém filtros para uma tabela específica, bem como uma lista de funções e/ou usuários aos quais essa política de linha deve ser aplicada.
 
@@ -123,7 +123,7 @@ Consultas de gerenciamento:
 * [SHOW CREATE ROW POLICY](/pt-BR/reference/statements/show#show-create-row-policy)
 * [SHOW POLICIES](/pt-BR/reference/statements/show#show-policies)
 
-### Perfil de configurações {#settings-profiles-management}
+### Perfil de configurações
 
 Um perfil de configurações é um conjunto de [configurações](/pt-BR/reference/settings/index). Um perfil de configurações contém configurações e restrições, bem como uma lista de funções e/ou usuários aos quais esse perfil se aplica.
 
@@ -135,7 +135,7 @@ Consultas de gerenciamento:
 * [SHOW CREATE SETTINGS PROFILE](/pt-BR/reference/statements/show#show-create-settings-profile)
 * [SHOW PROFILES](/pt-BR/reference/statements/show#show-profiles)
 
-### Cota {#quotas-management}
+### Cota
 
 Uma cota limita o uso de recursos. Veja [Cotas](/pt-BR/concepts/features/configuration/server-config/quotas).
 
@@ -150,7 +150,7 @@ Comandos de gerenciamento:
 * [SHOW QUOTA](/pt-BR/reference/statements/show#show-quota)
 * [SHOW QUOTAS](/pt-BR/reference/statements/show#show-quotas)
 
-### Habilitando o controle de acesso e o gerenciamento de contas via SQL {#enabling-access-control}
+### Habilitando o controle de acesso e o gerenciamento de contas via SQL
 
 * Configure um diretório para armazenar as configurações.
 
@@ -169,7 +169,7 @@ Comandos de gerenciamento:
 
   Defina as três configurações como 1 para tornar o usuário um administrador completo.
 
-## Definindo usuários e funções SQL {#defining-sql-users-and-roles}
+## Definindo usuários e funções SQL
 
 <Tip>
   Se você estiver trabalhando no ClickHouse Cloud, consulte [Cloud access management](/pt-BR/products/cloud/reference/security/console-roles).
@@ -177,7 +177,7 @@ Comandos de gerenciamento:
 
 Este artigo apresenta os conceitos básicos para definir usuários e funções SQL e aplicar esses privilégios e permissões a bancos de dados, tabelas, linhas e colunas.
 
-### Habilitando o modo de usuário SQL {#enabling-sql-user-mode}
+### Habilitando o modo de usuário SQL
 
 1. Habilite o modo de usuário SQL no arquivo `users.xml`, na seção do usuário `<default>`:
 
@@ -204,7 +204,7 @@ Este artigo apresenta os conceitos básicos para definir usuários e funções S
    clickhouse-client --user default --password <password>
    ```
 
-### Definindo usuários {#defining-users}
+### Definindo usuários
 
 1. Crie uma conta de administrador SQL:
    ```sql
@@ -215,7 +215,7 @@ Este artigo apresenta os conceitos básicos para definir usuários e funções S
    GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION;
    ```
 
-## Alterar permissões {#alter-permissions}
+## Alterar permissões
 
 Este artigo tem como objetivo proporcionar uma compreensão melhor de como definir permissões e de como elas funcionam ao usar instruções `ALTER` para usuários privilegiados.
 

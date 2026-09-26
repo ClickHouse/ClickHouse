@@ -20,7 +20,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 使用哪种查询语言由 `dialect` 设置控制。
 
-## 标准 SQL {#standard-sql}
+## 标准 SQL
 
 标准 SQL 是 ClickHouse 的默认查询语言。
 
@@ -28,7 +28,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 SET dialect = 'clickhouse'
 ```
 
-## 管道式关系查询语言 (PRQL) {#pipelined-relational-query-language-prql}
+## 管道式关系查询语言 (PRQL)
 
 <ExperimentalBadge />
 
@@ -51,7 +51,7 @@ aggregate {
 
 ClickHouse 在底层通过将 PRQL 转译为 SQL 来运行 PRQL 查询。
 
-## Kusto 查询语言 (KQL) {#kusto-query-language-kql}
+## Kusto 查询语言 (KQL)
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ numbers(10) | project number
 
 请注意，KQL 查询可能无法调用 ClickHouse 中定义的所有函数。
 
-## Trino SQL {#trino-sql}
+## Trino SQL
 
 <ExperimentalBadge />
 

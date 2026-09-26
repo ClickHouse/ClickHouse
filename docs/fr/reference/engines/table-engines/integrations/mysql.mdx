@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Le moteur de table MySQL vous permet d’exécuter des requêtes `SELECT` et `INSERT` sur des données stockées sur un serveur MySQL distant.
 
-## Créer une table {#creating-a-table}
+## Créer une table
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -56,7 +56,7 @@ Les clauses `WHERE` simples telles que `=, !=, >, >=, <, <=` sont exécutées su
 
 Le reste des conditions et la contrainte d’échantillonnage `LIMIT` ne sont exécutés dans ClickHouse qu’une fois la requête vers MySQL terminée.
 
-## TLS/SSL {#tls-ssl}
+## TLS/SSL
 
 Les identifiants d&#39;une connexion chiffrée à MySQL sont transmis sous forme de clés d&#39;une collection nommée (ou d&#39;arguments clé-valeur) :
 
@@ -82,7 +82,7 @@ Les mêmes identifiants peuvent également être fournis sous forme de chemins v
 </named_collections>
 ```
 
-## Utilisation d’une requête à la place d’un nom de table {#passing-a-query}
+## Utilisation d’une requête à la place d’un nom de table
 
 Au lieu d’un nom de table, l’argument `table` peut être une requête `SELECT` transmise telle quelle à MySQL. La structure de la table est déduite du résultat de la requête. La requête peut être écrite soit sous forme de sous-requête, soit encapsulée dans la fonction `query` :
 
@@ -105,7 +105,7 @@ Prend en charge plusieurs répliques, qui doivent être listées avec `|`. Par e
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-## Exemple d&#39;utilisation {#usage-example}
+## Exemple d&#39;utilisation
 
 Créer une table dans MySQL :
 
@@ -170,11 +170,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## Paramètres {#mysql-settings}
+## Paramètres
 
 Les paramètres par défaut ne sont pas très efficaces, car ils ne réutilisent même pas les connexions. Ces paramètres vous permettent d’augmenter le nombre de requêtes que le serveur peut exécuter par seconde.
 
-### `connection_auto_close` {#connection-auto-close}
+### `connection_auto_close`
 
 Permet de fermer automatiquement la connexion après l’exécution de la requête, c’est-à-dire de désactiver sa réutilisation.
 
@@ -185,7 +185,7 @@ Valeurs possibles :
 
 Valeur par défaut : `1`.
 
-### `connection_max_tries` {#connection-max-tries}
+### `connection_max_tries`
 
 Définit le nombre de tentatives pour le pool avec basculement.
 
@@ -196,7 +196,7 @@ Valeurs possibles :
 
 Valeur par défaut : `3`.
 
-### `connection_pool_size` {#connection-pool-size}
+### `connection_pool_size`
 
 Taille du pool de connexions (si toutes les connexions sont utilisées, la requête attendra qu&#39;une connexion se libère).
 
@@ -206,7 +206,7 @@ Valeurs possibles :
 
 Valeur par défaut : `16`.
 
-### `connection_wait_timeout` {#connection-wait-timeout}
+### `connection_wait_timeout`
 
 Délai d’expiration (en secondes) d’attente d’une connexion libre (s’il y a déjà `connection_pool_size` connexions actives), 0 - ne pas attendre.
 
@@ -216,7 +216,7 @@ Valeurs possibles :
 
 Valeur par défaut : `5`.
 
-### `connect_timeout` {#connect-timeout}
+### `connect_timeout`
 
 Délai d’expiration de la connexion (en secondes).
 
@@ -226,7 +226,7 @@ Valeurs possibles :
 
 Valeur par défaut : `10`.
 
-### `read_write_timeout` {#read-write-timeout}
+### `read_write_timeout`
 
 Délai d’expiration de lecture/écriture (en secondes).
 
@@ -236,7 +236,7 @@ Valeurs possibles :
 
 Valeur par défaut : `300`.
 
-### `enable_compression` {#enable-compression}
+### `enable_compression`
 
 Active la compression pour les connexions via le protocole MySQL.
 
@@ -265,7 +265,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-## Voir aussi {#see-also}
+## Voir aussi
 
 * [La fonction de table MySQL](/fr/reference/functions/table-functions/mysql)
 * [Utiliser MySQL comme source de dictionnaire](/fr/reference/statements/create/dictionary/sources/mysql)

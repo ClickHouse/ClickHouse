@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) に記載されており、ClickHouse のソースコードから自動生成されています。
 
-## max_avg_part_size_for_too_many_parts {#max_avg_part_size_for_too_many_parts}
+## max_avg_part_size_for_too_many_parts
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -25,7 +25,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 サーバー上の単一のテーブルで数百テラバイトを扱えるようになります。これは
 非アクティブなパーツ数や総パーツ数に対するしきい値には影響しません。
 
-## max_buckets_in_map {#max_buckets_in_map}
+## max_buckets_in_map
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -35,13 +35,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 実際のバケット数は [map&#95;buckets&#95;strategy](/ja/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy) によって決まります。
 許容される最大値は 256 です。
 
-## max_cleanup_delay_period {#max_cleanup_delay_period}
+## max_cleanup_delay_period
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 古いキューログ、ブロックのハッシュ、およびパーツをクリーンアップする最大間隔です。
 
-## max_compress_block_size {#max_compress_block_size}
+## max_compress_block_size
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -50,7 +50,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 ([max&#95;compress&#95;block&#95;size](/ja/reference/settings/merge-tree-settings/max#max_compress_block_size)
 設定を参照) 。テーブルの作成時に指定した値は、この設定のグローバル値より優先されます。
 
-## max_concurrent_queries {#max_concurrent_queries}
+## max_concurrent_queries
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -70,7 +70,7 @@ MergeTree テーブル に関連して同時実行されるクエリの最大数
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-## max_digestion_size_per_segment {#max_digestion_size_per_segment}
+## max_digestion_size_per_segment
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
 
@@ -78,7 +78,7 @@ MergeTree テーブル に関連して同時実行されるクエリの最大数
 
 廃止された設定であり、効果はありません。
 
-## max_file_name_length {#max_file_name_length}
+## max_file_name_length
 
 <SettingsInfoBlock type="UInt64" default_value="127" />
 
@@ -88,7 +88,7 @@ MergeTree テーブル に関連して同時実行されるクエリの最大数
 filesystem エラーを避けるには、最大ファイル名長 (通常は 255
 バイト) よりも、ある程度のギャップを持たせて小さめに設定することを推奨します。
 
-## max_partitions_to_read {#max_partitions_to_read}
+## max_partitions_to_read
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -103,13 +103,13 @@ filesystem エラーを避けるには、最大ファイル名長 (通常は 255
 
 クエリ / session / profile レベルで、クエリ複雑度の設定 [max&#95;partitions&#95;to&#95;read](/ja/reference/settings/session-settings/max-partitions#max_partitions_to_read) を指定することもできます。
 
-## max_projections {#max_projections}
+## max_projections
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 MergeTreeプロジェクションの最大数。
 
-## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
+## max_table_size_bytes_compressed
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -124,7 +124,7 @@ MergeTreeプロジェクションの最大数。
 
 マルチテナント、一時的な用途、デモ用のサービスで有用です。
 
-## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
+## max_table_size_bytes_uncompressed
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -140,7 +140,7 @@ MergeTreeプロジェクションの最大数。
 
 マルチテナント、一時的な用途、デモ用のサービスで役立ちます。
 
-## max_table_size_rows {#max_table_size_rows}
+## max_table_size_rows
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -164,7 +164,7 @@ MergeTreeプロジェクションの最大数。
 
 マルチテナント、一時的、デモ用のサービスで有用です。
 
-## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
+## max_uncompressed_bytes_in_patches
 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 

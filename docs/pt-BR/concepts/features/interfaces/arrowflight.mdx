@@ -6,7 +6,7 @@ title: 'Interface Arrow Flight'
 doc_type: 'reference'
 ---
 
-## Visão geral {#overview}
+## Visão geral
 
 O ClickHouse oferece suporte ao protocolo [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) — um framework de RPC de alto desempenho para o transporte eficiente de dados colunares usando o formato [Arrow IPC](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc) por meio de [gRPC](https://grpc.io/).
 
@@ -23,7 +23,7 @@ Principais recursos:
 * Recuperação incremental de resultados por meio de `PollFlightInfo`.
 * Cancelamento de consultas por meio de `CancelFlightInfo`.
 
-## Habilitando o Arrow Flight Server {#enabling-server}
+## Habilitando o Arrow Flight Server
 
 Para habilitar o Arrow Flight server, adicione a configuração `arrowflight_port` à configuração do servidor ClickHouse:
 
@@ -39,7 +39,7 @@ Ao iniciar, uma mensagem de log confirma que a interface está ativa:
 {} <Information> Application: Arrow Flight compatibility protocol: 0.0.0.0:9090
 ```
 
-## Configuração de TLS {#tls-configuration}
+## Configuração de TLS
 
 Para ativar o TLS na interface Arrow Flight, defina as seguintes configurações:
 
@@ -56,19 +56,19 @@ Para ativar o TLS na interface Arrow Flight, defina as seguintes configurações
 
 Quando o TLS estiver habilitado, os clientes deverão se conectar usando o esquema `grpc+tls://` em vez de `grpc://`.
 
-## Autenticação {#authentication}
+## Autenticação
 
 A interface Arrow Flight oferece suporte a dois métodos de autenticação:
 
-### Autenticação básica {#basic-auth}
+### Autenticação básica
 
 Os clientes se autenticam com um nome de usuário e uma senha por meio do cabeçalho HTTP padrão `Authorization: Basic`. Após a autenticação bem-sucedida, o servidor retorna um token Bearer no cabeçalho da resposta.
 
-### Autenticação com Bearer Token {#bearer-auth}
+### Autenticação com Bearer Token
 
 As solicitações subsequentes podem usar o Bearer token retornado pela autenticação básica por meio do cabeçalho `Authorization: Bearer <token>`. O token é renovado automaticamente a cada uso e expira com base na configuração do servidor `default_session_timeout` (padrão: 60 segundos).
 
-### Exemplo em Python {#auth-python-example}
+### Exemplo em Python
 
 ```python
 import pyarrow.flight as flight
@@ -97,7 +97,7 @@ token_pair = client.authenticate_basic_token("default", "password")
 options = flight.FlightCallOptions(headers=[token_pair])
 ```
 
-## Gerenciamento de sessões {#session-management}
+## Gerenciamento de sessões
 
 A interface Arrow Flight oferece suporte a sessões do ClickHouse por meio de cabeçalhos de metadados gRPC personalizados:
 
@@ -114,7 +114,7 @@ A interface Arrow Flight oferece suporte a sessões do ClickHouse por meio de ca
 
 As sessões permitem definir configurações persistentes do ClickHouse por meio da ação `SetSessionOptions` (consulte [DoAction](#doaction)).
 
-## Referência de configuração do servidor {#configuration-reference}
+## Referência de configuração do servidor
 
 | Configuração                                                  | Padrão  | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -132,9 +132,9 @@ As sessões permitem definir configurações persistentes do ClickHouse por meio
 | `default_session_timeout`                                     | `60`    | Timeout padrão da sessão, em segundos. Também controla a expiração do token Bearer.                                                                                                                                                                                                                                                                                                                                       |
 | `max_session_timeout`                                         | `3600`  | Timeout máximo permitido da sessão, em segundos.                                                                                                                                                                                                                                                                                                                                                                          |
 
-## Métodos RPC suportados {#rpc-methods}
+## Métodos RPC suportados
 
-### GetFlightInfo {#getflightinfo}
+### GetFlightInfo
 
 Executa uma consulta e retorna um `FlightInfo` contendo o esquema do resultado, endpoints com tickets para recuperação de dados, contagem de linhas e de bytes.
 
@@ -163,7 +163,7 @@ for endpoint in info.endpoints:
     print(table.to_pandas())
 ```
 
-### PollFlightInfo {#pollflightinfo}
+### PollFlightInfo
 
 Permite a recuperação incremental de resultados para consultas de longa execução. Em vez de esperar a consulta inteira ser concluída (como faz o `GetFlightInfo`), o `PollFlightInfo` retorna os resultados bloco a bloco.
 
@@ -178,7 +178,7 @@ As chamadas seguintes com o descritor retornado recuperam blocos adicionais. Qua
   A implementação atual bloqueia até que um bloco de dados esteja disponível, em vez de retornar imediatamente sem dados.
 </Note>
 
-### GetSchema {#getschema}
+### GetSchema
 
 Retorna o esquema Arrow para o resultado de uma consulta sem executar a consulta inteira. Aceita os mesmos tipos de descritor que `GetFlightInfo`.
 
@@ -191,7 +191,7 @@ schema = schema_result.schema
 print(schema)  # x: int32, y: string
 ```
 
-### DoGet {#doget}
+### DoGet
 
 Recupera os dados de um determinado ticket. Aceita uma destas opções:
 
@@ -209,7 +209,7 @@ reader = client.do_get(ticket, options)
 table = reader.read_all()
 ```
 
-### DoPut {#doput}
+### DoPut
 
 Envia dados ao ClickHouse. Aceita um `FlightDescriptor` e um fluxo de lotes de registros Arrow.
 
@@ -253,11 +253,11 @@ Só há suporte para anexar a tabelas existentes (`TABLE_NOT_EXIST_OPTION_FAIL` 
   Somente o formato `Arrow` é aceito para transferência de dados. Especificar outros formatos em SQL (por exemplo, `FORMAT JSON`) resulta em um erro.
 </Note>
 
-### DoAction {#doaction}
+### DoAction
 
 Executa ações nomeadas. Há suporte para as seguintes ações:
 
-#### CancelFlightInfo {#cancelflightinfo}
+#### CancelFlightInfo
 
 Cancela uma consulta em execução associada a um `FlightInfo`. O ID da consulta é extraído do campo `app_metadata` de `FlightInfo`. Também cancela todos os descritores de polling associados à consulta.
 
@@ -268,7 +268,7 @@ result = client.cancel_flight_info(cancel_request, options)
 # result.status é CancelStatus.CANCELLED se bem-sucedido
 ```
 
-#### SetSessionOptions {#setsessionoptions}
+#### SetSessionOptions
 
 Define as configurações do servidor ClickHouse para a sessão atual. Exige que um ID de sessão seja definido por meio do cabeçalho `x-clickhouse-session-id`.
 
@@ -276,11 +276,11 @@ Tipos de valor compatíveis: string, booleano, inteiro, double e listas de strin
 
 Se o nome de uma configuração for desconhecido, o erro `INVALID_NAME` será retornado. Se um valor não puder ser interpretado, o erro `INVALID_VALUE` será retornado.
 
-#### GetSessionOptions {#getsessionoptions}
+#### GetSessionOptions
 
 Retorna todas as configurações atuais do ClickHouse e seus valores da sessão. Retorna um mapa dos nomes das configurações para valores em string (consulta `system.settings` internamente).
 
-#### CreatePreparedStatement {#createpreparedstatement}
+#### CreatePreparedStatement
 
 Cria uma instrução preparada no servidor e retorna um identificador da instrução. A solicitação contém o texto da consulta SQL com placeholders `?`.
 
@@ -310,7 +310,7 @@ Outros usuários não podem executar, fazer bind nem fechar um identificador de 
 
 As instruções expiradas são removidas e deixam de contar para `arrowflight.max_prepared_statements_per_user`.
 
-#### ClosePreparedStatement {#closepreparedstatement}
+#### ClosePreparedStatement
 
 Fecha uma instrução preparada e libera os recursos associados no servidor quando a solicitação contém um identificador de instrução não vazio.
 
@@ -321,11 +321,11 @@ O ClickHouse também oferece suporte ao fechamento em massa com `ClosePreparedSt
 
 Se uma instrução preparada for criada em uma sessão (via `x-clickhouse-session-id`), ela também será fechada automaticamente quando essa sessão for encerrada.
 
-## Comandos do Flight SQL {#flight-sql-commands}
+## Comandos do Flight SQL
 
 Quando um descritor `CMD` contém uma mensagem [Flight SQL protobuf](https://arrow.apache.org/docs/format/FlightSql.html) serializada, ClickHouse processa os seguintes comandos:
 
-### Suportado via GetFlightInfo / GetSchema {#flightsql-getflightinfo}
+### Suportado via GetFlightInfo / GetSchema
 
 | Comando                         | Descrição                                                                                                 |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -338,7 +338,7 @@ Quando um descritor `CMD` contém uma mensagem [Flight SQL protobuf](https://arr
 | `CommandGetPrimaryKeys`         | Recupera as colunas da chave primária de uma tabela especificada.                                         |
 | `CommandPreparedStatementQuery` | Executa, por identificador, uma instrução preparada no estilo `SELECT`.                                   |
 
-### Suportado via DoPut {#flightsql-doput}
+### Suportado via DoPut
 
 | Command                          | Descrição                                                                                                                                                                                                                                                                                                                      |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -347,7 +347,7 @@ Quando um descritor `CMD` contém uma mensagem [Flight SQL protobuf](https://arr
 | `CommandPreparedStatementQuery`  | Associa valores de parâmetros a uma instrução preparada quando enviada via `DoPut` e, em seguida, retorna `DoPutPreparedStatementResult` com o identificador da instrução. Apenas um conjunto de parâmetros (uma linha) é aceito, e o número de valores associados deve corresponder exatamente ao número de placeholders `?`. |
 | `CommandPreparedStatementUpdate` | Executa uma instrução DDL/DML preparada por identificador e retorna a contagem de linhas afetadas.                                                                                                                                                                                                                             |
 
-### Sem suporte no ClickHouse {#flightsql-not-implemented}
+### Sem suporte no ClickHouse
 
 Esses comandos correspondem a recursos que o ClickHouse não oferece; por isso, não têm suporte na interface Arrow Flight SQL.
 
@@ -358,7 +358,7 @@ Esses comandos correspondem a recursos que o ClickHouse não oferece; por isso, 
 | `CommandGetImportedKeys`        | O ClickHouse não é um banco de dados relacional e não implementa restrições de chave estrangeira, portanto os metadados de chaves importadas não estão disponíveis.  |
 | `CommandStatementSubstraitPlan` | O ClickHouse não oferece suporte a planos Substrait.                                                                                                                 |
 
-## Exemplo completo {#complete-example}
+## Exemplo completo
 
 ```python title="Query"
 import pyarrow as pa
@@ -398,7 +398,7 @@ for endpoint in info.endpoints:
 2   3     c
 ```
 
-## Formato de dados {#data-format}
+## Formato de dados
 
 Todos os dados são transferidos no formato Apache Arrow IPC. Apenas o formato `Arrow` é compatível — especificar outros formatos do ClickHouse (por exemplo, `FORMAT JSON`, `FORMAT CSV`) resulta em erro.
 
@@ -427,7 +427,7 @@ Fora isso, tal coluna é indistinguível de uma coluna `Utf8`/`Binary` genuína,
 
 A antiga configuração booleana `output_format_arrow_unsupported_types_as_binary` continua funcionando e equivale a `throw` quando definida como `0` e a `binary` quando definida como `1`. Ela só é consultada enquanto `output_format_arrow_unsupported_types` permanecer com seu valor padrão.
 
-## Compatibilidade {#compatibility}
+## Compatibilidade
 
 A interface Arrow Flight é compatível com qualquer cliente ou ferramenta compatível com o protocolo Arrow Flight ou Arrow Flight SQL, incluindo:
 
@@ -440,14 +440,14 @@ A interface Arrow Flight é compatível com qualquer cliente ou ferramenta compa
 
 Se houver um conector nativo do ClickHouse disponível para sua ferramenta (por exemplo, JDBC, ODBC, protocolo nativo), prefira usá-lo, a menos que o Arrow Flight seja especificamente necessário por questões de desempenho ou compatibilidade de formato.
 
-## Recursos do ArrowFlight no cliente {#client-side}
+## Recursos do ArrowFlight no cliente
 
 O ClickHouse também pode atuar como cliente Flight para ler dados de servidores Arrow Flight externos. Veja:
 
 * [motor de tabela ArrowFlight](/pt-BR/reference/engines/table-engines/integrations/arrowflight)
 * [função de tabela arrowFlight](/pt-BR/reference/functions/table-functions/arrowflight)
 
-## Veja também {#see-also}
+## Veja também
 
 * [Especificação do Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html)
 * [Especificação do Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)

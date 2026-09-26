@@ -22,7 +22,7 @@ Esta guía recorre los aspectos específicos de ClickHouse en dbt usando el proy
 
 Está pensada para leerse junto con el resto de la [documentación](/es/integrations/connectors/data-ingestion/etl-tools/dbt/index), la página de [funcionalidad y configuración](/es/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) y la [referencia de materializaciones](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
 
-## Antes de empezar {#before-you-start}
+## Antes de empezar
 
 Sigue primero el README de [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse). Allí se explica cómo configurar el proyecto con dbt Core 1.x, dbt OSS, dbt v2 o la plataforma dbt, cómo apuntarlo a un ClickHouse local (docker) o a ClickHouse Cloud, cómo cargar los datos de ejemplo con `dbt seed` y cómo ejecutar el primer `dbt build`. Una vez que `dbt build` finalice correctamente, vuelve aquí para ver los ejemplos y configuraciones específicos de ClickHouse.
 
@@ -39,7 +39,7 @@ Si tu profile usa un `schema` distinto, sustituye `jaffle_shop` por tu valor en 
 
 Todas las sentencias SQL que no sean comandos de dbt están pensadas para ejecutarse directamente contra ClickHouse, por ejemplo con `clickhouse client`, la SQL console de ClickHouse Cloud o el client SQL que prefieras.
 
-## Cómo se materializa el proyecto {#views-and-tables}
+## Cómo se materializa el proyecto
 
 Jaffle Shop define sus materializaciones en `dbt_project.yml`: los modelos de staging son vistas y los marts son tablas.
 
@@ -108,7 +108,7 @@ SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 
 Aquí hay dos aspectos específicos de ClickHouse. El modelo no declara ningún motor de tabla, por lo que el adaptador usa `MergeTree`, y tampoco declara una sorting key, por lo que el adaptador usa `ORDER BY tuple()`, es decir, los datos no se ordenan en absoluto. Esto es aceptable en un proyecto de ejemplo, pero en una tabla real conviene definir ambos, que es justamente lo que se hace en las secciones siguientes. La [página de materializaciones](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) enumera todas las configuraciones de tabla que admite el adaptador.
 
-## Carga de datos con seeds {#seeds}
+## Carga de datos con seeds
 
 Jaffle Shop utiliza los [seeds](https://docs.getdbt.com/docs/build/seeds) de dbt para cargar sus datos sin procesar desde los archivos CSV de `seeds/jaffle-data`. Los seeds están pensados para datos de referencia pequeños y estáticos (tablas de códigos, correspondencias), no para cargar un warehouse; el proyecto los usa por comodidad, para que puedas empezar sin necesidad de otra herramienta de ingestión, y por eso están deshabilitados a menos que pases `--vars '{"load_source_data": true}'`.
 
@@ -177,7 +177,7 @@ SETTINGS index_granularity = 8192
 
 `dbt seed --full-refresh` elimina y vuelve a crear la tabla, por lo que debes ejecutarlo antes de crear cualquier elemento que dependa directamente de los datos de la tabla, como la vista materializada que se describe más adelante en esta guía.
 
-## Configuración de una tabla para ClickHouse {#table-configuration}
+## Configuración de una tabla para ClickHouse
 
 El mart `orders` es el punto de partida natural: lo consultan el mart `customers` y las métricas del proyecto, y es una tabla de tipo evento con un timestamp. Añade un bloque `config` al principio de `models/marts/orders.sql` para elegir el motor, la clave de ordenación y un esquema de particionado:
 
@@ -249,7 +249,7 @@ ORDER BY partition;
 
 Además de `engine`, `order_by` y `partition_by`, los modelos de tipo tabla aceptan `primary_key`, `ttl`, `settings`, `query_settings`, `projections` e `indexes`, y las columnas pueden llevar `codec` y `ttl` a través de un contrato de modelo. Todos ellos se describen en la [página de materializaciones](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
 
-## Creación de un modelo incremental {#incremental}
+## Creación de un modelo incremental
 
 Reconstruir `orders` desde cero en cada ejecución resulta aceptable para 62.000 filas, pero no para una tabla que crece en millones de filas al día. La [incremental materialization](https://docs.getdbt.com/docs/build/incremental-models) de dbt solo procesa las filas que cambiaron desde la última ejecución. Para convertir el modelo `orders` hacen falta dos añadidos:
 
@@ -356,7 +356,7 @@ WHERE customer_id = 'clicky-0001';
 └─────────────────────┴───────────────────────┴────────────────┴───────────────┘
 ```
 
-### Internals {#internals}
+### Internals
 
 El registro de consultas de ClickHouse muestra las sentencias que ejecutó el adaptador para la actualización incremental:
 
@@ -420,7 +420,7 @@ flowchart TB
 
 El paso 2 copia la tabla completa, por lo que en modelos muy grandes esta estrategia resulta tan costosa como reconstruir la tabla; consulte las [limitaciones](/es/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations). Las estrategias que se describen a continuación evitan esa copia.
 
-### Estrategia append {#append-strategy}
+### Estrategia append
 
 La estrategia `append` inserta las filas seleccionadas por el model directamente en la tabla de destino. No se crean tablas temporales ni se copia nada, por lo que resulta lo más económica que puede ser una ejecución incremental. El precio a pagar es que tampoco se deduplica nada: si el filtro incremental selecciona una fila que ya está en la tabla, la obtendrás dos veces. Úsala con datos inmutables de tipo evento y asegúrate de que el filtro incremental seleccione únicamente filas realmente nuevas.
 
@@ -495,7 +495,7 @@ El registro de consultas confirma la diferencia: esta vez la única sentencia qu
   Con `>` y un timestamp truncado a nivel de día, un pedido que llegue más tarde el mismo día que el último pedido cargado nunca se recoge. En un proyecto real, aplica el filter sobre un timestamp con full precision, o sobre un tiempo de ingestión monótonamente creciente, cuando uses la estrategia `append`.
 </Warning>
 
-### Estrategia de eliminación e inserción {#delete-insert-strategy}
+### Estrategia de eliminación e inserción
 
 Históricamente, ClickHouse ha ofrecido un soporte limitado para actualizaciones y eliminaciones, en forma de [mutaciones](/es/reference/statements/alter/index) asíncronas. Estas pueden consumir muchísimo IO y, por lo general, conviene evitarlas. ClickHouse 22.8 introdujo las [eliminaciones ligeras](/es/reference/statements/delete) y ClickHouse 25.7, las [actualizaciones ligeras](/es/reference/statements/update). Con ellas, el efecto de una sola sentencia de eliminación o actualización es visible de inmediato desde la perspectiva del usuario, aunque se materialice de forma asíncrona.
 
@@ -549,7 +549,7 @@ flowchart TB
     class q1,q2,q3,q4 query;
 ```
 
-### Estrategia insert overwrite (experimental) {#insert-overwrite-strategy}
+### Estrategia insert overwrite (experimental)
 
 La estrategia `insert_overwrite` reemplaza particiones completas, por lo que requiere una configuración `partition_by`, como la mensual de `orders`. Realiza los siguientes pasos:
 
@@ -598,7 +598,7 @@ flowchart TB
 
 La [página de materializaciones](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-incremental) describe las demás opciones de la materialización incremental, incluidas la estrategia `microbatch` y `on_schema_change`.
 
-## Crear un snapshot {#snapshot}
+## Crear un snapshot
 
 Los [snapshots](https://docs.getdbt.com/docs/build/snapshots) de dbt registran cómo cambian con el tiempo las filas de una tabla mutable, de modo que los analistas puedan consultar el estado de los datos en cualquier momento del pasado. Implementan [dimensiones de cambio lento de tipo 2](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row): cada versión de una fila se almacena junto con el intervalo durante el cual fue válida.
 
@@ -689,7 +689,7 @@ ORDER BY customer_id, dbt_valid_from;
 
 Internamente, el adaptador construye la nueva versión del snapshot en una tabla `customers_snapshot__snapshot_upsert` y la intercambia mediante `EXCHANGE TABLES` (o con un drop y un rename cuando el servidor no puede intercambiar tablas), de modo que los lectores ven la versión anterior o la nueva del snapshot. Consulte la [sección snapshot de la página de materializaciones](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#snapshot) para ver la referencia de configuración.
 
-## Uso de vistas materializadas {#materialized-views}
+## Uso de vistas materializadas
 
 Todo lo visto hasta ahora requiere un `dbt run` para incorporar nuevos datos a los modelos. Las [vistas materializadas](/es/concepts/features/materialized-views/index) de ClickHouse funcionan de otra forma: son desencadenadores de inserción. Cada bloque de filas insertado en la tabla de origen se transforma mediante el `SELECT` de la vista y se escribe en una tabla de destino, sin que intervenga ninguna planificación. El adaptador las expone a través de la materialización `materialized_view`.
 
@@ -794,6 +794,6 @@ La consulta agrega con `sum()` y `GROUP BY` de forma deliberada: `SummingMergeTr
 
 Las ejecuciones posteriores de `dbt run` conservan la tabla de destino y sus datos, y solo actualizan la definición de la vista, con `ALTER TABLE ... MODIFY QUERY` cuando el cambio lo permite, por lo que es seguro mantener el modelo en el proyecto. `dbt run --full-refresh` reconstruye la tabla de destino y vuelve a rellenarla (a menos que `catchup` sea `False`). La [página de vistas materializadas](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view) cubre el resto: cambios de esquema con `on_schema_change`, cómo desactivar el backfill con `catchup`, vistas materializadas actualizables, varias vistas que alimentan el mismo destino y la definición de la tabla de destino como un modelo propio.
 
-## Más información {#further-information}
+## Más información
 
 Esta guía apenas roza la superficie de dbt. La [documentación de dbt](https://docs.getdbt.com/docs/introduction) es la referencia para todo lo que no sea específico de ClickHouse. En cuanto al adaptador, consulte la página de [funcionalidad y configuración](/es/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) para conocer los ajustes del profile y las funcionalidades globales, la [página de materializaciones](/es/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) para cada configuración utilizada anteriormente, y la [página de dbt OSS, dbt v2 y la plataforma de dbt](/es/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) si utiliza dbt OSS, dbt v2 o la plataforma de dbt. Toda contribución de nuevos ejemplos a [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) es bienvenida.

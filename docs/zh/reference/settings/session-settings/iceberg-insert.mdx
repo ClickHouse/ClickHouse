@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
+## iceberg_insert_max_bytes_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
@@ -26,7 +26,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 未压缩大小，而 Iceberg 该属性针对的是最终生成文件的大小；此外，`iceberg_insert_max_rows_in_data_file`
 会独立于文件大小对文件加以限制。
 
-## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
+## iceberg_insert_max_partitions
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -34,7 +34,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 Iceberg 表引擎单次插入操作允许的最大分区数。
 
-## iceberg_insert_max_rows_in_data_file {#iceberg_insert_max_rows_in_data_file}
+## iceberg_insert_max_rows_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 

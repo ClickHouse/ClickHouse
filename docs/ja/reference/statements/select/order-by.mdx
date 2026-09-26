@@ -25,14 +25,14 @@ doc_type: 'reference'
 ソート式の値が同じ行は、任意かつ非決定論的な順序で返されます。
 `SELECT` ステートメントで `ORDER BY` 句を省略した場合も、行の順序は任意かつ非決定論的です。
 
-## 特殊な値のソート {#sorting-of-special-values}
+## 特殊な値のソート
 
 `NaN` と `NULL` のソート順には、2 つの方法があります。
 
 * デフォルト、または `NULLS LAST` 修飾子を使用する場合: まず値、次に `NaN`、最後に `NULL`。
 * `NULLS FIRST` 修飾子を使用する場合: まず `NULL`、次に `NaN`、その後にその他の値。
 
-### 例 {#example}
+### 例
 
 テーブルについて
 
@@ -70,7 +70,7 @@ doc_type: 'reference'
 
 浮動小数点数をソートすると、NaN は他の値とは別に扱われます。ソート順にかかわらず、NaN は末尾に配置されます。つまり、昇順では他のすべての数値より大きいものとして、降順ではそれ以外の値より小さいものとして配置されます。
 
-## 照合順序のサポート {#collation-support}
+## 照合順序のサポート
 
 [String](/ja/reference/data-types/string) 型の値でソートする場合は、照合順序 (collation) を指定できます。例: `ORDER BY SearchPhrase COLLATE 'tr'` - これは、文字列が UTF-8 でエンコードされていることを前提に、トルコ語アルファベットを使用し、大文字と小文字を区別せずに、キーワードを昇順でソートすることを意味します。`COLLATE` は、ORDER BY 内の各 式 に対して個別に指定することも、指定しないこともできます。`ASC` または `DESC` を指定する場合は、その後に `COLLATE` を指定します。`COLLATE` を使用すると、ソートは常に大文字と小文字を区別しません。
 
@@ -78,7 +78,7 @@ doc_type: 'reference'
 
 `COLLATE` を使ったソートは通常のバイト単位のソートよりも効率が低いため、`COLLATE` は少数の行に対する最終的なソートにのみ使用することを推奨します。
 
-## 照合順序の例 {#collation-examples}
+## 照合順序の例
 
 [String](/ja/reference/data-types/string) 型の値のみを使った例:
 
@@ -234,7 +234,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 └───┴─────────┘
 ```
 
-## 実装の詳細 {#implementation-details}
+## 実装の詳細
 
 `ORDER BY` に加えて十分に小さい [LIMIT](/ja/reference/statements/select/limit) を指定すると、使用する RAM を抑えられます。そうでない場合、ソートに必要なメモリ量は、ソート対象のデータ量に比例します。[`LIMIT ... AFTER ... UNTIL`](/ja/reference/statements/select/limit#limit-after-until) による範囲指定ではメモリ量は減りません。データがソートされるまで範囲のサイズが不明なためです。分散クエリ処理では、[GROUP BY](/ja/reference/statements/select/group-by) を省略すると、ソートはリモートサーバー上で部分的に実行され、その結果はリクエスト元のサーバーでマージされます。つまり、分散ソートでは、ソート対象のデータ量が単一サーバーのメモリ量を上回ることがあります。
 
@@ -244,7 +244,7 @@ RAM が不足している場合は、外部メモリを使ってソートを実�
 
 外部ソートは、RAM 内でのソートに比べて大幅に効率が低下します。
 
-## Data の読み取りの最適化 {#optimization-of-data-reading}
+## Data の読み取りの最適化
 
 `ORDER BY` 式にテーブルの sorting key と一致するプレフィックスがある場合は、[optimize&#95;read&#95;in&#95;order](/ja/reference/settings/session-settings/optimize#optimize_read_in_order) 設定を使用してクエリを最適化できます。
 
@@ -264,7 +264,7 @@ RAM が不足している場合は、外部メモリを使ってソートを実�
 
 `MaterializedView`-engine テーブルでは、この最適化は `SELECT ... FROM merge_tree_table ORDER BY pk` のような view で機能します。ただし、view のクエリに `ORDER BY` 句がない場合、`SELECT ... FROM view ORDER BY pk` のようなクエリではサポートされません。
 
-## ORDER BY Expr WITH FILL 修飾子 {#order-by-expr-with-fill-modifier}
+## ORDER BY Expr WITH FILL 修飾子
 
 この修飾子は、[LIMIT ... WITH TIES 修飾子](/ja/reference/statements/select/limit#limit--with-ties-modifier) や [LIMIT ... AFTER ... UNTIL](/ja/reference/statements/select/limit#limit-after-until) の range 形式と組み合わせることもできます。
 
@@ -580,7 +580,7 @@ SELECT n, source, inter FROM (
 └─────┴──────────┴───────┘
 ```
 
-## ソートプレフィックスごとにグループ化して補完する {#filling-grouped-by-sorting-prefix}
+## ソートプレフィックスごとにグループ化して補完する
 
 特定のカラムで同じ値を持つ行を、それぞれ独立して補完すると便利な場合があります。代表的な例として、時系列における欠損値の補完が挙げられます。
 次のような時系列テーブルがあるとします。
@@ -632,7 +632,7 @@ INTERPOLATE ( value AS 9999 )
 ここでは、補完された行をより目立たせるためだけに、`value` カラムを `9999` で補間しています。
 この動作は `use_with_fill_by_sorting_prefix` の設定で制御されます (デフォルトで有効です)
 
-## 関連コンテンツ {#related-content}
+## 関連コンテンツ
 
 * ブログ: [ClickHouseで時系列データを扱う](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 

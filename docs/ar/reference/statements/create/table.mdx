@@ -12,11 +12,11 @@ doc_type: 'مرجع'
 ينشئ جدولًا جديدًا. افتراضيًا، لا تُنشأ الجداول إلا على الخادم الحالي.
 وتُنفَّذ استعلامات DDL الموزعة باستخدام عبارة `ON CLUSTER`، وهي [موصوفة بشكل منفصل](/ar/reference/statements/distributed-ddl).
 
-## صيغة بناء الجملة {#syntax-forms}
+## صيغة بناء الجملة
 
 يمكن أن يأتي هذا الاستعلام بصيغ بناء جملة مختلفة بحسب حالة الاستخدام.
 
-### إنشاء جدول بمخطط محدد صراحةً {#with-explicit-schema}
+### إنشاء جدول بمخطط محدد صراحةً
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -41,7 +41,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 يمكن إضافة تعليقات إلى الأعمدة وإلى الجدول.
 
-### إنشاء جدول بمخطط جدول موجود {#with-a-schema-similar-to-other-table}
+### إنشاء جدول بمخطط جدول موجود
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
@@ -53,7 +53,7 @@ CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
 
 ينشئ هذا جدولًا له نفس بنية جدول آخر.
 
-### إنشاء جدول باستخدام مخطط وبيانات جدول موجود {#with-a-schema-and-data-cloned-from-another-table}
+### إنشاء جدول باستخدام مخطط وبيانات جدول موجود
 
 لاستنساخ مخطط وبيانات جدول موجود:
 
@@ -77,7 +77,7 @@ CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = eng
 بالنسبة إلى كلتا الخاصيتين، يمكنك تحديد محرك مختلف للجدول.
 وإذا لم يُحدَّد المحرك، فسيُستخدَم المحرك نفسه المستخدَم للجدول الأصلي (`db.table`).
 
-### إنشاء جدول باستخدام دالة الجدول {#from-a-table-function}
+### إنشاء جدول باستخدام دالة الجدول
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
@@ -85,7 +85,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 ينشئ جدولًا يعطي النتيجة نفسها التي تعطيها [دالة الجدول](/ar/reference/functions/table-functions/index) المحددة. كما سيعمل الجدول المُنشأ بالطريقة نفسها التي تعمل بها دالة الجدول المقابلة المحددة.
 
-### إنشاء جدول باستخدام استعلام SELECT {#from-select-query}
+### إنشاء جدول باستخدام استعلام SELECT
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
@@ -110,7 +110,7 @@ SELECT x, toTypeName(x) FROM t1;
 └───┴───────────────┘
 ```
 
-## تحديد القيم الافتراضية للأعمدة {#default_values}
+## تحديد القيم الافتراضية للأعمدة
 
 يمكن أن يحدّد وصف العمود تعبيرًا لقيمة افتراضية بصيغة `DEFAULT expr` أو `MATERIALIZED expr` أو `ALIAS expr`. مثال: `URLDomain String DEFAULT domain(URL)`.
 
@@ -122,7 +122,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 يمكن أن يشير تعبير القيمة الافتراضية `expr` إلى أي أعمدة في الجدول وإلى الثوابت. ويتحقق ClickHouse من أن التغييرات في بنية الجدول لا تؤدي إلى ظهور حلقات في حساب التعبير. وبالنسبة إلى INSERT، فإنه يتحقق من أن التعابير قابلة للحل — أي إن جميع الأعمدة التي يمكن حسابها انطلاقًا منها قد تم تمريرها.
 
-### DEFAULT {#default}
+### DEFAULT
 
 `DEFAULT expr`
 
@@ -148,7 +148,7 @@ SELECT * FROM test;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-### MATERIALIZED {#materialized}
+### MATERIALIZED
 
 `MATERIALIZED expr`
 
@@ -186,7 +186,7 @@ SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-### EPHEMERAL {#ephemeral}
+### EPHEMERAL
 
 `EPHEMERAL [expr]`
 
@@ -222,7 +222,7 @@ hexed:      Z��
 hex(hexed): 5A90B714
 ```
 
-### ALIAS {#alias}
+### ALIAS
 
 `ALIAS expr`
 
@@ -259,7 +259,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 └────┴────────────┴──────────┘
 ```
 
-## معدِّلات `NULL` أو `NOT NULL` {#null-or-not-null-modifiers}
+## معدِّلات `NULL` أو `NOT NULL`
 
 يسمح المعدِّلان `NULL` و`NOT NULL`، اللذان يأتيان بعد نوع البيانات في تعريف العمود، بجعل النوع [Nullable](/ar/reference/data-types/nullable) أو بعدم جعله كذلك.
 
@@ -267,7 +267,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 
 انظر أيضًا إلى الإعداد [data&#95;type&#95;default&#95;nullable](/ar/reference/settings/session-settings/other#data_type_default_nullable).
 
-## المفتاح الأساسي {#primary-key}
+## المفتاح الأساسي
 
 يمكنك تحديد [مفتاح أساسي](/ar/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) عند إنشاء جدول. ويمكن تحديد المفتاح الأساسي بإحدى طريقتين:
 
@@ -303,11 +303,11 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
   لا يمكنك استخدام كلتا الطريقتين في استعلام واحد.
 </Tip>
 
-## تحديد قيود الجدول {#constraints}
+## تحديد قيود الجدول
 
 يمكن أيضًا تعريف قيود إلى جانب أوصاف الأعمدة:
 
-### CONSTRAINT {#constraint}
+### CONSTRAINT
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -325,7 +325,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 يمكن فحص القيود الموجودة في جميع الـ tables من خلال table [`system.constraints`](/ar/reference/system-tables/constraints).
 
-### ASSUME {#assume}
+### ASSUME
 
 يُستخدم البند `ASSUME` لتعريف `CONSTRAINT` على جدول يُفترض أنها `true`. ويمكن للمُحسِّن بعد ذلك استخدام هذا القيد لتحسين أداء استعلامات SQL.
 
@@ -349,11 +349,11 @@ ORDER BY (name_len, name);
 
 `ASSUME CONSTRAINT` **لا يفرض القيد**، بل يقتصر على إبلاغ المُحسِّن بأن القيد صحيح. وإذا لم يكن القيد صحيحًا بالفعل، فقد تكون نتائج الاستعلامات غير صحيحة. لذلك، ينبغي ألا تستخدم `ASSUME CONSTRAINT` إلا إذا كنت متأكدًا من صحة هذا القيد.
 
-## تحديد مدة التخزين باستخدام TTL {#ttl-expression}
+## تحديد مدة التخزين باستخدام TTL
 
 يحدّد مدة احتفاظ القيم في التخزين. لا يمكن تحديده إلا للجداول من عائلة MergeTree. للاطلاع على وصف مفصل، راجع [TTL للأعمدة والجداول](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
 
-## اختيار برامج ترميز ضغط الأعمدة {#column_compression_codec}
+## اختيار برامج ترميز ضغط الأعمدة
 
 {/* روابط ارتساء للأقسام التي نُقلت إلى /reference/statements/create/table/codec */}
 
@@ -418,11 +418,11 @@ ENGINE = <Engine>
 
 للاطلاع على برامج الترميز المتاحة للأغراض العامة والمتخصصة والتشفير، راجع [برامج ترميز ضغط الأعمدة](/ar/reference/statements/create/table/codec).
 
-## إنشاء جداول مؤقتة {#temporary-tables}
+## إنشاء جداول مؤقتة
 
 يدعم ClickHouse الجداول المؤقتة التي تُحذف عند انتهاء الجلسة. لمزيد من التفاصيل، راجع [CREATE TEMPORARY TABLE](/ar/reference/statements/create/table/temporary-table).
 
-## تحديث جدول ذرّياً باستخدام REPLACE TABLE {#replace-table}
+## تحديث جدول ذرّياً باستخدام REPLACE TABLE
 
 {/* نقاط ارتكاز للروابط المؤدية إلى الأقسام التي نُقلت إلى /reference/statements/create/table/replace-table */}
 
@@ -432,7 +432,7 @@ ENGINE = <Engine>
 
 تتيح لك عبارة `REPLACE` تحديث جدول [ذرّياً](/ar/concepts/core-concepts/glossary#atomicity). للاطلاع على التفاصيل، راجع [REPLACE TABLE](/ar/reference/statements/create/table/replace-table).
 
-## إضافة تعليق إلى جدول {#comment-clause}
+## إضافة تعليق إلى جدول
 
 يمكنك إضافة تعليق إلى الجدول عند إنشائه.
 
@@ -473,7 +473,7 @@ SELECT name, comment FROM system.tables WHERE name = 't1';
 └──────┴─────────────────────┘
 ```
 
-## محتوى ذو صلة {#related-content}
+## محتوى ذو صلة
 
 * مدونة: [تحسين ClickHouse باستخدام المخططات وبرنامج ترميز](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * مدونة: [العمل مع بيانات السلاسل الزمنية في ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

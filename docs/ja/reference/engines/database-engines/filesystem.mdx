@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 `Filesystem` データベースエンジンは、ローカルディレクトリ内のファイルを読み取り専用のテーブルとして公開します。テーブル名はデータベースディレクトリからの相対パスとして解決され、[`file`](/ja/reference/functions/table-functions/file) テーブル関数を使用して読み取られます。
 
-## データベースの作成 {#creating-a-database}
+## データベースの作成
 
 ```sql
 CREATE DATABASE files
@@ -19,7 +19,7 @@ ENGINE = Filesystem([path]);
 
 `path` はファイルが格納されているディレクトリです。省略した場合、ClickHouse は `clickhouse-local` では現在のディレクトリを、ClickHouse server では `user_files` ディレクトリを使用します。
 
-## 使用方法 {#usage}
+## 使用方法
 
 例えば、選択したディレクトリに `data.csv` がある場合:
 
@@ -33,7 +33,7 @@ SELECT * FROM files.`data.csv`;
 
 このデータベースはテーブル定義を保持しません。テーブルは対応するファイルが最初に解決された時点で作成され、以降のアクセス用にキャッシュされるだけです。このデータベースを通じた `CREATE TABLE`、`INSERT`、およびその他の書き込みはサポートされていません。
 
-## アクセス制御 {#access-control}
+## アクセス制御
 
 ClickHouse server では、データベースディレクトリおよび解決されたすべてのファイルは [`user_files_path`](/ja/reference/settings/server-settings/settings#user_files_path) 配下になければなりません。この制限は、シンボリックリンクをたどった後にも適用されます。なお、`clickhouse-local` は `user_files_path` による制限を受けません。
 
@@ -45,7 +45,7 @@ GRANT READ, WRITE ON FILE TO user_name;
 
 バージョンおよび互換性の詳細については、[`SOURCES` 権限](/ja/reference/statements/grant#sources)を参照してください。
 
-## 関連項目 {#see-also}
+## 関連項目
 
 * [`file` テーブル関数](/ja/reference/functions/table-functions/file)
 * [S3 データベースエンジン](/ja/reference/engines/database-engines/s3)

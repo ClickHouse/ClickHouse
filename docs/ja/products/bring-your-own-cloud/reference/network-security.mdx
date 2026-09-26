@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-## ClickHouse コントロールプレーンとお客様の BYOC VPC 間の接続 {#connection-between-clickhouse-and-byoc}
+## ClickHouse コントロールプレーンとお客様の BYOC VPC 間の接続
 
 ClickHouse Cloud のコントロールプレーンは、お客様の BYOC デプロイメントを運用・サポートするために、いくつかの種類の接続を維持します。
 
@@ -20,7 +20,7 @@ ClickHouse Cloud のコントロールプレーンは、お客様の BYOC デプ
 | **トラブルシューティング — ClickHouse サービス**     | Tailscale                                                                                 | ClickHouse のエンジニアは、診断のために Tailscale 経由で ClickHouse サービス (例: システムテーブル) にアクセスします。                                                                                                                                                                                                                                                                                                                  |
 | **トラブルシューティング — Kubernetes API サーバー** | Tailscale                                                                                 | ClickHouse のエンジニアは、クラスター診断のために Tailscale 経由で Kubernetes API サーバーにアクセスします。                                                                                                                                                                                                                                                                                                                        |
 
-## クラウドプロバイダー API と Kubernetes API {#cloud-api-vs-kubernetes-api}
+## クラウドプロバイダー API と Kubernetes API
 
 混同しやすい 2 つの異なる制御経路があります。これらは、トラフィックの発信元、認証方法、Tailscale を適用できるかどうかが異なります。
 
@@ -36,20 +36,20 @@ ClickHouse Cloud のコントロールプレーンは、お客様の BYOC デプ
 
 クラウドプロバイダー API は、逆方向、つまりお客様自身のクラスター内で稼働するコントローラー (ロードバランサーコントローラー、CSI ドライバー、オートスケーラー、DNS コントローラー、cert-manager) からも呼び出されます。これらの呼び出しはクラスター内の ID を使用し、お客様自身の エグレス経路を通って外部へ出るため、監査証跡には管理呼び出しとは異なる ID および異なる送信元アドレスで記録されます。[Outbound connections](#outbound-connections)を参照してください。
 
-### ネットワーク送信元に基づく権限境界 {#network-origin-permission-boundaries}
+### ネットワーク送信元に基づく権限境界
 
 組織でネットワーク送信元に基づいて IAM ロールの引き受けや Cloud API 呼び出しを制限している場合 (たとえば、`aws:SourceIp` または `aws:SourceVpc` を使用する AWS SCP やロールの信頼条件) 、それらの条件によって ClickHouse の自動化がブロックされます。これらの呼び出しは、正当にもユーザー側ではなく ClickHouse Cloud のネットワークから発信されるためです。このような条件から ClickHouse が作成したロールを除外するか、送信元に基づく許可リストが必要な場合は、現在の egress IP 範囲について ClickHouse にお問い合わせください。
 
 次のセクションでは、**Tailscale** private network をトラブルシューティングおよび任意の管理アクセスに使用する方法について説明します。
 
 <div id="tailscale-private-network">
-  ## Tailscale Private Network {#tailscale-private-network}
+  ## Tailscale Private Network
 </div>
 
 Tailscale は、ClickHouse Cloud の管理サービスとお客様の BYOC デプロイメント間を結ぶ、ゼロトラストのプライベートネットワーク接続を提供します。このセキュアなチャネルにより、ClickHouse エンジニアは、インバウンドのパブリックネットワークアクセスや複雑な VPN 構成を必要とせずに、トラブルシューティングや管理操作を実施できます。エージェント自体はアウトバウンド専用の接続を確立し、Tailscale 協調サービスに到達するにはアウトバウンドのインターネットアクセスが必要です。
 
 <div id="tailscale-overview">
-  ### 概要 {#tailscale-overview}
+  ### 概要
 </div>
 
 Tailscale は、ClickHouse のコントロールプレーン (ClickHouse の VPC 内) とお客様の BYOC データプレーン (お客様の VPC 内) の間に、暗号化されたプライベートネットワークトンネルを確立します。この接続は、以下の用途にのみ使用されます。
@@ -63,7 +63,7 @@ Tailscale は、ClickHouse のコントロールプレーン (ClickHouse の VPC
 </Warning>
 
 <div id="how-tailscale-works">
-  ### BYOC における Tailscale の仕組み {#how-tailscale-works}
+  ### BYOC における Tailscale の仕組み
 </div>
 
 <Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
@@ -82,7 +82,7 @@ Tailscale 経由でアクセスする必要がある各サービスまたはエ�
    * Kubernetes クラスター内の適切な IP へのトラフィックのルーティング
 
 <div id="tailscale-connection-process">
-  ### ネットワーク接続プロセス {#tailscale-connection-process}
+  ### ネットワーク接続プロセス
 </div>
 
 Tailscale での接続確立は、次の手順で行われます。
@@ -101,7 +101,7 @@ Tailscale での接続確立は、次の手順で行われます。
    * 各 Tailscale エージェントはそれぞれ独自の公開鍵と秘密鍵のペアを生成します (PKI と同様)
    * トラフィックは、ダイレクトモードとリレーモードのどちらを使用する場合でも暗号化されたままです
 
-### セキュリティ機能 {#tailscale-security}
+### セキュリティ機能
 
 **アウトバウンド接続のみ**:
 
@@ -117,7 +117,7 @@ Tailscale での接続確立は、次の手順で行われます。
 
 データアクセスに関する完全なポリシー — エンジニアが参照できる内容、証明書ベース認証、顧客側の監査 — については、[ClickHouse data access](/ja/products/bring-your-own-cloud/reference/clickhouse-data-access) を参照してください。
 
-### 管理サービスからのアクセス {#management-services-access}
+### 管理サービスからのアクセス
 
 デフォルトでは、ClickHouse の管理サービスは API サーバーのパブリック エンドポイント経由でお使いの BYOC Kubernetes クラスターにアクセスします。このエンドポイントの制御方法はクラウドごとに異なり、AWS では ClickHouse の NAT ゲートウェイアドレスのみを含む IP 許可リストによって、GCP と Azure ではクラウドの IAM によって制御されます。クラウドごとの詳細は [Kubernetes API サーバーの公開](#kubernetes-api-server-exposure) を参照してください。
 
@@ -127,7 +127,7 @@ Tailscale での接続確立は、次の手順で行われます。
 * この場合、管理サービスは Tailscale 経由で API サーバーにアクセスします (人によるトラブルシューティングアクセスと同様です)。AWS では、VPC Lattice 経由でもアクセスできます ([Kubernetes API Private Connection](/ja/products/bring-your-own-cloud/configuration/configurations#k8s-api-private-connection) を参照)
 * デフォルトでは、パブリック エンドポイントは緊急時の調査やサポートに備えたバックアップ手段として維持されます。プライベートアクセスが検証された後は、ClickHouse と連携して完全に無効化できます
 
-### ネットワークトラフィックの流れ {#tailscale-traffic-flow}
+### ネットワークトラフィックの流れ
 
 **Tailscale の接続フロー**:
 
@@ -145,7 +145,7 @@ Tailscale での接続確立は、次の手順で行われます。
 
 BYOC で Tailscale がどのように実装されているかについて、さらに技術的な詳細は、[Building ClickHouse BYOC on AWS のブログ記事](https://clickhouse.com/blog/building-clickhouse-byoc-on-aws#tailscale-connection)を参照してください。接続後に ClickHouse のエンジニアが閲覧できる内容と、ClickHouse がそのアクセスをどのように監査するかについては、[ClickHouse data access](/ja/products/bring-your-own-cloud/reference/clickhouse-data-access)を参照してください。
 
-## ネットワーク境界 {#network-boundaries}
+## ネットワーク境界
 
 このセクションでは、BYOC デプロイメントをファイアウォールの観点から説明します。つまり、BYOC ネットワークの境界を越える接続を、方向を問わずすべて対象とします。内容は AWS、GCP、Azure に適用され、クラウドごとに挙動が異なる場合は該当するクラウド名を明示します。
 
@@ -156,7 +156,7 @@ BYOC で Tailscale がどのように実装されているかについて、さ�
 * **Public**: パブリックインターネットから到達可能なエンドポイント。
 * **Private**: VPC/VNet ピアリング、AWS PrivateLink、GCP Private Service Connect、Azure プライベートリンク、または Tailscale といったプライベート経路経由でのみ到達可能なエンドポイント。
 
-### プロバイダーごとの対応 {#provider-equivalents}
+### プロバイダーごとの対応
 
 このページの以降では、クラウドに依存しない名称を使用します。次の表は、それらを各プロバイダーの名称に対応付けたものです:
 
@@ -174,7 +174,7 @@ BYOC で Tailscale がどのように実装されているかについて、さ�
 
 パブリックインターネットへのエグレスは、いずれのクラウドでも少数の固定された NAT アドレスを経由して BYOC ネットワークから出ていくため、これらを自社のエグレス制御で指定できます。ご利用のデプロイメントにおける現在の値は、ClickHouse チームにお問い合わせください。AWS と GCP では、プロバイダー自身のストレージ API へのトラフィックだけは例外で、上の表の行に示したプライベート経路を通り、NAT ゲートウェイを経由することはありません。
 
-### 受信接続 {#inbound-connections}
+### 受信接続
 
 | リスナー                                                    | ポート                                                                                    | 送信元                                                 | 目的                                                         | お客様側の制御                                                                                                                                                            |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -199,7 +199,7 @@ ingress gateway の証明書は、cert-manager がパブリックな ACME certif
   デプロイメントごとに追加のプロトコルポートを有効化できます (現時点の例としては、証明書認証によるネイティブアクセスと Arrow Flight があります) 。そのため、この表をもとにファイアウォールルールを作成する前に、ご自身のデプロイメントにおける正確なポート構成を ClickHouse チームにご確認ください。
 </Note>
 
-#### Kubernetes API サーバーの公開 {#kubernetes-api-server-exposure}
+#### Kubernetes API サーバーの公開
 
 ClickHouse の管理サービスが Kubernetes API サーバーに到達する経路と、そのアクセスを制限する仕組みは、クラウドごとに異なります。
 
@@ -211,13 +211,13 @@ ClickHouse の管理サービスが Kubernetes API サーバーに到達する�
   プライベート経路に移せるのは、Kubernetes API とトラブルシューティングのトラフィックのみです。クラウドプロバイダーの API に対する management 呼び出しは ClickHouse Cloud のネットワークから発信されるため、この経路を通すことはできません — [Cloud provider APIs vs the Kubernetes API](#cloud-api-vs-kubernetes-api) を参照してください。そこでは、お客様のクラスター内の controllers が行うプロバイダー API 呼び出しについても説明しています。
 </Note>
 
-### トラブルシューティングアクセス {#troubleshooting-access}
+### トラブルシューティングアクセス
 
 *Inbound、Private*
 
 ClickHouse Cloud のエンジニアは、いずれのクラウドにおいても、トラブルシューティングのためにお客様のデプロイメントへアクセスする際、public internet を経由することはなく、必ず Tailscale 経由で接続します。アクセスは just-in-time かつ証明書ベースで、エンジニアは社内の承認 workflow を通じてアクセスをリクエストし、プラットフォームがエンジニアごとに有効期間の短い認証情報を発行、その認証情報は自動的に失効します。共有の管理者 identity は存在せず、standing access もありません。エンジニアが読み取れる table を含む policy の全文については、[ClickHouse data access](/ja/products/bring-your-own-cloud/reference/clickhouse-data-access) を参照してください。
 
-### Outbound connections {#outbound-connections}
+### Outbound connections
 
 | 宛先                            | ポート                      | 開始元                                                                         | 目的                                     | 境界を越えるもの                                                                                                                                                                                                                                                                                             |
 | ----------------------------- | ------------------------ | --------------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -230,7 +230,7 @@ ClickHouse Cloud のエンジニアは、いずれのクラウドにおいても
 | パブリックな ACME 認証局               | TCP 443、DNS              | cert-manager                                                                | サービスエンドポイント向けの TLS 証明書発行               | 証明書署名要求 — 公開鍵のみ                                                                                                                                                                                                                                                                                      |
 | ClickHouse Cloud のアラート受信先     | TCP 443                  | AlertManager                                                                | クラスターが異常な状態のときに ClickHouse SRE を呼び出します | アラート名とサービス識別子 — [Alerts](#alerts) を参照                                                                                                                                                                                                                                                                |
 
-### Billing scraper {#billing-scraper}
+### Billing scraper
 
 *Outbound、Private*
 
@@ -242,7 +242,7 @@ ClickHouse server コンテナーのサイドカーとして動作し、ClickHou
   このストリームが伝送するのはシステムメトリクスと運用メタデータのみです。テーブルの行、カラム値、生のクエリテキストは一切含まれません。
 </Warning>
 
-### Alerts {#alerts}
+### Alerts
 
 *Outbound、Public*
 
@@ -255,19 +255,19 @@ AlertManager は、ClickHouse クラスターが正常でない場合に ClickHo
 
 メトリクスは、お客様のクラスター内で稼働する Prometheus および Thanos の stack で扱い、任意でお客様自身のアカウント内のバケットに長期保持できます。この保持を有効にした場合、書き込みはプロバイダーのストレージ API へ向けて BYOC ネットワークの外に出ますが、データはお客様のアカウント内に留まります。ログは現在、ClickHouse ノードにアタッチされたノードボリュームに書き込まれます。今後のアップデートでは、同じく BYOC ネットワーク内で稼働する ClickHouse ベースのログストアである LogHouse に書き込まれる予定です。
 
-### サービスの状態 {#service-state}
+### サービスの状態
 
 *Outbound、Public*
 
 state exporter は、ClickHouse のサービスおよびバックアップの状態情報 (バックアップの内容ではなく、稼働状況を示すイベント) を、ClickHouse Cloud が所有するキュー (AWS では SQS、GCP では Pub/Sub、Azure では Service Bus) に送信します。これにより、ClickHouse Cloud コンソール上で、お客様のアカウントで稼働中のサービスのステータスを確認できるようになります。
 
-### ネットワーク内トラフィック {#intra-network-traffic}
+### ネットワーク内トラフィック
 
 クラスター内のコンポーネント間のトラフィック (ClickHouse から ClickHouse Keeper、operator、ClickHouse ポッドへのイングレス、監視の scrape) は、BYOC ネットワークの外に出ることはありません。各 provider は、自社の instance 間のトラフィックをネットワーク layer で暗号化します。[AWS](https://docs.aws.amazon.com/whitepapers/latest/logical-separation/encrypting-data-at-rest-and--in-transit.html)、[GCP](https://cloud.google.com/docs/security/encryption-in-transit)、[Azure](https://learn.microsoft.com/azure/security/fundamentals/encryption-overview) を参照してください。
 
 egress は、既定ではセキュリティグループ、ファイアウォールルール、network security group の layer で制限されていません。実際に接続先となる宛先は [Outbound connections](#outbound-connections) に記載のとおりです。代わりに宛先の allowlist を適用する、service 単位の egress ファイアウォールを任意で利用することもできます。必要な場合は ClickHouse team にお問い合わせください。
 
-### 境界の監査 {#auditing-the-boundary}
+### 境界の監査
 
 データプレーン全体がお客様自身のアカウント内で稼働するため、このページで説明するフローはお客様自身のツールで観測できます。一部のソースはデフォルトで有効になっており、その他はお客様側で有効化する必要があります。
 

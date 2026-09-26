@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## automatic_parallel_replicas_min_bytes_per_replica {#automatic_parallel_replicas_min_bytes_per_replica}
+## automatic_parallel_replicas_min_bytes_per_replica
 
 <ExperimentalBadge />
 
@@ -25,7 +25,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 Limite de bytes a serem lidos por réplica para habilitar automaticamente réplicas paralelas (aplica-se somente quando `automatic_parallel_replicas_mode`=1). 0 significa que não há limite.
 O número total de bytes a serem lidos é estimado com base nas estatísticas coletadas.
 
-## automatic_parallel_replicas_mode {#automatic_parallel_replicas_mode}
+## automatic_parallel_replicas_mode
 
 <ExperimentalBadge />
 

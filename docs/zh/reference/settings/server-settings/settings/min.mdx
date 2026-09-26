@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，并由 ClickHouse 源代码自动生成。
 
-## min_allocation_size_to_log_stack_trace {#min_allocation_size_to_log_stack_trace}
+## min_allocation_size_to_log_stack_trace
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -28,7 +28,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 值为 `0` (默认) 时禁用该诊断。应将其设置为远高于服务器正常情况下会发生的最大分配，否则常规的大额分配也会被记录，仅启动过程就可能耗尽全部配额。
 
-## min_allocation_size_to_throw_on_memory_limit {#min_allocation_size_to_throw_on_memory_limit}
+## min_allocation_size_to_throw_on_memory_limit
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -40,7 +40,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 注意：为避免副作用，建议将该值设置为大于 `max_untracked_memory`。
 
-## min_os_cpu_wait_time_ratio_to_drop_connection {#min_os_cpu_wait_time_ratio_to_drop_connection}
+## min_os_cpu_wait_time_ratio_to_drop_connection
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Yes" />
 

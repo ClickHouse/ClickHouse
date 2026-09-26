@@ -13,7 +13,7 @@ catalogues de données externes et d’interroger des données dans un format de
 Cela transforme ClickHouse en un puissant moteur de requête qui s’intègre parfaitement à
 votre infrastructure de lac de données existante.
 
-## Catalogues pris en charge {#supported-catalogs}
+## Catalogues pris en charge
 
 Le moteur `DataLakeCatalog` prend en charge les catalogues de données suivants :
 
@@ -22,7 +22,7 @@ Le moteur `DataLakeCatalog` prend en charge les catalogues de données suivants�
 * **Hive Metastore** - Catalogue traditionnel de l’écosystème Hadoop
 * **Catalogues REST** - Tout catalogue compatible avec la spécification REST d’Iceberg
 
-## Création d’une base de données {#creating-a-database}
+## Création d’une base de données
 
 Vous devrez activer les paramètres appropriés ci-dessous pour utiliser le moteur `DataLakeCatalog` :
 
@@ -66,7 +66,7 @@ Les paramètres suivants sont pris en charge :
 | `dlf_access_key_secret` | Clé d’accès secrète pour l’accès à DLF                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `force_add_bucket`      | Lors de la construction des URL du stockage objet à partir de l’emplacement de table fourni par le catalogue et de `storage_endpoint`, ajoutez le nom du bucket/conteneur au début, même si le point de terminaison le contient déjà. Par défaut : `false`. Définissez cette valeur sur `true` pour les catalogues qui renvoient des chemins sans le bucket et nécessitent son ajout lors de l’étape de construction de l’URL (chemins de type Polaris). |
 
-## Exemples {#examples}
+## Exemples
 
 Consultez les sections ci-dessous pour voir des exemples d&#39;utilisation du moteur `DataLakeCatalog` :
 

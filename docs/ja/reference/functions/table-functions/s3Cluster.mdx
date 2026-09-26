@@ -13,14 +13,14 @@ doc_type: 'reference'
 
 指定したクラスター内の多数のノードで、[Amazon S3](https://aws.amazon.com/s3/) および Google Cloud Storage [Google Cloud Storage](https://cloud.google.com/storage/) のファイルを並列に処理できます。イニシエーターでは、クラスター内のすべてのノードとの接続を確立し、S3 ファイルパス内のアスタリスクを展開して、各ファイルを動的に振り分けます。worker ノードでは、次に処理するタスクをイニシエーターに問い合わせて処理します。これを、すべてのタスクが完了するまで繰り返します。
 
-## 構文 {#syntax}
+## 構文
 
 ```sql
 s3Cluster(cluster_name, url[, NOSIGN | access_key_id, secret_access_key,[session_token]][, format][, structure][, compression_method][, headers][, extra_credentials])
 s3Cluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
-## 引数 {#arguments}
+## 引数
 
 | 引数                                      | 説明                                                                                                                                                                                                                                                                                                             |
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -44,11 +44,11 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 | `no_sign_request`             | デフォルトでは無効です。                                                                                                                                                                              |
 | `expiration_window_seconds`   | デフォルト値は 120 です。                                                                                                                                                                           |
 
-## 戻り値 {#returned-value}
+## 戻り値
 
 指定したファイル内のデータを読み書きするための、指定した構造のテーブル。
 
-## 例 {#examples}
+## 例
 
 `cluster_simple` クラスター内のすべてのノードを使用して、`/root/data/clickhouse` と `/root/data/database/` フォルダー内のすべてのファイルからデータを取得します。
 
@@ -82,15 +82,15 @@ SELECT count(*) FROM s3Cluster(
 )
 ```
 
-## 非公開バケットと公開バケットへのアクセス {#accessing-private-and-public-buckets}
+## 非公開バケットと公開バケットへのアクセス
 
 ユーザーは、[こちら](/ja/reference/functions/table-functions/s3#accessing-public-buckets)の `s3` 関数のドキュメントにあるものと同じ方法を使用できます。
 
-## パフォーマンスの最適化 {#optimizing-performance}
+## パフォーマンスの最適化
 
 `s3` 関数のパフォーマンス最適化について詳しくは、[詳細ガイド](/ja/integrations/connectors/data-ingestion/AWS/performance)をご覧ください。
 
-## 関連 {#related}
+## 関連
 
 * [S3エンジン](/ja/reference/engines/table-engines/integrations/s3)
 * [s3テーブル関数](/ja/reference/functions/table-functions/s3)

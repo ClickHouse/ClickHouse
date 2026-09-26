@@ -16,7 +16,7 @@ Este motor permite integrar ClickHouse con [NATS](https://nats.io/).
 * Publicar o suscribirse a subjects de NATS.
 * Procesar mensajes nuevos a medida que estén disponibles.
 
-## Crear una tabla {#creating-a-table}
+## Crear una tabla
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -141,7 +141,7 @@ En concreto, puedes añadir tu contraseña para el motor NATS:
 </nats>
 ```
 
-## Descripción {#description}
+## Descripción
 
 `SELECT` no es especialmente útil para leer mensajes (salvo para depuración), porque cada mensaje solo puede leerse una vez. Es más práctico crear flujos en tiempo real mediante [vistas materializadas](/es/reference/statements/create/view). Para ello:
 
@@ -182,7 +182,7 @@ ATTACH TABLE consumer;
 
 Si quiere cambiar la tabla de destino mediante `ALTER`, le recomendamos deshabilitar la vista materializada para evitar discrepancias entre la tabla de destino y los datos de la vista.
 
-## Columnas virtuales {#virtual-columns}
+## Columnas virtuales
 
 * `_subject` - subject del mensaje de NATS. Tipo de dato: `String`.
 
@@ -193,7 +193,7 @@ Columnas virtuales adicionales cuando `nats_handle_error_mode='stream'`:
 
 Nota: las columnas virtuales `_raw_message` y `_error` se rellenan solo en caso de excepción durante el análisis; siempre son `NULL` cuando el mensaje se ha analizado correctamente.
 
-## Compatibilidad con formatos de datos {#data-formats-support}
+## Compatibilidad con formatos de datos
 
 El motor NATS es compatible con todos los [formatos](/es/reference/formats/index) compatibles con ClickHouse.
 El número de filas en un mensaje de NATS depende de si el formato está basado en filas o en bloques:
@@ -201,7 +201,7 @@ El número de filas en un mensaje de NATS depende de si el formato está basado 
 * En los formatos basados en filas, el número de filas en un mensaje de NATS puede controlarse mediante la configuración `nats_max_rows_per_message`.
 * En los formatos basados en bloques, no es posible dividir un bloque en partes más pequeñas, pero el número de filas de un bloque puede controlarse mediante la configuración general [max&#95;block&#95;size](/es/reference/settings/session-settings/max#max_block_size).
 
-## Uso de JetStream {#using-jetstream}
+## Uso de JetStream
 
 Antes de usar el motor NATS con NATS JetStream, debe crear un `stream` de NATS y un consumidor pull duradero. Para ello, puede usar, por ejemplo, la utilidad `nats` del paquete [NATS CLI](https://github.com/nats-io/natscli):
 
@@ -316,7 +316,7 @@ CREATE TABLE nats_jet_stream (
 
 Las tablas de JetStream ofrecen entrega al menos una vez: un mensaje se confirma solo después de insertarse en las vistas materializadas dependientes, por lo que un mensaje cuya inserción falla o se interrumpe permanece sin confirmar y se vuelve a entregar. NATS Core (sin JetStream) no tiene confirmación ni reproducción, por lo que ofrece entrega como máximo una vez y un mensaje interrumpido se pierde.
 
-## Durabilidad de los datos {#data-durability}
+## Durabilidad de los datos
 
 Esta sección se aplica únicamente a JetStream. Core NATS no tiene confirmaciones y ofrece entrega como máximo una vez, como se describió anteriormente, por lo que no existe ninguna ventana en la que pueda perderse un mensaje confirmado.
 

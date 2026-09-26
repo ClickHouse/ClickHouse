@@ -14,7 +14,7 @@ doc_type: 'reference'
   المحرك `Ordinary` مهجور (deprecated). لا تستخدمه مع قواعد البيانات الجديدة.
 </Warning>
 
-## إنشاء قاعدة بيانات {#creating-a-database}
+## إنشاء قاعدة بيانات
 
 يتطلب إنشاء قاعدة بيانات من نوع `Ordinary` تفعيل [`allow_deprecated_database_ordinary`](/ar/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary):
 
@@ -25,11 +25,11 @@ CREATE DATABASE legacy
 ENGINE = Ordinary;
 ```
 
-## الترحيل {#migration}
+## الترحيل
 
 استخدم `Atomic` لقواعد البيانات الجديدة، فهو محرك قاعدة البيانات الافتراضي في ClickHouse مفتوح المصدر، ويدعم عمليات البيانات الوصفية الذرّية، بما في ذلك `DROP TABLE` و`RENAME TABLE` غير الحاجبتين.
 
-## اطلع أيضًا {#see-also}
+## اطلع أيضًا
 
 * [محرك قاعدة البيانات Atomic](/ar/reference/engines/database-engines/atomic)
 * [`allow_deprecated_database_ordinary`](/ar/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary)

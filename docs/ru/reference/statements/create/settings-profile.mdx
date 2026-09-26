@@ -24,7 +24,7 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
 Для `CREATE SETTINGS PROFILE` требуется привилегия [CREATE SETTINGS PROFILE](/ru/reference/statements/grant#access-management). `OR REPLACE` удаляет существующий profile с тем же именем, включая сведения о том, к каким ролям он применяется, поэтому дополнительно требуется привилегия [DROP SETTINGS PROFILE](/ru/reference/statements/grant#access-management). Привилегия `DROP SETTINGS PROFILE` требуется независимо от того, существует ли уже profile, поэтому этот оператор нельзя использовать, чтобы выяснить, какие profiles существуют.
 
-## Пример {#example}
+## Пример
 
 Создайте пользователя:
 

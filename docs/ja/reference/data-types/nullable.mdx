@@ -21,7 +21,7 @@ doc_type: 'reference'
 
 ClickHouse サーバー設定で別途指定されていない限り、`NULL` はすべての `Nullable` 型のデフォルト値です。
 
-## ストレージ機能 {#storage-features}
+## ストレージ機能
 
 テーブルのカラムに `Nullable` 型の値を格納するため、ClickHouse は値を格納する通常のファイルに加えて、`NULL` マスク用の別ファイルを使用します。マスクファイル内のエントリによって、ClickHouse はテーブルの各行について、`NULL` と対応するデータ型のデフォルト値を区別できます。ファイルが 1 つ追加されるため、`Nullable` カラムは同等の通常のカラムと比べてより多くのストレージ領域を消費します。
 
@@ -29,7 +29,7 @@ ClickHouse サーバー設定で別途指定されていない限り、`NULL` �
   `Nullable` を使用すると、ほとんどの場合パフォーマンスに悪影響が生じます。データベースを設計する際は、この点を考慮してください。
 </Note>
 
-## NULL の検出 {#finding-null}
+## NULL の検出
 
 カラム全体を読み取らなくても、`null` サブカラムを使ってカラム内の `NULL` 値を検出できます。これは格納されている `NULL` マスクのバイトを返します。対応する値が存在する場合は `0`、`NULL` の場合は非ゼロのバイト (正規形としては `1`) となります。厳密に `0` または `1` が必要な場合は `isNull` を使用してください。
 
@@ -52,7 +52,7 @@ SELECT n.null FROM nullable;
 └────────┘
 ```
 
-## 使用例 {#usage-example}
+## 使用例
 
 ```sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog

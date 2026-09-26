@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки задают конфигурацию сервера ClickHouse и автоматически генерируются на основе исходного кода ClickHouse.
 
-## min_allocation_size_to_log_stack_trace {#min_allocation_size_to_log_stack_trace}
+## min_allocation_size_to_log_stack_trace
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -28,7 +28,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Значение `0` (по умолчанию) отключает диагностику. Установите его значительно выше наибольшего выделения памяти, которое сервер выполняет в штатном режиме, иначе будут записываться и обычные крупные выделения, а при запуске может быть израсходован весь бюджет.
 
-## min_allocation_size_to_throw_on_memory_limit {#min_allocation_size_to_throw_on_memory_limit}
+## min_allocation_size_to_throw_on_memory_limit
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Да" />
 
@@ -40,7 +40,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Обратите внимание: чтобы избежать побочных эффектов, рекомендуется задавать значение больше `max_untracked_memory`.
 
-## min_os_cpu_wait_time_ratio_to_drop_connection {#min_os_cpu_wait_time_ratio_to_drop_connection}
+## min_os_cpu_wait_time_ratio_to_drop_connection
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Yes" />
 

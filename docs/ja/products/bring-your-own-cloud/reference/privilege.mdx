@@ -7,9 +7,9 @@ description: '自社のクラウドインフラストラクチャにClickHouse�
 doc_type: 'reference'
 ---
 
-## AWS IAMロール {#aws-iam-roles}
+## AWS IAMロール
 
-### Bootstrap IAM ロール {#bootstrap-iam-role}
+### Bootstrap IAM ロール
 
 Bootstrap IAM ロールには、次の権限があります。
 
@@ -18,7 +18,7 @@ Bootstrap IAM ロールには、次の権限があります。
 * **IAM の操作 (例: `iam:CreatePolicy`)&#x20;**: コントローラーが追加のロールを作成するために必要です (詳細は次のセクションを参照してください) 。
 * **EKS の操作**: 名前が `clickhouse-cloud` プレフィックスで始まるリソースに限定されます。
 
-### コントローラーによって追加で作成される IAM ロール {#additional-iam-roles-created-by-the-controller}
+### コントローラーによって追加で作成される IAM ロール
 
 CloudFormation で作成される `ClickHouseManagementRole` に加えて、コントローラーはいくつかの追加のロールも作成します。
 
@@ -44,9 +44,9 @@ CloudFormation で作成される `ClickHouseManagementRole` に加えて、コ�
 
 最後に、**`data-plane-mgmt`** は、`ClickHouseCluster` や Istio の Virtual Service/Gateway など、必要なカスタムリソースを ClickHouse Cloud のコントロールプレーンコンポーネントがリコンサイルできるようにします。
 
-## GCP のサービスアカウント {#gcp-service-accounts}
+## GCP のサービスアカウント
 
-### Bootstrap サービス アカウント {#bootstrap-service-account}
+### Bootstrap サービス アカウント
 
 Bootstrap サービス アカウントには、プロジェクト スコープのカスタム ロールとして、次の権限が付与されます。
 
@@ -56,7 +56,7 @@ Bootstrap サービス アカウントには、プロジェクト スコープ�
 * **Storage**: ClickHouse のバックアップ、共有状態、監視データに使用される Cloud ストレージ バケットの管理に使用されます。
 * **IAM Role**: プロジェクト内のサービス アカウントとカスタム ロールを管理します。このロールでは、サービス アカウント キーの作成、組織ポリシーのバインド、または他のプロジェクト内のリソースの操作は許可されません。
 
-### コントローラーによって追加で作成されるサービスアカウント {#additional-service-accounts-created-by-the-controller}
+### コントローラーによって追加で作成されるサービスアカウント
 
 オンボーディングの一環として Terraform 経由で作成される `clickhouse-management` サービスアカウントに加え、最初の BYOC サービスをプロビジョニングすると、ClickHouse のコントロールプレーン (`clickhouse-management` として認証) が、クラスター内の特定のワークロード向けにプロジェクト内へ追加のサービスアカウントを作成します。これらはそれぞれ、単一の用途に限定された最小限の権限セットで作成されます。
 
@@ -72,9 +72,9 @@ Bootstrap サービス アカウントには、プロジェクト スコープ�
 
 サービスおよびバックアップの status イベントを ClickHouse Cloud にパブリッシュする state exporter は、意図的にこのリストに含まれていません。GCP では、そのパブリッシュ用 identity は ClickHouse 所有のプロジェクト内にある ClickHouse 所有のサービスアカウントであり、お客様のプロジェクト内に作成されるものではありません。お客様のプロジェクト内に作成されるのは、クラスター内の `state-exporter` サービスアカウントがそれを借用 (impersonate) できるようにする Workload Identity の binding です。鍵情報は一切関与せず、Pub/Sub にパブリッシュする identity はお客様のプロジェクト内で一切の権限を持ちません。
 
-## Azure のロールと ID {#azure-roles-and-identities}
+## Azure のロールと ID
 
-### オンボーディング用サービス プリンシパル {#onboarding-service-principal}
+### オンボーディング用サービス プリンシパル
 
 [Azure 用 Terraform モジュール](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure)によるオンボーディングでは、クロステナント認証に関する Azure のガイダンスに従って、テナント内にマルチテナント アプリケーションをエンタープライズ アプリケーション (サービス プリンシパル) としてプロビジョニングします。サービス プリンシパルには、ターゲット サブスクリプションをスコープとする最小権限のカスタム ロールが割り当てられ、次の権限が付与されます。
 
@@ -84,7 +84,7 @@ Bootstrap サービス アカウントには、プロジェクト スコープ�
 * **ID**: サブスクリプション内のユーザー割り当てマネージド ID と、そのフェデレーション ID 資格情報を管理します。
 * **認可**: カスタム ロール定義とロールの割り当てを管理します。すべての権限はターゲット サブスクリプションに限定されるため、このロールは他のサブスクリプションやテナントのリソースにアクセスできません。
 
-### コントローラーが作成する追加のマネージド ID {#additional-managed-identities-created-by-the-controller}
+### コントローラーが作成する追加のマネージド ID
 
 BYOC サービスをプロビジョニングすると、ClickHouse のコントロールプレーンによって、お客様のサブスクリプション内にユーザー割り当てマネージド ID が作成されます。各 identity は、権限を限定し、単一の目的にのみ使用する特定の Kubernetes サービスアカウント (Workload identity) にフェデレーションされます。
 

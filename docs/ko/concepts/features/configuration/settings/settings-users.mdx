@@ -80,7 +80,7 @@ doc_type: 'reference'
 </users>
 ```
 
-### user_name/password {#user-namepassword}
+### user_name/password
 
 비밀번호는 평문(plaintext) 또는 SHA256(16진수 포맷)으로 지정할 수 있습니다.
 
@@ -116,7 +116,7 @@ doc_type: 'reference'
 
   결과의 첫 번째 줄은 비밀번호이고, 두 번째 줄은 해당 double SHA1 해시입니다.
 
-### TOTP 인증 구성 {#totp-authentication-configuration}
+### TOTP 인증 구성
 
 시간 기반 일회용 비밀번호(Time-Based One-Time Password, TOTP)는 제한된 시간 동안만 유효한 임시 액세스 코드를 생성해 ClickHouse 사용자를 인증하는 데 사용할 수 있습니다.
 이 TOTP 인증 방법은 [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238) 표준을 준수하므로 Google Authenticator, 1Password 같은 널리 사용되는 TOTP 애플리케이션과 호환됩니다.

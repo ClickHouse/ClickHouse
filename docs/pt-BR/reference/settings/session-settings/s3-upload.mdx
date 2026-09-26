@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## s3_upload_checksum_algorithm {#s3_upload_checksum_algorithm}
+## s3_upload_checksum_algorithm
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Nova configuração para escolher o algoritmo de checksum em uploads para o S3."}]}]} />
 
@@ -29,13 +29,13 @@ Endpoints do `GCS` (`storage.googleapis.com`) ignoram completamente essa configu
 
 Cópias server-side ignoram essa configuração.
 
-## s3_upload_part_size_multiply_factor {#s3_upload_part_size_multiply_factor}
+## s3_upload_part_size_multiply_factor
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
 Multiplique `s3_min_upload_part_size` por esse fator sempre que `s3_multiply_parts_count_threshold` partes forem enviadas em uma única gravação no S3.
 
-## s3_upload_part_size_multiply_parts_count_threshold {#s3_upload_part_size_multiply_parts_count_threshold}
+## s3_upload_part_size_multiply_parts_count_threshold
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 

@@ -35,7 +35,7 @@ metric_name2[...] = ...
   um serviço desse tipo.
 </Note>
 
-## Sintaxe {#syntax}
+## Sintaxe
 
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
@@ -51,7 +51,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
   A definição de uma tabela de uma [version](#schema-versioning) anterior à 4 é gravada com `METRICS`, para que um servidor mais antigo possa lê-la.
 </Note>
 
-## Uso {#usage}
+## Uso
 
 É mais fácil começar com tudo configurado com os valores padrão (é permitido criar uma tabela `TimeSeries` sem especificar uma lista de colunas):
 
@@ -64,7 +64,7 @@ Essa tabela pode ser usada com os seguintes protocolos (uma porta deve ser atrib
 * [prometheus remote-write](/pt-BR/concepts/features/interfaces/prometheus#remote-write)
 * [prometheus remote-read](/pt-BR/concepts/features/interfaces/prometheus#remote-read)
 
-### Colunas externas {#outer-columns}
+### Colunas externas
 
 As colunas de uma tabela TimeSeries são geradas automaticamente. São colunas externas: não armazenam dados, apenas fornecem a interface para SELECT/INSERT. Os dados reais são armazenados em [tabelas de destino](#target-tables). Aqui está a lista das colunas externas:
 
@@ -102,7 +102,7 @@ INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, hel
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
-### Especificando colunas externas {#specifying-outer-columns}
+### Especificando colunas externas
 
 A coluna externa `samples` pode ser listada explicitamente em uma instrução `CREATE TABLE` para substituir seu tipo padrão `Array(Tuple(DateTime64(3), Float64))` (seu nome antigo, `time_series`, também é aceito). O ClickHouse extrai, da tupla, os tipos de `timestamp` e do valor escalar e os propaga para a tabela samples:
 
@@ -119,7 +119,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 Se ambas as formas forem usadas na mesma instrução `CREATE TABLE`, os tipos declarados deverão coincidir.
 
-## Tabelas de destino {#target-tables}
+## Tabelas de destino
 
 Uma tabela `TimeSeries` não armazena dados próprios; tudo é armazenado em suas tabelas de destino.
 Isso é semelhante ao funcionamento de uma [visão materializada](/pt-BR/reference/statements/create/view#materialized-view),
@@ -135,7 +135,7 @@ As linhas inseridas em uma tabela `TimeSeries` são transformadas, divididas em 
 
 As tabelas de destino são as seguintes:
 
-### Tabela *samples* {#samples-table}
+### Tabela *samples*
 
 A tabela *samples* contém séries temporais associadas a um identificador.
 
@@ -153,7 +153,7 @@ são comprimidos por codecs genéricos e podem, caso contrário, dominar o taman
 O motor habilita `ALP` para suas tabelas internas samples e amostras recentes sem exigir que `enable_alp_codec` seja definido.
 Consulte também [Ajustando os tipos das colunas](#adjusting-column-types).
 
-### Tabela de amostras recentes {#recent-samples-table}
+### Tabela de amostras recentes
 
 A tabela de *amostras recentes* é opcional e está habilitada por padrão (consulte a configuração [recent&#95;samples&#95;ttl&#95;seconds](#settings);
 defini-la como zero desabilita a tabela). Ela contém uma cópia das amostras mais recentes que o TTL definido por essa configuração
@@ -167,7 +167,7 @@ já que ela é muito menor (esse comportamento pode ser desabilitado com a confi
 
 O TTL da tabela interna de amostras recentes é sempre derivado da configuração [recent&#95;samples&#95;ttl&#95;seconds](#settings).
 
-### Tabela de tags {#tags-table}
+### Tabela de tags
 
 A tabela *tags* contém identificadores calculados para cada combinação de nome de métrica e tags.
 
@@ -190,7 +190,7 @@ correspondem a rótulos ausentes e não usam esse índice.
 Índices explícitos declarados em `TAGS INNER COLUMNS` substituem o índice padrão. As tabelas existentes e as
 tabelas de tags externas mantêm seus índices; adicione e materialize o índice na tabela de destino das tags para habilitá-lo.
 
-### Tabela de famílias de métricas {#metric-families-table}
+### Tabela de famílias de métricas
 
 A tabela *metric families* contém algumas informações sobre as famílias de métricas coletadas, os tipos dessas famílias de métricas e suas descrições.
 Uma família de métricas é um grupo de métricas com o mesmo nome (a tag `__name__`) e o mesmo tipo; por exemplo, um histograma é uma família de métricas composta por várias métricas.
@@ -204,7 +204,7 @@ A tabela *metric families* deve conter as colunas:
 | `unit`               | [x]          | `LowCardinality(String)` | `String` ou `LowCardinality(String)` | A unidade usada em uma métrica                                                                                                                                                |
 | `help`               | [x]          | `String`                 | `String` ou `LowCardinality(String)` | A descrição de uma métrica                                                                                                                                                    |
 
-## Criação {#creation}
+## Criação
 
 Existem várias maneiras de criar uma tabela com o motor de tabela `TimeSeries`.
 A instrução mais simples
@@ -327,7 +327,7 @@ ORDER BY metric_family_name
 SETTINGS index_granularity = 8192
 ```
 
-## Criar uma tabela AS a partir de uma tabela existente {#create-as}
+## Criar uma tabela AS a partir de uma tabela existente
 
 A instrução `CREATE TABLE new_table AS existing_table` cria uma tabela `TimeSeries` configurada como `existing_table`,
 que deve ser uma tabela `TimeSeries`. Os destinos externos de `existing_table` não são copiados: a própria instrução deve declarar
@@ -350,7 +350,7 @@ A lista de colunas externas é regenerada, não copiada.
 Uma tabela criada por uma versão mais antiga do ClickHouse pode ser usada como `existing_table`: a nova tabela recebe a
 estrutura atual, por exemplo, o tipo `id` atual e a expressão padrão de identificador.
 
-## Ajustando os tipos das colunas {#adjusting-column-types}
+## Ajustando os tipos das colunas
 
 Você pode ajustar os tipos das colunas nas tabelas de destino internas usando a cláusula `INNER COLUMNS`. Por exemplo, para armazenar timestamps em microssegundos e valores como `Float32`, use:
 
@@ -366,7 +366,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 ```
 
-## A coluna `id` {#id-column}
+## A coluna `id`
 
 A coluna `id` contém identificadores; cada identificador é calculado com base em uma combinação de nome de métrica e tags.
 O tipo e a expressão `DEFAULT` usados para gerar identificadores podem ser personalizados por meio da cláusula `TAGS INNER COLUMNS`:
@@ -400,7 +400,7 @@ SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)'
 
 Quando a configuração `id_generator` está definida, a configuração `id_type` é registrada automaticamente no momento do `CREATE`, de modo que a definição preserva o tipo para o qual a expressão foi escrita.
 
-## A coluna `tags` {#tags-column}
+## A coluna `tags`
 
 A coluna `tags` contém todas as tags de uma série temporal, incluindo a tag `__name__` com o nome de uma métrica.
 
@@ -422,7 +422,7 @@ Os valores das tags `instance` e `job` serão armazenados tanto nessas colunas q
   com todas as tags, exceto o nome da métrica.
 </Note>
 
-## Motores de tabela das tabelas de destino internas {#inner-table-engines}
+## Motores de tabela das tabelas de destino internas
 
 Por padrão, as tabelas de destino internas usam os seguintes motores de tabela:
 
@@ -461,7 +461,7 @@ linhas que uma mesclagem em segundo plano combina compartilham os mesmos valores
 motor é especificado inline, como acima, `TimeSeries` define `allow_dimensions_outside_sorting_key = 1` nela automaticamente;
 para uma tabela [externa](#external-target-tables) de tags com agregação criada manualmente, você deve definir isso por conta própria.
 
-## Tabelas de destino externas {#external-target-tables}
+## Tabelas de destino externas
 
 É possível fazer com que uma tabela `TimeSeries` use uma tabela criada manualmente:
 
@@ -490,7 +490,7 @@ Os tipos de coluna das tabelas externas (`id`, `timestamp`, `value` e os `<tag_v
 
 O tipo da coluna `id` de uma tabela de tags externa e a expressão que gera os identificadores são registrados nas configurações [`id_type`](#settings) e [`id_generator`](#settings) no momento do `CREATE` (a partir da [versão](#schema-versioning) 2), de modo que a definição da tabela `TimeSeries` os mantém: por exemplo, `CREATE TABLE ... AS my_table` lê o tipo de `id` a partir da definição de `my_table` sem ler suas tabelas de destino externas. Se a configuração `id_generator` não for especificada, ela é definida como o `DEFAULT` declarado na coluna `id` da tabela externa (se houver) ou, caso contrário, como o gerador canônico derivado do tipo de `id`. A expressão registrada é usada para gerar o `id` mesmo que o `DEFAULT` da tabela externa mude posteriormente — consulte [A coluna `id`](#id-column) para mais detalhes.
 
-## Alterando configurações {#altering-settings}
+## Alterando configurações
 
 Duas configurações podem ser alteradas após `CREATE`:
 
@@ -508,7 +508,7 @@ Observe que alterar `id_generator` quando já existem dados na tabela de tags po
 As outras configurações não podem ser alteradas com `ALTER ... MODIFY SETTING`: a maioria delas é incorporada ao esquema das tabelas internas no momento do `CREATE`,
 e a configuração `version` é fixada automaticamente no momento do `CREATE` e identifica o próprio esquema (consulte [Versionamento de schema](#schema-versioning)).
 
-## Configurações {#settings}
+## Configurações
 
 Aqui está uma lista de configurações que podem ser especificadas ao definir uma tabela `TimeSeries`:
 
@@ -528,7 +528,7 @@ Aqui está uma lista de configurações que podem ser especificadas ao definir u
 | `tags_index_granularity`             | UInt64       | 8192                                                          | Define `index_granularity` da tabela [tags](#tags-table) interna. Quando definido explicitamente, substitui `index_granularity` da declaração do motor. Ignorado para uma tabela tags externa e um motor que não seja MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `version`                            | UInt64       | 5                                                             | A versão da tabela: identifica o conjunto de tabelas de destino e sua estrutura. A versão é fixada automaticamente quando uma tabela é criada e não pode ser alterada depois; normalmente ela deve ser omitida na consulta `CREATE TABLE` (consulte [Versionamento de schema](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-## Versionamento de schema {#schema-versioning}
+## Versionamento de schema
 
 O motor de tabela `TimeSeries` e a camada de execução de PromQL estão em desenvolvimento ativo:
 o conjunto de tabelas de destino e sua estrutura podem mudar entre versões do ClickHouse.
@@ -550,7 +550,7 @@ o dialect `promql` e a API HTTP de consulta do Prometheus):
 * Se a versão for antiga demais para gravação, as consultas `INSERT` e o protocolo remote-write do Prometheus são rejeitados, enquanto as consultas `SELECT` continuam funcionando.
 * Se a versão for antiga demais para o servidor como um todo, toda consulta sobre a tabela (exceto `SHOW CREATE TABLE`, `DETACH` e `DROP`) é rejeitada.
 
-### Histórico de versões {#version-history}
+### Histórico de versões
 
 | Versão | Alterações                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -561,7 +561,7 @@ o dialect `promql` e a API HTTP de consulta do Prometheus):
 | 4      | A tabela de destino `metrics` foi renomeada para `metric families`: a tabela interna é chamada de `.inner_id.metricfamilies.<uuid>` em vez de `.inner_id.metrics.<uuid>`, e a definição é gravada com a palavra-chave `METRIC FAMILIES` em vez de `METRICS`. Os dados armazenados não foram alterados                                                                                                                                                   |
 | 5      | Novas tabelas internas de tags com um motor da família `MergeTree` recebem, por padrão, um índice de texto `keyValuePairs` no map `tags` (consulte [Tabela de tags](#tags-table))                                                                                                                                                                                                                                                                       |
 
-# Funções {#functions}
+# Funções
 
 Aqui está uma lista de funções que aceitam uma tabela `TimeSeries` como argumento:
 

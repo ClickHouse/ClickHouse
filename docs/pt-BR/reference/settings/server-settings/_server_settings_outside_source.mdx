@@ -2,7 +2,7 @@
 title: Configurações do servidor fora da Source
 ---
 
-## asynchronous_metric_log {#asynchronous_metric_log}
+## asynchronous_metric_log
 
 Ativado por padrão nas implantações do ClickHouse Cloud.
 
@@ -37,7 +37,7 @@ Para desativar a configuração `asynchronous_metric_log`, crie o seguinte arqui
 
 <SystemLogParameters />
 
-## auth_use_forwarded_address {#auth_use_forwarded_address}
+## auth_use_forwarded_address
 
 Use o endereço de origem na autenticação de clientes conectados por meio de um proxy.
 
@@ -47,7 +47,7 @@ Use o endereço de origem na autenticação de clientes conectados por meio de u
   Essa configuração deve ser usada com cuidado redobrado, pois endereços encaminhados podem ser facilmente falsificados — servidores que aceitam essa autenticação não devem ser acessados diretamente, mas exclusivamente por meio de um proxy confiável.
 </Note>
 
-## backups {#backups}
+## backups
 
 Configurações de backups, usadas ao executar as instruções [`BACKUP` e `RESTORE`](/pt-BR/concepts/features/backup-restore/overview).
 
@@ -103,7 +103,7 @@ Essa configuração é definida por padrão como:
 </backups>
 ```
 
-## background_schedule_pool_log {#background_schedule_pool_log}
+## background_schedule_pool_log
 
 Contém informações sobre todas as tarefas em segundo plano executadas por meio de diferentes pools de segundo plano.
 
@@ -122,7 +122,7 @@ Contém informações sobre todas as tarefas em segundo plano executadas por mei
 </background_schedule_pool_log>
 ```
 
-## bcrypt_workfactor {#bcrypt_workfactor}
+## bcrypt_workfactor
 
 Fator de trabalho para o tipo de autenticação `bcrypt_password`, que usa o [algoritmo Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 O fator de trabalho define a quantidade de processamento e o tempo necessários para calcular o hash e verificar a senha.
@@ -139,7 +139,7 @@ O fator de trabalho define a quantidade de processamento e o tempo necessários 
   sobrecarga computacional do bcrypt em fatores de custo mais altos.
 </Warning>
 
-## table_engines_require_grant {#table_engines_require_grant}
+## table_engines_require_grant
 
 <CloudNotSupportedBadge />
 
@@ -151,7 +151,7 @@ Se definido como true, os usuários precisam de um grant para criar uma tabela c
   Por padrão, para manter a compatibilidade com versões anteriores, a criação de uma tabela com um motor de tabela específico ignora o grant; no entanto, você pode alterar esse comportamento definindo esta opção como true.
 </Note>
 
-## builtin_dictionaries_reload_interval {#builtin_dictionaries_reload_interval}
+## builtin_dictionaries_reload_interval
 
 O intervalo, em segundos, antes de recarregar os dicionários integrados.
 
@@ -163,7 +163,7 @@ O ClickHouse recarrega os dicionários integrados a cada x segundos. Isso permit
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-## compressão {#compression}
+## compressão
 
 Configurações de compressão de dados para tabelas do motor [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -218,7 +218,7 @@ Configurações de compressão de dados para tabelas do motor [MergeTree](/pt-BR
 </compression>
 ```
 
-## criptografia {#encryption}
+## criptografia
 
 Configura um comando para obter uma chave a ser usada por [codecs de criptografia](/pt-BR/reference/statements/create/table/codec#encryption-codecs). A chave (ou as chaves) deve ser armazenada em variáveis de ambiente ou definida no arquivo de configuração.
 
@@ -300,7 +300,7 @@ Ou pode ser definido em hexadecimal:
   Tudo o que foi mencionado acima pode ser aplicado a `aes_256_gcm_siv` (mas a chave deve ter 32 bytes de comprimento).
 </Note>
 
-## error_log {#error_log}
+## error_log
 
 Ele vem desativado por padrão.
 
@@ -335,7 +335,7 @@ Para desativar a configuração `error_log`, crie o arquivo `/etc/clickhouse-ser
 
 <SystemLogParameters />
 
-## custom_settings_prefixes {#custom_settings_prefixes}
+## custom_settings_prefixes
 
 Lista de prefixos usados para [configurações personalizadas](/pt-BR/concepts/features/configuration/settings/settings-query-level#custom_settings).
 Vários prefixos devem ser separados por vírgulas.
@@ -350,7 +350,7 @@ Vários prefixos devem ser separados por vírgulas.
 
 * [Configurações personalizadas](/pt-BR/concepts/features/configuration/settings/settings-query-level#custom_settings)
 
-## core_dump {#core_dump}
+## core_dump
 
 Define o limite flexível para o tamanho do arquivo de core dump.
 
@@ -366,7 +366,7 @@ Define o limite flexível para o tamanho do arquivo de core dump.
 </core_dump>
 ```
 
-## default_profile {#default_profile}
+## default_profile
 
 Perfil de configurações padrão. Os perfis de configurações ficam no arquivo especificado pela configuração `user_config`.
 
@@ -378,7 +378,7 @@ Perfil de configurações padrão. Os perfis de configurações ficam no arquivo
 <default_profile>default</default_profile>
 ```
 
-## dictionaries_config {#dictionaries_config}
+## dictionaries_config
 
 O caminho para o arquivo de configuração dos dicionários.
 
@@ -397,7 +397,7 @@ Veja também:
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## user_defined_executable_functions_config {#user_defined_executable_functions_config}
+## user_defined_executable_functions_config
 
 O caminho para o arquivo de configuração de funções executáveis definidas pelo usuário.
 
@@ -416,7 +416,7 @@ Veja também:
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
-## graphite {#graphite}
+## graphite
 
 Envio de dados para [Graphite](https://github.com/graphite-project).
 
@@ -450,7 +450,7 @@ Você pode configurar várias cláusulas `<graphite>`. Por exemplo, pode usar is
 </graphite>
 ```
 
-## graphite_rollup {#graphite_rollup}
+## graphite_rollup
 
 Configurações para redução de dados no Graphite.
 
@@ -478,7 +478,7 @@ Para mais detalhes, consulte [GraphiteMergeTree](/pt-BR/reference/engines/table-
 </graphite_rollup_example>
 ```
 
-## http_handlers {#http_handlers}
+## http_handlers
 
 Permite usar handlers HTTP personalizados.
 Para adicionar um novo handler HTTP, basta adicionar uma nova `<rule>`.
@@ -543,7 +543,7 @@ Exemplo:
 </http_handlers>
 ```
 
-## http_server_default_response {#http_server_default_response}
+## http_server_default_response
 
 A página exibida por padrão ao acessar o servidor HTTP(s) do ClickHouse.
 O valor padrão é &quot;Ok.&quot; (com uma quebra de linha no final)
@@ -560,7 +560,7 @@ Abre `https://tabix.io/` ao acessar `http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-## http_options_response {#http_options_response}
+## http_options_response
 
 Usado para adicionar headers à resposta de uma requisição HTTP `OPTIONS`.
 O método `OPTIONS` é usado ao fazer requisições de preflight de CORS.
@@ -590,7 +590,7 @@ Exemplo:
 </http_options_response>
 ```
 
-## hsts_max_age {#hsts_max_age}
+## hsts_max_age
 
 Tempo de expiração do HSTS, em segundos.
 
@@ -604,7 +604,7 @@ Tempo de expiração do HSTS, em segundos.
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-## interserver_listen_host {#interserver_listen_host}
+## interserver_listen_host
 
 Restrição dos hosts que podem trocar dados entre os servidores do ClickHouse.
 Se o Keeper for usado, a mesma restrição será aplicada à comunicação entre diferentes instâncias do Keeper.
@@ -626,7 +626,7 @@ Tipo:
 
 Padrão:
 
-## interserver_http_credentials {#interserver_http_credentials}
+## interserver_http_credentials
 
 Um nome de usuário e uma senha usados para se conectar a outros servidores durante a [replicação](/pt-BR/reference/engines/table-engines/mergetree-family/replication). Além disso, o servidor autentica outras réplicas usando essas credenciais.
 Portanto, `interserver_http_credentials` deve ser igual em todas as réplicas de um cluster.
@@ -679,7 +679,7 @@ Para alterar credenciais existentes, mova o nome de usuário e a senha para a se
 
 Quando as novas credenciais forem aplicadas a todas as réplicas, as credenciais antigas poderão ser removidas.
 
-## ldap_servers {#ldap_servers}
+## ldap_servers
 
 Liste aqui os servidores LDAP com seus parâmetros de conexão para:
 
@@ -746,7 +746,7 @@ Exemplo (Active Directory típico com detecção do DN do usuário configurada p
 </my_ad_server>
 ```
 
-## listen_host {#listen_host}
+## listen_host
 
 Restrição dos hosts de onde as solicitações podem vir. Se você quiser que o servidor responda a todos eles, especifique `::`.
 
@@ -757,7 +757,7 @@ Exemplos:
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## logger {#logger}
+## logger
 
 A localização e o formato das mensagens de log.
 
@@ -950,7 +950,7 @@ Os nomes das chaves podem ser modificados alterando os valores das tags dentro d
 
 As propriedades do log podem ser omitidas comentando a propriedade correspondente. Por exemplo, se você não quiser que o log exiba `query_id`, pode comentar a tag `<query_id>`.
 
-## send_crash_reports {#send_crash_reports}
+## send_crash_reports
 
 Configurações para o envio de relatórios de falha à equipe principal de desenvolvedores do ClickHouse.
 
@@ -972,7 +972,7 @@ Chaves:
 </send_crash_reports>
 ```
 
-## ssh_server {#ssh_server}
+## ssh_server
 
 A parte pública da chave do host será gravada no arquivo known&#95;hosts
 no cliente SSH na primeira conexão.
@@ -990,7 +990,7 @@ Exemplo:
 </ssh_server>
 ```
 
-## tcp_ssh_port {#tcp_ssh_port}
+## tcp_ssh_port
 
 Porta do servidor SSH que permite ao usuário se conectar e executar consultas de forma interativa usando o cliente embutido por meio de um PTY.
 
@@ -1000,7 +1000,7 @@ Exemplo:
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
 
-## configuração_de_armazenamento {#storage_configuration}
+## configuração_de_armazenamento
 
 Permite configurar o armazenamento com vários discos.
 
@@ -1017,7 +1017,7 @@ A configuração de armazenamento segue a estrutura:
 </storage_configuration>
 ```
 
-### Configuração dos discos {#configuration-of-disks}
+### Configuração dos discos
 
 A configuração de `disks` segue a estrutura abaixo:
 
@@ -1052,7 +1052,7 @@ As subtags acima definem as seguintes configurações para `disks`:
   A ordem dos discos não importa.
 </Note>
 
-### Configuração de políticas {#configuration-of-policies}
+### Configuração de políticas
 
 As subtags acima definem as seguintes configurações para `policies`:
 
@@ -1076,7 +1076,7 @@ Para `volume_priority`:
 * Se *nenhum* volume receber esse parâmetro, sua ordem será determinada pela ordem em que aparecem no arquivo de configuração.
 * A prioridade dos volumes não pode ser idêntica.
 
-## macros {#macros}
+## macros
 
 Substituições de parâmetros para tabelas replicadas.
 
@@ -1090,7 +1090,7 @@ Para mais informações, consulte a seção [Criando tabelas replicadas](/pt-BR/
 <macros incl="macros" optional="true" />
 ```
 
-## replica_group_name {#replica_group_name}
+## replica_group_name
 
 Nome do grupo de réplicas para o banco de dados Replicated.
 
@@ -1105,7 +1105,7 @@ As consultas DDL aguardarão apenas as réplicas do mesmo grupo.
 <replica_group_name>backups</replica_group_name>
 ```
 
-## max_session_timeout {#max_session_timeout}
+## max_session_timeout
 
 Tempo limite máximo da sessão, em segundos.
 
@@ -1115,7 +1115,7 @@ Exemplo:
 <max_session_timeout>3600</max_session_timeout>
 ```
 
-## merge_tree {#merge_tree}
+## merge_tree
 
 Ajuste fino para tabelas no [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -1129,7 +1129,7 @@ Para mais informações, consulte o arquivo de cabeçalho MergeTreeSettings.h.
 </merge_tree>
 ```
 
-## metric_log {#metric_log}
+## metric_log
 
 Está desativado por padrão.
 
@@ -1164,7 +1164,7 @@ Para desativar a configuração `metric_log`, crie o arquivo `/etc/clickhouse-se
 
 <SystemLogParameters />
 
-## replicated_merge_tree {#replicated_merge_tree}
+## replicated_merge_tree
 
 Ajuste fino para tabelas em [ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). Esta configuração tem prioridade mais alta.
 
@@ -1178,7 +1178,7 @@ Para mais informações, consulte o arquivo de cabeçalho MergeTreeSettings.h.
 </replicated_merge_tree>
 ```
 
-## opentelemetry_span_log {#opentelemetry_span_log}
+## opentelemetry_span_log
 
 Configurações da [tabela de sistema `opentelemetry_span_log`](/pt-BR/reference/system-tables/opentelemetry_span_log).
 
@@ -1203,7 +1203,7 @@ Exemplo:
 </opentelemetry_span_log>
 ```
 
-## openSSL {#openSSL}
+## openSSL
 
 Configuração SSL de cliente e servidor.
 
@@ -1266,7 +1266,7 @@ Chaves das configurações de servidor/cliente:
 </openSSL>
 ```
 
-## part_log {#part_log}
+## part_log
 
 Eventos de log associados ao [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). Por exemplo, adição ou mesclagem de dados. Você pode usar o log para simular algoritmos de mesclagem e comparar suas características. Também é possível visualizar o processo de mesclagem.
 
@@ -1289,7 +1289,7 @@ As consultas são registradas na tabela [system.part&#95;log](/pt-BR/reference/s
 </part_log>
 ```
 
-## processors_profile_log {#processors_profile_log}
+## processors_profile_log
 
 Configurações da tabela de sistema [`processors_profile_log`](/pt-BR/reference/system-tables/processors_profile_log).
 
@@ -1310,7 +1310,7 @@ As configurações padrão são:
 </processors_profile_log>
 ```
 
-## prometheus {#prometheus}
+## prometheus
 
 Expõe dados de métricas para coleta pelo [Prometheus](https://prometheus.io).
 
@@ -1352,7 +1352,7 @@ Verifique (substitua `127.0.0.1` pelo endereço IP ou hostname do seu servidor C
 curl 127.0.0.1:9363/metrics
 ```
 
-## query_log {#query_log}
+## query_log
 
 Configuração para registrar as consultas recebidas com a configuração [log&#95;queries=1](/pt-BR/reference/settings/session-settings/log-queries#log_queries).
 
@@ -1380,7 +1380,7 @@ Se a tabela não existir, o ClickHouse a criará. Se a estrutura do log de consu
 </query_log>
 ```
 
-## query_metric_log {#query_metric_log}
+## query_metric_log
 
 Ele vem desativado por padrão.
 
@@ -1415,7 +1415,7 @@ Para desativar a configuração `query_metric_log`, crie o arquivo `/etc/clickho
 
 <SystemLogParameters />
 
-## query_cache {#query_cache}
+## query_cache
 
 Configuração do [cache de consultas](/pt-BR/concepts/features/performance/caches/query-cache).
 
@@ -1444,7 +1444,7 @@ As seguintes configurações estão disponíveis:
 </query_cache>
 ```
 
-## query_thread_log {#query_thread_log}
+## query_thread_log
 
 Configuração para registrar as threads das consultas recebidas com a configuração [log&#95;query&#95;threads=1](/pt-BR/reference/settings/session-settings/log-query#log_query_threads).
 
@@ -1469,7 +1469,7 @@ Se a tabela não existir, o ClickHouse a criará. Se a estrutura do log de threa
 </query_thread_log>
 ```
 
-## query_views_log {#query_views_log}
+## query_views_log
 
 Configuração para registrar views (live, materializadas etc.) associadas às consultas recebidas com a configuração [log&#95;query&#95;views=1](/pt-BR/reference/settings/session-settings/log-query#log_query_views).
 
@@ -1494,7 +1494,7 @@ Se a tabela não existir, o ClickHouse a criará. Se a estrutura do log de query
 </query_views_log>
 ```
 
-## text_log {#text_log}
+## text_log
 
 Configurações da [tabela de sistema text&#95;log](/pt-BR/reference/system-tables/text_log) para registrar mensagens de texto.
 
@@ -1525,7 +1525,7 @@ Além disso:
 </clickhouse>
 ```
 
-## trace_log {#trace_log}
+## trace_log
 
 Configurações para a operação da tabela de sistema [trace&#95;log](/pt-BR/reference/system-tables/trace_log).
 
@@ -1547,7 +1547,7 @@ O arquivo de configuração padrão do servidor `config.xml` contém a seguinte 
 </trace_log>
 ```
 
-## asynchronous_insert_log {#asynchronous_insert_log}
+## asynchronous_insert_log
 
 Configurações da tabela de sistema [asynchronous&#95;insert&#95;log](/pt-BR/reference/system-tables/asynchronous_insert_log) para registrar inserções assíncronas.
 
@@ -1571,7 +1571,7 @@ Configurações da tabela de sistema [asynchronous&#95;insert&#95;log](/pt-BR/re
 </clickhouse>
 ```
 
-## crash_log {#crash_log}
+## crash_log
 
 Configurações para a operação da tabela de sistema [crash&#95;log](/pt-BR/reference/system-tables/crash_log).
 
@@ -1608,7 +1608,7 @@ O arquivo de configuração padrão do servidor, `config.xml`, contém a seguint
 </crash_log>
 ```
 
-## create_union_system_log_tables {#create_union_system_log_tables}
+## create_union_system_log_tables
 
 Solicita a criação de tabelas `all_...` ao lado das tabelas de log do sistema (`system.all_query_log` para `system.query_log`, `system.all_text_log` para `system.text_log` e assim por diante). Essa tabela é uma união da tabela de log correspondente, de suas versões rotacionadas (`query_log_0`, `query_log_1`, ...) e/ou das mesmas tabelas em todas as réplicas de um cluster, permitindo consultá-las de uma só vez sem precisar se lembrar de construções como `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
@@ -1640,7 +1640,7 @@ A opção se aplica a todas as tabelas de log do sistema; não permite configura
 </create_union_system_log_tables>
 ```
 
-## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
+## custom_cached_disks_base_directory
 
 Esta configuração especifica o caminho do cache para discos em cache personalizados (criados por SQL).
 `custom_cached_disks_base_directory` tem prioridade sobre `filesystem_caches_path` para discos personalizados (encontrado em `filesystem_caches_path.xml`),
@@ -1659,7 +1659,7 @@ Exemplo:
 <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
 ```
 
-## backup_log {#backup_log}
+## backup_log
 
 Configurações da tabela de sistema [backup&#95;log](/pt-BR/reference/system-tables/backup_log) para registrar operações `BACKUP` e `RESTORE`.
 
@@ -1683,7 +1683,7 @@ Configurações da tabela de sistema [backup&#95;log](/pt-BR/reference/system-ta
 </clickhouse>
 ```
 
-## blob_storage_log {#blob_storage_log}
+## blob_storage_log
 
 Configurações da tabela de sistema [`blob_storage_log`](/pt-BR/reference/system-tables/blob_storage_log).
 
@@ -1701,7 +1701,7 @@ Exemplo:
 </blob_storage_log>
 ```
 
-## query_masking_rules {#query_masking_rules}
+## query_masking_rules
 
 Regras baseadas em expressões regulares, que serão aplicadas às consultas, bem como a todas as mensagens de log antes de serem armazenadas nos logs do servidor,
 nas tabelas [`system.query_log`](/pt-BR/reference/system-tables/query_log), [`system.text_log`](/pt-BR/reference/system-tables/text_log), [`system.processes`](/pt-BR/reference/system-tables/processes), e nos logs enviados ao cliente. Isso ajuda a evitar
@@ -1734,7 +1734,7 @@ A tabela [`system.events`](/pt-BR/reference/system-tables/events) tem o contador
 Para consultas distribuídas, cada servidor deve ser configurado separadamente; caso contrário, as subconsultas enviadas para outros
 nós serão armazenadas sem mascaramento.
 
-## remote_servers {#remote_servers}
+## remote_servers
 
 Configuração dos clusters usada pelo mecanismo de tabela [Distributed](/pt-BR/reference/engines/table-engines/special/distributed) e pela função de tabela `cluster`.
 
@@ -1752,7 +1752,7 @@ Para o valor do atributo `incl`, consulte a seção &quot;[arquivos de configura
 * [Cluster Discovery](/pt-BR/guides/oss/deployment-and-scaling/cluster-discovery)
 * [motor de banco de dados Replicated](/pt-BR/reference/engines/database-engines/replicated)
 
-## remote_url_allow_hosts {#remote_url_allow_hosts}
+## remote_url_allow_hosts
 
 Lista de hosts permitidos para uso em motores de armazenamento relacionados a URL e em funções de tabela.
 
@@ -1772,7 +1772,7 @@ Por exemplo:
 </remote_url_allow_hosts>
 ```
 
-## timezone {#timezone}
+## timezone
 
 O fuso horário do servidor.
 
@@ -1790,7 +1790,7 @@ O fuso horário é necessário para conversões entre os formatos String e DateT
 
 * [session&#95;timezone](/pt-BR/reference/settings/session-settings/other#session_timezone)
 
-## tcp_port {#tcp_port}
+## tcp_port
 
 Porta para comunicação com clientes por meio do protocolo TCP.
 
@@ -1800,7 +1800,7 @@ Porta para comunicação com clientes por meio do protocolo TCP.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp_port_secure {#tcp_port_secure}
+## tcp_port_secure
 
 Porta TCP para comunicação segura com clientes. Use-a com as configurações do [OpenSSL](#openSSL).
 
@@ -1810,7 +1810,7 @@ Porta TCP para comunicação segura com clientes. Use-a com as configurações d
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql_port {#mysql_port}
+## mysql_port
 
 Porta usada para se comunicar com clientes pelo protocolo MySQL.
 
@@ -1825,7 +1825,7 @@ Porta usada para se comunicar com clientes pelo protocolo MySQL.
 <mysql_port>9004</mysql_port>
 ```
 
-## postgresql_port {#postgresql_port}
+## postgresql_port
 
 Porta para se comunicar com clientes pelo protocolo PostgreSQL.
 
@@ -1840,7 +1840,7 @@ Porta para se comunicar com clientes pelo protocolo PostgreSQL.
 <postgresql_port>9005</postgresql_port>
 ```
 
-## url_scheme_mappers {#url_scheme_mappers}
+## url_scheme_mappers
 
 Configuração para converter prefixos de URL abreviados ou simbólicos em URLs completas.
 
@@ -1860,7 +1860,7 @@ Exemplo:
 </url_scheme_mappers>
 ```
 
-## user_defined_path {#user_defined_path}
+## user_defined_path
 
 O diretório que contém arquivos definidos pelo usuário. Usado para funções SQL definidas pelo usuário [Funções SQL definidas pelo usuário](/pt-BR/reference/functions/regular-functions/udf).
 
@@ -1870,7 +1870,7 @@ O diretório que contém arquivos definidos pelo usuário. Usado para funções 
 <user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
 ```
 
-## users_config {#users_config}
+## users_config
 
 Caminho para o arquivo que contém:
 
@@ -1885,7 +1885,7 @@ Caminho para o arquivo que contém:
 <users_config>users.xml</users_config>
 ```
 
-## melhorias_no_controle_de_acesso {#access_control_improvements}
+## melhorias_no_controle_de_acesso
 
 Configurações para melhorias opcionais no sistema de controle de acesso.
 
@@ -1917,7 +1917,7 @@ Exemplo:
 </access_control_improvements>
 ```
 
-## s3queue_log {#s3queue_log}
+## s3queue_log
 
 Configurações da tabela do sistema `s3queue_log`.
 
@@ -1934,7 +1934,7 @@ As configurações padrão são:
 </s3queue_log>
 ```
 
-## dead_letter_queue {#dead_letter_queue}
+## dead_letter_queue
 
 Configuração para a tabela de sistema &#39;dead&#95;letter&#95;queue&#39;.
 
@@ -1951,7 +1951,7 @@ As configurações padrão são:
 </dead_letter_queue>
 ```
 
-## zookeeper {#zookeeper}
+## zookeeper
 
 Contém configurações que permitem ao ClickHouse interagir com um cluster do [ZooKeeper](http://zookeeper.apache.org/). O ClickHouse usa o ZooKeeper para armazenar os metadados das réplicas ao usar tabelas replicadas. Se tabelas replicadas não forem usadas, esta seção de parâmetros pode ser omitida.
 
@@ -2014,7 +2014,7 @@ Também existe a configuração `zookeeper_load_balancing` (opcional), que permi
 * [Guia de Programação do ZooKeeper](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 * [Comunicação segura opcional entre o ClickHouse e o ZooKeeper](/pt-BR/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)
 
-## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
+## use_minimalistic_part_header_in_zookeeper
 
 Método de armazenamento dos cabeçalhos das partes de dados no ZooKeeper. Essa configuração se aplica apenas à família [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/index). Ela pode ser especificada:
 
@@ -2039,7 +2039,7 @@ Se [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_head
   Os cabeçalhos das partes de dados já armazenados com essa configuração não podem ser restaurados para a representação anterior (não compacta).
 </Note>
 
-## distributed_ddl {#distributed_ddl}
+## distributed_ddl
 
 Gerencia a execução de [consultas de DDL distribuído](/pt-BR/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) no cluster.
 Funciona apenas se o [ZooKeeper](/pt-BR/reference/settings/server-settings/settings/zookeeper#zookeeper) estiver habilitado.
@@ -2083,7 +2083,7 @@ As configurações de `<distributed_ddl>` incluem:
 </distributed_ddl>
 ```
 
-## access_control_path {#access_control_path}
+## access_control_path
 
 Caminho para uma pasta em que um servidor ClickHouse armazena as configurações de usuários e papéis criadas por comandos SQL.
 
@@ -2091,7 +2091,7 @@ Caminho para uma pasta em que um servidor ClickHouse armazena as configurações
 
 * [Controle de acesso e gerenciamento de contas](/pt-BR/concepts/features/security/access-rights#access-control-usage)
 
-## allow_plaintext_password {#allow_plaintext_password}
+## allow_plaintext_password
 
 Define se tipos de senha em texto sem criptografia (inseguros) são permitidos ou não.
 
@@ -2101,7 +2101,7 @@ Define se tipos de senha em texto sem criptografia (inseguros) são permitidos o
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-## allow_no_password {#allow_no_password}
+## allow_no_password
 
 Define se o tipo de senha inseguro `no&#95;password` é permitido ou não.
 
@@ -2111,7 +2111,7 @@ Define se o tipo de senha inseguro `no&#95;password` é permitido ou não.
 <allow_no_password>1</allow_no_password>
 ```
 
-## allow_implicit_no_password {#allow_implicit_no_password}
+## allow_implicit_no_password
 
 Proíbe a criação de um usuário sem senha, a menos que &#39;IDENTIFIED WITH no&#95;password&#39; seja explicitamente especificado.
 
@@ -2121,7 +2121,7 @@ Proíbe a criação de um usuário sem senha, a menos que &#39;IDENTIFIED WITH n
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-## default_session_timeout {#default_session_timeout}
+## default_session_timeout
 
 Tempo limite padrão da sessão, em segundos.
 
@@ -2131,7 +2131,7 @@ Tempo limite padrão da sessão, em segundos.
 <default_session_timeout>60</default_session_timeout>
 ```
 
-## default_password_type {#default_password_type}
+## default_password_type
 
 Define o tipo de senha que será configurado automaticamente em consultas como `CREATE USER u IDENTIFIED BY 'p'`.
 
@@ -2151,7 +2151,7 @@ Os valores aceitos são:
 <default_password_type>sha256_password</default_password_type>
 ```
 
-## user_directories {#user_directories}
+## user_directories
 
 Seção do arquivo de configuração que contém as seguintes configurações:
 
@@ -2210,7 +2210,7 @@ Para adicionar um servidor LDAP como diretório remoto para usuários que não e
 </ldap>
 ```
 
-## top_level_domains_list {#top_level_domains_list}
+## top_level_domains_list
 
 Define uma lista de domínios de nível superior personalizados a serem adicionados, em que cada entrada está no formato `<name>/path/to/file</name>`.
 
@@ -2227,7 +2227,7 @@ Veja também:
 * a função [`cutToFirstSignificantSubdomainCustom`](/pt-BR/reference/functions/regular-functions/url-functions#cutToFirstSignificantSubdomainCustom) e suas variações,
   que aceita o nome de uma lista personalizada de TLDs e retorna a parte do domínio que inclui os subdomínios de nível superior até o primeiro subdomínio significativo.
 
-## proxy {#proxy}
+## proxy
 
 Defina servidores proxy para solicitações HTTP e HTTPS, atualmente compatíveis com armazenamento S3, funções de tabela S3 e funções URL.
 
@@ -2365,7 +2365,7 @@ O ClickHouse verificará o tipo de resolver de maior prioridade para o protocolo
 verificará o próximo tipo de resolver com prioridade mais alta, até chegar ao resolver de ambiente.
 Isso também permite usar uma combinação de tipos de resolver.
 
-## disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
+## disable_tunneling_for_https_requests_over_http_proxy
 
 Por padrão, o tunelamento (isto é, `HTTP CONNECT`) é usado para fazer solicitações `HTTPS` via proxy `HTTP`. Esta configuração pode ser usada para desativá-lo.
 
@@ -2395,7 +2395,7 @@ O mesmo se aplica ao GitLab, mesmo com um ponto à esquerda. Tanto `gitlab.com` 
 </proxy>
 ```
 
-## workload_path {#workload_path}
+## workload_path
 
 O diretório usado para armazenar todas as consultas `CREATE WORKLOAD` e `CREATE RESOURCE`. Por padrão, é usada a pasta `/workload/` no diretório de trabalho do servidor.
 
@@ -2412,7 +2412,7 @@ O diretório usado para armazenar todas as consultas `CREATE WORKLOAD` e `CREATE
 * [Hierarquia de cargas de trabalho](/pt-BR/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;zookeeper&#95;path](#workload_zookeeper_path)
 
-## workload_zookeeper_path {#workload_zookeeper_path}
+## workload_zookeeper_path
 
 O caminho para um nó do ZooKeeper, usado para armazenar todas as consultas `CREATE WORKLOAD` e `CREATE RESOURCE`. Para garantir a consistência, todas as definições SQL são armazenadas no valor desse único znode. Por padrão, o ZooKeeper não é usado, e as definições são armazenadas em [disco](#workload_path).
 
@@ -2427,7 +2427,7 @@ O caminho para um nó do ZooKeeper, usado para armazenar todas as consultas `CRE
 * [Hierarquia de cargas de trabalho](/pt-BR/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;path](#workload_path)
 
-## zookeeper_log {#zookeeper_log}
+## zookeeper_log
 
 Configurações da tabela de sistema [`zookeeper_log`](/pt-BR/reference/system-tables/zookeeper_log).
 

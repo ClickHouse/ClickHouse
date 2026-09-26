@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 ClickHouse Connect предлагает ряд дополнительных параметров для расширенных сценариев использования.
 
-## Глобальные настройки {#global-settings}
+## Глобальные настройки
 
 Несколько настроек глобально определяют поведение ClickHouse Connect. Доступ к ним осуществляется из пакета верхнего уровня `common`:
 
@@ -45,7 +45,7 @@ print(common.get_setting("invalid_setting_action"))
 | `max_error_size`          | `1024`       | Любое неотрицательное целое число     | Максимальное число символов, включаемых в сообщение об ошибке клиента. Используйте `0` для полного сообщения.                                                                                                                                                                                                                                                                                                                              |
 | `http_buffer_size`        | `10485760`   | Байты                                 | Размер буфера в памяти для потоковых HTTP-запросов; по умолчанию 10 МиБ.                                                                                                                                                                                                                                                                                                                                                                   |
 
-## Сжатие {#compression}
+## Сжатие
 
 ClickHouse Connect поддерживает сжатие ответов lz4, zstd, brotli, gzip и deflate. Нативные вставки поддерживают lz4, zstd, brotli и gzip. Сжатие уменьшает объём передаваемых по сети данных ценой дополнительного времени CPU.
 
@@ -59,17 +59,17 @@ ClickHouse Connect поддерживает сжатие ответов lz4, zst
 
 Для рабочих нагрузок ClickHouse gzip обычно медленнее, чем lz4 или zstd.
 
-## Поддержка HTTP-прокси {#http-proxy-support}
+## Поддержка HTTP-прокси
 
 ClickHouse Connect распознаёт стандартные переменные окружения `HTTP_PROXY` и `HTTPS_PROXY`. Эти переменные применяются ко всем клиентам в рамках процесса. Чтобы настроить прокси отдельно для каждого клиента, передайте `http_proxy` или `https_proxy` в `get_client` или `get_async_client`.
 
 Синхронный клиент использует `urllib3`. Чтобы использовать SOCKS-прокси, установите PySocks и передайте `urllib3.contrib.socks.SOCKSProxyManager` в качестве аргумента `pool_mgr` в `get_client`. Аргумент `pool_mgr` не поддерживается асинхронным клиентом.
 
-## Типы данных Variant, Dynamic и JSON {#variant-dynamic-json-data-types}
+## Типы данных Variant, Dynamic и JSON
 
 ClickHouse Connect поддерживает актуальные типы данных ClickHouse: `Variant`, `Dynamic` и `JSON`. Устаревший тип `Object('json')` был удалён в clickhouse-connect 0.14 и не поддерживается.
 
-### Примечания по использованию {#usage-notes}
+### Примечания по использованию
 
 * Значения `Variant` считываются как соответствующий тип Python. При нативной вставке элемент выбирается по типу значения Python.
 * Если нескольким элементам `Variant` соответствует один и тот же тип Python, оберните значение с помощью `clickhouse_connect.datatypes.dynamic.typed_variant(value, "TypeName")`, чтобы явно выбрать нужный элемент.

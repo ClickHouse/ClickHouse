@@ -13,7 +13,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يمكن لعملاء ClickHouse Cloud الاختيار من بين أدوار النظام المعرّفة مسبقًا أو إنشاء أدوار مخصصة لتعيينها للمستخدمين. لمزيد من المعلومات حول أدوار النظام والأذونات المرتبطة بها، راجع [Console roles and permissions](/ar/products/cloud/reference/security/console-roles). يقدّم هذا الدليل تفاصيل حول إدارة الأدوار المخصصة.
 
-## إنشاء الأدوار المخصصة {#create-custom-role}
+## إنشاء الأدوار المخصصة
 
 يمكن أن تتضمن الأدوار المخصصة مجموعةً من أذونات المؤسسة والخدمة وقاعدة البيانات. ويمكن تطبيق الأذونات على جميع الخدمات وقواعد البيانات أو على مجموعة فرعية منها.
 
@@ -65,7 +65,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-## إدارة أدوار قاعدة البيانات {#manage-database-roles}
+## إدارة أدوار قاعدة البيانات
 
 بالإضافة إلى أذونات Console، يمكن أن تتضمن الأدوار المخصصة سياسة `Data` تتحكم في الوصول إلى قواعد بيانات الخدمات المحددة. يتيح لك ذلك إدارة الوصول إلى Console وقواعد البيانات من مكان واحد بدلًا من إدارة أدوار منفصلة في كل قاعدة بيانات.
 
@@ -79,7 +79,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   تحل أدوار قاعدة البيانات التي يديرها Cloud محل أدوار [`sql-console-role:<email>`](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) المعيّنة يدويًا، وهي غير متوافقة مع جلسات JWT داخل SQL Console.
 </Warning>
 
-### المتطلبات الأساسية {#manage-database-roles-prerequisites}
+### المتطلبات الأساسية
 
 تعتمد أدوار قاعدة البيانات المخصصة في الخدمة على [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)، ولا تُطبّق عندما تكون معطّلة. قبل إضافة سياسة `Data` إلى دور، انتقل إلى الخدمة، وافتح `Settings`، ثم ابحث عن بطاقة `JWT authentication` في قسم `Security`. تأكد من أن مفتاح التبديل `SQL Console` مفعّل.
 
@@ -119,7 +119,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-### التحقق من أدوار قاعدة البيانات {#verify-database-roles}
+### التحقق من أدوار قاعدة البيانات
 
 تُنشأ الأدوار المُدارة عبر Console في قاعدة البيانات بالبادئة `cloud:` ونوع التخزين `cloud`، وقد يستغرق ظهورها بعد إنشائها ما يصل إلى 10 دقائق. لعرضها، نفّذ query على table `system.roles` في الخدمة:
 
@@ -134,7 +134,7 @@ SELECT * FROM system.roles;
 ```
 
 <div id="update-custom-role">
-  ## تحديث الأدوار المخصصة {#update-custom-role}
+  ## تحديث الأدوار المخصصة
 </div>
 
 يمكن تحديث الأدوار المخصصة بعد إنشائها. سيفقد المستخدمون أي أذونات تُزال من الدور، وسيُمنحون أي أذونات تُضاف إليه.
@@ -151,7 +151,7 @@ SELECT * FROM system.roles;
 6. حدد `Edit role`
 
 <div id="delete-custom-role">
-  ## حذف الأدوار المخصصة {#delete-custom-role}
+  ## حذف الأدوار المخصصة
 </div>
 
 يمكن حذف الأدوار المخصصة في أي وقت.

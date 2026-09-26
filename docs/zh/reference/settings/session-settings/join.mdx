@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，且由 [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## join_algorithm {#join_algorithm}
+## join_algorithm
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -110,7 +110,7 @@ ClickHouse 总是尽可能使用 `partial_merge` join，否则使用 `hash`。*�
 遗留值，请不要再使用。
 等同于 `direct,hash`，即依次尝试使用 direct join 和 hash join。
 
-## join_any_take_last_row {#join_any_take_last_row}
+## join_any_take_last_row
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +133,7 @@ ClickHouse 总是尽可能使用 `partial_merge` join，否则使用 `hash`。*�
 * [Join 表引擎](/zh/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/zh/reference/settings/session-settings/join#join_default_strictness)
 
-## join_default_strictness {#join_default_strictness}
+## join_default_strictness
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -146,7 +146,7 @@ ClickHouse 总是尽可能使用 `partial_merge` join，否则使用 `hash`。*�
 * `ASOF` — 用于连接匹配关系不确定的序列。
 * `Empty string` — 如果查询中未指定 `ALL` 或 `ANY`，ClickHouse 会抛出异常。
 
-## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
+## join_on_disk_max_files_to_merge
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -158,7 +158,7 @@ ClickHouse 总是尽可能使用 `partial_merge` join，否则使用 `hash`。*�
 
 * 任意大于等于 2 的正整数。
 
-## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
+## join_output_by_rowlist_perkey_rows_threshold
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -166,7 +166,7 @@ ClickHouse 总是尽可能使用 `partial_merge` join，否则使用 `hash`。*�
 
 在 hash join 中，用于判断是否按行列表输出的右表每个键平均行数下限。
 
-## join_overflow_mode {#join_overflow_mode}
+## join_overflow_mode
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -193,7 +193,7 @@ ClickHouse 总是尽可能使用 `partial_merge` join，否则使用 `hash`。*�
 * [JOIN 子句](/zh/reference/statements/select/join)
 * [Join 表引擎](/zh/reference/engines/table-engines/special/join)
 
-## join_use_nulls {#join_use_nulls}
+## join_use_nulls
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

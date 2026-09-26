@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir des sources de ClickHouse.
 
-## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
+## object_shared_data_buckets_for_compact_part
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
@@ -22,7 +22,7 @@ Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/r
 Nombre de buckets pour la sérialisation JSON des données partagées dans les parts compactes. Fonctionne avec les sérialisations de données partagées `map_with_buckets`, `advanced` et `advanced_chunked`.
 La valeur maximale autorisée est de 256.
 
-## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
+## object_shared_data_buckets_for_wide_part
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -31,7 +31,7 @@ La valeur maximale autorisée est de 256.
 Le nombre de buckets pour la sérialisation JSON des données partagées dans les Wide parts. Fonctionne avec les sérialisations de données partagées `map_with_buckets`, `advanced` et `advanced_chunked`.
 La valeur maximale autorisée est de 256.
 
-## object_shared_data_serialization_version {#object_shared_data_serialization_version}
+## object_shared_data_serialization_version
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -50,7 +50,7 @@ Valeurs possibles :
 Le nombre de buckets pour les sérialisations `map_with_buckets`, `advanced` et `advanced_chunked` est déterminé par les paramètres
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/fr/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part).
 
-## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts}
+## object_shared_data_serialization_version_for_zero_level_parts
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 
@@ -61,7 +61,7 @@ données partagées dans le type JSON pour les parts de niveau zéro créées lo
 Il est recommandé de ne pas utiliser la sérialisation des données partagées `advanced` ou `advanced_chunked` pour les parts de niveau zéro, car cela peut augmenter
 considérablement le temps d&#39;insertion.
 
-## object_shared_data_target_chunk_rows {#object_shared_data_target_chunk_rows}
+## object_shared_data_target_chunk_rows
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 

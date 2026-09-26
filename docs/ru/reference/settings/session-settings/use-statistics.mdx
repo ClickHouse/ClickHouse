@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## use_statistics {#use_statistics}
+## use_statistics
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 /// предпочтительнее, чем &#39;allow&#95;statistics&#95;optimize&#39;, для согласованности с &#39;use&#95;primary&#95;key&#39; и &#39;use&#95;skip&#95;indexes&#39;
 Разрешает использовать статистику для оптимизации запросов
 
-## use_statistics_cache {#use_statistics_cache}
+## use_statistics_cache
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Использовать кэш статистики в запросе, чтобы избежать накладных расходов на загрузку статистики для каждой части
 
-## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+## use_statistics_for_min_max_aggregation
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -47,7 +47,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — отключено.
 * 1 — включено.
 
-## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
+## use_statistics_for_part_pruning
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

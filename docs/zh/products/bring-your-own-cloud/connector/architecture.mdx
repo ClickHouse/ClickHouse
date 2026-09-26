@@ -11,7 +11,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-## 组件 {#components}
+## 组件
 
 ClickHouse 连接器运行三个守护进程，它们均内置于 `clicklink` 二进制文件中：
 
@@ -23,7 +23,7 @@ ClickHouse 连接器运行三个守护进程，它们均内置于 `clicklink` �
 
 <Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse Connector architecture" />
 
-## 连接 {#connections}
+## 连接
 
 连接器建立的每一个连接都是出站连接。完整列表如下：
 
@@ -45,7 +45,7 @@ ClickHouse 连接器运行三个守护进程，它们均内置于 `clicklink` �
 
 在入站方向，每个守护进程只暴露一个本地健康状况端口：抓取器为 8082，故障排查工具为 8084，执行器 为 8086。该端口提供 `/livez`、`/readyz`、`/healthz`，并在 `/metrics` 暴露该守护进程的 Prometheus 指标；没有单独的指标端口。执行器 的本地命令 API 仅绑定到回环地址，也没有任何 Service 将其对外暴露。唯一的另一个监听器，是需手动启用的会话网关；参见[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。ClickHouse Cloud 绝不会连接其中任何一个。
 
-## 证书生命周期 {#certificate-lifecycle}
+## 证书生命周期
 
 连接器使用自行获取并维护的客户端证书向你的端点进行身份验证。三个 守护进程 出示的是同一份证书。
 
@@ -55,11 +55,11 @@ ClickHouse 连接器运行三个守护进程，它们均内置于 `clicklink` �
 
 连接器会对照系统 trust store 校验你的端点所出示的服务器证书。若设置了 `api.tls.ca_file` (VM) 或 `api.tls.caFile` (Helm) ，则会将 enrollment bundle 中的 CA 证书链追加到这些根证书之后。
 
-## 数据流 {#data-flow}
+## 数据流
 
 <Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="ClickHouse 连接器数据流" />
 
-### 哪些内容会离开您的环境 {#what-leaves}
+### 哪些内容会离开您的环境
 
 * **来自允许列表中系统表的指标。** 抓取器默认抓取 `metric_log`、`asynchronous_metric_log`、`tables`、`warnings` 和 `server_settings`。允许列表由显式配置指定；抓取器不会读取列表之外的任何内容。
 * **基础设施元数据。** 通过 API 同步的服务、基础设施和备份清单。对于托管服务，这包括其状态、当前副本数和期望副本数，以及正在运行的服务器版本和配置版本。
@@ -68,14 +68,14 @@ ClickHouse 连接器运行三个守护进程，它们均内置于 `clicklink` �
 * **您提交的服务定义。** `clicklink clctl instances create` 会发送您的环境 ID、云和区域、服务名称、其桶名称和 IAM 角色 ARN，以及幂等性键。同时还会发送 default 用户密码的两种哈希值 (SHA-256 和双重 SHA-1) 。
 * **支持会话输出。** 在您启用的会话期间执行的只读诊断结果，经过脱敏处理。
 
-### 默认情况下绝不外传的内容 {#what-never-leaves}
+### 默认情况下绝不外传的内容
 
 * **抓取路径上的原始查询文本。** `system.query_log` 未包含在默认抓取集中，因为其查询相关列可能包含字面值，从而携带 PII 或密钥。若要重新加入，需要按部署逐一进行覆盖配置。默认的会话表允许列表中确实包含 `system.processes`，它会显示正在执行的查询文本；如需对其进行裁剪，请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
 * **你的表数据和备份。** 它们始终保留在你账户下的桶中。执行器不持有访问这些桶的凭据，也无法读取其中的数据。
 * **凭据。** `init` 不会将任何凭据写入配置文件。ClickHouse 仅存储连接器用户密码的 bcrypt 哈希，密钥则保存在 Kubernetes Secrets 或主机上仅 root 可读的文件中。托管服务的 default 用户密码在你这一侧生成，且只显示一次；提交的只有其哈希值。抓取路径和同步路径都不会传输任何凭据。
 * **未脱敏的故障排查工具输出。** 故障排查工具返回的所有内容在外传之前，都会先经过脱敏规则 (内置规则以及你自定义的规则) 处理。请参阅[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)。
 
-## 信任边界 {#trust-boundaries}
+## 信任边界
 
 * **你的环境即边界。** ClickHouse Cloud 只接收连接器发送的内容：抓取数据、心跳与状态、命令执行结果，以及活跃支持会话返回的内容。它从不反向发起连接。
 * **会话网关归你所有。** 除非你主动选择通过 Ingress 将其暴露，否则它只能在你的环境内部访问 (在 Kubernetes 上通过 `kubectl port-forward`，在 VM 上通过本地访问) 。ClickHouse Cloud 从不连接它。

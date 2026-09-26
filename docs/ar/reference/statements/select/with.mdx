@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 يدعم ClickHouse التعبيرات الجدولية الشائعة ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL))، والتعبيرات القياسية الشائعة، والاستعلامات التكرارية.
 
-## التعبيرات الجدولية الشائعة {#common-table-expressions}
+## التعبيرات الجدولية الشائعة
 
 تمثل التعبيرات الجدولية الشائعة استعلامات فرعية مُسمّاة.
 ويمكن الإشارة إليها بالاسم في أي موضع داخل استعلام `SELECT` يُسمح فيه باستخدام تعبير جدولي.
@@ -21,13 +21,13 @@ doc_type: 'reference'
 
 يرجى ملاحظة أن CTEs لا تضمن النتائج نفسها في جميع المواضع التي يُشار إليها فيها، لأن الاستعلام يُعاد تنفيذه عند كل استخدام.
 
-### الصيغة {#common-table-expressions-syntax}
+### الصيغة
 
 ```sql
 WITH <identifier> AS [MATERIALIZED] <subquery expression>
 ```
 
-### مثال {#common-table-expressions-example}
+### مثال
 
 فيما يلي مثال على حالة يُعاد فيها تنفيذ استعلام فرعي:
 
@@ -49,7 +49,7 @@ WHERE num IN (SELECT num FROM cte_numbers)
 
 لكن بما أننا نشير إلى `cte_numbers` مرتين، تُولَّد أرقام عشوائية في كل مرة، ولذلك نرى نتائج عشوائية مختلفة مثل `280501, 392454, 261636, 196227` وهكذا...
 
-## التعبيرات الجدولية الشائعة المُجسَّدة {#materialized-common-table-expressions}
+## التعبيرات الجدولية الشائعة المُجسَّدة
 
 بشكل افتراضي، يضمّن ClickHouse الاستعلام الفرعي الخاص بـ CTE في كل موضع يُشار إليه فيه، ويعيد تنفيذه في كل مرة.
 تؤدي إضافة الكلمة المفتاحية `MATERIALIZED` إلى توجيه ClickHouse لتنفيذ الاستعلام الفرعي لـ CTE **مرة واحدة فقط**، وتخزين النتائج في جدول مؤقت، ثم خدمة جميع المراجع من ذلك الجدول.
@@ -61,14 +61,14 @@ WHERE num IN (SELECT num FROM cte_numbers)
   وإذا كان الإعداد معطّلًا، يتم تجاهل الكلمة المفتاحية `MATERIALIZED`: حيث يُضمَّن CTE في كل موضع إشارة إليه كأي CTE عادي، ويُسجَّل تحذير في السجل.
 </Note>
 
-### الصيغة {#materialized-common-table-expressions-syntax}
+### الصيغة
 
 ```sql
 WITH <identifier> AS MATERIALIZED (<subquery>)
 SELECT ...
 ```
 
-### متى تستخدم {#materialized-cte-when-to-use}
+### متى تستخدم
 
 تكون Materialized CTEs أكثر فائدة في الحالات التالية:
 
@@ -82,7 +82,7 @@ SELECT ...
   إذا تمت الإشارة إلى materialized CTE مرة واحدة فقط، فإن ClickHouse يضمّنه تلقائيًا داخل استعلام فرعي عادي لتجنّب overhead غير الضروري.
 </Tip>
 
-### أمثلة {#materialized-common-table-expressions-examples}
+### أمثلة
 
 **المثال 1:** ربط ذاتي على CTE مُجسَّدة
 
@@ -164,13 +164,13 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 └─────────┘
 ```
 
-### القيود {#materialized-cte-restrictions}
+### القيود
 
 * **يتطلب إعدادًا تجريبيًا**: يجب تمكين الإعداد `enable_materialized_cte`. وإذا كان معطّلًا، فسيتم تجاهل الكلمة المفتاحية `MATERIALIZED`: إذ تُضمَّن عبارة CTE في كل إشارة إليها كعبارة CTE عادية، ويُسجَّل تحذير.
 * **غير مدعوم مع `RECURSIVE`**: لا يُسمح بالجمع بين الكلمتين المفتاحيتين `MATERIALIZED` و`RECURSIVE`، وينتج عن ذلك استثناء `UNSUPPORTED_METHOD`.
 * **عبارات CTE المرتبطة غير مسموح بها**: لا يمكن لتعبير الجدول الشائع المُجَّسد أن تُشير إلى أعمدة من نطاقات الاستعلام الخارجية.
 
-## التعبيرات القياسية الشائعة {#common-scalar-expressions}
+## التعبيرات القياسية الشائعة
 
 يتيح لك ClickHouse تعريف أسماء مستعارة لأي تعبيرات قياسية في عبارة `WITH`.
 ويمكن الرجوع إلى التعبيرات القياسية الشائعة في أي موضع ضمن الاستعلام.
@@ -181,13 +181,13 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
   يوصى بتعريف CSE على شكل [دالة لامبدا](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda) مع ربط جميع المعرّفات المستخدمة، لتحقيق سلوك أكثر قابلية للتنبؤ عند حلّ معرّفات التعبير.
 </Note>
 
-### الصيغة {#common-scalar-expressions-syntax}
+### الصيغة
 
 ```sql
 WITH <expression> AS <identifier>
 ```
 
-### أمثلة {#common-scalar-expressions-examples}
+### أمثلة
 
 **مثال 1:** استخدام تعبير ثابت كـ&quot;متغير&quot;
 
@@ -298,7 +298,7 @@ FROM
 └──────────────────┘
 ```
 
-## الاستعلامات التكرارية {#recursive-queries}
+## الاستعلامات التكرارية
 
 يسمح المُعدِّل الاختياري `RECURSIVE` لاستعلام WITH بالإشارة إلى ناتجه الخاص. مثال:
 
@@ -374,7 +374,7 @@ SELECT * FROM search_tree;
 └────┴───────────┴───────────┘
 ```
 
-### ترتيب البحث {#search-order}
+### ترتيب البحث
 
 لإنشاء ترتيب العمق أولًا، نحسب لكل صف في النتيجة مصفوفةً من الصفوف التي سبق أن زرناها:
 
@@ -428,7 +428,7 @@ SELECT * FROM search_tree ORDER BY depth;
 └────┴──────┴───────────┴─────────┴───────┘
 ```
 
-### اكتشاف الحلقات {#cycle-detection}
+### اكتشاف الحلقات
 
 لننشئ أولًا جدول graph:
 
@@ -511,7 +511,7 @@ SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
 └──────┴────┴────────┴──────────┴───────────────────────────┘
 ```
 
-### استعلامات لا نهائية {#infinite-queries}
+### استعلامات لا نهائية
 
 يمكن أيضًا استخدام استعلامات CTE التكرارية اللانهائية إذا استُخدم `LIMIT` في الاستعلام الخارجي:
 
@@ -532,7 +532,7 @@ SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
 └─────────────┘
 ```
 
-## الفاصلة الختامية {#trailing-comma}
+## الفاصلة الختامية
 
 يُسمح بوضع فاصلة بعد آخر عنصر في عبارة `WITH`:
 

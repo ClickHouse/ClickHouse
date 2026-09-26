@@ -14,24 +14,24 @@ Crée une nouvelle base de données.
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
 ```
 
-## Clauses {#clauses}
+## Clauses
 
-### IF NOT EXISTS {#if-not-exists}
+### IF NOT EXISTS
 
 Si la base de données `db_name` existe déjà, ClickHouse ne crée pas de nouvelle base de données et :
 
 * ne lève pas d&#39;exception si la clause est spécifiée ;
 * lève une exception si la clause n&#39;est pas spécifiée.
 
-### ON CLUSTER {#on-cluster}
+### ON CLUSTER
 
 ClickHouse crée la base de données `db_name` sur tous les serveurs du cluster spécifié. Pour plus de détails, consultez l’article [Distributed DDL](/fr/reference/statements/distributed-ddl).
 
-### ENGINE {#engine}
+### ENGINE
 
 Par défaut, ClickHouse utilise son propre [moteur de base de données Atomic](/fr/reference/engines/database-engines/atomic). Il existe également les moteurs [MySQL](/fr/reference/engines/database-engines/mysql), [PostgresSQL](/fr/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/fr/reference/engines/database-engines/materialized-postgresql), [Replicated](/fr/reference/engines/database-engines/replicated) et [SQLite](/fr/reference/engines/database-engines/sqlite).
 
-### COMMENT {#comment}
+### COMMENT
 
 Vous pouvez ajouter un commentaire à la base de données au moment de sa création.
 
@@ -56,13 +56,13 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 └────────────┴────────────────────────┘
 ```
 
-### SETTINGS {#settings}
+### SETTINGS
 
 La clause `SETTINGS` peut être utilisée sans clause `ENGINE`, auquel cas le moteur de base de données par défaut
 (`Atomic`) est utilisé. Elle peut contenir aussi bien des paramètres du moteur de base de données que des paramètres de requête ordinaires ; chaque
 nom est dirigé vers celui des deux auquel il se rapporte.
 
-#### disk {#disk}
+#### disk
 
 Le disque utilisé pour stocker les fichiers de métadonnées des tables de la base de données. Il peut désigner un disque défini dans la configuration du serveur, ou en définir un directement à l&#39;aide de la fonction `disk`, comme le ferait une table individuelle :
 
@@ -74,7 +74,7 @@ CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/cl
 S&#39;applique aux moteurs de base de données qui stockent les métadonnées des tables sur disque (`Atomic`, `Ordinary`). Si rien n&#39;est spécifié,
 le disque défini dans le paramètre serveur `database_disk.disk` est utilisé.
 
-#### lazy_load_tables {#lazy-load-tables}
+#### lazy_load_tables
 
 Lorsqu’il est activé, les tables ne sont pas entièrement chargées au démarrage de la base de données. À la place, un proxy léger est créé pour chaque table, et le véritable moteur de table est matérialisé lors du premier accès. Cela réduit le temps de démarrage et l’utilisation de la mémoire pour les bases de données comportant de nombreuses tables, dont seul un sous-ensemble fait l’objet de requêtes actives.
 

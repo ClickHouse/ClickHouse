@@ -12,9 +12,9 @@ import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrat
 
 *🚧 OpenTelemetry 指标和追踪插桩即将推出！*
 
-## 快速入门 {#getting-started}
+## 快速入门
 
-### 安装 ClickStack logger 后端软件包 {#install-hyperdx-logger-backend-package}
+### 安装 ClickStack logger 后端软件包
 
 可通过在 `mix.exs` 的依赖项列表中添加 `hyperdx` 来安装该软件包：
 
@@ -26,7 +26,7 @@ def deps do
 end
 ```
 
-### 配置 Logger {#configure-logger}
+### 配置 Logger
 
 将以下内容添加到你的 `config.exs` 文件中：
 
@@ -38,7 +38,7 @@ config :logger,
   backends: [:console, {Hyperdx.Backend, :hyperdx}]
 ```
 
-### 配置环境变量 {#configure-environment-variables}
+### 配置环境变量
 
 接下来，你需要在 shell 中配置以下环境变量，以便通过 OpenTelemetry Collector 将遥测数据发送到 ClickStack：
 

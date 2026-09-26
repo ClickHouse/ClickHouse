@@ -10,7 +10,7 @@ doc_type: 'مرجع'
 
 يتيح لك محرك MySQL تنفيذ استعلامات `SELECT` و`INSERT` على البيانات المخزّنة على خادم MySQL بعيد.
 
-## إنشاء جدول {#creating-a-table}
+## إنشاء جدول
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -56,7 +56,7 @@ SETTINGS
 
 أما بقية الشروط وقيد أخذ العينات `LIMIT`، فلا تُنفَّذ إلا في ClickHouse بعد اكتمال الاستعلام إلى MySQL.
 
-## TLS/SSL {#tls-ssl}
+## TLS/SSL
 
 تُمرَّر بيانات اعتماد الاتصال المشفّر بـ MySQL كمفاتيح في مجموعة مسمّاة (أو كوسيطات مفتاح-قيمة):
 
@@ -82,7 +82,7 @@ SETTINGS
 </named_collections>
 ```
 
-## تمرير استعلام بدلًا من اسم جدول {#passing-a-query}
+## تمرير استعلام بدلًا من اسم جدول
 
 بدلًا من اسم الجدول، يمكن أن تكون وسيطة `table` استعلام `SELECT` يُمرَّر إلى MySQL كما هو. ويُستدل على هيكل الجدول من نتيجة الاستعلام. ويمكن كتابة الاستعلام إما كاستعلام فرعي أو بتغليفه داخل الدالة `query`:
 
@@ -105,7 +105,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-## مثال للاستخدام {#usage-example}
+## مثال للاستخدام
 
 أنشئ جدولًا في MySQL:
 
@@ -170,11 +170,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## الإعدادات {#mysql-settings}
+## الإعدادات
 
 الإعدادات الافتراضية ليست فعّالة جدًا، إذ إنها لا تعيد استخدام الاتصالات حتى. تتيح لك هذه الإعدادات زيادة عدد الاستعلامات التي ينفّذها الخادوم في الثانية.
 
-### `connection_auto_close` {#connection-auto-close}
+### `connection_auto_close`
 
 يسمح بإغلاق الاتصال تلقائيًا بعد تنفيذ الاستعلام، أي بتعطيل إعادة استخدام الاتصال.
 
@@ -185,7 +185,7 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `1`.
 
-### `connection_max_tries` {#connection-max-tries}
+### `connection_max_tries`
 
 يحدد عدد مرات إعادة المحاولة لمجمع الاتصالات مع التبديل التلقائي عند التعطل.
 
@@ -196,7 +196,7 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `3`.
 
-### `connection_pool_size` {#connection-pool-size}
+### `connection_pool_size`
 
 حجم مجمع الاتصالات (إذا كانت جميع الاتصالات قيد الاستخدام، فسوف ينتظر الاستعلام حتى يتحرر أحد الاتصالات).
 
@@ -206,7 +206,7 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `16`.
 
-### `connection_wait_timeout` {#connection-wait-timeout}
+### `connection_wait_timeout`
 
 مهلة الانتظار (بالثواني) حتى يتوفر اتصال متاح (إذا كان هناك بالفعل `connection_pool_size` من الاتصالات النشطة)، 0 - لا تنتظر.
 
@@ -216,7 +216,7 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `5`.
 
-### `connect_timeout` {#connect-timeout}
+### `connect_timeout`
 
 مهلة الاتصال (بالثواني).
 
@@ -226,7 +226,7 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `10`.
 
-### `read_write_timeout` {#read-write-timeout}
+### `read_write_timeout`
 
 مهلة القراءة/الكتابة (بالثواني).
 
@@ -236,7 +236,7 @@ SELECT * FROM mysql_table
 
 القيمة الافتراضية: `300`.
 
-### `enable_compression` {#enable-compression}
+### `enable_compression`
 
 يُمكّن الضغط لاتصال بروتوكول MySQL.
 
@@ -265,7 +265,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-## انظر أيضًا {#see-also}
+## انظر أيضًا
 
 * [دالة الجدول MySQL](/ar/reference/functions/table-functions/mysql)
 * [استخدام MySQL كمصدر للقاموس](/ar/reference/statements/create/dictionary/sources/mysql)

@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は ClickHouse server を構成するためのもので、ClickHouse のソースコードから自動生成されています。
 
-## min_allocation_size_to_log_stack_trace {#min_allocation_size_to_log_stack_trace}
+## min_allocation_size_to_log_stack_trace
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -28,7 +28,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 `0` (デフォルト) を指定すると、この診断は無効になります。サーバーが正当に行う最大の割り当てよりも十分大きな値を設定してください。そうしないと、通常の大きな割り当てまでログに記録され、起動時に上限枠をすべて使い切ってしまう可能性があります。
 
-## min_allocation_size_to_throw_on_memory_limit {#min_allocation_size_to_throw_on_memory_limit}
+## min_allocation_size_to_throw_on_memory_limit
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -40,7 +40,7 @@ ClickHouse 自身の大きなバッファ — カラムデータ、ハッシュ�
 
 副作用を避けるため、値は `max_untracked_memory` より大きく設定することを推奨します。
 
-## min_os_cpu_wait_time_ratio_to_drop_connection {#min_os_cpu_wait_time_ratio_to_drop_connection}
+## min_os_cpu_wait_time_ratio_to_drop_connection
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Yes" />
 

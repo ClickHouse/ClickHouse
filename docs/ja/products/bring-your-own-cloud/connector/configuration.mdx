@@ -12,7 +12,7 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 このページでは、コネクタのインストール後に特に変更する可能性が高い設定について説明します。各キーのデフォルト値と意味は[設定リファレンス](/ja/products/bring-your-own-cloud/connector/reference/configuration)に、コマンドフラグは[CLI リファレンス](/ja/products/bring-your-own-cloud/connector/reference/cli)に記載されています。サービスの作成、スケーリング、削除については[マネージドサービス](/ja/products/bring-your-own-cloud/connector/managed-services)で説明しています。
 
-## 設定箇所 {#configuration-surfaces}
+## 設定箇所
 
 コネクタでは、インストール先ごとに設定箇所が 1 つあります。
 
@@ -58,7 +58,7 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
   </Tab>
 </Tabs>
 
-## managed モード {#managed-mode}
+## managed モード
 
 managed モードでは executor が動作し、ClickHouse Cloud が主導するサービスのライフサイクルをクラスターに適用します。`init` は登録時に managed モードを有効化し、クラスターの identity を設定します ([managed モードの有効化](/ja/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)を参照) 。以下のオプションは、その後に見直す可能性があるものです。設定を変更するには、`--force` と `--managed` または `--no-managed` を付けて `init` を再実行します。他の `init` 実行と同様に、entry point の指定が必要です。バンドルを保持している場合は `--handoff`、新しいトークンを使う場合は `--enroll` を指定します ([再実行と復旧](/ja/products/bring-your-own-cloud/connector/operations#re-runs-and-recovery)を参照) 。
 
@@ -160,7 +160,7 @@ Kubernetes では、values に `executor.enabled: false` を設定し、`helm up
   </Tab>
 </Tabs>
 
-## ClickHouse インスタンスの追加・変更 {#clickhouse-instances}
+## ClickHouse インスタンスの追加・変更
 
 executor が作成するサービスは自身を登録するため、managed モードではここに追加する必要はありません。本セクションは、executor なしで稼働する別のコネクタデプロイメントに適用されます。このデプロイメントは、ユーザー自身が運用する ClickHouse を監視します。2 つのデプロイメントが 1 つのインスタンスを共有する場合は、その `init` 時に `--ch-user-suffix` を渡してください。`instances` 配下の各エントリは、コネクタが読み取る ClickHouse のネイティブプロトコルエンドポイントを指定します。指定項目は `host`、`port`、`database`、`secure`、`cluster`、および Kubernetes では `namespace` です。`max_open_conns` と `max_idle_conns` は接続プールの上限を設定します。認証情報を設定に記述することはありません。各コンポーネントは、provisioning が作成するアクセスバンドルから読み取り専用の ClickHouse USER を解決します。
 
@@ -244,7 +244,7 @@ executor が作成するサービスは自身を登録するため、managed モ
   同じ `access provision` コマンドに `--force` を指定すると、インスタンスの ClickHouse 認証情報をローテーションできます。[操作](/ja/products/bring-your-own-cloud/connector/operations)を参照してください。
 </Tip>
 
-## Operator 許可リスト {#operator-allowlist}
+## Operator 許可リスト
 
 operator のメールアドレスの許可リストが、ゲートウェイで管理されるセッションを制限します。セッションゲートウェイへのすべてのリクエストには、証明済みメールアドレスがリストに含まれている、短期間有効な OIDC ID トークンが必要です。許可リストが空の場合、ゲートウェイは閉鎖されます。VM では、ホストの root ユーザーはローカルのセッションファイルを通じてセッションを直接管理することもできます。許可リストはゲートウェイ経由の経路にのみ適用されます。信頼モデルの詳細については、[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。
 
@@ -274,7 +274,7 @@ operator のメールアドレスの許可リストが、ゲートウェイで�
   </Tab>
 </Tabs>
 
-## ネットワークポリシーと egress {#network-policy}
+## ネットワークポリシーと egress
 
 Kubernetes では、このチャートは egress の 許可リスト を伴うデフォルト拒否の NetworkPolicy を同梱しています。NetworkPolicy オブジェクトは、CNI がこれを適用する場合にのみ有効になります。適用を行う CNI 配下では、2 つの CIDR リストの両方が入力されるまで、到達できるのはクラスター DNS と ClickHouse Service のネームスペースのみです。それまでは、コネクタから コネクタエンドポイント や Kubernetes API server への egress はありません。`init` は、コネクタエンドポイント の背後にある CIDR が判明している場合にのみ、ポリシーを enabled の状態でステージングします。
 
@@ -320,7 +320,7 @@ clctl:
 
 残る ingress 関連のオプションは 2 つです。`metricsScrapeSelector` は metrics-scrape の ingress を label によって 1 つの Prometheus ネームスペースに限定し、`kubeletProbeCIDRs` は厳格なデフォルト拒否の下でキューブレットの health probe を明示的に許可します。オプションの完全な一覧については、[設定リファレンス](/ja/products/bring-your-own-cloud/connector/reference/configuration)を参照してください。
 
-## マスキングパターン {#redaction-patterns}
+## マスキングパターン
 
 トラブルシューター は、出力が境界外に送信される前にマスキングします。組み込みパターンでは、`ipv4`、`ipv6`、`bearer-token`、`aws-access-key`、`email`、`jwt`、`ssh-private-key`、`connection-string-credentials` を対象とします。独自のパターンは YAML ファイルに追加してください。独自のパターンはファイル内の記述順に最初に実行され、その後に組み込みパターンが実行されます。また、組み込みパターンと同じ `name` を使用するエントリは、その組み込みパターンを置き換えます。
 
@@ -345,7 +345,7 @@ VM では、ファイルは `/etc/clicklink/redaction-patterns.yaml` にあり�
   パターンファイルが存在するものの無効な場合、トラブルシューター は起動を拒否し、問題のあるエントリをログに記録します。設定されているファイルが見つからない場合は、警告をログに記録して組み込みパターンを使用します。`clicklink clctl preflight` でファイルを検証できるため、デーモンを再起動する前に実行してください。
 </Warning>
 
-## プライベートミラーと境界内のエンドポイント {#private-mirrors}
+## プライベートミラーと境界内のエンドポイント
 
 公開されているチャートでは、`image.repository` にパブリックなマルチアーキテクチャ対応のcosign署名済みコネクタイメージが事前設定されているため、通常のインストールではイメージ値を指定する必要はありません。公開されているデフォルトを確認するには:
 
@@ -372,7 +372,7 @@ clicklink clctl init --handoff handoff.yaml --target helm --managed \
 
 コネクタエンドポイントが境界内の private CA の配下にある場合は、`init` に `--api-private-ca` を渡します。これにより `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt` が設定され、コネクタはシステムルートに加えて登録バンドルの CA チェーンを使用してエンドポイントを検証します。VM では、これに相当する設定は `/etc/clicklink/config.yaml` の `api.tls.ca_file` です。`init` はバンドルのチェーンを `/etc/clicklink/tls/ca.crt` にインストールし、コネクタは同様にそれをシステムルートへ追加します。完全に air-gapped な環境での登録と証明書署名については、[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding)を参照してください。
 
-## ストレージ {#storage}
+## ストレージ
 
 <Tabs>
   <Tab title="Kubernetes" id="storage-kubernetes">

@@ -16,11 +16,11 @@ Les flags des sous-arborescences `troubleshoot`, `scraper`, `preflight`, `execut
 
 Les commandes `instances` et `commands`, ainsi que `executor teardown`, interrogent l’API locale de l’executor. Deux flags globaux permettent de la sélectionner : `--endpoint <url>` (par défaut `http://127.0.0.1:9999`, variable d’environnement `CLCTL_ENDPOINT`) et `--cluster <name>` (variable d’environnement `CLCTL_CLUSTER`), qui désigne le cluster managé lorsqu’une commande en requiert un. Sur Kubernetes, ouvrez d’abord un `kubectl port-forward` vers le Deployment de l’executor ; consultez [services managés](/fr/products/bring-your-own-cloud/connector/managed-services#status).
 
-## clicklink clctl init {#init}
+## clicklink clctl init
 
 Initialise le connecteur à partir d’un jeton d’inscription, d’un bundle d’inscription enregistré ou d’un certificat signé transmis hors bande. Une seule exécution prépare la configuration, provisionne l’accès à ClickHouse, obtient le certificat client mTLS, effectue le déploiement (chart Helm ou unités systemd) et vérifie l’état de santé. Avec `--managed`, elle active également l’executor pour le cluster EKS qu’elle détecte et accorde à l’executor un accès à l’échelle du cluster. Vous pouvez relancer la commande sans risque : `init` conserve la configuration et l’UUID du cluster, remplace les informations d’identification de façon atomique et réutilise une clé client existante, sauf si vous spécifiez `--force`. Consultez [l’onboarding](/fr/products/bring-your-own-cloud/connector/onboarding) pour connaître le processus complet et [les services managés](/fr/products/bring-your-own-cloud/connector/managed-services) pour savoir ce que fait l’executor.
 
-### Points d&#39;entrée {#init-entry-points}
+### Points d&#39;entrée
 
 Un seul point d&#39;entrée est obligatoire.
 
@@ -30,7 +30,7 @@ Un seul point d&#39;entrée est obligatoire.
 | `--handoff <path>`     | Initialise à partir d&#39;un bundle d&#39;inscription enregistré. Les réexécutions et la récupération utilisent cette option une fois que `handoff.yaml` existe.                                                                                                                                                                                                                                                                        |
 | `--signed-cert <path>` | Phase 2 du flux air-gapped : installe un certificat client signé hors bande et termine l&#39;installation par étapes. `--chain <path>` remplace facultativement la chaîne de CA associée.                                                                                                                                                                                                                                               |
 
-### Flags courants {#init-common-flags}
+### Flags courants
 
 | Flag                        | Description                                                                                                                                                                                                                                                                                                                                                                                       |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -46,14 +46,14 @@ Un seul point d&#39;entrée est obligatoire.
 | `--ch-user-suffix <suffix>` | Suffix optionnel pour les usernames ClickHouse provisionnés (`pcm_scraper` devient `pcm_scraper_<suffix>`), afin qu&#39;un second déploiement du connector puisse partager une instance sans entrer en conflit avec les utilisateurs du premier.                                                                                                                                                  |
 | `--ch-admin-password-stdin` | Lit le password de l&#39;Admin ClickHouse depuis stdin lorsque le provisioning SQL en nécessite un ; une exécution dans un terminal affiche un prompt à la place.                                                                                                                                                                                                                                 |
 
-### Options de signature (phase 1 uniquement) {#init-signing-flags}
+### Options de signature (phase 1 uniquement)
 
 | Option                  | Description                                                                                                                                                                   |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--no-auto-sign`        | Uniquement à cette étape : ignore la signature automatique de la CSR via l’endpoint d’inscription, pour les flux de signature en environnement isolé du réseau ou hors bande. |
 | `--sign-endpoint <url>` | Remplace l’endpoint de signature d’inscription (par défaut : dérivé de l’endpoint du bundle par insertion du label DNS `enroll`). Doit être une URL HTTPS.                    |
 
-### Options réservées à Kubernetes {#init-kubernetes-flags}
+### Options réservées à Kubernetes
 
 Valables uniquement avec `--target helm`.
 
@@ -70,7 +70,7 @@ Valables uniquement avec `--target helm`.
 | `--api-private-ca`          | Votre connector endpoint fournit un certificat émis par la CA du bundle d’inscription : prépare `api.tls.caFile` pour qu’il pointe vers la chaîne de CA montée, laquelle est ajoutée aux racines système.                                                                                                                          |
 | `--egress-cidrs <cidrs>`    | CIDR de votre connector endpoint, séparés par des virgules, pour la NetworkPolicy de refus par défaut du chart : celle-ci est préparée activée avec ces valeurs dans `networkPolicy.allowEgressCIDRs` (demandés dans un terminal en mode managé). À défaut, la policy est préparée désactivée, à vous de l’activer ultérieurement. |
 
-### Options réservées aux VM {#init-vm-flags}
+### Options réservées aux VM
 
 Valable uniquement avec `--target systemd`.
 
@@ -81,7 +81,7 @@ Valable uniquement avec `--target systemd`.
 | `--cluster-name <name>` | Nom du cluster EKS piloté par le mode managed (par défaut : l’unique cluster EKS présent dans le kubeconfig de cet hôte ; demandé dans un terminal). |
 | `--no-instance`         | Démarre avec un registre d’instances vide et ignore les invites relatives aux instances.                                                             |
 
-### Conflits entre indicateurs {#init-flag-conflicts}
+### Conflits entre indicateurs
 
 * `--handoff`, `--enroll` et `--signed-cert` s’excluent mutuellement ; un seul doit être spécifié.
 * Les indicateurs propres à Kubernetes sont rejetés sauf avec `--target helm` ; `--server`, `--ca-data`, `--cluster-name` et `--no-instance` sont rejetés avec `--target helm` (le processus Helm lit le kubeconfig du poste de travail et détecte l’instance in-cluster).
@@ -91,7 +91,7 @@ Valable uniquement avec `--target systemd`.
 * `--operators` et `--no-gateway` s’excluent mutuellement.
 * `--skip-provision` rejette `--ch-pod`, `--ch-user-suffix`, `--server`, `--ca-data` et `--ch-admin-password-stdin` (aucun provisionnement n’est effectué).
 
-## clicklink clctl preflight {#preflight}
+## clicklink clctl preflight
 
 Exécute la suite de vérifications du connecteur, regroupées par catégorie : configuration, fichiers, réseau, ClickHouse, systemd, accès, disque, masquage. Chaque vérification indique une réussite, un avertissement, un échec ou une omission. Le code de sortie 0 signifie que toutes les vérifications ont réussi (les avertissements ne sont pas bloquants) ; le code de sortie 2 signifie qu&#39;au moins une a échoué.
 
@@ -110,7 +110,7 @@ Par défaut, la commande s&#39;exécute localement. Avec `--k8s-namespace`, elle
 
 Les options `--k8s-*` et les options du canal distant s&#39;excluent mutuellement ; choisissez une cible.
 
-## clicklink clctl troubleshoot session {#troubleshoot-session}
+## clicklink clctl troubleshoot session
 
 Active, désactive et inspecte la session de support : la période limitée pendant laquelle le composant de dépannage accepte les commandes. Sans session active, le démon refuse toutes les commandes, même lorsque son WebSocket est connecté. Consultez les [sessions de support](/fr/products/bring-your-own-cloud/connector/support-sessions).
 
@@ -119,7 +119,7 @@ Les commandes s&#39;exécutent dans l&#39;un des deux modes suivants :
 * **Fichier local** (par défaut) : lit et écrit le fichier d&#39;état de session sur l&#39;hôte sur lequel le composant de dépannage s&#39;exécute (par défaut, `/var/lib/clicklink/session.json`).
 * **Gateway** : avec `--gateway-url`, obtient un jeton d&#39;ID OIDC et appelle à la place la gateway de session du composant de dépannage depuis votre poste de travail.
 
-### Options communes {#session-shared-flags}
+### Options communes
 
 | Option                     | Description                                                                                                                                                                                                                                                                    |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -132,7 +132,7 @@ Les commandes s&#39;exécutent dans l&#39;un des deux modes suivants :
 | `--token-file <path>`      | Fichier contenant un jeton d&#39;ID OIDC préémis, utilisé comme jeton Bearer et contournant les autres fournisseurs de jetons.                                                                                                                                                 |
 | `--gateway-ca <path>`      | Bundle d&#39;AC vérifiant le certificat de la passerelle (certificat fourni par vos soins). Lorsqu&#39;il n&#39;est pas défini, la commande utilise un certificat épinglé via `gateway trust` ; une passerelle autosignée sans certificat épinglé échoue de manière sécurisée. |
 
-### activation de session {#session-enable}
+### activation de session
 
 | Indicateur         | Description                                                                                                                                                                  |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -142,11 +142,11 @@ Les commandes s&#39;exécutent dans l&#39;un des deux modes suivants :
 
 L’activation échoue si une session est déjà active ; désactivez-la d’abord ou attendez qu’elle expire.
 
-### session disable {#session-disable}
+### session disable
 
 Désactive immédiatement la session. Cette commande est sans effet lorsqu’aucune session n’est active.
 
-### état de la session {#session-status}
+### état de la session
 
 Indique si la session est active, qui l’a activée et à quelle date elle expire. `--output` (`-o`) sélectionne `table` (par défaut) ou `json`.
 
@@ -160,7 +160,7 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-## clicklink clctl troubleshoot gateway trust {#gateway-trust}
+## clicklink clctl troubleshoot gateway trust
 
 Sur une VM, la passerelle de session utilise un certificat TLS auto-signé. Cette commande enregistre l’empreinte SHA-256 du certificat dans `~/.clicklink/clctl.yaml` afin que les commandes `session` puissent le vérifier ; si une empreinte épinglée ne correspond plus, la vérification échoue de manière sécurisée. La relation de confiance est établie hors bande de l’une des deux manières suivantes :
 
@@ -181,7 +181,7 @@ clicklink clctl troubleshoot gateway trust \
 
 Sur Kubernetes, le pinning n’est pas utilisé : exposez la passerelle via un Ingress avec un certificat émis par une CA, ou utilisez un port-forward.
 
-## clicklink clctl troubleshoot audit tail {#audit-tail}
+## clicklink clctl troubleshoot audit tail
 
 Affiche les dernières entrées du journal d’audit de l’utilitaire de dépannage : JSON délimité par des sauts de ligne, avec une entrée pour chaque commande acceptée ou bloquée par le démon. Il ouvre le journal en lecture seule.
 
@@ -197,7 +197,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-## Provisionnement des accès {#access-provision}
+## Provisionnement des accès
 
 `clicklink clctl scraper access provision` et `clicklink clctl troubleshoot access provision` créent et, avec `--force`, renouvellent le bundle d&#39;accès par instance d&#39;un composant : l&#39;utilisateur ClickHouse en lecture seule et ses privilèges, ainsi que le ServiceAccount Kubernetes, les RBAC et le jeton utilisés par le composant. `init` exécute cette opération directement lors de l&#39;installation ; les commandes autonomes permettent de la relancer ou de renouveler les identifiants.
 
@@ -235,11 +235,11 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-## clicklink clctl executor access {#executor-access}
+## clicklink clctl executor access
 
 `init --managed` applique le grant cluster-wide de l&#39;executor avec vos credentials. Lorsque ce n&#39;est pas possible, `init` affiche les commands à exécuter depuis un kubeconfig disposant des droits d&#39;admin du cluster : `access apply` seul sur une VM (le bundle est déjà préparé), ou `access grant` puis `access apply` sur Kubernetes. Voir [onboarding](/fr/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
 
-### executor access grant {#executor-access-grant}
+### executor access grant
 
 Génère le bundle d&#39;accès à l&#39;échelle du cluster de l&#39;executor dans `<output-dir>/_cluster/` : un ServiceAccount, un ClusterRole et un ClusterRoleBinding, ainsi qu&#39;une ValidatingAdmissionPolicy qui restreint le ServiceAccount aux namespaces situés sous le prefix de namespace de l&#39;executor. Vérifiez le RBAC généré avant de l&#39;appliquer.
 
@@ -254,7 +254,7 @@ Génère le bundle d&#39;accès à l&#39;échelle du cluster de l&#39;executor d
 | `--force`                              | Écrase un bundle existant.                                                                                                                                             |
 | `--dry-run`                            | Affiche le plan sans écrire de fichiers.                                                                                                                               |
 
-### executor access apply {#executor-access-apply}
+### executor access apply
 
 Applique le bundle `grant` généré à l&#39;échelle du cluster : le Namespace d&#39;origine du ServiceAccount, le ServiceAccount, le ClusterRole et le ClusterRoleBinding, ainsi que la policy d&#39;admission, puis génère le token du ServiceAccount dans le bundle. Il n&#39;enregistre aucun service.
 
@@ -272,7 +272,7 @@ clicklink clctl executor access grant --cluster --sa-namespace <connector-namesp
 clicklink clctl executor access apply --cluster --output-dir <dir>
 ```
 
-## clicklink clctl executor prepare {#executor-prepare}
+## clicklink clctl executor prepare
 
 Prépare, de votre côté, tout ce dont la création d&#39;un service managé a besoin, en une seule exécution idempotente qui s&#39;arrête à la première erreur. La commande choisit ou valide le nom du service et crée les buckets de données et de sauvegarde ainsi que le rôle IAM (ou vérifie un rôle que vous fournissez). Sur une VM, elle génère et applique également le bundle d&#39;accès de l&#39;executor pour le namespace du service ; sur Kubernetes, le bundle est ignoré car l&#39;executor s&#39;exécute avec le ServiceAccount de son pod. Elle génère ensuite le mot de passe de l&#39;utilisateur `default` (affiché une seule fois) et écrit le corps de création destiné à [`instances create`](#instances-create). Voir [services managés](/fr/products/bring-your-own-cloud/connector/managed-services#create-a-service).
 
@@ -296,7 +296,7 @@ Sur une VM, elle s&#39;exécute sur l&#39;hôte du connecteur. Pour une installa
 | `--output <fmt>`                                 | `text` (par défaut) ou `json`. Aucun des deux ne contient le mot de passe.                                                                                                                                                                      |
 | `--dry-run`                                      | Exécute chaque étape en mode simulation ; rien n&#39;est créé ni écrit.                                                                                                                                                                         |
 
-## clicklink clctl executor teardown {#executor-teardown}
+## clicklink clctl executor teardown
 
 Supprime ce que `prepare` a créé pour un service que ClickHouse Cloud a supprimé, à savoir : le rôle IAM, le nom enregistré et l&#39;enregistrement du service dans l&#39;executor ; sur une VM, également les ClusterRole et ClusterRoleBinding du service, le bundle d&#39;accès local ainsi que l&#39;entrée du registry. L&#39;executor doit être en cours d&#39;exécution et le service à l&#39;état `terminated` (ou `stale`) ; l&#39;exécution est refusée tant que le namespace du service contient encore un cluster ClickHouse. Les buckets créés par `prepare`, avec leurs données et leurs sauvegardes, sont conservés sauf si vous en demandez la suppression, et les buckets conservés reçoivent le nouveau tag `clicklink:retained-from=<name>`. La commande lit tout avant de supprimer quoi que ce soit. Voir [supprimer un service](/fr/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
@@ -316,9 +316,9 @@ Supprime ce que `prepare` a créé pour un service que ClickHouse Cloud a suppri
 | `--output <fmt>`                                 | `text` (par défaut) ou `json`.                                                                                                                                                                                       |
 | `--dry-run`                                      | Affiche ce qui serait supprimé et quitte sans rien supprimer.                                                                                                                                                        |
 
-## clicklink clctl instances {#instances}
+## clicklink clctl instances
 
-### instances create {#instances-create}
+### instances create
 
 Soumet une création préparée à ClickHouse Cloud via votre connector endpoint, avec les identifiants propres au connector. La création est activée par environnement ; voir [créer un service](/fr/products/bring-your-own-cloud/connector/managed-services#create-a-service). La commande affiche le nom prononçable attribué par ClickHouse Cloud, l&#39;état, ainsi qu&#39;une indication `watch:` qui utilise votre service name. Le corps de la création provient du fichier écrit par `prepare`, ou de la combinaison des quatre flags `--deployed-name`, `--data-bucket`, `--backup-bucket` et `--irsa-role-arn`. Un retry effectué avec les mêmes entrées renvoie la première création.
 
@@ -336,31 +336,31 @@ Soumet une création préparée à ClickHouse Cloud via votre connector endpoint
 | `--wait`                                                                                            | Interroge l&#39;API locale de l&#39;executor jusqu&#39;à ce que le service soit `running`. Échoue immédiatement si une création a échoué pour ce nom, ou lorsque le service passe à `terminating`, `terminated` ou `stale`.                                                                                                                  |
 | `--wait-timeout <dur>`                                                                              | Durée pendant laquelle `--wait` interroge avant d&#39;échouer (`30m` par défaut).                                                                                                                                                                                                                                                            |
 
-### instances list {#instances-list}
+### instances list
 
 Affiche au format JSON tous les services connus de l&#39;executor. `--cluster <name>` filtre par cluster managé.
 
-### instances get {#instances-get}
+### instances get
 
 Affiche un service, au format JSON, avec le storage avec lequel il a été créé. `--name <name>` est obligatoire, de même que le cluster : passez `--cluster`, définissez `CLCTL_CLUSTER`, ou renseignez-le dans `~/.clicklink/clctl.yaml`.
 
 Les trois sous-commandes ci-dessous envoient des commands directement à l&#39;API locale de l&#39;executor, en contournant ClickHouse Cloud. Ne les exécutez que si votre account team vous le demande. Chacune requiert `--name <name>` et le cluster (`--cluster`, `CLCTL_CLUSTER`, ou `~/.clicklink/clctl.yaml`), et chacune affiche la command au format JSON. Passez son `id` à [`commands get`](#commands-get) pour en suivre l&#39;avancement ; le `result` d&#39;une command en échec contient son error.
 
-### instances scale {#instances-scale}
+### instances scale
 
 Définit le nombre de répliques de serveur d&#39;un service via un `ScalingOverride`. `--server-replicas <n>` est obligatoire et doit être supérieur à zéro. L&#39;executor signale la commande comme `running` lorsqu&#39;il applique l&#39;override, puis comme `completed` lorsque les répliques sont prêtes.
 
-### instances patch {#instances-patch}
+### instances patch
 
 Modifie un service en place. `--create-nlb` est le seul patch disponible ; sans lui, la commande échoue avec le message `nothing to patch`. Il provisionne un NLB interne sous la forme d&#39;un `Service` Kubernetes, sur AWS uniquement, afin qu&#39;un scraper situé en dehors du cluster puisse joindre les serveurs. L&#39;executor renseigne par backfill le host du scraper à partir du répartiteur de charge lors de sa prochaine synchronisation.
 
-### instances delete {#instances-delete}
+### instances delete
 
 Supprime un service du cluster. Cette commande arrête le service et attend l&#39;arrêt ordonné de l&#39;opérateur. Elle désinstalle ensuite la charge de travail, supprime l&#39;espace de noms `ns-<name>` ainsi que les artefacts du scraper, attend la disparition de l&#39;espace de noms, puis marque le service comme `terminated`. Les buckets et l&#39;IAM role du service sont conservés ; [`executor teardown`](#executor-teardown) les supprime à l&#39;aide de vos credentials. Réexécuter une suppression déjà terminée est un no-op. La procédure normale consiste à supprimer le service dans ClickHouse Cloud ; voir [supprimer un service](/fr/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
-## Commandes clicklink clctl {#commands}
+## Commandes clicklink clctl
 
-### commands list {#commands-list}
+### commands list
 
 Affiche les commandes enregistrées par l&#39;executor, au format JSON, les plus récentes en premier. Le champ `result` d&#39;une commande ayant échoué contient l&#39;erreur correspondante ; une synchronisation de plateforme en attente de votre approbation y indique la commande `platform approve` exacte à exécuter.
 
@@ -370,11 +370,11 @@ Affiche les commandes enregistrées par l&#39;executor, au format JSON, les plus
 | `--action <action>` | Filtrer par action, par exemple `create_instance` ou `sync_platform`. |
 | `--cluster <name>`  | Filtrer par cluster géré.                                             |
 
-### commands get {#commands-get}
+### commands get
 
 `clicklink clctl commands get <id>` affiche une commande, avec son étape et son résultat.
 
-## clicklink clctl platform approve {#platform-approve}
+## clicklink clctl platform approve
 
 Autorise une modification de plateforme avec vos propres identifiants de cluster. La commande lit le bundle préparé par l&#39;executor, en calcule le hachage et effectue le rendu de chaque chart qu&#39;il contient exactement comme le fera l&#39;executor. Elle applique la moitié « permissions » avec le contexte kube que vous choisissez, crée si nécessaire l&#39;identity `pcm-platform` de l&#39;executor et émet son jeton. Elle n&#39;envoie aucune requête à votre connector endpoint. La moitié « permissions » regroupe les Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles et bindings, Roles et bindings, configurations de webhook et d&#39;admission, PriorityClasses, ainsi que la StorageClass. L&#39;executor n&#39;applique ensuite que la moitié « charges de travail », et uniquement tant que ce jeton reste valide. Voir [mises à jour de plateforme](/fr/products/bring-your-own-cloud/connector/platform-updates).
 
@@ -392,7 +392,7 @@ Pour un accès direct au registre de ClickHouse, exécutez l&#39;approbation sur
 | `--bundle <path>`         | Remplacement : un manifeste de plateforme déjà rendu et transmis hors bande, lu à la place du bundle préparé. Normalement omis.                                                                                                     |
 | `--dry-run`               | Effectue le rendu et liste la moitié « permissions » sans l&#39;appliquer ni émettre de jeton.                                                                                                                                      |
 
-## clicklink clctl platform reset {#platform-reset}
+## clicklink clctl platform reset
 
 Pour les clusters de test sans services : désinstalle les releases de la plateforme dans l&#39;ordre inverse des dépendances et supprime le bundle de token de plateforme de l&#39;executor, afin de pouvoir rejouer la première installation. Avant toute modification, la commande liste les clusters ClickHouse présents dans les namespaces dont ce connector est propriétaire et refuse de continuer s&#39;il en existe. Les CustomResourceDefinitions, le RBAC et la StorageClass sont conservés. Exécutez à nouveau `platform approve` avant la prochaine synchronisation de la plateforme.
 
@@ -405,7 +405,7 @@ Pour les clusters de test sans services : désinstalle les releases de la platef
 | `--secret-namespace <ns>`, `--secret-name <name>` | Installations Kubernetes : supprime à la place le Secret du bundle de plateforme dans le namespace du connector (nom par défaut `clicklink-platform-bundle`). |
 | `--dry-run`                                       | Vérifie la présence de services et affiche le plan de réinitialisation sans modifier le cluster.                                                              |
 
-## Options du canal distant {#channel-flags}
+## Options du canal distant
 
 `preflight`, `gateway trust` et `access provision` partagent un ensemble d&#39;options qui déterminent comment accéder à une VM cible :
 

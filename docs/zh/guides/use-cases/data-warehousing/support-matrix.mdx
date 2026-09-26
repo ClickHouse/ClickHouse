@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 ClickHouse Cloud 和自管理 ClickHouse 的支持情况将分别列出。Experimental 功能在 ClickHouse Cloud 中默认处于禁用状态，且[必须通过 Support 申请](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#13-experimental-features-in-production)。是否可用取决于具体功能，因此请联系 Support 确认能否启用特定的 Experimental 功能。特定部署的配置和限制将在 Notes 列中说明。
 
-## 开放表格式支持 {#format-support}
+## 开放表格式支持
 
 ClickHouse 可与四种开放表格式集成：[Apache Iceberg](/zh/reference/engines/table-engines/integrations/iceberg)、[Delta Lake](/zh/reference/engines/table-engines/integrations/deltalake)、[Apache Hudi](/zh/reference/engines/table-engines/integrations/hudi) 和 [Apache Paimon](/zh/reference/functions/table-functions/paimon)。请选择下方的一种格式以查看其支持矩阵。
 
@@ -153,7 +153,7 @@ ClickHouse 可与四种开放表格式集成：[Apache Iceberg](/zh/reference/en
   </Tab>
 </Tabs>
 
-## 目录支持 {#catalog-support}
+## 目录支持
 
 ClickHouse 可以使用 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎连接外部数据目录，并将该目录映射为一个 ClickHouse 数据库。注册在目录中的表会自动显示出来，并可使用标准 SQL 查询。
 

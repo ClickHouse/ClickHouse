@@ -20,7 +20,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 </Tip>
 
 <div id="price-performance">
-  ## الأداء مقابل السعر {#price-performance}
+  ## الأداء مقابل السعر
 </div>
 
 نظرًا إلى أن الخدمة تعمل على وحدات تخزين NVMe محلية، يمكن للعديد من أعباء العمل تحقيق أداء أفضل بكثير مقابل التكلفة مقارنةً بمعماريات التخزين التقليدية المتصلة بالشبكة. راجع [PostgresBench](https://postgresbench.clickhouse.com/) للاطلاع على مقارنات الأداء مع موفري Postgres البديلين على مواصفات عتادية مماثلة.
@@ -28,7 +28,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 قد يلاحظ العملاء انخفاضًا في متطلبات الموارد الحاسوبية يصل إلى 2–4× لأعباء عمل مماثلة. وينبغي أخذ مكاسب الكفاءة المحتملة هذه في الاعتبار عند مقارنة الأسعار بين الموفّرين، مع أن التحسينات الفعلية ستختلف حسب عبء العمل ويجب التحقق منها في تطبيقاتك المحددة.
 
 <div id="pricing-model">
-  ## نموذج التسعير {#pricing-model}
+  ## نموذج التسعير
 </div>
 
 تعمل الخدمة على تخزين NVMe محلي، لذا يعتمد التسعير على التهيئة الكاملة للآلة الافتراضية — CPU والذاكرة والتخزين — بدلًا من احتساب رسوم منفصلة للحوسبة والقرص.
@@ -36,7 +36,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 يتوفر أكثر من 50 تهيئة، تتراوح من 1 vCPU / 8 GB RAM / 59 GB NVMe إلى 96 vCPUs / 768 GB RAM / 60 TB NVMe storage، مما يوفر مرونة لأعباء عمل Postgres المكثفة حوسبيًا وتلك كثيفة التخزين.
 
 <div id="tier-based-pricing">
-  ### التسعير حسب الفئة {#tier-based-pricing}
+  ### التسعير حسب الفئة
 </div>
 
 تختلف الأسعار والميزات وحدود الموارد حسب فئة المؤسسة — [Basic, Scale, or Enterprise](/ar/products/cloud/features/cloud-tiers) — لكن كل فئة تتضمن الإمكانات الأساسية للخدمة، بما في ذلك Postgres الجاهز للإنتاج على تخزين NVMe محلي، وCDC الأصلية إلى ClickHouse، وامتداد `pg_clickhouse`.
@@ -99,7 +99,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   </div>
 </div>
 
-### أنواع المثيلات {#instance-types}
+### أنواع المثيلات
 
 تُقسَّم تهيئات المثيلات إلى ثلاث فئات لتسهيل اختيار البنية التحتية بناءً على خصائص أعباء العمل. لا تتوفر جميع أنواع المثيلات في كل منطقة. تنطبق عائلات المثيلات المذكورة أدناه على AWS. أما GCP فهي في مرحلة المعاينة الخاصة، وتُشارَك أنواع مثيلاتها معك أثناء عملية الإعداد.
 
@@ -108,7 +108,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 * **محسّنة لوحدة المعالجة المركزية:** مُصمَّمة لأعباء العمل مكثفة حوسوبيًا بنسبة ذاكرة إلى CPU تبلغ 1:4. تدعم عائلتي `m8id` و`m6id` المستندتين إلى x86، وعائلتي `m8gd` و`m6gd` المستندتين إلى ARM64 (AWS Graviton). وهي الأنسب لأعباء العمل المعاملية عالية التزامن والاستعلامات المقيّدة بـ CPU.
 
 <div id="pricing-calculator">
-  ## حاسبة التسعير {#pricing-calculator}
+  ## حاسبة التسعير
 </div>
 
 استخدم [حاسبة التسعير](https://clickhouse.com/pricing?service=postgres#pricing-calculator) لتقدير تكاليف النشر عبر أنماط أعباء العمل والإعدادات المختلفة. يمكنك تخصيص ما يلي:
@@ -123,11 +123,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 يتيح لك ذلك مقارنة الأسعار عبر أكثر من 50 تركيبة إعدادات مدعومة والعثور على الأنسب لعبء العمل لديك.
 
 <div id="beta-pricing-highlights">
-  ## أبرز ملامح تسعير Beta {#beta-pricing-highlights}
+  ## أبرز ملامح تسعير Beta
 </div>
 
 <div id="aws-public-beta-pricing">
-  ### تسعير Public Beta على AWS {#aws-public-beta-pricing}
+  ### تسعير Public Beta على AWS
 </div>
 
 خلال فترة Beta على AWS:
@@ -137,12 +137,12 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 * لا تُفرض حاليًا أي رسوم على **حركة البيانات الصادرة من الشبكة** أو **النسخ الاحتياطية**
 * تتضمن جميع الخطط حاليًا **تسعير Beta بخصم 50%**
 
-### تسعير المعاينة الخاصة على GCP {#gcp-private-preview-pricing}
+### تسعير المعاينة الخاصة على GCP
 
 خدمة ClickHouse Managed Postgres على GCP مجانية خلال المعاينة الخاصة. ولا يزال تحديد التسعير بعد انتهاء المعاينة الخاصة جارياً. إذا كنت بحاجة إلى معلومات إضافية، فتواصل معنا لمعرفة الشكل المحتمل للتسعير النهائي. ويمكنك التسجيل في قائمة انتظار المعاينة الخاصة على GCP [من هنا](https://clickhouse.com/cloud/postgres#gcp-waitlist).
 
 <div id="disclaimers">
-  ## إخلاءات المسؤولية {#disclaimers}
+  ## إخلاءات المسؤولية
 </div>
 
 مع تطور المنتج خلال مرحلة Beta، قد تُجرى تحسينات على التسعير والباقات قبل التوافر العام (GA). يُرجى ملاحظة ما يلي:

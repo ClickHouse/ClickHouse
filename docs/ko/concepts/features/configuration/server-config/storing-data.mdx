@@ -27,7 +27,7 @@ ClickHouse에서 처리되는 데이터는 일반적으로 ClickHouse 서버가 
   3. Hadoop 분산 파일 시스템(지원되지 않음)에 저장된 데이터를 사용하려면 [HDFS](/ko/reference/engines/table-engines/integrations/hdfs) 테이블 엔진을 사용합니다.
 </Note>
 
-## 외부 스토리지 구성 {#configuring-external-storage}
+## 외부 스토리지 구성
 
 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 및 [`Log`](/ko/reference/engines/table-engines/log-family/log)
 계열 테이블 엔진은 각각 `s3`, `azure_blob_storage`, `hdfs`(지원되지 않음) 타입의 디스크를 사용해 데이터를 `S3`, `AzureBlobStorage`, `HDFS`(지원되지 않음)에 저장할 수 있습니다.
@@ -177,7 +177,7 @@ ENGINE = MergeTree() ORDER BY a
 SETTINGS disk = 's3';
 ```
 
-## refresh_parts_interval 및 table_disk {#refresh-parts-interval-and-table-disk}
+## refresh_parts_interval 및 table_disk
 
 이 설정은 파트가 외부에서 작성될 수 있고, 스토리지에서 메타데이터 탐지를 다시 갱신해야 하는 비복제 MergeTree 테이블을 위한 것입니다.
 
@@ -197,7 +197,7 @@ MergeTree 설정 `refresh_parts_interval`은 기본 스토리지에서 데이터
   이 설정은 파트가 외부에서 작성되고 메타데이터 갱신이 필요한 비복제 MergeTree 테이블에만 적용됩니다.
 </Note>
 
-## 동적 구성 {#dynamic-configuration}
+## 동적 구성
 
 설정 파일의 구성에서 디스크를 미리 정의하지 않고도 스토리지 구성을 지정할 수 있으며,
 대신 `CREATE`/`ATTACH` 쿼리 설정에서 구성할 수도 있습니다.
@@ -321,9 +321,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </storage_configuration>
 ```
 
-### S3 스토리지 사용 {#s3-storage}
+### S3 스토리지 사용
 
-#### 필수 매개변수 {#required-parameters-s3}
+#### 필수 매개변수
 
 | 매개변수                | 설명                                                                                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -331,7 +331,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `access_key_id`     | 인증에 사용되는 S3 액세스 키 ID입니다.                                                                                                                               |
 | `secret_access_key` | 인증에 사용되는 S3 시크릿 액세스 키입니다.                                                                                                                              |
 
-#### 선택적 매개변수 {#optional-parameters-s3}
+#### 선택적 매개변수
 
 | 매개변수                                            | 설명                                                                                                                                                                                                                               | 기본값                                      |
 | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
@@ -365,7 +365,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   Google Cloud Storage(GCS)도 `s3` 유형을 통해 지원됩니다. [GCS backed MergeTree](/ko/integrations/connectors/data-sources/gcs)를 참조하십시오.
 </Note>
 
-### Plain Storage 사용 {#plain-storage}
+### Plain Storage 사용
 
 `22.10`에는 한 번만 쓸 수 있는 저장소를 제공하는 새로운 디스크 유형 `s3_plain`이 도입되었습니다.
 이 디스크 유형의 구성 매개변수는 `s3` 디스크 유형과 동일합니다.
@@ -406,7 +406,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </s3_plain>
 ```
 
-### S3 Plain Rewritable Storage 사용 {#s3-plain-rewritable-storage}
+### S3 Plain Rewritable Storage 사용
 
 새 디스크 유형 `s3_plain_rewritable`는 `24.4`에서 도입되었습니다.
 `s3_plain` 디스크 유형과 마찬가지로, 메타데이터 파일을 위한 추가 저장소가
@@ -446,7 +446,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 `24.5`부터는 `plain_rewritable` 메타데이터 타입을 사용해
 모든 객체 스토리지 디스크(`s3`, `azure`, `local`)를 구성할 수 있습니다.
 
-### Azure Blob Storage 사용하기 {#azure-blob-storage}
+### Azure Blob Storage 사용하기
 
 `MergeTree` 계열 테이블 엔진은 `azure_blob_storage` 유형의 디스크를 사용해
 [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/)에 데이터를 저장할 수 있습니다.
@@ -471,7 +471,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 </storage_configuration>
 ```
 
-#### 연결 매개변수 {#azure-blob-storage-connection-parameters}
+#### 연결 매개변수
 
 | 매개변수                       | 설명                                                                                                                               | 기본값                 |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
@@ -487,7 +487,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `account_name`      | Shared Key를 사용한 인증에 사용합니다(`account_key`와 함께 사용).  |
 | `account_key`       | Shared Key를 사용한 인증에 사용합니다(`account_name`과 함께 사용). |
 
-#### 제한 매개변수 {#azure-blob-storage-limit-parameters}
+#### 제한 매개변수
 
 | 매개변수                              | 설명                                               |
 | --------------------------------- | ------------------------------------------------ |
@@ -498,7 +498,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 | `thread_pool_size`                | `IDiskRemote` 인스턴스화를 위한 최대 스레드 수입니다.             |
 | `max_inflight_parts_for_one_file` | 단일 객체에 대한 동시 put 요청의 최대 수입니다.                    |
 
-#### 기타 매개변수 {#azure-blob-storage-other-parameters}
+#### 기타 매개변수
 
 | 매개변수                             | 설명                                           | 기본값                                      |
 | -------------------------------- | -------------------------------------------- | ---------------------------------------- |
@@ -514,7 +514,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
   ClickHouse 버전 22.8 이상에서는 zero-copy 복제가 기본적으로 비활성화되어 있습니다. 이 기능은 프로덕션 환경에서 사용하도록 권장되지 않습니다.
 </Info>
 
-## HDFS 스토리지 사용(지원되지 않음) {#using-hdfs-storage-unsupported}
+## HDFS 스토리지 사용(지원되지 않음)
 
 이 예시 구성은 다음과 같습니다:
 
@@ -555,7 +555,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 점을 유의하십시오.
 
-### 데이터 암호화 사용 {#encrypted-virtual-file-system}
+### 데이터 암호화 사용
 
 [S3](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3), [HDFS](#using-hdfs-storage-unsupported)(지원되지 않음) 같은 외부 디스크나 로컬 디스크에 저장된 데이터를 암호화할 수 있습니다. 암호화 모드를 사용하려면 설정 파일에서 유형이 `encrypted`인 디스크를 정의하고, 데이터가 저장될 디스크를 선택해야 합니다. `encrypted` 디스크는 쓰여지는 모든 파일을 실시간으로 암호화하며, `encrypted` 디스크에서 파일을 읽을 때는 자동으로 복호화합니다. 따라서 `encrypted` 디스크도 일반 디스크처럼 사용할 수 있습니다.
 
@@ -580,7 +580,7 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
 
 동일한 파일을 `disk2`에 기록하면, 실제로는 물리 디스크의 `/path1/path2/store/all_1_1_0/data.bin` 경로에 암호화된 상태로 기록됩니다.
 
-### 필수 매개변수 {#required-parameters-encrypted-disk}
+### 필수 매개변수
 
 | 매개변수   | 유형     | 설명                                                                                    |
 | ------ | ------ | ------------------------------------------------------------------------------------- |
@@ -588,7 +588,7 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
 | `disk` | String | underlying storage에 사용할 디스크 유형입니다.                                                    |
 | `key`  | Uint64 | 암호화 및 복호화에 사용할 키입니다. `key_hex`를 사용해 16진수로 지정할 수 있습니다. `id` 속성을 사용하면 여러 키를 지정할 수 있습니다. |
 
-### 선택적 매개변수 {#optional-parameters-encrypted-disk}
+### 선택적 매개변수
 
 | 매개변수             | 유형     | 기본값           | 설명                                                                                                               |
 | ---------------- | ------ | ------------- | ---------------------------------------------------------------------------------------------------------------- |
@@ -619,7 +619,7 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
 </clickhouse>
 ```
 
-### 로컬 캐시 사용 {#using-local-cache}
+### 로컬 캐시 사용
 
 버전 22.3부터 스토리지 구성의 디스크에 로컬 캐시를 설정할 수 있습니다.
 버전 22.3~22.7에서는 `s3` 디스크 유형에서만 캐시를 지원합니다. 버전 &gt;= 22.8에서는 S3, Azure, Local, Encrypted 등 모든 디스크 유형에서 캐시를 지원합니다.
@@ -705,7 +705,7 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
 
 > **참고**: 크기 값은 `ki`, `Mi`, `Gi` 등의 단위를 지원합니다(예: `10Gi`).
 
-## 파일 캐시 쿼리/프로필 설정 {#file-cache-query-profile-settings}
+## 파일 캐시 쿼리/프로필 설정
 
 | 설정                                                                      | 유형     | 기본값                      | 설명                                                                                                                                               |
 | ----------------------------------------------------------------------- | ------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -722,20 +722,20 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
   이전 버전에서는 일부 기능이 지원되지 않을 수 있습니다.
 </Warning>
 
-#### 캐시 시스템 테이블 {#cache-system-tables-file-cache}
+#### 캐시 시스템 테이블
 
 | 테이블 이름                        | 설명                       | 요구 사항                                        |
 | ----------------------------- | ------------------------ | -------------------------------------------- |
 | `system.filesystem_cache`     | 파일 시스템 캐시의 현재 상태를 표시합니다. | 없음                                           |
 | `system.filesystem_cache_log` | 쿼리별 상세 캐시 사용 통계를 제공합니다.  | `enable_filesystem_cache_log = true`가 필요합니다. |
 
-#### 캐시 명령어 {#cache-commands-file-cache}
+#### 캐시 명령어
 
-##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER` {#system-clear-filesystem-cache-on-cluster}
+##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER`
 
 이 명령은 `<cache_name>`을 지정하지 않은 경우에만 지원됩니다
 
-##### `SHOW FILESYSTEM CACHES` {#show-filesystem-caches}
+##### `SHOW FILESYSTEM CACHES`
 
 server에 구성된 파일 시스템 캐시 목록을 표시합니다.
 (`22.8` 이하 버전에서는 이 명령의 이름이 `SHOW CACHES`입니다)
@@ -750,7 +750,7 @@ SHOW FILESYSTEM CACHES
 └───────────┘
 ```
 
-##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'` {#describe-filesystem-cache}
+##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
 
 특정 파일 시스템 캐시의 구성과 일부 일반 통계를 표시합니다.
 캐시 이름은 `SHOW FILESYSTEM CACHES` 명령으로 확인할 수 있습니다. (`22.8`
@@ -773,7 +773,7 @@ DESCRIBE FILESYSTEM CACHE 's3_cache'
 |                           |                        | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
 |                           |                        | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
 
-### 정적 Web 스토리지 사용(읽기 전용) {#web-storage}
+### 정적 Web 스토리지 사용(읽기 전용)
 
 이 디스크는 읽기 전용 디스크입니다. 데이터는 읽기만 가능하며 수정되지는 않습니다. 새 테이블은 `ATTACH TABLE` 쿼리로 이 디스크에 로드됩니다(아래 예시 참조). 로컬 디스크는 실제로 사용되지 않으며, 각 `SELECT` 쿼리는 필요한 데이터를 가져오기 위해 `http` 요청을 보냅니다. 테이블 데이터를 수정하려는 모든 작업은 예외를 발생시키므로, 다음과 같은 쿼리 유형은 허용되지 않습니다: [`CREATE TABLE`](/ko/reference/statements/create/table),
 [`ALTER TABLE`](/ko/reference/statements/alter/index), [`RENAME TABLE`](/ko/reference/statements/rename#rename-table),
@@ -1031,14 +1031,14 @@ SAMPLE BY intHash32(UserID)
 SETTINGS storage_policy='web';
 ```
 
-#### 필수 매개변수 {#static-web-storage-required-parameters}
+#### 필수 매개변수
 
 | 매개변수       | 설명                                                                         |
 | ---------- | -------------------------------------------------------------------------- |
 | `type`     | `web`여야 합니다. 그렇지 않으면 디스크가 생성되지 않습니다.                                       |
 | `endpoint` | `path` 형식의 엔드포인트 URL입니다. 엔드포인트 URL에는 데이터가 업로드되는 루트 저장 경로가 포함되어야 합니다. |
 
-#### 선택적 매개변수 {#optional-parameters-web}
+#### 선택적 매개변수
 
 `web` 객체 스토리지 백엔드는 `endpoint` 매개변수만 읽습니다. 웹 전용 선택적 매개변수는 없으며, 일반 디스크 옵션도 적용됩니다.
 
@@ -1053,7 +1053,7 @@ SETTINGS storage_policy='web';
 
 초기 시도를 포함한 HTTP 읽기 시도 횟수를 제한하려면 [`http_max_tries`](/ko/reference/settings/session-settings/http-max#http_max_tries)를 사용하십시오. 재시도 간 초기 및 최대 지연 시간을 구성하려면 [`http_retry_initial_backoff_ms`](/ko/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) 및 [`http_retry_max_backoff_ms`](/ko/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms)를 사용하십시오.
 
-### zero-copy 복제(프로덕션 환경에서는 아직 사용할 수 없음) {#zero-copy}
+### zero-copy 복제(프로덕션 환경에서는 아직 사용할 수 없음)
 
 `S3` 및 `HDFS`(미지원) 디스크에서 zero-copy 복제를 사용할 수는 있지만, 권장되지는 않습니다. zero-copy 복제는 데이터가 여러 머신의 원격 스토리지에 저장되어 있고 이를 동기화해야 할 때, 데이터 자체는 복제하지 않고 메타데이터(데이터 파트의 경로)만 복제하는 방식입니다.
 

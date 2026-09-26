@@ -54,7 +54,7 @@ SELECT DISTINCT ON (a,b) * FROM t1;
 └───┴───┴───┘
 ```
 
-## DISTINCT e ORDER BY {#distinct-and-order-by}
+## DISTINCT e ORDER BY
 
 O ClickHouse permite usar as cláusulas `DISTINCT` e `ORDER BY` para colunas diferentes em uma mesma consulta. A cláusula `DISTINCT` é executada antes da cláusula `ORDER BY`.
 
@@ -101,11 +101,11 @@ A linha `2, 4` foi descartada antes da ordenação.
 
 Leve essa particularidade da implementação em conta ao escrever consultas.
 
-## Processamento de NULL {#null-processing}
+## Processamento de NULL
 
 `DISTINCT` funciona com [NULL](/pt-BR/reference/syntax#null) como se `NULL` fosse um valor específico e `NULL==NULL`. Em outras palavras, nos resultados de `DISTINCT`, diferentes combinações com `NULL` aparecem apenas uma vez. Isso difere do processamento de `NULL` na maioria dos outros contextos.
 
-## Alternativas {#alternatives}
+## Alternativas
 
 É possível obter o mesmo resultado aplicando [GROUP BY](/pt-BR/reference/statements/select/group-by) ao mesmo conjunto de valores especificado na cláusula `SELECT`, sem usar nenhuma função de agregação. No entanto, há algumas diferenças em relação à abordagem com `GROUP BY`:
 
@@ -114,7 +114,7 @@ Leve essa particularidade da implementação em conta ao escrever consultas.
 * Antes de a execução externa começar e quando `ORDER BY` é omitido, um intervalo [`LIMIT ... AFTER ... UNTIL`](/pt-BR/reference/statements/select/limit#limit-after-until) sem `ALL` também pode parar a consulta assim que o intervalo termina.
 * Os blocos de dados são produzidos à medida que são processados até que a execução externa comece.
 
-## DISTINCT em memória externa {#distinct-in-external-memory}
+## DISTINCT em memória externa
 
 O `DISTINCT` pode gravar dados temporários em disco para processar conjuntos de valores únicos grandes demais
 para caberem na memória. Isso exige E/S de disco adicional e pode deixar as consultas mais lentas.

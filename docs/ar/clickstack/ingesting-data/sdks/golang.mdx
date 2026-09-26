@@ -14,9 +14,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## البدء {#getting-started}
+## البدء
 
-### ثبّت حزم Instrumentation الخاصة بـ OpenTelemetry {#install-opentelemetry}
+### ثبّت حزم Instrumentation الخاصة بـ OpenTelemetry
 
 لتثبيت حزم Go الخاصة بـ OpenTelemetry وHyperDX، استخدم الأمر أدناه. يُنصح بالاطلاع على [حزم Instrumentation الحالية](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/v1.4.0/instrumentation#instrumentation-packages) وتثبيت الحزم اللازمة لضمان إرفاق معلومات التتبّع بشكل صحيح.
 
@@ -27,7 +27,7 @@ go get -u github.com/hyperdxio/opentelemetry-go
 go get -u github.com/hyperdxio/opentelemetry-logs-go
 ```
 
-### مثال على خادم HTTP المدمج (net/http) {#native-http-server-example}
+### مثال على خادم HTTP المدمج (net/http)
 
 في هذا المثال، سنستخدم `net/http/otelhttp`.
 
@@ -135,7 +135,7 @@ func ExampleHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### مثال لتطبيق Gin {#gin-application-example}
+### مثال لتطبيق Gin
 
 في هذا المثال، سنستخدم `gin-gonic/gin`.
 
@@ -219,7 +219,7 @@ func main() {
 }
 ```
 
-### إعداد متغيرات البيئة {#configure-environment-variables}
+### إعداد متغيرات البيئة
 
 بعد ذلك، ستحتاج إلى إعداد متغيرات البيئة التالية في shell لديك لإرسال بيانات القياس عن بُعد إلى ClickStack عبر مجمّع OpenTelemetry:
 

@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 ClickHouse Connect には、より高度な用途に対応する追加オプションがいくつか用意されています。
 
-## グローバル設定 {#global-settings}
+## グローバル設定
 
 ClickHouse Connect の動作全体を制御する設定がいくつかあります。これらの設定には、トップレベルの `common` パッケージからアクセスできます。
 
@@ -45,7 +45,7 @@ print(common.get_setting("invalid_setting_action"))
 | `max_error_size`          | `1024`     | 任意の非負整数                               | クライアントエラーに含める最大文字数です。完全なメッセージを取得するには `0` を使用してください。                                                                                                                                                                                                                                                          |
 | `http_buffer_size`        | `10485760` | バイト                                   | ストリーミング HTTP クエリ用のインメモリバッファサイズです。デフォルトは 10 MiB です。                                                                                                                                                                                                                                                           |
 
-## 圧縮 {#compression}
+## 圧縮
 
 ClickHouse Connect は、レスポンス圧縮として lz4、zstd、brotli、gzip、deflate をサポートしています。ネイティブ insert は lz4、zstd、brotli、gzip をサポートしています。圧縮では、ネットワーク転送量を削減する代わりに CPU時間を消費します。
 
@@ -59,17 +59,17 @@ lz4 と zstd のサポートは ClickHouse Connect とともにインストー�
 
 一般に、ClickHouse のワークロードでは gzip は lz4 や zstd より低速です。
 
-## HTTPプロキシサポート {#http-proxy-support}
+## HTTPプロキシサポート
 
 ClickHouse Connect は、標準の `HTTP_PROXY` および `HTTPS_PROXY` 環境変数を認識します。これらの変数は、プロセス内のすべてのクライアントに適用されます。クライアントごとにプロキシを設定するには、`http_proxy` または `https_proxy` を `get_client` または `get_async_client` に渡します。
 
 同期クライアントは `urllib3` を使用します。SOCKSプロキシを使用するには、PySocks をインストールし、`urllib3.contrib.socks.SOCKSProxyManager` を `pool_mgr` 引数として `get_client` に渡します。`pool_mgr` は async クライアントではサポートされていません。
 
-## Variant、Dynamic、JSON データ型 {#variant-dynamic-json-data-types}
+## Variant、Dynamic、JSON データ型
 
 ClickHouse Connect は、現在の ClickHouse の `Variant`、`Dynamic`、`JSON` 型をサポートしています。従来の `Object('json')` 型は clickhouse-connect 0.14 で削除され、サポートされていません。
 
-### 使用上の注意 {#usage-notes}
+### 使用上の注意
 
 * `Variant` の値は、対応する Python 型として読み取られます。ネイティブ insert では、Python の値の型に基づいてメンバーが選択されます。
 * 複数の `Variant` メンバーが同じ Python 型に対応する場合は、`clickhouse_connect.datatypes.dynamic.typed_variant(value, "TypeName")` で値をラップして、メンバーを明示的に選択してください。

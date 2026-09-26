@@ -11,7 +11,7 @@ Esta página ofrece matrices de compatibilidad exhaustivas para las integracione
 
 La compatibilidad se muestra por separado para ClickHouse Cloud y ClickHouse autogestionado. Las características experimentales están deshabilitadas de forma predeterminada en ClickHouse Cloud y [deben solicitarse a través de Support](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#13-experimental-features-in-production). La disponibilidad depende de la característica, así que contacte con Support para confirmar si se puede habilitar una característica experimental específica. La configuración y las limitaciones específicas de la implementación se describen en la columna Notas.
 
-## Compatibilidad con formatos de tabla abiertos {#format-support}
+## Compatibilidad con formatos de tabla abiertos
 
 ClickHouse se integra con cuatro formatos de tabla abiertos: [Apache Iceberg](/es/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/es/reference/engines/table-engines/integrations/deltalake), [Apache Hudi](/es/reference/engines/table-engines/integrations/hudi) y [Apache Paimon](/es/reference/functions/table-functions/paimon). Selecciona uno de los formatos a continuación para ver su matriz de compatibilidad.
 
@@ -153,7 +153,7 @@ ClickHouse se integra con cuatro formatos de tabla abiertos: [Apache Iceberg](/e
   </Tab>
 </Tabs>
 
-## Compatibilidad con catálogos {#catalog-support}
+## Compatibilidad con catálogos
 
 ClickHouse puede conectarse a catálogos de datos externos mediante el motor de base de datos [`DataLakeCatalog`](/es/reference/engines/database-engines/datalake), que expone el catálogo como una base de datos de ClickHouse. Las tablas registradas en el catálogo aparecen automáticamente y pueden consultarse con SQL estándar.
 

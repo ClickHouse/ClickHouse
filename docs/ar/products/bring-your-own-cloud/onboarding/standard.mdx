@@ -10,7 +10,7 @@ doc_type: 'مرجع'
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <div id="what-is-standard-onboarding">
-  ## ما هي التهيئة القياسية؟ {#what-is-standard-onboarding}
+  ## ما هي التهيئة القياسية؟
 </div>
 
 تُعد **التهيئة القياسية** مسار العمل الإرشادي الافتراضي لنشر ClickHouse في حسابك السحابي باستخدام BYOC. في هذا النهج، يتولى ClickHouse Cloud توفير جميع موارد السحابة الأساسية اللازمة لعملية النشر—مثل VPC/VNet، والشبكات الفرعية، ومجموعات الأمان، وعنقود Kubernetes ‏(EKS/GKE/AKS)، وأدوار IAM/حسابات الخدمة/service principals الداعمة—داخل حساب AWS أو مشروع GCP أو اشتراك Azure الخاص بك. ويضمن ذلك إعدادًا متسقًا وآمنًا، ويقلل إلى الحد الأدنى من الخطوات اليدوية المطلوبة من فريقك.
@@ -26,16 +26,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="request-access">
-  ## طلب الوصول {#request-access}
+  ## طلب الوصول
 </div>
 
 لبدء عملية التهيئة، يُرجى [التواصل معنا](https://clickhouse.com/cloud/bring-your-own-cloud). سيرشدك فريقنا إلى متطلبات BYOC، ويساعدك على اختيار خيارات النشر الأنسب، ويضيف حسابك إلى قائمة السماح.
 
 <div id="onboarding-process">
-  ## التهيئة {#onboarding-process}
+  ## التهيئة
 </div>
 
-### جهّز حساب AWS/مشروع GCP/اشتراك Azure {#prepare-an-aws-account}
+### جهّز حساب AWS/مشروع GCP/اشتراك Azure
 
 جهّز حساب AWS جديدًا، أو مشروع GCP جديدًا، أو اشتراك Azure جديدًا ضمن مؤسستك.
 
@@ -57,7 +57,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       لا يتضمن هذا الإعداد الأولي حاويات التخزين وVPC/VNet ومجموعة Kubernetes وموارد الحوسبة المطلوبة لتشغيل ClickHouse. وسيتم توفيرها في الخطوة التالية.
     </Note>
 
-#### وحدة Terraform لـ AWS {#terraform-module-aws}
+#### وحدة Terraform لـ AWS
 
     إذا كنت تفضل استخدام Terraform بدلًا من CloudFormation لعمليات النشر على AWS، فاستخدم وحدة [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -76,7 +76,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       كانت الوحدة تُوزَّع سابقًا كأرشيف tarball على `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. لا يزال عنوان URL هذا متاحًا، لكنه مهمل — استخدم وحدة GitHub المذكورة أعلاه.
     </Note>
 
-#### المعرّف الخارجي لـ AWS {#aws-external-id}
+#### المعرّف الخارجي لـ AWS
 
     في AWS، يثق دور IAM الذي يُنشأ أثناء الإعداد بـ ClickHouse Cloud باستخدام [معرّف خارجي](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) للحماية من هجمات «النائب الملتبس». تنشئ واجهة ClickHouse Cloud معرّفًا خارجيًا لحساب AWS الخاص بك عند بدء عملية الإعداد، وتملؤه مسبقًا في رابط CloudFormation؛ وإذا كنت تستخدم Terraform، فمرّر القيمة نفسها باعتبارها `external_id`. تشترك جميع البنى التحتية لـ BYOC ضمن حساب AWS نفسه في المعرّف الخارجي ذاته.
 
@@ -102,7 +102,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="إعداد البنية التحتية لنموذج BYOC" background="black" />
 
-#### التحقق المسبق {#preflight-validation}
+#### التحقق المسبق
 
     عند النقر على **Set up Infrastructure**، تُجري ClickHouse Cloud مجموعة من فحوصات ما قبل التشغيل **للقراءة فقط** على حسابك قبل إنشاء أي موارد. وإذا اجتازت جميع الفحوصات، فيستمر التوفير. أما إذا فشل أحد الفحوصات، فيتوقف الإعداد مؤقتًا وتعرض الواجهة الخطأ بدقة، بحيث يمكنك إصلاحه قبل إنشاء أي موارد.
 
@@ -138,7 +138,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-### أنشئ أول خدمة ClickHouse BYOC {#create-clickhouse-service}
+### أنشئ أول خدمة ClickHouse BYOC
 
 بعد توفير البنية التحتية لـ BYOC، تصبح جاهزًا لإطلاق أول خدمة ClickHouse. افتح وحدة تحكم ClickHouse Cloud، وحدد بيئة BYOC الخاصة بك، ثم اتبع الإرشادات لإنشاء خدمة جديدة.
 

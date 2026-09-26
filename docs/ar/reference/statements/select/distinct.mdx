@@ -54,7 +54,7 @@ SELECT DISTINCT ON (a,b) * FROM t1;
 └───┴───┴───┘
 ```
 
-## DISTINCT و ORDER BY {#distinct-and-order-by}
+## DISTINCT و ORDER BY
 
 يدعم ClickHouse استخدام العبارتين `DISTINCT` و `ORDER BY` على أعمدة مختلفة ضمن استعلام واحد. وتُنفَّذ العبارة `DISTINCT` قبل العبارة `ORDER BY`.
 
@@ -101,11 +101,11 @@ SELECT DISTINCT a FROM t1 ORDER BY b DESC;
 
 ضع هذه الخصوصية التنفيذية في الحسبان عند برمجة الاستعلامات.
 
-## معالجة NULL {#null-processing}
+## معالجة NULL
 
 تعمل `DISTINCT` مع [NULL](/ar/reference/syntax#null) كما لو أن `NULL` قيمة محددة، وكأن `NULL==NULL`. وبعبارة أخرى، لا تظهر في نتائج `DISTINCT` التركيبات المختلفة التي تتضمن `NULL` إلا مرة واحدة فقط. وهذا يختلف عن طريقة التعامل مع `NULL` في معظم السياقات الأخرى.
 
-## بدائل {#alternatives}
+## بدائل
 
 يمكن الحصول على النتيجة نفسها بتطبيق [GROUP BY](/ar/reference/statements/select/group-by) على نفس مجموعة القيم المحددة في عبارة `SELECT`، من دون استخدام أي دوال تجميع. لكن توجد بعض الفروق مقارنةً بنهج `GROUP BY`:
 
@@ -114,7 +114,7 @@ SELECT DISTINCT a FROM t1 ORDER BY b DESC;
 * قبل بدء التنفيذ الخارجي وعند حذف `ORDER BY`، يمكن أيضًا لنطاق [`LIMIT ... AFTER ... UNTIL`](/ar/reference/statements/select/limit#limit-after-until) من دون `ALL` أن يوقف الاستعلام بمجرد انتهاء النطاق.
 * تُخرَج كتل البيانات أثناء معالجتها إلى أن يبدأ التنفيذ الخارجي.
 
-## DISTINCT في الذاكرة الخارجية {#distinct-in-external-memory}
+## DISTINCT في الذاكرة الخارجية
 
 يمكن لـ `DISTINCT` كتابة بيانات مؤقتة على القرص لمعالجة مجموعات من القيم المميزة التي يتعذّر
 الاحتفاظ بها في الذاكرة لكبر حجمها. ويتطلب ذلك عمليات إدخال/إخراج إضافية على القرص، وقد يبطئ الاستعلامات.

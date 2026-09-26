@@ -9,7 +9,7 @@ doc_type: '参考'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-## 适用于 GCP 的客户自管 VPC (BYO-VPC) {#customer-managed-vpc-gcp}
+## 适用于 GCP 的客户自管 VPC (BYO-VPC)
 
 如果您希望使用现有 VPC 部署 ClickHouse BYOC，而不是由 ClickHouse Cloud 预配新的 VPC，请按以下步骤操作。这样做可以让您更好地控制网络配置，并将 ClickHouse BYOC 集成到现有网络基础设施中。
 
@@ -57,7 +57,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 </Steps>
 
-### 来自宿主项目的共享 VPC {#shared-vpc-host-project}
+### 来自宿主项目的共享 VPC
 
 你可以在某个服务项目中运行 BYOC，而其使用的网络位于另一个独立的[共享 VPC](https://cloud.google.com/vpc/docs/shared-vpc) 宿主项目中，从而实现网络的集中管理。VPC 及其子网归**宿主**项目所有，而 BYOC 基础设施运行在关联的**服务**项目中。上述要求保持不变，只是改为适用于宿主项目中的子网。
 

@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## webassembly_udf_input_split_memory_ratio {#webassembly_udf_input_split_memory_ratio}
+## webassembly_udf_input_split_memory_ratio
 
 <ExperimentalBadge />
 
@@ -32,7 +32,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Установите 0, чтобы не разбивать вход: весь блок конвейера передаётся одним вызовом.
 
-## webassembly_udf_max_fuel {#webassembly_udf_max_fuel}
+## webassembly_udf_max_fuel
 
 <ExperimentalBadge />
 
@@ -42,7 +42,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Ограничение fuel на одно выполнение экземпляра WebAssembly UDF. Каждая инструкция WebAssembly потребляет некоторое количество fuel. Перед передачей в среду выполнения значение умножается на 1024, поэтому `webassembly_udf_max_fuel = 1` соответствует примерно 1024 единицам fuel. Установите 0, чтобы снять ограничение. Применяется только к функциям, у которых для настройки `webassembly_udf_enable_fuel` задано значение true; это значение используется по умолчанию.
 
-## webassembly_udf_max_input_block_size {#webassembly_udf_max_input_block_size}
+## webassembly_udf_max_input_block_size
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Значение 0 означает, что размер вызовов определяется по их сериализованным входным данным. Это касается только `ABI BUFFERED_V1` — единственного ABI, который сериализует входной блок целиком в память guest: его блоки разбиваются так, чтобы входные данные вызова не превышали долю `webassembly_udf_input_split_memory_ratio` от линейной памяти модуля. `ROW_DIRECT` передаёт аргументы как значения WebAssembly, а `ASSEMBLYSCRIPT` создаёт по одному объекту на строку, поэтому ни у того, ни у другого нет сериализованных входных данных, по которым можно было бы определить размер вызова, и при значении 0 блок конвейера остаётся целым.
 
-## webassembly_udf_max_instances {#webassembly_udf_max_instances}
+## webassembly_udf_max_instances
 
 <ExperimentalBadge />
 
@@ -64,7 +64,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Максимальное число экземпляров WebAssembly UDF, которые могут выполняться параллельно для каждой функции.
 
-## webassembly_udf_max_memory {#webassembly_udf_max_memory}
+## webassembly_udf_max_memory
 
 <ExperimentalBadge />
 

@@ -13,13 +13,13 @@ doc_type: 'reference'
 
 它允许在指定集群中使用多个节点并行处理 Amazon S3 中 Apache [Hudi](https://hudi.apache.org/) 表中的文件。在发起节点上，它会与集群中的所有节点建立连接，并动态分发每个文件。在工作节点上，它会向发起节点请求下一个要处理的任务并进行处理。该过程会不断重复，直到所有任务完成。
 
-## 语法 {#syntax}
+## 语法
 
 ```sql
 hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 ```
 
-## 参数 {#arguments}
+## 参数
 
 | Argument                                     | Description                                                                                                                                                                                                                            |
 | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -31,11 +31,11 @@ hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,form
 | `compression`                                | 此参数为可选项。支持的值：`none`、`gzip/gz`、`deflate`、`brotli/br`、`xz/LZMA`、`zstd/zst`、`lz4`、`bz2`、`snappy`。默认情况下，会根据文件扩展名自动检测压缩格式。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置选择 (默认值为 `basic`) 。 |
 | `extra_credentials`                          | 此参数为可选项。用于在 ClickHouse Cloud 中传递 role-based access 所需的 `role_arn`。配置步骤请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。                                                                                 |
 
-## 返回值 {#returned-value}
+## 返回值
 
 一个具有指定结构的表，用于从 S3 中指定 Hudi 表所在的集群读取数据。
 
-## 虚拟列 {#virtual-columns}
+## 虚拟列
 
 * `_path` — 文件路径。类型：`LowCardinality(String)`。
 * `_file` — 文件名。类型：`LowCardinality(String)`。
@@ -43,7 +43,7 @@ hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,form
 * `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 * `_etag` — 文件的 ETag。类型：`LowCardinality(String)`。如果 ETag 未知，则值为 `NULL`。
 
-## 相关 {#related}
+## 相关
 
 * [Hudi 引擎](/zh/reference/engines/table-engines/integrations/hudi)
 * [Hudi 表函数](/zh/reference/functions/table-functions/hudi)

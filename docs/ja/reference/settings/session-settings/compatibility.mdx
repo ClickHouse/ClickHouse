@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## 互換性設定 {#compatibility}
+## 互換性設定
 
 `compatibility` 設定を指定すると、ClickHouse は、設定変更履歴に記録された例外を除き、以前の ClickHouse バージョンのデフォルト設定を使用します。
 
@@ -30,7 +30,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
   ただし、互換性設定は、セッションで `SET compatibility = '22.3'` を使用したり、クエリで `SETTINGS compatibility = '22.3'` を使用したりするなど、標準の ClickHouse 設定機構を使って、ユーザー、ロール、profile、クエリ、またはセッションのレベルで上書きできます。
 </Note>
 
-## compatibility_s3_presigned_url_query_in_path {#compatibility_s3_presigned_url_query_in_path}
+## compatibility_s3_presigned_url_query_in_path
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -14,7 +14,7 @@ import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrat
   現在サポートしているのは OpenTelemetry ログ のみです。トレーシングのサポートについては、[以下のガイドを参照してください](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example)。
 </Note>
 
-## ログ {#logging}
+## ログ
 
 `std/log` モジュールにカスタムロガーをエクスポートすることで、ログを利用できます。
 
@@ -40,7 +40,7 @@ log.setup({
 log.getLogger('my-otel-logger').info('Hello from Deno!');
 ```
 
-### アプリケーションを実行する {#run-the-application}
+### アプリケーションを実行する
 
 <Tabs>
   <Tab title="Managed ClickStack">

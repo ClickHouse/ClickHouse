@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 `LIMIT` 句は、クエリ結果として返される行数を制御します。行は件数と OFFSET で選択するか、[`LIMIT ... AFTER ... UNTIL`](#limit-after-until) で行の範囲の開始と終了を指定する条件によって選択できます。
 
-## 基本構文 {#basic-syntax}
+## 基本構文
 
 **先頭の行を取得:**
 
@@ -51,7 +51,7 @@ LIMIT [n] UNTIL end_expr
 
 `start_expr` が true となる最初の行から、その開始位置以降で `end_expr` が true となる最初の行の直前までの行を返します。`AFTER` を省略した場合は、ストリームの先頭から開始します。`n` はその範囲の長さの上限を指定します。`AFTER start_expr ALL` は、一致するすべての行で範囲を開始します。以下の [LIMIT ... AFTER ... UNTIL](#limit-after-until) を参照してください。
 
-## 負の LIMIT {#negative-limits}
+## 負の LIMIT
 
 負の値を使用すると、result set の*末尾*から行を選択できます。
 
@@ -64,7 +64,7 @@ LIMIT [n] UNTIL end_expr
 
 `LIMIT -n, -m` 構文は `LIMIT -m OFFSET -n` と同等です。
 
-## 小数指定の制限 {#fractional-limits}
+## 小数指定の制限
 
 0 から 1 の間の小数値を使用して、行の割合を指定できます。
 
@@ -79,7 +79,7 @@ LIMIT [n] UNTIL end_expr
   * 小数で指定した行数は、次の整数に切り上げられます。
 </Note>
 
-## LIMIT の種類を組み合わせる {#combining-limit-types}
+## LIMIT の種類を組み合わせる
 
 通常の整数と、小数または負の OFFSET を組み合わせて使用できます。
 
@@ -90,7 +90,7 @@ LIMIT 10 OFFSET -20    -- 10 rows after skipping the last 20
 
 [範囲 form](#limit-after-until) は、通常の行数とのみ組み合わせられます。`LIMIT 3 AFTER start_expr` は、範囲の開始位置から最大3行を取得します。`OFFSET`、小数および負の件数、`WITH TIES` は、`AFTER` または `UNTIL` と併用できません。[`LIMIT BY`](/ja/reference/statements/select/limit-by) 句は同じクエリ内で範囲の前に指定でき、[`limit`](/ja/reference/settings/session-settings/other#limit) 設定は引き続き結果の上限を設定します。
 
-## LIMIT ... WITH TIES {#limit--with-ties-modifier}
+## LIMIT ... WITH TIES
 
 `WITH TIES` 修飾子は、制限された最後の行と同じ `ORDER BY` 値を持つ追加の行も含めます。これは count および OFFSET による limit にのみ適用され、[範囲 form](#limit-after-until) と組み合わせて使用することはできません。
 
@@ -173,7 +173,7 @@ ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
 
 この修飾子は、[`ORDER BY ... WITH FILL`](/ja/reference/statements/select/order-by#order-by-expr-with-fill-modifier) 修飾子と組み合わせて使用できます。
 
-## LIMIT ... AFTER ... UNTIL (conditions による範囲指定) {#limit-after-until}
+## LIMIT ... AFTER ... UNTIL (conditions による範囲指定)
 
 2 つの boundary condition に挟まれた行の *範囲* に結果を絞り込むことができます:
 
@@ -366,13 +366,13 @@ SELECT number % 4 AS k, number FROM numbers(12) ORDER BY k, number LIMIT 2 BY k 
 └───┴────────┘
 ```
 
-## 注意事項 {#considerations}
+## 注意事項
 
 **非決定論的な結果:** [`ORDER BY`](/ja/reference/statements/select/order-by) 句がない場合、返される行は不定であり、クエリを実行するたびに異なる可能性があります。
 
 **サーバー側の制限:** 返される行数は、[limit](/ja/reference/settings/session-settings/other#limit) 設定の影響を受ける場合もあります。
 
-## 関連項目 {#see-also}
+## 関連項目
 
 * [LIMIT BY](/ja/reference/statements/select/limit-by) — 値の各グループごとに行数を制限します。各カテゴリ内の上位 N 件の結果を取得する場合に便利です。
 

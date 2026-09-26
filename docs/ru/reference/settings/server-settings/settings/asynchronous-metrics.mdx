@@ -12,15 +12,15 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки настраивают сервер ClickHouse и автоматически сгенерированы на основе исходного кода ClickHouse.
 
-## asynchronous_metrics_enable_heavy_metrics {#asynchronous_metrics_enable_heavy_metrics}
+## asynchronous_metrics_enable_heavy_metrics
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Включает расчёт тяжёлых асинхронных метрик.
 
-## asynchronous_metrics_keeper_metrics_only {#asynchronous_metrics_keeper_metrics_only}
+## asynchronous_metrics_keeper_metrics_only
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Ограничивает вычисление асинхронных метрик только метриками, связанными с Keeper.
 
-## asynchronous_metrics_key_values_mode {#asynchronous_metrics_key_values_mode}
+## asynchronous_metrics_key_values_mode
 
 <SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
 
@@ -36,7 +36,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Настройка применяется на лету: она перечитывается при каждом обновлении асинхронных метрик, поэтому для переключения формы без перезапуска достаточно `SYSTEM RELOAD CONFIG`.
 
-## asynchronous_metrics_update_period_s {#asynchronous_metrics_update_period_s}
+## asynchronous_metrics_update_period_s
 
 <SettingsInfoBlock type="UInt32" default_value="1" changeable_without_restart="No" />Период обновления асинхронных метрик в секундах.
 

@@ -14,7 +14,7 @@ keywords: ['머지', '테이블 함수', '쿼리 패턴', '테이블 엔진', '�
   <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="YouTube 비디오 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## 테이블 설정 {#setup-tables}
+## 테이블 설정
 
 [TennisMyLife&#39;s ATP match database](https://github.com/Tennismylife/TML-Database)를 활용해 이 함수를 사용하는 방법을 살펴보겠습니다.
 1960년대까지 거슬러 올라가는 경기 데이터가 담긴 CSV 파일을 처리하되, 각 10년 단위로 스키마를 조금씩 다르게 만들겠습니다.
@@ -50,7 +50,7 @@ SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
 ```
 
-## 여러 테이블의 스키마 {#schema-multiple-tables}
+## 여러 테이블의 스키마
 
 다음 쿼리를 실행하면 각 테이블의 컬럼과 타입을 나란히 표시할 수 있어 차이점을 더 쉽게 확인할 수 있습니다.
 
@@ -89,7 +89,7 @@ SETTINGS output_format_pretty_max_value_width=25;
 * 1980년대 데이터에서는 `winner_seed`와 `loser_seed`가 `Nullable(UInt8)`에서 `Nullable(UInt16)`로 변경됩니다.
 * 1990년대 데이터에서는 `surface`가 `String`에서 `Enum('Hard', 'Grass', 'Clay', 'Carpet')`로 변경되고, `walkover`와 `retirement` 컬럼이 추가됩니다.
 
-## merge를 사용해 여러 테이블 쿼리하기 {#querying-multiple-tables}
+## merge를 사용해 여러 테이블 쿼리하기
 
 John McEnroe가 1번 시드를 받은 선수를 상대로 이긴 경기를 찾는 쿼리를 작성해 보겠습니다:
 
@@ -149,7 +149,7 @@ AND multiIf(
 └───────────────┴─────────────────────┴─────────────┘
 ```
 
-## merge를 사용할 때 행은 어느 테이블에서 가져옵니까? {#which-table-merge}
+## merge를 사용할 때 행은 어느 테이블에서 가져옵니까?
 
 행이 어느 테이블에서 가져오는지 확인하려면 어떻게 해야 할까요?
 다음 쿼리와 같이 `_table` 가상 컬럼을 사용하면 됩니다:

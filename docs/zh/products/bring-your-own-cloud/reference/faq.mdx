@@ -7,9 +7,9 @@ description: '有关 ClickHouse 自备 Cloud (BYOC) 的常见问题'
 doc_type: '参考'
 ---
 
-## FAQ {#faq}
+## FAQ
 
-### 引导与预配 {#onboarding-and-provisioning}
+### 引导与预配
 
 <Accordion title="如何开始使用 BYOC？">
   请通过[联系表单](https://clickhouse.com/cloud/bring-your-own-cloud)联系 ClickHouse，我们的团队将为您的组织启用 BYOC。随后，准备一个专用云账户 (AWS 账户、GCP 项目或 Azure 订阅) ，并按照[标准引导指南](/zh/products/bring-your-own-cloud/onboarding/standard)操作。我们强烈建议使用仅用于 BYOC 的专用账户、项目或订阅。
@@ -52,7 +52,7 @@ doc_type: '参考'
   在 Kubernetes 集群中：可以，但有一定限制——请使用自己的节点组，并配置污点和容忍；避开由 ClickHouse 管理的命名空间；也不要安装集群级准入控制器或策略引擎，因为它们可能会阻碍 ClickHouse 组件的协调。请先向支持团队说明您的计划，以便我们确认不会产生冲突。
 </Accordion>
 
-### 计算资源与扩缩容 {#compute}
+### 计算资源与扩缩容
 
 <Accordion title="我可以在同一 BYOC 基础设施中创建多个服务吗？">
   可以。对于每个云账户/项目/订阅与区域的组合，基础设施 (包括 Kubernetes 集群) 只需预配一次，您在该区域创建的所有服务都会共享该基础设施。
@@ -84,7 +84,7 @@ doc_type: '参考'
   可以。BYOC 支持仓库 (计算资源分离) ：多个服务共享相同的数据，因此您可以将部分服务专用于摄取，其他服务专用于查询。
 </Accordion>
 
-### 网络与安全 {#network-and-security}
+### 网络与安全
 
 <Accordion title="我们能否限制或撤销安装期间授予的权限？">
   在 AWS 和 GCP 上，您可以从一开始就缩减授权范围：引导制品支持参数配置，因此在使用自有 VPC 时，您可以不授予管理 VPC 网络拓扑的权限 (CloudFormation 中的 `IncludeVPCWritePermissions`、Terraform 模块中的 `include_vpc_write_permissions`) 。在 GCP 上，这仅会缩小拓扑管理的权限范围——ClickHouse 仍保留对其在 VPC 内拥有的网络资源的写入权限，例如 Private Service Connect 服务附件和入口地址。Private Service Connect NAT 子网不在其中：在使用自有 VPC 时，您需要在启用 private link 之前[自行创建它](/zh/products/bring-your-own-cloud/onboarding/network-gcp#setup-psc)。在 AWS 上，您还可以——目前处于私有预览阶段，需通过支持团队启用——自行管理 IAM 角色 (`IncludeIAMWritePermissions=false`，请参阅[客户管理的 IAM 角色](/zh/products/bring-your-own-cloud/onboarding/customization-aws)) ；跨账户角色则通过外部 ID 防范混淆代理访问。在 Azure 上，引导模块目前授予固定的订阅范围角色，且不提供范围限定参数。对于所有云平台，某些权限仅为特定功能所需；如果您永远不会使用这些功能，则可移除这些权限——如需将权限范围缩小至制品提供的范围以外，请联系支持团队。
@@ -154,7 +154,7 @@ doc_type: '参考'
   BYOC 目前尚不支持。静态数据使用云提供商管理的密钥加密。有关当前计划功能的列表，请参阅[概述](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview)。
 </Accordion>
 
-### 升级与维护 {#upgrades-and-maintenance}
+### 升级与维护
 
 <Accordion title="ClickHouse 版本如何升级？我可以决定维护频率吗？">
   升级方式与 ClickHouse Cloud 相同：服务会加入发布渠道 (快速、常规、慢速) ，并遵循预定的维护窗口——请联系支持团队进行配置。更新频率至少为每周一次。升级采用滚动方式，逐个副本进行 (先创建后删除) ，因此不会导致整个服务停机。请参阅[操作](/zh/products/bring-your-own-cloud/configuration/operations)。
@@ -164,7 +164,7 @@ doc_type: '参考'
   ClickHouse 会在提供商终止支持日期之前主动执行 Kubernetes 升级，并通过支持团队与您协调维护窗口。控制平面升级对您无感；节点组升级会以先创建后删除的方式逐个滚动升级节点，因此 pod (容器组) 重启时，可能会出现短暂的连接重置，但不会丢失数据。请参阅[操作](/zh/products/bring-your-own-cloud/configuration/operations)。
 </Accordion>
 
-### 备份和灾难恢复 {#backups-and-disaster-recovery}
+### 备份和灾难恢复
 
 <Accordion title="备份存储在哪里？">
   备份存储在您自己的云账户中的对象存储内，绝不会离开您的环境。您可以配置备份计划和保留期限；如需调整，请联系支持团队。
@@ -186,19 +186,19 @@ doc_type: '参考'
   BYOC 跨三个可用区部署，且只有在对象存储确认写入后，写入操作才会得到确认。目前不支持跨区域复制，因此区域级灾难恢复依赖备份，可实现的 RPO 受备份频率限制。您可以配置备份频率和目标端以满足自身目标，包括备份到其他区域的 bucket；如需设置，请联系支持团队。
 </Accordion>
 
-### 可观测性 {#observability}
+### 可观测性
 
 <Accordion title="如何将 BYOC 与自有监控和告警系统集成？">
   监控栈 (Prometheus、Grafana、AlertManager) 在您的账户内运行，您可以通过私有连接直接使用：通过 PromQL API 查询、将其联邦到您自己的 Prometheus，或抓取每个服务的 ClickHouse `/metrics_all` 端点。目前尚未提供与 Datadog 等第三方平台的开箱即用集成，可通过其兼容 Prometheus 的摄取方式进行集成。有关端点和设置，请参阅[可观测性](/zh/products/bring-your-own-cloud/reference/observability-aws)。
 </Accordion>
 
-### 成本 {#cost}
+### 成本
 
 <Accordion title="BYOC 的费用包括哪些？">
   账单分为两部分：ClickHouse Cloud 按分配给您的服务的内存计费；云提供商则直接向您收取底层基础设施的成本，不加价。目前，详细成本参考页面涵盖 AWS：请参阅[成本模型](/zh/products/bring-your-own-cloud/reference/cost-model-aws)、[计费 AWS 服务](/zh/products/bring-your-own-cloud/reference/billable-aws-services)和 [AWS 服务限制](/zh/products/bring-your-own-cloud/reference/aws-service-limits)。
 </Accordion>
 
-### 可用性和生命周期 {#availability-and-lifecycle}
+### 可用性和生命周期
 
 <Accordion title="BYOC 可在哪些云提供商上使用？">
   AWS、GCP 和 Azure 均已正式发布。有关各云平台支持的功能和区域，请参阅[概览](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview)。
@@ -208,7 +208,7 @@ doc_type: '参考'
   请在 ClickHouse 控制台中终止服务和 BYOC 基础设施——不要先在云提供商控制台中删除资源或撤销权限，否则会在操作过程中中断与控制平面的连接，并导致需要手动清理。通过控制台完成终止后，请移除引导技术栈 (CloudFormation stack 或 Terraform 模块) 及所有剩余资源。在 AWS 上，所有由 ClickHouse 创建的资源均带有 `clickhouse-byoc=true` 标签，因此您可以随后枚举这些资源，确认没有遗漏；在 GCP 和 Azure 上，您引导的专用项目或订阅界定了需要检查的范围。
 </Accordion>
 
-### 运行时间 SLA {#uptime-sla}
+### 运行时间 SLA
 
 <Accordion title="ClickHouse 是否为 BYOC 提供运行时间 SLA？">
   不提供。由于数据平面托管在客户自己的云环境中，服务可用性取决于 ClickHouse 无法控制的资源。因此，ClickHouse 不为 BYOC 部署提供正式的运行时间 SLA。请注意，正在运行的服务独立于 ClickHouse 控制平面运行：控制平面发生故障不会导致您账户中运行的服务停止。如有其他问题，请联系 support@clickhouse.com。

@@ -32,7 +32,7 @@ UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION
 `IN PARTITION` 子句会将更新限制在所列出的分区内。若不使用该子句，在 `ReplicatedMergeTree` 家族的表上，当启用 [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/zh/reference/settings/session-settings/optimize) 设置 (默认启用) 时，ClickHouse 会自动检测 `filter_expr` 中的分区键条件，并仅更新受影响的分区。在非复制的 `MergeTree` 表上，请使用显式的 `IN PARTITION` 子句将更新限制在特定分区。
 
 <div id="examples">
-  ## 示例 {#examples}
+  ## 示例
 </div>
 
 ```sql
@@ -41,7 +41,7 @@ UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
 UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
-## 轻量级更新可立即在查询中看到 {#lightweight-update-does-not-update-data-immediately}
+## 轻量级更新可立即在查询中看到
 
 轻量级 `UPDATE` 通过应用**补丁分区片段**，使更新后的值能立即在 `SELECT` 查询中看到。查询无需等待合并即可读取更新后的值。
 补丁分区片段是一种特殊的数据分区片段，仅包含已更新的列和行。创建补丁分区片段不会立即在存储中对原始数据进行物理修改。
@@ -56,19 +56,19 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 有关并发更新的一致性，请参阅[并发操作](#concurrent-operations)。
 
 <div id="lightweight-update-requirements">
-  ## 轻量级更新要求 {#lightweight-update-requirements}
+  ## 轻量级更新要求
 </div>
 
 [`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/mergetree)、[`ReplacingMergeTree`](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree)、[`CollapsingMergeTree`](/zh/reference/engines/table-engines/mergetree-family/collapsingmergetree)、[`VersionedCollapsingMergeTree`](/zh/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) 引擎及其 [`Replicated`](/zh/reference/engines/table-engines/mergetree-family/replication) 和 [`Shared`](/zh/products/cloud/features/infrastructure/shared-merge-tree) 版本均支持轻量级更新。
 
 要使用轻量级更新，必须通过表设置 [`enable_block_number_column`](/zh/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) 和 [`enable_block_offset_column`](/zh/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column) 启用 `_block_number` 和 `_block_offset` 列的物化。
 
-## 轻量级删除 {#lightweight-delete}
+## 轻量级删除
 
 [轻量级 `DELETE`](/zh/reference/statements/delete) 查询可以通过轻量级 `UPDATE` 的方式执行，而不是作为 `ALTER UPDATE` 变更执行。轻量级 `DELETE` 的实现由设置 [`lightweight_delete_mode`](/zh/reference/settings/session-settings/lightweight#lightweight_delete_mode) 控制。
 
 <div id="performance-considerations">
-  ## 性能注意事项 {#performance-considerations}
+  ## 性能注意事项
 </div>
 
 **轻量级更新的优势：**
@@ -86,14 +86,14 @@ UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 * 轻量级更新适合更新少量行 (最多约占表的 10%) 。如果需要更新更多数据，建议使用 [`ALTER TABLE ... UPDATE`](/zh/reference/statements/alter/update) 变更
 
 <div id="concurrent-operations">
-  ## 并发操作 {#concurrent-operations}
+  ## 并发操作
 </div>
 
 与重量级变更不同，轻量级更新不会等待当前正在进行的合并/变更完成。
 并发轻量级更新的一致性由设置 [`update_sequential_consistency`](/zh/reference/settings/session-settings/update#update_sequential_consistency) 和 [`update_parallel_mode`](/zh/reference/settings/session-settings/update#update_parallel_mode) 控制。
 
 <div id="update-permissions">
-  ## 更新权限 {#update-permissions}
+  ## 更新权限
 </div>
 
 `UPDATE` 需要 `ALTER UPDATE` 权限。要为指定用户授予在特定表上执行 `UPDATE` 语句的权限，请运行：
@@ -103,7 +103,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## 实现细节 {#details-of-the-implementation}
+  ## 实现细节
 </div>
 
 补丁分区片段与常规 parts 相同，但只包含更新后的列以及若干系统列：
@@ -142,7 +142,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 
 join 模式比合并 模式更慢，且需要更多内存，但使用频率较低。
 
-## 相关内容 {#related-content}
+## 相关内容
 
 * [`ALTER UPDATE`](/zh/reference/statements/alter/update) - 高开销的 `UPDATE` 操作
 * [轻量级 `DELETE`](/zh/reference/statements/delete) - 轻量级 `DELETE` 操作

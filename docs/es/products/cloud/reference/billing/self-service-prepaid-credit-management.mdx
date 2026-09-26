@@ -11,7 +11,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 Si adquieres créditos prepagados mediante un contrato comprometido, puedes gestionar cómo se distribuyen esos créditos entre tus organizaciones de ClickHouse.
 Usa la página **Prepaid credits** para consultar los saldos y transferir créditos entre organizaciones.
 
-## Acceder a los créditos prepagados {#access-prepaid-credits}
+## Acceder a los créditos prepagados
 
 En la consola de ClickHouse Cloud, abra **Settings** y luego seleccione **Prepaid credits** en **Account**.
 
@@ -29,7 +29,7 @@ La página muestra todas las organizaciones en las que tiene uno de estos roles 
   Si ninguna de sus organizaciones tiene créditos prepagados, la pestaña muestra un estado vacío con enlaces a la calculadora de precios y a un formulario para contactar con el equipo de Ventas.
 </Note>
 
-## Ver saldos de créditos {#view-credit-balances}
+## Ver saldos de créditos
 
 El resumen muestra los totales de créditos prepagados de las organizaciones sobre las que tiene el acceso descrito anteriormente.
 
@@ -46,7 +46,7 @@ El resumen muestra los totales de créditos prepagados de las organizaciones sob
 
 Todos los importes se expresan en ClickHouse Credits (CHC), donde 1 CHC equivale a $1 de uso. Si adquirió créditos con descuento, es posible que reciba más CHC que los dólares pagados.
 
-### Balances de la organización {#organization-balances}
+### Balances de la organización
 
 Cada fila de la tabla situada debajo del resumen representa una organización, con datos que reflejan todos los balances prepago de esa organización.
 
@@ -65,7 +65,7 @@ Cada fila de la tabla situada debajo del resumen representa una organización, c
 
 <Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Métricas de resumen de créditos prepagados y balances por organización" size="lg" />
 
-## Transferir créditos {#transfer-credits}
+## Transferir créditos
 
 Una transferencia de créditos, también llamada split, traslada créditos prepagados de una organización de origen a una organización de destino.
 
@@ -79,7 +79,7 @@ Para transferir créditos, necesitas el permiso [Manage billing details](/es/pro
 
 <Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="Panel de transferencia de créditos con la asignación de origen, la organización de destino, el importe de la transferencia y los saldos resultantes" size="md" />
 
-### Reglas de transferencia {#transfer-rules}
+### Reglas de transferencia
 
 * Solo puedes transferir **créditos prepagados activos**. No puedes transferir créditos de prueba.
 * Una transferencia de créditos modifica los créditos prepagados disponibles en las organizaciones de origen y de destino, pero no altera el total de créditos activos otorgados en virtud de tu contrato comprometido.
@@ -88,7 +88,7 @@ Para transferir créditos, necesitas el permiso [Manage billing details](/es/pro
 * No puedes transferir créditos entre organizaciones de ClickHouse Cloud y de [Bring Your Own Cloud (BYOC)](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview).
 * No puedes transferir créditos entre organizaciones facturadas a través de distintos marketplaces en la nube, como AWS Marketplace y Google Cloud Marketplace.
 
-### Facturación del marketplace tras una transferencia {#marketplace-billing-after-a-transfer}
+### Facturación del marketplace tras una transferencia
 
 Si la organización de origen se factura mediante un contrato activo de AWS, Google Cloud o Azure Marketplace, la configuración de facturación de la organización de destino determina lo que ocurre:
 
@@ -100,7 +100,7 @@ Si la organización de origen se factura mediante un contrato activo de AWS, Goo
 
 Para facturar los excedentes de ambas organizaciones mediante la misma suscripción de marketplace, consulte [cómo utilizar la suscripción de marketplace de otra organización](/es/products/cloud/reference/billing/managing-payment-methods#steps-switch-org-different-org).
 
-## Revisar el historial de transferencias y las notificaciones {#review-transfer-history-and-notifications}
+## Revisar el historial de transferencias y las notificaciones
 
 Una vez completada una transferencia:
 

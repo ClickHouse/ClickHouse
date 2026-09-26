@@ -14,13 +14,13 @@ instrumentation manuelle n’est donc pas nécessaire pour tirer parti du tracin
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## Prise en main {#getting-started}
+## Prise en main
 
 <Note>
   Pour le moment, l’intégration n’est compatible qu’avec **Java 8+**
 </Note>
 
-### Télécharger l’agent Java OpenTelemetry {#download-opentelemetry-java-agent}
+### Télécharger l’agent Java OpenTelemetry
 
 Téléchargez [`opentelemetry-javaagent.jar`](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar)
 et placez le fichier JAR dans le répertoire de votre choix. Le fichier JAR contient l’agent
@@ -31,7 +31,7 @@ télécharger l’agent :
 curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
 ```
 
-### Configurer les variables d’environnement {#configure-environment-variables}
+### Configurer les variables d’environnement
 
 Ensuite, vous devez configurer les variables d’environnement suivantes dans votre shell pour envoyer la télémétrie à ClickStack via l’OpenTelemetry Collector :
 
@@ -62,7 +62,7 @@ Ensuite, vous devez configurer les variables d’environnement suivantes dans vo
 
 La variable d’environnement `OTEL_EXPORTER_OTLP_HEADERS` contient la clé API disponible dans l’application HyperDX, sous `Team Settings → API Keys`.
 
-### Exécutez l’application avec l’agent Java OpenTelemetry {#run-the-application-with-otel-java-agent}
+### Exécutez l’application avec l’agent Java OpenTelemetry
 
 ```shell
 java -jar target/<APPLICATION_JAR_FILE>

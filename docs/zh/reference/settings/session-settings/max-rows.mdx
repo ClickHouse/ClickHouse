@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## max_rows_for_lazy_final {#max_rows_for_lazy_final}
+## max_rows_for_lazy_final
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" />
 
@@ -21,13 +21,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 lazy FINAL 优化所用集合中的最大行数。超过该值时，将回退到普通 FINAL。
 
-## max_rows_in_distinct {#max_rows_in_distinct}
+## max_rows_in_distinct
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 使用 DISTINCT 时，允许的最大不同行数。
 
-## max_rows_in_join {#max_rows_in_join}
+## max_rows_in_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -55,13 +55,13 @@ lazy FINAL 优化所用集合中的最大行数。超过该值时，将回退到
 * 正整数。
 * `0` — 行数不受限制。
 
-## max_rows_in_set {#max_rows_in_set}
+## max_rows_in_set
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 由子查询创建的 IN 子句中的数据集的最大行数。
 
-## max_rows_in_set_to_optimize_join {#max_rows_in_set_to_optimize_join}
+## max_rows_in_set_to_optimize_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -74,7 +74,7 @@ lazy FINAL 优化所用集合中的最大行数。超过该值时，将回退到
 * 0 — 禁用。
 * 任意正整数。
 
-## max_rows_to_group_by {#max_rows_to_group_by}
+## max_rows_to_group_by
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -83,7 +83,7 @@ lazy FINAL 优化所用集合中的最大行数。超过该值时，将回退到
 如果 GROUP BY 期间的聚合生成的行数 (唯一的 GROUP BY 键) 超过指定数量，其行为将由
 &#39;group&#95;by&#95;overflow&#95;mode&#39; 决定；默认值为 `throw`，但也可以切换为近似 GROUP BY 模式。
 
-## max_rows_to_read {#max_rows_to_read}
+## max_rows_to_read
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -92,7 +92,7 @@ lazy FINAL 优化所用集合中的最大行数。超过该值时，将回退到
 表表达式；从远程服务器读取时，也仅在
 远程服务器上进行检查。
 
-## max_rows_to_read_leaf {#max_rows_to_read_leaf}
+## max_rows_to_read_leaf
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -106,7 +106,7 @@ lazy FINAL 优化所用集合中的最大行数。超过该值时，将回退到
   此设置在 `prefer_localhost_replica=1` 时不稳定。
 </Note>
 
-## max_rows_to_sort {#max_rows_to_sort}
+## max_rows_to_sort
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -114,7 +114,7 @@ lazy FINAL 优化所用集合中的最大行数。超过该值时，将回退到
 如果 ORDER BY 操作需要处理的记录数超过指定数量，
 其行为将由 `sort_overflow_mode` 决定，该值默认设置为 `throw`。
 
-## max_rows_to_transfer {#max_rows_to_transfer}
+## max_rows_to_transfer
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

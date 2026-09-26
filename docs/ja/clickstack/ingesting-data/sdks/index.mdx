@@ -13,13 +13,13 @@ keywords: ['ClickStack SDKs', 'ClickStack 言語 SDKs', 'OpenTelemetry SDKs Clic
 
 ブラウザベースの環境では、SDKs が **セッションデータ** (UI イベント、クリック、ナビゲーションなど) の収集も担い、ユーザーセッションのリプレイを可能にすることもあります。
 
-## 動作の仕組み {#how-it-works}
+## 動作の仕組み
 
 1. アプリケーションは ClickStack SDK (例: Node.js、Python、Go) を使用します。これらの SDK は OpenTelemetry SDKs をベースにしており、追加機能と使いやすさの改善が加えられています。
 2. SDK は OTLP (HTTP または gRPC) 経由でトレースとログを収集し、エクスポートします。
 3. OpenTelemetry collector はテレメトリーを受信し、設定されたエクスポーターを通じて ClickHouse に書き込みます。
 
-## 対応言語 {#supported-languages}
+## 対応言語
 
 <Info>
   **OpenTelemetry 互換性**
@@ -44,7 +44,7 @@ keywords: ['ClickStack SDKs', 'ClickStack 言語 SDKs', 'OpenTelemetry SDKs Clic
 | React Native | React Native モバイルアプリケーション          | [ドキュメント](/ja/clickstack/ingesting-data/sdks/react-native) |
 | Ruby         | Ruby on Rails アプリケーションと Web サービス   | [ドキュメント](/ja/clickstack/ingesting-data/sdks/ruby)         |
 
-## API key による保護 {#securing-api-key}
+## API key による保護
 
 <Info>
   **Managed ClickStack では不要**
@@ -66,7 +66,7 @@ OpenTelemetry をサポートするほとんどの [言語 SDKs](/ja/clickstack/
 export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 ```
 
-## Kubernetes インテグレーション {#kubernetes-integration}
+## Kubernetes インテグレーション
 
 すべての SDK は、Kubernetes 環境で実行されている場合、Kubernetes のメタデータ (ポッド名、ネームスペース など) との自動相関をサポートしています。これにより、次のことが可能になります。
 

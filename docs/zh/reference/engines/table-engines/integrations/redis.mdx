@@ -10,7 +10,7 @@ doc_type: 'guide'
 
 该引擎支持将 ClickHouse 与 [Redis](https://redis.io/) 集成。由于 Redis 采用键值 (KV) 模型，我们强烈建议仅进行点查询，例如 `where k=xx` 或 `where k in (xx, xx)`。
 
-## 创建表 {#creating-a-table}
+## 创建表
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -42,7 +42,7 @@ PRIMARY KEY(primary_key_name);
   带有 `key equals` 或 `in filtering` 的查询会被优化为从 Redis 执行多键查找。如果查询未按键过滤，则会发生全表扫描，这是一项开销很大的操作。
 </Note>
 
-## 使用示例 {#usage-example}
+## 使用示例
 
 在 ClickHouse 中使用普通参数创建一个使用 `Redis` 引擎的表：
 
@@ -148,7 +148,7 @@ Join：
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
-## 限制 {#limitations}
+## 限制
 
 Redis 引擎 也支持扫描查询，例如 `where k > xx`，但它也有一些限制：
 

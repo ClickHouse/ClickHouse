@@ -13,11 +13,11 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h) から自動生成されています。
 
-## format_schema {#format_schema}
+## format_schema
 
 このパラメーターは、[Cap&#39;n Proto](https://capnproto.org/) や [Protobuf](https://developers.google.com/protocol-buffers/) のような、スキーマ定義を必要とするフォーマットを使用する場合に便利です。値はフォーマットによって異なります。
 
-## format_schema_message_name {#format_schema_message_name}
+## format_schema_message_name
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": ""},{"label": "新しい設定"}]}]} />
 
@@ -27,7 +27,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * `format_schema_message_name` が指定されていない場合、メッセージ名は従来の `format_schema` 値の `message_name` 部分から推論されます。
 * 従来形式の使用時に `format_schema_message_name` を指定すると、エラーになります。
 
-## format_schema_source {#format_schema_source}
+## format_schema_source
 
 <SettingsInfoBlock type="String" default_value="file" />
 

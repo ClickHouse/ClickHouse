@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 ClickHouse の `TRUNCATE` ステートメントは、テーブルまたはデータベースの構造を保持したまま、すべてのデータをすばやく削除するために使用します。
 
-## テーブルをTRUNCATEする {#truncate-table}
+## テーブルをTRUNCATEする
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
@@ -41,7 +41,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 * [`Buffer`](/ja/reference/engines/table-engines/special/buffer)
 * [`Null`](/ja/reference/engines/table-engines/special/null)
 
-## すべてのテーブルをTRUNCATEする {#truncate-all-tables}
+## すべてのテーブルをTRUNCATEする
 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
@@ -59,7 +59,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 
 データベース内のすべてのテーブルからすべてのデータを削除します。
 
-## TRUNCATE DATABASE {#truncate-database}
+## TRUNCATE DATABASE
 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]

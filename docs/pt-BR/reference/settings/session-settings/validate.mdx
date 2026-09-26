@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
+## validate_enum_literals_in_operators
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -21,7 +21,7 @@ Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Se habilitada, valida literais enum em operadores como `IN`, `NOT IN`, `==`, `!=` em relação ao tipo enum e lança uma exceção se o literal não for um valor enum válido.
 
-## validate_group_by_all_key_types {#validate_group_by_all_key_types}
+## validate_group_by_all_key_types
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,7 +34,7 @@ Valores possíveis:
 * 0 - Os tipos de chave nos quais `GROUP BY ALL` expande não são validados.
 * 1 - Eles são validados, assim como um `GROUP BY` explícito valida suas próprias chaves.
 
-## validate_mutation_query {#validate_mutation_query}
+## validate_mutation_query
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -44,7 +44,7 @@ Valide as consultas de mutação antes de aceitá-las. As mutações são execut
 
 Altere essa configuração apenas se encontrar um bug incompatível com versões anteriores.
 
-## validate_polygons {#validate_polygons}
+## validate_polygons
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

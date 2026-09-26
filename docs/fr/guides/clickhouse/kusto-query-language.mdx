@@ -23,7 +23,7 @@ StormEvents
 `SET dialect = 'clickhouse'` permet de revenir au dialecte précédent. `SET` est la seule instruction SQL reconnue lorsque
 le dialecte KQL est actif, afin qu’une session puisse toujours le quitter.
 
-## Éléments pris en charge {#what-is-supported}
+## Éléments pris en charge
 
 Il s&#39;agit volontairement d&#39;un sous-ensemble restreint. Une construction KQL est soit traduite conformément à la sémantique documentée par Kusto, soit rejetée explicitement avec une erreur d&#39;analyse — aucune approximation n&#39;est effectuée silencieusement.
 Si une requête est analysée, son résultat doit correspondre à celui de Kusto.
@@ -96,7 +96,7 @@ rejetés plutôt que transmis tels quels, afin qu’un nom Kusto ne puisse jamai
 `range` en est l’exemple le plus clair — `range(1, 3, 1)` donne `[1, 2, 3]` dans Kusto et `[1, 2]` dans
 ClickHouse ; son utilisation en KQL génère donc une erreur plutôt qu’un résultat incorrect.
 
-## Couverture par rapport à la référence Kusto {#coverage-against-the-kusto-reference}
+## Couverture par rapport à la référence Kusto
 
 Évaluée par rapport aux propres index de Microsoft
 ([opérateurs tabulaires](https://learn.microsoft.com/en-us/kusto/query/queries),
@@ -113,7 +113,7 @@ Les opérateurs pris en charge sont ceux enseignés dans le tutoriel *Learn comm
 ainsi que `datatable`, `range`, `print`, `union` et `join` — suffisamment pour les types de requêtes que
 ce tutoriel et la référence rapide KQL permettent de construire progressivement.
 
-## Ce qui n’est pas pris en charge {#what-is-not-supported}
+## Ce qui n’est pas pris en charge
 
 Les éléments suivants sont rejetés avec une erreur d’analyse plutôt que traduits incorrectement :
 
@@ -149,7 +149,7 @@ Les éléments suivants sont rejetés avec une erreur d’analyse plutôt que tr
   `declare query_parameters`, `restrict access to`.
 * Littéraux de chaîne obfusqués (`h"..."`) et littéraux multilignes (triple accent grave).
 
-## Comportements à connaître {#behaviour-worth-knowing}
+## Comportements à connaître
 
 * **Les durées sont des valeurs `Interval`.** `1d` devient `toIntervalNanosecond(86400000000000)`.
   Définissez `interval_output_format = 'kusto'` pour les afficher au format Kusto (`1.00:00:00`) plutôt
@@ -184,7 +184,7 @@ Les éléments suivants sont rejetés avec une erreur d’analyse plutôt que tr
 * **Les agrégats paramétriques de ClickHouse** (`quantileExact(0.5)(x)`) n&#39;ont pas d&#39;équivalent en KQL.
   Utilisez une alternative nommée telle que `medianExact(x)`.
 
-## Signaler un problème {#reporting-a-problem}
+## Signaler un problème
 
 Une requête qui s’analyse correctement mais renvoie un résultat que Kusto ne renverrait pas est un bogue — veuillez le signaler en indiquant
 les deux résultats. Une requête rejetée dont vous avez besoin relève d’une demande de fonctionnalité ; les listes

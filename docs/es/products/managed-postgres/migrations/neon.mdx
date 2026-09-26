@@ -56,9 +56,9 @@ Con ClickPipes, los clientes pueden migrar bases de datos Postgres de varios ter
   </Step>
 </Steps>
 
-## Consideraciones sobre la migración {#migration-considerations}
+## Consideraciones sobre la migración
 
-### Ramas {#branches}
+### Ramas
 
 Neon ofrece ramificación instantánea mediante copy-on-write. ClickHouse Managed Postgres utiliza almacenamiento NVMe local para ofrecer un rendimiento de Postgres rápido, predecible y fiable.
 La contrapartida es que las ramas no son instantáneas: se crean como implementaciones independientes mediante [recuperación a un momento dado (PITR)](/es/products/managed-postgres/backup-and-restore). Normalmente están disponibles en unos minutos.
@@ -67,7 +67,7 @@ Para el desarrollo diario, recomendamos mantener una base de datos de desarrollo
 
 Algunos clientes emplean este enfoque para gestionar cientos de entornos de desarrollo. Estamos mejorando activamente la experiencia de bifurcación y de sandbox. Consulte la [documentación sobre ramificación](/es/products/managed-postgres/branching).
 
-### Neon Serverless Driver {#neon-serverless}
+### Neon Serverless Driver
 
 Si tu aplicación no utiliza el Neon Serverless Driver, puedes omitir esta sección.
 
@@ -88,7 +88,7 @@ Antes de migrar:
 
 Para más detalles, consulta la [matriz de compatibilidad de PgBouncer](https://www.pgbouncer.org/features.html).
 
-### Límites de conexiones {#connection-limits}
+### Límites de conexiones
 
 ClickHouse Managed Postgres admite 500 conexiones directas a Postgres de forma predeterminada. Si tu carga de trabajo de Neon supera esta cifra, puedes:
 
@@ -97,7 +97,7 @@ ClickHouse Managed Postgres admite 500 conexiones directas a Postgres de forma p
 * Aumentar `max_connections` si se requieren más conexiones directas.
   * `max_connections` se puede modificar desde **Settings → Edit parameters**. Algunos cambios requieren un reinicio. Consulta la [documentación de configuración](/es/products/managed-postgres/settings#changing-configuration).
 
-### Cambios de esquema durante la migración {#schema-changes}
+### Cambios de esquema durante la migración
 
 Mantenga el período entre el inicio de ClickPipes y la conmutación lo más corto posible —idealmente, no más de unos pocos días— y evite realizar cambios de esquema durante ese intervalo.
 

@@ -18,7 +18,7 @@ import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrat
 
 <ClickStackIntegrates signals={['logs', 'traces']} />
 
-## Начало работы {#getting-started}
+## Начало работы
 
 <br />
 
@@ -71,7 +71,7 @@ import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrat
   </Tab>
 </Tabs>
 
-### Параметры {#options}
+### Параметры
 
 * `apiKey` - Ваш ключ API ClickStack для приёма данных.
 * `service` - Имя сервиса, под которым события будут отображаться в интерфейсе HyperDX.
@@ -91,9 +91,9 @@ import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrat
 * `disableIntercom` - (Необязательно) Отключить ли интеграцию с Intercom (по умолчанию `false`)
 * `disableReplay` - (Необязательно) Отключить ли воспроизведение сеанса (по умолчанию `false`)
 
-## Дополнительная конфигурация {#additional-configuration}
+## Дополнительная конфигурация
 
-### Добавление информации о пользователе или метаданных {#attach-user-information-or-metadata}
+### Добавление информации о пользователе или метаданных
 
 Добавление информации о пользователе позволит искать/фильтровать сеансы и события
 в интерфейсе HyperDX. Это можно вызвать в любой момент в течение клиентского сеанса. Текущий
@@ -114,7 +114,7 @@ HyperDX.setGlobalAttributes({
 });
 ```
 
-### Автоматический перехват ошибок в границах ошибок React {#auto-capture-react-error-boundary-errors}
+### Автоматический перехват ошибок в границах ошибок React
 
 Если вы используете React, вы можете автоматически перехватывать ошибки,
 которые возникают в границах ошибок React, передав компонент
@@ -130,7 +130,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 HyperDX.attachToReactErrorBoundary(ErrorBoundary);
 ```
 
-### Отправка пользовательских действий {#send-custom-actions}
+### Отправка пользовательских действий
 
 Чтобы явно отслеживать конкретное событие в приложении (например, регистрацию, отправку формы и
 т. д.), можно вызвать функцию `addAction`, указав имя события и при необходимости
@@ -146,7 +146,7 @@ HyperDX.addAction('Form-Completed', {
 });
 ```
 
-### Динамическое включение захвата сетевого трафика {#enable-network-capture-dynamically}
+### Динамическое включение захвата сетевого трафика
 
 Чтобы динамически включать или отключать захват сетевого трафика, просто вызывайте функцию `enableAdvancedNetworkCapture` или `disableAdvancedNetworkCapture` по мере необходимости.
 
@@ -154,7 +154,7 @@ HyperDX.addAction('Form-Completed', {
 HyperDX.enableAdvancedNetworkCapture();
 ```
 
-### Включение таймингов ресурсов для CORS-запросов {#enable-resource-timing-for-cors-requests}
+### Включение таймингов ресурсов для CORS-запросов
 
 Если ваше фронтенд-приложение отправляет API-запросы на другой домен, вы можете
 при необходимости настроить отправку [заголовка](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin) `Timing-Allow-Origin` вместе с запросом. Это позволит ClickStack собирать подробную

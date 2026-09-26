@@ -16,7 +16,7 @@ Il s&#39;agit d&#39;un alias de la [fonction de table s3](/fr/reference/function
 
 Si votre cluster comporte plusieurs répliques, vous pouvez utiliser la [fonction s3Cluster](/fr/reference/functions/table-functions/s3Cluster) (compatible avec GCS) à la place pour paralléliser les insertions.
 
-## Syntaxe {#syntax}
+## Syntaxe
 
 ```sql
 gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method] [,partition_strategy])
@@ -30,7 +30,7 @@ gcs(named_collection[, option=value [,..]])
   Consultez la [documentation sur l’interopérabilité de Google](https://cloud.google.com/storage/docs/interoperability) pour plus de détails sur l’endpoint et le HMAC.
 </Tip>
 
-## Arguments {#arguments}
+## Arguments
 
 | Argument                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -65,11 +65,11 @@ Les arguments peuvent également être transmis à l&#39;aide de [collections no
 | `no_sign_request`             | Désactivé par défaut.                                                                                                                                                                                                                                                    |
 | `expiration_window_seconds`   | La valeur par défaut est 120.                                                                                                                                                                                                                                            |
 
-## Valeur renvoyée {#returned-value}
+## Valeur renvoyée
 
 Une table dotée de la structure spécifiée pour lire ou écrire des données dans le fichier indiqué.
 
-## Exemples {#examples}
+## Exemples
 
 Sélection des deux premières lignes depuis le fichier GCS `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz`. La méthode de compression est détectée automatiquement à partir de l’extension de fichier `.gz` :
 
@@ -101,7 +101,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-## Utilisation {#usage}
+## Utilisation
 
 Supposons que nous disposions de plusieurs fichiers avec les URI suivantes sur GCS :
 
@@ -194,7 +194,7 @@ SELECT count(*)
 FROM gcs(creds, url='https://s3-object-url.csv')
 ```
 
-## Écriture partitionnée {#partitioned-write}
+## Écriture partitionnée
 
 Si vous spécifiez une expression `PARTITION BY` lors de l’insertion de données dans la table `GCS`, un fichier distinct est créé pour chaque valeur de partition. Répartir les données dans des fichiers distincts permet d’améliorer l’efficacité des opérations de lecture.
 
@@ -222,7 +222,7 @@ INSERT INTO TABLE FUNCTION
 
 Par conséquent, les données sont écrites dans trois fichiers répartis dans différents buckets : `my_bucket_1/file.csv`, `my_bucket_10/file.csv` et `my_bucket_20/file.csv`.
 
-## Voir aussi {#related}
+## Voir aussi
 
 * [fonction de table S3](/fr/reference/functions/table-functions/s3)
 * [moteur S3](/fr/reference/engines/table-engines/integrations/s3)

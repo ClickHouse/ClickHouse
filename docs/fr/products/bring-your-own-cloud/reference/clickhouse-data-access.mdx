@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 Par défaut, les employés de ClickHouse n’ont pas accès à vos données. Vos données ClickHouse, y compris toutes les tables utilisateur et les résultats de requête, restent dans votre propre compte cloud. Les seuls moyens par lesquels ClickHouse interagit avec votre déploiement sont décrits ci-dessous — aucun ne donne accès aux données des tables client.
 
-## Opérations courantes {#routine-operations}
+## Opérations courantes
 
 Le control plane de ClickHouse Cloud pilote votre BYOC deployment sans lire les données client. Les composants qui envoient des données vers l&#39;infrastructure détenue par ClickHouse ne transmettent que des metadata opérationnelles :
 
@@ -21,11 +21,11 @@ Le control plane de ClickHouse Cloud pilote votre BYOC deployment sans lire les 
 
 Le trafic de query, le contenu des tables et les schemas ne transitent jamais par ces canaux. L&#39;intégralité de votre dataset de monitoring — la stack Prometheus et Thanos, ainsi que vos logs — reste dans votre propre account ; la telemetry limitée décrite dans le tableau ci-dessus constitue les seules données d&#39;observability exportées en continu vers les systèmes détenus par ClickHouse. Les tableaux de bord Monitoring de ClickHouse et, après escalation approuvée, ses ingénieurs peuvent en outre interroger cette stack et vos logs sur place via Tailscale, sans qu&#39;aucune donnée ne soit persistée du côté de ClickHouse — voir [accès de dépannage](#troubleshooting-access). Consultez les [frontières réseau](/fr/products/bring-your-own-cloud/reference/network-security#network-boundaries) pour la référence complète des flux Inbound et Outbound.
 
-## Accès de dépannage {#troubleshooting-access}
+## Accès de dépannage
 
 Lorsque les ingénieurs ClickHouse doivent diagnostiquer un problème dans votre déploiement, ils demandent un accès juste à temps via un processus interne d’escalade et d’approbation. Une fois approuvé, cet accès est accordé au moyen d’un certificat à durée limitée et acheminé via [Tailscale](/fr/products/bring-your-own-cloud/reference/network-security#tailscale-private-network), jamais via l’internet public.
 
-### Ce que les ingénieurs peuvent voir {#what-engineers-can-see}
+### Ce que les ingénieurs peuvent voir
 
 Au sein de ClickHouse, l’accès de dépannage approuvé est limité aux tables système. Cela inclut :
 
@@ -33,15 +33,15 @@ Au sein de ClickHouse, l’accès de dépannage approuvé est limité aux tables
 * `system.tables`, `system.columns` et des tables système similaires — le schéma et les métadonnées
 * D’autres tables `system.*` utilisées pour le diagnostic (par ex. : parts, mutations, réplicas)
 
-### Ce que les ingénieurs ne peuvent pas voir {#what-engineers-cant-see}
+### Ce que les ingénieurs ne peuvent pas voir
 
 Les ingénieurs ne peuvent pas consulter les tables utilisateur des clients. Au sein de ClickHouse, l’accès est limité aux seules tables système.
 
-### Diagnostics d&#39;infrastructure {#infrastructure-diagnostics}
+### Diagnostics d&#39;infrastructure
 
 Cette même procédure d&#39;escalation soumise à approbation peut également accorder, de façon distincte, un accès limité dans le temps aux surfaces d&#39;infrastructure via Tailscale : le Kubernetes API server, ainsi que le monitoring stack et les logs internes au cluster. Il s&#39;agit d&#39;une surface distincte de l&#39;accès à ClickHouse décrit ci-dessus : elle ne contient aucune donnée de table client, et rien de ce qui y est consulté n&#39;est persisté du côté de ClickHouse.
 
-### Comment l’accès est contrôlé {#how-access-is-enforced}
+### Comment l’accès est contrôlé
 
 * **Approbation requise** : chaque demande d’accès passe par un système d’approbation interne avec des approbateurs désignés. Les ingénieurs ne peuvent pas s’octroyer eux-mêmes un accès.
 * **Certificats à durée limitée** : un certificat temporaire, à durée limitée, est généré pour chaque session approuvée. L’accès expire automatiquement.
@@ -49,7 +49,7 @@ Cette même procédure d&#39;escalation soumise à approbation peut également a
 * **Lecture seule sur les tables système** : l’identité du certificat est limitée à la lecture des tables système.
 * **Aucune persistance côté ClickHouse** : les résultats consultés lors d’une session de dépannage — qu’ils proviennent des tables système, de la stack de monitoring ou de vos logs — parviennent à l’outillage de l’ingénieur pour y être affichés, mais ne sont ni stockés dans l’infrastructure ClickHouse ni renvoyés vers celle-ci.
 
-## Audit {#auditing}
+## Audit
 
 L’activité des ingénieurs est visible de votre côté et fait l’objet d’un audit par ClickHouse :
 
@@ -57,11 +57,11 @@ L’activité des ingénieurs est visible de votre côté et fait l’objet d’
 * **Visible côté client (infrastructure)** : `system.query_log` ne peut pas rendre compte des surfaces d’infrastructure ci-dessus. Les appels à l’API Kubernetes apparaissent dans les audit logs Kubernetes de votre cluster, les appels à l’API cloud dans votre piste d’audit cloud, et les connexions Tailscale elles-mêmes dans vos journaux de flux, là où vous les avez activés. Consultez [Auditer la frontière](/fr/products/bring-your-own-cloud/reference/network-security#auditing-the-boundary) pour savoir où se trouve chacun de ces éléments selon le cloud, et lesquels sont activés par défaut.
 * **Côté ClickHouse** : l’équipe sécurité de ClickHouse journalise et audite en interne toutes les demandes d’accès, les approbations et les connexions Tailscale.
 
-## Contrôles futurs {#future-controls}
+## Contrôles futurs
 
 L&#39;approbation contrôlée par le client — où vous approuvez chaque demande d&#39;accès d&#39;un ingénieur avant sa prise d&#39;effet — figure sur la feuille de route. Aujourd&#39;hui, l&#39;approbation est gérée via le processus d&#39;escalade interne de ClickHouse.
 
-## Voir aussi {#related}
+## Voir aussi
 
 * [Sécurité réseau BYOC](/fr/products/bring-your-own-cloud/reference/network-security) — comment fonctionnent Tailscale et les frontières réseau
 * [Privilège BYOC](/fr/products/bring-your-own-cloud/reference/privilege) — IAM roles créés lors de la mise en place de BYOC

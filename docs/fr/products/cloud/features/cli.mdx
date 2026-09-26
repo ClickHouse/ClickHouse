@@ -11,7 +11,7 @@ ClickHouse CLI (`clickhousectl`) est un outil de ligne de commande unifié perme
 
 Cette page constitue une référence des commandes disponibles dans `clickhousectl` 0.4.2. Exécutez `clickhousectl --version` pour vérifier la version installée, et `clickhousectl <command> --help` sur n&#39;importe quelle commande pour obtenir la liste complète des flags.
 
-## Installation {#installation}
+## Installation
 
 ```bash
 curl https://clickhouse.com/cli | sh
@@ -26,11 +26,11 @@ clickhousectl update           # self-update
 clickhousectl update --check   # check for updates without installing
 ```
 
-## Gestion de Cloud {#cloud-management}
+## Gestion de Cloud
 
 Authentifiez-vous auprès de ClickHouse Cloud et gérez vos services directement depuis la ligne de commande.
 
-### Authentification {#authentication}
+### Authentification
 
 ```bash
 # Log in with an API key (read/write access)
@@ -60,7 +60,7 @@ Préséance des credentials, de la plus élevée à la plus faible : flags `--ap
 
 Les tokens OAuth sont en lecture seule ; les commandes d&#39;écriture (create, delete, start, stop, update, scale) nécessitent une authentification par clé API.
 
-### Services {#services}
+### Services
 
 ```bash
 # List services
@@ -94,7 +94,7 @@ clickhousectl cloud service reset-password <service-id>
 clickhousectl cloud service delete <service-id>
 ```
 
-### Exécuter des requêtes {#running-queries}
+### Exécuter des requêtes
 
 Exécutez du SQL sur un service Cloud via HTTP grâce à la Query API — sans binaire `clickhouse` local ni mot de passe de service. Un seul des paramètres `--id` ou `--name` doit être fourni, et il est obligatoire :
 
@@ -125,7 +125,7 @@ Avec l&#39;authentification par clé API, les requêtes s&#39;exécutent avec un
 * Une clé API Query enregistrée que l&#39;endpoint rejette avec un HTTP 401/403 n&#39;est jamais remplacée automatiquement ; la CLI consulte l&#39;enregistrement de management de la clé uniquement pour en indiquer la raison. Remplacez ce credential précis avec `clickhousectl cloud service repair-query-key <service-id>`, qui supprime également la clé remplacée. Sur un service en cours d&#39;exécution, la commande ne se termine avec le code 0 qu&#39;une fois qu&#39;une query de probe avec la nouvelle clé a réussi, résultat rapporté sous `verification` dans la sortie `--json`. Si la Query API rejette toujours la clé à la fin de la readiness window, la commande se termine avec le code 1, mais la réparation reste valide : ne la relancez pas, exécutez plutôt `cloud service query`.
 * La Query API expire après environ 30 secondes ; la statement continue de s&#39;exécuter sur le service, mais le résultat est perdu. Au-delà de cette durée, exécutez `clickhousectl local use latest` afin de placer le `clickhouse` binary standard dans le `PATH`, puis connectez-vous avec `clickhouse client --host <host> --secure --port 9440 --user default --password <password>`.
 
-### Points de terminaison de service et configuration {#service-endpoints-and-configuration}
+### Points de terminaison de service et configuration
 
 ```bash
 # Query endpoints (used by the Query API)
@@ -153,7 +153,7 @@ clickhousectl cloud service prometheus <service-id>
 
 `--clear-backup-start-time` supprime un horodatage de début enregistré et lève cette restriction. Combinez cette option avec `--backup-period-hours` pour effacer l&#39;horodatage de début et définir n&#39;importe quelle période en un seul appel. Elle est incompatible avec `--backup-start-time`.
 
-### Sauvegardes {#backups}
+### Sauvegardes
 
 ```bash
 clickhousectl cloud backup list <service-id>
@@ -162,7 +162,7 @@ clickhousectl cloud backup get <service-id> <backup-id>
 
 Pour restaurer une sauvegarde, créez un nouveau service à partir de celle-ci : `clickhousectl cloud service create --name restored-service --backup-id <backup-id>`.
 
-### ClickPipes {#clickpipes}
+### ClickPipes
 
 Gérez les [ClickPipes](/fr/integrations/clickpipes) permettant d&#39;ingérer des données dans un service Cloud. La plupart des commandes prennent l&#39;ID du service comme premier argument.
 
@@ -233,7 +233,7 @@ clickhousectl cloud clickpipe reverse-private-endpoint delete <service-id> <endp
 * Un pipe ne peut utiliser qu&#39;un reverse private endpoint ayant atteint le statut `Ready` ; un endpoint AWS PrivateLink reste en `PendingAcceptance` tant que la demande de connexion n&#39;a pas été acceptée dans le compte propriétaire de la source. Les pipes Kafka référencent l&#39;endpoint par son ID avec `--reverse-private-endpoint-id` (répétable) ; les pipes CDC Postgres et MySQL transmettent l&#39;un des `dnsNames` de l&#39;endpoint via `--host`.
 * Les pipes Google Cloud Pub/Sub sont en preview limitée : contactez le support pour activer la fonctionnalité pour votre organisation avant d&#39;en créer un. `--service-account-file` prend le chemin d&#39;une clé JSON de service account GCP, ou `-` pour lire la clé depuis stdin ; la clé n&#39;est jamais acceptée en ligne, elle n&#39;apparaît donc ni dans la liste des processus ni dans l&#39;historique du shell.
 
-### Postgres services (beta) {#postgres-services}
+### Postgres services (beta)
 
 Créez et gérez des services [ClickHouse Cloud Postgres](/fr/products/managed-postgres/overview).
 
@@ -285,7 +285,7 @@ clickhousectl cloud postgres delete <pg-id>
 * Les changements de rôle sont à cohérence à terme, et l&#39;API accuse réception de `promote` et `switchover` avant de les appliquer : un code de sortie 0 ne suffit donc pas à confirmer que le rôle a changé. Ces deux commandes acceptent `--wait`, qui interroge la cible jusqu&#39;à ce qu&#39;elle signale le nouveau rôle, ainsi que `--wait-timeout <seconds>` (300 par défaut) pour borner cette interrogation. L&#39;ancien primary peut continuer à signaler `isPrimary=true` pendant plusieurs minutes : vérifiez donc avec `clickhousectl cloud postgres list --filter isPrimary=true` qu&#39;un seul service est primary.
 * `postgres delete` fonctionne quel que soit l&#39;état du service, y compris `running` : il n&#39;est donc pas nécessaire de l&#39;arrêter au préalable.
 
-### Organisations {#organizations}
+### Organisations
 
 ```bash
 clickhousectl cloud org list
@@ -295,7 +295,7 @@ clickhousectl cloud org prometheus
 clickhousectl cloud org usage --from-date 2026-08-01 --to-date 2026-08-31
 ```
 
-### Clés API {#api-keys}
+### Clés API
 
 ```bash
 clickhousectl cloud key list
@@ -305,7 +305,7 @@ clickhousectl cloud key update <key-id>
 clickhousectl cloud key delete <key-id>
 ```
 
-### Membres et invitations {#members-and-invitations}
+### Membres et invitations
 
 ```bash
 clickhousectl cloud member list
@@ -319,14 +319,14 @@ clickhousectl cloud invitation get <invitation-id>
 clickhousectl cloud invitation delete <invitation-id>
 ```
 
-### Journal d&#39;activité {#activity-log}
+### Journal d&#39;activité
 
 ```bash
 clickhousectl cloud activity list --from-date 2026-08-01 --to-date 2026-08-31
 clickhousectl cloud activity get <activity-id>
 ```
 
-### Sortie JSON {#json-output}
+### Sortie JSON
 
 Utilisez l’option `--json` pour obtenir des réponses au format JSON depuis n’importe quelle commande cloud :
 
@@ -336,7 +336,7 @@ clickhousectl cloud service list --json
 
 Les commandes `org prometheus` et `service prometheus` font exception : elles produisent toujours du texte d’exposition Prometheus brut et ignorent silencieusement `--json`.
 
-## Développement local {#local-development}
+## Développement local
 
 La CLI gère également les installations locales de ClickHouse, les serveurs locaux et les instances Postgres locales basées sur Docker. Consultez la page [clickhousectl (CLI)](/fr/get-started/setup/self-managed/clickhousectl) pour bien débuter avec le développement local.
 
@@ -384,7 +384,7 @@ clickhousectl local postgres dotenv
 * `local client` accepte `-v`/`--version` pour choisir une version de client installée en mode hôte/port direct, admet `-q` de façon répétée pour plusieurs requêtes et accepte plusieurs chemins pour `--queries-file`. Combiner `--query` et `--queries-file` constitue une erreur d&#39;utilisation.
 * `local postgres start` bloque jusqu&#39;à ce que PostgreSQL accepte les connexions, dans la limite du nombre de secondes défini par `--wait-timeout` (60 par défaut, 600 au maximum). Si `--port` est omis, le port 5432 est utilisé s&#39;il est libre, sinon un port est sélectionné automatiquement ; un port explicitement demandé mais déjà occupé est rejeté.
 
-## Autres commandes {#other-commands}
+## Autres commandes
 
 ```bash
 # Install the ClickHouse agent skills into supported coding agents
@@ -397,7 +397,7 @@ clickhousectl telemetry disable
 clickhousectl telemetry enable
 ```
 
-## Prérequis {#requirements}
+## Prérequis
 
 * MacOS (aarch64, x86&#95;64) ou Linux (aarch64, x86&#95;64)
 * Les commandes Cloud nécessitent une [clé API ClickHouse Cloud](/fr/products/cloud/features/admin-features/api/openapi) pour l&#39;accès en écriture ; la connexion OAuth est en lecture seule

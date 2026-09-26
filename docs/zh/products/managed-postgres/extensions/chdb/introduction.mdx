@@ -7,11 +7,11 @@ doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
 
-## 简介 {#introduction}
+## 简介
 
 该库提供了一组 PostgreSQL 扩展，可在 Postgres 中执行 [chDB] 查询，并在多种数据格式与对象存储之间复制数据。
 
-### chdb 扩展 {#chdb-extension}
+### chdb 扩展
 
 `chdb` 扩展用于运行 [chDB] 查询。`chdb_query()` 函数执行单条查询。例如，以下查询：
 
@@ -34,7 +34,7 @@ $$) AS (id int, months int, days int);
 
 详情请参阅 [chdb 文档](/zh/products/managed-postgres/extensions/chdb/chdb)。
 
-### chdb_hook 模块 {#chdb_hook-module}
+### chdb_hook 模块
 
 `chdb_hook` 模块挂接到 [COPY] 命令，可将数据复制到 S3、GCS、Azure Blob、文件或 http URL，也可从这些位置复制数据。以下示例通过单条 [COPY] 命令从 S3 上的多个 CSV 文件中加载记录：
 
@@ -86,7 +86,7 @@ CREATE TABLE reviews () WITH (
 
 详情请参阅 [chdb&#95;hook 文档](/zh/products/managed-postgres/extensions/chdb/chdb_hook)。
 
-## 格式基准测试 {#benchmarking-formats}
+## 格式基准测试
 
 有一项[benchmark]以约 100 万行 [NYC Taxi dataset] 数据为基础，在多种格式下将 [chdb&#95;hook] 的 `COPY` 性能与 [aws&#95;s3]、[pg&#95;duckdb] 和 [pg&#95;lake] 进行了对比。
 
@@ -107,7 +107,7 @@ CREATE TABLE reviews () WITH (
 
 为与其他扩展保持可比性，该基准测试采用了 [JSONCompact] 格式；其他 JSON 数据格式 (例如 [JSONCompactEachRow]) 的性能会更接近上述其他格式。
 
-## 架构 {#architecture}
+## 架构
 
 chdb 和 chdb&#95;hook 扩展依赖 `chdb_helper` 进程来执行 [chDB] 查询。该辅助进程将 [chDB] 的资源占用与 Postgres 主进程隔离开来，对于从数据湖加载数据这类偶尔才会用到的工作流而言，这是一大优势。
 
@@ -128,7 +128,7 @@ chdb 和 chdb&#95;hook 扩展依赖 `chdb_helper` 进程来执行 [chDB] 查询�
   对于每个查询，该辅助进程都会连接到磁盘上一个新的临时 chDB database 来执行该查询。因此，目前每个查询都运行在与其他所有查询完全隔离的环境中。请不要 CREATE 一个表后，期望在后续查询中访问它。
 </Important>
 
-## 依赖项 {#dependencies}
+## 依赖项
 
 `chdb` 扩展 需要 PostgreSQL 15 或更高版本，以及 v26.7.0 或更高版本的 [chDB] library (目前仅支持 Linux 和 macOS) 。最简单的安装方式是使用 [lib.chdb.io] shell 脚本：
 
@@ -147,7 +147,7 @@ export BUNDLE_LIBCHDB=1 LIBCHDB_BUILD=static
 
 在 Linux 上，也可以在执行[安装](#compile-from-source)所需的 `make` 命令前设置 `export BUNDLE_LIBCHDB=1`，让安装过程改为下载并安装动态 `libchdb` 库。
 
-### 从源码编译 {#compile-from-source}
+### 从源码编译
 
 要构建 chdb，只需执行以下操作：
 
@@ -224,12 +224,12 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-## 作者 {#authors}
+## 作者
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## 版权 {#copyright}
+## 版权
 
 Copyright (c) 2026, ClickHouse
 

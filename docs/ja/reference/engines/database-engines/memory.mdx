@@ -10,14 +10,14 @@ doc_type: 'reference'
 
 `Memory` データベースエンジンは、メタデータとテーブル定義をメモリ上にのみ保持します。一時的なデータベースでの利用を想定しており、サーバーが停止または再起動すると、データベースとそのテーブルは失われます。
 
-## データベースの作成 {#creating-a-database}
+## データベースの作成
 
 ```sql
 CREATE DATABASE temporary_data
 ENGINE = Memory;
 ```
 
-## 使用方法 {#usage}
+## 使用方法
 
 [`Atomic`](/ja/reference/engines/database-engines/atomic) データベースと同じようにテーブルを作成して使用します:
 
@@ -34,7 +34,7 @@ INSERT INTO temporary_data.events VALUES (1, 'started');
 
 再起動後も保持する必要があるデータや定義には、このエンジンを使用しないでください。永続的なデータベースメタデータには、デフォルトのオープンソースデータベースエンジンである `Atomic` を使用してください。
 
-## 関連項目 {#see-also}
+## 関連項目
 
 * [Atomic データベースエンジン](/ja/reference/engines/database-engines/atomic)
 * [`Memory` テーブルエンジン](/ja/reference/engines/table-engines/special/memory)

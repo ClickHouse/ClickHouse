@@ -33,7 +33,7 @@ metric_name2[...] = ...
   ではこの構成は行われておらず、そのようなサービスでご自身でこのエンジンを有効にすることはできません。
 </Note>
 
-## 構文 {#syntax}
+## 構文
 
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
@@ -49,7 +49,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
   バージョン 4 より前の[バージョン](#schema-versioning)のテーブル定義は `METRICS` を用いて書き込まれるため、古いサーバーでも読み取ることができます。
 </Note>
 
-## 使い方 {#usage}
+## 使い方
 
 まずは、すべてデフォルト設定のままで始めるのが簡単です (カラムの一覧を指定しなくても `TimeSeries` テーブルを作成できます) :
 
@@ -62,7 +62,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 * [prometheus remote-write](/ja/concepts/features/interfaces/prometheus#remote-write)
 * [prometheus remote-read](/ja/concepts/features/interfaces/prometheus#remote-read)
 
-### 外部カラム {#outer-columns}
+### 外部カラム
 
 TimeSeries テーブルのカラムは自動的に自動生成されます。これらは外部カラムであり、データ自体は保持せず、`SELECT`/`INSERT` のためのインターフェイスだけを提供します。実際のデータは[ターゲットテーブル](#target-tables)に格納されます。外部カラムの一覧は次のとおりです。
 
@@ -100,7 +100,7 @@ INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, hel
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
-### 外部カラムの指定 {#specifying-outer-columns}
+### 外部カラムの指定
 
 外部 `samples` カラムは、デフォルトの `Array(タプル(DateTime64(3), Float64))` 型をオーバーライドするために、`CREATE TABLE` ステートメントで明示的に指定できます (旧名称の `time_series` も使用できます) 。ClickHouse はその タプル から timestamp 型と scalar 型を抽出し、それらを内部の Samples テーブルに反映します：
 
@@ -117,7 +117,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 両方の形式を同じ `CREATE TABLE` ステートメント内で使用する場合、宣言する型は一致していなければなりません。
 
-## ターゲットテーブル {#target-tables}
+## ターゲットテーブル
 
 `TimeSeries` テーブル自体はデータを持たず、すべてのデータはそのターゲットテーブルに格納されます。
 これは [materialized view](/ja/reference/statements/create/view#materialized-view) の仕組みに似ていますが、
@@ -133,7 +133,7 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 
 ターゲットテーブルは次のとおりです:
 
-### samples テーブル {#samples-table}
+### samples テーブル
 
 *samples* テーブルには、識別子に関連付けられた時系列が格納されます。
 
@@ -151,7 +151,7 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 エンジンは、内部の samples テーブルおよび recent samples テーブルに対して、`enable_alp_codec` を設定しなくても `ALP` を有効にします。
 [カラムの型の調整](#adjusting-column-types)も参照してください。
 
-### Recent samples テーブル {#recent-samples-table}
+### Recent samples テーブル
 
 *recent samples* テーブルは任意であり、デフォルトで有効になっています ([recent&#95;samples&#95;ttl&#95;seconds](#settings) 設定を参照してください。この値をゼロに設定するとテーブルは無効になります) 。このテーブルには、当該設定で定義された有効期限 (TTL) より新しいサンプルのコピーが格納され、[samples](#samples-table) テーブルと同じカラムを持つ必要があります。
 生成された `timestamp` カラムには `CODEC(Delta, T64, ZSTD(3))` が使用され、
@@ -162,7 +162,7 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 
 内部の recent samples テーブルの有効期限 (TTL) は、常に [recent&#95;samples&#95;ttl&#95;seconds](#settings) 設定から導出されます。
 
-### Tags テーブル {#tags-table}
+### Tags テーブル
 
 *tags* テーブルには、メトリクス名とタグの各組み合わせに対して計算された識別子が格納されます。
 
@@ -185,7 +185,7 @@ materialized view ではターゲットテーブルは 1 つであるのに対�
 `TAGS INNER COLUMNS` で明示的に宣言された索引は、デフォルトの索引を置き換えます。既存のテーブルおよび外部の
 tags テーブルは、それぞれの索引をそのまま保持します。有効にするには、その tags ターゲットテーブルに索引を追加してマテリアライズしてください。
 
-### Metric families テーブル {#metric-families-table}
+### Metric families テーブル
 
 *metric families* テーブルには、収集されるメトリクスファミリーに関する情報、それらのメトリクスファミリーのタイプ、および説明が格納されます。
 メトリクスファミリーとは、同じ名前 (`__name__` タグ) と同じタイプを持つメトリクスのグループであり、例えば histogram は複数のメトリクスから構成されるメトリクスファミリーです。
@@ -199,7 +199,7 @@ tags テーブルは、それぞれの索引をそのまま保持します。有
 | `unit`               | [x] | `LowCardinality(String)` | `String` または `LowCardinality(String)` | メトリクスで使用される単位                                                                                                                                        |
 | `help`               | [x] | `String`                 | `String` または `LowCardinality(String)` | メトリクスの説明                                                                                                                                             |
 
-## 作成 {#creation}
+## 作成
 
 `TimeSeries` テーブルエンジンを使用してテーブルを作成する方法は複数あります。
 最もシンプルなステートメントは次のとおりです
@@ -319,7 +319,7 @@ ORDER BY metric_family_name
 SETTINGS index_granularity = 8192
 ```
 
-## 既存テーブルを AS 指定してテーブルを作成する {#create-as}
+## 既存テーブルを AS 指定してテーブルを作成する
 
 ステートメント `CREATE TABLE new_table AS existing_table` は、`existing_table` と同じ構成の `TimeSeries` テーブルを作成します。
 `existing_table` は `TimeSeries` テーブルである必要があります。`existing_table` の外部ターゲットはコピーされないため、ステートメントで
@@ -342,7 +342,7 @@ SETTINGS index_granularity = 8192
 古いバージョンの ClickHouse で作成されたテーブルも `existing_table` として使用できます。新しいテーブルには現在の
 構造、たとえば現在の `id` 型やデフォルトの識別子式が設定されます。
 
-## カラム型の調整 {#adjusting-column-types}
+## カラム型の調整
 
 `INNER COLUMNS` 句を使用すると、内部ターゲットテーブルのカラム型を調整できます。たとえば、timestamp をマイクロ秒単位で保存し、値を `Float32` として保存するには、次のようにします。
 
@@ -358,7 +358,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 ```
 
-## `id` カラム {#id-column}
+## `id` カラム
 
 `id` カラムには識別子が格納されており、各識別子はメトリクス名とタグの組み合わせごとに計算されます。
 識別子の生成に使用される型と `DEFAULT` 式は、`TAGS INNER COLUMNS` 句でカスタマイズできます。
@@ -392,7 +392,7 @@ SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)'
 
 `id_generator` SETTINGが指定されている場合、`id_type` SETTINGは `CREATE` 時に自動的に記録されるため、その式が想定して記述された型が定義に保持されます。
 
-## `tags` カラム {#tags-column}
+## `tags` カラム
 
 `tags` カラムには、メトリクス名を持つ `__name__` タグを含む、時系列のすべてのタグが格納されます。
 
@@ -411,7 +411,7 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
   古いバージョンの ClickHouse で作成されたテーブルでは、`tags` カラムには専用のカラムを持たないタグのみが含まれ、メトリクス名は含まれません。また、`all_tags` カラムは一時的なカラムであり、INSERT 時にメトリクス名以外のすべてのタグで補完されます。
 </Note>
 
-## 内部ターゲットテーブルのテーブルエンジン {#inner-table-engines}
+## 内部ターゲットテーブルのテーブルエンジン
 
 デフォルトでは、内部ターゲットテーブルでは次のテーブルエンジンを使用します。
 
@@ -449,7 +449,7 @@ METRIC FAMILIES ENGINE=ReplicatedReplacingMergeTree
 エンジンがインラインで指定される場合、`TimeSeries` は自動的にそのテーブルに `allow_dimensions_outside_sorting_key = 1` を設定します。
 手動で作成した[外部](#external-target-tables)の集約 tags テーブルでは、自分でこれを設定する必要があります。
 
-## 外部ターゲットテーブル {#external-target-tables}
+## 外部ターゲットテーブル
 
 `TimeSeries` テーブルでは、手動で作成したテーブルを使用することもできます:
 
@@ -478,7 +478,7 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 
 外部 tags テーブルの `id` カラムの型と、識別子を生成する式は、`CREATE` 時に [`id_type`](#settings) および [`id_generator`](#settings) 設定に記録されます ([バージョン](#schema-versioning) 2 以降) 。そのため `TimeSeries` テーブルの定義がそれらを保持します。たとえば `CREATE TABLE ... AS my_table` では、外部ターゲットテーブルを読み取ることなく `my_table` の定義から `id` 型を読み取ります。`id_generator` 設定が指定されていない場合は、外部テーブルの `id` カラムで宣言された `DEFAULT` (存在する場合) が設定され、それがなければ `id` 型から導出される正規のジェネレーターが設定されます。記録された式は、後で外部テーブルの `DEFAULT` が変更された場合でも `id` の生成に使用されます。詳細は [The `id` column](#id-column) を参照してください。
 
-## 設定の変更 {#altering-settings}
+## 設定の変更
 
 `CREATE` 実行後に変更できる設定は、次の 2 つです。
 
@@ -496,7 +496,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 他の設定は、`ALTER ... MODIFY SETTING` では変更できません。大半は `CREATE` 時に内部テーブルのスキーマに組み込まれ、
 `version` 設定は `CREATE` 時に自動的に固定され、スキーマ自体を識別します ([スキーマのバージョニング](#schema-versioning) を参照) 。
 
-## SETTING {#settings}
+## SETTING
 
 以下は、`TimeSeries` テーブルの定義時に指定できるSETTINGの一覧です。
 
@@ -516,7 +516,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `tags_index_granularity`             | UInt64     | 8192                                                          | 内部 [tags](#tags-table) テーブルの `index_granularity` を設定します。明示的に設定した場合、エンジン宣言の `index_granularity` をオーバーライドします。外部 tags テーブルおよび MergeTree 以外のエンジンでは無視されます                                                                                                                                                                                                                                                                                                                                           |
 | `version`                            | UInt64     | 5                                                             | テーブルのバージョン。ターゲットテーブルの集合とその構造を識別します。バージョンはテーブルの作成時に自動的に固定され、その後は変更できません。通常は `CREATE TABLE` クエリで省略すべきです ([スキーマのバージョニング](#schema-versioning) を参照)                                                                                                                                                                                                                                                                                                                                                 |
 
-## スキーマのバージョン管理 {#schema-versioning}
+## スキーマのバージョン管理
 
 `TimeSeries` テーブルエンジンと PromQL 実行レイヤーは現在も活発に開発されています。
 そのため、ターゲットテーブルのセットや構造は ClickHouse のバージョン間で変更される可能性があります。
@@ -538,7 +538,7 @@ Prometheus remote-write プロトコル、PromQL の評価 ([prometheusQuery](/j
 * バージョンが書き込みには古すぎる場合、`INSERT` クエリと Prometheus remote-write プロトコルは拒否されますが、`SELECT` クエリは引き続き機能します。
 * バージョンがサーバーでまったくサポートされないほど古い場合、テーブルに対するすべてのクエリ (`SHOW CREATE TABLE`、`DETACH`、`DROP` を除く) が拒否されます。
 
-### バージョン履歴 {#version-history}
+### バージョン履歴
 
 | バージョン | 変更内容                                                                                                                                                                                                                                                                                                                  |
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -549,7 +549,7 @@ Prometheus remote-write プロトコル、PromQL の評価 ([prometheusQuery](/j
 | 4     | `metrics` ターゲットテーブルが `metric families` にリネームされた。内部テーブルの名前は `.inner_id.metrics.<uuid>` ではなく `.inner_id.metricfamilies.<uuid>` となり、定義には `METRICS` ではなく `METRIC FAMILIES` キーワードが使用される。格納されるデータ自体に変更はない                                                                                                                   |
 | 5     | `MergeTree` ファミリーのエンジンを使用する新しい内部 tags テーブルでは、デフォルトで `tags` map に `keyValuePairs` テキスト索引が作成される ([Tags テーブル](#tags-table)を参照)                                                                                                                                                                                           |
 
-# 関数 {#functions}
+# 関数
 
 以下は、`TimeSeries` テーブルを引数としてサポートする関数の一覧です。
 

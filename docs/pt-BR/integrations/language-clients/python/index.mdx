@@ -28,7 +28,7 @@ Se você estiver atualizando da versão 0.15.x ou anterior, consulte o [guia de 
   Os clientes padrão do ClickHouse Connect usam a interface HTTP. Isso oferece suporte a balanceadores de carga HTTP, proxies e controles de rede corporativos comuns. O ClickHouse Connect também tem um backend [chDB](#embedded-chdb-backend) experimental in-process.
 </Note>
 
-## Requisitos e compatibilidade {#requirements-and-compatibility}
+## Requisitos e compatibilidade
 
 | Componente  | Versões compatíveis                                                                                                         |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -42,7 +42,7 @@ Se você estiver atualizando da versão 0.15.x ou anterior, consulte o [guia de 
 
 O pacote inclui wheels compiladas quando disponíveis e usa uma implementação em Python puro quando as extensões Cython não podem ser compiladas. PyArrow é compatível com Python 3.10 a 3.14. Python 3.14 requer PyArrow 22 ou posterior.
 
-## Instalação {#installation}
+## Instalação
 
 Instale o ClickHouse Connect do [PyPI](https://pypi.org/project/clickhouse-connect/) via pip:
 
@@ -70,7 +70,7 @@ O ClickHouse Connect também pode ser instalado a partir do código-fonte:
 * Execute `git clone` do [repositório no GitHub](https://github.com/ClickHouse/clickhouse-connect).
 * Acesse a raiz do projeto e execute `pip install .`. O sistema de compilação instala o Cython automaticamente para compilar as extensões C opcionais.
 
-### Modos de compilação a partir do código-fonte {#source-build-modes}
+### Modos de compilação a partir do código-fonte
 
 As compilações a partir do código-fonte suportam três modos. Os modos padrão e obrigatório falham se o Cython não estiver disponível ou se `cythonize()` falhar. O modo de omissão não importa o Cython.
 
@@ -98,24 +98,24 @@ Importar `clickhouse_connect.driverc.npconv` diretamente também exige que o Num
 
 A versão instalada está disponível em `clickhouse_connect.__version__`.
 
-## Política de suporte {#support-policy}
+## Política de suporte
 
 Atualize para a versão mais recente do ClickHouse Connect antes de relatar um issue. Registre issues no [projeto do GitHub](https://github.com/ClickHouse/clickhouse-connect/issues). O ClickHouse Connect é direcionado aos [lançamentos do ClickHouse com suporte ativo](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md) no momento de cada lançamento do driver. Em geral, ele também funciona com versões mais antigas do servidor, mas tipos de dados e recursos de protocolo mais recentes podem exigir um servidor mais novo.
 
-## Uso básico {#basic-usage}
+## Uso básico
 
-### Obtenha os detalhes da conexão {#gather-your-connection-details}
+### Obtenha os detalhes da conexão
 
 <ConnectionDetails />
 
-### Estabeleça uma conexão {#establish-a-connection}
+### Estabeleça uma conexão
 
 Há dois exemplos de como se conectar ao ClickHouse:
 
 * Conectar-se a um servidor ClickHouse em localhost.
 * Conectar-se a um serviço do ClickHouse Cloud.
 
-#### Use uma instância do cliente ClickHouse Connect para se conectar a um servidor ClickHouse no localhost: {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost}
+#### Use uma instância do cliente ClickHouse Connect para se conectar a um servidor ClickHouse no localhost:
 
 ```python
 import clickhouse_connect
@@ -127,7 +127,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-#### Use uma instância do cliente ClickHouse Connect para se conectar a um serviço do ClickHouse Cloud: {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service}
+#### Use uma instância do cliente ClickHouse Connect para se conectar a um serviço do ClickHouse Cloud:
 
 <Tip>
   Use os detalhes da conexão obtidos anteriormente. Os serviços do ClickHouse Cloud exigem TLS, então use a porta 8443.
@@ -144,7 +144,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-### Interaja com o seu banco de dados {#interact-with-your-database}
+### Interaja com o seu banco de dados
 
 Para executar um comando do ClickHouse SQL, use o método `command` do client:
 
@@ -175,7 +175,7 @@ print(result.result_rows)
 client.close()
 ```
 
-## Backend embutido do chDB {#embedded-chdb-backend}
+## Backend embutido do chDB
 
 O backend experimental do chDB executa consultas do ClickHouse dentro do processo do Python, sem um servidor HTTP. Instale o extra `chdb` e, em seguida, selecione o backend com `interface="chdb"` ou uma DSN `chdb://`:
 

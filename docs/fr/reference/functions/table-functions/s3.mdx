@@ -20,7 +20,7 @@ Si votre cluster comporte plusieurs répliques, vous pouvez utiliser la [fonctio
 
 Lors de l&#39;utilisation de la `fonction de table S3` avec [`INSERT INTO...SELECT`](/fr/reference/statements/insert-into#inserting-the-results-of-select), les données sont lues et insérées en flux continu. Seuls quelques blocs de données restent en mémoire pendant que les blocs sont lus en continu depuis S3 et envoyés vers la table de destination.
 
-## Syntaxe {#syntax}
+## Syntaxe
 
 ```sql
 s3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers], [,extra_credentials], [,partition_strategy], [,partition_columns_in_data_file])
@@ -75,11 +75,11 @@ Les arguments peuvent également être transmis à l’aide de [collections nomm
 | `no_sign_request`             | désactivé par défaut.                                                                                                                                                                                                                                            |
 | `expiration_window_seconds`   | la valeur par défaut est de 120.                                                                                                                                                                                                                                 |
 
-## Valeur renvoyée {#returned-value}
+## Valeur renvoyée
 
 Une table de la structure spécifiée pour lire ou écrire des données dans le fichier spécifié.
 
-## Exemples {#examples}
+## Exemples
 
 Sélection des 5 premières lignes de la table issue du fichier S3 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv` :
 
@@ -134,7 +134,7 @@ LIMIT 5;
   ```
 </Note>
 
-## Utilisation {#usage}
+## Utilisation
 
 Supposons que nous ayons plusieurs fichiers avec les URI suivants sur S3 :
 
@@ -249,9 +249,9 @@ SELECT count(*)
 FROM s3(creds, url='https://s3-object-url.csv')
 ```
 
-## Écriture partitionnée {#partitioned-write}
+## Écriture partitionnée
 
-### Stratégie de partitionnement {#partition-strategy}
+### Stratégie de partitionnement
 
 Pris en charge uniquement pour les requêtes `INSERT`.
 
@@ -297,7 +297,7 @@ INSERT INTO TABLE FUNCTION
 
 Par conséquent, les données sont enregistrées dans trois fichiers répartis dans différents buckets : `my_bucket_1/file.csv`, `my_bucket_10/file.csv` et `my_bucket_20/file.csv`.
 
-## Accès aux buckets publics {#accessing-public-buckets}
+## Accès aux buckets publics
 
 ClickHouse tente de récupérer des identifiants à partir de nombreux types de sources.
 Il peut parfois en résulter des problèmes lors de l&#39;accès à certains buckets publics, le client renvoyant alors le code d&#39;erreur `403`.
@@ -313,7 +313,7 @@ FROM s3(
 LIMIT 5;
 ```
 
-## Utilisation des identifiants S3 (ClickHouse Cloud) {#using-s3-credentials-clickhouse-cloud}
+## Utilisation des identifiants S3 (ClickHouse Cloud)
 
 Pour les buckets non publics, les utilisateurs peuvent fournir un `aws_access_key_id` et un `aws_secret_access_key` à la fonction. Par exemple :
 
@@ -339,7 +339,7 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 
 Vous trouverez d’autres exemples [ici](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role)
 
-## Utilisation des archives {#working-with-archives}
+## Utilisation des archives
 
 Supposons que nous ayons plusieurs fichiers d’archive avec les URI suivantes sur S3 :
 
@@ -365,18 +365,18 @@ FROM s3(
   Si les archives ZIP et TAR sont accessibles à partir de n’importe quel emplacement de stockage pris en charge, les archives 7Z ne peuvent être lues que depuis le système de fichiers local sur lequel ClickHouse est installé.
 </Note>
 
-## Insertion de données {#inserting-data}
+## Insertion de données
 
 Notez que les lignes ne peuvent être insérées que dans de nouveaux fichiers. Il n’y a ni cycles de fusion ni opérations de fractionnement de fichiers. Une fois qu’un fichier a été écrit, les insertions suivantes échoueront. Pour plus de détails, voir [ici](/fr/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-## Colonnes virtuelles {#virtual-columns}
+## Colonnes virtuelles
 
 * `_path` — Chemin du fichier. Type : `LowCardinality(String)`. Dans le cas d&#39;une archive, affiche le chemin au format : `"{path_to_archive}::{path_to_file_inside_archive}"`
 * `_file` — Nom du fichier. Type : `LowCardinality(String)`. Dans le cas d&#39;une archive, affiche le nom du fichier contenu dans l&#39;archive.
 * `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille du fichier est inconnue, la valeur est `NULL`. Dans le cas d&#39;une archive, affiche la taille non compressée du fichier contenu dans l&#39;archive.
 * `_time` — Date et heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si cette information est inconnue, la valeur est `NULL`.
 
-## paramètre use_hive_partitioning {#hive-style-partitioning}
+## paramètre use_hive_partitioning
 
 Il s’agit d’une indication permettant à ClickHouse d’analyser les fichiers partitionnés au format Hive lors de la lecture. Cela n’a aucun effet sur l’écriture. Pour des lectures et écritures symétriques, utilisez l’argument `partition_strategy`.
 
@@ -388,7 +388,7 @@ Lorsque le paramètre `use_hive_partitioning` est défini sur 1, ClickHouse dét
 SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-## Accéder aux buckets requester-pays {#accessing-requester-pays-buckets}
+## Accéder aux buckets requester-pays
 
 Pour accéder à un bucket requester-pays, l’en-tête `x-amz-request-payer = requester` doit être transmis avec toutes les requêtes. Pour ce faire, passez le paramètre `headers('x-amz-request-payer' = 'requester')` à la fonction s3. Par exemple :
 
@@ -406,7 +406,7 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
-## Résolution des URL relatives {#resolving-relative-urls}
+## Résolution des URL relatives
 
 Le paramètre [s3&#95;base](/fr/reference/settings/session-settings/s3#s3_base) permet de transmettre une URL relative à la fonction `s3`. Lorsque `s3_base` est défini et que l’argument de la fonction ne comporte aucun schéma, l’URL est résolue par rapport à l’URL de base conformément à la [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986), selon les mêmes règles que le paramètre [url&#95;base](/fr/reference/settings/session-settings/url#url_base) de la fonction [url](/fr/reference/functions/table-functions/url#resolving-relative-urls). Les URL absolues sont transmises sans modification.
 
@@ -419,7 +419,7 @@ SET s3_base = 's3://clickhouse-public-datasets/';
 SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
-## Paramètres de stockage {#storage-settings}
+## Paramètres de stockage
 
 * [s3&#95;truncate&#95;on&#95;insert](/fr/reference/settings/session-settings/s3#s3_truncate_on_insert) - permet de tronquer le fichier avant d’y insérer des données. Désactivé par défaut.
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/fr/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - permet de créer un nouveau fichier à chaque insertion si le format comporte un suffixe. Désactivé par défaut.
@@ -427,7 +427,7 @@ SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 
 - [s3&#95;base](/fr/reference/settings/session-settings/s3#s3_base) - URL de base utilisée pour résoudre les URL relatives transmises à la fonction `s3`. Vide (désactivé) par défaut.
 
-## Schémas Avro imbriqués {#nested-avro-schemas}
+## Schémas Avro imbriqués
 
 Lors de la lecture de fichiers Avro contenant des **enregistrements imbriqués** dont la structure varie d’un fichier à l’autre (par exemple, si certains fichiers contiennent un champ supplémentaire dans un objet imbriqué), ClickHouse peut renvoyer une erreur du type :
 
@@ -457,7 +457,7 @@ FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
 ```
 
-## Related {#related}
+## Related
 
 * [S3 engine](/fr/reference/engines/table-engines/integrations/s3)
 * [Integrating S3 with ClickHouse](/fr/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

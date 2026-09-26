@@ -18,20 +18,20 @@ MergeTree 테이블의 (파트, 컬럼, 서브스트림)별로 각 코덱을 사
 
 현재 사용자에게 해당 테이블의 행 정책이 적용되면, 정책으로 숨겨진 행까지 개수에 포함되므로 `codec_block_counts`를 읽을 때 `ACCESS_DENIED`가 발생합니다. 다른 컬럼은 계속 읽을 수 있으며, `system.parts_columns`는 행 정책과 관계없이 이를 보고합니다.
 
-## 구문 {#syntax}
+## 구문
 
 ```sql
 mergeTreeCodecBlockCounts(database, table)
 ```
 
-## 인수 {#arguments}
+## 인수
 
 | 인수         | 설명                    |
 | ---------- | --------------------- |
 | `database` | 테이블이 속한 데이터베이스 이름입니다. |
 | `table`    | MergeTree 테이블 이름입니다.  |
 
-## 반환 값 {#returned-value}
+## 반환 값
 
 원본 테이블의 각 (활성 파트, 컬럼, 서브스트림) 조합에 대해 하나의 행을 포함하는 테이블 객체입니다.
 
@@ -42,7 +42,7 @@ mergeTreeCodecBlockCounts(database, table)
 * `data_uncompressed_bytes` ([Nullable(UInt64)](/ko/reference/data-types/nullable)) — 서브스트림의 비압축 데이터 크기(바이트)입니다. `Compact` 파트에서는 `NULL`입니다.
 * `codec_block_counts` ([Map(String, UInt64)](/ko/reference/data-types/map)) — 코덱별로 그룹화한 이 서브스트림의 압축 블록 수입니다. 컬럼이 하나의 데이터 파일을 공유하므로 스트림별 코덱 정보가 없는 `Compact` 파트에서는 비어 있습니다.
 
-## 사용 예시 {#usage-example}
+## 사용 예시
 
 ```sql
 CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a

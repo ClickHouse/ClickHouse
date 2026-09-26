@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وتُولَّد تلقائيًا من [الشيفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## s3_upload_checksum_algorithm {#s3_upload_checksum_algorithm}
+## s3_upload_checksum_algorithm
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "إعداد جديد لاختيار خوارزمية الـ checksum لعمليات الرفع إلى S3."}]}]} />
 
@@ -29,13 +29,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 وتتجاهل عمليات النسخ على جانب الـ server هذا الإعداد.
 
-## s3_upload_part_size_multiply_factor {#s3_upload_part_size_multiply_factor}
+## s3_upload_part_size_multiply_factor
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
 اضرب s3&#95;min&#95;upload&#95;part&#95;size في هذا العامل في كل مرة يُرفع فيها عدد من الأجزاء يساوي s3&#95;multiply&#95;parts&#95;count&#95;threshold من عملية كتابة واحدة إلى S3.
 
-## s3_upload_part_size_multiply_parts_count_threshold {#s3_upload_part_size_multiply_parts_count_threshold}
+## s3_upload_part_size_multiply_parts_count_threshold
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 

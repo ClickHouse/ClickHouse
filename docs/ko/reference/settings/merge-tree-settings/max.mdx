@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며, ClickHouse 소스에서 자동 생성됩니다.
 
-## max_avg_part_size_for_too_many_parts {#max_avg_part_size_for_too_many_parts}
+## max_avg_part_size_for_too_many_parts
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -25,7 +25,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 서버의 단일 테이블에 수백 테라바이트의 데이터를 저장할 수 있습니다. 이는
 비활성 파트 또는 전체 파트의 임계값에는 영향을 주지 않습니다.
 
-## max_buckets_in_map {#max_buckets_in_map}
+## max_buckets_in_map
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -35,13 +35,13 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 실제 버킷 수는 [map&#95;buckets&#95;strategy](/ko/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy)에 따라 결정됩니다.
 허용되는 최대값은 256입니다.
 
-## max_cleanup_delay_period {#max_cleanup_delay_period}
+## max_cleanup_delay_period
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 오래된 큐 로그, 블록 해시 및 파트를 정리하는 최대 주기입니다.
 
-## max_compress_block_size {#max_compress_block_size}
+## max_compress_block_size
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -51,7 +51,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 설정 참조). 테이블 생성 시 지정한 값은 이 설정의 전역
 값을 재정의합니다.
 
-## max_concurrent_queries {#max_concurrent_queries}
+## max_concurrent_queries
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,7 +71,7 @@ Possible values:
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-## max_digestion_size_per_segment {#max_digestion_size_per_segment}
+## max_digestion_size_per_segment
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
 
@@ -79,7 +79,7 @@ Possible values:
 
 더 이상 사용되지 않는 설정이며, 아무런 효과가 없습니다.
 
-## max_file_name_length {#max_file_name_length}
+## max_file_name_length
 
 <SettingsInfoBlock type="UInt64" default_value="127" />
 
@@ -89,7 +89,7 @@ Possible values:
 파일 시스템 오류를 방지할 수 있도록 여유를 두고 최대 파일 이름 길이(보통 255
 바이트)보다 작게 설정하는 것이 좋습니다.
 
-## max_partitions_to_read {#max_partitions_to_read}
+## max_partitions_to_read
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -105,13 +105,13 @@ table을 생성할 때 지정한 설정 값은
 쿼리 / 세션 / profile 수준에서 쿼리 복잡도 설정 [max&#95;partitions&#95;to&#95;read](/ko/reference/settings/session-settings/max-partitions#max_partitions_to_read)를
 지정할 수도 있습니다.
 
-## max_projections {#max_projections}
+## max_projections
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 MergeTree 프로젝션의 최대 개수입니다.
 
-## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
+## max_table_size_bytes_compressed
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -127,7 +127,7 @@ PARTITION`을 사용해 제한을 초과한 테이블에서 데이터를 제거�
 
 다중 테넌트, 임시 및 데모 서비스에 유용합니다.
 
-## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
+## max_table_size_bytes_uncompressed
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -143,7 +143,7 @@ PARTITION`을 사용해 제한을 초과한 테이블에서 데이터를 제거�
 
 다중 테넌트, 임시 및 데모 서비스에 유용합니다.
 
-## max_table_size_rows {#max_table_size_rows}
+## max_table_size_rows
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -166,7 +166,7 @@ PARTITION`을 사용해 제한을 초과한 테이블에서 데이터를 제거�
 
 다중 테넌트, 임시, 데모 서비스에 유용합니다.
 
-## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
+## max_uncompressed_bytes_in_patches
 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 

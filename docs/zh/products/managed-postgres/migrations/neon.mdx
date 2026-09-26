@@ -56,9 +56,9 @@ ClickHouse Managed Postgres 内置 ClickPipes，提供从 Neon 迁移的全托�
   </Step>
 </Steps>
 
-## 迁移注意事项 {#migration-considerations}
+## 迁移注意事项
 
-### 分支 {#branches}
+### 分支
 
 Neon 提供即时的 copy-on-write 分支能力。ClickHouse Managed Postgres 使用 local NVMe storage，以提供快速、可预测且可靠的 Postgres 性能。
 代价是分支并非即时创建，而是通过 [Point-in-Time Recovery (PITR)](/zh/products/managed-postgres/backup-and-restore) 以独立部署的形式创建，通常在几分钟内即可使用。
@@ -67,7 +67,7 @@ Neon 提供即时的 copy-on-write 分支能力。ClickHouse Managed Postgres �
 
 一些客户借助这种方式管理着数百个开发环境。我们也在持续改进分支与 sandbox 体验。请参阅[分支文档](/zh/products/managed-postgres/branching)。
 
-### Neon Serverless Driver {#neon-serverless}
+### Neon Serverless Driver
 
 如果你的应用未使用 Neon Serverless Driver，可以跳过本节。
 
@@ -88,7 +88,7 @@ Neon 提供即时的 copy-on-write 分支能力。ClickHouse Managed Postgres �
 
 更多详情，请参阅 [PgBouncer 兼容性矩阵](https://www.pgbouncer.org/features.html)。
 
-### 连接数限制 {#connection-limits}
+### 连接数限制
 
 ClickHouse Managed Postgres 默认支持 500 个直连 Postgres 连接。如果你的 Neon 工作负载超出该数量，可以：
 
@@ -97,7 +97,7 @@ ClickHouse Managed Postgres 默认支持 500 个直连 Postgres 连接。如果�
 * 如需更多直连连接，可调高 `max_connections`。
   * 可在 **Settings → Edit parameters** 中修改 `max_connections`。部分更改需要重启。请参阅[配置文档](/zh/products/managed-postgres/settings#changing-configuration)。
 
-### 迁移期间的 schema 变更 {#schema-changes}
+### 迁移期间的 schema 变更
 
 请尽量缩短从启动 ClickPipes 到切换 (cutover) 之间的时间——最好不超过几天——并在此期间避免进行 schema 变更。
 

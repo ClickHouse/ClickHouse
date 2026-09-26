@@ -14,13 +14,13 @@ ClickStack 使用 OpenTelemetry 标准来收集遥测数据 (日志和
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## 快速开始 {#getting-started}
+## 快速开始
 
 <Note>
   目前，该集成仅支持 **Java 8+**
 </Note>
 
-### 下载 OpenTelemetry Java agent {#download-opentelemetry-java-agent}
+### 下载 OpenTelemetry Java agent
 
 下载 [`opentelemetry-javaagent.jar`](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar)，
 并将该 JAR 文件放到你选择的目录中。该 JAR 文件包含 agent
@@ -31,7 +31,7 @@ ClickStack 使用 OpenTelemetry 标准来收集遥测数据 (日志和
 curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
 ```
 
-### 配置环境变量 {#configure-environment-variables}
+### 配置环境变量
 
 接下来，你需要在 shell 中配置以下环境变量，以便通过 OpenTelemetry Collector 将遥测数据发送到 ClickStack：
 
@@ -62,7 +62,7 @@ curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/
 
 `OTEL_EXPORTER_OTLP_HEADERS` 环境变量中包含 API 密钥，可在 HyperDX 应用的 `Team Settings → API Keys` 中获取。
 
-### 使用 OpenTelemetry Java agent 运行应用 {#run-the-application-with-otel-java-agent}
+### 使用 OpenTelemetry Java agent 运行应用
 
 ```shell
 java -jar target/<APPLICATION_JAR_FILE>

@@ -13,13 +13,13 @@ doc_type: 'reference'
 
 Позволяет параллельно обрабатывать файлы из таблиц Apache [Hudi](https://hudi.apache.org/) в Amazon S3 на множестве узлов указанного кластера. На узле-инициаторе создаётся соединение со всеми узлами кластера, после чего каждый файл динамически распределяется между ними. На узле-воркере у инициатора запрашивается следующая задача на обработку, и затем она обрабатывается. Это повторяется, пока не будут завершены все задачи.
 
-## Синтаксис {#syntax}
+## Синтаксис
 
 ```sql
 hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 ```
 
-## Аргументы {#arguments}
+## Аргументы
 
 | Аргумент                                     | Описание                                                                                                                                                                                                                                                                                                                                                                                                              |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -31,11 +31,11 @@ hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,form
 | `compression`                                | Параметр необязателен. Поддерживаемые значения: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. По умолчанию сжатие определяется автоматически по расширению файла. Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (`basic` по умолчанию).                                             |
 | `extra_credentials`                          | Параметр необязателен. Используется для передачи `role_arn` для доступа на основе ролей в ClickHouse Cloud. Инструкции по настройке см. в разделе [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).                                                                                                                                                                                        |
 
-## Возвращаемое значение {#returned-value}
+## Возвращаемое значение
 
 Таблица с указанной структурой для чтения данных из указанной таблицы Hudi в S3 на заданном кластере.
 
-## Виртуальные столбцы {#virtual-columns}
+## Виртуальные столбцы
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
@@ -43,7 +43,7 @@ hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,form
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение равно `NULL`.
 * `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение равно `NULL`.
 
-## См. также {#related}
+## См. также
 
 * [Движок Hudi](/ru/reference/engines/table-engines/integrations/hudi)
 * [Табличная функция Hudi](/ru/reference/functions/table-functions/hudi)

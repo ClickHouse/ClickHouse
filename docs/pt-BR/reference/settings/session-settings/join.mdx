@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## join_algorithm {#join_algorithm}
+## join_algorithm
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -110,7 +110,7 @@ O ClickHouse sempre tenta usar a junção `partial_merge`, se possível; caso co
 Valor legado, não use mais.
 Igual a `direct,hash`, ou seja, tente usar a junção direta e o hash join (nessa ordem).
 
-## join_any_take_last_row {#join_any_take_last_row}
+## join_any_take_last_row
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +133,7 @@ Veja também:
 * [motor de tabela Join](/pt-BR/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/pt-BR/reference/settings/session-settings/join#join_default_strictness)
 
-## join_default_strictness {#join_default_strictness}
+## join_default_strictness
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -146,7 +146,7 @@ Valores possíveis:
 * `ASOF` — Para junção de sequências com correspondência incerta.
 * `Empty string` — Se `ALL` ou `ANY` não for especificado na consulta, o ClickHouse lança uma exceção.
 
-## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
+## join_on_disk_max_files_to_merge
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -158,7 +158,7 @@ Valores possíveis:
 
 * Qualquer número inteiro positivo, a partir de 2.
 
-## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
+## join_output_by_rowlist_perkey_rows_threshold
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -166,7 +166,7 @@ Valores possíveis:
 
 O limite inferior da média de linhas por chave na tabela à direita para determinar se a saída deve ser feita por lista de linhas em hash join.
 
-## join_overflow_mode {#join_overflow_mode}
+## join_overflow_mode
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -196,7 +196,7 @@ Valor padrão: `THROW`.
 * [cláusula junção](/pt-BR/reference/statements/select/join)
 * [motor de tabela junção](/pt-BR/reference/engines/table-engines/special/join)
 
-## join_use_nulls {#join_use_nulls}
+## join_use_nulls
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

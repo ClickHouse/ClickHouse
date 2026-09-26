@@ -12,18 +12,18 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 ClickHouse BYOC в GCP поддерживает два варианта приватного подключения: пиринг VPC и PSC (Private Service Connect).
 
 <div id="common-prerequisites">
-  ## Предварительные требования {#common-prerequisites}
+  ## Предварительные требования
 </div>
 
 Общие действия, необходимые как для пиринга VPC, так и для PSC.
 
-### Включите приватный балансировщик нагрузки для ClickHouse BYOC {#step-enable-private-load-balancer-for-clickhouse-byoc}
+### Включите приватный балансировщик нагрузки для ClickHouse BYOC
 
 В консоли ClickHouse Cloud включите **приватный балансировщик нагрузки** для своей инфраструктуры BYOC.
 
 <Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC Включение приватного балансировщика нагрузки" border />
 
-## Настройка пиринга VPC {#gcp-vpc-peering}
+## Настройка пиринга VPC
 
 Ознакомьтесь с [возможностью пиринга VPC в GCP](https://docs.cloud.google.com/vpc/docs/vpc-peering) и учитывайте ограничения пиринга VPC (например, диапазоны IP-адресов подсетей не должны пересекаться в VPC-сетях, связанных пирингом). ClickHouse BYOC использует приватный балансировщик нагрузки, чтобы обеспечить сетевую связность с сервисами ClickHouse через пиринг.
 
@@ -63,7 +63,7 @@ ClickHouse BYOC в GCP поддерживает два варианта прив
   </Step>
 </Steps>
 
-## Настройка PSC (Private Service Connect) {#setup-psc}
+## Настройка PSC (Private Service Connect)
 
 GCP PSC (Private Service Connect) обеспечивает безопасное частное подключение к вашим сервисам ClickHouse BYOC без необходимости в пиринге VPC или интернет-шлюзах. Весь трафик передаётся внутри сети GCP и никогда не проходит через публичный интернет.
 

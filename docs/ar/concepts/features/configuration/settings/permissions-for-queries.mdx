@@ -19,7 +19,7 @@ doc_type: 'reference'
 
 تنظّم الإعدادات التالية أذونات المستخدم وفقًا لنوع الاستعلام:
 
-## readonly {#readonly}
+## readonly
 
 يقيّد الاستعلامات التي يمكن للجلسة تنفيذها. قيم هذا الإعداد وقيمته الافتراضية والإعدادات التي تتيح كل قيمة تغييرها موصوفة في
 [مرجع الإعدادات](/ar/reference/settings/session-settings/other#readonly)؛ ويصف هذا القسم فئات الاستعلامات التي تسمح بها كل قيمة.
@@ -68,7 +68,7 @@ doc_type: 'reference'
   [قابلًا للتغيير في وضع القراءة فقط](/ar/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
 </Note>
 
-## allow_ddl {#allow_ddl}
+## allow_ddl
 
 يسمح باستعلامات [DDL](https://en.wikipedia.org/wiki/Data_definition_language) أو يمنعها على قواعد البيانات،
 والجداول، وطرق العرض، والقواميس، والدوال المعرّفة من قبل المستخدم، وأحمال العمل، والموارد، والمعالجات المعرّفة بلغة SQL.
@@ -112,7 +112,7 @@ doc_type: 'reference'
   امتياز `KILL QUERY`، وهو ما يرفضه `readonly = 1` و`readonly = 2`.
 </Info>
 
-## إعدادات أخرى ذات صلة {#other-relevant-settings}
+## إعدادات أخرى ذات صلة
 
 * [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions)
   هو الإعداد الثالث الذي يشارك في قرار الصلاحية نفسه، إلى جانب `readonly` و

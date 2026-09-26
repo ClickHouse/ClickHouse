@@ -15,11 +15,11 @@ doc_type: 'reference'
 | ------- | ----- | ----- |
 | ✔       | ✔     |       |
 
-## Descrição {#description}
+## Descrição
 
 [Apache Parquet](https://parquet.apache.org/) é um formato de armazenamento colunar amplamente utilizado no ecossistema Hadoop. O ClickHouse oferece suporte a operações de leitura e gravação nesse formato.
 
-## Correspondência entre tipos de dados {#data-types-matching-parquet}
+## Correspondência entre tipos de dados
 
 A tabela abaixo mostra como os tipos de dados do Parquet correspondem aos [tipos de dados](/pt-BR/reference/data-types/index) do ClickHouse.
 
@@ -76,7 +76,7 @@ Ao gravar um arquivo Parquet, os tipos de dados que não têm um tipo Parquet co
 
 Arrays podem ser aninhados e podem ter um valor do tipo `Nullable` como argumento. Os tipos `Tuple` e `Map` também podem ser aninhados.
 
-### Inteiros largos {#wide-integers}
+### Inteiros largos
 
 Por padrão, o ClickHouse grava `Int128`, `UInt128`, `Int256` e `UInt256` como valores `FIXED_LEN_BYTE_ARRAY(16/32)` sem anotações, em ordem little-endian. Essa representação legada continua sendo o padrão para que os arquivos possam ser lidos por versões mais antigas do ClickHouse.
 
@@ -100,11 +100,11 @@ Para alguns tipos Parquet, não há um tipo ClickHouse com correspondência pró
 * `TIMESTAMP` com `isAdjustedToUTC=false` é um horário de relógio local (campos de ano, mês, dia, hora, minuto, segundo e fração de segundo em um timezone local, independentemente de qual fuso horário específico seja considerado local), assim como em SQL `TIMESTAMP WITHOUT TIME ZONE`. O ClickHouse o lê como se fosse um timestamp em UTC. Ex.: `2025-09-29 18:42:13.000` (representando a leitura de um relógio local) torna-se `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')` representando um ponto no tempo). Se convertido para String, ele mostra o ano, mês, dia, hora, minuto, segundo e fração de segundo corretos, que então podem ser interpretados como pertencentes a algum timezone local em vez de UTC. Contraintuitivamente, mudar o tipo de `DateTime64(3, 'UTC')` para `DateTime64(3)` não ajudaria, pois ambos os tipos representam um ponto no tempo, e não uma leitura de relógio, mas `DateTime64(3)` seria formatado incorretamente usando o timezone local.
 * `INTERVAL` no momento é lido como `FixedString(12)`, com a representação binária bruta do intervalo de tempo, conforme codificada no arquivo Parquet.
 
-## Tipos geo (GeoParquet) {#geo-types}
+## Tipos geo (GeoParquet)
 
 O ClickHouse oferece suporte à leitura e à gravação de colunas de geometria de acordo com a especificação [GeoParquet](https://geoparquet.org/). As colunas de geometria são armazenadas como payloads `BYTE_ARRAY` codificados em [WKB](https://libgeos.org/specifications/wkb/) (ou WKT na leitura), com uma chave JSON `geo` nos metadados Parquet em nível de arquivo que descreve a codificação, o tipo de geometria e o CRS de cada coluna de geometria.
 
-### Comportamento de leitura {#read}
+### Comportamento de leitura
 
 Na leitura, as colunas de geometria são mapeadas para os [tipos de dados geo](/pt-BR/reference/data-types/geo) correspondentes no ClickHouse:
 
@@ -112,15 +112,15 @@ Na leitura, as colunas de geometria são mapeadas para os [tipos de dados geo](/
 * Uma coluna com tipos de geometria múltiplos ou desconhecidos é lida como o tipo [`Geometry`](/pt-BR/reference/data-types/geo#geometry), que é um `Variant` de todos os tipos geo compatíveis.
 * Se o tipo de coluna solicitado for `String`, os metadados do GeoParquet serão ignorados e o payload bruto da geometria codificada será retornado como está — bytes WKB ou WKT, de acordo com a codificação declarada pela coluna do GeoParquet. Isso também se aplica se a configuração [`input_format_parquet_allow_geoparquet_parser`](/pt-BR/reference/settings/formats/input-format#input_format_parquet_allow_geoparquet_parser) estiver definida como `0`.
 
-### Comportamento de escrita {#write}
+### Comportamento de escrita
 
 Na escrita, colunas de nível superior dos tipos `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` ou `MultiPolygon` são codificadas como `BYTE_ARRAY` (WKB), e os metadados JSON `geo` correspondentes são acrescentados ao footer do arquivo Parquet. Um `Variant` [`Geometry`](/pt-BR/reference/data-types/geo#geometry) de nível superior também é codificado como um payload `BYTE_ARRAY` WKB (seus subvalores são convertidos em WKB e armazenados como uma coluna `Nullable(String)`), mas nenhum metadado `geo` é emitido para ele, portanto o resultado não é reconhecido como uma coluna de geometria GeoParquet na leitura. Outros tipos relacionados a geo, como [`Ring`](/pt-BR/reference/data-types/geo#ring), são gravados usando sua representação nativa subjacente, sem metadados GeoParquet. Esse comportamento pode ser desativado por completo definindo [`output_format_parquet_geometadata`](/pt-BR/reference/settings/formats/output-format#output_format_parquet_geometadata) como `0`; nesse caso, até mesmo os tipos geo compatíveis são gravados usando sua representação nativa subjacente (`Point` como `Tuple(Float64, Float64)`, `LineString` como `Array(Point)`, `Polygon` como `Array(Array(Point))`, etc.), e nenhum metadado GeoParquet é emitido.
 
 Colunas de geometria devem aparecer na raiz do schema ou aninhadas em `Tuple` (`struct`); não há suporte para aninhá-las em `Array` ou `Map`. `Nullable` também não tem suporte para colunas geo.
 
-## Exemplo de uso {#example-usage}
+## Exemplo de uso
 
-### Inserção de dados {#inserting-data}
+### Inserção de dados
 
 Use um arquivo Parquet com os seguintes dados, chamado `football.parquet`:
 
@@ -152,7 +152,7 @@ Insira os dados:
 INSERT INTO football FROM INFILE 'football.parquet' FORMAT Parquet;
 ```
 
-### Leitura de dados {#reading-data}
+### Leitura de dados
 
 Leia os dados no formato `Parquet`:
 
@@ -169,7 +169,7 @@ FORMAT Parquet
 
 Para trocar dados com o Hadoop, você pode usar o [`motor de tabela HDFS`](/pt-BR/reference/engines/table-engines/integrations/hdfs).
 
-## Configurações de formato {#format-settings}
+## Configurações de formato
 
 | Configuração                                                                   | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Padrão                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

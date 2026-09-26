@@ -13,7 +13,7 @@ Ce guide s’adresse aux utilisateurs disposant du rôle Admin dans ClickHouse C
 
 Les clients de ClickHouse Cloud peuvent choisir parmi des rôles système prédéfinis ou créer des rôles personnalisés à attribuer aux utilisateurs. Pour plus d’informations sur les rôles système et les permissions associées, consultez [Console roles and permissions](/fr/products/cloud/reference/security/console-roles). Ce guide présente la gestion des rôles personnalisés en détail.
 
-## Créer des rôles personnalisés {#create-custom-role}
+## Créer des rôles personnalisés
 
 Les rôles personnalisés peuvent inclure une combinaison de permissions d’organisation, de service et de base de données. Ces permissions peuvent s’appliquer à l’ensemble des services et des bases de données, ou seulement à un sous-ensemble.
 
@@ -65,7 +65,7 @@ Les rôles personnalisés peuvent inclure une combinaison de permissions d’org
   </Step>
 </Steps>
 
-## Gérer les rôles de base de données {#manage-database-roles}
+## Gérer les rôles de base de données
 
 Outre les permissions de la console, les rôles personnalisés peuvent inclure une policy `Data` qui contrôle l&#39;accès aux bases de données des services sélectionnés. Vous pouvez ainsi gérer les accès à la console et aux bases de données à un seul endroit, au lieu de maintenir des rôles distincts dans chaque base de données.
 
@@ -79,7 +79,7 @@ Lorsque vous ajoutez une policy `Data` à un rôle personnalisé, ClickHouse Clo
   Les rôles de base de données gérés par Cloud remplacent les rôles [`sql-console-role:<email>`](/fr/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) attribués manuellement, qui ne sont pas compatibles avec les sessions JWT dans la console SQL.
 </Warning>
 
-### Prérequis {#manage-database-roles-prerequisites}
+### Prérequis
 
 Les rôles personnalisés de base de données d&#39;un service dépendent de l&#39;[authentification JWT](/fr/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) et ne sont pas appliqués lorsqu&#39;elle est désactivée. Avant d&#39;ajouter une policy `Data` à un rôle, accédez au service, ouvrez `Settings`, puis recherchez la carte `JWT authentication` dans la section `Security`. Assurez-vous que le bouton bascule `SQL Console` est activé.
 
@@ -119,7 +119,7 @@ Les rôles personnalisés de base de données d&#39;un service dépendent de l&#
   </Step>
 </Steps>
 
-### Vérifier les rôles de base de données {#verify-database-roles}
+### Vérifier les rôles de base de données
 
 Les rôles gérés via la console sont créés dans la base de données avec le préfixe `cloud:` et le type de stockage `cloud`, et peuvent mettre jusqu’à 10 minutes à apparaître après leur création. Pour les afficher, interrogez la table `system.roles` du service :
 
@@ -134,7 +134,7 @@ SELECT * FROM system.roles;
 ```
 
 <div id="update-custom-role">
-  ## Mettre à jour les rôles personnalisés {#update-custom-role}
+  ## Mettre à jour les rôles personnalisés
 </div>
 
 Les rôles personnalisés peuvent être modifiés après leur création. Les utilisateurs perdront toutes les permissions retirées du rôle et obtiendront toutes les permissions ajoutées.
@@ -151,7 +151,7 @@ Les rôles personnalisés peuvent être modifiés après leur création. Les uti
 6. Sélectionnez `Edit role`
 
 <div id="delete-custom-role">
-  ## Supprimer les rôles personnalisés {#delete-custom-role}
+  ## Supprimer les rôles personnalisés
 </div>
 
 Les rôles personnalisés peuvent être supprimés à tout moment.

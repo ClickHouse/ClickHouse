@@ -9,11 +9,11 @@ doc_type: 'guide'
 
 يشرح هذا الدليل خطوة بخطوة كيفية تحميل بيانات تتبع نماذج LLM من [Langfuse Cloud](https://cloud.langfuse.com/) إلى ClickHouse Cloud لإجراء التحليلات في الوقت الفعلي.
 
-## التصدير من Langfuse Cloud {#export-from-langfuse-cloud}
+## التصدير من Langfuse Cloud
 
 اتبع [هذا الدليل](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage) لتهيئة تكامل Blob Storage في Langfuse Cloud بهدف إجراء عمليات تصدير مجدولة. يمكنك جدولة تصدير بيانات التتبع إلى التخزين الكائني بوتيرة تصل إلى مرة كل `20 minutes`، أو وفق جدول `hourly` أو `daily` أو `weekly`. ويتضمن كل تصدير افتراضيًا `observations` الخاصة بك (مُثراةً بسمات التتبع) و`scores`.
 
-### بنية الملفات المُصدَّرة {#exported-file-layout}
+### بنية الملفات المُصدَّرة
 
 يكتب تكامل Blob Storage في Langfuse Cloud البيانات إلى الحاوية (bucket) أو حاوية التخزين (storage container) الهدف وفق بنية الأدلة التالية:
 
@@ -24,7 +24,7 @@ doc_type: 'guide'
 └── manifests/         # one JSON file per completed run with export metadata
 ```
 
-## الاستيراد إلى ClickHouse Cloud {#import-into-clickhouse-cloud}
+## الاستيراد إلى ClickHouse Cloud
 
 بعد تهيئة تكامل Blob Storage في Langfuse Cloud، ستُصدَّر بيانات التتبع دوريًا وفق جدول زمني إلى الحاوية (bucket) أو حاوية التخزين الهدف. ولاستيراد هذه البيانات إلى ClickHouse Cloud، يمكنك استخدام [ClickPipes](/ar/integrations/clickpipes) وموصلات التخزين الكائني المُدارة التي يوفرها:
 
@@ -34,7 +34,7 @@ doc_type: 'guide'
 | <img src="/images/integrations/logos/gcs.svg" alt="شعار Google Cloud Storage" className="integration-table-logo" width="24" height="24" /> **Google Cloud Storage**                                                                                                                                            | التكامل باستخدام [GCS ClickPipes](/ar/integrations/clickpipes/object-storage/google-cloud-storage/overview). |
 | <img src="/images/integrations/logos/azureblobstorage.svg" alt="شعار Azure Blob Storage" className="integration-table-logo" width="24" height="24" /> **Azure Blob Storage**                                                                                                                                   | التكامل باستخدام [ABS ClickPipes](/ar/integrations/clickpipes/object-storage/azure-blob-storage/overview).   |
 
-### إنشاء ClickPipe {#create-a-clickpipe}
+### إنشاء ClickPipe
 
 يستخدم هذا المثال S3 ClickPipe لاستيراد البيانات من حاوية S3 تستقبل عمليات تصدير مجدولة من Langfuse Cloud، ويمكن اعتماده نموذجًا لجميع وجهات التصدير إلى التخزين الكائني. وللاطلاع على إرشادات خاصة بكل مصدر بيانات، راجع [وثائق ClickPipes](/ar/integrations/clickpipes).
 
@@ -147,11 +147,11 @@ doc_type: 'guide'
   </Step>
 </Steps>
 
-### الاستعلام عن بيانات التتبع {#query-trace-data}
+### الاستعلام عن بيانات التتبع
 
 بعد أن تبدأ ClickPipes بالعمل، يمكنك الاستعلام عن بيانات التتبع الخاصة بك في Langfuse Cloud مباشرةً من ClickHouse Cloud. تتناول الأمثلة أدناه بعض أنماط الاستعلام الشائعة: التجميعات الإجمالية للتكلفة وزمن الاستجابة، وإعادة بناء تتبع واحد، وربط الدرجات بالنماذج والموجّهات.
 
-#### تجميعات المقاييس ضمن فترات زمنية {#time-bucketed-metric-rollups}
+#### تجميعات المقاييس ضمن فترات زمنية
 
 <Tip>
   تُصدَّر بعض الحقول، مثل `usage_details` و`cost_details`، كأعمدة من نوع `Map`. للوصول إلى قيمة واحدة، ابحث عنها بمفتاحها (مثلًا: `sum(cost_details['total'])`).
@@ -172,7 +172,7 @@ GROUP BY t, provided_model_name
 ORDER BY t;
 ```
 
-#### إعادة بناء التتبّع {#trace-reconstruction}
+#### إعادة بناء التتبّع
 
 ```sql
 SELECT *
@@ -181,7 +181,7 @@ WHERE trace_id = '<trace_id>'
 ORDER BY start_time;
 ```
 
-#### تحليل الجودة {#quality-analysis}
+#### تحليل الجودة
 
 ```sql
 SELECT
@@ -195,7 +195,7 @@ GROUP BY o.provided_model_name, s.name
 ORDER BY avg_score DESC;
 ```
 
-## انظر أيضًا {#see-also}
+## انظر أيضًا
 
 * [Langfuse وClickHouse](/ar/products/cloud/features/ai-ml/langfuse)
 * [التصدير من Langfuse Cloud إلى Blob Storage](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)

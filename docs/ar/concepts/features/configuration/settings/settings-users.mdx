@@ -80,7 +80,7 @@ doc_type: 'reference'
 </users>
 ```
 
-### user_name/password {#user-namepassword}
+### user_name/password
 
 يمكن تحديد كلمة المرور بصيغة نص صريح أو بصيغة SHA256 (بتنسيق hex).
 
@@ -116,7 +116,7 @@ doc_type: 'reference'
 
   السطر الأول من الناتج هو كلمة المرور. والسطر الثاني هو تجزئة double SHA1 المقابلة لها.
 
-### تهيئة مصادقة TOTP {#totp-authentication-configuration}
+### تهيئة مصادقة TOTP
 
 يمكن استخدام كلمة المرور لمرة واحدة المستندة إلى الوقت (TOTP) لمصادقة مستخدمي ClickHouse، وذلك عبر إنشاء رموز وصول مؤقتة صالحة لمدة محدودة.
 تتوافق طريقة المصادقة هذه باستخدام TOTP مع معايير [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238)، مما يجعلها متوافقة مع تطبيقات TOTP الشائعة مثل Google Authenticator و1Password وأدوات مماثلة.

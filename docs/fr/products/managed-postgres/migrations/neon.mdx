@@ -56,9 +56,9 @@ Avec ClickPipes, les clients peuvent migrer des bases de données Postgres de pl
   </Step>
 </Steps>
 
-## Points à considérer pour la migration {#migration-considerations}
+## Points à considérer pour la migration
 
-### Branches {#branches}
+### Branches
 
 Neon propose une création de branches instantanée en copy-on-write. ClickHouse Managed Postgres s&#39;appuie sur du stockage NVMe local pour offrir des performances Postgres rapides, prévisibles et fiables.
 En contrepartie, les branches ne sont pas instantanées : elles sont créées sous forme de deployments indépendants via la [récupération à un instant précis (PITR)](/fr/products/managed-postgres/backup-and-restore). Elles sont généralement disponibles en quelques minutes.
@@ -67,7 +67,7 @@ Pour le développement au quotidien, nous recommandons de maintenir une base de 
 
 Certains clients recourent à cette approche pour gérer des centaines d&#39;environnements de développement. Nous améliorons activement l&#39;expérience de fork et de sandbox. Consultez la [documentation sur la création de branches](/fr/products/managed-postgres/branching).
 
-### Neon Serverless Driver {#neon-serverless}
+### Neon Serverless Driver
 
 Si votre application n&#39;utilise pas le Neon Serverless Driver, vous pouvez ignorer cette section.
 
@@ -88,7 +88,7 @@ Avant la migration :
 
 Pour plus de détails, consultez la [compatibility matrix de PgBouncer](https://www.pgbouncer.org/features.html).
 
-### Limites de connexions {#connection-limits}
+### Limites de connexions
 
 ClickHouse Managed Postgres prend en charge par défaut 500 connexions Postgres directes. Si votre workload Neon dépasse ce nombre, vous pouvez :
 
@@ -97,7 +97,7 @@ ClickHouse Managed Postgres prend en charge par défaut 500 connexions Postgres 
 * Augmenter `max_connections` si davantage de connexions directes sont nécessaires.
   * `max_connections` peut être modifié depuis **Settings → Edit parameters**. Certaines modifications nécessitent un redémarrage. Consultez la [documentation de configuration](/fr/products/managed-postgres/settings#changing-configuration).
 
-### Modifications de schéma pendant la migration {#schema-changes}
+### Modifications de schéma pendant la migration
 
 Réduisez au maximum la période entre le démarrage de ClickPipes et le basculement — idéalement quelques jours tout au plus — et évitez toute modification de schéma pendant cet intervalle.
 

@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-## Customer-managed VPC (BYO-VPC) for GCP {#customer-managed-vpc-gcp}
+## Customer-managed VPC (BYO-VPC) for GCP
 
 إذا كنت تفضّل استخدام شبكة VPC الحالية لنشر ClickHouse BYOC بدلًا من أن يقوم ClickHouse Cloud بتجهيز VPC جديدة، فاتبع الخطوات أدناه. يوفّر هذا النهج قدرًا أكبر من التحكم في تكوين الشبكة، ويتيح لك دمج ClickHouse BYOC ضمن البنية التحتية الحالية لشبكتك.
 
@@ -57,7 +57,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-### شبكة VPC المشتركة من مشروع مضيف {#shared-vpc-host-project}
+### شبكة VPC المشتركة من مشروع مضيف
 
 يمكنك تشغيل BYOC في مشروع خدمة على شبكة موجودة في مشروع مضيف منفصل من نوع [Shared VPC](https://cloud.google.com/vpc/docs/shared-vpc)، ما يتيح لك إبقاء إدارة الشبكات مركزية. فشبكة VPC وشبكاتها الفرعية مملوكة للمشروع **المضيف**، بينما تعمل البنية التحتية لـ BYOC في مشروع **خدمة** مرفق به. وتبقى المتطلبات المذكورة أعلاه كما هي؛ غير أنها تنطبق على الشبكة الفرعية في المشروع المضيف.
 

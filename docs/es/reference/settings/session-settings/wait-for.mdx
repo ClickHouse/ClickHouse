@@ -13,19 +13,19 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## wait_for_async_insert {#wait_for_async_insert}
+## wait_for_async_insert
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Si es true, espere a que se complete el procesamiento de la inserción asíncrona.
 
-## wait_for_async_insert_timeout {#wait_for_async_insert_timeout}
+## wait_for_async_insert_timeout
 
 <SettingsInfoBlock type="Segundos" default_value="120" />
 
 Tiempo de espera para que se procese la inserción asíncrona.
 
-## wait_for_part_commit_in_dependent_materialized_views {#wait_for_part_commit_in_dependent_materialized_views}
+## wait_for_part_commit_in_dependent_materialized_views
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

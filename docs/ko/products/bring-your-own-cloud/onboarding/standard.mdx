@@ -10,7 +10,7 @@ doc_type: '참고'
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <div id="what-is-standard-onboarding">
-  ## 표준 온보딩이란 무엇입니까? {#what-is-standard-onboarding}
+  ## 표준 온보딩이란 무엇입니까?
 </div>
 
 **표준 온보딩**은 BYOC를 사용해 자체 클라우드 계정에 ClickHouse를 배포할 때 사용하는 기본 안내형 워크플로입니다. 이 방식에서는 ClickHouse Cloud가 배포에 필요한 핵심 클라우드 리소스(VPC/VNet, 서브넷, 보안 그룹, Kubernetes(EKS/GKE/AKS) 클러스터, 관련 IAM 역할/서비스 계정/서비스 주체 등)를 AWS 계정, GCP 프로젝트 또는 Azure subscription 내에 프로비저닝합니다. 이를 통해 일관되고 안전한 구성을 보장하고, 팀이 수동으로 수행해야 하는 작업을 최소화합니다.
@@ -26,16 +26,16 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </Note>
 
 <div id="request-access">
-  ## 액세스 요청 {#request-access}
+  ## 액세스 요청
 </div>
 
 온보딩 절차를 시작하려면 [문의해 주세요](https://clickhouse.com/cloud/bring-your-own-cloud). 당사 팀이 BYOC 요구 사항을 안내하고, 가장 적합한 배포 옵션을 선택할 수 있도록 지원하며, 계정을 허용 목록에 추가해 드립니다.
 
 <div id="onboarding-process">
-  ## 온보딩 {#onboarding-process}
+  ## 온보딩
 </div>
 
-### AWS 계정/GCP 프로젝트/Azure subscription 준비 {#prepare-an-aws-account}
+### AWS 계정/GCP 프로젝트/Azure subscription 준비
 
 조직 아래에 새로운 AWS 계정, GCP 프로젝트 또는 Azure subscription을 준비합니다.
 
@@ -57,7 +57,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
       ClickHouse 실행에 필요한 스토리지 버킷, VPC/VNet, Kubernetes 클러스터 및 컴퓨트 리소스는 이 초기 설정에 포함되지 않습니다. 다음 단계에서 프로비저닝됩니다.
     </Note>
 
-#### AWS용 Terraform 모듈 {#terraform-module-aws}
+#### AWS용 Terraform 모듈
 
     AWS 배포에서 CloudFormation 대신 Terraform을 사용하려면 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 모듈을 사용하십시오:
 
@@ -76,7 +76,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
       이 모듈은 이전에 `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`에서 tarball 형태로 배포되었습니다. 해당 URL은 계속 사용할 수 있지만 더 이상 사용되지 않으므로 위의 GitHub 모듈을 사용하십시오.
     </Note>
 
-#### AWS 외부 ID {#aws-external-id}
+#### AWS 외부 ID
 
     AWS에서는 설정 중 생성된 IAM 역할이 혼동된 대리인 공격을 방지하기 위해 [외부 ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html)(`sts:ExternalId`)를 통해 ClickHouse Cloud를 신뢰하도록 구성됩니다. ClickHouse Cloud 콘솔은 온보딩을 시작할 때 AWS 계정용 외부 ID를 생성하여 CloudFormation 링크에 미리 입력합니다. Terraform을 사용하는 경우 동일한 값을 `external_id`로 전달하십시오. 동일한 AWS 계정의 모든 BYOC 인프라는 같은 외부 ID를 공유합니다.
 
@@ -102,7 +102,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC 인프라 구성" background="black" />
 
-#### 사전 유효성 검사 {#preflight-validation}
+#### 사전 유효성 검사
 
     **Set up Infrastructure**를 클릭하면 ClickHouse Cloud는 리소스를 생성하기 전에 계정을 대상으로 일련의 **읽기 전용** 사전 점검을 실행합니다. 모든 점검을 통과하면 프로비저닝이 계속 진행됩니다. 점검에 실패하면 설정이 일시 중지되고 콘솔에 문제가 무엇인지 정확히 표시되므로, 리소스가 생성되기 전에 문제를 해결할 수 있습니다.
 
@@ -138,7 +138,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   </Step>
 </Steps>
 
-### 첫 번째 BYOC ClickHouse 서비스 생성 {#create-clickhouse-service}
+### 첫 번째 BYOC ClickHouse 서비스 생성
 
 BYOC 인프라가 프로비저닝되면 첫 번째 ClickHouse 서비스를 생성할 준비가 됩니다. ClickHouse Cloud 콘솔을 열고 BYOC 환경을 선택한 다음, 안내에 따라 새 서비스를 생성하십시오.
 

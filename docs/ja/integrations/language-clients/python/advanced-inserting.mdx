@@ -7,9 +7,9 @@ title: '高度なデータ挿入'
 doc_type: 'reference'
 ---
 
-## ClickHouse Connectを使ったデータの挿入: 高度な使い方 {#inserting-data-with-clickhouse-connect--advanced-usage}
+## ClickHouse Connectを使ったデータの挿入: 高度な使い方
 
-### InsertContexts {#insertcontexts}
+### InsertContexts
 
 ClickHouse Connect は、Native-format の挿入である `insert` および `insert_df` メソッドを、`InsertContext` 内で実行します。`insert_arrow`、`insert_df_arrow`、`raw_insert` の各メソッドはペイロードを直接送信するため、これを使用しません。`InsertContext` には、クライアントの `insert` メソッドに引数として渡すすべての値が含まれます。さらに、`InsertContext` の初回作成時には、効率的な Native format での挿入に必要な対象カラムのデータ型を ClickHouse Connect が取得します。複数回の挿入で `InsertContext` を再利用すると、この&quot;事前クエリ&quot;を省略できるため、挿入をより高速かつ効率的に実行できます。
 
@@ -31,13 +31,13 @@ assert qr.first_row[0] == 113
 
 `InsertContext`には、挿入処理中に更新される可変状態が含まれているため、スレッドセーフではありません。
 
-### 書き込みフォーマット {#write-formats}
+### 書き込みフォーマット
 
 書き込みフォーマットは、一部の型に対してのみ実装されています。ほとんどの場合、ClickHouse Connect はカラムの最初の非 NULL 値に基づいて、適切な書き込みフォーマットを自動的に判定します。たとえば、`DateTime` カラムの最初の値が整数であれば、クライアントはそれをエポック秒として扱います。
 
 通常、書き込みフォーマットを上書きする必要はありませんが、`clickhouse_connect.datatypes.format` のメソッドを使うとグローバルに設定できます。`Array`、`Nullable`、`LowCardinality` などのコンテナーラッパーは、要素型のフォーマット動作を保持します。
 
-#### 書き込みフォーマットのオプション {#write-format-options}
+#### 書き込みフォーマットのオプション
 
 | ClickHouse Type       | Native Python Type                 | 書き込みフォーマット        | Comments                                                                                                                                    |
 | --------------------- | ---------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -71,7 +71,7 @@ assert qr.first_row[0] == 113
 | Geometry              | tuple or list                      |                   | Point の値は2要素のタプルです。MultiPoint を含むリストベースの値は、ジオメトリのメンバーを選択するために `typed_variant` でラップしてください。                                                   |
 | QBit                  | Sequence[float]                    |                   | インストールされている場合、より高速なビット転置のために NumPy が自動的に使用されます。                                                                                             |
 
-#### Date および Date32 の値 {#date-and-date32-values}
+#### Date および Date32 の値
 
 ネイティブ insert では、`Date` または `Date32` カラムに Python の `date` 値と `datetime` 値を混在させて渡すことができます。`datetime` を渡した場合は、`.date()` が返すのと同じ、その値自体の日付が使用されます。タイムゾーン変換は行われません。これは `Nullable`、`Array`、`Tuple`、`LowCardinality` カラム内の値にも適用されます。
 
@@ -90,7 +90,7 @@ assert result.result_rows == [(date(2024, 1, 1),), (date(2024, 1, 2),)]
 
 datetime のクエリパラメータは[バインディングのルール](/ja/integrations/language-clients/python/driver-api#parameters-argument)に従います。タイムゾーン対応の `datetime` は、`Date` または `Date32` の値としてフォーマットされる前にサーバーのタイムゾーンに変換されるため、暦日が変わることがあります。挿入時とバインドするパラメータとで同じ暦日を使用する必要がある場合は、`value.date()` を明示的に渡してください。
 
-### 専用の 挿入 メソッド {#specialized-insert-methods}
+### 専用の 挿入 メソッド
 
 ClickHouse Connect では、一般的なデータフォーマット向けに専用の 挿入 メソッドが用意されています。
 
@@ -104,7 +104,7 @@ ClickHouse Connect では、一般的なデータフォーマット向けに専�
   NumPy 配列は有効な Sequence の Sequence であり、メインの `insert` メソッドの `data` 引数として使用できるため、専用メソッドは必要ありません。
 </Note>
 
-#### Pandas DataFrame の挿入 {#pandas-dataframe-insert}
+#### Pandas DataFrame の挿入
 
 ```python
 import clickhouse_connect
@@ -121,7 +121,7 @@ df = pd.DataFrame({
 client.insert_df("users", df)
 ```
 
-#### PyArrow Table を使った挿入 {#pyarrow-table-insert}
+#### PyArrow Table を使った挿入
 
 ```python
 import clickhouse_connect
@@ -138,7 +138,7 @@ arrow_table = pa.table({
 client.insert_arrow("users", arrow_table)
 ```
 
-#### ArrowベースのDataFrame挿入 (pandas 2.x) {#arrow-backed-dataframe-insert-pandas-2}
+#### ArrowベースのDataFrame挿入 (pandas 2.x)
 
 ```python
 import clickhouse_connect
@@ -156,7 +156,7 @@ df = pd.DataFrame({
 client.insert_df_arrow("users", df)
 ```
 
-### PyArrow スキーマからテーブルを作成する {#create-table-from-pyarrow-schema}
+### PyArrow スキーマからテーブルを作成する
 
 `create_table_from_arrow_schema` は、一般的なスカラー Arrow フィールドから `CREATE TABLE` ステートメントを生成します。このマッピングは、符号付き整数、符号なし整数、浮動小数点値、ブール値、文字列、日付、タイムスタンプをカバーします。意図的に NULL を許容しない ClickHouse カラムを作成し、サポートされていない Arrow 型に対しては `TypeError` を送出するため、実行前に生成された DDL を確認してください。
 
@@ -183,11 +183,11 @@ ddl = create_table_from_arrow_schema(
 client.command(ddl)
 ```
 
-### タイムゾーン {#time-zones}
+### タイムゾーン
 
 Python の `datetime` オブジェクトを `DateTime` または `DateTime64` カラムに挿入する際、ClickHouse Connect はそれらを epoch 値に変換します。
 
-#### タイムゾーン対応の datetime オブジェクト {#timezone-aware-datetime-objects}
+#### タイムゾーン対応の datetime オブジェクト
 
 タイムゾーン対応のオブジェクトは、表している時点を保持します。ソースのタイムゾーンは、ClickHouse のカラムで宣言されているタイムゾーンと一致している必要はありません。
 
@@ -216,7 +216,7 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
   ClickHouse Connect は標準ライブラリの `zoneinfo` モジュールを使用します。ドライバーは `pytz` に依存しなくなっています。
 </Note>
 
-#### タイムゾーン情報を持たない datetime オブジェクト {#timezone-naive-datetime-objects}
+#### タイムゾーン情報を持たない datetime オブジェクト
 
 グローバル設定 `naive_datetime_insert` は、タイムゾーン情報を持たない `datetime` 値をネイティブ Python オブジェクトとして挿入する際の動作を制御します。また、`DateTime64` カラムで受け付けられるタイムゾーン情報を持たない ISO 文字列にも適用されます。
 
@@ -257,7 +257,7 @@ client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 
 タイムゾーン情報を持たない `datetime` のクエリパラメータには、個別の `naive_datetime_binding` 設定が使用されます。デフォルトの `"wall"` モードでは、ホストのローカル時刻への変換を行わずに日時フィールドが送信されます。[Parameters argument](/ja/integrations/language-clients/python/driver-api#parameters-argument) セクションを参照してください。
 
-#### タイムゾーン メタデータを持つ DateTime カラム {#datetime-columns-with-timezone-metadata}
+#### タイムゾーン メタデータを持つ DateTime カラム
 
 ClickHouse のカラムでは、`DateTime('America/Denver')` や `DateTime64(3, 'Asia/Tokyo')` のようにタイムゾーン メタデータを宣言できます。このメタデータは、クエリ時に値がどのように表示されるかを制御します。
 
@@ -282,7 +282,7 @@ assert returned.hour == 7
 assert returned.tzinfo == ZoneInfo("America/Los_Angeles")
 ```
 
-## ファイルの挿入 {#file-inserts}
+## ファイルの挿入
 
 `clickhouse_connect.driver.tools.insert_file` はローカルファイルを既存のテーブルにストリームで挿入し、パースは ClickHouse に委ねます。
 

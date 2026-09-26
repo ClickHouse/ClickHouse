@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [ملف المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## external_table_functions_use_nulls {#external_table_functions_use_nulls}
+## external_table_functions_use_nulls
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,7 +27,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 إذا ضُبط الإعداد على `0`، فلن تُنشئ دالة الجدول أعمدة Nullable، وستُدرج القيم الافتراضية بدلًا من NULL. وينطبق ذلك أيضًا على قيم NULL داخل المصفوفات.
 
-## external_table_strict_query {#external_table_strict_query}
+## external_table_strict_query
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

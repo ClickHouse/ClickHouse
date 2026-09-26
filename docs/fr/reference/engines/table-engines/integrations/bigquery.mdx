@@ -14,7 +14,7 @@ La lecture utilise l’API REST BigQuery (`tabledata.list`) ; seules les tables
 
 Les écritures ne sont pas atomiques : un `INSERT` volumineux est envoyé par batches (500 lignes au maximum par requête et scindé si nécessaire pour respecter la limite de 10 Mo imposée par BigQuery&#39;s pour la taille des requêtes), une même requête peut ne réussir que partiellement (BigQuery peut valider certaines lignes d’une requête tout en rejetant les autres avec `insertErrors`), et un batch ultérieur peut être rejeté après l’acceptation de batches précédents — dans les deux cas, les lignes déjà validées restent dans BigQuery tandis que la requête signale une erreur. Chaque ligne comporte un `insertId` stable (dérivé de l’identifiant de la requête et de la position ordinale de la ligne) afin que BigQuery déduplique au mieux les lignes réessayées ; comme le `insertId` dépend de la position ordinale, la réexécution du même `INSERT` ne déduplique que si les lignes sont présentées dans le même ordre (par exemple en mode monothread, avec `max_threads = 1` et `max_insert_threads = 1`). Consultez les [limitations de la fonction de table `bigquery`](/fr/reference/functions/table-functions/bigquery#limitations) pour plus de détails.
 
-## Création d’une table {#creating-a-table}
+## Création d’une table
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -37,7 +37,7 @@ La liste des colonnes est facultative : si elle est omise, la structure est déd
 
 Les paramètres peuvent également être transmis sous forme de [collection nommée](/fr/concepts/features/configuration/server-config/named-collections), avec des surcharges `key = value`. Consultez la [fonction de table `bigquery`](/fr/reference/functions/table-functions/bigquery#arguments) pour obtenir la liste complète des clés et une description des [méthodes d’authentification](/fr/reference/functions/table-functions/bigquery#authentication). Une seule méthode d’authentification doit être fournie ; pour une table permanente, il est préférable d’utiliser un `service_account_key` ou un `refresh_token` plutôt qu’un `access_token`, car les jetons d’accès expirent au bout d’une heure.
 
-## Exemple d’utilisation {#usage-example}
+## Exemple d’utilisation
 
 ```sql
 CREATE TABLE shakespeare
@@ -53,7 +53,7 @@ ENGINE = BigQuery('my-project', 'my_dataset', 'events',
 INSERT INTO events VALUES (1, 'started');
 ```
 
-## À consulter également {#related}
+## À consulter également
 
 * [Fonction de table `bigquery`](/fr/reference/functions/table-functions/bigquery)
 

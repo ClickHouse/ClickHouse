@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'مغلّف البيانات الخارجية', 'pg_clickhouse', 'امتداد', 'دليل تعليمي', 'سيارات الأجرة']
 ---
 
-## نظرة عامة {#overview}
+## نظرة عامة
 
 يعتمد هذا الدليل العملي على [دليل ClickHouse التعليمي]، لكنه يُجري جميع استعلاماته عبر
 pg&#95;clickhouse.
@@ -18,7 +18,7 @@ pg&#95;clickhouse.
 * [من PSQL](#from-psql) إذا كنت تثبّت وتُهيّئ الامتداد
   بنفسك.
 
-## ابدأ ClickHouse {#start-clickhouse}
+## ابدأ ClickHouse
 
 أولًا، أنشئ قاعدة بيانات في ClickHouse إذا لم تكن لديك قاعدة بيانات بالفعل. ومن أسرع الطرق
 للبدء استخدام Docker image:
@@ -28,7 +28,7 @@ docker run -d --network host --name clickhouse -p 8123:8123 -p9000:9000 --ulimit
 docker exec -it clickhouse clickhouse-client
 ```
 
-## إنشاء جدول {#create-a-table}
+## إنشاء جدول
 
 لنستفد من [دليل ClickHouse التعليمي] لإنشاء قاعدة بيانات بسيطة باستخدام مجموعة بيانات سيارات الأجرة
 في مدينة نيويورك:
@@ -93,7 +93,7 @@ PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 ```
 
-## أضِف مجموعة البيانات {#add-the-data-set}
+## أضِف مجموعة البيانات
 
 ثم استورد البيانات:
 
@@ -162,7 +162,7 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
-## من وحدة التحكم {#from-console}
+## من وحدة التحكم
 
 إذا كنت تستخدم ClickHouse Managed Postgres، يمكنك تهيئة
 `pg_clickhouse` والاتصال بخدمة ClickHouse من خلال ClickHouse Cloud console.
@@ -193,9 +193,9 @@ SELECT * FROM <schema>.<table>;
 لمتابعة أمثلة سيارات الأجرة في هذا الدليل العملي، اختر قاعدة بيانات ClickHouse ‏`taxi`
 واستوردها إلى مخطط الوجهة ‏`taxi`.
 
-## من PSQL {#from-psql}
+## من PSQL
 
-### تثبيت pg_clickhouse {#install-pg_clickhouse}
+### تثبيت pg_clickhouse
 
 أنشئ pg&#95;clickhouse وثبّته من [PGXN] أو [GitHub]. أو شغّل حاوية
 Docker باستخدام [image pg&#95;clickhouse]، التي تضيف ببساطة
@@ -206,7 +206,7 @@ docker run -d --network host --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
 ```
 
-### ربط pg_clickhouse {#connect-pg_clickhouse}
+### ربط pg_clickhouse
 
 الآن، اتصل بـ Postgres:
 
@@ -350,7 +350,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 لاحظ أن &quot;Foreign Scan&quot; يظهر عند جذر الخطة، ما يعني أن
 الاستعلام بأكمله دُفع إلى ClickHouse.
 
-## حلّل البيانات {#analyze-the-data}
+## حلّل البيانات
 
 شغّل بعض الاستعلامات لتحليل البيانات. اطّلع على الأمثلة التالية أو جرّب
 استعلام SQL خاصًا بك.
@@ -506,7 +506,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
   Time: 17.450 ms
   ```
 
-## إنشاء قاموس {#create-a-dictionary}
+## إنشاء قاموس
 
 أنشئ قاموسًا مرتبطًا بجدول في خدمة ClickHouse الخاصة بك. يعتمد كلٌّ من
 الجدول والقاموس على ملف CSV يحتوي على صف لكل
@@ -606,7 +606,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
    مطارَي LaGuardia أو JFK. لاحظ أن هناك عددًا كبيرًا من الرحلات التي
    لا يكون فيها الحي الذي انطلقت منه الرحلة معروفًا.
 
-## تنفيذ عملية join {#perform-a-join}
+## تنفيذ عملية join
 
 اكتب بعض الاستعلامات التي تربط `taxi_zone_dictionary` بجدول `trips`
 لديك.

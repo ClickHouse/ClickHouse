@@ -38,7 +38,7 @@ CREATE TOKEN
 نفسه. وتخوّل الصلاحية نفسها تنفيذ العبارة المكافئة
 `ALTER USER <current user> ADD IDENTIFIED ...`.
 
-## النتيجة {#result}
+## النتيجة
 
 يُرجع الاستعلام صفًا واحدًا يتكوّن من عمودين:
 
@@ -57,7 +57,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 [قواعد تعقيد كلمة المرور](/ar/reference/statements/create/user#identification) — فهذه القواعد وُضعت لتقييد
 كلمات المرور التي يختارها البشر.
 
-## عبارتا VALID UNTIL و VALID FOR {#valid-until-clause}
+## عبارتا VALID UNTIL و VALID FOR
 
 تحدّان مدة صلاحية الرمز. وتعملان تمامًا مثل العبارتين المقابلتين لهما في طريقة المصادقة الخاصة بـ
 [`CREATE USER`](/ar/reference/statements/create/user#valid-until-clause): فـ `VALID UNTIL` تأخذ تاريخًا ووقتًا مطلقين،
@@ -75,7 +75,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 * `CREATE TOKEN VALID FOR INTERVAL 30 DAY`
 * `CREATE TOKEN VALID UNTIL 'infinity'`
 
-## GRANTS Clause {#grants-clause}
+## GRANTS Clause
 
 يقصر حقوق الوصول للجلسات المُصادَق عليها بواسطة الرمز على التقاطع مع الصلاحيات المذكورة.
 وهو يعمل تمامًا مثل [`عبارة `GRANTS`في`CREATE USER&#96;](/ar/reference/statements/create/user#grants-clause)،
@@ -92,7 +92,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 لا ينطبق هذا الحد ولا الحد الزمني على ما تخلّفه جلسات الرمز وراءها — راجع
 [اعتبارات الأمان](#security-considerations).
 
-## إدارة الرموز {#managing-tokens}
+## إدارة الرموز
 
 الرمز هو طريقة المصادقة خاصة بالمستخدم، ولذلك يظهر في
 [`SHOW CREATE USER`](/ar/reference/statements/show#show-create-user) (مع عبارتَي `VALID UNTIL` و`GRANTS`،
@@ -115,7 +115,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 كل node باستخدام العبارة المكافئة `ALTER USER ... ADD IDENTIFIED WITH sha256_hash`) لكي يعمل الرمز
 عبر cluster تُخزَّن access entities الخاصة به محليًا.
 
-## اعتبارات الأمان {#security-considerations}
+## اعتبارات الأمان
 
 يقيّد كل من `VALID UNTIL` و`GRANTS` الجلسات التي تُصادَق باستخدام الرمز، لكنهما لا يقيّدان
 ما تخلّفه تلك الجلسات وراءها:

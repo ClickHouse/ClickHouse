@@ -11,13 +11,13 @@ doc_type: 'reference'
 
 Предоставляет интерфейс, подобный таблице, только для чтения для таблиц Apache [Hudi](https://hudi.apache.org/) в Amazon S3.
 
-## Синтаксис {#syntax}
+## Синтаксис
 
 ```sql
 hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 ```
 
-## Аргументы {#arguments}
+## Аргументы
 
 | Аргумент                                     | Описание                                                                                                                                                                                                                                                                                                                                                                                |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -28,11 +28,11 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 | `compression`                                | Параметр необязателен. Поддерживаемые значения: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. По умолчанию сжатие автоматически определяется по расширению файла. Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (по умолчанию — `basic`).             |
 | `extra_credentials`                          | Параметр необязателен. Используется для передачи `role_arn` для доступа на основе ролей в ClickHouse Cloud. Инструкции по настройке см. в разделе [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).                                                                                                                                                          |
 
-## Возвращаемое значение {#returned-value}
+## Возвращаемое значение
 
 Таблица с указанной структурой для чтения данных из указанной таблицы Hudi в S3.
 
-## Виртуальные столбцы {#virtual-columns}
+## Виртуальные столбцы
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
@@ -40,7 +40,7 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 * `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение — `NULL`.
 
-## См. также {#related}
+## См. также
 
 * [Движок Hudi](/ru/reference/engines/table-engines/integrations/hudi)
 * [Табличная функция cluster для Hudi](/ru/reference/functions/table-functions/hudiCluster)

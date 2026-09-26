@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 書き込みはアトミックではありません。大規模な `INSERT` はバッチに分けて送信されます (1 リクエストあたり最大 500 行。BigQuery&#39;s の 10 MB リクエストサイズ上限を超えないようにも分割されます) 。また、1 つのリクエストが部分的にしか成功しない場合があります (BigQuery はリクエスト内の一部の行を commit し、残りを `insertErrors` で拒否することがあります) 。さらに、先行するバッチが受け入れられた後で、後続のバッチが拒否されることもあります。いずれの場合も、すでに commit された行は BigQuery に残り、クエリでは error が報告されます。各行には安定した `insertId` (クエリ id と行の序数位置から派生) が付与されるため、BigQuery は再試行された行の重複をベストエフォートで排除します。`insertId` は序数位置に依存するため、同じ `INSERT` を再実行した際に重複排除されるのは、行が同じ順序で渡される場合のみです (たとえば、`max_threads = 1` および `max_insert_threads = 1` を指定した single-threaded の場合) 。詳細については、[`bigquery` テーブル関数 の制限事項](/ja/reference/functions/table-functions/bigquery#limitations)を参照してください。
 
-## テーブルの作成 {#creating-a-table}
+## テーブルの作成
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -37,7 +37,7 @@ ENGINE = BigQuery(project, dataset, table[, access_token][, key = value, ...])
 
 パラメータは、`key = value` によるオーバーライドを指定した[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)として渡すこともできます。オプションの完全なリストと[認証方法](/ja/reference/functions/table-functions/bigquery#authentication)の説明については、[`bigquery` テーブル関数](/ja/reference/functions/table-functions/bigquery#arguments)を参照してください。認証方法は必ず 1 つ指定する必要があります。永続テーブルでは、アクセストークンは 1 時間以内に期限切れとなるため、`access_token` よりも `service_account_key` または `refresh_token` を使用することを推奨します。
 
-## 使用例 {#usage-example}
+## 使用例
 
 ```sql
 CREATE TABLE shakespeare
@@ -53,7 +53,7 @@ ENGINE = BigQuery('my-project', 'my_dataset', 'events',
 INSERT INTO events VALUES (1, 'started');
 ```
 
-## 関連項目 {#related}
+## 関連項目
 
 * [`bigquery` テーブル関数](/ja/reference/functions/table-functions/bigquery)
 

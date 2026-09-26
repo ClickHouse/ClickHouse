@@ -10,7 +10,7 @@ doc_type: 'referência'
 
 A instrução `TRUNCATE` no ClickHouse é usada para remover rapidamente todos os dados de uma tabela ou banco de dados, preservando sua estrutura.
 
-## TRUNCATE TABLE {#truncate-table}
+## TRUNCATE TABLE
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
@@ -41,7 +41,7 @@ A consulta `TRUNCATE TABLE` **não tem suporte** para os seguintes motores de ta
 * [`Buffer`](/pt-BR/reference/engines/table-engines/special/buffer)
 * [`Null`](/pt-BR/reference/engines/table-engines/special/null)
 
-## TRUNCATE DE TODAS AS TABELAS {#truncate-all-tables}
+## TRUNCATE DE TODAS AS TABELAS
 
 ```sql
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
@@ -59,7 +59,7 @@ TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] 
 
 Remove todos os dados de todas as tabelas de um banco de dados.
 
-## TRUNCATE DATABASE {#truncate-database}
+## TRUNCATE DATABASE
 
 ```sql
 TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]

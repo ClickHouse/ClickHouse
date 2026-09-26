@@ -11,7 +11,7 @@ O ClickHouse CLI (`clickhousectl`) é uma ferramenta unificada de linha de coman
 
 Esta página é uma referência do conjunto de comandos do `clickhousectl` 0.4.2. Execute `clickhousectl --version` para verificar a versão instalada e `clickhousectl <command> --help` em qualquer comando para ver a lista completa de flags.
 
-## Instalação {#installation}
+## Instalação
 
 ```bash
 curl https://clickhouse.com/cli | sh
@@ -26,11 +26,11 @@ clickhousectl update           # self-update
 clickhousectl update --check   # check for updates without installing
 ```
 
-## Gerenciamento da Cloud {#cloud-management}
+## Gerenciamento da Cloud
 
 Autentique-se no ClickHouse Cloud e gerencie seus serviços diretamente via linha de comando.
 
-### Autenticação {#authentication}
+### Autenticação
 
 ```bash
 # Log in with an API key (read/write access)
@@ -60,7 +60,7 @@ Precedência de credenciais, da maior para a menor: flags `--api-key`/`--api-sec
 
 Os tokens OAuth são somente leitura; comandos de escrita (create, delete, start, stop, update, scale) exigem autenticação por chave de API.
 
-### Serviços {#services}
+### Serviços
 
 ```bash
 # List services
@@ -94,7 +94,7 @@ clickhousectl cloud service reset-password <service-id>
 clickhousectl cloud service delete <service-id>
 ```
 
-### Executando consultas {#running-queries}
+### Executando consultas
 
 Execute SQL em um serviço Cloud via HTTP através da Query API — sem necessidade de um binário `clickhouse` local ou da senha do serviço. É obrigatório informar exatamente um entre `--id` e `--name`:
 
@@ -125,7 +125,7 @@ O que você precisa saber:
 * Uma chave de API da Query API armazenada que o endpoint rejeita com HTTP 401/403 nunca é substituída automaticamente; a CLI lê o registro de gerenciamento da chave de API apenas para informar o motivo. Substitua essa credencial específica com `clickhousectl cloud service repair-query-key <service-id>`, que também exclui a chave de API substituída. Em um service em execução, o comando sai com 0 apenas quando uma consulta de teste com a nova chave de API é bem-sucedida, o que é reportado em `verification` na saída `--json`. Se a Query API ainda rejeitar a chave de API quando a janela de readiness terminar, o comando sai com 1, mas o reparo continua válido: não execute o comando novamente; execute `cloud service query` no lugar.
 * A Query API expira após cerca de 30 segundos; a instrução continua sendo executada no service, mas o resultado é perdido. Para algo mais demorado, execute `clickhousectl local use latest` para colocar o `clickhouse` binary padrão no `PATH` e conecte-se com `clickhouse client --host <host> --secure --port 9440 --user default --password <password>`.
 
-### Endpoints e configuração do service {#service-endpoints-and-configuration}
+### Endpoints e configuração do service
 
 ```bash
 # Query endpoints (used by the Query API)
@@ -153,7 +153,7 @@ clickhousectl cloud service prometheus <service-id>
 
 `--clear-backup-start-time` remove o horário de início armazenado e suspende essa restrição. Combine-o com `--backup-period-hours` para limpar o horário de início e definir qualquer período em uma única chamada. Ele conflita com `--backup-start-time`.
 
-### Backups {#backups}
+### Backups
 
 ```bash
 clickhousectl cloud backup list <service-id>
@@ -162,7 +162,7 @@ clickhousectl cloud backup get <service-id> <backup-id>
 
 Para restaurar um backup, crie um novo service a partir dele: `clickhousectl cloud service create --name restored-service --backup-id <backup-id>`.
 
-### ClickPipes {#clickpipes}
+### ClickPipes
 
 Gerencie os [ClickPipes](/pt-BR/integrations/clickpipes) para ingestão de dados em um serviço do Cloud. A maioria dos comandos recebe o ID do serviço como primeiro argumento.
 
@@ -233,7 +233,7 @@ O que você precisa saber:
 * Um pipe só pode usar um reverse private endpoint que tenha atingido o status `Ready`; um endpoint AWS PrivateLink permanece em `PendingAcceptance` até que a solicitação de conexão seja aceita na conta proprietária da source. Pipes Kafka referenciam o endpoint pelo ID com `--reverse-private-endpoint-id` (repetível); pipes de CDC Postgres e MySQL passam um dos `dnsNames` do endpoint como `--host`.
 * Pipes do Google Cloud Pub/Sub estão em preview limitado: contate o suporte para habilitar o recurso na sua organização antes de criar um. `--service-account-file` recebe o caminho para uma chave JSON de service account do GCP, ou `-` para ler a chave do stdin; a chave nunca é aceita inline, portanto não aparece em listagens de processos nem no histórico do shell.
 
-### Postgres services (beta) {#postgres-services}
+### Postgres services (beta)
 
 Crie e gerencie serviços do [ClickHouse Cloud Postgres](/pt-BR/products/managed-postgres/overview).
 
@@ -285,7 +285,7 @@ O que você precisa saber:
 * Alterações de role são eventualmente consistentes, e a API confirma `promote` e `switchover` antes de aplicá-los, de modo que o código de saída 0, isoladamente, não garante que a role foi alterada. Ambos aceitam `--wait` para consultar periodicamente até que o target reporte a nova role, com `--wait-timeout <seconds>` (padrão 300) limitando esse polling. O primary anterior pode continuar reportando `isPrimary=true` por alguns minutos, portanto confirme com `clickhousectl cloud postgres list --filter isPrimary=true` que exatamente um service é primary.
 * `postgres delete` funciona a partir de qualquer state, inclusive `running`, ou seja, não é necessário parar o service antes.
 
-### Organizações {#organizations}
+### Organizações
 
 ```bash
 clickhousectl cloud org list
@@ -295,7 +295,7 @@ clickhousectl cloud org prometheus
 clickhousectl cloud org usage --from-date 2026-08-01 --to-date 2026-08-31
 ```
 
-### Chaves de API {#api-keys}
+### Chaves de API
 
 ```bash
 clickhousectl cloud key list
@@ -305,7 +305,7 @@ clickhousectl cloud key update <key-id>
 clickhousectl cloud key delete <key-id>
 ```
 
-### Membros e convites {#members-and-invitations}
+### Membros e convites
 
 ```bash
 clickhousectl cloud member list
@@ -319,14 +319,14 @@ clickhousectl cloud invitation get <invitation-id>
 clickhousectl cloud invitation delete <invitation-id>
 ```
 
-### Log de atividades {#activity-log}
+### Log de atividades
 
 ```bash
 clickhousectl cloud activity list --from-date 2026-08-01 --to-date 2026-08-31
 clickhousectl cloud activity get <activity-id>
 ```
 
-### Saída em JSON {#json-output}
+### Saída em JSON
 
 Use a opção `--json` para obter respostas em formato JSON de qualquer comando de cloud:
 
@@ -336,7 +336,7 @@ clickhousectl cloud service list --json
 
 Os comandos `org prometheus` e `service prometheus` são a exceção: eles sempre emitem o texto bruto de exposição do Prometheus e ignoram silenciosamente `--json`.
 
-## Desenvolvimento local {#local-development}
+## Desenvolvimento local
 
 A CLI também gerencia instalações locais do ClickHouse, servidores locais e instâncias locais do Postgres em Docker. Consulte a página [clickhousectl (CLI)](/pt-BR/get-started/setup/self-managed/clickhousectl) para começar a trabalhar com desenvolvimento local.
 
@@ -384,7 +384,7 @@ O que você precisa saber:
 * O `local client` aceita `-v`/`--version` para escolher uma versão de cliente instalada no modo direto de host/porta, aceita `-q` repetido para múltiplas consultas e aceita vários caminhos em `--queries-file`. Combinar `--query` e `--queries-file` é um erro de uso.
 * O `local postgres start` bloqueia até que o PostgreSQL aceite conexões, limitado pelos segundos definidos em `--wait-timeout` (padrão 60, máximo 600). Se `--port` for omitido, ele usa a 5432 caso esteja livre e, caso contrário, seleciona uma porta automaticamente; uma porta solicitada explicitamente que já esteja ocupada é rejeitada.
 
-## Outros comandos {#other-commands}
+## Outros comandos
 
 ```bash
 # Install the ClickHouse agent skills into supported coding agents
@@ -397,7 +397,7 @@ clickhousectl telemetry disable
 clickhousectl telemetry enable
 ```
 
-## Requisitos {#requirements}
+## Requisitos
 
 * macOS (aarch64, x86&#95;64) ou Linux (aarch64, x86&#95;64)
 * Os comandos do Cloud exigem uma [chave de API do ClickHouse Cloud](/pt-BR/products/cloud/features/admin-features/api/openapi) para acesso de escrita; o login por OAuth é somente leitura

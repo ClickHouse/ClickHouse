@@ -12,7 +12,7 @@ import { DeprecatedBadge } from "/snippets/ru/components/DeprecatedBadge/Depreca
 
 Создает новое представление. Представления бывают [обычными](#normal-view), [materialized](#materialized-view) и [refreshable materialized](#refreshable-materialized-view).
 
-## Обычное представление {#normal-view}
+## Обычное представление
 
 Синтаксис:
 
@@ -43,7 +43,7 @@ SELECT a, b, c FROM view
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-## Параметризованное представление {#parameterized-view}
+## Параметризованное представление
 
 Параметризованные представления похожи на обычные представления, но могут создаваться с параметрами, значения которых определяются не сразу.
 Эти представления можно использовать с табличными функциями: имя представления указывается как имя функции, а значения параметров — как её аргументы.
@@ -66,7 +66,7 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
-## Materialized View {#materialized-view}
+## Materialized View
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
@@ -86,7 +86,7 @@ AS SELECT ...
 
 `OR REPLACE` и `IF NOT EXISTS` являются взаимоисключающими: их совместное использование вызывает синтаксическую ошибку.
 
-### CREATE OR REPLACE MATERIALIZED VIEW {#create-or-replace-materialized-view}
+### CREATE OR REPLACE MATERIALIZED VIEW
 
 `CREATE OR REPLACE MATERIALIZED VIEW` атомарно заменяет существующее materialized view и его внутреннюю таблицу хранения (если она есть). Для выполнения этой операции требуется движок базы данных `Atomic` или `Replicated`.
 
@@ -184,7 +184,7 @@ Materialized view работает следующим образом: при в�
 
 Чтобы удалить представление, используйте [DROP VIEW](/ru/reference/statements/drop#drop-view). Хотя `DROP TABLE` тоже работает для VIEW.
 
-## Безопасность SQL {#sql_security}
+## Безопасность SQL
 
 `DEFINER` и `SQL SECURITY` позволяют указать, от имени какого пользователя ClickHouse выполнять запрос, лежащий в основе представления.
 `SQL SECURITY` имеет три допустимых значения: `DEFINER`, `INVOKER` или `NONE`. В секции `DEFINER` можно указать любого существующего пользователя или `CURRENT_USER`.
@@ -222,7 +222,7 @@ Refreshable materialized view всегда получают эти значен�
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
-### Примеры {#examples}
+### Примеры
 
 ```sql
 CREATE VIEW test_view
@@ -236,7 +236,7 @@ SQL SECURITY INVOKER
 AS SELECT ...
 ```
 
-## Live View {#live-view}
+## Live View
 
 <DeprecatedBadge />
 
@@ -244,7 +244,7 @@ AS SELECT ...
 
 Для вашего удобства старая документация находится [здесь](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## Refreshable Materialized View {#refreshable-materialized-view}
+## Refreshable Materialized View
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -283,7 +283,7 @@ number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
   Настройки в части запроса `REFRESH ... SETTINGS` — это настройки обновления (например, `refresh_retries`), а не обычные настройки (например, `max_threads`). Обычные настройки можно указать с помощью `SETTINGS` в конце запроса.
 </Note>
 
-### Расписание обновления {#refresh-schedule}
+### Расписание обновления
 
 Примеры расписаний обновления:
 
@@ -311,7 +311,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 Обычно первое обновление запускается сразу после создания materialized view: время с момента последнего обновления равно бесконечности, поэтому по любому расписанию обновление должно начаться прямо сейчас. Если указано `EMPTY`, это начальное обновление пропускается, а первое обновление произойдёт в следующий момент по расписанию; например, для `EVERY 1 HOUR` первое обновление произойдёт в конце текущего часа.
 
-### В базе данных Replicated {#in-replicated-db}
+### В базе данных Replicated
 
 Если refreshable materialized view находится в [базе данных Replicated](/ru/reference/engines/database-engines/replicated), реплики координируют работу между собой так, что в каждый запланированный момент обновление выполняет только одна реплика. Для этого требуется движок таблицы [ReplicatedMergeTree](/ru/reference/engines/table-engines/mergetree-family/replication), чтобы все реплики видели данные, полученные в результате обновления.
 
@@ -321,7 +321,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 Координация выполняется через Keeper. Путь znode определяется настройкой сервера [default&#95;replica&#95;path](/ru/reference/settings/server-settings/settings/default-replica#default_replica_path).
 
-### Зависимости при обновлении {#refresh-dependencies}
+### Зависимости при обновлении
 
 `DEPENDS ON` синхронизирует обновление разных таблиц:
 
@@ -347,7 +347,7 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
   `DEPENDS ON` работает только между refreshable materialized view. В частности, если представление-зависимость использует `TO <table>`, обязательно указывайте имя представления, а не таблицы. Если список `DEPENDS ON` содержит обычную таблицу, не-refreshable представление или опечатку, представление никогда не будет обновляться и в `system.view_refreshes` будет иметь состояние `MissingDependencies`. Зависимости можно изменить или удалить с помощью `ALTER`, см. [Изменение параметров обновления](#changing-refresh-parameters).
 </Note>
 
-#### Использование DEPENDS ON для согласованной задержки распространения {#using-depends-on-for-consistent-propagation-latency}
+#### Использование DEPENDS ON для согласованной задержки распространения
 
 Если оба представления используют `REFRESH EVERY` с одинаковым периодом, зависимость действует в каждом временном интервале.
 
@@ -371,7 +371,7 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
   Y:             └►[10:00 ru------un]└►[11:00 ru---------------un]└►[13:00 run]
 ```
 
-#### Использование DEPENDS ON для батчевой потоковой обработки {#using-depends-on-for-batched-stream-processing}
+#### Использование DEPENDS ON для батчевой потоковой обработки
 
 Если `REFRESH EVERY` не используется, зависимое представление X обновляется, когда все его зависимости обновились хотя бы один раз с момента последнего обновления X. `REFRESH AFTER T` добавляет задержку: зависимое представление начнет обновляться через T после завершения обновления зависимости.
 
@@ -417,7 +417,7 @@ SYSTEM REFRESH VIEW current_batch_v;
 
 Однако это работает хорошо только при включенной координации обновления, то есть когда представления находятся в базе данных Replicated или Shared. Без координации перезапуск сервера прерывает цикл, и после каждого перезапуска приходится вручную выполнять `SYSTEM REFRESH VIEW`, а не только один раз после создания представлений.
 
-### Настройки обновления {#refresh-settings}
+### Настройки обновления
 
 Доступные настройки обновления:
 
@@ -426,7 +426,7 @@ SYSTEM REFRESH VIEW current_batch_v;
 * `refresh_retry_max_backoff_ms` - Ограничение на экспоненциальный рост задержки между попытками обновления. Значение по умолчанию: 60000 мс (1 минута).
 * `all_replicas` - В [Replicated database](/ru/reference/engines/database-engines/replicated) с `APPEND` определяет, будут ли все реплики обновляться независимо или в каждый запланированный момент обновление будет выполнять только одна реплика. Не может быть изменено после создания представления. Значение по умолчанию: `false`.
 
-### Изменение параметров обновления {#changing-refresh-parameters}
+### Изменение параметров обновления
 
 Параметры обновления существующей refreshable materialized view изменяются командой [`ALTER TABLE ... MODIFY REFRESH`](/ru/reference/statements/alter/view#alter-table--modify-refresh-statement):
 
@@ -469,7 +469,7 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 
-### Другие операции {#other-operations}
+### Другие операции
 
 Статус всех refreshable materialized view доступен в таблице [`system.view_refreshes`](/ru/reference/system-tables/view_refreshes). В частности, в ней содержатся прогресс обновления (если оно выполняется), время последнего и следующего обновления, а также сообщение об исключении, если обновление завершилось ошибкой.
 
@@ -481,12 +481,12 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
   Интересный факт: запросу обновления разрешено читать из обновляемого представления, при этом он видит версию данных до обновления. Это означает, что вы можете реализовать игру «Жизнь» Конвея: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 </Note>
 
-## Связанные материалы {#related-content}
+## Связанные материалы
 
 * Блог: [Работа с временными рядами в ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * Блог: [Создание решения для обсервабилити на ClickHouse — часть 2 — трейсы](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
 
-## Временные представления {#temporary-views}
+## Временные представления
 
 ClickHouse поддерживает **временные представления** со следующими характеристиками (где применимо — аналогично временным таблицам):
 
@@ -514,7 +514,7 @@ ClickHouse поддерживает **временные представлен�
 * **SHOW CREATE**
   Используйте `SHOW CREATE TEMPORARY VIEW view_name;`, чтобы вывести DDL временного представления.
 
-### Синтаксис {#temporary-views-syntax}
+### Синтаксис
 
 ```sql
 CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
@@ -522,7 +522,7 @@ CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
 
 `OR REPLACE` **не** поддерживается для временных представлений (по аналогии с временными таблицами). Если вам нужно «заменить» временное представление, удалите его и создайте заново.
 
-### Примеры {#temporary-views-examples}
+### Примеры
 
 Создайте временную исходную таблицу и временное представление на её основе:
 
@@ -550,7 +550,7 @@ SHOW CREATE TEMPORARY VIEW tview;
 DROP TEMPORARY VIEW IF EXISTS tview;  -- временные представления удаляются с использованием синтаксиса TEMPORARY TABLE
 ```
 
-### Недопустимые варианты / ограничения {#temporary-views-limitations}
+### Недопустимые варианты / ограничения
 
 * `CREATE OR REPLACE TEMPORARY VIEW ...` → **не допускается** (используйте `DROP` + `CREATE`).
 * `CREATE TEMPORARY MATERIALIZED VIEW ...` → **не допускается**.
@@ -558,11 +558,11 @@ DROP TEMPORARY VIEW IF EXISTS tview;  -- временные представле
 * `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **не допускается** (временные объекты локальны для сеанса).
 * `POPULATE`, `REFRESH`, `TO [db.table]`, внутренние движки и все специфичные для MV секции → **не применимы** к временным представлениям.
 
-### Примечания о распределённых запросах {#temporary-views-distributed-notes}
+### Примечания о распределённых запросах
 
 Временное **представление** — это лишь определение; передавать здесь нечего. Если ваше временное представление ссылается на временные **таблицы** (например, `Memory`), их данные могут передаваться на удалённые серверы при выполнении распределённого запроса — так же, как и в случае временных таблиц.
 
-#### Пример {#temporary-views-distributed-example}
+#### Пример
 
 ```sql
 -- A session-scoped, in-memory table

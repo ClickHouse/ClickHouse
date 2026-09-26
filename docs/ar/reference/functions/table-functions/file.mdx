@@ -15,7 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 يمكن استخدام الدالة `file` في استعلامات `SELECT` و`INSERT` للقراءة من الملفات أو الكتابة إليها.
 
-## الصيغة {#syntax}
+## الصيغة
 
 ```sql
 file([path_to_archive ::] path [,format] [,structure] [,compression])
@@ -27,7 +27,7 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
 ```
 
-## الوسائط {#arguments}
+## الوسائط
 
 | المعلمة           | الوصف                                                                                                                                                                                                                                                                                                                                                                               |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -55,13 +55,13 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
   ```
 </Tip>
 
-## القيمة المعادة {#returned-value}
+## القيمة المعادة
 
 جدول لقراءة البيانات من ملف أو كتابتها فيه.
 
-## أمثلة على الكتابة إلى ملف {#examples-for-writing-to-a-file}
+## أمثلة على الكتابة إلى ملف
 
-### الكتابة إلى ملف TSV {#write-to-a-tsv-file}
+### الكتابة إلى ملف TSV
 
 ```sql
 INSERT INTO TABLE FUNCTION
@@ -78,7 +78,7 @@ VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
 1    3    2
 ```
 
-### كتابة مُقسَّمة إلى عدة ملفات TSV {#partitioned-write-to-multiple-tsv-files}
+### كتابة مُقسَّمة إلى عدة ملفات TSV
 
 إذا حدّدت تعبير `PARTITION BY` عند إدراج البيانات في دالة جدول من النوع `file`، فسيُنشأ ملف منفصل لكل partition. ويساعد تقسيم البيانات إلى ملفات منفصلة على تحسين أداء عمليات القراءة.
 
@@ -102,9 +102,9 @@ VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
 1    2    3
 ```
 
-## أمثلة على القراءة من ملف {#examples-for-reading-from-a-file}
+## أمثلة على القراءة من ملف
 
-### SELECT من ملف CSV {#select-from-a-csv-file}
+### SELECT من ملف CSV
 
 أولًا، اضبط `user_files_path` في إعدادات الخادم وجهّز ملفًا باسم `test.csv`:
 
@@ -133,7 +133,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-### إدخال البيانات من ملف إلى جدول {#inserting-data-from-a-file-into-a-table}
+### إدخال البيانات من ملف إلى جدول
 
 ```sql
 INSERT INTO FUNCTION
@@ -159,7 +159,7 @@ file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-## أنماط glob في المسار {#globs-in-path}
+## أنماط glob في المسار
 
 قد تستخدم المسارات أنماط glob. يجب أن تطابق الملفات نمط المسار بالكامل، لا اللاحقة أو البادئة فقط. ويوجد استثناء واحد: إذا كان المسار يشير إلى
 دليل موجود ولا يستخدم أنماط glob، فستُضاف `*` ضمنيًا إلى المسار بحيث
@@ -173,7 +173,7 @@ SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 
 البُنى التي تستخدم `{}` مشابهة لما في دالتي الجداول [remote](/ar/reference/functions/table-functions/remote) و [hdfs](/ar/reference/functions/table-functions/hdfs).
 
-## أمثلة {#examples}
+## أمثلة
 
 **مثال**
 
@@ -232,14 +232,14 @@ SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
 SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
-## الأعمدة الافتراضية {#virtual-columns}
+## الأعمدة الافتراضية
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
 * `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، تكون القيمة `NULL`.
 * `_time` — وقت آخر تعديل على الملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
 
-## إعداد use_hive_partitioning {#hive-style-partitioning}
+## إعداد use_hive_partitioning
 
 عند تعيين `use_hive_partitioning` إلى 1، سيكتشف ClickHouse التقسيم بنمط Hive في المسار (`/name=value/`)، وسيتيح استخدام أعمدة التقسيم كأعمدة افتراضية في الاستعلام. وستحمل هذه الأعمدة الافتراضية الأسماء نفسها الموجودة في مسار التقسيم.
 
@@ -251,7 +251,7 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-## الإعدادات {#settings}
+## الإعدادات
 
 | الإعداد                                                                                                                                                 | الوصف                                                                                                                                                                                       |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -261,7 +261,7 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
 | [engine&#95;file&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings/engine-file#engine_file_skip_empty_files)                           | يتيح تخطي الملفات الفارغة أثناء القراءة. يكون معطّلًا افتراضيًا.                                                                                                                            |
 | [storage&#95;file&#95;read&#95;method](/ar/reference/settings/session-settings/storage#storage_file_read_method)                                           | طريقة قراءة البيانات من ملف التخزين، وهي إحدى القيم التالية: read أو pread أو mmap (فقط لـ clickhouse-local). القيمة الافتراضية: `pread` لـ clickhouse-server، و`mmap` لـ clickhouse-local. |
 
-## مواضيع ذات صلة {#related}
+## مواضيع ذات صلة
 
 * [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)
 * [إعادة تسمية الملفات بعد المعالجة](/ar/reference/settings/session-settings/other#rename_files_after_processing)

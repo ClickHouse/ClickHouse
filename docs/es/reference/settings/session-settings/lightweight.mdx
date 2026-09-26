@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se autogeneran a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## lightweight_delete_mode {#lightweight_delete_mode}
+## lightweight_delete_mode
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -27,7 +27,7 @@ Valores posibles:
 * `lightweight_update` - ejecutar la actualización ligera si es posible; de lo contrario, ejecutar `ALTER UPDATE`.
 * `lightweight_update_force` - ejecutar la actualización ligera si es posible; de lo contrario, generar una excepción.
 
-## lightweight_deletes_sync {#lightweight_deletes_sync}
+## lightweight_deletes_sync
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 

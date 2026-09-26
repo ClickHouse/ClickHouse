@@ -22,7 +22,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 وقد صُمم ليُقرأ إلى جانب بقية [التوثيق](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/index)، وصفحة [الميزات والتهيئات](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations)، و[مرجع materializations](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
 
-## قبل أن تبدأ {#before-you-start}
+## قبل أن تبدأ
 
 اتبع أولاً ملف README الخاص بـ [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse)، فهو يوضح كيفية إعداد المشروع باستخدام dbt Core 1.x أو dbt OSS أو dbt v2 أو منصة dbt، وكيفية توجيهه إلى ClickHouse محلي (docker) أو إلى ClickHouse Cloud، وكيفية تحميل بيانات العينة باستخدام `dbt seed`، وكيفية تشغيل أول `dbt build`. وبعد أن يكتمل `dbt build` بنجاح، عد إلى هنا للاطلاع على الأمثلة والتهيئات الخاصة بـ ClickHouse.
 
@@ -39,7 +39,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 جميع عبارات SQL التي ليست أوامر dbt يُقصد تشغيلها مباشرةً على ClickHouse، على سبيل المثال عبر `clickhouse client`، أو SQL console في ClickHouse Cloud، أو عميل SQL الذي تختاره.
 
-## كيف يتم تجسيد المشروع {#views-and-tables}
+## كيف يتم تجسيد المشروع
 
 يهيّئ Jaffle Shop تجسيداته في `dbt_project.yml`: نماذج staging تكون views، أما marts فتكون tables.
 
@@ -108,7 +108,7 @@ SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 
 هناك أمران خاصان بـ ClickHouse هنا. فالـ model لا يُعلِن عن table engine، لذا يستخدم الـ adapter المحرك `MergeTree`، كما أنه لا يُعلِن عن sorting key، لذا يستخدم الـ adapter العبارة `ORDER BY tuple()`، أي أن البيانات غير مُرتَّبة على الإطلاق. وهذا مقبول في مشروع تجريبي، أما في جدول حقيقي فستحتاج إلى تحديد كليهما، وهو ما تتناوله الأقسام التالية. وتسرد [صفحة materializations](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) كل تهيئة جدول يدعمها الـ adapter.
 
-## تحميل البيانات باستخدام seeds {#seeds}
+## تحميل البيانات باستخدام seeds
 
 يستخدم Jaffle Shop [seeds](https://docs.getdbt.com/docs/build/seeds) في dbt لتحميل بياناته الخام من ملفات CSV الموجودة في `seeds/jaffle-data`. صُمّمت seeds للبيانات المرجعية الصغيرة والثابتة (جداول الرموز وعمليات الربط)، وليست مخصصة لتحميل warehouse؛ لكن المشروع يستخدمها لتسهيل الأمر عليك كي تبدأ دون الحاجة إلى أداة ingestion أخرى، ولهذا تبقى seeds معطّلة ما لم تمرّر `--vars '{"load_source_data": true}'`.
 
@@ -177,7 +177,7 @@ SETTINGS index_granularity = 8192
 
 يقوم الأمر `dbt seed --full-refresh` بحذف الجدول وإعادة إنشائه، لذا شغّله قبل بناء أي شيء يعتمد مباشرةً على بيانات الجدول، مثل الـ عرض مُجسَّد الوارد لاحقًا في هذا الدليل.
 
-## إعداد جدول لـ ClickHouse {#table-configuration}
+## إعداد جدول لـ ClickHouse
 
 يُعد الـ mart المسمى `orders` نقطة البداية الطبيعية: فهو الجدول الذي يستعلم منه mart المسمى `customers` ومقاييس المشروع، كما أنه جدول على نمط الأحداث يتضمن timestamp. أضف كتلة `config` في أعلى ملف `models/marts/orders.sql` لتحديد المحرك ومفتاح الفرز ومخطط التقسيم:
 
@@ -249,7 +249,7 @@ ORDER BY partition;
 
 إلى جانب `engine` و`order_by` و`partition_by`، تقبل نماذج الجداول أيضًا `primary_key` و`ttl` و`settings` و`query_settings` و`projections` و`indexes`، ويمكن أن تحمل الأعمدة `codec` و`ttl` عبر عقد النموذج (model contract). وجميعها موضّحة في [صفحة materializations](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
 
-## إنشاء model تزايدي {#incremental}
+## إنشاء model تزايدي
 
 إعادة بناء `orders` من الصفر في كل تشغيل أمر مقبول مع 62,000 row، لكنه غير مناسب لـ table ينمو بملايين الـ rows يوميًا. أما [التجسيد التزايدي](https://docs.getdbt.com/docs/build/incremental-models) في dbt فلا يعالج سوى الـ rows التي تغيّرت منذ التشغيل الأخير. ويتطلب تحويل model الخاص بـ `orders` إضافتين:
 
@@ -356,7 +356,7 @@ WHERE customer_id = 'clicky-0001';
 └─────────────────────┴───────────────────────┴────────────────┴───────────────┘
 ```
 
-### البنية الداخلية {#internals}
+### البنية الداخلية
 
 يُظهر سجل الاستعلامات في ClickHouse العبارات التي نفّذها الـ adapter لإجراء التحديث التزايدي:
 
@@ -420,7 +420,7 @@ flowchart TB
 
 تنسخ الخطوة 2 الجدول بأكمله، ولذلك تكون تكلفة هذه الاستراتيجية مماثلة لإعادة بناء الجدول في النماذج الضخمة جدًا؛ راجع [القيود](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations). أما الاستراتيجيات الواردة أدناه فهي تتجنب عملية النسخ هذه.
 
-### Append strategy {#append-strategy}
+### Append strategy
 
 تُدرج استراتيجية `append` الصفوف التي يحددها الـ model مباشرةً في الـ target table. فلا تُنشأ أي temporary tables ولا يُنسخ أي شيء، ما يجعلها أقل تكلفة ما يمكن أن يكون عليه تشغيل incremental. لكن الثمن هو عدم إجراء أي deduplicate أيضًا: فإذا حدّد الـ filter الخاص بـ incremental صفًا موجودًا بالفعل في الـ table، فستحصل عليه مرتين. استخدمها للبيانات غير القابلة للتغيير ذات النمط الحدثي، وتأكد من أن الـ filter لا يحدد إلا الصفوف الجديدة فعليًا.
 
@@ -495,7 +495,7 @@ ORDER BY ordered_at;
   عند استخدام `>` مع طابع زمني مقتطع إلى مستوى اليوم، فإن أي طلب يصل لاحقًا في اليوم نفسه الذي وصل فيه آخر طلب محمَّل لن يُلتقط أبدًا. في المشاريع الحقيقية، طبّق الـ filter على طابع زمني بدقة كاملة، أو على وقت ingestion متزايد باستمرار، عند استخدام الـ `append` strategy.
 </Warning>
 
-### استراتيجية الحذف والإدراج {#delete-insert-strategy}
+### استراتيجية الحذف والإدراج
 
 تاريخيًا، لم يقدّم ClickHouse سوى دعم محدود لعمليات التحديث والحذف، على هيئة [mutations](/ar/reference/statements/alter/index) غير متزامنة. وقد تكون هذه العمليات مكثفة جدًا من ناحية IO ويُفضّل تجنّبها عمومًا. وقد أضاف ClickHouse 22.8 ميزة [lightweight deletes](/ar/reference/statements/delete)، وأضاف ClickHouse 25.7 ميزة [lightweight updates](/ar/reference/statements/update). وبفضلهما، يظهر أثر عبارة الحذف أو التحديث الواحدة فورًا من منظور المستخدم، رغم أن تجسيدها يتم بشكل غير متزامن.
 
@@ -549,7 +549,7 @@ flowchart TB
     class q1,q2,q3,q4 query;
 ```
 
-### استراتيجية insert overwrite (تجريبية) {#insert-overwrite-strategy}
+### استراتيجية insert overwrite (تجريبية)
 
 تستبدل استراتيجية `insert_overwrite` تقسيمات كاملة، لذا فهي تتطلّب تهيئة `partition_by` مثل التهيئة الشهرية المستخدمة في `orders`. وهي تنفّذ الخطوات التالية:
 
@@ -598,7 +598,7 @@ flowchart TB
 
 تتناول [صفحة التجسيدات](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-incremental) بقية خيارات التجسيد التزايدي، بما في ذلك استراتيجية `microbatch` و`on_schema_change`.
 
-## إنشاء snapshot {#snapshot}
+## إنشاء snapshot
 
 تسجّل [snapshots](https://docs.getdbt.com/docs/build/snapshots) في dbt كيفية تغيّر صفوف جدول قابل للتعديل بمرور الوقت، بما يتيح للمحللين الاطلاع على حالة البيانات في أي لحظة سابقة. وهي تُطبّق [الأبعاد بطيئة التغيّر من النوع 2](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row): إذ يُخزَّن كل إصدار من الصف مع الفاصل الزمني الذي كان صالحًا خلاله.
 
@@ -689,7 +689,7 @@ ORDER BY customer_id, dbt_valid_from;
 
 داخليًا، يبني الـ adapter النسخة الجديدة من الـ snapshot في جدول `customers_snapshot__snapshot_upsert` ثم يستبدلها باستخدام `EXCHANGE TABLES` (أو عبر drop وrename في الحالات التي لا يستطيع فيها الخادم تبديل الجداول)، بحيث يرى القُرّاء إمّا النسخة السابقة أو النسخة الجديدة من الـ snapshot. راجع [قسم snapshot في صفحة materializations](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#snapshot) للاطلاع على مرجع التهيئة.
 
-## استخدام العروض المُجسَّدة {#materialized-views}
+## استخدام العروض المُجسَّدة
 
 كل ما سبق يتطلّب تنفيذ `dbt run` لإدخال البيانات الجديدة إلى الـ models. أما [العروض المُجسَّدة](/ar/concepts/features/materialized-views/index) في ClickHouse فتعمل بطريقة مختلفة: فهي بمثابة insert triggers. فكل كتلة من الصفوف تُدرَج في الـ source table يحوّلها الـ `SELECT` الخاص بالـ view ثم تُكتب في الـ target table، دون أي scheduling. ويوفّر الـ adapter الوصول إليها عبر الـ materialization المسمّى `materialized_view`.
 
@@ -794,6 +794,6 @@ ORDER BY order_date, store_id;
 
 تُبقي عمليات `dbt run` اللاحقة على الجدول الهدف وبياناته، ولا تحدّث سوى تعريف العرض، باستخدام `ALTER TABLE ... MODIFY QUERY` عندما يسمح التغيير بذلك، لذا من الآمن الإبقاء على النموذج ضمن المشروع. أما `dbt run --full-refresh` فيعيد بناء الجدول الهدف ويملؤه بالبيانات التاريخية من جديد (ما لم تكن قيمة `catchup` هي `False`). وتغطي [صفحة العروض المجسّدة](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view) ما تبقّى: تغييرات المخطط عبر `on_schema_change`، وتعطيل الملء التاريخي باستخدام `catchup`، والعروض المجسّدة القابلة للتحديث، وتغذية عدة عروض للهدف نفسه، وتعريف الجدول الهدف كنموذج مستقل بذاته.
 
-## معلومات إضافية {#further-information}
+## معلومات إضافية
 
 لا يتطرق هذا الدليل إلا إلى أساسيات dbt. وتُعد [وثائق dbt](https://docs.getdbt.com/docs/introduction) المرجع لكل ما هو غير خاص بـ ClickHouse. أما بالنسبة إلى adapter، فراجع صفحة [features and configurations](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) للاطلاع على إعدادات profile والميزات العامة، وصفحة [تجسيدات](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) لكل تهيئة وردت أعلاه، وصفحة [dbt OSS وdbt v2 ومنصة dbt](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform) إذا كنت تستخدم dbt OSS أو dbt v2 أو منصة dbt. ونرحّب بالمساهمات بأمثلة جديدة في [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse).

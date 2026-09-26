@@ -16,7 +16,7 @@ Este engine permite integrar o ClickHouse ao [NATS](https://nats.io/).
 * Publicar em ou assinar subjects de mensagens.
 * Processar novas mensagens à medida que se tornem disponíveis.
 
-## Criando uma tabela {#creating-a-table}
+## Criando uma tabela
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -141,7 +141,7 @@ Mais especificamente, você pode adicionar sua senha para o engine NATS:
 </nats>
 ```
 
-## Descrição {#description}
+## Descrição
 
 `SELECT` não é particularmente útil para ler mensagens (exceto para depuração), porque cada mensagem pode ser lida apenas uma vez. É mais prático criar fluxos em tempo real usando [visões materializadas](/pt-BR/reference/statements/create/view). Para fazer isso:
 
@@ -182,7 +182,7 @@ ATTACH TABLE consumer;
 
 Se quiser alterar a tabela de destino com `ALTER`, recomendamos desabilitar a visão materializada para evitar discrepâncias entre a tabela de destino e os dados da view.
 
-## Colunas virtuais {#virtual-columns}
+## Colunas virtuais
 
 * `_subject` - subject da mensagem no NATS. Tipo de dado: `String`.
 
@@ -193,7 +193,7 @@ Colunas virtuais adicionais quando `nats_handle_error_mode='stream'`:
 
 Observação: as colunas virtuais `_raw_message` e `_error` são preenchidas apenas em caso de exceção durante o processamento; elas são sempre `NULL` quando a mensagem é processada com sucesso.
 
-## Suporte a formatos de dados {#data-formats-support}
+## Suporte a formatos de dados
 
 O engine NATS oferece suporte a todos os [formatos](/pt-BR/reference/formats/index) compatíveis com o ClickHouse.
 O número de linhas em uma mensagem NATS depende de o formato ser baseado em linhas ou em blocos:
@@ -201,7 +201,7 @@ O número de linhas em uma mensagem NATS depende de o formato ser baseado em lin
 * Para formatos baseados em linhas, o número de linhas em uma mensagem NATS pode ser controlado pela configuração `nats_max_rows_per_message`.
 * Para formatos baseados em blocos, não é possível dividir um bloco em partes menores, mas o número de linhas em um bloco pode ser controlado pela configuração geral [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max#max_block_size).
 
-## Usando o JetStream {#using-jetstream}
+## Usando o JetStream
 
 Antes de usar o engine NATS com o NATS JetStream, você deve criar um stream NATS e um consumer pull durável. Para isso, você pode usar, por exemplo, o utilitário `nats` do pacote [NATS CLI](https://github.com/nats-io/natscli):
 
@@ -316,7 +316,7 @@ CREATE TABLE nats_jet_stream (
 
 As tabelas JetStream oferecem entrega de pelo menos uma vez: uma mensagem só é confirmada após ser inserida nas visões materializadas dependentes; portanto, uma mensagem cuja inserção falha ou é interrompida permanece sem confirmação e é entregue novamente. O NATS Core (sem JetStream) não oferece confirmação nem reprocessamento; portanto, tem entrega de no máximo uma vez, e uma mensagem interrompida é perdida.
 
-## Durabilidade dos dados {#data-durability}
+## Durabilidade dos dados
 
 Esta seção se aplica somente ao JetStream. O NATS Core não tem confirmações e opera no modo de entrega no máximo uma vez, conforme descrito acima. Portanto, não há uma janela em que uma mensagem confirmada possa ser perdida.
 

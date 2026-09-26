@@ -18,11 +18,11 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     Если критически важны производительность и прямой доступ, рекомендуем использовать новейший Java-клиент напрямую.
   </Note>
 
-  ## Требования к среде {#environment-requirements}
+  ## Требования к среде
 
   * [OpenJDK](https://openjdk.java.net) версии &gt;= 8
 
-  ### Setup {#setup}
+  ### Setup
 
   <Tabs>
     <Tab title="Maven">
@@ -59,7 +59,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     * используйте квалификатор `all`, чтобы получить jar со всеми включёнными затенёнными зависимостями.
   * или из официального репозитория [по этой ссылке](https://github.com/ClickHouse/clickhouse-java/releases)
 
-  ## Конфигурация {#configuration}
+  ## Конфигурация
 
   **Класс драйвера**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -87,7 +87,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * драйвер не пытается определить протокол по порту, его нужно указать явно
   * Параметр `ssl` не требуется, если указан протокол.
 
-  ### Свойства подключения {#connection-properties}
+  ### Свойства подключения
 
   Основные параметры конфигурации определены в разделе [Java-клиента](/ru/integrations/language-clients/java/client#client-configuration). Их следует передавать в драйвер без изменений. Драйвер также имеет ряд собственных свойств, не входящих в конфигурацию клиента; они перечислены ниже.
 
@@ -149,7 +149,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   Однако некоторым пользователям необходимо передавать настройки формата (например, для чтения JSON как String), и в таких случаях мы рекомендуем использовать профиль `readonly=2`.
   Подробнее о профилях только для чтения читайте [здесь](/ru/concepts/features/configuration/settings/constraints-on-settings#read-only).
 
-  ### Идентификация клиента {#client-identification}
+  ### Идентификация клиента
 
   Существует два способа идентифицировать приложение, из которого поступил запрос: задать `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME` через
   параметры подключения или использовать метод `java.sql.Connection#setClientInfo(String name, String value)`.
@@ -172,7 +172,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   **Примечание:** Рекомендуем использовать формат `app_name/version` для свойства `client_name` — это помогает идентифицировать приложение в журнале запросов.
 
-  ### Идентификация операции {#operation-identification}
+  ### Идентификация операции
 
   JDBC driver генерирует `query_id` для каждой операции (в настоящее время он включён в исключения сервера).
 
@@ -185,11 +185,11 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   **Примечание:** данный подход работает только для однопоточного использования оператора, так как `localSettings` является общим для всех потоков.
 
-  ## Поддерживаемые типы данных {#supported-data-types}
+  ## Поддерживаемые типы данных
 
   JDBC driver поддерживает те же форматы данных, что и базовый [Java‑клиент](/ru/integrations/language-clients/java/index#supported-data-types).
 
-  ### Соответствие типов JDBC {#jdbc-type-mapping}
+  ### Соответствие типов JDBC
 
   Следующее соответствие применяется к:
 
@@ -624,12 +624,12 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_decimals"), "0");
   ```
 
-  ### Работа с датами, временем и часовыми поясами {#handling-dates-times-and-timezones}
+  ### Работа с датами, временем и часовыми поясами
 
   Ознакомьтесь с [руководством по Date/Time](/ru/integrations/language-clients/java/date-time-guide), в котором описаны типичные проблемы
   и логика работы драйвера при обработке значений Date/Time и временных меток.
 
-  ## Создание подключения {#creating-connection}
+  ## Создание подключения
 
   ```java
   String url = "jdbc:ch://my-server:8123/system";
@@ -640,7 +640,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   ... // do something with the connection
   ```
 
-  ## Передача учётных данных и настроек {#supplying-credentials-and-settings}
+  ## Передача учётных данных и настроек
 
   ```java showLineNumbers
   String url = "jdbc:ch://localhost:8123?jdbc_ignore_unsupported_values=true&socket_timeout=10";
@@ -662,7 +662,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Простой оператор {#simple-statement}
+  ## Простой оператор
 
   ```java showLineNumbers
 
@@ -675,7 +675,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Вставка {#insert}
+  ## Вставка
 
   ```java showLineNumbers
   try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable VALUES (?, ?)")) {
@@ -687,7 +687,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## `HikariCP` {#hikaricp}
+  ## `HikariCP`
 
   ```java showLineNumbers
   // connection pooling won't help much in terms of performance,
@@ -710,17 +710,17 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Дополнительная информация {#more-information}
+  ## Дополнительная информация
 
   Дополнительную информацию см. в нашем [репозитории GitHub](https://github.com/ClickHouse/clickhouse-java) и в [документации по Java-клиенту](/ru/integrations/language-clients/java/client).
 
-  ## Устранение неполадок {#troubleshooting}
+  ## Устранение неполадок
 
-  ### Логирование {#logging}
+  ### Логирование
 
   Драйвер использует [slf4j](https://www.slf4j.org/) для логирования и задействует первую доступную реализацию в `classpath`.
 
-  ### Устранение тайм-аута JDBC при больших вставках {#resolving-jdbc-timeout-on-large-inserts}
+  ### Устранение тайм-аута JDBC при больших вставках
 
   При выполнении больших операций вставки в ClickHouse с длительным временем выполнения могут возникать ошибки тайм-аута JDBC, например:
 
@@ -730,7 +730,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Эти ошибки могут нарушить процесс вставки данных и повлиять на стабильность системы. Чтобы устранить эту проблему, возможно, потребуется скорректировать несколько параметров тайм-аутов в ОС клиента.
 
-  #### Mac OS {#mac-os}
+  #### Mac OS
 
   В Mac OS для решения этой проблемы можно изменить следующие настройки:
 
@@ -740,7 +740,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  #### Linux {#linux}
+  #### Linux
 
   В Linux одних только аналогичных настроек может оказаться недостаточно для решения проблемы. Из-за различий в том, как Linux обрабатывает параметры keep-alive для сокетов, потребуются дополнительные действия. Выполните следующие шаги:
 
@@ -767,9 +767,9 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   properties.setProperty("socket_keepalive", "true");
   ```
 
-  ## Руководство по миграции {#migration-guide}
+  ## Руководство по миграции
 
-  ### Основные изменения {#key-changes}
+  ### Основные изменения
 
   | Возможность                                         | V1 (старая)             | V2 (новая)                                              |
   | --------------------------------------------------- | ----------------------- | ------------------------------------------------------- |
@@ -784,7 +784,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * JDBC V2 требует явной конфигурации. Для аварийного переключения значения по умолчанию не предусмотрены.
     * Протокол необходимо указать в URL. Автоматическое определение протокола по номеру порта не поддерживается.
 
-  ### Изменения конфигурации {#configuration-changes}
+  ### Изменения конфигурации
 
   Существует только два enum-типа:
 
@@ -814,7 +814,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### Изменения типов данных {#data-types-changes}
+  ### Изменения типов данных
 
   **Числовые типы**
 
@@ -928,7 +928,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * Значения IPv4 и IPv6 можно читать как `byte[]` с помощью метода `getBytes(columnIndex)`. Однако для этих типов рекомендуется использовать специальные классы.
   * V2 не поддерживает чтение IP-адресов в виде числовых значений, поскольку такое преобразование лучше реализовано в классах InetAddress.
 
-  ### Изменения метаданных базы данных {#database-metadata-changes}
+  ### Изменения метаданных базы данных
 
   * В V2 для обозначения баз данных используется только термин `Schema`. Термин `Catalog` зарезервирован для будущего использования.
   * V2 возвращает `false` для `DatabaseMetaData.supportsTransactions()` и `DatabaseMetaData.supportsSavepoints()`. В дальнейшем это будет изменено.
@@ -945,11 +945,11 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   API `clickhouse-jdbc` является синхронным и, как правило, создаёт более высокие накладные расходы (например, на разбор SQL и преобразование типов). Рекомендуем использовать [clickhouse-client](/ru/integrations/connectors/sql-clients/sql-console), если производительность критична или если вы предпочитаете более прямой способ доступа к ClickHouse.
 
-  ## Требования к среде {#v07-environment-requirements}
+  ## Требования к среде
 
   * [OpenJDK](https://openjdk.java.net) версии &gt;= 8
 
-  ### Setup {#v07-setup}
+  ### Setup
 
   <Tabs>
     <Tab title="Maven">
@@ -1011,7 +1011,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## Конфигурация {#v07-configuration}
+  ## Конфигурация
 
   **Класс драйвера**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -1036,7 +1036,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Примечание: дополнительные сведения см. в разделе [конфигурация JDBC](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java).
 
-  ## Поддерживаемые типы данных {#v07-supported-data-types}
+  ## Поддерживаемые типы данных
 
   JDBC driver поддерживает те же форматы данных, что и клиентская библиотека.
 
@@ -1047,7 +1047,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     * UInt64 - сопоставляется с `long` (в client-v1)
   </Note>
 
-  ## Создание подключения {#v07-creating-connection}
+  ## Создание подключения
 
   ```java
   String url = "jdbc:ch://my-server/system"; // use http protocol and port 8123 by default
@@ -1060,7 +1060,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Простой оператор {#v07-simple-statement}
+  ## Простой оператор
 
   ```java showLineNumbers
 
@@ -1073,7 +1073,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Вставка {#v07-insert}
+  ## Вставка
 
   <Note>
     * Используйте `PreparedStatement` вместо `Statement`
@@ -1091,7 +1091,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### С табличной функцией input {#with-input-table-function}
+  ### С табличной функцией input
 
   Вариант с отличными характеристиками производительности:
 
@@ -1110,7 +1110,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   * [документацию по функции input](/ru/reference/functions/table-functions/input), если возможно
 
-  ### Вставка с плейсхолдерами {#insert-with-placeholders}
+  ### Вставка с плейсхолдерами
 
   Этот вариант рекомендуется только для небольших вставок, так как он требует длинного SQL-выражения (которое будет разобрано на стороне клиента и потребует ресурсов CPU и памяти):
 
@@ -1125,7 +1125,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Работа с DateTime и часовыми поясами {#handling-datetime-and-time-zones}
+  ## Работа с DateTime и часовыми поясами
 
   Рекомендуется использовать `java.time.LocalDateTime` или `java.time.OffsetDateTime` вместо `java.sql.Timestamp`, а также `java.time.LocalDate` вместо `java.sql.Date`.
 
@@ -1140,7 +1140,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Работа с `AggregateFunction` {#handling-aggregatefunction}
+  ## Работа с `AggregateFunction`
 
   <Note>
     Прямое чтение состояния `AggregateFunction` в бинарном виде поддерживается только для `groupBitmap`. Для других агрегатных функций (`min`, `max`, `avg` и т. д.) используйте комбинаторы `-Merge` в запросе (например, `SELECT minMerge(min_state) FROM ...`), чтобы вычислить агрегатное состояние на стороне сервера и вернуть обычное значение.
@@ -1188,7 +1188,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## Настройка HTTP-библиотеки {#v07-configuring-http-library}
+  ## Настройка HTTP-библиотеки
 
   Коннектор JDBC для ClickHouse поддерживает три HTTP-библиотеки: [`HttpClient`](https://docs.oracle.com/en/java/javase/11/docs/api/java.net.http/java/net/http/HttpClient.html), [`HttpURLConnection`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/HttpURLConnection.html) и [Apache `HttpClient`](https://hc.apache.org/httpcomponents-client-5.2.x/).
 
@@ -1212,11 +1212,11 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## Подключение к ClickHouse через SSL {#connect-to-clickhouse-with-ssl}
+  ## Подключение к ClickHouse через SSL
 
   Для установки защищённого JDBC-соединения с ClickHouse через SSL необходимо настроить свойства JDBC, добавив параметры SSL. Как правило, это означает указание таких свойств SSL, как `sslmode` и `sslrootcert`, в строке JDBC URL или объекте Properties.
 
-  ## Параметры SSL {#ssl-properties}
+  ## Параметры SSL
 
   | Имя                  | Значение по умолчанию | Допустимые значения | Описание                                                                    |
   | -------------------- | --------------------- | ------------------- | --------------------------------------------------------------------------- |
@@ -1249,7 +1249,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     }
   ```
 
-  ## Устранение тайм-аута JDBC при больших вставках {#v07-resolving-jdbc-timeout-on-large-inserts}
+  ## Устранение тайм-аута JDBC при больших вставках
 
   При выполнении больших операций вставки в ClickHouse с длительным временем выполнения могут возникать ошибки тайм-аута JDBC, например:
 
@@ -1259,7 +1259,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   Эти ошибки могут нарушить процесс вставки данных и повлиять на стабильность системы. Чтобы решить эту проблему, необходимо настроить несколько параметров тайм-аута в ОС клиента.
 
-  ### Mac OS {#v07-mac-os}
+  ### Mac OS
 
   В macOS для решения этой проблемы можно изменить следующие настройки:
 
@@ -1269,7 +1269,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  ### Linux {#v07-linux}
+  ### Linux
 
   В Linux одних только аналогичных настроек может оказаться недостаточно для решения проблемы. Из-за различий в том, как Linux обрабатывает настройки keep-alive для сокетов, потребуются дополнительные действия. Выполните следующие шаги:
 

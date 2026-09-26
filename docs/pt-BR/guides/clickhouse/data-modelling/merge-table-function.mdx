@@ -14,7 +14,7 @@ Ela faz isso criando uma tabela temporária [Merge](/pt-BR/reference/engines/tab
   <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## Configurar tabelas {#setup-tables}
+## Configurar tabelas
 
 Vamos aprender a usar essa função com a ajuda do [banco de dados de partidas da ATP do TennisMyLife](https://github.com/Tennismylife/TML-Database).
 Vamos processar arquivos CSV com partidas desde a década de 1960, mas criaremos um esquema um pouco diferente para cada década.
@@ -50,7 +50,7 @@ SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
 ```
 
-## Esquema de múltiplas tabelas {#schema-multiple-tables}
+## Esquema de múltiplas tabelas
 
 Podemos executar a seguinte consulta para listar, lado a lado, as colunas e seus tipos em cada tabela, facilitando a visualização das diferenças.
 
@@ -89,7 +89,7 @@ Vamos ver as diferenças:
 * 1980s altera `winner_seed` e `loser_seed` de `Nullable(UInt8)` para `Nullable(UInt16)`.
 * 1990s altera `surface` de `String` para `Enum('Hard', 'Grass', 'Clay', 'Carpet')` e adiciona as colunas `walkover` e `retirement`.
 
-## Consultando várias tabelas com merge {#querying-multiple-tables}
+## Consultando várias tabelas com merge
 
 Vamos escrever uma consulta para encontrar as partidas que John McEnroe venceu contra alguém que era o cabeça de chave nº 1:
 
@@ -149,7 +149,7 @@ O resultado da execução da consulta é mostrado abaixo:
 └───────────────┴─────────────────────┴─────────────┘
 ```
 
-## De qual tabela vêm as linhas ao usar merge? {#which-table-merge}
+## De qual tabela vêm as linhas ao usar merge?
 
 E se quisermos saber de qual tabela vêm as linhas?
 Podemos usar a coluna virtual `_table` para fazer isso, como mostrado na consulta a seguir:

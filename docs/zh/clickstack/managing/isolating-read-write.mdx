@@ -23,7 +23,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
   隔离面向具有持续摄取的大规模部署。若每月存储数据量大致低于 100 TB,单个读写 service 通常足以同时承载这两类工作负载,很可能无需第二个 service。请使用[资源估算模型](/zh/clickstack/managing/estimating-resources)估算每月的压缩后数据量。
 </Note>
 
-## 为何要将读与写隔离 {#why-isolate}
+## 为何要将读与写隔离
 
 * **写入不再拖慢读取。** 持续的 OpenTelemetry 摄取——既包括插入本身，也包括随之而来的后台合并——会与仪表板和搜索查询争抢 CPU 和内存。摄取进行期间，读取延迟可能明显变差，摄取停止后才会恢复。
 * **读取不再干扰写入。** 这种争抢是双向的：一次繁重的临时查询或一次开销高昂的仪表板渲染可能耗尽服务的内存，直接导致插入失败，而不只是变慢。
@@ -33,7 +33,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 * **存储不会重复。** 同一仓库中的服务共享相同的对象存储目录和相同的表，并且[存储只计费一次](/zh/products/cloud/features/infrastructure/warehouses#pricing)。
 * **可按端点限制访问。** IP 访问列表按服务生效，因此写入端点可以只允许你的 collector 访问，而读取端点只允许你的 ClickStack 部署访问。请参阅我们关于[网络访问控制](/zh/products/cloud/features/infrastructure/warehouses#network-access-control)的指南。
 
-## 架构 {#architecture}
+## 架构
 
 推荐的拓扑是：一个 warehouse 中包含一个用于摄取的读写 service 和一个供 ClickStack 使用的只读 service：
 
@@ -48,7 +48,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 * 同一 warehouse 中的所有 service 共享相同的云提供商、区域、ClickHouse 版本和 Keeper，并沿用 primary service 的 upgrade schedule。
 * 摄取只使用**一个**读写 service。合并任务会分配到共享同一存储的所有读写 service 上，因此某个 service 上的插入所触发的合并可能由另一个 service 执行。如果那个 service 同时还承担着繁重的查询，这些查询就会与合并争抢它所在 service 的 CPU 和内存——导致第一个 service 的插入所对应的合并变慢，进而拖累插入性能。请把查询工作负载放在只读 service 上，仅在需要[将合并与摄取分离](#separating-merges)时才增加第二个读写 service。
 
-## 搭建隔离部署 {#setup}
+## 搭建隔离部署
 
 <Steps>
   <Step title="准备读写服务" id="prepare-read-write-service">
@@ -146,7 +146,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
   </Step>
 </Steps>
 
-## 将合并与摄取分离 {#separating-merges}
+## 将合并与摄取分离
 
 在极高的持续摄取速率下,真正的主要开销来自合并而非插入本身。由于合并会分配到共享同一存储的所有读写服务上,它们也可能被调度到你原本另有用途的服务上。
 
@@ -172,7 +172,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 * **不要让查询落到任何一个读写服务上。** 在读写服务上执行繁重的 `SELECT` 查询会与合并工作争抢 CPU 和内存,而这正是该拓扑要规避的故障模式。请按[上文](#point-clickstack)所述,将 ClickStack 指向只读服务。
 * **如果存在变更,它们会在执行它们的服务上被跟踪。** 变更在可观测性场景中很少见——ClickStack 的 schema 设置了 [`ttl_only_drop_parts = 1`](/zh/clickstack/managing/ttl),因此常规的数据保留会在 TTL 合并期间整体删除已过期的 parts,而不是通过变更逐行删除数据。如果你确实向摄取服务提交了会产生变更的 `ALTER`,它将由合并服务执行,其进度也会出现在合并服务的 [`system.mutations`](/zh/reference/system-tables/mutations) 中,而不是摄取服务上。
 
-## 管理与 DDL {#administration}
+## 管理与 DDL
 
 所有 schema 变更都必须在 **read-write** 服务上执行，包括：
 
@@ -200,7 +200,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 Materialized views 由插入操作触发，因此由 read-write 服务执行。只读服务会像查询普通表一样查询它们的 target tables，其中也包括为加速查询而[注册到 ClickStack 源](/zh/clickstack/managing/config#materialized-views-settings)的那些 views。
 
-## 隔离智能体工作负载 {#agentic-workloads}
+## 隔离智能体工作负载
 
 通过 [ClickStack MCP 服务器](/zh/clickstack/mcp)连接的 AI assistant 和仪表盘一样都属于读流量，但负载模式截然不同：正在排查事故的 agent 会在极短时间内连续发出大量探索性查询，查询范围也无人事先设定。如果让智能体和 UI 共用同一个 read-only service，这类突发流量就会直接挤占工程师在同一起事故中正在查看的仪表盘。
 
@@ -237,7 +237,7 @@ Materialized views 由插入操作触发，因此由 read-write 服务执行。�
   MCP 服务器除了执行查询，还可以创建仪表盘、告警和 saved searches，而这些状态与所有 [ClickStack 状态](#point-clickstack)一样，只作用于请求被路由到的那个服务。agent 在智能体服务上创建的仪表盘，不会出现在由面向工程师的那个服务启动的 ClickStack UI 中；它在那里创建的 alert 也会在该服务的 compute 上进行评估——而处于 idling 状态的智能体服务会延迟甚至漏掉这些评估，详见[下文](#isolating-alerts)。对于预期会创建需长期保留的制品的智能体，请将其路由到你的团队所使用的同一个服务。
 </Warning>
 
-## 告警 {#alerts}
+## 告警
 
 ClickStack 会在创建该告警的 service 上评估告警,因此告警与 UI 运行在同一套 compute 上——在本拓扑中即 read-only service。
 
@@ -249,7 +249,7 @@ ClickStack 会在创建该告警的 service 上评估告警,因此告警与 UI �
 
 告警评估属于周期性的 query workload。在为 read-only service 做容量规划时,应将其计入 QPS——[sizing model](/zh/clickstack/managing/estimating-resources#refining-sizing-assumptions) 会把搜索、dashboard 和告警 query 合并为一个汇总数值来计算。
 
-### 隔离告警评估 {#isolating-alerts}
+### 隔离告警评估
 
 告警负载无法集中路由，因为告警是由用户创建的：谁在 ClickStack 中添加告警，该告警就会落到他当时所用的 service 上，并消耗该 service 的 compute 进行评估。没有任何 SETTING 能把某个 service 的告警挪到别处。
 
@@ -274,7 +274,7 @@ ClickStack 会在创建该告警的 service 上评估告警,因此告警与 UI �
 
 如果这一组告警本身规模很小，其评估负载相对于仪表盘流量只是舍入误差，那就把所有内容都放在同一个 read-only service 上——在两处维护定义带来的运维成本，才是二者中更大的那一项。
 
-## 进一步考量 {#considerations}
+## 进一步考量
 
 **自动休眠。** 对已休眠的只读 service 发起的第一条查询需要等待该 service 启动，因此间歇性使用相当于用少量延迟换取更低的花费。不要指望用告警来阻止休眠——如[上文](#isolating-alerts)所述，对于你依赖其评估告警的 service，请禁用自动休眠。持续摄取确实能让读写 service 保持唤醒，但如果摄取是间歇性的或按计划执行的，休眠期结束后的第一个批次同样需要等待，表现为遥测数据延迟。
 

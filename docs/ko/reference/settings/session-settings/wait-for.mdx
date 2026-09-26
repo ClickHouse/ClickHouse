@@ -13,19 +13,19 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-## wait_for_async_insert {#wait_for_async_insert}
+## wait_for_async_insert
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 true이면 비동기 삽입이 처리될 때까지 기다립니다.
 
-## wait_for_async_insert_timeout {#wait_for_async_insert_timeout}
+## wait_for_async_insert_timeout
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
 비동기 삽입 처리가 완료될 때까지 대기하는 제한 시간.
 
-## wait_for_part_commit_in_dependent_materialized_views {#wait_for_part_commit_in_dependent_materialized_views}
+## wait_for_part_commit_in_dependent_materialized_views
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

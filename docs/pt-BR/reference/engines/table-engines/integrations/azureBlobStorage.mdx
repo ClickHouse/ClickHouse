@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Este motor oferece integração com o ecossistema do [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
 
-## CREATE TABLE {#create-table}
+## CREATE TABLE
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -19,7 +19,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-### Parâmetros do motor {#engine-parameters}
+### Parâmetros do motor
 
 * `endpoint` — URL do endpoint do AzureBlobStorage com contêiner e prefixo. Opcionalmente, pode conter `account&#95;name` se o método de autenticação usado exigir isso. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) ou esses parâmetros podem ser fornecidos separadamente usando `storage&#95;account&#95;url`, `account&#95;name` e `container`. Para especificar o prefixo, `endpoint` deve ser usado.
 * `endpoint_contains_account_name` - Este sinalizador é usado para especificar se `endpoint` contém `account&#95;name`, já que isso só é necessário para determinados métodos de autenticação. (Padrão: true)
@@ -55,14 +55,14 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
-## Colunas virtuais {#virtual-columns}
+## Colunas virtuais
 
 * `_path` — Caminho do arquivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nome do arquivo. Tipo: `LowCardinality(String)`.
 * `_size` — Tamanho do arquivo em bytes. Tipo: `Nullable(UInt64)`. Se o tamanho for desconhecido, o valor é `NULL`.
 * `_time` — Data e hora da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se a data e hora forem desconhecidas, o valor é `NULL`.
 
-## Autenticação {#authentication}
+## Autenticação
 
 Atualmente, há 3 formas de autenticação:
 
@@ -70,7 +70,7 @@ Atualmente, há 3 formas de autenticação:
 * `SAS Token` - Pode ser usado ao fornecer um `endpoint`, `connection_string` ou `storage_account_url`. Ele é identificado pela presença de `?` na URL. Consulte [azureBlobStorage](/pt-BR/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) para ver exemplos.
 * `Workload Identity` - Pode ser usada ao fornecer um `endpoint` ou `storage_account_url`. Se o parâmetro `use_workload_identity` estiver definido na configuração, a [Workload Identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications) será usada para autenticação.
 
-### Cache de dados {#data-cache}
+### Cache de dados
 
 O mecanismo de tabela `Azure` oferece suporte ao cache de dados em disco local.
 Consulte as opções de configuração e o uso do cache do sistema de arquivos nesta [seção](/pt-BR/concepts/features/configuration/server-config/storing-data#using-local-cache).
@@ -99,13 +99,13 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 2. reutilize a configuração de cache (e, portanto, o armazenamento em cache) da seção `storage_configuration` do ClickHouse, [descrita aqui](/pt-BR/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
-### PARTITION BY {#partition-by}
+### PARTITION BY
 
 `PARTITION BY` — Opcional. Na maioria dos casos, você não precisa de uma chave de partição e, quando ela é necessária, em geral não precisa ser mais granular do que mensal. O particionamento não acelera consultas (ao contrário da expressão ORDER BY). Você nunca deve usar um particionamento granular demais. Não particione seus dados por identificadores ou nomes de clientes (em vez disso, use o identificador ou o nome do cliente como a primeira coluna na expressão ORDER BY).
 
 Para particionar por mês, use a expressão `toYYYYMM(date_column)`, em que `date_column` é uma coluna com uma data do tipo [Date](/pt-BR/reference/data-types/date). Os nomes das partições aqui têm o formato `"YYYYMM"`.
 
-#### Estratégia de particionamento {#partition-strategy}
+#### Estratégia de particionamento
 
 `wildcard`: substitui o caractere curinga `{_partition_id}` no caminho do arquivo pela chave de partição real. A leitura não é suportada. É selecionada por padrão quando o caminho contém `{_partition_id}`.
 
@@ -132,7 +132,7 @@ select _path, * from azure_table;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-## Veja também {#see-also}
+## Veja também
 
 [Função de tabela do Azure Blob Storage](/pt-BR/reference/functions/table-functions/azureBlobStorage)
 

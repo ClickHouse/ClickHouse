@@ -15,11 +15,11 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-## 说明 {#description}
+## 说明
 
 `ArrowStream` 是 Apache Arrow 的“流模式”格式，专为内存中的流式处理而设计。
 
-## 示例用法 {#example-usage}
+## 示例用法
 
 在下面的示例中，我们使用 `forex` 数据集，可在
 [ClickHouse SQL playground](https://sql.clickhouse.com) 中使用。你可以使用主机 `sql-clickhouse.clickhouse.com`
@@ -121,7 +121,7 @@ for await (const recordBatch of reader) {
 这篇博客文章
 [使用 ClickHouse、Apache Arrow 和 Perspective 实现实时流式可视化](https://clickhouse.com/blog/streaming-real-time-visualizations-clickhouse-apache-arrow-perpsective).
 
-## 格式设置 {#format-settings}
+## 格式设置
 
 `ArrowStream` 与 [`Arrow`](/zh/reference/formats/Arrow/Arrow) 格式共享相同的格式设置。
 

@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 O motor de banco de dados `URL` trata nomes de tabelas como URLs e expõe os dados dessas URLs como tabelas. Ele utiliza a função de tabela [`url`](/pt-BR/reference/functions/table-functions/url), que encaminha cada URL ao backend apropriado, como `file`, `s3`, HDFS, Azure Blob Storage ou HTTP.
 
-## Criando um banco de dados {#creating-a-database}
+## Criando um banco de dados
 
 ```sql
 CREATE DATABASE web_data
@@ -19,7 +19,7 @@ ENGINE = URL([base_url]);
 
 Quando `base_url` é especificado, os nomes de tabela relativos são resolvidos em relação a ele. Sem uma base URL, todo nome de tabela deve ser uma URL completa.
 
-## Usage {#usage}
+## Usage
 
 ```sql
 CREATE DATABASE web_data
@@ -30,7 +30,7 @@ SELECT * FROM web_data.`daily.csv`;
 
 O banco de dados não contém definições de tabelas. Cada tabela é resolvida a partir de sua URL no momento do uso, de modo que seu schema é inferido dos dados atuais. Os nomes de tabelas também podem usar uma URL completa, por exemplo `web_data.`s3://bucket/data/events.parquet&#96;&#96;.
 
-## Access control {#access-control}
+## Access control
 
 Criar esse banco de dados exige grants de source `READ` e `WRITE` em `URL`, independentemente de [`table_engines_require_grant`](/pt-BR/reference/settings/server-settings/settings/other#table_engines_require_grant). Ler uma tabela também exige um grant de source `READ` para o backend resolvido; a gravação exige o grant `WRITE` correspondente. Por exemplo:
 
@@ -43,7 +43,7 @@ Para um banco de dados com base URL `file://`, o usuário precisa do privilégio
 
 Consulte os [privilégios `SOURCES`](/pt-BR/reference/statements/grant#sources) para obter detalhes sobre versão e compatibilidade.
 
-## Veja também {#see-also}
+## Veja também
 
 * [Função de tabela `url`](/pt-BR/reference/functions/table-functions/url)
 * [Motor de banco de dados Filesystem](/pt-BR/reference/engines/database-engines/filesystem)

@@ -27,7 +27,7 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
 
 {/* vale off */}
 
-## Telflo란 무엇인가요? {#what-is-telflo}
+## Telflo란 무엇인가요?
 
 {/* vale on */}
 
@@ -37,7 +37,7 @@ Telflo는 [명령줄 인터페이스](https://docs.telflo.com/docs/cli/)를 통�
 
 {/* vale off */}
 
-## Telflo와 ClickStack을 함께 사용하는 이유 {#why-telflo-clickstack}
+## Telflo와 ClickStack을 함께 사용하는 이유
 
 {/* vale on */}
 
@@ -58,7 +58,7 @@ Telflo는 다음 기능을 제공합니다:
   * **Telflo는 ClickStack에 데이터를 공급하는 collector 플릿을 운영합니다**
 </Tip>
 
-## 사전 요구 사항 {#prerequisites}
+## 사전 요구 사항
 
 * 대상: [Open Source ClickStack](/ko/clickstack/getting-started/oss), [관리형 ClickStack](/ko/clickstack/getting-started/managed) 또는 자가 관리형 ClickHouse instance
 * Telflo 계정([telflo.com에서 계정 생성](https://telflo.com))
@@ -70,7 +70,7 @@ Telflo는 다음 기능을 제공합니다:
 
 {/* vale off */}
 
-## ClickStack와 Telflo 통합 {#integrate-telflo-clickstack}
+## ClickStack와 Telflo 통합
 
 {/* vale on */}
 
@@ -144,25 +144,25 @@ Telflo는 다음 기능을 제공합니다:
   </Step>
 </Steps>
 
-## 고급 구성 {#advanced-configuration}
+## 고급 구성
 
-### 팬아웃 라우팅 {#fan-out-routing}
+### 팬아웃 라우팅
 
 동일한 텔레메트리를 장기 보관용으로 ClickStack에, 마이그레이션 기간에는 다른 플랫폼에, 보안 분석용으로는 SIEM에 동시에 전송할 수 있습니다. 캔버스에 exporter를 추가한 뒤 데이터를 보낼 파이프라인에 연결하거나, [Telflo의 플로우 라이브러리](https://telflo.com/flows)에서 제공하는 사전 구축된 파이프라인으로 시작하십시오.
 
-### 압축 및 성능 {#compression-and-performance}
+### 압축 및 성능
 
 * **OTLP/HTTP 및 OTLP exporter**: **Compression**을 gzip으로 유지하십시오.
 * **ClickHouse exporter**: **Async Insert**를 켜 둔 상태로 유지하고, **Compression**은 lz4로 두며, 파이프라인 앞단에 **Batch** processor를 추가하십시오. [삽입 최적화](/ko/clickstack/ingesting-data/collector#optimizing-inserts)를 참조하십시오.
 
-## 다음 단계 {#next-steps}
+## 다음 단계
 
 * **대시보드 구축**: HyperDX에서 로그, 메트릭, 트레이스에 대한 시각화를 생성합니다
 * **알림 설정**: ClickStack에서 중요한 조건에 대한 알림을 구성합니다
 * **AI 어시스턴트로 개선**: 파이프라인을 조정하거나 테스트를 제안하도록 요청합니다
 * **다른 벤더에서 이전하는 경우**: [flows](https://telflo.com/flows)가 전환 과정을 지원하여, 이미 인프라에 배포된 에이전트를 교체하고 두 백엔드를 비교하는 동안 양쪽 모두로 데이터를 이중 전송합니다
 
-## 더 읽어보기 {#read-more}
+## 더 읽어보기
 
 * [Telflo 문서](https://docs.telflo.com/docs)
 * [퀵스타트: 빈 캔버스에서 collector 배포까지](https://docs.telflo.com/docs/getting-started/quickstart)

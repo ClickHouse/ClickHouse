@@ -10,13 +10,13 @@ doc_type: 'reference'
 
 يسمح بتنفيذ استعلامات `SELECT` و`INSERT` على البيانات المخزنة على خادم PostgreSQL بعيد.
 
-## الصياغة {#syntax}
+## الصياغة
 
 ```sql
 postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]} [, SETTINGS name=value, ...])
 ```
 
-## الوسيطات {#arguments}
+## الوسيطات
 
 | الوسيطة       | الوصف                                                                                                                   |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------- |
@@ -32,7 +32,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 تُمرَّر معلمات TLS/SSL إلى `libpq`، ويمكن توفيرها كمفاتيح ضمن مجموعة مسماة أو كوسيطات مفتاح-قيمة لاحقة: `sslmode` (`disable` أو `allow` أو `prefer` أو `require` أو `verify-ca` أو `verify-full`؛ وعند عدم تعيينها، يُطبَّق الإعداد الافتراضي `prefer` الخاص بـ`libpq`)، إضافةً إلى الشهادات والمفتاح بإحدى صيغتين. تشير `sslrootcert` (شهادة CA، أو القيمة الخاصة `system`) و`sslcert` (شهادة العميل) و`sslkey` (المفتاح الخاص للعميل) إلى مسارات ملفات محلية على الخادم، ولا يمكن تحديدها إلا في مجموعة مسماة معرَّفة في ملف تهيئة الخادم. أما `sslrootcert_pem` و`sslcert_pem` و`sslkey_pem` فتقبل المحتوى الحرفي للملف المقابل بدلًا من ذلك — على سبيل المثال، `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` — وتُخفى في السجلات واستعلامات `SHOW` كما تُخفى كلمة المرور.
 
-## القيمة المعادة {#returned-value}
+## القيمة المعادة
 
 كائن جدول يحتوي على الأعمدة نفسها الموجودة في جدول PostgreSQL الأصلي.
 
@@ -40,7 +40,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
   في استعلام `INSERT`، وللتمييز بين دالة الجدول `postgresql(...)` واسم الجدول المصحوب بقائمة أسماء الأعمدة، يجب استخدام الكلمتين المفتاحيتين `FUNCTION` أو `TABLE FUNCTION`. راجع الأمثلة أدناه.
 </Note>
 
-## الإعدادات {#settings}
+## الإعدادات
 
 يمكن تهيئة تجمّع الاتصالات المستخدم في دالة الجدول `postgresql` (وفي محرك الجدول [`PostgreSQL`](/ar/reference/engines/table-engines/integrations/postgresql)) باستخدام عبارة `SETTINGS` في نهاية العبارة. وإذا لم يُحدَّد إعداد معيّن، فستُستخدم تلقائيًا قيمة إعداد `postgresql_*` المناظر له على مستوى الاستعلام. راجع قسم [الإعدادات](/ar/reference/engines/table-engines/integrations/postgresql#settings) الخاص بمحرك الجدول للاطلاع على القائمة الكاملة لإعدادات `postgresql_connection_pool_*` و`postgresql_connection_attempt_timeout` وقيمها الافتراضية.
 
@@ -50,7 +50,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password', SETTINGS postgresql_connection_pool_size = 32);
 ```
 
-## تفاصيل التنفيذ {#implementation-details}
+## تفاصيل التنفيذ
 
 تُنفَّذ استعلامات `SELECT` على جانب PostgreSQL بصيغة `COPY (SELECT ...) TO STDOUT` داخل معاملة PostgreSQL للقراءة فقط، مع إجراء commit بعد كل استعلام `SELECT`.
 
@@ -58,7 +58,7 @@ SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'p
 
 تُنفَّذ جميع عمليات الربط والتجميع والفرز وشروط `IN [ array ]` وقيد sampling الخاص بـ `LIMIT` في ClickHouse فقط بعد اكتمال الاستعلام على PostgreSQL.
 
-## تمرير استعلام بدلاً من اسم جدول {#passing-a-query}
+## تمرير استعلام بدلاً من اسم جدول
 
 بدلاً من اسم جدول، يمكن أن تكون الوسيطة الثالثة استعلام `SELECT` يُمرَّر إلى PostgreSQL كما هو. ويُستدل على بنية الجدول الناتج من نتيجة الاستعلام. ويمكن كتابة الاستعلام إما على شكل استعلام فرعي، أو بتغليفه داخل الدالة `query`:
 
@@ -97,7 +97,7 @@ SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database'
 
 يدعم تحديد أولوية النسخ المتماثلة لمصدر القاموس في PostgreSQL. وكلما كان الرقم في map أكبر، كانت الأولوية أقل. وأعلى أولوية هي `0`.
 
-## أمثلة {#examples}
+## أمثلة
 
 جدول في PostgreSQL:
 
@@ -175,12 +175,12 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
         ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
-## مواضيع ذات صلة {#related}
+## مواضيع ذات صلة
 
 * [محرك جداول PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql)
 * [استخدام PostgreSQL كمصدر للقاموس](/ar/reference/statements/create/dictionary/sources/postgresql)
 
-### نسخ بيانات Postgres أو ترحيلها باستخدام PeerDB {#replicating-or-migrating-postgres-data-with-peerdb}
+### نسخ بيانات Postgres أو ترحيلها باستخدام PeerDB
 
 > إلى جانب دوال الجداول، يمكنك دائمًا استخدام [PeerDB](https://docs.peerdb.io/introduction) من ClickHouse لإعداد مسار بيانات مستمر من Postgres إلى ClickHouse. تُعد PeerDB أداةً مصممةً خصيصًا لنسخ البيانات من Postgres إلى ClickHouse باستخدام التقاط بيانات التغيير (CDC).
 

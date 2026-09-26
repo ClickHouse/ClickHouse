@@ -14,7 +14,7 @@ import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrat
   Сейчас поддерживается только логирование OpenTelemetry. Поддержку трассировки см. в [следующем руководстве](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example).
 </Note>
 
-## Логирование {#logging}
+## Логирование
 
 Для модуля `std/log` поддерживается экспорт пользовательского логгера.
 
@@ -40,7 +40,7 @@ log.setup({
 log.getLogger('my-otel-logger').info('Hello from Deno!');
 ```
 
-### Запустите приложение {#run-the-application}
+### Запустите приложение
 
 <Tabs>
   <Tab title="Управляемый ClickStack">

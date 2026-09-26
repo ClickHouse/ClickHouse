@@ -10,14 +10,14 @@ doc_type: 'reference'
 
 يحتفظ محرك قاعدة البيانات `Memory` ببيانات وصفية وتعريفات الجداول في الذاكرة فقط. وهو مخصص لقواعد البيانات المؤقتة، إذ تُفقد قاعدة البيانات وجداولها عند إيقاف الخادم أو إعادة تشغيله.
 
-## إنشاء قاعدة بيانات {#creating-a-database}
+## إنشاء قاعدة بيانات
 
 ```sql
 CREATE DATABASE temporary_data
 ENGINE = Memory;
 ```
 
-## الاستخدام {#usage}
+## الاستخدام
 
 أنشئ الجداول واستخدمها كما في قاعدة بيانات [`Atomic`](/ar/reference/engines/database-engines/atomic):
 
@@ -34,7 +34,7 @@ INSERT INTO temporary_data.events VALUES (1, 'started');
 
 لا تستخدم هذا المحرك للبيانات أو التعريفات التي يجب أن تبقى بعد إعادة التشغيل. استخدم `Atomic`، محرك قواعد البيانات مفتوح المصدر الافتراضي، للاحتفاظ ببيانات وصفية لقاعدة البيانات بشكل دائم.
 
-## انظر أيضًا {#see-also}
+## انظر أيضًا
 
 * [محرك قاعدة البيانات Atomic](/ar/reference/engines/database-engines/atomic)
 * [محرك الجدول `Memory`](/ar/reference/engines/table-engines/special/memory)

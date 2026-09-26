@@ -22,7 +22,7 @@ ClickHouse의 쿼리는 여러 유형으로 나눌 수 있습니다:
 
 다음 설정은 쿼리 유형에 따라 사용자 권한을 제어합니다:
 
-## readonly {#readonly}
+## readonly
 
 세션이 실행할 수 있는 쿼리를 제한합니다. 이 설정의 값, 기본값, 그리고 각 값에서 변경할 수 있는 설정 항목은
 [설정 참고](/ko/reference/settings/session-settings/other#readonly)에 설명되어 있습니다. 이 섹션에서는 각 값이
@@ -78,7 +78,7 @@ masking policies, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` �
   만들지 않도록 권장하고 있습니다.
 </Note>
 
-## allow_ddl {#allow_ddl}
+## allow_ddl
 
 데이터베이스, 테이블, 뷰, 딕셔너리, 사용자 정의 함수, workload, resource 및 SQL-defined handler에 대한 [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 쿼리를 허용하거나 거부합니다.
 
@@ -120,7 +120,7 @@ masking policies, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` �
   `readonly = 1`과 `readonly = 2`는 이를 거부합니다.
 </Info>
 
-## 그 밖의 관련 설정 {#other-relevant-settings}
+## 그 밖의 관련 설정
 
 * [`allow_introspection_functions`](/ko/reference/settings/session-settings/allow#allow_introspection_functions)
   는 `readonly`, `allow_ddl`과 함께 권한 판단 자체에 관여하는 세 번째 설정입니다. 이 설정이 비활성화되면

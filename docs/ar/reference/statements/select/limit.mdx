@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 تتحكم عبارة `LIMIT` في عدد الصفوف المُعادة في نتائج الاستعلام. يمكن تحديد الصفوف بالعدد والإزاحة، أو عبر الشروط التي تفتح وتغلق نطاقًا من الصفوف باستخدام [`LIMIT ... AFTER ... UNTIL`](#limit-after-until).
 
-## صيغة أساسية {#basic-syntax}
+## صيغة أساسية
 
 **اختيار الصفوف الأولى:**
 
@@ -51,7 +51,7 @@ LIMIT [n] UNTIL end_expr
 
 يعيد الصفوف ابتداءً من أول صف تكون فيه `start_expr` صحيحة، أو من بداية الدفق عند حذف `AFTER`، وحتى أول صف عند تلك البداية أو بعدها تكون فيه `end_expr` صحيحة، دون تضمينه؛ ويحدد `n` طول ذلك النطاق. يفتح `AFTER start_expr ALL` نطاقًا عند كل صف مطابق. راجع [LIMIT ... AFTER ... UNTIL](#limit-after-until) أدناه.
 
-## الحدود السالبة {#negative-limits}
+## الحدود السالبة
 
 حدِّد الصفوف من *نهاية* مجموعة النتائج باستخدام قيم سالبة:
 
@@ -64,7 +64,7 @@ LIMIT [n] UNTIL end_expr
 
 صيغة `LIMIT -n, -m` مكافئة لـ `LIMIT -m OFFSET -n`.
 
-## حدود LIMIT الكسرية {#fractional-limits}
+## حدود LIMIT الكسرية
 
 استخدم قيمًا عشرية بين 0 و1 لتحديد نسبة مئوية من الصفوف:
 
@@ -79,7 +79,7 @@ LIMIT [n] UNTIL end_expr
   * تُقرَّب أعداد الصفوف الكسرية إلى العدد الصحيح التالي.
 </Note>
 
-## الجمع بين أنواع LIMIT {#combining-limit-types}
+## الجمع بين أنواع LIMIT
 
 يمكنك الجمع بين الأعداد الصحيحة العادية والإزاحات الكسرية أو السالبة:
 
@@ -90,7 +90,7 @@ LIMIT 10 OFFSET -20    -- 10 rows after skipping the last 20
 
 لا تُستخدم [صيغة النطاق](#limit-after-until) إلا مع عدد صحيح عادي للصفوف: يأخذ `LIMIT 3 AFTER start_expr` ثلاثة صفوف كحد أقصى من نقطة بدء النطاق. تُرفض `OFFSET` والأعداد الكسرية والسالبة و`WITH TIES` مع `AFTER` أو `UNTIL`. يمكن أن تسبق عبارة [`LIMIT BY`](/ar/reference/statements/select/limit-by) نطاقًا في الاستعلام نفسه، ويظل إعداد [`limit`](/ar/reference/settings/session-settings/other#limit) يقيّد النتيجة.
 
-## LIMIT ... WITH TIES {#limit--with-ties-modifier}
+## LIMIT ... WITH TIES
 
 يضمّ المعدِّل `WITH TIES` صفوفًا إضافية تحمل قيم `ORDER BY` نفسها التي يحملها الصف الأخير ضمن الحد. وينطبق على حدود العدد والإزاحة فقط، ولا يمكن دمجه مع [صيغة النطاق](#limit-after-until).
 
@@ -173,7 +173,7 @@ ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
 
 يمكن دمج هذا المُعدِّل مع المُعدِّل [`ORDER BY ... WITH FILL`](/ar/reference/statements/select/order-by#order-by-expr-with-fill-modifier).
 
-## LIMIT ... AFTER ... UNTIL (‏نطاق حسب الشرط) {#limit-after-until}
+## LIMIT ... AFTER ... UNTIL (‏نطاق حسب الشرط)
 
 يمكنك حصر النتيجة في *نطاق* من الصفوف يقع بين شرطَي boundary:
 
@@ -366,13 +366,13 @@ SELECT number % 4 AS k, number FROM numbers(12) ORDER BY k, number LIMIT 2 BY k 
 └───┴────────┘
 ```
 
-## اعتبارات {#considerations}
+## اعتبارات
 
 **نتائج غير حتمية:** من دون عبارة [`ORDER BY`](/ar/reference/statements/select/order-by)، قد تكون الصفوف المُعادة عشوائية وقد تختلف من تنفيذ استعلام إلى آخر.
 
 **حدّ على مستوى الخادم:** يمكن أيضًا أن يتأثر عدد الصفوف المُعادة بإعداد [limit](/ar/reference/settings/session-settings/other#limit).
 
-## انظر أيضًا {#see-also}
+## انظر أيضًا
 
 * [LIMIT BY](/ar/reference/statements/select/limit-by) — يحدّ عدد الصفوف لكل مجموعة من القيم، وهو مفيد للحصول على أعلى N من النتائج ضمن كل فئة.
 

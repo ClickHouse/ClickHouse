@@ -15,7 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 
 Предоставляет табличный интерфейс для выборки/вставки файлов в [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs). Аналогична [функции s3](/ru/reference/functions/table-functions/s3).
 
-## Синтаксис {#syntax}
+## Синтаксис
 
 <Tabs>
   <Tab title="Строка подключения">
@@ -43,7 +43,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
   </Tab>
 </Tabs>
 
-## Аргументы {#arguments}
+## Аргументы
 
 | Аргумент                         | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -60,7 +60,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 | `partition_columns_in_data_file` | Необязательно. Используется только со стратегией партиционирования `HIVE`. Указывает ClickHouse, следует ли ожидать, что столбцы партиций будут записаны в файл данных. По умолчанию `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `extra_credentials`              | Используйте `client_id` и `tenant_id` для аутентификации. Если указаны `extra_credentials`, они имеют приоритет над `account_name` и `account_key`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 
-## Именованные коллекции {#named-collections}
+## Именованные коллекции
 
 Аргументы также можно передавать с помощью [именованных коллекций](/ru/concepts/features/configuration/server-config/named-collections). В этом случае поддерживаются следующие ключи:
 
@@ -106,13 +106,13 @@ FROM azureBlobStorage(azure_my_data, blob_path = 'other_data/*.csv', format = 'C
 LIMIT 5;
 ```
 
-## Возвращаемое значение {#returned-value}
+## Возвращаемое значение
 
 Таблица с указанной структурой для чтения данных из указанного файла или записи данных в него.
 
-## Примеры {#examples}
+## Примеры
 
-### Чтение с использованием `storage_account_url` {#reading-with-storage-account-url}
+### Чтение с использованием `storage_account_url`
 
 ```sql
 SELECT *
@@ -127,7 +127,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-### Чтение с использованием варианта `connection_string` {#reading-with-connection-string}
+### Чтение с использованием варианта `connection_string`
 
 ```sql
 SELECT *
@@ -140,7 +140,7 @@ FROM azureBlobStorage(
 LIMIT 5;
 ```
 
-### Запись с партиционированием {#writing-with-partitions}
+### Запись с партиционированием
 
 Путь, содержащий `{_partition_id}`, предполагает стратегию партиционирования `WILDCARD`. Путь с другим glob-шаблоном не использует стратегию партиционирования и игнорирует `PARTITION BY`. Путь без glob-шаблона использует `HIVE`, если `file_like_engine_default_partition_strategy` имеет значение `HIVE`; в противном случае стратегия партиционирования не используется.
 
@@ -177,16 +177,16 @@ FROM azureBlobStorage(
 └─────────┴─────────┴─────────┘
 ```
 
-## Виртуальные столбцы {#virtual-columns}
+## Виртуальные столбцы
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
 * `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер файла неизвестен, значение равно `NULL`.
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение равно `NULL`.
 
-## Запись с разбиением на партиции {#partitioned-write}
+## Запись с разбиением на партиции
 
-### Стратегия партиционирования {#partition-strategy}
+### Стратегия партиционирования
 
 Поддерживается только для запросов INSERT.
 
@@ -226,7 +226,7 @@ SELECT _path, * FROM azureBlobStorage(
    └─────────────────────────────────────────────────────────────────────────────────┴────┴──────┴─────────┘
 ```
 
-## настройка use_hive_partitioning {#hive-style-partitioning}
+## настройка use_hive_partitioning
 
 Это указание для ClickHouse разбирать файлы с секционированием в стиле Hive при чтении. На запись оно не влияет. Чтобы чтение и запись работали симметрично, используйте аргумент `partition_strategy`.
 
@@ -240,7 +240,7 @@ SELECT _path, * FROM azureBlobStorage(
 SELECT * FROM azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-## Использование Shared Access Signatures (SAS) {#using-shared-access-signatures-sas-sas-tokens}
+## Использование Shared Access Signatures (SAS)
 
 Shared Access Signature (SAS) — это URI, который предоставляет ограниченный доступ к контейнеру или файлу в Azure Storage. Используйте его, чтобы предоставить ограниченный по времени доступ к ресурсам учётной записи хранилища, не передавая ключ этой учётной записи хранилища. Подробнее [здесь](https://learn.microsoft.com/en-us/rest/api/storageservices/delegate-access-with-shared-access-signature).
 
@@ -272,7 +272,7 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 1 row in set. Elapsed: 0.153 sec.
 ```
 
-## См. также {#related}
+## См. также
 
 * [Движок таблицы AzureBlobStorage](/ru/reference/engines/table-engines/integrations/azureBlobStorage)
 

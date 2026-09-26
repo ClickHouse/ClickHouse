@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações configuram o servidor ClickHouse e são geradas automaticamente a partir do código-fonte do ClickHouse.
 
-## min_allocation_size_to_log_stack_trace {#min_allocation_size_to_log_stack_trace}
+## min_allocation_size_to_log_stack_trace
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -28,7 +28,7 @@ Requer que `trace_log` esteja configurado. Sem um trace collector em execução,
 
 O valor `0` (padrão) desativa o diagnóstico. Defina-o bem acima da maior alocação que o servidor legitimamente realiza; caso contrário, alocações grandes comuns também serão registradas em log e a inicialização pode consumir todo o orçamento.
 
-## min_allocation_size_to_throw_on_memory_limit {#min_allocation_size_to_throw_on_memory_limit}
+## min_allocation_size_to_throw_on_memory_limit
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Sim" />
 
@@ -40,7 +40,7 @@ Um valor de `0` (padrão) preserva o comportamento legado: alocações implícit
 
 Observação: para evitar efeitos colaterais, recomenda-se definir um valor maior que `max_untracked_memory`.
 
-## min_os_cpu_wait_time_ratio_to_drop_connection {#min_os_cpu_wait_time_ratio_to_drop_connection}
+## min_os_cpu_wait_time_ratio_to_drop_connection
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Sim" />
 

@@ -13,14 +13,14 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se autogeneran a partir del código fuente de ClickHouse.
 
-## min_absolute_delay_to_close {#min_absolute_delay_to_close}
+## min_absolute_delay_to_close
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Retraso absoluto mínimo para cerrar, dejar de atender solicitudes y no
 devolver Ok durante la comprobación de estado.
 
-## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
+## min_columns_to_activate_adaptive_write_buffer
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -37,7 +37,7 @@ Valores posibles:
 * 0 - deshabilitado
 * 1 - siempre habilitado
 
-## min_compress_block_size {#min_compress_block_size}
+## min_compress_block_size
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -48,7 +48,7 @@ escribir la siguiente marca. También puede especificar esta configuración en l
 El valor especificado cuando se crea la tabla sobrescribe el valor global
 de esta configuración.
 
-## min_index_granularity_bytes {#min_index_granularity_bytes}
+## min_index_granularity_bytes
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -57,7 +57,7 @@ Tamaño mínimo permitido de los gránulos de datos en bytes.
 Sirve como protección para evitar crear accidentalmente tablas con un
 `index_granularity_bytes` demasiado bajo.
 
-## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
+## min_marks_to_honor_max_concurrent_queries
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -78,7 +78,7 @@ Valores posibles:
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
+## min_merge_bytes_to_use_direct_io
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -89,7 +89,7 @@ los `min_merge_bytes_to_use_direct_io` bytes, ClickHouse lee y escribe los
 datos en el disco de almacenamiento mediante la interfaz de E/S directa (opción `O_DIRECT`).
 Si `min_merge_bytes_to_use_direct_io = 0`, la E/S directa se deshabilita.
 
-## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
+## min_partition_age_to_force_merge_seconds
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -137,7 +137,7 @@ Valores posibles:
 
 * Entero positivo.
 
-## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
+## min_parts_to_merge_at_once
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -145,7 +145,7 @@ Cantidad mínima de partes de datos que el selector de merge puede elegir para f
 (configuración de nivel experto; no la cambie si no entiende lo que hace).
 0 - deshabilitado. Funciona con los selectores de merge Simple y StochasticSimple.
 
-## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
+## min_replicated_logs_to_keep
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

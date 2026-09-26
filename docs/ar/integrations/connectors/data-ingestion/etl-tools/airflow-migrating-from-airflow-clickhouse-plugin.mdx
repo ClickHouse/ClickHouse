@@ -13,7 +13,7 @@ ClickHouse عبر حزمة المجتمع
 خطوات ترحيل عملية نشر قائمة إلى `apache-airflow-providers-clickhousedb`. ولمعرفة كيفية عمل المزود
 نفسه، راجع [ربط Apache Airflow بـ ClickHouse](/ar/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse).
 
-## لماذا مزوّد أصلي؟ {#why-a-native-provider}
+## لماذا مزوّد أصلي؟
 
 المزوّدات (Providers) هي الطريقة التي يتكامل بها Airflow مع الأنظمة الخارجية. ويتم إصدارها واختبارها
 وتوثيقها مع بقية منظومة Airflow، وهذا المزوّد يتولى صيانته مجتمع Airflow بالتعاون مع ClickHouse team.
@@ -32,7 +32,7 @@ ClickHouse وتدعمه بنفسها، لا على driver يصونه المجت�
   كل DAG في الوقت نفسه.
 </Note>
 
-## لمحة سريعة {#at-a-glance}
+## لمحة سريعة
 
 |                               | `airflow-clickhouse-plugin`                                                                    | `apache-airflow-providers-clickhousedb`                                                                                                                     |
 | ----------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -45,7 +45,7 @@ ClickHouse وتدعمه بنفسها، لا على driver يصونه المجت�
 | الخطاف                        | `ClickHouseHook` (`BaseHook`) و`ClickHouseDbApiHook` (`DbApiHook`)                             | خطاف واحد `ClickHouseHook` (`DbApiHook`)                                                                                                                    |
 | الحد الأدنى لإصدار Airflow    | 2.0                                                                                            | 2.11                                                                                                                                                        |
 
-## الخطوة 1: التحقق من المتطلبات المسبقة والتثبيت {#step-1-check-prerequisites-and-install}
+## الخطوة 1: التحقق من المتطلبات المسبقة والتثبيت
 
 يتطلب المزوّد إصدار Airflow 2.11 أو أحدث، والإصدار 1.32.0 أو أحدث من `apache-airflow-providers-common-sql`.
 قم بترقية Airflow أولاً إذا كنت تستخدم إصداراً أقدم.
@@ -60,7 +60,7 @@ pip install apache-airflow-providers-clickhousedb
 pip uninstall airflow-clickhouse-plugin clickhouse-driver
 ```
 
-## الخطوة 2: تحديث الاتصالات {#step-2-update-connections}
+## الخطوة 2: تحديث الاتصالات
 
 هذه هي الخطوة التي يؤدي تجاوزها إلى تعطّل الأمور. فكل اتصال ClickHouse قائم يشير إلى المنفذ native، بينما يحتاج provider إلى منفذ HTTP.
 
@@ -76,7 +76,7 @@ pip uninstall airflow-clickhouse-plugin clickhouse-driver
 
 أما الاتصالات المخزّنة كعناوين URI (`clickhouse://user:pass@host:9000/db?secure=true`) فهي تحمل بالفعل نوع الاتصال `clickhouse` لأن Airflow يستنتجه من الـ scheme في عنوان URI. ولا يتغيّر فيها سوى المنفذ والـ keys الإضافية؛ وتُحلَّل قيم سلسلة الاستعلام على أنها JSON، لذا تبقى `secure=true` قيمة منطقية.
 
-### إضافات الاتصال {#connection-extras}
+### إضافات الاتصال
 
 كان الـ plugin يمرّر كل مفتاح في `extra` مباشرةً إلى `clickhouse_driver.Client`، لذا قد تحمل الاتصالات
 أي وسيطات كلمات مفتاحية خاصة بـ `clickhouse-driver`. أما الـ provider فلا يقرأ سوى مجموعة ثابتة من المفاتيح
@@ -140,7 +140,7 @@ pip uninstall airflow-clickhouse-plugin clickhouse-driver
 airflow connections test clickhouse_default
 ```
 
-## الخطوة 3: استبدال عمليات الاستيراد {#step-3-replace-imports}
+## الخطوة 3: استبدال عمليات الاستيراد
 
 | صنف الـ plugin                                                                           | البديل في الـ provider                                               |
 | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
@@ -160,7 +160,7 @@ airflow connections test clickhouse_default
 
 لم يكن الغرض من الـ wrappers الخاصة بـ `common.sql` والمسبوقة بـ `ClickHouse` سوى حقن الخطاف الخاص بالـ plugin. أما الـ provider فيسجّل نوع الاتصال `clickhouse`، ومن ثم تستطيع أصناف `common.sql` غير المسبوقة تحديد الخطاف من الاتصال بنفسها. فإذا كنت تستخدم تلك الـ wrappers، يقتصر الترحيل عادةً على تعديل سطر الـ import، وحذف السابقة `ClickHouse`، وتمرير `conn_id` بشكل صريح (انظر [الخطوة 7](#step-7-the-commonsql-wrapper-family)).
 
-## الخطوة 4: من `ClickHouseOperator` إلى `SQLExecuteQueryOperator` {#step-4-clickhouseoperator-to-sqlexecutequeryoperator}
+## الخطوة 4: من `ClickHouseOperator` إلى `SQLExecuteQueryOperator`
 
 | معامل `ClickHouseOperator`                | المكافئ في `SQLExecuteQueryOperator`                    | ملاحظات                                                                                                                                                                                                                                                                                                                    |
 | ----------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -227,7 +227,7 @@ update_income_aggregate = SQLExecuteQueryOperator(
 )
 ```
 
-### نتائج العبارات المتعددة {#multi-statement-results}
+### نتائج العبارات المتعددة
 
 كان الـ plugin يدفع نتيجة **آخر** عبارة إلى XCom. أما `SQLExecuteQueryOperator` فيُعيد
 نتيجة واحدة لكل عبارة عندما يكون `sql` قائمة، لذا فإن المثال أعلاه يدفع `[[], [(12345.0,)]]`
@@ -270,7 +270,7 @@ load_rows = SQLInsertRowsOperator(
 
 مرّر دائماً `columns`؛ فبدونها يبحث الـ operator عن الجدول عبر SQLAlchemy.
 
-### الحفاظ على column types {#keeping-column-types}
+### الحفاظ على column types
 
 كانت `with_column_types=True` تُعيد `(rows, [(name, type), ...])`. يمكن تحقيق الأمر نفسه باستخدام handler، حيث يعرض مؤشر `clickhouse-connect` أسماء أنواع ClickHouse في `cursor.description`:
 
@@ -287,7 +287,7 @@ SQLExecuteQueryOperator(
 )
 ```
 
-## الخطوة 5: من `ClickHouseHook.execute` إلى طرق `DbApiHook` {#step-5-clickhousehookexecute-to-dbapihook-methods}
+## الخطوة 5: من `ClickHouseHook.execute` إلى طرق `DbApiHook`
 
 كان خطاف الـ plugin يوفّر طريقة واحدة، `execute`، تُحاكي `clickhouse_driver.Client.execute`. أما خطاف
 الـ provider فهو `DbApiHook`، ولذلك يحصل على الطرق القياسية المتوفرة في كل provider SQL آخر:
@@ -353,7 +353,7 @@ with hook.get_client() as client:
     columns = result.result_columns
 ```
 
-## الخطوة 6: من `ClickHouseSensor` إلى `SqlSensor` {#step-6-clickhousesensor-to-sqlsensor}
+## الخطوة 6: من `ClickHouseSensor` إلى `SqlSensor`
 
 هذا هو الاستبدال الوحيد الذي يتغيّر فيه دخل الدالة القابلة للاستدعاء.
 
@@ -399,7 +399,7 @@ SqlSensor(
 
 إذا كان الكائن القابل للاستدعاء يحتاج إلى الصف بأكمله، فمرّر `selector=lambda row: row`. وإذا كان يحتاج إلى جميع الصفوف، فاكتب الـ check في SQL بحيث يُعيد الاستعلام قيمة منطقية واحدة أو عدداً.
 
-## الخطوة 7: عائلة الأغلفة `common.sql` {#step-7-the-commonsql-wrapper-family}
+## الخطوة 7: عائلة الأغلفة `common.sql`
 
 الشيفرة التي استخدمت `ClickHouseSQLExecuteQueryOperator` و`ClickHouseSqlSensor` وبقية
 الأغلفة المسبوقة بـ `ClickHouse` تحتاج إلى أقل قدر من العمل:
@@ -417,7 +417,7 @@ SqlSensor(
 * لا يزال الاتصال بحاجة إلى تغييرات المنفذ والإضافات الواردة في الخطوة 2، فالأغلفة كانت تستخدم
   البروتوكول الأصلي أيضًا.
 
-## اختلافات السلوك التي يجب مراجعتها {#behavior-differences-to-review}
+## اختلافات السلوك التي يجب مراجعتها
 
 حتى بعد نجاح ترجمة الشيفرة، تختلف بعض السلوكيات في وقت التشغيل.
 
@@ -437,7 +437,7 @@ SqlSensor(
 
 **التعامل مع الاتصالات.** يُنشئ الخطاف عميل `clickhouse-connect` لكل استدعاء `run` أو `get_client`، على غرار الطريقة التي كان الـ plugin يفتح بها اتصالًا أصليًا جديدًا لكل `execute`. ويتشارك العملاء مجمّع اتصالات HTTP على مستوى العملية بأكملها، لذا فإن استدعاء `close()` على عميل ناتج عن `get_client()` يُعدّ ممارسة جيدة لا شرطًا إلزاميًا؛ فالمجمّع يُحرَّر عند انتهاء عملية المهمة. والعميل هو context manager، لذا تبقى `with hook.get_client() as client:` أنظف صيغة.
 
-## قائمة التحقق {#checklist}
+## قائمة التحقق
 
 1. إصدار Airflow هو 2.11 أو أحدث.
 2. منفذ HTTP يمكن الوصول إليه من الـ workers؛ وشهادات TLS صالحة لنقطة نهاية HTTP.
@@ -456,7 +456,7 @@ SqlSensor(
 11. تحديث الشيفرة التي تعترض استثناءات `clickhouse_driver`.
 12. إلغاء تثبيت `airflow-clickhouse-plugin` و`clickhouse-driver`.
 
-## استخدام مساعد برمجي يعمل بالذكاء الاصطناعي {#using-an-ai-coding-assistant}
+## استخدام مساعد برمجي يعمل بالذكاء الاصطناعي
 
 صُمِّم الـ mapping أعلاه ليكون آليًا بحتًا بشكل متعمّد، بحيث يستطيع المساعد البرمجي تطبيقه على repository
 خاص بـ DAG. وفيما يلي prompt أثبت فعاليته:
@@ -483,7 +483,7 @@ Show the diff and a summary of items flagged for human review.
 
 راجع الفروقات؛ فتغييرات الاتصال ودلالات المستشعر ومستهلكو XCom هي المواضع التي تخطئ فيها عمليات إعادة الكتابة الآلية.
 
-## محتوى ذو صلة {#related-content}
+## محتوى ذو صلة
 
 * [ربط Apache Airflow بـ ClickHouse](/ar/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse)
 * [عميل `clickhouse-connect` لبايثون](/ar/integrations/language-clients/python/index)

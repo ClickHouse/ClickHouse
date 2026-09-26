@@ -35,7 +35,7 @@ metric_name2[...] = ...
   مثل هذه الخدمة.
 </Note>
 
-## الصياغة {#syntax}
+## الصياغة
 
 ```sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
@@ -51,7 +51,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
   يُكتب تعريف الجدول الخاص بأي [version](#schema-versioning) أقدم من 4 باستخدام `METRICS`، حتى يتمكن خادم أقدم من قراءته.
 </Note>
 
-## الاستخدام {#usage}
+## الاستخدام
 
 من الأسهل البدء بالإعدادات الافتراضية لكل شيء (يُسمح بإنشاء جدول `TimeSeries` من دون تحديد قائمة بالأعمدة):
 
@@ -64,7 +64,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 * [prometheus remote-write](/ar/concepts/features/interfaces/prometheus#remote-write)
 * [prometheus remote-read](/ar/concepts/features/interfaces/prometheus#remote-read)
 
-### الأعمدة الخارجية {#outer-columns}
+### الأعمدة الخارجية
 
 تُنشأ أعمدة جدول TimeSeries تلقائيًا. وهذه هي الأعمدة الخارجية؛ فهي لا تخزّن أي بيانات، وإنما توفّر فقط واجهة لـ SELECT/INSERT. وتُخزَّن البيانات الفعلية في [الجداول الهدف](#target-tables). وفيما يلي قائمة الأعمدة الخارجية:
 
@@ -102,7 +102,7 @@ INSERT INTO my_table (metric_name, tags, samples, metric_family, type, unit, hel
      'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
 ```
 
-### تحديد الأعمدة الخارجية {#specifying-outer-columns}
+### تحديد الأعمدة الخارجية
 
 يمكن إدراج العمود الخارجي `samples` صراحةً في عبارة `CREATE TABLE` لاستبدال نوعه الافتراضي `Array(Tuple(DateTime64(3), Float64))` (كما يُقبل اسمه القديم `time_series` أيضاً). يستخرج ClickHouse نوعَي الطابع الزمني والقيمة scalar من الـ tuple ويُمرّرهما إلى جدول العينات الداخلي:
 
@@ -119,7 +119,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 إذا استُخدمت الصيغتان كلتاهما ضمن عبارة `CREATE TABLE` نفسها، فيجب أن تتطابق الأنواع المُعلنة.
 
-## الجداول الهدف {#target-tables}
+## الجداول الهدف
 
 لا يحتوي جدول `TimeSeries` على بيانات خاصة به، إذ يُخزَّن كل شيء في جداوله الهدف.
 وهذا يشبه طريقة عمل [العرض المادي](/ar/reference/statements/create/view#materialized-view)،
@@ -135,7 +135,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 الجداول الهدف هي كما يلي:
 
-### جدول العينات {#samples-table}
+### جدول العينات
 
 يحتوي جدول *samples* على سلاسل زمنية مرتبطة بمعرّف معيّن.
 
@@ -153,7 +153,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 يفعّل المحرك `ALP` لجداول العينات الداخلية وجداول العينات الحديثة الخاصة به دون الحاجة إلى ضبط `enable_alp_codec`.
 انظر أيضًا [ضبط أنواع الأعمدة](#adjusting-column-types).
 
-### جدول العينات الحديثة {#recent-samples-table}
+### جدول العينات الحديثة
 
 جدول *العينات الحديثة* اختياري ومُفعّل افتراضيًا (راجع إعداد [recent&#95;samples&#95;ttl&#95;seconds](#settings)؛
 إذ يؤدي ضبطه على صفر إلى تعطيل الجدول). يحتوي على نسخة من العينات الأحدث من قيمة TTL التي يحددها هذا الإعداد،
@@ -167,7 +167,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 تُشتق قيمة TTL لجدول العينات الحديثة الداخلي دائمًا من إعداد [recent&#95;samples&#95;ttl&#95;seconds](#settings).
 
-### جدول الوسوم {#tags-table}
+### جدول الوسوم
 
 يحتوي جدول *tags* على المعرّفات المحسوبة لكل توليفة من اسم مقياس والوسوم.
 
@@ -188,7 +188,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 
 تحلّ الفهارس الصريحة المعلَنة في `TAGS INNER COLUMNS` محل الفهرس الافتراضي. أما الجداول الموجودة وجداول الوسوم الخارجية فتحتفظ بفهارسها؛ ولتفعيله عليها، أضف الفهرس وجسّده على جدول الهدف الخاص بوسومها.
 
-### جدول عائلات المقاييس {#metric-families-table}
+### جدول عائلات المقاييس
 
 يحتوي جدول *metric families* على بعض المعلومات حول عائلات المقاييس التي تُجمع، وأنواع تلك العائلات وأوصافها.
 عائلة المقياس هي مجموعة من المقاييس التي تحمل الاسم نفسه (الوسم `__name__`) والنوع نفسه، فعلى سبيل المثال المُدرَّج التكراري هو عائلة مقياس تتكون من عدة مقاييس.
@@ -202,7 +202,7 @@ SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(Delta, T64, ZSTD(3)), value Float3
 | `unit`               | [x]     | `LowCardinality(String)` | `String` أو `LowCardinality(String)` | الوحدة المستخدمة في المقياس                                                                                                                                                                 |
 | `help`               | [x]     | `String`                 | `String` أو `LowCardinality(String)` | وصف المقياس                                                                                                                                                                                 |
 
-## الإنشاء {#creation}
+## الإنشاء
 
 توجد عدة طرق لإنشاء جدول باستخدام محرك الجدول `TimeSeries`.
 أبسط عبارة
@@ -325,7 +325,7 @@ ORDER BY metric_family_name
 SETTINGS index_granularity = 8192
 ```
 
-## إنشاء جدول AS جدول موجود {#create-as}
+## إنشاء جدول AS جدول موجود
 
 تنشئ العبارة `CREATE TABLE new_table AS existing_table` جدول `TimeSeries` مهيأً على غرار `existing_table`،
 الذي يجب أن يكون بدوره جدول `TimeSeries`. لا تُنسخ الأهداف الخارجية لـ `existing_table`؛ إذ يجب أن تعرّفها العبارة
@@ -348,7 +348,7 @@ SETTINGS index_granularity = 8192
 يمكن استخدام جدول أنشأه إصدار أقدم من ClickHouse بصفته `existing_table`: يحصل الجدول الجديد على
 البنية الحالية، مثل نوع `id` الحالي وتعبير المعرّف الافتراضي.
 
-## ضبط أنواع الأعمدة {#adjusting-column-types}
+## ضبط أنواع الأعمدة
 
 يمكنك ضبط أنواع الأعمدة في الجداول الهدف الداخلية باستخدام عبارة `INNER COLUMNS`. على سبيل المثال، لتخزين الطوابع الزمنية بالميكروثانية والقيم كـ `Float32`، استخدم:
 
@@ -364,7 +364,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
 ```
 
-## العمود `id` {#id-column}
+## العمود `id`
 
 يحتوي العمود `id` على معرّفات، ويُحتسب كل معرّف استنادًا إلى تركيبة من اسم المقياس والوسوم.
 يمكن تخصيص النوع وتعبير `DEFAULT` المستخدم لتوليد المعرّفات عبر العبارة `TAGS INNER COLUMNS`:
@@ -399,7 +399,7 @@ SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)'
 عندما يكون الإعداد `id_generator` مُعيَّنًا، يُسجَّل الإعداد `id_type` تلقائيًا عند `CREATE`،
 بحيث يحتفظ التعريف بالنوع الذي كُتب التعبير من أجله.
 
-## العمود `tags` {#tags-column}
+## العمود `tags`
 
 يحتوي العمود `tags` على جميع وسوم السلسلة الزمنية، بما في ذلك الوسم `__name__` الذي يحتوي على اسم المقياس.
 
@@ -421,7 +421,7 @@ SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
   بجميع الوسوم باستثناء اسم المقياس.
 </Note>
 
-## محركات الجداول الخاصة بالجداول الهدف الداخلية {#inner-table-engines}
+## محركات الجداول الخاصة بالجداول الهدف الداخلية
 
 تستخدم الجداول الهدف الداخلية، افتراضيًا، محركات الجداول التالية:
 
@@ -459,7 +459,7 @@ METRIC FAMILIES ENGINE=ReplicatedReplacingMergeTree
 الصفوف التي تدمجها عملية دمج في الخلفية معًا تتشارك القيم نفسها. وعندما يُنشأ جدول الوسوم الداخلي أو يُحدَّد محركه inline كما هو موضح أعلاه، يضبط `TimeSeries` القيمة `allow_dimensions_outside_sorting_key = 1` عليه تلقائيًا؛
 أما بالنسبة إلى جدول الوسوم التجميعي [الخارجي](#external-target-tables) الذي يُنشأ يدويًا، فيجب عليك تعيين هذا الإعداد بنفسك.
 
-## الجداول الهدف الخارجية {#external-target-tables}
+## الجداول الهدف الخارجية
 
 يمكن إعداد جدول `TimeSeries` لاستخدام جدول أُنشئ يدويًا:
 
@@ -488,7 +488,7 @@ CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_f
 
 يُسجَّل نوع عمود `id` في جدول الوسوم الخارجي والتعبير المولِّد للمعرّفات في الإعدادين [`id_type`](#settings) و[`id_generator`](#settings) عند تنفيذ `CREATE` (بدءًا من [الإصدار](#schema-versioning) 2)، بحيث يحتفظ بهما تعريف جدول `TimeSeries`: على سبيل المثال، يقرأ `CREATE TABLE ... AS my_table` نوع `id` من تعريف `my_table` دون قراءة جداوله الهدف الخارجية. وإذا لم يُحدَّد الإعداد `id_generator`، فيُعيَّن إلى `DEFAULT` المعرَّف في عمود `id` للجدول الخارجي (إن وجد)، وإلا فإلى المولِّد القياسي المشتق من نوع `id`. ويُستخدَم التعبير المسجَّل لتوليد `id` حتى إذا تغيّرت قيمة `DEFAULT` في الجدول الخارجي لاحقًا — راجع [عمود `id`](#id-column) للتفاصيل.
 
-## تعديل الإعدادات {#altering-settings}
+## تعديل الإعدادات
 
 يمكن تغيير إعدادَين بعد `CREATE`:
 
@@ -506,7 +506,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ولا يمكن تغيير الإعدادات الأخرى باستخدام `ALTER ... MODIFY SETTING`: فمعظمها يكون مدمجًا في مخطط الجداول الداخلية عند `CREATE`،
 كما أن الإعداد `version` يُثبَّت تلقائيًا عند `CREATE` ويُعرِّف المخطط نفسه (انظر [إصدارات المخطط](#schema-versioning)).
 
-## الإعدادات {#settings}
+## الإعدادات
 
 فيما يلي قائمة بالإعدادات التي يمكن تحديدها عند تعريف جدول `TimeSeries`:
 
@@ -526,7 +526,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | `tags_index_granularity`             | UInt64       | 8192                                                          | يضبط `index_granularity` لجدول [الوسوم](#tags-table) الداخلي. عند تعيينه صراحةً، فإنه يتجاوز `index_granularity` من تعريف المحرك. يُتجاهل لجدول الوسوم خارجي ولمحرك غير MergeTree                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `version`                            | UInt64       | 5                                                             | إصدار الجدول: يحدد مجموعة جداول الهدف وبنيتها. يُثبّت الإصدار تلقائيًا عند إنشاء الجدول ولا يمكن تغييره بعد ذلك، وعادةً ينبغي حذفه من استعلام `CREATE TABLE` (راجع [إصدارات المخطط](#schema-versioning))                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
-## إصدارات المخطط {#schema-versioning}
+## إصدارات المخطط
 
 لا يزال محرك الجدول `TimeSeries` وطبقة تنفيذ PromQL قيد التطوير النشط:
 فمجموعة الجداول الهدف وبنيتها قد تتغيّر بين إصدارات ClickHouse.
@@ -548,7 +548,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 * إذا كان الإصدار أقدم من أن يُكتب فيه، تُرفض استعلامات `INSERT` وبروتوكول remote-write الخاص بـ Prometheus، بينما تظل استعلامات `SELECT` تعمل.
 * وإذا كان الإصدار أقدم من أن يدعمه الخادم أصلًا، يُرفض كل استعلام على الجدول (باستثناء `SHOW CREATE TABLE` و`DETACH` و`DROP`).
 
-### سجل الإصدارات {#version-history}
+### سجل الإصدارات
 
 | الإصدار | التغييرات                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -559,7 +559,7 @@ ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 | 4       | أُعيدت تسمية جدول الهدف `metrics` إلى `عائلة المقياس`: يُسمّى الجدول الداخلي `.inner_id.metricfamilies.<uuid>` بدلًا من `.inner_id.metrics.<uuid>`، ويُكتب التعريف بالكلمة المفتاحية `METRIC FAMILIES` بدلًا من `METRICS`. أما البيانات المخزَّنة فلم تتغيّر                                                                                                                                               |
 | 5       | جداول الوسوم الداخلية الجديدة التي تستخدم محركًا من عائلة `MergeTree` تحصل افتراضيًا على فهرس نصي `keyValuePairs` على الخريطة `tags` (انظر [جدول الوسوم](#tags-table))                                                                                                                                                                                                                                     |
 
-# الدوال {#functions}
+# الدوال
 
 فيما يلي قائمة بالدوال التي تقبل جدول `TimeSeries` كوسيطة:
 

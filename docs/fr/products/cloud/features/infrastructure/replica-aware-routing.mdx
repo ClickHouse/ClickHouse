@@ -24,13 +24,13 @@ Le routage tenant compte des répliques est disponible via les deux interfaces :
 
 Les deux s’activent séparément et reposent sur le même hachage cohérent derrière le proxy.
 
-## Prérequis {#prerequisites}
+## Prérequis
 
 * Votre service doit disposer d’**au moins 2 répliques**. Sur un service à réplique unique, il n’y a rien à épingler.
 * Un service de tier **Enterprise**.
 * Pris en charge sur les services ClickHouse Cloud standard et [BYOC](/fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview)
 
-## Configurer le routage tenant compte des répliques {#configuring-replica-aware-routing}
+## Configurer le routage tenant compte des répliques
 
 Les clients Enterprise activent le routage tenant compte des répliques depuis la page des paramètres du service dans la ClickHouse Cloud console. Ouvrez votre service, rendez-vous dans **Settings**, puis activez le toggle correspondant à l&#39;interface souhaitée :
 
@@ -41,7 +41,7 @@ Activez l&#39;un, l&#39;autre, ou les deux. Aucun redémarrage n&#39;est nécess
 
 Ces toggles sont progressivement déployés sur les plans de l&#39;Enterprise tier. S&#39;ils ne sont pas encore disponibles sur votre service, ouvrez un ticket auprès du [support](https://clickhouse.com/support/program) en indiquant votre service ID afin que la feature soit activée plus tôt.
 
-## Routage HTTP {#http-based-routing}
+## Routage HTTP
 
 Pour associer une charge de travail à une réplique, envoyez un en-tête `X-ClickHouse-Replica-Tag` via l’[interface HTTPS](/fr/concepts/features/interfaces/http). Le proxy applique un hachage cohérent à la valeur de l’en-tête : les requêtes partageant cette valeur sont donc dirigées vers la même réplique tant que le nombre de répliques reste inchangé. Une valeur différente est hachée indépendamment et peut être associée à la même réplique ou à une autre, mais vous ne choisissez pas *à quelle* réplique une valeur est associée.
 
@@ -63,7 +63,7 @@ Pour clickhouse-go (v2), définissez `Protocol: clickhouse.HTTP` et transmettez 
   `X-ClickHouse-Replica-Tag` assure une affinité avec une réplique sans créer de session HTTP ClickHouse. Les requêtes concurrentes peuvent réutiliser le même tag sans rencontrer l’erreur `SESSION_IS_LOCKED`.
 </Info>
 
-## Routage via le protocole natif {#native-protocol-routing}
+## Routage via le protocole natif
 
 Avec le [protocole natif](/fr/interfaces/tcp), transmettez la valeur de routage sous la forme d&#39;un nom de serveur TLS du type `<routing-value>.sticky.<host>`. Connectez-vous au nom d’hôte habituel de votre service, comme d&#39;ordinaire. [ClickHouse Client](/fr/interfaces/client) récupère la valeur de routage via `--tls-sni-override` :
 
@@ -77,7 +77,7 @@ clickhouse client \
 
 `--host` correspond au nom d’hôte habituel de votre service, `--secure` active TLS et `--tls-sni-override` transporte la valeur de routage. TLS est obligatoire. Aucun certificat ni entry DNS supplémentaire n&#39;est nécessaire.
 
-## Cohérence lecture après écriture {#read-after-write-consistency}
+## Cohérence lecture après écriture
 
 Sur un service comptant plusieurs répliques, une écriture effectuée sur une réplique peut ne pas être visible sur les autres tant que la réplication n&#39;a pas rattrapé son retard. Envoyez votre écriture avec une valeur de routage, puis réutilisez cette même valeur lors des lectures qui suivent. Le proxy dirige les deux vers la même réplique : vous lisez ainsi votre propre écriture, même si les autres répliques accusent encore du retard. Ce modèle convient aux workloads qui écrivent puis relisent immédiatement les mêmes données, comme les applications interactives ou les jobs ETL qui valident les insertions avant de poursuivre.
 
@@ -121,29 +121,29 @@ clickhouse client \
 
 Pour des garanties plus étendues sur l&#39;ensemble des répliques, vous pouvez également définir [`select_sequential_consistency`](/fr/reference/settings/session-settings#select_sequential_consistency) sur `1` dans ClickHouse Cloud.
 
-## Vérifier quelle réplique est utilisée {#check-which-replica}
+## Vérifier quelle réplique est utilisée
 
 Exécutez à nouveau l’un des exemples `SELECT hostName()` avec la même valeur de routage. Vous devriez obtenir le même nom d’hôte tant que le nombre de répliques reste inchangé. Une valeur de routage différente peut être associée à une autre réplique.
 
-## Limites du routage tenant compte des réplicas {#limitations-of-replica-aware-routing}
+## Limites du routage tenant compte des réplicas
 
-### La persistance change lorsque le nombre de répliques change {#replica-aware-routing-does-not-guarantee-isolation}
+### La persistance change lorsque le nombre de répliques change
 
 La mise à l’échelle horizontale, à la hausse comme à la baisse, modifie l’anneau de hachage du routage. Des requêtes partageant la même valeur de routage peuvent alors être dirigées vers une autre réplique. Si vous vous appuyez sur des tables temporaires ou des paramètres au niveau de la session, soyez prêt à les recréer après une réaffectation. `SELECT hostName()` vous indique toujours sur quelle réplique vous vous trouvez.
 
-### Le routage tenant compte des réplicas n&#39;est pas une isolation des charges de travail {#not-workload-isolation}
+### Le routage tenant compte des réplicas n&#39;est pas une isolation des charges de travail
 
 Le routage sticky contrôle uniquement *quelle* réplique traite une requête. Cette réplique peut tout de même servir d&#39;autres requêtes. Pour un compute dédié, utilisez la [séparation compute-compute](/fr/products/cloud/features/infrastructure/warehouses).
 
-### Mise en réseau privée {#private-networking}
+### Mise en réseau privée
 
 Le routage HTTP comme le routage par protocole natif fonctionnent avec la [mise en réseau privée](/fr/products/cloud/guides/security/connectivity/private-networking) sur le nom d’hôte habituel de votre service. Aucune entrée DNS supplémentaire n’est requise.
 
-### Le routage en protocole natif nécessite TLS {#native-protocol-routing-requires-tls}
+### Le routage en protocole natif nécessite TLS
 
 Le routage en protocole natif nécessite TLS : utilisez donc l&#39;option `--secure`. Une connexion native non chiffrée conserve l&#39;équilibrage de charge ordinaire.
 
-## Résolution des problèmes {#troubleshooting}
+## Résolution des problèmes
 
 **Les requêtes sont toujours dirigées vers différentes répliques avec la même valeur de routage**
 

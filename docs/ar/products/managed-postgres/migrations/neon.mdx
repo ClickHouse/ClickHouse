@@ -56,9 +56,9 @@ doc_type: 'guide'
   </Step>
 </Steps>
 
-## اعتبارات الترحيل {#migration-considerations}
+## اعتبارات الترحيل
 
-### الفروع {#branches}
+### الفروع
 
 توفّر Neon تفريعًا فوريًا بتقنية النسخ عند الكتابة (copy-on-write). أما ClickHouse Managed Postgres فيستخدم تخزين NVMe محليًا لتقديم أداء Postgres سريع ويمكن التنبؤ به وموثوق.
 وفي المقابل، فإن الفروع ليست فورية؛ إذ تُنشأ كعمليات نشر مستقلة باستخدام [الاستعادة إلى نقطة زمنية (PITR)](/ar/products/managed-postgres/backup-and-restore)، وتصبح متاحة عادةً خلال دقائق قليلة.
@@ -67,7 +67,7 @@ doc_type: 'guide'
 
 ويعتمد بعض العملاء هذا النهج لإدارة مئات بيئات التطوير. ونعمل باستمرار على تحسين تجربة التفريع والبيئات المعزولة. راجع [توثيق التفريع](/ar/products/managed-postgres/branching).
 
-### Neon Serverless Driver {#neon-serverless}
+### Neon Serverless Driver
 
 إذا كان تطبيقك لا يستخدم Neon Serverless Driver، فيمكنك تخطي هذا القسم.
 
@@ -88,7 +88,7 @@ doc_type: 'guide'
 
 لمزيد من التفاصيل، راجع [مصفوفة توافق PgBouncer](https://www.pgbouncer.org/features.html).
 
-### حدود الاتصالات {#connection-limits}
+### حدود الاتصالات
 
 يدعم ClickHouse Managed Postgres 500 اتصال Postgres مباشر بشكل افتراضي. إذا تجاوز عبء العمل لديك في Neon هذا العدد، فيمكنك:
 
@@ -97,7 +97,7 @@ doc_type: 'guide'
 * زيادة `max_connections` إذا لزم المزيد من الاتصالات المباشرة.
   * يمكن تغيير `max_connections` من **Settings → Edit parameters**. وتتطلب بعض التغييرات إعادة تشغيل. راجع [وثائق التهيئة](/ar/products/managed-postgres/settings#changing-configuration).
 
-### تغييرات المخطط أثناء الترحيل {#schema-changes}
+### تغييرات المخطط أثناء الترحيل
 
 اجعل الفترة الفاصلة بين بدء ClickPipes وعملية التحويل أقصر ما يمكن — ويُفضّل ألّا تتجاوز بضعة أيام — وتجنّب إجراء أي تغييرات على المخطط خلال هذه الفترة.
 

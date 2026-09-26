@@ -22,7 +22,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Руководство рассчитано на чтение вместе с остальной [документацией](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/index), страницей [возможностей и конфигураций](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) и [справочником по materializations](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
 
-## Прежде чем начать {#before-you-start}
+## Прежде чем начать
 
 Сначала выполните инструкции из README проекта [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse). Там объясняется, как настроить проект с dbt Core 1.x, dbt OSS, dbt v2 или платформой dbt, как подключить его к локальному ClickHouse (docker) или ClickHouse Cloud, как загрузить демонстрационные данные командой `dbt seed` и как выполнить первый `dbt build`. После того как `dbt build` успешно завершится, возвращайтесь сюда за примерами и конфигурациями, специфичными для ClickHouse.
 
@@ -39,7 +39,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Все SQL-команды, не являющиеся командами dbt, предназначены для выполнения непосредственно в ClickHouse — например, с помощью `clickhouse client`, SQL-консоли ClickHouse Cloud или любого другого SQL-клиента на ваш выбор.
 
-## Как материализуется проект {#views-and-tables}
+## Как материализуется проект
 
 В Jaffle Shop materializations задаются в `dbt_project.yml`: staging-модели создаются как просмотры, а marts — как таблицы.
 
@@ -108,7 +108,7 @@ SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 
 Здесь есть два момента, специфичных для ClickHouse. В модели не указан движок таблицы, поэтому adapter использует `MergeTree`, и не указан ключ сортировки, поэтому adapter применяет `ORDER BY tuple()` — то есть данные не сортируются вовсе. Для демонстрационного проекта это приемлемо, но для реальной таблицы стоит задать и то, и другое, чем мы и займёмся в следующих разделах. На [странице materializations](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) перечислены все конфигурации таблиц, которые поддерживает adapter.
 
-## Загрузка данных с помощью seeds {#seeds}
+## Загрузка данных с помощью seeds
 
 Jaffle Shop использует dbt [seeds](https://docs.getdbt.com/docs/build/seeds) для загрузки необработанных данных из CSV-файлов в каталоге `seeds/jaffle-data`. Seeds предназначены для небольших статических справочных данных (таблицы кодов, соответствия), а не для наполнения хранилища; в проекте они используются для удобства, чтобы можно было начать работу без дополнительного инструмента ингестии — именно поэтому seeds отключены, пока вы не передадите `--vars '{"load_source_data": true}'`.
 
@@ -177,7 +177,7 @@ SETTINGS index_granularity = 8192
 
 `dbt seed --full-refresh` удаляет и заново создаёт таблицу, поэтому выполните эту команду до создания любых объектов, которые напрямую зависят от данных этой таблицы, — например, materialized view, рассматриваемого далее в этом руководстве.
 
-## Настройка таблицы для ClickHouse {#table-configuration}
+## Настройка таблицы для ClickHouse
 
 Витрина `orders` — естественная точка, с которой стоит начать: к ней обращаются витрина `customers` и метрики проекта, к тому же это таблица событийного типа с временной меткой. Добавьте блок `config` в начало файла `models/marts/orders.sql`, чтобы задать движок, ключ сортировки и схему партиционирования:
 
@@ -249,7 +249,7 @@ ORDER BY partition;
 
 Помимо `engine`, `order_by` и `partition_by`, модели типа table принимают `primary_key`, `ttl`, `settings`, `query_settings`, `projections` и `indexes`, а столбцы могут получать `codec` и `ttl` через контракт модели. Все они описаны на [странице materializations](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations).
 
-## Создание инкрементальной модели {#incremental}
+## Создание инкрементальной модели
 
 Полная пересборка `orders` при каждом запуске вполне приемлема для 62 000 строк, но не для таблицы, которая растёт на миллионы строк в день. [Инкрементальная материализация](https://docs.getdbt.com/docs/build/incremental-models) в dbt обрабатывает только те строки, которые изменились с момента последнего запуска. Чтобы преобразовать модель `orders`, нужно добавить два элемента:
 
@@ -356,7 +356,7 @@ WHERE customer_id = 'clicky-0001';
 └─────────────────────┴───────────────────────┴────────────────┴───────────────┘
 ```
 
-### Внутреннее устройство {#internals}
+### Внутреннее устройство
 
 В журнале запросов ClickHouse видны команды, которые adapter выполнил для инкрементального обновления:
 
@@ -420,7 +420,7 @@ flowchart TB
 
 На шаге 2 таблица копируется целиком, поэтому на очень больших моделях эта стратегия обходится так же дорого, как полное пересоздание таблицы; см. [ограничения](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations). Описанные ниже стратегии позволяют избежать копирования.
 
-### Append strategy {#append-strategy}
+### Append strategy
 
 Стратегия `append` вставляет строки, отобранные моделью, напрямую в целевую таблицу. Временные таблицы не создаются, ничего не копируется — это самый дешёвый из возможных инкрементальных запусков. Плата за это — отсутствие дедупликации: если инкрементальный фильтр отберёт строку, которая уже есть в таблице, она попадёт туда во второй раз. Используйте эту стратегию для неизменяемых данных событийного характера и следите за тем, чтобы фильтр отбирал только действительно новые строки.
 
@@ -495,7 +495,7 @@ ORDER BY ordered_at;
   При использовании `>` и временной метки, усечённой до дня, заказ, поступивший позже в тот же день, что и последний загруженный заказ, так и не будет учтён. В реальном проекте при использовании стратегии `append` фильтруйте по временной метке с полной точностью или по монотонно возрастающему времени ингестии.
 </Warning>
 
-### Стратегия delete и insert {#delete-insert-strategy}
+### Стратегия delete и insert
 
 Исторически ClickHouse поддерживал обновления и удаления лишь ограниченно — в виде асинхронных [мутаций](/ru/reference/statements/alter/index). Они могут создавать крайне высокую нагрузку на ввод-вывод, поэтому их, как правило, следует избегать. В ClickHouse 22.8 появились [легковесные удаления](/ru/reference/statements/delete), а в ClickHouse 25.7 — [легковесные обновления](/ru/reference/statements/update). Благодаря им результат отдельного оператора удаления или обновления виден пользователю сразу, хотя физически изменения применяются асинхронно.
 
@@ -549,7 +549,7 @@ flowchart TB
     class q1,q2,q3,q4 query;
 ```
 
-### Стратегия insert overwrite (экспериментальная) {#insert-overwrite-strategy}
+### Стратегия insert overwrite (экспериментальная)
 
 Стратегия `insert_overwrite` заменяет партиции целиком, поэтому ей требуется конфигурация `partition_by` — например, помесячная, как у `orders`. Она выполняет следующие шаги:
 
@@ -598,7 +598,7 @@ flowchart TB
 
 На [странице materializations](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-incremental) рассмотрены остальные параметры инкрементальной материализации, включая стратегию `microbatch` и `on_schema_change`.
 
-## Создание снимка {#snapshot}
+## Создание снимка
 
 [Снимки](https://docs.getdbt.com/docs/build/snapshots) dbt фиксируют, как строки изменяемой таблицы меняются со временем, что позволяет аналитикам увидеть состояние данных на любой момент в прошлом. Они реализуют [медленно меняющиеся измерения второго типа](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row): каждая версия строки сохраняется вместе с интервалом, в течение которого она была актуальна.
 
@@ -689,7 +689,7 @@ ORDER BY customer_id, dbt_valid_from;
 
 Под капотом adapter собирает новую версию снимка в таблице `customers_snapshot__snapshot_upsert` и подменяет ею текущую с помощью `EXCHANGE TABLES` (либо через drop и rename, если server не поддерживает обмен таблицами), так что считыватели видят либо предыдущую, либо новую версию снимка. Справочник по configuration см. в [разделе о snapshot на странице materializations](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#snapshot).
 
-## Использование materialized view {#materialized-views}
+## Использование materialized view
 
 Всё, что рассматривалось до сих пор, требует выполнения `dbt run`, чтобы новые данные попали в модели. В ClickHouse [materialized view](/ru/concepts/features/materialized-views/index) работают иначе: это триггеры вставки. Каждый блок строк, вставленный в исходную таблицу, преобразуется запросом `SELECT` этого представления и записывается в целевую таблицу — без какого-либо расписания. Адаптер предоставляет их через материализацию `materialized_view`.
 
@@ -794,6 +794,6 @@ ORDER BY order_date, store_id;
 
 Последующие запуски `dbt run` сохраняют целевую таблицу и её данные и лишь обновляют определение представления — через `ALTER TABLE ... MODIFY QUERY`, если изменение это допускает, поэтому модель можно спокойно оставить в проекте. `dbt run --full-refresh` пересоздаёт целевую таблицу и снова выполняет дозагрузку (если `catchup` не равно `False`). Всё остальное описано на [странице о materialized view](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view): изменения схемы через `on_schema_change`, отключение дозагрузки с помощью `catchup`, refreshable materialized views, несколько представлений, наполняющих одну и ту же целевую таблицу, и определение целевой таблицы как отдельной модели.
 
-## Дополнительная информация {#further-information}
+## Дополнительная информация
 
 Это руководство лишь поверхностно затрагивает dbt. [Документация dbt](https://docs.getdbt.com/docs/introduction) служит справочником по всему, что не относится непосредственно к ClickHouse. Что касается adapterа, см. страницу [features and configurations](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) — о настройках профиля и глобальных возможностях, [страницу materializations](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) — обо всех использованных выше конфигурациях, а также [страницу dbt OSS, dbt v2 и платформы dbt](/ru/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform), если вы используете dbt OSS, dbt v2 или платформу dbt. Приветствуется добавление новых примеров в [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse).

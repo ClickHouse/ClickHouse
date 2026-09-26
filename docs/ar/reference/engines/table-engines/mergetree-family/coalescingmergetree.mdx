@@ -21,7 +21,7 @@ doc_type: 'reference'
 
 `CoalescingMergeTree` مخصص للاستخدام مع أنواع Nullable في الأعمدة غير المفتاحية. وإذا لم تكن الأعمدة Nullable، فسيكون السلوك مماثلًا لما هو عليه في [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree).
 
-## إنشاء جدول {#creating-a-table}
+## إنشاء جدول
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -38,13 +38,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 للاطلاع على وصف معلمات الطلب، راجع [وصف الطلب](/ar/reference/statements/create/table).
 
-### معاملات CoalescingMergeTree {#parameters-of-coalescingmergetree}
+### معاملات CoalescingMergeTree
 
-#### الأعمدة {#columns}
+#### الأعمدة
 
 `columns` - اختياري. قيمة من نوع tuple تحتوي على أسماء الأعمدة التي ستُدمَج قيمها. يجب ألا تكون الأعمدة المحددة ضمن partition أو مفتاح الفرز. إذا لم يتم تحديد `columns`، فسيقوم ClickHouse بدمج القيم في جميع الأعمدة غير الموجودة في مفتاح الفرز.
 
-### بنود الاستعلام {#query-clauses}
+### بنود الاستعلام
 
 عند إنشاء جدول `CoalescingMergeTree`، تكون [البنود](/ar/reference/engines/table-engines/mergetree-family/mergetree) نفسها مطلوبة، كما هو الحال عند إنشاء جدول `MergeTree`.
 
@@ -69,7 +69,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
   * `columns` — `Tuple` بأسماء الأعمدة التي ستُجمع قيمها. هذه معلَمة اختيارية. للاطلاع على الوصف، راجع النص أعلاه.
 </details>
 
-## مثال على الاستخدام {#usage-example}
+## مثال على الاستخدام
 
 انظر إلى الجدول التالي:
 
@@ -131,7 +131,7 @@ SELECT * FROM test_table FINAL ORDER BY key;
   ```
 </Note>
 
-## تجميع عناصر Tuple {#tuple-element-aggregation}
+## تجميع عناصر Tuple
 
 عند تمكين الإعداد `allow_tuple_element_aggregation`، تُسطَّح أعمدة `Tuple` بشكل متكرر بحيث يشارك كل عنصر نهائي في الدمج بصورة مستقلة. يتيح لك ذلك تخزين عدة حقول في عمود `Tuple` واحد مع دمجها عنصرًا بعنصر أثناء عمليات الدمج، بحيث يحتفظ كل عمود فرعي `Nullable` بأحدث قيمة غير `NULL` بصورة مستقلة.
 

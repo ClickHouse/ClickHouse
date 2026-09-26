@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-## aggregate_function_input_format {#aggregate_function_input_format}
+## aggregate_function_input_format
 
 <SettingsInfoBlock type="AggregateFunctionInputFormat" default_value="state" />
 
@@ -66,7 +66,7 @@ INSERT INTO example FORMAT JSONEachRow
 
 참고: `value` 및 `array` 포맷은 삽입 시 값을 생성하고 집계해야 하므로 기본 `state` 포맷보다 느립니다.
 
-## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
+## aggregate_functions_null_for_empty
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

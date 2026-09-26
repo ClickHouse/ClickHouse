@@ -14,7 +14,7 @@ import { ClickStackIntegrates } from '/snippets/es/components/ClickStackIntegrat
   Actualmente, solo admite OpenTelemetry Logging. Para obtener compatibilidad con tracing, [consulta la siguiente guía](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example).
 </Note>
 
-## Logging {#logging}
+## Logging
 
 Se admite el Logging exportando un registrador personalizado para el módulo `std/log`.
 
@@ -40,7 +40,7 @@ log.setup({
 log.getLogger('my-otel-logger').info('Hello from Deno!');
 ```
 
-### Ejecuta la aplicación {#run-the-application}
+### Ejecuta la aplicación
 
 <Tabs>
   <Tab title="Managed ClickStack">

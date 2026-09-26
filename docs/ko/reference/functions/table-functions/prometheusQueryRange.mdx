@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 평가 시간 범위 전반에 걸쳐 TimeSeries 테이블의 데이터를 사용해 Prometheus 쿼리를 평가합니다.
 
-## 구문 {#syntax}
+## 구문
 
 ```sql
 prometheusQueryRange('db_name', 'time_series_table', 'promql_query', start_time, end_time, step)
@@ -18,7 +18,7 @@ prometheusQueryRange(db_name.time_series_table, 'promql_query', start_time, end_
 prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, step)
 ```
 
-## 인수 {#arguments}
+## 인수
 
 * `db_name` - TimeSeries 테이블이 있는 데이터베이스 이름입니다.
 * `time_series_table` - TimeSeries 테이블 이름입니다.
@@ -27,7 +27,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 * `end_time` - 평가 범위의 종료 시간입니다.
 * `step` - `start_time`부터 `end_time`까지(양 끝 포함) 평가 시간을 순회할 때 사용하는 간격입니다.
 
-## 반환 값 {#returned-value}
+## 반환 값
 
 이 함수는 매개변수 `promql_query`에 전달된 쿼리의 결과 유형에 따라 서로 다른 컬럼을 반환할 수 있습니다.
 
@@ -40,13 +40,13 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 `TimeSeries` 테이블의 [version](/ko/reference/engines/table-engines/integrations/time-series#schema-versioning)이 2 이하인 경우 `samples` 컬럼의 이름은 `time_series`입니다.
 
-## 지원되는 PromQL 기능 {#supported-promql-features}
+## 지원되는 PromQL 기능
 
-### 셀렉터 {#selectors}
+### 셀렉터
 
 인스턴트 셀렉터, 범위 셀렉터, 레이블 매처(`=`, `!=`, `=~`, `!~`), offset 수정자, `@` 타임스탬프 수정자, 그리고 서브쿼리.
 
-### 함수 {#functions}
+### 함수
 
 | 범주       | 함수                                                                                                                                                                                                                                                                                                                   |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -63,7 +63,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 **참고**: `ts_of_min_over_time`과 `ts_of_max_over_time`은 Prometheus에서 실험적 함수입니다(Prometheus에서는 `--enable-feature=promql-experimental-functions`로 활성화). ClickHouse는 해당 flag 없이도 이 함수들을 평가합니다.
 
-### 연산자 {#operators}
+### 연산자
 
 `on()`/`ignoring()` 및 `group_left()`/`group_right()` 수정자와 함께 사용하는 모든 산술(`+`, `-`, `*`, `/`, `%`, `^`, `atan2`), 비교(`==`, `!=`, `<`, `>`, `<=`, `>=`, 선택적 `bool` 포함) 이항 연산자
 
@@ -71,15 +71,15 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 단항 연산자 `+` 및 `-`.
 
-### 집계 연산자 {#aggregation-operators}
+### 집계 연산자
 
 `sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — 선택적으로 `by()` 또는 `without()` 수정자와 함께 사용할 수 있습니다.
 
-### 아직 지원되지 않는 기능 {#not-yet-supported}
+### 아직 지원되지 않는 기능
 
 * 범위 함수 `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 
-## 예시 {#example}
+## 예시
 
 ```sql
 SELECT * FROM prometheusQueryRange(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE)

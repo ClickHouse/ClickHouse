@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 `EXPLAIN WHATIF`는 아직 가상 프로젝션의 이점을 추정하지 못하며, 각 프로젝션을 `status: not_applicable`로 보고합니다. 현재로서는 프로젝션을 머티리얼라이즈하지 않고 해당 테이블을 기준으로 정의를 검증하거나, [`system.hypothetical_projections`](/ko/reference/system-tables/hypothetical_projections)를 읽는 도구를 사용할 때 유용합니다.
 
-## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
+## CREATE HYPOTHETICAL PROJECTION
 
 ```sql
 CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name
@@ -37,7 +37,7 @@ CREATE HYPOTHETICAL PROJECTION p_by_b ON t (SELECT a, b ORDER BY b);
 CREATE HYPOTHETICAL PROJECTION p_idx ON t INDEX b TYPE basic;
 ```
 
-## DROP HYPOTHETICAL PROJECTION {#drop-hypothetical-projection}
+## DROP HYPOTHETICAL PROJECTION
 
 ```sql
 DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
@@ -45,7 +45,7 @@ DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
 
 현재 세션에서 가상 프로젝션을 제거합니다.
 
-## DROP ALL HYPOTHETICAL PROJECTIONS {#drop-all-hypothetical-projections}
+## DROP ALL HYPOTHETICAL PROJECTIONS
 
 ```sql
 DROP ALL HYPOTHETICAL PROJECTIONS
@@ -53,19 +53,19 @@ DROP ALL HYPOTHETICAL PROJECTIONS
 
 현재 세션에 정의된 모든 가상 프로젝션을 테이블에 관계없이 삭제합니다. 가상 인덱스는 그대로 유지되며, `DROP ALL HYPOTHETICAL INDEXES`는 이와 반대로 동작합니다.
 
-## 범위와 수명 {#scope-and-lifetime}
+## 범위와 수명
 
 * 가상 프로젝션은 **현재 세션**에만 존재합니다. 다른 세션에서는 보이지 않으며, 세션이 종료되면 사라집니다.
 * 가상 프로젝션을 정의하거나 삭제해도 실제 프로젝션이 생성되지 않으며, 해당 테이블에 대한 일반 쿼리에도 전혀 영향을 주지 않습니다.
 * 현재 세션의 가상 프로젝션은 [`system.hypothetical_projections`](/ko/reference/system-tables/hypothetical_projections)에서 확인할 수 있습니다.
 
-## 필요한 privilege {#required-privileges}
+## 필요한 privilege
 
 `CREATE HYPOTHETICAL PROJECTION`은 정의가 테이블의 컬럼과 맞는지 검사하기 때문에, 테이블에 대한 `ALTER ADD PROJECTION` privilege가 필요합니다. 이는 실제 `ALTER TABLE ... ADD PROJECTION`에 필요한 privilege와 동일합니다. 테이블 데이터를 읽지는 않으므로 아직 프로젝션 컬럼에 대한 `SELECT`는 필요하지 않습니다. 다만 `EXPLAIN WHATIF`가 프로젝션 추정을 수행하게 되면 해당 컬럼을 읽으므로, [`CREATE HYPOTHETICAL INDEX`](/ko/reference/statements/hypothetical-index#required-privileges)에서 이미 그러한 것처럼 그때는 컬럼 수준의 `SELECT`가 필요합니다.
 
 `DROP HYPOTHETICAL PROJECTION`에도 동일한 privilege가 필요합니다. 삭제 구문에 테이블 이름을 지정하는 것만으로 해당 테이블의 존재 여부나 적용 가능 여부가 드러나지 않도록 하기 위함입니다. `DROP ALL HYPOTHETICAL PROJECTIONS`는 테이블 이름을 지정하지 않으므로 privilege가 필요하지 않습니다.
 
-## 관련 항목 {#see-also}
+## 관련 항목
 
 * [`CREATE HYPOTHETICAL INDEX`](/ko/reference/statements/hypothetical-index)
 * [`EXPLAIN WHATIF`](/ko/reference/statements/explain#explain-whatif)

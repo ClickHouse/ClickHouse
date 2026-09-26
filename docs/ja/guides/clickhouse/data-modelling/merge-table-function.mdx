@@ -14,7 +14,7 @@ keywords: ['merge', 'テーブル関数', 'クエリパターン', 'テーブル
   <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## テーブルをセットアップする {#setup-tables}
+## テーブルをセットアップする
 
 [TennisMyLife&#39;s ATP match database](https://github.com/Tennismylife/TML-Database) を使って、この関数の使い方を見ていきます。
 1960年代までさかのぼる試合を含む CSVファイルを処理しますが、年代ごとに少し異なるスキーマを作成します。
@@ -50,7 +50,7 @@ SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
 ```
 
-## 複数テーブルのスキーマ {#schema-multiple-tables}
+## 複数テーブルのスキーマ
 
 次のクエリを実行すると、各テーブルのカラムとその型を横に並べて一覧表示できるため、違いを確認しやすくなります。
 
@@ -89,7 +89,7 @@ SETTINGS output_format_pretty_max_value_width=25;
 * 1980s では、`winner_seed` と `loser_seed` の型が `Nullable(UInt8)` から `Nullable(UInt16)` に変わります。
 * 1990s では、`surface` の型が `String` から `Enum('Hard', 'Grass', 'Clay', 'Carpet')` に変わり、`walkover` と `retirement` のカラムが追加されます。
 
-## merge を使った複数テーブルのクエリ {#querying-multiple-tables}
+## merge を使った複数テーブルのクエリ
 
 John McEnroe が第1シードの相手に勝利した試合を見つけるクエリを書いてみましょう：
 
@@ -149,7 +149,7 @@ AND multiIf(
 └───────────────┴─────────────────────┴─────────────┘
 ```
 
-## merge を使用する場合、行はどのテーブルから来ているのでしょうか？ {#which-table-merge}
+## merge を使用する場合、行はどのテーブルから来ているのでしょうか？
 
 行がどのテーブルに由来するのかを知りたい場合はどうすればよいでしょうか。
 これには、次のクエリに示すように `_table` 仮想カラムを使用できます。

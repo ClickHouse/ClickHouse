@@ -11,7 +11,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-## Componentes {#components}
+## Componentes
 
 El ClickHouse Connector ejecuta tres demonios, todos integrados en el binary `clicklink`:
 
@@ -23,7 +23,7 @@ En Kubernetes, el gráfico de Helm `clicklink-connector` despliega los demonios 
 
 <Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="Arquitectura del ClickHouse Connector" />
 
-## Conexiones {#connections}
+## Conexiones
 
 Todas las conexiones que establece el connector son salientes. La lista completa:
 
@@ -45,7 +45,7 @@ Cada solicitud a la API incluye una cabecera `Authorization` con una firma HMAC-
 
 En sentido entrante, cada demonio expone un único puerto local de health: 8082 para el scraper, 8084 para el solucionador de problemas y 8086 para el executor. Ese puerto sirve `/livez`, `/readyz`, `/healthz` y las métricas de Prometheus del demonio en `/metrics`; no hay un puerto de métricas independiente. La API de comandos local del executor se vincula únicamente a loopback y ningún Service la expone. El único listener adicional es el gateway de sesión opcional; consulta [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions). ClickHouse Cloud nunca se conecta a ninguno de ellos.
 
-## Ciclo de vida del certificado {#certificate-lifecycle}
+## Ciclo de vida del certificado
 
 El connector se autentica ante tu endpoint con un certificado de cliente que obtiene y gestiona por sí mismo. Los tres demonios presentan el mismo certificado.
 
@@ -55,11 +55,11 @@ El connector se autentica ante tu endpoint con un certificado de cliente que obt
 
 El connector verifica el server certificate de tu endpoint contra el system trust store. Cuando se establece `api.tls.ca_file` (VM) o `api.tls.caFile` (Helm), la CA chain de tu paquete de inscripción se añade a esas raíces.
 
-## Flujo de datos {#data-flow}
+## Flujo de datos
 
 <Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="Flujo de datos de ClickHouse Connector" />
 
-### Qué sale de su entorno {#what-leaves}
+### Qué sale de su entorno
 
 * **Métricas de tablas del sistema incluidas en la lista de permitidas.** El conjunto predeterminado del scraper es `metric_log`, `asynchronous_metric_log`, `tables`, `warnings` y `server_settings`. La lista de permitidas es una configuración explícita; el scraper no lee nada fuera de ella.
 * **Metadatos de infraestructura.** Inventario de servicios, infraestructura y copias de seguridad sincronizado mediante la API. En el caso de un servicio gestionado, se trata de su estado, el número actual y previsto de réplicas, y la versión del servidor en ejecución y la versión de la configuración.
@@ -68,14 +68,14 @@ El connector verifica el server certificate de tu endpoint contra el system trus
 * **Definiciones de servicio que usted envía.** `clicklink clctl instances create` envía el ID de su entorno, la nube y la región, el nombre del servicio, los nombres de sus buckets y el ARN del rol de IAM, y una clave de idempotencia. También envía dos hash de la contraseña del usuario `default` (SHA-256 y doble SHA-1).
 * **Resultados de la sesión de Support.** Resultados de diagnósticos de solo lectura ejecutados durante una sesión que habilitó, tras la eliminación de información confidencial.
 
-### Qué nunca sale de forma predeterminada {#what-never-leaves}
+### Qué nunca sale de forma predeterminada
 
 * **El texto sin procesar de las consultas, en la ruta de scrape.** `system.query_log` queda excluido del conjunto de scrape predeterminado porque sus columnas de consulta pueden contener valores literales y, con ellos, PII o secretos. Volver a añadirlo es una sobrescritura por implementación. La lista de permitidos predeterminada de tablas de sesión sí incluye `system.processes`, que muestra el texto de las consultas activas; consulta [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions) para recortarla.
 * **Los datos de tus tablas y las copias de seguridad.** Permanecen en buckets de tu cuenta. El executor no dispone de credenciales para tus buckets ni puede leerlos.
 * **Las credenciales.** `init` no escribe ninguna credencial en los archivos de configuración. ClickHouse almacena únicamente hashes bcrypt de las contraseñas de los usuarios del connector, y los secretos permanecen en secretos de Kubernetes o en archivos legibles solo por root en el host. La contraseña del usuario `default` de un servicio gestionado se genera en tu lado y se muestra una sola vez; solo se envían sus hashes. Nada en las rutas de scrape o de sincronización transmite credenciales.
 * **La salida sin redactar del solucionador de problemas.** Todo lo que devuelve el solucionador de problemas pasa por patrones de redacción (los integrados y los tuyos propios) antes de salir. Consulta [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions).
 
-## Límites de confianza {#trust-boundaries}
+## Límites de confianza
 
 * **Tu entorno es el límite.** ClickHouse Cloud recibe únicamente lo que el connector envía: scrapes, latidos y estado, resultados de comandos y lo que devuelve una sesión de soporte activa. Nunca inicia una conexión hacia dentro.
 * **El gateway de sesión es tuyo.** Solo es accesible dentro de tu entorno (mediante `kubectl port-forward` en Kubernetes, o localmente en una VM), salvo que decidas exponerla a través de un Ingress. ClickHouse Cloud nunca se conecta a ella.

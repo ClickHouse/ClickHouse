@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## join_algorithm {#join_algorithm}
+## join_algorithm
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -110,7 +110,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 Устаревшее значение, больше не используйте.
 То же, что `direct,hash`, то есть сначала попробуйте использовать direct JOIN, затем hash JOIN (в таком порядке).
 
-## join_any_take_last_row {#join_any_take_last_row}
+## join_any_take_last_row
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +133,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 * [движок таблицы Join](/ru/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/ru/reference/settings/session-settings/join#join_default_strictness)
 
-## join_default_strictness {#join_default_strictness}
+## join_default_strictness
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -146,7 +146,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 * `ASOF` — Для соединения последовательностей с неточным совпадением.
 * `Empty string` — Если в запросе не указаны `ALL` или `ANY`, ClickHouse генерирует исключение.
 
-## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
+## join_on_disk_max_files_to_merge
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -158,7 +158,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 
 * Любое положительное целое число, начиная с 2.
 
-## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
+## join_output_by_rowlist_perkey_rows_threshold
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -166,7 +166,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 
 Нижний порог среднего числа строк на ключ в правой таблице, определяющий, следует ли использовать вывод по списку строк при hash JOIN.
 
-## join_overflow_mode {#join_overflow_mode}
+## join_overflow_mode
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -196,7 +196,7 @@ ClickHouse всегда пытается использовать JOIN `partial_
 * [предложение JOIN](/ru/reference/statements/select/join)
 * [движок таблицы Join](/ru/reference/engines/table-engines/special/join)
 
-## join_use_nulls {#join_use_nulls}
+## join_use_nulls
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

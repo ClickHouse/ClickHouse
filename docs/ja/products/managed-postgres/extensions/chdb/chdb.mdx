@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
 
-## 概要 {#synopsis}
+## 概要
 
 ```psql
 # CREATE EXTENSION chdb;
@@ -20,13 +20,13 @@ CREATE EXTENSION
 (1 row)
 ```
 
-## 説明 {#description}
+## 説明
 
 `chdb` 拡張機能は、[chDB] クエリをヘルパープロセス内で実行します。
 
-## 関数 {#functions}
+## 関数
 
-### `pgchdb_version` {#pgchdb_version}
+### `pgchdb_version`
 
 ```sql
 SELECT pgchdb_version();
@@ -40,7 +40,7 @@ SELECT version
  WHERE module_name = 'chdb';
 ```
 
-### `chdb_query` {#chdb_query}
+### `chdb_query`
 
 ```sql
 SELECT * FROM chdb_query('SELECT version()') AS (version text);
@@ -77,13 +77,13 @@ SELECT * FROM chdb_query(
 (5 rows)
 ```
 
-## テキストエンコーディング {#text-encoding}
+## テキストエンコーディング
 
 chDB の byte strings が Postgres の `text`、`bytea` などの types にどのようにマッピングされるかについては、[`chdb_hook` ドキュメントのテキストエンコーディング][text encoding]を参照してください。
 
-## 設定 {#settings}
+## 設定
 
-### `chdb.max_memory` {#chdbmax_memory}
+### `chdb.max_memory`
 
 ```sql
 SET chdb.max_memory = '1 GB';
@@ -101,7 +101,7 @@ chDB クエリで使用できるメモリの最大量です。chDB の
 
 デフォルトは `0` で、この場合メモリは制限されません。
 
-### `chdb.max_threads` {#chdmax_threads}
+### `chdb.max_threads`
 
 ```sql
 SET chdb.max_threads = 4;
@@ -111,7 +111,7 @@ chDB クエリのクエリ処理に使用する最大スレッド数で、chDB �
 
 大規模なクエリを実行する前に `chdb.max_threads` を設定することを強く推奨します。これにより、chDB が PostgreSQL を犠牲にして CPU を使い切ってしまうことを防げます。
 
-### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
+### `chdb.max_parsing_threads`
 
 ```sql
 SET chdb.max_parsing_threads = 2;
@@ -121,7 +121,7 @@ SET chdb.max_parsing_threads = 2;
 
 [table functions] からのデータ読み込みなど、大量のデータをパースするクエリを実行する前に `chdb.max_parsing_threads` を設定することを推奨します。これにより、chDB が PostgreSQL を犠牲にして CPU 使用率を使い切ってしまうことを防げます。
 
-## Versioning Policy {#versioning-policy}
+## Versioning Policy
 
 chdb 拡張機能は、公開リリースにおいて [セマンティックバージョニング][semver] に準拠しています。
 
@@ -138,12 +138,12 @@ chdb 拡張機能は、公開リリースにおいて [セマンティックバ�
 
 一方、minor または major のバージョンがインクリメントされるリリースには SQL アップグレード script が付属するため、拡張機能を含む既存のすべての database でアップグレードの効果を得るには `ALTER EXTENSION chdb UPDATE` を実行する必要があります。
 
-## 著者 {#authors}
+## 著者
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## 著作権 {#copyright}
+## 著作権
 
 Copyright (c) 2026, ClickHouse
 

@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## text_index_hint_max_selectivity {#text_index_hint_max_selectivity}
+## text_index_hint_max_selectivity
 
 <SettingsInfoBlock type="Float" default_value="0.2" />
 
@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Максимальная селективность фильтра для использования хинта, построенного на основе inverted текстового индекса.
 
-## text_index_lazy_intersection_density_threshold {#text_index_lazy_intersection_density_threshold}
+## text_index_lazy_intersection_density_threshold
 
 **Псевдонимы**: `text_index_density_threshold`
 
@@ -32,7 +32,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Порог плотности списка вхождений для выбора алгоритма пересечения в отложенном режиме применения списка вхождений (`text_index_posting_list_apply_mode = 'lazy'`).
 Ниже порога: алгоритм пересечения leapfrog (предпочтителен для разреженных списков вхождений). При значении порога и выше: brute-force-пересечение битмапов (предпочтительно для плотных списков вхождений).
 
-## text_index_like_max_postings_to_read {#text_index_like_max_postings_to_read}
+## text_index_like_max_postings_to_read
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -42,7 +42,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Требует включения `use_text_index_like_evaluation_by_dictionary_scan`.
 
-## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
+## text_index_like_min_pattern_length
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
@@ -56,7 +56,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Требует, чтобы `use_text_index_like_evaluation_by_dictionary_scan` был включен.
 
-## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
+## text_index_posting_list_apply_mode
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="lazy" />
 

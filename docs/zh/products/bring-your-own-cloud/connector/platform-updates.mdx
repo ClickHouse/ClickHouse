@@ -14,7 +14,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 托管集群会运行一个小型平台层，ClickHouse 服务依赖于该层。ClickHouse Cloud 会为该层提出更新建议；在您使用自己的集群凭证逐项批准之前，executor不会应用任何更新。
 
-## 什么是平台更新 {#what-a-platform-update-is}
+## 什么是平台更新
 
 平台层由三个组件构成：snapshot controller、ClickHouse operator 以及监控 collector。三者必须按此顺序安装，因为每个组件都依赖前一个组件的自定义资源定义。各服务使用随之一同提供的、名为 `gp3-encrypted` 的 StorageClass (加密的 gp3 卷) 。
 
@@ -27,11 +27,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 executor 绝不会应用未经你批准的支持包。若某次平台同步缺少权限部分、其 sha256 与已批准的不一致，或其 token 已过期，executor 都会拒绝该同步。拒绝信息会说明需要批准，并给出已暂存支持包的 sha256。若创建服务时需要当前平台所缺少的自定义资源定义，也会以同样的方式失败，并提示运行同样的命令。
 
-## 批准平台更新 {#approve-a-platform-update}
+## 批准平台更新
 
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="ClickHouse 连接器平台审批流程" />
 
-### Registry 凭证 {#registry-credentials}
+### Registry 凭证
 
 Registry 身份验证方式取决于为你的环境注册的镜像分发模式：
 
@@ -127,7 +127,7 @@ Registry 身份验证方式取决于为你的环境注册的镜像分发模式�
   </Step>
 </Steps>
 
-## 批准时间窗 {#the-approval-window}
+## 批准时间窗
 
 一次批准会为 `pcm-platform` identity 签发一个 token，默认有效期为 2 小时 (可通过 `--ttl` 修改) 。executor 不会对其续期。token 一旦过期，executor 就无法再操作平台层，并会在下一次平台同步时再次给出批准提示并拒绝执行。这是有意设计的行为，且与网络连通性无关：即便批准是在连接器离线时给出的，它仍按自己的时钟到期。
 
@@ -139,7 +139,7 @@ Registry 身份验证方式取决于为你的环境注册的镜像分发模式�
 
 重复批准同一个支持包是安全的，并会替换原有 token。同步完成后，已暂存的支持包仍会保留，因此重复批准无需重新提案。
 
-## 该批准授予了哪些权限 {#what-the-approval-grants}
+## 该批准授予了哪些权限
 
 权限部分由你来应用，因此它携带的是你的权限；executor 本身不会应用其中的任何内容。`approve` 会为其打上该支持包的 sha256 标记，executor 在执行任何操作之前都会先校验：所收到支持包中的每一个权限对象都已存在且已获批准。
 
@@ -151,7 +151,7 @@ executor 以 `pcm-platform` 身份应用工作负载部分。该 identity 可以
 
 executor 的服务生命周期 identity `pcm-executor` 则是独立的，仅限于服务命名空间内。它无法写入平台命名空间；其读取操作则不受 prefix 保护机制的限制。这两个 identity 的完整清单，请参见[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)。
 
-## 重置测试集群 {#resetting-a-test-cluster}
+## 重置测试集群
 
 `clicklink clctl platform reset` 专为测试集群设计：它会卸载平台组件，以便重新演练一次首次安装流程。在做出任何更改之前，它会先列出该连接器所管辖命名空间中的 ClickHouse 集群，若存在任何 service，则拒绝执行。
 

@@ -30,7 +30,7 @@ L’architecture du cluster que vous allez configurer est illustrée ci-dessous�
 <DedicatedKeeperServers />
 
 <div id="prerequisites">
-  ## Prérequis {#prerequisites}
+  ## Prérequis
 </div>
 
 * Vous avez déjà installé un [serveur ClickHouse local](/fr/get-started/setup/install)
@@ -171,7 +171,7 @@ L’architecture du cluster que vous allez configurer est illustrée ci-dessous�
   </Step>
 
   <Step title="Configurer les nœuds ClickHouse" id="configure-clickhouse-servers">
-### Configuration du serveur {#server-setup}
+### Configuration du serveur
 
     Modifiez maintenant chaque fichier de configuration vide `config.xml` situé dans
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Les lignes surlignées
@@ -257,7 +257,7 @@ L’architecture du cluster que vous allez configurer est illustrée ci-dessous�
 
     Chaque section du fichier de configuration ci-dessus est expliquée plus en détail ci-dessous.
 
-#### Réseau et journalisation {#networking}
+#### Réseau et journalisation
 
     <ListenHost />
 
@@ -277,7 +277,7 @@ L’architecture du cluster que vous allez configurer est illustrée ci-dessous�
     Pour plus d&#39;informations sur la configuration de la journalisation, consultez les commentaires inclus dans le
     [fichier de configuration](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) ClickHouse par défaut.
 
-#### Configuration du cluster {#cluster-config}
+#### Configuration du cluster
 
     La configuration du cluster est définie dans le bloc `<remote_servers>`.
     Le nom du cluster `cluster_2S_2R` y est défini.
@@ -326,7 +326,7 @@ L’architecture du cluster que vous allez configurer est illustrée ci-dessous�
     et sert de template pour les requêtes DDL distribuées, c&#39;est-à-dire les requêtes qui s&#39;exécutent
     sur l&#39;ensemble du cluster à l&#39;aide de la clause `ON CLUSTER`.
 
-#### Configuration de Keeper {#keeper-config-explanation}
+#### Configuration de Keeper
 
     La section `<ZooKeeper>` indique à ClickHouse où ClickHouse Keeper (ou ZooKeeper) est en cours d&#39;exécution.
     Comme nous utilisons un cluster ClickHouse Keeper, chaque `<node>` du cluster doit être spécifié,
@@ -356,7 +356,7 @@ L’architecture du cluster que vous allez configurer est illustrée ci-dessous�
       en production, nous recommandons vivement d&#39;exécuter ClickHouse Keeper sur des hôtes dédiés.
     </Note>
 
-#### Configuration des macros {#macros-config-explanation}
+#### Configuration des macros
 
     Par ailleurs, la section `<macros>` permet de définir des substitutions de paramètres pour
     les tables répliquées. Celles-ci sont répertoriées dans `system.macros` et permettent d&#39;utiliser des substitutions
@@ -369,7 +369,7 @@ L’architecture du cluster que vous allez configurer est illustrée ci-dessous�
     </macros>
     ```
 
-### Configuration utilisateur {#cluster-configuration}
+### Configuration utilisateur
 
     Modifiez maintenant chaque fichier de configuration vide `users.xml` situé dans
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` avec le contenu suivant :
@@ -423,7 +423,7 @@ L’architecture du cluster que vous allez configurer est illustrée ci-dessous�
   <Step title="Configurer ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     Ensuite, configurez ClickHouse Keeper, utilisé pour la coordination.
 
-### Configuration de Keeper {#configuration-explanation}
+### Configuration de Keeper
 
     <KeeperConfig />
 
@@ -743,7 +743,7 @@ L’architecture du cluster que vous allez configurer est illustrée ci-dessous�
   </Step>
 </Steps>
 
-## Conclusion {#conclusion}
+## Conclusion
 
 L’avantage de cette topologie de cluster avec 2 shards et 2 répliques est qu’elle offre à la fois passage à l’échelle et tolérance aux pannes.
 Les données sont réparties sur des hôtes distincts, ce qui réduit les besoins en stockage et en E/S par nœud, tandis que les requêtes sont traitées en parallèle sur les deux shards afin d’améliorer les performances et l’efficience mémoire.

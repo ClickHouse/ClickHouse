@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 تتوفر هذه الإعدادات في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## short_circuit_function_evaluation {#short_circuit_function_evaluation}
+## short_circuit_function_evaluation
 
 <SettingsInfoBlock type="ShortCircuitFunctionEvaluation" default_value="enable" />
 
@@ -25,7 +25,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * `force_enable` — يفعّل التقييم المختصر لجميع الدوال.
 * `disable` — يعطّل التقييم المختصر.
 
-## short_circuit_function_evaluation_for_nulls {#short_circuit_function_evaluation_for_nulls}
+## short_circuit_function_evaluation_for_nulls
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,7 +35,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يتحكم هذا الإعداد في التحسين فقط. أما الدوال التي لا يمكن تنفيذها على القيمة الافتراضية لوسيطاتها - مثل `parseDateTime` أو `IPv4StringToNum` أو `intDiv` - فإنها تتخطى دائمًا الصفوف التي تحتوي على NULL بغض النظر عن هذا الإعداد، لأن القيمة المخزّنة خلف NULL هي القيمة الافتراضية لنوع الوسيطة، وتنفيذ الدالة عليها سيؤدي إلى رفع استثناء على بيانات صالحة في الأصل.
 
-## short_circuit_function_evaluation_for_nulls_threshold {#short_circuit_function_evaluation_for_nulls_threshold}
+## short_circuit_function_evaluation_for_nulls_threshold
 
 <SettingsInfoBlock type="Double" default_value="1" />
 

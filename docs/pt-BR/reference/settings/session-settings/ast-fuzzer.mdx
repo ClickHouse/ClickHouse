@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## ast_fuzzer_any_query {#ast_fuzzer_any_query}
+## ast_fuzzer_any_query
 
 <ExperimentalBadge />
 
@@ -24,7 +24,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Quando false (padrão), o AST fuzzer no servidor (controlado por `ast_fuzzer_runs`) aplica fuzzing apenas a consultas somente leitura (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS). Quando true, todos os tipos de consulta, incluindo DDL e INSERT, são submetidos a fuzzing.
 
-## ast_fuzzer_oracle {#ast_fuzzer_oracle}
+## ast_fuzzer_oracle
 
 <ExperimentalBadge />
 
@@ -34,7 +34,7 @@ Quando false (padrão), o AST fuzzer no servidor (controlado por `ast_fuzzer_run
 
 Quando habilitada junto com `ast_fuzzer_runs`, aplica um conjunto de verificações de oráculo de correção às consultas SELECT geradas por fuzzing que foram executadas com sucesso: TLP WHERE/DISTINCT/GROUP BY/HAVING/Aggregate, NoREC, DQP (alternando configurações individuais do otimizador), Identity WHERE e Subquery wrap. Uma divergência lança uma exceção `AST_FUZZER_ORACLE_MISMATCH`.
 
-## ast_fuzzer_runs {#ast_fuzzer_runs}
+## ast_fuzzer_runs
 
 <ExperimentalBadge />
 

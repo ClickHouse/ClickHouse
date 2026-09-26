@@ -2,7 +2,7 @@
 title: Configuración del servidor fuera de Source
 ---
 
-## asynchronous_metric_log {#asynchronous_metric_log}
+## asynchronous_metric_log
 
 Habilitado de forma predeterminada en las implementaciones de ClickHouse Cloud.
 
@@ -37,7 +37,7 @@ Para deshabilitar la configuración `asynchronous_metric_log`, cree el siguiente
 
 <SystemLogParameters />
 
-## auth_use_forwarded_address {#auth_use_forwarded_address}
+## auth_use_forwarded_address
 
 Use la dirección de origen para la autenticación de clientes conectados a través de un proxy.
 
@@ -47,7 +47,7 @@ Use la dirección de origen para la autenticación de clientes conectados a trav
   Esta configuración debe usarse con especial precaución, ya que las direcciones reenviadas pueden falsificarse fácilmente. No se debe acceder directamente a los servidores que aceptan este tipo de autenticación, sino exclusivamente a través de un proxy de confianza.
 </Note>
 
-## copias de seguridad {#backups}
+## copias de seguridad
 
 Configuración de las copias de seguridad, utilizada al ejecutar las sentencias [`BACKUP` y `RESTORE`](/es/concepts/features/backup-restore/overview).
 
@@ -103,7 +103,7 @@ Este ajuste está configurado de forma predeterminada como:
 </backups>
 ```
 
-## background_schedule_pool_log {#background_schedule_pool_log}
+## background_schedule_pool_log
 
 Contiene información sobre todas las tareas en segundo plano que se ejecutan a través de varios pools en segundo plano.
 
@@ -122,7 +122,7 @@ Contiene información sobre todas las tareas en segundo plano que se ejecutan a 
 </background_schedule_pool_log>
 ```
 
-## bcrypt_workfactor {#bcrypt_workfactor}
+## bcrypt_workfactor
 
 Factor de trabajo para el tipo de autenticación `bcrypt_password`, que utiliza el [algoritmo Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 El factor de trabajo define la cantidad de cálculos y el tiempo necesarios para calcular el hash y verificar la contraseña.
@@ -139,7 +139,7 @@ El factor de trabajo define la cantidad de cálculos y el tiempo necesarios para
   costo computacional de bcrypt con factores de trabajo más altos.
 </Warning>
 
-## table_engines_require_grant {#table_engines_require_grant}
+## table_engines_require_grant
 
 <CloudNotSupportedBadge />
 
@@ -151,7 +151,7 @@ Si se establece en true, los usuarios necesitan un privilegio para crear una tab
   De forma predeterminada, por compatibilidad con versiones anteriores, al crear una tabla con un motor de tabla específico no se comprueba el privilegio; sin embargo, puede cambiar este comportamiento estableciendo este valor en true.
 </Note>
 
-## builtin_dictionaries_reload_interval {#builtin_dictionaries_reload_interval}
+## builtin_dictionaries_reload_interval
 
 El intervalo, en segundos, antes de volver a cargar los diccionarios integrados.
 
@@ -163,7 +163,7 @@ ClickHouse vuelve a cargar los diccionarios integrados cada x segundos. Esto per
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-## compresión {#compression}
+## compresión
 
 Configuración de compresión de datos para tablas del motor [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -218,7 +218,7 @@ Configuración de compresión de datos para tablas del motor [MergeTree](/es/ref
 </compression>
 ```
 
-## encryption {#encryption}
+## encryption
 
 Configura un comando para obtener una clave que se usará con los [códecs de cifrado](/es/reference/statements/create/table/codec#encryption-codecs). La clave (o las claves) debe escribirse en variables de entorno o establecerse en el archivo de configuración.
 
@@ -300,7 +300,7 @@ O también puede establecerse en hexadecimal:
   Todo lo mencionado anteriormente se puede aplicar a `aes_256_gcm_siv` (pero la clave debe tener 32 bytes de longitud).
 </Note>
 
-## error_log {#error_log}
+## error_log
 
 Está deshabilitado de forma predeterminada.
 
@@ -335,7 +335,7 @@ Para desactivar la configuración `error_log`, debe crear el siguiente archivo `
 
 <SystemLogParameters />
 
-## custom_settings_prefixes {#custom_settings_prefixes}
+## custom_settings_prefixes
 
 Lista de prefijos utilizados para [ajustes personalizados](/es/concepts/features/configuration/settings/settings-query-level#custom_settings).
 Los prefijos deben separarse con comas.
@@ -350,7 +350,7 @@ Los prefijos deben separarse con comas.
 
 * [Ajustes personalizados](/es/concepts/features/configuration/settings/settings-query-level#custom_settings)
 
-## core_dump {#core_dump}
+## core_dump
 
 Configura el límite blando para el tamaño del archivo core dump.
 
@@ -366,7 +366,7 @@ Configura el límite blando para el tamaño del archivo core dump.
 </core_dump>
 ```
 
-## default_profile {#default_profile}
+## default_profile
 
 Perfil de configuración predeterminado. Los perfiles de configuración se encuentran en el archivo especificado en la opción `user_config`.
 
@@ -378,7 +378,7 @@ Perfil de configuración predeterminado. Los perfiles de configuración se encue
 <default_profile>default</default_profile>
 ```
 
-## dictionaries_config {#dictionaries_config}
+## dictionaries_config
 
 La ruta del archivo de configuración de los diccionarios.
 
@@ -397,7 +397,7 @@ Véase también:
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## user_defined_executable_functions_config {#user_defined_executable_functions_config}
+## user_defined_executable_functions_config
 
 La ruta del archivo de configuración para las funciones ejecutables definidas por el usuario.
 
@@ -416,7 +416,7 @@ Véase también:
 <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 ```
 
-## graphite {#graphite}
+## graphite
 
 Envío de datos a [Graphite](https://github.com/graphite-project).
 
@@ -450,7 +450,7 @@ Puede configurar varias secciones `<graphite>`. Por ejemplo, puede usarlas para 
 </graphite>
 ```
 
-## graphite_rollup {#graphite_rollup}
+## graphite_rollup
 
 Configuración para reducir la densidad de los datos de Graphite.
 
@@ -478,7 +478,7 @@ Para obtener más información, consulte [GraphiteMergeTree](/es/reference/engin
 </graphite_rollup_example>
 ```
 
-## http_handlers {#http_handlers}
+## http_handlers
 
 Permite usar handlers HTTP personalizados.
 Para añadir un nuevo handler HTTP, simplemente añada una nueva `<rule>`.
@@ -543,7 +543,7 @@ Ejemplo:
 </http_handlers>
 ```
 
-## http_server_default_response {#http_server_default_response}
+## http_server_default_response
 
 La página que se muestra de forma predeterminada al acceder al servidor HTTP(s) de ClickHouse.
 El valor predeterminado es &quot;Ok.&quot; (con un salto de línea al final)
@@ -560,7 +560,7 @@ Abre `https://tabix.io/` cuando se accede a `http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-## http_options_response {#http_options_response}
+## http_options_response
 
 Se utiliza para añadir encabezados a la respuesta de una solicitud HTTP `OPTIONS`.
 El método `OPTIONS` se usa al realizar solicitudes de verificación previa de CORS.
@@ -590,7 +590,7 @@ Ejemplo:
 </http_options_response>
 ```
 
-## hsts_max_age {#hsts_max_age}
+## hsts_max_age
 
 Tiempo de expiración de HSTS en segundos.
 
@@ -604,7 +604,7 @@ Tiempo de expiración de HSTS en segundos.
 <hsts_max_age>600000</hsts_max_age>
 ```
 
-## interserver_listen_host {#interserver_listen_host}
+## interserver_listen_host
 
 Restricción de los hosts que pueden intercambiar datos entre servidores de ClickHouse.
 Si se utiliza Keeper, la misma restricción se aplicará a la comunicación entre distintas instancias de Keeper.
@@ -626,7 +626,7 @@ Tipo:
 
 Predeterminado:
 
-## interserver_http_credentials {#interserver_http_credentials}
+## interserver_http_credentials
 
 Un nombre de usuario y una contraseña que se usan para conectarse a otros servidores durante la [replicación](/es/reference/engines/table-engines/mergetree-family/replication). Además, el servidor autentica otras réplicas con estas credenciales.
 Por lo tanto, `interserver_http_credentials` debe ser igual en todas las réplicas de un clúster.
@@ -679,7 +679,7 @@ Para cambiar las credenciales existentes, mueva el nombre de usuario y la contra
 
 Una vez aplicadas las nuevas credenciales a todas las réplicas, se podrán eliminar las credenciales antiguas.
 
-## ldap_servers {#ldap_servers}
+## ldap_servers
 
 Enumere aquí los servidores LDAP con sus parámetros de conexión para:
 
@@ -746,7 +746,7 @@ Ejemplo (Active Directory típico con detección del user DN configurada para el
 </my_ad_server>
 ```
 
-## listen_host {#listen_host}
+## listen_host
 
 Restringe los hosts desde los que pueden proceder las solicitudes. Si quiere que el servidor responda a todos ellos, especifique `::`.
 
@@ -757,7 +757,7 @@ Ejemplos:
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## logger {#logger}
+## logger
 
 La ubicación y el formato de los mensajes de registro.
 
@@ -950,7 +950,7 @@ Los nombres de las claves pueden modificarse cambiando los valores de las etique
 
 Las propiedades del registro pueden omitirse comentando la propiedad. Por ejemplo, si no desea que el registro imprima `query_id`, puede comentar la etiqueta `<query_id>`.
 
-## send_crash_reports {#send_crash_reports}
+## send_crash_reports
 
 Configuración para el envío de informes de fallos al equipo de desarrolladores principales de ClickHouse.
 
@@ -972,7 +972,7 @@ Claves:
 </send_crash_reports>
 ```
 
-## ssh_server {#ssh_server}
+## ssh_server
 
 La parte pública de la clave de host se escribirá en el archivo known&#95;hosts
 del lado del cliente SSH en la primera conexión.
@@ -990,7 +990,7 @@ Ejemplo:
 </ssh_server>
 ```
 
-## tcp_ssh_port {#tcp_ssh_port}
+## tcp_ssh_port
 
 Puerto del servidor SSH que permite al usuario conectarse y ejecutar consultas de forma interactiva mediante el cliente integrado a través de la PTY.
 
@@ -1000,7 +1000,7 @@ Ejemplo:
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
 
-## storage_configuration {#storage_configuration}
+## storage_configuration
 
 Permite configurar el almacenamiento en varios discos.
 
@@ -1017,7 +1017,7 @@ La configuración de almacenamiento tiene la siguiente estructura:
 </storage_configuration>
 ```
 
-### Configuración de discos {#configuration-of-disks}
+### Configuración de discos
 
 La configuración de `disks` sigue la estructura que se indica a continuación:
 
@@ -1052,7 +1052,7 @@ Las subetiquetas anteriores definen la siguiente configuración para `disks`:
   El orden de los discos no es importante.
 </Note>
 
-### Configuración de políticas {#configuration-of-policies}
+### Configuración de políticas
 
 Las subetiquetas anteriores definen las siguientes opciones de configuración para `policies`:
 
@@ -1076,7 +1076,7 @@ Para `volume_priority`:
 * Si *ningún* volumen tiene este parámetro, su orden se determina por el orden en que aparecen en el archivo de configuración.
 * La prioridad de los volúmenes no puede ser idéntica.
 
-## macros {#macros}
+## macros
 
 Sustituciones de parámetros de las tablas replicadas.
 
@@ -1090,7 +1090,7 @@ Para obtener más información, consulte la sección [Creación de tablas replic
 <macros incl="macros" optional="true" />
 ```
 
-## replica_group_name {#replica_group_name}
+## replica_group_name
 
 Nombre del grupo de réplicas para la base de datos Replicated.
 
@@ -1105,7 +1105,7 @@ Las consultas DDL solo esperarán a las réplicas del mismo grupo.
 <replica_group_name>backups</replica_group_name>
 ```
 
-## max_session_timeout {#max_session_timeout}
+## max_session_timeout
 
 Tiempo máximo de espera de la sesión, en segundos.
 
@@ -1115,7 +1115,7 @@ Ejemplo:
 <max_session_timeout>3600</max_session_timeout>
 ```
 
-## merge_tree {#merge_tree}
+## merge_tree
 
 Ajustes detallados para las tablas de [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -1129,7 +1129,7 @@ Para obtener más información, consulta el archivo de cabecera MergeTreeSetting
 </merge_tree>
 ```
 
-## metric_log {#metric_log}
+## metric_log
 
 Está desactivado de forma predeterminada.
 
@@ -1164,7 +1164,7 @@ Para deshabilitar la configuración `metric_log`, debe crear el archivo `/etc/cl
 
 <SystemLogParameters />
 
-## replicated_merge_tree {#replicated_merge_tree}
+## replicated_merge_tree
 
 Ajuste detallado para tablas en [ReplicatedMergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree). Esta configuración tiene mayor prioridad.
 
@@ -1178,7 +1178,7 @@ Para obtener más información, consulte el archivo de cabecera MergeTreeSetting
 </replicated_merge_tree>
 ```
 
-## opentelemetry_span_log {#opentelemetry_span_log}
+## opentelemetry_span_log
 
 Configuración de la tabla del sistema [`opentelemetry_span_log`](/es/reference/system-tables/opentelemetry_span_log).
 
@@ -1203,7 +1203,7 @@ Ejemplo:
 </opentelemetry_span_log>
 ```
 
-## openSSL {#openSSL}
+## openSSL
 
 Configuración SSL de cliente y servidor.
 
@@ -1266,7 +1266,7 @@ Claves para la configuración de servidor y cliente:
 </openSSL>
 ```
 
-## part_log {#part_log}
+## part_log
 
 Eventos de registro asociados con [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree). Por ejemplo, la adición o la fusión de datos. Puede usar este registro para simular algoritmos de fusión y comparar sus características. También puede visualizar el proceso de fusión.
 
@@ -1289,7 +1289,7 @@ Las consultas se registran en la tabla [system.part&#95;log](/es/reference/syste
 </part_log>
 ```
 
-## processors_profile_log {#processors_profile_log}
+## processors_profile_log
 
 Configuración de la tabla del sistema [`processors_profile_log`](/es/reference/system-tables/processors_profile_log).
 
@@ -1310,7 +1310,7 @@ La configuración predeterminada es la siguiente:
 </processors_profile_log>
 ```
 
-## prometheus {#prometheus}
+## prometheus
 
 Exposición de datos de métricas para su recopilación mediante [Prometheus](https://prometheus.io).
 
@@ -1352,7 +1352,7 @@ Compruebe (reemplace `127.0.0.1` por la dirección IP o el hostname de su servid
 curl 127.0.0.1:9363/metrics
 ```
 
-## query_log {#query_log}
+## query_log
 
 Configuración para registrar las consultas recibidas con la opción [log&#95;queries=1](/es/reference/settings/session-settings/log-queries#log_queries).
 
@@ -1380,7 +1380,7 @@ Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de c
 </query_log>
 ```
 
-## query_metric_log {#query_metric_log}
+## query_metric_log
 
 Está desactivado de forma predeterminada.
 
@@ -1415,7 +1415,7 @@ Para desactivar la configuración `query_metric_log`, debe crear el siguiente ar
 
 <SystemLogParameters />
 
-## query_cache {#query_cache}
+## query_cache
 
 Configuración de la [caché de consultas](/es/concepts/features/performance/caches/query-cache).
 
@@ -1444,7 +1444,7 @@ Están disponibles los siguientes ajustes:
 </query_cache>
 ```
 
-## query_thread_log {#query_thread_log}
+## query_thread_log
 
 Configuración para registrar los hilos de las consultas recibidas con la configuración [log&#95;query&#95;threads=1](/es/reference/settings/session-settings/log-query#log_query_threads).
 
@@ -1469,7 +1469,7 @@ Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de h
 </query_thread_log>
 ```
 
-## query_views_log {#query_views_log}
+## query_views_log
 
 Configuración para registrar vistas (live, materialized, etc.) según las consultas recibidas con la configuración [log&#95;query&#95;views=1](/es/reference/settings/session-settings/log-query#log_query_views).
 
@@ -1494,7 +1494,7 @@ Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de v
 </query_views_log>
 ```
 
-## text_log {#text_log}
+## text_log
 
 Configuración de la [tabla del sistema text&#95;log](/es/reference/system-tables/text_log) para registrar mensajes de texto.
 
@@ -1525,7 +1525,7 @@ Además:
 </clickhouse>
 ```
 
-## trace_log {#trace_log}
+## trace_log
 
 Configuración para el funcionamiento de la [tabla del sistema trace&#95;log](/es/reference/system-tables/trace_log).
 
@@ -1547,7 +1547,7 @@ El archivo de configuración predeterminado del servidor `config.xml` contiene l
 </trace_log>
 ```
 
-## asynchronous_insert_log {#asynchronous_insert_log}
+## asynchronous_insert_log
 
 Configuración de la [tabla del sistema asynchronous&#95;insert&#95;log](/es/reference/system-tables/asynchronous_insert_log) para el registro de inserciones asíncronas.
 
@@ -1571,7 +1571,7 @@ Configuración de la [tabla del sistema asynchronous&#95;insert&#95;log](/es/ref
 </clickhouse>
 ```
 
-## crash_log {#crash_log}
+## crash_log
 
 Configuración para el funcionamiento de la [tabla del sistema crash&#95;log](/es/reference/system-tables/crash_log).
 
@@ -1608,7 +1608,7 @@ El archivo de configuración predeterminado del servidor, `config.xml`, contiene
 </crash_log>
 ```
 
-## create_union_system_log_tables {#create_union_system_log_tables}
+## create_union_system_log_tables
 
 Solicita la creación de tablas `all_...` junto a las tablas de logs del sistema (`system.all_query_log` para `system.query_log`, `system.all_text_log` para `system.text_log`, etc.). Estas tablas son una unión de la tabla de logs correspondiente, sus versiones rotadas (`query_log_0`, `query_log_1`, ...) y/o las mismas tablas de todas las réplicas de un clúster, y permiten consultarlas todas a la vez sin tener que recordar construcciones como `clusterAllReplicas(default, merge(system, '^query_log'))`.
 
@@ -1640,7 +1640,7 @@ La opción se aplica a todas las tablas de logs del sistema; no permite una conf
 </create_union_system_log_tables>
 ```
 
-## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
+## custom_cached_disks_base_directory
 
 Esta configuración especifica la ruta de caché para los discos en caché personalizados (creados desde SQL).
 `custom_cached_disks_base_directory` tiene mayor prioridad para los discos personalizados que `filesystem_caches_path` (ubicado en `filesystem_caches_path.xml`),
@@ -1659,7 +1659,7 @@ Ejemplo:
 <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
 ```
 
-## backup_log {#backup_log}
+## backup_log
 
 Configuración de la tabla del sistema [backup&#95;log](/es/reference/system-tables/backup_log) para registrar operaciones `BACKUP` y `RESTORE`.
 
@@ -1683,7 +1683,7 @@ Configuración de la tabla del sistema [backup&#95;log](/es/reference/system-tab
 </clickhouse>
 ```
 
-## blob_storage_log {#blob_storage_log}
+## blob_storage_log
 
 Configuración de la tabla del sistema [`blob_storage_log`](/es/reference/system-tables/blob_storage_log).
 
@@ -1701,7 +1701,7 @@ Ejemplo:
 </blob_storage_log>
 ```
 
-## query_masking_rules {#query_masking_rules}
+## query_masking_rules
 
 Reglas basadas en expresiones regulares que se aplican a las consultas, así como a todos los mensajes de registro antes de almacenarlos en los registros del servidor, en las tablas
 [`system.query_log`](/es/reference/system-tables/query_log), [`system.text_log`](/es/reference/system-tables/text_log), [`system.processes`](/es/reference/system-tables/processes), y en los registros enviados al cliente. Esto permite evitar
@@ -1734,7 +1734,7 @@ La tabla [`system.events`](/es/reference/system-tables/events) tiene el contador
 Para las consultas distribuidas, cada servidor debe configurarse por separado; de lo contrario, las subconsultas enviadas a otros
 nodos se almacenarán sin enmascaramiento.
 
-## remote_servers {#remote_servers}
+## remote_servers
 
 Configuración de los clústeres utilizados por el motor de tabla [Distributed](/es/reference/engines/table-engines/special/distributed) y por la función de tabla `cluster`.
 
@@ -1752,7 +1752,7 @@ Para el valor del atributo `incl`, consulte la sección &quot;[Archivos de confi
 * [Cluster Discovery](/es/guides/oss/deployment-and-scaling/cluster-discovery)
 * [motor de base de datos Replicated](/es/reference/engines/database-engines/replicated)
 
-## remote_url_allow_hosts {#remote_url_allow_hosts}
+## remote_url_allow_hosts
 
 Lista de hosts que pueden usarse en motores de almacenamiento relacionados con URL y funciones de tabla.
 
@@ -1772,7 +1772,7 @@ Por ejemplo:
 </remote_url_allow_hosts>
 ```
 
-## timezone {#timezone}
+## timezone
 
 La zona horaria del servidor.
 
@@ -1790,7 +1790,7 @@ La zona horaria es necesaria para las conversiones entre los formatos String y D
 
 * [session&#95;timezone](/es/reference/settings/session-settings/other#session_timezone)
 
-## tcp_port {#tcp_port}
+## tcp_port
 
 Puerto para la comunicación con los clientes mediante el protocolo TCP.
 
@@ -1800,7 +1800,7 @@ Puerto para la comunicación con los clientes mediante el protocolo TCP.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp_port_secure {#tcp_port_secure}
+## tcp_port_secure
 
 Puerto TCP para la comunicación segura con los clientes. Úselo con la configuración de [OpenSSL](#openSSL).
 
@@ -1810,7 +1810,7 @@ Puerto TCP para la comunicación segura con los clientes. Úselo con la configur
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql_port {#mysql_port}
+## mysql_port
 
 Puerto para comunicarse con los clientes mediante el protocolo MySQL.
 
@@ -1825,7 +1825,7 @@ Puerto para comunicarse con los clientes mediante el protocolo MySQL.
 <mysql_port>9004</mysql_port>
 ```
 
-## postgresql_port {#postgresql_port}
+## postgresql_port
 
 Puerto para comunicarse con los clientes a través del protocolo PostgreSQL.
 
@@ -1840,7 +1840,7 @@ Puerto para comunicarse con los clientes a través del protocolo PostgreSQL.
 <postgresql_port>9005</postgresql_port>
 ```
 
-## url_scheme_mappers {#url_scheme_mappers}
+## url_scheme_mappers
 
 Configuración para traducir prefijos de URL abreviados o simbólicos en URL completas.
 
@@ -1860,7 +1860,7 @@ Ejemplo:
 </url_scheme_mappers>
 ```
 
-## user_defined_path {#user_defined_path}
+## user_defined_path
 
 El directorio que contiene archivos definidos por el usuario. Se utiliza para las funciones SQL definidas por el usuario [Funciones SQL definidas por el usuario](/es/reference/functions/regular-functions/udf).
 
@@ -1870,7 +1870,7 @@ El directorio que contiene archivos definidos por el usuario. Se utiliza para la
 <user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
 ```
 
-## users_config {#users_config}
+## users_config
 
 Ruta al archivo que contiene:
 
@@ -1885,7 +1885,7 @@ Ruta al archivo que contiene:
 <users_config>users.xml</users_config>
 ```
 
-## access_control_improvements {#access_control_improvements}
+## access_control_improvements
 
 Configuración para mejoras opcionales en el sistema de control de acceso.
 
@@ -1917,7 +1917,7 @@ Ejemplo:
 </access_control_improvements>
 ```
 
-## s3queue_log {#s3queue_log}
+## s3queue_log
 
 Configuración de la tabla del sistema `s3queue_log`.
 
@@ -1934,7 +1934,7 @@ La configuración predeterminada es la siguiente:
 </s3queue_log>
 ```
 
-## dead_letter_queue {#dead_letter_queue}
+## dead_letter_queue
 
 Configuración de la tabla del sistema &#39;dead&#95;letter&#95;queue&#39;.
 
@@ -1951,7 +1951,7 @@ La configuración predeterminada es:
 </dead_letter_queue>
 ```
 
-## zookeeper {#zookeeper}
+## zookeeper
 
 Contiene ajustes que permiten a ClickHouse interactuar con un clúster de [ZooKeeper](http://zookeeper.apache.org/). ClickHouse usa ZooKeeper para almacenar los metadatos de las réplicas cuando se utilizan tablas replicadas. Si no se utilizan tablas replicadas, esta sección de parámetros puede omitirse.
 
@@ -2014,7 +2014,7 @@ También existe el ajuste `zookeeper_load_balancing` (opcional), que le permite 
 * [Guía del programador de ZooKeeper](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 * [Comunicación segura opcional entre ClickHouse y ZooKeeper](/es/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)
 
-## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
+## use_minimalistic_part_header_in_zookeeper
 
 Método de almacenamiento de las cabeceras de las partes de datos en ZooKeeper. Esta configuración solo se aplica a la familia [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/index). Puede especificarse:
 
@@ -2039,7 +2039,7 @@ Si [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_head
   Las cabeceras de las partes de datos ya almacenadas con esta configuración no pueden restaurarse a su representación anterior (no compacta).
 </Note>
 
-## distributed_ddl {#distributed_ddl}
+## distributed_ddl
 
 Gestiona la ejecución de [consultas DDL distribuidas](/es/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) en el clúster.
 Solo funciona si [ZooKeeper](/es/reference/settings/server-settings/settings/zookeeper#zookeeper) está habilitado.
@@ -2083,7 +2083,7 @@ Las opciones configurables dentro de `<distributed_ddl>` incluyen:
 </distributed_ddl>
 ```
 
-## access_control_path {#access_control_path}
+## access_control_path
 
 Ruta de la carpeta donde un servidor de ClickHouse almacena las configuraciones de usuarios y roles creadas mediante comandos SQL.
 
@@ -2091,7 +2091,7 @@ Ruta de la carpeta donde un servidor de ClickHouse almacena las configuraciones 
 
 * [Control de acceso y administración de cuentas](/es/concepts/features/security/access-rights#access-control-usage)
 
-## allow_plaintext_password {#allow_plaintext_password}
+## allow_plaintext_password
 
 Establece si se permiten o no los tipos de contraseña en texto plano (inseguros).
 
@@ -2101,7 +2101,7 @@ Establece si se permiten o no los tipos de contraseña en texto plano (inseguros
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
 
-## allow_no_password {#allow_no_password}
+## allow_no_password
 
 Establece si se permite o no el tipo de contraseña insegura no&#95;password.
 
@@ -2111,7 +2111,7 @@ Establece si se permite o no el tipo de contraseña insegura no&#95;password.
 <allow_no_password>1</allow_no_password>
 ```
 
-## allow_implicit_no_password {#allow_implicit_no_password}
+## allow_implicit_no_password
 
 Impide crear un usuario sin contraseña, a menos que se especifique explícitamente &#39;IDENTIFIED WITH no&#95;password&#39;.
 
@@ -2121,7 +2121,7 @@ Impide crear un usuario sin contraseña, a menos que se especifique explícitame
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
 
-## default_session_timeout {#default_session_timeout}
+## default_session_timeout
 
 Tiempo de espera de sesión predeterminado, en segundos.
 
@@ -2131,7 +2131,7 @@ Tiempo de espera de sesión predeterminado, en segundos.
 <default_session_timeout>60</default_session_timeout>
 ```
 
-## default_password_type {#default_password_type}
+## default_password_type
 
 Establece el tipo de contraseña que se asignará automáticamente en consultas como `CREATE USER u IDENTIFIED BY 'p'`.
 
@@ -2151,7 +2151,7 @@ Los valores aceptados son:
 <default_password_type>sha256_password</default_password_type>
 ```
 
-## user_directories {#user_directories}
+## user_directories
 
 Sección del archivo de configuración que contiene las siguientes opciones:
 
@@ -2210,7 +2210,7 @@ Para agregar un servidor LDAP como directorio remoto para usuarios que no estén
 </ldap>
 ```
 
-## top_level_domains_list {#top_level_domains_list}
+## top_level_domains_list
 
 Define una lista de dominios de nivel superior personalizados que se deben añadir, donde cada entrada tiene el formato `<name>/path/to/file</name>`.
 
@@ -2227,7 +2227,7 @@ Véase también:
 * la función [`cutToFirstSignificantSubdomainCustom`](/es/reference/functions/regular-functions/url-functions#cutToFirstSignificantSubdomainCustom) y sus variantes,
   que acepta el nombre de una lista personalizada de TLD y devuelve la parte del dominio que incluye los subdominios de nivel superior hasta el primer subdominio significativo.
 
-## proxy {#proxy}
+## proxy
 
 Defina servidores proxy para solicitudes HTTP y HTTPS, compatibles actualmente con el almacenamiento S3, las funciones de tabla de S3 y las funciones de URL.
 
@@ -2365,7 +2365,7 @@ ClickHouse comprobará el tipo de resolver de mayor prioridad para el protocolo 
 comprobará el siguiente tipo de resolver con mayor prioridad, hasta llegar al resolver de entorno.
 Esto también permite usar una combinación de tipos de resolver.
 
-## disable_tunneling_for_https_requests_over_http_proxy {#disable_tunneling_for_https_requests_over_http_proxy}
+## disable_tunneling_for_https_requests_over_http_proxy
 
 De forma predeterminada, se usa tunelización (es decir, `HTTP CONNECT`) para realizar solicitudes `HTTPS` a través de un proxy `HTTP`. Esta configuración puede usarse para desactivarla.
 
@@ -2395,7 +2395,7 @@ Lo mismo se aplica a GitLab, aunque tenga un punto inicial. Tanto `gitlab.com` c
 </proxy>
 ```
 
-## workload_path {#workload_path}
+## workload_path
 
 El directorio que se utiliza para almacenar todas las consultas `CREATE WORKLOAD` y `CREATE RESOURCE`. De forma predeterminada, se usa la carpeta `/workload/` dentro del directorio de trabajo del servidor.
 
@@ -2412,7 +2412,7 @@ El directorio que se utiliza para almacenar todas las consultas `CREATE WORKLOAD
 * [Jerarquía de cargas de trabajo](/es/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;zookeeper&#95;path](#workload_zookeeper_path)
 
-## workload_zookeeper_path {#workload_zookeeper_path}
+## workload_zookeeper_path
 
 La ruta a un nodo de ZooKeeper, que se utiliza como almacenamiento para todas las consultas `CREATE WORKLOAD` y `CREATE RESOURCE`. Para mantener la coherencia, todas las definiciones SQL se almacenan como valor de este único znode. De forma predeterminada, no se usa ZooKeeper y las definiciones se almacenan en [disco](#workload_path).
 
@@ -2427,7 +2427,7 @@ La ruta a un nodo de ZooKeeper, que se utiliza como almacenamiento para todas la
 * [Jerarquía de cargas de trabajo](/es/concepts/features/configuration/server-config/workload-scheduling#workloads)
 * [workload&#95;path](#workload_path)
 
-## zookeeper_log {#zookeeper_log}
+## zookeeper_log
 
 Configuración de la tabla del sistema [`zookeeper_log`](/es/reference/system-tables/zookeeper_log).
 

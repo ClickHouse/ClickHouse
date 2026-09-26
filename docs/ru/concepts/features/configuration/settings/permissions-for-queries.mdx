@@ -23,7 +23,7 @@ doc_type: 'reference'
 
 Следующие настройки определяют права пользователя в зависимости от типа запроса:
 
-## readonly {#readonly}
+## readonly
 
 Ограничивает, какие запросы может выполнять сеанс. Значения этой настройки, значение по умолчанию и то,
 какие настройки позволяет изменять каждое значение, описаны в
@@ -80,7 +80,7 @@ doc_type: 'reference'
   [изменяемой в режиме только для чтения](/ru/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
 </Note>
 
-## allow_ddl {#allow_ddl}
+## allow_ddl
 
 Разрешает или запрещает [DDL](https://en.wikipedia.org/wiki/Data_definition_language)-запросы к базам данных,
 таблицам, представлениям, словарям, пользовательским функциям, рабочим нагрузкам, ресурсам и обработчикам, определённым через SQL.
@@ -124,7 +124,7 @@ doc_type: 'reference'
   привилегии `KILL QUERY`, которую `readonly = 1` и `readonly = 2` не допускают.
 </Info>
 
-## Другие связанные настройки {#other-relevant-settings}
+## Другие связанные настройки
 
 * [`allow_introspection_functions`](/ru/reference/settings/session-settings/allow#allow_introspection_functions)
   — третья настройка, которая наряду с `readonly` и `allow_ddl` участвует непосредственно в

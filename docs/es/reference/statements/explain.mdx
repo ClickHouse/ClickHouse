@@ -60,7 +60,7 @@ Union
             Output: number
 ```
 
-## Tipos de EXPLAIN {#explain-types}
+## Tipos de EXPLAIN
 
 * `AST` — Árbol de sintaxis abstracta.
 * `SYNTAX` — Texto de la consulta tras las optimizaciones a nivel de AST.
@@ -71,7 +71,7 @@ Union
 * `ESTIMATE` — Número estimado de filas, marcas y partes que se leerán de las tablas al procesar la consulta.
 * `TABLE OVERRIDE` — Resultado validado de una sobrescritura de tabla sobre el esquema de una función de tabla.
 
-### EXPLAIN AST {#explain-ast}
+### EXPLAIN AST
 
 Muestra el AST de la consulta. Admite todo tipo de consultas, no solo `SELECT`.
 
@@ -109,7 +109,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-### EXPLAIN SYNTAX {#explain-syntax}
+### EXPLAIN SYNTAX
 
 Muestra el árbol de sintaxis abstracta (AST) de una consulta tras el análisis sintáctico.
 
@@ -150,7 +150,7 @@ ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
 ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-### EXPLAIN QUERY TREE {#explain-query-tree}
+### EXPLAIN QUERY TREE
 
 Configuración:
 
@@ -179,7 +179,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-### EXPLAIN PLAN {#explain-plan}
+### EXPLAIN PLAN
 
 Muestra los pasos del plan de consulta.
 
@@ -663,7 +663,7 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
-### EXPLAIN PIPELINE {#explain-pipeline}
+### EXPLAIN PIPELINE
 
 Configuración:
 
@@ -703,7 +703,7 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-### EXPLAIN ANALYZE {#explain-analyze}
+### EXPLAIN ANALYZE
 
 `EXPLAIN ANALYZE` sí ejecuta la consulta, descarta las filas del resultado y muestra el mismo árbol del plan que `EXPLAIN PLAN`, con cada paso anotado con lo que realmente ocurrió en tiempo de ejecución.
 
@@ -813,7 +813,7 @@ Las filas y los bytes se informan una vez para todo el paso (la línea `I/O`). E
   2. el número máximo de hilos de procesamiento de consultas configurado en `max_threads`.
 </Note>
 
-#### Pasos de join {#explain-analyze-join-steps}
+#### Pasos de join
 
 En un paso de join, `EXPLAIN ANALYZE` muestra líneas que comparan las estimaciones del optimizador de orden de join con lo que ocurrió realmente (consulte [Métricas de join estimadas frente a reales](#explain-analyze-join-estimation)) y líneas de *participación* para cada lado —`Left` y `Right`—, seguidas de las líneas específicas de la implementación del join. Se cubren todos los valores de [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), así como las dos implementaciones que esta configuración no puede seleccionar: un join `CROSS` o `COMMA`, cualquier sección `ON` sin igualdad de clave y el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join). La mayoría informa sobre ambos lados; algunas solo informan del lado que materializan (por ejemplo, `direct` solo muestra `Left:`).
 
@@ -834,7 +834,7 @@ Para cada lado, `EXPLAIN ANALYZE` informa de lo siguiente:
 
 Un valor que no puede calcularse con exactitud se informa como `not collected` en lugar de `0`. `match rate` y `fanout` se derivan de `matched`, por lo que, si un lado no dispone de este valor, los tres se informan como `not collected`.
 
-#### Métricas estimadas frente a reales del join {#explain-analyze-join-estimation}
+#### Métricas estimadas frente a reales del join
 
 Un paso de join incluye las estimaciones del optimizador de orden de join —las mismas que muestra `EXPLAIN PLAN` (consulta la sección [EXPLAIN PLAN](#explain-plan))— y `EXPLAIN ANALYZE` imprime cada una de ellas junto al valor medido:
 
@@ -872,7 +872,7 @@ Join (JOIN FillRightFirst)
 │    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
 ```
 
-#### Fanout {#explain-analyze-fanout}
+#### Fanout
 
 `fanout` mide la multiplicación de filas:
 
@@ -887,7 +887,7 @@ Un `outer join` genera una fila de salida rellenada con `NULL` por cada fila del
 * `fanout = 1` — un join 1:1 sin duplicados; cada fila coincidente generó exactamente una fila de salida.
 * `fanout > 1` — un join 1:N; las claves duplicadas del otro lado multiplicaron las filas. Un valor alto en ambos lados a la vez indica una explosión cartesiana no intencionada.
 
-#### Cuándo los números requieren `matches = 1` {#explain-analyze-matches}
+#### Cuándo los números requieren `matches = 1`
 
 La mayoría de estos números se obtienen de datos que el join ya genera de todos modos y se muestran con un `EXPLAIN ANALYZE` normal. El resto requiere un seguimiento que el join no realizaría de otro modo, por lo que solo se muestra con `EXPLAIN ANALYZE matches = 1`. Cuáles son depende del algoritmo; en la familia hash hay dos casos:
 
@@ -934,7 +934,7 @@ El motor de tabla [`Join`](/es/reference/engines/table-engines/special/join) sig
 
 Cuando ambos algoritmos informan un número, los resultados coinciden. Los algoritmos de fusión simplemente disponen de más información; no difieren en cuanto a lo que constituye una coincidencia.
 
-#### Líneas específicas del algoritmo {#explain-analyze-join-algorithm-lines}
+#### Líneas específicas del algoritmo
 
 Veamos las líneas que añade cada implementación de JOIN además de las anteriores.
 
@@ -991,7 +991,7 @@ Ambos lados informan `matched not collected` aquí: un predicado constante empar
 
 Para un join con el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join), se muestran ambos lados, junto con la línea `Hash table:`, que describe la tabla preconstruida. El lado derecho cuenta las filas almacenadas en el motor, no las filas de una compilación específica de cada consulta.
 
-#### Tiempos por procesador {#explain-analyze-processors}
+#### Tiempos por procesador
 
 Con `processors = 1`, se imprime una línea adicional debajo de cada etapa que muestra la distribución del tiempo transcurrido entre los procesadores de la etapa:
 
@@ -1001,7 +1001,7 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 `<n>` es el número de procesadores de la etapa. Una gran diferencia entre `median` y `max` apunta a un desequilibrio de carga entre los procesadores paralelos.
 
-### EXPLAIN ESTIMATE {#explain-estimate}
+### EXPLAIN ESTIMATE
 
 Muestra el número estimado de filas, marcas y partes que se leerán de las tablas al procesar la consulta. Funciona con tablas de la familia [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -1025,7 +1025,7 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-### EXPLAIN WHATIF {#explain-whatif}
+### EXPLAIN WHATIF
 
 Estima el beneficio que tendría un índice de omisión hipotético en una consulta `SELECT`, *sin* materializar el índice en disco. Defina uno o más candidatos con [`CREATE HYPOTHETICAL INDEX`](/es/reference/statements/hypothetical-index#create-hypothetical-index) y luego ejecute `EXPLAIN WHATIF SELECT ...` para ver, para cada candidato, si aplica, las marcas estimadas leídas, los bytes estimados y la tasa de omisión.
 
@@ -1149,7 +1149,7 @@ El número proviene de la selectividad de las estadísticas de columna para `b <
 
 Si ninguna de las dos vías está disponible (p. ej., `empirical = 0` y no hay estadísticas de columna definidas), el estimador informa `source: applicability_only` y un `skip_ratio: 0.0%` conservador.
 
-### EXPLAIN TABLE OVERRIDE {#explain-table-override}
+### EXPLAIN TABLE OVERRIDE
 
 Muestra el resultado de una sobrescritura de tabla aplicada al esquema de una tabla a la que se accede mediante una función de tabla.
 También realiza ciertas validaciones y genera una excepción si la sobrescritura hubiera provocado algún tipo de fallo.

@@ -19,7 +19,7 @@ doc_type: 'reference'
 Distributed 엔진을 사용하는 테이블은 자체적으로 데이터를 저장하지 않지만, 여러 서버에서 분산 쿼리 처리를 수행할 수 있습니다.
 읽기 작업은 자동으로 병렬화됩니다. 읽는 동안에는 원격 서버에 테이블 인덱스가 있는 경우 해당 인덱스를 사용합니다.
 
-## 테이블 만들기 {#distributed-creating-a-table}
+## 테이블 만들기
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -31,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-### 테이블에서 {#distributed-from-a-table}
+### 테이블에서
 
 `Distributed` 테이블이 현재 서버의 테이블을 가리키는 경우 해당 테이블의 스키마(schema)를 사용할 수 있습니다:
 
@@ -39,7 +39,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-### Remote 및 RemoteSecure 엔진 {#distributed-remote-engines}
+### Remote 및 RemoteSecure 엔진
 
 `Remote` 및 `RemoteSecure`는 [`remote` 및 `remoteSecure`](/ko/reference/functions/table-functions/remote) 테이블 함수와 동일한 주소 표현식과 자격 증명을 사용하는 영속 테이블 엔진입니다:
 
@@ -68,7 +68,7 @@ SELECT * FROM remote_one;
 
 대상은 테이블 함수일 수도 있습니다. 예를 들어 `Remote('127.0.0.1', numbers(10))` 또는 `Remote('127.0.0.1', merge(db, '^table_'))`가 있습니다. 이러한 테이블은 읽기 전용입니다. 원격으로 삽입할 테이블이 없으므로 `INSERT`는 `NOT_IMPLEMENTED` 예외과 함께 거부됩니다. 이 읽기 전용 제한은 `remote` 및 `remoteSecure` 테이블 함수에도 동일하게 적용됩니다. 일반적인 `db`/`table` 대상에는 `SELECT`와 `INSERT`가 모두 지원되지만, 테이블 함수 대상(`remote('127.0.0.1', numbers(10))`)은 같은 이유로 읽기 전용입니다.
 
-### 분산 매개변수 {#distributed-parameters}
+### 분산 매개변수
 
 | 매개변수                      | 설명                                                                                                                                                                                                                                                                                                                                             |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -83,7 +83,7 @@ SELECT * FROM remote_one;
 * [distributed&#95;foreground&#95;insert](/ko/reference/settings/session-settings/distributed#distributed_foreground_insert) 설정
 * 예시는 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)를 참조하십시오
 
-### 분산 설정 {#distributed-settings}
+### 분산 설정
 
 | 설정                                         | 설명                                                                                                                                                                                                                                                  | 기본값                            |
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
@@ -128,7 +128,7 @@ SETTINGS
 
 데이터베이스 이름 대신 문자열을 반환하는 상수 표현식을 사용할 수 있습니다. 예시: `currentDatabase()`.
 
-## 클러스터 {#distributed-clusters}
+## 클러스터
 
 클러스터는 [서버 구성 파일](/ko/concepts/features/configuration/server-config/configuration-files)에서 설정합니다:
 
@@ -214,7 +214,7 @@ SETTINGS
 
 매번 알 수 없는 세트의 세그먼트와 레플리카로 쿼리를 보내야 한다면 `Distributed` 테이블을 만들 필요가 없습니다. 대신 `remote` 테이블 함수를 사용하십시오. 자세한 내용은 [테이블 함수](/ko/reference/functions/table-functions/index) 섹션을 참조하십시오.
 
-## 데이터 쓰기 {#distributed-writing-data}
+## 데이터 쓰기
 
 클러스터에 데이터를 쓰는 방법은 두 가지입니다.
 
@@ -247,7 +247,7 @@ SETTINGS
 
 `Distributed` 테이블에 `INSERT`한 후 서버가 더 이상 존재하지 않게 되었거나 비정상적으로 재시작된 경우(예: 하드웨어 장애)에는 삽입된 데이터가 손실될 수 있습니다. 테이블 디렉터리에서 손상된 데이터 파트가 감지되면 `broken` 하위 디렉터리로 이동되며 더 이상 사용되지 않습니다.
 
-## 데이터 읽기 {#distributed-reading-data}
+## 데이터 읽기
 
 `Distributed` 테이블을 쿼리할 때 `SELECT` 쿼리는 모든 세그먼트로 전송되며, 데이터가 세그먼트 간에 어떻게 분산되어 있든 관계없이 동작합니다(완전히 무작위로 분산되어 있어도 됩니다). 새 세그먼트를 추가할 때 기존 데이터를 그 세그먼트로 옮길 필요는 없습니다. 대신 더 높은 가중치를 사용해 새 데이터를 해당 세그먼트에 기록할 수 있습니다. 그러면 데이터가 다소 불균등하게 분산될 수 있지만, 쿼리는 여전히 정확하고 효율적으로 동작합니다.
 
@@ -255,9 +255,9 @@ SETTINGS
 
 분산 `in` 및 `global in` 쿼리가 처리되는 방식에 관해 자세히 알아보려면 [이 문서](/ko/reference/statements/in#distributed-subqueries)를 참조하십시오.
 
-## 가상 컬럼 {#virtual-columns}
+## 가상 컬럼
 
-#### _Shard_num {#_shard_num}
+#### _Shard_num
 
 `_shard_num` — 테이블 `system.clusters`의 `shard_num` 값을 포함합니다. 유형: [UInt32](/ko/reference/data-types/int-uint).
 

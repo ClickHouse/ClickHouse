@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются из исходного кода ClickHouse.
 
-## object_shared_data_buckets_for_compact_part {#object_shared_data_buckets_for_compact_part}
+## object_shared_data_buckets_for_compact_part
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
 
@@ -22,7 +22,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Количество бакетов для JSON-сериализации общих данных в компактных частях. Работает с сериализациями общих данных `map_with_buckets`, `advanced` и `advanced_chunked`.
 Максимально допустимое значение — 256.
 
-## object_shared_data_buckets_for_wide_part {#object_shared_data_buckets_for_wide_part}
+## object_shared_data_buckets_for_wide_part
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -31,7 +31,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Количество бакетов для JSON-сериализации общих данных в частях Wide. Работает с сериализациями общих данных `map_with_buckets`, `advanced` и `advanced_chunked`.
 Максимально допустимое значение — 256.
 
-## object_shared_data_serialization_version {#object_shared_data_serialization_version}
+## object_shared_data_serialization_version
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
 
@@ -50,7 +50,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Количество бакетов для сериализаций `map_with_buckets`, `advanced` и `advanced_chunked` определяется настройками
 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ru/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part).
 
-## object_shared_data_serialization_version_for_zero_level_parts {#object_shared_data_serialization_version_for_zero_level_parts}
+## object_shared_data_serialization_version_for_zero_level_parts
 
 <SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
 
@@ -61,7 +61,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Для частей нулевого уровня не рекомендуется использовать сериализацию общих данных `advanced` или `advanced_chunked`, поскольку это может
 существенно увеличить время вставки.
 
-## object_shared_data_target_chunk_rows {#object_shared_data_target_chunk_rows}
+## object_shared_data_target_chunk_rows
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
 

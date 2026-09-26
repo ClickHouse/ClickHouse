@@ -24,7 +24,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
   [руководству по миграции](/ru/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin), чтобы перенести существующие DAG и соединения на провайдер.
 </Note>
 
-## Установите провайдер {#install-the-provider}
+## Установите провайдер
 
 Установите провайдер в окружение, где работают планировщик Airflow и воркеры:
 
@@ -38,7 +38,7 @@ pip install apache-airflow-providers-clickhousedb
 pip install 'apache-airflow-providers-common-sql[pandas,polars]'
 ```
 
-## Создайте подключение ClickHouse {#create-a-clickhouse-connection}
+## Создайте подключение ClickHouse
 
 Провайдер регистрирует тип подключения `clickhouse`. Создайте подключение в интерфейсе Airflow в разделе **Admin &gt; Connections** или задайте его через CLI либо переменную окружения.
 
@@ -54,7 +54,7 @@ pip install 'apache-airflow-providers-common-sql[pandas,polars]'
 
 Для [ClickHouse Cloud](/ru/products/cloud/getting-started/intro) или любого самоуправляемого кластера с включенным TLS установите для `secure` значение `true` в поле **Extra** и используйте TLS-порт (`8443`).
 
-### Дополнительные параметры соединения {#extra-connection-options}
+### Дополнительные параметры соединения
 
 Провайдер предоставляет дополнительные параметры в виде отдельных полей в форме соединения. Если вместо этого вы задаёте соединение через URI, JSON или переменную окружения, укажите их как ключи в объекте JSON `extra`. Все они необязательны:
 
@@ -69,7 +69,7 @@ pip install 'apache-airflow-providers-common-sql[pandas,polars]'
 | `session_settings`     | Настройки сеанса (JSON)       | (пусто)      | [Настройки сеанса ClickHouse](/ru/reference/settings/session-settings), применяемые ко всем запросам через это соединение, например `{"max_execution_time": 300, "max_threads": 8}`.             |
 | `client_kwargs`        | Параметры клиента (JSON)      | (пусто)      | Дополнительные именованные аргументы, передаваемые в `clickhouse_connect.get_client()`, например `http_proxy`.                                                                                |
 
-### Настройте подключение без интерфейса {#define-a-connection-without-the-ui}
+### Настройте подключение без интерфейса
 
 Задайте подключение через переменную окружения. Формат URI включает хост, учетные данные и базу данных:
 
@@ -99,7 +99,7 @@ export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='{
 
 Все хуки и операторы используют идентификатор подключения `clickhouse_default`, если не указан другой.
 
-## Выполнение запросов с SQLExecuteQueryOperator {#run-queries}
+## Выполнение запросов с SQLExecuteQueryOperator
 
 Укажите в `conn_id` оператора ваше подключение к ClickHouse. Следующий DAG создаёт таблицу, вставляет строки, считывает их обратно и удаляет таблицу:
 
@@ -158,7 +158,7 @@ with DAG(
 
 Результаты запроса извлекаются с помощью обработчика `handler`, используемого по умолчанию (`fetch_all_handler`). Чтобы вернуть не весь результирующий набор, передайте другой обработчик, например `fetch_one_handler`, чтобы получить только первую строку.
 
-### Укажите разные базы данных для каждой задачи {#target-a-different-database}
+### Укажите разные базы данных для каждой задачи
 
 Если одно соединение указывает на кластер, а отдельные задачи выполняют запросы к разным базам данных, переопределите базу данных через `hook_params` вместо создания отдельного соединения:
 
@@ -171,7 +171,7 @@ read_rows = SQLExecuteQueryOperator(
 )
 ```
 
-## Используйте хук напрямую {#use-the-hook-directly}
+## Используйте хук напрямую
 
 Для задач, которые не укладываются в возможности SQL-оператора, — например, для массовой вставки, стриминга или вызовов клиента, специфичных для ClickHouse, — используйте `ClickHouseHook` в Python-задаче.
 
@@ -197,7 +197,7 @@ client = hook.get_client()
 total = client.query("SELECT count() FROM events").result_rows[0][0]
 ```
 
-### Применить настройки сеанса {#apply-session-settings}
+### Применить настройки сеанса
 
 Передавайте [настройки сеанса](/ru/reference/settings/session-settings) при создании хука — напрямую или через `hook_params` оператора. Настройки, переданные в конструктор, накладываются поверх любых `session_settings`, заданных в поле **Extra** подключения; при конфликте ключей приоритет имеют значения конструктора:
 
@@ -208,7 +208,7 @@ hook = ClickHouseHook(
 )
 ```
 
-## Материалы по теме {#related-content}
+## Материалы по теме
 
 * [Миграция с airflow-clickhouse-plugin](/ru/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin)
 * [клиент Python `clickhouse-connect`](/ru/integrations/language-clients/python/index)

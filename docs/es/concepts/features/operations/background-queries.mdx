@@ -6,7 +6,7 @@ title: 'Consultas en segundo plano'
 doc_type: 'guide'
 ---
 
-## Overview {#overview}
+## Overview
 
 Las consultas en segundo plano permiten a los Clients enviar consultas que se ejecutan de forma independiente de la sesión del Client estableciendo `run_query_in_background=1`. Una vez enviada, el servidor de ClickHouse responde de inmediato al Client, mientras la consulta continúa hasta finalizar (con éxito o con error) en el lado del servidor.
 
@@ -27,13 +27,13 @@ para conocer las solicitudes que se rechazan.
 Una consulta en segundo plano no sobrevive a un reinicio del servidor. El comportamiento del apagado del servidor se controla mediante
 `shutdown_wait_unfinished_queries` y `shutdown_wait_unfinished`.
 
-## Formas de consulta no admitidas {#unsupported-query-forms}
+## Formas de consulta no admitidas
 
 Una consulta en segundo plano sigue viva más allá de la conexión que la envió, por lo que el servidor debe contar ya con todo lo necesario
 para ejecutarla en el momento de aceptarla. Las solicitudes que no cumplen esta condición se rechazan de forma síncrona, en la
 conexión que las envió, y la consulta nunca llega a iniciarse.
 
-### Datos que se transmiten por la conexión {#data-that-streams-over-the-connection}
+### Datos que se transmiten por la conexión
 
 Un `INSERT` se rechaza cuando el servidor todavía tendría que leer datos de la conexión que lo envía después de despachar
 la consulta.
@@ -58,7 +58,7 @@ Esto incluye una consulta HTTP que lee una carga útil en línea mediante `input
 
 No dependa de ese límite de tamaño: utilice `INSERT ... SELECT`, o una función de tabla como `url` o `s3`, para los datos que deban cargarse en segundo plano.
 
-### Otras solicitudes rechazadas {#other-rejected-requests}
+### Otras solicitudes rechazadas
 
 | Solicitud                                                                                                                                                  | Error                                                                                        |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -72,9 +72,9 @@ No dependa de ese límite de tamaño: utilice `INSERT ... SELECT`, o una funció
 El ajuste nunca se propaga a las consultas secundarias de una consulta distribuida: un `INSERT` distribuido en segundo plano
 ejecuta sus consultas por segmento en primer plano, dentro de la consulta inicial en segundo plano.
 
-## Enviar una consulta en segundo plano {#submit-a-background-query}
+## Enviar una consulta en segundo plano
 
-### Protocolo nativo TCP {#native-tcp-protocol}
+### Protocolo nativo TCP
 
 Con `clickhouse-client`, pase `run_query_in_background` como ajuste de línea de comandos:
 
@@ -103,7 +103,7 @@ El protocolo nativo no devuelve un `query_id` generado por el server. Los Client
 Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
 ```
 
-### Protocolo HTTP {#http-protocol}
+### Protocolo HTTP
 
 Para las solicitudes HTTP, pase `run_query_in_background` como parámetro de URL:
 
@@ -139,7 +139,7 @@ Esta solicitud devuelve una excepción `BAD_ARGUMENTS`. El handler HTTP debe dec
 
 Pase el ajuste en la URL o configúrelo a nivel de usuario o de perfil.
 
-## Monitorizar la ejecución {#monitor-execution}
+## Monitorizar la ejecución
 
 Use el `query_id` para comprobar si una consulta se está ejecutando actualmente:
 
@@ -188,7 +188,7 @@ en `system.query_log` en lugar de devolverse por la conexión original.
   ```
 </Note>
 
-## Retraso en el volcado del registro de consultas {#query-log-flush-delay}
+## Retraso en el volcado del registro de consultas
 
 Las entradas se almacenan temporalmente en el búfer antes de aparecer en `system.query_log`.
 En ClickHouse autogestionado, la configuración de servidor de ejemplo establece `query_log.flush_interval_milliseconds` en `7500`.

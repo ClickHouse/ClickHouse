@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## alter_move_to_space_execute_async {#alter_move_to_space_execute_async}
+## alter_move_to_space_execute_async
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Executa ALTER TABLE MOVE ... TO [DISK|VOLUME] de forma assíncrona
 
-## alter_partition_verbose_result {#alter_partition_verbose_result}
+## alter_partition_verbose_result
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -54,7 +54,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 └──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-## alter_sync {#alter_sync}
+## alter_sync
 
 **Aliases**: `replication_alter_partitions_sync`
 
@@ -75,7 +75,7 @@ Valor padrão no Cloud: `0`.
   `alter_sync` se aplica apenas a tabelas `Replicated` e `SharedMergeTree`; não tem efeito ao alterar tabelas que não sejam `Replicated` ou `Shared`.
 </Note>
 
-## alter_update_mode {#alter_update_mode}
+## alter_update_mode
 
 <SettingsInfoBlock type="AlterUpdateMode" default_value="heavy" />
 

@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## allow_experimental_analyzer {#allow_experimental_analyzer}
+## allow_experimental_analyzer
 
 **Псевдонимы**: `enable_analyzer`
 
@@ -26,7 +26,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Анализатор — это инфраструктура для анализа и планирования запросов, используемая по умолчанию с версии v24.3. В v26.9 эта настройка зафиксирована на единственном поддерживаемом значении `1`: попытка установить её в `0` отклоняется, а настройка `compatibility` больше не возвращает прежнее поведение. В v26.10 анализ запросов, на который она переключала, был удалён. Удалите `enable_analyzer = 0` из запросов, настроек сеанса, профилей настроек и конфигураций клиентов. Чтобы сравнить поведение или производительность запроса с прежним анализом запросов, используйте версию ClickHouse старше v26.9.
 
-## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
+## allow_experimental_cleanup_old_data_files_compaction
 
 <ExperimentalBadge />
 
@@ -36,7 +36,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешает удалять старые файлы данных во время compaction в Iceberg.
 
-## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
+## allow_experimental_database_hms_catalog
 
 <ExperimentalBadge />
 
@@ -46,7 +46,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешить использование экспериментального движка базы данных DataLakeCatalog с catalog&#95;type = &#39;hms&#39;
 
-## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
+## allow_experimental_database_materialized_postgresql
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Позволяет создавать базу данных с Engine=MaterializedPostgreSQL(...).
 
-## allow_experimental_database_paimon_rest_catalog {#allow_experimental_database_paimon_rest_catalog}
+## allow_experimental_database_paimon_rest_catalog
 
 <ExperimentalBadge />
 
@@ -64,7 +64,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешает использование экспериментального движка базы данных DataLakeCatalog с catalog&#95;type = &#39;paimon&#95;rest&#39;
 
-## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
+## allow_experimental_eval_table_function
 
 <ExperimentalBadge />
 
@@ -74,7 +74,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Включает экспериментальную табличную функцию `eval`.
 
-## allow_experimental_expire_snapshots {#allow_experimental_expire_snapshots}
+## allow_experimental_expire_snapshots
 
 <ExperimentalBadge />
 
@@ -84,7 +84,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешает выполнение экспериментальной команды Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
-## allow_experimental_hash_functions {#allow_experimental_hash_functions}
+## allow_experimental_hash_functions
 
 <ExperimentalBadge />
 
@@ -92,7 +92,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Включает экспериментальные хеш-функции
 
-## allow_experimental_iceberg_compaction {#allow_experimental_iceberg_compaction}
+## allow_experimental_iceberg_compaction
 
 <ExperimentalBadge />
 
@@ -102,7 +102,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешает явно использовать `OPTIMIZE` для таблиц Iceberg.
 
-## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
+## allow_experimental_kusto_dialect
 
 <ExperimentalBadge />
 
@@ -112,7 +112,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Включает диалект Kusto Query Language (KQL) — альтернативу SQL.
 
-## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
+## allow_experimental_nlp_functions
 
 <ExperimentalBadge />
 
@@ -120,7 +120,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Включает экспериментальные функции обработки естественного языка.
 
-## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
+## allow_experimental_object_storage_queue_hive_partitioning
 
 <ExperimentalBadge />
 
@@ -130,7 +130,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешает использовать партиционирование Hive с движками S3Queue/AzureQueue
 
-## allow_experimental_paimon_storage_engine {#allow_experimental_paimon_storage_engine}
+## allow_experimental_paimon_storage_engine
 
 <ExperimentalBadge />
 
@@ -140,7 +140,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Разрешает создавать таблицы с движками таблиц Paimon*.
 
-## allow_experimental_parallel_reading_from_replicas {#allow_experimental_parallel_reading_from_replicas}
+## allow_experimental_parallel_reading_from_replicas
 
 **Псевдонимы**: `enable_parallel_replicas`
 
@@ -148,7 +148,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Использовать до `max_parallel_replicas` реплик из каждого сегмента при выполнении запроса SELECT. Чтение распараллеливается и координируется динамически. 0 — отключено, 1 — включено, при сбое отключается без уведомления, 2 — включено, при сбое сгенерировать исключение
 
-## allow_experimental_polyglot_dialect {#allow_experimental_polyglot_dialect}
+## allow_experimental_polyglot_dialect
 
 <ExperimentalBadge />
 
@@ -158,7 +158,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Включает polyglot SQL-транспайлер — преобразует SQL из более чем 30 диалектов (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB и т. д.) в ClickHouse SQL.
 
-## allow_experimental_prql_dialect {#allow_experimental_prql_dialect}
+## allow_experimental_prql_dialect
 
 <ExperimentalBadge />
 
@@ -168,7 +168,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Включает PRQL — альтернативный язык запросов по сравнению с SQL.
 
-## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
+## allow_experimental_ytsaurus_dictionary_source
 
 <ExperimentalBadge />
 
@@ -178,7 +178,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Экспериментальный источник данных словаря для интеграции с YTsaurus.
 
-## allow_experimental_ytsaurus_table_engine {#allow_experimental_ytsaurus_table_engine}
+## allow_experimental_ytsaurus_table_engine
 
 <ExperimentalBadge />
 
@@ -188,7 +188,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Экспериментальный движок таблицы для интеграции с YTsaurus.
 
-## allow_experimental_ytsaurus_table_function {#allow_experimental_ytsaurus_table_function}
+## allow_experimental_ytsaurus_table_function
 
 <ExperimentalBadge />
 

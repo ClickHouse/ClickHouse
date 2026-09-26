@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## external_table_functions_use_nulls {#external_table_functions_use_nulls}
+## external_table_functions_use_nulls
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,7 +27,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Если для этой настройки установлено значение `0`, табличная функция не создаёт столбцы типа Nullable и вместо NULL вставляет значения по умолчанию. Это также применимо к значениям NULL внутри массивов.
 
-## external_table_strict_query {#external_table_strict_query}
+## external_table_strict_query
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

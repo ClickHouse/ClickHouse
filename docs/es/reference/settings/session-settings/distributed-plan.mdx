@@ -15,7 +15,7 @@ import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## distributed_plan_default_reader_bucket_count {#distributed_plan_default_reader_bucket_count}
+## distributed_plan_default_reader_bucket_count
 
 <ExperimentalBadge />
 
@@ -26,7 +26,7 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 Número predeterminado de tareas para la lectura paralela en una consulta distribuida. Las tareas se reparten entre las réplicas.
 Lo utiliza el planificador distribuido basado en reglas. El optimizador basado en costos elige el grado de paralelismo de lectura según el costo estimado y no utiliza esta configuración.
 
-## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
+## distributed_plan_default_shuffle_join_bucket_count
 
 <ExperimentalBadge />
 
@@ -37,7 +37,7 @@ Lo utiliza el planificador distribuido basado en reglas. El optimizador basado e
 Número predeterminado de buckets para distributed shuffle-hash-join.
 Lo utiliza el planificador distribuido basado en reglas. El optimizador basado en costos elige el grado de paralelismo según el costo estimado y no utiliza esta configuración.
 
-## distributed_plan_execute_locally {#distributed_plan_execute_locally}
+## distributed_plan_execute_locally
 
 <ExperimentalBadge />
 
@@ -47,7 +47,7 @@ Lo utiliza el planificador distribuido basado en reglas. El optimizador basado e
 
 Ejecuta localmente todas las tareas de un plan de consulta distribuida. Útil para pruebas y depuración.
 
-## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
+## distributed_plan_fallback_to_local_execution
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -57,7 +57,7 @@ Cuando un plan de consulta contiene un paso que no admite la ejecución distribu
 
 Solo surte efecto cuando `make_distributed_plan` (private preview) está habilitado.
 
-## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
+## distributed_plan_force_exchange_kind
 
 <ExperimentalBadge />
 
@@ -71,7 +71,7 @@ Valores posibles:
 * &#39;Persisted&#39; - usar archivos temporales en almacenamiento de objetos,
 * &#39;Streaming&#39; - transmitir los datos de Exchange a través de la red.
 
-## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
+## distributed_plan_force_shuffle_aggregation
 
 <ExperimentalBadge />
 
@@ -82,7 +82,7 @@ Valores posibles:
 Usa la estrategia de agregación Shuffle en lugar de PartialAggregation + Merge en el plan de consulta distribuida.
 Se ignora cuando la estrategia Shuffle no puede producir un resultado correcto, por ejemplo para `GROUPING SETS` o cuando la agregación debe producir los resultados en orden de bucket.
 
-## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
+## distributed_plan_max_rows_to_broadcast
 
 <ExperimentalBadge />
 
@@ -93,7 +93,7 @@ Se ignora cuando la estrategia Shuffle no puede producir un resultado correcto, 
 Número máximo de filas para usar un broadcast join en lugar de un shuffle join en el plan de consulta distribuida.
 Una heurística para el planificador distribuido basado en reglas. Cuando el optimizador basado en costos está habilitado, la elección entre broadcast y shuffle se realiza según el costo estimado y esta configuración no tiene efecto.
 
-## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
+## distributed_plan_optimize_exchanges
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -101,7 +101,7 @@ Una heurística para el planificador distribuido basado en reglas. Cuando el opt
 
 Elimina intercambios innecesarios del plan de consulta distribuida. Desactívelo para depuración.
 
-## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
+## distributed_plan_prefer_replicas_over_workers
 
 <PrivatePreviewBadge />
 
@@ -111,7 +111,7 @@ Elimina intercambios innecesarios del plan de consulta distribuida. Desactívelo
 
 Serializa el plan de consulta distribuida para su ejecución en las réplicas.
 
-## distributed_plan_read_in_order {#distributed_plan_read_in_order}
+## distributed_plan_read_in_order
 
 <ExperimentalBadge />
 
@@ -126,7 +126,7 @@ Desactivada de forma predeterminada: la reescritura que distribuye una ordenaci�
 ya esté ordenada, y una ordenación que sí depende de ello puede recibir filas a través de un intercambio que no preserva
 el orden. Por ahora, solo son seguras las formas en las que no queda ningún intercambio entre la lectura y la ordenación.
 
-## distributed_plan_workers_num {#distributed_plan_workers_num}
+## distributed_plan_workers_num
 
 <PrivatePreviewBadge />
 
@@ -136,7 +136,7 @@ el orden. Por ahora, solo son seguras las formas en las que no queda ningún int
 
 Cuántos workers sin estado se usarán para ejecutar esta consulta. Cero desactiva la reserva de workers sin estado para los planes distribuidos.
 
-## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
+## distributed_plan_workers_provisioning_timeout_ms
 
 <PrivatePreviewBadge />
 

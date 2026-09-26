@@ -15,7 +15,7 @@ doc_type: 'reference'
 pip install "clickhouse-connect[sqlalchemy]"
 ```
 
-## الاتصال عبر SQLAlchemy {#sqlalchemy-connect}
+## الاتصال عبر SQLAlchemy
 
 أنشئ محركًا باستخدام صيغة URL ‏`clickhousedb://` أو `clickhousedb+connect://`:
 
@@ -31,11 +31,11 @@ with engine.connect() as conn:
     print(version)
 ```
 
-### معرّفات جلسات ClickHouse {#sqlalchemy-session-ids}
+### معرّفات جلسات ClickHouse
 
 افتراضيًا، يُنشئ كل اتصال ضمن مجمّع الاتصالات معرّف جلسة ClickHouse خاصًا به، سواء في اللهجة المتزامنة أو غير المتزامنة. وعندما تصل طلبات هذا الاتصال إلى عملية خادم ClickHouse نفسها، تظل الإعدادات المُغيَّرة باستخدام `SET` والجداول المؤقتة محفوظة لهذا الاتصال. وتجدر الإشارة إلى أن حالة الجلسة المسمّاة وعمليات فحص التداخل ضمن الجلسة نفسها تقتصر على العملية الواحدة. ففي عملية خادم واحدة، يُرفض فورًا أي طلب متداخل للمستخدم نفسه ومعرّف الجلسة نفسه برمز الخادم 373 بدلًا من وضعه في قائمة انتظار. وإذا هيّأت قيمة ثابتة لـ `session_id`، فاستخدم `pool_size=1, max_overflow=0` أو اجعل الوصول تسلسليًا قبل أن تصل الطلبات إلى ClickHouse. أما في ClickHouse Cloud أو غيرها من البيئات التي تعتمد على موازنة الحمل، فقد تصل الطلبات التي تحمل معرّف الجلسة نفسه إلى خوادم مختلفة، لذا لا تعتمد على قيمة ثابتة لـ `session_id` بوصفها حالة موزّعة أو قفل استبعاد متبادل (mutex) موزّعًا.
 
-### الاتصالات غير المتزامنة {#sqlalchemy-async-connections}
+### الاتصالات غير المتزامنة
 
 تتطلب اللهجة غير المتزامنة الإصدار 2.0.44 من SQLAlchemy أو أحدث، وتعتمد على `AsyncClient` الأصلي في ClickHouse Connect. ثبّت الاعتماديات اللازمة لها، ثم أنشئ محركًا غير متزامن باستخدام عنوان URL ‏`clickhousedb+async://`:
 
@@ -101,7 +101,7 @@ async def prepare_schema(engine, metadata):
         )
 ```
 
-### إعدادات خاصة بكل استعلام {#sqlalchemy-per-query-settings}
+### إعدادات خاصة بكل استعلام
 
 مرِّر إعدادات ClickHouse عبر خيارات التنفيذ في SQLAlchemy. يمكن تعيين الإعدادات على المحرك أو الاتصال أو التعليمة. وتكون قيمة التعليمة لها الأسبقية على قيمة الاتصال أو المحرك عند استخدام المفتاح نفسه.
 
@@ -116,7 +116,7 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
-### تنسيقات القراءة لكل استعلام {#sqlalchemy-per-query-read-formats}
+### تنسيقات القراءة لكل استعلام
 
 عيّن تنسيقات قراءة ClickHouse على مستوى المحرك أو الاتصال أو التعليمة عبر خيارات تنفيذ SQLAlchemy باستخدام `query_formats`. تُطبَّق تنسيقات التعليمة أولًا، لذا تتجاوز المفاتيح وأحرف البدل المطابقة على مستوى الاتصال أو المحرك.
 
@@ -131,7 +131,7 @@ with engine.connect() as conn:
     rows = conn.execute(stmt).all()
 ```
 
-### معالجة الأخطاء {#sqlalchemy-error-handling}
+### معالجة الأخطاء
 
 تستخدم الأخطاء التي يُطلقها المشغّل عبر اتصال SQLAlchemy أصنافَ DB-API المُصدَّرة من `clickhouse_connect.dbapi`. وهذه الأصناف هي كائنات الأصناف نفسها المقابلة لها في `clickhouse_connect.driver.exceptions`، ولذلك يغلّفها SQLAlchemy في الفئة الفرعية المطابقة من `sqlalchemy.exc.DBAPIError`. أما `StreamFailureError` فهو من نوع `OperationalError`، ويُغلَّف على هيئة `sqlalchemy.exc.OperationalError`.
 
@@ -159,7 +159,7 @@ async def invalidate_safely(connection):
 
 لا تستخدم الاتصال ما دامت مهمة إبطاله قيد التشغيل. إذا أُلغي استدعاء مباشر لـ `await connection.invalidate()` وظلت قيمة `connection.invalidated` هي false، فاستدعِ `connection.invalidate()` مجددًا مع await لإكمال عملية التنظيف قبل استخدام الاتصال أو إغلاقه.
 
-### معلمات من جهة الخادم {#sqlalchemy-server-side-parameters}
+### معلمات من جهة الخادم
 
 يعرض SQLAlchemy المعلمات عادةً من جهة العميل. فعِّل معلمات ClickHouse من جهة الخادم عند إنشاء المحرّك:
 
@@ -176,7 +176,7 @@ engine = create_engine(
 
 يجب أن تكون أسماء الربط أسماء ClickHouse من نوع ASCII BareWord. تُرفض الأسماء التي تبدأ وتنتهي بـ `$` لأن المشغّل الأساسي يحجزها لمعلمات الاستعلام الثنائية الخام.
 
-## استعلامات Core {#sqlalchemy-core-queries}
+## استعلامات Core
 
 تدعم هذه اللهجة استعلامات `SELECT` في SQLAlchemy Core مع عمليات الربط، وعوامل التصفية، والترتيب، والحدود والإزاحات، و`DISTINCT`، وعمليات select المركبة.
 
@@ -211,7 +211,7 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
-### عرض القيم الحرفية {#sqlalchemy-literal-rendering}
+### عرض القيم الحرفية
 
 عندما يضمّن SQLAlchemy قيمة مقيّدة باستخدام `literal_binds` أو `literal_execute`، تستخدم اللهجة أسلوب الاقتباس في ClickHouse لأنواع السلاسل النصية العامة وأنواع ClickHouse. وينطبق ذلك أيضًا عند استخدام أغلفة `TypeDecorator` واختيارات `with_variant()`. تحتفظ قيم السلاسل النصية بعلامات النسبة المئوية والشرطات المائلة العكسية، حتى مع وجود مَعلَمات مقيّدة أخرى.
 
@@ -223,7 +223,7 @@ with engine.connect() as conn:
 
 إذا أُعيد استخدام معلمة تاريخ ووقت مُسمّاة، فيجب أن يكون لكل موضع تظهر فيه نوع ربط `DateTime64` متوافق للحفاظ على أجزاء الثانية؛ فأي موضع غير محدد النوع أو ذي نوع متعارض يُبقي على تنسيق الثواني الكاملة. عيِّن `type_=DateTime64(6)` في كل `bindparam`، أو استخدم أسماء معلمات مختلفة بالأنواع المناسبة.
 
-### تلميحات نوع JSON {#sqlalchemy-json-type-hints}
+### تلميحات نوع JSON
 
 أعلن عن مسارات JSON ذات الأنواع المحددة باستخدام تعيين `typed_paths`. يمكن أن يكون نوع المسار صنف نوع من ClickHouse SQLAlchemy، أو نسخة مهيَّأة، أو سلسلة نصية تحمل اسم نوع ClickHouse. وتدعم سلاسل أسماء الأنواع الأنواعَ التي لا يوجد لها مُنشئ في SQLAlchemy، مثل `Dynamic`، كما يمكن استخدامها لتعبيرات الأنواع المهيَّأة المعقدة، وهي تحافظ على الأسماء داخل `Tuple` المسمّى.
 
@@ -264,7 +264,7 @@ events = Table(
 
 ويرتّب المُنشئ الوسائط بالصيغة القياسية نفسها التي يعيدها ClickHouse. كما تحافظ الأنواع المنعكسة، ونسخ أنواع SQLAlchemy، والتوليد التلقائي في Alembic على التهيئة.
 
-### الأعمدة الفرعية لـ JSON {#sqlalchemy-json-subcolumns}
+### الأعمدة الفرعية لـ JSON
 
 بالنسبة إلى عمود مُعرَّف أو ممثَّل في ClickHouse بصفته `JSON`، استخدم الأقواس المربعة لاختيار مقطع واحد في كل مرة من مسار عمود فرعي مدعوم بالتخزين:
 
@@ -310,7 +310,7 @@ request_id = json_subcolumn(request, "id", type_=UInt32)
 
 يُقتبس كل مقطع بشكل مستقل، بما في ذلك الأسماء التي تحتوي على مسافات أو علامات اقتباس خلفية. لا تجعل علامات الاقتباس الخلفية النقطة قيمة حرفية في معالجة مسارات JSON في ClickHouse. عند تمكين `json_type_escape_dots_in_keys`، استخدم ترميز ClickHouse `%2E` للنقاط الحرفية في المفاتيح. للوصول إلى مفتاح باسم `a.b`، استخدم `payload["a%2Eb"]`، وليس `payload["a.b"]`.
 
-### امتدادات استعلام ClickHouse {#sqlalchemy-query-extensions}
+### امتدادات استعلام ClickHouse
 
 استورد `select` من `clickhouse_connect.cc_sqlalchemy` لتمكين أدوات التحقق الساكنة من الأنواع من التعرّف على طرائق ClickHouse المعرّفة الأنواع. كما تتوفر هذه الطرائق أيضًا في `sqlalchemy.select` القياسي وقت التشغيل.
 
@@ -386,7 +386,7 @@ stmt = select(
 
 تُحوَّل بنية SQLAlchemy القياسية `values()` عند الترجمة إلى صياغة دالة الجدول `VALUES` في ClickHouse، بما في ذلك عند استخدامها في تعبير الجدول الشائع. يتطلب شكل تعبير الجدول الشائع استخدام SQLAlchemy 2.0.42 أو إصدار أحدث، إذ أُضيفت `Values.cte()`.
 
-### تعبيرات الجدول الشائعة المُجسَّدة {#sqlalchemy-materialized-ctes}
+### تعبيرات الجدول الشائعة المُجسَّدة
 
 يُضمّن ClickHouse تعبير الجدول الشائع تلقائيًا، لذا إذا أُشير إلى CTE أكثر من مرة، يُنفَّذ محتواه مرةً لكل مرجع. مرّر `materialized=True` إلى `.cte()` لإنتاج `WITH <name> AS MATERIALIZED (...)`، بحيث يُحسب المحتوى مرةً واحدة:
 
@@ -428,7 +428,7 @@ ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
 
 لا يدعم ClickHouse تعبيرات الجدول الشائع المادية التعاودية. تثير helpers الخاصة بـ SQLAlchemy الخطأ `ValueError` عند تعيين كلٍّ من `recursive=True` و`materialized=True`.
 
-## DDL واستكشاف البنية {#sqlalchemy-ddl-reflection}
+## DDL واستكشاف البنية
 
 يوفّر ClickHouse Connect أنواع بيانات ClickHouse، ومحركات الجداول، وبُنى القواميس، وDDL لقواعد البيانات، واستكشاف بنية الجداول.
 
@@ -479,7 +479,7 @@ engine_clause = SummingMergeTree("id", columns=("delta", "n_tx"))
 
 مرّر سلسلة نصية، أو عمود SQLAlchemy، أو سمة عمود مُعيَّن (mapped)، أو قائمة أو صفًّا (tuple) غير فارغ من هذه القيم. تُحاط عناصر السلاسل النصية في القوائم والصفوف بعلامات الاقتباس بوصفها معرّفات. أما السلسلة النصية المفردة فتُمرَّر بوصفها SQL خامًا، مثل `"delta"` أو `"(delta, n_tx)"`. ويتطلب الخادم معرّفات لهذه الأعمدة. احذف `columns` لتترك لـ ClickHouse تحديد الأعمدة المراد جمعها. ويحافظ استكشاف البنية والتوليد التلقائي في Alembic على قائمة الأعمدة المحددة صراحةً.
 
-## عمليات الإدراج واستخدام ORM الأساسي {#sqlalchemy-inserts}
+## عمليات الإدراج واستخدام ORM الأساسي
 
 عمليات إدراج Core ونماذج ORM البسيطة مدعومة. في اللهجة المتزامنة، يُفضَّل استخدام عمليات إدراج Core عبر executemany لمسارات البيانات المجمّعة المتوافقة. أما عمليات الإدراج المجمّعة غير المتزامنة، فاستخدم لها المسار الأصلي `AsyncClient.insert()` الموضّح في [الاتصالات غير المتزامنة](#sqlalchemy-async-connections).
 
@@ -527,7 +527,7 @@ with Session(engine) as session:
     session.commit()
 ```
 
-## ترحيلات Alembic {#sqlalchemy-alembic}
+## ترحيلات Alembic
 
 يتضمن ClickHouse Connect تكاملًا مع Alembic لإجراء ترحيلات مخطط ClickHouse. ثبّته باستخدام:
 
@@ -565,7 +565,7 @@ alembic init -t async alembic
 
 راجع [المثال العملي الكامل لـ Alembic](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md). كما ينبغي للمستخدمين الذين يرحّلون من `clickhouse-sqlalchemy` قراءة [دليل الترحيل](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md).
 
-## النطاق والقيود {#scope-and-limitations}
+## النطاق والقيود
 
 * لا يوفّر ClickHouse المعاملات التقليدية عبر لهجة HTTP هذه. ينظّم `engine.begin()` و`Session.commit()` العمل على جانب بايثون، لكن commit و التراجع لا يُحدثان أي تأثير على الخادوم.
 * لا تدعم هذه اللهجة `UPDATE`، والمعاملات ثنائية الطور، والتسلسلات، و`RETURNING`، ومستويات العزل المتقدمة. استخدم ClickHouse SQL الصريح لتنفيذ تعديلات الخادوم عند الحاجة.

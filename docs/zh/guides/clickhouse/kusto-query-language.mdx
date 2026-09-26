@@ -22,7 +22,7 @@ StormEvents
 
 `SET dialect = 'clickhouse'` 可切换回 ClickHouse 方言。KQL 方言处于启用状态时，`SET` 是唯一可识别的 SQL 语句，因此会话始终可以退出该方言。
 
-## 支持的内容 {#what-is-supported}
+## 支持的内容
 
 这是一个有意限定的小型子集。KQL 构造要么按 Kusto 文档描述的语义进行转换，
 要么按名称拒绝并报出解析错误——绝不会进行静默的近似处理。
@@ -75,7 +75,7 @@ StormEvents
 `range` 是最典型的例子——在 Kusto 中，`range(1, 3, 1)` 的结果是 `[1, 2, 3]`，而在
 ClickHouse 中则是 `[1, 2]`，因此在 KQL 中写出它会报错，而不是返回错误的结果。
 
-## 与 Kusto 参考文档的覆盖对比 {#coverage-against-the-kusto-reference}
+## 与 Kusto 参考文档的覆盖对比
 
 以 Microsoft 自身的索引为基准
  ([表格运算符](https://learn.microsoft.com/en-us/kusto/query/queries)、
@@ -91,7 +91,7 @@ ClickHouse 中则是 `[1, 2]`，因此在 KQL 中写出它会报错，而不是�
 支持的运算符包括 Microsoft 自身的 *Learn 常用运算符* 教程中介绍的运算符，
 以及 `datatable`、`range`、`print`、`union` 和 `join`——足以支持该教程和 KQL Quick Reference 中逐步构建的查询形态。
 
-## 不支持的内容 {#what-is-not-supported}
+## 不支持的内容
 
 会报解析错误而被拒绝，不会被错误翻译：
 
@@ -126,7 +126,7 @@ ClickHouse 中则是 `[1, 2]`，因此在 KQL 中写出它会报错，而不是�
   `declare query_parameters`、`restrict access to`。
 * 混淆字符串字面量 (`h"..."`) 和多行字面量 (三个反引号) 。
 
-## 值得了解的行为 {#behaviour-worth-knowing}
+## 值得了解的行为
 
 * **时间跨度是 `Interval` 值。** `1d` 会变为 `toIntervalNanosecond(86400000000000)`。
   设置 `interval_output_format = 'kusto'` 可按 Kusto 的格式将其呈现为 `1.00:00:00`，而非
@@ -160,7 +160,7 @@ ClickHouse 中则是 `[1, 2]`，因此在 KQL 中写出它会报错，而不是�
 * **ClickHouse 的参数化聚合函数** (`quantileExact(0.5)(x)`) 没有对应的 KQL 写法。
   请使用命名替代方案，例如 `medianExact(x)`。
 
-## 报告问题 {#reporting-a-problem}
+## 报告问题
 
 如果查询能够解析，但返回了 Kusto 不会返回的结果，这就是 bug——请报告该问题，并同时提供
 两种结果。被拒绝但您确实需要的查询属于功能请求；上面的列表

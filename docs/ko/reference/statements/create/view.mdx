@@ -12,7 +12,7 @@ import { DeprecatedBadge } from "/snippets/ko/components/DeprecatedBadge/Depreca
 
 새로운 뷰를 생성합니다. 뷰는 [일반](#normal-view), [materialized](#materialized-view), [갱신 가능 구체화 뷰](#refreshable-materialized-view) 유형으로 만들 수 있습니다.
 
-## 일반 뷰 {#normal-view}
+## 일반 뷰
 
 구문:
 
@@ -43,7 +43,7 @@ SELECT a, b, c FROM view
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-## 매개변수화된 뷰(Parameterized View) {#parameterized-view}
+## 매개변수화된 뷰(Parameterized View)
 
 매개변수화된 뷰는 일반 뷰와 유사하지만, 즉시 해석되지 않는 매개변수를 포함해 생성할 수 있습니다.
 이러한 뷰는 테이블 함수와 함께 사용할 수 있으며, 이 경우 함수 이름에는 뷰 이름을 지정하고 인수에는 매개변수 값을 지정합니다.
@@ -66,7 +66,7 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
-## Materialized View {#materialized-view}
+## Materialized View
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
@@ -86,7 +86,7 @@ AS SELECT ...
 
 `OR REPLACE`와 `IF NOT EXISTS`는 서로 배타적이므로 함께 사용할 수 없습니다. 둘을 함께 사용하면 구문 오류가 발생합니다.
 
-### CREATE OR REPLACE MATERIALIZED VIEW {#create-or-replace-materialized-view}
+### CREATE OR REPLACE MATERIALIZED VIEW
 
 `CREATE OR REPLACE MATERIALIZED VIEW`는 기존 materialized view와 해당 내부 저장 테이블(있는 경우)을 원자적으로 대체합니다. 이 작업을 수행하려면 `Atomic` 또는 `Replicated` 데이터베이스 엔진이 필요합니다.
 
@@ -184,7 +184,7 @@ materialized view가 `TO [db.]name` 구문을 사용하는 경우, 뷰를 `DETAC
 
 뷰를 삭제하려면 [DROP VIEW](/ko/reference/statements/drop#drop-view)를 사용하십시오. `DROP TABLE`도 VIEW에 사용할 수 있습니다.
 
-## SQL 보안 {#sql_security}
+## SQL 보안
 
 `DEFINER` 및 `SQL SECURITY`를 사용하면 뷰의 기반 쿼리를 실행할 때 어떤 ClickHouse 사용자를 사용할지 지정할 수 있습니다.
 `SQL SECURITY`에는 `DEFINER`, `INVOKER`, `NONE`의 세 가지 유효한 값이 있습니다. `DEFINER` 절에는 기존 사용자 또는 `CURRENT_USER`를 지정할 수 있습니다.
@@ -222,7 +222,7 @@ SQL 보안 옵션과 관계없이, 어떤 경우에도 뷰를 읽으려면 여�
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
-### 예시 {#examples}
+### 예시
 
 ```sql
 CREATE VIEW test_view
@@ -236,7 +236,7 @@ SQL SECURITY INVOKER
 AS SELECT ...
 ```
 
-## 라이브 view {#live-view}
+## 라이브 view
 
 <DeprecatedBadge />
 
@@ -244,7 +244,7 @@ AS SELECT ...
 
 편의를 위해 이전 문서는 [여기](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)에서 확인하실 수 있습니다.
 
-## 갱신 가능 구체화 뷰 {#refreshable-materialized-view}
+## 갱신 가능 구체화 뷰
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -283,7 +283,7 @@ number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
   쿼리의 `REFRESH ... SETTINGS` 부분에 있는 설정은 갱신 설정(예: `refresh_retries`)이며, 일반 설정(예: `max_threads`)과는 구분됩니다. 일반 설정은 쿼리 끝에 `SETTINGS`를 사용해 지정할 수 있습니다.
 </Note>
 
-### 갱신 일정 {#refresh-schedule}
+### 갱신 일정
 
 예시 갱신 일정:
 
@@ -311,7 +311,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 일반적으로 첫 번째 갱신은 materialized view가 생성된 직후 즉시 시작됩니다. 마지막 갱신 이후 경과 시간은 무한대이므로, 어떤 일정이든 지금 갱신할 시점으로 간주됩니다. `EMPTY`를 지정하면 이 초기 갱신은 건너뛰고, 첫 번째 갱신은 다음 예약된 시각에 수행됩니다. 예를 들어 `EVERY 1 HOUR`의 경우 첫 번째 갱신은 현재 시간의 끝에 수행됩니다.
 
-### 복제된 DB에서 {#in-replicated-db}
+### 복제된 DB에서
 
 갱신 가능 materialized view가 [복제된 데이터베이스](/ko/reference/engines/database-engines/replicated)에 있는 경우, 레플리카는 서로 coordination하여 예약된 각 시점마다 하나의 레플리카만 갱신을 수행합니다. 갱신으로 생성된 데이터를 모든 레플리카가 확인할 수 있도록 [ReplicatedMergeTree](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블 엔진이 필요합니다.
 
@@ -321,7 +321,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 coordination은 Keeper를 통해 수행됩니다. znode 경로는 [default&#95;replica&#95;path](/ko/reference/settings/server-settings/settings/default-replica#default_replica_path) 서버 설정으로 결정됩니다.
 
-### 갱신 의존성 {#refresh-dependencies}
+### 갱신 의존성
 
 `DEPENDS ON`은 서로 다른 테이블의 갱신 시점을 동기화합니다:
 
@@ -347,7 +347,7 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
   `DEPENDS ON`은 갱신 가능 구체화 뷰(Refreshable Materialized View) 사이에서만 작동합니다. 특히 의존성 뷰에서 `TO <table>`을 사용하는 경우에는 테이블 이름이 아니라 뷰 이름을 사용해야 합니다. `DEPENDS ON` 목록에 일반 테이블, 갱신 가능하지 않은 뷰가 포함되어 있거나 오타가 있으면 해당 뷰는 갱신되지 않으며, `system.view_refreshes`에 상태가 `MissingDependencies`로 표시됩니다. 의존성은 `ALTER`를 사용해 변경하거나 제거할 수 있습니다. 자세한 내용은 [갱신 매개변수 변경](#changing-refresh-parameters)을 참조하십시오.
 </Note>
 
-#### 일관된 전파 지연 시간을 위해 DEPENDS ON 사용 {#using-depends-on-for-consistent-propagation-latency}
+#### 일관된 전파 지연 시간을 위해 DEPENDS ON 사용
 
 두 뷰가 모두 같은 주기의 `REFRESH EVERY`를 사용하면 의존성은 각 타임슬롯마다 적용됩니다.
 
@@ -371,7 +371,7 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
   Y:             └►[10:00 ru------un]└►[11:00 ru---------------un]└►[13:00 run]
 ```
 
-#### 배치 스트림 처리에 DEPENDS ON 사용하기 {#using-depends-on-for-batched-stream-processing}
+#### 배치 스트림 처리에 DEPENDS ON 사용하기
 
 `REFRESH EVERY`를 사용하지 않으면, 의존하는 뷰 X는 X가 마지막으로 갱신된 이후 모든 의존성이 각각 최소 한 번씩 갱신되었을 때 갱신됩니다. `REFRESH AFTER T`는 지연 시간을 추가합니다. 즉, 의존성이 갱신을 완료한 후 T 시간이 지나면 의존하는 뷰의 갱신이 시작됩니다.
 
@@ -417,7 +417,7 @@ SYSTEM REFRESH VIEW current_batch_v;
 
 이 기능은 갱신 조정 기능이 활성화된 경우, 즉 뷰가 Replicated 또는 Shared 데이터베이스에 있을 때에만 제대로 작동합니다. 조정 기능이 없으면 서버를 재시작할 때 사이클이 끊어지므로, 뷰를 생성한 후 한 번만이 아니라 재시작할 때마다 수동으로 `SYSTEM REFRESH VIEW`를 실행해야 합니다.
 
-### 갱신 설정 {#refresh-settings}
+### 갱신 설정
 
 사용 가능한 갱신 설정은 다음과 같습니다.
 
@@ -426,7 +426,7 @@ SYSTEM REFRESH VIEW current_batch_v;
 * `refresh_retry_max_backoff_ms` - 갱신 시도 사이의 지연 시간이 지수적으로 증가할 때의 상한입니다. 기본값: 60000 ms(1분).
 * `all_replicas` - `APPEND`를 사용하는 [복제된 데이터베이스](/ko/reference/engines/database-engines/replicated)에서 모든 레플리카가 각각 독립적으로 갱신할지, 아니면 예약된 각 시각마다 하나의 레플리카만 갱신할지를 제어합니다. 이 설정은 뷰를 생성한 후에는 변경할 수 없습니다. 기본값: `false`.
 
-### 갱신 매개변수 변경 {#changing-refresh-parameters}
+### 갱신 매개변수 변경
 
 기존 갱신 가능 구체화 뷰의 갱신 매개변수는 [`ALTER TABLE ... MODIFY REFRESH`](/ko/reference/statements/alter/view#alter-table--modify-refresh-statement)를 사용해 변경합니다:
 
@@ -469,7 +469,7 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 
-### 기타 작업 {#other-operations}
+### 기타 작업
 
 모든 갱신 가능 materialized view의 상태는 [`system.view_refreshes`](/ko/reference/system-tables/view_refreshes) 테이블에서 확인할 수 있습니다. 특히 갱신 진행 상황(실행 중인 경우), 마지막 및 다음 갱신 시각, 갱신이 실패한 경우의 예외 메시지가 포함됩니다.
 
@@ -481,12 +481,12 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
   재미있는 사실: 갱신 쿼리는 현재 갱신 중인 뷰를 읽을 수 있으며, 갱신 전 버전의 데이터를 보게 됩니다. 즉, Conway의 생명 게임을 구현할 수 있습니다: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 </Note>
 
-## 관련 콘텐츠 {#related-content}
+## 관련 콘텐츠
 
 * 블로그: [ClickHouse에서 시계열 데이터 다루기](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * 블로그: [ClickHouse로 관측성 솔루션 구축하기 - 2부 - 트레이스](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
 
-## 임시 뷰 {#temporary-views}
+## 임시 뷰
 
 ClickHouse는 다음과 같은 특성을 가진 **임시 뷰**를 지원합니다(해당하는 경우 임시 테이블과 동일):
 
@@ -514,7 +514,7 @@ ClickHouse는 다음과 같은 특성을 가진 **임시 뷰**를 지원합니�
 * **SHOW CREATE**
   임시 뷰의 DDL을 출력하려면 `SHOW CREATE TEMPORARY VIEW view_name;`를 사용하십시오.
 
-### 구문 {#temporary-views-syntax}
+### 구문
 
 ```sql
 CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
@@ -522,7 +522,7 @@ CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
 
 `OR REPLACE`는 임시 뷰에서는 지원되지 않습니다(임시 테이블과 일관성을 맞추기 위함입니다). 임시 뷰를 “대체”해야 하는 경우, 해당 뷰를 삭제한 후 다시 생성하십시오.
 
-### 예시 {#temporary-views-examples}
+### 예시
 
 먼저 임시 원본 테이블을 만들고, 그 위에 임시 뷰를 생성합니다:
 
@@ -550,7 +550,7 @@ SHOW CREATE TEMPORARY VIEW tview;
 DROP TEMPORARY VIEW IF EXISTS tview;  -- 임시 뷰는 TEMPORARY TABLE 구문으로 삭제됩니다
 ```
 
-### 지원되지 않는 항목 / 제한 사항 {#temporary-views-limitations}
+### 지원되지 않는 항목 / 제한 사항
 
 * `CREATE OR REPLACE TEMPORARY VIEW ...` → **허용되지 않음** (`DROP` + `CREATE` 사용).
 * `CREATE TEMPORARY MATERIALIZED VIEW ...` → **허용되지 않음**.
@@ -558,11 +558,11 @@ DROP TEMPORARY VIEW IF EXISTS tview;  -- 임시 뷰는 TEMPORARY TABLE 구문으
 * `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **허용되지 않음** (임시 객체는 세션 로컬임).
 * `POPULATE`, `REFRESH`, `TO [db.table]`, 내부 엔진, 그리고 모든 MV 전용 절 → 임시 뷰에는 **적용되지 않음**.
 
-### 분산 쿼리 관련 참고 사항 {#temporary-views-distributed-notes}
+### 분산 쿼리 관련 참고 사항
 
 임시 **뷰**는 단지 정의일 뿐이므로, 별도로 전달할 데이터는 없습니다. 임시 뷰가 임시 **테이블**(예: `Memory`)을 참조하는 경우, 해당 데이터는 임시 테이블과 마찬가지로 분산 쿼리 실행 중 원격 서버로 전송될 수 있습니다.
 
-#### 예시 {#temporary-views-distributed-example}
+#### 예시
 
 ```sql
 -- A session-scoped, in-memory table

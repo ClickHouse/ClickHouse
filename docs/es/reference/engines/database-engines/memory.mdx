@@ -10,14 +10,14 @@ doc_type: 'reference'
 
 El motor de base de datos `Memory` mantiene sus metadatos y definiciones de tablas únicamente en memoria. Está pensado para bases de datos temporales: la base de datos y sus tablas se pierden cuando el server se detiene o se reinicia.
 
-## Crear una base de datos {#creating-a-database}
+## Crear una base de datos
 
 ```sql
 CREATE DATABASE temporary_data
 ENGINE = Memory;
 ```
 
-## Uso {#usage}
+## Uso
 
 Cree y utilice tablas igual que en una base de datos [`Atomic`](/es/reference/engines/database-engines/atomic):
 
@@ -34,7 +34,7 @@ INSERT INTO temporary_data.events VALUES (1, 'started');
 
 No utilice este engine para datos o definiciones que deban sobrevivir a un reinicio. Utilice `Atomic`, el motor de base de datos open-source predeterminado, para metadatos de bases de datos persistente.
 
-## Véase también {#see-also}
+## Véase también
 
 * [Motor de base de datos Atomic](/es/reference/engines/database-engines/atomic)
 * [Motor de tabla `Memory`](/es/reference/engines/table-engines/special/memory)

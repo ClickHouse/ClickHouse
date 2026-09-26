@@ -22,7 +22,7 @@ Esta página mostra uma lista das opções de configuração disponíveis no plu
 
 Para ter uma visão geral rápida de todas as opções, consulte [aqui](#all-yaml-options) a lista completa de opções de configuração.
 
-## Configurações comuns {#common-settings}
+## Configurações comuns
 
 Exemplo de tela de configuração:
 
@@ -54,14 +54,14 @@ secureJsonData:
 
 Observe que uma propriedade `version` é adicionada quando a configuração é salva pela UI. Isso indica a versão do plugin com a qual a configuração foi salva.
 
-### Protocolo HTTP {#http-protocol}
+### Protocolo HTTP
 
 Mais configurações serão exibidas se você optar por se conectar pelo protocolo HTTP.
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="Opções extras de configuração de HTTP" border />
 
 <div id="http-path">
-  #### Caminho HTTP {#http-path}
+  #### Caminho HTTP
 </div>
 
 Se o seu servidor HTTP estiver exposto em um caminho de URL diferente, você pode adicioná-lo aqui.
@@ -73,7 +73,7 @@ jsonData:
 ```
 
 <div id="custom-http-headers">
-  #### Cabeçalhos HTTP personalizados {#custom-http-headers}
+  #### Cabeçalhos HTTP personalizados
 </div>
 
 Você pode adicionar cabeçalhos personalizados às solicitações enviadas ao seu servidor.
@@ -102,7 +102,7 @@ secureJsonData:
   secureHttpHeaders.X-Example-Secure-Header: secure header value
 ```
 
-## Configurações adicionais {#additional-settings}
+## Configurações adicionais
 
 Estas configurações adicionais são opcionais.
 
@@ -121,7 +121,7 @@ jsonData:
 ```
 
 <div id="opentelemetry">
-  ### OpenTelemetry {#opentelemetry}
+  ### OpenTelemetry
 </div>
 
 O OpenTelemetry (OTel) é fortemente integrado ao plugin.
@@ -130,7 +130,7 @@ Para obter o melhor uso, recomenda-se configurar o OTel tanto para [logs](#logs)
 
 Também é necessário configurar esses padrões para habilitar [data links](/pt-BR/integrations/connectors/data-visualization/grafana/query-builder#data-links), um recurso que permite fluxos de trabalho avançados de observabilidade.
 
-### Logs {#logs}
+### Logs
 
 Para acelerar a [criação de consultas de logs](/pt-BR/integrations/connectors/data-visualization/grafana/query-builder#logs), você pode definir um banco de dados/tabela padrão, bem como colunas para a consulta de logs. Isso pré-carregará o construtor de consultas com uma consulta de logs pronta para execução, o que agiliza a navegação na página Explore para observabilidade.
 
@@ -162,14 +162,14 @@ jsonData:
     messageColumn: <string> # the log's message/content.
 ```
 
-#### Desativando links &quot;View logs&quot; {#disabling-view-logs-links}
+#### Desativando links &quot;View logs&quot;
 
 A seção **Correlação de ID de trace** da configuração de logs contém o toggle **Mostrar links &quot;View logs&quot;**.
 Esse toggle controla se o plugin anexa links &quot;View logs&quot; de [data links](/pt-BR/integrations/connectors/data-visualization/grafana/query-builder#data-links) aos campos de ID de trace nos resultados das consultas.
 O toggle é ativado por padrão. Um link &quot;View logs&quot; para o mesmo tipo de consulta não requer padrões de logs configurados; já um link &quot;View logs&quot; entre sinais, proveniente de resultados de consultas de traces, requer.
 Desative o toggle ou defina `showLogLinks: false` no YAML para ocultá-los.
 
-### Traces {#traces}
+### Traces
 
 Para acelerar a [criação de consultas para traces](/pt-BR/integrations/connectors/data-visualization/grafana/query-builder#traces), você pode definir um banco de dados/tabela padrão, bem como as colunas da consulta de trace. Isso pré-carregará o construtor de consultas com uma consulta de busca de trace pronta para execução, tornando a navegação na página Explore mais rápida para observabilidade.
 
@@ -207,7 +207,7 @@ jsonData:
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
-#### Desativar links &quot;View trace&quot; {#disabling-view-trace-links}
+#### Desativar links &quot;View trace&quot;
 
 A seção **Correlação de ID de trace** da configuração de traces contém o toggle **Mostrar links &quot;View trace&quot;**.
 Esse toggle controla se o plugin adiciona links &quot;View trace&quot; de [data links](/pt-BR/integrations/connectors/data-visualization/grafana/query-builder#data-links) aos campos de ID de trace nos resultados de consultas.
@@ -215,7 +215,7 @@ O toggle vem ativado por padrão. Um link &quot;View trace&quot; para o mesmo ti
 Desative o toggle ou defina `showTraceLinks: false` em YAML para ocultá-los.
 
 <div id="column-aliases">
-  ### Aliases de coluna {#column-aliases}
+  ### Aliases de coluna
 </div>
 
 Usar aliases de coluna é uma forma prática de consultar seus dados com nomes e tipos diferentes.
@@ -229,7 +229,7 @@ Usar aliases pode ser útil para você se:
 * Você costuma aplicar funções para transformar as colunas que seleciona
 
 <div id="table-defined-alias-columns">
-  #### Colunas ALIAS definidas na tabela {#table-defined-alias-columns}
+  #### Colunas ALIAS definidas na tabela
 </div>
 
 O ClickHouse oferece aliases de coluna nativamente e funciona com o Grafana sem necessidade de configuração adicional.
@@ -248,7 +248,7 @@ Aliases definidos na tabela não são retornados com `SELECT *`, mas isso pode s
 
 Para mais informações, leia a documentação do tipo de coluna [ALIAS](/pt-BR/reference/statements/create/table#alias).
 
-#### Tabelas de aliases de colunas {#column-alias-tables}
+#### Tabelas de aliases de colunas
 
 Por padrão, o Grafana fornecerá sugestões de colunas com base na resposta de `DESC table`.
 Em alguns casos, talvez você queira substituir completamente as colunas que o Grafana enxerga.
@@ -290,7 +290,7 @@ Agora o Grafana verá os resultados da tabela de aliases em vez dos resultados d
 
 Ambas as formas de alias podem ser usadas para realizar conversões complexas de tipo ou extração de campos JSON.
 
-## Todas as opções de YAML {#all-yaml-options}
+## Todas as opções de YAML
 
 Estas são todas as opções de configuração em YAML disponibilizadas pelo plugin.
 Alguns campos têm valores de exemplo, enquanto outros apenas mostram o tipo do campo.

@@ -17,7 +17,7 @@ import DataTypesMatching from '/snippets/es/data-types-matching.mdx';
 | ------- | ------ | ----- |
 | ✔       | ✔      |       |
 
-## Descripción {#description}
+## Descripción
 
 [Apache Avro](https://avro.apache.org/) es un formato de serialización orientado a filas que utiliza codificación binaria para procesar datos de forma eficiente. El formato `AvroConfluent` admite leer y escribir mensajes codificados en Avro mediante [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) (o servicios compatibles con su API).
 
@@ -25,11 +25,11 @@ Cada mensaje utiliza el wire format de Confluent: un byte mágico (`0x00`), segu
 
 <a id="data-types-matching" />
 
-## Correspondencia de tipos de datos {#data-type-mapping}
+## Correspondencia de tipos de datos
 
 <DataTypesMatching />
 
-## Configuración del formato {#format-settings}
+## Configuración del formato
 
 [//]: # "NOTA Esta configuración puede establecerse a nivel de sesión, pero no es habitual, y documentarlo de forma demasiado destacada puede resultar confuso para los usuarios."
 
@@ -44,9 +44,9 @@ Cada mensaje utiliza el wire format de Confluent: un byte mágico (`0x00`), segu
 | `output_format_avro_confluent_subject`           | Para la salida: el nombre del subject con el que el esquema está registrado en registro de esquemas. Obligatorio al escribir.                                                                                                              |                |
 | `output_format_avro_string_column_pattern`       | Para la salida: expresión regular de las columnas String que se serializarán como Avro `string` (el valor predeterminado es `bytes`).                                                                                                      |                |
 
-## Ejemplos {#examples}
+## Ejemplos
 
-### Lectura desde Kafka {#reading-from-kafka}
+### Lectura desde Kafka
 
 Para leer un topic de Kafka codificado en Avro mediante el [motor de tabla Kafka](/es/reference/engines/table-engines/integrations/kafka), utilice la configuración `format_avro_schema_registry_url` para indicar la URL del registro de esquemas.
 
@@ -67,7 +67,7 @@ format_avro_schema_registry_url = 'http://schema-registry-url';
 SELECT * FROM topic1_stream;
 ```
 
-### Escribir en Kafka {#writing-to-kafka}
+### Escribir en Kafka
 
 Para escribir mensajes de AvroConfluent en un topic de Kafka, configure tanto la URL del registro de esquemas como el nombre del subject. El esquema se registra automáticamente en el registro con la primera escritura.
 
@@ -88,7 +88,7 @@ output_format_avro_confluent_subject = 'topic1-value';
 INSERT INTO topic1_sink VALUES ('hello', 'world');
 ```
 
-#### Uso de la autenticación básica {#using-basic-authentication}
+#### Uso de la autenticación básica
 
 Si tu registro de esquemas requiere autenticación básica (p. ej., si usas Confluent Cloud), puedes proporcionar credenciales codificadas en URL en el parámetro `format_avro_schema_registry_url`.
 
@@ -107,7 +107,7 @@ kafka_format = 'AvroConfluent',
 format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry-url';
 ```
 
-## Solución de problemas {#troubleshooting}
+## Solución de problemas
 
 Para supervisar el progreso de la ingestión y depurar los errores del consumidor de Kafka, puedes consultar la [tabla del sistema `system.kafka_consumers`](/es/reference/system-tables/kafka_consumers). Si tu implementación tiene varias réplicas (p. ej., ClickHouse Cloud), debes usar la [función de tabla `clusterAllReplicas`](/es/reference/functions/table-functions/cluster).
 

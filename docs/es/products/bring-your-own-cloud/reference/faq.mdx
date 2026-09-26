@@ -7,9 +7,9 @@ description: 'Preguntas frecuentes sobre ClickHouse Bring Your Own Cloud (BYOC)'
 doc_type: 'reference'
 ---
 
-## FAQ {#faq}
+## FAQ
 
-### Incorporación y aprovisionamiento {#onboarding-and-provisioning}
+### Incorporación y aprovisionamiento
 
 <Accordion title="¿Cómo empezar con BYOC?">
   Póngase en contacto con ClickHouse mediante el [formulario de contacto](https://clickhouse.com/cloud/bring-your-own-cloud) y el equipo habilitará BYOC para su organización. A continuación, prepare una cuenta en la nube dedicada (una cuenta de AWS, un proyecto de GCP o una suscripción de Azure) y siga la [guía de incorporación estándar](/es/products/bring-your-own-cloud/onboarding/standard). Recomendamos encarecidamente usar una cuenta, un proyecto o una suscripción dedicados exclusivamente a BYOC.
@@ -52,7 +52,7 @@ doc_type: 'reference'
   En el clúster de Kubernetes: es posible, con restricciones. Use sus propios grupos de nodos con taints y tolerations, evite los espacios de nombres administrados por ClickHouse y no instale controladores de admisión ni motores de políticas para todo el clúster, ya que pueden bloquear la reconciliación de los componentes de ClickHouse. Describa primero su plan al equipo de soporte para que podamos confirmar que no haya conflictos.
 </Accordion>
 
-### Cómputo y escalado {#compute}
+### Cómputo y escalado
 
 <Accordion title="¿Puedo crear varios servicios en una misma infraestructura BYOC?">
   Sí. La infraestructura (incluido el clúster de Kubernetes) solo debe aprovisionarse una vez por cada combinación de cuenta/proyecto/suscripción de Cloud y región, y todos los servicios que cree en esa región la comparten.
@@ -84,7 +84,7 @@ doc_type: 'reference'
   Sí. Los warehouses (separación de cómputo-cómputo) son compatibles con BYOC: varios servicios comparten los mismos datos, por lo que puede dedicar unos servicios a la ingestión y otros a las consultas.
 </Accordion>
 
-### Red y seguridad {#network-and-security}
+### Red y seguridad
 
 <Accordion title="¿Podemos limitar o revocar los permisos concedidos durante la instalación?">
   Puede reducir los permisos desde el principio en AWS y GCP: los artefactos de incorporación están parametrizados, por lo que puede omitir permisos para administrar la topología de red de su VPC al usar su propia VPC (`IncludeVPCWritePermissions` en CloudFormation, `include_vpc_write_permissions` en los módulos de Terraform). En GCP, esto limita únicamente la administración de la topología; ClickHouse conserva acceso de escritura a los recursos de red de su propiedad dentro de la VPC, como el adjunto de servicio de Private Service Connect y las direcciones de entrada. La subred NAT de Private Service Connect no está entre ellos: con BYO-VPC, [usted mismo la crea](/es/products/bring-your-own-cloud/onboarding/network-gcp#setup-psc) antes de habilitar enlace privado. En AWS, además, en vista previa privada y previa habilitación por parte de soporte, puede administrar usted mismo los roles de IAM (`IncludeIAMWritePermissions=false`, consulte [roles de IAM gestionados por el cliente](/es/products/bring-your-own-cloud/onboarding/customization-aws)); los roles entre cuentas están protegidos mediante un ID externo contra ataques de suplante de identidad. En Azure, el módulo de incorporación concede actualmente un rol fijo con ámbito de suscripción, sin parámetros para limitar su alcance. En todos los proveedores de nube, algunos permisos solo son necesarios para funciones específicas y pueden eliminarse si nunca va a utilizar esas funciones; contacte con soporte si necesita limitar los permisos más allá de lo que permiten los artefactos.
@@ -154,7 +154,7 @@ doc_type: 'reference'
   Actualmente, no para BYOC. Los datos en reposo se cifran con claves gestionadas por el proveedor de Cloud. Consulte la [descripción general](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview) para ver la lista actual de funcionalidades planificadas.
 </Accordion>
 
-### Actualizaciones y mantenimiento {#upgrades-and-maintenance}
+### Actualizaciones y mantenimiento
 
 <Accordion title="¿Cómo funcionan las actualizaciones de versión de ClickHouse? ¿Puedo decidir la frecuencia del mantenimiento?">
   Las actualizaciones funcionan igual que en ClickHouse Cloud: los servicios se adhieren a canales de lanzamiento (rápido, regular o lento) y respetan las ventanas de mantenimiento programadas; contacte con soporte para configurarlas. Espere una programación de actualizaciones de al menos una vez por semana. Las actualizaciones se realizan de forma gradual, réplica por réplica (make-before-break), por lo que no hay tiempo de inactividad de todo el servicio. Consulte [operations](/es/products/bring-your-own-cloud/configuration/operations).
@@ -164,7 +164,7 @@ doc_type: 'reference'
   ClickHouse se encarga de realizar proactivamente las actualizaciones de Kubernetes, antes de las fechas de finalización del soporte del proveedor, y coordina la ventana con usted a través de soporte. Las actualizaciones del plano de control son transparentes; las de los grupos de nodos se realizan nodo por nodo con semántica make-before-break, por lo que puede experimentar breves restablecimientos de conexión mientras se reinician los pods, pero sin pérdida de datos. Consulte [operations](/es/products/bring-your-own-cloud/configuration/operations).
 </Accordion>
 
-### Copias de seguridad y recuperación ante desastres {#backups-and-disaster-recovery}
+### Copias de seguridad y recuperación ante desastres
 
 <Accordion title="¿Dónde se almacenan las copias de seguridad?">
   En el almacenamiento de objetos de su propia cuenta en la nube; las copias de seguridad nunca salen de su entorno. La programación y la retención de las copias de seguridad se pueden configurar; póngase en contacto con el soporte técnico para ajustarlas.
@@ -186,19 +186,19 @@ doc_type: 'reference'
   BYOC se despliega en tres zonas de disponibilidad, y las escrituras solo se confirman cuando el almacenamiento de objetos las confirma. La replicación entre regiones no está disponible actualmente, por lo que la recuperación ante desastres regional se basa en copias de seguridad y el RPO alcanzable está limitado por la frecuencia de las copias de seguridad. La frecuencia y el destino de las copias de seguridad se pueden configurar para ajustarse a sus objetivos, incluido realizar copias de seguridad en un bucket de otra región; póngase en contacto con el soporte técnico para configurarlo.
 </Accordion>
 
-### Observabilidad {#observability}
+### Observabilidad
 
 <Accordion title="¿Cómo podemos integrar BYOC con nuestra propia monitorización y alertas?">
   La pila de monitorización (Prometheus, Grafana, AlertManager) se ejecuta dentro de su cuenta y puede utilizarla directamente mediante conectividad privada: consultarla a través de la API PromQL, federarla en su propio Prometheus o recopilar métricas del endpoint `/metrics_all` de ClickHouse para cada servicio. Actualmente no existe una integración lista para usar con plataformas de terceros como Datadog; intégrela mediante su ingestión compatible con Prometheus. Consulte [observabilidad](/es/products/bring-your-own-cloud/reference/observability-aws) para conocer los endpoints y la configuración.
 </Accordion>
 
-### Coste {#cost}
+### Coste
 
 <Accordion title="¿Qué se paga con BYOC?">
   Dos facturas independientes: ClickHouse Cloud cobra en función de la memoria asignada a tus servicios, y tu proveedor de nube te factura directamente el coste de la infraestructura subyacente, sin recargo. Actualmente, las páginas de referencia detallada sobre costes cubren AWS: consulta el [modelo de costes](/es/products/bring-your-own-cloud/reference/cost-model-aws), los [servicios facturables de AWS](/es/products/bring-your-own-cloud/reference/billable-aws-services) y los [límites de servicio de AWS](/es/products/bring-your-own-cloud/reference/aws-service-limits).
 </Accordion>
 
-### Disponibilidad y ciclo de vida {#availability-and-lifecycle}
+### Disponibilidad y ciclo de vida
 
 <Accordion title="¿En qué proveedores de nube está disponible BYOC?">
   AWS, GCP y Azure están disponibles de forma general. Consulte la [descripción general](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview) para conocer las funcionalidades y regiones compatibles en cada nube.
@@ -208,7 +208,7 @@ doc_type: 'reference'
   Finalice sus servicios y la infraestructura BYOC desde la consola de ClickHouse; no empiece por eliminar recursos ni revocar permisos en la consola de su proveedor de nube, ya que esto interrumpe la conexión con el plano de control durante el proceso y obliga a realizar una limpieza manual. Una vez completada la finalización desde la consola, elimine la pila de incorporación (pila de CloudFormation o módulo de Terraform) y los recursos restantes. En AWS, todos los recursos creados por ClickHouse están etiquetados con `clickhouse-byoc=true`, por lo que puede enumerarlos posteriormente para verificar que no quede nada; en GCP y Azure, el proyecto o la suscripción dedicados que incorporó delimitan lo que debe revisar.
 </Accordion>
 
-### SLA de disponibilidad {#uptime-sla}
+### SLA de disponibilidad
 
 <Accordion title="¿ClickHouse ofrece un SLA de disponibilidad para BYOC?">
   No, dado que el plano de datos está alojado en el entorno de nube del cliente, la disponibilidad del servicio depende de recursos que no están bajo el control de ClickHouse. Por lo tanto, ClickHouse no ofrece un SLA formal de disponibilidad para las implementaciones de BYOC. Tenga en cuenta que los servicios en ejecución operan de forma independiente del plano de control de ClickHouse: una interrupción del plano de control no detiene los servicios que se ejecutan en su cuenta. Si tiene alguna pregunta adicional, póngase en contacto con support@clickhouse.com.

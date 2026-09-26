@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
 
-## 개요 {#synopsis}
+## 개요
 
 ```psql
 # CREATE EXTENSION chdb;
@@ -20,13 +20,13 @@ CREATE EXTENSION
 (1 row)
 ```
 
-## 설명 {#description}
+## 설명
 
 `chdb` 확장 기능은 헬퍼 프로세스에서 [chDB] 쿼리를 실행합니다.
 
-## 함수 {#functions}
+## 함수
 
-### `pgchdb_version` {#pgchdb_version}
+### `pgchdb_version`
 
 ```sql
 SELECT pgchdb_version();
@@ -40,7 +40,7 @@ SELECT version
  WHERE module_name = 'chdb';
 ```
 
-### `chdb_query` {#chdb_query}
+### `chdb_query`
 
 ```sql
 SELECT * FROM chdb_query('SELECT version()') AS (version text);
@@ -77,13 +77,13 @@ Output:
 (5 rows)
 ```
 
-## Text Encoding {#text-encoding}
+## Text Encoding
 
 chDB의 byte string이 Postgres의 `text`, `bytea` 등의 타입에 어떻게 매핑되는지는 [`chdb_hook` 문서의 Text Encoding][text encoding] 섹션을 참조하십시오.
 
-## 설정 {#settings}
+## 설정
 
-### `chdb.max_memory` {#chdbmax_memory}
+### `chdb.max_memory`
 
 ```sql
 SET chdb.max_memory = '1 GB';
@@ -101,7 +101,7 @@ chDB 쿼리에 사용할 최대 메모리 양으로, chDB
 
 기본값은 `0`이며, 이 경우 메모리를 제한하지 않습니다.
 
-### `chdb.max_threads` {#chdmax_threads}
+### `chdb.max_threads`
 
 ```sql
 SET chdb.max_threads = 4;
@@ -114,7 +114,7 @@ chDB 쿼리에 사용할 최대 쿼리 처리 스레드 수이며, chDB [`max_th
 대규모 쿼리를 실행하기 전에 `chdb.max_threads`를 설정하여, chDB가 PostgreSQL의
 자원을 잠식하면서 CPU 사용량을 모두 점유하는 상황을 방지하는 것을 강력히 권장합니다.
 
-### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
+### `chdb.max_parsing_threads`
 
 ```sql
 SET chdb.max_parsing_threads = 2;
@@ -124,7 +124,7 @@ chDB가 병렬 파싱을 지원하는 입력 형식의 데이터를 파싱할 �
 
 [테이블 함수]에서 데이터를 불러오는 경우처럼 대량의 데이터를 파싱하는 쿼리를 실행하기 전에는 `chdb.max_parsing_threads`를 설정하는 것을 권장합니다. 이렇게 하면 chDB가 PostgreSQL의 자원을 희생시키면서 CPU 사용량을 모두 점유하는 것을 방지할 수 있습니다.
 
-## 버전 관리 정책 {#versioning-policy}
+## 버전 관리 정책
 
 chdb 확장 기능은 공개 릴리스에 [Semantic Versioning][semver]을 따릅니다.
 
@@ -149,12 +149,12 @@ chdb 확장 기능은 공개 릴리스에 [Semantic Versioning][semver]을 따�
 함께 제공되므로, 해당 확장 기능이 설치된 모든 기존 데이터베이스에서
 `ALTER EXTENSION chdb UPDATE`를 실행해야 업그레이드 효과를 얻을 수 있습니다.
 
-## 작성자 {#authors}
+## 작성자
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## 저작권 {#copyright}
+## 저작권
 
 Copyright (c) 2026, ClickHouse
 

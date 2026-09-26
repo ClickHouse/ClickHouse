@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
 
-## Краткое описание {#synopsis}
+## Краткое описание
 
 ```psql
 # CREATE EXTENSION chdb;
@@ -20,13 +20,13 @@ CREATE EXTENSION
 (1 row)
 ```
 
-## Описание {#description}
+## Описание
 
 Расширение `chdb` выполняет запросы [chDB] во вспомогательном процессе.
 
-## Функции {#functions}
+## Функции
 
-### `pgchdb_version` {#pgchdb_version}
+### `pgchdb_version`
 
 ```sql
 SELECT pgchdb_version();
@@ -44,7 +44,7 @@ SELECT version
  WHERE module_name = 'chdb';
 ```
 
-### `chdb_query` {#chdb_query}
+### `chdb_query`
 
 ```sql
 SELECT * FROM chdb_query('SELECT version()') AS (version text);
@@ -81,13 +81,13 @@ SELECT * FROM chdb_query(
 (5 rows)
 ```
 
-## Кодирование текста {#text-encoding}
+## Кодирование текста
 
 О том, как байтовые строки chDB сопоставляются с типами Postgres `text`, `bytea` и другими, см. раздел [«Кодирование текста» в документации `chdb_hook`][text encoding].
 
-## Настройки {#settings}
+## Настройки
 
-### `chdb.max_memory` {#chdbmax_memory}
+### `chdb.max_memory`
 
 ```sql
 SET chdb.max_memory = '1 GB';
@@ -105,7 +105,7 @@ SET chdb.max_memory = '1 GB';
 
 Значение по умолчанию — `0`: объём памяти не ограничен.
 
-### `chdb.max_threads` {#chdmax_threads}
+### `chdb.max_threads`
 
 ```sql
 SET chdb.max_threads = 4;
@@ -118,7 +118,7 @@ SET chdb.max_threads = 4;
 запроса, чтобы chDB не загрузила CPU целиком в ущерб
 PostgreSQL.
 
-### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
+### `chdb.max_parsing_threads`
 
 ```sql
 SET chdb.max_parsing_threads = 2;
@@ -128,7 +128,7 @@ SET chdb.max_parsing_threads = 2;
 
 Рекомендуем задавать `chdb.max_parsing_threads` перед выполнением запроса, разбирающего большой объём данных, например при загрузке данных из [табличных функций], чтобы chDB не загружал CPU полностью в ущерб PostgreSQL.
 
-## Политика версионирования {#versioning-policy}
+## Политика версионирования
 
 Расширение chDB следует [семантическому версионированию][semver] в своих
 публичных выпусках.
@@ -155,12 +155,12 @@ SQL-скриптами обновления, и во всех существую
 расширение, необходимо выполнить `ALTER EXTENSION chdb UPDATE`, чтобы получить
 обновление.
 
-## Авторы {#authors}
+## Авторы
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## Авторские права {#copyright}
+## Авторские права
 
 Copyright (c) 2026, ClickHouse
 

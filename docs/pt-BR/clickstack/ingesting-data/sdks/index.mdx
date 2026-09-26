@@ -13,13 +13,13 @@ Os SDKs de linguagem são responsáveis por coletar telemetria de dentro da sua 
 
 Em ambientes baseados em navegador, os SDKs também podem ser responsáveis por coletar **dados de sessão**, incluindo eventos da UI, cliques e navegação, permitindo assim a reprodução das sessões dos usuários.
 
-## Como funciona {#how-it-works}
+## Como funciona
 
 1. Sua aplicação usa um SDK do ClickStack (por exemplo, Node.js, Python, Go). Esses SDKs são baseados nos SDKs do OpenTelemetry, com recursos adicionais e melhorias de usabilidade.
 2. O SDK coleta e exporta traces e logs via OTLP (HTTP ou gRPC).
 3. O coletor do OpenTelemetry recebe a telemetria e a grava no ClickHouse por meio dos exporters configurados.
 
-## Linguagens compatíveis {#supported-languages}
+## Linguagens compatíveis
 
 <Info>
   **Compatibilidade com OpenTelemetry**
@@ -44,7 +44,7 @@ Em ambientes baseados em navegador, os SDKs também podem ser responsáveis por 
 | React Native | Aplicações móveis React Native                                      | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/react-native) |
 | Ruby         | Aplicações Ruby on Rails e serviços web                             | [Documentação](/pt-BR/clickstack/ingesting-data/sdks/ruby)         |
 
-## Proteção com API key {#securing-api-key}
+## Proteção com API key
 
 <Info>
   **Não é necessário para o Managed ClickStack**
@@ -66,7 +66,7 @@ Para a maioria dos [SDKs de linguagem](/pt-BR/clickstack/ingesting-data/sdks/ind
 export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 ```
 
-## Integração com Kubernetes {#kubernetes-integration}
+## Integração com Kubernetes
 
 Todos os SDKs oferecem suporte à correlação automática com metadados do Kubernetes (nome do pod, espaço de nomes etc.) quando executados em um ambiente Kubernetes. Isso permite:
 

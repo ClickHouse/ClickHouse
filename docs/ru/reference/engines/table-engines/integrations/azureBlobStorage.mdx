@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Этот движок обеспечивает интеграцию с экосистемой [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
 
-## CREATE TABLE {#create-table}
+## CREATE TABLE
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -19,7 +19,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-### Параметры движка {#engine-parameters}
+### Параметры движка
 
 * `endpoint` — URL конечной точки AzureBlobStorage с контейнером и префиксом. При необходимости также может содержать account&#95;name, если этого требует используемый метод аутентификации. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) Либо эти параметры можно передать отдельно через storage&#95;account&#95;url, account&#95;name и container. Для указания префикса следует использовать endpoint.
 * `endpoint_contains_account_name` - Этот флаг указывает, содержит ли endpoint account&#95;name, так как он нужен только для некоторых методов аутентификации. (По умолчанию: true)
@@ -55,14 +55,14 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
-## Виртуальные столбцы {#virtual-columns}
+## Виртуальные столбцы
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
 * `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер неизвестен, значение — `NULL`.
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 
-## Аутентификация {#authentication}
+## Аутентификация
 
 Сейчас доступны 3 способа аутентификации:
 
@@ -70,7 +70,7 @@ SELECT * FROM test_table;
 * `SAS Token` — можно использовать, указав `endpoint`, `connection_string` или `storage_account_url`. Определяется по наличию символа `?` в URL. Примеры см. в [azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens).
 * `Workload Identity` — можно использовать, указав `endpoint` или `storage_account_url`. Если в конфигурации задан параметр `use_workload_identity`, для аутентификации используется [workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications).
 
-### Кэш данных {#data-cache}
+### Кэш данных
 
 Движок таблицы `Azure` поддерживает кэширование данных на локальном диске.
 Параметры конфигурации файлового кэша и примеры его использования см. в этом [разделе](/ru/concepts/features/configuration/server-config/storing-data#using-local-cache).
@@ -99,13 +99,13 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 2. повторно использовать конфигурацию кэша (и, следовательно, хранилище кэша) из раздела `storage_configuration` ClickHouse, [описанного здесь](/ru/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
-### PARTITION BY {#partition-by}
+### PARTITION BY
 
 `PARTITION BY` — необязателен. В большинстве случаев ключ партиционирования не нужен, а если он всё же нужен, то обычно не стоит делать его детальнее, чем по месяцам. Партиционирование не ускоряет запросы (в отличие от выражения ORDER BY). Никогда не используйте слишком мелкое партиционирование. Не разбивайте данные на партиции по идентификаторам или именам клиентов (вместо этого сделайте идентификатор или имя клиента первым столбцом в выражении ORDER BY).
 
 Для партиционирования по месяцам используйте выражение `toYYYYMM(date_column)`, где `date_column` — столбец с датой типа [Date](/ru/reference/data-types/date). Имена партиций в этом случае имеют формат `"YYYYMM"`.
 
-#### Стратегия партиционирования {#partition-strategy}
+#### Стратегия партиционирования
 
 `wildcard`: заменяет подстановку `{_partition_id}` в пути к файлу фактическим ключом партиционирования. Чтение не поддерживается. По умолчанию выбирается, когда путь содержит `{_partition_id}`.
 
@@ -132,7 +132,7 @@ select _path, * from azure_table;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-## См. также {#see-also}
+## См. также
 
 [Табличная функция Azure Blob Storage](/ru/reference/functions/table-functions/azureBlobStorage)
 

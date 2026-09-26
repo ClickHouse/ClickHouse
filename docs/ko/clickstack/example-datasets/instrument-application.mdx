@@ -21,14 +21,14 @@ HackerNews Analyzer는 공개 ClickHouse 데모에서 호스팅되는 HackerNews
 
 이는 로컬 Docker ClickStack에서 브라우저 전용 앱을 계측하는 [세션 리플레이 데모](/ko/clickstack/example-datasets/session-replay)와는 다른 작업입니다. 여기서는 하나의 앱에서 backend 자동 계측, ClickHouse 쿼리 스팬, 세션 리플레이를 모두 사용할 수 있습니다.
 
-## 사전 요구 사항 {#prerequisites}
+## 사전 요구 사항
 
 * Node 18+ 및 npm
 * ClickStack OTLP/HTTP 엔드포인트 및 수집 토큰:
   * **ClickHouse Cloud:** service를 열고 **ClickStack** → **OpenTelemetry exporter 구성** → **Env vars**로 이동합니다. protocol은 `http/protobuf`입니다. headers는 `Bearer` prefix 없이 `authorization=<ingestion token>`으로 설정합니다.
   * **로컬 collector:** `http://localhost:4318`을 사용합니다. collector가 보안 설정되지 않은 경우 `authorization=`을 비워 둡니다.
 
-## 리포지토리 복제 {#clone-the-repository}
+## 리포지토리 복제
 
 [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) 리포지토리를 복제하고 의존성을 설치한 다음 환경 변수 템플릿을 복사합니다:
 
@@ -43,7 +43,7 @@ cp .env.example .env
 
 <InstrumentApplication />
 
-## 더 알아보기 {#learn-more}
+## 더 알아보기
 
 * [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer): 이 가이드에서 계측하는 데모 리포지토리입니다.
 * [세션 리플레이](/ko/clickstack/features/session-replay): 기능 개요, SDK 옵션, 개인정보 보호 제어.

@@ -19,7 +19,7 @@ doc_type: 'reference'
 Distributed エンジンを使用するテーブルは自身のデータを保存しませんが、複数のサーバーにまたがる分散クエリ処理を可能にします。
 読み取りは自動的に並列化されます。読み取り時には、存在する場合、リモートサーバー上のテーブルの索引が使用されます。
 
-## テーブルの作成 {#distributed-creating-a-table}
+## テーブルの作成
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -31,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-### テーブルから {#distributed-from-a-table}
+### テーブルから
 
 `Distributed` テーブルが現在のサーバー上のテーブルを参照している場合は、そのテーブルのスキーマをそのまま利用できます。
 
@@ -39,7 +39,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-### Remote および RemoteSecure エンジン {#distributed-remote-engines}
+### Remote および RemoteSecure エンジン
 
 `Remote` と `RemoteSecure` は永続的なテーブルエンジンで、[`remote` と `remoteSecure`](/ja/reference/functions/table-functions/remote) テーブル関数と同じアドレス式および認証情報を指定できます。
 
@@ -68,7 +68,7 @@ SELECT * FROM remote_one;
 
 対象にはテーブル関数を指定することもでき、たとえば `Remote('127.0.0.1', numbers(10))` や `Remote('127.0.0.1', merge(db, '^table_'))` などがあります。このようなテーブルは読み取り専用です。挿入先となるリモートテーブルが存在しないため、`INSERT` は `NOT_IMPLEMENTED` 例外で拒否されます。この読み取り専用の制限は、`remote` および `remoteSecure` テーブル関数にも同様に適用されます。通常の `db`/`table` を対象とする場合は `SELECT` と `INSERT` の両方がサポートされますが、テーブル関数を対象とする場合 (`remote('127.0.0.1', numbers(10))`) は、同じ理由で読み取り専用になります。
 
-### Distributed パラメーター {#distributed-parameters}
+### Distributed パラメーター
 
 | パラメーター                    | 説明                                                                                                                                                                                                                                                                                                                    |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -83,7 +83,7 @@ SELECT * FROM remote_one;
 * [distributed&#95;foreground&#95;insert](/ja/reference/settings/session-settings/distributed#distributed_foreground_insert) 設定
 * 例については [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) を参照してください
 
-### Distributed の設定 {#distributed-settings}
+### Distributed の設定
 
 | 設定                                         | 説明                                                                                                                                                                                                                                | デフォルト値                         |
 | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
@@ -128,7 +128,7 @@ SETTINGS
 
 データベース名の代わりに、文字列を返す定数式を使用できます。例: `currentDatabase()`。
 
-## クラスター {#distributed-clusters}
+## クラスター
 
 クラスターは、[サーバー設定ファイル](/ja/concepts/features/configuration/server-config/configuration-files)で構成します。
 
@@ -214,7 +214,7 @@ SETTINGS
 
 毎回、未知の分片とレプリカの集合にクエリを送る必要がある場合は、`Distributed` テーブルを作成する必要はありません。代わりに `remote` テーブル関数を使用してください。[テーブル関数](/ja/reference/functions/table-functions/index) セクションを参照してください。
 
-## データの書き込み {#distributed-writing-data}
+## データの書き込み
 
 クラスターにデータを書き込む方法は 2 つあります。
 
@@ -247,7 +247,7 @@ SETTINGS
 
 `Distributed` テーブルへの `INSERT` 後にサーバーが停止した、または異常終了した場合 (たとえばハードウェア障害による場合) 、挿入されたデータが失われる可能性があります。テーブルディレクトリで破損したデータパートが検出されると、それは `broken` サブディレクトリに移され、以後は使用されません。
 
-## データの読み取り {#distributed-reading-data}
+## データの読み取り
 
 `Distributed` テーブルに対してクエリを実行すると、`SELECT` クエリはすべての分片に送信され、データが分片間でどのように分散されていても機能します (完全にランダムに分散されていても問題ありません) 。新しい分片を追加しても、古いデータをその分片に移行する必要はありません。代わりに、より大きな重みを設定して新しいデータを書き込めます。データの分布はやや不均一になりますが、クエリは正しく効率的に動作します。
 
@@ -255,9 +255,9 @@ SETTINGS
 
 分散 `in` および `global in` クエリがどのように処理されるかについて詳しくは、[こちら](/ja/reference/statements/in#distributed-subqueries) のドキュメントを参照してください。
 
-## 仮想カラム {#virtual-columns}
+## 仮想カラム
 
-#### _Shard_num {#_shard_num}
+#### _Shard_num
 
 `_shard_num` — テーブル `system.clusters` の `shard_num` の値が格納されています。型: [UInt32](/ja/reference/data-types/int-uint)。
 

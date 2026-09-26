@@ -10,7 +10,7 @@ sidebarTitle: 'Referência da API'
 
 Este documento fornece uma referência detalhada da API dos recursos personalizados do ClickHouse Operator.
 
-## AdditionalPort {#additionalport}
+## AdditionalPort
 
 AdditionalPort declara uma porta TCP adicional a ser exposta no pod do Kubernetes do ClickHouse e no Service headless público.
 
@@ -23,7 +23,7 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## CABundleSelector {#cabundleselector}
+## CABundleSelector
 
 CABundleSelector seleciona uma chave que contém um bundle de CA de um Secret no Espaço de nomes do cluster.
 
@@ -36,11 +36,11 @@ Aparece em:
 
 * [ClusterTLSSpec](#clustertlsspec)
 
-## ClickHouseCluster {#clickhousecluster}
+## ClickHouseCluster
 
 ClickHouseCluster é o schema da API `clickhouseclusters`.
 
-### Versão da API e Kind {#clickhousecluster-api-version-and-kind}
+### Versão da API e Kind
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -56,11 +56,11 @@ Aparece em:
 
 * [ClickHouseClusterList](#clickhouseclusterlist)
 
-## ClickHouseClusterList {#clickhouseclusterlist}
+## ClickHouseClusterList
 
 ClickHouseClusterList contém uma lista de ClickHouseCluster.
 
-### Versão da API e Kind {#clickhouseclusterlist-api-version-and-kind}
+### Versão da API e Kind
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -71,7 +71,7 @@ kind: ClickHouseClusterList
 | ------- | ------------------------------------------------ | --------- | ----------- | ------ |
 | `items` | array de [ClickHouseCluster](#clickhousecluster) |           | true        |        |
 
-## ClickHouseClusterSpec {#clickhouseclusterspec}
+## ClickHouseClusterSpec
 
 ClickHouseClusterSpec define o estado desejado do ClickHouseCluster.
 
@@ -99,7 +99,7 @@ Aparece em:
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseClusterStatus {#clickhouseclusterstatus}
+## ClickHouseClusterStatus
 
 ClickHouseClusterStatus define o estado observado de ClickHouseCluster.
 
@@ -119,7 +119,7 @@ Aparece em:
 
 * [ClickHouseCluster](#clickhousecluster)
 
-## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
+## ClickHouseNetworkPolicySpec
 
 ClickHouseNetworkPolicySpec configura a NetworkPolicy gerenciada para o cluster do ClickHouse.
 A política gerenciada abrange o tráfego interno do cluster:
@@ -136,7 +136,7 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClickHouseSettings {#clickhousesettings}
+## ClickHouseSettings
 
 ClickHouseSettings define as opções de configuração do servidor ClickHouse.
 
@@ -154,7 +154,7 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ClusterTLSSpec {#clustertlsspec}
+## ClusterTLSSpec
 
 ClusterTLSSpec define a configuração de TLS do cluster.
 
@@ -170,7 +170,7 @@ Aparece em:
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## ConfigMapKeySelector {#configmapkeyselector}
+## ConfigMapKeySelector
 
 ConfigMapKeySelector seleciona uma chave de um ConfigMap.
 
@@ -183,7 +183,7 @@ Aparece em:
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## ContainerImage {#containerimage}
+## ContainerImage
 
 ContainerImage define uma imagem de contêiner com repositório, tag ou hash.
 
@@ -197,7 +197,7 @@ Aparece em:
 
 * [ContainerTemplateSpec](#containertemplatespec)
 
-## ContainerTemplateSpec {#containertemplatespec}
+## ContainerTemplateSpec
 
 ContainerTemplateSpec descreve as sobrescritas de configuração dos contêineres do cluster.
 
@@ -217,7 +217,7 @@ Aparece em:
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## DefaultPasswordSelector {#defaultpasswordselector}
+## DefaultPasswordSelector
 
 DefaultPasswordSelector seleciona a origem da senha do usuário padrão.
 
@@ -231,7 +231,7 @@ Aparece em:
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## EncryptionSettings {#encryptionsettings}
+## EncryptionSettings
 
 EncryptionSettings habilita a criptografia em repouso dos dados de tabelas. Quando presente, o operador gera uma
 política de armazenamento criptografada do ClickHouse que encapsula cada disco de dados; as tabelas a utilizam por meio de `SETTINGS storage_policy`.
@@ -245,7 +245,7 @@ Aparece em:
 
 * [ClickHouseSettings](#clickhousesettings)
 
-## ExternalSecret {#externalsecret}
+## ExternalSecret
 
 ExternalSecret é uma referência a um Secret no mesmo Espaço de nomes.
 
@@ -258,7 +258,7 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## ExternalSecretPolicy {#externalsecretpolicy}
+## ExternalSecretPolicy
 
 ExternalSecretPolicy controla como o operador trata o conteúdo do Secret externo.
 
@@ -271,11 +271,11 @@ Aparece em:
 
 * [ExternalSecret](#externalsecret)
 
-## KeeperCluster {#keepercluster}
+## KeeperCluster
 
 KeeperCluster é o schema da API `keeperclusters`.
 
-### Versão da API e Kind {#keepercluster-api-version-and-kind}
+### Versão da API e Kind
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -291,11 +291,11 @@ Aparece em:
 
 * [KeeperClusterList](#keeperclusterlist)
 
-## KeeperClusterList {#keeperclusterlist}
+## KeeperClusterList
 
 KeeperClusterList contém uma lista de KeeperCluster.
 
-### Versão da API e Kind {#keeperclusterlist-api-version-and-kind}
+### Versão da API e Kind
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -306,7 +306,7 @@ kind: KeeperClusterList
 | ------- | ------------------------------------- | --------- | ----------- | ------ |
 | `items` | [KeeperCluster](#keepercluster) array |           | true        |        |
 
-## KeeperClusterReference {#keeperclusterreference}
+## KeeperClusterReference
 
 KeeperClusterReference identifica o KeeperCluster utilizado por um ClickHouseCluster.
 
@@ -319,7 +319,7 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## KeeperClusterSpec {#keeperclusterspec}
+## KeeperClusterSpec
 
 KeeperClusterSpec define o estado desejado do KeeperCluster.
 
@@ -342,7 +342,7 @@ Aparece em:
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperClusterStatus {#keeperclusterstatus}
+## KeeperClusterStatus
 
 KeeperClusterStatus define o estado observado de KeeperCluster.
 
@@ -362,7 +362,7 @@ Aparece em:
 
 * [KeeperCluster](#keepercluster)
 
-## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
+## KeeperNetworkPolicySpec
 
 KeeperNetworkPolicySpec configura a NetworkPolicy gerenciada para o cluster Keeper.
 A política gerenciada abrange o tráfego interno do cluster:
@@ -380,7 +380,7 @@ Aparece em:
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## KeeperSettings {#keepersettings}
+## KeeperSettings
 
 KeeperSettings define as configurações do servidor ClickHouse Keeper.
 
@@ -394,7 +394,7 @@ Aparece em:
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## LoggerConfig {#loggerconfig}
+## LoggerConfig
 
 LoggerConfig define a configuração de logging do servidor.
 
@@ -411,7 +411,7 @@ Aparece em:
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-## NamedTemplateMeta {#namedtemplatemeta}
+## NamedTemplateMeta
 
 NamedTemplateMeta define as configurações de metadados compatíveis para objetos de template que exigem um nome.
 
@@ -425,7 +425,7 @@ Aparece em:
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
 
-## NetworkPolicyPolicy {#networkpolicypolicy}
+## NetworkPolicyPolicy
 
 NetworkPolicyPolicy controla se o operador gerencia uma NetworkPolicy para o cluster.
 
@@ -439,7 +439,7 @@ Aparece em:
 * [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
 * [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
-## PDBPolicy {#pdbpolicy}
+## PDBPolicy
 
 PDBPolicy controla se os PodDisruptionBudgets serão criados.
 
@@ -453,7 +453,7 @@ Aparece em:
 
 * [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-## PersistentVolumeClaimTemplate {#persistentvolumeclaimtemplate}
+## PersistentVolumeClaimTemplate
 
 PersistentVolumeClaimTemplate é um template nomeado para um PersistentVolumeClaim por réplica.
 
@@ -466,7 +466,7 @@ Aparece em:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
+## PodDisruptionBudgetSpec
 
 PodDisruptionBudgetSpec configura o PDB criado para o cluster.
 Exatamente um entre MinAvailable ou MaxUnavailable pode ser definido.
@@ -484,7 +484,7 @@ Aparece em:
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## PodTemplateSpec {#podtemplatespec}
+## PodTemplateSpec
 
 PodTemplateSpec descreve as substituições da configuração de pod do Kubernetes para os pods do Kubernetes do cluster.
 
@@ -512,7 +512,7 @@ Aparece em:
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-## SecretKeySelector {#secretkeyselector}
+## SecretKeySelector
 
 SecretKeySelector seleciona uma chave de um Secret.
 
@@ -525,7 +525,7 @@ Aparece em:
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-## TemplateMeta {#templatemeta}
+## TemplateMeta
 
 TemplateMeta define as configurações de metadados compatíveis para objetos de template.
 
@@ -539,7 +539,7 @@ Aparece em:
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbeContainer {#versionprobecontainer}
+## VersionProbeContainer
 
 VersionProbeContainer define substituições no nível do contêiner para a sonda de versão.
 Os nomes dos campos e as tags JSON correspondem a corev1.Container para que as mesclagens SMP sejam feitas por nome.
@@ -554,7 +554,7 @@ Aparece em:
 
 * [VersionProbePodSpec](#versionprobepodspec)
 
-## VersionProbeJobSpec {#versionprobejobspec}
+## VersionProbeJobSpec
 
 VersionProbeJobSpec define substituições no nível do Job para a sonda de versão.
 
@@ -567,7 +567,7 @@ Aparece em:
 
 * [VersionProbeTemplate](#versionprobetemplate)
 
-## VersionProbePodSpec {#versionprobepodspec}
+## VersionProbePodSpec
 
 VersionProbePodSpec define substituições no nível de pod do Kubernetes para a sonda de versão.
 Os nomes dos campos e as tags JSON correspondem a corev1.PodSpec para compatibilidade com strategic merge patch.
@@ -583,7 +583,7 @@ Aparece em:
 
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 
-## VersionProbePodTemplate {#versionprobepodtemplate}
+## VersionProbePodTemplate
 
 VersionProbePodTemplate descreve substituições para o pod do Kubernetes de sonda de versão.
 
@@ -596,7 +596,7 @@ Aparece em:
 
 * [VersionProbeJobSpec](#versionprobejobspec)
 
-## VersionProbeTemplate {#versionprobetemplate}
+## VersionProbeTemplate
 
 VersionProbeTemplate define substituições para o Job de detecção de versão.
 A estrutura corresponde a `batchv1.JobTemplateSpec`, expondo apenas os campos compatíveis.

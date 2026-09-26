@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 바탕으로 자동 생성됩니다.
 
-## compatibility {#compatibility}
+## compatibility
 
 `compatibility` 설정을 사용하면, 설정 변경 이력에 기록된 예외를 제외하고 이전 ClickHouse 버전의 기본 설정을 ClickHouse에서 사용합니다.
 
@@ -30,7 +30,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
   하지만 `compatibility` 설정은 세션에서 `SET compatibility = '22.3'`를 사용하거나 쿼리에서 `SETTINGS compatibility = '22.3'`를 사용하는 등 표준 ClickHouse 설정 메커니즘을 통해 사용자, 역할, 프로필, 쿼리 또는 세션 수준에서 재정의할 수 있습니다.
 </Note>
 
-## compatibility_s3_presigned_url_query_in_path {#compatibility_s3_presigned_url_query_in_path}
+## compatibility_s3_presigned_url_query_in_path
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

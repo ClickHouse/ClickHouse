@@ -18,7 +18,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 
 Эта возможность не поддерживается инженерами ClickHouse, и её качество, как известно, оставляет желать лучшего. Если возникнут какие-либо проблемы, исправляйте их самостоятельно и отправляйте pull request.
 
-## Использование {#usage}
+## Использование
 
 ```sql
 ENGINE = HDFS(URI, format)
@@ -33,7 +33,7 @@ ENGINE = HDFS(URI, format)
   [Форматы](/ru/reference/formats/index#formats-overview).
 * [PARTITION BY expr]
 
-### PARTITION BY {#partition-by}
+### PARTITION BY
 
 `PARTITION BY` — необязателен. В большинстве случаев ключ партиционирования не нужен, а если и нужен, то обычно достаточно партиционирования по месяцам. Партиционирование не ускоряет запросы (в отличие от выражения ORDER BY). Никогда не используйте слишком мелкое партиционирование. Не разбивайте данные на партиции по идентификаторам или именам клиентов (вместо этого сделайте идентификатор или имя клиента первым столбцом в выражении ORDER BY).
 
@@ -66,7 +66,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-## Подробности реализации {#implementation-details}
+## Подробности реализации
 
 * Чтение и запись могут выполняться параллельно.
 * Не поддерживаются:
@@ -132,7 +132,7 @@ CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs
 CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
 
-## Конфигурация {#configuration}
+## Конфигурация
 
 Как и GraphiteMergeTree, движок HDFS поддерживает расширенную настройку через файл конфигурации ClickHouse. Можно использовать два ключа конфигурации: глобальный (`hdfs`) и пользовательский (`hdfs_*`). Сначала применяется глобальная конфигурация, затем — пользовательская (если она задана).
 
@@ -150,9 +150,9 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 </hdfs_root>
 ```
 
-### Параметры конфигурации {#configuration-options}
+### Параметры конфигурации
 
-#### Поддерживается в libhdfs3 {#supported-by-libhdfs3}
+#### Поддерживается в libhdfs3
 
 | **параметр**                                                            | **значение по умолчанию**         |
 | ----------------------------------------------------------------------- | --------------------------------- |
@@ -200,7 +200,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 Некоторые параметры могут быть описаны в [справочнике по конфигурации HDFS](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html).
 
-#### Дополнительные параметры ClickHouse {#clickhouse-extras}
+#### Дополнительные параметры ClickHouse
 
 | **параметр**                      | **значение по умолчанию** |
 | --------------------------------- | ------------------------- |
@@ -208,11 +208,11 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 | hadoop&#95;kerberos&#95;principal | &quot;&quot;              |
 | libhdfs3&#95;conf                 | &quot;&quot;              |
 
-### Ограничения {#limitations}
+### Ограничения
 
 * `hadoop_security_kerberos_ticket_cache_path` и `libhdfs3_conf` могут быть только глобальными, а не пользовательскими
 
-## Поддержка Kerberos {#kerberos-support}
+## Поддержка Kerberos
 
 Если параметр `hadoop_security_authentication` имеет значение `kerberos`, ClickHouse выполняет аутентификацию через Kerberos.
 Параметры приведены [здесь](#clickhouse-extras), также может быть полезен `hadoop_security_kerberos_ticket_cache_path`.
@@ -222,7 +222,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 Если указаны `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` или `hadoop_security_kerberos_ticket_cache_path`, будет использоваться аутентификация Kerberos. В этом случае `hadoop_kerberos_keytab` и `hadoop_kerberos_principal` обязательны.
 
-## Поддержка HA для NameNode в HDFS {#namenode-ha}
+## Поддержка HA для NameNode в HDFS
 
 libhdfs3 поддерживает HA для NameNode в HDFS.
 
@@ -237,7 +237,7 @@ libhdfs3 поддерживает HA для NameNode в HDFS.
 
 * Затем используйте значение тега `dfs.nameservices` из `hdfs-site.xml` в качестве адреса NameNode в URI HDFS. Например, замените `hdfs://appadmin@192.168.101.11:8020/abc/` на `hdfs://appadmin@my_nameservice/abc/`.
 
-## Виртуальные столбцы {#virtual-columns}
+## Виртуальные столбцы
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
@@ -245,7 +245,7 @@ libhdfs3 поддерживает HA для NameNode в HDFS.
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 * `_etag` — ETag файла. Тип: `LowCardinality(String)`. В HDFS нет нативного ETag, поэтому значение синтезируется на основе времени изменения и размера файла в виде `<mtime_seconds>_<size>`. Поскольку `libhdfs3` предоставляет время изменения только с точностью до секунды, перезапись в пределах той же секунды с сохранением того же размера даёт то же значение; поэтому этот синтезированный ETag не используется в качестве ключа кэша содержимого.
 
-## Настройки хранилища {#storage-settings}
+## Настройки хранилища
 
 * [hdfs&#95;truncate&#95;on&#95;insert](/ru/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - позволяет обрезать файл перед вставкой в него. По умолчанию отключено.
 * [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/ru/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - позволяет создавать новый файл при каждой вставке, если у формата есть суффикс. По умолчанию отключено.

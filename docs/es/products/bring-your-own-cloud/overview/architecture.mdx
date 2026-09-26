@@ -10,7 +10,7 @@ doc_type: 'referencia'
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <div id="key-concepts">
-  ## Conceptos clave {#key-concepts}
+  ## Conceptos clave
 </div>
 
 El diagrama siguiente muestra cómo se relacionan entre sí las organizaciones de ClickHouse Cloud, las cuentas en la nube y la infraestructura BYOC.
@@ -27,13 +27,13 @@ El diagrama siguiente muestra cómo se relacionan entre sí las organizaciones d
   La combinación de cuentas de AWS, proyectos de GCP y suscripciones de Azure en una misma organización solo es posible para clientes que no estén configurados a través de un [marketplace de proveedores de servicios cloud](/es/products/cloud/reference/billing/marketplace/overview).
 </Note>
 
-## Glosario {#glossary}
+## Glosario
 
 * **ClickHouse VPC:**  La VPC que pertenece a ClickHouse Cloud.
 * **VPC BYOC del cliente:** La VPC, que pertenece a la cuenta en la nube del cliente, es aprovisionada y gestionada por ClickHouse Cloud, y está dedicada a una implementación de BYOC de ClickHouse Cloud.
 * **Customer VPC:** Otras VPC que pertenecen a la cuenta en la nube del cliente y se utilizan para aplicaciones que necesitan conectarse a la VPC BYOC del cliente.
 
-## Arquitectura técnica {#architecture}
+## Arquitectura técnica
 
 BYOC separa el **plano de control de ClickHouse**, que se ejecuta en la VPC de ClickHouse, del **plano de datos**, que se ejecuta por completo en su cuenta en la nube. La VPC de ClickHouse aloja la ClickHouse Cloud Console, la autenticación, la gestión de usuarios, las API, la facturación, componentes de gestión de infraestructura como el controlador de BYOC y herramientas de alertas y gestión de incidentes. Estos servicios orquestan y supervisan su despliegue, pero no almacenan sus datos.
 
@@ -55,24 +55,24 @@ Los principales recursos de Cloud que ClickHouse Cloud desplegará en su cuenta 
 De forma predeterminada, ClickHouse Cloud aprovisiona una VPC nueva y dedicada, y configura los roles de IAM necesarios para garantizar el funcionamiento seguro de los servicios de Kubernetes. Para las organizaciones con necesidades avanzadas de red o seguridad, también existe la opción de gestionar la VPC y los roles de IAM de forma independiente. Este enfoque permite una mayor personalización de las configuraciones de red y un control más preciso sobre los permisos. Sin embargo, optar por autogestionar estos recursos aumentará sus responsabilidades operativas.
 
 <div id="data-storage">
-  ### Almacenamiento de datos {#data-storage}
+  ### Almacenamiento de datos
 </div>
 
 Sus datos de ClickHouse, las copias de seguridad, los logs y los datos de monitorización permanecen en su cuenta en la nube; los únicos datos que se exportan a otro lugar son los datos acotados de telemetría de uso y estado que se enumeran en [límites de red](/es/products/bring-your-own-cloud/reference/network-security#outbound-connections). Las partes de datos y las copias de seguridad se almacenan en su almacenamiento de objetos (por ejemplo, Amazon S3), mientras que los logs se almacenan en los volúmenes de almacenamiento conectados a sus nodos de ClickHouse. En una futura actualización, los logs se escribirán en LogHouse, un servicio de logging basado en ClickHouse que también se ejecuta dentro de su VPC BYOC. Las métricas pueden almacenarse localmente o, para su conservación a largo plazo, en un bucket dedicado dentro de su propia cuenta: el almacenamiento de objetos se sitúa fuera de la VPC/VNet y se accede a él a través de la ruta de la API de almacenamiento del proveedor. La conectividad del plano de control entre la VPC de ClickHouse y su VPC BYOC se utiliza únicamente para operaciones de gestión, nunca para el tráfico de consultas. De forma predeterminada, los servicios de administración de ClickHouse acceden a la API de Kubernetes de su cluster a través de su endpoint público, que nunca queda expuesto sin restricciones: en AWS, el acceso está restringido mediante una lista de permitidos de IP a los rangos de salida de ClickHouse; en GCP, se autoriza mediante Google Cloud IAM, y en Azure, mediante Microsoft Entra ID junto con Azure RBAC. Como alternativa, puede habilitarse una conexión privada por implementación —AWS VPC Lattice, el endpoint del plano de control basado en DNS de GKE en GCP o Azure Private Link—, como se muestra en el diagrama. En todas las nubes, Tailscale canaliza el acceso de resolución de problemas de los ingenieros de ClickHouse, así como las métricas y los dashboards, y se mantiene incluso cuando la ruta de la API de Kubernetes es privada.
 
 <div id="control-plane-communication">
-  ### Comunicación con el plano de control {#control-plane-communication}
+  ### Comunicación con el plano de control
 </div>
 
 La VPC de ClickHouse se comunica con tu VPC BYOC a través de HTTPS (puerto 443) para operaciones de administración del servicio, como cambios de configuración, comprobaciones de estado y comandos de implementación. Este tráfico transporta únicamente datos del plano de control para la orquestación. La telemetría crítica y las alertas fluyen desde tu VPC BYOC hacia la VPC de ClickHouse para permitir la supervisión del uso de recursos y del estado.
 
 <div id="key-requirements">
-  ## Requisitos clave para BYOC {#key-requirements}
+  ## Requisitos clave para BYOC
 </div>
 
 El modelo de implementación de BYOC requiere dos componentes esenciales para garantizar un funcionamiento fiable, facilidad de mantenimiento y seguridad:
 
-### Permisos de IAM entre cuentas {#cross-account-iam-permissions}
+### Permisos de IAM entre cuentas
 
 ClickHouse Cloud necesita permisos de IAM entre cuentas para aprovisionar y administrar recursos dentro de su cuenta en la nube. Esto permite a ClickHouse:
 
@@ -87,7 +87,7 @@ Estos permisos se otorgan mediante un rol de IAM entre cuentas (AWS), una cuenta
 Para obtener información detallada sobre los permisos específicos necesarios, consulte la [Referencia de privilegios de BYOC](/es/products/bring-your-own-cloud/reference/privilege).
 
 <div id="tailscale-private-network">
-  ### Conexión de red privada de Tailscale {#tailscale-private-network}
+  ### Conexión de red privada de Tailscale
 </div>
 
 Tailscale proporciona una red privada segura y de confianza cero entre ClickHouse Cloud y su implementación de BYOC. Por ella circulan el acceso de diagnóstico y resolución de problemas de los ingenieros de ClickHouse y las métricas y los paneles que ClickHouse utiliza para monitorizar su despliegue, así como el tráfico de la API de Kubernetes cuando se habilita un endpoint privado de la API. Esta conexión permite:
@@ -108,7 +108,7 @@ Esta restricción a conexiones salientes se aplica únicamente al propio Tailsca
 
 Para obtener información detallada sobre cómo funciona Tailscale en BYOC y sobre los controles de seguridad, consulte la [documentación de seguridad de red](/es/products/bring-your-own-cloud/reference/network-security#tailscale-private-network).
 
-### Por qué son importantes estos requisitos {#why-requirements-matter}
+### Por qué son importantes estos requisitos
 
 En conjunto, estos dos componentes permiten a ClickHouse Cloud:
 

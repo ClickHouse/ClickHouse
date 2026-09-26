@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## force_optimize_projection {#force_optimize_projection}
+## force_optimize_projection
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,7 +25,7 @@ Valores possíveis:
 * 0 — A otimização de projeções não é obrigatória.
 * 1 — A otimização de projeções é obrigatória.
 
-## force_optimize_projection_name {#force_optimize_projection_name}
+## force_optimize_projection_name
 
 Se for definido como uma string não vazia, verifique se essa projeção é usada na consulta pelo menos uma vez.
 
@@ -33,7 +33,7 @@ Valores possíveis:
 
 * string: nome da projeção usada em uma consulta
 
-## force_optimize_skip_unused_shards {#force_optimize_skip_unused_shards}
+## force_optimize_skip_unused_shards
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -45,7 +45,7 @@ Valores possíveis:
 * 1 — Habilitado. A execução da consulta é desabilitada somente se a tabela tiver uma chave de sharding.
 * 2 — Habilitado. A execução da consulta é desabilitada independentemente de a tabela ter uma chave de sharding definida.
 
-## force_optimize_skip_unused_shards_nesting {#force_optimize_skip_unused_shards_nesting}
+## force_optimize_skip_unused_shards_nesting
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

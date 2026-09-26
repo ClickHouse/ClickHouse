@@ -15,7 +15,7 @@ ClickHouse Connect には、コアドライバー上に構築された `clickhou
 pip install "clickhouse-connect[sqlalchemy]"
 ```
 
-## SQLAlchemy で接続する {#sqlalchemy-connect}
+## SQLAlchemy で接続する
 
 `clickhousedb://` または `clickhousedb+connect://` のいずれかの URL 形式で engine を作成します。
 
@@ -31,11 +31,11 @@ with engine.connect() as conn:
     print(version)
 ```
 
-### ClickHouseのセッションID {#sqlalchemy-session-ids}
+### ClickHouseのセッションID
 
 同期・非同期いずれのダイアレクトでも、プール内の各接続はデフォルトで個別のClickHouseセッションIDを生成します。その接続からのリクエストが同一のClickHouseサーバープロセスに到達する限り、`SET` で変更した設定や一時テーブルはその接続内で保持されます。名前付きセッションの状態と、同一セッションでの重複実行のチェックは、プロセス単位で管理されます。1つのサーバープロセス上で、同じユーザー・同じセッションIDのリクエストが重複した場合、そのリクエストはキューに入れられることなく、サーバーのエラーコード373で即座に拒否されます。固定の `session_id` を設定する場合は、`pool_size=1, max_overflow=0` を指定するか、リクエストがClickHouseに到達する前にアクセスを直列化してください。ClickHouse Cloudなどロードバランサーを介した環境では、同じセッションIDを持つリクエストが別々のサーバーに到達する可能性があります。そのため、固定の `session_id` を分散状態や分散ミューテックスとして利用しないでください。
 
-### 非同期接続 {#sqlalchemy-async-connections}
+### 非同期接続
 
 非同期ダイアレクトには SQLAlchemy 2.0.44 以降が必要で、ClickHouse Connect のネイティブな `AsyncClient` を使用します。必要な依存関係をインストールし、`clickhousedb+async://` URL を指定して非同期エンジンを作成します:
 
@@ -101,7 +101,7 @@ async def prepare_schema(engine, metadata):
         )
 ```
 
-### クエリごとの設定 {#sqlalchemy-per-query-settings}
+### クエリごとの設定
 
 SQLAlchemy の実行オプションを通じて ClickHouse の設定を渡します。設定は engine、connection、またはステートメントに指定できます。同じキーが指定されている場合、ステートメントの値が connection または engine の値よりも優先されます。
 
@@ -116,7 +116,7 @@ with engine.connect() as conn:
     value = conn.execute(stmt).scalar_one()
 ```
 
-### クエリ単位の読み取りフォーマット {#sqlalchemy-per-query-read-formats}
+### クエリ単位の読み取りフォーマット
 
 `query_formats` を指定した SQLAlchemy の実行オプションを使用して、ClickHouse の読み取りフォーマットを engine、connection、またはステートメントに設定できます。ステートメントのフォーマットが先に適用されるため、一致する connection または engine のオプションやワイルドカードよりも優先されます。
 
@@ -131,7 +131,7 @@ with engine.connect() as conn:
     rows = conn.execute(stmt).all()
 ```
 
-### エラー処理 {#sqlalchemy-error-handling}
+### エラー処理
 
 SQLAlchemy の接続を介してドライバーが送出するエラーには、`clickhouse_connect.dbapi` からエクスポートされている DB-API クラスが使用されます。これらは `clickhouse_connect.driver.exceptions` 内の対応するクラスと同一のクラスオブジェクトであるため、SQLAlchemy はこれらを該当する `sqlalchemy.exc.DBAPIError` サブクラスでラップします。`StreamFailureError` は `OperationalError` の一種であり、`sqlalchemy.exc.OperationalError` としてラップされます。
 
@@ -159,7 +159,7 @@ async def invalidate_safely(connection):
 
 無効化タスクの実行中は、その接続を使用しないでください。直接呼び出した `await connection.invalidate()` がキャンセルされ、`connection.invalidated` が false のままになっている場合は、接続を使用またはクローズする前に `connection.invalidate()` を再度 await して、クリーンアップを完了させてください。
 
-### サーバー側パラメータ {#sqlalchemy-server-side-parameters}
+### サーバー側パラメータ
 
 SQLAlchemy は通常、クライアント側でパラメータを展開します。engine の作成時に ClickHouse のサーバー側パラメータを有効にしてください。
 
@@ -176,7 +176,7 @@ engine = create_engine(
 
 バインド名は ClickHouse の ASCII BareWord 名である必要があります。先頭と末尾が `$` の名前は、コアドライバーが生バイナリクエリパラメータ用に予約しているため拒否されます。
 
-## Core クエリ {#sqlalchemy-core-queries}
+## Core クエリ
 
 このダイアレクトは、JOIN、フィルター、並べ替え、LIMIT と OFFSET、`DISTINCT`、複合 SELECT を含む SQLAlchemy Core の `SELECT` クエリをサポートしています。
 
@@ -211,7 +211,7 @@ with engine.connect() as conn:
     conn.execute(stmt)
 ```
 
-### リテラルのレンダリング {#sqlalchemy-literal-rendering}
+### リテラルのレンダリング
 
 SQLAlchemy が `literal_binds` または `literal_execute` によってバインド値をインライン展開する場合、ダイアレクト は汎用 String 型および ClickHouse 型に ClickHouse のクォーティングを使用します。これは `TypeDecorator` ラッパーおよび `with_variant()` の選択にも適用されます。他のバインドパラメータが残っている場合でも、文字列値内のパーセント記号とバックスラッシュは保持されます。
 
@@ -223,7 +223,7 @@ SQLAlchemy 2.x では、ClickHouse の `Tuple` 要素を含む汎用 `sqlalchemy
 
 名前付きの datetime パラメータを再利用する場合、秒未満の値を保持するには、すべての出現箇所で互換性のある `DateTime64` バインド型を指定する必要があります。型が指定されていない箇所や型が競合する箇所があると、秒単位のフォーマットのままになります。各 `bindparam` に `type_=DateTime64(6)` を設定するか、適切な型を指定した別々のパラメータ名を使用してください。
 
-### JSON型ヒント {#sqlalchemy-json-type-hints}
+### JSON型ヒント
 
 `typed_paths` マッピングを使用して、型付きパスを宣言します。パスの型には、ClickHouse SQLAlchemyの型クラス、設定済みのインスタンス、またはClickHouseの型名文字列を指定できます。型名文字列は、`Dynamic` のようにSQLAlchemyのコンストラクタを持たない型にも対応しており、複雑な型式を設定する用途にも利用できます。また、名前付き `Tuple` の名前も保持されます。
 
@@ -264,7 +264,7 @@ events = Table(
 
 コンストラクタは、ClickHouseが返す正規形と同じ形式で引数を並べます。リフレクションされた型、SQLAlchemyの型のコピー、およびAlembicの自動生成では、この設定が保持されます。
 
-### JSON サブカラム {#sqlalchemy-json-subcolumns}
+### JSON サブカラム
 
 ClickHouse `JSON` として宣言または反映されたカラムでは、角括弧を使用して、ストレージでサポートされるサブカラムパスのセグメントを一度に1つずつ選択します。
 
@@ -310,7 +310,7 @@ request_id = json_subcolumn(request, "id", type_=UInt32)
 
 スペースやバッククォートを含む名前も含め、各セグメントは個別に引用符で囲まれます。バッククォートを使用しても、ClickHouse の JSON path 処理でドットがリテラルとして扱われるわけではありません。`json_type_escape_dots_in_keys` が有効な場合、キー内のリテラルなドットには ClickHouse&#39;s `%2E` エンコーディングを使用します。`a.b` という名前のキーには、`payload["a.b"]` ではなく `payload["a%2Eb"]` でアクセスします。
 
-### ClickHouseクエリ拡張機能 {#sqlalchemy-query-extensions}
+### ClickHouseクエリ拡張機能
 
 静的型チェッカーで型付きの ClickHouse メソッドを利用できるようにするには、`clickhouse_connect.cc_sqlalchemy` から `select` をインポートします。標準の `sqlalchemy.select` でも、実行時にはこれらのメソッドを利用できます。
 
@@ -386,7 +386,7 @@ stmt = select(
 
 標準的な SQLAlchemy の `values()` 構文は、共通テーブル式で使用する場合を含め、ClickHouse の `VALUES` テーブル関数構文にコンパイルされます。CTE 形式には、`Values.cte()` が追加された SQLAlchemy 2.0.42 以降が必要です。
 
-### マテリアライズド CTE {#sqlalchemy-materialized-ctes}
+### マテリアライズド CTE
 
 デフォルトでは、ClickHouse は共通テーブル式をインライン化するため、複数回参照される CTE では、参照のたびにボディが実行されます。`.cte()` に `materialized=True` を渡すと、`WITH <name> AS MATERIALIZED (...)` が出力され、ボディは 1 回だけ計算されます。
 
@@ -428,7 +428,7 @@ ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
 
 ClickHouse は再帰的なマテリアライズド CTE をサポートしていません。SQLAlchemy helpers は、`recursive=True` と `materialized=True` の両方が設定されている場合、`ValueError` を送出します。
 
-## DDL とリフレクション {#sqlalchemy-ddl-reflection}
+## DDL とリフレクション
 
 ClickHouse Connect は、ClickHouse データ型、テーブルエンジン、Dictionary 機能、データベース DDL、テーブルリフレクションをサポートしています。
 
@@ -479,7 +479,7 @@ engine_clause = SummingMergeTree("id", columns=("delta", "n_tx"))
 
 文字列、SQLAlchemy のカラム、マッピングされたカラム属性、またはそれらからなる空でないリストまたはタプルを渡します。リストおよびタプル内の文字列要素は、識別子としてクォートされます。単一の文字列を渡した場合は、`"delta"` や `"(delta, n_tx)"` のような生の SQL として扱われます。サーバー側では、これらのカラムを識別子で指定する必要があります。`columns` を省略すると、合計対象のカラムは ClickHouse によって選択されます。リフレクションおよび Alembic の自動生成では、明示的に指定したカラムリストが保持されます。
 
-## 挿入と基本的な ORM の使用 {#sqlalchemy-inserts}
+## 挿入と基本的な ORM の使用
 
 Core による挿入とシンプルな ORM モデルをサポートしています。同期ダイアレクトでは、互換性のある大量データの処理に、Core の executemany による挿入を推奨します。非同期での一括挿入には、[非同期接続](#sqlalchemy-async-connections)で説明しているネイティブの `AsyncClient.insert()` パスを使用してください。
 
@@ -527,7 +527,7 @@ with Session(engine) as session:
     session.commit()
 ```
 
-## Alembic 移行 {#sqlalchemy-alembic}
+## Alembic 移行
 
 ClickHouse Connect には、ClickHouse のスキーマ移行向けの Alembic インテグレーションが含まれています。インストールするには、次を実行します。
 
@@ -565,7 +565,7 @@ ClickHouse のデータスキッピングインデックスは SQLAlchemy の索
 
 完全な [Alembic の実例](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md) を参照してください。`clickhouse-sqlalchemy` から移行するユーザーは、[移行ガイド](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md) も確認してください。
 
-## 対象範囲と制限事項 {#scope-and-limitations}
+## 対象範囲と制限事項
 
 * ClickHouse は、この HTTP ダイアレクト では従来型のトランザクションを提供しません。`engine.begin()` と `Session.commit()` は Python 側の処理を整理しますが、commit と rollback はサーバー側では no-op です。
 * `UPDATE`、二相トランザクション、シーケンス、`RETURNING`、および高度な分離レベルは、この ダイアレクト では実装されていません。必要に応じて、サーバー側のミューテーションには明示的に ClickHouse SQL を使用してください。

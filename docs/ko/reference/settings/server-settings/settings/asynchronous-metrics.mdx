@@ -12,15 +12,15 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버를 구성하기 위한 것이며 ClickHouse 소스에서 자동 생성됩니다.
 
-## asynchronous_metrics_enable_heavy_metrics {#asynchronous_metrics_enable_heavy_metrics}
+## asynchronous_metrics_enable_heavy_metrics
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />부하가 큰 비동기 메트릭의 계산을 활성화합니다.
 
-## asynchronous_metrics_keeper_metrics_only {#asynchronous_metrics_keeper_metrics_only}
+## asynchronous_metrics_keeper_metrics_only
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />비동기 메트릭이 Keeper 관련 메트릭만 계산하게 합니다.
 
-## asynchronous_metrics_key_values_mode {#asynchronous_metrics_key_values_mode}
+## asynchronous_metrics_key_values_mode
 
 <SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
 
@@ -36,7 +36,7 @@ CPU 코어, 블록 디바이스, 네트워크 인터페이스, 디스크, 온도
 
 이 설정은 동적으로 적용됩니다. 비동기 메트릭이 업데이트될 때마다 다시 읽히므로 재시작 없이 `SYSTEM RELOAD CONFIG`만으로 형식을 전환할 수 있습니다.
 
-## asynchronous_metrics_update_period_s {#asynchronous_metrics_update_period_s}
+## asynchronous_metrics_update_period_s
 
 <SettingsInfoBlock type="UInt32" default_value="1" changeable_without_restart="No" />비동기 메트릭 업데이트 주기(초)입니다.
 

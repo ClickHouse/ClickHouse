@@ -13,7 +13,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 本页是 ClickHouse 连接器的安全参考：涵盖其身份、连接、具体特权、结构性限制，以及每项操作的归因方式。若要了解各部分如何协同工作，请参阅[架构](/zh/products/bring-your-own-cloud/connector/architecture)。
 
-## Identities {#identities}
+## Identities
 
 <Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="ClickHouse 连接器身份模型" />
 
@@ -26,9 +26,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * **连接器 EC2 虚拟机的 instance profile** 会 assume 你环境中的只读 ECR puller role，以进行直接的平台 access，用于 chart 登录和镜像检查。批准用的命令行客户端使用同一条 instance-profile 路径；workstation 上的 AWS profile 或 SSO 凭证无法替代它。其他 ECR chart registry 使用 ambient AWS 凭证。Image pulls 发生在你的节点上，使用节点各自的 pull role。executor 不持有任何针对你的桶或 IAM 的凭证，也不会发起任何 S3 或 IAM 调用。参见 [registry credentials](/zh/products/bring-your-own-cloud/connector/platform-updates#registry-credentials)。
 * **你自己的凭证** 用于授予每一项 授权：在 `init --managed` 时授予 executor 的 access 授权，在 `prepare` 时创建桶和 role，在 `approve` 时提供每次平台更新的 permission 部分，以及在 `teardown` 时执行清理。
 
-## 连接器 的功能 {#what-the-connector-can-do}
+## 连接器 的功能
 
-### 出站连接 {#outbound-connections}
+### 出站连接
 
 连接器建立的每一个连接均由您的环境内部发起。完整列表如下：
 
@@ -47,7 +47,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在入站方向，每个守护进程仅暴露一个本地健康检查端口，该端口同时提供其 Prometheus 指标，此外还有可选启用的会话网关。executor 的本地命令 API 仅绑定到回环地址，除此之外没有任何监听。ClickHouse Cloud 永远不会主动连入您的环境，它只能响应上述两个出站 WebSocket。
 
-### ClickHouse 授权 {#clickhouse-grants}
+### ClickHouse 授权
 
 预配会为每个观测组件创建一个只读用户。用户通过 `IDENTIFIED WITH bcrypt_hash` 创建，因此预配 SQL 中仅包含加盐的 bcrypt 哈希。明文密码仅保存在守护进程运行时读取的凭据文件中。每条 `CREATE USER` 之后的 `ALTER USER` 语句会在指定 `--force` 时轮换哈希。executor 没有 ClickHouse 用户，也从不连接 ClickHouse。授权如下，使用默认表集：
 
@@ -106,9 +106,9 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 
 没有 `INSERT`、DDL、用户管理、设置或进程控制方面的授权。当第二个 连接器 部署共享同一实例时，其用户会带有后缀 (`pcm_scraper_<suffix>`) ，并拥有相同的授权集。
 
-### Kubernetes RBAC {#kubernetes-rbac}
+### Kubernetes RBAC
 
-#### 抓取器与故障排查工具 {#kubernetes-rbac-observing}
+#### 抓取器与故障排查工具
 
 抓取器与故障排查工具不使用集群角色或 ClusterRoleBinding。该 chart 在连接器命名空间中创建命名空间范围内的 Role，并且每个实例的访问包会在该实例所在的 ClickHouse 或 service 命名空间中创建一个 Role。
 
@@ -121,7 +121,7 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 | `pods`, `pods/log`, `pods/status`, `services`, `configmaps`, `events`, `persistentvolumeclaims` | `get`, `list`, `watch` | 仅限 Troubleshooter                                                 |
 | `deployments`, `statefulsets`, `replicasets` (`apps`)                                           | `get`, `list`, `watch` | 仅限 Troubleshooter                                                 |
 
-#### Executor {#kubernetes-rbac-executor}
+#### Executor
 
 在托管模式下，`clicklink clctl init --managed` (或先执行 `clicklink clctl executor access grant --cluster`，再执行 `apply --cluster`) 会使用你的凭证下发 executor 的授权。该授权由以下部分组成：`pcm-executor` ServiceAccount (在 Kubernetes 上位于连接器命名空间，在 VM 安装中位于 `clicklink-system`) 、一个绑定到它的 ClusterRole，以及 `pcm-executor-prefix-guard` ValidatingAdmissionPolicy。
 
@@ -146,13 +146,13 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 
 准入控制不会在 `get`、`list` 或 `watch` 上运行，因此 executor 对这些资源族的读取不受前缀限制。
 
-#### 平台身份 {#kubernetes-rbac-platform}
+#### 平台身份
 
 `clicklink clctl platform approve` 会使用你的凭证应用平台更新中与权限相关的那一半内容：命名空间、CustomResourceDefinitions、ServiceAccounts、集群角色与 ClusterRoleBindings、Roles 与 RoleBindings、webhook 与 admission 配置、PriorityClasses，以及存储类。随后它会应用 `pcm-platform` ServiceAccount、其集群角色、`pcm-platform-scope-guard` ValidatingAdmissionPolicy 以及相应绑定，并签发一个有效期为 2 小时的绑定 token。
 
 凭借该 token，executor 只能写入 `deployments`、`services`、`configmaps`、`secrets`、`jobs` 和 `poddisruptionbudgets`，且仅限于 scope guard 允许的平台命名空间。它可以读取 `pods`、`events`、`namespaces`、`serviceaccounts`、CustomResourceDefinitions、RBAC 对象、webhook 配置、StorageClasses 和 PriorityClasses，以便在应用任何变更前确认权限部分已就位。它从不持有 `escalate`、`bind` 或 `impersonate` 权限，从不写入集群范围的 kind 或 RBAC 对象，也无法为自己签发或续期 token。该 token 只对一个支持包有效：你所批准的摘要会记录在 ServiceAccount 上，executor 会拒绝其他任何支持包。
 
-## 该连接器无法做什么 {#what-the-connector-cannot-do}
+## 该连接器无法做什么
 
 * **无法写入 ClickHouse 数据或状态。** 上述授权不包含 `INSERT`、DDL，也不包含任何用户管理、设置或进程控制方面的特权。唯一一项系统类授权，即抓取器的 `SYSTEM FLUSH LOGS`，只会让日志表把已经缓冲的内容落盘。executor 没有 ClickHouse 用户。任何组件都无法通过 ClickHouse 修改数据、schema、用户或设置。
 * **无法执行 exec。** 所有 RBAC 中都不含 `pods/exec`；没有任何组件能在你的 Pod (容器组) 中运行命令。
@@ -162,7 +162,7 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 * **不知道你的 default user 密码。** `clicklink clctl executor prepare` 在你这一侧生成该密码并只显示一次 (若你以标志方式传入这些输入，则由 `clicklink clctl instances create` 完成) 。提交的只有其哈希值，因此连接器和 ClickHouse Cloud 都无法还原该密码。
 * **不存在入站访问。** ClickHouse Cloud 绝不会向你的环境发起连接。唯一的命令通道是两条出站 WebSocket。除非你启用的 support session 处于活动状态，否则故障排查工具会拒绝一切命令。executor只接受你委托 ClickHouse 管理的服务的生命周期命令，且不超出上述范围。即使在会话期间，故障排查工具在两侧同样受限。ClickHouse 查询仅限于表允许列表，该列表拒绝 `query_log` 和 `text_log`，因此二者永远不会被授权。Kubernetes 访问仅限于命名空间级 Role 所授予的只读视图和 pod (容器组) 日志。
 
-## 需要您采取操作的事项 {#what-requires-your-action}
+## 需要您采取操作的事项
 
 * **启用托管模式。** 只有在您于 `init` 时启用托管模式之后，executor 才会运行，其 Kubernetes 授权才会存在；该授权以 cluster admin 权限应用。请参阅[托管服务](/zh/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode)。
 * **创建服务。** `clicklink clctl executor prepare` 使用您的 AWS 凭证运行，以创建桶和 IAM role，随后由 `clicklink clctl instances create` 提交定义。缺少其中任何一步，ClickHouse Cloud 都无法在您的 cluster 中创建服务。请参阅[创建服务](/zh/products/bring-your-own-cloud/connector/managed-services#create-a-service)。
@@ -173,7 +173,7 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 * **Gateway 暴露。** 会话网关默认关闭，需由您启用；除非您选择使用入口，否则只能通过端口转发访问。在 VM 上，每位操作员都必须固定其自签名证书的指纹，或使用通过 `--gateway-ca` 传入的 CA bundle 对其进行验证，会话命令才能与之通信。
 * **网络出站流量。** 在强制实施 CNI 的环境中，除非您在 `networkPolicy.allowEgressCIDRs` 中列出连接器端点的 CIDR，否则任何守护进程都无法访问该端点。executor 还需要 Kubernetes API server 的 CIDR (`networkPolicy.apiserverCIDRs`) ，`init --managed` 会从 cluster 的 VPC 中推导出这些值。如果平台 chart 来自 Amazon ECR，还需添加 ECR 和 STS 的地址范围。
 
-## 访问如何归属 {#how-access-is-attributed}
+## 访问如何归属
 
 * **部署身份。** mTLS 客户端证书的通用名称即为你的组织 ID，其单个 DNS name 绑定到你的端点主机。这使得每一次 API 连接都可归属到你的组织。续订自动完成且在守护进程内进行；不会有任何操作员接触密钥材料。
 * **请求完整性。** 每个 API request 还会携带一个 HMAC-SHA256 签名 (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) ，该签名使用 enrollment 时签发的密钥对，基于 method、path、timestamp 和 body 哈希计算得出。
@@ -182,7 +182,7 @@ GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
 * **平台审批。** 你所批准的支持包的摘要会记录在 `pcm-platform` ServiceAccount 上。你的凭证所应用的每个 object 都带有内容哈希，executor 在写入任何内容之前都会加以校验。摘要不一致的支持包将被拒绝。
 * **审计追踪。** 每条 session 命令，无论被接受还是被阻止，都会连同来自命令通道的组织身份一起追加到 NDJSON audit log 中。Gateway 调用会以结构化的 `clctl.gateway` 行记录在故障排查工具日志中，并附带已证明的操作员电子邮件地址。虚拟机本地 session 变更会在 `session.json` 中记录主机用户。可使用 `clicklink clctl troubleshoot audit tail` 读取 audit log；参见 [CLI reference](/zh/products/bring-your-own-cloud/connector/reference/cli)。
 
-## 数据最小化默认设置 {#data-minimization-defaults}
+## 数据最小化默认设置
 
 * **`query_log` 默认不参与抓取。** 其列中保存的是带字面量值的原始 SQL，可能包含个人数据或机密信息。除非你主动添加，否则这些数据不会离开你的边界。
 * **故障排查工具仅读取允许列表中的表。** `query_log` 和 `text_log` 在允许列表配置中即被拒绝，因此永远不会被授予访问权限，查询历史也始终不可读。默认允许列表中包含 `system.processes` (正在运行的查询文本) ；如果会话期间必须隐藏这部分内容，请将其从列表中移除 (Kubernetes 上为 `troubleshooter.allowedTables`，虚拟机上为 `troubleshooter.allowed_tables`) 。

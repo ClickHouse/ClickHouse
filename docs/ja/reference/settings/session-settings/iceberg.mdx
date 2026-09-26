@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
+## iceberg_delete_data_on_drop
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -22,7 +22,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 drop 時に Iceberg のすべてのファイルを削除するかどうか。
 
-## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+## iceberg_file_entries_queue_size
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -34,7 +34,7 @@ Iceberg データマニフェストのデコードタスクとクエリの間の
 
 ゼロより大きい値を指定する必要があります。
 
-## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+## iceberg_manifest_decode_concurrency
 
 **別名**: `iceberg_delete_manifest_decode_concurrency`
 
@@ -50,7 +50,7 @@ Iceberg metadata files cache が無効、または満杯の場合、転送中の
 
 ゼロより大きい値である必要があります。`1` の場合はマニフェストを 1 つずつデコードします。
 
-## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
+## iceberg_manifest_min_count_to_compact
 
 <ExperimentalBadge />
 
@@ -65,7 +65,7 @@ allow&#95;experimental&#95;iceberg&#95;compaction を有効にする必要があ
 デフォルト値は、Iceberg テーブルプロパティ `commit.manifest.min-count-to-merge` のドキュメント記載のデフォルト値 (100) に準じています。
 https://iceberg.apache.org/docs/1.5.2/configuration/ を参照してください。
 
-## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
+## iceberg_max_number_datafiles_to_compact
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -73,7 +73,7 @@ https://iceberg.apache.org/docs/1.5.2/configuration/ を参照してください
 
 Iceberg における コンパクション data files のしきい値。
 
-## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
+## iceberg_orphan_files_older_than_seconds
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ Iceberg における コンパクション data files のしきい値。
 
 Icebergテーブルで孤立ファイルを削除する際の、デフォルトの経過時間しきい値 (秒) です。これより新しいファイルは孤立ファイルと見なされません。`remove_orphan_files()` プロシージャ呼び出しで `older_than` 引数が省略された場合に使用されます。デフォルトは259200 (3日) です。
 
-## iceberg_snapshot_id {#iceberg_snapshot_id}
+## iceberg_snapshot_id
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -91,7 +91,7 @@ Icebergテーブルで孤立ファイルを削除する際の、デフォルト�
 
 特定のスナップショット ID を使用して Iceberg テーブルをクエリします。
 
-## iceberg_timestamp_ms {#iceberg_timestamp_ms}
+## iceberg_timestamp_ms
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -99,7 +99,7 @@ Icebergテーブルで孤立ファイルを削除する際の、デフォルト�
 
 特定のタイムスタンプ時点で有効だったスナップショットを使用してIcebergテーブルをクエリします。
 
-## iceberg_tolerate_conflicting_manifest_schemas {#iceberg_tolerate_conflicting_manifest_schemas}
+## iceberg_tolerate_conflicting_manifest_schemas
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

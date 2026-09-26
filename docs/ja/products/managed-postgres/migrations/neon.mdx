@@ -56,9 +56,9 @@ ClickPipes を利用すれば、数テラバイト規模の Postgres データ�
   </Step>
 </Steps>
 
-## 移行時の考慮事項 {#migration-considerations}
+## 移行時の考慮事項
 
-### 分岐 {#branches}
+### 分岐
 
 Neon は copy-on-write による即時のブランチ作成を提供します。ClickHouse Managed Postgres は local NVMe storage を使用することで、高速かつ予測可能で信頼性の高い Postgres のパフォーマンスを実現しています。
 そのトレードオフとして、ブランチの作成は瞬時には完了しません。ブランチは [ポイントインタイムリカバリ (PITR)](/ja/products/managed-postgres/backup-and-restore) を利用して独立したデプロイメントとして作成され、通常は数分以内に利用可能になります。
@@ -67,7 +67,7 @@ Neon は copy-on-write による即時のブランチ作成を提供します。
 
 この手法で数百の開発環境を管理しているお客様もいます。フォークおよび sandbox の利用体験については、現在も改善を進めています。詳細は [ブランチのドキュメント](/ja/products/managed-postgres/branching) を参照してください。
 
-### Neon Serverless Driver {#neon-serverless}
+### Neon Serverless Driver
 
 アプリケーションで Neon Serverless Driver を使用していない場合は、このセクションを読み飛ばして構いません。
 
@@ -88,7 +88,7 @@ Neon は copy-on-write による即時のブランチ作成を提供します。
 
 詳細については、[PgBouncer の互換性マトリックス](https://www.pgbouncer.org/features.html)を参照してください。
 
-### 接続数の上限 {#connection-limits}
+### 接続数の上限
 
 ClickHouse Managed Postgres は、デフォルトで 500 件の direct Postgres 接続をサポートします。Neon の workload がこの数を超える場合は、次の方法を利用できます:
 
@@ -97,7 +97,7 @@ ClickHouse Managed Postgres は、デフォルトで 500 件の direct Postgres 
 * direct 接続をさらに増やす必要がある場合は `max_connections` の値を引き上げる。
   * `max_connections` は **Settings → Edit parameters** から変更できます。変更内容によっては再起動が必要です。詳細は[設定に関するドキュメント](/ja/products/managed-postgres/settings#changing-configuration)を参照してください。
 
-### 移行中のスキーマ変更 {#schema-changes}
+### 移行中のスキーマ変更
 
 ClickPipes の開始からカットオーバーまでの期間はできるだけ短く (理想的には数日以内に) 抑え、その間はスキーマ変更を行わないようにしてください。
 

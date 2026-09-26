@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد جرى توليدها تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## lightweight_delete_mode {#lightweight_delete_mode}
+## lightweight_delete_mode
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -27,7 +27,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * `lightweight_update` - يشغّل التحديث الخفيف إن أمكن، وإلا فيشغّل `ALTER UPDATE`.
 * `lightweight_update_force` - يشغّل التحديث الخفيف إن أمكن، وإلا فيُطلِق استثناءً.
 
-## lightweight_deletes_sync {#lightweight_deletes_sync}
+## lightweight_deletes_sync
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 

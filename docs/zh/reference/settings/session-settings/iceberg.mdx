@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
+## iceberg_delete_data_on_drop
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -22,7 +22,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 执行 drop 时，是否删除所有 Iceberg 文件。
 
-## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+## iceberg_file_entries_queue_size
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -34,7 +34,7 @@ Iceberg data manifest 解码任务与查询之间队列的容量，以数据文�
 
 必须大于零。
 
-## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+## iceberg_manifest_decode_concurrency
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
@@ -50,7 +50,7 @@ Iceberg data manifest 解码任务与查询之间队列的容量，以数据文�
 
 该值必须大于零；取 `1` 表示逐个解码 manifest。
 
-## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
+## iceberg_manifest_min_count_to_compact
 
 <ExperimentalBadge />
 
@@ -65,7 +65,7 @@ Iceberg data manifest 解码任务与查询之间队列的容量，以数据文�
 该默认值与 Iceberg 表属性 `commit.manifest.min-count-to-merge` 的文档默认值 (100) 保持一致，
 参见 https://iceberg.apache.org/docs/1.5.2/configuration/。
 
-## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
+## iceberg_max_number_datafiles_to_compact
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -73,7 +73,7 @@ Iceberg data manifest 解码任务与查询之间队列的容量，以数据文�
 
 Iceberg 中参与合并整理的数据文件数量阈值。
 
-## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
+## iceberg_orphan_files_older_than_seconds
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ Iceberg 中参与合并整理的数据文件数量阈值。
 
 Iceberg 表中删除孤立文件时使用的默认文件期限阈值 (以秒为单位) 。新于该阈值的文件不会被视为孤立文件。当在 `remove_orphan_files()` 过程调用中省略 `older_than` 参数时，将使用此设置。默认值为 259200 (3 天) 。
 
-## iceberg_snapshot_id {#iceberg_snapshot_id}
+## iceberg_snapshot_id
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -91,7 +91,7 @@ Iceberg 表中删除孤立文件时使用的默认文件期限阈值 (以秒为�
 
 使用指定的快照 ID 查询 Iceberg 表。
 
-## iceberg_timestamp_ms {#iceberg_timestamp_ms}
+## iceberg_timestamp_ms
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -99,7 +99,7 @@ Iceberg 表中删除孤立文件时使用的默认文件期限阈值 (以秒为�
 
 使用特定时间戳对应的快照查询 Iceberg 表。
 
-## iceberg_tolerate_conflicting_manifest_schemas {#iceberg_tolerate_conflicting_manifest_schemas}
+## iceberg_tolerate_conflicting_manifest_schemas
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -20,7 +20,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 عند استخدام `s3 table function` مع [`INSERT INTO...SELECT`](/ar/reference/statements/insert-into#inserting-the-results-of-select)، تُقرأ البيانات وتُدرج بأسلوب تدفقي. ولا يبقى في الذاكرة إلا عدد قليل من كتل البيانات، بينما تُقرأ الكتل باستمرار من S3 وتُرسَل إلى الجدول الوجهة.
 
-## الصيغة {#syntax}
+## الصيغة
 
 ```sql
 s3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers], [,extra_credentials], [,partition_strategy], [,partition_columns_in_data_file])
@@ -75,11 +75,11 @@ s3(named_collection[, option=value [,..]])
 | `no_sign_request`             | مُعطَّل افتراضيًا.                                                                                                                                                                                                     |
 | `expiration_window_seconds`   | القيمة الافتراضية هي 120.                                                                                                                                                                                              |
 
-## القيمة المعادة {#returned-value}
+## القيمة المعادة
 
 جدول ذو البنية المحددة لقراءة البيانات أو كتابتها في الملف المحدد.
 
-## أمثلة {#examples}
+## أمثلة
 
 تحديد أول 5 صفوف من الجدول من ملف S3 ‏`https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv`:
 
@@ -134,7 +134,7 @@ LIMIT 5;
   ```
 </Note>
 
-## الاستخدام {#usage}
+## الاستخدام
 
 لنفترض أن لدينا عدة ملفات بعناوين URI التالية على S3:
 
@@ -249,9 +249,9 @@ SELECT count(*)
 FROM s3(creds, url='https://s3-object-url.csv')
 ```
 
-## الكتابة المُقسَّمة إلى أجزاء {#partitioned-write}
+## الكتابة المُقسَّمة إلى أجزاء
 
-### استراتيجية التقسيم {#partition-strategy}
+### استراتيجية التقسيم
 
 مدعومة فقط لاستعلامات INSERT.
 
@@ -297,7 +297,7 @@ INSERT INTO TABLE FUNCTION
 
 ونتيجةً لذلك، تُكتب البيانات في ثلاثة ملفات ضمن حاويات تخزين مختلفة: `my_bucket_1/file.csv` و`my_bucket_10/file.csv` و`my_bucket_20/file.csv`.
 
-## الوصول إلى حاويات التخزين العامة {#accessing-public-buckets}
+## الوصول إلى حاويات التخزين العامة
 
 يحاول ClickHouse جلب بيانات الاعتماد من أنواع متعددة من المصادر.
 وقد يؤدي ذلك أحيانًا إلى حدوث مشكلات عند الوصول إلى بعض حاويات التخزين العامة، ما يتسبب في أن يعيد العميل رمز الخطأ `403`.
@@ -313,7 +313,7 @@ FROM s3(
 LIMIT 5;
 ```
 
-## استخدام بيانات اعتماد S3 ‏(ClickHouse Cloud) {#using-s3-credentials-clickhouse-cloud}
+## استخدام بيانات اعتماد S3 ‏(ClickHouse Cloud)
 
 بالنسبة إلى حاويات التخزين غير العامة، يمكن للمستخدمين تمرير `aws_access_key_id` و`aws_secret_access_key` إلى الدالة. على سبيل المثال:
 
@@ -339,7 +339,7 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 
 يمكنك العثور على المزيد من الأمثلة [هنا](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role)
 
-## العمل مع الأرشيفات {#working-with-archives}
+## العمل مع الأرشيفات
 
 لنفترض أن لدينا عدة ملفات أرشيف بعناوين URI التالية على S3:
 
@@ -365,18 +365,18 @@ FROM s3(
   وبينما يمكن الوصول إلى أرشيفات ZIP وTAR من أي موقع تخزين مدعوم، فلا يمكن قراءة أرشيفات 7Z إلا من نظام الملفات المحلي الذي ثُبّت عليه ClickHouse.
 </Note>
 
-## إدراج البيانات {#inserting-data}
+## إدراج البيانات
 
 لاحظ أن الصفوف لا يمكن إدراجها إلا في الملفات الجديدة. ولا توجد دورات دمج أو عمليات تقسيم للملفات. وما إن يُكتَب ملف حتى تفشل عمليات الإدراج اللاحقة. اطّلع على مزيد من التفاصيل [هنا](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-## الأعمدة الافتراضية {#virtual-columns}
+## الأعمدة الافتراضية
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`. في حالة الأرشيف، يعرض المسار بالتنسيق: `"{path_to_archive}::{path_to_file_inside_archive}"`
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`. في حالة الأرشيف، يعرض اسم الملف داخل الأرشيف.
 * `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، تكون القيمة `NULL`. في حالة الأرشيف، يعرض حجم الملف غير المضغوط للملف الموجود داخل الأرشيف.
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
 
-## إعداد use_hive_partitioning {#hive-style-partitioning}
+## إعداد use_hive_partitioning
 
 هذا تلميح لـ ClickHouse لتحليل الملفات المُقسَّمة بنمط Hive عند القراءة. ولا يؤثر في الكتابة. ولتحقيق تماثل بين القراءة والكتابة، استخدم الوسيطة `partition_strategy`.
 
@@ -388,7 +388,7 @@ FROM s3(
 SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-## الوصول إلى حاويات التخزين requester-pays {#accessing-requester-pays-buckets}
+## الوصول إلى حاويات التخزين requester-pays
 
 للوصول إلى حاوية التخزين requester-pays، يجب تمرير الترويسة `x-amz-request-payer = requester` مع أي طلب. ويتم ذلك بتمرير المعلمة `headers('x-amz-request-payer' = 'requester')` إلى الدالة `s3`. على سبيل المثال:
 
@@ -406,7 +406,7 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
-## تحليل عناوين URL النسبية {#resolving-relative-urls}
+## تحليل عناوين URL النسبية
 
 يتيح الإعداد [s3&#95;base](/ar/reference/settings/session-settings/s3#s3_base) تمرير عنوان URL نسبي إلى الدالة `s3`. عند تعيين `s3_base` وعدم احتواء وسيطة الدالة على مخطط، يُحل عنوان URL بالاستناد إلى عنوان URL الأساسي وفقًا لـ [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)، باستخدام القواعد نفسها التي يستخدمها الإعداد [url&#95;base](/ar/reference/settings/session-settings/url#url_base) في الدالة [url](/ar/reference/functions/table-functions/url#resolving-relative-urls). وتُمرَّر عناوين URL المطلقة دون تغيير.
 
@@ -419,14 +419,14 @@ SET s3_base = 's3://clickhouse-public-datasets/';
 SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
-## إعدادات التخزين {#storage-settings}
+## إعدادات التخزين
 
 * [s3&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings/s3#s3_truncate_on_insert) - يتيح تفريغ الملف قبل الإدراج فيه. معطّل افتراضيًا.
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ar/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - يتيح إنشاء ملف جديد عند كل عملية إدراج إذا كان للتنسيق لاحقة. معطّل افتراضيًا.
 * [s3&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings/s3#s3_skip_empty_files) - يتيح تخطي الملفات الفارغة أثناء القراءة. مفعّل افتراضيًا.
 * [s3&#95;base](/ar/reference/settings/session-settings/s3#s3_base) - عنوان URL الأساسي لحل عناوين URL النسبية المُمرَّرة إلى الدالة `s3`. فارغ (معطّل) افتراضيًا.
 
-## مخططات Avro المتداخلة {#nested-avro-schemas}
+## مخططات Avro المتداخلة
 
 عند قراءة ملفات Avro التي تحتوي على **سجلات متداخلة** تختلف من ملف إلى آخر (على سبيل المثال، تحتوي بعض الملفات على حقل إضافي داخل كائن متداخل)، فقد يُرجع ClickHouse خطأً مثل:
 
@@ -456,7 +456,7 @@ FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
 ```
 
-## Related {#related}
+## Related
 
 * [S3 engine](/ar/reference/engines/table-engines/integrations/s3)
 * [Integrating S3 with ClickHouse](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

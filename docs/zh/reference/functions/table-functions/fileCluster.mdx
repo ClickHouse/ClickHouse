@@ -15,13 +15,13 @@ doc_type: 'reference'
   如果这些文件在各节点之间不一致，则返回值无法预先确定，并且取决于工作节点向发起节点请求任务的顺序。
 </Note>
 
-## 语法 {#syntax}
+## 语法
 
 ```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-## 参数 {#arguments}
+## 参数
 
 | 参数                   | 说明                                                                                                                                                                                                                     |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -31,7 +31,7 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
 | `structure`          | 表结构，格式为 `'UserID UInt64, Name String'`。用于确定列名和类型。类型：[String](/zh/reference/data-types/string)。                                                                                                                            |
 | `compression_method` | 压缩方法。支持的值包括 `none` (不压缩) 、`gzip/gz`、`deflate`、`brotli/br`、`lzma/xz`、`zstd/zst`、`lz4`、`bz2` 和 `snappy`。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置决定 (默认为 `basic`) 。 |
 
-## 返回值 {#returned-value}
+## 返回值
 
 一个表，采用指定的格式和结构，并包含来自与指定路径匹配的文件中的数据。
 
@@ -80,11 +80,11 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
-## 路径中的通配符 {#globs-in-path}
+## 路径中的通配符
 
 FileCluster 支持 [File](/zh/reference/functions/table-functions/file#globs-in-path) 表函数支持的所有模式。
 
-## 相关 {#related}
+## 相关
 
 * [File 表函数](/zh/reference/functions/table-functions/file)
 

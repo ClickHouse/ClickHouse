@@ -14,11 +14,11 @@ ClickHouse は [`TimeSeries`](/ja/reference/engines/table-engines/integrations/t
 
 Prometheus サーバーがスクレイプできるように ClickHouse 自身のメトリクスを公開する方法については、[Prometheus メトリクスエンドポイント](/ja/concepts/features/interfaces/prometheus-metrics)を参照してください。
 
-## 前提条件 {#prerequisites}
+## 前提条件
 
 セットアップ手順は ClickHouse Cloud とセルフマネージドの ClickHouse で異なります。ご利用のデプロイメントに該当するセクションに従ってください。
 
-### ClickHouse Cloud {#prerequisites-cloud}
+### ClickHouse Cloud
 
 <Note>
   ClickHouse Cloud における PromQL のサポートはプライベートプレビューです。プライベートプレビューの対象となっているサービスでは、`enable_time_series_table` 設定と Prometheus API エンドポイントがすでに構成済みです。それ以外の ClickHouse Cloud サービスにはこの構成がなく、ユーザー自身でこの機能を有効化することはできません。以降のセクションで説明する `SET enable_time_series_table` ステートメントおよび `http_handlers` の構成は、セルフマネージドのデプロイメントに適用されるものです。
@@ -26,7 +26,7 @@ Prometheus サーバーがスクレイプできるように ClickHouse 自身の
 
 プライベートプレビューの対象となっているサービスでは、[TimeSeries テーブルを作成する](#create-a-timeseries-table)に進んでください。対象サービスでは、[エンドポイント一覧](#configure-prometheus-api)に記載されたエンドポイントパスが利用できます。
 
-### セルフマネージド: TimeSeries設定を有効にする {#enable-the-timeseries-setting}
+### セルフマネージド: TimeSeries設定を有効にする
 
 テーブルを作成しアクセスするユーザーに対して、`enable_time_series_table` 設定を有効にします。
 
@@ -36,7 +36,7 @@ SET enable_time_series_table = 1;
 
 HTTP APIリクエストの場合は、APIユーザーのプロファイルで`enable_time_series_table`を有効にします。
 
-### セルフマネージド: Prometheus API エンドポイントを設定する {#configure-prometheus-api}
+### セルフマネージド: Prometheus API エンドポイントを設定する
 
 ClickHouse のメイン HTTP ポートで、プレフィックスルーティングされたハンドラーを 1 つ設定します。
 
@@ -86,7 +86,7 @@ ClickHouse のメイン HTTP ポートで、プレフィックスルーティン
 | `table`      | none  | `TimeSeries` テーブル名。省略した場合、リクエストで `table` クエリパラメータを指定する必要があります。設定する名前にはデータベースを含めることができます。                            |
 | `database`   | none  | テーブルを含むデータベース。リクエストでクエリパラメータとして指定できます。省略した場合、ClickHouse は完全修飾された `table` 値に含まれるデータベースを使用し、指定がなければ `default` を使用します。 |
 
-### TimeSeriesテーブルを作成する {#create-a-timeseries-table}
+### TimeSeriesテーブルを作成する
 
 データベースと `TimeSeries` テーブルを作成します。
 
@@ -95,7 +95,7 @@ CREATE DATABASE prometheus;
 CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 ```
 
-## リモート書き込み を使用してメトリクスを取り込む {#remote-write}
+## リモート書き込み を使用してメトリクスを取り込む
 
 ClickHouse は [Prometheus リモート書き込み プロトコル](https://prometheus.io/docs/specs/remote_write_spec/)をサポートしています。Prometheus がハンドラーに書き込むように設定します。
 
@@ -118,7 +118,7 @@ remote_write:
 
 ClickHouse は、[`wait_for_async_insert`](/ja/reference/settings/session-settings/wait-for#wait_for_async_insert) 設定にかかわらず、データが `TimeSeries` テーブルのすべての内部テーブルにフラッシュされた後にのみ、非同期 リモート書き込み リクエストを受理します。リモート書き込み プロトコルでは、受理された書き込みは永続化済みとして扱われます。フラッシュに失敗した場合、リクエストはエラーを返し、Prometheus は再試行します。
 
-## PromQL でクエリを実行する {#promql-query-support}
+## PromQL でクエリを実行する
 
 instant-query エンドポイントを使用して、特定の時点における PromQL 式を評価します。
 
@@ -168,7 +168,7 @@ curl --user default:<password> --get \
 
 HTTP API、`promql` 方言、およびテーブル関数で使用される関数と集約演算子の一覧については、[サポートされている PromQL 機能](/ja/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)を参照してください。
 
-### Grafana {#grafana}
+### Grafana
 
 ベース URL が `/api/v1` の直前までとなるように、Prometheus データソースを設定します。
 
@@ -196,7 +196,7 @@ Grafana は、このベース URL に `/api/v1/query` または `/api/v1/query_r
   実装されているのは、クエリエンドポイント `/api/v1/query`、`/api/v1/query_range`、`/api/v1/format_query`、およびメタデータエンドポイント `/api/v1/series`、`/api/v1/labels`、`/api/v1/label/<name>/values`、`/api/v1/metadata` のみです。`/api/v1/series` には少なくとも 1 つの `match[]` シリーズセレクターが必要で、任意の `start`、`end`、`limit` パラメータをサポートし、各セレクターに一致するシリーズのユニオンを返します。`/api/v1/labels` は同じパラメータを受け付けますが、`match[]` は任意であり、一致するシリーズのソート済みラベル名を返します (セレクターが指定されていない場合はすべてのシリーズのラベル名を返します) 。`/api/v1/label/<name>/values` は `/api/v1/labels` と同じパラメータを受け付け、1 つのラベルのソート済みの値を返します。`<name>` には、`[a-zA-Z0-9_]` 以外の文字を含むラベル名に対して Prometheus の `U__...` エスケープを任意で使用できます。これらのエンドポイントは、Grafana の Prometheus データソースがラベルの参照、Template 変数、クエリビルダーでの自動補完に使用する機能をカバーします。
 </Note>
 
-### SQL エントリポイント {#sql-entry-points}
+### SQL エントリポイント
 
 ClickHouse では、HTTP API、`promql` 方言、および [`prometheusQuery`](/ja/reference/functions/table-functions/prometheusQuery) と [`prometheusQueryRange`](/ja/reference/functions/table-functions/prometheusQueryRange) のテーブル関数で、同じ PromQL コンバーターを使用します。
 
@@ -221,7 +221,7 @@ FROM prometheusQuery(
 );
 ```
 
-## メトリクスのメタデータをクエリする {#metadata}
+## メトリクスのメタデータをクエリする
 
 `/prometheus/api/v1/metadata` エンドポイントは、`TimeSeries` テーブルの `Metrics` ターゲットテーブルに格納されているメトリクスのメタデータ (各メトリクスファミリーの型、ヘルプテキスト、単位) を返します。URL のクエリ文字列では、次の Prometheus パラメータをサポートしています。
 
@@ -241,7 +241,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-## リモート読み取り でメトリクスを読み取る {#remote-read}
+## リモート読み取り でメトリクスを読み取る
 
 ClickHouse は、`/prometheus/api/v1/read` で [Prometheus リモート読み取り プロトコル](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/)をサポートしています。
 

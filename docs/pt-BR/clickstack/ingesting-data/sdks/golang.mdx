@@ -14,9 +14,9 @@ instrumentação manual não é necessária para aproveitar o tracing.
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## Primeiros passos {#getting-started}
+## Primeiros passos
 
-### Instale os pacotes de instrumentação do OpenTelemetry {#install-opentelemetry}
+### Instale os pacotes de instrumentação do OpenTelemetry
 
 Para instalar os pacotes Go do OpenTelemetry e do HyperDX, use o comando abaixo. Recomenda-se consultar os [pacotes de instrumentação atuais](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/v1.4.0/instrumentation#instrumentation-packages) e instalar os pacotes necessários para garantir que as informações de rastreamento sejam associadas corretamente.
 
@@ -27,7 +27,7 @@ go get -u github.com/hyperdxio/opentelemetry-go
 go get -u github.com/hyperdxio/opentelemetry-logs-go
 ```
 
-### Exemplo de servidor HTTP nativo (net/http) {#native-http-server-example}
+### Exemplo de servidor HTTP nativo (net/http)
 
 Neste exemplo, usaremos `net/http/otelhttp`.
 
@@ -135,7 +135,7 @@ func ExampleHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### Exemplo de aplicação com Gin {#gin-application-example}
+### Exemplo de aplicação com Gin
 
 Neste exemplo, usaremos `gin-gonic/gin`.
 
@@ -219,7 +219,7 @@ func main() {
 }
 ```
 
-### Configurar variáveis de ambiente {#configure-environment-variables}
+### Configurar variáveis de ambiente
 
 Em seguida, você precisará configurar as seguintes variáveis de ambiente no shell para enviar telemetria ao ClickStack por meio do coletor do OpenTelemetry:
 

@@ -17,7 +17,7 @@ import DataTypesMatching from '/snippets/ru/data-types-matching.mdx';
 | ---- | ----- | --------- |
 | ✔    | ✔     |           |
 
-## Описание {#description}
+## Описание
 
 [Apache Avro](https://avro.apache.org/) — это строко-ориентированный формат сериализации, использующий двоичное кодирование для эффективной обработки данных. Формат `AvroConfluent` поддерживает чтение и запись сообщений в формате Avro с использованием [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) (или сервисов с совместимым API).
 
@@ -25,11 +25,11 @@ import DataTypesMatching from '/snippets/ru/data-types-matching.mdx';
 
 <a id="data-types-matching" />
 
-## Соответствие типов данных {#data-type-mapping}
+## Соответствие типов данных
 
 <DataTypesMatching />
 
-## Настройки формата {#format-settings}
+## Настройки формата
 
 [//]: # "ПРИМЕЧАНИЕ: эти настройки можно задавать на уровне сеанса, но это встречается нечасто, и слишком заметное упоминание об этом может запутать пользователей."
 
@@ -44,9 +44,9 @@ import DataTypesMatching from '/snippets/ru/data-types-matching.mdx';
 | `output_format_avro_confluent_subject`           | Для вывода: имя subject, под которым схема зарегистрирована в Schema Registry. Обязательно при записи.                                                                                                      |              |
 | `output_format_avro_string_column_pattern`       | Для вывода: шаблон регулярного выражения для столбцов String, которые нужно сериализовать как Avro `string` (по умолчанию — `bytes`).                                                                       |              |
 
-## Примеры {#examples}
+## Примеры
 
-### Чтение из Kafka {#reading-from-kafka}
+### Чтение из Kafka
 
 Чтобы читать Kafka топик в кодировке Avro с помощью [движка таблицы Kafka](/ru/reference/engines/table-engines/integrations/kafka), используйте параметр `format_avro_schema_registry_url`, чтобы указать URL реестра схем.
 
@@ -67,7 +67,7 @@ format_avro_schema_registry_url = 'http://schema-registry-url';
 SELECT * FROM topic1_stream;
 ```
 
-### Запись в Kafka {#writing-to-kafka}
+### Запись в Kafka
 
 Чтобы записывать сообщения AvroConfluent в топик Kafka, задайте URL реестра схем и имя subject. Схема автоматически регистрируется в реестре при первой записи.
 
@@ -88,7 +88,7 @@ output_format_avro_confluent_subject = 'topic1-value';
 INSERT INTO topic1_sink VALUES ('hello', 'world');
 ```
 
-#### Использование базовой аутентификации {#using-basic-authentication}
+#### Использование базовой аутентификации
 
 Если для вашего реестра схем требуется базовая аутентификация (например, если вы используете Confluent Cloud), вы можете указать URL-кодированные учетные данные в параметре `format_avro_schema_registry_url`.
 
@@ -107,7 +107,7 @@ kafka_format = 'AvroConfluent',
 format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry-url';
 ```
 
-## Устранение неполадок {#troubleshooting}
+## Устранение неполадок
 
 Чтобы отслеживать прогресс ингестии и диагностировать ошибки Kafka-консьюмера, можно выполнить запрос к [системной таблице `system.kafka_consumers`](/ru/reference/system-tables/kafka_consumers). Если в вашем развертывании несколько реплик (например, в ClickHouse Cloud), необходимо использовать табличную функцию [`clusterAllReplicas`](/ru/reference/functions/table-functions/cluster).
 

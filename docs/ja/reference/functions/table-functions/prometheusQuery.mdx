@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 TimeSeriesテーブルのデータを使用して Prometheus クエリを評価します。
 
-## 構文 {#syntax}
+## 構文
 
 ```sql
 prometheusQuery('db_name', 'time_series_table', 'promql_query', evaluation_time)
@@ -18,14 +18,14 @@ prometheusQuery(db_name.time_series_table, 'promql_query', evaluation_time)
 prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 ```
 
-## 引数 {#arguments}
+## 引数
 
 * `db_name` - TimeSeries テーブルが配置されているデータベース名。
 * `time_series_table` - TimeSeries テーブルの名前。
 * `promql_query` - [PromQL 構文](https://prometheus.io/docs/prometheus/latest/querying/basics/)で記述されたクエリ。
 * `evaluation_time - 評価時刻のタイムスタンプ。現在時刻でクエリを評価するには、`evaluation&#95;time`として`now()&#96; を使用します。
 
-## 戻り値 {#returned-value}
+## 戻り値
 
 この関数は、パラメータ `promql_query` に渡されたクエリの結果タイプに応じて、異なるカラムを返します。
 
@@ -38,13 +38,13 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 `TimeSeries` テーブルの [version](/ja/reference/engines/table-engines/integrations/time-series#schema-versioning) が 2 以前の場合、`samples` カラムは `time_series` という名前になります。
 
-## PromQL でサポートされている機能 {#supported-promql-features}
+## PromQL でサポートされている機能
 
-### セレクタ {#selectors}
+### セレクタ
 
 インスタントセレクタ、レンジセレクタ、ラベルマッチャー (`=`、`!=`、`=~`、`!~`) 、OFFSET修飾子、`@`タイムスタンプ修飾子、サブクエリ。
 
-### 関数 {#functions}
+### 関数
 
 | カテゴリ     | 関数                                                                                                                                                                                                                                                                                                                   |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -61,7 +61,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 **注記**: `ts_of_min_over_time` と `ts_of_max_over_time` は Prometheus では実験的な関数であり (Prometheus では `--enable-feature=promql-experimental-functions` で有効化します)、ClickHouse はそのフラグを必要とせずにこれらを評価します。
 
-### 演算子 {#operators}
+### 演算子
 
 `on()`/`ignoring()` および `group_left()`/`group_right()` 修飾子を含む、算術 (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) および比較 (省略可能な `bool` を伴う `==`, `!=`, `<`, `>`, `<=`, `>=`) 二項演算子。
 
@@ -69,15 +69,15 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 単項演算子 `+` と `-`。
 
-### 集計演算子 {#aggregation-operators}
+### 集計演算子
 
 `sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — オプションで `by()` または `without()` 修飾子を使用できます。
 
-### 未サポート {#not-yet-supported}
+### 未サポート
 
 * 範囲関数 `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 
-## 例 {#example}
+## 例
 
 ```sql
 SELECT * FROM prometheusQuery(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now())

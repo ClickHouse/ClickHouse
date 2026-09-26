@@ -9,11 +9,11 @@ doc_type: 'guide'
 
 В этом руководстве пошагово описано, как загрузить данные трассировки LLM из [Langfuse Cloud](https://cloud.langfuse.com/) в ClickHouse Cloud для Real-time аналитики.
 
-## Экспорт из Langfuse Cloud {#export-from-langfuse-cloud}
+## Экспорт из Langfuse Cloud
 
 Чтобы настроить в Langfuse Cloud интеграцию с Blob Storage для экспорта по расписанию, следуйте [этому руководству](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage). Экспорт данных трассировки в объектное хранилище можно запускать не чаще чем раз в `20 minutes` либо по расписанию `hourly`, `daily` или `weekly`. По умолчанию каждый экспорт включает `observations` (дополненные атрибутами трассировок) и `scores`.
 
-### Структура экспортируемых файлов {#exported-file-layout}
+### Структура экспортируемых файлов
 
 Интеграция Blob Storage в Langfuse Cloud записывает данные в целевой бакет или контейнер хранилища со следующей структурой каталогов:
 
@@ -24,7 +24,7 @@ doc_type: 'guide'
 └── manifests/         # one JSON file per completed run with export metadata
 ```
 
-## Импорт в ClickHouse Cloud {#import-into-clickhouse-cloud}
+## Импорт в ClickHouse Cloud
 
 После настройки интеграции Blob Storage в Langfuse Cloud данные трассировки будут по расписанию экспортироваться в целевой бакет или контейнер хранилища. Чтобы импортировать эти данные в ClickHouse Cloud, воспользуйтесь [ClickPipes](/ru/integrations/clickpipes) и его управляемыми коннекторами к объектным хранилищам:
 
@@ -34,7 +34,7 @@ doc_type: 'guide'
 | <img src="/images/integrations/logos/gcs.svg" alt="Логотип Google Cloud Storage" className="integration-table-logo" width="24" height="24" /> **Google Cloud Storage**                                                                                                                                          | Интеграция через [GCS ClickPipes](/ru/integrations/clickpipes/object-storage/google-cloud-storage/overview). |
 | <img src="/images/integrations/logos/azureblobstorage.svg" alt="Логотип Azure Blob Storage" className="integration-table-logo" width="24" height="24" /> **Azure Blob Storage**                                                                                                                                 | Интеграция через [ABS ClickPipes](/ru/integrations/clickpipes/object-storage/azure-blob-storage/overview).   |
 
-### Создание ClickPipe {#create-a-clickpipe}
+### Создание ClickPipe
 
 В этом примере S3 ClickPipe используется для импорта данных из S3 бакета, в который по расписанию выгружаются данные из Langfuse Cloud. Этот пример можно взять за основу и для других объектных хранилищ, в которые выполняется экспорт. Рекомендации для конкретных источников данных см. в [документации ClickPipes](/ru/integrations/clickpipes).
 
@@ -147,11 +147,11 @@ doc_type: 'guide'
   </Step>
 </Steps>
 
-### Запросы к данным трассировки {#query-trace-data}
+### Запросы к данным трассировки
 
 Когда ClickPipes будут запущены, вы сможете выполнять запросы к данным трассировки Langfuse Cloud непосредственно в ClickHouse Cloud. Ниже приведены примеры нескольких распространённых шаблонов запросов: агрегирование затрат и задержек, восстановление отдельной трассировки, а также сопоставление оценок с моделями и промптами.
 
-#### Агрегация метрик по временным интервалам {#time-bucketed-metric-rollups}
+#### Агрегация метрик по временным интервалам
 
 <Tip>
   Некоторые поля, например `usage_details` и `cost_details`, экспортируются как столбцы типа `Map`. Чтобы получить отдельное значение, обратитесь к нему по ключу (например, `sum(cost_details['total'])`).
@@ -172,7 +172,7 @@ GROUP BY t, provided_model_name
 ORDER BY t;
 ```
 
-#### Восстановление трассировки {#trace-reconstruction}
+#### Восстановление трассировки
 
 ```sql
 SELECT *
@@ -181,7 +181,7 @@ WHERE trace_id = '<trace_id>'
 ORDER BY start_time;
 ```
 
-#### Анализ качества {#quality-analysis}
+#### Анализ качества
 
 ```sql
 SELECT
@@ -195,7 +195,7 @@ GROUP BY o.provided_model_name, s.name
 ORDER BY avg_score DESC;
 ```
 
-## См. также {#see-also}
+## См. также
 
 * [Langfuse и ClickHouse](/ru/products/cloud/features/ai-ml/langfuse)
 * [Экспорт данных Langfuse Cloud в Blob Storage](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)

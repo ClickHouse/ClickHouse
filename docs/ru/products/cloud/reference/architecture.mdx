@@ -13,7 +13,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 <Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Архитектура Cloud" />
 
 <div id="storage-backed-by-object-store">
-  ## Хранилище на основе объектного хранилища {#storage-backed-by-object-store}
+  ## Хранилище на основе объектного хранилища
 </div>
 
 * Практически неограниченное хранилище
@@ -21,7 +21,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 * Значительно более низкая стоимость хранения данных, особенно тех, к которым обращаются нечасто
 
 <div id="compute">
-  ## Вычислительные ресурсы {#compute}
+  ## Вычислительные ресурсы
 </div>
 
 * Автоматическое масштабирование и переход в режим простоя: не нужно заранее подбирать конфигурацию или выделять избыточные ресурсы под пиковую нагрузку
@@ -29,30 +29,30 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 * Безопасность и высокая доступность по умолчанию
 
 <div id="administration">
-  ## Администрирование {#administration}
+  ## Администрирование
 </div>
 
 * Настройку, мониторинг, резервное копирование и биллинг мы берем на себя.
 * Средства контроля затрат включены по умолчанию, и вы можете настроить их в консоли Cloud.
 
 <div id="service-isolation">
-  ## Изоляция сервиса {#service-isolation}
+  ## Изоляция сервиса
 </div>
 
 <div id="network-isolation">
-  ### Сетевая изоляция {#network-isolation}
+  ### Сетевая изоляция
 </div>
 
 Все сервисы изолированы на уровне сети.
 
 <div id="compute-isolation">
-  ### Изоляция вычислительных ресурсов {#compute-isolation}
+  ### Изоляция вычислительных ресурсов
 </div>
 
 Все сервисы развертываются в отдельных подах в соответствующих пространствах имен Kubernetes с изоляцией на сетевом уровне.
 
 <div id="storage-isolation">
-  ### Изоляция хранилища {#storage-isolation}
+  ### Изоляция хранилища
 </div>
 
 Все сервисы используют отдельный подкаталог в общем бакете (AWS, GCP) или отдельный контейнер хранилища (Azure).
@@ -62,12 +62,12 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 В GCP и Azure сервисы изолированы на уровне объектного хранилища (у каждого сервиса свой бакет или контейнер хранилища).
 
 <div id="compute-compute-separation">
-  ## Compute-compute separation {#compute-compute-separation}
+  ## Compute-compute separation
 </div>
 
 [Compute-compute separation](/ru/products/cloud/features/infrastructure/warehouses) позволяет создавать несколько групп вычислительных узлов, каждая со своим URL-адресом сервиса, которые используют одно и то же общее Объектное хранилище. Это обеспечивает изоляцию вычислительных ресурсов для разных сценариев использования, например разделение операций чтения и записи при работе с одними и теми же данными. Это также способствует более эффективному использованию ресурсов, поскольку при необходимости группы вычислительных узлов можно масштабировать независимо друг от друга.
 
-## Вычисления по требованию {#on-demand-compute}
+## Вычисления по требованию
 
 <PrivatePreviewBadge />
 
@@ -77,7 +77,7 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 [Условия обслуживания закрытой предварительной версии](https://clickhouse.com/legal/agreements/private-preview-terms-of-service)
 
-## Ограничения параллелизма {#concurrency-limits}
+## Ограничения параллелизма
 
 В вашем сервисе ClickHouse Cloud нет ограничений на количество запросов в секунду (QPS). Однако существует ограничение: не более 1000 одновременных запросов на одну реплику. В конечном счете QPS зависит от среднего времени выполнения запроса и количества реплик в вашем сервисе.
 

@@ -14,7 +14,7 @@ keywords: ['слияние', 'табличная функция', 'шаблон�
   <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="Проигрыватель видео YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-## Настройка таблиц {#setup-tables}
+## Настройка таблиц
 
 Мы научимся использовать эту функцию на примере [базы данных матчей ATP от TennisMyLife](https://github.com/Tennismylife/TML-Database).
 Мы будем обрабатывать CSV-файлы с матчами начиная с 1960-х годов, но для каждого десятилетия создадим немного отличающуюся схему.
@@ -50,7 +50,7 @@ SETTINGS schema_inference_make_columns_nullable=0,
          schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
 ```
 
-## Схема нескольких таблиц {#schema-multiple-tables}
+## Схема нескольких таблиц
 
 Мы можем выполнить следующий запрос, чтобы вывести столбцы каждой таблицы и их типы рядом — так различия будет проще увидеть.
 
@@ -89,7 +89,7 @@ SETTINGS output_format_pretty_max_value_width=25;
 * В 1980-х `winner_seed` и `loser_seed` меняются с `Nullable(UInt8)` на `Nullable(UInt16)`.
 * В 1990-х `surface` меняется с `String` на `Enum('Hard', 'Grass', 'Clay', 'Carpet')`, а также добавляются столбцы `walkover` и `retirement`.
 
-## Запрос к нескольким таблицам с помощью merge {#querying-multiple-tables}
+## Запрос к нескольким таблицам с помощью merge
 
 Давайте напишем запрос, чтобы найти матчи, в которых Джон Макинрой победил соперника, посеянного под № 1:
 
@@ -149,7 +149,7 @@ AND multiIf(
 └───────────────┴─────────────────────┴─────────────┘
 ```
 
-## Из какой таблицы берутся строки при использовании merge? {#which-table-merge}
+## Из какой таблицы берутся строки при использовании merge?
 
 Что, если мы хотим узнать, из какой таблицы берутся строки?
 Для этого можно использовать виртуальный столбец `_table`, как показано в следующем запросе:

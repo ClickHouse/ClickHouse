@@ -13,11 +13,11 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置是根据[源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h)自动生成的。
 
-## format_schema {#format_schema}
+## format_schema
 
 当您使用需要定义 schema 的格式 (例如 [Cap&#39;n Proto](https://capnproto.org/) 或 [Protobuf](https://developers.google.com/protocol-buffers/)) 时，此参数会很有用。其值取决于具体格式。
 
-## format_schema_message_name {#format_schema_message_name}
+## format_schema_message_name
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": ""},{"label": "新增设置"}]}]} />
 
@@ -27,7 +27,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 如果未指定 `format_schema_message_name`，则会从 legacy `format_schema` 值中的 `message_name` 部分推断出消息名称。
 * 如果在使用 legacy 格式时指定了 `format_schema_message_name`，则会引发错误。
 
-## format_schema_source {#format_schema_source}
+## format_schema_source
 
 <SettingsInfoBlock type="String" default_value="file" />
 

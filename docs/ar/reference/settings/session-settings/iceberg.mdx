@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تتوفر هذه الإعدادات في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
+## iceberg_delete_data_on_drop
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -22,7 +22,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تحديد ما إذا كان سيتم حذف جميع ملفات Iceberg عند تنفيذ عملية الحذف أم لا.
 
-## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+## iceberg_file_entries_queue_size
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -34,7 +34,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يجب أن تكون القيمة أكبر من الصفر.
 
-## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+## iceberg_manifest_decode_concurrency
 
 **الأسماء البديلة**: `iceberg_delete_manifest_decode_concurrency`
 
@@ -50,7 +50,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يجب أن تكون القيمة أكبر من صفر؛ فالقيمة `1` تفك ترميز manifests واحدًا تلو الآخر.
 
-## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
+## iceberg_manifest_min_count_to_compact
 
 <ExperimentalBadge />
 
@@ -65,7 +65,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 القيمة الافتراضية تعكس القيمة الافتراضية الموثّقة لخاصية جدول Iceberg ‏`commit.manifest.min-count-to-merge` (100)،
 انظر https://iceberg.apache.org/docs/1.5.2/configuration/.
 
-## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
+## iceberg_max_number_datafiles_to_compact
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -73,7 +73,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 العتبة الخاصة بملفات بيانات الدمج في Iceberg.
 
-## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
+## iceberg_orphan_files_older_than_seconds
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 عتبة العمر الافتراضية، بالثواني، لإزالة الملفات اليتيمة في جداول Iceberg. لا تُعدّ الملفات الأحدث من هذه العتبة ملفات يتيمة. يُستخدم هذا الإعداد عند عدم تمرير الوسيط `older_than` في استدعاء الإجراء `remove_orphan_files()`. القيمة الافتراضية هي 259200 (3 أيام).
 
-## iceberg_snapshot_id {#iceberg_snapshot_id}
+## iceberg_snapshot_id
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -91,7 +91,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 نفّذ استعلامًا على جدول Iceberg باستخدام معرّف اللقطة المحدّد.
 
-## iceberg_timestamp_ms {#iceberg_timestamp_ms}
+## iceberg_timestamp_ms
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -99,7 +99,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 استعلام عن جدول Iceberg باستخدام اللقطة السارية عند طابع زمني محدد.
 
-## iceberg_tolerate_conflicting_manifest_schemas {#iceberg_tolerate_conflicting_manifest_schemas}
+## iceberg_tolerate_conflicting_manifest_schemas
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

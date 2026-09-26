@@ -10,14 +10,14 @@ doc_type: 'reference'
 
 `Dictionary` データベースエンジンは、設定済みのすべての [dictionary](/ja/reference/statements/create/dictionary) を読み取り専用のテーブルとして公開します。通常のテーブル構文で dictionary のデータを読み取ったり結合したりする必要があるクエリで役立ちます。
 
-## データベースの作成 {#creating-a-database}
+## データベースの作成
 
 ```sql
 CREATE DATABASE dictionaries
 ENGINE = Dictionary;
 ```
 
-## Usage {#usage}
+## Usage
 
 データベースを作成したら、設定済みのDictionary名をテーブル名として使用します:
 
@@ -28,7 +28,7 @@ FROM dictionaries.products;
 
 このデータベースは独自のテーブルを持ちません。テーブルとして見えるのはサーバーに設定された dictionary であるため、このデータベース内でのテーブルの作成・削除・変更はサポートされていません。dictionary 自体は [`CREATE DICTIONARY`](/ja/reference/statements/create/dictionary) またはサーバー設定で管理してください。
 
-## 関連項目 {#see-also}
+## 関連項目
 
 * [Dictionaries](/ja/concepts/features/dictionaries/index)
 * [`Dictionary` テーブルエンジン](/ja/reference/engines/table-engines/special/dictionary)

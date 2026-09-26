@@ -10,13 +10,13 @@ doc_type: 'reference'
 
 Fournit une interface de type table en lecture seule pour les tables Apache [Hudi](https://hudi.apache.org/) dans Amazon S3.
 
-## Syntaxe {#syntax}
+## Syntaxe
 
 ```sql
 hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 ```
 
-## Arguments {#arguments}
+## Arguments
 
 | Argument                                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -27,11 +27,11 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 | `compression`                                | Le paramètre est facultatif. Valeurs prises en charge : `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Par défaut, la compression est détectée automatiquement à partir de l&#39;extension du fichier. Pour `snappy`, le format de transmission est sélectionné par le paramètre [snappy&#95;mode](/fr/reference/settings/session-settings/other#snappy_mode) (`basic` par défaut).                   |
 | `extra_credentials`                          | Le paramètre est facultatif. Utilisé pour transmettre un `role_arn` pour le contrôle d&#39;accès basé sur les rôles dans ClickHouse Cloud. Voir [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour les étapes de configuration.                                                                                                                                                                                 |
 
-## Valeur renvoyée {#returned-value}
+## Valeur renvoyée
 
 Une table ayant la structure spécifiée, permettant de lire les données dans la table Hudi spécifiée sur S3.
 
-## Colonnes virtuelles {#virtual-columns}
+## Colonnes virtuelles
 
 * `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
 * `_file` — Nom du fichier. Type : `LowCardinality(String)`.
@@ -39,7 +39,7 @@ Une table ayant la structure spécifiée, permettant de lire les données dans l
 * `_time` — Heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si l&#39;heure est inconnue, la valeur est `NULL`.
 * `_etag` — ETag du fichier. Type : `LowCardinality(String)`. Si l&#39;ETag est inconnu, la valeur est `NULL`.
 
-## Voir aussi {#related}
+## Voir aussi
 
 * [Moteur Hudi](/fr/reference/engines/table-engines/integrations/hudi)
 * [Fonction de table cluster Hudi](/fr/reference/functions/table-functions/hudiCluster)

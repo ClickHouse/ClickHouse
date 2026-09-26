@@ -34,12 +34,12 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 * [`UPDATE` خفيف الوزن](/ar/reference/statements/update) - تحديث خفيف بديل يستخدم أجزاء التصحيح
 * [`APPLY PATCHES`](/ar/reference/statements/alter/apply-patches) - تطبيق التصحيحات يدويًا من التحديثات الخفيفة
 
-## الأعمدة المُجسَّدة {#materialized-columns}
+## الأعمدة المُجسَّدة
 
 إذا كان تعبير عمود [`MATERIALIZED`](/ar/reference/statements/create/table#materialized) يقرأ عمودًا
 مُحدَّثًا، تُعيد عملية التعديل حسابه، بحيث تظل قيمته المخزنة متسقة مع البيانات الجديدة.
 
-### الأعمدة المحسوبة من أعمدة EPHEMERAL {#columns-calculated-from-ephemeral-columns}
+### الأعمدة المحسوبة من أعمدة EPHEMERAL
 
 لا يوجد العمود [`EPHEMERAL`](/ar/reference/statements/create/table#ephemeral) إلا طوال مدة عملية
 `INSERT` ولا يُخزَّن مطلقًا، لذلك لا يمكن لعملية تعديل إعادة حساب عمود `MATERIALIZED` محسوب منه.
@@ -72,7 +72,7 @@ SELECT x, m FROM test;
 خارج عملية `INSERT` التي زوّدتها بها. تسجّل عملية التعديل تحذيرًا في سجل الخادم عند تخطي
 عمود لهذا السبب. لتحديث هذا العمود، أعد تنفيذ `INSERT` للصفوف المتأثرة.
 
-## محتوى ذي صلة {#related-content}
+## محتوى ذي صلة
 
 * مدونة: [التعامل مع التحديثات وعمليات الحذف في ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

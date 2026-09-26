@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 이 엔진은 S3, GCP, Azure 스토리지의 기존 [Delta Lake](https://github.com/delta-io/delta) 테이블과 통합할 수 있도록 지원하며, 읽기와 쓰기를 모두 지원합니다(쓰기는 S3와 GCS는 v25.10부터, Azure는 v26.9부터).
 
-## DeltaLake 테이블 생성하기 {#create-table}
+## DeltaLake 테이블 생성하기
 
 기본적으로 Delta Lake 테이블은 이미 S3, GCP 또는 Azure 스토리지에 존재해야 하며, 아래 명령은 DDL 컬럼 정의 없이 해당 테이블에 연결합니다. `allow_delta_lake_create_table = 1`을 사용하면 `_delta_log`가 없는 위치에서 명시적으로 컬럼을 지정한 `CREATE TABLE` 문이 `delta-kernel-rs`를 통해 초기 커밋을 기록하여 새 Delta Lake 테이블을 생성합니다(파티션 테이블 생성은 아직 지원되지 않음). Unity `DataLakeCatalog` 데이터베이스 내에서는 테이블이 카탈로그에도 등록됩니다.
 
@@ -113,7 +113,7 @@ doc_type: 'reference'
   </Tab>
 </Tabs>
 
-## DeltaLake 테이블에 데이터 쓰기 {#insert-data}
+## DeltaLake 테이블에 데이터 쓰기
 
 DeltaLake 테이블 엔진을 사용해 테이블을 생성한 후에는 다음과 같이 데이터를 삽입할 수 있습니다.
 
@@ -132,11 +132,11 @@ Delta Lake 쓰기는 기본적으로 비활성화되어 있는 베타 기능이�
   Azure workload identity 인증(`extra_credentials(client_id = ..., tenant_id = ...)`)은 delta kernel에서 지원되지 않습니다.
 </Note>
 
-### 데이터 캐시 {#data-cache}
+### 데이터 캐시
 
 `DeltaLake` 테이블 엔진과 테이블 함수는 `S3`, `AzureBlobStorage`, `HDFS` 스토리지와 마찬가지로 데이터 캐시를 지원합니다. 자세한 내용은 [&quot;S3 테이블 엔진&quot;](/ko/reference/engines/table-engines/integrations/s3#data-cache)을 참조하십시오.
 
-## 관련 항목 {#see-also}
+## 관련 항목
 
 * [DeltaLake 테이블 함수](/ko/reference/functions/table-functions/deltalake)
 

@@ -15,13 +15,13 @@ doc_type: 'reference'
   これらのファイルがノードごとに異なる場合、戻り値は事前には決定できず、ワーカーノードがイニシエーターにタスクを要求する順序に依存します。
 </Note>
 
-## 構文 {#syntax}
+## 構文
 
 ```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-## 引数 {#arguments}
+## 引数
 
 | Argument             | Description                                                                                                                                                                                                                                |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -31,7 +31,7 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
 | `structure`          | `'UserID UInt64, Name String'` 形式のテーブル構造です。カラム名と型を決定します。型: [String](/ja/reference/data-types/string)。                                                                                                                                         |
 | `compression_method` | 圧縮方式。サポートされている値は `none` (圧縮なし) 、`gzip/gz`、`deflate`、`brotli/br`、`lzma/xz`、`zstd/zst`、`lz4`、`bz2`、`snappy` です。`snappy` の場合、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定によって選択されます (デフォルトは `basic`) 。 |
 
-## 戻り値 {#returned-value}
+## 戻り値
 
 指定されたフォーマットとテーブル構造を持ち、指定されたパスに一致するファイル内のデータを含むテーブル。
 
@@ -80,11 +80,11 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
-## Path内のグロブ {#globs-in-path}
+## Path内のグロブ
 
 [File](/ja/reference/functions/table-functions/file#globs-in-path) テーブル関数でサポートされているすべてのパターンは、FileClusterでもサポートされています。
 
-## 関連 {#related}
+## 関連
 
 * [File テーブル関数](/ja/reference/functions/table-functions/file)
 

@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## automatic_parallel_replicas_min_bytes_per_replica {#automatic_parallel_replicas_min_bytes_per_replica}
+## automatic_parallel_replicas_min_bytes_per_replica
 
 <ExperimentalBadge />
 
@@ -25,7 +25,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 عتبة عدد البايتات المطلوب قراءتها لكل replica لتفعيل نسخ متماثلة متوازية تلقائيًا (ينطبق ذلك فقط عندما تكون قيمة `automatic_parallel_replicas_mode`=1). وتعني القيمة 0 عدم وجود عتبة.
 يُقدَّر إجمالي عدد البايتات المطلوب قراءتها استنادًا إلى الإحصاءات المُجمَّعة.
 
-## automatic_parallel_replicas_mode {#automatic_parallel_replicas_mode}
+## automatic_parallel_replicas_mode
 
 <ExperimentalBadge />
 

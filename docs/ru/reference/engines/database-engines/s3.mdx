@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Движок баз данных `S3` предоставляет объекты в Amazon S3 и S3-совместимых объектных хранилищах в виде таблиц, доступных только для чтения. Имя таблицы преобразуется в URL объекта с помощью табличной функции [`s3`](/ru/reference/functions/table-functions/s3).
 
-## Создание базы данных {#creating-a-database}
+## Создание базы данных
 
 ```sql
 CREATE DATABASE s3_data
@@ -19,7 +19,7 @@ ENGINE = S3([url[, NOSIGN | access_key_id, secret_access_key]]);
 
 Движок также может принимать named collection. Поддерживаемые ключи конфигурации: `url`, `access_key_id`, `secret_access_key`, `no_sign_request` и `use_environment_credentials`.
 
-## Usage {#usage}
+## Usage
 
 При использовании base URL имена таблиц задаются как пути к объектам относительно этого URL:
 
@@ -32,7 +32,7 @@ SELECT * FROM s3_data.`events.parquet`;
 
 Если base URL не задан, в качестве имени таблицы используется полный URL объекта. Схема и формат выводятся так же, как и для табличной функции `s3`. База данных не хранит определения таблиц и не поддерживает DDL таблиц и запись.
 
-## Управление доступом {#access-control}
+## Управление доступом
 
 URL-адреса S3 проверяются по фильтру удалённых хостов сервера. Для создания такой базы данных требуются привилегии источника `READ` и `WRITE` на `S3` независимо от [`table_engines_require_grant`](/ru/reference/settings/server-settings/settings/other#table_engines_require_grant), например:
 
@@ -42,7 +42,7 @@ GRANT READ, WRITE ON S3 TO user_name;
 
 Сведения о версиях и совместимости см. в разделе [привилегии `SOURCES`](/ru/reference/statements/grant#sources).
 
-## Смотрите также {#see-also}
+## Смотрите также
 
 * [Табличная функция `s3`](/ru/reference/functions/table-functions/s3)
 * [Использование S3 с ClickHouse](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

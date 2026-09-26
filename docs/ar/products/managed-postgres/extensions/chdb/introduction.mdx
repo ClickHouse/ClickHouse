@@ -7,11 +7,11 @@ doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'امتداد', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
 
-## المقدمة {#introduction}
+## المقدمة
 
 توفّر هذه المكتبة امتدادات PostgreSQL لتنفيذ استعلامات [chDB] داخل Postgres، ولنسخ البيانات من وإلى مجموعة متنوعة من التنسيقات ومخازن الكائنات.
 
-### امتداد chdb {#chdb-extension}
+### امتداد chdb
 
 يُشغّل امتداد `chdb` استعلامات [chDB]. وتُنفّذ الدالة `chdb_query()` استعلامًا
 واحدًا. على سبيل المثال، هذا الاستعلام:
@@ -36,7 +36,7 @@ $$) AS (id int, months int, days int);
 راجع [وثائق chdb](/ar/products/managed-postgres/extensions/chdb/chdb)
 لمزيد من التفاصيل.
 
-### وحدة chdb_hook {#chdb_hook-module}
+### وحدة chdb_hook
 
 ترتبط وحدة `chdb_hook` بأمر [COPY] عبر خطاف لنسخ البيانات من أو إلى S3 أو GCS أو Azure Blob أو ملف أو عنوان URL عبر http. يحمّل هذا المثال السجلات من
 عدة ملفات CSV على S3 بأمر [COPY] واحد:
@@ -91,7 +91,7 @@ CREATE TABLE reviews () WITH (
 راجع [توثيق chdb&#95;hook](/ar/products/managed-postgres/extensions/chdb/chdb_hook)
 لمزيد من التفاصيل.
 
-## قياس أداء التنسيقات {#benchmarking-formats}
+## قياس أداء التنسيقات
 
 يقارن [benchmark] أداء `COPY` في [chdb&#95;hook] بأداء
 [aws&#95;s3] و[pg&#95;duckdb] و[pg&#95;lake] لنحو مليون صف من [NYC Taxi dataset] بمجموعة
@@ -121,7 +121,7 @@ CREATE TABLE reviews () WITH (
 الأخرى؛ أما تنسيقات JSON الأخرى، مثل [JSONCompactEachRow]، فأداؤها أقرب
 إلى أداء التنسيقات الأخرى.
 
-## المعمارية {#architecture}
+## المعمارية
 
 يعتمد امتدادا chdb و chdb&#95;hook على عملية `chdb_helper` لتنفيذ استعلامات
 [chDB]. وتُبقي هذه العملية المساعدة استهلاك [chDB] للموارد منفصلًا
@@ -145,7 +145,7 @@ CREATE TABLE reviews () WITH (
   لكل استعلام، يتصل المساعد بـ database جديدة ومؤقتة من chdb على القرص لتنفيذه. ونتيجة لذلك، يعمل كل استعلام حاليًا في عزلة تامة عن جميع الـ الاستعلامات الأخرى. فلا تُنشئ table وتتوقع أن تستعلم عنها في استعلام لاحق.
 </Important>
 
-## التبعيات {#dependencies}
+## التبعيات
 
 يتطلب امتداد `chdb` إصدار PostgreSQL 15 أو أحدث، ومكتبة [chDB]
 بالإصدار v26.7.0 أو أحدث (المتوفرة حاليًا لنظامي Linux وmacOS فقط). وأبسط
@@ -166,7 +166,7 @@ export BUNDLE_LIBCHDB=1 LIBCHDB_BUILD=static
 
 على Linux، يمكنك أيضاً جعل عملية التثبيت تنزّل مكتبة `libchdb` الديناميكية وتثبّتها، وذلك بتعيين `export BUNDLE_LIBCHDB=1` قبل تشغيل أوامر `make` الخاصة بـ [التثبيت](#compile-from-source).
 
-### البناء من المصدر {#compile-from-source}
+### البناء من المصدر
 
 لبناء chdb، نفّذ ما يلي فقط:
 
@@ -245,12 +245,12 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-## المؤلفون {#authors}
+## المؤلفون
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## حقوق النشر {#copyright}
+## حقوق النشر
 
 حقوق النشر (c) 2026، ClickHouse
 

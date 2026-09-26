@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## automatic_parallel_replicas_min_bytes_per_replica {#automatic_parallel_replicas_min_bytes_per_replica}
+## automatic_parallel_replicas_min_bytes_per_replica
 
 <ExperimentalBadge />
 
@@ -25,7 +25,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 用于自动启用并行副本的每个副本读取字节数阈值 (仅在 `automatic_parallel_replicas_mode`=1 时适用) 。0 表示不设阈值。
 待读取的总字节数会根据已收集的统计信息进行估算。
 
-## automatic_parallel_replicas_mode {#automatic_parallel_replicas_mode}
+## automatic_parallel_replicas_mode
 
 <ExperimentalBadge />
 

@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## max_rows_for_lazy_final {#max_rows_for_lazy_final}
+## max_rows_for_lazy_final
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" />
 
@@ -21,13 +21,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 遅延実行 FINAL 最適化で使用する集合の最大行数です。これを超えると、通常の FINAL にフォールバックします。
 
-## max_rows_in_distinct {#max_rows_in_distinct}
+## max_rows_in_distinct
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 DISTINCT 使用時の異なる行の最大数。
 
-## max_rows_in_join {#max_rows_in_join}
+## max_rows_in_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,13 +53,13 @@ JOIN の部分では、この制限は上限ではなく追加のスピルのト
 * 正の整数。
 * `0` — 行数は無制限。
 
-## max_rows_in_set {#max_rows_in_set}
+## max_rows_in_set
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 サブクエリから作成される IN clause 内のデータセットの最大行数。
 
-## max_rows_in_set_to_optimize_join {#max_rows_in_set_to_optimize_join}
+## max_rows_in_set_to_optimize_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -72,7 +72,7 @@ JOIN の部分では、この制限は上限ではなく追加のスピルのト
 * 0 — 無効。
 * 任意の正の整数。
 
-## max_rows_to_group_by {#max_rows_to_group_by}
+## max_rows_to_group_by
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -84,7 +84,7 @@ GROUP BY による集約で、指定した数を超える
 既定では &#39;group&#95;by&#95;overflow&#95;mode&#39; の `throw` によって決まりますが、
 近似 GROUP BY モードに切り替えることもできます。
 
-## max_rows_to_read {#max_rows_to_read}
+## max_rows_to_read
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -93,7 +93,7 @@ GROUP BY による集約で、指定した数を超える
 テーブル式にのみ適用されます。また、リモートサーバーから読み取る場合は、
 リモートサーバー上でのみチェックされます。
 
-## max_rows_to_read_leaf {#max_rows_to_read_leaf}
+## max_rows_to_read_leaf
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -115,7 +115,7 @@ GROUP BY による集約で、指定した数を超える
   この設定は、`prefer_localhost_replica=1` と併用すると不安定です。
 </Note>
 
-## max_rows_to_sort {#max_rows_to_sort}
+## max_rows_to_sort
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -123,7 +123,7 @@ GROUP BY による集約で、指定した数を超える
 ORDER BY の処理で指定された数を超えるレコードを処理する必要がある場合、
 その動作は `sort_overflow_mode` によって決まり、デフォルトでは `throw` に設定されています。
 
-## max_rows_to_transfer {#max_rows_to_transfer}
+## max_rows_to_transfer
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

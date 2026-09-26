@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 `S3` データベースエンジンは、Amazon S3 および S3 互換のオブジェクトストレージ上のオブジェクトを読み取り専用のテーブルとして公開します。テーブル名は、[`s3`](/ja/reference/functions/table-functions/s3) テーブル関数によってオブジェクトの URL として解決されます。
 
-## データベースの作成 {#creating-a-database}
+## データベースの作成
 
 ```sql
 CREATE DATABASE s3_data
@@ -19,7 +19,7 @@ ENGINE = S3([url[, NOSIGN | access_key_id, secret_access_key]]);
 
 このエンジンは named collection を受け取ることもできます。サポートされている設定キーは `url`、`access_key_id`、`secret_access_key`、`no_sign_request`、`use_environment_credentials` です。
 
-## Usage {#usage}
+## Usage
 
 base URL を指定した場合、テーブル名はその URL からの相対的なオブジェクトパスとなります。
 
@@ -32,7 +32,7 @@ SELECT * FROM s3_data.`events.parquet`;
 
 base URL を指定しない場合は、オブジェクトの完全な URL をテーブル名として使用します。スキーマとフォーマットは、`s3` テーブル関数と同じ方法で推論されます。このデータベースはテーブル定義を保持せず、テーブルの DDL や書き込みもサポートしません。
 
-## アクセス制御 {#access-control}
+## アクセス制御
 
 S3 URL は、サーバーの remote-host フィルターによってチェックされます。このデータベースを作成するには、[`table_engines_require_grant`](/ja/reference/settings/server-settings/settings/other#table_engines_require_grant) の設定にかかわらず、`S3` に対する `READ` および `WRITE` のソース権限が必要です。例:
 
@@ -42,7 +42,7 @@ GRANT READ, WRITE ON S3 TO user_name;
 
 バージョンおよび互換性の詳細については、[`SOURCES` 権限](/ja/reference/statements/grant#sources)を参照してください。
 
-## 関連項目 {#see-also}
+## 関連項目
 
 * [`s3` テーブル関数](/ja/reference/functions/table-functions/s3)
 * [ClickHouse で S3 を使用する](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

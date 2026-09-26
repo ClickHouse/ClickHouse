@@ -15,7 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 
 Функцию `file` можно использовать в запросах `SELECT` и `INSERT` для чтения из файлов и записи в них.
 
-## Синтаксис {#syntax}
+## Синтаксис
 
 ```sql
 file([path_to_archive ::] path [,format] [,structure] [,compression])
@@ -27,7 +27,7 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
 ```
 
-## Аргументы {#arguments}
+## Аргументы
 
 | Параметр          | Описание                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -55,13 +55,13 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
   ```
 </Tip>
 
-## Возвращаемое значение {#returned-value}
+## Возвращаемое значение
 
 Таблица для чтения данных из файла или записи данных в файл.
 
-## Примеры записи в файл {#examples-for-writing-to-a-file}
+## Примеры записи в файл
 
-### Запись в файл в формате TSV {#write-to-a-tsv-file}
+### Запись в файл в формате TSV
 
 ```sql
 INSERT INTO TABLE FUNCTION
@@ -78,7 +78,7 @@ VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
 1    3    2
 ```
 
-### Запись в несколько файлов в формате TSV с разбиением на партиции {#partitioned-write-to-multiple-tsv-files}
+### Запись в несколько файлов в формате TSV с разбиением на партиции
 
 Если при вставке данных в табличную функцию типа `file` указать выражение `PARTITION BY`, для каждой партиции будет создан отдельный файл. Разбиение данных на отдельные файлы помогает повысить производительность операций чтения.
 
@@ -102,9 +102,9 @@ VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
 1    2    3
 ```
 
-## Примеры чтения из файла {#examples-for-reading-from-a-file}
+## Примеры чтения из файла
 
-### SELECT из CSV-файла {#select-from-a-csv-file}
+### SELECT из CSV-файла
 
 Сначала задайте `user_files_path` в конфигурации сервера и подготовьте файл `test.csv`:
 
@@ -133,7 +133,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-### Вставка данных из файла в таблицу {#inserting-data-from-a-file-into-a-table}
+### Вставка данных из файла в таблицу
 
 ```sql
 INSERT INTO FUNCTION
@@ -159,7 +159,7 @@ file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-## Глоб-шаблоны в пути {#globs-in-path}
+## Глоб-шаблоны в пути
 
 В путях можно использовать глоб-шаблоны. Файлы должны соответствовать всему шаблону пути, а не только суффиксу или префиксу. Есть одно исключение: если путь указывает на существующий
 каталог и не содержит глоб-шаблонов, к пути неявно добавляется `*`, чтобы
@@ -173,7 +173,7 @@ SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 
 Конструкции с `{}` аналогичны конструкциям в табличной функции [remote](/ru/reference/functions/table-functions/remote) и [hdfs](/ru/reference/functions/table-functions/hdfs).
 
-## Примеры {#examples}
+## Примеры
 
 **Пример**
 
@@ -232,14 +232,14 @@ SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
 SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
-## Виртуальные столбцы {#virtual-columns}
+## Виртуальные столбцы
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
 * `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер файла неизвестен, значение — `NULL`.
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 
-## Настройка use_hive_partitioning {#hive-style-partitioning}
+## Настройка use_hive_partitioning
 
 Когда параметр `use_hive_partitioning` установлен в 1, ClickHouse определяет партиционирование в стиле Hive в пути (`/name=value/`) и позволяет использовать столбцы партиции в запросе как виртуальные столбцы. Эти виртуальные столбцы будут иметь те же имена, что и в пути с партициями.
 
@@ -251,7 +251,7 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-## Настройки {#settings}
+## Настройки
 
 | Настройка                                                                                                                                               | Описание                                                                                                                                                                                                |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -261,7 +261,7 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
 | [engine&#95;file&#95;skip&#95;empty&#95;files](/ru/reference/settings/session-settings/engine-file#engine_file_skip_empty_files)                           | позволяет пропускать пустые файлы при чтении. По умолчанию отключено.                                                                                                                                   |
 | [storage&#95;file&#95;read&#95;method](/ru/reference/settings/session-settings/storage#storage_file_read_method)                                           | метод чтения данных из файла хранилища; одно из следующих значений: read, pread, mmap (только для clickhouse-local). Значение по умолчанию: `pread` для clickhouse-server, `mmap` для clickhouse-local. |
 
-## См. также {#related}
+## См. также
 
 * [Виртуальные столбцы](/ru/reference/engines/table-engines/index#table_engines-virtual_columns)
 * [Переименование файлов после обработки](/ru/reference/settings/session-settings/other#rename_files_after_processing)

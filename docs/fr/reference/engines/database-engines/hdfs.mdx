@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Le moteur de base de données `HDFS` expose les fichiers présents dans HDFS sous forme de tables en lecture seule. Le nom d&#39;une table est résolu via la fonction de table [`hdfs`](/fr/reference/functions/table-functions/hdfs).
 
-## Création d&#39;une base de données {#creating-a-database}
+## Création d&#39;une base de données
 
 ```sql
 CREATE DATABASE hdfs_data
@@ -19,7 +19,7 @@ ENGINE = HDFS([hdfs_host_and_root_path]);
 
 `hdfs_host_and_root_path` permet, de manière facultative, de définir une URL HDFS de base. Lorsqu&#39;elle est présente, les noms de tables sont des chemins relatifs à cette URL. Sinon, les noms de tables doivent être des URL `hdfs://` complètes.
 
-## Usage {#usage}
+## Usage
 
 ```sql
 CREATE DATABASE hdfs_data
@@ -30,7 +30,7 @@ SELECT * FROM hdfs_data.`events.parquet`;
 
 Le schema et le format sont inférés de la même manière que pour la fonction de table `hdfs`. La base de données ne possède aucune table definition et ne prend en charge ni les DDL de table ni les writes.
 
-## Access control {#access-control}
+## Access control
 
 Les URL HDFS sont vérifiées au regard du filter d&#39;hôtes distants du server. La création de cette base de données nécessite les grants de source `READ` et `WRITE` sur `HDFS`, indépendamment de [`table_engines_require_grant`](/fr/reference/settings/server-settings/settings/other#table_engines_require_grant), par exemple :
 
@@ -40,7 +40,7 @@ GRANT READ, WRITE ON HDFS TO user_name;
 
 Consultez les [privilèges `SOURCES`](/fr/reference/statements/grant#sources) pour plus de détails sur la version et la compatibilité.
 
-## Voir aussi {#see-also}
+## Voir aussi
 
 * [Fonction de table `hdfs`](/fr/reference/functions/table-functions/hdfs)
 * [Moteur de base de données Filesystem](/fr/reference/engines/database-engines/filesystem)

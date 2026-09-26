@@ -60,7 +60,7 @@ Union
             Output: number
 ```
 
-## EXPLAIN の種類 {#explain-types}
+## EXPLAIN の種類
 
 * `AST` — 抽象構文木。
 * `SYNTAX` — AST レベルでの最適化後のクエリテキスト。
@@ -71,7 +71,7 @@ Union
 * `ESTIMATE` — クエリの処理中にテーブルから読み取ると見積もられる行数、マーク数、パーツ数。
 * `TABLE OVERRIDE` — テーブル関数のスキーマに対するテーブルオーバーライドの検証済み結果。
 
-### EXPLAIN AST {#explain-ast}
+### EXPLAIN AST
 
 クエリASTをダンプします。`SELECT` だけでなく、あらゆる種類のクエリをサポートします。
 
@@ -109,7 +109,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-### EXPLAIN SYNTAX {#explain-syntax}
+### EXPLAIN SYNTAX
 
 構文解析後のクエリの抽象構文木 (AST) を表示します。
 
@@ -150,7 +150,7 @@ ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
 ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-### EXPLAIN QUERY TREE {#explain-query-tree}
+### EXPLAIN QUERY TREE
 
 設定:
 
@@ -179,7 +179,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-### EXPLAIN PLAN {#explain-plan}
+### EXPLAIN PLAN
 
 クエリプランのステップを出力します。
 
@@ -662,7 +662,7 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
-### EXPLAIN PIPELINE {#explain-pipeline}
+### EXPLAIN PIPELINE
 
 設定:
 
@@ -702,7 +702,7 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-### EXPLAIN ANALYZE {#explain-analyze}
+### EXPLAIN ANALYZE
 
 `EXPLAIN ANALYZE` は実際にクエリを実行し、結果の行を破棄したうえで、各ステップに実行時に実際に何が起きたかを注記として付けた、`EXPLAIN PLAN` と同じプランツリーを出力します。
 
@@ -811,7 +811,7 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. `max_threads` で設定されたクエリ処理スレッドの最大数
 </Note>
 
-#### Join ステップ {#explain-analyze-join-steps}
+#### Join ステップ
 
 join ステップでは、`EXPLAIN ANALYZE` は結合順序オプティマイザの推定値と実際に起きたことを比較する行 ([推定値と実測値の join メトリクス](#explain-analyze-join-estimation) を参照) と、各側の*参加*行 (`Left` と `Right`) を出力し、その後に join の実装固有の行を出力します。[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) のすべての値 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) に対応しています。また、この設定では選択できない 2 つの実装、すなわち `CROSS` または `COMMA` join、キーの等価条件を含まない `ON` 句、および [`Join`](/ja/reference/engines/table-engines/special/join) テーブルエンジンも対象です。ほとんどの実装では両側が報告されますが、マテリアライズする側のみを報告するものもあります (たとえば、`direct` は `Left:` のみを出力します) 。
 
@@ -832,7 +832,7 @@ Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <ma
 
 正確に導出できない数値は、`0` ではなく `not collected` として報告されます。`match rate` と `fanout` は `matched` から導出されるため、`matched` がない側では、3つすべてが `not collected` として報告されます。
 
-#### 推定値と実測値の join メトリクス {#explain-analyze-join-estimation}
+#### 推定値と実測値の join メトリクス
 
 join ステップは、結合順序オプティマイザによる推定値 (`EXPLAIN PLAN` が表示するものと同じ値。[EXPLAIN PLAN](#explain-plan) セクションを参照) を保持しており、`EXPLAIN ANALYZE` はそれぞれを実測値と並べて出力します。
 
@@ -870,7 +870,7 @@ Join (JOIN FillRightFirst)
 │    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
 ```
 
-#### ファンアウト {#explain-analyze-fanout}
+#### ファンアウト
 
 `fanout` は行数の増加倍率を示します。
 
@@ -885,7 +885,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 * `fanout = 1` — 明確な 1:1 join です。一致した各行から、ちょうど 1 行の出力行が生成されます。
 * `fanout > 1` — 1:N join です。もう一方の側の重複キーによって行数が増加しました。両側で同時に大きな値になる場合は、意図しない Cartesian 的な行数の急増を示します。
 
-#### 数値に `matches = 1` が必要な場合 {#explain-analyze-matches}
+#### 数値に `matches = 1` が必要な場合
 
 これらの数値の大半は、結合がいずれにせよ構築するデータから得られるため、通常の `EXPLAIN ANALYZE` で報告されます。残りは、結合が通常は行わない追跡処理を必要とするため、`EXPLAIN ANALYZE matches = 1` でのみ報告されます。どれが該当するかはアルゴリズムによって異なり、hash ファミリーでは次の 2 つです。
 
@@ -932,7 +932,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 両方のアルゴリズムが数値を報告する場合、その値は一致します。マージアルゴリズムは単により多くの情報を持っているだけで、何を一致とみなすかについて見解が異なるわけではありません。
 
-#### アルゴリズム固有の行 {#explain-analyze-join-algorithm-lines}
+#### アルゴリズム固有の行
 
 各JOIN実装がこれに加えて出力する行を見てみましょう。
 
@@ -989,7 +989,7 @@ Spill: yes · right spilled <right_spilled_bytes>
 
 [`Join`](/ja/reference/engines/table-engines/special/join) テーブルエンジンとの join では、事前構築済みテーブルを説明する `Hash table:` 行とともに、両側が報告されます。右側では、クエリごとの build の行数ではなく、エンジンに格納されている行数がカウントされます。
 
-#### プロセッサごとの時間 {#explain-analyze-processors}
+#### プロセッサごとの時間
 
 `processors = 1` の場合、各ステージの下に追加の行が出力され、そのステージのプロセッサごとの経過時間の分布が表示されます。
 
@@ -999,7 +999,7 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 `<n>` はそのステージのプロセッサ数です。`median` と `max` の間に大きなギャップがある場合は、並列プロセッサ間で負荷に偏りがあることを示します。
 
-### EXPLAIN ESTIMATE {#explain-estimate}
+### EXPLAIN ESTIMATE
 
 クエリの実行時に、テーブルから読み取られると推定される行数、マーク数、パーツ数を表示します。[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリーのテーブルで使用できます。
 
@@ -1023,7 +1023,7 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-### EXPLAIN WHATIF {#explain-whatif}
+### EXPLAIN WHATIF
 
 仮想的なスキップ索引をディスク上に*マテリアライズ*することなく、それが `SELECT` クエリにもたらす効果を見積もります。[`CREATE HYPOTHETICAL INDEX`](/ja/reference/statements/hypothetical-index#create-hypothetical-index) で 1 つ以上の候補を定義し、`EXPLAIN WHATIF SELECT ...` を実行すると、各候補について、適用可否、推定読み取りマーク数、推定バイト数、スキップ率を確認できます。
 
@@ -1147,7 +1147,7 @@ Estimation:
 
 どちらの方法も利用できない場合 (たとえば `empirical = 0` で、かつカラム STATISTICS が定義されていない場合) 、推定器は `source: applicability_only` と保守的な `skip_ratio: 0.0%` を報告します。
 
-### EXPLAIN TABLE OVERRIDE {#explain-table-override}
+### EXPLAIN TABLE OVERRIDE
 
 テーブル関数を介してアクセスするテーブルのスキーマに対して、テーブルオーバーライドを適用した結果を表示します。
 また、いくつかの検証も行い、オーバーライドによって何らかの問題が発生する場合は例外をスローします。

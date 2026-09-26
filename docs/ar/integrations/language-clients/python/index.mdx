@@ -28,7 +28,7 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
   تستخدم برامج ClickHouse Connect العميلة القياسية واجهة HTTP. ويدعم ذلك موازنات تحميل HTTP والوكيلات وضوابط الشبكات المؤسسية الشائعة. كما يوفّر ClickHouse Connect أيضًا واجهة خلفية [chDB](#embedded-chdb-backend) تجريبية تعمل داخل العملية.
 </Note>
 
-## المتطلبات والتوافق {#requirements-and-compatibility}
+## المتطلبات والتوافق
 
 | المكوّن    | الإصدارات المدعومة                                                                                        |
 | ---------- | --------------------------------------------------------------------------------------------------------- |
@@ -42,7 +42,7 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
 تتضمن الحزمة حزم wheel مُصرَّفة حيثما كانت متاحة، وتلجأ إلى تنفيذ ببايثون خالص عندما يتعذر بناء امتدادات Cython. ‏PyArrow مدعوم على بايثون من 3.10 إلى 3.14. يتطلب بايثون 3.14 إصدار PyArrow 22 أو أحدث.
 
-## التثبيت {#installation}
+## التثبيت
 
 ثبّت ClickHouse Connect من [PyPI](https://pypi.org/project/clickhouse-connect/) عبر pip:
 
@@ -70,7 +70,7 @@ pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal system
 * نفّذ `git clone` لـ [مستودع GitHub](https://github.com/ClickHouse/clickhouse-connect).
 * انتقل إلى جذر المشروع وشغّل `pip install .`. يثبّت نظام البناء Cython تلقائيًا لتصريف امتدادات C الاختيارية.
 
-### أوضاع البناء من المصدر {#source-build-modes}
+### أوضاع البناء من المصدر
 
 يدعم البناء من المصدر ثلاثة أوضاع. يفشل الوضع الافتراضي والوضع المطلوب إذا لم يكن Cython متاحًا أو إذا فشلت `cythonize()`. أما وضع التخطي فلا يستورد Cython.
 
@@ -98,24 +98,24 @@ python -c "from importlib.util import find_spec; print(all(find_spec(m) for m in
 
 يتوفّر الإصدار المثبَّت عبر `clickhouse_connect.__version__`.
 
-## سياسة الدعم {#support-policy}
+## سياسة الدعم
 
 حدِّث إلى أحدث إصدار من ClickHouse Connect قبل الإبلاغ عن مشكلة. سجّل المشكلات في [مشروع GitHub](https://github.com/ClickHouse/clickhouse-connect/issues). يستهدف ClickHouse Connect [إصدارات ClickHouse المدعومة حاليًا](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md) وقت إصدار كل نسخة من برنامج التشغيل. وغالبًا ما يعمل مع إصدارات الخادم الأقدم، لكن أنواع البيانات الأحدث وميزات البروتوكول قد تتطلب خادمًا أحدث.
 
-## الاستخدام الأساسي {#basic-usage}
+## الاستخدام الأساسي
 
-### اجمع بيانات الاتصال الخاصة بك {#gather-your-connection-details}
+### اجمع بيانات الاتصال الخاصة بك
 
 <ConnectionDetails />
 
-### إنشاء اتصال {#establish-a-connection}
+### إنشاء اتصال
 
 فيما يلي مثالان للاتصال بـ ClickHouse:
 
 * الاتصال بخادم ClickHouse على localhost.
 * الاتصال بخدمة ClickHouse Cloud.
 
-#### استخدم مثيل عميل ClickHouse Connect للاتصال بخادم ClickHouse على localhost: {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost}
+#### استخدم مثيل عميل ClickHouse Connect للاتصال بخادم ClickHouse على localhost:
 
 ```python
 import clickhouse_connect
@@ -127,7 +127,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-#### استخدم مثيل عميل ClickHouse Connect للاتصال بخدمة ClickHouse Cloud: {#use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service}
+#### استخدم مثيل عميل ClickHouse Connect للاتصال بخدمة ClickHouse Cloud:
 
 <Tip>
   استخدم تفاصيل الاتصال التي جُمعت سابقًا. تتطلب خدمات ClickHouse Cloud استخدام TLS، لذا استخدم المنفذ 8443.
@@ -144,7 +144,7 @@ client = clickhouse_connect.get_client(
 )
 ```
 
-### التفاعل مع قاعدة البيانات {#interact-with-your-database}
+### التفاعل مع قاعدة البيانات
 
 لتنفيذ أمر في ClickHouse SQL، استخدم طريقة ‏`command` الخاصة بالعميل:
 
@@ -175,7 +175,7 @@ print(result.result_rows)
 client.close()
 ```
 
-## الواجهة الخلفية المضمّنة لـ chDB {#embedded-chdb-backend}
+## الواجهة الخلفية المضمّنة لـ chDB
 
 تُشغِّل الواجهة الخلفية التجريبية لـ chDB استعلامات ClickHouse داخل عملية بايثون من دون خادم HTTP. ثبّت الإضافة `chdb`، ثم اختر الواجهة الخلفية باستخدام `interface="chdb"` أو عبر `chdb://` DSN:
 

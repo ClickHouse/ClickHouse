@@ -39,7 +39,7 @@ Puede especificar cuánto tiempo (en segundos) se debe esperar a que las réplic
   Si `alter_sync` está establecido en `2` y algunas réplicas permanecen inactivas durante más tiempo del especificado por el SETTING `replication_wait_for_inactive_replica_timeout`, se lanza una excepción `UNFINISHED`. Con `alter_sync = 3` no se espera a las réplicas inactivas, por lo que no se lanza ninguna excepción.
 </Note>
 
-## DRY RUN {#dry-run}
+## DRY RUN
 
 La cláusula `DRY RUN` simula una fusión de las partes especificadas sin aplicar el resultado. La parte fusionada se escribe en una ubicación temporal, se valida y luego se descarta. Las partes originales y los datos de la tabla permanecen sin cambios.
 
@@ -88,7 +88,7 @@ ORDER BY name;
 └─────────────┴──────┘
 ```
 
-## Expresión BY {#by-expression}
+## Expresión BY
 
 Si desea realizar la deduplicación sobre un conjunto personalizado de columnas en lugar de sobre todas ellas, puede especificar explícitamente la lista de columnas o usar cualquier combinación de expresiones [`*`](/es/reference/statements/select/index#asterisk), [`COLUMNS`](/es/reference/statements/select/index#select-clause) o [`EXCEPT`](/es/reference/statements/select/except_modifier). La lista de columnas escrita explícitamente o expandida implícitamente debe incluir todas las columnas especificadas en la expresión de ordenación de filas (tanto la clave primaria como la clave de ordenación) y en la expresión de particionado (la clave de particionado).
 
@@ -155,7 +155,7 @@ SELECT * FROM example;
 
 Todos los ejemplos que siguen se ejecutan sobre este estado de 5 filas.
 
-#### `DEDUPLICATE` {#deduplicate}
+#### `DEDUPLICATE`
 
 Cuando no se especifican las columnas para la deduplicación, se tienen en cuenta todas. La fila se elimina solo si todos los valores de todas las columnas coinciden con los valores correspondientes de la fila anterior:
 
@@ -180,7 +180,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-#### `DEDUPLICATE BY *` {#deduplicate-by-}
+#### `DEDUPLICATE BY *`
 
 Cuando las columnas se especifican de forma implícita, la tabla se deduplica por todas las columnas que no son `ALIAS` ni `MATERIALIZED`. Teniendo en cuenta la tabla anterior, estas son las columnas `primary_key`, `secondary_key`, `value` y `partition_key`:
 
@@ -205,7 +205,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-#### `DEDUPLICATE BY * EXCEPT` {#deduplicate-by--except}
+#### `DEDUPLICATE BY * EXCEPT`
 
 Deduplica por todas las columnas que no sean `ALIAS` ni `MATERIALIZED`, y excluyendo explícitamente `value`: las columnas `primary_key`, `secondary_key` y `partition_key`.
 
@@ -229,7 +229,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-#### `DEDUPLICATE BY <list of columns>` {#deduplicate-by-list-of-columns}
+#### `DEDUPLICATE BY <list of columns>`
 
 Deduplica explícitamente según las columnas `primary_key`, `secondary_key` y `partition_key`:
 
@@ -253,7 +253,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-#### `DEDUPLICATE BY COLUMNS(<regex>)` {#deduplicate-by-columnsregex}
+#### `DEDUPLICATE BY COLUMNS(<regex>)`
 
 Deduplica en todas las columnas que coincidan con una expresión regular: las columnas `primary_key`, `secondary_key` y `partition_key`:
 

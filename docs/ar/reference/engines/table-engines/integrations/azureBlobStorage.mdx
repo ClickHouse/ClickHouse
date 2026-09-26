@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 يوفر هذا المحرك تكاملًا مع [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
 
-## إنشاء جدول {#create-table}
+## إنشاء جدول
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -19,7 +19,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-### معلمات المحرّك {#engine-parameters}
+### معلمات المحرّك
 
 * `endpoint` — عنوان URL لنقطة نهاية AzureBlobStorage مع الحاوية والبادئة. ويمكن أن يتضمن اختياريًا account&#95;name إذا كانت طريقة المصادقة المستخدمة تتطلب ذلك. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) أو يمكن توفير هذه المعلمات بشكل منفصل باستخدام storage&#95;account&#95;url و account&#95;name و container. ولتحديد البادئة، يجب استخدام endpoint.
 * `endpoint_contains_account_name` - يُستخدم هذا العلَم لتحديد ما إذا كان endpoint يتضمن account&#95;name، لأنه لا يلزم إلا لبعض طرق المصادقة. (القيمة الافتراضية: true)
@@ -55,14 +55,14 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
-## الأعمدة الافتراضية {#virtual-columns}
+## الأعمدة الافتراضية
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
 * `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان الحجم غير معروف، تكون القيمة `NULL`.
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
 
-## المصادقة {#authentication}
+## المصادقة
 
 توجد حاليًا 3 طرق للمصادقة:
 
@@ -70,7 +70,7 @@ SELECT * FROM test_table;
 * `SAS Token` - يمكن استخدامها عبر توفير `endpoint` أو `connection_string` أو `storage_account_url`. ويُستدلّ عليها بوجود &#39;?&#39; في عنوان URL. راجع [azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) للاطلاع على أمثلة.
 * `Workload Identity` - يمكن استخدامها عبر توفير `endpoint` أو `storage_account_url`. إذا تم تعيين المعلَمة `use_workload_identity` في `config`، فستُستخدم [workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications) للمصادقة.
 
-### التخزين المؤقت للبيانات {#data-cache}
+### التخزين المؤقت للبيانات
 
 يدعم محرك الجدول `Azure` التخزين المؤقت للبيانات على القرص المحلي.
 راجع خيارات تهيئة ذاكرة التخزين المؤقت لنظام الملفات وطريقة استخدامها في هذا [القسم](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache).
@@ -99,13 +99,13 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 2. إعادة استخدام إعدادات ذاكرة التخزين المؤقت (وبالتالي مساحة تخزينها) من قسم `storage_configuration` في ClickHouse، [كما هو موضح هنا](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
-### PARTITION BY {#partition-by}
+### PARTITION BY
 
 `PARTITION BY` — اختياري. في معظم الحالات، لا تحتاج إلى مفتاح تقسيم، وحتى إذا احتجت إليه، فغالبًا لا تحتاج إلى مفتاح تقسيم أكثر تفصيلًا من التقسيم حسب الشهر. لا يؤدي التقسيم إلى تسريع الاستعلامات (على عكس تعبير `ORDER BY`). يجب ألّا تستخدم أبدًا تقسيمًا مفرط الدقة. لا تقسّم بياناتك حسب معرّفات العملاء أو أسمائهم (واجعل بدلًا من ذلك معرّف العميل أو اسمه هو العمود الأول في تعبير `ORDER BY`).
 
 للتقسيم حسب الشهر، استخدم التعبير `toYYYYMM(date_column)`، حيث إن `date_column` هو عمود يحتوي على تاريخ من النوع [Date](/ar/reference/data-types/date). وتكون أسماء الأقسام هنا بالتنسيق `"YYYYMM"`.
 
-#### استراتيجية التقسيم {#partition-strategy}
+#### استراتيجية التقسيم
 
 `wildcard`: يستبدل حرف البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. القراءة غير مدعومة. يُحدَّد افتراضيًا عندما يحتوي المسار على `{_partition_id}`.
 
@@ -132,7 +132,7 @@ select _path, * from azure_table;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-## انظر أيضًا {#see-also}
+## انظر أيضًا
 
 [دالة الجدول Azure Blob Storage](/ar/reference/functions/table-functions/azureBlobStorage)
 

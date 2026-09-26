@@ -38,7 +38,7 @@ authentifié par une clé matérielle ou un certificat peut s&#39;en servir pour
 compte. Ce même privilège autorise le statement équivalent
 `ALTER USER <current user> ADD IDENTIFIED ...`.
 
-## Résultat {#result}
+## Résultat
 
 La requête renvoie une ligne comportant deux colonnes :
 
@@ -57,7 +57,7 @@ Le secret comporte 32 caractères et est généré à partir d&#39;une source al
 [règles de complexité des mots de passe](/fr/reference/statements/create/user#identification) — celles-ci existent pour
 encadrer les mots de passe choisis par des humains.
 
-## Clauses VALID UNTIL et VALID FOR {#valid-until-clause}
+## Clauses VALID UNTIL et VALID FOR
 
 Elles limitent la durée de vie du token. Elles fonctionnent exactement comme les clauses correspondantes d&#39;une méthode d’authentification
 de [`CREATE USER`](/fr/reference/statements/create/user#valid-until-clause) : `VALID UNTIL` attend une date et une heure
@@ -75,7 +75,7 @@ Exemples :
 * `CREATE TOKEN VALID FOR INTERVAL 30 DAY`
 * `CREATE TOKEN VALID UNTIL 'infinity'`
 
-## Clause GRANTS {#grants-clause}
+## Clause GRANTS
 
 Limite les droits d&#39;accès des sessions authentifiées par le token à l&#39;intersection avec les privilèges
 listés. Cette clause fonctionne exactement comme la [clause `GRANTS` de `CREATE USER`](/fr/reference/statements/create/user#grants-clause),
@@ -92,7 +92,7 @@ Exemples :
 Ni cette restriction ni la limite temporelle ne s&#39;appliquent à ce que les sessions du token laissent derrière elles — voir
 [Considérations de sécurité](#security-considerations).
 
-## Gestion des tokens {#managing-tokens}
+## Gestion des tokens
 
 Un token est une méthode d&#39;authentification de l&#39;utilisateur ; il est donc répertorié par
 [`SHOW CREATE USER`](/fr/reference/statements/show#show-create-user) (avec ses clauses `VALID UNTIL` et `GRANTS`,
@@ -116,7 +116,7 @@ n&#39;ajoute rien.
 exécutez la requête sur chaque nœud avec l&#39;instruction équivalente `ALTER USER ... ADD IDENTIFIED WITH sha256_hash`)
 pour qu&#39;un token fonctionne sur l&#39;ensemble d&#39;un cluster dont les entités d&#39;accès sont stockées localement.
 
-## Considérations de sécurité {#security-considerations}
+## Considérations de sécurité
 
 `VALID UNTIL` et `GRANTS` restreignent les sessions qui s&#39;authentifient avec le token. Ils ne restreignent pas
 ce que ces sessions laissent derrière elles :

@@ -14,9 +14,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## بدء الاستخدام {#getting-started}
+## بدء الاستخدام
 
-### ثبّت حزمة HyperDX OpenTelemetry الخاصة بالرصد {#install-hyperdx-opentelemetry-instrumentation-package}
+### ثبّت حزمة HyperDX OpenTelemetry الخاصة بالرصد
 
 استخدم الأمر التالي لتثبيت [حزمة ClickStack OpenTelemetry](https://www.npmjs.com/package/@hyperdx/node-opentelemetry).
 
@@ -34,7 +34,7 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
   </Tab>
 </Tabs>
 
-### تهيئة SDK {#initializin-the-sdk}
+### تهيئة SDK
 
 لتهيئة SDK، ستحتاج إلى استدعاء الدالة `init` في بداية نقطة الدخول الخاصة بتطبيقك.
 
@@ -66,7 +66,7 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 
 سيؤدي ذلك تلقائيًا إلى التقاط بيانات التتبّع والمقاييس والسجلات من تطبيق Node.js الخاص بك.
 
-### إعداد جمع السجلات {#setup-log-collection}
+### إعداد جمع السجلات
 
 افتراضيًا، تُجمَع سجلات `console.*` تلقائيًا. إذا كنت تستخدم `logger`
 مثل `winston` أو `pino`، فستحتاج إلى إضافة `transport` إلى `logger` لديك
@@ -126,7 +126,7 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
   </Tab>
 </Tabs>
 
-### إعداد التقاط الأخطاء {#setup-error-collection}
+### إعداد التقاط الأخطاء
 
 يمكن لحزمة SDK الخاصة بـ ClickStack التقاط الاستثناءات والأخطاء غير المعالَجة تلقائيًا في تطبيقك، مع stack trace كامل وسياق الشيفرة.
 
@@ -187,7 +187,7 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
   </Tab>
 </Tabs>
 
-## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+## استكشاف الأخطاء وإصلاحها
 
 إذا كنت تواجه مشكلة في الـ SDK، يمكنك تفعيل التسجيل المطوّل عبر ضبط
 متغير البيئة `OTEL_LOG_LEVEL` على `debug`.
@@ -196,9 +196,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 export OTEL_LOG_LEVEL=debug
 ```
 
-## التهيئة المتقدّمة للرصد {#advanced-instrumentation-configuration}
+## التهيئة المتقدّمة للرصد
 
-### التقاط سجلات وحدة التحكم {#capture-console-logs}
+### التقاط سجلات وحدة التحكم
 
 افتراضيًا، تلتقط حزمة SDK الخاصة بـ ClickStack سجلات وحدة التحكم. يمكنك تعطيل ذلك عن طريق
 ضبط متغير البيئة `HDX_NODE_CONSOLE_CAPTURE` على 0.
@@ -207,7 +207,7 @@ export OTEL_LOG_LEVEL=debug
 export HDX_NODE_CONSOLE_CAPTURE=0
 ```
 
-### إرفاق معلومات المستخدم أو البيانات الوصفية {#attach-user-information-or-metadata}
+### إرفاق معلومات المستخدم أو البيانات الوصفية
 
 لتوسيم جميع الأحداث المرتبطة بسهولة بسمة أو معرّف معيّن (مثل: معرّف المستخدم
 أو البريد الإلكتروني)، يمكنك استدعاء الدالة `setTraceAttributes`، التي ستوسم كل
@@ -247,7 +247,7 @@ app.use((req, res, next) => {
 export HDX_NODE_BETA_MODE=1
 ```
 
-### Google Cloud Run {#google-cloud-run}
+### Google Cloud Run
 
 إذا كنت تشغّل تطبيقك على Google Cloud Run، فإن Cloud Trace
 يضيف تلقائيًا رؤوس أخذ العينات إلى الطلبات الواردة، مما
@@ -264,7 +264,7 @@ export HDX_NODE_BETA_MODE=1
 لمعرفة المزيد، ولفرض التتبع لطلبات محددة، يُرجى الرجوع إلى
 [وثائق Google Cloud Run](https://cloud.google.com/run/docs/trace).
 
-### المكتبات المزوّدة بأدوات الرصد تلقائيًا {#auto-instrumented-libraries}
+### المكتبات المزوّدة بأدوات الرصد تلقائيًا
 
 سيضيف SDK التتبّع تلقائيًا إلى المكتبات التالية:
 
@@ -286,9 +286,9 @@ export HDX_NODE_BETA_MODE=1
 * [`redis`](https://www.npmjs.com/package/redis)
 * [`winston`](https://www.npmjs.com/package/winston)
 
-## طريقة تثبيت بديلة {#alternative-installation}
+## طريقة تثبيت بديلة
 
-### شغّل التطبيق باستخدام ClickStack OpenTelemetry CLI {#run-the-application-with-cli}
+### شغّل التطبيق باستخدام ClickStack OpenTelemetry CLI
 
 بدلاً من ذلك، يمكنك تفعيل الرصد التلقائي لتطبيقك من دون أي تغييرات على الشيفرة باستخدام واجهة سطر الأوامر `opentelemetry-instrument` أو عبر
 الخيار `--require` في Node.js. يوفّر تثبيت CLI نطاقًا أوسع من المكتبات وأطر العمل المزوّدة بالرصد التلقائي.
@@ -334,7 +334,7 @@ export HDX_NODE_BETA_MODE=1
 
 *يُستخدم متغير البيئة `OTEL_SERVICE_NAME` للتعريف بخدمتك في تطبيق HyperDX، ويمكن أن يكون أي اسم تريده.*
 
-### تمكين التقاط الاستثناءات {#enabling-exception-capturing}
+### تمكين التقاط الاستثناءات
 
 لتمكين التقاط الاستثناءات غير المعالَجة، عليك ضبط متغير البيئة `HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` على القيمة 1.
 
@@ -344,7 +344,7 @@ HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
 
 بعد ذلك، لالتقاط الاستثناءات تلقائيًا من Express أو Koa، أو للتعامل مع الاستثناءات يدويًا، اتبع الإرشادات الواردة في قسم [إعداد جمع الأخطاء](#setup-error-collection) أعلاه.
 
-### المكتبات التي تُزوَّد بأدوات الرصد تلقائيًا {#auto-instrumented-libraries-2}
+### المكتبات التي تُزوَّد بأدوات الرصد تلقائيًا
 
 سيتم تزويد المكتبات التالية بأدوات الرصد تلقائيًا (لتجميع التتبعات) باستخدام طرق التثبيت المذكورة أعلاه:
 

@@ -18,7 +18,7 @@ A função de tabela JDBC retorna uma tabela conectada por meio do driver JDBC.
 Esta função de tabela exige que um programa [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) separado esteja em execução.
 Ela oferece suporte a tipos Nullable (com base no DDL da tabela remota consultada).
 
-## Sintaxe {#syntax}
+## Sintaxe
 
 ```sql
 jdbc(datasource, external_database, external_table)
@@ -26,7 +26,7 @@ jdbc(datasource, external_table)
 jdbc(named_collection)
 ```
 
-## Exemplos {#examples}
+## Exemplos
 
 Em vez do nome de um banco de dados externo, é possível especificar um esquema:
 

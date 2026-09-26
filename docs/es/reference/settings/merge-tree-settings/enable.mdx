@@ -14,7 +14,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se generan automáticamente a partir del código fuente de ClickHouse.
 
-## enable_adaptive_codec_selection {#enable_adaptive_codec_selection}
+## enable_adaptive_codec_selection
 
 <ExperimentalBadge />
 
@@ -28,13 +28,13 @@ Se elige la salida más pequeña. Por lo tanto, la compresión nunca es peor que
 Una columna cuyo códec predeterminado incluye cifrado (por ejemplo, `AES_128_GCM_SIV`) nunca se selecciona de forma adaptativa, por lo que el cifrado siempre se aplica.
 Los códecs por bloque se indican mediante la función de tabla [`mergeTreeCodecBlockCounts`](/es/reference/functions/table-functions/index).
 
-## enable_index_granularity_compression {#enable_index_granularity_compression}
+## enable_index_granularity_compression
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Comprime en memoria los valores de la granularidad del índice cuando sea posible
 
-## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge}
+## enable_max_bytes_limit_for_min_age_to_force_merge
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -49,7 +49,7 @@ Valores posibles:
 * `true`
 * `false`
 
-## enable_mixed_granularity_parts {#enable_mixed_granularity_parts}
+## enable_mixed_granularity_parts
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -61,7 +61,7 @@ seleccionar datos de tablas con filas grandes (decenas o cientos de megabytes).
 Si tiene tablas con filas grandes, puede habilitar esta configuración en dichas tablas
 para mejorar la eficiencia de las consultas `SELECT`.
 
-## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge {#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge}
+## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge
 
 <ExperimentalBadge />
 
@@ -79,13 +79,13 @@ Valores posibles:
 * `true`
 * `false`
 
-## enable_the_endpoint_id_with_zookeeper_name_prefix {#enable_the_endpoint_id_with_zookeeper_name_prefix}
+## enable_the_endpoint_id_with_zookeeper_name_prefix
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Habilita el ID del endpoint con el prefijo del nombre de ZooKeeper para la tabla ReplicatedMergeTree.
 
-## enable_vertical_merge_algorithm {#enable_vertical_merge_algorithm}
+## enable_vertical_merge_algorithm
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 

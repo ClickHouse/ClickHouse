@@ -7,11 +7,11 @@ doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'расширение', 'chDB', 'Parquet', 'CSV', 'TSV']
 ---
 
-## Введение {#introduction}
+## Введение
 
 Эта библиотека предоставляет расширения PostgreSQL для выполнения запросов [chDB] в Postgres, а также для копирования данных в различные форматы и объектные хранилища и обратно.
 
-### Расширение chDB {#chdb-extension}
+### Расширение chDB
 
 Расширение `chdb` выполняет запросы [chDB]. Функция `chdb_query()` выполняет
 один запрос. Например, следующий запрос:
@@ -35,7 +35,7 @@ Output:
 
 Подробнее см. в [документации chDB](/ru/products/managed-postgres/extensions/chdb/chdb).
 
-### Модуль chdb_hook {#chdb_hook-module}
+### Модуль chdb_hook
 
 Модуль `chdb_hook` встраивается в команду [COPY], позволяя копировать данные в S3, GCS, Azure Blob, файл или http URL, а также из них. В этом примере записи загружаются из нескольких CSV-файлов в S3 одной командой [COPY]:
 
@@ -87,7 +87,7 @@ CREATE TABLE reviews () WITH (
 
 Подробнее см. в [документации chdb&#95;hook](/ru/products/managed-postgres/extensions/chdb/chdb_hook).
 
-## Бенчмаркинг форматов {#benchmarking-formats}
+## Бенчмаркинг форматов
 
 [Бенчмарк][benchmark] сравнивает производительность `COPY` в [chDB&#95;hook] с производительностью
 [aws&#95;s3], [pg&#95;duckdb] и [pg&#95;lake] примерно на 1 млн строк [NYC Taxi dataset] в
@@ -117,7 +117,7 @@ CREATE TABLE reviews () WITH (
 расширениями; прочие форматы JSON, например [JSONCompactEachRow], будут
 ближе по производительности к остальным форматам.
 
-## Архитектура {#architecture}
+## Архитектура
 
 Расширения chDB и chDB&#95;hook используют процесс `chdb_helper` для выполнения
 запросов [chDB]. Вспомогательный процесс отделяет потребление ресурсов [chDB]
@@ -145,7 +145,7 @@ CREATE TABLE reviews () WITH (
   в последующем запросе.
 </Important>
 
-## Зависимости {#dependencies}
+## Зависимости
 
 Расширению `chdb` требуется PostgreSQL 15 или выше и библиотека [chDB]
 версии 26.7.0 или выше (в настоящее время доступна только для Linux и macOS).
@@ -168,7 +168,7 @@ export BUNDLE_LIBCHDB=1 LIBCHDB_BUILD=static
 динамическая библиотека `libchdb` — для этого задайте `export BUNDLE_LIBCHDB=1` перед выполнением
 команд `make` из раздела [Установка](#compile-from-source).
 
-### Сборка из исходного кода {#compile-from-source}
+### Сборка из исходного кода
 
 Чтобы собрать chDB, достаточно выполнить следующее:
 
@@ -245,12 +245,12 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-## Авторы {#authors}
+## Авторы
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## Авторские права {#copyright}
+## Авторские права
 
 Copyright (c) 2026, ClickHouse
 

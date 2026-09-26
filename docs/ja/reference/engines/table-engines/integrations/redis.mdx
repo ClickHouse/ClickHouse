@@ -10,7 +10,7 @@ doc_type: 'guide'
 
 このエンジンでは、ClickHouse を [Redis](https://redis.io/) と連携できます。Redis はキー・バリューモデルを採用しているため、`where k=xx` や `where k in (xx, xx)` のようなポイントクエリでのみ使用することを強く推奨します。
 
-## テーブルの作成 {#creating-a-table}
+## テーブルの作成
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -42,7 +42,7 @@ PRIMARY KEY(primary_key_name);
   `key equals` または `in` フィルタリングを含むクエリは、Redis に対する複数キーのルックアップに最適化されます。キーによるフィルタリングがないクエリではフルテーブルスキャンが発生し、これは高コストな処理です。
 </Note>
 
-## 使用例 {#usage-example}
+## 使用例
 
 通常の引数を使って、`Redis`エンジンを使用する ClickHouse のテーブルを作成します:
 
@@ -148,7 +148,7 @@ JOIN:
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
-## 制限事項 {#limitations}
+## 制限事項
 
 Redis エンジン は、`where k > xx` のようなスキャンクエリもサポートしていますが、いくつか制限があります。
 

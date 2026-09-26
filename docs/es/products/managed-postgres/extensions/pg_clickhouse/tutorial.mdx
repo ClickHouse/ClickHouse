@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', 'extension', 'tutorial', 'taxi']
 ---
 
-## Descripción general {#overview}
+## Descripción general
 
 Este tutorial sigue el [tutorial de ClickHouse], pero ejecuta todas las consultas a través de
 pg&#95;clickhouse.
@@ -18,7 +18,7 @@ Elija cómo desea configurar `pg_clickhouse`:
 * [Desde PSQL](#from-psql) si instala y configura la extensión
   usted mismo.
 
-## Iniciar ClickHouse {#start-clickhouse}
+## Iniciar ClickHouse
 
 Primero, cree una base de datos en ClickHouse si aún no tiene una. Una forma rápida
 de empezar es usar la imagen de Docker:
@@ -28,7 +28,7 @@ docker run -d --network host --name clickhouse -p 8123:8123 -p9000:9000 --ulimit
 docker exec -it clickhouse clickhouse-client
 ```
 
-## Crear una tabla {#create-a-table}
+## Crear una tabla
 
 Tomemos como referencia el [tutorial de ClickHouse] para crear una base de datos sencilla con el conjunto de datos de taxis de la ciudad de Nueva York:
 
@@ -92,7 +92,7 @@ PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 ```
 
-## Añade el conjunto de datos {#add-the-data-set}
+## Añade el conjunto de datos
 
 Y luego importa los datos:
 
@@ -161,7 +161,7 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
-## Desde la consola {#from-console}
+## Desde la consola
 
 Si utiliza ClickHouse Managed Postgres, puede configurar
 `pg_clickhouse` y conectarse a un servicio de ClickHouse desde la consola de ClickHouse Cloud.
@@ -192,9 +192,9 @@ SELECT * FROM <schema>.<table>;
 Para seguir los ejemplos de taxis de este tutorial, selecciona la base de datos `taxi` en ClickHouse
 e impórtala en el esquema de destino `taxi`.
 
-## Desde PSQL {#from-psql}
+## Desde PSQL
 
-### Instalar pg_clickhouse {#install-pg_clickhouse}
+### Instalar pg_clickhouse
 
 Compila e instala pg&#95;clickhouse desde [PGXN] o [GitHub]. O bien, inicia un
 contenedor de Docker con la [imagen de pg&#95;clickhouse], que simplemente añade
@@ -205,7 +205,7 @@ docker run -d --network host --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
 ```
 
-### Conectar pg_clickhouse {#connect-pg_clickhouse}
+### Conectar pg_clickhouse
 
 Ahora, conéctese a Postgres:
 
@@ -350,7 +350,7 @@ devuelve una única fila a Postgres. Usa [EXPLAIN] para verlo:
 Ten en cuenta que &quot;Foreign Scan&quot; aparece en la raíz del plan, lo que significa que la
 consulta completa se ejecutó en ClickHouse.
 
-## Analiza los datos {#analyze-the-data}
+## Analiza los datos
 
 Ejecuta algunas consultas para analizar los datos. Revisa los siguientes ejemplos o prueba
 tu propia consulta SQL.
@@ -507,7 +507,7 @@ tu propia consulta SQL.
   Time: 17.450 ms
   ```
 
-## Crear un diccionario {#create-a-dictionary}
+## Crear un diccionario
 
 Crea un diccionario asociado a una tabla de tu servicio de ClickHouse. La
 tabla y el diccionario se basan en un archivo CSV que contiene una fila por cada
@@ -607,7 +607,7 @@ columna `LocationID` del archivo se corresponde con las columnas `pickup_nyct201
    los aeropuertos LaGuardia o JFK. Fíjate en que hay bastantes viajes en los que
    se desconoce el barrio de recogida.
 
-## Realiza un JOIN {#perform-a-join}
+## Realiza un JOIN
 
 Escribe algunas consultas que hagan un `JOIN` entre `taxi_zone_dictionary` y tu tabla
 `trips`.

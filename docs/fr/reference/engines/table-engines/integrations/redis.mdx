@@ -10,7 +10,7 @@ doc_type: 'guide'
 
 Ce moteur permet d’intégrer ClickHouse à [Redis](https://redis.io/). Comme Redis repose sur un modèle clé-valeur, nous vous recommandons vivement de ne l’interroger que de façon ciblée, par exemple avec `where k=xx` ou `where k in (xx, xx)`.
 
-## Création d’une table {#creating-a-table}
+## Création d’une table
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -42,7 +42,7 @@ Les arguments peuvent également être transmis à l’aide de [collections nomm
   Les requêtes avec un filtrage `key equals` ou `in` seront optimisées en recherches de plusieurs clés dans Redis. Si les requêtes n’incluent pas de clé de filtrage, un parcours complet de la table sera effectué, ce qui constitue une opération coûteuse.
 </Note>
 
-## Exemple d&#39;utilisation {#usage-example}
+## Exemple d&#39;utilisation
 
 Créez une table dans ClickHouse en utilisant le moteur `Redis` avec des arguments simples :
 
@@ -148,7 +148,7 @@ Jointure avec d’autres tables.
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
-## Limites {#limitations}
+## Limites
 
 Le moteur Redis prend également en charge les requêtes de balayage, telles que `where k > xx`, mais il présente certaines limites :
 

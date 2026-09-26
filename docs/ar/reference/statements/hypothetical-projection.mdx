@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 لا يقدّر `EXPLAIN WHATIF` حتى الآن مدى فائدة الإسقاط الافتراضي، بل يُبلغ عن كل منها بالحالة `status: not_applicable`. ويبقى تعريفها مفيدًا اليوم للتحقق من صحة التعريف مقابل الجدول دون تجسيده، وكذلك للأدوات التي تقرأ من [`system.hypothetical_projections`](/ar/reference/system-tables/hypothetical_projections).
 
-## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
+## CREATE HYPOTHETICAL PROJECTION
 
 ```sql
 CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name
@@ -37,7 +37,7 @@ CREATE HYPOTHETICAL PROJECTION p_by_b ON t (SELECT a, b ORDER BY b);
 CREATE HYPOTHETICAL PROJECTION p_idx ON t INDEX b TYPE basic;
 ```
 
-## DROP HYPOTHETICAL PROJECTION {#drop-hypothetical-projection}
+## DROP HYPOTHETICAL PROJECTION
 
 ```sql
 DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
@@ -45,7 +45,7 @@ DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
 
 يزيل إسقاطًا افتراضيًا (hypothetical projection) من الجلسة الحالية.
 
-## DROP ALL HYPOTHETICAL PROJECTIONS {#drop-all-hypothetical-projections}
+## DROP ALL HYPOTHETICAL PROJECTIONS
 
 ```sql
 DROP ALL HYPOTHETICAL PROJECTIONS
@@ -53,19 +53,19 @@ DROP ALL HYPOTHETICAL PROJECTIONS
 
 يمسح كل إسقاط افتراضي مُعرَّف في الجلسة الحالية، بغض النظر عن الجدول. ولا يمسّ الفهارس الافتراضية؛ أما `DROP ALL HYPOTHETICAL INDEXES` فيفعل العكس.
 
-## النطاق ودورة الحياة {#scope-and-lifetime}
+## النطاق ودورة الحياة
 
 * لا توجد الإسقاطات الافتراضية إلا في **الجلسة الحالية** — فهي غير مرئية للجلسات الأخرى ويتم التخلص منها عند انتهاء الجلسة.
 * تعريف إحداها أو حذفها لا يُنشئ أي إسقاط ولا يؤثر مطلقًا على الاستعلامات العادية على الجدول.
 * يمكنك الاطلاع على الإسقاطات الافتراضية للجلسة الحالية عبر [`system.hypothetical_projections`](/ar/reference/system-tables/hypothetical_projections).
 
-## الصلاحيات المطلوبة {#required-privileges}
+## الصلاحيات المطلوبة
 
 يتطلب `CREATE HYPOTHETICAL PROJECTION` صلاحية `ALTER ADD PROJECTION` على الجدول — وهي الصلاحية نفسها التي يحتاجها الأمر الفعلي `ALTER TABLE ... ADD PROJECTION` — لأنه يتحقق من صحة التعريف بمقارنته بأعمدة الجدول. وهو لا يقرأ أي بيانات من الجدول، لذا لا تُشترط صلاحية `SELECT` على أعمدة الإسقاط في الوقت الحالي؛ أما عندما يبدأ `EXPLAIN WHATIF` بتقدير الإسقاطات فسيقرأ تلك الأعمدة، وعندئذٍ ستصبح صلاحية `SELECT` على مستوى العمود مطلوبة، كما هو الحال بالفعل مع [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index#required-privileges).
 
 ويتطلب `DROP HYPOTHETICAL PROJECTION` الصلاحية نفسها، حتى لا يكشف ذكر اسم جدول في عملية حذف عمّا إذا كان موجودًا أو مؤهلًا. أما `DROP ALL HYPOTHETICAL PROJECTIONS` فلا يذكر أي جدول ولا يتطلب أي صلاحية.
 
-## انظر أيضاً {#see-also}
+## انظر أيضاً
 
 * [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index)
 * [`EXPLAIN WHATIF`](/ar/reference/statements/explain#explain-whatif)

@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 使用 TimeSeries 表中的数据计算 Prometheus 查询结果。
 
-## 语法 {#syntax}
+## 语法
 
 ```sql
 prometheusQuery('db_name', 'time_series_table', 'promql_query', evaluation_time)
@@ -18,14 +18,14 @@ prometheusQuery(db_name.time_series_table, 'promql_query', evaluation_time)
 prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 ```
 
-## 参数 {#arguments}
+## 参数
 
 * `db_name` - TimeSeries 表所在的数据库名称。
 * `time_series_table` - TimeSeries 表的名称。
 * `promql_query` - 使用 [PromQL 语法](https://prometheus.io/docs/prometheus/latest/querying/basics/) 编写的查询。
 * `evaluation_time - 求值时间戳。要在当前时间对查询进行求值，请使用 `now()`作为`evaluation&#95;time&#96;。
 
-## 返回值 {#returned-value}
+## 返回值
 
 该函数会根据传给参数 `promql_query` 的查询结果类型，返回不同的列：
 
@@ -38,13 +38,13 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 如果 `TimeSeries` 表的 [version](/zh/reference/engines/table-engines/integrations/time-series#schema-versioning) 为 2 或更早，则 `samples` 列的名称为 `time_series`。
 
-## 支持的 PromQL 特性 {#supported-promql-features}
+## 支持的 PromQL 特性
 
-### 选择器 {#selectors}
+### 选择器
 
 即时选择器、范围选择器、标签匹配器 (`=`、`!=`、`=~`、`!~`) 、偏移修饰符、`@` 时间戳修饰符以及子查询。
 
-### 函数 {#functions}
+### 函数
 
 | 类别   | 函数                                                                                                                                                                                                                                                                                                                   |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -61,7 +61,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 **注意**：`ts_of_min_over_time` 和 `ts_of_max_over_time` 是 Prometheus 中的 Experimental 函数 (通过 `--enable-feature=promql-experimental-functions` 启用) ；ClickHouse 无需该标志即可计算它们。
 
-### 运算符 {#operators}
+### 运算符
 
 算术 (`+`、`-`、`*`、`/`、`%`、`^`、`atan2`) 和比较 (`==`、`!=`、`<`、`>`、`<=`、`>=`，可选 `bool`) 二元运算符，以及 `on()`/`ignoring()` 和 `group_left()`/`group_right()` 修饰符。
 
@@ -69,15 +69,15 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 一元运算符 `+` 和 `-`。
 
-### 聚合运算符 {#aggregation-operators}
+### 聚合运算符
 
 `sum`、`avg`、`min`、`max`、`count`、`count_values`、`stddev`、`stdvar`、`group`、`quantile`、`topk`、`bottomk`、`limitk` —— 可选使用 `by()` 或 `without()` 修饰符。
 
-### 尚未支持 {#not-yet-supported}
+### 尚未支持
 
 * 范围函数 `stddev_over_time`、`stdvar_over_time`、`mad_over_time`、`first_over_time`、`ts_of_last_over_time`、`ts_of_first_over_time`
 
-## 示例 {#example}
+## 示例
 
 ```sql
 SELECT * FROM prometheusQuery(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now())

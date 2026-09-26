@@ -13,7 +13,7 @@ ClickHouse через пакет сообщества
 описан перенос существующего развертывания на `apache-airflow-providers-clickhousedb`. О том, как
 работает сам провайдер, см. [Подключение Apache Airflow к ClickHouse](/ru/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse).
 
-## Зачем нужен нативный провайдер? {#why-a-native-provider}
+## Зачем нужен нативный провайдер?
 
 Провайдеры — это механизм интеграции Airflow со сторонними системами. Они выпускаются, тестируются и документируются вместе со всей остальной экосистемой Airflow, а данный провайдер поддерживается сообществом Airflow совместно с командой ClickHouse. Он построен на
 [clickhouse-connect](/ru/integrations/language-clients/python/index) — клиенте Python, который разрабатывает и поддерживает сама компания ClickHouse, а не на драйвере, сопровождаемом сообществом. Благодаря этому новые возможности сервера и исправления доходят до пользователей Airflow по поддерживаемому пути. Переход на провайдер даёт вам пакет с официальным местом размещения, стандартные операторы и сенсоры `common.sql`, а также тип соединения, который отображается в интерфейсе Airflow так же, как и для любой другой базы данных.
@@ -27,7 +27,7 @@ ClickHouse через пакет сообщества
   сразу все DAG.
 </Note>
 
-## Краткий обзор {#at-a-glance}
+## Краткий обзор
 
 |                                     | `airflow-clickhouse-plugin`                                                                     | `apache-airflow-providers-clickhousedb`                                                                                                                                  |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -40,7 +40,7 @@ ClickHouse через пакет сообщества
 | Hook                                | `ClickHouseHook` (`BaseHook`) и `ClickHouseDbApiHook` (`DbApiHook`)                             | Один `ClickHouseHook` (`DbApiHook`)                                                                                                                                      |
 | Минимальная версия Airflow          | 2.0                                                                                             | 2.11                                                                                                                                                                     |
 
-## Шаг 1: Проверьте prerequisites и выполните установку {#step-1-check-prerequisites-and-install}
+## Шаг 1: Проверьте prerequisites и выполните установку
 
 Для работы provider требуется Airflow 2.11 или новее, а также `apache-airflow-providers-common-sql` 1.32.0 или
 новее. Если у вас более старый release, сначала обновите Airflow.
@@ -55,7 +55,7 @@ pip install apache-airflow-providers-clickhousedb
 pip uninstall airflow-clickhouse-plugin clickhouse-driver
 ```
 
-## Шаг 2. Обновите соединения {#step-2-update-connections}
+## Шаг 2. Обновите соединения
 
 Именно на этом шаге всё ломается, если его пропустить. Все существующие соединения с ClickHouse указывают на
 нативный порт, а провайдеру нужен HTTP-порт.
@@ -78,7 +78,7 @@ pip uninstall airflow-clickhouse-plugin clickhouse-driver
 дополнительные ключи; значения из строки запроса разбираются как JSON, поэтому `secure=true` остаётся
 булевым значением.
 
-### Дополнительные параметры соединения {#connection-extras}
+### Дополнительные параметры соединения
 
 Плагин передавал каждый ключ из `extra` напрямую в `clickhouse_driver.Client`, поэтому соединения могут
 содержать любой именованный аргумент `clickhouse-driver`. Провайдер читает только фиксированный набор ключей, а
@@ -142,7 +142,7 @@ pip uninstall airflow-clickhouse-plugin clickhouse-driver
 airflow connections test clickhouse_default
 ```
 
-## Шаг 3: Замените импорты {#step-3-replace-imports}
+## Шаг 3: Замените импорты
 
 | Класс плагина                                                                            | Замена из provider                                                   |
 | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
@@ -166,7 +166,7 @@ Provider регистрирует тип соединения `clickhouse`, по
 импорта, удалению префикса `ClickHouse` и явной передаче `conn_id` (см.
 [шаг 7](#step-7-the-commonsql-wrapper-family)).
 
-## Шаг 4: от `ClickHouseOperator` к `SQLExecuteQueryOperator` {#step-4-clickhouseoperator-to-sqlexecutequeryoperator}
+## Шаг 4: от `ClickHouseOperator` к `SQLExecuteQueryOperator`
 
 | Аргумент `ClickHouseOperator`            | Эквивалент в `SQLExecuteQueryOperator`                  | Примечания                                                                                                                                                                                                                                                                                                                                |
 | ---------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -233,7 +233,7 @@ update_income_aggregate = SQLExecuteQueryOperator(
 )
 ```
 
-### Результаты нескольких операторов {#multi-statement-results}
+### Результаты нескольких операторов
 
 Плагин отправлял в XCom результат **последнего** оператора. `SQLExecuteQueryOperator` возвращает
 по одному результату на каждый оператор, если `sql` задан списком, поэтому приведённый выше пример отправляет `[[], [(12345.0,)]]`
@@ -275,7 +275,7 @@ load_rows = SQLInsertRowsOperator(
 
 Всегда передавайте `columns`; без него оператор будет искать таблицу через SQLAlchemy.
 
-### Сохранение типов столбцов {#keeping-column-types}
+### Сохранение типов столбцов
 
 `with_column_types=True` возвращал `(rows, [(name, type), ...])`. Это поведение можно воспроизвести с помощью handler; курсор `clickhouse-connect` возвращает имена типов ClickHouse в `cursor.description`:
 
@@ -292,7 +292,7 @@ SQLExecuteQueryOperator(
 )
 ```
 
-## Шаг 5: от `ClickHouseHook.execute` к методам `DbApiHook` {#step-5-clickhousehookexecute-to-dbapihook-methods}
+## Шаг 5: от `ClickHouseHook.execute` к методам `DbApiHook`
 
 Hook плагина предоставлял единственный метод — `execute`, повторяющий `clickhouse_driver.Client.execute`. Hook
 провайдера является `DbApiHook`, поэтому он получает стандартные методы, доступные у любого другого SQL-провайдера:
@@ -363,7 +363,7 @@ with hook.get_client() as client:
     columns = result.result_columns
 ```
 
-## Шаг 6: с `ClickHouseSensor` на `SqlSensor` {#step-6-clickhousesensor-to-sqlsensor}
+## Шаг 6: с `ClickHouseSensor` на `SqlSensor`
 
 Это единственная замена, при которой меняются входные данные вызываемого объекта.
 
@@ -409,7 +409,7 @@ SqlSensor(
 
 Если вызываемому объекту нужна вся строка, передайте `selector=lambda row: row`. Если нужны все строки, реализуйте проверку на SQL так, чтобы запрос возвращал одно булевое значение или количество.
 
-## Шаг 7: семейство обёрток `common.sql` {#step-7-the-commonsql-wrapper-family}
+## Шаг 7: семейство обёрток `common.sql`
 
 Код, использовавший `ClickHouseSQLExecuteQueryOperator`, `ClickHouseSqlSensor` и другие обёртки
 с префиксом `ClickHouse`, потребует минимальных изменений:
@@ -427,7 +427,7 @@ SqlSensor(
 * Соединению по-прежнему необходимы изменения порта и extras из шага 2 — обёртки тоже использовали собственный
   протокол.
 
-## Различия в поведении, требующие проверки {#behavior-differences-to-review}
+## Различия в поведении, требующие проверки
 
 Даже после успешной компиляции кода некоторые вещи во время выполнения ведут себя иначе.
 
@@ -480,7 +480,7 @@ timeout. Для операторов, которые выполнялись мн
 завершении процесса задачи. Client является менеджером контекста, поэтому
 `with hook.get_client() as client:` — самая аккуратная форма.
 
-## Контрольный список {#checklist}
+## Контрольный список
 
 1. Airflow версии 2.11 или новее.
 2. HTTP-порт доступен с воркеров; TLS-сертификаты действительны для HTTP-конечной точки.
@@ -499,7 +499,7 @@ timeout. Для операторов, которые выполнялись мн
 11. Код, перехватывающий исключения `clickhouse_driver`, обновлён.
 12. `airflow-clickhouse-plugin` и `clickhouse-driver` удалены.
 
-## Использование ИИ-ассистента для написания кода {#using-an-ai-coding-assistant}
+## Использование ИИ-ассистента для написания кода
 
 Приведённое выше сопоставление намеренно сделано механическим, чтобы ИИ-ассистент мог применить его к
 репозиторию с DAG. Промпт, который хорошо себя показал:
@@ -527,7 +527,7 @@ Show the diff and a summary of items flagged for human review.
 Просмотрите diff. Изменения в соединениях, семантика сенсоров и потребители XCom — именно те места,
 где автоматический рефакторинг чаще всего даёт сбой.
 
-## Дополнительные материалы {#related-content}
+## Дополнительные материалы
 
 * [Подключение Apache Airflow к ClickHouse](/ru/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse)
 * [Клиент Python `clickhouse-connect`](/ru/integrations/language-clients/python/index)

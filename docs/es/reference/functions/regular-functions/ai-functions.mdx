@@ -29,7 +29,7 @@ Todas las funciones comparten una infraestructura común que proporciona:
 * **Aplicación de cuotas**: Límites por consulta de tokens ([`ai_function_max_input_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) y llamadas a la API ([`ai_function_max_api_calls_per_query`](/es/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
 * **Reintentos con backoff**: Los fallos transitorios se reintentan ([`ai_function_max_retries`](/es/reference/settings/session-settings/ai-function#ai_function_max_retries)) con backoff exponencial ([`ai_function_retry_initial_delay_ms`](/es/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 
-## Configuración {#configuration}
+## Configuración
 
 Las funciones de IA hacen referencia a una **colección nombrada** que almacena las credenciales del proveedor y la configuración. Se pueden crear y usar distintas colecciones nombradas para diferentes funciones o llamadas a funciones. Por ejemplo, quizá quiera definir una colección nombrada distinta para usar con las funciones de texto (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) en lugar de las funciones de embedding (`aiEmbed`, `aiSimilarity`), ya que requieren endpoints diferentes y normalmente usan modelos distintos.
 
@@ -51,7 +51,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
     api_key = 'sk-...';
 ```
 
-### Parámetros de la colección nombrada {#named-collection-parameters}
+### Parámetros de la colección nombrada
 
 | Parámetro     | Tipo   | Predeterminado | Descripción                                                                                                                                                                                                                                              |
 | ------------- | ------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -66,7 +66,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
   Se puede usar cualquier API compatible con OpenAI (p. ej. vLLM, Ollama, LiteLLM) configurando `provider = 'openai'` y apuntando `endpoint` a su servicio.
 </Note>
 
-### Selección de credenciales {#selecting-credentials}
+### Selección de credenciales
 
 Una función determina la colección nombrada que debe usar según, en este orden:
 
@@ -94,7 +94,7 @@ SELECT * FROM reviews
 WHERE aiFilter(body, 'the customer is angry about shipping');
 ```
 
-### Mapa de parámetros {#parameter-map}
+### Mapa de parámetros
 
 Cada función acepta opcionalmente un `Map(String, String)` de parámetros al final. Todos los valores son cadenas (ponga entre comillas los números, por ejemplo, `'0.2'`). Las claves desconocidas se rechazan. Si una clave está presente, sobrescribe el valor correspondiente de la colección nombrada; si una clave no está presente, se usa el valor de la colección nombrada (para `model`/`max_tokens`) o el valor predeterminado integrado. La excepción son las funciones de embedding (`aiEmbed`, `aiSimilarity`), que toman `model` como un argumento posicional obligatorio (por ejemplo, `aiEmbed(text, model[, params])`, `aiSimilarity(text1, text2, model[, params])`) y generan un error si, en su lugar, se establece en el mapa de parámetros o en la colección nombrada. Esto tiene como objetivo garantizar embeddings reproducibles.
 
@@ -111,11 +111,11 @@ Las funciones individuales aceptan parámetros adicionales específicos de cada 
 SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
 ```
 
-### Configuración a nivel de consulta {#query-level-settings}
+### Configuración a nivel de consulta
 
 Toda la configuración relacionada con la IA se enumera en [Configuración](/es/reference/settings/session-settings) con el prefijo `ai_function_`.
 
-### Restricción de hosts de endpoint {#restricting-endpoint-hosts}
+### Restricción de hosts de endpoint
 
 La URL de `endpoint` en una colección nombrada de IA es un destino saliente al que el servidor se conecta con su propia identidad, y puede enviar (si se especifica) la `api_key` de la colección nombrada en los encabezados de la solicitud. De forma predeterminada, ClickHouse permite cualquier host. Para restringir las funciones a un conjunto específico de proveedores, configure [`remote_url_allow_hosts`](/es/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) en la configuración del servidor, por ejemplo:
 
@@ -128,7 +128,7 @@ La URL de `endpoint` en una colección nombrada de IA es un destino saliente al 
 
 Ten en cuenta que esta configuración es global para el servidor y se aplica a todas las funciones que usan HTTP.
 
-### Seguridad del transporte (HTTP vs HTTPS) {#transport-security}
+### Seguridad del transporte (HTTP vs HTTPS)
 
 El transporte se determina únicamente por el esquema de la URL del `endpoint`. No hay cifrado del payload de la solicitud a nivel de la aplicación; la protección de los datos en tránsito depende por completo del esquema:
 
@@ -139,14 +139,14 @@ De forma predeterminada, las funciones de IA rechazan un `endpoint` que enviarí
 
 Tenga en cuenta que, en cualquiera de los dos casos, el proveedor recibe los datos de entrada en texto sin formato después de la terminación de TLS; TLS protege los datos solo en la ruta de red entre el servidor y el proveedor.
 
-## Proveedores compatibles {#supported-providers}
+## Proveedores compatibles
 
 | Proveedor | Valor de `provider` | Funciones de chat | Notas                           |
 | --------- | ------------------- | ----------------- | ------------------------------- |
 | OpenAI    | `'openai'`          | Sí                | Proveedor por defecto.          |
 | Anthropic | `'anthropic'`       | Sí                | Usa el endpoint `/v1/messages`. |
 
-## Observabilidad {#observability}
+## Observabilidad
 
 La actividad de la función de IA se supervisa mediante los [ProfileEvents](/es/reference/system-tables/query_log) de ClickHouse:
 
@@ -179,7 +179,7 @@ ORDER BY event_time DESC;
 
 {/*AUTOGENERATED_START*/}
 
-## aiClassify {#aiClassify}
+## aiClassify
 
 Introducido en: v26.4.0
 
@@ -231,7 +231,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
-## aiEmbed {#aiEmbed}
+## aiEmbed
 
 Introducido en: v26.6.0
 
@@ -295,7 +295,7 @@ INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
-## aiExtract {#aiExtract}
+## aiExtract
 
 Introducido en: v26.4.0
 
@@ -353,7 +353,7 @@ INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only tw
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
-## aiFilter {#aiFilter}
+## aiFilter
 
 Introducido en: v26.8.0
 
@@ -414,7 +414,7 @@ INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
 ```
 
-## aiGenerate {#aiGenerate}
+## aiGenerate
 
 Introducido en: v26.4.0
 
@@ -477,7 +477,7 @@ INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
-## aiRedact {#aiRedact}
+## aiRedact
 
 Introducido en: v26.8.0
 
@@ -549,7 +549,7 @@ INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
 ```
 
-## aiSimilarity {#aiSimilarity}
+## aiSimilarity
 
 Introducido en: v26.8.0
 
@@ -612,7 +612,7 @@ INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse databas
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
 ```
 
-## aiTranslate {#aiTranslate}
+## aiTranslate
 
 Introducido en: v26.4.0
 

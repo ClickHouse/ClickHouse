@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_compaction_commit_batch_size {#iceberg_compaction_commit_batch_size}
+## iceberg_compaction_commit_batch_size
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -26,7 +26,7 @@ por quanto tempo arquivos já mesclados permanecem sem ser publicados enquanto a
 de publicar somente quando a compactação não tem mais candidatos — um estado que nunca é alcançado enquanto a tabela continua
 recebendo novos arquivos de dados. Assim, toda saída mesclada é gravada no armazenamento de objetos e nunca é referenciada por um snapshot.
 
-## iceberg_compaction_data_cleanup {#iceberg_compaction_data_cleanup}
+## iceberg_compaction_data_cleanup
 
 <SettingsInfoBlock type="Segundos" default_value="10800" />
 
@@ -34,7 +34,7 @@ recebendo novos arquivos de dados. Assim, toda saída mesclada é gravada no arm
 
 Tempo após o qual os dados serão excluídos.
 
-## iceberg_compaction_delay_bias {#iceberg_compaction_delay_bias}
+## iceberg_compaction_delay_bias
 
 <SettingsInfoBlock type="Segundos" default_value="10800" />
 
@@ -42,7 +42,7 @@ Tempo após o qual os dados serão excluídos.
 
 Intervalo mínimo entre 2 operações de compactação em segundo plano.
 
-## iceberg_compaction_max_bytes_in_data_file {#iceberg_compaction_max_bytes_in_data_file}
+## iceberg_compaction_max_bytes_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
@@ -55,7 +55,7 @@ consulte https://iceberg.apache.org/docs/1.5.2/configuration/. Mantenha-o acima 
 `iceberg_data_file_size_lower_threshold_compaction`; caso contrário, todo arquivo de saída ficará abaixo do threshold inferior
 e será novamente selecionado para compactação.
 
-## iceberg_compaction_max_rows_in_data_file {#iceberg_compaction_max_rows_in_data_file}
+## iceberg_compaction_max_rows_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="18446744073709551615" />
 

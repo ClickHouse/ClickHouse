@@ -54,7 +54,7 @@ SELECT DISTINCT ON (a,b) * FROM t1;
 └───┴───┴───┘
 ```
 
-## DISTINCT と ORDER BY {#distinct-and-order-by}
+## DISTINCT と ORDER BY
 
 ClickHouse では、1 つのクエリ内で `DISTINCT` 句と `ORDER BY` 句に異なるカラムを指定できます。`DISTINCT` 句は `ORDER BY` 句より先に実行されます。
 
@@ -101,11 +101,11 @@ SELECT DISTINCT a FROM t1 ORDER BY b DESC;
 
 クエリを記述する際は、この実装上の特性を考慮してください。
 
-## NULL の処理 {#null-processing}
+## NULL の処理
 
 `DISTINCT` は、[NULL](/ja/reference/syntax#null) を `NULL` が特定の値であり、`NULL==NULL` であるかのように扱います。つまり、`DISTINCT` の結果では、`NULL` を含む同じ組み合わせは 1 回しか現れません。これは、ほかの多くの文脈での `NULL` の扱いとは異なります。
 
-## 代替手段 {#alternatives}
+## 代替手段
 
 集約関数を使用しなくても、`SELECT` 句で指定したものと同じ値の組み合わせに対して [GROUP BY](/ja/reference/statements/select/group-by) を適用すれば、同じ結果を得ることができます。ただし、`GROUP BY` を使う方法とはいくつか異なる点があります。
 
@@ -114,7 +114,7 @@ SELECT DISTINCT a FROM t1 ORDER BY b DESC;
 * 外部実行が開始される前で、かつ `ORDER BY` が省略されている場合、`ALL` を伴わない [`LIMIT ... AFTER ... UNTIL`](/ja/reference/statements/select/limit#limit-after-until) の範囲についても、その範囲が終了した時点でクエリを停止できます。
 * データブロックは、外部実行が開始されるまでは、処理されるたびに出力されます。
 
-## 外部メモリでのDISTINCT {#distinct-in-external-memory}
+## 外部メモリでのDISTINCT
 
 `DISTINCT` は、メモリに保持しきれないほど大きな一意な値の集合を処理する際に、一時データをディスクへ書き出すことができます。その分ディスクI/Oが増えるため、クエリが遅くなる場合があります。
 

@@ -9,11 +9,11 @@ doc_type: 'guide'
 
 本指南将逐步介绍如何将 [Langfuse Cloud](https://cloud.langfuse.com/) 中的 LLM 链路追踪数据加载到 ClickHouse Cloud，以便进行实时分析。
 
-## 从 Langfuse Cloud 导出 {#export-from-langfuse-cloud}
+## 从 Langfuse Cloud 导出
 
 请按照[此指南](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)在 Langfuse Cloud 中配置 blob 存储集成，以启用定时导出。您可以将链路追踪数据定时导出到对象存储，最快每 `20 minutes` 导出一次，也可以按 `hourly`、`daily` 或 `weekly` 频率执行。默认情况下，每次导出都包含 `observations` (已使用 trace 属性富化) 和 `scores`。
 
-### 导出文件布局 {#exported-file-layout}
+### 导出文件布局
 
 Langfuse Cloud 中的 blob 存储集成会按以下目录结构，将数据写入目标桶或存储容器：
 
@@ -24,7 +24,7 @@ Langfuse Cloud 中的 blob 存储集成会按以下目录结构，将数据写�
 └── manifests/         # one JSON file per completed run with export metadata
 ```
 
-## 导入到 ClickHouse Cloud {#import-into-clickhouse-cloud}
+## 导入到 ClickHouse Cloud
 
 在 Langfuse Cloud 中配置好 blob 存储集成后，链路追踪数据会定期导出到目标桶或存储容器中。要将这些数据导入 ClickHouse Cloud，可以使用 [ClickPipes](/zh/integrations/clickpipes) 及其托管的对象存储连接器：
 
@@ -34,7 +34,7 @@ Langfuse Cloud 中的 blob 存储集成会按以下目录结构，将数据写�
 | <img src="/images/integrations/logos/gcs.svg" alt="Google Cloud Storage 徽标" className="integration-table-logo" width="24" height="24" /> **Google Cloud Storage**                                                                                                               | 通过 [GCS ClickPipes](/zh/integrations/clickpipes/object-storage/google-cloud-storage/overview) 集成。 |
 | <img src="/images/integrations/logos/azureblobstorage.svg" alt="Azure blob 存储徽标" className="integration-table-logo" width="24" height="24" /> **Azure blob 存储**                                                                                                      | 通过 [ABS ClickPipes](/zh/integrations/clickpipes/object-storage/azure-blob-storage/overview) 集成。   |
 
-### 创建 ClickPipe {#create-a-clickpipe}
+### 创建 ClickPipe
 
 本示例使用 S3 ClickPipe，从接收 Langfuse Cloud 定时导出数据的 S3 桶中导入数据，可作为所有对象存储导出目标的通用参考模板。如需了解特定数据源的配置指南，请参阅 [ClickPipes 文档](/zh/integrations/clickpipes)。
 
@@ -147,11 +147,11 @@ Langfuse Cloud 中的 blob 存储集成会按以下目录结构，将数据写�
   </Step>
 </Steps>
 
-### 查询链路追踪数据 {#query-trace-data}
+### 查询链路追踪数据
 
 ClickPipes 启动并正常运行后，即可直接在 ClickHouse Cloud 中查询 Langfuse Cloud 的链路追踪数据。以下示例涵盖了几种常见的查询模式：成本与延迟汇总、还原单个 trace，以及将评分与模型和提示词进行关联分析。
 
-#### 按时间分桶的指标汇总 {#time-bucketed-metric-rollups}
+#### 按时间分桶的指标汇总
 
 <Tip>
   部分字段 (例如 `usage_details` 和 `cost_details`) 以 `Map` 列的形式导出。可通过键查找读取单个值 (例如 `sum(cost_details['total'])`) 。
@@ -172,7 +172,7 @@ GROUP BY t, provided_model_name
 ORDER BY t;
 ```
 
-#### trace 重建 {#trace-reconstruction}
+#### trace 重建
 
 ```sql
 SELECT *
@@ -181,7 +181,7 @@ WHERE trace_id = '<trace_id>'
 ORDER BY start_time;
 ```
 
-#### 质量分析 {#quality-analysis}
+#### 质量分析
 
 ```sql
 SELECT
@@ -195,7 +195,7 @@ GROUP BY o.provided_model_name, s.name
 ORDER BY avg_score DESC;
 ```
 
-## 另请参见 {#see-also}
+## 另请参见
 
 * [Langfuse 与 ClickHouse](/zh/products/cloud/features/ai-ml/langfuse)
 * [Langfuse Cloud blob 存储导出](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)

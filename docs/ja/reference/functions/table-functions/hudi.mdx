@@ -10,13 +10,13 @@ doc_type: 'reference'
 
 Amazon S3 上の Apache [Hudi](https://hudi.apache.org/) テーブルに対する読み取り専用のテーブル形式インターフェイスを提供します。
 
-## 構文 {#syntax}
+## 構文
 
 ```sql
 hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 ```
 
-## 引数 {#arguments}
+## 引数
 
 | 引数                                           | 説明                                                                                                                                                                                                                                                                              |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -27,11 +27,11 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 | `compression`                                | このパラメータは省略可能です。サポートされる値: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`。デフォルトでは、圧縮形式はファイル拡張子から自動判別されます。`snappy` の場合、ワイヤ形式は [snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定 (デフォルトでは `basic`) によって選択されます。 |
 | `extra_credentials`                          | このパラメータは省略可能です。ClickHouse Cloud でロールベースアクセスに使用する `role_arn` を渡すために使います。設定手順については、[Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。                                                                                                         |
 
-## 戻り値 {#returned-value}
+## 戻り値
 
 S3上の指定されたHudiテーブルのデータを読み取るための、指定された構造を持つテーブル。
 
-## 仮想カラム {#virtual-columns}
+## 仮想カラム
 
 * `_path` — ファイルへのパス。型: `LowCardinality(String)`。
 * `_file` — ファイル名。型: `LowCardinality(String)`。
@@ -39,7 +39,7 @@ S3上の指定されたHudiテーブルのデータを読み取るための、�
 * `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
 * `_etag` — ファイルの etag。型: `LowCardinality(String)`。etag が不明な場合、値は `NULL` です。
 
-## 関連 {#related}
+## 関連
 
 * [Hudi エンジン](/ja/reference/engines/table-engines/integrations/hudi)
 * [Hudi cluster テーブル関数](/ja/reference/functions/table-functions/hudiCluster)

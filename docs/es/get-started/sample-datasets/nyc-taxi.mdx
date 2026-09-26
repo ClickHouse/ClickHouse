@@ -13,7 +13,7 @@ import { RunnableCode } from "/snippets/es/components/RunnableCode/RunnableCode.
   En este tutorial, descubrirá cómo usar ClickHouse para ejecutar consultas analíticas sobre grandes volúmenes de datos.
   También verá cómo utilizar un diccionario para enriquecer los datos y escribir consultas con JOIN.
 
-  ## Requisitos previos {#prerequisites}
+  ## Requisitos previos
 
   Para este tutorial, necesitará:
 
@@ -361,7 +361,7 @@ import { RunnableCode } from "/snippets/es/components/RunnableCode/RunnableCode.
     </Step>
   </Steps>
 
-  ## Próximos pasos {#next-steps}
+  ## Próximos pasos
 
   Obtenga más información sobre ClickHouse en la siguiente documentación:
 
@@ -385,7 +385,7 @@ import { RunnableCode } from "/snippets/es/components/RunnableCode/RunnableCode.
     [&quot;Especificaciones del Playground&quot;](/es/get-started/sample-datasets/playground#specifications).
   </Note>
 
-  ## Crear la tabla trips {#create-the-table-trips}
+  ## Crear la tabla trips
 
   Comience creando una tabla para los viajes en taxi:
 
@@ -416,7 +416,7 @@ import { RunnableCode } from "/snippets/es/components/RunnableCode/RunnableCode.
   PRIMARY KEY (pickup_datetime, dropoff_datetime);
   ```
 
-  ## Cargar los datos directamente desde el almacenamiento de objetos {#load-the-data-directly-from-object-storage}
+  ## Cargar los datos directamente desde el almacenamiento de objetos
 
   Los usuarios pueden obtener un pequeño subconjunto de los datos (3 millones de filas) para familiarizarse con ellos. Los datos están en archivos TSV alojados en almacenamiento de objetos, desde donde pueden transmitirse fácilmente a
   ClickHouse Cloud mediante la función de tabla `s3`.
@@ -485,7 +485,7 @@ import { RunnableCode } from "/snippets/es/components/RunnableCode/RunnableCode.
     </Tab>
   </Tabs>
 
-  ## Consultas de muestra {#sample-queries}
+  ## Consultas de muestra
 
   Las siguientes consultas se ejecutan sobre la muestra descrita anteriormente. Puede ejecutar las consultas de muestra en el conjunto de datos completo en [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19), modificando las consultas siguientes para usar la tabla `nyc_taxi.trips`.
 
@@ -547,7 +547,7 @@ import { RunnableCode } from "/snippets/es/components/RunnableCode/RunnableCode.
   ORDER BY passenger_count ASC
   ```
 
-  ## Descarga de particiones preparadas {#download-of-prepared-partitions}
+  ## Descarga de particiones preparadas
 
   <Note>
     Los siguientes pasos ofrecen información sobre el conjunto de datos original y describen un método para cargar particiones preparadas en un entorno con un servidor de ClickHouse autogestionado.
@@ -573,7 +573,7 @@ import { RunnableCode } from "/snippets/es/components/RunnableCode/RunnableCode.
     Si va a ejecutar las consultas que se describen a continuación, debe usar el nombre de tabla completo, `datasets.trips_mergetree`.
   </Info>
 
-  ## Resultados en un solo servidor {#results-on-single-server}
+  ## Resultados en un solo servidor
 
   Q1:
 
@@ -657,7 +657,7 @@ import { RunnableCode } from "/snippets/es/components/RunnableCode/RunnableCode.
   En este caso, el tiempo de procesamiento de la consulta depende, sobre todo, de la latencia de red.
   Ejecutamos las consultas con un client ubicado en un centro de datos distinto al del cluster, lo que añadió unos 20 ms de latencia.
 
-  ## Resumen {#summary}
+  ## Resumen
 
   | servidores         | Q1    | Q2    | Q3    | Q4    |
   | ------------------ | ----- | ----- | ----- | ----- |

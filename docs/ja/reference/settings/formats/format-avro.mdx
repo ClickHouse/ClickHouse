@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は、[ソースファイル](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h) から自動生成されています。
 
-## format_avro_schema_registry_connection_timeout {#format_avro_schema_registry_connection_timeout}
+## format_avro_schema_registry_connection_timeout
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 AvroConfluent フォーマット向け: Confluent スキーマレジストリ HTTP クライアントに対する接続タイムアウト (秒) 。スキーマの取得とスキーマ登録の両方で使用されます。0 より大きい必要があり、600 (10 分) 以上の値は 599 に減らされます。
 
-## format_avro_schema_registry_max_retries {#format_avro_schema_registry_max_retries}
+## format_avro_schema_registry_max_retries
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -29,7 +29,7 @@ AvroConfluent フォーマット向け: Confluent スキーマレジストリ HT
 
 AvroConfluent フォーマット: Confluent スキーマレジストリとの通信時に発生する一時的な障害 (転送タイムアウト、接続拒否、DNS エラー、HTTP 5xx/408/429) に対する最大再試行回数です。再試行を無効にするには 0 に設定します。20 を超える値は 20 に切り下げられます。スキーマ検証エラー (HTTP 409、不正な Avro JSON) では再試行されません。
 
-## format_avro_schema_registry_receive_timeout {#format_avro_schema_registry_receive_timeout}
+## format_avro_schema_registry_receive_timeout
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
@@ -37,7 +37,7 @@ AvroConfluent フォーマット: Confluent スキーマレジストリとの通
 
 AvroConfluent フォーマット向けの Confluent スキーマレジストリ HTTP クライアントの受信タイムアウト (秒単位) です。スキーマの取得とスキーマ登録の両方で使用されます。0 より大きい値である必要があり、600 (10 分) 以上の値は 599 に切り下げられます。
 
-## format_avro_schema_registry_retry_initial_backoff_ms {#format_avro_schema_registry_retry_initial_backoff_ms}
+## format_avro_schema_registry_retry_initial_backoff_ms
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -45,7 +45,7 @@ AvroConfluent フォーマット向けの Confluent スキーマレジストリ 
 
 AvroConfluent フォーマット用の設定です。失敗した Confluent スキーマレジストリへのリクエストを再試行する前の初期バックオフを、ミリ秒単位で指定します。バックオフは以降の再試行のたびに 2 倍になり、上限は 10 秒です。0 より大きい必要があり、60000 を超える値は 60000 に切り下げられます。
 
-## format_avro_schema_registry_send_timeout {#format_avro_schema_registry_send_timeout}
+## format_avro_schema_registry_send_timeout
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
@@ -53,7 +53,7 @@ AvroConfluent フォーマット用の設定です。失敗した Confluent ス�
 
 AvroConfluent フォーマット向けの設定です。Confluent スキーマレジストリ HTTPクライアントの送信タイムアウトを秒単位で指定します。スキーマの取得とスキーマ登録の両方で使用されます。0 より大きい値である必要があり、600 (10 分) 以上の値は 599 に切り下げられます。
 
-## format_avro_schema_registry_url {#format_avro_schema_registry_url}
+## format_avro_schema_registry_url
 
 AvroConfluent フォーマットの Confluent スキーマレジストリ URL。
 

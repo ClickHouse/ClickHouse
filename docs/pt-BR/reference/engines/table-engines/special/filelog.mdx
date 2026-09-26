@@ -16,7 +16,7 @@ Este motor permite processar arquivos de log de aplicativos como um fluxo de reg
 * Monitore arquivos de log.
 * Processe novos registros à medida que são adicionados aos arquivos de log monitorados.
 
-## Criando uma tabela {#creating-a-table}
+## Criando uma tabela
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -51,7 +51,7 @@ Parâmetros opcionais:
 * `poll_directory_watch_events_backoff_factor` - Velocidade do backoff, exponencial por padrão. Padrão: `2`.
 * `handle_error_mode` — Como tratar erros no motor FileLog. Valores possíveis: default (uma exceção será lançada se não for possível analisar uma mensagem), stream (a mensagem da exceção e a mensagem bruta serão salvas nas colunas virtuais `_error` e `_raw_message`).
 
-## Descrição {#description}
+## Descrição
 
 Os registros recebidos são rastreados automaticamente, portanto cada registro em um arquivo de log é contabilizado apenas uma vez.
 
@@ -97,7 +97,7 @@ ATTACH TABLE consumer;
 
 Se você quiser alterar a tabela de destino usando `ALTER`, recomendamos desativar a visão materializada para evitar discrepâncias entre a tabela de destino e os dados provenientes da view.
 
-## Colunas virtuais {#virtual-columns}
+## Colunas virtuais
 
 * `_filename` - Nome do arquivo de log. Tipo de dado: `LowCardinality(String)`.
 * `_offset` - Offset no arquivo de log. Tipo de dado: `UInt64`.
@@ -109,7 +109,7 @@ Colunas virtuais adicionais quando `handle_error_mode='stream'`:
 
 Observação: as colunas virtuais `_raw_record` e `_error` são preenchidas apenas em caso de exceção durante o parsing; elas sempre são `NULL` quando a mensagem é processada com sucesso.
 
-## Durabilidade dos dados {#data-durability}
+## Durabilidade dos dados
 
 O motor `FileLog` registra o offset consumido de um fragmento antes que o insert ao qual ele pertence seja confirmado; portanto, a interrupção do servidor pode fazer com que o offset registrado fique adiantado em relação aos dados que chegaram à tabela de destino. Ao reiniciar, cada arquivo de log é retomado a partir do offset registrado em seu diretório de metadados, de modo que essas linhas nunca são lidas novamente: elas são perdidas sem gerar erro, e `count()` simplesmente retorna um valor menor. Uma falha comum de processo é suficiente para expor esse problema e não exige perda de energia, pois o offset é registrado em um arquivo de metadados renomeado para o local definitivo enquanto a parte de destino ainda está sendo gravada.
 

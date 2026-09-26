@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，且由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## external_table_functions_use_nulls {#external_table_functions_use_nulls}
+## external_table_functions_use_nulls
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,7 +27,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 如果将此设置设为 `0`，表函数不会将列设为 Nullable，而是插入默认值来代替 NULL。此规则同样适用于数组中的 NULL 值。
 
-## external_table_strict_query {#external_table_strict_query}
+## external_table_strict_query
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

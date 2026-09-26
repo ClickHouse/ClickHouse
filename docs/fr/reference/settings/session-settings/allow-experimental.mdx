@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## allow_experimental_analyzer {#allow_experimental_analyzer}
+## allow_experimental_analyzer
 
 **Aliases** : `enable_analyzer`
 
@@ -26,7 +26,7 @@ Obsolète depuis la v26.9 : l&#39;analyseur ne peut plus être désactivé.
 
 L&#39;analyseur est l&#39;infrastructure d&#39;analyse et de planification des requêtes utilisée par défaut depuis la v24.3. Dans la v26.9, ce paramètre a été figé sur sa seule valeur prise en charge, `1` : toute tentative de le définir à `0` est rejetée, et le paramètre `compatibility` ne le rétablit plus. Dans la v26.10, l&#39;analyse de requête vers laquelle il permettait de basculer a été supprimée. Supprimez `enable_analyzer = 0` de vos requêtes, de vos paramètre de session, de vos settings profile et de vos configurations client. Pour comparer le comportement ou les performances d&#39;une requête avec l&#39;ancienne analyse de requête, utilisez une version de ClickHouse antérieure à la v26.9.
 
-## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
+## allow_experimental_cleanup_old_data_files_compaction
 
 <ExperimentalBadge />
 
@@ -36,7 +36,7 @@ L&#39;analyseur est l&#39;infrastructure d&#39;analyse et de planification des r
 
 Permet de supprimer les anciens fichiers de données lors de la compaction d’Iceberg.
 
-## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
+## allow_experimental_database_hms_catalog
 
 <ExperimentalBadge />
 
@@ -46,7 +46,7 @@ Permet de supprimer les anciens fichiers de données lors de la compaction d’I
 
 Autorise le moteur de base de données expérimental DataLakeCatalog avec catalog&#95;type = &#39;hms&#39;
 
-## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
+## allow_experimental_database_materialized_postgresql
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ Autorise le moteur de base de données expérimental DataLakeCatalog avec catalo
 
 Permet de créer une base de données avec Engine=MaterializedPostgreSQL(...).
 
-## allow_experimental_database_paimon_rest_catalog {#allow_experimental_database_paimon_rest_catalog}
+## allow_experimental_database_paimon_rest_catalog
 
 <ExperimentalBadge />
 
@@ -64,7 +64,7 @@ Permet de créer une base de données avec Engine=MaterializedPostgreSQL(...).
 
 Autorise l&#39;utilisation du moteur de base de données expérimental DataLakeCatalog avec catalog&#95;type = &#39;paimon&#95;rest&#39;
 
-## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
+## allow_experimental_eval_table_function
 
 <ExperimentalBadge />
 
@@ -74,7 +74,7 @@ Autorise l&#39;utilisation du moteur de base de données expérimental DataLakeC
 
 Active la fonction de table expérimentale `eval`.
 
-## allow_experimental_expire_snapshots {#allow_experimental_expire_snapshots}
+## allow_experimental_expire_snapshots
 
 <ExperimentalBadge />
 
@@ -84,7 +84,7 @@ Active la fonction de table expérimentale `eval`.
 
 Autorise l&#39;exécution de la commande expérimentale Iceberg `ALTER TABLE ... EXECUTE expire_snapshots`.
 
-## allow_experimental_hash_functions {#allow_experimental_hash_functions}
+## allow_experimental_hash_functions
 
 <ExperimentalBadge />
 
@@ -92,7 +92,7 @@ Autorise l&#39;exécution de la commande expérimentale Iceberg `ALTER TABLE ...
 
 Active les fonctions de hachage expérimentales
 
-## allow_experimental_iceberg_compaction {#allow_experimental_iceberg_compaction}
+## allow_experimental_iceberg_compaction
 
 <ExperimentalBadge />
 
@@ -102,7 +102,7 @@ Active les fonctions de hachage expérimentales
 
 Permet d&#39;utiliser explicitement &#39;OPTIMIZE&#39; pour les tables Iceberg.
 
-## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
+## allow_experimental_kusto_dialect
 
 <ExperimentalBadge />
 
@@ -112,7 +112,7 @@ Permet d&#39;utiliser explicitement &#39;OPTIMIZE&#39; pour les tables Iceberg.
 
 Activez le dialecte Kusto Query Language (KQL), une alternative à SQL.
 
-## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
+## allow_experimental_nlp_functions
 
 <ExperimentalBadge />
 
@@ -120,7 +120,7 @@ Activez le dialecte Kusto Query Language (KQL), une alternative à SQL.
 
 Active les fonctions expérimentales de traitement du langage naturel.
 
-## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
+## allow_experimental_object_storage_queue_hive_partitioning
 
 <ExperimentalBadge />
 
@@ -130,7 +130,7 @@ Active les fonctions expérimentales de traitement du langage naturel.
 
 Permet d&#39;utiliser le partitionnement Hive avec les moteurs S3Queue/AzureQueue
 
-## allow_experimental_paimon_storage_engine {#allow_experimental_paimon_storage_engine}
+## allow_experimental_paimon_storage_engine
 
 <ExperimentalBadge />
 
@@ -140,7 +140,7 @@ Permet d&#39;utiliser le partitionnement Hive avec les moteurs S3Queue/AzureQueu
 
 Autorise la création de tables avec les moteurs de table Paimon*.
 
-## allow_experimental_parallel_reading_from_replicas {#allow_experimental_parallel_reading_from_replicas}
+## allow_experimental_parallel_reading_from_replicas
 
 **Alias** : `enable_parallel_replicas`
 
@@ -148,7 +148,7 @@ Autorise la création de tables avec les moteurs de table Paimon*.
 
 Utilise jusqu’à `max_parallel_replicas` répliques de chaque shard pour exécuter les requêtes SELECT. La lecture est parallélisée et coordonnée dynamiquement. 0 - désactivé, 1 - activé, avec désactivation silencieuse en cas d’échec, 2 - activé, avec levée d’une exception en cas d’échec
 
-## allow_experimental_polyglot_dialect {#allow_experimental_polyglot_dialect}
+## allow_experimental_polyglot_dialect
 
 <ExperimentalBadge />
 
@@ -158,7 +158,7 @@ Utilise jusqu’à `max_parallel_replicas` répliques de chaque shard pour exéc
 
 Active le transpileur SQL polyglotte : il convertit le SQL de plus de 30 dialectes (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) en ClickHouse SQL.
 
-## allow_experimental_prql_dialect {#allow_experimental_prql_dialect}
+## allow_experimental_prql_dialect
 
 <ExperimentalBadge />
 
@@ -168,7 +168,7 @@ Active le transpileur SQL polyglotte : il convertit le SQL de plus de 30 dialect
 
 Active PRQL, une alternative à SQL.
 
-## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
+## allow_experimental_ytsaurus_dictionary_source
 
 <ExperimentalBadge />
 
@@ -178,7 +178,7 @@ Active PRQL, une alternative à SQL.
 
 Source de dictionnaire expérimentale pour l’intégration avec YTsaurus.
 
-## allow_experimental_ytsaurus_table_engine {#allow_experimental_ytsaurus_table_engine}
+## allow_experimental_ytsaurus_table_engine
 
 <ExperimentalBadge />
 
@@ -188,7 +188,7 @@ Source de dictionnaire expérimentale pour l’intégration avec YTsaurus.
 
 Moteur de table expérimental pour l’intégration à YTsaurus.
 
-## allow_experimental_ytsaurus_table_function {#allow_experimental_ytsaurus_table_function}
+## allow_experimental_ytsaurus_table_function
 
 <ExperimentalBadge />
 

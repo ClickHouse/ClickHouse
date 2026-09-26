@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## join_runtime_bloom_filter_bytes {#join_runtime_bloom_filter_bytes}
+## join_runtime_bloom_filter_bytes
 
 <SettingsInfoBlock type="UInt64" default_value="524288" />
 
@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 حجم مرشح بلوم، بالبايت، المستخدم كعامل تصفية وقت التشغيل لـ JOIN (راجع الإعداد enable&#95;join&#95;runtime&#95;filters).
 
-## join_runtime_bloom_filter_hash_functions {#join_runtime_bloom_filter_hash_functions}
+## join_runtime_bloom_filter_hash_functions
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -29,7 +29,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 عدد دوال التجزئة في مرشح بلوم المستخدم كعامل تصفية وقت التشغيل لـ JOIN (راجع الإعداد enable&#95;join&#95;runtime&#95;filters).
 
-## join_runtime_bloom_filter_max_ratio_of_set_bits {#join_runtime_bloom_filter_max_ratio_of_set_bits}
+## join_runtime_bloom_filter_max_ratio_of_set_bits
 
 <SettingsInfoBlock type="Double" default_value="0.7" />
 
@@ -37,7 +37,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا تجاوز عدد البتات المفعّلة في مرشح بلوم وقت التشغيل هذه النسبة، فسيتم تعطيل المرشح بالكامل لتقليل العبء الإضافي.
 
-## join_runtime_filter_blocks_to_skip_before_reenabling {#join_runtime_filter_blocks_to_skip_before_reenabling}
+## join_runtime_filter_blocks_to_skip_before_reenabling
 
 <SettingsInfoBlock type="UInt64" default_value="30" />
 
@@ -45,7 +45,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 عدد الكتل التي يتم تجاوزها قبل محاولة إعادة تمكين عامل تصفية وقت التشغيل ديناميكيًا، بعد أن كان قد عُطِّل سابقًا بسبب انخفاض نسبة التصفية.
 
-## join_runtime_filter_exact_values_limit {#join_runtime_filter_exact_values_limit}
+## join_runtime_filter_exact_values_limit
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -53,7 +53,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأقصى لعدد العناصر في مرشح وقت التشغيل التي تُخزَّن كما هي في Set؛ وعند تجاوز هذه العتبة، يتم التبديل إلى مرشح بلوم.
 
-## join_runtime_filter_from_fixed_hash_table {#join_runtime_filter_from_fixed_hash_table}
+## join_runtime_filter_from_fixed_hash_table
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -61,7 +61,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 عند تحويل جانب البناء في `hash join` إلى `FixedHashMap` (راجع `enable_join_fixed_hash_table_conversion`)، استخدم خريطة التجزئة هذه مباشرةً كعامل تصفية وقت التشغيل.
 
-## join_runtime_filter_min_probe_rows {#join_runtime_filter_min_probe_rows}
+## join_runtime_filter_min_probe_rows
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -69,7 +69,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا قُدّر، عند تخطيط الاستعلام، أن جانب الفحص في JOIN لن ينتج أكثر من هذا العدد من الصفوف، فلن يُنشأ عامل تصفية وقت التشغيل لـ JOIN. إذ إن إنشاء عامل تصفية وقت التشغيل وتطبيقه على جانب فحص صغير جدًا يكلّف أكثر مما يوفّره. اضبط القيمة على 0 لإنشاء عامل تصفية وقت التشغيل دائمًا، بغض النظر عن حجم جانب الفحص المقدّر.
 
-## join_runtime_filter_pass_ratio_threshold_for_disabling {#join_runtime_filter_pass_ratio_threshold_for_disabling}
+## join_runtime_filter_pass_ratio_threshold_for_disabling
 
 <SettingsInfoBlock type="Double" default_value="0.7" />
 
@@ -77,7 +77,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 إذا كانت نسبة الصفوف الممرَّرة إلى الصفوف التي جرى التحقق منها أكبر من هذه العتبة، فسيُعتبر عامل تصفية وقت التشغيل ضعيف الأداء، وسيُعطَّل خلال الكتل `join_runtime_filter_blocks_to_skip_before_reenabling` التالية لتقليل العبء الإضافي.
 
-## join_runtime_filter_size_from_hash_table_stats {#join_runtime_filter_size_from_hash_table_stats}
+## join_runtime_filter_size_from_hash_table_stats
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

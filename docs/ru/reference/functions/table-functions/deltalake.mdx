@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 Предоставляет табличный интерфейс для таблиц [Delta Lake](https://github.com/delta-io/delta) в Amazon S3, Azure Blob Storage или в локально смонтированной файловой системе с поддержкой чтения и записи (запись для S3 и GCS с v25.10, для Azure с v26.9)
 
-## Синтаксис {#syntax}
+## Синтаксис
 
 `deltaLake` — это поддерживаемый для совместимости псевдоним `deltaLakeS3`.
 
@@ -25,20 +25,20 @@ deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, 
 deltaLakeLocal(path, [,format])
 ```
 
-## Аргументы {#arguments}
+## Аргументы
 
 Аргументы этой табличной функции совпадают с аргументами табличных функций `s3`, `azureBlobStorage`, `HDFS` и `file`.
 Аргумент `format` задаёт формат файлов данных в таблице Delta Lake.
 
 Необязательный параметр `extra_credentials` можно использовать, чтобы передать `role_arn` для ролевого доступа в ClickHouse Cloud. Шаги по настройке см. в разделе [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).
 
-## Возвращаемое значение {#returned-value}
+## Возвращаемое значение
 
 Возвращает таблицу с указанной структурой для чтения данных из указанной таблицы Delta Lake или записи данных в неё.
 
-## Примеры {#examples}
+## Примеры
 
-### Чтение данных {#reading-data}
+### Чтение данных
 
 Рассмотрим таблицу в хранилище S3 по адресу `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`.
 Чтобы прочитать данные из этой таблицы в ClickHouse, выполните:
@@ -59,7 +59,7 @@ LIMIT 2
 └───────────────────────────────────────────────────────────────────────┴───────────┘
 ```
 
-### Вставка данных {#inserting-data}
+### Вставка данных
 
 Рассмотрим таблицу в хранилище S3 по адресу `s3://ch-docs-s3-bucket/people_10k/`.
 Запись в Delta Lake — это бета-возможность, отключенная по умолчанию. Включите её следующим образом (`allow_delta_lake_writes` доступен начиная с версии 26.7; в более ранних версиях используйте `allow_experimental_delta_lake_writes`):
@@ -98,7 +98,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
    └───────┴───────────┴──────────┴────────┴─────┘
 ```
 
-## Виртуальные столбцы {#virtual-columns}
+## Виртуальные столбцы
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
@@ -106,7 +106,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 * `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение — `NULL`.
 
-## См. также {#related}
+## См. также
 
 * [движок DeltaLake](/ru/reference/engines/table-engines/integrations/deltalake)
 * [кластерная табличная функция DeltaLake](/ru/reference/functions/table-functions/deltalakeCluster)

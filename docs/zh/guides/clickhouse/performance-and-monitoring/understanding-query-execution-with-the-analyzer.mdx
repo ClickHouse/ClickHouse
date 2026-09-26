@@ -33,7 +33,7 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 下面我们来看这些环节在查询执行过程中是如何工作的。我们将选取几个查询，然后使用 `EXPLAIN` 语句来分析它们。
 
-## 解析器 {#parser}
+## 解析器
 
 解析器的目标是将查询文本转换为 AST (抽象语法树) 。可以用 `EXPLAIN AST` 直观地展示这一步骤：
 
@@ -81,7 +81,7 @@ graph TD
 
 每个节点都有对应的子节点，整棵树表示查询的整体结构。这是一种有助于处理查询的逻辑结构。从终端用户的角度来看 (除非你对查询执行感兴趣) ，它的实用性并不高；这个工具主要供开发者使用。
 
-## Analyzer {#analyzer}
+## Analyzer
 
 自 ClickHouse `24.3` 起，analyzer 已默认启用；自 `26.9` 起，它成为唯一的查询分析方式，此时 `enable_analyzer` 已成为一个无法再被禁用的已废弃设置。
 
@@ -141,7 +141,7 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 对比这两次执行结果，可以看到别名和投影的解析过程。
 
 <div id="planner">
-  ## 规划器 {#planner}
+  ## 规划器
 </div>
 
 规划器接收查询树，并据此生成查询计划。查询树描述的是我们希望对某个特定查询执行什么操作，而查询计划说明的是这些操作将如何执行。进一步的优化也会在生成查询计划的过程中完成。你可以使用 `EXPLAIN PLAN` 或 `EXPLAIN` 来查看查询计划 (`EXPLAIN` 会执行 `EXPLAIN PLAN`) 。
@@ -261,7 +261,7 @@ GROUP BY type
 现在，你可以看到所有正在使用的输入、函数、别名和数据类型。你还可以在[这里](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h)查看规划器将应用的部分优化。
 
 <div id="query-pipeline">
-  ## 查询管道 {#query-pipeline}
+  ## 查询管道
 </div>
 
 查询管道由查询计划生成。查询管道与查询计划非常相似，区别在于它不是树形结构，而是图结构。它展示了 ClickHouse 将如何执行查询以及将使用哪些资源。分析查询管道对于定位输入/输出方面的性能瓶颈非常有帮助。下面以之前的查询为例，来看看查询管道的执行情况：
@@ -462,7 +462,7 @@ digraph
 因此，执行器认为无需将这些操作并行化，因为数据量还不够大。增加更多行后，执行器便决定改用多个线程，如图所示。
 
 <div id="executor">
-  ## 执行器 {#executor}
+  ## 执行器
 </div>
 
 最后，查询执行的最终一步由执行器完成。它会接收查询管道并执行。根据执行的是 `SELECT`、`INSERT` 还是 `INSERT SELECT`，所使用的执行器类型也会不同。

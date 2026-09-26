@@ -11,7 +11,7 @@ ClickHouse Connect 可以使用编译后的 Rust 编解码器来解码查询结�
 
 该编解码器目前为 Experimental 功能，需显式启用，默认仍使用 Python 编解码器。
 
-## 安装 {#installation}
+## 安装
 
 编译后的编解码器以名为 `clickhouse-connect-core` 的独立 wheel 包形式发布，该包提供 `_ch_core` 扩展模块。若要进行评估，请将该编解码器与 PyArrow 一并安装：
 
@@ -31,7 +31,7 @@ pip install "clickhouse-connect[rust]"
 
 如果选择了 Rust 编解码器，但未安装编译后的模块，则创建 client 时会引发 `NotSupportedError`，并在错误信息中给出此安装命令。
 
-## 启用 编解码器 {#enabling-the-codec}
+## 启用 编解码器
 
 通过 `native_codec` 客户端选项选择编解码器：
 
@@ -53,7 +53,7 @@ client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
 
 对于 `interface="chdb"` 的客户端，该选项将被忽略，此类客户端始终使用 Python 编解码器。
 
-## 何时使用 Rust 编解码器 {#when-to-use-the-rust-codec}
+## 何时使用 Rust 编解码器
 
 Rust 编解码器最适用于包含文本、容器和复杂类型 (如 `String`、`LowCardinality`、`Map`、`Array`、`JSON`、`Decimal` 和 `UUID`) 的大型 DataFrame 结果。此外，它对大型行块流和列块流、并发查询工作负载以及批量插入也有帮助。
 
@@ -63,7 +63,7 @@ Rust 编解码器最适用于包含文本、容器和复杂类型 (如 `String`�
 
 在采用该编解码器之前，请针对自身的工作负载进行基准测试。测量时请使用 `native_codec="rust_strict"`，这样遇到不受支持的选项或缺失的依赖时会直接抛出异常，而不会悄悄将查询转由 Python 处理。
 
-## Fallback 规则 {#fallback-rules}
+## Fallback 规则
 
 Fallback 决策在读取或发送任何字节之前就已完成，因此绝不会出现流中途切换编解码器的情况。对于查询，该选择发生在读取 response body 之前。对于插入，只有当所有列类型都受支持时才会选用 Rust 编码器，否则整个 insert 都在 Python 编解码器上执行。
 
@@ -73,7 +73,7 @@ driver 内部的 metadata 查询，包括 SQLAlchemy dialect 的 reflection 语�
 
 Rust 编解码器检测到格式错误的 Native payloads 时会引发 `DataError`。
 
-## Versioning {#versioning}
+## Versioning
 
 `clickhouse-connect-core` 的版本与 `clickhouse-connect` 相互独立。驱动通过 `rust` extra 声明兼容的版本范围，模块则导出一个 binding API 版本号；当选择 Rust 编解码器时，驱动会对该版本号进行校验。如果已安装的 wheel 对当前驱动而言版本过旧，创建 client 时会引发 `NotSupportedError`，并在其中给出升级命令：
 
@@ -83,7 +83,7 @@ pip install --upgrade clickhouse-connect-core
 
 编译后编解码器的修复和性能提升会随 `clickhouse-connect-core` 发行版一同发布，只需将 core wheel 升级到兼容版本即可获取。而对驱动的 Rust 集成所做的更改，则需要升级 `clickhouse-connect`。
 
-## 已知行为差异 {#known-behavior-differences}
+## 已知行为差异
 
 Rust 编解码器的目标是与 Python 编解码器逐单元保持一致。目前已知存在以下差异。
 

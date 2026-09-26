@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Движок MySQL позволяет выполнять запросы `SELECT` и `INSERT` к данным, которые хранятся на удалённом сервере MySQL.
 
-## Создание таблицы {#creating-a-table}
+## Создание таблицы
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -56,7 +56,7 @@ SETTINGS
 
 Остальные условия и ограничение выборки `LIMIT` выполняются в ClickHouse только после завершения запроса к MySQL.
 
-## TLS/SSL {#tls-ssl}
+## TLS/SSL
 
 Учетные данные для зашифрованного соединения с MySQL передаются как ключи именованной коллекции (или как аргументы «ключ-значение»):
 
@@ -82,7 +82,7 @@ SETTINGS
 </named_collections>
 ```
 
-## Передача запроса вместо имени таблицы {#passing-a-query}
+## Передача запроса вместо имени таблицы
 
 Вместо имени таблицы аргумент `table` может представлять собой запрос `SELECT`, который передаётся в MySQL как есть. Структура таблицы определяется по результату запроса. Запрос можно записать либо как подзапрос, либо обернуть в функцию `query`:
 
@@ -105,7 +105,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-## Пример использования {#usage-example}
+## Пример использования
 
 Создайте таблицу в MySQL:
 
@@ -170,11 +170,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## Настройки {#mysql-settings}
+## Настройки
 
 Настройки по умолчанию не очень эффективны, поскольку при них даже не переиспользуются соединения. Эти настройки позволяют увеличить число запросов, выполняемых сервером в секунду.
 
-### `connection_auto_close` {#connection-auto-close}
+### `connection_auto_close`
 
 Позволяет автоматически закрывать соединение после выполнения запроса, то есть отключать его повторное использование.
 
@@ -185,7 +185,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `1`.
 
-### `connection_max_tries` {#connection-max-tries}
+### `connection_max_tries`
 
 Задаёт число повторных попыток в пуле с failover.
 
@@ -196,7 +196,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `3`.
 
-### `connection_pool_size` {#connection-pool-size}
+### `connection_pool_size`
 
 Размер пула соединений (если все соединения заняты, запрос будет ждать, пока одно из них не освободится).
 
@@ -206,7 +206,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `16`.
 
-### `connection_wait_timeout` {#connection-wait-timeout}
+### `connection_wait_timeout`
 
 Тайм-аут (в секундах) ожидания свободного соединения (если уже имеется `connection_pool_size` активных соединений), 0 — не ждать.
 
@@ -216,7 +216,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `5`.
 
-### `connect_timeout` {#connect-timeout}
+### `connect_timeout`
 
 Тайм-аут подключения (в секундах).
 
@@ -226,7 +226,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `10`.
 
-### `read_write_timeout` {#read-write-timeout}
+### `read_write_timeout`
 
 Тайм-аут операций чтения/записи (в секундах).
 
@@ -236,7 +236,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `300`.
 
-### `enable_compression` {#enable-compression}
+### `enable_compression`
 
 Включает сжатие для соединения по протоколу MySQL.
 
@@ -265,7 +265,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-## См. также {#see-also}
+## См. также
 
 * [Табличная функция MySQL](/ru/reference/functions/table-functions/mysql)
 * [Использование MySQL в качестве источника данных для словаря](/ru/reference/statements/create/dictionary/sources/mysql)

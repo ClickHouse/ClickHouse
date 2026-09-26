@@ -13,7 +13,7 @@ import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.
   Dans ce tutoriel, vous découvrirez comment utiliser ClickHouse pour exécuter des requêtes analytiques sur de grands volumes de données.
   Vous verrez également comment utiliser un dictionnaire pour enrichir les données et rédiger des requêtes avec jointures.
 
-  ## Prérequis {#prerequisites}
+  ## Prérequis
 
   Pour ce tutoriel, vous aurez besoin des éléments suivants :
 
@@ -361,7 +361,7 @@ import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.
     </Step>
   </Steps>
 
-  ## Prochaines étapes {#next-steps}
+  ## Prochaines étapes
 
   Pour en savoir plus sur ClickHouse, consultez la documentation suivante :
 
@@ -385,7 +385,7 @@ import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.
     [« Spécifications du Playground »](/fr/get-started/sample-datasets/playground#specifications).
   </Note>
 
-  ## Créer la table trips {#create-the-table-trips}
+  ## Créer la table trips
 
   Commencez par créer une table pour les courses de taxi :
 
@@ -416,7 +416,7 @@ import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.
   PRIMARY KEY (pickup_datetime, dropoff_datetime);
   ```
 
-  ## Charger les données directement depuis le stockage d’objet {#load-the-data-directly-from-object-storage}
+  ## Charger les données directement depuis le stockage d’objet
 
   Vous pouvez récupérer un petit sous-ensemble des données (3 millions de lignes) pour vous familiariser avec elles. Les données sont stockées dans des fichiers TSV sur un stockage d’objet et peuvent facilement être transmises en flux vers
   ClickHouse Cloud à l’aide de la fonction de table `s3`.
@@ -485,7 +485,7 @@ import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.
     </Tab>
   </Tabs>
 
-  ## Exemples de requêtes {#sample-queries}
+  ## Exemples de requêtes
 
   Les requêtes suivantes sont exécutées sur l’échantillon décrit ci-dessus. Vous pouvez exécuter ces requêtes d’exemple sur l’ensemble du jeu de données dans [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19), en modifiant les requêtes ci-dessous pour utiliser la table `nyc_taxi.trips`.
 
@@ -547,7 +547,7 @@ import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.
   ORDER BY passenger_count ASC
   ```
 
-  ## Téléchargement des partitions pré-générées {#download-of-prepared-partitions}
+  ## Téléchargement des partitions pré-générées
 
   <Note>
     Les étapes suivantes présentent le jeu de données d’origine, ainsi qu’une méthode pour charger des partitions préparées dans un environnement de serveur ClickHouse autogéré.
@@ -573,7 +573,7 @@ import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.
     Si vous exécutez les requêtes décrites ci-dessous, vous devez utiliser le nom complet de la table, `datasets.trips_mergetree`.
   </Info>
 
-  ## Résultats sur un serveur unique {#results-on-single-server}
+  ## Résultats sur un serveur unique
 
   Q1 :
 
@@ -657,7 +657,7 @@ import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.
   Dans ce cas, le temps de traitement des requêtes dépend avant tout de la latence réseau.
   Nous avons exécuté les requêtes depuis un client situé dans un autre datacenter que celui du cluster, ce qui a ajouté environ 20 ms de latence.
 
-  ## Résumé {#summary}
+  ## Résumé
 
   | serveurs           | Q1    | Q2    | Q3    | Q4    |
   | ------------------ | ----- | ----- | ----- | ----- |

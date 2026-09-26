@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متوفرة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
+## iceberg_insert_max_bytes_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
@@ -26,7 +26,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 للبيانات المكتوبة في الملف حتى تلك اللحظة، في حين تستهدف خاصية Iceberg حجم الملف الناتج،
 كما أن `iceberg_insert_max_rows_in_data_file` يحدّ من الملف بصرف النظر عن حجمه.
 
-## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
+## iceberg_insert_max_partitions
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -34,7 +34,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأقصى المسموح به لعدد الأقسام في عملية إدراج واحدة لمحرك جداول Iceberg.
 
-## iceberg_insert_max_rows_in_data_file {#iceberg_insert_max_rows_in_data_file}
+## iceberg_insert_max_rows_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 

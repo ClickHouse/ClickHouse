@@ -22,7 +22,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 
 本指南适合与其余[文档](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index)、[features and configurations](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 页面以及[物化类型参考](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)配合阅读。
 
-## 开始之前 {#before-you-start}
+## 开始之前
 
 请先按照 [ClickHouse/jaffle-shop-clickhouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 的 README 操作。其中说明了如何使用 dbt Core 1.x、dbt OSS、dbt v2 或 dbt 平台搭建该项目，如何将其指向本地 ClickHouse (docker) 或 ClickHouse Cloud，如何使用 `dbt seed` 加载示例数据，以及如何执行首次 `dbt build`。`dbt build` 成功完成后，再回到本页查看 ClickHouse 特有的示例和配置。
 
@@ -39,7 +39,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 
 所有非 dbt 命令的 SQL 语句都应直接在 ClickHouse 上执行，例如通过 `clickhouse client`、ClickHouse Cloud SQL 控制台或你习惯使用的 SQL 客户端。
 
-## 项目的物化方式 {#views-and-tables}
+## 项目的物化方式
 
 Jaffle Shop 在 `dbt_project.yml` 中配置其物化类型：staging 模型为视图，marts 为表。
 
@@ -108,7 +108,7 @@ SETTINGS replicated_deduplication_window = '0', index_granularity = 8192
 
 这里有两点是 ClickHouse 特有的。该模型没有声明表引擎，因此adapter使用 `MergeTree`；它也没有声明sorting key，因此adapter使用 `ORDER BY tuple()`，也就是数据完全不排序。对于示例项目来说这没什么问题，但在真实的表中，你应当明确指定这两项，这也正是后续几节要做的事情。[物化类型页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)列出了adapter支持的所有表配置。
 
-## 使用 seeds 加载数据 {#seeds}
+## 使用 seeds 加载数据
 
 Jaffle Shop 使用 dbt [seeds](https://docs.getdbt.com/docs/build/seeds) 从 `seeds/jaffle-data` 目录下的 CSV 文件加载原始数据。Seeds 的用途是小型静态参考数据 (代码表、映射关系) ，而非向数据仓库批量加载数据；本项目只是为了方便才使用它，让你无需额外的摄取工具即可上手——这也是为什么除非传入 `--vars '{"load_source_data": true}'`，否则 seeds 默认处于禁用状态。
 
@@ -177,7 +177,7 @@ SETTINGS index_granularity = 8192
 
 `dbt seed --full-refresh` 会删除并重新创建该表，因此请先运行它，然后再构建任何直接依赖该表数据的对象 (例如本指南后文中的 materialized view) 。
 
-## 为 ClickHouse 配置表 {#table-configuration}
+## 为 ClickHouse 配置表
 
 `orders` mart 是最自然的起点：它会被 `customers` mart 以及项目的 metrics 查询，而且它是一张带 timestamp 的事件型表。在 `models/marts/orders.sql` 顶部添加一个 `config` 块，用于指定 engine、sorting key 和分区方案：
 
@@ -249,7 +249,7 @@ ORDER BY partition;
 
 除了 `engine`、`order_by` 和 `partition_by` 之外，table 模型还支持 `primary_key`、`ttl`、`settings`、`query_settings`、`projections` 和 `indexes`，而列可以通过模型契约 (model contract) 指定 `codec` 和 `ttl`。这些配置均在[物化类型页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations)中有详细说明。
 
-## 创建增量模型 {#incremental}
+## 创建增量模型
 
 对于 62,000 行数据来说，每次运行都从头重建 `orders` 并无不可，但若表每天新增数百万行，就行不通了。dbt 的[增量物化](https://docs.getdbt.com/docs/build/incremental-models)只处理自上次运行以来发生变化的行。将 `orders` 模型改为增量模型需要两处补充：
 
@@ -356,7 +356,7 @@ WHERE customer_id = 'clicky-0001';
 └─────────────────────┴───────────────────────┴────────────────┴───────────────┘
 ```
 
-### 内部实现 {#internals}
+### 内部实现
 
 ClickHouse 的 query log 中可以看到 adapter 为执行增量更新所运行的语句：
 
@@ -420,7 +420,7 @@ flowchart TB
 
 第 2 步会复制整张表，因此在非常大的模型上，这种策略的开销与重建整表相当；参见[局限性](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index#limitations)。下面介绍的策略则可避免这次复制。
 
-### 追加策略 {#append-strategy}
+### 追加策略
 
 `append` 策略会将模型选出的行直接插入到 target table 中。它不会创建 temporary table，也不会复制任何数据，因此是增量运行中开销最低的方式。代价是它同样不做任何去重：如果增量过滤器选中了表中已有的行，该行就会重复出现两次。因此请仅将它用于不可变的事件类数据，并确保 filter 只会选中真正的新行。
 
@@ -495,7 +495,7 @@ query log 印证了这一差异：这一次涉及 `orders` 的语句只有一条
   使用 `>` 搭配按天截断的 timestamp 时，如果某个订单与已加载的最新订单处于同一天但到达时间更晚，它将永远不会被采集到。在实际项目中，使用 `append` strategy 时，应基于全精度的 timestamp 或单调递增的摄取时间进行过滤。
 </Warning>
 
-### Delete and insert 策略 {#delete-insert-strategy}
+### Delete and insert 策略
 
 一直以来，ClickHouse 对更新和删除的支持都比较有限，只能通过异步 [变更](/zh/reference/statements/alter/index) 来实现。这类操作往往会带来极高的 IO 开销，通常应尽量避免。ClickHouse 22.8 引入了 [轻量级删除](/zh/reference/statements/delete)，ClickHouse 25.7 引入了 [轻量级更新](/zh/reference/statements/update)。有了这些特性，虽然数据是以异步方式 materialized 的，但从用户的角度看，单条删除或更新语句的效果会立即可见。
 
@@ -549,7 +549,7 @@ flowchart TB
     class q1,q2,q3,q4 query;
 ```
 
-### Insert overwrite 策略 (experimental) {#insert-overwrite-strategy}
+### Insert overwrite 策略 (experimental)
 
 `insert_overwrite` 策略会整分区替换，因此需要配置 `partition_by`，例如 `orders` 上按月分区的配置。其执行步骤如下：
 
@@ -598,7 +598,7 @@ flowchart TB
 
 [物化类型页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#materialization-incremental)介绍了增量物化的其余选项，包括 `microbatch` 策略和 `on_schema_change`。
 
-## 创建 snapshot {#snapshot}
+## 创建 snapshot
 
 dbt [snapshots](https://docs.getdbt.com/docs/build/snapshots) 用于记录可变表中的行随时间发生的变化，使分析人员能够回溯查看过去任意时间点的数据状态。它们实现了[类型 2 缓慢变化维](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row)：每个版本的行都会连同其有效的时间间隔一并存储。
 
@@ -689,7 +689,7 @@ ORDER BY customer_id, dbt_valid_from;
 
 在底层，adapter 会在表 `customers_snapshot__snapshot_upsert` 中构建新版本的 snapshot，然后通过 `EXCHANGE TABLES` 将其替换上线 (若 server 不支持 exchange tables，则改用 drop 加 rename 的方式) ，因此读取器看到的要么是旧版本的 snapshot，要么是新版本，不会出现中间状态。配置参考请参见[物化类型页面的 snapshot 部分](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations#snapshot)。
 
-## 使用 materialized view {#materialized-views}
+## 使用 materialized view
 
 到目前为止，所有内容都需要执行 `dbt run` 才能将新数据加载到模型中。ClickHouse [materialized view](/zh/concepts/features/materialized-views/index) 的工作方式则不同：它们本质上是插入触发器。每当有行块插入源表，视图的 `SELECT` 就会对其进行转换并写入目标表，无需任何调度。adapter 通过 `materialized_view` 物化暴露这一能力。
 
@@ -794,6 +794,6 @@ ORDER BY order_date, store_id;
 
 后续执行 `dbt run` 会保留target table及其数据，只更新 view definition；如果变更允许，会通过 `ALTER TABLE ... MODIFY QUERY` 完成，因此把该模型保留在项目中是安全的。`dbt run --full-refresh` 则会重建target table并重新 backfill (除非 `catchup` 为 `False`) 。其余内容可参见 [materialized views 页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view)：使用 `on_schema_change` 处理 schema 变更、通过 `catchup` 禁用 backfill、可刷新 materialized views、多个 view 写入同一target table，以及将target table定义为独立模型。
 
-## 更多信息 {#further-information}
+## 更多信息
 
 本指南仅涉及 dbt 的皮毛。凡是并非 ClickHouse 特有的内容，均应以 [dbt 文档](https://docs.getdbt.com/docs/introduction) 为准。关于该 adapter，可参阅 [features and configurations](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations) 页面了解 profile 设置与全局功能，参阅 [物化类型页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/materializations) 了解上文用到的各项配置；如果你使用 dbt OSS、dbt v2 或 dbt 平台，则可参阅 [dbt OSS、dbt v2 与 dbt 平台页面](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/dbt-core-v2-fusion-and-platform)。欢迎向 [Jaffle Shop for ClickHouse](https://github.com/ClickHouse/jaffle-shop-clickhouse) 贡献新的示例。

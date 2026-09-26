@@ -19,13 +19,13 @@ doc_type: 'reference'
   أما إذا اختلفت هذه الملفات بين العقد، فلا يمكن تحديد القيمة المُعادة مسبقًا، إذ تعتمد على الترتيب الذي تطلب وفقه العقد العاملة المهام من العقدة المُبادِرة.
 </Note>
 
-## الصيغة {#syntax}
+## الصيغة
 
 ```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-## الوسائط {#arguments}
+## الوسائط
 
 | الوسيطة              | الوصف                                                                                                                                                                                                                                                                                               |
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -35,7 +35,7 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
 | `structure`          | بنية الجدول بتنسيق `'UserID UInt64, Name String'`. وتحدد أسماء الأعمدة وأنواعها. النوع: [String](/ar/reference/data-types/string).                                                                                                                                                                     |
 | `compression_method` | طريقة الضغط. القيم المدعومة هي `none` (من دون ضغط)، و`gzip/gz`، و`deflate`، و`brotli/br`، و`lzma/xz`، و`zstd/zst`، و`lz4`، و`bz2`، و`snappy`. بالنسبة إلى `snappy`، يُختار تنسيق النقل بواسطة إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (‏`basic` افتراضيًا). |
 
-## القيمة المُعادة {#returned-value}
+## القيمة المُعادة
 
 جدول بالتنسيق والبنية المحدَّدين، ويحتوي على بيانات من الملفات التي تطابق المسار المحدَّد.
 
@@ -84,11 +84,11 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
-## أنماط glob في المسار {#globs-in-path}
+## أنماط glob في المسار
 
 تدعم FileCluster أيضًا جميع الأنماط التي تدعمها دالة الجدول [File](/ar/reference/functions/table-functions/file#globs-in-path).
 
-## ذات صلة {#related}
+## ذات صلة
 
 * [دالة الجدول File](/ar/reference/functions/table-functions/file)
 

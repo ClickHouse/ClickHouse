@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Ce moteur s’intègre à l’[écosystème Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
 
-## Créer une table {#create-table}
+## Créer une table
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -19,7 +19,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-### Paramètres du moteur {#engine-parameters}
+### Paramètres du moteur
 
 * `endpoint` — URL du point de terminaison AzureBlobStorage avec conteneur &amp; préfixe. Peut éventuellement contenir `account&#95;name` si la méthode d’authentification utilisée l’exige. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) Sinon, ces paramètres peuvent être fournis séparément via `storage&#95;account&#95;url`, `account&#95;name` &amp; `container`. Pour spécifier le préfixe, il faut utiliser `endpoint`.
 * `endpoint_contains_account_name` - Ce flag permet d’indiquer si `endpoint` contient `account&#95;name`, car cela n’est nécessaire que pour certaines méthodes d’authentification. (Par défaut : true)
@@ -55,14 +55,14 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
-## Colonnes virtuelles {#virtual-columns}
+## Colonnes virtuelles
 
 * `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
 * `_file` — Nom du fichier. Type : `LowCardinality(String)`.
 * `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille est inconnue, la valeur est `NULL`.
 * `_time` — Date et heure de dernière modification du fichier. Type : `Nullable(DateTime)`. Si l&#39;heure est inconnue, la valeur est `NULL`.
 
-## Authentification {#authentication}
+## Authentification
 
 Il existe actuellement 3 méthodes d’authentification :
 
@@ -70,7 +70,7 @@ Il existe actuellement 3 méthodes d’authentification :
 * `SAS Token` - Peut être utilisé en fournissant un `endpoint`, une `connection_string` ou un `storage_account_url`. Il est identifié par la présence du caractère « ? » dans l’URL. Voir [azureBlobStorage](/fr/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) pour des exemples.
 * `Workload Identity` - Peut être utilisée en fournissant un `endpoint` ou un `storage_account_url`. Si le paramètre `use_workload_identity` est défini dans la config, [workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications) est utilisée pour l’authentification.
 
-### Cache de données {#data-cache}
+### Cache de données
 
 Le moteur de table `Azure` prend en charge la mise en cache des données sur disque local.
 Consultez les options de configuration et l’utilisation du cache du système de fichiers dans cette [section](/fr/concepts/features/configuration/server-config/storing-data#using-local-cache).
@@ -99,13 +99,13 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 2. réutiliser la configuration du cache (et donc son stockage) depuis la section `storage_configuration` de ClickHouse, [décrite ici](/fr/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
-### PARTITION BY {#partition-by}
+### PARTITION BY
 
 `PARTITION BY` — Facultatif. Dans la plupart des cas, vous n’avez pas besoin de clé de partition et, lorsqu’elle est nécessaire, elle n’a généralement pas besoin d’être plus fine qu’un partitionnement mensuel. Le partitionnement n’accélère pas les requêtes (contrairement à l’expression ORDER BY). N’utilisez jamais un partitionnement trop fin. Ne partitionnez pas vos données par identifiant ou nom de client (utilisez plutôt l’identifiant ou le nom du client comme première colonne de l’expression ORDER BY).
 
 Pour un partitionnement par mois, utilisez l’expression `toYYYYMM(date_column)`, où `date_column` est une colonne contenant une date de type [Date](/fr/reference/data-types/date). Les noms de partition sont ici au format `"YYYYMM"`.
 
-#### Stratégie de partitionnement {#partition-strategy}
+#### Stratégie de partitionnement
 
 `wildcard` : remplace le caractère générique `{_partition_id}` dans le chemin du fichier par la clé de partition réelle. La lecture n’est pas prise en charge. Cette stratégie est sélectionnée par défaut lorsque le chemin contient `{_partition_id}`.
 
@@ -132,7 +132,7 @@ select _path, * from azure_table;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-## Voir aussi {#see-also}
+## Voir aussi
 
 [Fonction de table Azure Blob Storage](/fr/reference/functions/table-functions/azureBlobStorage)
 

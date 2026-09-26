@@ -11,7 +11,7 @@ import ResourceEstimation from '/snippets/ko/_resource_estimation.mdx';
 
 <ResourceEstimation />
 
-## 환경에 맞게 용량 산정 가정 조정하기 {#refining-sizing-assumptions}
+## 환경에 맞게 용량 산정 가정 조정하기
 
 이 모델은 검색, 대시보드, 알림을 포함한 모든 쿼리 유형을 합산했을 때 ClickStack에서 평균 1 QPS가 지속적으로 발생한다고 가정합니다.
 
@@ -21,7 +21,7 @@ import ResourceEstimation from '/snippets/ko/_resource_estimation.mdx';
 
 또한 이는 쿼리 분포가 비교적 고르게 균형을 이룬다고 가정합니다. 더 무거운 과거 데이터 쿼리나 아카이브 쿼리에 치우친 워크로드는 필요한 컴퓨트가 크게 달라질 수 있으므로 부하 테스트를 통해 검증해야 합니다. 향후에는 다양한 쿼리 분포 패턴에 따라 필요한 쿼리 컴퓨트를 추정할 수 있는 더 유연한 용량 산정 모델을 도입할 계획입니다.
 
-### 계산 예시 {#worked-example}
+### 계산 예시
 
 **요구 사항:** 월 1.5 PB 수집, 5 QPS, 3개월 보존.
 
@@ -62,7 +62,7 @@ import ResourceEstimation from '/snippets/ko/_resource_estimation.mdx';
 | 월간 스토리지(압축 후) | 150 TB    |
 | 3개월 보존용 스토리지  | 450 TB    |
 
-## 관측성 워크로드 격리 {#isolating-workloads}
+## 관측성 워크로드 격리
 
 이미 실시간 애플리케이션 분석과 같은 다른 워크로드를 지원하고 있는 **기존 ClickHouse Cloud 서비스**에 ClickStack을 추가하는 경우, 관측성 트래픽을 격리하는 것을 강력히 권장합니다.
 

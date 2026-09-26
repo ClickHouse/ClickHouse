@@ -12,9 +12,9 @@ import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrat
 
 *🚧 Инструментирование метрик и трассировки OpenTelemetry скоро будет доступно!*
 
-## Начало работы {#getting-started}
+## Начало работы
 
-### Установите пакет backend логгера ClickStack {#install-hyperdx-logger-backend-package}
+### Установите пакет backend логгера ClickStack
 
 Пакет можно установить, добавив `hyperdx` в список зависимостей в
 `mix.exs`:
@@ -27,7 +27,7 @@ def deps do
 end
 ```
 
-### Настройте логгер {#configure-logger}
+### Настройте логгер
 
 Добавьте следующее в файл `config.exs`:
 
@@ -39,7 +39,7 @@ config :logger,
   backends: [:console, {Hyperdx.Backend, :hyperdx}]
 ```
 
-### Настройте переменные окружения {#configure-environment-variables}
+### Настройте переменные окружения
 
 После этого вам нужно настроить следующие переменные окружения в
 оболочке, чтобы отправлять телеметрию в ClickStack через OpenTelemetry Collector:

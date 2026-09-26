@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 يُقيِّم استعلام Prometheus باستخدام بيانات من جدول TimeSeries عبر نطاق من أزمنة التقييم.
 
-## البنية {#syntax}
+## البنية
 
 ```sql
 prometheusQueryRange('db_name', 'time_series_table', 'promql_query', start_time, end_time, step)
@@ -18,7 +18,7 @@ prometheusQueryRange(db_name.time_series_table, 'promql_query', start_time, end_
 prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, step)
 ```
 
-## المعاملات {#arguments}
+## المعاملات
 
 * `db_name` - اسم قاعدة البيانات التي يوجد فيها جدول TimeSeries.
 * `time_series_table` - اسم جدول TimeSeries.
@@ -27,7 +27,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 * `end_time` - وقت نهاية نطاق التقييم.
 * `step` - الخطوة المستخدَمة للتنقّل عبر وقت التقييم من `start_time` إلى `end_time` (شاملاً).
 
-## القيمة المُعادة {#returned-value}
+## القيمة المُعادة
 
 يمكن أن تُرجِع الدالة أعمدة مختلفة بناءً على نوع نتيجة الاستعلام المُمرَّر إلى المَعلمة `promql_query`:
 
@@ -40,13 +40,13 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 يُسمّى العمود `samples` باسم `time_series` إذا كان جدول `TimeSeries` من [version](/ar/reference/engines/table-engines/integrations/time-series#schema-versioning) 2 أو أقدم.
 
-## الميزات المدعومة في PromQL {#supported-promql-features}
+## الميزات المدعومة في PromQL
 
-### المحددات {#selectors}
+### المحددات
 
 المحددات اللحظية، ومحددات النطاق، ومطابقات الوسوم (`=`, `!=`, `=~`, `!~`)، ومُعدِّلات الإزاحة، ومُعدِّلات الطابع الزمني `@`، والاستعلامات الفرعية.
 
-### الدوال {#functions}
+### الدوال
 
 | الفئة          | الدوال                                                                                                                                                                                                                                                                                                               |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -63,7 +63,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 **ملاحظة**: الدالتان `ts_of_min_over_time` و`ts_of_max_over_time` تجريبيتان في Prometheus (تُفعَّلان هناك باستخدام `--enable-feature=promql-experimental-functions`)؛ ويقيّمهما ClickHouse دون اشتراط هذا الخيار.
 
-### العوامل {#operators}
+### العوامل
 
 العوامل الثنائية الحسابية (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) وعوامل المقارنة (`==`, `!=`, `<`, `>`, `<=`, `>=` مع `bool` اختياري)، مع المعدِّلات `on()`/`ignoring()` و`group_left()`/`group_right()`.
 
@@ -71,15 +71,15 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 العاملان الأحاديان `+` و`-`.
 
-### عوامل التجميع {#aggregation-operators}
+### عوامل التجميع
 
 `sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — مع معدِّلات اختيارية `by()` أو `without()`.
 
-### غير مدعوم حاليًا {#not-yet-supported}
+### غير مدعوم حاليًا
 
 * دوال النطاق `stddev_over_time`، `stdvar_over_time`، `mad_over_time`، `first_over_time`، `ts_of_last_over_time`، `ts_of_first_over_time`
 
-## مثال {#example}
+## مثال
 
 ```sql
 SELECT * FROM prometheusQueryRange(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE)

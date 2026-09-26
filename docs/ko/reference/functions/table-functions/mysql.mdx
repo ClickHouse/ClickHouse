@@ -11,13 +11,13 @@ doc_type: 'reference'
 
 원격 MySQL 서버에 저장된 데이터에 대해 `SELECT` 및 `INSERT` 쿼리를 실행할 수 있습니다.
 
-## 구문 {#syntax}
+## 구문
 
 ```sql
 mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 ```
 
-## 인수 {#arguments}
+## 인수
 
 | 인수                    | 설명                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -35,7 +35,7 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 
 그 외 조건과 `LIMIT` 샘플링 제약은 MySQL 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
 
-## TLS/SSL {#tls-ssl}
+## TLS/SSL
 
 MySQL 암호화 연결의 자격 증명은 명명된 컬렉션 키(또는 키-값 인수)로 전달됩니다.
 
@@ -49,7 +49,7 @@ MySQL 암호화 연결의 자격 증명은 명명된 컬렉션 키(또는 키-�
 
 동일한 자격 증명을 서버의 파일 경로로 `ssl_ca`, `ssl_cert`, `ssl_key`에 지정할 수도 있습니다. 단, **서버 구성 파일에 정의된 명명된 컬렉션에서만** 가능하며, 이러한 값은 쿼리에서 재정의할 수 없습니다. 서버는 자체 권한으로 해당 파일을 열므로, SQL에서 경로를 허용하면 MySQL 소스를 정의할 수 있는 모든 사용자가 로컬 파일 시스템을 탐색하고, 본인에게 읽기 권한이 없는 인증서와 키를 사용해 인증할 수 있게 됩니다.
 
-## 테이블 이름 대신 쿼리 전달하기 {#passing-a-query}
+## 테이블 이름 대신 쿼리 전달하기
 
 테이블 이름 대신, 세 번째 인수로 MySQL에 그대로 전달할 `SELECT` 쿼리를 지정할 수 있습니다. 결과 테이블의 구조는 쿼리 결과를 바탕으로 자동 추론됩니다. 쿼리는 서브쿼리로 작성하거나 `query` 함수로 감싸서 작성할 수 있습니다:
 
@@ -78,7 +78,7 @@ SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'us
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-## 반환 값 {#returned-value}
+## 반환 값
 
 원본 MySQL 테이블과 동일한 컬럼으로 이루어진 테이블 객체입니다.
 
@@ -90,7 +90,7 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
   `INSERT` 쿼리에서 테이블 함수 `mysql(...)`를 컬럼 이름 목록이 포함된 테이블 이름과 구분하려면 `FUNCTION` 또는 `TABLE FUNCTION` 키워드를 사용해야 합니다. 아래 예시를 참조하십시오.
 </Note>
 
-## 예시 {#examples}
+## 예시
 
 MySQL 테이블:
 
@@ -134,7 +134,7 @@ SELECT * FROM mysql(creds, table='test');
 └────────┴───────┘
 ```
 
-### `enable_compression` {#enable-compression}
+### `enable_compression`
 
 MySQL 프로토콜 연결에 대한 압축을 활성화합니다.
 
@@ -202,7 +202,7 @@ SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
 WHERE id > (SELECT max(id) FROM mysql_copy);
 ```
 
-## 관련 {#related}
+## 관련
 
 * [「MySQL」 테이블 엔진](/ko/reference/engines/table-engines/integrations/mysql)
 * [MySQL을 딕셔너리 소스로 사용](/ko/reference/statements/create/dictionary/sources/mysql)

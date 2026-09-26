@@ -13,9 +13,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 このページでは、登録トークンの取得から、ClickHouse Cloud が駆動するサービスライフサイクルを executor が適用する managed モードでの検証済みコネクタの準備までの手順を説明します。コネクタは、Kubernetes クラスター (Helm) または Linux VM (systemd) にインストールできます。標準的な手順はトークン登録です。環境からコネクタエンドポイントに直接アクセスできない場合は、[エアギャップ環境およびミラーインストール](#air-gapped-and-mirrored-installs)を参照してください。executor を使わずに自分で運用する ClickHouse を監視する場合は、`--no-managed` を指定してください。
 
-## 前提条件 {#prerequisites}
+## 前提条件
 
-### 環境を登録する {#registration}
+### 環境を登録する
 
 登録 (enrollment) を行う前に、アカウントチームがお客様の環境を登録し、組織に対して managed モードを有効化します。以下の情報をアカウントチームに伝えてください:
 
@@ -27,7 +27,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 その後、ClickHouse Cloud からコネクタエンドポイントと使い捨ての登録トークンが発行されます。このトークンによって環境が識別されるため、登録時に追加の ID は不要です。
 
-### すべてのインストールで共通 {#prerequisites-every-install}
+### すべてのインストールで共通
 
 * **Connector v0.17.0 以降。** それより前のリリースには Managed モード、`platform` コマンド、`instances create` がありません。インストーラーは `--version` を指定しない限り最新のリリースを提供します。
 * **[登録](#registration)時に発行されるコネクタエンドポイントと登録トークン**。
@@ -37,7 +37,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * **ClickHouse はまだ不要です。** Managed インストールは service が存在しない状態から始まり、executor が作成した service が自動的に登録されます。Managed モードの `init` は、自身で運用している ClickHouse を登録しません (Kubernetes では `--instance` と `--instance-namespace` を拒否します) 。そのようなクラスターを監視するには、`--no-managed` を指定して別の connector deployment をインストールしてください。`--ch-user-suffix` を使えば、2 つの deployment が connector の user 名を衝突させることなく同一の instance を共有できます。この deployment には到達可能な native listener が必要で、セキュア接続なら 9440、plaintext なら 9000 を使用し、Kubernetes では自動検出されます。さらに、provisioning のために ClickHouse admin アクセスも必要です。パスワードなしの `default` user、`--ch-admin-password-stdin` もしくはプロンプトで渡すパスワード、または operator 管理の instance の場合は CR injection のいずれかを利用します。
 * **リリースアーティファクトをダウンロードするすべての環境での cosign。** インストーラーは常に SHA-256 checksum を検証します。cosign がインストールされていれば release の署名も検証し、`CLICKLINK_REQUIRE_COSIGN=1` を指定した場合は cosign なしでの処理続行を拒否します。
 
-### Kubernetes (Helm) インストールの場合 {#prerequisites-kubernetes}
+### Kubernetes (Helm) インストールの場合
 
 * **kubeconfig**：現在のコンテキストが EKS クラスターを指していること。コネクタのネームスペースの作成と読み取り、Secrets の適用、ServiceAccounts、Roles、RoleBindings の作成、チャートのインストール、および executor への クラスター-wide なアクセス権の付与が行える必要があります。
 * **AWS 認証情報**：workstation 上 (環境変数または profile) に、`eks:DescribeCluster` と `ec2:DescribeVpcs` の権限を持つもの。`init` はこれらを使用して、NetworkPolicy 用に クラスターの VPC の CIDR ブロックを読み取ります。ルックアップに失敗した場合は警告を表示し、そのリストは手動で入力できるよう空のまま残します。
@@ -45,7 +45,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * **デフォルトの StorageClass**、または `--storage-class` で指定するクラス。troubleshooter と executor は PersistentVolumeClaims 上に state を保持します。
 * **イメージのプルアクセス**：クラスターのノードが、パブリック ECR イメージまたは自身でホストする mirror をプルできる必要があります。
 
-### Linux VM(systemd)へのインストールの場合 {#prerequisites-vm}
+### Linux VM(systemd)へのインストールの場合
 
 * **systemd を使用する任意の Linux ホスト**(amd64 または arm64)。Linux 向け builds は FIPS モードで動作します。
 * インストーラーおよび `init` のための **root アクセス**。
@@ -56,7 +56,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   VM において Kubernetes API server の要件を回避する方法は `--skip-provision` のみで、これは stage 専用です。ClickHouse user の provisioning、executor の 権限、ユニットの有効化、検証をスキップするため、これだけでは動作するコネクタは生成されません。Kubernetes ではスキップされるのは ClickHouse user の provisioning のみです。チャートの executor は 権限 を付与された ServiceAccount がなければスケジュールできないため、executor の 権限 は引き続き適用されます。
 </Note>
 
-## インストールと登録 {#install-and-enroll}
+## インストールと登録
 
 <Steps>
   <Step title="コネクタのエンドポイントと登録トークンを取得する" id="get-endpoint-and-token">
@@ -170,7 +170,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Step>
 </Steps>
 
-## エアギャップ環境とミラーインストール {#air-gapped-and-mirrored-installs}
+## エアギャップ環境とミラーインストール
 
 環境からどこに到達できるかに応じて、2 つの独立した要素を帯域外で処理できます。executor には追加で必要なものはありません。他のコンポーネントと同じクライアント証明書と API 認証情報で認証を行います。cluster-wide の grant は、ネットワーク経由ではなく kubeconfig を通じて適用します。
 
@@ -182,7 +182,7 @@ Kubernetes では、`--chart` は `--chart-repo` 経由で解決されるチャ�
 
 インストーラーはミラーからも動作します。リリースアーティファクトと `install.sh` を自身のミラーでホストし、`CLICKLINK_MIRROR_URL` でそこを指定してください。
 
-### 手動でのダウンロードと検証 {#manual-download-and-verification}
+### 手動でのダウンロードと検証
 
 インストーラーをパイプで実行したくない場合は、リリースを自分で取得して検証してください。このスクリプトはプラットフォームとアーキテクチャを検出するため、macOS または Linux、amd64 または arm64 でそのまま実行できます。
 
@@ -220,7 +220,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 VM では、tarball を展開し、展開先のディレクトリで `sudo ./install.sh` を実行します。リリースアーティファクトの隣に配置すると、`--host` と同じホストインストールが実行されます。
 
-## 失敗した場合 {#if-something-fails}
+## 失敗した場合
 
 同じコマンドを再実行してください。`init` は冪等であり、再実行しても同じ状態に収束し、既存の設定とステージ済みのファイルはそのまま維持され、完了済みの作業はスキップされます。ステップが途中で失敗した場合、CLI が復旧コマンドをそのまま出力します。これらは繰り返し実行しても安全です。
 

@@ -16,7 +16,7 @@ doc_type: 'reference'
 
 클러스터에 여러 레플리카가 있는 경우, GCS에서도 작동하는 [s3Cluster 함수](/ko/reference/functions/table-functions/s3Cluster)를 대신 사용해 삽입을 병렬화할 수 있습니다.
 
-## 구문 {#syntax}
+## 구문
 
 ```sql
 gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method] [,partition_strategy])
@@ -30,7 +30,7 @@ gcs(named_collection[, option=value [,..]])
   endpoint와 HMAC에 대한 자세한 내용은 [Google interoperability docs](https://cloud.google.com/storage/docs/interoperability)를 참조하십시오.
 </Tip>
 
-## 인수 {#arguments}
+## 인수
 
 | 인수                           | 설명                                                                                                                                                                                                                                                                                                                   |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -65,11 +65,11 @@ gcs(named_collection[, option=value [,..]])
 | `no_sign_request`             | 기본적으로 비활성화되어 있습니다.                                                                                                                                                                                |
 | `expiration_window_seconds`   | 기본값은 120입니다.                                                                                                                                                                                      |
 
-## 반환 값 {#returned-value}
+## 반환 값
 
 지정된 파일의 데이터를 읽거나 쓰기 위한, 지정된 구조의 테이블입니다.
 
-## 예시 {#examples}
+## 예시
 
 GCS 파일 `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz`에서 처음 두 행을 선택하는 예시입니다. 압축 방식은 `.gz` 파일 확장자를 기준으로 자동 감지됩니다:
 
@@ -101,7 +101,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-## 사용법 {#usage}
+## 사용법
 
 GCS에 다음 URI를 가진 여러 파일이 있다고 가정합니다.
 
@@ -194,7 +194,7 @@ SELECT count(*)
 FROM gcs(creds, url='https://s3-object-url.csv')
 ```
 
-## 파티션별 쓰기 {#partitioned-write}
+## 파티션별 쓰기
 
 `GCS` 테이블에 데이터를 삽입할 때 `PARTITION BY` 표현식을 지정하면 각 파티션 값별로 별도의 파일이 생성됩니다. 데이터를 파일별로 분할하면 읽기 작업의 효율을 높이는 데 도움이 됩니다.
 
@@ -222,7 +222,7 @@ INSERT INTO TABLE FUNCTION
 
 그 결과, 데이터는 서로 다른 3개의 버킷에 있는 `my_bucket_1/file.csv`, `my_bucket_10/file.csv`, `my_bucket_20/file.csv`의 세 파일에 기록됩니다.
 
-## 관련 항목 {#related}
+## 관련 항목
 
 * [S3 테이블 함수](/ko/reference/functions/table-functions/s3)
 * [S3 엔진](/ko/reference/engines/table-engines/integrations/s3)

@@ -57,7 +57,7 @@ El `ON CLUSTER` opcional se aplica a toda la sentencia (un nombre de clúster). 
 
 `CREATE ROW POLICY` requiere el privilegio [CREATE ROW POLICY](/es/reference/statements/grant#access-management) en la tabla en la que se crea la política. `OR REPLACE` descarta una política existente con el mismo nombre, incluidos los roles a los que se aplica, por lo que también requiere el privilegio [DROP ROW POLICY](/es/reference/statements/grant#access-management) en esa tabla. El privilegio `DROP ROW POLICY` es necesario tanto si la política ya existe como si no, por lo que la sentencia no puede utilizarse para averiguar qué políticas existen.
 
-## Varios nombres y tablas {#multiple-names-and-tables}
+## Varios nombres y tablas
 
 Válido:
 
@@ -94,11 +94,11 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-## Cláusula USING {#using-clause}
+## Cláusula USING
 
 Permite especificar una condición para filtrar filas. Un usuario verá una fila si la condición se evalúa como distinta de cero para esa fila.
 
-## Cláusula TO {#to-clause}
+## Cláusula TO
 
 En la sección `TO` puedes indicar una lista de usuarios y roles a los que se aplicará esta política. Por ejemplo, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
@@ -106,7 +106,7 @@ La palabra clave `ALL` significa todos los usuarios de ClickHouse, incluido el u
 
 Los roles indicados en la sección `TO`, incluidos los que aparecen después de `ALL EXCEPT`, se comparan con los roles habilitados del usuario actual ([`system.enabled_roles`](/es/reference/system-tables/enabled_roles)), y no con todos los roles concedidos al usuario, por lo que [`SET ROLE`](/es/reference/statements/set-role) puede cambiar qué políticas se aplican.
 
-## Cláusula AS {#as-clause}
+## Cláusula AS
 
 Se permite que haya más de una política habilitada en la misma tabla para el mismo usuario al mismo tiempo. Por lo tanto, necesitamos una forma de combinar las condiciones de varias políticas.
 
@@ -153,7 +153,7 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 permiten que el usuario `peter` vea las filas de table1 solo si se cumplen tanto `b=1` COMO `c=2`, aunque
 cualquier otra tabla de mydb tendría aplicada únicamente la política `b=1` para el usuario.
 
-## Tablas Distributed y con respaldo remoto {#distributed-and-remote-backed-tables}
+## Tablas Distributed y con respaldo remoto
 
 Una ROW POLICY filtra las filas en el lugar donde se leen realmente los datos de la tabla. Una tabla que delega la lectura en servidores remotos, como una tabla [Distributed](/es/reference/engines/table-engines/special/distributed) o un envoltorio de una de ellas (por ejemplo, una vista materializada con un destino `Distributed`), solo envía el texto de la consulta a los servidores remotos y no puede aplicar el filtro de la ROW POLICY a la lectura remota. Para evitar que el filtro se omita silenciosamente, las consultas a este tipo de tabla realizadas por usuarios a los que se aplica la ROW POLICY se rechazan con el error `ILLEGAL_PREWHERE`.
 
@@ -168,11 +168,11 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   Esto funciona cuando la consulta se envía como texto, que es el comportamiento predeterminado. Con [`serialize_query_plan = 1`](/es/reference/settings/session-settings/serialize#serialize_query_plan), el iniciador envía en su lugar un plan de lectura ya generado, y un servidor remoto que ejecuta ese plan no aplica sus propias ROW POLICY, por lo que la lectura de una tabla `Distributed` sobre `local_table` devuelve filas sin filtrar. Mantenga `serialize_query_plan = 0` para los usuarios cuyas ROW POLICY deban aplicarse. Consulte el [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891).
 </Warning>
 
-## Cláusula ON CLUSTER {#on-cluster-clause}
+## Cláusula ON CLUSTER
 
 Permite crear políticas de fila en un clúster; consulta [DDL distribuido](/es/reference/statements/distributed-ddl). También es una forma práctica de crear la política en las tablas locales de cada servidor del clúster.
 
-## Ejemplos {#examples}
+## Ejemplos
 
 `CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
 

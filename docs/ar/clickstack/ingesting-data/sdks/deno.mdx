@@ -14,7 +14,7 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
   يدعم حاليًا OpenTelemetry لتسجيل الأحداث فقط. ولمزيد من الدعم الخاص بالتتبّع، [راجع الدليل التالي](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example).
 </Note>
 
-## تسجيل الأحداث {#logging}
+## تسجيل الأحداث
 
 يُدعَم تسجيل الأحداث عبر تصدير `logger` مخصّص لوحدة `std/log`.
 
@@ -40,7 +40,7 @@ log.setup({
 log.getLogger('my-otel-logger').info('Hello from Deno!');
 ```
 
-### تشغيل التطبيق {#run-the-application}
+### تشغيل التطبيق
 
 <Tabs>
   <Tab title="Managed ClickStack">

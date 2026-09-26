@@ -27,7 +27,7 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     Postgres ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムから操作することもできます。
 
-## 前提条件 {#prerequisites}
+## 前提条件
 
     開始するには、まず Postgres データベースが正しく設定されていることを確認する必要があります。使用するソース Postgres インスタンスに応じて、以下のいずれかのガイドに従ってください。
 
@@ -57,7 +57,7 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     ソース Postgres データベースの設定が完了したら、ClickPipe の作成に進めます。
 
-## ClickPipe の作成 {#creating-your-clickpipe}
+## ClickPipe の作成
 
     ClickHouse Cloud アカウントにログインしていることを確認してください。まだアカウントをお持ちでない場合は、[こちら](https://cloud.clickhouse.com/)からサインアップできます。
 
@@ -75,7 +75,7 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="Postgres を選択" size="lg" border />
 
-### ソース Postgres データベース接続の追加 {#adding-your-source-postgres-database-connection}
+### ソース Postgres データベース接続の追加
 
     4. 前提条件のステップで設定したソース Postgres データベースの接続情報を入力します。
 
@@ -86,16 +86,16 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="接続情報を入力" size="lg" border />
 
-#### (任意) AWS プライベートリンクのセットアップ {#optional-setting-up-aws-private-link}
+#### (任意) AWS プライベートリンクのセットアップ
 
     ソース Postgres データベースが AWS 上でホストされている場合は、AWS Private Link を使用して接続できます。これは、データ転送をプライベートに保ちたい場合に便利です。
     [接続を設定するためのセットアップガイド](/ja/integrations/clickpipes/networking/aws-privatelink)に従ってください。
 
-#### (任意) TLS 設定の変更 {#optional-changing-tls-settings}
+#### (任意) TLS 設定の変更
 
     <ChangingTLSSettings />
 
-#### (任意) SSH トンネリングの設定 {#optional-setting-up-ssh-tunneling}
+#### (任意) SSH トンネリングの設定
 
     ソース Postgres データベースがパブリックにアクセスできない場合は、SSH トンネリングの詳細を指定できます。
 
@@ -115,13 +115,13 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     接続情報を入力したら、&quot;Next&quot;をクリックします。
 
-### レプリケーション設定の構成 {#configuring-the-replication-settings}
+### レプリケーション設定の構成
 
     5. 前提条件のステップで作成した replication slot を、ドロップダウンリストから必ず選択してください。
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="レプリケーションスロットの選択" size="lg" border />
 
-#### 詳細設定 {#advanced-settings}
+#### 詳細設定
 
     必要に応じて詳細設定を構成できます。各設定の簡単な説明は以下のとおりです。
 
@@ -131,7 +131,7 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
     * **パーティションあたりのスナップショット行数**: 初期スナップショット中に各パーティションで取得される行数です。テーブルの行数が多く、各パーティションで取得する行数を制御したい場合に役立ちます。
     * **並列に処理するスナップショットのテーブル数**: 初期スナップショット中に並列に取得されるテーブル数です。テーブル数が多く、並列に取得するテーブル数を制御したい場合に役立ちます。
 
-### テーブルの設定 {#configuring-the-tables}
+### テーブルの設定
 
     6. ここでは、ClickPipe の宛先データベースを選択できます。既存のデータベースを選択するか、新しいデータベースを作成できます。
 
@@ -145,13 +145,13 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     8. <SettingPartitionBy />
 
-### 権限を確認して ClickPipe を開始する {#review-permissions-and-start-the-clickpipe}
+### 権限を確認して ClickPipe を開始する
 
     9. 権限のドロップダウンから「Full access」ロールを選択し、「Complete Setup」をクリックします。
 
        <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="権限を確認する" size="lg" border />
 
-## 次のステップ {#whats-next}
+## 次のステップ
 
     PostgreSQL から ClickHouse Cloud へデータをレプリケーションする ClickPipe のセットアップが完了したら、最適なパフォーマンスを得るためのクエリ方法やデータモデリングに取り組めます。どの戦略が要件に最も適しているかを判断するには、[移行ガイド](/ja/get-started/migrate/postgres/overview)を参照してください。また、CDC ワークロードのベストプラクティスについては、[重複排除戦略 (CDC 使用時) ](/ja/integrations/clickpipes/postgres/deduplication)および [Ordering Keys](/ja/integrations/clickpipes/postgres/ordering-keys) のページを参照してください。
 

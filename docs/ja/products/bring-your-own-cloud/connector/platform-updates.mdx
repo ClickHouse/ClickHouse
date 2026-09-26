@@ -14,7 +14,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 マネージドクラスターでは、ClickHouse のサービスが依存する小規模なプラットフォームレイヤーが動作しています。ClickHouse Cloud はそのレイヤーに対するプラットフォーム更新を提案しますが、各更新をご自身のクラスターの認証情報で承認するまで、executor は何も適用しません。
 
-## プラットフォーム更新とは {#what-a-platform-update-is}
+## プラットフォーム更新とは
 
 プラットフォームレイヤーは、snapshot controller、ClickHouse operator、監視 collectors の3つのコンポーネントで構成されます。各コンポーネントは直前のコンポーネントの custom resource definitions を必要とするため、この順序でインストールされます。サービス は、これらと併せて提供される `gp3-encrypted` という名前の StorageClass (暗号化された gp3 volume) を使用します。
 
@@ -27,11 +27,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 executor が未承認の バンドル を適用することは決してありません。権限側の半分 が欠けている場合、sha256 が承認済みのものと異なる場合、または トークン が期限切れの場合、プラットフォーム同期は拒否されます。拒否時には承認が必要である旨と、ステージングされている バンドル の sha256 が示されます。現在のプラットフォームに存在しない custom resource definition を必要とする サービス の作成も同様に失敗し、実行すべきコマンドも同じものが示されます。
 
-## プラットフォーム更新の承認 {#approve-a-platform-update}
+## プラットフォーム更新の承認
 
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="ClickHouse Connector のプラットフォーム承認フロー" />
 
-### レジストリ認証情報 {#registry-credentials}
+### レジストリ認証情報
 
 レジストリの認証方式は、環境に登録されているイメージの配布モードによって異なります。
 
@@ -127,7 +127,7 @@ executor が未承認の バンドル を適用することは決してありま
   </Step>
 </Steps>
 
-## 承認ウィンドウ {#the-approval-window}
+## 承認ウィンドウ
 
 承認を行うと、`pcm-platform` identity 向けのトークンが発行されます。このトークンの有効期間はデフォルトで 2 時間です (`--ttl` で変更できます) 。executor がこれを更新することはありません。有効期限が切れると、executor はプラットフォームレイヤーを操作できなくなり、次回のプラットフォーム同期は再び承認メッセージを表示して拒否されます。これは設計どおりの動作であり、接続状態にも依存しません。コネクタがオフラインの間に与えた承認も、それ自身の時計に従って期限切れになります。
 
@@ -139,7 +139,7 @@ executor が未承認の バンドル を適用することは決してありま
 
 同じ バンドル を再度承認しても問題はなく、トークンは置き換えられます。ステージングされた バンドル は同期後もそのまま残るため、再承認にあたって新たな提案は不要です。
 
-## 承認によって与えられる権限 {#what-the-approval-grants}
+## 承認によって与えられる権限
 
 権限側の半分を適用するのはあなた自身であるため、そこにはあなたの権限が伴います。executor 自身はその中身を一切適用しません。`approve` はそこにバンドルの sha256 を刻印し、executor は何かに手を加える前に、送信されたバンドルのすべての権限オブジェクトが存在し、かつ承認済みであることを検証します。
 
@@ -151,7 +151,7 @@ executor はワークロード側の半分を `pcm-platform` として適用し�
 
 executor のサービスライフサイクル用 identity である `pcm-executor` はこれとは別個のもので、サービスのネームスペースに限定されています。プラットフォームのネームスペースへは書き込めませんが、読み取りはプレフィックスガードによる制限を受けません。両方の identity の完全な一覧については、[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)を参照してください。
 
-## テストクラスターのリセット {#resetting-a-test-cluster}
+## テストクラスターのリセット
 
 `clicklink clctl platform reset` はテストクラスター向けのコマンドです。プラットフォームのコンポーネントをアンインストールし、初回インストールを再度実行できる状態に戻します。変更を加える前に、このコネクタが所有するネームスペース内の ClickHouse クラスターを一覧表示し、サービスが 1 つでも存在する場合は処理を中止します。
 

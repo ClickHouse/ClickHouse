@@ -18,7 +18,7 @@ Este motor fornece integração com o ecossistema [Apache Hadoop](https://en.wik
 
 Esse recurso não conta com suporte dos engenheiros do ClickHouse e sua qualidade é reconhecidamente duvidosa. Se tiver algum problema, corrija por conta própria e envie um pull request.
 
-## Uso {#usage}
+## Uso
 
 ```sql
 ENGINE = HDFS(URI, format)
@@ -33,7 +33,7 @@ ENGINE = HDFS(URI, format)
   seção [Formatos](/pt-BR/reference/formats/index#formats-overview).
 * [PARTITION BY expr]
 
-### PARTITION BY {#partition-by}
+### PARTITION BY
 
 `PARTITION BY` — Opcional. Na maioria dos casos, você não precisa de uma chave de partição e, quando ela for necessária, em geral também não precisa ser mais granular do que por mês. O particionamento não acelera as consultas (ao contrário da expressão ORDER BY). Você nunca deve usar um particionamento granular demais. Não particione seus dados por identificadores ou nomes de clientes (em vez disso, use o identificador ou nome do cliente como a primeira coluna na expressão ORDER BY).
 
@@ -66,7 +66,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-## Detalhes de implementação {#implementation-details}
+## Detalhes de implementação
 
 * Leituras e escritas podem ser paralelas.
 * Não há suporte a:
@@ -132,7 +132,7 @@ Crie uma tabela com arquivos nomeados `file000`, `file001`, ... , `file999`:
 CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
 
-## Configuração {#configuration}
+## Configuração
 
 Assim como o GraphiteMergeTree, o motor HDFS oferece suporte a configuração estendida usando o arquivo de configuração do ClickHouse. Há duas chaves de configuração que você pode usar: global (`hdfs`) e no nível do usuário (`hdfs_*`). A configuração global é aplicada primeiro e, em seguida, a configuração no nível do usuário é aplicada (se existir).
 
@@ -150,9 +150,9 @@ Assim como o GraphiteMergeTree, o motor HDFS oferece suporte a configuração es
 </hdfs_root>
 ```
 
-### Opções de configuração {#configuration-options}
+### Opções de configuração
 
-#### Suportado por libhdfs3 {#supported-by-libhdfs3}
+#### Suportado por libhdfs3
 
 | **parâmetro**                                                           | **valor padrão**                  |
 | ----------------------------------------------------------------------- | --------------------------------- |
@@ -200,7 +200,7 @@ Assim como o GraphiteMergeTree, o motor HDFS oferece suporte a configuração es
 
 A [referência de configuração do HDFS](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) pode explicar alguns parâmetros.
 
-#### Extras do ClickHouse {#clickhouse-extras}
+#### Extras do ClickHouse
 
 | **parâmetro**                     | **valor padrão** |
 | --------------------------------- | ---------------- |
@@ -208,11 +208,11 @@ A [referência de configuração do HDFS](https://hawq.apache.org/docs/userguide
 | hadoop&#95;kerberos&#95;principal | &quot;&quot;     |
 | libhdfs3&#95;conf                 | &quot;&quot;     |
 
-### Limitações {#limitations}
+### Limitações
 
 * `hadoop_security_kerberos_ticket_cache_path` e `libhdfs3_conf` só podem ser globais, não específicos por usuário
 
-## Suporte ao Kerberos {#kerberos-support}
+## Suporte ao Kerberos
 
 Se o parâmetro `hadoop_security_authentication` tiver o valor `kerberos`, o ClickHouse será autenticado via Kerberos.
 Os parâmetros estão [aqui](#clickhouse-extras), e `hadoop_security_kerberos_ticket_cache_path` pode ser útil.
@@ -222,7 +222,7 @@ abordagem de segurança). Use `tests/integration/test_storage_kerberized_hdfs/hd
 
 Se `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` ou `hadoop_security_kerberos_ticket_cache_path` forem especificados, a autenticação via Kerberos será usada. Nesse caso, `hadoop_kerberos_keytab` e `hadoop_kerberos_principal` são obrigatórios.
 
-## Suporte a HA do NameNode do HDFS {#namenode-ha}
+## Suporte a HA do NameNode do HDFS
 
 O libhdfs3 oferece suporte a HA do NameNode do HDFS.
 
@@ -237,7 +237,7 @@ O libhdfs3 oferece suporte a HA do NameNode do HDFS.
 
 * Em seguida, use o valor da tag `dfs.nameservices` em `hdfs-site.xml` como o endereço do namenode no URI do HDFS. Por exemplo, substitua `hdfs://appadmin@192.168.101.11:8020/abc/` por `hdfs://appadmin@my_nameservice/abc/`.
 
-## Colunas virtuais {#virtual-columns}
+## Colunas virtuais
 
 * `_path` — Caminho do arquivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nome do arquivo. Tipo: `LowCardinality(String)`.
@@ -245,7 +245,7 @@ O libhdfs3 oferece suporte a HA do NameNode do HDFS.
 * `_time` — Hora da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se a hora for desconhecida, o valor será `NULL`.
 * `_etag` — ETag do arquivo. Tipo: `LowCardinality(String)`. O HDFS não tem ETag nativo; portanto, o valor é gerado a partir do horário de modificação e do tamanho do arquivo, no formato `<mtime_seconds>_<size>`. Como o `libhdfs3` expõe o horário de modificação com precisão de apenas um segundo, uma regravação no mesmo segundo que mantém o mesmo tamanho produz o mesmo valor; por esse motivo, esse ETag gerado não é usado como chave de cache de conteúdo.
 
-## Configurações de armazenamento {#storage-settings}
+## Configurações de armazenamento
 
 * [hdfs&#95;truncate&#95;on&#95;insert](/pt-BR/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - permite truncar o arquivo antes de inserir dados nele. Desativado por padrão.
 * [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/pt-BR/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - permite criar um novo arquivo a cada insert se o formato tiver sufixo. Desativado por padrão.

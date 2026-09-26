@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
+## validate_enum_literals_in_operators
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 有効にすると、`IN`、`NOT IN`、`==`、`!=` などの演算子で使われる enum リテラルを enum 型に対して検証し、そのリテラルが有効な enum 値でない場合は例外をスローします。
 
-## validate_group_by_all_key_types {#validate_group_by_all_key_types}
+## validate_group_by_all_key_types
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,7 +34,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 0 - `GROUP BY ALL` が展開して得られるキーの型は検証されません。
 * 1 - 明示的な `GROUP BY` が自身のキーを検証するのと同様に、検証されます。
 
-## validate_mutation_query {#validate_mutation_query}
+## validate_mutation_query
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -44,7 +44,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 この設定を変更するのは、後方互換性のないバグに遭遇した場合のみにしてください。
 
-## validate_polygons {#validate_polygons}
+## validate_polygons
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

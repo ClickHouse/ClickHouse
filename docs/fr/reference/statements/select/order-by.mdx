@@ -25,14 +25,14 @@ De plus, le tri respecte la casse.
 Les lignes ayant des valeurs identiques pour des expressions de tri sont renvoyées dans un ordre arbitraire et non déterministe.
 Si la clause `ORDER BY` est omise dans une instruction `SELECT`, l&#39;ordre des lignes est également arbitraire et non déterministe.
 
-## Tri des valeurs spéciales {#sorting-of-special-values}
+## Tri des valeurs spéciales
 
 Il existe deux façons de trier `NaN` et `NULL` :
 
 * Par défaut ou avec le modificateur `NULLS LAST` : d&#39;abord les valeurs, puis `NaN`, puis `NULL`.
 * Avec le modificateur `NULLS FIRST` : d&#39;abord `NULL`, puis `NaN`, puis les autres valeurs.
 
-### Exemple {#example}
+### Exemple
 
 Pour la table suivante
 
@@ -70,7 +70,7 @@ Exécutez la requête `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` pour obt
 
 Lorsque des nombres à virgule flottante sont triés, les NaN sont distincts des autres valeurs. Quel que soit l’ordre de tri, les NaN se trouvent à la fin. Autrement dit, pour un tri croissant, ils sont placés comme s’ils étaient supérieurs à tous les autres nombres, tandis que pour un tri décroissant, ils sont placés comme s’ils étaient inférieurs aux autres.
 
-## Prise en charge de la collation {#collation-support}
+## Prise en charge de la collation
 
 Pour trier des valeurs [String](/fr/reference/data-types/string), vous pouvez spécifier une collation (règle de comparaison). Exemple : `ORDER BY SearchPhrase COLLATE 'tr'` - pour trier par mot-clé par ordre croissant, en utilisant l&#39;alphabet turc, sans tenir compte de la casse, en supposant que les chaînes sont encodées en UTF-8. `COLLATE` peut être spécifié, ou non, indépendamment pour chaque expression dans ORDER BY. Si `ASC` ou `DESC` est spécifié, `COLLATE` se place après. Lorsque `COLLATE` est utilisé, le tri est toujours insensible à la casse.
 
@@ -78,7 +78,7 @@ La collation est prise en charge avec [LowCardinality](/fr/reference/data-types/
 
 Nous recommandons d&#39;utiliser `COLLATE` uniquement pour le tri final d&#39;un petit nombre de lignes, car le tri avec `COLLATE` est moins efficace qu&#39;un tri normal par octets.
 
-## Exemples de collation {#collation-examples}
+## Exemples de collation
 
 Exemple avec uniquement des valeurs [String](/fr/reference/data-types/string) :
 
@@ -234,7 +234,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 └───┴─────────┘
 ```
 
-## Détails d’implémentation {#implementation-details}
+## Détails d’implémentation
 
 Moins de RAM est utilisée si un [LIMIT](/fr/reference/statements/select/limit) suffisamment faible est spécifié en plus de `ORDER BY`. Sinon, la quantité de mémoire consommée est proportionnelle au volume de données à trier. Une plage [`LIMIT ... AFTER ... UNTIL`](/fr/reference/statements/select/limit#limit-after-until) ne la réduit pas, car la taille de la plage est inconnue tant que les données ne sont pas triées. Dans le cadre du traitement distribué des requêtes, si [GROUP BY](/fr/reference/statements/select/group-by) est omis, le tri est effectué en partie sur les serveurs distants, puis les résultats sont fusionnés sur le serveur demandeur. Cela signifie que, pour un tri distribué, le volume de données à trier peut être supérieur à la quantité de mémoire disponible sur un seul serveur.
 
@@ -244,7 +244,7 @@ L’exécution d’une requête peut utiliser plus de mémoire que `max_bytes_be
 
 Le tri externe est beaucoup moins efficace que le tri en RAM.
 
-## Optimisation de la lecture des données {#optimization-of-data-reading}
+## Optimisation de la lecture des données
 
 Si l&#39;expression `ORDER BY` a un préfixe qui correspond à la clé de tri de la table, vous pouvez optimiser la requête à l&#39;aide du paramètre [optimize&#95;read&#95;in&#95;order](/fr/reference/settings/session-settings/optimize#optimize_read_in_order).
 
@@ -264,7 +264,7 @@ L&#39;optimisation est prise en charge par les moteurs de table suivants :
 
 Dans les tables utilisant le moteur `MaterializedView`, l&#39;optimisation fonctionne avec des vues telles que `SELECT ... FROM merge_tree_table ORDER BY pk`. En revanche, elle n&#39;est pas prise en charge pour des requêtes comme `SELECT ... FROM view ORDER BY pk` si la requête de la vue ne comporte pas de clause `ORDER BY`.
 
-## Modificateur ORDER BY Expr WITH FILL {#order-by-expr-with-fill-modifier}
+## Modificateur ORDER BY Expr WITH FILL
 
 Ce modificateur peut également être combiné avec le [modificateur LIMIT ... WITH TIES](/fr/reference/statements/select/limit#limit--with-ties-modifier) et avec la forme de plage [LIMIT ... AFTER ... UNTIL](/fr/reference/statements/select/limit#limit-after-until).
 
@@ -580,7 +580,7 @@ SELECT n, source, inter FROM (
 └─────┴──────────┴───────┘
 ```
 
-## Remplissage regroupé par préfixe de tri {#filling-grouped-by-sorting-prefix}
+## Remplissage regroupé par préfixe de tri
 
 Il peut être utile de remplir indépendamment les lignes qui ont les mêmes valeurs dans certaines colonnes ; un bon exemple est le remplissage des valeurs manquantes dans les séries temporelles.
 Supposons qu’il existe la table de séries temporelles suivante :
@@ -632,7 +632,7 @@ INTERPOLATE ( value AS 9999 )
 Ici, la colonne `value` a été interpolée avec `9999` simplement pour rendre les lignes ajoutées plus visibles.
 Ce comportement est contrôlé par le paramètre `use_with_fill_by_sorting_prefix` (activé par défaut)
 
-## Contenu connexe {#related-content}
+## Contenu connexe
 
 * Blog : [Utiliser des données de séries temporelles dans ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 

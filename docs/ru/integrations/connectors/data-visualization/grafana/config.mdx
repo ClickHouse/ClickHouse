@@ -22,7 +22,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Краткий обзор всех параметров и полный список опций конфигурации можно найти [здесь](#all-yaml-options).
 
-## Общие настройки {#common-settings}
+## Общие настройки
 
 Экран с примером конфигурации:
 
@@ -54,14 +54,14 @@ secureJsonData:
 
 Обратите внимание, что при сохранении конфигурации из интерфейса добавляется свойство `version`. Оно показывает версию плагина, с которой была сохранена конфигурация.
 
-### HTTP-протокол {#http-protocol}
+### HTTP-протокол
 
 Если выбрать подключение по HTTP-протоколу, отобразятся дополнительные настройки.
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="Дополнительные параметры конфигурации HTTP" border />
 
 <div id="http-path">
-  #### HTTP-путь {#http-path}
+  #### HTTP-путь
 </div>
 
 Если ваш HTTP-сервер доступен по другому URL-пути, укажите его здесь.
@@ -73,7 +73,7 @@ jsonData:
 ```
 
 <div id="custom-http-headers">
-  #### Пользовательские HTTP-заголовки {#custom-http-headers}
+  #### Пользовательские HTTP-заголовки
 </div>
 
 Вы можете добавлять пользовательские заголовки в запросы, отправляемые на сервер.
@@ -102,7 +102,7 @@ secureJsonData:
   secureHttpHeaders.X-Example-Secure-Header: secure header value
 ```
 
-## Дополнительные настройки {#additional-settings}
+## Дополнительные настройки
 
 Эти настройки необязательны.
 
@@ -121,7 +121,7 @@ jsonData:
 ```
 
 <div id="opentelemetry">
-  ### OpenTelemetry {#opentelemetry}
+  ### OpenTelemetry
 </div>
 
 OpenTelemetry (OTel) тесно интегрирован в плагин.
@@ -130,7 +130,7 @@ OpenTelemetry (OTel) тесно интегрирован в плагин.
 
 Также необходимо настроить эти значения по умолчанию, чтобы включить [ссылки на данные](/ru/integrations/connectors/data-visualization/grafana/query-builder#data-links) — функцию, которая обеспечивает мощные сценарии обсервабилити.
 
-### Журналы {#logs}
+### Журналы
 
 Чтобы ускорить [построение запросов к журналам](/ru/integrations/connectors/data-visualization/grafana/query-builder#logs), можно задать базу данных и таблицу по умолчанию, а также столбцы для запроса к журналам. Это позволит заранее загрузить в конструктор запросов готовый к выполнению запрос к журналам, что ускорит просмотр на странице Explore в сценариях обсервабилити.
 
@@ -162,14 +162,14 @@ jsonData:
     messageColumn: <string> # the log's message/content.
 ```
 
-#### Отключение ссылок «View logs» {#disabling-view-logs-links}
+#### Отключение ссылок «View logs»
 
 В разделе **Корреляция Trace ID** конфигурации журналов находится переключатель **Показывать ссылки «View logs»**.
 Этот переключатель определяет, добавляет ли плагин ссылки «View logs» [ссылки на данные](/ru/integrations/connectors/data-visualization/grafana/query-builder#data-links) к полям Trace ID в результатах запросов.
 По умолчанию переключатель включен. Для ссылки «View logs» в запросе того же типа не требуется настраивать параметры журналов по умолчанию, однако для межсигнальной ссылки «View logs» из результатов запросов трассировок это необходимо.
 Чтобы скрыть эти ссылки, выключите переключатель или укажите в YAML `showLogLinks: false`.
 
-### Трассировка {#traces}
+### Трассировка
 
 Чтобы ускорить [построение запросов для трассировки](/ru/integrations/connectors/data-visualization/grafana/query-builder#traces), можно задать базу данных и таблицу по умолчанию, а также столбцы для запроса трассировки. Это позволит заранее загрузить в конструктор запросов готовый к выполнению поисковый запрос по трассировке, что ускорит просмотр данных на странице Explore для задач обсервабилити.
 
@@ -207,7 +207,7 @@ jsonData:
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
-#### Отключение ссылок «View trace» {#disabling-view-trace-links}
+#### Отключение ссылок «View trace»
 
 В разделе **Корреляция Trace ID** конфигурации трассировок находится переключатель **Показывать ссылки «View trace»**.
 Он определяет, добавляет ли плагин ссылки «View trace» [ссылки на данные](/ru/integrations/connectors/data-visualization/grafana/query-builder#data-links) к полям Trace ID в результатах запросов.
@@ -215,7 +215,7 @@ jsonData:
 Чтобы скрыть эти ссылки, выключите переключатель или задайте в YAML `showTraceLinks: false`.
 
 <div id="column-aliases">
-  ### Псевдонимы столбцов {#column-aliases}
+  ### Псевдонимы столбцов
 </div>
 
 Псевдонимы столбцов — это удобный способ выполнять запросы к данным, используя другие имена и типы.
@@ -229,7 +229,7 @@ jsonData:
 * Вы часто применяете функции для преобразования выбираемых столбцов
 
 <div id="table-defined-alias-columns">
-  #### ALIAS-столбцы, заданные в таблице {#table-defined-alias-columns}
+  #### ALIAS-столбцы, заданные в таблице
 </div>
 
 ClickHouse изначально поддерживает псевдонимы столбцов и сразу работает с Grafana.
@@ -248,7 +248,7 @@ CREATE TABLE alias_example (
 
 Подробнее см. в документации по типу столбца [ALIAS](/ru/reference/statements/create/table#alias).
 
-#### Таблицы псевдонимов столбцов {#column-alias-tables}
+#### Таблицы псевдонимов столбцов
 
 По умолчанию Grafana предлагает столбцы на основе ответа на `DESC table`.
 В некоторых случаях может потребоваться полностью переопределить столбцы, которые видит Grafana.
@@ -290,7 +290,7 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 Оба типа использования псевдонимов можно применять для сложных преобразований типов или извлечения полей JSON.
 
-## Все параметры YAML {#all-yaml-options}
+## Все параметры YAML
 
 Ниже приведены все параметры конфигурации YAML, доступные в этом плагине.
 Для некоторых полей указаны примеры значений, а для других — только тип поля.

@@ -19,7 +19,7 @@ ClickHouse 中的查询可分为以下几类：
 
 以下设置按查询类型控制用户权限：
 
-## readonly {#readonly}
+## readonly
 
 限制一个 session 可以运行哪些查询。该设置的取值、默认值，以及每个取值允许你更改哪些设置，详见
 [settings reference](/zh/reference/settings/session-settings/other#readonly)；本节说明每个取值允许哪些
@@ -72,7 +72,7 @@ insert 和 drop。
   [设为可在 read-only 模式下更改](/zh/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly)。
 </Note>
 
-## allow_ddl {#allow_ddl}
+## allow_ddl
 
 允许或禁止对数据库、表、视图、字典、用户自定义函数、工作负载、资源以及 SQL 定义的 handler 执行 [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 查询。
 
@@ -107,7 +107,7 @@ insert 和 drop。
   `KILL QUERY` 特权，而 `readonly = 1` 和 `readonly = 2` 会拒绝该特权。
 </Info>
 
-## 其他相关设置 {#other-relevant-settings}
+## 其他相关设置
 
 * [`allow_introspection_functions`](/zh/reference/settings/session-settings/allow#allow_introspection_functions)
   是与 `readonly` 和 `allow_ddl` 一同参与权限判定的第三个设置。当它被禁用时,执行内部信息函数会被阻止,但授予

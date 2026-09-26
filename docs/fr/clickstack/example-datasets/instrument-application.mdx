@@ -21,14 +21,14 @@ HackerNews Analyzer est une application Node.js qui interroge le dataset HackerN
 
 Cette tâche est différente de la [démo de session replay](/fr/clickstack/example-datasets/session-replay), qui instrumente une application uniquement côté navigateur avec un ClickStack Docker local. Ici, vous bénéficiez de l’auto-instrumentation du backend, des spans de requêtes ClickHouse et du session replay dans la même application.
 
-## Prérequis {#prerequisites}
+## Prérequis
 
 * Node 18+ et npm
 * Un endpoint OTLP/HTTP ClickStack et un jeton d’ingestion :
   * **ClickHouse Cloud :** ouvrez le service, puis **ClickStack** → **Configure your OpenTelemetry exporter** → **Env vars**. Le protocole est `http/protobuf`. Le header est `authorization=<ingestion token>`, sans préfixe `Bearer`.
   * **Collector local :** utilisez `http://localhost:4318`. Si le collector n’est pas sécurisé, laissez `authorization=` vide.
 
-## Clonez le dépôt {#clone-the-repository}
+## Clonez le dépôt
 
 Clonez [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), installez les dépendances et copiez le modèle de fichier d’environnement :
 
@@ -43,7 +43,7 @@ Vous renseignerez le fichier `.env` à l’étape suivante, puis instrumenterez 
 
 <InstrumentApplication />
 
-## En savoir plus {#learn-more}
+## En savoir plus
 
 * [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) : le dépôt de démonstration instrumenté par ce guide.
 

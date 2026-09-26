@@ -19,7 +19,7 @@ doc_type: 'reference'
 Les tables utilisant le moteur Distributed ne stockent aucune donnée en propre, mais permettent l’exécution distribuée de requêtes sur plusieurs serveurs.
 La lecture est automatiquement parallélisée. Lors de la lecture, les index de table sur les serveurs distants sont utilisés, s’ils existent.
 
-## Créer une table {#distributed-creating-a-table}
+## Créer une table
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -31,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-### À partir d’une table {#distributed-from-a-table}
+### À partir d’une table
 
 Lorsque la table `Distributed` pointe vers une table du serveur actuel, vous pouvez reprendre le schéma de cette table :
 
@@ -39,7 +39,7 @@ Lorsque la table `Distributed` pointe vers une table du serveur actuel, vous pou
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-### Moteurs Remote et RemoteSecure {#distributed-remote-engines}
+### Moteurs Remote et RemoteSecure
 
 `Remote` et `RemoteSecure` sont des moteurs de table persistants qui acceptent les mêmes expressions d’adresse et les mêmes identifiants que les fonctions de table [`remote` et `remoteSecure`](/fr/reference/functions/table-functions/remote) :
 
@@ -68,7 +68,7 @@ Il s’agit de l’équivalent persistant de `CREATE TABLE ... AS remote(...)`. 
 
 La cible peut également être une fonction de table, par exemple `Remote('127.0.0.1', numbers(10))` ou `Remote('127.0.0.1', merge(db, '^table_'))`. Une telle table est en lecture seule : il n’existe pas de table distante dans laquelle insérer des données, donc `INSERT` est rejeté avec une exception `NOT_IMPLEMENTED`. Cette limitation de lecture seule s’applique tout autant aux fonctions de table `remote` et `remoteSecure` : `SELECT` et `INSERT` sont tous deux pris en charge pour une cible `db`/`table` classique, mais une cible de type fonction de table (`remote('127.0.0.1', numbers(10))`) est en lecture seule pour la même raison.
 
-### Paramètres de Distributed {#distributed-parameters}
+### Paramètres de Distributed
 
 | Paramètre                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -83,7 +83,7 @@ La cible peut également être une fonction de table, par exemple `Remote('127.0
 * le paramètre [distributed&#95;foreground&#95;insert](/fr/reference/settings/session-settings/distributed#distributed_foreground_insert)
 * [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) pour des exemples
 
-### Paramètres de Distributed {#distributed-settings}
+### Paramètres de Distributed
 
 | Setting                                    | Description                                                                                                                                                                                                                                                                                                                                                                                                       | Default value                  |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
@@ -128,7 +128,7 @@ Les données seront lues sur tous les serveurs du cluster `logs`, à partir de l
 
 Au lieu du nom de la base de données, vous pouvez utiliser une expression constante qui renvoie une chaîne. Par exemple : `currentDatabase()`.
 
-## Clusters {#distributed-clusters}
+## Clusters
 
 Les clusters se configurent dans le [fichier de configuration du serveur](/fr/concepts/features/configuration/server-config/configuration-files):
 
@@ -214,7 +214,7 @@ Le moteur `Distributed` permet de travailler avec un cluster comme avec un serve
 
 Si vous devez envoyer une requête à un ensemble inconnu de shards et de répliques à chaque fois, vous n&#39;avez pas besoin de créer une table `Distributed` – utilisez plutôt la fonction de table `remote`. Voir la section [Fonctions de table](/fr/reference/functions/table-functions/index).
 
-## Écriture des données {#distributed-writing-data}
+## Écriture des données
 
 Il existe deux méthodes pour écrire des données dans un cluster :
 
@@ -247,7 +247,7 @@ Les données sont écrites en arrière-plan. Lorsqu’elles sont insérées dans
 
 Si le serveur a disparu ou a subi un redémarrage brutal (par exemple, à cause d’une panne matérielle) après un `INSERT` dans une table `Distributed`, les données insérées peuvent être perdues. Si une partie de données endommagée est détectée dans le répertoire de la table, elle est déplacée vers le sous-répertoire `broken` et n’est plus utilisée.
 
-## Lecture des données {#distributed-reading-data}
+## Lecture des données
 
 Lorsqu’on interroge une table `Distributed`, les requêtes `SELECT` sont envoyées à tous les shards et fonctionnent quelle que soit la façon dont les données sont réparties entre eux (elles peuvent être distribuées de manière totalement aléatoire). Lorsque vous ajoutez un nouveau shard, vous n’avez pas besoin d’y transférer les anciennes données. Vous pouvez plutôt y écrire les nouvelles données en lui attribuant un poids plus élevé : la répartition des données sera légèrement inégale, mais les requêtes continueront de fonctionner correctement et efficacement.
 
@@ -255,9 +255,9 @@ Lorsque l’option `max_parallel_replicas` est activée, le traitement des requ�
 
 Pour en savoir plus sur le traitement des requêtes distribuées `in` et `global in`, consultez [cette](/fr/reference/statements/in#distributed-subqueries) documentation.
 
-## Colonnes virtuelles {#virtual-columns}
+## Colonnes virtuelles
 
-#### _Shard_num {#_shard_num}
+#### _Shard_num
 
 `_shard_num` — Contient la valeur `shard_num` issue de la table `system.clusters`. Type : [UInt32](/fr/reference/data-types/int-uint).
 

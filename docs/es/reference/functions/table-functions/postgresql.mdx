@@ -11,13 +11,13 @@ doc_type: 'reference'
 
 Permite ejecutar consultas `SELECT` e `INSERT` sobre datos almacenados en un servidor PostgreSQL remoto.
 
-## Sintaxis {#syntax}
+## Sintaxis
 
 ```sql
 postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]} [, SETTINGS name=value, ...])
 ```
 
-## Argumentos {#arguments}
+## Argumentos
 
 | Argumento     | Descripción                                                                                                                                             |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,7 +33,7 @@ Los argumentos también pueden pasarse mediante [colecciones con nombre](/es/con
 
 Los parámetros TLS/SSL se reenvían a `libpq` y pueden proporcionarse como claves de colecciones con nombre o como argumentos de clave-valor al final: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` o `verify-full`; si no se especifica, se aplica el valor predeterminado `prefer` de `libpq`), así como los certificados y la clave, de una de estas dos formas. `sslrootcert` (certificado de CA o el valor especial `system`), `sslcert` (certificado de cliente) y `sslkey` (clave privada de cliente) son rutas a archivos locales del servidor y solo pueden especificarse en una colección con nombre definida en el archivo de configuración del servidor. Como alternativa, `sslrootcert_pem`, `sslcert_pem` y `sslkey_pem` aceptan el contenido literal del archivo correspondiente —por ejemplo, `postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`— y se enmascaran en los registros y las consultas `SHOW`, al igual que una contraseña.
 
-## Valor devuelto {#returned-value}
+## Valor devuelto
 
 Un objeto de tipo tabla con las mismas columnas que la tabla original de PostgreSQL.
 
@@ -41,7 +41,7 @@ Un objeto de tipo tabla con las mismas columnas que la tabla original de Postgre
   En la consulta `INSERT`, para distinguir la función de tabla `postgresql(...)` del nombre de la tabla con una lista de nombres de columnas, debe usar las palabras clave `FUNCTION` o `TABLE FUNCTION`. Vea los ejemplos a continuación.
 </Note>
 
-## Configuración {#settings}
+## Configuración
 
 El pool de conexiones que utiliza la función de tabla `postgresql` (y el motor de tabla [`PostgreSQL`](/es/reference/engines/table-engines/integrations/postgresql)) puede configurarse con una cláusula `SETTINGS` al final. Si no se especifica una configuración, se usa de forma predeterminada el valor de la configuración `postgresql_*` correspondiente a nivel de consulta. Consulte la sección [Configuración](/es/reference/engines/table-engines/integrations/postgresql#settings) del motor de tabla para ver la lista completa de las configuraciones `postgresql_connection_pool_*` y `postgresql_connection_attempt_timeout`, así como sus valores predeterminados.
 
@@ -51,7 +51,7 @@ Ejemplo:
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password', SETTINGS postgresql_connection_pool_size = 32);
 ```
 
-## Detalles de implementación {#implementation-details}
+## Detalles de implementación
 
 Las consultas `SELECT` del lado de PostgreSQL se ejecutan como `COPY (SELECT ...) TO STDOUT` dentro de una transacción de PostgreSQL de solo lectura, con commit después de cada consulta `SELECT`.
 
@@ -59,7 +59,7 @@ Las cláusulas `WHERE` simples, como `=`, `!=`, `>`, `>=`, `<`, `<=` e `IN`, se 
 
 Todos los joins, las agregaciones, la ordenación, las condiciones `IN [ array ]` y la restricción de muestreo `LIMIT` se ejecutan en ClickHouse solo después de que finaliza la consulta a PostgreSQL.
 
-## Pasar una consulta en lugar del nombre de una tabla {#passing-a-query}
+## Pasar una consulta en lugar del nombre de una tabla
 
 En lugar del nombre de una tabla, el tercer argumento puede ser una consulta `SELECT` que se pasa a PostgreSQL tal cual. La estructura de la tabla resultante se infiere a partir del resultado de la consulta. La consulta puede escribirse como una subconsulta o envolverse en la función `query`:
 
@@ -98,7 +98,7 @@ SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database'
 
 Admite prioridades de réplicas para la fuente para diccionario de PostgreSQL. Cuanto mayor sea el número en el mapa, menor será la prioridad. La prioridad más alta es `0`.
 
-## Ejemplos {#examples}
+## Ejemplos
 
 Tabla en PostgreSQL:
 
@@ -176,12 +176,12 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
         ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
 ```
 
-## Relacionado {#related}
+## Relacionado
 
 * [El motor de tabla de PostgreSQL](/es/reference/engines/table-engines/integrations/postgresql)
 * [Uso de PostgreSQL como fuente para diccionarios](/es/reference/statements/create/dictionary/sources/postgresql)
 
-### Replicar o migrar datos de Postgres con PeerDB {#replicating-or-migrating-postgres-data-with-peerdb}
+### Replicar o migrar datos de Postgres con PeerDB
 
 > Además de las funciones de tabla, también puedes usar [PeerDB](https://docs.peerdb.io/introduction) de ClickHouse para configurar un pipeline de datos continuo de Postgres a ClickHouse. PeerDB es una herramienta diseñada específicamente para replicar datos de Postgres a ClickHouse mediante captura de cambios de datos (CDC).
 

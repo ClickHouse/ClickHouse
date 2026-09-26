@@ -14,7 +14,7 @@ PrometheusのメトリクスをClickHouseに保存し、PromQLでクエリする
   ClickHouse Cloudを使用している場合は、[Prometheusインテグレーション](/ja/products/cloud/features/monitoring/prometheus)を利用してPrometheusにメトリクスを公開できます。
 </Note>
 
-## メトリクスポートの設定 {#configure-the-metrics-port}
+## メトリクスポートの設定
 
 Prometheus サーバーが ClickHouse 自身のメトリクスをスクレイプする必要がある場合は、専用のポートを設定します。
 
@@ -31,7 +31,7 @@ Prometheus サーバーが ClickHouse 自身のメトリクスをスクレイプ
 </prometheus>
 ```
 
-## 拡張ハンドラーを設定する {#configure-extended-handlers}
+## 拡張ハンドラーを設定する
 
 `<prometheus.handlers>` セクションを使用すると、同一ポート上により拡張されたハンドラーを構成できます。
 このセクションは [`<http_handlers>`](/ja/concepts/features/interfaces/http) と似ていますが、Prometheus プロトコル向けに動作します。
@@ -60,7 +60,7 @@ Prometheus サーバーが ClickHouse 自身のメトリクスをスクレイプ
 </prometheus>
 ```
 
-## 設定 {#settings}
+## 設定
 
 これらの設定の詳細な動作については、サーバー設定リファレンスの [Prometheus セクション](/ja/reference/settings/server-settings/settings/other#prometheus) を参照してください。
 
@@ -78,7 +78,7 @@ Prometheus サーバーが ClickHouse 自身のメトリクスをスクレイプ
 | `dimensional_metrics`        | true       | [`system.dimensional_metrics`](/ja/reference/system-tables/dimensional_metrics) のメトリクスを公開します。                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `labels`                     | なし         | 公開されるすべてのメトリクスに追加される定数ラベル。各子要素が 1 つのラベルを定義し、要素名がラベル名 (`[a-zA-Z_][a-zA-Z0-9_]*` に一致する必要があります) 、要素の値がラベル値になります。ラベル値は `from_env` 属性などの標準的な設定の置換に対応しています。ラベル名が `__` (Prometheus の予約領域) で始まる場合、または有効化されているセクションのためにこのエンドポイントがすでに書き込んでいるラベルと衝突する場合、そのラベル名は拒否されます。したがって、予約されるラベル名の集合は、そのエンドポイントが実際にエクスポートする範囲に応じて変わります。`histograms` が有効な場合は `le`、`info` が有効な場合は `ClickHouse_Info` のラベル (`name`、`version`、`version_describe`、`version_major`、`version_minor`、`version_patch`) 、`histograms` または `dimensional_metrics` が有効な場合は、公開される histogram または次元付きメトリクスの family が使用するすべてのラベル (例: `group`、`direction`、`operation_type`) が該当します。エンドポイントが実際に公開する内容によって決まるため、あるエンドポイントでは有効な名前が、別のエンドポイントでは拒否されることがあります。 |
 
-## エンドポイントを確認する {#check-the-endpoint}
+## エンドポイントを確認する
 
 ```bash
 curl http://127.0.0.1:9363/metrics

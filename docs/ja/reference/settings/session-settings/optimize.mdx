@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## optimize_aggregators_of_group_by_keys {#optimize_aggregators_of_group_by_keys}
+## optimize_aggregators_of_group_by_keys
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 SELECT 句の GROUP BY キーに対する min/max/any/anyLast 集約関数を削除します
 
-## optimize_append_index {#optimize_append_index}
+## optimize_append_index
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -29,13 +29,13 @@ SELECT 句の GROUP BY キーに対する min/max/any/anyLast 集約関数を削
 
 * true, false
 
-## optimize_arithmetic_operations_in_aggregate_functions {#optimize_arithmetic_operations_in_aggregate_functions}
+## optimize_arithmetic_operations_in_aggregate_functions
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 算術演算を集計関数の外に移動する
 
-## optimize_const_name_size {#optimize_const_name_size}
+## optimize_const_name_size
 
 <SettingsInfoBlock type="Int64" default_value="256" />
 
@@ -49,7 +49,7 @@ SELECT 句の GROUP BY キーに対する min/max/any/anyLast 集約関数を削
 * 0 — 常に置き換える
 * 負の整数 - 置き換えない
 
-## optimize_count_from_files {#optimize_count_from_files}
+## optimize_count_from_files
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -60,7 +60,7 @@ SELECT 句の GROUP BY キーに対する min/max/any/anyLast 集約関数を削
 * 0 — 最適化は無効です。
 * 1 — 最適化は有効です。
 
-## optimize_dictget_tuple_element {#optimize_dictget_tuple_element}
+## optimize_dictget_tuple_element
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -68,13 +68,13 @@ SELECT 句の GROUP BY キーに対する min/max/any/anyLast 集約関数を削
 
 不要な Dictionary 属性の取得を避けるため、`tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` は `dictGet('dict', 'b', key)` に書き換えられます。位置指定アクセス (`.1`、`.2`、...) と名前付きアクセス (`.b`) に対応しており、デフォルト引数が定数 Tuple または定数のみからなる `tuple(...)` の場合は `dictGetOrDefault` にも適用されます。
 
-## optimize_distinct_in_order {#optimize_distinct_in_order}
+## optimize_distinct_in_order
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 DISTINCT 内の一部のカラムがソート順のプレフィックスになっている場合、DISTINCT の最適化を有効にします。たとえば、MergeTree におけるソートキーのプレフィックスや、ORDER BY ステートメントのプレフィックスです。
 
-## optimize_distributed_group_by_sharding_key {#optimize_distributed_group_by_sharding_key}
+## optimize_distributed_group_by_sharding_key
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -110,7 +110,7 @@ DISTINCT 内の一部のカラムがソート順のプレフィックスにな�
   現時点では `optimize_skip_unused_shards` が必要です。これは、将来的にこの設定がデフォルトで有効になる可能性がある一方で、データが Distributed テーブル経由で挿入され、すなわち sharding&#95;key に従って分散されている場合にのみ正しく動作するためです。
 </Note>
 
-## optimize_dry_run_check_part {#optimize_dry_run_check_part}
+## optimize_dry_run_check_part
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -118,7 +118,7 @@ DISTINCT 内の一部のカラムがソート順のプレフィックスにな�
 
 有効な場合、`OPTIMIZE ... DRY RUN` は `checkDataPart` を使って、マージ後の結果パートを検証します。チェックに失敗すると、例外がスローされます。
 
-## optimize_empty_string_comparisons {#optimize_empty_string_comparisons}
+## optimize_empty_string_comparisons
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -127,7 +127,7 @@ DISTINCT 内の一部のカラムがソート順のプレフィックスにな�
 col = &#39;&#39; や &#39;&#39; = col のような式を empty(col) に、col != &#39;&#39; や &#39;&#39; != col を notEmpty(col) に変換します。
 ただし、col が String または FixedString 型の場合に限ります。
 
-## optimize_extract_common_expressions {#optimize_extract_common_expressions}
+## optimize_extract_common_expressions
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -138,7 +138,7 @@ WHERE、PREWHERE、ON、HAVING、QUALIFY の式で、論理和から共通式を
 * 単純なフィルタ式でのインデックス利用
 * CROSS JOIN から INNER JOIN への最適化
 
-## optimize_functions_to_subcolumns {#optimize_functions_to_subcolumns}
+## optimize_functions_to_subcolumns
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -165,7 +165,7 @@ WHERE、PREWHERE、ON、HAVING、QUALIFY の式で、論理和から共通式を
 * 0 — 最適化は無効です。
 * 1 — 最適化は有効です。
 
-## optimize_inverse_dictionary_lookup {#optimize_inverse_dictionary_lookup}
+## optimize_inverse_dictionary_lookup
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -173,13 +173,13 @@ WHERE、PREWHERE、ON、HAVING、QUALIFY の式で、論理和から共通式を
 
 事前に計算した可能なキー値の集合に対して高速にルックアップすることで、Dictionary の逆引きに対する繰り返しのルックアップを回避します。
 
-## optimize_multiif_to_if {#optimize_multiif_to_if}
+## optimize_multiif_to_if
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 &#39;multiIf&#39; の条件が 1 つだけの場合、&#39;if&#39; に置き換えます。
 
-## optimize_mutations_with_partition_pruning {#optimize_mutations_with_partition_pruning}
+## optimize_mutations_with_partition_pruning
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -194,7 +194,7 @@ WHERE、PREWHERE、ON、HAVING、QUALIFY の式で、論理和から共通式を
 * 0 — 無効。mutation と論理更新はすべてのパーティションを処理します。
 * 1 — 有効。mutation と論理更新は WHERE 条件に一致するパーティションのみを処理します。
 
-## optimize_normalize_count_variants {#optimize_normalize_count_variants}
+## optimize_normalize_count_variants
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -202,7 +202,7 @@ WHERE、PREWHERE、ON、HAVING、QUALIFY の式で、論理和から共通式を
 
 意味上 count() と等価な集約関数を count() に書き換えます。
 
-## optimize_on_insert {#optimize_on_insert}
+## optimize_on_insert
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -258,7 +258,7 @@ SELECT * FROM test2;
 
 この設定は、[materialized view](/ja/reference/statements/create/view#materialized-view) の動作にも影響する点に注意してください。
 
-## optimize_prewhere_after_pushdown {#optimize_prewhere_after_pushdown}
+## optimize_prewhere_after_pushdown
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -270,7 +270,7 @@ SELECT * FROM test2;
 `PREWHERE` がすでにある場合、新しいフィルターは個別のフィルターステップとして残されず、
 `AND` でそこにマージされます。
 
-## optimize_qbit_distance_function_reads {#optimize_qbit_distance_function_reads}
+## optimize_qbit_distance_function_reads
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -278,7 +278,7 @@ SELECT * FROM test2;
 
 `QBit` データ型に対する距離関数を、ストレージから計算に必要なカラムだけを読み込む等価な関数に置き換えます。
 
-## optimize_read_in_order {#optimize_read_in_order}
+## optimize_read_in_order
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -293,7 +293,7 @@ SELECT * FROM test2;
 
 * [ORDER BY 句](/ja/reference/statements/select/order-by#optimization-of-data-reading)
 
-## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+## optimize_read_in_reverse_order_final
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -306,19 +306,19 @@ SELECT * FROM test2;
 * 0 — `FINAL` 指定時の逆順読み取りは無効です。
 * 1 — `FINAL` 指定時の逆順読み取りは有効です。
 
-## optimize_respect_aliases {#optimize_respect_aliases}
+## optimize_respect_aliases
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 true に設定すると、WHERE/GROUP BY/ORDER BY で別名が考慮されるようになり、パーティションプルーニング、セカンダリ索引、optimize&#95;aggregation&#95;in&#95;order、optimize&#95;read&#95;in&#95;order、optimize&#95;trivial&#95;count に役立ちます
 
-## optimize_sorting_by_input_stream_properties {#optimize_sorting_by_input_stream_properties}
+## optimize_sorting_by_input_stream_properties
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 入力ストリームのソート特性に基づいてソートを最適化します
 
-## optimize_substitute_columns {#optimize_substitute_columns}
+## optimize_substitute_columns
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -328,7 +328,7 @@ true に設定すると、WHERE/GROUP BY/ORDER BY で別名が考慮されるよ
 
 * true, false
 
-## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
+## optimize_syntax_fuse_functions
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -362,7 +362,7 @@ SELECT
 FROM default.fuse_tbl AS __table1
 ```
 
-## optimize_throw_if_noop {#optimize_throw_if_noop}
+## optimize_throw_if_noop
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -375,7 +375,7 @@ FROM default.fuse_tbl AS __table1
 * 1 — 例外のスローが有効です。
 * 0 — 例外のスローが無効です。
 
-## optimize_time_filter_with_preimage {#optimize_time_filter_with_preimage}
+## optimize_time_filter_with_preimage
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -383,7 +383,7 @@ FROM default.fuse_tbl AS __table1
 
 関数を、変換を伴わない等価な比較式に書き換えることで、Date および DateTime の述語を最適化します (例: `toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31'`)
 
-## optimize_truncate_order_by_after_group_by_keys {#optimize_truncate_order_by_after_group_by_keys}
+## optimize_truncate_order_by_after_group_by_keys
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -391,13 +391,13 @@ FROM default.fuse_tbl AS __table1
 
 ORDER BY のプレフィックスですべての GROUP BY キーがカバーされている場合、末尾の ORDER BY 要素を削除します。
 
-## optimize_uniq_to_count {#optimize_uniq_to_count}
+## optimize_uniq_to_count
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 サブクエリに DISTINCT または GROUP BY 句がある場合、uniq とその variants (uniqUpTo を除く) を count に書き換えます。
 
-## optimize_using_constraints {#optimize_using_constraints}
+## optimize_using_constraints
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

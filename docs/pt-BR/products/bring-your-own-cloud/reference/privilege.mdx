@@ -7,9 +7,9 @@ description: 'Implante o ClickHouse na sua própria infraestrutura de nuvem'
 doc_type: 'reference'
 ---
 
-## Funções do IAM da AWS {#aws-iam-roles}
+## Funções do IAM da AWS
 
-### Função do IAM Bootstrap {#bootstrap-iam-role}
+### Função do IAM Bootstrap
 
 A função do IAM Bootstrap tem as seguintes permissões:
 
@@ -18,7 +18,7 @@ A função do IAM Bootstrap tem as seguintes permissões:
 * **Operações de IAM (por exemplo, `iam:CreatePolicy`)**: Necessárias para que os controladores criem funções adicionais (consulte a próxima seção para mais detalhes).
 * **Operações de EKS**: Limitadas a recursos com nomes que começam com o prefixo `clickhouse-cloud`.
 
-### Funções adicionais do IAM criadas pelo controlador {#additional-iam-roles-created-by-the-controller}
+### Funções adicionais do IAM criadas pelo controlador
 
 Além da `ClickHouseManagementRole` criada via CloudFormation, o controlador criará várias outras funções.
 
@@ -44,9 +44,9 @@ As funções **K8s-control-plane** e **k8s-worker** destinam-se a ser assumidas 
 
 Por fim, **`data-plane-mgmt`** permite que um componente do plano de controle do ClickHouse Cloud faça a reconciliação dos recursos personalizados necessários, como `ClickHouseCluster` e o Istio Virtual Service/Gateway.
 
-## Contas de serviço do GCP {#gcp-service-accounts}
+## Contas de serviço do GCP
 
-### Conta de serviço Bootstrap {#bootstrap-service-account}
+### Conta de serviço Bootstrap
 
 A conta de serviço Bootstrap recebe funções personalizadas com escopo no projeto com as seguintes permissões:
 
@@ -56,7 +56,7 @@ A conta de serviço Bootstrap recebe funções personalizadas com escopo no proj
 * **Storage**: Usada para gerenciar buckets do Cloud Storage usados para backups do ClickHouse, estado compartilhado e dados de monitoramento.
 * **IAM Role**: Gerencia contas de serviço e funções personalizadas dentro do projeto. Essa função não concede a capacidade de criar chaves de conta de serviço, vincular políticas da organização nem modificar quaisquer recursos em outros projetos.
 
-### Contas de serviço adicionais criadas pelo controlador {#additional-service-accounts-created-by-the-controller}
+### Contas de serviço adicionais criadas pelo controlador
 
 Além da conta de serviço `clickhouse-management`, criada via Terraform como parte do onboarding, quando você provisiona seu primeiro serviço BYOC, o plano de controle do ClickHouse (autenticando-se como `clickhouse-management`) cria contas de serviço adicionais no seu projeto para cargas de trabalho específicas no cluster. Cada uma delas é criada com um conjunto de permissões restrito e voltado a uma única finalidade.
 
@@ -72,9 +72,9 @@ Além da conta de serviço `clickhouse-management`, criada via Terraform como pa
 
 O state exporter, que publica eventos de status de serviço e de backup no ClickHouse Cloud, foi deliberadamente deixado de fora desta lista: no GCP, sua identidade de publicação é uma conta de serviço pertencente ao ClickHouse, em um projeto pertencente ao ClickHouse, e não uma conta criada no seu. O que é criado no seu projeto é um vínculo de Workload Identity que permite que a conta de serviço `state-exporter` no cluster represente essa identidade. Nenhum material de chave está envolvido, e a identidade que publica no Pub/Sub não detém permissões no seu projeto.
 
-## Funções e identidades do Azure {#azure-roles-and-identities}
+## Funções e identidades do Azure
 
-### Principal de serviço de onboarding {#onboarding-service-principal}
+### Principal de serviço de onboarding
 
 O onboarding com o [módulo do Terraform para Azure](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) provisiona um aplicativo multilocatário como um Aplicativo Empresarial (principal de serviço) no seu tenant, seguindo as orientações do Azure para autenticação entre tenants. Ao principal de serviço é atribuída uma função personalizada com privilégios mínimos, limitada à assinatura de destino, com permissões para:
 
@@ -84,7 +84,7 @@ O onboarding com o [módulo do Terraform para Azure](https://github.com/ClickHou
 * **Identidade**: Gerenciar identidades gerenciadas atribuídas pelo usuário e suas credenciais de identidade federada na assinatura.
 * **Autorização**: Gerenciar definições de função personalizadas e atribuições de função. Todas as permissões são limitadas à assinatura de destino — a função não pode acessar recursos em outras assinaturas ou tenants.
 
-### Identidades gerenciadas adicionais criadas pelo controlador {#additional-managed-identities-created-by-the-controller}
+### Identidades gerenciadas adicionais criadas pelo controlador
 
 Ao provisionar serviços BYOC, o plano de controle do ClickHouse cria identidades gerenciadas atribuídas pelo usuário em sua assinatura. Cada uma é federada a uma conta de serviço específica do Kubernetes (Workload Identity) e tem um conjunto de permissões restrito a uma única finalidade:
 

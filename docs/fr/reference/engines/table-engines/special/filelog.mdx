@@ -15,7 +15,7 @@ Ce moteur permet de traiter les fichiers de log d&#39;application comme un flux 
 * Vous abonner à des fichiers de log.
 * Traiter les nouveaux enregistrements à mesure qu&#39;ils sont ajoutés aux fichiers de log suivis.
 
-## Créer une table {#creating-a-table}
+## Créer une table
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -50,7 +50,7 @@ Paramètres facultatifs :
 * `poll_directory_watch_events_backoff_factor` - Vitesse du backoff, exponentielle par défaut. Par défaut : `2`.
 * `handle_error_mode` — Mode de gestion des erreurs du moteur FileLog. Valeurs possibles : default (une exception sera levée si l&#39;analyse d&#39;un message échoue), stream (le message d&#39;exception et le message brut seront enregistrés dans les colonnes virtuelles `_error` et `_raw_message`).
 
-## Description {#description}
+## Description
 
 Les enregistrements reçus sont suivis automatiquement, de sorte que chaque enregistrement d’un fichier de log n’est compté qu’une seule fois.
 
@@ -96,7 +96,7 @@ ATTACH TABLE consumer;
 
 Si vous souhaitez modifier la table cible à l’aide de `ALTER`, nous vous recommandons de désactiver la vue matérialisée afin d’éviter toute incohérence entre la table cible et les données de la vue.
 
-## Colonnes virtuelles {#virtual-columns}
+## Colonnes virtuelles
 
 * `_filename` - Nom du fichier de log. Type de données : `LowCardinality(String)`.
 * `_offset` - Décalage dans le fichier de log. Type de données : `UInt64`.
@@ -108,7 +108,7 @@ Colonnes virtuelles supplémentaires lorsque `handle_error_mode='stream'` :
 
 Remarque : les colonnes virtuelles `_raw_record` et `_error` ne sont renseignées qu&#39;en cas d&#39;exception lors de l&#39;analyse ; elles sont toujours `NULL` lorsque le message a été analysé avec succès.
 
-## Durabilité des données {#data-durability}
+## Durabilité des données
 
 Le moteur `FileLog` enregistre le décalage consommé pour un fragment avant que l&#39;insertion à laquelle appartient ce fragment soit validée. Ainsi, en cas d&#39;interruption du serveur, le décalage enregistré peut être en avance sur les données ayant atteint la table cible. Au redémarrage, chaque fichier de log reprend au décalage enregistré dans son répertoire de métadonnées, de sorte que ces lignes ne sont jamais relues : elles sont perdues sans qu&#39;aucune erreur ne soit signalée et `count()` est simplement inférieur. Une défaillance de processus ordinaire suffit à provoquer ce problème, sans nécessiter de coupure d&#39;alimentation, car le décalage est enregistré dans un fichier de métadonnées renommé à son emplacement définitif alors que la partie cible est encore en cours d&#39;écriture.
 

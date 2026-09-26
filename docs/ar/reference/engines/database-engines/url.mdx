@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 يتعامل محرك قاعدة البيانات `URL` مع أسماء الجداول كعناوين URL، ويعرض البيانات الموجودة في تلك العناوين كجداول. وهو يستخدم دالة الجدول [`url`](/ar/reference/functions/table-functions/url) التي توجّه كل عنوان URL إلى الـ backend المناسب، مثل `file` أو `s3` أو HDFS أو Azure Blob Storage أو HTTP.
 
-## إنشاء قاعدة بيانات {#creating-a-database}
+## إنشاء قاعدة بيانات
 
 ```sql
 CREATE DATABASE web_data
@@ -19,7 +19,7 @@ ENGINE = URL([base_url]);
 
 عند تحديد `base_url`، يتم تحليل أسماء الجداول النسبية بالاستناد إليه. وبدون عنوان URL أساسي، يجب أن يكون كل اسم جدول عنوان URL كاملًا.
 
-## Usage {#usage}
+## Usage
 
 ```sql
 CREATE DATABASE web_data
@@ -30,7 +30,7 @@ SELECT * FROM web_data.`daily.csv`;
 
 لا تحتوي قاعدة البيانات على أي تعريفات جداول. يُحلّ كل جدول من عنوان URL الخاص به عند استخدامه، ومن ثم يُستنتج مخططه من البيانات الحالية. كما يمكن أن تستخدم أسماء الجداول عنوان URL كاملًا، على سبيل المثال `web_data.`s3://bucket/data/events.parquet&#96;&#96;.
 
-## التحكم في الوصول {#access-control}
+## التحكم في الوصول
 
 يتطلب إنشاء قاعدة البيانات هذه صلاحيتي المصدر `READ` و`WRITE` على `URL`، بغض النظر عن [`table_engines_require_grant`](/ar/reference/settings/server-settings/settings/other#table_engines_require_grant). كما تتطلب القراءة من جدول ما صلاحية مصدر `READ` على backend الذي تم تحديده، بينما تتطلب الكتابة صلاحية `WRITE` المقابلة. على سبيل المثال:
 
@@ -43,7 +43,7 @@ GRANT READ, WRITE ON S3 TO user_name;
 
 راجع [صلاحيات `SOURCES`](/ar/reference/statements/grant#sources) للاطلاع على تفاصيل الإصدار والتوافق.
 
-## انظر أيضًا {#see-also}
+## انظر أيضًا
 
 * [دالة الجدول `url`](/ar/reference/functions/table-functions/url)
 * [محرك قاعدة البيانات Filesystem](/ar/reference/engines/database-engines/filesystem)

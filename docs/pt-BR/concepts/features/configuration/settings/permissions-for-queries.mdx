@@ -23,7 +23,7 @@ recusa as quatro instruções em uma tabela persistente.
 
 As configurações a seguir regulam as permissões do usuário por tipo de consulta:
 
-## readonly {#readonly}
+## readonly
 
 Restringe quais consultas uma sessão pode executar. Os valores da configuração, seu padrão e quais configurações
 cada valor permite alterar estão descritos na
@@ -79,7 +79,7 @@ inserir dados nela e removê-la.
   [alterável em modo somente leitura](/pt-BR/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
 </Note>
 
-## allow_ddl {#allow_ddl}
+## allow_ddl
 
 Permite ou nega consultas [DDL](https://en.wikipedia.org/wiki/Data_definition_language) em bancos de dados,
 tabelas, views, dicionários, funções definidas pelo usuário, workloads, resources e handlers definidos em SQL.
@@ -123,7 +123,7 @@ Valor padrão: 1
   privilégio `KILL QUERY`, que `readonly = 1` e `readonly = 2` recusam.
 </Info>
 
-## Outras configurações relevantes {#other-relevant-settings}
+## Outras configurações relevantes
 
 * [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings/allow#allow_introspection_functions)
   é a terceira configuração que participa da decisão de permissão em si, junto com `readonly` e

@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 `LIMIT` 子句用于控制查询结果返回的行数。可按数量和偏移量选择行，也可根据通过 [`LIMIT ... AFTER ... UNTIL`](#limit-after-until) 确定行范围起止的条件选择行。
 
-## 基本语法 {#basic-syntax}
+## 基本语法
 
 **选择前几行：**
 
@@ -51,7 +51,7 @@ LIMIT [n] UNTIL end_expr
 
 返回从 `start_expr` 为 true 的第一行起，到该起始位置或其之后 `end_expr` 为 true 的第一行之前的行；若省略 `AFTER`，则从 stream 的开头起；`n` 限制该范围的长度。`AFTER start_expr ALL` 会在每个匹配行处开启一个范围。请参阅下方的 [LIMIT ... AFTER ... UNTIL](#limit-after-until)。
 
-## 负数限制 {#negative-limits}
+## 负数限制
 
 使用负值从结果集的*末尾*选取行：
 
@@ -64,7 +64,7 @@ LIMIT [n] UNTIL end_expr
 
 `LIMIT -n, -m` 语法等同于 `LIMIT -m OFFSET -n`。
 
-## 分数限制 {#fractional-limits}
+## 分数限制
 
 使用 0 到 1 之间的小数值来选取一定比例的行：
 
@@ -79,7 +79,7 @@ LIMIT [n] UNTIL end_expr
   * 非整数的行数会向上取整到下一个整数。
 </Note>
 
-## 组合不同的 LIMIT 类型 {#combining-limit-types}
+## 组合不同的 LIMIT 类型
 
 你可以将普通整数与小数或负偏移量混合使用：
 
@@ -90,7 +90,7 @@ LIMIT 10 OFFSET -20    -- 10 rows after skipping the last 20
 
 [范围形式](#limit-after-until)只能与普通行数结合使用：`LIMIT 3 AFTER start_expr` 从范围起点开始最多获取三行。`OFFSET`、小数和负数计数以及 `WITH TIES` 均不能与 `AFTER` 或 `UNTIL` 一起使用。同一查询中，[`LIMIT BY`](/zh/reference/statements/select/limit-by) 子句可以位于范围之前，且 [`limit`](/zh/reference/settings/session-settings/other#limit) 设置仍会限制结果。
 
-## LIMIT ... WITH TIES {#limit--with-ties-modifier}
+## LIMIT ... WITH TIES
 
 `WITH TIES` 修饰符会包含与限制结果中最后一行具有相同 `ORDER BY` 值的其他行。它仅适用于计数和偏移量限制，且不能与[范围形式](#limit-after-until)结合使用。
 
@@ -173,7 +173,7 @@ ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
 
 此修饰符可与 [`ORDER BY ... WITH FILL`](/zh/reference/statements/select/order-by#order-by-expr-with-fill-modifier) 修饰符结合使用。
 
-## LIMIT ... AFTER ... UNTIL (按条件划定范围) {#limit-after-until}
+## LIMIT ... AFTER ... UNTIL (按条件划定范围)
 
 您可以将结果限制为两个边界条件之间的某个行*范围*：
 
@@ -366,13 +366,13 @@ SELECT number % 4 AS k, number FROM numbers(12) ORDER BY k, number LIMIT 2 BY k 
 └───┴────────┘
 ```
 
-## 注意事项 {#considerations}
+## 注意事项
 
 **非确定性结果：**如果没有 [`ORDER BY`](/zh/reference/statements/select/order-by) 子句，返回的行可能是任意的，并且在多次执行查询时可能会有所不同。
 
 **服务器端限制：**返回的行数也可能受到 [limit](/zh/reference/settings/session-settings/other#limit) 设置的影响。
 
-## 另请参阅 {#see-also}
+## 另请参阅
 
 * [LIMIT BY](/zh/reference/statements/select/limit-by) — 限制每组值中的行数，适用于获取每个类别下前 N 个结果。
 

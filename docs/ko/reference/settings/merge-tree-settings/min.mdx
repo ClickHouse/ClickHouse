@@ -13,14 +13,14 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며 ClickHouse 소스 코드에서 자동 생성됩니다.
 
-## min_absolute_delay_to_close {#min_absolute_delay_to_close}
+## min_absolute_delay_to_close
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 종료하고, 요청 처리를 중단하며, status check에서
 Ok를 반환하지 않기까지의 최소 절대 지연 시간입니다.
 
-## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
+## min_columns_to_activate_adaptive_write_buffer
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -37,7 +37,7 @@ Ok를 반환하지 않기까지의 최소 절대 지연 시간입니다.
 * 0 - 비활성화
 * 1 - 항상 활성화
 
-## min_compress_block_size {#min_compress_block_size}
+## min_compress_block_size
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -47,7 +47,7 @@ Ok를 반환하지 않기까지의 최소 절대 지연 시간입니다.
 설정 참조). 테이블을 생성할 때 지정한 값은 이 설정의 전역 값을
 재정의합니다.
 
-## min_index_granularity_bytes {#min_index_granularity_bytes}
+## min_index_granularity_bytes
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -55,7 +55,7 @@ Ok를 반환하지 않기까지의 최소 절대 지연 시간입니다.
 
 실수로 `index_granularity_bytes`가 매우 낮은 테이블을 생성하지 않도록 하는 보호 장치입니다.
 
-## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
+## min_marks_to_honor_max_concurrent_queries
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -77,7 +77,7 @@ Ok를 반환하지 않기까지의 최소 절대 지연 시간입니다.
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
+## min_merge_bytes_to_use_direct_io
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -89,7 +89,7 @@ direct I/O 인터페이스(`O_DIRECT` 옵션)를 사용해 스토리지 디스�
 씁니다.
 `min_merge_bytes_to_use_direct_io = 0`이면 direct I/O가 비활성화됩니다.
 
-## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
+## min_partition_age_to_force_merge_seconds
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -133,7 +133,7 @@ Simple 및 StochasticSimple 머지 선택기에서는
 
 * 양의 정수.
 
-## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
+## min_parts_to_merge_at_once
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -141,7 +141,7 @@ Simple 및 StochasticSimple 머지 선택기에서는
 (전문가 수준의 설정이므로, 어떤 동작을 하는지 이해하지 못했다면 변경하지 마십시오).
 0 - 비활성화됩니다. Simple 및 StochasticSimple 머지 선택기에 적용됩니다.
 
-## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
+## min_replicated_logs_to_keep
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

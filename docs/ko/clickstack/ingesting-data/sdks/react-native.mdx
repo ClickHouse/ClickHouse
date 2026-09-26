@@ -14,9 +14,9 @@ ClickStack React Native SDK를 사용하면 React Native
 
 <ClickStackIntegrates signals={['traces']} />
 
-## 시작하기 {#getting-started}
+## 시작하기
 
-### NPM으로 설치 {#install-via-npm}
+### NPM으로 설치
 
 다음 명령을 사용하여 [ClickStack React Native 패키지](https://www.npmjs.com/package/@hyperdx/otel-react-native)를 설치하십시오.
 
@@ -24,7 +24,7 @@ ClickStack React Native SDK를 사용하면 React Native
 npm install @hyperdx/otel-react-native
 ```
 
-### ClickStack 초기화 {#initialize-clickstack}
+### ClickStack 초기화
 
 앱 수명 주기 초기에 가능한 한 빨리 라이브러리를 초기화하세요:
 
@@ -39,7 +39,7 @@ HyperDXRum.init({
 });
 ```
 
-### 사용자 정보 또는 메타데이터 첨부(선택 사항) {#attach-user-information-metadata}
+### 사용자 정보 또는 메타데이터 첨부(선택 사항)
 
 사용자 정보를 첨부하면 HyperDX에서 세션과 이벤트를 검색하거나 필터링할 수
 있습니다. 이는 클라이언트 세션 중 어느 시점에서나 호출할 수 있습니다. 현재
@@ -59,7 +59,7 @@ HyperDXRum.setGlobalAttributes({
 });
 ```
 
-### 하위 버전 계측 {#instrument-lower-versions}
+### 하위 버전 계측
 
 0.68 미만 버전의 React Native에서 실행되는 애플리케이션을 계측하려면
 `metro.config.js` 파일을 수정하여 metro가 브라우저 전용
@@ -105,7 +105,7 @@ module.exports = {
 };
 ```
 
-## 화면 내비게이션 {#view-navigation}
+## 화면 내비게이션
 
 [react-navigation](https://github.com/react-navigation/react-navigation) 버전 5와 6이 지원됩니다.
 

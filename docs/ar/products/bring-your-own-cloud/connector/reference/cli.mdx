@@ -16,11 +16,11 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 يقرأ الأمران `instances` و`commands`، وكذلك `executor teardown`، واجهة برمجة التطبيقات المحلية للمنفّذ. وتحدّدها علامتان عامتان: `--endpoint <url>` (القيمة الافتراضية `http://127.0.0.1:9999`، متغير البيئة `CLCTL_ENDPOINT`) و`--cluster <name>` (متغير البيئة `CLCTL_CLUSTER`) التي تحدّد اسم العنقود المُدار عندما يحتاج الأمر إلى ذلك. في Kubernetes، افتح `kubectl port-forward` إلى Deployment المنفّذ أولًا؛ انظر [الخدمات المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services#status).
 
-## clicklink clctl init {#init}
+## clicklink clctl init
 
 يُهيّئ الموصل باستخدام رمز تسجيل، أو حزمة تسجيل محفوظة، أو شهادة موقّعة خارج النطاق. ينفّذ استدعاء واحد إعداد التكوين، ويوفّر الوصول إلى ClickHouse، ويحصل على شهادة عميل mTLS، وينشر المكوّنات (مخطط Helm أو وحدات systemd)، ويتحقق من سلامتها. ومع `--managed` يُفعّل أيضًا المنفّذ لعنقود EKS الذي يكتشفه ويمنح المنفّذ وصولًا على مستوى العنقود. إعادة التشغيل آمنة: يحافظ `init` على التكوين ومعرّف UUID للعنقود، ويستبدل بيانات الاعتماد ذريًا، ويُعيد استخدام مفتاح العميل الحالي ما لم تمرّر `--force`. راجع [الإعداد الأولي](/ar/products/bring-your-own-cloud/connector/onboarding) للاطلاع على التدفق الكامل و[الخدمات المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services) لمعرفة ما يقوم به المنفّذ.
 
-### نقاط الدخول {#init-entry-points}
+### نقاط الدخول
 
 يلزم تحديد نقطة دخول واحدة فقط.
 
@@ -30,7 +30,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 | `--handoff <path>`     | يُجري Bootstrap من حزمة تسجيل محفوظة. تستخدم عمليات إعادة التشغيل والاسترداد هذا الخيار بعد إنشاء `handoff.yaml`.                                                                                                                                                                                                                                      |
 | `--signed-cert <path>` | المرحلة الثانية من تدفق البيئة المعزولة عن الشبكة: يثبّت شهادة عميل موقعة خارج النطاق ويكمل التثبيت المرحلي. ويمكن لـ `--chain <path>` استبدال سلسلة CA اختياريًا إلى جانبها.                                                                                                                                                                          |
 
-### الرايات الشائعة {#init-common-flags}
+### الرايات الشائعة
 
 | علامة                        | Description                                                                                                                                                                                                                                                                                                             |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -46,14 +46,14 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 | `--ch-user-suffix <suffix>` | لاحقة اختيارية لأسماء مستخدمي ClickHouse المُجهَّزين (فيصبح `pcm_scraper` بالشكل `pcm_scraper_<suffix>`)، بحيث يمكن لنشر موصل ثانٍ أن يشارك النسخة ذاتها دون التعارض مع مستخدمي النشر الأول.                                                                                                                            |
 | `--ch-admin-password-stdin` | يقرأ كلمة مرور مدير ClickHouse من stdin عندما يحتاج تجهيز SQL إليها؛ أما التشغيل عبر الطرفية فيطالب بها بدلاً من ذلك.                                                                                                                                                                                                   |
 
-### خيارات التوقيع (المرحلة 1 فقط) {#init-signing-flags}
+### خيارات التوقيع (المرحلة 1 فقط)
 
 | العلامة                  | الوصف                                                                                                                                |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `--no-auto-sign`        | للمرحلة فقط: يتخطى التوقيع التلقائي لـ CSR عبر نقطة نهاية التسجيل، لتدفقات التوقيع في البيئات المعزولة عن الشبكة أو خارج النطاق.     |
 | `--sign-endpoint <url>` | يتجاوز نقطة نهاية توقيع التسجيل (الافتراضي: تُشتق من نقطة نهاية الحزمة بإدراج تسمية DNS ‏`enroll`). يجب أن يكون عنوان URL عبر HTTPS. |
 
-### العلامات الخاصة بـ Kubernetes {#init-kubernetes-flags}
+### العلامات الخاصة بـ Kubernetes
 
 صالحة فقط مع `--target helm`.
 
@@ -70,7 +70,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 | `--api-private-ca`          | تعرض نقطة نهاية الموصّل لديك شهادة صادرة عن CA لحزمة التسجيل: تُجهِّز `api.tls.caFile` ليشير إلى سلسلة CA المُربطة، والتي تُضاف إلى جذور النظام.                                                                                                                                   |
 | `--egress-cidrs <cidrs>`    | نطاقات CIDR لنقطة نهاية الموصّل لديك، مفصولة بفواصل، من أجل NetworkPolicy الافتراضية بالرفض الخاصة بالمخطط: تُجهَّز مُفعَّلة مع هذه النطاقات بوصفها `networkPolicy.allowEgressCIDRs` (يُطلب إدخالها في الطرفية في الوضع المُدار). وبدونها تُجهَّز السياسة معطَّلة لتفعّلها لاحقًا. |
 
-### العلامات الخاصة بـ جهاز افتراضي فقط {#init-vm-flags}
+### العلامات الخاصة بـ جهاز افتراضي فقط
 
 صالحة فقط مع `--target systemd`.
 
@@ -81,7 +81,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 | `--cluster-name <name>` | اسم عنقود EKS الذي يديره الوضع المُدار (الافتراضي: عنقود EKS الوحيد في kubeconfig الخاص بهذا المضيف؛ وتتم المطالبة به على الطرفية).    |
 | `--no-instance`         | يبدأ بسجل instance فارغ ويتخطى مطالبات instance.                                                                                       |
 
-### تعارضات العلامات {#init-flag-conflicts}
+### تعارضات العلامات
 
 * العلامات `--handoff` و`--enroll` و`--signed-cert` متنافية؛ ويجب تحديد واحد منها فقط.
 * تُرفض العلامات الخاصة بـ Kubernetes ما لم يُستخدم `--target helm`؛ كما يُرفض `--server` و`--ca-data` و`--cluster-name` و`--no-instance` عند استخدام `--target helm` (إذ يعتمد تدفق Helm على ملف kubeconfig لمحطة العمل ويكتشف الـ instance داخل العنقود).
@@ -91,7 +91,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 * يتنافى `--operators` و`--no-gateway`.
 * يرفض `--skip-provision` العلامات `--ch-pod` و`--ch-user-suffix` و`--server` و`--ca-data` و`--ch-admin-password-stdin` (إذ لا يتم توفير أي شيء).
 
-## clicklink clctl preflight {#preflight}
+## clicklink clctl preflight
 
 يشغّل مجموعة فحوصات الموصل، المجمّعة حسب الفئات: الإعدادات، الملفات، الشبكة، ClickHouse، systemd، الوصول، القرص، وحجب المعلومات الحساسة. يُبلغ كل فحص عن إحدى الحالات التالية: نجاح أو تحذير أو فشل أو تخطٍّ. يشير رمز الخروج 0 إلى نجاح جميع الفحوصات (فالتحذيرات غير حاجبة)، بينما يشير رمز الخروج 2 إلى فشل فحص واحد على الأقل.
 
@@ -110,7 +110,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 علامات `--k8s-*` وعلامات القناة البعيدة متنافية؛ اختر هدفًا واحدًا.
 
-## clicklink clctl troubleshoot session {#troubleshoot-session}
+## clicklink clctl troubleshoot session
 
 يتيح تفعيل جلسة الدعم وتعطيلها وفحصها، وهي نافذة زمنية محددة يقبل خلالها troubleshooter الأوامر. بدون جلسة نشطة، يرفض البرنامج الخفي كل أمر، حتى لو كان WebSocket متصلاً. راجع [جلسات الدعم](/ar/products/bring-your-own-cloud/connector/support-sessions).
 
@@ -119,7 +119,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 * **ملف محلي** (افتراضيًا): تقرأ ملف حالة الجلسة وتكتب إليه على المضيف الذي يعمل عليه troubleshooter (المسار الافتراضي: `/var/lib/clicklink/session.json`).
 * **بوابة**: باستخدام `--gateway-url`، يحصل على رمز مميز للهوية من OIDC ويستدعي بوابة جلسة troubleshooter بدلًا من ذلك من محطة العمل لديك.
 
-### الخيارات المشتركة {#session-shared-flags}
+### الخيارات المشتركة
 
 | العلامة                    | الوصف                                                                                                                                                                                 |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -132,7 +132,7 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 | `--token-file <path>`      | ملف يحتوي على رمز معرّف OIDC مُنشأ مسبقًا، يُستخدم كرمز حامل ويتجاوز موفري الرموز الآخرين.                                                                                            |
 | `--gateway-ca <path>`      | حزمة CA للتحقق من شهادة البوابة (شهادة توفرها بنفسك). عند عدم تعيينه، يستخدم الأمر شهادة مثبّتة عبر `gateway trust`؛ وتفشل البوابة ذات الشهادة الموقعة ذاتيًا ومن دون تثبيت بشكل آمن. |
 
-### تفعيل الجلسة {#session-enable}
+### تفعيل الجلسة
 
 | العلامة            | الوصف                                                                                                                                                             |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -142,11 +142,11 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 يفشل التفعيل إذا كانت هناك جلسة نشطة بالفعل؛ عطّلها أولًا أو انتظر انتهاء صلاحيتها.
 
-### تعطيل الجلسة {#session-disable}
+### تعطيل الجلسة
 
 يعطّل الجلسة فورًا. ولا يكون له أي تأثير إذا لم تكن هناك جلسة نشطة.
 
-### حالة الجلسة {#session-status}
+### حالة الجلسة
 
 يوضح ما إذا كانت الجلسة نشطة، ومن فعّلها، ومتى تنتهي صلاحيتها. يحدد `--output` (`-o`) إما `table` (الخيار الافتراضي) أو `json`.
 
@@ -160,7 +160,7 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-## clicklink clctl troubleshoot gateway trust {#gateway-trust}
+## clicklink clctl troubleshoot gateway trust
 
 على جهاز افتراضي، تقدّم بوابة الجلسة شهادة TLS موقّعة ذاتيًا. يسجّل هذا الأمر بصمة SHA-256 للشهادة في `~/.clicklink/clctl.yaml` كي تتمكن أوامر `session` من التحقق منها؛ وإذا لم تعد البصمة المثبّتة مطابقة، يُرفض الاتصال. تُنشأ الثقة خارج النطاق بإحدى طريقتين:
 
@@ -181,7 +181,7 @@ clicklink clctl troubleshoot gateway trust \
 
 في Kubernetes، لا يُستخدم التثبيت: اعرض البوابة عبر مورد Ingress باستخدام شهادة صادرة عن جهة إصدار شهادات موثوقة (CA)، أو استخدم إعادة توجيه المنفذ.
 
-## clicklink clctl troubleshoot audit tail {#audit-tail}
+## clicklink clctl troubleshoot audit tail
 
 يطبع أحدث الإدخالات في سجل تدقيق مستكشف الأخطاء ومصلحها: ‏JSON مفصول بأسطر جديدة، مع إدخال واحد لكل أمر قبله البرنامج الخفي أو حظره. ويفتح السجل للقراءة فقط.
 
@@ -197,7 +197,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-## تهيئة الوصول {#access-provision}
+## تهيئة الوصول
 
 ينشئ الأمران `clicklink clctl scraper access provision` و`clicklink clctl troubleshoot access provision` حزمة وصول لكل مثيل من المكوّن، ويُدوّرانها عند استخدام `--force`. تشمل الحزمة مستخدم ClickHouse بصلاحية القراءة فقط وصلاحياته، بالإضافة إلى حساب خدمة Kubernetes وRBAC والرمز المميز الذي يستخدمه المكوّن. ينفّذ `init` ذلك مباشرةً أثناء التثبيت؛ أما الأوامر المستقلة فتُستخدم لإعادة التنفيذ وتدوير بيانات الاعتماد.
 
@@ -235,11 +235,11 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-## clicklink clctl executor access {#executor-access}
+## clicklink clctl executor access
 
 يطبّق `init --managed` صلاحية منفّذ على مستوى العنقود بأكمله باستخدام بيانات اعتمادك. وعند تعذّر ذلك، يطبع `init` الأوامر الواجب تنفيذها من kubeconfig يملك صلاحيات admin على العنقود: `access apply` وحده على جهاز افتراضي (إذ تكون الحزمة مُجهّزة مسبقًا)، و`access grant` ثم `access apply` على Kubernetes. راجع [onboarding](/ar/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
 
-### منفّذ access grant {#executor-access-grant}
+### منفّذ access grant
 
 يُنشئ حزمة وصول المنفّذ (منفّذ) على مستوى العنقود ضمن `<output-dir>/_cluster/`: ServiceAccount واحد، وClusterRole وClusterRoleBinding، وValidatingAdmissionPolicy تَقصُر الـ ServiceAccount على مساحات الأسماء الواقعة تحت بادئة مساحة أسماء المنفّذ. راجع الـ RBAC المُنشأ قبل تطبيقه.
 
@@ -254,7 +254,7 @@ clicklink clctl scraper access provision --target helm \
 | `--force`                              | يستبدل حزمة موجودة مسبقًا.                                                                                                                 |
 | `--dry-run`                            | يطبع الخطة دون كتابة أي ملفات.                                                                                                             |
 
-### منفّذ access apply {#executor-access-apply}
+### منفّذ access apply
 
 يطبّق حزمة `grant` المُولَّدة على مستوى العنقود: الـ مساحة أسماء الأصلي لـ ServiceAccount، وServiceAccount نفسه، وClusterRole وClusterRoleBinding، وسياسة admission، ثم يُنشئ رمز الخاص بـ ServiceAccount ويضعه في الحزمة. ولا يسجّل أي service.
 
@@ -272,7 +272,7 @@ clicklink clctl executor access grant --cluster --sa-namespace <connector-namesp
 clicklink clctl executor access apply --cluster --output-dir <dir>
 ```
 
-## clicklink clctl منفّذ prepare {#executor-prepare}
+## clicklink clctl منفّذ prepare
 
 يُجهّز كل ما يلزم من جانبك لإنشاء managed service، في تنفيذ واحد خامل التأثير يتوقف عند أول إخفاق. فهو يختار اسم service أو يتحقق منه وينشئ حاويتَي البيانات والنسخ الاحتياطي ودور IAM (أو يتحقق من دور IAM تُحضره بنفسك). وعلى جهاز افتراضي يُولّد أيضاً حزمة وصول منفّذ ويطبّقها على مساحة أسماء service؛ أما على Kubernetes فيتخطى الحزمة لأن منفّذ يعمل بهوية ServiceAccount الخاصة بالـ pod. ثم يُصدر كلمة مرور المستخدم `default` (تُعرض مرة واحدة فقط) ويكتب جسم طلب الإنشاء الخاص بـ [`instances create`](#instances-create). راجع [managed services](/ar/products/bring-your-own-cloud/connector/managed-services#create-a-service).
 
@@ -296,7 +296,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--output <fmt>`                                 | `text` (الافتراضي) أو `json`. ولا يتضمن أي منهما كلمة المرور.                                                                                                                                        |
 | `--dry-run`                                      | ينفّذ كل خطوة في وضع التجربة؛ فلا يُنشأ شيء ولا يُكتب.                                                                                                                                               |
 
-## clicklink clctl executor teardown {#executor-teardown}
+## clicklink clctl executor teardown
 
 يزيل ما أنشأه `prepare` لخدمة حذفتها ClickHouse Cloud، أي دور IAM، والاسم المسجَّل، وسجل المنفِّذ الخاص بالخدمة؛ وعلى جهاز افتراضي أيضًا: ClusterRole وClusterRoleBinding الخاصين بالخدمة، وحزمة الوصول المحلية، ومُدخل السجل. يجب أن يكون المنفِّذ قيد التشغيل وأن تكون الخدمة `terminated` (أو `stale`)؛ ويرفض التنفيذ ما دامت مساحة أسماء الخدمة تحتوي على عنقود ClickHouse. ويُحتفظ بالحاويات التي أنشأها `prepare`، بما فيها من بيانات ونسخ احتياطية، ما لم تطلب حذفها، ويُعاد وسم الحاويات المحتفظ بها بـ `clicklink:retained-from=<name>`. ويقرأ الأمر كل شيء قبل أن يحذف أي شيء. راجع [حذف خدمة](/ar/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
@@ -316,9 +316,9 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--output <fmt>`                                 | `text` (الافتراضي) أو `json`.                                                                                                                              |
 | `--dry-run`                                      | يطبع ما سيُزال ثم يخرج دون حذف أي شيء.                                                                                                                     |
 
-## clicklink clctl instances {#instances}
+## clicklink clctl instances
 
-### instances create {#instances-create}
+### instances create
 
 يُرسل طلب إنشاء مُجهّزًا إلى ClickHouse Cloud عبر نقطة نهاية الموصّل الخاصة بك، مستخدِمًا بيانات اعتماد الموصّل نفسه. ويُفعَّل الإنشاء لكل بيئة على حدة؛ انظر [إنشاء خدمة](/ar/products/bring-your-own-cloud/connector/managed-services#create-a-service). ويطبع الاسم المنطوق الذي خصّصته ClickHouse Cloud، والحالة، وتلميح `watch:` يستخدم اسم خدمتك. ويأتي متن الإنشاء من الملف الذي كتبه `prepare`، أو من الرايات الأربع `--deployed-name` و`--data-bucket` و`--backup-bucket` و`--irsa-role-arn` مجتمعةً. وإعادة المحاولة بالمدخلات نفسها تُعيد طلب الإنشاء الأول.
 
@@ -336,31 +336,31 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--wait`                                                                                            | يستطلع واجهة برمجة التطبيقات المحلية للمنفّذ حتى تصبح الخدمة `running`. ويفشل سريعًا عند فشل إنشاء بذلك الاسم، أو عندما تتحول الخدمة إلى `terminating` أو `terminated` أو `stale`.                                                                              |
 | `--wait-timeout <dur>`                                                                              | مدة استطلاع `--wait` قبل الفشل (الافتراضي `30m`).                                                                                                                                                                                                               |
 
-### instances list {#instances-list}
+### instances list
 
 يطبع كل service معروف لدى الـ منفّذ بصيغة JSON. ويؤدي `--cluster <name>` إلى التصفية حسب العنقود المُدار.
 
-### instances get {#instances-get}
+### instances get
 
 يطبع خدمة واحدة بصيغة JSON، مع التخزين الذي أُنشئت به. الخيار `--name <name>` مطلوب، وكذلك العنقود: مرِّر `--cluster`، أو اضبط `CLCTL_CLUSTER`، أو ضعه في `~/.clicklink/clctl.yaml`.
 
 ترسل الأوامر الفرعية الثلاثة أدناه أوامرها مباشرةً إلى واجهة برمجة التطبيقات المحلية للمنفِّذ، متجاوزةً ClickHouse Cloud. لا تستخدمها إلا بناءً على طلب من فريق حسابك. ويحتاج كل منها إلى `--name <name>` وإلى العنقود (`--cluster` أو `CLCTL_CLUSTER` أو `~/.clicklink/clctl.yaml`)، ويطبع كل منها الأمر بصيغة JSON. مرِّر معرّفه `id` إلى [`commands get`](#commands-get) لتتبّعه؛ أما الأمر الفاشل فيحتوي الحقل `result` الخاص به على تفاصيل الخطأ.
 
-### instances scale {#instances-scale}
+### instances scale
 
 يضبط عدد نسخ الخادم (server replicas) لخدمة واحدة عبر `ScalingOverride`. الخيار `--server-replicas <n>` مطلوب ويجب أن تكون قيمته أكبر من الصفر. ويُبلّغ المنفّذ (executor) عن الأمر بحالة running عند تطبيق الـ override، وبحالة completed عندما تصبح النسخ جاهزة.
 
-### instances patch {#instances-patch}
+### instances patch
 
 يغيّر خدمة واحدة في موضعها. والخيار `--create-nlb` هو التصحيح الوحيد المتاح؛ ومن دونه يرفض الأمر التنفيذ مع الرسالة `nothing to patch`. وهو يجهّز NLB داخليًا على هيئة `Service` في Kubernetes، على AWS فقط، ليتمكن ساحب المقاييس الموجود خارج العنقود من الوصول إلى الخوادم. ويتولى المنفّذ تعبئة مضيف الساحب رجعيًا من موازن التحميل عند المزامنة التالية.
 
-### instances delete {#instances-delete}
+### instances delete
 
 يزيل خدمة واحدة من العنقود. يوقف الخدمة وينتظر إتمام إيقاف التشغيل المرتّب الذي يقوم به المشغّل. ثم يزيل تثبيت عبء العمل، ويحذف مساحة الأسماء `ns-<name>` ومخرجات أداة السحب، وينتظر إلى أن تختفي مساحة الأسماء، ثم يضع علامة `terminated` على الخدمة. أما حاويات الخدمة ودور IAM الخاص بها فتبقى كما هي؛ ويزيلها [`executor teardown`](#executor-teardown) باستخدام بيانات الاعتماد الخاصة بك. وإعادة محاولة عملية حذف مكتملة لا تُحدث أي تأثير. والمسار المعتاد هو حذف الخدمة في ClickHouse Cloud؛ راجع [حذف خدمة](/ar/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
-## أوامر clicklink clctl {#commands}
+## أوامر clicklink clctl
 
-### commands list {#commands-list}
+### commands list
 
 يطبع الأوامر التي سجّلها المنفّذ بصيغة JSON، بدءاً من الأحدث. يحتوي الحقل `result` للأمر الفاشل على الخطأ الذي حدث؛ أما مزامنة المنصة التي تنتظر موافقتك فتُظهر هناك أمر `platform approve` المطلوب تحديداً.
 
@@ -370,11 +370,11 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--action <action>` | التصفية حسب الإجراء، على سبيل المثال `create_instance` أو `sync_platform`. |
 | `--cluster <name>`  | التصفية حسب العنقود المُدار.                                               |
 
-### commands get {#commands-get}
+### commands get
 
 يطبع `clicklink clctl commands get <id>` أمرًا واحدًا، مع stage الخاص به ونتيجته.
 
-## clicklink clctl platform approve {#platform-approve}
+## clicklink clctl platform approve
 
 يصرّح بتغيير واحد في المنصة باستخدام بيانات اعتماد العنقود الخاصة بك. يقرأ الحزمة التي جهّزها المنفّذ (executor)، ويحسب تجزئتها، ويُصيّر كل مخطط (chart) فيها تمامًا كما سيفعل المنفّذ. ويطبّق نصف الصلاحيات باستخدام سياق kube الذي تختاره، وينشئ هوية `pcm-platform` الخاصة بالمنفّذ إذا لزم الأمر، ويُصدر رمزها. ولا يرسل أي طلب إلى نقطة نهاية الموصّل لديك. ويشمل نصف الصلاحيات: Namespaces، وCustomResourceDefinitions، وServiceAccounts، وClusterRoles وارتباطاتها، وRoles وارتباطاتها، وتهيئات webhook وadmission، وPriorityClasses، وStorageClass. ثم يطبّق المنفّذ نصف عبء العمل فقط، وطالما كان ذلك الرمز صالحًا فقط. راجع [تحديثات المنصة](/ar/products/bring-your-own-cloud/connector/platform-updates).
 
@@ -392,7 +392,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--bundle <path>`         | تجاوز: بيان منصة مُصيَّر يُسلَّم خارج المسار المعتاد، ويُقرأ بدلًا من الحزمة المُجهّزة. يُحذف عادةً.                                                                                                          |
 | `--dry-run`               | يُصيّر نصف الصلاحيات ويسرده دون تطبيق أو إصدار رمز.                                                                                                                                                           |
 
-## clicklink clctl platform reset {#platform-reset}
+## clicklink clctl platform reset
 
 للعناقيد الاختبارية التي لا تحتوي على خدمات: يزيل تثبيت إصدارات المنصة بترتيب عكسي للاعتماديات ويحذف حزمة رموز المنصة الخاصة بالمنفّذ، بحيث يمكن تنفيذ التثبيت الأول من جديد. وقبل إجراء أي تغيير، يسرد عناقيد ClickHouse في مساحات الأسماء التي يملكها هذا الموصّل ويرفض المتابعة إن وُجد أي منها. أما CustomResourceDefinitions وRBAC وStorageClass فتبقى كما هي. شغّل `platform approve` مرة أخرى قبل مزامنة المنصة التالية.
 
@@ -405,7 +405,7 @@ clicklink clctl executor access apply --cluster --output-dir <dir>
 | `--secret-namespace <ns>`، `--secret-name <name>` | لعمليات التثبيت على Kubernetes: يزيل بدلاً من ذلك Secret حزمة المنصة في مساحة أسماء الموصّل (الاسم الافتراضي `clicklink-platform-bundle`). |
 | `--dry-run`                                       | يتحقق من وجود خدمات ويطبع خطة إعادة التعيين دون تغيير العنقود.                                                                             |
 
-## علامات القناة البعيدة {#channel-flags}
+## علامات القناة البعيدة
 
 تشترك `preflight` و`gateway trust` و`access provision` في مجموعة من العلامات التي تحدد كيفية الوصول إلى جهاز افتراضي الهدف:
 

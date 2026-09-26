@@ -14,7 +14,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 Un cluster gestionado ejecuta una pequeña capa de plataforma de la que dependen los servicios de ClickHouse. ClickHouse Cloud propone actualizaciones para esa capa; el executor no aplica ninguna hasta que usted apruebe cada una con las credenciales de su propio cluster.
 
-## Qué es una actualización de la plataforma {#what-a-platform-update-is}
+## Qué es una actualización de la plataforma
 
 La capa de plataforma consta de tres componentes: el controlador de snapshots, el ClickHouse Operator y los collectors de monitorización. Se instalan en ese orden porque cada uno necesita las definiciones de custom resource del anterior. Los services utilizan una StorageClass llamada `gp3-encrypted` (volúmenes gp3 cifrados) que se incluye con ellos.
 
@@ -27,11 +27,11 @@ Un paquete se aplica en dos mitades:
 
 El executor nunca aplica un paquete que no hayas aprobado. Rechaza cualquier sincronización de plataforma a la que le falte la mitad de permisos, cuyo sha256 difiera del aprobado o cuyo token haya expirado. El rechazo informa de que se requiere aprobación e indica el sha256 del paquete preparado. La creación de un service que necesite una definición de custom resource de la que carece tu plataforma actual falla del mismo modo, con el mismo comando a ejecutar.
 
-## Aprobar una actualización de la plataforma {#approve-a-platform-update}
+## Aprobar una actualización de la plataforma
 
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="Flujo de aprobación de la plataforma de ClickHouse Connector" />
 
-### Credenciales del registry {#registry-credentials}
+### Credenciales del registry
 
 La authentication del registry depende del modo de distribución de imágenes registrado para su entorno:
 
@@ -127,7 +127,7 @@ Utilice el procedimiento de workstation de Kubernetes que se describe a continua
   </Step>
 </Steps>
 
-## La ventana de aprobación {#the-approval-window}
+## La ventana de aprobación
 
 Una aprobación emite un token para la identity `pcm-platform`, válido durante 2 horas de forma predeterminada (`--ttl` lo modifica). El executor nunca lo renueva. Una vez que expira, el executor deja de poder actuar sobre la capa de plataforma y rechaza la siguiente sincronización de plataforma mostrando de nuevo el mensaje de aprobación. Esto es intencionado e independiente de la conectividad: una aprobación otorgada mientras el connector está desconectado expira igualmente según su propio reloj.
 
@@ -139,7 +139,7 @@ Vuelve a ejecutar `approve` siempre que:
 
 Volver a aprobar el mismo paquete es seguro y reemplaza el token. El paquete preparado permanece en su sitio tras la sincronización, por lo que una aprobación repetida no requiere una nueva propuesta.
 
-## Qué otorga la aprobación {#what-the-approval-grants}
+## Qué otorga la aprobación
 
 Usted aplica la mitad de permisos, de modo que esta lleva su autoridad; el executor no aplica nada de esa mitad. `approve` la sella con el sha256 del paquete y, antes de tocar nada, el executor verifica que todos los objetos de permiso del paquete que se le envió estén presentes y aprobados.
 
@@ -151,7 +151,7 @@ El executor aplica la mitad de workload como `pcm-platform`. Esa identity puede 
 
 La identity de ciclo de vida de services del executor, `pcm-executor`, es independiente y está confinada a los espacios de nombres de los services. No puede escribir en los espacios de nombres de la plataforma; sus reads no están limitados por la protección de prefix. Para ver la enumeración completa de ambas identities, consulte el [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-## Restablecer un cluster de prueba {#resetting-a-test-cluster}
+## Restablecer un cluster de prueba
 
 `clicklink clctl platform reset` está pensado para clusters de prueba: desinstala los componentes de la plataforma para poder volver a probar su primera instalación. Antes de modificar nada, enumera los clusters de ClickHouse de los espacios de nombres que pertenecen a este connector y se niega a continuar si existe algún service.
 

@@ -10,14 +10,14 @@ doc_type: 'reference'
 
 Движок баз данных `Dictionary` представляет каждый настроенный [словарь](/ru/reference/statements/create/dictionary) как таблицу, доступную только для чтения. Это удобно, когда в запросе нужно прочитать данные словаря или выполнить с ними JOIN, используя обычный синтаксис работы с таблицами.
 
-## Создание базы данных {#creating-a-database}
+## Создание базы данных
 
 ```sql
 CREATE DATABASE dictionaries
 ENGINE = Dictionary;
 ```
 
-## Использование {#usage}
+## Использование
 
 После создания базы данных укажите имя настроенного словаря в качестве имени таблицы:
 
@@ -28,7 +28,7 @@ FROM dictionaries.products;
 
 У этой базы данных нет собственных таблиц. Её таблицами являются словари, настроенные на сервере, поэтому создание, удаление и изменение таблиц в ней не поддерживается. Управлять самими словарями следует с помощью [`CREATE DICTIONARY`](/ru/reference/statements/create/dictionary) или конфигурации сервера.
 
-## Смотрите также {#see-also}
+## Смотрите также
 
 * [Словари](/ru/concepts/features/dictionaries/index)
 * [Движок таблиц `Dictionary`](/ru/reference/engines/table-engines/special/dictionary)

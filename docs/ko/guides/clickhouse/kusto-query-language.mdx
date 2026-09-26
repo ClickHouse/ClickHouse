@@ -23,7 +23,7 @@ StormEvents
 `SET dialect = 'clickhouse'`를 실행하면 다시 전환됩니다. KQL 방언이 활성화된 상태에서도 인식되는 유일한 SQL 문는 `SET`이므로
 session은 언제든지 KQL 방언을 종료할 수 있습니다.
 
-## 지원 범위 {#what-is-supported}
+## 지원 범위
 
 지원 범위는 의도적으로 제한되어 있습니다. KQL 구문은 Kusto 문서에 명시된 의미 체계에 따라
 변환되거나, 이름을 명시한 구문 분석 오류와 함께 거부됩니다. 어떠한 구문도 조용히 근사 변환되지 않습니다.
@@ -94,7 +94,7 @@ StormEvents
 `range`가 가장 명확한 사례입니다. Kusto에서 `range(1, 3, 1)`은 `[1, 2, 3]`이고
 ClickHouse에서는 `[1, 2]`이므로, KQL에서 이를 작성하면 잘못된 결과가 반환되는 대신 오류가 발생합니다.
 
-## Kusto 참고 자료 대비 지원 범위 {#coverage-against-the-kusto-reference}
+## Kusto 참고 자료 대비 지원 범위
 
 Microsoft 자체 색인([테이블 형식 연산자](https://learn.microsoft.com/en-us/kusto/query/queries),
 [스칼라 함수](https://learn.microsoft.com/en-us/kusto/query/scalar-functions),
@@ -109,7 +109,7 @@ Microsoft 자체 색인([테이블 형식 연산자](https://learn.microsoft.com
 지원되는 연산자는 Microsoft의 *일반적인 연산자 알아보기* Tutorial에서 다루는 연산자에
 `datatable`, `range`, `print`, `union`, `join`을 더한 것입니다. 이는 해당 Tutorial과 KQL Quick Reference에서 단계적으로 구성하는 쿼리 형태를 지원하기에 충분합니다.
 
-## 지원되지 않는 항목 {#what-is-not-supported}
+## 지원되지 않는 항목
 
 잘못 번역하는 대신 구문 분석 오류로 거부됩니다.
 
@@ -145,7 +145,7 @@ Microsoft 자체 색인([테이블 형식 연산자](https://learn.microsoft.com
   `declare query_parameters`, `restrict access to`.
 * 난독화된 문자열 리터럴(`h"..."`) 및 여러 줄 리터럴(삼중 백틱).
 
-## 알아두면 좋은 동작 {#behaviour-worth-knowing}
+## 알아두면 좋은 동작
 
 * **기간은 `Interval` 값입니다.** `1d`는 `toIntervalNanosecond(86400000000000)`로 변환됩니다.
   숫자가 아닌 Kusto 방식(`1.00:00:00`)으로 표시하려면 `interval_output_format = 'kusto'`를 설정하십시오.
@@ -177,6 +177,6 @@ Microsoft 자체 색인([테이블 형식 연산자](https://learn.microsoft.com
 * **ClickHouse의 매개변수 집계 함수**(`quantileExact(0.5)(x)`)에는 KQL 표기법이 없습니다.
   `medianExact(x)`와 같은 이름이 지정된 대안을 사용하십시오.
 
-## 문제 신고 {#reporting-a-problem}
+## 문제 신고
 
 구문 분석은 되지만 Kusto에서 반환하지 않는 결과를 반환하는 쿼리는 버그입니다. 두 결과를 함께 첨부하여 신고하십시오. 거부되었지만 필요한 쿼리는 기능 요청에 해당합니다. 위 목록은 거부되는 모든 이름을 열거한 것이 아니라 대략적인 경계를 보여 주는 것이며, 특정 쿼리에 대한 최종 답변은 구문 분석 오류 자체입니다. 또한 이 내용은 영구적으로 유지되지 않습니다.

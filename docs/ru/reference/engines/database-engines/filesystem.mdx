@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Движок базы данных `Filesystem` предоставляет файлы из локального каталога в виде таблиц, доступных только для чтения. Имя таблицы разрешается как путь относительно каталога базы данных, а чтение выполняется с помощью табличной функции [`file`](/ru/reference/functions/table-functions/file).
 
-## Создание базы данных {#creating-a-database}
+## Создание базы данных
 
 ```sql
 CREATE DATABASE files
@@ -19,7 +19,7 @@ ENGINE = Filesystem([path]);
 
 `path` — каталог, в котором находятся файлы. Если он не указан, ClickHouse использует текущий каталог в `clickhouse-local` и каталог `user_files` на сервере ClickHouse.
 
-## Использование {#usage}
+## Использование
 
 Например, при наличии файла `data.csv` в выбранном каталоге:
 
@@ -33,7 +33,7 @@ SELECT * FROM files.`data.csv`;
 
 База данных не хранит определений таблиц: таблицы создаются при первом разрешении их файлов и лишь кэшируются для последующих обращений. `CREATE TABLE`, `INSERT` и другие операции записи через эту базу данных не поддерживаются.
 
-## Управление доступом {#access-control}
+## Управление доступом
 
 На сервере ClickHouse каталог базы данных и каждый разрешаемый файл должны находиться внутри [`user_files_path`](/ru/reference/settings/server-settings/settings#user_files_path); это ограничение действует и после перехода по символическим ссылкам. На `clickhouse-local` ограничение `user_files_path` не распространяется.
 
@@ -45,7 +45,7 @@ GRANT READ, WRITE ON FILE TO user_name;
 
 Подробности о версиях и совместимости см. в разделе [Привилегии `SOURCES`](/ru/reference/statements/grant#sources).
 
-## См. также {#see-also}
+## См. также
 
 * [Табличная функция `file`](/ru/reference/functions/table-functions/file)
 * [Движок базы данных S3](/ru/reference/engines/database-engines/s3)

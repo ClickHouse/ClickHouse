@@ -21,7 +21,7 @@ doc_type: 'reference'
 
 ClickHouse 서버 구성에서 별도로 지정하지 않는 한, `NULL`은 모든 `Nullable` 타입의 기본값입니다。
 
-## 저장소 기능 {#storage-features}
+## 저장소 기능
 
 테이블 컬럼에 `Nullable` 타입 값을 저장할 때 ClickHouse는 값이 저장된 일반 파일 외에 `NULL` 마스크가 포함된 별도의 파일도 사용합니다. 마스크 파일의 각 항목을 통해 ClickHouse는 테이블의 각 행에서 `NULL`과 해당 데이터 타입의 기본값을 구분할 수 있습니다. 이 추가 파일 때문에 `Nullable` 컬럼은 유사한 일반 컬럼보다 더 많은 저장 공간을 사용합니다.
 
@@ -29,7 +29,7 @@ ClickHouse 서버 구성에서 별도로 지정하지 않는 한, `NULL`은 모�
   `Nullable`을 사용하면 거의 항상 성능에 부정적인 영향을 미치므로, 데이터베이스를 설계할 때 이 점을 염두에 두십시오.
 </Note>
 
-## NULL 찾기 {#finding-null}
+## NULL 찾기
 
 전체 컬럼을 읽지 않고도 `null` 하위 컬럼을 사용해 컬럼에서 `NULL` 값을 찾을 수 있습니다. 저장된 `NULL` 마스크 바이트를 반환하는데, 해당 값이 존재하면 `0`을, `NULL`이면 0이 아닌 바이트(정규 형태로는 `1`)를 반환합니다. 엄격하게 `0` 또는 `1`이 필요하다면 `isNull`을 사용하십시오.
 
@@ -52,7 +52,7 @@ SELECT n.null FROM nullable;
 └────────┘
 ```
 
-## 사용 예시 {#usage-example}
+## 사용 예시
 
 ```sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog

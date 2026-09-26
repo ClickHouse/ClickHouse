@@ -14,9 +14,9 @@ não é necessário fazer instrumentação manual para aproveitar o tracing.
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## Primeiros passos {#getting-started}
+## Primeiros passos
 
-### Instale o pacote de instrumentação OpenTelemetry da HyperDX {#install-hyperdx-opentelemetry-instrumentation-package}
+### Instale o pacote de instrumentação OpenTelemetry da HyperDX
 
 Use o comando a seguir para instalar o [pacote OpenTelemetry do ClickStack](https://www.npmjs.com/package/@hyperdx/node-opentelemetry).
 
@@ -34,7 +34,7 @@ Use o comando a seguir para instalar o [pacote OpenTelemetry do ClickStack](http
   </Tab>
 </Tabs>
 
-### Inicializando o SDK {#initializin-the-sdk}
+### Inicializando o SDK
 
 Para inicializar o SDK, você precisará chamar a função `init` no início do ponto de entrada da sua aplicação.
 
@@ -66,7 +66,7 @@ Para inicializar o SDK, você precisará chamar a função `init` no início do 
 
 Isso capturará automaticamente tracing, métricas e logs da sua aplicação Node.js.
 
-### Configurar a coleta de logs {#setup-log-collection}
+### Configurar a coleta de logs
 
 Por padrão, os logs de `console.*` são coletados. Se você estiver usando um logger
 como `winston` ou `pino`, precisará adicionar um transport ao logger para
@@ -126,7 +126,7 @@ integrações de plataforma, se aplicável (como [Kubernetes](/pt-BR/clickstack/
   </Tab>
 </Tabs>
 
-### Configurar a coleta de erros {#setup-error-collection}
+### Configurar a coleta de erros
 
 O SDK do ClickStack pode capturar automaticamente exceções não tratadas e erros na sua aplicação com stack trace completo e contexto do código.
 
@@ -187,7 +187,7 @@ Para habilitar esse recurso, você precisará adicionar o código abaixo ao fina
   </Tab>
 </Tabs>
 
-## Solução de problemas {#troubleshooting}
+## Solução de problemas
 
 Se você estiver tendo problemas com o SDK, pode ativar o logging detalhado definindo
 a variável de ambiente `OTEL_LOG_LEVEL` como `debug`.
@@ -196,9 +196,9 @@ a variável de ambiente `OTEL_LOG_LEVEL` como `debug`.
 export OTEL_LOG_LEVEL=debug
 ```
 
-## Configuração avançada de instrumentação {#advanced-instrumentation-configuration}
+## Configuração avançada de instrumentação
 
-### Capturar logs do console {#capture-console-logs}
+### Capturar logs do console
 
 Por padrão, o SDK do ClickStack captura logs do console. Você pode desativar isso
 definindo a variável de ambiente `HDX_NODE_CONSOLE_CAPTURE` como 0.
@@ -207,7 +207,7 @@ definindo a variável de ambiente `HDX_NODE_CONSOLE_CAPTURE` como 0.
 export HDX_NODE_CONSOLE_CAPTURE=0
 ```
 
-### Adicionar informações do usuário ou metadados {#attach-user-information-or-metadata}
+### Adicionar informações do usuário ou metadados
 
 Para marcar facilmente todos os eventos relacionados a um determinado atributo ou identificador (ex.: ID do usuário
 ou e-mail), você pode chamar a função `setTraceAttributes`, que marcará cada
@@ -247,7 +247,7 @@ habilitar os atributos de trace.
 export HDX_NODE_BETA_MODE=1
 ```
 
-### Google Cloud Run {#google-cloud-run}
+### Google Cloud Run
 
 Se você executa sua aplicação no Google Cloud Run, o Cloud Trace injeta
 automaticamente cabeçalhos de amostragem nas solicitações de entrada, o que
@@ -263,7 +263,7 @@ obter o mesmo resultado.
 Para saber mais e forçar o tracing de solicitações específicas, consulte a
 [documentação do Google Cloud Run](https://cloud.google.com/run/docs/trace).
 
-### Bibliotecas com instrumentação automática {#auto-instrumented-libraries}
+### Bibliotecas com instrumentação automática
 
 As bibliotecas a seguir serão instrumentadas automaticamente para rastreamento pelo SDK:
 
@@ -285,9 +285,9 @@ As bibliotecas a seguir serão instrumentadas automaticamente para rastreamento 
 * [`redis`](https://www.npmjs.com/package/redis)
 * [`winston`](https://www.npmjs.com/package/winston)
 
-## Instalação alternativa {#alternative-installation}
+## Instalação alternativa
 
-### Execute a aplicação com a CLI OpenTelemetry do ClickStack {#run-the-application-with-cli}
+### Execute a aplicação com a CLI OpenTelemetry do ClickStack
 
 Como alternativa, você pode instrumentar automaticamente sua aplicação sem precisar alterar o código usando a CLI `opentelemetry-instrument` ou a flag `--require` do Node.js. A instalação da CLI oferece uma variedade maior de bibliotecas e frameworks com instrumentação automática.
 
@@ -332,7 +332,7 @@ Como alternativa, você pode instrumentar automaticamente sua aplicação sem pr
 
 *A variável de ambiente `OTEL_SERVICE_NAME` é usada para identificar seu serviço no HyperDX e pode ter qualquer nome que você quiser.*
 
-### Habilitando a captura de exceções {#enabling-exception-capturing}
+### Habilitando a captura de exceções
 
 Para habilitar a captura de exceções não tratadas, defina a variável de ambiente `HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` como 1.
 
@@ -342,7 +342,7 @@ HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
 
 Depois, para capturar automaticamente exceções do Express, do Koa ou capturá-las manualmente, siga as instruções na seção [Configurar a coleta de erros](#setup-error-collection) acima.
 
-### Bibliotecas com instrumentação automática {#auto-instrumented-libraries-2}
+### Bibliotecas com instrumentação automática
 
 As bibliotecas a seguir serão instrumentadas automaticamente (com rastreamento) pelos métodos de instalação acima:
 

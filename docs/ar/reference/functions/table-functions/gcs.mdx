@@ -16,7 +16,7 @@ doc_type: 'reference'
 
 إذا كان لديك عدة نُسخ متماثلة في العنقود، فيمكنك استخدام [الدالة s3Cluster](/ar/reference/functions/table-functions/s3Cluster) (التي تعمل مع GCS) بدلًا من ذلك لتنفيذ عمليات `INSERT` بشكل متوازٍ.
 
-## البنية {#syntax}
+## البنية
 
 ```sql
 gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method] [,partition_strategy])
@@ -30,7 +30,7 @@ gcs(named_collection[, option=value [,..]])
   راجع [وثائق التشغيل البيني من Google](https://cloud.google.com/storage/docs/interoperability) لمزيد من التفاصيل حول نقطة النهاية وHMAC.
 </Tip>
 
-## الوسيطات {#arguments}
+## الوسيطات
 
 | Argument                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -65,11 +65,11 @@ gcs(named_collection[, option=value [,..]])
 | `no_sign_request`             | مُعطَّل افتراضيًا.                                                                                                                                                                                                     |
 | `expiration_window_seconds`   | القيمة الافتراضية هي 120.                                                                                                                                                                                              |
 
-## القيمة المُعادة {#returned-value}
+## القيمة المُعادة
 
 جدول ذو البنية المحددة لقراءة البيانات من الملف المحدد أو كتابتها فيه.
 
-## أمثلة {#examples}
+## أمثلة
 
 اختيار أول صفّين من ملف GCS `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz`. تُكتشَف أسلوب الضغط تلقائيًا من امتداد الملف `.gz`:
 
@@ -101,7 +101,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-## الاستخدام {#usage}
+## الاستخدام
 
 لنفترض أن لدينا عدة ملفات بعناوين URI التالية على GCS:
 
@@ -194,7 +194,7 @@ SELECT count(*)
 FROM gcs(creds, url='https://s3-object-url.csv')
 ```
 
-## الكتابة المقسّمة حسب التقسيمات {#partitioned-write}
+## الكتابة المقسّمة حسب التقسيمات
 
 إذا حدّدت تعبير `PARTITION BY` عند إدراج البيانات في جدول `GCS`، فسيُنشأ ملف منفصل لكل قيمة تقسيم. ويساعد تقسيم البيانات إلى ملفات منفصلة على تحسين كفاءة عمليات القراءة.
 
@@ -222,7 +222,7 @@ INSERT INTO TABLE FUNCTION
 
 ونتيجةً لذلك، تُكتب البيانات في ثلاثة ملفات ضمن ثلاث حاويات مختلفة: `my_bucket_1/file.csv` و`my_bucket_10/file.csv` و`my_bucket_20/file.csv`.
 
-## مواضيع ذات صلة {#related}
+## مواضيع ذات صلة
 
 * [دالة الجدول S3](/ar/reference/functions/table-functions/s3)
 * [محرك S3](/ar/reference/engines/table-engines/integrations/s3)

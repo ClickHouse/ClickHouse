@@ -26,7 +26,7 @@ Soft limits 适用于三种不同的范围。以下各节从服务级限制开�
   如果你触及了其中某项防护限制，可能说明你实现用例的方式还有优化空间。请联系[支持团队](https://clickhouse.com/support/program)，我们很乐意协助你优化用例以避免超出这些防护限制，或与你一起探讨如何以可控的方式提高上限。
 </Tip>
 
-## 服务限制 {#service-limits}
+## 服务限制
 
 以下限制适用于**独立服务** (对于数据对象数量，则适用于该服务的存储) 。
 
@@ -66,7 +66,7 @@ FROM system.server_settings
 WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
 
-## 仓库限制 {#warehouse-limits}
+## 仓库限制
 
 [仓库](/zh/products/cloud/features/infrastructure/warehouses)是一组共享同一份数据的服务。
 仓库限制针对该共享组整体生效，而非针对每个服务单独生效，也不是按组织整体计算。
@@ -87,7 +87,7 @@ WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_
 
 由于同一仓库中的服务共享一个 catalog (相同的表、数据库、视图等) ，上文的[服务级数据对象限制](#service-limits)**按仓库计一次**，而不会随服务数量成倍增加。不同仓库之间相互隔离，因此每个仓库各自统计自己的表和数据库是否达到这些限制。
 
-## 组织限制 {#organization-limits}
+## 组织限制
 
 这些限制适用于整个 ClickHouse Cloud 组织，即该组织下所有仓库和服务的总和。
 

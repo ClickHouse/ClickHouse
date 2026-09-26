@@ -18,7 +18,7 @@ doc_type: 'reference'
 As tabelas com o motor Distributed não armazenam dados próprios, mas permitem o processamento distribuído de consultas em vários servidores.
 A leitura é paralelizada automaticamente. Durante a leitura, os índices da tabela nos servidores remotos são usados, se existirem.
 
-## Criando uma tabela {#distributed-creating-a-table}
+## Criando uma tabela
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -30,7 +30,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-### Com base em uma tabela {#distributed-from-a-table}
+### Com base em uma tabela
 
 Quando a tabela `Distributed` aponta para uma tabela no servidor atual, você pode adotar o schema dessa tabela:
 
@@ -38,7 +38,7 @@ Quando a tabela `Distributed` aponta para uma tabela no servidor atual, você po
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-### Motores Remote e RemoteSecure {#distributed-remote-engines}
+### Motores Remote e RemoteSecure
 
 `Remote` e `RemoteSecure` são motores de tabela persistentes que aceitam as mesmas expressões de endereço e credenciais que as funções de tabela [`remote` e `remoteSecure`](/pt-BR/reference/functions/table-functions/remote):
 
@@ -67,7 +67,7 @@ Este é o equivalente persistente de `CREATE TABLE ... AS remote(...)`. Assim co
 
 O destino também pode ser uma função de tabela, por exemplo `Remote('127.0.0.1', numbers(10))` ou `Remote('127.0.0.1', merge(db, '^table_'))`. Essa tabela é somente leitura: não há tabela remota na qual inserir dados, portanto `INSERT` é rejeitado com uma exceção `NOT_IMPLEMENTED`. Essa limitação de somente leitura se aplica igualmente às funções de tabela `remote` e `remoteSecure`: `SELECT` e `INSERT` são compatíveis com um destino `db`/`table` comum, mas um destino de função de tabela (`remote('127.0.0.1', numbers(10))`) é somente leitura pelo mesmo motivo.
 
-### Parâmetros da Distributed {#distributed-parameters}
+### Parâmetros da Distributed
 
 | Parâmetro                 | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -82,7 +82,7 @@ O destino também pode ser uma função de tabela, por exemplo `Remote('127.0.0.
 * configuração [distributed&#95;foreground&#95;insert](/pt-BR/reference/settings/session-settings/distributed#distributed_foreground_insert)
 * [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) para ver exemplos
 
-### Configurações do Distributed {#distributed-settings}
+### Configurações do Distributed
 
 | Configuração                               | Descrição                                                                                                                                                                                                                                                                                                                                                               | Valor padrão                   |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
@@ -127,7 +127,7 @@ Os dados serão lidos de todos os servidores do cluster `logs`, a partir da tabe
 
 Em vez do nome do banco de dados, você pode usar uma expressão constante que retorne uma string. Por exemplo: `currentDatabase()`.
 
-## Clusters {#distributed-clusters}
+## Clusters
 
 Os clusters são configurados no [arquivo de configuração do servidor](/pt-BR/concepts/features/configuration/server-config/configuration-files):
 
@@ -213,7 +213,7 @@ O motor `Distributed` permite trabalhar com um cluster como se fosse um servidor
 
 Se você precisar enviar uma consulta para um conjunto desconhecido de shards e réplicas a cada vez, não é necessário criar uma tabela `Distributed` — use a função de tabela `remote` em vez disso. Veja a seção [Funções de tabela](/pt-BR/reference/functions/table-functions/index).
 
-## Gravação de dados {#distributed-writing-data}
+## Gravação de dados
 
 Há dois métodos para gravar dados em um cluster:
 
@@ -246,7 +246,7 @@ Os dados são gravados em segundo plano. Quando inserido na tabela, o bloco de d
 
 Se o servidor não estiver mais disponível ou tiver sofrido uma reinicialização abrupta (por exemplo, devido a uma falha de hardware) após um `INSERT` em uma tabela `Distributed`, os dados inseridos poderão ser perdidos. Se uma parte de dados danificada for detectada no diretório da tabela, ela será transferida para o subdiretório `broken` e não será mais usada.
 
-## Leitura de dados {#distributed-reading-data}
+## Leitura de dados
 
 Ao consultar uma tabela `Distributed`, as consultas `SELECT` são enviadas para todos os shards e funcionam independentemente de como os dados estão distribuídos entre eles (podem até estar distribuídos de forma totalmente aleatória). Quando você adiciona um novo shard, não precisa transferir os dados antigos para ele. Em vez disso, pode escrever novos dados nele atribuindo um peso maior — os dados ficarão distribuídos de forma ligeiramente desigual, mas as consultas continuarão funcionando de forma correta e eficiente.
 
@@ -254,9 +254,9 @@ Quando a opção `max_parallel_replicas` está ativada, o processamento de consu
 
 Para saber mais sobre como as consultas distribuídas `in` e `global in` são processadas, consulte [esta](/pt-BR/reference/statements/in#distributed-subqueries) documentação.
 
-## Colunas virtuais {#virtual-columns}
+## Colunas virtuais
 
-#### _Shard_num {#_shard_num}
+#### _Shard_num
 
 `_shard_num` — Contém o valor de `shard_num` da tabela `system.clusters`. Tipo: [UInt32](/pt-BR/reference/data-types/int-uint).
 

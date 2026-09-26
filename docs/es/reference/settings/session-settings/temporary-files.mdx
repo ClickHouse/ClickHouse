@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## temporary_files_buffer_size {#temporary_files_buffer_size}
+## temporary_files_buffer_size
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
 
@@ -21,7 +21,7 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 Tamaño del búfer para la escritura de archivos temporales. Un tamaño de búfer mayor implica menos llamadas al sistema, pero un mayor consumo de memoria. Un valor superior a 1 GiB se reduce a 1 GiB.
 
-## temporary_files_codec {#temporary_files_codec}
+## temporary_files_codec
 
 <SettingsInfoBlock type="String" default_value="LZ4" />
 

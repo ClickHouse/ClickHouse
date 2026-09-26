@@ -14,24 +14,24 @@ doc_type: 'reference'
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
 ```
 
-## البنود {#clauses}
+## البنود
 
-### IF NOT EXISTS {#if-not-exists}
+### IF NOT EXISTS
 
 إذا كانت قاعدة البيانات `db_name` موجودة بالفعل، فلن ينشئ ClickHouse قاعدة بيانات جديدة، ويحدث ما يلي:
 
 * لا يطرح استثناءً إذا كان هذا البند محددًا.
 * يطرح استثناءً إذا لم يكن هذا البند محددًا.
 
-### ON CLUSTER {#on-cluster}
+### ON CLUSTER
 
 ينشئ ClickHouse قاعدة البيانات `db_name` على جميع خوادم المجموعة المحددة. لمزيد من التفاصيل، راجع مقالة [Distributed DDL](/ar/reference/statements/distributed-ddl).
 
-### المحرك {#engine}
+### المحرك
 
 يستخدم ClickHouse افتراضيًا محرك قاعدة البيانات [Atomic](/ar/reference/engines/database-engines/atomic) الخاص به. كما تتوفر أيضًا محركات أخرى مثل [MySQL](/ar/reference/engines/database-engines/mysql)، و[PostgreSQL](/ar/reference/engines/database-engines/postgresql)، و[MaterializedPostgreSQL](/ar/reference/engines/database-engines/materialized-postgresql)، و[Replicated](/ar/reference/engines/database-engines/replicated)، و[SQLite](/ar/reference/engines/database-engines/sqlite).
 
-### تعليق {#comment}
+### تعليق
 
 يمكنك إضافة تعليق إلى قاعدة البيانات عند إنشائها.
 
@@ -56,13 +56,13 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 └────────────┴────────────────────────┘
 ```
 
-### SETTINGS {#settings}
+### SETTINGS
 
 يمكن استخدام عبارة `SETTINGS` دون عبارة `ENGINE`، وعندها يُستخدم محرك قاعدة البيانات الافتراضي
 (`Atomic`). ويمكن أن تتضمن إعدادات محرك قاعدة البيانات وإعدادات الاستعلام العادية معًا؛ حيث يُوجَّه كل
 اسم إلى ما ينتمي إليه منهما.
 
-#### disk {#disk}
+#### disk
 
 القرص المستخدم لتخزين ملفات البيانات الوصفية لجداول قاعدة البيانات. يمكن أن يحدّد اسم قرص من تهيئة
 الخادم، أو أن يُعرّف قرصًا مباشرةً عبر الدالة `disk`، تمامًا كما يفعل الجدول المفرد:
@@ -75,7 +75,7 @@ CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/cl
 ينطبق على محركات قواعد البيانات التي تخزّن البيانات الوصفية للجداول على القرص (`Atomic`، `Ordinary`). وفي حال عدم تحديده،
 يُستخدم القرص المعرّف في إعداد الخادم `database_disk.disk`.
 
-#### lazy_load_tables {#lazy-load-tables}
+#### lazy_load_tables
 
 عند تمكينه، لا تُحمَّل الجداول بالكامل أثناء بدء تشغيل قاعدة البيانات. وبدلًا من ذلك، يُنشأ وكيل خفيف الوزن لكل جدول، ويُنشأ محرك الجدول الفعلي ماديًا عند أول وصول إليه. يقلّل ذلك من وقت بدء التشغيل واستهلاك الذاكرة في قواعد البيانات التي تحتوي على عدد كبير من الجداول ولا يُستعلَم فعليًا إلا عن مجموعة فرعية منها.
 

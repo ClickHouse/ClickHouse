@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
+## iceberg_delete_data_on_drop
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -22,7 +22,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Удалять ли все файлы Iceberg при drop.
 
-## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+## iceberg_file_entries_queue_size
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -34,7 +34,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Значение должно быть больше нуля.
 
-## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+## iceberg_manifest_decode_concurrency
 
 **Псевдонимы**: `iceberg_delete_manifest_decode_concurrency`
 
@@ -50,7 +50,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Значение должно быть больше нуля; при `1` манифесты декодируются по одному.
 
-## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
+## iceberg_manifest_min_count_to_compact
 
 <ExperimentalBadge />
 
@@ -65,7 +65,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 Значение по умолчанию соответствует документированному значению по умолчанию свойства таблицы Iceberg `commit.manifest.min-count-to-merge` (100),
 см. https://iceberg.apache.org/docs/1.5.2/configuration/.
 
-## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
+## iceberg_max_number_datafiles_to_compact
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -73,7 +73,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Пороговое значение для файлов данных, участвующих в компактации, в Iceberg.
 
-## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
+## iceberg_orphan_files_older_than_seconds
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Пороговое значение возраста по умолчанию в секундах для удаления файлов-сирот в таблицах Iceberg. Файлы новее этого значения не считаются сиротами. Используется, если в вызове процедуры remove&#95;orphan&#95;files() опущен аргумент older&#95;than. Значение по умолчанию — 259200 (3 дня).
 
-## iceberg_snapshot_id {#iceberg_snapshot_id}
+## iceberg_snapshot_id
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -91,7 +91,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Выполняет запрос к таблице Iceberg по указанному идентификатору снимка.
 
-## iceberg_timestamp_ms {#iceberg_timestamp_ms}
+## iceberg_timestamp_ms
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -99,7 +99,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Выполняет запрос к таблице Iceberg, используя снимок, актуальный для указанной временной метки.
 
-## iceberg_tolerate_conflicting_manifest_schemas {#iceberg_tolerate_conflicting_manifest_schemas}
+## iceberg_tolerate_conflicting_manifest_schemas
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

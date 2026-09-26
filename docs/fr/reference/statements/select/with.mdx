@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 ClickHouse prend en charge les expressions de table communes ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), les expressions scalaires communes et les requêtes récursives.
 
-## Expressions de table communes {#common-table-expressions}
+## Expressions de table communes
 
 Les expressions de table communes représentent des sous-requêtes nommées.
 Elles peuvent être référencées par leur nom partout dans une requête `SELECT` où une expression de table est autorisée.
@@ -21,13 +21,13 @@ La récursivité est évitée en masquant la CTE courante du processus de résol
 
 Veuillez noter que les CTE ne garantissent pas les mêmes résultats partout où elles sont appelées, car la requête est réexécutée à chaque utilisation.
 
-### Syntaxe {#common-table-expressions-syntax}
+### Syntaxe
 
 ```sql
 WITH <identifier> AS [MATERIALIZED] <subquery expression>
 ```
 
-### Exemple {#common-table-expressions-example}
+### Exemple
 
 Voici un exemple de cas où une sous-requête est réexécutée :
 
@@ -49,7 +49,7 @@ Si les CTE transmettaient exactement les résultats, et pas seulement un morceau
 
 Cependant, comme nous faisons référence deux fois à `cte_numbers`, des nombres aléatoires sont générés à chaque fois et nous obtenons donc des résultats aléatoires différents : `280501, 392454, 261636, 196227`, etc.
 
-## Expressions de table communes matérialisées {#materialized-common-table-expressions}
+## Expressions de table communes matérialisées
 
 Par défaut, ClickHouse intègre la sous-requête d&#39;une CTE à chaque référence, et la réexécute donc à chaque fois.
 L&#39;ajout du mot-clé `MATERIALIZED` indique à ClickHouse d&#39;exécuter la sous-requête de la CTE **exactement une fois**, de stocker les résultats dans une table temporaire, puis d&#39;utiliser cette table pour toutes les références.
@@ -61,14 +61,14 @@ Cela est particulièrement utile lorsque la même CTE est référencée plusieur
   Si le paramètre est désactivé, le mot-clé `MATERIALIZED` est ignoré : la CTE est intégrée à chaque référence comme une CTE ordinaire, et un avertissement est journalisé.
 </Note>
 
-### Syntaxe {#materialized-common-table-expressions-syntax}
+### Syntaxe
 
 ```sql
 WITH <identifier> AS MATERIALIZED (<subquery>)
 SELECT ...
 ```
 
-### Quand utiliser {#materialized-cte-when-to-use}
+### Quand utiliser
 
 Les CTE matérialisées sont particulièrement utiles dans les cas suivants :
 
@@ -82,7 +82,7 @@ Les CTE matérialisées sont particulièrement utiles dans les cas suivants :
   Si une CTE matérialisée n&#39;est référencée qu&#39;une seule fois, ClickHouse la réintègre automatiquement sous forme de sous-requête classique afin d&#39;éviter tout surcoût inutile.
 </Tip>
 
-### Exemples {#materialized-common-table-expressions-examples}
+### Exemples
 
 **Exemple 1 :** Auto-jointure sur une CTE matérialisée
 
@@ -164,13 +164,13 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 └─────────┘
 ```
 
-### Restrictions {#materialized-cte-restrictions}
+### Restrictions
 
 * **Paramètre expérimental requis** : le paramètre `enable_materialized_cte` doit être activé. S’il est désactivé, le mot-clé `MATERIALIZED` est ignoré : la CTE est intégrée à chaque référence comme une CTE ordinaire, et un avertissement est journalisé.
 * **Non pris en charge avec `RECURSIVE`** : la combinaison des mots-clés `MATERIALIZED` et `RECURSIVE` n’est pas autorisée et entraîne une exception `UNSUPPORTED_METHOD`.
 * **Les CTE corrélées sont interdites** : une CTE matérialisée ne peut pas référencer des colonnes provenant de portées de requête englobantes.
 
-## Expressions scalaires communes {#common-scalar-expressions}
+## Expressions scalaires communes
 
 ClickHouse vous permet de déclarer des alias pour des expressions scalaires arbitraires dans la clause `WITH`.
 Les expressions scalaires communes peuvent être référencées n&#39;importe où dans la requête.
@@ -181,13 +181,13 @@ Les expressions scalaires communes peuvent être référencées n&#39;importe o�
   Il est recommandé de définir une CSE sous forme de [fonction lambda](/fr/reference/functions/regular-functions/overview#arrow-operator-and-lambda), en liant tous les identifiants utilisés afin d&#39;obtenir un comportement plus prévisible lors de la résolution des identifiants d&#39;expression.
 </Note>
 
-### Syntaxe {#common-scalar-expressions-syntax}
+### Syntaxe
 
 ```sql
 WITH <expression> AS <identifier>
 ```
 
-### Exemples {#common-scalar-expressions-examples}
+### Exemples
 
 **Exemple 1 :** Utiliser une expression constante comme &quot;variable&quot;
 
@@ -298,7 +298,7 @@ FROM
 └──────────────────┘
 ```
 
-## Requêtes récursives {#recursive-queries}
+## Requêtes récursives
 
 Le modificateur `RECURSIVE`, facultatif, permet à une requête `WITH` de faire référence à son propre résultat. Exemple :
 
@@ -374,7 +374,7 @@ SELECT * FROM search_tree;
 └────┴───────────┴───────────┘
 ```
 
-### Ordre de parcours {#search-order}
+### Ordre de parcours
 
 Pour établir un parcours en profondeur, nous calculons pour chaque ligne de résultat un tableau des lignes déjà visitées :
 
@@ -428,7 +428,7 @@ SELECT * FROM search_tree ORDER BY depth;
 └────┴──────┴───────────┴─────────┴───────┘
 ```
 
-### Détection des cycles {#cycle-detection}
+### Détection des cycles
 
 Commençons par créer la table du graphe :
 
@@ -511,7 +511,7 @@ SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
 └──────┴────┴────────┴──────────┴───────────────────────────┘
 ```
 
-### Requêtes infinies {#infinite-queries}
+### Requêtes infinies
 
 Il est également possible d’utiliser des requêtes CTE récursives infinies si `LIMIT` est utilisé dans la requête externe :
 
@@ -532,7 +532,7 @@ SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
 └─────────────┘
 ```
 
-## Virgule finale {#trailing-comma}
+## Virgule finale
 
 Une virgule est autorisée après le dernier élément de la clause `WITH` :
 

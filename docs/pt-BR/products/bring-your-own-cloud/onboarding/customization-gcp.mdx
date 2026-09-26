@@ -9,7 +9,7 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-## VPC gerenciada pelo cliente (BYO-VPC) para GCP {#customer-managed-vpc-gcp}
+## VPC gerenciada pelo cliente (BYO-VPC) para GCP
 
 Se preferir usar uma VPC existente para implantar o ClickHouse BYOC, em vez de permitir que o ClickHouse Cloud provisione uma nova VPC, siga as etapas abaixo. Essa abordagem oferece maior controle sobre a configuração da rede e permite integrar o ClickHouse BYOC à infraestrutura de rede existente.
 
@@ -57,7 +57,7 @@ Se preferir usar uma VPC existente para implantar o ClickHouse BYOC, em vez de p
   </Step>
 </Steps>
 
-### VPC compartilhada de um projeto host {#shared-vpc-host-project}
+### VPC compartilhada de um projeto host
 
 Você pode executar o BYOC em um projeto de serviço em uma rede que reside em um projeto host de [Shared VPC](https://cloud.google.com/vpc/docs/shared-vpc) separado, o que permite manter a rede centralizada. A VPC e suas sub-redes pertencem ao projeto **host**, enquanto a infraestrutura do BYOC é executada em um projeto de **serviço** anexado. Os requisitos acima permanecem inalterados; eles simplesmente se aplicam à sub-rede do projeto host.
 

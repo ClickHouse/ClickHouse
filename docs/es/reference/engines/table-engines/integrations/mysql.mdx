@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 El motor MySQL le permite realizar consultas `SELECT` e `INSERT` en datos almacenados en un servidor MySQL remoto.
 
-## Crear una tabla {#creating-a-table}
+## Crear una tabla
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -56,7 +56,7 @@ Las cláusulas `WHERE` simples, como `=, !=, >, >=, <, <=`, se ejecutan en el se
 
 El resto de las condiciones y la restricción de muestreo `LIMIT` se ejecutan en ClickHouse solo después de que finaliza la consulta a MySQL.
 
-## TLS/SSL {#tls-ssl}
+## TLS/SSL
 
 Las credenciales de una conexión cifrada a MySQL se proporcionan como claves de una colección nombrada (o como argumentos de clave-valor):
 
@@ -82,7 +82,7 @@ Las mismas credenciales también pueden proporcionarse como rutas a archivos del
 </named_collections>
 ```
 
-## Pasar una consulta en lugar del nombre de una tabla {#passing-a-query}
+## Pasar una consulta en lugar del nombre de una tabla
 
 En lugar del nombre de una tabla, el argumento `table` puede ser una consulta `SELECT` que se envía a MySQL sin modificar. La estructura de la tabla se infiere a partir del resultado de la consulta. La consulta puede escribirse como una subconsulta o envolverse en la función `query`:
 
@@ -105,7 +105,7 @@ Admite múltiples réplicas, que deben indicarse con `|`. Por ejemplo:
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-## Ejemplo de uso {#usage-example}
+## Ejemplo de uso
 
 Crear una tabla en MySQL:
 
@@ -170,11 +170,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## Configuración {#mysql-settings}
+## Configuración
 
 La configuración predeterminada no es muy eficiente, ya que ni siquiera reutiliza las conexiones. Estos ajustes permiten aumentar el número de consultas que el servidor ejecuta por segundo.
 
-### `connection_auto_close` {#connection-auto-close}
+### `connection_auto_close`
 
 Permite cerrar automáticamente la conexión después de ejecutar la consulta; es decir, desactiva la reutilización de la conexión.
 
@@ -185,7 +185,7 @@ Valores posibles:
 
 Valor predeterminado: `1`.
 
-### `connection_max_tries` {#connection-max-tries}
+### `connection_max_tries`
 
 Establece el número de reintentos del pool con failover.
 
@@ -196,7 +196,7 @@ Valores posibles:
 
 Valor predeterminado: `3`.
 
-### `connection_pool_size` {#connection-pool-size}
+### `connection_pool_size`
 
 Tamaño del pool de conexiones (si todas las conexiones están en uso, la consulta esperará hasta que se libere alguna).
 
@@ -206,7 +206,7 @@ Valores posibles:
 
 Valor predeterminado: `16`.
 
-### `connection_wait_timeout` {#connection-wait-timeout}
+### `connection_wait_timeout`
 
 Tiempo de espera (en segundos) para esperar a que haya una conexión libre (en caso de que ya haya `connection_pool_size` conexiones activas); 0: no esperar.
 
@@ -216,7 +216,7 @@ Valores posibles:
 
 Valor predeterminado: `5`.
 
-### `connect_timeout` {#connect-timeout}
+### `connect_timeout`
 
 Tiempo de espera de conexión (en segundos).
 
@@ -226,7 +226,7 @@ Valores posibles:
 
 Valor predeterminado: `10`.
 
-### `read_write_timeout` {#read-write-timeout}
+### `read_write_timeout`
 
 Tiempo de espera de lectura y escritura (en segundos).
 
@@ -236,7 +236,7 @@ Posibles valores:
 
 Valor predeterminado: `300`.
 
-### `enable_compression` {#enable-compression}
+### `enable_compression`
 
 Habilita la compresión para la conexión mediante el protocolo MySQL.
 
@@ -265,7 +265,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-## Véase también {#see-also}
+## Véase también
 
 * [La función de tabla mysql](/es/reference/functions/table-functions/mysql)
 * [Uso de MySQL como fuente de diccionario](/es/reference/statements/create/dictionary/sources/mysql)

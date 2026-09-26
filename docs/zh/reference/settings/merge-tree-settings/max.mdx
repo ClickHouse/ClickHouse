@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置见于 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings)，并由 ClickHouse 源代码自动生成。
 
-## max_avg_part_size_for_too_many_parts {#max_avg_part_size_for_too_many_parts}
+## max_avg_part_size_for_too_many_parts
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -25,7 +25,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 server 上的单个表中存储数百 TB 的数据。这
 不会影响非活跃 parts 或总 parts 数的阈值。
 
-## max_buckets_in_map {#max_buckets_in_map}
+## max_buckets_in_map
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -35,13 +35,13 @@ server 上的单个表中存储数百 TB 的数据。这
 实际桶数由 [map&#95;buckets&#95;strategy](/zh/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy) 决定。
 允许的最大值为 256。
 
-## max_cleanup_delay_period {#max_cleanup_delay_period}
+## max_cleanup_delay_period
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 用于清理旧队列日志、块哈希和 parts 的最大周期。
 
-## max_compress_block_size {#max_compress_block_size}
+## max_compress_block_size
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -50,7 +50,7 @@ server 上的单个表中存储数百 TB 的数据。这
 设置) 。创建表时指定的值会覆盖此设置的全局
 值。
 
-## max_concurrent_queries {#max_concurrent_queries}
+## max_concurrent_queries
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -70,7 +70,7 @@ server 上的单个表中存储数百 TB 的数据。这
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-## max_digestion_size_per_segment {#max_digestion_size_per_segment}
+## max_digestion_size_per_segment
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
 
@@ -78,7 +78,7 @@ server 上的单个表中存储数百 TB 的数据。这
 
 已废弃设置，无任何作用。
 
-## max_file_name_length {#max_file_name_length}
+## max_file_name_length
 
 <SettingsInfoBlock type="UInt64" default_value="127" />
 
@@ -88,7 +88,7 @@ server 上的单个表中存储数百 TB 的数据。这
 建议将其设置得低于文件名最大长度 (通常为 255
 字节) ，并预留一定余量，以避免文件系统错误。
 
-## max_partitions_to_read {#max_partitions_to_read}
+## max_partitions_to_read
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -103,13 +103,13 @@ server 上的单个表中存储数百 TB 的数据。这
 
 你也可以在查询 / 会话 / profile 级别指定查询复杂度设置 [max&#95;partitions&#95;to&#95;read](/zh/reference/settings/session-settings/max-partitions#max_partitions_to_read)。
 
-## max_projections {#max_projections}
+## max_projections
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 MergeTree 投影的数量上限。
 
-## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
+## max_table_size_bytes_compressed
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -132,7 +132,7 @@ MergeTree 投影的数量上限。
 
 该设置适用于多租户、临时和演示用途的 services。
 
-## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
+## max_table_size_bytes_uncompressed
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -147,7 +147,7 @@ MergeTree 投影的数量上限。
 
 该设置适用于多租户、临时和演示类服务。
 
-## max_table_size_rows {#max_table_size_rows}
+## max_table_size_rows
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -168,7 +168,7 @@ MergeTree 投影的数量上限。
 
 该设置适用于多租户、临时和演示用途的服务。
 
-## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
+## max_uncompressed_bytes_in_patches
 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 

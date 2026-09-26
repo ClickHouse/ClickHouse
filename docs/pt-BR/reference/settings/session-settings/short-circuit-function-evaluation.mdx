@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## short_circuit_function_evaluation {#short_circuit_function_evaluation}
+## short_circuit_function_evaluation
 
 <SettingsInfoBlock type="ShortCircuitFunctionEvaluation" default_value="enable" />
 
@@ -25,7 +25,7 @@ Valores possíveis:
 * `force_enable` — Habilita a avaliação de função em curto-circuito para todas as funções.
 * `disable` — Desabilita a avaliação de função em curto-circuito.
 
-## short_circuit_function_evaluation_for_nulls {#short_circuit_function_evaluation_for_nulls}
+## short_circuit_function_evaluation_for_nulls
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,7 +35,7 @@ Otimiza a avaliação de funções que retornam NULL quando qualquer argumento �
 
 Esta configuração controla apenas uma otimização. Funções que não podem ser executadas sobre o valor default de seus argumentos — como `parseDateTime`, `IPv4StringToNum` ou `intDiv` — sempre ignoram as linhas que contêm NULL, independentemente desta configuração, porque o valor armazenado por trás de um NULL é o valor default do tipo do argumento e executá-las sobre ele lançaria uma exceção em dados que, de outra forma, seriam válidos.
 
-## short_circuit_function_evaluation_for_nulls_threshold {#short_circuit_function_evaluation_for_nulls_threshold}
+## short_circuit_function_evaluation_for_nulls_threshold
 
 <SettingsInfoBlock type="Double" default_value="1" />
 

@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extensão', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
 
-## Sinopse {#synopsis}
+## Sinopse
 
 ```psql
 # CREATE EXTENSION chdb;
@@ -20,13 +20,13 @@ CREATE EXTENSION
 (1 row)
 ```
 
-## Descrição {#description}
+## Descrição
 
 A extensão `chdb` executa consultas do [chDB] em um processo auxiliar.
 
-## Funções {#functions}
+## Funções
 
-### `pgchdb_version` {#pgchdb_version}
+### `pgchdb_version`
 
 ```sql
 SELECT pgchdb_version();
@@ -44,7 +44,7 @@ SELECT version
  WHERE module_name = 'chdb';
 ```
 
-### `chdb_query` {#chdb_query}
+### `chdb_query`
 
 ```sql
 SELECT * FROM chdb_query('SELECT version()') AS (version text);
@@ -88,14 +88,14 @@ Output:
 (5 rows)
 ```
 
-## Codificação de texto {#text-encoding}
+## Codificação de texto
 
 Consulte [Text Encoding na documentação do `chdb_hook`][text encoding] para entender como
 as byte strings do chDB são mapeadas para os tipos `text`, `bytea` e outros do Postgres.
 
-## Configurações {#settings}
+## Configurações
 
-### `chdb.max_memory` {#chdbmax_memory}
+### `chdb.max_memory`
 
 ```sql
 SET chdb.max_memory = '1 GB';
@@ -113,7 +113,7 @@ para indicar a quantidade de megabytes ou uma das seguintes unidades de memória
 
 O padrão é `0`, que não impõe limite de memória.
 
-### `chdb.max_threads` {#chdmax_threads}
+### `chdb.max_threads`
 
 ```sql
 SET chdb.max_threads = 4;
@@ -126,7 +126,7 @@ Recomendamos fortemente definir `chdb.max_threads` antes de executar uma
 consulta pesada, para evitar que o chDB esgote o uso de CPU em detrimento do
 PostgreSQL.
 
-### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
+### `chdb.max_parsing_threads`
 
 ```sql
 SET chdb.max_parsing_threads = 2;
@@ -141,7 +141,7 @@ Recomendamos definir `chdb.max_parsing_threads` antes de executar uma consulta q
 analise um grande volume de dados, como o carregamento de dados a partir de [table functions], para
 evitar que o chDB consuma todo o uso de CPU em detrimento do PostgreSQL.
 
-## Política de versionamento {#versioning-policy}
+## Política de versionamento
 
 A extensão chdb segue o [Semantic Versioning][semver] em seus lançamentos
 públicos.
@@ -168,12 +168,12 @@ acompanhado de scripts de upgrade em SQL, e todos os bancos de dados existentes 
 a extensão devem executar `ALTER EXTENSION chdb UPDATE` para aproveitar o
 upgrade.
 
-## Autores {#authors}
+## Autores
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## Direitos autorais {#copyright}
+## Direitos autorais
 
 Copyright (c) 2026, ClickHouse
 

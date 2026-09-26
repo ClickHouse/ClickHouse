@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## webassembly_udf_input_split_memory_ratio {#webassembly_udf_input_split_memory_ratio}
+## webassembly_udf_input_split_memory_ratio
 
 <ExperimentalBadge />
 
@@ -32,7 +32,7 @@ batch が 1 行を下回ることはないため、シリアル化されたサ�
 
 入力を分割しない場合は 0 に設定します。パイプラインブロック全体が1回の呼び出しで渡されます。
 
-## webassembly_udf_max_fuel {#webassembly_udf_max_fuel}
+## webassembly_udf_max_fuel
 
 <ExperimentalBadge />
 
@@ -42,7 +42,7 @@ batch が 1 行を下回ることはないため、シリアル化されたサ�
 
 WebAssembly UDF インスタンス の実行ごとの fuel 上限です。各 WebAssembly 命令は一定量の fuel を消費します。この値はランタイムに渡される前に 1024 倍されるため、`webassembly_udf_max_fuel = 1` はおよそ 1024 fuel 単位に相当します。有限の上限を設けない場合は 0 に設定します。これは、関数ごとの設定 `webassembly_udf_enable_fuel` が true である関数にのみ適用され、これが既定値です。
 
-## webassembly_udf_max_input_block_size {#webassembly_udf_max_input_block_size}
+## webassembly_udf_max_input_block_size
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ WebAssembly UDF インスタンス の実行ごとの fuel 上限です。各 We
 
 代わりにシリアル化された入力に基づいて呼び出しサイズを決定するには、0 に設定します。これは、入力ブロック全体をゲストメモリにシリアル化する唯一の ABI である `ABI BUFFERED_V1` にのみ適用されます。この ABI では、呼び出しの入力がモジュールのリニアメモリの `webassembly_udf_input_split_memory_ratio` 以内に収まるようにブロックが分割されます。`ROW_DIRECT` は引数を WebAssembly 値として渡し、`ASSEMBLYSCRIPT` は行ごとに 1 つのオブジェクトを構築するため、いずれにも呼び出しサイズの基準となるシリアル化された入力はありません。したがって、0 を指定してもこれらのパイプラインブロックはそのままです。
 
-## webassembly_udf_max_instances {#webassembly_udf_max_instances}
+## webassembly_udf_max_instances
 
 <ExperimentalBadge />
 
@@ -64,7 +64,7 @@ WebAssembly UDF インスタンス の実行ごとの fuel 上限です。各 We
 
 関数ごとに並列で実行できる WebAssembly UDF インスタンスの最大数。
 
-## webassembly_udf_max_memory {#webassembly_udf_max_memory}
+## webassembly_udf_max_memory
 
 <ExperimentalBadge />
 

@@ -18,7 +18,7 @@ ClickStack 브라우저 SDK를 사용하면 프론트엔드 애플리케이션�
 
 <ClickStackIntegrates signals={['logs', 'traces']} />
 
-## 시작하기 {#getting-started}
+## 시작하기
 
 <br />
 
@@ -71,7 +71,7 @@ ClickStack 브라우저 SDK를 사용하면 프론트엔드 애플리케이션�
   </Tab>
 </Tabs>
 
-### 옵션 {#options}
+### 옵션
 
 * `apiKey` - ClickStack 수집 API Key입니다.
 * `service` - HyperDX UI에 이벤트가 표시될 서비스 이름입니다.
@@ -91,9 +91,9 @@ ClickStack 브라우저 SDK를 사용하면 프론트엔드 애플리케이션�
 * `disableIntercom` - (선택 사항) Intercom 통합을 비활성화할지 여부입니다(기본값 `false`)
 * `disableReplay` - (선택 사항) 세션 리플레이를 비활성화할지 여부입니다(기본값 `false`)
 
-## 추가 구성 {#additional-configuration}
+## 추가 구성
 
-### 사용자 정보 또는 메타데이터 추가 {#attach-user-information-or-metadata}
+### 사용자 정보 또는 메타데이터 추가
 
 사용자 정보를 추가하면 HyperDX UI에서 세션과 이벤트를 검색하거나 필터링할 수
 있습니다. 이는 클라이언트 세션 중 언제든지 호출할 수 있습니다. 현재
@@ -114,7 +114,7 @@ HyperDX.setGlobalAttributes({
 });
 ```
 
-### React error boundary 오류 자동 수집 {#auto-capture-react-error-boundary-errors}
+### React error boundary 오류 자동 수집
 
 React를 사용하는 경우, 에러 바운더리(error boundary) 컴포넌트를
 `attachToReactErrorBoundary` 함수에 전달하면 React error boundary 내에서 발생하는
@@ -129,7 +129,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 HyperDX.attachToReactErrorBoundary(ErrorBoundary);
 ```
 
-### 사용자 지정 액션 보내기 {#send-custom-actions}
+### 사용자 지정 액션 보내기
 
 특정 애플리케이션 이벤트(예: 회원 가입, 제출 등)를 명시적으로 추적하려면 이벤트 이름과 선택적 메타데이터를 함께 지정해 `addAction` 함수를 호출할 수 있습니다.
 
@@ -143,7 +143,7 @@ HyperDX.addAction('Form-Completed', {
 });
 ```
 
-### 네트워크 캡처 동적으로 활성화하기 {#enable-network-capture-dynamically}
+### 네트워크 캡처 동적으로 활성화하기
 
 네트워크 캡처를 동적으로 활성화하거나 비활성화하려면 필요에 따라 `enableAdvancedNetworkCapture` 또는 `disableAdvancedNetworkCapture` 함수를 호출하면 됩니다.
 
@@ -151,7 +151,7 @@ HyperDX.addAction('Form-Completed', {
 HyperDX.enableAdvancedNetworkCapture();
 ```
 
-### CORS 요청에 대한 리소스 타이밍 활성화 {#enable-resource-timing-for-cors-requests}
+### CORS 요청에 대한 리소스 타이밍 활성화
 
 프런트엔드 애플리케이션이 다른 도메인으로 API 요청을 보내는 경우,
 선택적으로 `Timing-Allow-Origin`[헤더](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin)가 요청과 함께 전송되도록 설정할 수

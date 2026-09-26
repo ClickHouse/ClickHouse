@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 该引擎可与 S3、GCP 和 Azure 存储中现有的 [Delta Lake](https://github.com/delta-io/delta) 表集成，并支持读写 (S3 和 GCS 的写入自 v25.10 起，Azure 的写入自 v26.9 起) 。
 
-## 创建 DeltaLake 表 {#create-table}
+## 创建 DeltaLake 表
 
 默认情况下，Delta Lake 表必须已存在于 S3、GCP 或 Azure 存储中，以下命令会在不提供 DDL 列定义的情况下附加到该表。设置 `allow_delta_lake_create_table = 1` 后，对不含 `_delta_log` 的位置执行带显式列定义的 `CREATE TABLE` 会改为通过 `delta-kernel-rs` 写入初始提交以创建新的 Delta Lake 表 (尚不支持创建分区表) ；而在 Unity `DataLakeCatalog` 数据库中，该表还会注册到目录中。
 
@@ -113,7 +113,7 @@ doc_type: 'reference'
   </Tab>
 </Tabs>
 
-## 使用 DeltaLake 表写入数据 {#insert-data}
+## 使用 DeltaLake 表写入数据
 
 使用 DeltaLake 表引擎创建表后，可以通过以下方式向表中插入数据：
 
@@ -132,11 +132,11 @@ Delta Lake 写入目前处于 Beta 阶段，默认禁用，必须使用 `SET all
   delta kernel 不支持 Azure workload identity 身份验证 (`extra_credentials(client_id = ..., tenant_id = ...)`) 。
 </Note>
 
-### 数据缓存 {#data-cache}
+### 数据缓存
 
 `DeltaLake` 表引擎和表函数支持数据缓存，与 `S3`、`AzureBlobStorage` 和 `HDFS` 存储相同。更多详情，请参见[&quot;S3 表引擎&quot;](/zh/reference/engines/table-engines/integrations/s3#data-cache)。
 
-## 另请参阅 {#see-also}
+## 另请参阅
 
 * [deltaLake 表函数](/zh/reference/functions/table-functions/deltalake)
 

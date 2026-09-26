@@ -14,11 +14,11 @@ ClickHouse는 [`TimeSeries`](/ko/reference/engines/table-engines/integrations/ti
 
 Prometheus 서버가 스크레이프할 수 있도록 ClickHouse 자체 메트릭을 노출하려면 [Prometheus 메트릭 엔드포인트](/ko/concepts/features/interfaces/prometheus-metrics)를 참조하십시오.
 
-## 사전 요구 사항 {#prerequisites}
+## 사전 요구 사항
 
 설정 단계는 ClickHouse Cloud와 자가 관리형 ClickHouse가 서로 다릅니다. 사용 중인 배포 방식에 해당하는 섹션을 따르십시오.
 
-### ClickHouse Cloud {#prerequisites-cloud}
+### ClickHouse Cloud
 
 <Note>
   ClickHouse Cloud의 PromQL 지원은 비공개 프리뷰 단계입니다. 비공개 프리뷰에 참여 중인 서비스에는 `enable_time_series_table` 설정과 Prometheus API 엔드포인트가 이미 구성되어 있습니다. 그 외의 ClickHouse Cloud 서비스에는 이러한 구성이 적용되어 있지 않으며, 사용자가 해당 서비스에서 직접 이 기능을 활성화할 수도 없습니다. 다음 섹션에서 설명하는 `SET enable_time_series_table` SQL 문과 `http_handlers` 구성은 자가 관리형 배포에만 해당합니다.
@@ -26,7 +26,7 @@ Prometheus 서버가 스크레이프할 수 있도록 ClickHouse 자체 메트�
 
 비공개 프리뷰에 참여 중인 서비스라면 [TimeSeries 테이블 생성](#create-a-timeseries-table)부터 이어서 진행하십시오. 해당 서비스는 [엔드포인트 표](#configure-prometheus-api)에 나열된 엔드포인트 경로를 제공합니다.
 
-### 자가 관리형: TimeSeries 설정 활성화 {#enable-the-timeseries-setting}
+### 자가 관리형: TimeSeries 설정 활성화
 
 테이블을 생성하고 액세스하는 사용자에 대해 `enable_time_series_table` 설정을 활성화하십시오:
 
@@ -36,7 +36,7 @@ SET enable_time_series_table = 1;
 
 HTTP API 요청의 경우 API 사용자 프로필에서 `enable_time_series_table`을 활성화하십시오.
 
-### 자가 관리형: Prometheus API 엔드포인트 구성 {#configure-prometheus-api}
+### 자가 관리형: Prometheus API 엔드포인트 구성
 
 기본 ClickHouse HTTP 포트에 접두사 기반으로 라우팅되는 핸들러 하나를 구성합니다:
 
@@ -86,7 +86,7 @@ HTTP API 요청의 경우 API 사용자 프로필에서 `enable_time_series_tabl
 | `table`      | none | `TimeSeries` 테이블 이름입니다. 생략하면 요청에서 `table` 쿼리 매개변수를 제공해야 합니다. 구성된 이름에는 데이터베이스를 포함할 수 있습니다.                              |
 | `database`   | none | 테이블이 포함된 데이터베이스입니다. 요청에서 쿼리 매개변수로 지정할 수 있습니다. 생략하면 ClickHouse는 정규화된 `table` 값에 지정된 데이터베이스를 사용하며, 없으면 `default`를 사용합니다. |
 
-### TimeSeries 테이블 생성 {#create-a-timeseries-table}
+### TimeSeries 테이블 생성
 
 데이터베이스와 `TimeSeries` 테이블을 생성합니다.
 
@@ -95,7 +95,7 @@ CREATE DATABASE prometheus;
 CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 ```
 
-## remote write를 통한 메트릭 수집 {#remote-write}
+## remote write를 통한 메트릭 수집
 
 ClickHouse는 [Prometheus remote-write 프로토콜](https://prometheus.io/docs/specs/remote_write_spec/)을 지원합니다. Prometheus가 핸들러에 쓰도록 구성하십시오:
 
@@ -118,7 +118,7 @@ remote_write:
 
 ClickHouse는 [`wait_for_async_insert`](/ko/reference/settings/session-settings/wait-for#wait_for_async_insert) 설정과 관계없이 데이터가 `TimeSeries` 테이블의 모든 내부 테이블에 플러시된 후에만 비동기 remote-write 요청을 승인합니다. remote-write 프로토콜은 승인된 쓰기를 영속성이 보장된 것으로 간주합니다. 플러시에 실패하면 요청에서 오류가 반환되고 Prometheus가 재시도합니다.
 
-## PromQL로 쿼리 {#promql-query-support}
+## PromQL로 쿼리
 
 특정 시점에서 PromQL 표현식을 평가하려면 instant-query 엔드포인트를 사용하십시오:
 
@@ -168,7 +168,7 @@ curl --user default:<password> --get \
 
 HTTP API, `promql` 방언 및 테이블 함수에서 지원하는 함수와 집계 연산자 목록은 [지원되는 PromQL 기능](/ko/reference/functions/table-functions/prometheusQueryRange#supported-promql-features)을 참조하십시오.
 
-### Grafana {#grafana}
+### Grafana
 
 기준 URL이 `/api/v1` 앞에서 끝나도록 Prometheus 데이터 소스를 구성하십시오:
 
@@ -196,7 +196,7 @@ Grafana는 이 기준 URL 뒤에 `/api/v1/query` 또는 `/api/v1/query_range`를
   쿼리 엔드포인트인 `/api/v1/query`, `/api/v1/query_range`, `/api/v1/format_query`와 메타데이터 엔드포인트 `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, `/api/v1/metadata`만 구현되어 있습니다. `/api/v1/series`에는 최소 하나의 `match[]` 시리즈 셀렉터가 필요하며, 선택 사항인 `start`, `end`, `limit` 매개변수를 지원하고, 각 셀렉터와 일치하는 시리즈의 합집합을 반환합니다. `/api/v1/labels`는 동일한 매개변수를 허용하며, `match[]`는 선택 사항이고 일치하는 시리즈의 정렬된 레이블 이름을 반환합니다(셀렉터가 제공되지 않은 경우 모든 시리즈의 레이블 이름을 반환합니다). `/api/v1/label/<name>/values`는 `/api/v1/labels`와 동일한 매개변수를 허용하며 하나의 레이블에 대한 정렬된 값을 반환합니다. 이때 `<name>`에는 `[a-zA-Z0-9_]` 범위를 벗어나는 문자를 포함하는 레이블 이름에 대해 Prometheus의 `U__...` 이스케이프를 선택적으로 사용할 수 있습니다. 이러한 엔드포인트는 Grafana Prometheus 데이터 소스가 레이블 탐색, 템플릿 변수, 쿼리 빌더 자동 완성에 사용하는 기능을 모두 다룹니다.
 </Note>
 
-### SQL 진입점 {#sql-entry-points}
+### SQL 진입점
 
 ClickHouse는 HTTP API, `promql` 방언, [`prometheusQuery`](/ko/reference/functions/table-functions/prometheusQuery) 및 [`prometheusQueryRange`](/ko/reference/functions/table-functions/prometheusQueryRange) 테이블 함수에서 동일한 PromQL 컨버터를 사용합니다.
 
@@ -221,7 +221,7 @@ FROM prometheusQuery(
 );
 ```
 
-## 메트릭 메타데이터 쿼리 {#metadata}
+## 메트릭 메타데이터 쿼리
 
 `/prometheus/api/v1/metadata` 엔드포인트는 `TimeSeries` 테이블의 `Metrics` 대상 테이블에 저장된 메트릭 메타데이터(각 메트릭 패밀리의 유형, 도움말 텍스트, 단위)를 반환합니다. URL 쿼리 문자열에서 다음 Prometheus 매개변수를 지원합니다.
 
@@ -241,7 +241,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-## remote read를 통해 메트릭 읽기 {#remote-read}
+## remote read를 통해 메트릭 읽기
 
 ClickHouse는 `/prometheus/api/v1/read`에서 [Prometheus remote-read 프로토콜](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/)을 지원합니다.
 

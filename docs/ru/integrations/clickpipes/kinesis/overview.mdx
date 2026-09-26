@@ -15,12 +15,12 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Kinesis ClickPipes можно развертывать и настраивать вручную через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="prerequisite">
-  ## Предварительные требования {#prerequisite}
+  ## Предварительные требования
 </div>
 
 Вы уже ознакомились с [введением в ClickPipes](/ru/integrations/clickpipes/home) и настроили [учетные данные IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) или [роль IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Сведения о том, как настроить роль для работы с ClickHouse Cloud, см. в [руководстве по ролевому доступу Kinesis](/ru/integrations/clickpipes/kinesis/auth).
 
-## Создание первого ClickPipe {#creating-your-first-clickpipe}
+## Создание первого ClickPipe
 
 1. Откройте SQL Console для вашего сервиса ClickHouse Cloud.
 
@@ -82,7 +82,7 @@ Kinesis ClickPipes можно развертывать и настраивать
 10. **Поздравляем!** Вы успешно настроили свой первый ClickPipe. Если это стриминговый ClickPipe, он будет непрерывно работать и выполнять ингестию данных в реальном времени из удалённого источника. В противном случае он обработает батч и завершит работу.
 
 <div id="supported-data-formats">
-  ## Поддерживаемые форматы данных {#supported-data-formats}
+  ## Поддерживаемые форматы данных
 </div>
 
 Поддерживаются следующие форматы:
@@ -91,7 +91,7 @@ Kinesis ClickPipes можно развертывать и настраивать
 * [Protobuf](/ru/reference/formats/Protobuf/Protobuf)
 
 <div id="compression">
-  ## Сжатие {#compression}
+  ## Сжатие
 </div>
 
 ClickPipes для Kinesis автоматически определяет и распаковывает сжатые записи. В отличие от Kafka, где декомпрессия прозрачно выполняется клиентской библиотекой, Kinesis передаёт сырые байты — ClickPipes берёт это на себя без дополнительной настройки.
@@ -110,11 +110,11 @@ ClickPipes для Kinesis автоматически определяет и р�
 </Note>
 
 <div id="supported-data-types">
-  ## Поддерживаемые типы данных {#supported-data-types}
+  ## Поддерживаемые типы данных
 </div>
 
 <div id="standard-types-support">
-  ### Поддержка стандартных типов {#standard-types-support}
+  ### Поддержка стандартных типов
 </div>
 
 В настоящее время ClickPipes поддерживает следующие типы данных ClickHouse:
@@ -137,7 +137,7 @@ ClickPipes для Kinesis автоматически определяет и р�
 * типы SimpleAggregateFunction (для пунктов назначения AggregatingMergeTree или SummingMergeTree)
 
 <div id="variant-type-support">
-  ### Поддержка типа варианта {#variant-type-support}
+  ### Поддержка типа варианта
 </div>
 
 Вы можете вручную указать тип варианта (например, `Variant(String, Int64, DateTime)`) для любого JSON-поля
@@ -145,13 +145,13 @@ ClickPipes для Kinesis автоматически определяет и р�
 например, `Variant(Int64, UInt32)` не поддерживается.
 
 <div id="json-type-support">
-  ### Поддержка типа JSON {#json-type-support}
+  ### Поддержка типа JSON
 </div>
 
 Поля JSON, которые всегда представляют собой объект JSON, можно назначить целевому столбцу типа JSON. Вам потребуется вручную изменить целевой столбец на нужный тип JSON, включая все фиксированные или пропускаемые пути.
 
 <div id="kinesis-virtual-columns">
-  ## Виртуальные столбцы Kinesis {#kinesis-virtual-columns}
+  ## Виртуальные столбцы Kinesis
 </div>
 
 Для потока Kinesis поддерживаются следующие виртуальные столбцы. При создании новой целевой таблицы их можно добавить с помощью кнопки `Add Column`.
@@ -168,18 +168,18 @@ ClickPipes для Kinesis автоматически определяет и р�
 представления ниже по конвейеру). Для таких пайпов удаление всех «не виртуальных» столбцов может повысить производительность ClickPipes.
 
 <div id="limitations">
-  ## Ограничения {#limitations}
+  ## Ограничения
 </div>
 
 * [DEFAULT](/ru/reference/statements/create/table#default) не поддерживается.
 * По умолчанию размер отдельных сообщений ограничен 16 МБ (без сжатия) для реплик минимального размера (XS) и 32 МБ (без сжатия) для более крупных реплик.  Сообщения, превышающие этот лимит, будут отклонены с ошибкой.  Если вам требуются сообщения большего размера, пожалуйста, обратитесь в службу поддержки.
 
 <div id="performance">
-  ## Производительность {#performance}
+  ## Производительность
 </div>
 
 <div id="batching">
-  ### Батчинг {#batching}
+  ### Батчинг
 </div>
 
 ClickPipes выполняет вставку данных в ClickHouse батчами. Это позволяет избежать создания слишком большого количества частей в базе данных, что может привести к проблемам с производительностью в кластере.
@@ -190,7 +190,7 @@ ClickPipes выполняет вставку данных в ClickHouse батч
 * Батч оставался открытым в течение максимально допустимого времени (5 секунд)
 
 <div id="latency">
-  ### Задержка {#latency}
+  ### Задержка
 </div>
 
 Задержка (то есть время между отправкой сообщения Kinesis в поток и моментом, когда это сообщение становится доступным в ClickHouse) зависит от ряда факторов (например, задержки в Kinesis, сетевой задержки, размера/формата сообщения). Описанный в предыдущем разделе [батчинг](#batching) также влияет на задержку. Мы всегда рекомендуем протестировать ваш конкретный сценарий использования, чтобы понять, на какую задержку можно рассчитывать.
@@ -198,13 +198,13 @@ ClickPipes выполняет вставку данных в ClickHouse батч
 Если у вас есть особые требования к низкой задержке, [свяжитесь с нами](https://clickhouse.com/company/contact?loc=clickpipes).
 
 <div id="active-shards">
-  ### Активные сегменты {#active-shards}
+  ### Активные сегменты
 </div>
 
 Большое число активных сегментов может снизить пропускную способность ClickPipe, если ClickPipe не [масштабирован](#scaling) для их обработки.
 
 <div id="scaling">
-  ### Масштабирование {#scaling}
+  ### Масштабирование
 </div>
 
 ClickPipes для Kinesis спроектирован так, чтобы масштабироваться как по горизонтали, так и по вертикали. По умолчанию создается группа потребителей с одним потребителем. Это можно настроить при создании ClickPipe или позже в разделе **Настройки** -&gt; **Дополнительные настройки** -&gt; **Масштабирование**.
@@ -216,6 +216,6 @@ ClickPipes обеспечивает высокую доступность за �
 Если потребитель или лежащая в его основе инфраструктура выйдет из строя,
 ClickPipe автоматически перезапустит потребителя и продолжит обработку сообщений.
 
-## Аутентификация {#authentication}
+## Аутентификация
 
 Для доступа к потокам Amazon Kinesis можно использовать [учетные данные IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) или [роль IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Подробнее о настройке роли IAM см. в [этом руководстве](/ru/integrations/clickpipes/kinesis/auth), где описано, как настроить роль для работы с ClickHouse Cloud

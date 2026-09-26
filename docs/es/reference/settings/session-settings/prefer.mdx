@@ -14,7 +14,7 @@ import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnly
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## prefer_column_name_to_alias {#prefer_column_name_to_alias}
+## prefer_column_name_to_alias
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -74,7 +74,7 @@ Resultado:
 └────────┴─────────────┘
 ```
 
-## prefer_external_sort_block_bytes {#prefer_external_sort_block_bytes}
+## prefer_external_sort_block_bytes
 
 <SettingsInfoBlock type="UInt64" default_value="16744704" />
 
@@ -82,7 +82,7 @@ Resultado:
 
 Da preferencia al número máximo de bytes por bloque para la ordenación externa; reduce el uso de memoria durante la fusión.
 
-## prefer_global_in_and_join {#prefer_global_in_and_join}
+## prefer_global_in_and_join
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -105,7 +105,7 @@ Otro caso de uso de `prefer_global_in_and_join` es acceder a tablas creadas por
 
 * [Subconsultas distribuidas](/es/reference/statements/in#distributed-subqueries) para obtener más información sobre cómo usar `GLOBAL IN`/`GLOBAL JOIN`
 
-## prefer_localhost_replica {#prefer_localhost_replica}
+## prefer_localhost_replica
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,7 +122,7 @@ Valores posibles:
   Si se usa en un clúster con un solo segmento y varias réplicas, desactivar este SETTING tendrá efectos negativos.
 </Note>
 
-## prefer_optimize_projection {#prefer_optimize_projection}
+## prefer_optimize_projection
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -137,7 +137,7 @@ Valores posibles:
 * 0 — Las projections se eligen según su costo estimado.
 * 1 — Se elige una projection utilizable sin importar su costo estimado.
 
-## prefer_warmed_unmerged_parts_seconds {#prefer_warmed_unmerged_parts_seconds}
+## prefer_warmed_unmerged_parts_seconds
 
 <CloudOnlyBadge />
 

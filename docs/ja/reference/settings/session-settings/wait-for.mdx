@@ -13,19 +13,19 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で利用でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## wait_for_async_insert {#wait_for_async_insert}
+## wait_for_async_insert
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 true の場合は、非同期挿入の処理が完了するまで待機します。
 
-## wait_for_async_insert_timeout {#wait_for_async_insert_timeout}
+## wait_for_async_insert_timeout
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
 非同期挿入の処理完了を待機する際のタイムアウト。
 
-## wait_for_part_commit_in_dependent_materialized_views {#wait_for_part_commit_in_dependent_materialized_views}
+## wait_for_part_commit_in_dependent_materialized_views
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

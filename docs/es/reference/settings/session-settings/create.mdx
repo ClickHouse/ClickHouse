@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## create_if_not_exists {#create_if_not_exists}
+## create_if_not_exists
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -21,19 +21,19 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 Habilita `IF NOT EXISTS` de forma predeterminada en la instrucción `CREATE`. Si se especifica esta configuración o `IF NOT EXISTS`, y ya existe una tabla con el nombre indicado, no se lanzará ninguna excepción.
 
-## create_index_ignore_unique {#create_index_ignore_unique}
+## create_index_ignore_unique
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ignora la palabra clave UNIQUE en CREATE UNIQUE INDEX. Diseñado para pruebas de compatibilidad con SQL.
 
-## create_replicated_merge_tree_fault_injection_probability {#create_replicated_merge_tree_fault_injection_probability}
+## create_replicated_merge_tree_fault_injection_probability
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
 La probabilidad de introducir fallos durante la creación de una tabla después de crear los metadatos en ZooKeeper
 
-## create_table_empty_primary_key_by_default {#create_table_empty_primary_key_by_default}
+## create_table_empty_primary_key_by_default
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,7 +41,7 @@ La probabilidad de introducir fallos durante la creación de una tabla después 
 
 Permite crear tablas *MergeTree con una clave primaria vacía cuando no se especifican ORDER BY ni PRIMARY KEY
 
-## create_token_default_ttl_seconds {#create_token_default_ttl_seconds}
+## create_token_default_ttl_seconds
 
 <SettingsInfoBlock type="UInt64" default_value="1800" />
 

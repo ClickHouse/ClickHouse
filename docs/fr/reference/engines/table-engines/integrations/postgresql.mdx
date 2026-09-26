@@ -19,7 +19,7 @@ Le moteur PostgreSQL permet d&#39;exécuter des requêtes `SELECT` et `INSERT` s
   Découvrez notre service [ClickHouse Managed Postgres](/fr/products/managed-postgres/overview). Reposant sur un stockage NVMe physiquement colocalisé avec les ressources de calcul, il offre des performances jusqu&#39;à 10x supérieures pour les charges de travail limitées par le disque par rapport aux alternatives utilisant un stockage en réseau comme EBS, et vous permet de répliquer vos données Postgres vers ClickHouse à l&#39;aide du connecteur Postgres CDC dans ClickPipes.
 </Tip>
 
-## Création d’une table {#creating-a-table}
+## Création d’une table
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -75,7 +75,7 @@ Certains paramètres peuvent être redéfinis par des arguments clé-valeur :
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-### TLS/SSL {#tls-ssl}
+### TLS/SSL
 
 Les paramètres TLS/SSL sont transmis à `libpq` et peuvent être définis comme clés d’une collection nommée ou comme arguments clé-valeur en fin de liste : `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full`), ainsi que les certificats et la clé, sous l’une de deux formes. S’ils ne sont pas définis, les valeurs par défaut de `libpq` s’appliquent (`sslmode=prefer`).
 
@@ -107,35 +107,35 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 -----END CERTIFICATE-----');
 ```
 
-## Paramètres {#settings}
+## Paramètres
 
 Le pool de connexions utilisé par le moteur de table `PostgreSQL` (ainsi que par la fonction de table [`postgresql`](/fr/reference/functions/table-functions/postgresql)) peut être configuré pour chaque table au moyen d’une clause `SETTINGS`. Si un paramètre n’est pas indiqué, la valeur du paramètre `postgresql_*` correspondant au niveau de la requête est utilisée par défaut.
 
-### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
+### `postgresql_connection_pool_size`
 
 Taille du pool de connexions (si toutes les connexions sont utilisées, la requête attend qu&#39;une connexion se libère). Doit être non nulle.
 
 Valeur par défaut : `16`.
 
-### `postgresql_connection_pool_wait_timeout` {#postgresql-connection-pool-wait-timeout}
+### `postgresql_connection_pool_wait_timeout`
 
 Délai d’attente, en millisecondes, pour les opérations push/pop du pool de connexions lorsque celui-ci est vide. `0` signifie que l’opération bloque lorsque le pool est vide.
 
 Valeur par défaut : `5000`.
 
-### `postgresql_connection_pool_retries` {#postgresql-connection-pool-retries}
+### `postgresql_connection_pool_retries`
 
 Nombre de tentatives de push/pop du pool de connexions.
 
 Valeur par défaut : `2`.
 
-### `postgresql_connection_pool_auto_close_connection` {#postgresql-connection-pool-auto-close-connection}
+### `postgresql_connection_pool_auto_close_connection`
 
 Fermer la connexion avant de la remettre dans le pool.
 
 Valeur par défaut : `false`.
 
-### `postgresql_connection_attempt_timeout` {#postgresql-connection-attempt-timeout}
+### `postgresql_connection_attempt_timeout`
 
 Délai d’expiration, en secondes, pour une tentative unique de connexion au point de terminaison PostgreSQL. La valeur est transmise en tant que paramètre `connect_timeout` dans l’URL de connexion.
 
@@ -154,7 +154,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgr
 SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_close_connection = 1;
 ```
 
-## Détails d’implémentation {#implementation-details}
+## Détails d’implémentation
 
 Les requêtes `SELECT` côté PostgreSQL s’exécutent sous la forme `COPY (SELECT ...) TO STDOUT` dans une transaction PostgreSQL en lecture seule, avec validation après chaque requête `SELECT`.
 
@@ -162,7 +162,7 @@ Les clauses `WHERE` simples telles que `=`, `!=`, `>`, `>=`, `<`, `<=` et `IN` s
 
 Toutes les jointures, agrégations, opérations de tri, conditions `IN [ array ]` et la contrainte d’échantillonnage `LIMIT` sont exécutées dans ClickHouse uniquement une fois la requête vers PostgreSQL terminée.
 
-## Utilisation d’une requête à la place d’un nom de table {#passing-a-query}
+## Utilisation d’une requête à la place d’un nom de table
 
 Au lieu d’un nom de table, l’argument `table` peut être une requête `SELECT` transmise telle quelle à PostgreSQL. La structure de la table est déduite du résultat de la requête. La requête peut être écrite soit sous forme de sous-requête, soit encapsulée dans la fonction `query` :
 
@@ -217,9 +217,9 @@ Dans l’exemple ci-dessous, la réplique `example01-1` a la priorité la plus �
 </postgresql>
 ```
 
-## Exemple d’utilisation {#usage-example}
+## Exemple d’utilisation
 
-### Table PostgreSQL {#table-in-postgresql}
+### Table PostgreSQL
 
 ```text
 postgres=# CREATE TABLE "public"."test" (
@@ -242,7 +242,7 @@ int_id | int_nullable | float | str  | float_nullable
 (1 row)
 ```
 
-### Création d&#39;une table dans ClickHouse et connexion à la table PostgreSQL créée ci-dessus {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
+### Création d&#39;une table dans ClickHouse et connexion à la table PostgreSQL créée ci-dessus
 
 Cet exemple utilise le [moteur de table PostgreSQL](/fr/reference/engines/table-engines/integrations/postgresql) pour relier la table ClickHouse à la table PostgreSQL et exécuter des instructions SELECT et INSERT sur la base de données PostgreSQL :
 
@@ -256,7 +256,7 @@ CREATE TABLE default.postgresql_table
 ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-### Insertion des données initiales d&#39;une table PostgreSQL dans une table ClickHouse à l&#39;aide d&#39;une requête SELECT {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
+### Insertion des données initiales d&#39;une table PostgreSQL dans une table ClickHouse à l&#39;aide d&#39;une requête SELECT
 
 La [fonction de table postgresql](/fr/reference/functions/table-functions/postgresql) copie les données de PostgreSQL vers ClickHouse. Elle est souvent utilisée pour améliorer les performances des requêtes sur ces données en les interrogeant ou en effectuant des analyses dans ClickHouse plutôt que dans PostgreSQL, mais elle peut aussi servir à migrer des données de PostgreSQL vers ClickHouse. Comme nous allons copier les données de PostgreSQL vers ClickHouse, nous utiliserons dans ClickHouse un moteur de table MergeTree, que nous appellerons postgresql&#95;copy:
 
@@ -276,7 +276,7 @@ INSERT INTO default.postgresql_copy
 SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-### Insertion de données incrémentielles de la table PostgreSQL dans la table ClickHouse {#inserting-incremental-data-from-postgresql-table-into-clickhouse-table}
+### Insertion de données incrémentielles de la table PostgreSQL dans la table ClickHouse
 
 Si vous mettez ensuite en place une synchronisation continue entre la table PostgreSQL et la table ClickHouse après l&#39;insertion initiale, vous pouvez utiliser une clause WHERE dans ClickHouse pour n&#39;insérer que les données ajoutées à PostgreSQL en fonction d&#39;un timestamp ou d&#39;un identifiant de séquence unique.
 
@@ -294,7 +294,7 @@ SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'p
 WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
 ```
 
-### Sélection des données dans la table ClickHouse obtenue {#selecting-data-from-the-resulting-clickhouse-table}
+### Sélection des données dans la table ClickHouse obtenue
 
 ```sql
 SELECT * FROM postgresql_copy WHERE str IN ('test');
@@ -306,7 +306,7 @@ SELECT * FROM postgresql_copy WHERE str IN ('test');
 └────────────────┴──────┴────────┘
 ```
 
-### Utiliser un schéma non par défaut {#using-non-default-schema}
+### Utiliser un schéma non par défaut
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";
@@ -326,7 +326,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 * [La fonction de table `postgresql`](/fr/reference/functions/table-functions/postgresql)
 * [Utiliser PostgreSQL comme source pour un dictionnaire](/fr/reference/statements/create/dictionary/sources/postgresql)
 
-## Articles connexes {#related-content}
+## Articles connexes
 
 * Blog : [ClickHouse et PostgreSQL - une alliance parfaite au paradis des données - partie 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * Blog : [ClickHouse et PostgreSQL - une alliance parfaite au paradis des données - partie 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

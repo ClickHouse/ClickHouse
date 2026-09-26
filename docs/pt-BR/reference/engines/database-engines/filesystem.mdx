@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 O motor de banco de dados `Filesystem` expõe arquivos de um diretório local como tabelas read-only. O nome da tabela é resolvido como um path relativo ao diretório do banco de dados e é lido por meio da função de tabela [`file`](/pt-BR/reference/functions/table-functions/file).
 
-## Criando um banco de dados {#creating-a-database}
+## Criando um banco de dados
 
 ```sql
 CREATE DATABASE files
@@ -19,7 +19,7 @@ ENGINE = Filesystem([path]);
 
 `path` é o diretório que contém os arquivos. Se for omitido, o ClickHouse usa o diretório atual no `clickhouse-local` e o diretório `user_files` no servidor ClickHouse.
 
-## Uso {#usage}
+## Uso
 
 Por exemplo, com `data.csv` no diretório selecionado:
 
@@ -33,7 +33,7 @@ O nome da tabela pode incluir um caminho relativo dentro do diretório do banco 
 
 O banco de dados não mantém definições de tabela: as tabelas são criadas quando seus arquivos são resolvidos pela primeira vez e ficam apenas em cache para acessos subsequentes. `CREATE TABLE`, `INSERT` e outras gravações por meio deste banco de dados não são suportados.
 
-## Controle de acesso {#access-control}
+## Controle de acesso
 
 No servidor ClickHouse, o diretório do banco de dados e todos os arquivos resolvidos devem estar dentro de [`user_files_path`](/pt-BR/reference/settings/server-settings/settings#user_files_path); essa restrição também se aplica após o acompanhamento de links simbólicos. O `clickhouse-local` não está restrito a `user_files_path`.
 
@@ -45,7 +45,7 @@ GRANT READ, WRITE ON FILE TO user_name;
 
 Consulte os [privilégios `SOURCES`](/pt-BR/reference/statements/grant#sources) para obter detalhes sobre versão e compatibilidade.
 
-## Veja também {#see-also}
+## Veja também
 
 * [Função de tabela `file`](/pt-BR/reference/functions/table-functions/file)
 * [Motor de banco de dados S3](/pt-BR/reference/engines/database-engines/s3)

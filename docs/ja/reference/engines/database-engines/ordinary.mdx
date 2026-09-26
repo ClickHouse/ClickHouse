@@ -14,7 +14,7 @@ doc_type: 'reference'
   `Ordinary` は非推奨です。新しいデータベースには使用しないでください。
 </Warning>
 
-## データベースの作成 {#creating-a-database}
+## データベースの作成
 
 `Ordinary` データベースを作成するには、[`allow_deprecated_database_ordinary`](/ja/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary) を有効にする必要があります。
 
@@ -25,11 +25,11 @@ CREATE DATABASE legacy
 ENGINE = Ordinary;
 ```
 
-## 移行 {#migration}
+## 移行
 
 新規のデータベースには `Atomic` を使用してください。オープンソース版 ClickHouse のデフォルトのデータベースエンジンであり、ノンブロッキングな `DROP TABLE` や `RENAME TABLE` を含むアトミックなメタデータ操作をサポートします。
 
-## 関連項目 {#see-also}
+## 関連項目
 
 * [Atomic データベースエンジン](/ja/reference/engines/database-engines/atomic)
 * [`allow_deprecated_database_ordinary`](/ja/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary)

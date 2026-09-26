@@ -11,13 +11,13 @@ doc_type: 'reference'
 
 Permite executar consultas `SELECT` e `INSERT` em dados armazenados em um servidor MySQL remoto.
 
-## Sintaxe {#syntax}
+## Sintaxe
 
 ```sql
 mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 ```
 
-## Argumentos {#arguments}
+## Argumentos
 
 | Argument              | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -35,7 +35,7 @@ Cláusulas `WHERE` simples, como `=, !=, >, >=, <, <=`, atualmente são executad
 
 O restante das condições e a restrição de amostragem `LIMIT` são executados no ClickHouse somente após a conclusão da consulta ao MySQL.
 
-## TLS/SSL {#tls-ssl}
+## TLS/SSL
 
 As credenciais de uma conexão criptografada com o MySQL são fornecidas como chaves de coleção nomeada (ou como argumentos de chave-valor):
 
@@ -49,7 +49,7 @@ Os valores correspondem ao conteúdo dos respectivos arquivos PEM, que pode ser 
 
 As mesmas credenciais também podem ser fornecidas como caminhos para arquivos no servidor, em `ssl_ca`, `ssl_cert` e `ssl_key` — mas **somente em uma coleção nomeada definida no arquivo de configuração do servidor**, e esse valor não pode ser substituído em uma consulta. O servidor abre esses arquivos com seus próprios privilégios. Portanto, aceitar um caminho via SQL permitiria que qualquer usuário capaz de definir uma fonte MySQL sondasse o sistema de arquivos local e se autenticasse com um certificado e uma chave que não tem permissão para ler.
 
-## Passando uma consulta em vez de um nome de tabela {#passing-a-query}
+## Passando uma consulta em vez de um nome de tabela
 
 Em vez de um nome de tabela, o terceiro argumento pode ser uma consulta `SELECT` passada ao MySQL como está. A estrutura da tabela resultante é inferida a partir do resultado da consulta. A consulta pode ser escrita como uma subconsulta ou encapsulada na função `query`:
 
@@ -78,7 +78,7 @@ ou
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-## Valor retornado {#returned-value}
+## Valor retornado
 
 Um objeto de tabela com as mesmas colunas da tabela MySQL original.
 
@@ -90,7 +90,7 @@ Um objeto de tabela com as mesmas colunas da tabela MySQL original.
   Na consulta `INSERT`, para distinguir a função de tabela `mysql(...)` do nome da tabela com uma lista de nomes de colunas, você deve usar as palavras-chave `FUNCTION` ou `TABLE FUNCTION`. Veja os exemplos abaixo.
 </Note>
 
-## Exemplos {#examples}
+## Exemplos
 
 Tabela no MySQL:
 
@@ -134,7 +134,7 @@ SELECT * FROM mysql(creds, table='test');
 └────────┴───────┘
 ```
 
-### `enable_compression` {#enable-compression}
+### `enable_compression`
 
 Habilita a compressão para a conexão via protocolo MySQL.
 
@@ -202,7 +202,7 @@ SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
 WHERE id > (SELECT max(id) FROM mysql_copy);
 ```
 
-## Relacionados {#related}
+## Relacionados
 
 * [O motor de tabela &#39;MySQL&#39;](/pt-BR/reference/engines/table-engines/integrations/mysql)
 * [Usar o MySQL como origem de dicionário](/pt-BR/reference/statements/create/dictionary/sources/mysql)

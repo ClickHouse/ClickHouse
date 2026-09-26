@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## allow_experimental_analyzer {#allow_experimental_analyzer}
+## allow_experimental_analyzer
 
 **別名**: `enable_analyzer`
 
@@ -26,7 +26,7 @@ v26.9 以降、この設定は廃止されています。アナライザは無�
 
 アナライザは、v24.3 以降デフォルトで使用されているクエリ分析およびプランニングのインフラストラクチャです。v26.9 でこの設定は唯一サポートされる値である `1` に固定されました。`0` に設定しようとすると拒否され、`compatibility` 設定でも元に戻せなくなりました。v26.10 では、この設定によって切り替えられていた旧クエリ分析が削除されました。クエリ、セッション設定、設定プロファイル、クライアント設定から `enable_analyzer = 0` を削除してください。旧クエリ分析でのクエリの動作やパフォーマンスと比較するには、v26.9 より前の ClickHouse バージョンを使用してください。
 
-## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
+## allow_experimental_cleanup_old_data_files_compaction
 
 <ExperimentalBadge />
 
@@ -36,7 +36,7 @@ v26.9 以降、この設定は廃止されています。アナライザは無�
 
 Iceberg compaction 時に古い data files をクリーンアップできるようにします。
 
-## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
+## allow_experimental_database_hms_catalog
 
 <ExperimentalBadge />
 
@@ -46,7 +46,7 @@ Iceberg compaction 時に古い data files をクリーンアップできるよ�
 
 catalog&#95;type = &#39;hms&#39; の場合に、実験的なデータベースエンジン DataLakeCatalog を有効にします
 
-## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
+## allow_experimental_database_materialized_postgresql
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ catalog&#95;type = &#39;hms&#39; の場合に、実験的なデータベース�
 
 Engine=MaterializedPostgreSQL(...) を指定したデータベースの作成を許可します。
 
-## allow_experimental_database_paimon_rest_catalog {#allow_experimental_database_paimon_rest_catalog}
+## allow_experimental_database_paimon_rest_catalog
 
 <ExperimentalBadge />
 
@@ -64,7 +64,7 @@ Engine=MaterializedPostgreSQL(...) を指定したデータベースの作成を
 
 catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデータベースエンジン DataLakeCatalog の使用を許可します
 
-## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
+## allow_experimental_eval_table_function
 
 <ExperimentalBadge />
 
@@ -74,7 +74,7 @@ catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデー�
 
 実験的なテーブル関数 `eval` を有効にします。
 
-## allow_experimental_expire_snapshots {#allow_experimental_expire_snapshots}
+## allow_experimental_expire_snapshots
 
 <ExperimentalBadge />
 
@@ -84,7 +84,7 @@ catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデー�
 
 実験段階の Iceberg コマンド `ALTER TABLE ... EXECUTE expire_snapshots` を実行できるようにします。
 
-## allow_experimental_hash_functions {#allow_experimental_hash_functions}
+## allow_experimental_hash_functions
 
 <ExperimentalBadge />
 
@@ -92,7 +92,7 @@ catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデー�
 
 実験的なハッシュ関数を有効にする
 
-## allow_experimental_iceberg_compaction {#allow_experimental_iceberg_compaction}
+## allow_experimental_iceberg_compaction
 
 <ExperimentalBadge />
 
@@ -102,7 +102,7 @@ catalog&#95;type = &#39;paimon&#95;rest&#39; を使用する実験的なデー�
 
 Iceberg テーブルで &#39;OPTIMIZE&#39; を明示的に使用できるようにします。
 
-## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
+## allow_experimental_kusto_dialect
 
 <ExperimentalBadge />
 
@@ -112,7 +112,7 @@ Iceberg テーブルで &#39;OPTIMIZE&#39; を明示的に使用できるよう�
 
 SQL の代替となる Kusto Query Language (KQL) 方言を有効にします。
 
-## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
+## allow_experimental_nlp_functions
 
 <ExperimentalBadge />
 
@@ -120,7 +120,7 @@ SQL の代替となる Kusto Query Language (KQL) 方言を有効にします。
 
 自然言語処理向けの実験的な関数を有効にします。
 
-## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
+## allow_experimental_object_storage_queue_hive_partitioning
 
 <ExperimentalBadge />
 
@@ -130,7 +130,7 @@ SQL の代替となる Kusto Query Language (KQL) 方言を有効にします。
 
 S3Queue/AzureQueue エンジンで Hive パーティション化を使用できるようにします
 
-## allow_experimental_paimon_storage_engine {#allow_experimental_paimon_storage_engine}
+## allow_experimental_paimon_storage_engine
 
 <ExperimentalBadge />
 
@@ -140,7 +140,7 @@ S3Queue/AzureQueue エンジンで Hive パーティション化を使用でき�
 
 Paimon* テーブルエンジンでテーブルを作成できるようにします。
 
-## allow_experimental_parallel_reading_from_replicas {#allow_experimental_parallel_reading_from_replicas}
+## allow_experimental_parallel_reading_from_replicas
 
 **別名**: `enable_parallel_replicas`
 
@@ -148,7 +148,7 @@ Paimon* テーブルエンジンでテーブルを作成できるようにしま
 
 SELECT クエリ実行では、各分片から最大 `max_parallel_replicas` 個のレプリカを使用します。読み取りは並列化され、動的に調整されます。0 - 無効、1 - 有効 (障害時は自動的に無効化) 、2 - 有効 (障害時に例外をスロー)
 
-## allow_experimental_polyglot_dialect {#allow_experimental_polyglot_dialect}
+## allow_experimental_polyglot_dialect
 
 <ExperimentalBadge />
 
@@ -158,7 +158,7 @@ SELECT クエリ実行では、各分片から最大 `max_parallel_replicas` 個
 
 polyglot SQL トランスパイラを有効にします。これにより、30種類以上のSQL方言 (MySQL、PostgreSQL、SQLite、Snowflake、DuckDB など) のSQLをClickHouse SQLに変換できます。
 
-## allow_experimental_prql_dialect {#allow_experimental_prql_dialect}
+## allow_experimental_prql_dialect
 
 <ExperimentalBadge />
 
@@ -168,7 +168,7 @@ polyglot SQL トランスパイラを有効にします。これにより、30�
 
 SQLの代替となるPRQLを有効にします。
 
-## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
+## allow_experimental_ytsaurus_dictionary_source
 
 <ExperimentalBadge />
 
@@ -178,7 +178,7 @@ SQLの代替となるPRQLを有効にします。
 
 YTsaurus とのインテグレーション向けの実験的な Dictionary ソース。
 
-## allow_experimental_ytsaurus_table_engine {#allow_experimental_ytsaurus_table_engine}
+## allow_experimental_ytsaurus_table_engine
 
 <ExperimentalBadge />
 
@@ -188,7 +188,7 @@ YTsaurus とのインテグレーション向けの実験的な Dictionary ソ�
 
 YTsaurus とのインテグレーション用の実験的なテーブルエンジン。
 
-## allow_experimental_ytsaurus_table_function {#allow_experimental_ytsaurus_table_function}
+## allow_experimental_ytsaurus_table_function
 
 <ExperimentalBadge />
 

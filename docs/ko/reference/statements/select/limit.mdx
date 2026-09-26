@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 `LIMIT` 절은 쿼리 결과로 반환할 행 수를 제어합니다. 행은 개수와 오프셋으로 선택하거나, [`LIMIT ... AFTER ... UNTIL`](#limit-after-until)을 사용해 행 범위를 여는 조건과 닫는 조건으로 선택할 수 있습니다.
 
-## 기본 구문 {#basic-syntax}
+## 기본 구문
 
 **처음 몇 개의 행 선택:**
 
@@ -51,7 +51,7 @@ LIMIT [n] UNTIL end_expr
 
 `start_expr`가 true인 첫 행부터, 또는 `AFTER`가 생략된 경우 스트림의 시작부터, 해당 시작 지점 또는 그 이후에서 `end_expr`가 true인 첫 행 직전까지의 행을 반환합니다. `n`은 해당 범위의 길이를 제한합니다. `AFTER start_expr ALL`은 일치하는 모든 행에서 범위를 시작합니다. 아래 [LIMIT ... AFTER ... UNTIL](#limit-after-until)을 참조하세요.
 
-## 음수 제한 {#negative-limits}
+## 음수 제한
 
 음수 값을 사용해 결과 집합의 *끝*에서 행을 선택합니다.
 
@@ -64,7 +64,7 @@ LIMIT [n] UNTIL end_expr
 
 `LIMIT -n, -m` 구문은 `LIMIT -m OFFSET -n`과 동일합니다.
 
-## 분수형 제한 {#fractional-limits}
+## 분수형 제한
 
 0과 1 사이의 소수 값을 사용해 행의 일정 비율을 선택합니다:
 
@@ -79,7 +79,7 @@ LIMIT [n] UNTIL end_expr
   * 소수로 계산된 행 수는 다음 정수로 올림됩니다.
 </Note>
 
-## LIMIT 유형 함께 사용하기 {#combining-limit-types}
+## LIMIT 유형 함께 사용하기
 
 일반적인 정수 값과 소수 또는 음수 OFFSET을 함께 사용할 수 있습니다:
 
@@ -90,7 +90,7 @@ LIMIT 10 OFFSET -20    -- 10 rows after skipping the last 20
 
 [범위 form](#limit-after-until)은 단순 행 개수와만 함께 사용할 수 있습니다. `LIMIT 3 AFTER start_expr`은 범위가 시작되는 지점부터 최대 3개의 행을 가져옵니다. `OFFSET`, 소수 및 음수 개수, `WITH TIES`는 `AFTER` 또는 `UNTIL`과 함께 사용할 수 없습니다. 동일한 쿼리에서 [`LIMIT BY`](/ko/reference/statements/select/limit-by) 절이 범위보다 앞에 올 수 있으며, [`limit`](/ko/reference/settings/session-settings/other#limit) 설정은 여전히 결과 개수를 제한합니다.
 
-## LIMIT ... WITH TIES {#limit--with-ties-modifier}
+## LIMIT ... WITH TIES
 
 `WITH TIES` 수정자는 제한된 결과의 마지막 행과 `ORDER BY` 값이 동일한 추가 행도 포함합니다. 개수 및 오프셋 기반 제한에만 적용되며, [범위 form](#limit-after-until)과 함께 사용할 수 없습니다.
 
@@ -173,7 +173,7 @@ ORDER BY n LIMIT -4 OFFSET -3 WITH TIES
 
 이 수정자는 [`ORDER BY ... WITH FILL`](/ko/reference/statements/select/order-by#order-by-expr-with-fill-modifier) 수정자와 함께 사용할 수 있습니다.
 
-## LIMIT ... AFTER ... UNTIL (조건으로 범위 지정) {#limit-after-until}
+## LIMIT ... AFTER ... UNTIL (조건으로 범위 지정)
 
 두 경계 조건 사이의 행 *범위*로 결과를 제한할 수 있습니다:
 
@@ -366,13 +366,13 @@ SELECT number % 4 AS k, number FROM numbers(12) ORDER BY k, number LIMIT 2 BY k 
 └───┴────────┘
 ```
 
-## 고려 사항 {#considerations}
+## 고려 사항
 
 **비결정적 결과:** [`ORDER BY`](/ko/reference/statements/select/order-by) 절이 없으면 반환되는 행은 임의적일 수 있으며, 쿼리를 실행할 때마다 달라질 수 있습니다.
 
 **서버 측 제한:** 반환되는 행 수는 [limit](/ko/reference/settings/session-settings/other#limit) 설정의 영향을 받을 수도 있습니다.
 
-## 관련 항목 {#see-also}
+## 관련 항목
 
 * [LIMIT BY](/ko/reference/statements/select/limit-by) — 값 그룹별 행 수를 제한하므로, 각 범주에서 상위 N개 결과를 가져올 때 유용합니다.
 

@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## ai_function_allow_insecure_endpoint {#ai_function_allow_insecure_endpoint}
+## ai_function_allow_insecure_endpoint
 
 <BetaBadge />
 
@@ -24,7 +24,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Если false (значение по умолчанию), функции ИИ не используют `endpoint` именованной коллекции, который отправляет промпты и ключи API на удалённый хост по незашифрованному соединению: любая конечная точка, не использующая HTTPS и не расположенная на loopback-хосте, отклоняется с исключением. Конечные точки loopback (например, локальный сервер модели `http://localhost`) всегда разрешены. Установите true, чтобы разрешить использование незашифрованных конечных точек `http://` на удалённых хостах.
 
-## ai_function_embedding_default_credentials {#ai_function_embedding_default_credentials}
+## ai_function_embedding_default_credentials
 
 <BetaBadge />
 
@@ -32,7 +32,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Имя именованной коллекции, которую функции эмбеддинга (`aiEmbed`, `aiSimilarity`) используют, если при вызове в карту параметров не передаются `credentials`. Пустое значение означает, что значения по умолчанию нет: в таких вызовах `credentials` нужно передавать явно. Эти функции принимают `model` как обязательный позиционный аргумент, а не из именованной коллекции. Этот параметр выделен отдельно от `ai_function_text_default_credentials`, поскольку конечная точка для эмбеддингов отличается от конечной точки чата.
 
-## ai_function_embedding_max_batch_size {#ai_function_embedding_max_batch_size}
+## ai_function_embedding_max_batch_size
 
 <BetaBadge />
 
@@ -42,7 +42,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Максимальное количество текстов, включаемых в один HTTP-запрос, выполняемый функциями эмбеддинга (`aiEmbed`, `aiSimilarity`). Тексты группируются в батчи такого размера, чтобы снизить накладные расходы на вызовы API. Например, 500 уникальных текстов при размере батча 100 дадут 5 HTTP-запросов.
 
-## ai_function_max_api_calls_per_query {#ai_function_max_api_calls_per_query}
+## ai_function_max_api_calls_per_query
 
 <BetaBadge />
 
@@ -52,7 +52,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Максимальное количество HTTP-запросов, которые функции ИИ могут выполнять в рамках одного запроса. Ограничение применяется независимо каждым сервером и фрагментом запроса: в пределах одного контекста выполнения это точный общий лимит для всех функций ИИ, блоков и потоков, но распределённый запрос (между сегментами или фрагментами параллельных реплик) может выполнять до такого количества запросов для каждого сегмента или фрагмента. Его необходимо задать в запросе верхнего уровня — переопределение `SETTINGS` в подзапросе игнорируется. Установите 0, чтобы отключить ограничение.
 
-## ai_function_max_input_tokens_per_query {#ai_function_max_input_tokens_per_query}
+## ai_function_max_input_tokens_per_query
 
 <BetaBadge />
 
@@ -64,7 +64,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Это ограничение действует только для провайдеров, которые возвращают объект `usage` в своём ответе (OpenAI, Anthropic, vLLM). Если провайдер не передаёт сведения об использовании токенов (в частности, HuggingFace TEI), счётчик остаётся равным 0 — в таком случае используйте `ai_function_max_api_calls_per_query`, чтобы ограничить число таких вызовов.
 
-## ai_function_max_output_tokens_per_query {#ai_function_max_output_tokens_per_query}
+## ai_function_max_output_tokens_per_query
 
 <BetaBadge />
 
@@ -76,7 +76,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Это ограничение применяется только к провайдерам, которые возвращают объект `usage` в своём ответе (OpenAI, Anthropic, vLLM). Оно не распространяется на функции эмбеддинга (`aiEmbed`, `aiSimilarity`), которые никогда не создают выходные токены.
 
-## ai_function_max_retries {#ai_function_max_retries}
+## ai_function_max_retries
 
 <BetaBadge />
 
@@ -86,7 +86,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Максимальное количество повторных попыток при временных ошибках для каждого отдельного API-запроса. Для каждой повторной попытки используется экспоненциальная задержка, начиная с `ai_function_retry_initial_delay_ms`.
 
-## ai_function_request_timeout_sec {#ai_function_request_timeout_sec}
+## ai_function_request_timeout_sec
 
 <BetaBadge />
 
@@ -96,7 +96,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Тайм-аут в секундах для отдельных HTTP-запросов, выполняемых функциями ИИ (вызовы API для чат-комплишенов ИИ и эмбеддингов). Если запрос не завершается за это время, он считается неуспешным и может быть повторён в соответствии с `ai_function_max_retries`.
 
-## ai_function_retry_initial_delay_ms {#ai_function_retry_initial_delay_ms}
+## ai_function_retry_initial_delay_ms
 
 <BetaBadge />
 
@@ -106,7 +106,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Начальная задержка в миллисекундах перед первой повторной попыткой после неудачного API-запроса функции ИИ. При каждой следующей попытке задержка удваивается (экспоненциальная задержка). Например, при настройках по умолчанию: 1000ms, 2000ms, 4000ms.
 
-## ai_function_text_default_credentials {#ai_function_text_default_credentials}
+## ai_function_text_default_credentials
 
 <BetaBadge />
 
@@ -114,7 +114,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Имя именованной коллекции, которую текстовые функции ИИ (`aiGenerate`, `aiClassify`, `aiFilter`, `aiExtract`, `aiTranslate`, `aiRedact`) используют, если в карте параметров вызова не указаны `credentials`. Пустое значение означает отсутствие значения по умолчанию: в таких вызовах `credentials` нужно передавать явно. Конечная точка chat-completions отличается от конечной точки для эмбеддингов, поэтому этот параметр отделён от `ai_function_embedding_default_credentials`.
 
-## ai_function_throw_on_error {#ai_function_throw_on_error}
+## ai_function_throw_on_error
 
 <BetaBadge />
 
@@ -124,7 +124,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Если `true` (по умолчанию), то при необратимом сбое вызова функции ИИ после исчерпания всех повторных попыток выполнение запроса прерывается с исключением. Если `false`, для строки, в которой произошёл сбой, используется значение по умолчанию для типа столбца (пустая строка для `String`), и обработка продолжается.
 
-## ai_function_throw_on_quota_exceeded {#ai_function_throw_on_quota_exceeded}
+## ai_function_throw_on_quota_exceeded
 
 <BetaBadge />
 

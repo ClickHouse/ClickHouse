@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas com base no [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
+## iceberg_delete_data_on_drop
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -22,7 +22,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Define se todos os arquivos do Iceberg devem ser excluídos ao executar drop.
 
-## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+## iceberg_file_entries_queue_size
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -34,7 +34,7 @@ As tarefas de decodificação são pausadas quando a fila fica cheia e a consult
 
 Deve ser maior que zero.
 
-## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+## iceberg_manifest_decode_concurrency
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
@@ -50,7 +50,7 @@ Valores mais altos elevam o pico de memória quando o cache de Iceberg metadata 
 
 Deve ser maior que zero; `1` decodifica os manifests um de cada vez.
 
-## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
+## iceberg_manifest_min_count_to_compact
 
 <ExperimentalBadge />
 
@@ -65,7 +65,7 @@ Exige que `allow_experimental_iceberg_compaction` esteja habilitado.
 O padrão espelha o padrão documentado da propriedade de tabela Iceberg `commit.manifest.min-count-to-merge` (100),
 consulte https://iceberg.apache.org/docs/1.5.2/configuration/.
 
-## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
+## iceberg_max_number_datafiles_to_compact
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -73,7 +73,7 @@ consulte https://iceberg.apache.org/docs/1.5.2/configuration/.
 
 Limite de arquivos de dados de compactação no Iceberg.
 
-## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
+## iceberg_orphan_files_older_than_seconds
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ Limite de arquivos de dados de compactação no Iceberg.
 
 Limite padrão de tempo, em segundos, para a remoção de arquivos órfãos em tabelas Iceberg. Arquivos mais recentes do que esse limite não são considerados órfãos. Usado quando o argumento older&#95;than é omitido da chamada do procedimento remove&#95;orphan&#95;files(). O padrão é 259200 (3 dias).
 
-## iceberg_snapshot_id {#iceberg_snapshot_id}
+## iceberg_snapshot_id
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -91,7 +91,7 @@ Limite padrão de tempo, em segundos, para a remoção de arquivos órfãos em t
 
 Consulte a tabela Iceberg usando o ID do snapshot especificado.
 
-## iceberg_timestamp_ms {#iceberg_timestamp_ms}
+## iceberg_timestamp_ms
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -99,7 +99,7 @@ Consulte a tabela Iceberg usando o ID do snapshot especificado.
 
 Consulte a tabela Iceberg usando o snapshot que estava vigente em um timestamp específico.
 
-## iceberg_tolerate_conflicting_manifest_schemas {#iceberg_tolerate_conflicting_manifest_schemas}
+## iceberg_tolerate_conflicting_manifest_schemas
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

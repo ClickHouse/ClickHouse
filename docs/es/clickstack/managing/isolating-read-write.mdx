@@ -23,7 +23,7 @@ Los warehouses son una característica de ClickHouse Cloud, por lo que la config
   El aislamiento está orientado a implementaciones grandes con ingestión continua. Por debajo de aproximadamente 100 TB/mes de datos almacenados, un único service de lectura y escritura suele absorber ambas cargas de trabajo, por lo que probablemente no haga falta un segundo service. Utilice el [sizing model](/es/clickstack/managing/estimating-resources) para estimar su volumen comprimido mensual.
 </Note>
 
-## Por qué aislar las lecturas de las escrituras {#why-isolate}
+## Por qué aislar las lecturas de las escrituras
 
 * **Las escrituras dejan de degradar las lecturas.** La ingestión continua de OpenTelemetry —los inserts en sí, más las fusiones en segundo plano que los siguen— compite con las consultas de dashboards y búsquedas por CPU y memoria. La latencia de lectura puede degradarse de forma notable mientras la ingestión está en curso, y se recupera cuando esta se detiene.
 * **Las lecturas dejan de interferir con las escrituras.** La contención se produce en ambos sentidos: una consulta ad-hoc pesada o la renderización costosa de un dashboard pueden agotar la memoria del service y hacer que los inserts fallen directamente, no solo que se ralenticen.
@@ -33,7 +33,7 @@ Los warehouses son una característica de ClickHouse Cloud, por lo que la config
 * **El almacenamiento no se duplica.** Los services de un warehouse comparten la misma carpeta de object storage y las mismas tablas, y [el almacenamiento se factura una sola vez](/es/products/cloud/features/infrastructure/warehouses#pricing).
 * **El acceso puede restringirse por endpoint.** Las IP access lists se aplican por service, por lo que el endpoint de escritura puede ser accesible únicamente desde tus collectors y el endpoint de lectura únicamente desde tu implementación de ClickStack. Consulta nuestra guía sobre [Control de acceso de red](/es/products/cloud/features/infrastructure/warehouses#network-access-control).
 
-## Arquitectura {#architecture}
+## Arquitectura
 
 La topología recomendada es un warehouse con un servicio read-write para la ingestión y un servicio read-only para ClickStack:
 
@@ -48,7 +48,7 @@ Ten en cuenta lo siguiente al planificar la topología:
 * Todos los servicios de un warehouse comparten el mismo proveedor de nube, región, versión de ClickHouse y Keeper, así como la programación de upgrade del servicio primario.
 * Usa **un solo** servicio read-write para la ingestión. Las fusiones se reparten entre todos los servicios read-write que comparten el almacenamiento, de modo que la fusión correspondiente a un insert en un servicio puede acabar ejecutándose en otro. Si ese otro servicio además atiende consultas pesadas, esas consultas competirán con la fusión por CPU y memoria en el servicio que la ejecuta, lo que ralentiza las fusiones de los inserts del primer servicio y, con ellas, el rendimiento de inserción. Mantén los workloads de consulta en el servicio read-only y añade un segundo servicio read-write solo si necesitas [separar las fusiones de la ingestión](#separating-merges).
 
-## Configurar un despliegue aislado {#setup}
+## Configurar un despliegue aislado
 
 <Steps>
   <Step title="Prepare el servicio de lectura y escritura" id="prepare-read-write-service">
@@ -146,7 +146,7 @@ Ten en cuenta lo siguiente al planificar la topología:
   </Step>
 </Steps>
 
-## Separar las fusiones de la ingestión {#separating-merges}
+## Separar las fusiones de la ingestión
 
 Con tasas de ingestión sostenidas muy altas, las fusiones —y no las inserciones en sí— se convierten en el coste dominante del servicio de ingestión. Dado que las fusiones se reparten entre todos los servicios de lectura y escritura que comparten el almacenamiento, también pueden acabar ejecutándose en un servicio que habías destinado a otra cosa.
 
@@ -172,7 +172,7 @@ Al utilizar esta topología, ten en cuenta lo siguiente:
 * **Mantén las consultas fuera de ambos servicios de lectura y escritura.** Las consultas `SELECT` pesadas en un servicio de lectura y escritura compiten por CPU y memoria con el trabajo de fusión, que es precisamente el modo de fallo que esta topología pretende evitar. Apunta ClickStack al servicio de solo lectura tal como se describe [más arriba](#point-clickstack).
 * **Las mutaciones, cuando las haya, se registran en el servicio que las ejecuta.** Las mutaciones son poco frecuentes en observabilidad: el esquema de ClickStack establece [`ttl_only_drop_parts = 1`](/es/clickstack/managing/ttl), por lo que la retención ordinaria elimina partes expiradas completas durante las fusiones de TTL en lugar de mutar filas para borrarlas. Si envías al servicio de ingestión un `ALTER` que produce una mutación, la ejecuta el servicio de fusión, y su progreso aparece allí en [`system.mutations`](/es/reference/system-tables/mutations) y no en el servicio de ingestión.
 
-## Administración y DDL {#administration}
+## Administración y DDL
 
 Todos los cambios de esquema deben ejecutarse contra el servicio de **lectura-escritura**, incluidos:
 
@@ -200,7 +200,7 @@ Conéctate al servicio de lectura-escritura mediante la [SQL Console o el clickh
 
 Las vistas materializadas se activan con la inserción, por lo que las ejecuta el servicio de lectura-escritura. El servicio de solo lectura consulta sus tablas de destino como cualquier otra tabla, incluidas las views [registradas contra una fuente de ClickStack](/es/clickstack/managing/config#materialized-views-settings) para acelerar las consultas.
 
-## Aislamiento de cargas de trabajo agénticas {#agentic-workloads}
+## Aislamiento de cargas de trabajo agénticas
 
 Los AI assistants conectados a través del [servidor MCP de ClickStack](/es/clickstack/mcp) generan tráfico de lectura como cualquier dashboard, pero su patrón de carga es distinto: un agent que investiga un incidente emite muchas queries exploratorias en rápida sucesión, sobre rangos que nadie eligió por adelantado. Compartir un único read-only service entre los agents y la UI hace que esa ráfaga se anteponga a los dashboards que un ingeniero está consultando durante ese mismo incidente.
 
@@ -237,7 +237,7 @@ Aquí se aplica el mismo patrón de warehouse: dar a los agents su propio read-o
   El servidor MCP puede crear dashboards, alerts y saved searches, además de ejecutar queries, y ese state queda delimitado al service al que se enrutó la solicitud, como todo el [state de ClickStack](#point-clickstack). Un dashboard que un agent cree en el service de agents no aparecerá en la UI de ClickStack iniciada desde el service que atiende a sus ingenieros, y un alert creado allí se evalúa con el compute de ese service, donde un service de agents en idling retrasará u omitirá las evaluaciones, como se explica [más abajo](#isolating-alerts). Enrute al mismo service que usa su equipo los agents de los que se espere que creen artifacts duraderos.
 </Warning>
 
-## Alertas {#alerts}
+## Alertas
 
 ClickStack evalúa cada alerta en el service desde el que se creó, por lo que las alertas se ejecutan en el mismo compute que la UI: el read-only service en esta topología.
 
@@ -249,7 +249,7 @@ ClickStack evalúa cada alerta en el service desde el que se creó, por lo que l
 
 La evaluación de alertas constituye un workload de consultas recurrente. Téngalo en cuenta al calcular el QPS con el que dimensiona el read-only service: el [sizing model](/es/clickstack/managing/estimating-resources#refining-sizing-assumptions) trata las consultas de búsqueda, dashboards y alertas como una única cifra agregada.
 
-### Aislar la evaluación de alertas {#isolating-alerts}
+### Aislar la evaluación de alertas
 
 La carga de las alertas no se puede enrutar de forma centralizada, porque las alertas las crean los usuarios: quien añade una alerta en ClickStack la añade al servicio en el que está trabajando, y esta se evalúa con el compute de ese servicio. No existe ninguna configuración que traslade las alertas de un servicio a otro lugar.
 
@@ -274,7 +274,7 @@ Las demás contrapartidas se derivan de que el state sea propio de cada servicio
 
 Si un único conjunto de alertas es lo bastante pequeño como para que su carga de evaluación resulte insignificante frente al tráfico de los dashboards, mantén todo en un solo servicio de solo lectura: el coste operativo de mantener las definiciones en dos lugares es el mayor de los dos costes.
 
-## Consideraciones adicionales {#considerations}
+## Consideraciones adicionales
 
 **Auto-idling.** La primera consulta a un read-only service que ha entrado en estado idled debe esperar a que el service arranque, por lo que el uso intermitente sacrifica algo de latencia a cambio de un menor gasto. No cuentes con las alertas para evitar el idling: desactiva el auto-idling en cualquier service del que dependas para evaluarlas, tal como se describe [más arriba](#isolating-alerts). La continuous ingestion sí mantiene despierto el read-write service, pero si tu ingestión es intermitente o programada, el primer batch tras un periodo de inactividad tendrá que esperar igualmente, lo que se traduce en telemetría retrasada.
 

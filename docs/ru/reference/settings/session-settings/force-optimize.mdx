@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы из [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## force_optimize_projection {#force_optimize_projection}
+## force_optimize_projection
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,7 +25,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 * 0 — Оптимизация проекций не обязательна.
 * 1 — Оптимизация проекций обязательна.
 
-## force_optimize_projection_name {#force_optimize_projection_name}
+## force_optimize_projection_name
 
 Если задана непустая строка, проверьте, что эта проекция используется в запросе как минимум один раз.
 
@@ -33,7 +33,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 * string: имя проекции, используемой в запросе
 
-## force_optimize_skip_unused_shards {#force_optimize_skip_unused_shards}
+## force_optimize_skip_unused_shards
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -45,7 +45,7 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 * 1 — Включено. Выполнение запроса отключается только в том случае, если у таблицы есть ключ сегментирования.
 * 2 — Включено. Выполнение запроса отключается независимо от того, задан ли для таблицы ключ сегментирования.
 
-## force_optimize_skip_unused_shards_nesting {#force_optimize_skip_unused_shards_nesting}
+## force_optimize_skip_unused_shards_nesting
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

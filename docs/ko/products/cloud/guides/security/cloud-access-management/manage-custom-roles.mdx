@@ -13,7 +13,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 사용자에게 할당할 사용자 지정 역할을 만들 수 있습니다. 시스템 역할과 여기에 연결된 권한에 대한 자세한 내용은 [Console roles and permissions](/ko/products/cloud/reference/security/console-roles)를 참조하십시오. 이 가이드에서는 사용자 지정 역할을 관리하는 방법을 설명합니다.
 
-## 사용자 지정 역할 만들기 {#create-custom-role}
+## 사용자 지정 역할 만들기
 
 사용자 지정 역할에는 조직, 서비스, 데이터베이스 권한을 조합하여 포함할 수 있습니다. 권한은 모든 서비스와 데이터베이스 또는 그 부분 집합에 적용할 수 있습니다.
 
@@ -65,7 +65,7 @@ ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 
   </Step>
 </Steps>
 
-## 데이터베이스 역할 관리 {#manage-database-roles}
+## 데이터베이스 역할 관리
 
 콘솔 권한 외에도 사용자 지정 역할에 선택한 서비스의 데이터베이스 접근을 제어하는 `Data` 정책을 포함할 수 있습니다. 따라서 각 데이터베이스에서 역할을 별도로 관리하지 않고 한곳에서 콘솔 및 데이터베이스 접근을 관리할 수 있습니다.
 
@@ -79,7 +79,7 @@ ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 
   Cloud 관리형 데이터베이스 역할은 SQL 콘솔 내 JWT 세션과 호환되지 않는, 수동으로 할당한 [`sql-console-role:<email>`](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) 역할을 대체합니다.
 </Warning>
 
-### 사전 요구 사항 {#manage-database-roles-prerequisites}
+### 사전 요구 사항
 
 서비스에서 사용자 지정 데이터베이스 역할을 사용하려면 [JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)이 필요하며, JWT 인증이 비활성화되어 있으면 적용되지 않습니다. 역할에 `Data` 정책을 추가하기 전에 서비스로 이동하여 `설정`를 열고 `Security` 섹션에서 `JWT authentication` 카드를 찾습니다. `SQL 콘솔` 토글이 활성화되어 있는지 확인합니다.
 
@@ -119,7 +119,7 @@ ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 
   </Step>
 </Steps>
 
-### 데이터베이스 역할 확인 {#verify-database-roles}
+### 데이터베이스 역할 확인
 
 콘솔을 통해 관리되는 역할은 데이터베이스에 `cloud:` 접두사와 `cloud` 저장소 유형으로 생성되며, 생성 후 표시되기까지 최대 10분이 걸릴 수 있습니다. 이러한 역할을 나열하려면 서비스에서 `system.roles` 테이블을 쿼리합니다:
 
@@ -134,7 +134,7 @@ SELECT * FROM system.roles;
 ```
 
 <div id="update-custom-role">
-  ## 사용자 지정 역할 업데이트 {#update-custom-role}
+  ## 사용자 지정 역할 업데이트
 </div>
 
 사용자 지정 역할은 생성된 후에도 업데이트할 수 있습니다. 역할에서 제거된 권한은 사용자에게서 사라지고, 추가된 권한은 사용자에게 부여됩니다.
@@ -151,7 +151,7 @@ SELECT * FROM system.roles;
 6. `Edit role`을 선택합니다
 
 <div id="delete-custom-role">
-  ## 사용자 지정 역할 삭제 {#delete-custom-role}
+  ## 사용자 지정 역할 삭제
 </div>
 
 사용자 지정 역할은 언제든지 삭제할 수 있습니다.

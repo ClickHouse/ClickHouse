@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## enable_join_fixed_hash_table_conversion {#enable_join_fixed_hash_table_conversion}
+## enable_join_fixed_hash_table_conversion
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Permite converter a tabela hash em um array linear em junções quando a chave é um único inteiro com um pequeno intervalo de valores.
 
-## enable_join_key_only_hash_tables {#enable_join_key_only_hash_tables}
+## enable_join_key_only_hash_tables
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ Permite converter a tabela hash em um array linear em junções quando a chave �
 
 Usa tabelas hash que armazenam apenas as chaves de junção, sem referência a uma linha da direita, para junções cujo resultado nunca pode conter um valor obtido de uma linha da direita: `LEFT ANTI` e `LEFT SEMI` quando nenhuma coluna da direita é selecionada. Essa tabela tem uma célula menor e permite que os blocos da direita sejam descartados em vez de armazenados.
 
-## enable_join_runtime_filters {#enable_join_runtime_filters}
+## enable_join_runtime_filters
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -38,7 +38,7 @@ Usa tabelas hash que armazenam apenas as chaves de junção, sem referência a u
 
 Filtra o lado esquerdo usando o conjunto de chaves de JOIN coletado do lado direito em tempo de execução.
 
-## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
+## enable_join_runtime_filters_index_analysis
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -46,7 +46,7 @@ Filtra o lado esquerdo usando o conjunto de chaves de JOIN coletado do lado dire
 
 Execute uma segunda etapa de análise de índices (via `use_skip_indexes_on_data_read`) para descartar grânulos no lado esquerdo (LHS) de uma junção.
 
-## enable_join_transitive_predicates {#enable_join_transitive_predicates}
+## enable_join_transitive_predicates
 
 <BetaBadge />
 

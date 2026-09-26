@@ -14,7 +14,7 @@ doc_type: 'reference'
   `Ordinary` 已弃用，请勿用于新建数据库。
 </Warning>
 
-## 创建数据库 {#creating-a-database}
+## 创建数据库
 
 创建 `Ordinary` 数据库需要启用 [`allow_deprecated_database_ordinary`](/zh/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary)：
 
@@ -25,11 +25,11 @@ CREATE DATABASE legacy
 ENGINE = Ordinary;
 ```
 
-## 迁移 {#migration}
+## 迁移
 
 新建数据库时请使用 `Atomic`。它是开源 ClickHouse 的默认数据库引擎，支持原子化的元数据操作，包括非阻塞的 `DROP TABLE` 和 `RENAME TABLE`。
 
-## 参见 {#see-also}
+## 参见
 
 * [Atomic 数据库引擎](/zh/reference/engines/database-engines/atomic)
 * [`allow_deprecated_database_ordinary`](/zh/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary)

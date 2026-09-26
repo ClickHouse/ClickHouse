@@ -20,7 +20,7 @@ ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] 
 
 Если таблица ранее была отсоединена (запрос [DETACH](/ru/reference/statements/detach)), то есть ее структура известна, вы можете использовать сокращенную форму без определения структуры.
 
-## Присоединение существующей таблицы {#attach-existing-table}
+## Присоединение существующей таблицы
 
 **Синтаксис**
 
@@ -32,9 +32,9 @@ ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 Если таблица была отсоединена навсегда, при запуске сервера она не будет присоединена снова, поэтому нужно явно выполнить запрос `ATTACH`.
 
-## Создать новую таблицу и присоединить данные {#create-new-table-and-attach-data}
+## Создать новую таблицу и присоединить данные
 
-### С указанием пути к данным таблицы {#with-specified-path-to-table-data}
+### С указанием пути к данным таблицы
 
 Этот запрос создает новую таблицу с указанной структурой и присоединяет данные таблицы из указанного каталога в `user_files`.
 Для выполнения этого запроса пользователю необходимы привилегии `READ ON FILE` и `WRITE ON FILE`: запрос читает каталог и перемещает его в путь к данным новой таблицы.
@@ -60,7 +60,7 @@ SELECT * FROM test;
 └──────┴────┘
 ```
 
-### С указанием UUID таблицы {#with-specified-table-uuid}
+### С указанием UUID таблицы
 
 Этот запрос создаёт новую таблицу с указанной структурой и присоединяет данные из таблицы с указанным UUID.
 Поддерживается движком базы данных [Atomic](/ru/reference/engines/database-engines/atomic).
@@ -71,7 +71,7 @@ SELECT * FROM test;
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-## Присоединение таблицы MergeTree как ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
+## Присоединение таблицы MergeTree как ReplicatedMergeTree
 
 Позволяет присоединить нереплицируемую таблицу MergeTree как ReplicatedMergeTree. Таблица ReplicatedMergeTree будет создана со значениями настроек `default_replica_path` и `default_replica_name`. Также можно присоединить реплицируемую таблицу как обычную MergeTree.
 
@@ -115,7 +115,7 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-## Присоединить существующий словарь {#attach-existing-dictionary}
+## Присоединить существующий словарь
 
 Присоединяет ранее отключённый словарь.
 
@@ -125,7 +125,7 @@ SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## Присоединение существующей базы данных {#attach-existing-database}
+## Присоединение существующей базы данных
 
 Присоединяет ранее отсоединённую базу данных.
 

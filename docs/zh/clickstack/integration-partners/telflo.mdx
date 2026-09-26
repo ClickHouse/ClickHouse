@@ -27,7 +27,7 @@ import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.
 
 {/* vale off */}
 
-## 什么是 Telflo？ {#what-is-telflo}
+## 什么是 Telflo？
 
 {/* vale on */}
 
@@ -37,7 +37,7 @@ Telflo 是面向 OpenTelemetry Collectors 的厂商中立 control plane，可对
 
 {/* vale off */}
 
-## 为什么选择 Telflo + ClickStack？ {#why-telflo-clickstack}
+## 为什么选择 Telflo + ClickStack？
 
 {/* vale on */}
 
@@ -58,7 +58,7 @@ Telflo 提供：
   * **Telflo 负责运维为其供给数据的 collector 机群**
 </Tip>
 
-## 前置条件 {#prerequisites}
+## 前置条件
 
 * 一个目标端：[开源 ClickStack](/zh/clickstack/getting-started/oss)、[托管 ClickStack](/zh/clickstack/getting-started/managed)，或自管理的 ClickHouse 实例
 * Telflo 账户 ([在 telflo.com 创建账户](https://telflo.com))
@@ -70,7 +70,7 @@ Telflo 提供：
 
 {/* vale off */}
 
-## 将 ClickStack 与 Telflo 集成 {#integrate-telflo-clickstack}
+## 将 ClickStack 与 Telflo 集成
 
 {/* vale on */}
 
@@ -144,25 +144,25 @@ Telflo 提供：
   </Step>
 </Steps>
 
-## 高级配置 {#advanced-configuration}
+## 高级配置
 
-### 扇出路由 {#fan-out-routing}
+### 扇出路由
 
 同一份遥测数据可以同时发往 ClickStack 用于长期存储、在迁移期间发往另一个平台，并发往 SIEM 进行安全分析。在画布上添加导出器，将其连接到需要向其输送数据的管道，或者直接从 [Telflo 流程库](https://telflo.com/flows)中的预置管道入手。
 
-### 压缩与性能 {#compression-and-performance}
+### 压缩与性能
 
 * **OTLP/HTTP 与 OTLP 导出器**：**Compression** 保持为 gzip。
 * **ClickHouse 导出器**：保持 **Async Insert** 开启，**Compression** 保持为 lz4，并在其上游添加 **Batch** 处理器。参见[优化 insert](/zh/clickstack/ingesting-data/collector#optimizing-inserts)。
 
-## 后续步骤 {#next-steps}
+## 后续步骤
 
 * **构建仪表盘**：在 HyperDX 中为日志、指标和链路追踪创建可视化图表
 * **设置告警**：在 ClickStack 中针对关键状况配置告警
 * **借助 AI assistant 优化**：让它调整管道或给出测试建议
 * **从其他厂商迁移**：[flows](https://telflo.com/flows) 可覆盖整个 cutover 过程，替换机群上已有的 agent，并在你对比两者期间同时向两个后端双写数据
 
-## 延伸阅读 {#read-more}
+## 延伸阅读
 
 * [Telflo 文档](https://docs.telflo.com/docs)
 * [快速入门：从空白画布到部署 collector](https://docs.telflo.com/docs/getting-started/quickstart)

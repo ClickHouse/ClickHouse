@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 このエンジンは、[Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) エコシステム向けのインテグレーションを提供します。
 
-## テーブルの作成 {#create-table}
+## テーブルの作成
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -19,7 +19,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-### エンジンパラメータ {#engine-parameters}
+### エンジンパラメータ
 
 * `endpoint` — コンテナーとプレフィックスを含む AzureBlobStorage のエンドポイント URL。使用する認証方式で必要な場合は、任意で account&#95;name を含めることもできます。(`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`)。または、storage&#95;account&#95;url、account&#95;name、container を使ってこれらのパラメータを個別に指定することもできます。プレフィックスを指定する場合は、endpoint を使用する必要があります。
 * `endpoint_contains_account_name` - endpoint に account&#95;name が含まれるかどうかを指定するフラグです。これは一部の認証方式でのみ必要です。(デフォルト: true)
@@ -55,14 +55,14 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
-## 仮想カラム {#virtual-columns}
+## 仮想カラム
 
 * `_path` — ファイルのパス。型: `LowCardinality(String)`.
 * `_file` — ファイル名。型: `LowCardinality(String)`.
 * `_size` — ファイルのサイズ (バイト単位) 。型: `Nullable(UInt64)`。サイズが不明な場合、値は `NULL` です。
 * `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
 
-## 認証 {#authentication}
+## 認証
 
 現在、認証方式は 3 つあります。
 
@@ -70,7 +70,7 @@ SELECT * FROM test_table;
 * `SAS Token` - `endpoint`、`connection_string`、または `storage_account_url` を指定して使用できます。URL に `?` が含まれていることで識別されます。例については、[azureBlobStorage](/ja/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) を参照してください。
 * `Workload Identity` - `endpoint` または `storage_account_url` を指定して使用できます。config で `use_workload_identity` パラメータが設定されている場合、認証には ([workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)) が使用されます。
 
-### データキャッシュ {#data-cache}
+### データキャッシュ
 
 `Azure` テーブルエンジンは、ローカルディスク上でのデータキャッシュをサポートしています。
 ファイルシステムキャッシュの設定オプションと使用方法については、この[セクション](/ja/concepts/features/configuration/server-config/storing-data#using-local-cache)を参照してください。
@@ -99,13 +99,13 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 2. ClickHouse の `storage_configuration` セクションの cache 構成 (したがって cache ストレージも) を再利用します。詳しくは[こちら](/ja/concepts/features/configuration/server-config/storing-data#using-local-cache)を参照してください
 
-### PARTITION BY {#partition-by}
+### PARTITION BY
 
 `PARTITION BY` — 任意です。ほとんどの場合、パーティションキーは不要です。必要な場合でも、通常は月単位より細かいパーティションキーは必要ありません。パーティション化してもクエリは高速化されません (`ORDER BY` 式とは対照的です) 。細かすぎるパーティション化は決して行わないでください。クライアント識別子や名前でデータをパーティション化しないでください (代わりに、クライアント識別子または名前を `ORDER BY` 式の最初のカラムにしてください) 。
 
 月単位でパーティション化するには、`toYYYYMM(date_column)` 式を使用します。ここで、`date_column` は [Date](/ja/reference/data-types/date) 型の日付を持つカラムです。この場合、パーティション名は `"YYYYMM"` フォーマットになります。
 
-#### パーティション方式 {#partition-strategy}
+#### パーティション方式
 
 `wildcard`: ファイルパス内の `{_partition_id}` ワイルドカードを実際のパーティションキーに置き換えます。読み取りはサポートされていません。パスに `{_partition_id}` が含まれる場合、デフォルトで選択されます。
 
@@ -132,7 +132,7 @@ select _path, * from azure_table;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-## 関連項目 {#see-also}
+## 関連項目
 
 [Azure Blob Storageテーブル関数](/ja/reference/functions/table-functions/azureBlobStorage)
 

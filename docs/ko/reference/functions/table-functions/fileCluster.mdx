@@ -15,13 +15,13 @@ doc_type: 'reference'
   이 파일들이 노드마다 다르면 반환값은 미리 정해질 수 없으며, worker 노드가 initiator에 작업을 요청하는 순서에 따라 달라집니다.
 </Note>
 
-## 구문 {#syntax}
+## 구문
 
 ```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-## 인수 {#arguments}
+## 인수
 
 | 인수                   | 설명                                                                                                                                                                                                                                              |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -31,7 +31,7 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
 | `structure`          | `'UserID UInt64, Name String'` 포맷의 테이블 구조입니다. 컬럼 이름과 타입을 결정합니다. 유형: [String](/ko/reference/data-types/string).                                                                                                                                     |
 | `compression_method` | 압축 방법입니다. 지원되는 값은 `none`(압축 없음), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2`, `snappy`입니다. `snappy`의 경우 wire 형식은 [snappy&#95;mode](/ko/reference/settings/session-settings/other#snappy_mode) 설정으로 선택합니다(기본값은 `basic`). |
 
-## 반환 값 {#returned-value}
+## 반환 값
 
 지정된 포맷과 구조를 가지며, 지정된 경로와 일치하는 파일의 데이터를 포함하는 테이블입니다.
 
@@ -80,11 +80,11 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
-## 경로 내 글롭 패턴 {#globs-in-path}
+## 경로 내 글롭 패턴
 
 [File](/ko/reference/functions/table-functions/file#globs-in-path) 테이블 함수에서 지원하는 모든 패턴은 FileCluster에서도 지원됩니다.
 
-## 관련 항목 {#related}
+## 관련 항목
 
 * [File 테이블 함수](/ko/reference/functions/table-functions/file)
 

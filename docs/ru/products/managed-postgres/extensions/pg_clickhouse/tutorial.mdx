@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'обёртка сторонних данных', 'pg_clickhouse', 'расширение', 'руководство', 'такси']
 ---
 
-## Обзор {#overview}
+## Обзор
 
 Это руководство следует [руководству по ClickHouse], но все запросы в нем выполняются через
 pg&#95;clickhouse.
@@ -18,7 +18,7 @@ pg&#95;clickhouse.
 * [Из PSQL](#from-psql), если вы самостоятельно устанавливаете и настраиваете
   расширение.
 
-## Запустите ClickHouse {#start-clickhouse}
+## Запустите ClickHouse
 
 Сначала создайте базу данных ClickHouse, если у вас её ещё нет. Быстро начать
 можно с Docker-образа:
@@ -28,7 +28,7 @@ docker run -d --network host --name clickhouse -p 8123:8123 -p9000:9000 --ulimit
 docker exec -it clickhouse clickhouse-client
 ```
 
-## Создайте таблицу {#create-a-table}
+## Создайте таблицу
 
 Давайте воспользуемся [руководством по ClickHouse], чтобы создать простую базу данных с набором данных о такси в Нью-Йорке:
 
@@ -92,7 +92,7 @@ PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 ```
 
-## Добавьте набор данных {#add-the-data-set}
+## Добавьте набор данных
 
 Затем импортируйте данные:
 
@@ -161,7 +161,7 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
-## Через консоль {#from-console}
+## Через консоль
 
 Если вы используете ClickHouse Managed Postgres, вы можете настроить
 `pg_clickhouse` и подключиться к сервису ClickHouse через консоль ClickHouse Cloud.
@@ -192,9 +192,9 @@ SELECT * FROM <schema>.<table>;
 Чтобы выполнить примеры с данными такси из этого руководства, выберите базу данных ClickHouse `taxi`
 и импортируйте её в целевую схему `taxi`.
 
-## Из PSQL {#from-psql}
+## Из PSQL
 
-### Установите pg_clickhouse {#install-pg_clickhouse}
+### Установите pg_clickhouse
 
 Соберите и установите pg&#95;clickhouse из [PGXN] или [GitHub]. Либо запустите
 Docker-контейнер с [образом pg&#95;clickhouse], который просто добавляет
@@ -205,7 +205,7 @@ docker run -d --network host --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
 ```
 
-### Подключение pg_clickhouse {#connect-pg_clickhouse}
+### Подключение pg_clickhouse
 
 Теперь подключитесь к Postgres:
 
@@ -349,7 +349,7 @@ Postgres возвращается только одна строка. Чтобы
 Обратите внимание, что &quot;Foreign Scan&quot; находится в корне плана, то есть
 весь запрос был отправлен в ClickHouse.
 
-## Проанализируйте данные {#analyze-the-data}
+## Проанализируйте данные
 
 Выполните несколько запросов, чтобы проанализировать данные. Ознакомьтесь со следующими примерами или попробуйте собственный SQL-запрос.
 
@@ -505,7 +505,7 @@ Postgres возвращается только одна строка. Чтобы
   Time: 17.450 ms
   ```
 
-## Создайте словарь {#create-a-dictionary}
+## Создайте словарь
 
 Создайте словарь, связанный с таблицей в вашем сервисе ClickHouse. Таблица и
 словарь основаны на CSV-файле, который содержит по одной строке для каждого
@@ -605,7 +605,7 @@ Postgres возвращается только одна строка. Чтобы
    в аэропорту Ла-Гуардия или JFK. Обратите внимание, что довольно много поездок, в которых
    район посадки неизвестен.
 
-## Выполните JOIN {#perform-a-join}
+## Выполните JOIN
 
 Напишите несколько запросов, объединяющих `taxi_zone_dictionary` с таблицей
 `trips`.

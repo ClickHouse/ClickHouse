@@ -15,7 +15,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## distributed_plan_default_reader_bucket_count {#distributed_plan_default_reader_bucket_count}
+## distributed_plan_default_reader_bucket_count
 
 <ExperimentalBadge />
 
@@ -26,7 +26,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 العدد الافتراضي للمهام اللازمة للقراءة المتوازية في استعلام موزّع. تُوزَّع المهام عبر النسخ المتماثلة.
 يستخدم المخطِّط الموزّع القائم على القواعد هذا الإعداد. ويختار محسن قائم على التكلفة مدى التوزيع للقراءة استنادًا إلى التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
 
-## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
+## distributed_plan_default_shuffle_join_bucket_count
 
 <ExperimentalBadge />
 
@@ -37,7 +37,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 العدد الافتراضي للحاويات لعملية distributed shuffle-hash-join.
 يستخدمه مخطط موزع قائم على القواعد. يحدد المُحسِّن القائم على التكلفة درجة التشعّب بناءً على التكلفة المقدّرة، ولا يستخدم هذا الإعداد.
 
-## distributed_plan_execute_locally {#distributed_plan_execute_locally}
+## distributed_plan_execute_locally
 
 <ExperimentalBadge />
 
@@ -47,7 +47,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 شغّل جميع مهام خطة الاستعلام الموزعة محليًا. هذا مفيد للاختبار وتصحيح الأخطاء.
 
-## distributed_plan_fallback_to_local_execution {#distributed_plan_fallback_to_local_execution}
+## distributed_plan_fallback_to_local_execution
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -57,7 +57,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 لا يسري مفعوله إلا عند تفعيل `make_distributed_plan` (معاينة خاصة).
 
-## distributed_plan_force_exchange_kind {#distributed_plan_force_exchange_kind}
+## distributed_plan_force_exchange_kind
 
 <ExperimentalBadge />
 
@@ -71,7 +71,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 * &#39;Persisted&#39; - استخدم ملفات مؤقتة في تخزين الكائنات،
 * &#39;Streaming&#39; - بثّ بيانات exchange عبر الشبكة.
 
-## distributed_plan_force_shuffle_aggregation {#distributed_plan_force_shuffle_aggregation}
+## distributed_plan_force_shuffle_aggregation
 
 <ExperimentalBadge />
 
@@ -82,7 +82,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 استخدم استراتيجية تجميع Shuffle بدلًا من PartialAggregation + Merge ضمن خطة الاستعلام الموزعة.
 يُتجاهل هذا الإعداد عندما لا تستطيع استراتيجية Shuffle إنتاج نتيجة صحيحة، على سبيل المثال مع `GROUPING SETS` أو عندما يجب أن ينتج التجميع نتائج مرتبة حسب حاوية.
 
-## distributed_plan_max_rows_to_broadcast {#distributed_plan_max_rows_to_broadcast}
+## distributed_plan_max_rows_to_broadcast
 
 <ExperimentalBadge />
 
@@ -93,7 +93,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 الحد الأقصى لعدد الصفوف لاستخدام broadcast join بدلًا من shuffle join ضمن خطة الاستعلام الموزعة.
 آلية استدلالية للمخطط الموزع القائم على القواعد. عند تمكين المُحسِّن القائم على التكلفة، يُحدَّد الاختيار بين broadcast وshuffle بناءً على التكلفة المقدّرة، ولا يكون لهذا الإعداد أي تأثير.
 
-## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
+## distributed_plan_optimize_exchanges
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -101,7 +101,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 يزيل عمليات التبادل غير الضرورية في خطة الاستعلام الموزعة. عطِّله لأغراض تصحيح الأخطاء.
 
-## distributed_plan_prefer_replicas_over_workers {#distributed_plan_prefer_replicas_over_workers}
+## distributed_plan_prefer_replicas_over_workers
 
 <PrivatePreviewBadge />
 
@@ -111,7 +111,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 يُجري تسلسلًا لخطة الاستعلام الموزعة لتنفيذها على النسخ المتماثلة.
 
-## distributed_plan_read_in_order {#distributed_plan_read_in_order}
+## distributed_plan_read_in_order
 
 <ExperimentalBadge />
 
@@ -126,7 +126,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 مدخلاتها مرتبة مسبقًا، وقد تُغذّى عملية فرز تعتمد على ذلك بصفوف تمر عبر تبادل لا يحافظ على الترتيب. لا تكون
 آمنة حاليًا إلا البنى التي لا يبقى فيها أي تبادل بين القراءة والفرز.
 
-## distributed_plan_workers_num {#distributed_plan_workers_num}
+## distributed_plan_workers_num
 
 <PrivatePreviewBadge />
 
@@ -136,7 +136,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 عدد العمّال عديمي الحالة الذين سيُستخدمون لتنفيذ هذا الاستعلام. تؤدي القيمة صفر إلى تعطيل تخصيص العمّال عديمي الحالة لخطط التنفيذ الموزعة.
 
-## distributed_plan_workers_provisioning_timeout_ms {#distributed_plan_workers_provisioning_timeout_ms}
+## distributed_plan_workers_provisioning_timeout_ms
 
 <PrivatePreviewBadge />
 

@@ -11,13 +11,13 @@ doc_type: 'reference'
 
 يوفر واجهة شبيهة بالجدول للقراءة فقط لجداول Apache [Hudi](https://hudi.apache.org/) في Amazon S3.
 
-## الصيغة {#syntax}
+## الصيغة
 
 ```sql
 hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 ```
 
-## المعاملات {#arguments}
+## المعاملات
 
 | Argument                                     | Description                                                                                                                                                                                                                                                                                                                                                           |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -28,11 +28,11 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 | `compression`                                | هذه المعلمة اختيارية. القيم المدعومة: `none`، `gzip/gz`، `deflate`، `brotli/br`، `xz/LZMA`، `zstd/zst`، `lz4`، `bz2`، `snappy`. افتراضيًا، سيُكتشف الضغط تلقائيًا من امتداد الملف. بالنسبة إلى `snappy`، يُحدَّد تنسيق النقل بواسطة إعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (القيمة الافتراضية هي `basic`).                   |
 | `extra_credentials`                          | هذه المعلمة اختيارية. تُستخدم لتمرير `role_arn` للوصول المستند إلى الأدوار في ClickHouse Cloud. راجع [Secure S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات الإعداد.                                                                                                                                                           |
 
-## القيمة المُعادة {#returned-value}
+## القيمة المُعادة
 
 جدول ذو البنية المحددة لقراءة البيانات من جدول Hudi المحدد في S3.
 
-## الأعمدة الافتراضية {#virtual-columns}
+## الأعمدة الافتراضية
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
@@ -40,7 +40,7 @@ hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,co
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، فستكون القيمة `NULL`.
 * `_etag` — قيمة etag الخاصة بالملف. النوع: `LowCardinality(String)`. إذا كانت قيمة etag غير معروفة، فستكون القيمة `NULL`.
 
-## مواضيع ذات صلة {#related}
+## مواضيع ذات صلة
 
 * [محرك Hudi](/ar/reference/engines/table-engines/integrations/hudi)
 * [دالة الجدول العنقودية لـ Hudi](/ar/reference/functions/table-functions/hudiCluster)

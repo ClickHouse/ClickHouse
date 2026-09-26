@@ -15,13 +15,13 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-## 설명 {#description}
+## 설명
 
 [Apache Arrow](https://arrow.apache.org/)에는 두 가지 기본 제공 열 지향 저장 포맷이 있습니다.
 ClickHouse는 이러한 포맷의 읽기와 쓰기를 지원합니다.
 `Arrow`는 Apache Arrow의 &quot;file mode&quot; 형식이며, 메모리 내에서 임의 접근이 가능하도록 설계되었습니다.
 
-## 데이터 타입 매핑 {#data-types-matching}
+## 데이터 타입 매핑
 
 아래 표는 지원되는 데이터 타입과 `INSERT` 및 `SELECT` 쿼리에서 해당 타입이 ClickHouse [데이터 타입](/ko/reference/data-types/index)에 어떻게 매핑되는지를 보여줍니다.
 
@@ -66,11 +66,11 @@ ClickHouse는 이러한 포맷의 읽기와 쓰기를 지원합니다.
 
 ClickHouse 테이블 컬럼의 데이터 타입은 해당 Arrow 데이터 필드와 일치할 필요가 없습니다. 데이터를 삽입할 때 ClickHouse는 먼저 위 표에 따라 데이터 타입을 해석한 다음, 데이터를 ClickHouse 테이블 컬럼에 설정된 데이터 타입으로 [CAST](/ko/reference/functions/regular-functions/type-conversion-functions#CAST)합니다.
 
-## 사용 예시 {#example-usage}
+## 사용 예시
 
 아래 예시에서는 [ClickHouse SQL playground](https://sql.clickhouse.com)에서 제공되는 `forex` 데이터셋을 사용합니다.
 
-### 데이터 선택 {#selecting-data}
+### 데이터 선택
 
 Playground에서 `EUR/USD` 환율 데이터 1일치를 선택해 로컬 `forex_eurusd.arrow` 파일에 저장합니다. HTTP
 인터페이스를 통해 Playground에 쿼리하며, 이때 host는 `sql-clickhouse.clickhouse.com`이고 user는
@@ -93,7 +93,7 @@ curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
         SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
 ```
 
-### 파일 다시 읽기 {#reading-data}
+### 파일 다시 읽기
 
 이제 [`clickhouse-local`](/ko/concepts/features/tools-and-utilities/clickhouse-local)과
 [`file`](/ko/reference/functions/table-functions/file) 테이블 함수를 사용해 로컬 Arrow 파일을 다시 읽어올 수 있습니다. 이 파일은
@@ -118,7 +118,7 @@ clickhouse-local --query "
    └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
 ```
 
-### 데이터 삽입 {#inserting-data}
+### 데이터 삽입
 
 Arrow 파일을 ClickHouse 테이블에 삽입하려면 `FORMAT Arrow`와 함께 `clickhouse-client`로 파이프하여 전달하십시오:
 
@@ -126,7 +126,7 @@ Arrow 파일을 ClickHouse 테이블에 삽입하려면 `FORMAT Arrow`와 함께
 cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-## 포맷 설정 {#format-settings}
+## 포맷 설정
 
 | Setting                                                                      | 설명                                                                                                                                                                                                                                                                                                     | Default     |
 | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |

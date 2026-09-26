@@ -15,13 +15,13 @@ doc_type: 'reference'
 | ------- | ------ | ----- |
 | ✔       | ✔      |       |
 
-## Descripción {#description}
+## Descripción
 
 [Apache Arrow](https://arrow.apache.org/) incluye dos formatos integrados de almacenamiento columnar.
 ClickHouse admite operaciones de lectura y escritura en estos formatos.
 `Arrow` es el formato de Apache Arrow en &quot;modo de archivo&quot;, diseñado para el acceso aleatorio en memoria.
 
-## Correspondencia entre tipos de datos {#data-types-matching}
+## Correspondencia entre tipos de datos
 
 La siguiente tabla muestra los tipos de datos admitidos y cómo se corresponden con los [tipos de datos](/es/reference/data-types/index) de ClickHouse en las consultas `INSERT` y `SELECT`.
 
@@ -66,12 +66,12 @@ Tipos de datos de Arrow no compatibles:
 
 Los tipos de datos de las columnas de la tabla de ClickHouse no tienen que coincidir con los campos de datos de Arrow correspondientes. Al insertar datos, ClickHouse interpreta los tipos de datos según la tabla anterior y luego [convierte](/es/reference/functions/regular-functions/type-conversion-functions#CAST) los datos al tipo de dato definido para la columna de la tabla de ClickHouse.
 
-## Ejemplo de uso {#example-usage}
+## Ejemplo de uso
 
 En el ejemplo siguiente, usamos el conjunto de datos `forex` disponible en el
 [Playground de SQL de ClickHouse](https://sql.clickhouse.com).
 
-### Selección de datos {#selecting-data}
+### Selección de datos
 
 Seleccionamos un día de cotizaciones de `EUR/USD` del Playground de SQL y lo guardamos
 en un archivo local `forex_eurusd.arrow`. Consultamos el Playground de SQL a través de la interfaz HTTP,
@@ -95,7 +95,7 @@ curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
         SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
 ```
 
-### Leer de nuevo el archivo {#reading-data}
+### Leer de nuevo el archivo
 
 Ahora podemos volver a leer el archivo Arrow local con
 [`clickhouse-local`](/es/concepts/features/tools-and-utilities/clickhouse-local) usando la
@@ -121,7 +121,7 @@ clickhouse-local --query "
    └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
 ```
 
-### Insertar datos {#inserting-data}
+### Insertar datos
 
 Para cargar un archivo Arrow en una tabla de ClickHouse, páselo por una tubería a `clickhouse-client`
 con `FORMAT Arrow`:
@@ -130,7 +130,7 @@ con `FORMAT Arrow`:
 cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-## Configuración del formato {#format-settings}
+## Configuración del formato
 
 | Configuración                                                                | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                            | Predeterminado |
 | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |

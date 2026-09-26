@@ -13,7 +13,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يتضمن ClickHouse Managed Postgres مجموعة مختارة من الامتدادات لتوسيع وظائف قاعدة البيانات لديك. في ما يلي قائمة بالامتدادات المتاحة.
 
-## تثبيت الامتدادات {#installing-extensions}
+## تثبيت الامتدادات
 
 لتثبيت امتداد، اتصل بقاعدة البيانات ثم نفِّذ:
 
@@ -33,7 +33,7 @@ SELECT * FROM pg_extension;
 SELECT * FROM pg_available_extensions;
 ```
 
-## الامتدادات المتاحة {#available-extensions}
+## الامتدادات المتاحة
 
 | Extension                      | Version | الوصف                                                                                 |
 | ------------------------------ | ------- | ------------------------------------------------------------------------------------- |
@@ -133,16 +133,16 @@ SELECT * FROM pg_available_extensions;
 | `pgvector (vector)`            | 0.8.6   | نوع بيانات المتجهات وطريقتا الوصول ivfflat وhnsw                                      |
 | `xml2`                         | 1.2     | الاستعلام عن XPath وXSLT                                                              |
 
-## امتداد pg_clickhouse {#pg-clickhouse}
+## امتداد pg_clickhouse
 
 امتداد `pg_clickhouse` مُثبّتة مسبقًا على كل مثيل من ClickHouse Managed Postgres. وتتيح لك الاستعلام مباشرةً عن قواعد بيانات ClickHouse من PostgreSQL، مما يوفر طبقة استعلام موحّدة لكلٍّ من المعاملات والتحليلات.
 
 راجع [وثائق pg&#95;clickhouse](/ar/products/managed-postgres/extensions/pg_clickhouse/introduction) للاطلاع على تعليمات الإعداد وتفاصيل الاستخدام.
 
-## امتداد pg_stat_ch {#pg-stat-ch}
+## امتداد pg_stat_ch
 
 يوفّر امتداد `pg_stat_ch` إمكانات observability على مستوى الاستعلام لمثيل ClickHouse Managed Postgres لديك. ويجمع بيانات telemetry لكل استعلام على حدة (التوقيتات، الصفوف، المخازن المؤقتة، WAL، الأخطاء) ويرسلها إلى UI في ClickHouse Cloud، حيث تظهر على شكل عروض الاستعلامات البطيئة والأخطاء وأحمال العمل. لا يتطلب أي إعداد.
 
-## امتداد pg_re2 {#pg-re2}
+## امتداد pg_re2
 
 يضيف امتداد `pg_re2` إلى ClickHouse Managed Postgres دوال للتعبيرات النمطية متوافقة مع ClickHouse، ومدعومة بمحرك RE2 من Google. ويكون ذلك مفيدًا عند نقل الاستعلامات بينهما أو تشغيل أعباء عمل هجينة تتطلب دلالات متطابقة لمطابقة الأنماط على كلا الجانبين.

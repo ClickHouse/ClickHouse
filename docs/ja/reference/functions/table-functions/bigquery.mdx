@@ -12,14 +12,14 @@ doc_type: 'reference'
 
 読み取りには BigQuery REST API (`tabledata.list`) を使用するため、読み取り可能なのはネイティブテーブルのみです (ビュー、materialized view、外部テーブルは読み取れません) 。書き込みにはストリーミング挿入 (`tabledata.insertAll`) を使用します。この機能を使用するには、プロジェクトで課金を有効にする必要があります。
 
-## 構文 {#syntax}
+## 構文
 
 ```sql
 bigquery(project, dataset, table[, access_token][, key = value, ...])
 bigquery(named_collection[, key = value, ...])
 ```
 
-## 引数 {#arguments}
+## 引数
 
 | 引数             | 説明                                                                                                         |
 | -------------- | ---------------------------------------------------------------------------------------------------------- |
@@ -43,7 +43,7 @@ bigquery(named_collection[, key = value, ...])
 | `base_url`            | API エンドポイントです。デフォルトは `https://bigquery.googleapis.com` です。テストおよびエミュレーター用に変更できます。                                             |
 | `token_url`           | テストおよびエミュレーター用に OAuth トークンエンドポイントをオーバーライドします。デフォルトでは、サービスアカウントキーの `token_uri` または `https://oauth2.googleapis.com/token` です。 |
 
-## 認証 {#authentication}
+## 認証
 
 認証方法は必ず1つだけ指定する必要があります。BigQuery では匿名アクセスは許可されないため、パブリックデータセットであっても認証情報が必要です。
 
@@ -53,7 +53,7 @@ bigquery(named_collection[, key = value, ...])
 
 クエリごとに認証情報を指定する必要がないよう、認証情報は [名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) に保存します。名前付きコレクションから作成された永続テーブル (`BigQuery` テーブルエンジンまたは `CREATE TABLE ... AS bigquery(...)` を使用) は、そのコレクションの依存先として登録されるため、テーブルが存在する間は `DROP NAMED COLLECTION` を実行できません。
 
-## 型マッピング {#data-type-mapping}
+## 型マッピング
 
 | BigQuery の型           | ClickHouse の型                                                                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -88,7 +88,7 @@ bigquery(named_collection[, key = value, ...])
 * `RANGE` カラムは読み取り専用です。`tabledata.insertAll` は `RANGE<T>` 値として構造化された `{start, end}` オブジェクトを想定しますが、これは `String` マッピングから再構築できないため、`RANGE` カラムへの挿入はエラーになります。
 * `INT64` 値は、API が JSON 数値を double として解析するため、そうしなければ `[-2^53 + 1, 2^53 - 1]` の範囲外の値が破損することから、10 進数文字列として `tabledata.insertAll` に送信されます。
 
-## 例 {#examples}
+## 例
 
 `gcloud` のトークンを使用して、公開データセットを読み取ります。
 
@@ -133,7 +133,7 @@ SELECT number AS id, toString(number) AS name FROM numbers(10);
 SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 ```
 
-## 制限事項 {#limitations}
+## 制限事項
 
 * 読み取れるのはネイティブ BigQuery テーブルのみです。ビューおよび外部テーブルを読み取るには BigQuery クエリジョブを実行する必要がありますが、この関数では実行しません。
 * `RANGE` カラムは (`String` として) 読み取れますが、書き込むことはできません。`RANGE` カラムへの挿入はエラーになります。
@@ -147,7 +147,7 @@ SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 * 大きな `INSERT` はバッチに分割して `tabledata.insertAll` に送信されます。各リクエストは最大 500 行で、BigQuery の 10 MB のリクエストサイズ制限を超えないようにも分割されます (この制限を超える単一行は、明確なエラーで拒否されます) 。
 * 書き込みはアトミックではなく、1 回の `tabledata.insertAll` リクエストでも一部のみ成功する可能性があります。BigQuery はリクエスト内の一部の行をコミットする一方、他の行を `insertErrors` として拒否する場合があります。また、各リクエストは互いに独立してコミットされるため、先行するバッチが受け入れられた後に後続のバッチが拒否されることもあります。どちらの場合もクエリはエラーを報告しますが、すでにコミットされた行は BigQuery に残ります。重複を抑えるため、各行にはクエリ ID とストリーム内での行の序数位置から生成した安定した `insertId` を付与して送信します。BigQuery はこれを使用して、ストリーミング挿入ウィンドウ内でベストエフォートによる重複排除を行います。BigQuery の `insertId` の 128 文字制限を超える `query_id` は、固定長のプレフィックスにハッシュ化され、その `query_id` に対して安定した値となります。`insertId` は序数位置に依存するため、重複排除が確実に行われるのは、再実行時に行が同じ順序で生成される場合に限られます。バッチのトランスポートレベルでの再試行は常に安全ですが、同じ `query_id` で同じ `INSERT` を再実行した場合に重複排除されるのは、行が同じ順序で提示される場合のみです (たとえば、単一スレッドの insert、またはそれ以外に決定論的な順序付けの場合です。試行間で chunk の順序が変わる可能性がある並列 `INSERT ... SELECT` では、`max_threads = 1` および `max_insert_threads = 1` を設定してください) 。
 
-## 関連項目 {#related}
+## 関連項目
 
 * [`BigQuery` テーブルエンジン](/ja/reference/engines/table-engines/integrations/bigquery)
 

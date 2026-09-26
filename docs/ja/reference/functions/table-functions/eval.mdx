@@ -14,14 +14,14 @@ doc_type: 'reference'
 SET allow_experimental_eval_table_function = 1;
 ```
 
-## 構文 {#syntax}
+## 構文
 
 ```sql
 eval(expression)
 eval(SELECT ...)
 ```
 
-## 引数 {#arguments}
+## 引数
 
 * `expression` — クエリ文字列を返す定数式です。クエリパラメータとスカラーサブクエリを使用できます。
 * `SELECT ...` — クエリ文字列を返す `SELECT` クエリです。この形式はスカラーサブクエリのシンタックスシュガーです。`eval(SELECT ...)` は `eval((SELECT ...))` と等価なため、このクエリは必ずちょうど1行1カラムを返す必要があります。
@@ -35,13 +35,13 @@ eval(SELECT ...)
 
 値が `NULL` の場合、`eval` は例外をスローします。
 
-## 戻り値 {#returned-value}
+## 戻り値
 
 生成された `SELECT` クエリの結果をテーブルとして返します。
 
 出力スキーマは `eval` テーブル関数の解析時に決定されるため、外側のクエリから、生成されたクエリの実際のカラム名や型を参照できます。
 
-## 例 {#examples}
+## 例
 
 定数式を評価する例:
 
@@ -100,7 +100,7 @@ SELECT x + 1 FROM eval('SELECT 4 AS x');
 └────────────┘
 ```
 
-## 制約事項 {#restrictions}
+## 制約事項
 
 * 生成されるクエリは、`INTO OUTFILE` や `FORMAT` などの出力オプションを含まない、単一の `SELECT` クエリでなければなりません。`eval` で複数のステートメントは実行できません。
 * 生成されるクエリは自己完結している必要があります。独立したスコープで解決されるため、外側のクエリの `WITH` 別名やカラムは参照できません。
@@ -109,7 +109,7 @@ SELECT x + 1 FROM eval('SELECT 4 AS x');
 * 引数はクエリの解析時に一度だけ評価され、行ごとやブロックごとに評価されるわけではありません。
 * 外側のクエリログには `eval` を含む元のクエリが記録されます。生成された `SELECT` クエリは、別個のユーザークエリとしては記録されません。
 
-## 関連 {#related}
+## 関連
 
 * [`view` テーブル関数](/ja/reference/functions/table-functions/view)
 * `allow_experimental_eval_table_function` 設定

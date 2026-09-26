@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Выполняет Prometheus-запрос по данным из таблицы TimeSeries.
 
-## Синтаксис {#syntax}
+## Синтаксис
 
 ```sql
 prometheusQuery('db_name', 'time_series_table', 'promql_query', evaluation_time)
@@ -18,14 +18,14 @@ prometheusQuery(db_name.time_series_table, 'promql_query', evaluation_time)
 prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 ```
 
-## Аргументы {#arguments}
+## Аргументы
 
 * `db_name` - Имя базы данных, в которой находится таблица TimeSeries.
 * `time_series_table` - Имя таблицы TimeSeries.
 * `promql_query` - Запрос, написанный в [синтаксисе PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 * `evaluation_time - Временная метка вычисления. Чтобы вычислить запрос на текущий момент, используйте `now()`в качестве`evaluation&#95;time&#96;.
 
-## Возвращаемое значение {#returned-value}
+## Возвращаемое значение
 
 Функция может возвращать разные столбцы в зависимости от типа результата запроса, переданного через параметр `promql_query`:
 
@@ -38,13 +38,13 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 Столбец `samples` называется `time_series`, если таблица `TimeSeries` имеет [version](/ru/reference/engines/table-engines/integrations/time-series#schema-versioning) 2 или более раннюю.
 
-## Поддерживаемые возможности PromQL {#supported-promql-features}
+## Поддерживаемые возможности PromQL
 
-### Селекторы {#selectors}
+### Селекторы
 
 Мгновенные селекторы, селекторы диапазона, сопоставители меток (`=`, `!=`, `=~`, `!~`), модификаторы `offset`, модификаторы временной метки `@` и подзапросы.
 
-### Функции {#functions}
+### Функции
 
 | Категория     | Функции                                                                                                                                                                                                                                                                                                              |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -61,7 +61,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 **Note**: `ts_of_min_over_time` и `ts_of_max_over_time` — экспериментальные функции в Prometheus (там они включаются с помощью `--enable-feature=promql-experimental-functions`); ClickHouse вычисляет их без необходимости указывать этот флаг.
 
-### Операторы {#operators}
+### Операторы
 
 Все арифметические (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) и сравнительные (`==`, `!=`, `<`, `>`, `<=`, `>=` с необязательным модификатором `bool`) бинарные операторы, а также модификаторы `on()`/`ignoring()` и `group_left()`/`group_right()`.
 
@@ -69,15 +69,15 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 Унарные операторы `+` и `-`.
 
-### Операторы агрегации {#aggregation-operators}
+### Операторы агрегации
 
 `sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — с необязательными модификаторами `by()` и `without()`.
 
-### Пока не поддерживаются {#not-yet-supported}
+### Пока не поддерживаются
 
 * Функции диапазона `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 
-## Пример {#example}
+## Пример
 
 ```sql
 SELECT * FROM prometheusQuery(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now())

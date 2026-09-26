@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb_hook', 'Parquet', 'CSV', 'TSV']
 ---
 
-## 概要 {#synopsis}
+## 概要
 
 ```psql
 # LOAD 'chdb_hook';
@@ -24,7 +24,7 @@ CREATE TABLE
 COPY 18
 ```
 
-## 説明 {#description}
+## 説明
 
 chdb&#95;hook モジュールは PostgreSQL の [COPY](#copy-overloading) コマンドにフックし、
 ローカルファイル、[AWS S3] bucket、[Google Cloud ストレージ] などを対象として、
@@ -32,7 +32,7 @@ chdb&#95;hook モジュールは PostgreSQL の [COPY](#copy-overloading) コマ
 さらに [CREATE TABLE] にもフックするため、テーブルはこれらと同じターゲットから
 カラムを導出し、行を読み込むことができます。
 
-## ロード {#loading}
+## ロード
 
 以下のいずれかの方法で、super user として chdb&#95;hook をロードします。ユースケースに最も適した方法を選んでください:
 
@@ -81,7 +81,7 @@ chdb&#95;hook モジュールは PostgreSQL の [COPY](#copy-overloading) コマ
   chdb&#95;hook をロードすると、`pg_read_server_files` または `pg_write_server_files` ロールに属するユーザーが、Postgres server 上のファイルや cloud storage との間でデータを `COPY` できるようになる点に注意してください。
 </Warning>
 
-## COPY のオーバーロード {#copy-overloading}
+## COPY のオーバーロード
 
 [ロード](#loading)時に、chdb&#95;hook は Postgres の [COPY] コマンドにフックし、
 ローカルファイル、[AWS S3] バケット、[Google Cloud ストレージ] などにある
@@ -99,7 +99,7 @@ CREATE TABLE times (
 COPY times FROM 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv';
 ```
 
-### Privileges {#privileges}
+### Privileges
 
 chdb&#95;hook の `COPY` には、置き換え対象の [COPY] と同じ権限が必要です。
 すなわち、`COPY TO` の場合は relation またはコピー対象のすべてのカラムに対する `SELECT`、
@@ -107,7 +107,7 @@ chdb&#95;hook の `COPY` には、置き換え対象の [COPY] と同じ権限�
 `pg_read_server_files` または `pg_write_server_files` のメンバーであることも必要です。
 `COPY FROM` には read-write の transaction が必要です。
 
-### URL スキーム {#url-schemes}
+### URL スキーム
 
 chdb&#95;hook は、次のいずれかのスキームを使用する URL `COPY` ターゲットに対してのみ実行されます。
 
@@ -120,11 +120,11 @@ chdb&#95;hook は、次のいずれかのスキームを使用する URL `COPY` 
 | `az`, `azure`, `abfss`, `abfs` | [Azure Blob Storage] または [Azure ABFS] | [`azureBlobStorage()`] |
 | `hdfs`                         | [Hadoop Distributed File System]      | [`hdfs()`]             |
 
-### URL フォーマット {#url-formats}
+### URL フォーマット
 
 URL のフォーマットは、ターゲットによって異なります。
 
-#### File {#file}
+#### File
 
 Postgres サーバー上の絶対パスである必要があります。相対パスを指定した場合はエラーになります。Postgres ユーザーは、用途に応じて `pg_read_server_files` または `pg_write_server_files` ロールのメンバーである必要があります。また、Postgres のシステムユーザーには、用途に応じて対象ファイルへの読み取りまたは書き込みアクセス権が必要です。`COPY TO` の場合、パスが存在しなければ chdb&#95;hook が不足している親ディレクトリを作成しますが、そのためにはファイルシステム上の権限が必要です。例:
 
@@ -132,7 +132,7 @@ Postgres サーバー上の絶対パスである必要があります。相対�
 file:///tmp/users.parquet
 ```
 
-#### HTTP {#http}
+#### HTTP
 
 パブリックな cloud ストレージ上のものを含め、通常の HTTP URL であれば利用できます。`COPY TO` の場合、
 chdb&#95;hook はその URL に対してデータを `POST` しようとします。例:
@@ -141,7 +141,7 @@ chdb&#95;hook はその URL に対してデータを `POST` しようとしま�
 https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_1.csv
 ```
 
-#### S3 {#s3}
+#### S3
 
 S3 URL は S3 URI の形式で指定することもできます
 
@@ -155,7 +155,7 @@ s3://{bucket}/{path}
 s3://{bucket}.s3.{region}.amazonaws.com/{path}
 ```
 
-#### GCS {#GCS}
+#### GCS
 
 GCS の URL は、パブリック URL の形式を取ります。
 
@@ -169,7 +169,7 @@ gs://storage.googleapis.com/{bucket}/{path}
 gs://{bucket}/{path}
 ```
 
-#### Azure Blob Storage {#azure-blob-storage}
+#### Azure Blob Storage
 
 サブドメインにアカウント名を指定した `blob.windows.net` の URL を使用します:
 
@@ -183,7 +183,7 @@ az://{account}.blob.core.windows.net/{container}/{blob}
 az://{host}/{container}/{blob}
 ```
 
-#### Azure ABFS {#azure-abfs}
+#### Azure ABFS
 
 ABFS URL は次のフォーマットである必要があります:
 
@@ -191,7 +191,7 @@ ABFS URL は次のフォーマットである必要があります:
 abfs://{container}@{account}.dfs.core.windows.net/{blob}
 ```
 
-#### HDFS URL {#hdfs-urls}
+#### HDFS URL
 
 HDFS URL には、一般的な HTTP 形式の URL を使用でき、ポートは任意で指定できます:
 
@@ -200,7 +200,7 @@ hdfs://{host}/{path}
 hdfs://{host}:{port}/{path}
 ```
 
-### パスのワイルドカード {#path-wildcards}
+### パスのワイルドカード
 
 `COPY FROM` コマンドの URL パスにはグロブを含めることができます。ファイルは接尾辞やプレフィックスだけでなく、パスパターン全体に一致する必要があります。例外が1つあり、パスが既存のディレクトリを指していてグロブを使用していない場合は、そのディレクトリ内のすべてのファイルを選択するために `*` が暗黙的にパスへ追加されます。
 
@@ -233,15 +233,15 @@ CREATE TABLE times (
 COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
 ```
 
-### オプション {#options}
+### オプション
 
 chdb&#95;hook の `COPY` コマンドは、次のオプションをサポートします。
 
-#### `format`: {#format}
+#### `format`:
 
 読み取りまたは書き込みに使用するフォーマット。[chDB] が提供する [formats] のいずれかを指定する必要があり、TSV、CSV、Parquet、Iceberg、JSON などが利用できます。省略するか `auto` に設定した場合は、chDB が URL 末尾のファイル名の拡張子からフォーマットを判別します。
 
-#### `structure` {#structure}
+#### `structure`
 
 行を表す [chDB] のデータ構造です。カラム名と [ClickHouse データ型]、および修飾子のリストで構成されます。省略した場合、chdb&#95;hook は Postgres のデータ型を、おおむね適切な ClickHouse の型にマッピングします。詳細は [Postgres から
 chDB へ](#postgres-to-chdb) を参照してください。`auto` を指定した場合、chDB が型の推論を試みます。
@@ -254,7 +254,7 @@ COPY users TO 'file:///tmp/users.parquet' (
 );
 ```
 
-#### `access_key` と `access_secret` {#access_key-and-access_secret}
+#### `access_key` と `access_secret`
 
 リクエストを認証するために使用する、AWS アカウントユーザーの長期認証情報です。
 
@@ -263,11 +263,11 @@ COPY users TO 'file:///tmp/users.parquet' (
 * **GCS:** GCP の [HMACキーとシークレット]
 * **Azure:** Azure ストレージアカウント名と [access key]
 
-#### `session_token` {#session_token}
+#### `session_token`
 
 `access_key` および `access_secret` と併用する AWS のセッショントークンで、多くの場合は環境変数 `AWS_SESSION_TOKEN` で定義されます。S3 の URL の場合にのみ使用されます。
 
-#### `compression` {#compression}
+#### `compression`
 
 ファイルの圧縮フォーマット。ファイル名から圧縮方式を推論できない場合に使用します。サポートされる値:
 
@@ -281,12 +281,12 @@ COPY users TO 'file:///tmp/users.parquet' (
 * `bz2`
 * `snappy`
 
-#### `timeout` {#timeout}
+#### `timeout`
 
 リクエストのタイムアウト (ミリ秒) 。HTTP、S3、GCS、Azure の URL に適用されます。
 デフォルトは `30000` (30秒) です。
 
-### デバッグ {#debugging}
+### デバッグ
 
 エラー発生時、chdb&#95;hook の `COPY` コマンドは、実行を試みた [chDB] クエリをエラーコンテキストに含めます:
 
@@ -315,7 +315,7 @@ chdb&#95;hook は、SQL インジェクションの脆弱性を防ぎ、認証�
   出力するため、ログがすぐに肥大化してしまうからです。
 </Warning>
 
-## CREATE TABLE のオーバーロード {#create-table-overloading}
+## CREATE TABLE のオーバーロード
 
 chdb&#95;hook は [CREATE TABLE] にもフックするため、テーブルは URL からカラムを導出し、行を読み込むことができます。
 
@@ -359,7 +359,7 @@ CREATE TABLE users () WITH (
 
 `structure_from` と `copy_from` はいずれも `IF NOT EXISTS` と併用できません。既存のリレーションを読み込むには [COPY] を使用してください。
 
-## 制限事項 {#limitations}
+## 制限事項
 
 Postgres と chDB の間でのいくつかの既知の問題およびデータ型の挙動の違いにより、chdb&#95;hook には以下の制限があります:
 
@@ -379,13 +379,13 @@ Postgres と chDB の間でのいくつかの既知の問題およびデータ�
 * Protobuf 出力は 1970-01-01 より前の日付をサポートしません。値を保持するには、明示的な [structure](#structure) で `time` カラムを `String` として設定してください。(ClickHouse/ClickHouse#111860)
 * CSVWithNames および CSVWithNamesAndTypes フォーマットは、現時点では `NULL` の box や circle の値をインポートできません。(ClickHouse/ClickHouse#115523)
 
-## データ型 {#data-types}
+## データ型
 
 [COPY](#copy-overloading) は relation の Postgres 型を chDB の型にマッピングし、
 [CREATE TABLE](#create-table-overloading) は URL の chDB 型を Postgres の型に
 マッピングします。
 
-### Postgres から chDB へ {#postgres-to-chdb}
+### Postgres から chDB へ
 
 明示的な [structure](#structure) オプションが指定されていない場合、chdb&#95;hook は
 Postgres の型を適切な chDB の同等な型にマッピングします。用途に合わない場合は、
@@ -444,7 +444,7 @@ Array 型は、マッピング後の要素型の `Array` にマッピングさ�
 指定することは可能です。`Map` はキーと値のペアの array に変換でき、`Tuple` は
 array に変換されます。異種混在のデータをサポートするには `text[]` を使用してください。
 
-### Timestamp 変換 {#timestamp-conversion}
+### Timestamp 変換
 
 プレーンテキストフォーマット (TSV、CSV など) では、`COPY` hook は現在の `datestyle` 設定に関係なく、DateTime および DateTime64 の値を ISO-8601 形式 (`YYYY-MM-DDThh:mm:ssZ`) で出力します。これにより、値をインポートする側が異なる time zone を使用していても、timestamptz の値は一貫して保たれます。`structure` の出力で `Datetime64(3, 'America/Los_Angeles')` のような別の型を指定しても、出力のオフセットには影響せず、精度のみが変わります。
 
@@ -467,7 +467,7 @@ Timestamp TZ の例:
 | `America/New_York`    | `2026-08-28T16:00:00.000000Z` | `2026-08-28T16:00:00.000Z` |
 | `Japan`               | `2026-08-28T03:00:00.000000Z` | `2026-08-28T03:00:00.000Z` |
 
-### chDB から Postgres へ {#chdb-to-postgres}
+### chDB から Postgres へ
 
 chdb&#95;hook は、[`DESCRIBE`] が報告する ClickHouse の型を、次の Postgres の型にマッピングします:
 
@@ -539,7 +539,7 @@ chdb&#95;hook は、[`DESCRIBE`] が報告する ClickHouse の型を、次の P
 
 Postgres が扱える範囲は、これらの型のいくつかにおいて chDB より狭くなっています。そのため、24 時間を超える `Time` や `Time64`、および Postgres の日付範囲外の `Date32` については、コピー時にエラーが送出されます。
 
-### テキストエンコーディング {#text-encoding}
+### テキストエンコーディング
 
 chDB は `String`、`FixedString`、`Enum`、`JSON` をバイト列として読み取るため、エンコーディングは保証されません。これらのカラムを `text` やその他の非バイナリ型へコピーする際には、バイト列がデータベースのエンコーディングに適合するかが検証され、表現できないデータに対してはエラーが送出されます:
 
@@ -560,9 +560,9 @@ CREATE TABLE logs (id bigint, payload bytea) WITH (
 `FixedString(N)` は、短い値を NUL バイトで埋めます。`text` にコピーすると
 末尾の NUL は削除されますが、`bytea` では N バイトすべてが保持されます。
 
-## 設定 {#settings}
+## 設定
 
-### `chdb_hook.max_memory` {#chdb_hookmax_memory}
+### `chdb_hook.max_memory`
 
 ```sql
 SET chdb_hook.max_memory = '1 GB';
@@ -578,7 +578,7 @@ chDB クエリで使用するメモリの上限を定義します。chDB の [`m
 
 デフォルトは `0` で、この場合メモリは制限されません。
 
-### `chdb_hook.max_threads` {#chdb_hookmax_threads}
+### `chdb_hook.max_threads`
 
 ```sql
 SET chdb_hook.max_threads = 4;
@@ -588,7 +588,7 @@ chDB クエリのクエリ処理スレッド数の上限で、chDB の [`max_thr
 
 大規模な `COPY` を実行する前に `chdb_hook.max_threads` を設定することを強く推奨します。これにより、chDB が PostgreSQL を犠牲にして CPU を使い切ってしまうのを防げます。
 
-### `chdb_hook.max_parsing_threads` {#chdb_hookmax_parsing_threads}
+### `chdb_hook.max_parsing_threads`
 
 ```sql
 SET chdb_hook.max_parsing_threads = 2;
@@ -598,7 +598,7 @@ SET chdb_hook.max_parsing_threads = 2;
 
 大量のデータを `COPY` する前に `chdb_hook.max_parsing_threads` を設定し、chDB が PostgreSQL を犠牲にして CPU 使用率を使い切ってしまうことを防ぐことを推奨します。
 
-## Versioning Policy {#versioning-policy}
+## Versioning Policy
 
 chdb&#95;hook は、公開リリースにおいて [Semantic Versioning] に準拠しています。
 
@@ -613,12 +613,12 @@ chdb&#95;hook は、公開リリースにおいて [Semantic Versioning] に準�
 SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'chdb_hook';
 ```
 
-## 著者 {#authors}
+## 著者
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## 著作権 {#copyright}
+## 著作権
 
 Copyright (c) 2026, ClickHouse
 

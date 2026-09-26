@@ -13,7 +13,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse Managed Postgres には、データベースの機能を拡張するための厳選された拡張機能が含まれています。以下に、利用可能な拡張機能の一覧を示します。
 
-## 拡張機能のインストール {#installing-extensions}
+## 拡張機能のインストール
 
 拡張機能をインストールするには、データベースに接続し、次を実行します。
 
@@ -33,7 +33,7 @@ SELECT * FROM pg_extension;
 SELECT * FROM pg_available_extensions;
 ```
 
-## 利用可能な拡張機能 {#available-extensions}
+## 利用可能な拡張機能
 
 | 拡張機能                           | バージョン  | 説明                                                                 |
 | ------------------------------ | ------ | ------------------------------------------------------------------ |
@@ -133,16 +133,16 @@ SELECT * FROM pg_available_extensions;
 | `pgvector (vector)`            | 0.8.6  | ベクトルデータ型およびivfflat・hnswアクセスメソッド                                    |
 | `xml2`                         | 1.2    | XPathクエリとXSLT                                                      |
 
-## pg_clickhouse 拡張機能 {#pg-clickhouse}
+## pg_clickhouse 拡張機能
 
 `pg_clickhouse` 拡張機能は、すべての ClickHouse Managed Postgres インスタンスにプリインストールされています。これにより、PostgreSQL から ClickHouse データベースに直接クエリを実行でき、トランザクション処理と分析の両方に対して統一されたクエリレイヤーを提供します。
 
 セットアップ手順と使用方法の詳細については、[pg&#95;clickhouse documentation](/ja/products/managed-postgres/extensions/pg_clickhouse/introduction) を参照してください。
 
-## pg_stat_ch 拡張機能 {#pg-stat-ch}
+## pg_stat_ch 拡張機能
 
 `pg_stat_ch` 拡張機能は、ClickHouse Managed Postgres インスタンスのクエリレベルのオブザーバビリティを支えます。クエリごとのテレメトリー (実行時間、行数、バッファ、WAL、エラー) を収集して ClickHouse Cloud UI に送信し、そこでスロークエリ、エラー、ワークロードの各ビューとして表示されます。Setup は不要です。
 
-## pg_re2 拡張機能 {#pg-re2}
+## pg_re2 拡張機能
 
 `pg_re2` 拡張機能は、Google の RE2 エンジンをベースに、ClickHouse 互換の正規表現関数を ClickHouse Managed Postgres に追加します。両者間でクエリを移植する場合や、両側で同一のパターンマッチングの挙動が必要なハイブリッドワークロードを実行する場合に便利です。

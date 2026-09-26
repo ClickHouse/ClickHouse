@@ -10,7 +10,7 @@ doc_type: '참고'
 
 MySQL 엔진을 사용하면 원격 MySQL 서버에 저장된 데이터에 대해 `SELECT` 및 `INSERT` 쿼리를 실행할 수 있습니다.
 
-## 테이블 생성하기 {#creating-a-table}
+## 테이블 생성하기
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -56,7 +56,7 @@ SETTINGS
 
 나머지 조건과 `LIMIT` 샘플링 제약은 MySQL 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
 
-## TLS/SSL {#tls-ssl}
+## TLS/SSL
 
 MySQL 암호화 연결의 자격 증명은 명명된 컬렉션 키(또는 키-값 인수)로 전달됩니다.
 
@@ -82,7 +82,7 @@ MySQL 암호화 연결의 자격 증명은 명명된 컬렉션 키(또는 키-�
 </named_collections>
 ```
 
-## 테이블 이름 대신 쿼리 전달하기 {#passing-a-query}
+## 테이블 이름 대신 쿼리 전달하기
 
 테이블 이름 대신 `table` 인수에 MySQL로 그대로 전달되는 `SELECT` 쿼리를 사용할 수 있습니다. 테이블의 구조는 쿼리 결과를 바탕으로 추론됩니다. 쿼리는 서브쿼리로 작성하거나 `query` 함수로 감싸 작성할 수 있습니다:
 
@@ -105,7 +105,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-## 사용 예시 {#usage-example}
+## 사용 예시
 
 MySQL에서 테이블 생성:
 
@@ -170,11 +170,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## 설정 {#mysql-settings}
+## 설정
 
 기본 설정은 연결조차 재사용하지 않아 효율이 그다지 높지 않습니다. 이러한 설정을 사용하면 서버가 초당 처리할 수 있는 쿼리 수를 늘릴 수 있습니다.
 
-### `connection_auto_close` {#connection-auto-close}
+### `connection_auto_close`
 
 쿼리 실행 후 연결을 자동으로 닫아, 연결 재사용을 비활성화할 수 있습니다.
 
@@ -185,7 +185,7 @@ SELECT * FROM mysql_table
 
 기본값: `1`.
 
-### `connection_max_tries` {#connection-max-tries}
+### `connection_max_tries`
 
 페일오버를 지원하는 풀의 재시도 횟수를 설정합니다.
 
@@ -196,7 +196,7 @@ SELECT * FROM mysql_table
 
 기본값: `3`.
 
-### `connection_pool_size` {#connection-pool-size}
+### `connection_pool_size`
 
 연결 풀의 크기입니다(모든 연결이 사용 중인 경우, 일부 연결이 해제될 때까지 쿼리는 대기합니다).
 
@@ -206,7 +206,7 @@ SELECT * FROM mysql_table
 
 기본값: `16`.
 
-### `connection_wait_timeout` {#connection-wait-timeout}
+### `connection_wait_timeout`
 
 사용 가능한 연결이 생길 때까지 대기하는 시간 제한(초)입니다(이미 `connection_pool_size`개의 연결이 활성 상태인 경우). 0이면 대기하지 않습니다.
 
@@ -216,7 +216,7 @@ Possible values:
 
 기본값: `5`.
 
-### `connect_timeout` {#connect-timeout}
+### `connect_timeout`
 
 연결 시간 제한(초)입니다.
 
@@ -226,7 +226,7 @@ Possible values:
 
 기본값: `10`.
 
-### `read_write_timeout` {#read-write-timeout}
+### `read_write_timeout`
 
 읽기-쓰기 타임아웃(초)입니다.
 
@@ -236,7 +236,7 @@ Possible values:
 
 기본값: `300`.
 
-### `enable_compression` {#enable-compression}
+### `enable_compression`
 
 MySQL 프로토콜 연결에서 압축을 활성화합니다.
 
@@ -265,7 +265,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-## 관련 항목 {#see-also}
+## 관련 항목
 
 * [MySQL 테이블 함수](/ko/reference/functions/table-functions/mysql)
 * [MySQL을 딕셔너리 소스로 사용하는 방법](/ko/reference/statements/create/dictionary/sources/mysql)

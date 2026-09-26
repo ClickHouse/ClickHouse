@@ -18,7 +18,7 @@ doc_type: 'مرجع'
 الجداول التي تستخدم المحرك Distributed لا تخزّن أي بيانات خاصة بها، لكنها تتيح معالجة الاستعلامات الموزعة عبر عدة خوادم.
 تُنفَّذ القراءة بالتوازي تلقائيًا. أثناء القراءة، تُستخدم فهارس الجداول على الخوادم البعيدة إن وُجدت.
 
-## إنشاء جدول {#distributed-creating-a-table}
+## إنشاء جدول
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -30,7 +30,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-### من جدول {#distributed-from-a-table}
+### من جدول
 
 عندما يشير جدول `Distributed` إلى جدول على الخادم الحالي، يمكنك اعتماد مخطط هذا الجدول:
 
@@ -38,7 +38,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-### محركا Remote وRemoteSecure {#distributed-remote-engines}
+### محركا Remote وRemoteSecure
 
 يُعد `Remote` و`RemoteSecure` محركَي جداول دائمة، ويقبلان تعبيرات العناوين نفسها وبيانات الاعتماد نفسها التي تقبلها دوال الجداول [`remote` و`remoteSecure`](/ar/reference/functions/table-functions/remote):
 
@@ -67,7 +67,7 @@ SELECT * FROM remote_one;
 
 يمكن أن يكون الهدف أيضًا دوال الجداول، على سبيل المثال `Remote('127.0.0.1', numbers(10))` أو `Remote('127.0.0.1', merge(db, '^table_'))`. يكون هذا الجدول للقراءة فقط: إذ لا يوجد جدول بعيد يمكن الإدراج فيه، لذلك يُرفَض `INSERT` مع الاستثناء `NOT_IMPLEMENTED`. وينطبق هذا القيد الخاص بالقراءة فقط أيضًا على دوال الجداول ‏`remote` و`remoteSecure`: إذ إن كلًا من `SELECT` و`INSERT` مدعومان عند استخدام هدف `db`/`table` عادي، لكن الهدف من نوع دوال الجداول ‏(`remote('127.0.0.1', numbers(10))`) يكون للقراءة فقط للسبب نفسه.
 
-### معلمات Distributed {#distributed-parameters}
+### معلمات Distributed
 
 | المعلمة                   | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -82,7 +82,7 @@ SELECT * FROM remote_one;
 * الإعداد [distributed&#95;foreground&#95;insert](/ar/reference/settings/session-settings/distributed#distributed_foreground_insert)
 * [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) للاطلاع على الأمثلة
 
-### إعدادات Distributed {#distributed-settings}
+### إعدادات Distributed
 
 | الإعداد                                    | الوصف                                                                                                                                                                                                                                                                                                                            | القيمة الافتراضية              |
 | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
@@ -127,7 +127,7 @@ SETTINGS
 
 بدلًا من اسم قاعدة البيانات، يمكنك استخدام تعبير ثابت يُرجع سلسلة نصية. على سبيل المثال: `currentDatabase()`.
 
-## العناقيد {#distributed-clusters}
+## العناقيد
 
 تُضبط العناقيد في [ملف إعدادات الخادم](/ar/concepts/features/configuration/server-config/configuration-files):
 
@@ -213,7 +213,7 @@ SETTINGS
 
 إذا كنت بحاجة إلى إرسال استعلام إلى مجموعة غير معروفة من الشوارد والنسخ المتماثلة في كل مرة، فلست بحاجة إلى إنشاء جدول `Distributed` — استخدم بدلًا من ذلك دالة الجدول `remote`. راجع قسم [دوال الجداول](/ar/reference/functions/table-functions/index).
 
-## كتابة البيانات {#distributed-writing-data}
+## كتابة البيانات
 
 هناك طريقتان لكتابة البيانات إلى عنقود:
 
@@ -246,7 +246,7 @@ SETTINGS
 
 إذا تعطل الخادم أو تعرّض لإعادة تشغيل غير سليمة (على سبيل المثال، بسبب عطل في العتاد) بعد تنفيذ `INSERT` إلى جدول `Distributed`، فقد تُفقَد البيانات المُدرَجة. وإذا اكتُشف جزء بيانات تالف في دليل الجدول، فسيُنقَل إلى الدليل الفرعي `broken` ولن يُستخدَم بعد ذلك.
 
-## قراءة البيانات {#distributed-reading-data}
+## قراءة البيانات
 
 عند الاستعلام عن جدول `Distributed`، تُرسَل استعلامات `SELECT` إلى جميع الشوارد وتعمل بغضّ النظر عن كيفية توزيع البيانات بينها (إذ يمكن أن تكون موزعة عشوائيًا بالكامل). وعند إضافة شارد جديد، لا تحتاج إلى نقل البيانات القديمة إليه. بدلًا من ذلك، يمكنك كتابة البيانات الجديدة إليه باستخدام وزن أعلى — ستتوزع البيانات بشكل غير متساوٍ قليلًا، لكن الاستعلامات ستعمل بكفاءة وبصورة صحيحة.
 
@@ -254,9 +254,9 @@ SETTINGS
 
 لمعرفة المزيد حول كيفية معالجة الاستعلامات الموزعة `in` و`global in`، راجع [هذه الوثائق](/ar/reference/statements/in#distributed-subqueries).
 
-## الأعمدة الافتراضية {#virtual-columns}
+## الأعمدة الافتراضية
 
-#### _Shard_num {#_shard_num}
+#### _Shard_num
 
 `_shard_num` — يحتوي على قيمة `shard_num` من الجدول `system.clusters`. النوع: [UInt32](/ar/reference/data-types/int-uint).
 

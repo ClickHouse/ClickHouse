@@ -32,7 +32,7 @@ Os valores são convertidos para o tipo da coluna usando o operador `CAST`. Não
 A cláusula `IN PARTITION` limita a atualização às partições listadas. Sem ela, em tabelas da família `ReplicatedMergeTree`, quando a configuração [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/pt-BR/reference/settings/session-settings/optimize) está habilitada (o padrão), o ClickHouse detecta automaticamente condições de chave de partição em `filter_expr` e atualiza apenas as partições afetadas. Em tabelas `MergeTree` não replicadas, use uma cláusula `IN PARTITION` explícita para limitar uma atualização a partições específicas.
 
 <div id="examples">
-  ## Exemplos {#examples}
+  ## Exemplos
 </div>
 
 ```sql
@@ -41,7 +41,7 @@ UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
 UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
 ```
 
-## Atualizações leves são imediatamente visíveis nas consultas {#lightweight-update-does-not-update-data-immediately}
+## Atualizações leves são imediatamente visíveis nas consultas
 
 O `UPDATE` leve torna os valores atualizados imediatamente visíveis em consultas `SELECT` por meio da aplicação de **patch parts**. As consultas não precisam esperar por uma mesclagem para ler os valores atualizados.
 Patch parts são um tipo especial de parte de dados que contém apenas as colunas e linhas atualizadas. Sua criação não altera imediatamente os dados originais fisicamente no armazenamento.
@@ -55,18 +55,18 @@ A visibilidade nas consultas e a materialização física são coisas distintas:
 
 Sobre a consistência de atualizações concorrentes, consulte [Operações concorrentes](#concurrent-operations).
 
-## Requisitos para atualizações leves {#lightweight-update-requirements}
+## Requisitos para atualizações leves
 
 As atualizações leves são suportadas pelos motores [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) e por suas versões [`Replicated`](/pt-BR/reference/engines/table-engines/mergetree-family/replication) e [`Shared`](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree).
 
 Para usar atualizações leves, a materialização das colunas `_block_number` e `_block_offset` deve estar habilitada por meio das configurações da tabela [`enable_block_number_column`](/pt-BR/reference/settings/merge-tree-settings/enable-block#enable_block_number_column) e [`enable_block_offset_column`](/pt-BR/reference/settings/merge-tree-settings/enable-block#enable_block_offset_column).
 
-## Exclusões leves {#lightweight-delete}
+## Exclusões leves
 
 Uma consulta de [`DELETE` leve](/pt-BR/reference/statements/delete) pode ser executada como um `UPDATE` leve em vez de uma mutação `ALTER UPDATE`. A implementação de `DELETE` leve é controlada pela configuração [`lightweight_delete_mode`](/pt-BR/reference/settings/session-settings/lightweight#lightweight_delete_mode).
 
 <div id="performance-considerations">
-  ## Considerações de desempenho {#performance-considerations}
+  ## Considerações de desempenho
 </div>
 
 **Vantagens das atualizações leves:**
@@ -83,13 +83,13 @@ Uma consulta de [`DELETE` leve](/pt-BR/reference/statements/delete) pode ser exe
 * Atualizações pequenas, se frequentes demais, podem levar ao erro &quot;too many parts&quot;. Recomenda-se agrupar várias atualizações em uma única consulta, por exemplo, colocando os IDs a serem atualizados em uma única cláusula `IN` na cláusula `WHERE`
 * As atualizações leves foram projetadas para atualizar pequenas quantidades de linhas (até cerca de 10% da tabela). Se você precisar atualizar uma quantidade maior, recomenda-se usar a mutação [`ALTER TABLE ... UPDATE`](/pt-BR/reference/statements/alter/update)
 
-## Operações concorrentes {#concurrent-operations}
+## Operações concorrentes
 
 As atualizações leves não esperam a conclusão de mesclagens/mutações em execução, ao contrário das mutações pesadas.
 A consistência das atualizações leves concorrentes é controlada pelas configurações [`update_sequential_consistency`](/pt-BR/reference/settings/session-settings/update#update_sequential_consistency) e [`update_parallel_mode`](/pt-BR/reference/settings/session-settings/update#update_parallel_mode).
 
 <div id="update-permissions">
-  ## Permissões de `UPDATE` {#update-permissions}
+  ## Permissões de `UPDATE`
 </div>
 
 `UPDATE` requer o privilégio `ALTER UPDATE`. Para habilitar instruções `UPDATE` em uma tabela específica para um determinado usuário, execute:
@@ -99,7 +99,7 @@ GRANT ALTER UPDATE ON db.table TO username;
 ```
 
 <div id="details-of-the-implementation">
-  ## Detalhes da implementação {#details-of-the-implementation}
+  ## Detalhes da implementação
 </div>
 
 As patch parts são iguais às partes regulares, mas contêm apenas colunas atualizadas e várias colunas de sistema:
@@ -138,7 +138,7 @@ Para esses dois casos, há duas maneiras correspondentes de aplicar patch parts:
 
 O modo join é mais lento e requer mais memória do que o modo de merge, mas é usado com menos frequência.
 
-## Conteúdo relacionado {#related-content}
+## Conteúdo relacionado
 
 * [`ALTER UPDATE`](/pt-BR/reference/statements/alter/update) - Operações de `UPDATE` pesadas
 * [exclusão leve](/pt-BR/reference/statements/delete) - Operações leves de `DELETE`

@@ -26,7 +26,7 @@ ClickHouse Cloud에서는 자체 JSON Web Key Set(JWKS) 엔드포인트를 통�
 ClickHouse Cloud 콘솔의 **설정 → Security**에서 서비스별로 JWKS 제공자를 직접 구성할 수 있습니다.
 
 <div id="before-you-begin">
-  ## 시작하기 전에 {#before-you-begin}
+  ## 시작하기 전에
 </div>
 
 서비스에 JWT 제공자를 구성하려면 다음이 필요합니다.
@@ -40,7 +40,7 @@ ClickHouse Cloud 콘솔의 **설정 → Security**에서 서비스별로 JWKS �
   JWKS 기반 provider는 **RSA** 키와 버전 26.8부터 P-256, P-384, P-521 곡선의 **EC** 키를 허용합니다. JWKS 문서에 다른 키 타입이 포함될 수는 있지만, 사용 가능한 키가 최소 1개 있어야 합니다.
 </Note>
 
-## 작동 방식 {#how-it-works}
+## 작동 방식
 
 클라이언트(IdP(Identity Provider) 또는 애플리케이션)는 JWT를 생성하고 **private key**로 서명합니다. 토큰은 예상되는 [토큰 형식](/ko/concepts/features/security/external-authenticators/jwt#token-claims)을 따라야 합니다. 이후 ClickHouse는 JWKS URL에 게시된 **공개** 키를 사용하여 토큰을 검증합니다.
 
@@ -51,7 +51,7 @@ ClickHouse Cloud 콘솔의 **설정 → Security**에서 서비스별로 JWKS �
 ClickHouse는 provider를 추가하거나 업데이트할 때 JWKS URL을 검증하고 가져옵니다. 따라서 구성이 잘못되었거나 연결할 수 없는 URL은 사전에 거부됩니다.
 
 <div id="add-a-jwt-provider">
-  ## JWT 제공자 추가 {#add-a-jwt-provider}
+  ## JWT 제공자 추가
 </div>
 
 <Steps>
@@ -87,7 +87,7 @@ ClickHouse는 provider를 추가하거나 업데이트할 때 JWKS URL을 검증
 </Warning>
 
 <div id="limits">
-  ## 제한 사항 {#limits}
+  ## 제한 사항
 </div>
 
 * 서비스당 JWT 제공자는 최대 **5개**까지 사용할 수 있습니다.
@@ -95,7 +95,7 @@ ClickHouse는 provider를 추가하거나 업데이트할 때 JWKS URL을 검증
 * JWKS URL은 Public HTTPS endpoint여야 합니다. Private, 내부 또는 link-local 주소는 거부됩니다.
 
 <div id="related">
-  ## 관련 문서 {#related}
+  ## 관련 문서
 </div>
 
 * [JWT 인증](/ko/concepts/features/security/external-authenticators/jwt) — 토큰 클레임, 임시 사용자 및 클라이언트 사용법.

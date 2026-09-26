@@ -7,12 +7,12 @@ doc_type: 'landing-page'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
 ---
 
-## Introduction {#introduction}
+## Introduction
 
 Cette bibliothèque fournit des extensions PostgreSQL permettant d&#39;exécuter des requêtes [chDB] dans
 Postgres, ainsi que de copier des données depuis et vers divers formats et stockage d’objet.
 
-### Extension chdb {#chdb-extension}
+### Extension chdb
 
 L&#39;extension `chdb` exécute des requêtes [chDB]. La fonction `chdb_query()` exécute
 une seule requête. Par exemple, cette requête :
@@ -37,7 +37,7 @@ Sorties :
 Consultez la [documentation chdb](/fr/products/managed-postgres/extensions/chdb/chdb)
 pour plus de détails.
 
-### Module chdb_hook {#chdb_hook-module}
+### Module chdb_hook
 
 Le module `chdb_hook` se greffe sur la commande [COPY] afin de copier des données vers ou depuis
 S3, GCS, Azure Blob, un fichier ou une URL http. Cet exemple charge des enregistrements issus de
@@ -93,7 +93,7 @@ CREATE TABLE reviews () WITH (
 Voir la [documentation de chdb&#95;hook](/fr/products/managed-postgres/extensions/chdb/chdb_hook)
 pour plus de détails.
 
-## Benchmarking des formats {#benchmarking-formats}
+## Benchmarking des formats
 
 Un [benchmark] compare les performances de `COPY` avec [chdb&#95;hook] à celles
 d&#39;[aws&#95;s3], [pg&#95;duckdb] et [pg&#95;lake] pour environ 1 million de rows du
@@ -124,7 +124,7 @@ avec les autres extensions ; d&#39;autres formats JSON, tels que
 [JSONCompactEachRow], se rapprocheront davantage des performances des autres
 formats.
 
-## Architecture {#architecture}
+## Architecture
 
 Les extensions chdb et chdb&#95;hook s&#39;appuient sur un processus `chdb_helper` pour exécuter
 les requêtes [chDB]. Ce processus auxiliaire maintient la consommation de ressources de [chDB]
@@ -154,7 +154,7 @@ sans incidence sur les autres sessions.
   dans une requête ultérieure.
 </Important>
 
-## Dépendances {#dependencies}
+## Dépendances
 
 L&#39;extension `chdb` nécessite PostgreSQL 15 ou une version supérieure ainsi que la bibliothèque [chDB]
 v26.7.0 ou ultérieure (actuellement disponible uniquement pour Linux et macOS). Le
@@ -178,7 +178,7 @@ Sur Linux, vous pouvez également faire en sorte que le processus d&#39;installa
 bibliothèque dynamique `libchdb` en définissant `export BUNDLE_LIBCHDB=1` avant d&#39;exécuter
 les commandes `make` de l&#39;[Installation](#compile-from-source).
 
-### Compiler depuis les sources {#compile-from-source}
+### Compiler depuis les sources
 
 Pour compiler chdb, il suffit de faire ceci :
 
@@ -262,12 +262,12 @@ extension_control_path = '/usr/local/extras/postgresql/share:$system'
 dynamic_library_path   = '/usr/local/extras/postgresql/lib:$libdir'
 ```
 
-## Auteurs {#authors}
+## Auteurs
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## Copyright {#copyright}
+## Copyright
 
 Copyright (c) 2026, ClickHouse
 

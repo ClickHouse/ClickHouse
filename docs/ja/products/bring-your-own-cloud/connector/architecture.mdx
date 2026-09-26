@@ -11,7 +11,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-## コンポーネント {#components}
+## コンポーネント
 
 ClickHouse Connector は 3 つのデーモンを実行します。いずれも `clicklink` バイナリに組み込まれています。
 
@@ -23,7 +23,7 @@ Kubernetes では、`clicklink-connector` Helm チャートが、任意に選択
 
 <Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse Connector architecture" />
 
-## 接続 {#connections}
+## 接続
 
 コネクタが確立する接続はすべてアウトバウンドです。完全な一覧は次のとおりです。
 
@@ -45,7 +45,7 @@ Kubernetes では、`clicklink-connector` Helm チャートが、任意に選択
 
 インバウンドについては、各デーモンがローカルのヘルスポートを 1 つ公開します。scraper は 8082、トラブルシューターは 8084、executor は 8086 です。このポートは `/livez`、`/readyz`、`/healthz`、および `/metrics` でのデーモンの Prometheus メトリクスを提供します。メトリクス専用のポートは別途ありません。executor のローカルコマンド API はループバックにのみバインドされ、Service で公開されることはありません。他に存在するリスナーは、オプトイン方式のセッションゲートウェイのみです。[support sessions](/ja/products/bring-your-own-cloud/connector/support-sessions) を参照してください。ClickHouse Cloud がこれらのいずれかに接続することはありません。
 
-## 証明書のライフサイクル {#certificate-lifecycle}
+## 証明書のライフサイクル
 
 コネクタは、自身で取得・維持するクライアント証明書を使用してエンドポイントに対して認証を行います。3 つのデーモンはいずれも同じ証明書を提示します。
 
@@ -55,11 +55,11 @@ Kubernetes では、`clicklink-connector` Helm チャートが、任意に選択
 
 コネクタは、エンドポイントのサーバー証明書をシステムのトラストストアに照らして検証します。`api.tls.ca_file` (VM) または `api.tls.caFile` (Helm) が設定されている場合は、登録バンドルに含まれる CA チェーンがこれらのルート証明書に追加されます。
 
-## データフロー {#data-flow}
+## データフロー
 
 <Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="ClickHouse Connectorのデータフロー" />
 
-### 環境外に送信されるもの {#what-leaves}
+### 環境外に送信されるもの
 
 * **allowlist に登録されたシステムテーブルのメトリクス。** スクレイパーのデフォルトセットは `metric_log`、`asynchronous_metric_log`、`tables`、`warnings`、`server_settings` です。allowlist は明示的に設定されており、スクレイパーはこれ以外を読み取りません。
 * **インフラストラクチャのメタデータ。** API を介して同期されるサービス、インフラストラクチャ、バックアップのインベントリ。マネージドサービスの場合、その状態、現在および期待されるレプリカ数、稼働中のサーバーバージョンと設定バージョンが含まれます。
@@ -68,14 +68,14 @@ Kubernetes では、`clicklink-connector` Helm チャートが、任意に選択
 * **送信したサービス定義。** `clicklink clctl instances create` は、環境 ID、クラウドとリージョン、サービス名、そのバケット名と IAM ロール ARN、冪等性キーを送信します。また、デフォルトユーザーのパスワードの 2 つのハッシュ (SHA-256 とダブル SHA-1) も送信します。
 * **support session の出力。** 有効化したセッション中に実行された読み取り専用診断の結果 (機密情報のマスキング後) 。
 
-### デフォルトで外部に出ないもの {#what-never-leaves}
+### デフォルトで外部に出ないもの
 
 * **生のクエリテキスト (scrape パス上) 。** `system.query_log` はデフォルトの scrape 対象セットから除外されています。クエリ関連のカラムにはリテラル値が含まれる可能性があり、それに伴って PII やシークレットが含まれることがあるためです。これを再度追加する場合は、デプロイメントごとの override となります。デフォルトのセッションテーブル allowlist には `system.processes` が含まれており、生存中のクエリのテキストが表示されます。その絞り込み方法については [support sessions](/ja/products/bring-your-own-cloud/connector/support-sessions) を参照してください。
 * **テーブルのデータおよびバックアップ。** これらはお客様のアカウント内の バケット に留まります。executor はお客様の バケット への認証情報を保持しておらず、読み取ることもできません。
 * **認証情報。** `init` は設定ファイルに認証情報を書き込みません。ClickHouse が保存するのはコネクタユーザーのパスワードの bcrypt ハッシュのみで、シークレットは Kubernetes Secrets またはホスト上の root のみが読み取れるファイルに留まります。マネージドサービスの default user のパスワードはお客様側で生成され、一度だけ表示されます。送信されるのはそのハッシュのみです。scrape パスにも同期パスにも、認証情報を送信する処理はありません。
 * **マスキングされていない トラブルシューター の出力。** トラブルシューター が返す内容はすべて、外部に出る前に マスキング patterns (組み込みのものとお客様独自のもの) を通過します。[support sessions](/ja/products/bring-your-own-cloud/connector/support-sessions) を参照してください。
 
-## 信頼境界 {#trust-boundaries}
+## 信頼境界
 
 * **境界はお客様の環境です。** ClickHouse Cloud が受け取るのは、コネクタが送信するものだけです。すなわち、スクレイプ、ハートビートとステータス、コマンド結果、そしてアクティブな support session が返す内容です。ClickHouse Cloud 側から内向きに接続を開始することは一切ありません。
 * **セッションゲートウェイはお客様のものです。** Ingress 経由での公開を明示的に選択しない限り、お客様の環境内からのみ到達可能です (Kubernetes では `kubectl port-forward` 経由、VM ではローカル) 。ClickHouse Cloud がこれに接続することはありません。

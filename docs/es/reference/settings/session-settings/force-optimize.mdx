@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## force_optimize_projection {#force_optimize_projection}
+## force_optimize_projection
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,7 +25,7 @@ Valores posibles:
 * 0 — La optimización de proyecciones no es obligatoria.
 * 1 — La optimización de proyecciones es obligatoria.
 
-## force_optimize_projection_name {#force_optimize_projection_name}
+## force_optimize_projection_name
 
 Si se establece como una cadena no vacía, comprueba que esta proyección se utilice al menos una vez en la consulta.
 
@@ -33,7 +33,7 @@ Valores posibles:
 
 * string: nombre de la proyección que se usa en una consulta
 
-## force_optimize_skip_unused_shards {#force_optimize_skip_unused_shards}
+## force_optimize_skip_unused_shards
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -45,7 +45,7 @@ Valores posibles:
 * 1 — Habilitado. La ejecución de consultas se deshabilita solo si la tabla tiene una clave de segmentación.
 * 2 — Habilitado. La ejecución de consultas se deshabilita independientemente de si la tabla tiene definida una clave de segmentación.
 
-## force_optimize_skip_unused_shards_nesting {#force_optimize_skip_unused_shards_nesting}
+## force_optimize_skip_unused_shards_nesting
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

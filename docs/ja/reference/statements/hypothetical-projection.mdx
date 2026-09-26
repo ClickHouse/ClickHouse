@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 `EXPLAIN WHATIF` は、仮説的なプロジェクションの効果をまだ見積もりません。いずれも `status: not_applicable` として報告されます。現時点で仮説的なプロジェクションを定義する利点は、マテリアライズせずに定義内容をテーブルに対して検証できること、および [`system.hypothetical_projections`](/ja/reference/system-tables/hypothetical_projections) を読み取るツールで活用できることにあります。
 
-## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
+## CREATE HYPOTHETICAL PROJECTION
 
 ```sql
 CREATE HYPOTHETICAL PROJECTION [IF NOT EXISTS] name
@@ -37,7 +37,7 @@ CREATE HYPOTHETICAL PROJECTION p_by_b ON t (SELECT a, b ORDER BY b);
 CREATE HYPOTHETICAL PROJECTION p_idx ON t INDEX b TYPE basic;
 ```
 
-## DROP HYPOTHETICAL PROJECTION {#drop-hypothetical-projection}
+## DROP HYPOTHETICAL PROJECTION
 
 ```sql
 DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
@@ -45,7 +45,7 @@ DROP HYPOTHETICAL PROJECTION [IF EXISTS] name ON [db.]table_name
 
 現在のセッションから仮説的なプロジェクションを削除します。
 
-## DROP ALL HYPOTHETICAL PROJECTIONS {#drop-all-hypothetical-projections}
+## DROP ALL HYPOTHETICAL PROJECTIONS
 
 ```sql
 DROP ALL HYPOTHETICAL PROJECTIONS
@@ -53,19 +53,19 @@ DROP ALL HYPOTHETICAL PROJECTIONS
 
 テーブルを問わず、現在のセッションで定義されたすべての仮説的なプロジェクションを削除します。仮想索引はそのまま残ります。`DROP ALL HYPOTHETICAL INDEXES` はその逆の動作となります。
 
-## スコープとライフタイム {#scope-and-lifetime}
+## スコープとライフタイム
 
 * 仮説的なプロジェクションは**現在のセッション**内にのみ存在し、他のセッションからは参照できず、セッション終了時に破棄されます。
 * 定義や削除を行っても projection は構築されず、そのテーブルに対する通常のクエリに影響することもありません。
 * 現在のセッションの仮説的なプロジェクションは [`system.hypothetical_projections`](/ja/reference/system-tables/hypothetical_projections) で確認できます。
 
-## 必要な権限 {#required-privileges}
+## 必要な権限
 
 `CREATE HYPOTHETICAL PROJECTION` には、テーブルに対する `ALTER ADD PROJECTION` 権限が必要です。定義をテーブルのカラムと照合して検証するため、実際の `ALTER TABLE ... ADD PROJECTION` と同じ権限が求められます。テーブルのデータは読み取らないため、PROJECTION のカラムに対する `SELECT` 権限は現時点では不要です。ただし、`EXPLAIN WHATIF` が PROJECTION の見積もりを行うようになると、それらのカラムを読み取るため、その時点でカラムレベルの `SELECT` が必要になります。[`CREATE HYPOTHETICAL INDEX`](/ja/reference/statements/hypothetical-index#required-privileges) では、すでにこの権限が必要です。
 
 `DROP HYPOTHETICAL PROJECTION` にも同じ権限が必要です。これは、削除時にテーブル名を指定することで、そのテーブルが存在するか、対象となり得るかが判明してしまうことを防ぐためです。`DROP ALL HYPOTHETICAL PROJECTIONS` はテーブル名を指定しないため、権限は不要です。
 
-## 関連項目 {#see-also}
+## 関連項目
 
 * [`CREATE HYPOTHETICAL INDEX`](/ja/reference/statements/hypothetical-index)
 * [`EXPLAIN WHATIF`](/ja/reference/statements/explain#explain-whatif)

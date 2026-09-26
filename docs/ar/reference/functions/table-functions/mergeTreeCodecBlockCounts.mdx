@@ -18,20 +18,20 @@ doc_type: 'reference'
 
 إذا انطبقت سياسة صفوف على الجدول بالنسبة إلى المستخدم الحالي، فإن قراءة `codec_block_counts` تطرح `ACCESS_DENIED`، لأن الأعداد ستشمل الصفوف التي تخفيها السياسة. تظل الأعمدة الأخرى قابلة للقراءة، ويعرض `system.parts_columns` تلك الأعمدة بغض النظر عن سياسات الصفوف.
 
-## الصياغة {#syntax}
+## الصياغة
 
 ```sql
 mergeTreeCodecBlockCounts(database, table)
 ```
 
-## الوسيطات {#arguments}
+## الوسيطات
 
 | الوسيطة    | الوصف                                     |
 | ---------- | ----------------------------------------- |
 | `database` | اسم قاعدة البيانات التي يوجد فيها الجدول. |
 | `table`    | اسم جدول MergeTree.                       |
 
-## القيمة المُعادة {#returned-value}
+## القيمة المُعادة
 
 كائن جدول يحتوي على صف واحد لكل مجموعة من (الجزء النشط والعمود والتدفق الفرعي) في الجدول المصدر:
 
@@ -42,7 +42,7 @@ mergeTreeCodecBlockCounts(database, table)
 * `data_uncompressed_bytes` ([Nullable(UInt64)](/ar/reference/data-types/nullable)) — حجم البيانات غير المضغوطة في التدفق الفرعي، بالبايت. تكون `NULL` لأجزاء `Compact`.
 * `codec_block_counts` ([Map(String, UInt64)](/ar/reference/data-types/map)) — عدد الكتل المضغوطة في هذا التدفق الفرعي، مجمّعة حسب برنامج الترميز. تكون فارغة لأجزاء `Compact`، إذ تشترك أعمدتها في ملف بيانات واحد، ولذلك لا يمكن إسناد برنامج ترميز إلى كل تدفق على حدة.
 
-## مثال للاستخدام {#usage-example}
+## مثال للاستخدام
 
 ```sql
 CREATE TABLE mt (a UInt64) ENGINE = MergeTree ORDER BY a

@@ -10,7 +10,7 @@ doc_type: 'guide'
 
 Este motor permite integrar o ClickHouse ao [Redis](https://redis.io/). Como o Redis adota o modelo chave-valor, recomendamos fortemente que ele seja consultado apenas de forma pontual, como em `where k=xx` ou `where k in (xx, xx)`.
 
-## Criar uma tabela {#creating-a-table}
+## Criar uma tabela
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -42,7 +42,7 @@ Os argumentos também podem ser passados usando [coleções nomeadas](/pt-BR/con
   Consultas com `key equals` ou `in filtering` serão otimizadas para buscas de múltiplas chaves no Redis. Se as consultas não incluírem filtro pela chave, ocorrerá uma varredura completa da tabela, o que é uma operação custosa.
 </Note>
 
-## Exemplo de uso {#usage-example}
+## Exemplo de uso
 
 Crie uma tabela no ClickHouse usando o motor `Redis` com argumentos simples:
 
@@ -148,7 +148,7 @@ Junção com outras tabelas.
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
-## Limitações {#limitations}
+## Limitações
 
 O motor Redis também oferece suporte a consultas de varredura, como `where k > xx`, mas tem algumas limitações:
 

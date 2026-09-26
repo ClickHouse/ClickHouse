@@ -13,7 +13,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse Managed Postgres comprend un ensemble sélectionné d’extensions qui étendent les fonctionnalités de votre base de données. Vous trouverez ci-dessous la liste des extensions disponibles.
 
-## Installation des extensions {#installing-extensions}
+## Installation des extensions
 
 Pour installer une extension, connectez-vous à votre base de données et exécutez :
 
@@ -33,7 +33,7 @@ Pour afficher toutes les extensions disponibles et leurs versions :
 SELECT * FROM pg_available_extensions;
 ```
 
-## Extensions disponibles {#available-extensions}
+## Extensions disponibles
 
 | Extension                      | Version | Description                                                                                                  |
 | ------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------ |
@@ -133,16 +133,16 @@ SELECT * FROM pg_available_extensions;
 | `pgvector (vector)`            | 0.8.6   | Type de données vectoriel et méthodes d&#39;accès ivfflat et hnsw                                            |
 | `xml2`                         | 1.2     | Requêtes XPath et XSLT                                                                                       |
 
-## extension pg_clickhouse {#pg-clickhouse}
+## extension pg_clickhouse
 
 L’extension `pg_clickhouse` est préinstallée sur toutes les instances ClickHouse Managed Postgres. Elle vous permet d’interroger directement des bases de données ClickHouse depuis PostgreSQL, offrant ainsi une couche de requête unifiée pour les transactions comme pour l’analytique.
 
 Consultez la [documentation de pg&#95;clickhouse](/fr/products/managed-postgres/extensions/pg_clickhouse/introduction) pour les instructions de configuration et les détails d’utilisation.
 
-## extension pg_stat_ch {#pg-stat-ch}
+## extension pg_stat_ch
 
 L’extension `pg_stat_ch` assure l’observability au niveau des requêtes pour votre instance ClickHouse Managed Postgres. Elle capture la télémétrie de chaque requête (durées, lignes, buffers, WAL, erreurs) et l’envoie vers l’UI de ClickHouse Cloud, où elle alimente les vues des requêtes lentes, des erreurs et de la charge de travail. Aucune configuration n’est requise.
 
-## extension pg_re2 {#pg-re2}
+## extension pg_re2
 
 L&#39;extension `pg_re2` ajoute à ClickHouse Managed Postgres des fonctions Regex compatibles avec ClickHouse, reposant sur le moteur RE2 de Google. Elle est utile pour porter des requêtes de l&#39;un à l&#39;autre, ou pour exécuter des charges de travail hybrides nécessitant une sémantique de correspondance des motifs identique des deux côtés.

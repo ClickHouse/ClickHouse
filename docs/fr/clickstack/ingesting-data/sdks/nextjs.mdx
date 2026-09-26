@@ -18,9 +18,9 @@ avec Next 13.2 et versions ultérieures.
   Si vous recherchez la session replay ou la supervision côté navigateur, installez plutôt l’[intégration Browser](/fr/clickstack/ingesting-data/sdks/browser).
 </Note>
 
-## Installation {#installing}
+## Installation
 
-### Activer le hook d’instrumentation (obligatoire pour la v15 et les versions antérieures) {#enable-instrumentation-hook}
+### Activer le hook d’instrumentation (obligatoire pour la v15 et les versions antérieures)
 
 Pour commencer, vous devez activer le hook d’instrumentation de Next.js en définissant `experimental.instrumentationHook = true;` dans votre fichier `next.config.js`.
 
@@ -47,7 +47,7 @@ const nextConfig = {
 module.exports = nextConfig;
 ```
 
-### Installer le SDK OpenTelemetry de ClickHouse {#install-sdk}
+### Installer le SDK OpenTelemetry de ClickHouse
 
 <Tabs>
   <Tab title="NPM">
@@ -63,7 +63,7 @@ module.exports = nextConfig;
   </Tab>
 </Tabs>
 
-### Créer les fichiers d’instrumentation {#create-instrumentation-files}
+### Créer les fichiers d’instrumentation
 
 Créez un fichier nommé `instrumentation.ts` (ou `.js`) à la racine de votre projet Next.js avec le contenu suivant :
 
@@ -82,7 +82,7 @@ export async function register() {
 
 Cela permettra à Next.js d’importer l’instrumentation OpenTelemetry pour chaque invocation d’une fonction serverless.
 
-### Configurer les variables d&#39;environnement {#configure-environment-variables}
+### Configurer les variables d&#39;environnement
 
 Si vous envoyez des traces directement à ClickStack via OpenTelemetry, vous devrez démarrer votre serveur Next.js
 avec les variables d&#39;environnement suivantes afin d&#39;envoyer les spans vers l’OTel collector :

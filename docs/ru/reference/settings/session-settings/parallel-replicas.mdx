@@ -15,7 +15,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## parallel_replicas_allow_in_with_subquery {#parallel_replicas_allow_in_with_subquery}
+## parallel_replicas_allow_in_with_subquery
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,7 +23,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Если значение true, подзапрос для IN будет выполняться на каждой реплике-follower.
 
-## parallel_replicas_allow_materialized_views {#parallel_replicas_allow_materialized_views}
+## parallel_replicas_allow_materialized_views
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -31,7 +31,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешить использование материализованных представлений с параллельными репликами
 
-## parallel_replicas_allow_merge_tables {#parallel_replicas_allow_merge_tables}
+## parallel_replicas_allow_merge_tables
 
 <ExperimentalBadge />
 
@@ -41,7 +41,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает чтение из таблицы `Merge` с параллельными репликами. Действует только совместно с [parallel&#95;replicas&#95;plan&#95;based](/ru/reference/settings/session-settings/parallel-replicas#parallel_replicas_plan_based): чтение из таблицы `Merge` разворачивается в объединение чтений из базовых таблиц `MergeTree`, которое затем распределяется, как любое другое объединение. Таблица `Merge` обрабатывается одной репликой, если хотя бы одну из её базовых таблиц нельзя читать таким образом (таблица, не относящаяся к `MergeTree`, чтение с `FINAL`). Установите значение `false`, чтобы, как и до добавления этой поддержки, читать каждую таблицу `Merge` одной репликой. Экспериментальная.
 
-## parallel_replicas_allow_view_over_mergetree {#parallel_replicas_allow_view_over_mergetree}
+## parallel_replicas_allow_view_over_mergetree
 
 <BetaBadge />
 
@@ -51,7 +51,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает параллельным репликам выполнять внешний запрос простого представления над таблицами `MergeTree` (вместо внутреннего запроса представления), что улучшает распараллеливание между узлами. Также применяется к представлениям `UNION ALL`, все ветви которых читают из разных таблиц `MergeTree`.
 
-## parallel_replicas_connect_timeout_ms {#parallel_replicas_connect_timeout_ms}
+## parallel_replicas_connect_timeout_ms
 
 <SettingsInfoBlock type="Milliseconds" default_value="300" />
 
@@ -59,7 +59,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Тайм-аут в миллисекундах для подключения к удалённой реплике во время выполнения запроса в режиме параллельных реплик. Если тайм-аут истекает, соответствующая реплика не используется для выполнения запроса
 
-## parallel_replicas_count {#parallel_replicas_count}
+## parallel_replicas_count
 
 <BetaBadge />
 
@@ -67,7 +67,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Это внутренняя настройка, её не следует использовать напрямую: она отражает детали реализации режима «параллельных реплик». Для распределённых запросов сервер-инициатор автоматически устанавливает её в значение, равное числу параллельных реплик, участвующих в обработке запроса.
 
-## parallel_replicas_custom_key {#parallel_replicas_custom_key}
+## parallel_replicas_custom_key
 
 <BetaBadge />
 
@@ -81,7 +81,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Выражение проверяется с учетом привилегий пользователя `SELECT` на уровне столбцов. Для представления с `SQL SECURITY DEFINER` или `NONE` оно применяется к столбцам представления; тело представления читается без такой проверки.
 
-## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
+## parallel_replicas_custom_key_range_lower
 
 <BetaBadge />
 
@@ -95,7 +95,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Примечание: эта настройка не приводит к дополнительной фильтрации данных при обработке запросов, а лишь изменяет точки, в которых фильтр диапазона разбивает диапазон `[0, INT_MAX]` для параллельной обработки.
 
-## parallel_replicas_custom_key_range_upper {#parallel_replicas_custom_key_range_upper}
+## parallel_replicas_custom_key_range_upper
 
 <BetaBadge />
 
@@ -109,7 +109,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Примечание: эта настройка сама по себе не приводит к дополнительной фильтрации данных при обработке запроса, а лишь изменяет точки, в которых фильтр диапазона разбивает диапазон `[0, INT_MAX]` для параллельной обработки
 
-## parallel_replicas_filter_pushdown {#parallel_replicas_filter_pushdown}
+## parallel_replicas_filter_pushdown
 
 <BetaBadge />
 
@@ -119,7 +119,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешить pushdown фильтров в ту часть запроса, которую выполняют параллельные реплики
 
-## parallel_replicas_for_cluster_engines {#parallel_replicas_for_cluster_engines}
+## parallel_replicas_for_cluster_engines
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -127,13 +127,13 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Заменяет движки табличных функций на соответствующие варианты -Cluster
 
-## parallel_replicas_for_non_replicated_merge_tree {#parallel_replicas_for_non_replicated_merge_tree}
+## parallel_replicas_for_non_replicated_merge_tree
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Если установлено значение true, ClickHouse будет использовать алгоритм параллельных реплик и для нереплицируемых таблиц семейства MergeTree
 
-## parallel_replicas_index_analysis_only_on_coordinator {#parallel_replicas_index_analysis_only_on_coordinator}
+## parallel_replicas_index_analysis_only_on_coordinator
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -141,7 +141,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Анализ индекса выполняется только на реплике-координаторе и не выполняется на других репликах. Действует только при включенном parallel&#95;replicas&#95;local&#95;plan
 
-## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
+## parallel_replicas_insert_select_local_pipeline
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -149,7 +149,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Использовать локальный конвейер при распределённом INSERT SELECT с параллельными репликами
 
-## parallel_replicas_local_plan {#parallel_replicas_local_plan}
+## parallel_replicas_local_plan
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -157,7 +157,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Использовать локальный план для локальной реплики
 
-## parallel_replicas_mark_segment_size {#parallel_replicas_mark_segment_size}
+## parallel_replicas_mark_segment_size
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -165,13 +165,13 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Части логически разбиваются на сегменты, которые распределяются между репликами для параллельного чтения. Этот параметр задаёт размер этих сегментов. Не рекомендуется изменять его, пока вы не будете полностью уверены в том, что делаете. Значение должно находиться в диапазоне [128; 16384]
 
-## parallel_replicas_min_number_of_rows_per_replica {#parallel_replicas_min_number_of_rows_per_replica}
+## parallel_replicas_min_number_of_rows_per_replica
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Ограничивает число реплик, используемых в запросе, значением (оценочное количество строк для чтения / min&#95;number&#95;of&#95;rows&#95;per&#95;replica). Максимальное значение по-прежнему ограничено параметром &#39;max&#95;parallel&#95;replicas&#39;
 
-## parallel_replicas_mode {#parallel_replicas_mode}
+## parallel_replicas_mode
 
 <SettingsInfoBlock type="ParallelReplicasMode" default_value="read_tasks" />
 
@@ -179,7 +179,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Тип фильтра, используемого с пользовательским ключом для параллельных реплик. default — использовать операцию modulo для пользовательского ключа, range — использовать фильтр диапазона для пользовательского ключа с применением всех возможных значений типа значения этого ключа.
 
-## parallel_replicas_plan_based {#parallel_replicas_plan_based}
+## parallel_replicas_plan_based
 
 <ExperimentalBadge />
 
@@ -189,7 +189,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Определяет, следует ли использовать параллельные реплики и где именно, на основе анализа плана запроса, а не дерева запроса. В результате удалённым репликам вместо SQL-запроса отправляется фрагмент плана. Экспериментальная.
 
-## parallel_replicas_prefer_local_join {#parallel_replicas_prefer_local_join}
+## parallel_replicas_prefer_local_join
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -197,7 +197,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Если `true`, и `JOIN` можно выполнить с помощью алгоритма параллельных реплик, а каждое хранилище той части `JOIN`, которая иначе была бы материализована во временную таблицу, может быть прочитано каждой репликой самостоятельно, будет использоваться локальный `JOIN` вместо `GLOBAL JOIN`. Такой частью является правая — за исключением `RIGHT JOIN`, где это левая часть и где каждое хранилище должно быть пригодно для параллельных реплик, а не просто быть таблицей семейства `*MergeTree`. Хранилище на материализуемой стороне вложенного `GLOBAL JOIN` или под `GLOBAL IN` не учитывается, поскольку initiator материализует их сам.
 
-## parallel_replicas_prefer_local_replica {#parallel_replicas_prefer_local_replica}
+## parallel_replicas_prefer_local_replica
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -207,7 +207,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Если отключено, локальной реплике не отдается предпочтение, и реплики выбираются исключительно алгоритмом балансировки нагрузки.
 Это позволяет направлять запросы с `max_parallel_replicas = 1` на другой хост, что может улучшить локальность кэша, когда множество коротких запросов распределено по кластеру.
 
-## parallel_replicas_support_projection {#parallel_replicas_support_projection}
+## parallel_replicas_support_projection
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

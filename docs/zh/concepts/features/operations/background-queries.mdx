@@ -6,7 +6,7 @@ title: '后台查询'
 doc_type: 'guide'
 ---
 
-## 概述 {#overview}
+## 概述
 
 后台查询允许客户端通过设置 `run_query_in_background=1` 提交查询，使其独立于客户端会话执行。提交后，ClickHouse server 会立即向客户端返回响应，而查询仍在服务端继续运行直至结束 (成功或失败) 。
 
@@ -26,12 +26,12 @@ doc_type: 'guide'
 后台查询无法在服务器重启后继续存在。服务器关闭时的行为由
 `shutdown_wait_unfinished_queries` 和 `shutdown_wait_unfinished` 控制。
 
-## 不受支持的查询形式 {#unsupported-query-forms}
+## 不受支持的查询形式
 
 后台查询的存活时间比提交它的 connection 更长，因此 server 必须在接受该查询的那一刻就已具备运行它所需的一切条件。
 不满足该条件的 request 会在提交请求的 connection 上被同步拒绝，查询不会启动。
 
-### 通过连接流式传输的数据 {#data-that-streams-over-the-connection}
+### 通过连接流式传输的数据
 
 如果在分发查询后，服务器仍需从提交该查询的连接中读取数据，则该 `INSERT` 会被拒绝。
 
@@ -54,7 +54,7 @@ INSERT INTO target_table SELECT number FROM numbers(1000000)
 
 请不要依赖这一大小界限：对于必须在后台加载的数据，请使用 `INSERT ... SELECT`，或 `url`、`s3` 之类的 table function。
 
-### 其他被拒绝的请求 {#other-rejected-requests}
+### 其他被拒绝的请求
 
 | 请求                                                                            | 错误                                                                                           |
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -68,9 +68,9 @@ INSERT INTO target_table SELECT number FROM numbers(1000000)
 该设置永远不会传播到分布式查询的次级查询：后台执行的分布式 `INSERT`
 会在后台运行的初始查询内，以前台方式执行各个分片上的查询。
 
-## 提交后台查询 {#submit-a-background-query}
+## 提交后台查询
 
-### 原生 TCP 协议 {#native-tcp-protocol}
+### 原生 TCP 协议
 
 使用 ClickHouse 客户端时，将 `run_query_in_background` 作为命令行设置传入：
 
@@ -98,7 +98,7 @@ clickhouse-client --echo-query-id \
 Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
 ```
 
-### HTTP protocol {#http-protocol}
+### HTTP protocol
 
 对于 HTTP 请求，请将 `run_query_in_background` 作为 URL 参数传递：
 
@@ -134,7 +134,7 @@ curl 'http://localhost:8123/' \
 
 请在 URL 中传递该设置，或在用户或 profile 级别进行配置。
 
-## 监控执行 {#monitor-execution}
+## 监控执行
 
 使用 `query_id` 检查查询当前是否正在运行：
 
@@ -182,7 +182,7 @@ LIMIT 1;
   ```
 </Note>
 
-## 查询日志刷新延迟 {#query-log-flush-delay}
+## 查询日志刷新延迟
 
 条目会先经过缓冲，之后才会出现在 `system.query_log` 中。
 对于自管理 ClickHouse，示例服务器配置将 `query_log.flush_interval_milliseconds` 设置为 `7500`。

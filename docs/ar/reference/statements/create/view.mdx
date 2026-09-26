@@ -12,7 +12,7 @@ import { DeprecatedBadge } from "/snippets/ar/components/DeprecatedBadge/Depreca
 
 ينشئ عرضًا جديدًا. يمكن أن تكون العروض [عادية](#normal-view)، أو [مادية](#materialized-view)، أو [مادية قابلة للتحديث](#refreshable-materialized-view).
 
-## عرض عادي {#normal-view}
+## عرض عادي
 
 الصيغة:
 
@@ -43,7 +43,7 @@ SELECT a, b, c FROM view
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-## العرض ذو المعلمات {#parameterized-view}
+## العرض ذو المعلمات
 
 تشبه العروض ذات المعلمات العروض العادية، لكنها يمكن أن تُنشأ بمعلمات لا تُفسَّر فورًا.
 ويمكن استخدام هذه العروض مع دوال الجداول، بحيث يُستخدَم اسم العرض اسمًا للدالة، وتُمرَّر قيم المعلمات كوسائط لها.
@@ -66,7 +66,7 @@ SELECT * FROM view(column1=value1, column2=value2 ...)
 DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
-## العرض المادي {#materialized-view}
+## العرض المادي
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
@@ -86,7 +86,7 @@ AS SELECT ...
 
 `OR REPLACE` و`IF NOT EXISTS` لا يمكن استخدامهما معًا: فالجمع بينهما يؤدي إلى خطأ نحوي.
 
-### CREATE OR REPLACE MATERIALIZED VIEW {#create-or-replace-materialized-view}
+### CREATE OR REPLACE MATERIALIZED VIEW
 
 تستبدل `CREATE OR REPLACE MATERIALIZED VIEW` بشكل ذري عرضًا ماديًا موجودًا وجدول التخزين الداخلي الخاص به (إن وُجد). وتتطلب هذه العملية محرك قاعدة بيانات `Atomic` أو `Replicated`.
 
@@ -184,7 +184,7 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 
 لحذف عرض، استخدم [DROP VIEW](/ar/reference/statements/drop#drop-view). مع أن `DROP TABLE` يعمل مع VIEW أيضًا.
 
-## أمان SQL {#sql_security}
+## أمان SQL
 
 يتيح لك `DEFINER` و`SQL SECURITY` تحديد مستخدم ClickHouse الذي سيُستخدم عند تنفيذ الاستعلام الأساسي للعرض.
 لـ `SQL SECURITY` ثلاث قيم مسموح بها: `DEFINER` أو `INVOKER` أو `NONE`. ويمكنك تحديد أي مستخدم موجود أو `CURRENT_USER` في عبارة `DEFINER`.
@@ -222,7 +222,7 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
-### أمثلة {#examples}
+### أمثلة
 
 ```sql
 CREATE VIEW test_view
@@ -236,7 +236,7 @@ SQL SECURITY INVOKER
 AS SELECT ...
 ```
 
-## Live View {#live-view}
+## Live View
 
 <DeprecatedBadge />
 
@@ -244,7 +244,7 @@ AS SELECT ...
 
 لراحتك، يمكنك العثور على الوثائق القديمة [هنا](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## العرض المادي القابل للتحديث {#refreshable-materialized-view}
+## العرض المادي القابل للتحديث
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -283,7 +283,7 @@ number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
   الإعدادات الموجودة في جزء `REFRESH ... SETTINGS` من الاستعلام هي إعدادات التحديث (مثل `refresh_retries`)، وهي مختلفة عن الإعدادات العادية (مثل `max_threads`). ويمكن تحديد الإعدادات العادية باستخدام `SETTINGS` في نهاية الاستعلام.
 </Note>
 
-### جدولة التحديث {#refresh-schedule}
+### جدولة التحديث
 
 أمثلة على جداول التحديث:
 
@@ -311,7 +311,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 عادةً ما يبدأ أول تحديث فور إنشاء الـ materialized view: إذ يكون الوقت منذ آخر تحديث لانهائيًا، لذا يشير أي schedule إلى أن وقت التحديث قد حان الآن. إذا تم تحديد `EMPTY`، فسيتم تخطي هذا التحديث الأولي، وسيحدث أول تحديث في الوقت المجدول التالي؛ فعلى سبيل المثال، مع `EVERY 1 HOUR` سيحدث أول تحديث عند نهاية الساعة الحالية.
 
-### في قاعدة بيانات Replicated {#in-replicated-db}
+### في قاعدة بيانات Replicated
 
 إذا كان العرض المادي القابل للتحديث موجودًا في [قاعدة بيانات Replicated](/ar/reference/engines/database-engines/replicated)، فإن النُسخ المتماثلة تتنسّق فيما بينها بحيث لا تنفّذ التحديث في كل وقت مجدول إلا نسخة متماثلة واحدة فقط. ويُشترط استخدام محرك الجداول [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/replication)، حتى تتمكن جميع النُسخ المتماثلة من رؤية البيانات الناتجة عن التحديث.
 
@@ -321,7 +321,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 يتم التنسيق عبر Keeper. ويُحدَّد مسار znode بواسطة إعداد الخادم [default&#95;replica&#95;path](/ar/reference/settings/server-settings/settings/default-replica#default_replica_path).
 
-### تبعيات إعادة التحديث {#refresh-dependencies}
+### تبعيات إعادة التحديث
 
 `DEPENDS ON` يزامن عمليات إعادة التحديث بين الجداول المختلفة:
 
@@ -347,7 +347,7 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
   لا تعمل `DEPENDS ON` إلا بين العروض المادية القابلة للتحديث. وعلى وجه الخصوص، إذا كان عرض التبعية يستخدم `TO <table>`، فتأكد من استخدام اسم العرض لا اسم الجدول. وإذا كانت قائمة `DEPENDS ON` تتضمن جدولًا عاديًا أو عرضًا غير قابل للتحديث أو تحتوي على خطأ مطبعي، فلن يتم تحديث العرض أبدًا، وستظهر حالته `MissingDependencies` في `system.view_refreshes`. ويمكن تغيير التبعيات أو إزالتها باستخدام `ALTER`، راجع [تغيير معلمات التحديث](#changing-refresh-parameters).
 </Note>
 
-#### استخدام `DEPENDS ON` لتحقيق زمن انتشار متسق {#using-depends-on-for-consistent-propagation-latency}
+#### استخدام `DEPENDS ON` لتحقيق زمن انتشار متسق
 
 إذا كان كلا العرضين يستخدم `REFRESH EVERY` بالفترة نفسها، فستُطبَّق التبعية في كل فترة زمنية.
 
@@ -371,7 +371,7 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
   Y:             └►[10:00 ru------un]└►[11:00 ru---------------un]└►[13:00 run]
 ```
 
-#### استخدام `DEPENDS ON` في معالجة التدفق على دفعات {#using-depends-on-for-batched-stream-processing}
+#### استخدام `DEPENDS ON` في معالجة التدفق على دفعات
 
 إذا لم يُستخدَم `REFRESH EVERY`، فسيُحدَّث العرض التابع X إذا كانت جميع تبعياته قد تحدّثت مرة واحدة على الأقل منذ آخر تحديث لـ X. ويضيف `REFRESH AFTER T` تأخيرًا: إذ سيبدأ العنصر التابع التحديث بعد مرور مدة T على اكتمال تحديث التبعية.
 
@@ -417,7 +417,7 @@ SYSTEM REFRESH VIEW current_batch_v;
 
 لا يعمل هذا جيدًا إلا عندما يكون تنسيق التحديث مفعّلًا، أي عندما تكون العروض في قاعدة بيانات Replicated أو Shared. ومن دون التنسيق، تؤدي إعادة تشغيل الخادم إلى كسر الحلقة، مما يتطلب تنفيذ `SYSTEM REFRESH VIEW` يدويًا بعد كل إعادة تشغيل بدلًا من تنفيذه مرة واحدة فقط بعد إنشاء العروض.
 
-### إعدادات التحديث {#refresh-settings}
+### إعدادات التحديث
 
 إعدادات التحديث المتاحة:
 
@@ -426,7 +426,7 @@ SYSTEM REFRESH VIEW current_batch_v;
 * `refresh_retry_max_backoff_ms` - الحد الأقصى للزيادة الأسية في مدة التأخير بين محاولات التحديث. القيمة الافتراضية: 60000 مللي ثانية (دقيقة واحدة).
 * `all_replicas` - في [قاعدة بيانات Replicated](/ar/reference/engines/database-engines/replicated) مع `APPEND`، يحدّد ما إذا كانت جميع النسخ المتماثلة تُحدَّث بشكل مستقل، أو ما إذا كانت نسخة متماثلة واحدة فقط تُجري التحديث في كل وقت مجدول. لا يمكن تغيير هذا الإعداد بعد إنشاء العرض. القيمة الافتراضية: `false`.
 
-### تغيير معلمات التحديث {#changing-refresh-parameters}
+### تغيير معلمات التحديث
 
 يمكن تغيير معلمات التحديث لعرض مادي قابل للتحديث موجود باستخدام [`ALTER TABLE ... MODIFY REFRESH`](/ar/reference/statements/alter/view#alter-table--modify-refresh-statement):
 
@@ -469,7 +469,7 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 
-### عمليات أخرى {#other-operations}
+### عمليات أخرى
 
 تتوفر حالة جميع العروض المادية القابلة للتحديث في الجدول [`system.view_refreshes`](/ar/reference/system-tables/view_refreshes). ويعرض هذا الجدول تحديدًا تقدّم التحديث (إذا كان جاريًا)، ووقت آخر تحديث ووقت التحديث التالي، ورسالة الاستثناء إذا فشل التحديث.
 
@@ -481,12 +481,12 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
   معلومة طريفة: يُسمح لاستعلام التحديث بالقراءة من العرض الذي يجري تحديثه، مع الاطّلاع على نسخة البيانات السابقة للتحديث. وهذا يعني أنه يمكنك تنفيذ لعبة الحياة لكونواي: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 </Note>
 
-## محتوى مرتبط {#related-content}
+## محتوى مرتبط
 
 * مدونة: [العمل مع بيانات السلاسل الزمنية في ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * مدونة: [بناء حل Observability باستخدام ClickHouse - الجزء 2 - التتبعات](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
 
-## عروض مؤقتة {#temporary-views}
+## عروض مؤقتة
 
 يدعم ClickHouse **عروض مؤقتة** بالخصائص التالية (على غرار الجداول المؤقتة حيثما ينطبق ذلك):
 
@@ -514,7 +514,7 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 * **SHOW CREATE**
   استخدم `SHOW CREATE TEMPORARY VIEW view_name;` لطباعة DDL الخاص بعرض مؤقت.
 
-### الصيغة {#temporary-views-syntax}
+### الصيغة
 
 ```sql
 CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
@@ -522,7 +522,7 @@ CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
 
 `OR REPLACE` **غير مدعوم** للعروض المؤقتة (تماشيًا مع الجداول المؤقتة). إذا كنت بحاجة إلى “استبدال” عرض مؤقت، فاحذفها ثم أنشئها من جديد.
 
-### أمثلة {#temporary-views-examples}
+### أمثلة
 
 أنشئ جدولًا مؤقتًا كمصدر، ثم أنشئ فوقه عرضًا مؤقتًا:
 
@@ -550,7 +550,7 @@ SHOW CREATE TEMPORARY VIEW tview;
 DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPORARY TABLE syntax
 ```
 
-### غير المسموح به / القيود {#temporary-views-limitations}
+### غير المسموح به / القيود
 
 * `CREATE OR REPLACE TEMPORARY VIEW ...` → **غير مسموح** (استخدم `DROP` + `CREATE`).
 * `CREATE TEMPORARY MATERIALIZED VIEW ...` → **غير مسموح**.
@@ -558,11 +558,11 @@ DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPOR
 * `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **غير مسموح** (الكائنات المؤقتة محلية على مستوى الجلسة).
 * `POPULATE`, `REFRESH`, `TO [db.table]`, المحركات الداخلية، وجميع البنود الخاصة بـ MV → **لا تنطبق** على العروض المؤقتة.
 
-### ملاحظات حول الاستعلامات الموزعة {#temporary-views-distributed-notes}
+### ملاحظات حول الاستعلامات الموزعة
 
 إن **العرض** المؤقت ليس سوى تعريف؛ ولا توجد أي بيانات يمكن تمريرها. وإذا كان العرض المؤقت يشير إلى **جداول** مؤقتة (مثل `Memory`)، فيمكن إرسال بياناتها إلى الخوادم البعيدة أثناء تنفيذ الاستعلامات الموزعة، تمامًا كما هو الحال مع الجداول المؤقتة.
 
-#### مثال {#temporary-views-distributed-example}
+#### مثال
 
 ```sql
 -- A session-scoped, in-memory table

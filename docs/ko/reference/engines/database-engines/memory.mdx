@@ -10,14 +10,14 @@ doc_type: 'reference'
 
 `Memory` 데이터베이스 엔진은 메타데이터와 테이블 정의를 메모리에만 보관합니다. 이 엔진은 임시 데이터베이스용으로, 서버가 중지되거나 재시작되면 해당 데이터베이스와 그 안의 테이블은 모두 사라집니다.
 
-## 데이터베이스 생성 {#creating-a-database}
+## 데이터베이스 생성
 
 ```sql
 CREATE DATABASE temporary_data
 ENGINE = Memory;
 ```
 
-## 사용법 {#usage}
+## 사용법
 
 [`Atomic`](/ko/reference/engines/database-engines/atomic) 데이터베이스에서와 동일하게 테이블을 생성하고 사용합니다:
 
@@ -34,7 +34,7 @@ INSERT INTO temporary_data.events VALUES (1, 'started');
 
 재시작 후에도 유지되어야 하는 데이터나 정의에는 이 엔진을 사용하지 마십시오. 영구적으로 보존해야 하는 데이터베이스 메타데이터에는 기본 오픈소스 데이터베이스 엔진인 `Atomic`을 사용하십시오.
 
-## 관련 항목 {#see-also}
+## 관련 항목
 
 * [Atomic 데이터베이스 엔진](/ko/reference/engines/database-engines/atomic)
 * [`Memory` 테이블 엔진](/ko/reference/engines/table-engines/special/memory)

@@ -16,7 +16,7 @@ Al ejecutar `SET ROLE` en la SQL Console de ClickHouse Cloud, el rol puede parec
   Prefiera los [roles de base de datos administrados por Cloud](/es/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) para gestionar el acceso a la base de datos desde la consola. Los roles `sql-console-role:<email>` no son compatibles con las sesiones JWT dentro de la SQL Console.
 </Tip>
 
-## Síntomas {#symptoms}
+## Síntomas
 
 Es posible que observe uno o varios de los siguientes síntomas:
 
@@ -35,7 +35,7 @@ SELECT
     defaultRoles();
 ```
 
-## Por qué ocurre esto {#why-this-happens}
+## Por qué ocurre esto
 
 La SQL Console envía consultas a través de conexiones HTTP sin estado a un servicio de ClickHouse Cloud con varias réplicas. No se garantiza que las consultas consecutivas utilicen la misma conexión o réplica.
 
@@ -43,7 +43,7 @@ La SQL Console envía consultas a través de conexiones HTTP sin estado a un ser
 
 Por este motivo, no use `SET ROLE` como mecanismo persistente de control de acceso en la SQL Console.
 
-## Cómo funcionan los roles de usuario de SQL Console {#how-sql-console-user-roles-work}
+## Cómo funcionan los roles de usuario de SQL Console
 
 Cuando un usuario abre SQL Console, ClickHouse Cloud crea un usuario de base de datos con la siguiente convención de nomenclatura:
 
@@ -65,7 +65,7 @@ Cuando existe ese rol, ClickHouse Cloud se lo asigna al usuario correspondiente 
 | `sql_console_admin` y `sql_console_read_only` | Roles integrados de SQL Console                                           | Sí, administrado por ClickHouse Cloud         |
 | `sql-console-role:<email>`                    | Rol personalizado por usuario creado por un administrador                 | Sí, se aplica cuando el usuario inicia sesión |
 
-## Configurar permisos persistentes {#configure-persistent-permissions}
+## Configurar permisos persistentes
 
 Ejecute las siguientes sentencias como un usuario con privilegios administrativos en el servicio, por ejemplo, un usuario de SQL Console con el rol `sql_console_admin` u otro usuario con el privilegio `ACCESS MANAGEMENT`.
 
@@ -127,7 +127,7 @@ Ejecute las siguientes sentencias como un usuario con privilegios administrativo
   </Step>
 </Steps>
 
-## Evite modificar los roles administrados {#avoid-modifying-managed-roles}
+## Evite modificar los roles administrados
 
 No modifique `sql_console_admin` ni `sql_console_read_only` para conceder permisos personalizados. ClickHouse Cloud administra estos roles integrados. En su lugar, use `sql-console-role:<email>` para asignar permisos por usuario.
 

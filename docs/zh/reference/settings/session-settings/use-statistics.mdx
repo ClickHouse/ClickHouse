@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## use_statistics {#use_statistics}
+## use_statistics
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 /// 相较于 &#39;allow&#95;statistics&#95;optimize&#39;，更推荐使用此名称，因为它与 &#39;use&#95;primary&#95;key&#39; 和 &#39;use&#95;skip&#95;indexes&#39; 保持一致
 允许使用统计信息优化查询
 
-## use_statistics_cache {#use_statistics_cache}
+## use_statistics_cache
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 在查询中使用统计信息缓存，以避免为每个 parts 加载统计信息带来的额外开销
 
-## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+## use_statistics_for_min_max_aggregation
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -47,7 +47,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 禁用。
 * 1 — 启用。
 
-## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
+## use_statistics_for_part_pruning
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

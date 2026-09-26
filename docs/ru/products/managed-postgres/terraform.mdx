@@ -17,7 +17,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
   Этот ресурс находится на стадии альфа, и его поведение может измениться в будущих версиях провайдера. Он входит в стандартную сборку провайдера. На этой странице описывается версия провайдера **v3.21.0** и более поздние версии. Подробности см. в [релизах провайдера](https://github.com/ClickHouse/terraform-provider-clickhouse/releases).
 </Note>
 
-## Настройка провайдера {#provider-setup}
+## Настройка провайдера
 
 Добавьте провайдер ClickHouse в конфигурацию Terraform:
 
@@ -40,7 +40,7 @@ provider "clickhouse" {
 
 См. [Управление ключами API](/ru/products/cloud/features/admin-features/api/openapi), чтобы узнать, как создать ключ API для работы с провайдером.
 
-## Обзор ресурса {#resource-overview}
+## Обзор ресурса
 
 Ресурс `clickhouse_postgres_service` поддерживает следующие аргументы:
 
@@ -67,7 +67,7 @@ provider "clickhouse" {
   Значение `password` хранится в состоянии Terraform в открытом виде. Поэтому файл состояния Terraform нужно надёжно защитить, например использовать удалённый backend с шифрованием при хранении или `password_wo`, чтобы пароль вообще не попадал в состояние Terraform.
 </Warning>
 
-## Создайте сервис {#create-a-service}
+## Создайте сервис
 
 ```hcl
 resource "clickhouse_postgres_service" "example" {
@@ -92,7 +92,7 @@ resource "clickhouse_postgres_service" "example" {
 
 Стандартный сервис должен объявлять `password` или `password_wo`. Значение должно содержать не менее 12 символов, включая как минимум одну строчную букву, одну заглавную букву и одну цифру. `password_wo` (вместе с `password_wo_version`) подчиняется тем же правилам для пароля, но никогда не сохраняется в состоянии Terraform; для ротации измените `password_wo_version`. Поскольку API не возвращает учетные данные, Terraform должен оставаться единственным средством записи пароля: ротация пароля вне Terraform (в консоли или через API) не обнаруживается, и следующая ротация через Terraform повторно применит объявленное значение.
 
-## Высокая доступность {#high-availability}
+## Высокая доступность
 
 Аргумент `ha_type` определяет количество резервных реплик:
 
@@ -104,7 +104,7 @@ resource "clickhouse_postgres_service" "example" {
 
 `ha_type` можно изменять после создания; его изменение вызывает переход HA. Подробности см. в разделе [Высокая доступность](/ru/products/managed-postgres/high-availability).
 
-## Реплики для чтения {#read-replicas}
+## Реплики для чтения
 
 Задайте `read_replica_of` равным `id` основного сервиса, чтобы создать стриминговую реплику для чтения. Реплика наследует `cloud_provider`, `region`, `postgres_version` и superuser основного сервиса — не указывайте эти параметры (и `password`):
 
@@ -118,7 +118,7 @@ resource "clickhouse_postgres_service" "replica" {
 
 Подробнее см. в разделе [реплики для чтения](/ru/products/managed-postgres/read-replicas).
 
-## Восстановление на определённый момент времени {#point-in-time-restore}
+## Восстановление на определённый момент времени
 
 Задайте `restore_to_point_in_time`, чтобы создать сервис, восстановив резервную копию другого сервиса на указанный момент времени. Параметры `cloud_provider`, `region` и `postgres_version` наследуются от исходного сервиса, поэтому их указывать не нужно; `size` и `ha_type` также следует опустить:
 
@@ -135,7 +135,7 @@ resource "clickhouse_postgres_service" "restored" {
 
 Весь этот блок используется только на этапе создания: изменение `source_id` или `restore_target`, а также удаление блока приводят к удалению и повторному созданию сервиса. Подробности см. в разделе [Резервное копирование и восстановление](/ru/products/managed-postgres/backup-and-restore).
 
-## Источники данных {#data-sources}
+## Источники данных
 
 Три дополнительных источника данных позволяют найти существующие сервисы:
 
@@ -154,7 +154,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
 }
 ```
 
-## Импорт существующих сервисов {#importing-existing-services}
+## Импорт существующих сервисов
 
 Существующие сервисы ClickHouse Managed Postgres можно импортировать в состояние Terraform по идентификатору сервиса:
 
@@ -164,7 +164,7 @@ terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxx
 
 При импорте пароль не восстанавливается (API его не возвращает). После импорта при первом apply для сервиса используется `password` или `password_wo`, указанный в вашей конфигурации.
 
-## Неподдерживаемые операции {#unsupported-operations}
+## Неподдерживаемые операции
 
 Следующее намеренно не включено в схему ресурса:
 

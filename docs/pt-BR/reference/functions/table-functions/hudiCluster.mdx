@@ -13,13 +13,13 @@ Esta é uma extensão da [hudi](/pt-BR/reference/functions/table-functions/hudi)
 
 Permite processar arquivos de tabelas Apache [Hudi](https://hudi.apache.org/) no Amazon S3 em paralelo com vários nós em um cluster especificado. No iniciador, ela cria uma conexão com todos os nós do cluster e distribui dinamicamente cada arquivo. No nó worker, ela consulta o iniciador sobre a próxima tarefa a ser processada e a processa. Isso se repete até que todas as tarefas sejam concluídas.
 
-## Sintaxe {#syntax}
+## Sintaxe
 
 ```sql
 hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 ```
 
-## Argumentos {#arguments}
+## Argumentos
 
 | Argumento                                    | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -31,11 +31,11 @@ hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,form
 | `compression`                                | O parâmetro é opcional. Valores compatíveis: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Por padrão, a compressão será detectada automaticamente pela extensão do arquivo. Para `snappy`, o formato wire é selecionado pela configuração [snappy&#95;mode](/pt-BR/reference/settings/session-settings/other#snappy_mode) (`basic` por padrão).                                             |
 | `extra_credentials`                          | O parâmetro é opcional. Usado para passar um `role_arn` para controle de acesso baseado em funções no ClickHouse Cloud. Consulte [S3 seguro](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver as etapas de configuração.                                                                                                                                                                                   |
 
-## Valor retornado {#returned-value}
+## Valor retornado
 
 Uma tabela com a estrutura especificada para ler dados do cluster a partir da tabela Hudi especificada no S3.
 
-## Colunas Virtuais {#virtual-columns}
+## Colunas Virtuais
 
 * `_path` — Caminho do arquivo. Tipo: `LowCardinality(String)`.
 * `_file` — Nome do arquivo. Tipo: `LowCardinality(String)`.
@@ -43,7 +43,7 @@ Uma tabela com a estrutura especificada para ler dados do cluster a partir da ta
 * `_time` — Data e hora da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se esse horário for desconhecido, o valor é `NULL`.
 * `_etag` — O etag do arquivo. Tipo: `LowCardinality(String)`. Se o etag for desconhecido, o valor é `NULL`.
 
-## Veja também {#related}
+## Veja também
 
 * [Motor Hudi](/pt-BR/reference/engines/table-engines/integrations/hudi)
 * [Função de tabela do Hudi](/pt-BR/reference/functions/table-functions/hudi)

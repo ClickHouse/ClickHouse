@@ -24,7 +24,7 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
 `CREATE SETTINGS PROFILE` には [CREATE SETTINGS PROFILE](/ja/reference/statements/grant#access-management) 権限が必要です。`OR REPLACE` は、同名の既存のプロファイルを、それが適用されているロールも含めて破棄するため、追加で [DROP SETTINGS PROFILE](/ja/reference/statements/grant#access-management) 権限が必要です。`DROP SETTINGS PROFILE` 権限は、プロファイルが既に存在するかどうかにかかわらず必要となるため、このステートメントを使ってどのプロファイルが存在するかを調べることはできません。
 
-## 例 {#example}
+## 例
 
 ユーザーを作成します。
 

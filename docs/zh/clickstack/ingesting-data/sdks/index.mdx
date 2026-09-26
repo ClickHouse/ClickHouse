@@ -13,13 +13,13 @@ keywords: ['ClickStack SDKs', 'ClickStack 语言 SDK', 'ClickStack 的 OpenTelem
 
 在基于浏览器的环境中，SDK 还可能负责收集 **会话数据**，包括 UI 事件、点击和导航，从而支持用户会话回放。
 
-## 工作原理 {#how-it-works}
+## 工作原理
 
 1. 您的应用程序使用 ClickStack SDK (例如 Node.js、Python、Go) 。这些 SDK 基于 OpenTelemetry SDK，并提供了额外功能和更好的易用性。
 2. SDK 通过 OTLP (HTTP 或 gRPC) 收集并导出链路追踪和日志。
 3. OpenTelemetry Collector 接收遥测数据，并通过已配置的导出器将其写入 ClickHouse。
 
-## 支持的语言 {#supported-languages}
+## 支持的语言
 
 <Info>
   **OpenTelemetry 兼容性**
@@ -44,7 +44,7 @@ keywords: ['ClickStack SDKs', 'ClickStack 语言 SDK', 'ClickStack 的 OpenTelem
 | React Native | React Native 移动应用        | [文档](/zh/clickstack/ingesting-data/sdks/react-native) |
 | Ruby         | Ruby on Rails 应用和 Web 服务 | [文档](/zh/clickstack/ingesting-data/sdks/ruby)         |
 
-## 使用 API key 进行安全防护 {#securing-api-key}
+## 使用 API key 进行安全防护
 
 <Info>
   **托管 ClickStack 不需要 API key**
@@ -66,7 +66,7 @@ OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 ```
 
-## Kubernetes 集成 {#kubernetes-integration}
+## Kubernetes 集成
 
 所有 SDK 都支持在 Kubernetes 环境中自动关联 Kubernetes 元数据 (pod 名称、命名空间等) 。这样您就可以：
 

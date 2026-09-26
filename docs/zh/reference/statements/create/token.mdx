@@ -32,7 +32,7 @@ CREATE TOKEN
 完成身份验证的用户，可以借此为同一账户创建一个长期有效的密码。该特权同样授权执行等价的
 `ALTER USER <current user> ADD IDENTIFIED ...` 语句。
 
-## 结果 {#result}
+## 结果
 
 该查询返回一行,包含两列:
 
@@ -51,7 +51,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 [密码复杂度规则](/zh/reference/statements/create/user#identification)进行校验——这些规则的存在是为了
 约束由人工设置的密码。
 
-## VALID UNTIL 与 VALID FOR 子句 {#valid-until-clause}
+## VALID UNTIL 与 VALID FOR 子句
 
 用于限制标记的有效期。它们的作用与 [`CREATE USER`](/zh/reference/statements/create/user#valid-until-clause) 中身份验证方法的同名子句完全一致：`VALID UNTIL` 接受一个绝对的日期和时间，`VALID FOR` 接受一个[时间间隔](/zh/reference/data-types/special-data-types/interval)，该间隔会与查询执行时的当前时间相加。
 
@@ -66,7 +66,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 * `CREATE TOKEN VALID FOR INTERVAL 30 DAY`
 * `CREATE TOKEN VALID UNTIL 'infinity'`
 
-## GRANTS 子句 {#grants-clause}
+## GRANTS 子句
 
 将使用该标记完成身份验证的会话的访问权限限制为与所列特权的交集。其工作方式与 [`CREATE USER` 的 `GRANTS` 子句](/zh/reference/statements/create/user#grants-clause)完全一致，包括其各项限制——尤其需要注意的是，该限制仅在接收查询的节点上生效，不会传播到集群中的其他节点。该子句绝不会新增任何访问权限：未授予该用户的特权对标记而言同样不可用。若不使用该子句，标记将拥有该用户的全部访问权限。
 
@@ -77,7 +77,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 
 无论是该权限限制还是时间限制，都不适用于标记的会话所遗留下来的内容——参见[安全方面的考虑](#security-considerations)。
 
-## 管理标记 {#managing-tokens}
+## 管理标记
 
 标记是用户的一种身份验证方法，因此它会在
 [`SHOW CREATE USER`](/zh/reference/statements/show#show-create-user) 的输出中列出 (含其 `VALID UNTIL` 和 `GRANTS` 子句，
@@ -96,7 +96,7 @@ CREATE TOKEN VALID FOR INTERVAL 30 DAY GRANTS (SELECT ON db.*) FORMAT TSVRaw
 `CREATE TOKEN` 不支持 `ON CLUSTER` 子句。若集群的访问实体存储在本地，请使用复制式访问存储 (或在每个
 节点上执行等效的 `ALTER USER ... ADD IDENTIFIED WITH sha256_hash` 语句) ，以使标记在整个集群范围内生效。
 
-## 安全方面的考虑 {#security-considerations}
+## 安全方面的考虑
 
 `VALID UNTIL` 和 `GRANTS` 约束的是使用该 标记 进行身份验证的 会话，但并不约束这些 会话 所遗留下来的东西：
 

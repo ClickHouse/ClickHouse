@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 이 설정은 ClickHouse 서버를 구성하기 위한 것이며 ClickHouse 소스 코드에서 자동 생성됩니다.
 
-## min_allocation_size_to_log_stack_trace {#min_allocation_size_to_log_stack_trace}
+## min_allocation_size_to_log_stack_trace
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -28,7 +28,7 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 값 `0`(기본값)은 진단을 비활성화합니다. 서버가 정상적으로 수행하는 가장 큰 할당보다 충분히 높은 값으로 설정하십시오. 그렇지 않으면 일반적인 대규모 할당도 기록되어 시작 과정에서 전체 예산을 소진할 수 있습니다.
 
-## min_allocation_size_to_throw_on_memory_limit {#min_allocation_size_to_throw_on_memory_limit}
+## min_allocation_size_to_throw_on_memory_limit
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -40,7 +40,7 @@ ClickHouse 자체의 대형 버퍼(컬럼 데이터, 해시 테이블, 아레나
 
 부작용을 피하려면 값을 `max_untracked_memory`보다 크게 설정하는 것이 좋습니다.
 
-## min_os_cpu_wait_time_ratio_to_drop_connection {#min_os_cpu_wait_time_ratio_to_drop_connection}
+## min_os_cpu_wait_time_ratio_to_drop_connection
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Yes" />
 

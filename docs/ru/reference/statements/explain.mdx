@@ -60,7 +60,7 @@ Union
             Output: number
 ```
 
-## Типы EXPLAIN {#explain-types}
+## Типы EXPLAIN
 
 * `AST` — Абстрактное синтаксическое дерево.
 * `SYNTAX` — Текст запроса после оптимизаций на уровне AST.
@@ -71,7 +71,7 @@ Union
 * `ESTIMATE` — Оценочное количество строк, меток и частей, которые будут прочитаны из таблиц при обработке запроса.
 * `TABLE OVERRIDE` — Провалидированный результат переопределения таблицы в схеме табличной функции.
 
-### EXPLAIN AST {#explain-ast}
+### EXPLAIN AST
 
 Выводит AST запроса. Поддерживает все типы запросов, а не только `SELECT`.
 
@@ -109,7 +109,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-### EXPLAIN SYNTAX {#explain-syntax}
+### EXPLAIN SYNTAX
 
 Показывает абстрактное синтаксическое дерево (AST) запроса после синтаксического анализа.
 
@@ -150,7 +150,7 @@ ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
 ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-### EXPLAIN QUERY TREE {#explain-query-tree}
+### EXPLAIN QUERY TREE
 
 Настройки:
 
@@ -179,7 +179,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-### EXPLAIN PLAN {#explain-plan}
+### EXPLAIN PLAN
 
 Выводит шаги плана запроса.
 
@@ -663,7 +663,7 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
-### EXPLAIN PIPELINE {#explain-pipeline}
+### EXPLAIN PIPELINE
 
 Настройки:
 
@@ -703,7 +703,7 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-### EXPLAIN ANALYZE {#explain-analyze}
+### EXPLAIN ANALYZE
 
 `EXPLAIN ANALYZE` действительно выполняет запрос, отбрасывает строки результата и выводит то же дерево плана, что и `EXPLAIN PLAN`, добавляя к каждому шагу сведения о том, что реально произошло во время выполнения.
 
@@ -813,7 +813,7 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. максимального числа потоков обработки запроса, заданного в `max_threads`.
 </Note>
 
-#### Шаги JOIN {#explain-analyze-join-steps}
+#### Шаги JOIN
 
 Для шага JOIN `EXPLAIN ANALYZE` выводит строки, сопоставляющие оценки оптимизатора порядка JOIN с тем, что произошло в действительности (см. [Оценочные и фактические метрики JOIN](#explain-analyze-join-estimation)), а также строки *участия* для каждой стороны — `Left` и `Right`, — за которыми следуют строки, относящиеся к конкретной реализации JOIN. Охвачены все значения [`join_algorithm`](/ru/reference/settings/session-settings/join#join_algorithm) (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), а также две реализации, которые нельзя выбрать этой настройкой: JOIN типа `CROSS` или `COMMA`, JOIN с секцией `ON` без равенства ключей и движок таблицы [`Join`](/ru/reference/engines/table-engines/special/join). Большинство из них выводят сведения об обеих сторонах; некоторые — только о стороне, которую материализуют (например, `direct` выводит только `Left:`).
 
@@ -834,7 +834,7 @@ Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <ma
 
 Значение, которое невозможно вычислить точно, указывается как `not collected`, а не как `0`. Значения `match rate` и `fanout` вычисляются на основе `matched`, поэтому для стороны, у которой оно отсутствует, все три значения указываются как `not collected`.
 
-#### Оценочные и фактические метрики JOIN {#explain-analyze-join-estimation}
+#### Оценочные и фактические метрики JOIN
 
 Шаг JOIN содержит оценки оптимизатора порядка JOIN — те же самые, что показывает `EXPLAIN PLAN` (см. раздел [EXPLAIN PLAN](#explain-plan)), — а `EXPLAIN ANALYZE` выводит каждую из них рядом с измеренным значением:
 
@@ -872,7 +872,7 @@ Join (JOIN FillRightFirst)
 │    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
 ```
 
-#### Разветвление {#explain-analyze-fanout}
+#### Разветвление
 
 `fanout` показывает кратность строк:
 
@@ -887,7 +887,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 * `fanout = 1` — корректное соединение 1:1; каждая сопоставленная строка дала ровно одну строку результата.
 * `fanout > 1` — соединение 1:N; дублирующиеся ключи на другой стороне размножили строки. Большое значение сразу с обеих сторон — признак непреднамеренного разрастания декартова произведения.
 
-#### Когда для подсчёта требуется `matches = 1` {#explain-analyze-matches}
+#### Когда для подсчёта требуется `matches = 1`
 
 Большинство этих чисел получается из данных, которые JOIN и так формирует, и выводится обычным `EXPLAIN ANALYZE`. Для остальных требуется дополнительный учёт, который JOIN иначе не выполнял бы, поэтому они выводятся только при использовании `EXPLAIN ANALYZE matches = 1`. Какие именно — зависит от алгоритма; в семействе хеш-алгоритмов это два случая:
 
@@ -936,7 +936,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 Если оба алгоритма выдают число, эти числа совпадают. Алгоритмы слияния просто располагают более полной информацией; в вопросе о том, что считать совпадением, разногласий нет.
 
-#### Строки для конкретных алгоритмов {#explain-analyze-join-algorithm-lines}
+#### Строки для конкретных алгоритмов
 
 Рассмотрим строки, которые добавляет каждая реализация JOIN.
 
@@ -993,7 +993,7 @@ Spill: yes · right spilled <right_spilled_bytes>
 
 Для JOIN с движком таблицы [`Join`](/ru/reference/engines/table-engines/special/join) отображаются обе стороны, а также строка `Hash table:`, описывающая предварительно созданную таблицу. Для правой стороны указывается число строк, хранящихся в движке, а не число строк, созданных при построении для отдельного запроса.
 
-#### Время по процессорам {#explain-analyze-processors}
+#### Время по процессорам
 
 При `processors = 1` под каждой стадией выводится дополнительная строка, показывающая распределение затраченного времени между процессорами этой стадии:
 
@@ -1003,7 +1003,7 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 `<n>` — это количество процессоров на стадии. Большой разрыв между `median` и `max` указывает на неравномерное распределение нагрузки между параллельными процессорами.
 
-### EXPLAIN ESTIMATE {#explain-estimate}
+### EXPLAIN ESTIMATE
 
 Показывает оценочное количество строк, меток и частей, которые будут прочитаны из таблиц при обработке запроса. Работает с таблицами семейства [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -1027,7 +1027,7 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-### EXPLAIN WHATIF {#explain-whatif}
+### EXPLAIN WHATIF
 
 Оценивает, какую пользу гипотетический индекс пропуска данных может принести запросу `SELECT`, *без* материализации индекса на диске. Задайте один или несколько кандидатов с помощью [`CREATE HYPOTHETICAL INDEX`](/ru/reference/statements/hypothetical-index#create-hypothetical-index), затем выполните `EXPLAIN WHATIF SELECT ...`, чтобы увидеть для каждого кандидата: применимость, оценочное количество прочитанных меток, оценочный объём данных в байтах и коэффициент пропуска.
 
@@ -1151,7 +1151,7 @@ Estimation:
 
 Если ни один из вариантов недоступен (например, `empirical = 0` и статистика столбцов не определена), оценщик возвращает `source: applicability_only` и консервативное значение `skip_ratio: 0.0%`.
 
-### EXPLAIN TABLE OVERRIDE {#explain-table-override}
+### EXPLAIN TABLE OVERRIDE
 
 Показывает результат переопределения таблицы в схеме таблицы, к которой обращаются через табличную функцию.
 Также выполняет проверку и генерирует исключение, если такое переопределение привело бы к какой-либо ошибке.

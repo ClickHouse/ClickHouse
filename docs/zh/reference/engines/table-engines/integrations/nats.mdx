@@ -15,7 +15,7 @@ doc_type: 'guide'
 * 发布或订阅消息 subject。
 * 在有新消息可用时进行处理。
 
-## 创建表 {#creating-a-table}
+## 创建表
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -140,7 +140,7 @@ CREATE TABLE queue (
 </nats>
 ```
 
-## 说明 {#description}
+## 说明
 
 `SELECT` 并不特别适合用于读取消息 (调试除外) ，因为每条消息只能读取一次。更实用的做法是使用 [materialized views](/zh/reference/statements/create/view) 创建实时处理链路。为此：
 
@@ -181,7 +181,7 @@ ATTACH TABLE consumer;
 
 如果你想使用 `ALTER` 修改目标表，我们建议先禁用物化视图，以避免目标表与视图数据之间出现不一致。
 
-## 虚拟列 {#virtual-columns}
+## 虚拟列
 
 * `_subject` - NATS 消息的 subject。数据类型：`String`。
 
@@ -192,7 +192,7 @@ ATTACH TABLE consumer;
 
 注意：`_raw_message` 和 `_error` 这两个虚拟列仅会在解析过程中发生异常时填充；如果消息解析成功，它们始终为 `NULL`。
 
-## 数据格式支持 {#data-formats-support}
+## 数据格式支持
 
 NATS 引擎 支持 ClickHouse 支持的所有[格式](/zh/reference/formats/index)。
 单条 NATS 消息中的行数取决于格式是按行还是按块：
@@ -200,7 +200,7 @@ NATS 引擎 支持 ClickHouse 支持的所有[格式](/zh/reference/formats/inde
 * 对于按行的格式，可通过设置 `nats_max_rows_per_message` 来控制单条 NATS 消息中的行数。
 * 对于按块的格式，无法将块拆分成更小的部分，但一个块中的行数可通过通用设置 [max&#95;block&#95;size](/zh/reference/settings/session-settings/max#max_block_size) 控制。
 
-## 使用 JetStream {#using-jetstream}
+## 使用 JetStream
 
 在结合 NATS JetStream 使用 NATS 引擎之前，您必须先创建一个 NATS stream 和一个持久化拉取消费者。为此，您可以使用 [NATS CLI](https://github.com/nats-io/natscli) 包中的 `nats` 工具，例如：
 
@@ -315,7 +315,7 @@ CREATE TABLE nats_jet_stream (
 
 JetStream 表提供至少一次投递保证：消息只有在插入其依赖的 materialized views 后才会被确认，因此插入失败或中断的消息会保持未确认状态，并被重新投递。Core NATS (不含 JetStream) 没有确认或重放机制，因此仅提供至多一次语义，中断的消息会丢失。
 
-## 数据持久性 {#data-durability}
+## 数据持久性
 
 本节仅适用于 JetStream。Core NATS 没有确认机制，且如上所述采用至多一次语义，因此不存在已确认消息可能丢失的时间窗口。
 

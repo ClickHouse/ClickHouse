@@ -18,11 +18,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     نوصي باستخدام أحدث عميل Java مباشرةً إذا كانت الأولوية القصوى للأداء أو للوصول المباشر.
   </Note>
 
-  ## متطلبات البيئة {#environment-requirements}
+  ## متطلبات البيئة
 
   * [OpenJDK](https://openjdk.java.net) الإصدار &gt;= 8
 
-  ### الإعداد {#setup}
+  ### الإعداد
 
   <Tabs>
     <Tab title="Maven">
@@ -59,7 +59,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     * استخدم اللاحقة `all` للحصول على ملف jar يتضمن جميع التبعيات المدمجة.
   * أو من repository الرسمي [هنا](https://github.com/ClickHouse/clickhouse-java/releases)
 
-  ## الإعداد {#configuration}
+  ## الإعداد
 
   **فئة برنامج التشغيل**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -87,7 +87,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * لا يستنتج المُشغِّل البروتوكول من المنفذ، لذا يجب تحديده صراحةً
   * لا تكون المعلَمة `ssl` مطلوبة عند تحديد البروتوكول.
 
-  ### خصائص الاتصال {#connection-properties}
+  ### خصائص الاتصال
 
   تُعرَّف معاملات التكوين الرئيسية في [عميل Java](/ar/integrations/language-clients/java/client#client-configuration). ينبغي تمريرها كما هي إلى برنامج التشغيل. لبرنامج التشغيل بعض الخصائص الخاصة به التي ليست جزءًا من تكوين العميل، وهي مدرجة أدناه.
 
@@ -149,7 +149,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   مع ذلك، يحتاج بعض المستخدمين إلى تمرير إعدادات التنسيق (على سبيل المثال لقراءة JSON كسلسلة نصية)، ونوصي باستخدام ملف التعريف `readonly=2`.
   اطّلع على مزيد من المعلومات حول ملفات التعريف للقراءة فقط هنا: /concepts/features/configuration/settings/constraints-on-settings#read-only.
 
-  ### تعريف العميل {#client-identification}
+  ### تعريف العميل
 
   ثمة طريقتان لتحديد التطبيق الذي أنشأ الطلب: ضبط `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME` عبر
   خصائص الاتصال، أو استخدام الطريقة `java.sql.Connection#setClientInfo(String name, String value)`.
@@ -172,7 +172,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **ملاحظة:** نوصي باستخدام تنسيق `app_name/version` للخاصية `client_name` لأنه يُساعد في التعرف على التطبيق في سجل الاستعلامات.
 
-  ### تحديد العملية {#operation-identification}
+  ### تحديد العملية
 
   يُنشئ مشغّل JDBC معرّف `query_id` لكل عملية (حاليًا مُضمّن في استثناءات الخادم).
 
@@ -185,11 +185,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   **ملاحظة:** يعمل هذا الأسلوب مع حالات الاستخدام أحادية الخيط للعبارة، لأن `localSettings` مشترك بين الخيوط.
 
-  ## أنواع البيانات المدعومة {#supported-data-types}
+  ## أنواع البيانات المدعومة
 
   يدعم JDBC driver نفس تنسيقات البيانات التي يدعمها [Java client](/ar/integrations/language-clients/java/index#supported-data-types) الأساسي.
 
-  ### تعيين أنواع JDBC {#jdbc-type-mapping}
+  ### تعيين أنواع JDBC
 
   ينطبق التعيين التالي على:
 
@@ -624,11 +624,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_decimals"), "0");
   ```
 
-  ### التعامل مع التواريخ والأوقات والمناطق الزمنية {#handling-dates-times-and-timezones}
+  ### التعامل مع التواريخ والأوقات والمناطق الزمنية
 
   يُرجى الاطلاع على [دليل التاريخ والوقت](/ar/integrations/language-clients/java/date-time-guide) الذي يشرح الأخطاء الشائعة ومنطق عمل البرنامج المساعد عند التعامل مع قيم التاريخ والوقت والطوابع الزمنية.
 
-  ## إنشاء اتصال {#creating-connection}
+  ## إنشاء اتصال
 
   ```java
   String url = "jdbc:ch://my-server:8123/system";
@@ -639,7 +639,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   ... // do something with the connection
   ```
 
-  ## توفير بيانات الاعتماد والإعدادات {#supplying-credentials-and-settings}
+  ## توفير بيانات الاعتماد والإعدادات
 
   ```java showLineNumbers
   String url = "jdbc:ch://localhost:8123?jdbc_ignore_unsupported_values=true&socket_timeout=10";
@@ -661,7 +661,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## عبارة بسيطة {#simple-statement}
+  ## عبارة بسيطة
 
   ```java showLineNumbers
 
@@ -674,7 +674,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## إدراج {#insert}
+  ## إدراج
 
   ```java showLineNumbers
   try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable VALUES (?, ?)")) {
@@ -686,7 +686,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## `HikariCP` {#hikaricp}
+  ## `HikariCP`
 
   ```java showLineNumbers
   // connection pooling won't help much in terms of performance,
@@ -709,17 +709,17 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## مزيد من المعلومات {#more-information}
+  ## مزيد من المعلومات
 
   لمزيد من المعلومات، راجع [مستودع GitHub](https://github.com/ClickHouse/clickhouse-java) الخاص بنا و[وثائق عميل Java](/ar/integrations/language-clients/java/client).
 
-  ## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+  ## استكشاف الأخطاء وإصلاحها
 
-  ### التسجيل {#logging}
+  ### التسجيل
 
   يستخدم برنامج التشغيل [slf4j](https://www.slf4j.org/) للتسجيل، وسيستخدم أول تنفيذ متاح على `classpath`.
 
-  ### حل مشكلة انتهاء مهلة JDBC عند عمليات الإدراج الكبيرة {#resolving-jdbc-timeout-on-large-inserts}
+  ### حل مشكلة انتهاء مهلة JDBC عند عمليات الإدراج الكبيرة
 
   عند تنفيذ عمليات إدراج كبيرة في ClickHouse ذات أوقات تنفيذ طويلة، قد تواجه أخطاء انتهاء مهلة JDBC مثل:
 
@@ -729,7 +729,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   قد تُعطّل هذه الأخطاء عملية إدراج البيانات وتؤثر على استقرار النظام. لمعالجة هذه المشكلة، قد تحتاج إلى ضبط بعض إعدادات المهلة الزمنية في نظام تشغيل العميل.
 
-  #### Mac OS {#mac-os}
+  #### Mac OS
 
   على نظام Mac OS، يمكن تعديل الإعدادات التالية لحل المشكلة:
 
@@ -739,7 +739,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  #### Linux {#linux}
+  #### Linux
 
   على Linux، قد لا تكفي الإعدادات المكافئة وحدها لحل المشكلة. ويعود ذلك إلى الاختلافات في طريقة تعامل Linux مع إعدادات keep-alive للمقبس، مما يستوجب اتخاذ خطوات إضافية. اتبع الخطوات التالية:
 
@@ -766,9 +766,9 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   properties.setProperty("socket_keepalive", "true");
   ```
 
-  ## دليل الترحيل {#migration-guide}
+  ## دليل الترحيل
 
-  ### التغييرات الرئيسية {#key-changes}
+  ### التغييرات الرئيسية
 
   | الميزة                                         | V1 (الإصدار القديم) | V2 (الإصدار الجديد)              |
   | ---------------------------------------------- | ------------------- | -------------------------------- |
@@ -783,7 +783,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * يتطلب JDBC V2 إعدادًا صريحًا. لا توجد إعدادات افتراضية للتجاوز التلقائي.
     * يجب تحديد البروتوكول في عنوان URL. لا يتم اكتشاف البروتوكول ضمنيًا بالاعتماد على أرقام المنافذ.
 
-  ### تغييرات التكوين {#configuration-changes}
+  ### تغييرات التكوين
 
   يوجد نوعان فقط من أنواع enum:
 
@@ -813,7 +813,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### تغييرات أنواع البيانات {#data-types-changes}
+  ### تغييرات أنواع البيانات
 
   **الأنواع الرقمية**
 
@@ -927,7 +927,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * يمكن قراءة قيم `IPv4` و`IPv6` على هيئة `byte[]` باستخدام الدالة `getBytes(columnIndex)`. ومع ذلك، يُوصى باستخدام الفئات المخصّصة لهذه الأنواع.
   * لا يدعم V2 قراءة عنوان IP على أنه من القيم العددية، لأن التحويل مُنفَّذ بصورة أفضل في فئات `InetAddress`.
 
-  ### تغييرات البيانات الوصفية لقاعدة البيانات {#database-metadata-changes}
+  ### تغييرات البيانات الوصفية لقاعدة البيانات
 
   * يستخدم V2 المصطلح `Schema` فقط لتسمية قواعد البيانات. أما المصطلح `Catalog` فمحجوز للاستخدام المستقبلي.
   * يعيد V2 القيمة `false` لكل من `DatabaseMetaData.supportsTransactions()` و`DatabaseMetaData.supportsSavepoints()`. سيتغير ذلك في الإصدارات القادمة.
@@ -944,11 +944,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   واجهة برمجة تطبيقات `clickhouse-jdbc` متزامنة، وتنطوي بشكل عام على تكاليف إضافية أعلى (كتحليل SQL وتعيين الأنواع/تحويلها وغير ذلك). يُنصح باستخدام [clickhouse-client](/ar/integrations/connectors/sql-clients/sql-console) حين يكون الأداء أولويةً قصوى، أو إذا كنت تفضّل طريقة أكثر مباشرةً للوصول إلى ClickHouse.
 
-  ## متطلبات البيئة {#v07-environment-requirements}
+  ## متطلبات البيئة
 
   * [OpenJDK](https://openjdk.java.net) الإصدار 8 أو أحدث
 
-  ### الإعداد {#v07-setup}
+  ### الإعداد
 
   <Tabs>
     <Tab title="Maven">
@@ -1010,7 +1010,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## الإعداد {#v07-configuration}
+  ## الإعداد
 
   **فئة برنامج التشغيل**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -1035,7 +1035,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   ملاحظة: يُرجى الرجوع إلى [إعدادات JDBC الخاصة](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java) لمزيد من المعلومات.
 
-  ## أنواع البيانات المدعومة {#v07-supported-data-types}
+  ## أنواع البيانات المدعومة
 
   يدعم JDBC driver نفس تنسيقات البيانات التي تدعمها مكتبة العميل.
 
@@ -1046,7 +1046,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     * UInt64 - يُعيَّن إلى `long` (في client-v1)
   </Note>
 
-  ## إنشاء اتصال {#v07-creating-connection}
+  ## إنشاء اتصال
 
   ```java
   String url = "jdbc:ch://my-server/system"; // use http protocol and port 8123 by default
@@ -1059,7 +1059,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## عبارة بسيطة {#v07-simple-statement}
+  ## عبارة بسيطة
 
   ```java showLineNumbers
 
@@ -1072,7 +1072,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## إدراج {#v07-insert}
+  ## إدراج
 
   <Note>
     * استخدم `PreparedStatement` بدلًا من `Statement`
@@ -1090,7 +1090,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### مع دالة الجدول `input` {#with-input-table-function}
+  ### مع دالة الجدول `input`
 
   خيار يتميز بخصائص أداء ممتازة:
 
@@ -1109,7 +1109,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   * [توثيق الدالة input](/ar/reference/functions/table-functions/input) متى أمكن
 
-  ### الإدراج باستخدام العناصر النائبة {#insert-with-placeholders}
+  ### الإدراج باستخدام العناصر النائبة
 
   يُوصى بهذا الخيار فقط للإدراجات الصغيرة، إذ يستلزم تعبير SQL طويلاً (يُحلَّل على جانب العميل ويستهلك CPU &amp; Memory):
 
@@ -1124,7 +1124,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## التعامل مع DateTime والمناطق الزمنية {#handling-datetime-and-time-zones}
+  ## التعامل مع DateTime والمناطق الزمنية
 
   يُرجى استخدام `java.time.LocalDateTime` أو `java.time.OffsetDateTime` بدلاً من `java.sql.Timestamp`، و`java.time.LocalDate` بدلاً من `java.sql.Date`.
 
@@ -1139,7 +1139,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## التعامل مع `AggregateFunction` {#handling-aggregatefunction}
+  ## التعامل مع `AggregateFunction`
 
   <Note>
     لا تُدعَم القراءة الثنائية المباشرة لحالة `AggregateFunction` إلا في `groupBitmap`. بالنسبة إلى دوال التجميع الأخرى (`min` و`max` و`avg` وما إلى ذلك)، استخدِم مُعدِّلات `-Merge` في الاستعلام الخاص بك (على سبيل المثال، `SELECT minMerge(min_state) FROM ...`) لفكّ حالة التجميع على جانب الخادم وإرجاع قيمة عادية.
@@ -1187,7 +1187,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## تهيئة مكتبة HTTP {#v07-configuring-http-library}
+  ## تهيئة مكتبة HTTP
 
   يدعم موصّل JDBC الخاص بـ ClickHouse ثلاث مكتبات HTTP: [`HttpClient`](https://docs.oracle.com/en/java/javase/11/docs/api/java.net.http/java/net/http/HttpClient.html)، و[`HttpURLConnection`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/HttpURLConnection.html)، و[Apache `HttpClient`](https://hc.apache.org/httpcomponents-client-5.2.x/).
 
@@ -1211,11 +1211,11 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## الاتصال بـ ClickHouse عبر SSL {#connect-to-clickhouse-with-ssl}
+  ## الاتصال بـ ClickHouse عبر SSL
 
   لإنشاء اتصال JDBC آمن بـ ClickHouse عبر SSL، تحتاج إلى ضبط خصائص JDBC لتشمل معاملات SSL. يتضمن ذلك عادةً تحديد خصائص SSL مثل `sslmode` و`sslrootcert` في JDBC URL أو كائن الخصائص.
 
-  ## خصائص SSL {#ssl-properties}
+  ## خصائص SSL
 
   | الاسم                | القيمة الافتراضية | القيم الاختيارية | الوصف                                                                     |
   | -------------------- | ----------------- | ---------------- | ------------------------------------------------------------------------- |
@@ -1248,7 +1248,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
     }
   ```
 
-  ## حل مشكلة انتهاء مهلة JDBC عند عمليات الإدراج الكبيرة {#v07-resolving-jdbc-timeout-on-large-inserts}
+  ## حل مشكلة انتهاء مهلة JDBC عند عمليات الإدراج الكبيرة
 
   عند تنفيذ عمليات إدراج كبيرة في ClickHouse ذات أوقات تنفيذ طويلة، قد تواجه أخطاء انتهاء مهلة JDBC مثل:
 
@@ -1258,7 +1258,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
 
   قد تُعطّل هذه الأخطاء عملية إدراج البيانات وتؤثر على استقرار النظام. لمعالجة هذه المشكلة، يلزمك ضبط بعض إعدادات المهلة الزمنية في نظام تشغيل العميل.
 
-  ### Mac OS {#v07-mac-os}
+  ### Mac OS
 
   على نظام Mac OS، يمكن تعديل الإعدادات التالية لحل المشكلة:
 
@@ -1268,7 +1268,7 @@ import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  ### Linux {#v07-linux}
+  ### Linux
 
   على Linux، قد لا تكفي الإعدادات المكافئة وحدها لحل المشكلة. إذ تستلزم الاختلافات في طريقة تعامل Linux مع إعدادات keep-alive للمقبس اتخاذ خطوات إضافية. اتبع الخطوات التالية:
 

@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وتُولَّد تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## max_rows_for_lazy_final {#max_rows_for_lazy_final}
+## max_rows_for_lazy_final
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" />
 
@@ -21,13 +21,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأقصى لعدد الصفوف في المجموعة المستخدمة في تحسين FINAL الكسول. إذا تم تجاوزه، فسيُعاد استخدام FINAL العادي.
 
-## max_rows_in_distinct {#max_rows_in_distinct}
+## max_rows_in_distinct
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 الحد الأقصى لعدد الصفوف المميّزة عند استخدام DISTINCT.
 
-## max_rows_in_join {#max_rows_in_join}
+## max_rows_in_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,13 +53,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * عدد صحيح موجب.
 * `0` — عدد غير محدود من الصفوف.
 
-## max_rows_in_set {#max_rows_in_set}
+## max_rows_in_set
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 الحد الأقصى لعدد الصفوف في مجموعة البيانات ضمن العبارة `IN` المُنشأة من استعلام فرعي.
 
-## max_rows_in_set_to_optimize_join {#max_rows_in_set_to_optimize_join}
+## max_rows_in_set_to_optimize_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -72,7 +72,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 — تعطيل.
 * أي عدد صحيح موجب.
 
-## max_rows_to_group_by {#max_rows_to_group_by}
+## max_rows_to_group_by
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -84,7 +84,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 &#39;group&#95;by&#95;overflow&#95;mode&#39; التي تكون قيمتها الافتراضية `throw`، ولكن يمكن أيضًا تحويله
 إلى وضع GROUP BY تقريبي.
 
-## max_rows_to_read {#max_rows_to_read}
+## max_rows_to_read
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -93,7 +93,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 أعمق تعبير جدول، وعند القراءة من خادم بعيد، يُتحقق منه فقط على
 الخادم البعيد.
 
-## max_rows_to_read_leaf {#max_rows_to_read_leaf}
+## max_rows_to_read_leaf
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -114,7 +114,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
   هذا الإعداد غير مستقر مع `prefer_localhost_replica=1`.
 </Note>
 
-## max_rows_to_sort {#max_rows_to_sort}
+## max_rows_to_sort
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -122,7 +122,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 إذا استلزمت عملية ORDER BY معالجة عدد من السجلات يتجاوز المقدار المحدد،
 فسيُحدَّد السلوك بواسطة `sort_overflow_mode`، والذي يكون مضبوطًا افتراضيًا على `throw`.
 
-## max_rows_to_transfer {#max_rows_to_transfer}
+## max_rows_to_transfer
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

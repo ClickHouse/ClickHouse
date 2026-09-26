@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_data_file_size_lower_threshold_compaction {#iceberg_data_file_size_lower_threshold_compaction}
+## iceberg_data_file_size_lower_threshold_compaction
 
 <SettingsInfoBlock type="UInt64" default_value="402653184" />
 
@@ -25,7 +25,7 @@ La valeur par défaut correspond à `0.75` de la valeur par défaut documentée 
 (512 Mio), soit la manière dont la procédure `rewrite_data_files` dérive son option `min-file-size-bytes` ;
 voir https://iceberg.apache.org/docs/1.5.2/configuration/.
 
-## iceberg_data_file_size_upper_threshold_compaction {#iceberg_data_file_size_upper_threshold_compaction}
+## iceberg_data_file_size_upper_threshold_compaction
 
 <SettingsInfoBlock type="UInt64" default_value="966367641" />
 

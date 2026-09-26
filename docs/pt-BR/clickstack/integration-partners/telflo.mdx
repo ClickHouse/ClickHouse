@@ -27,7 +27,7 @@ import { PartnerBadge } from "/snippets/pt-BR/components/PartnerBadge/PartnerBad
 
 {/* vale off */}
 
-## O que é o Telflo? {#what-is-telflo}
+## O que é o Telflo?
 
 {/* vale on */}
 
@@ -37,7 +37,7 @@ O Telflo também pode ser acessado fora do navegador, por meio de uma [interface
 
 {/* vale off */}
 
-## Por que Telflo + ClickStack? {#why-telflo-clickstack}
+## Por que Telflo + ClickStack?
 
 {/* vale on */}
 
@@ -58,7 +58,7 @@ O Telflo oferece:
   * **O Telflo opera a frota de collectors que o alimenta**
 </Tip>
 
-## Pré-requisitos {#prerequisites}
+## Pré-requisitos
 
 * Um destino: [Open Source ClickStack](/pt-BR/clickstack/getting-started/oss), [Managed ClickStack](/pt-BR/clickstack/getting-started/managed) ou uma instância autogerenciada do ClickHouse
 * Conta Telflo ([crie uma conta em telflo.com](https://telflo.com))
@@ -70,7 +70,7 @@ O Telflo oferece:
 
 {/* vale off */}
 
-## Integre o ClickStack com o Telflo {#integrate-telflo-clickstack}
+## Integre o ClickStack com o Telflo
 
 {/* vale ativado */}
 
@@ -144,25 +144,25 @@ O Telflo oferece:
   </Step>
 </Steps>
 
-## Configuração avançada {#advanced-configuration}
+## Configuração avançada
 
-### Fan-out routing {#fan-out-routing}
+### Fan-out routing
 
 A mesma telemetria pode ser enviada simultaneamente ao ClickStack para armazenamento de longo prazo, a outra plataforma durante uma migração e a um SIEM para análise de segurança. Adicione os exporters ao canvas e conecte-os aos pipelines que devem alimentá-los, ou comece a partir de um pipeline pronto na [biblioteca de fluxos da Telflo](https://telflo.com/flows).
 
-### Compressão e desempenho {#compression-and-performance}
+### Compressão e desempenho
 
 * **Exporters OTLP/HTTP e OTLP**: mantenha **Compression** em gzip.
 * **ClickHouse exporter**: mantenha **Async Insert** ativado, deixe **Compression** em lz4 e adicione um processor **Batch** antes dele no pipeline. Consulte [Otimizando inserts](/pt-BR/clickstack/ingesting-data/collector#optimizing-inserts).
 
-## Próximos passos {#next-steps}
+## Próximos passos
 
 * **Crie dashboards**: crie visualizações no HyperDX para logs, metrics e traces
 * **Configure alerts**: configure alerts no ClickStack para conditions críticas
 * **Refine com o AI assistant**: peça a ele para ajustar um pipeline ou sugerir testes
 * **Se você está migrando de outro fornecedor**: os [flows](https://telflo.com/flows) dão conta da transição, substituindo os agents já instalados na sua infraestrutura e enviando os dados simultaneamente para os dois backends enquanto você os compara
 
-## Leia mais {#read-more}
+## Leia mais
 
 * [Documentação do Telflo](https://docs.telflo.com/docs)
 * [Quickstart: de um canvas vazio a um collector implantado](https://docs.telflo.com/docs/getting-started/quickstart)

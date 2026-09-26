@@ -12,9 +12,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 
 *🚧 دعم مقاييس OpenTelemetry وinstrumentation للتتبّع قادم قريبًا!*
 
-## البدء {#getting-started}
+## البدء
 
-### ثبّت حزمة backend الخاصة بـ logger في ClickStack {#install-hyperdx-logger-backend-package}
+### ثبّت حزمة backend الخاصة بـ logger في ClickStack
 
 يمكن تثبيت الحزمة بإضافة `hyperdx` إلى قائمة dependencies في
 `mix.exs`:
@@ -27,7 +27,7 @@ def deps do
 end
 ```
 
-### إعداد logger {#configure-logger}
+### إعداد logger
 
 أضف ما يلي إلى ملف `config.exs`:
 
@@ -39,7 +39,7 @@ config :logger,
   backends: [:console, {Hyperdx.Backend, :hyperdx}]
 ```
 
-### ضبط متغيرات البيئة {#configure-environment-variables}
+### ضبط متغيرات البيئة
 
 بعد ذلك، ستحتاج إلى ضبط متغيرات البيئة التالية في
 الصدفة لإرسال بيانات القياس عن بُعد إلى ClickStack عبر مجمّع OpenTelemetry:

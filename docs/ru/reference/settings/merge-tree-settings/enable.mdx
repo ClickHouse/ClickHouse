@@ -14,7 +14,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически формируются на основе исходного кода ClickHouse.
 
-## enable_adaptive_codec_selection {#enable_adaptive_codec_selection}
+## enable_adaptive_codec_selection
 
 <ExperimentalBadge />
 
@@ -28,13 +28,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Столбцы, в кодек по умолчанию которых входит шифрование (например, `AES_128_GCM_SIV`), никогда не выбираются для адаптивного кодирования, поэтому шифрование применяется всегда.
 Кодеки для каждого блока отображаются табличной функцией [`mergeTreeCodecBlockCounts`](/ru/reference/functions/table-functions/index).
 
-## enable_index_granularity_compression {#enable_index_granularity_compression}
+## enable_index_granularity_compression
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Сжимать значения гранулярности индекса в памяти, если это возможно
 
-## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge}
+## enable_max_bytes_limit_for_min_age_to_force_merge
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -49,13 +49,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `true`
 * `false`
 
-## enable_mixed_granularity_parts {#enable_mixed_granularity_parts}
+## enable_mixed_granularity_parts
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Включает или отключает использование настройки `index_granularity_bytes` для управления размером гранул. До версии 19.11 для ограничения размера гранул использовалась только настройка `index_granularity`. Настройка `index_granularity_bytes` повышает производительность ClickHouse при выборке данных из таблиц с большими строками (десятки и сотни мегабайт). Если у вас есть таблицы с большими строками, включите эту настройку для таких таблиц, чтобы повысить эффективность запросов `SELECT`.
 
-## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge {#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge}
+## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge
 
 <ExperimentalBadge />
 
@@ -72,13 +72,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `true`
 * `false`
 
-## enable_the_endpoint_id_with_zookeeper_name_prefix {#enable_the_endpoint_id_with_zookeeper_name_prefix}
+## enable_the_endpoint_id_with_zookeeper_name_prefix
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Включает использование Endpoint ID с префиксом имени ZooKeeper для реплицируемой таблицы MergeTree.
 
-## enable_vertical_merge_algorithm {#enable_vertical_merge_algorithm}
+## enable_vertical_merge_algorithm
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 

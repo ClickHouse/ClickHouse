@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', 'foreign data wrapper', 'pg_clickhouse', '拡張機能', 'チュートリアル', 'タクシー']
 ---
 
-## 概要 {#overview}
+## 概要
 
 このチュートリアルは [ClickHouse チュートリアル] に沿って進めますが、すべてのクエリを
 pg&#95;clickhouse 経由で実行します。
@@ -17,7 +17,7 @@ pg&#95;clickhouse 経由で実行します。
 * ClickHouse Managed Postgres を使用している場合は、[Console から](#from-console)。
 * 拡張機能を自分でインストールして構成する場合は、[PSQL から](#from-psql)。
 
-## ClickHouse を起動する {#start-clickhouse}
+## ClickHouse を起動する
 
 まず、ClickHouse のデータベースがまだない場合は作成します。手早く始めるには、
 Docker イメージ を使うのが簡単です。
@@ -27,7 +27,7 @@ docker run -d --network host --name clickhouse -p 8123:8123 -p9000:9000 --ulimit
 docker exec -it clickhouse clickhouse-client
 ```
 
-## テーブルを作成する {#create-a-table}
+## テーブルを作成する
 
 シンプルなデータベースを作成するために、[ClickHouse チュートリアル]にある The New York
 City taxi データセットを使ってみましょう。
@@ -92,7 +92,7 @@ PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 ```
 
-## データセットを追加する {#add-the-data-set}
+## データセットを追加する
 
 次に、データをインポートします。
 
@@ -161,7 +161,7 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
-## コンソールから {#from-console}
+## コンソールから
 
 ClickHouse Managed Postgres を使用している場合は、`pg_clickhouse` を設定し、ClickHouse Cloud
 コンソールから ClickHouse サービスに接続できます。Managed Postgres サービスを開き、**Settings** を選択して、
@@ -190,9 +190,9 @@ SELECT * FROM <schema>.<table>;
 このチュートリアルのタクシーの例に従うには、`taxi` ClickHouse
 データベースを選択し、`taxi` 宛先スキーマにインポートします。
 
-## PSQL から {#from-psql}
+## PSQL から
 
-### pg_clickhouse をインストールする {#install-pg_clickhouse}
+### pg_clickhouse をインストールする
 
 [PGXN] または [GitHub] から pg&#95;clickhouse をビルドしてインストールします。あるいは、
 [pg&#95;clickhouse イメージ] を使用して Docker コンテナーを起動することもできます。これは
@@ -203,7 +203,7 @@ docker run -d --network host --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
 ```
 
-### pg_clickhouse に接続する {#connect-pg_clickhouse}
+### pg_clickhouse に接続する
 
 次に、Postgres に接続します。
 
@@ -349,7 +349,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 &quot;Foreign Scan&quot; がプランの最上位に表示されている点に注目してください。これは、
 クエリ全体が ClickHouse にプッシュダウンされたことを意味します。
 
-## データを分析する {#analyze-the-data}
+## データを分析する
 
 データを分析するには、いくつかのクエリを実行してください。以下の例を確認するか、
 独自のSQLクエリを試してみてください。
@@ -506,7 +506,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
   Time: 17.450 ms
   ```
 
-## Dictionary を作成する {#create-a-dictionary}
+## Dictionary を作成する
 
 ClickHouseサービス内のテーブルに関連付けられた Dictionary を作成します。この
 テーブルと Dictionary は、ニューヨーク市の各
@@ -605,7 +605,7 @@ Airport (EWR) の名前に対応付けられています。
    行政区ごとに合計します。乗車地の地区が不明なケースがかなり多いことに
    注目してください。
 
-## JOIN を行う {#perform-a-join}
+## JOIN を行う
 
 `taxi_zone_dictionary` と `trips`
 テーブルを結合するクエリをいくつか作成します。

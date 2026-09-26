@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد أُنشئت تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## reader_executor_block_size {#reader_executor_block_size}
+## reader_executor_block_size
 
 <ExperimentalBadge />
 
@@ -24,7 +24,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 حجم جزء المخزن المؤقت لـ `ReaderExecutor` التجريبي: تملأ قراءات المصدر العُقد حتى هذا الحجم كحد أقصى. يجب ألا يقل عن 128 KiB.
 
-## reader_executor_max_tail_for_drain {#reader_executor_max_tail_for_drain}
+## reader_executor_max_tail_for_drain
 
 <ExperimentalBadge />
 
@@ -34,7 +34,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 حدّ التصريف لـ `ReaderExecutor` التجريبي: إذا تم إسقاط اتصال مصدر طويل وكان ضمن هذا العدد من البايتات من حدّه الأيمن، فستتم قراءة ما تبقّى منه حتى ذلك الحد أولًا، لكي يكتمل ويعود إلى مجمع الاتصالات صالحًا لإعادة الاستخدام بدلًا من احتسابه اتصالًا غير مكتمل.
 
-## reader_executor_min_bytes_for_seek {#reader_executor_min_bytes_for_seek}
+## reader_executor_min_bytes_for_seek
 
 <ExperimentalBadge />
 
@@ -44,7 +44,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 حد الفجوة الأمامية لـ `ReaderExecutor` التجريبي: تُتخطّى فجوة حتى هذا الحد عبر اتصال المصدر المفتوح (بالتجاوز / بالقراءة عبرها) بدلًا من تنفيذ قراءة منفصلة من المصدر أو إعادة فتح الاتصال. اضبطه قريبًا من نقطة التعادل بين تكلفة عرض النطاق الترددي وتكلفة الطلب، بحيث يبقى التجاوز مجديًا من حيث التكلفة.
 
-## reader_executor_use_long_connections {#reader_executor_use_long_connections}
+## reader_executor_use_long_connections
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 أعِد استخدام اتصال مصدر طويل ومقيّد عبر النوافذ في `ReaderExecutor` التجريبي. والاتصال الطويل هو اتصال يتجاوز نطاقه نافذة القراءة الحالية؛ وعند تعطيل هذا الإعداد، لا يستهلك المنفّذ أي حصة من مجمع الاتصالات، وتفتح كل نافذة اتصالًا قصير العمر للاستخدام مرة واحدة (المسار عديم الحالة).
 
-## reader_executor_window_size {#reader_executor_window_size}
+## reader_executor_window_size
 
 <ExperimentalBadge />
 

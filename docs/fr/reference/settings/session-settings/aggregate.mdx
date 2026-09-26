@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## aggregate_function_input_format {#aggregate_function_input_format}
+## aggregate_function_input_format
 
 <SettingsInfoBlock type="AggregateFunctionInputFormat" default_value="state" />
 
@@ -66,7 +66,7 @@ INSERT INTO example FORMAT JSONEachRow
 
 Remarque : les formats `value` et `array` sont plus lents que le format `state` par défaut, car ils nécessitent de créer et d&#39;agréger les valeurs lors de l&#39;insertion.
 
-## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
+## aggregate_functions_null_for_empty
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

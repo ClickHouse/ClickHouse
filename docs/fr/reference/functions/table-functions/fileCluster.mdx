@@ -20,13 +20,13 @@ Permet le traitement simultané des fichiers correspondant à un chemin spécifi
   Si ces fichiers diffèrent d&#39;un nœud à l&#39;autre, la valeur de retour ne peut pas être déterminée à l&#39;avance et dépend de l&#39;ordre dans lequel les nœuds worker demandent des tâches à l&#39;initiateur.
 </Note>
 
-## Syntaxe {#syntax}
+## Syntaxe
 
 ```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-## Arguments {#arguments}
+## Arguments
 
 | Argument             | Description                                                                                                                                                                                                                                                                                                                                |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -36,7 +36,7 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
 | `structure`          | Structure de la table au format `'UserID UInt64, Name String'`. Détermine les noms et les types des colonnes. Type : [String](/fr/reference/data-types/string).                                                                                                                                                                               |
 | `compression_method` | Méthode de compression. Les valeurs prises en charge sont `none` (sans compression), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2` et `snappy`. Pour `snappy`, le format filaire est sélectionné par le paramètre [snappy&#95;mode](/fr/reference/settings/session-settings/other#snappy_mode) (`basic` par défaut). |
 
-## Valeur retournée {#returned-value}
+## Valeur retournée
 
 Une table au format et à la structure spécifiés, contenant les données des fichiers correspondant au chemin indiqué.
 
@@ -85,11 +85,11 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
-## Globs dans le chemin {#globs-in-path}
+## Globs dans le chemin
 
 FileCluster prend en charge tous les motifs gérés par la fonction de table [File](/fr/reference/functions/table-functions/file#globs-in-path).
 
-## Voir aussi {#related}
+## Voir aussi
 
 * [Fonction de table File](/fr/reference/functions/table-functions/file)
 

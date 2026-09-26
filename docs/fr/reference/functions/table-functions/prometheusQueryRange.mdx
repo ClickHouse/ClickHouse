@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Évalue une requête Prometheus à l’aide des données d’une table TimeSeries sur une plage d’instants d’évaluation.
 
-## Syntaxe {#syntax}
+## Syntaxe
 
 ```sql
 prometheusQueryRange('db_name', 'time_series_table', 'promql_query', start_time, end_time, step)
@@ -18,7 +18,7 @@ prometheusQueryRange(db_name.time_series_table, 'promql_query', start_time, end_
 prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, step)
 ```
 
-## Arguments {#arguments}
+## Arguments
 
 * `db_name` - Le nom de la base de données où se trouve une table TimeSeries.
 * `time_series_table` - Le nom d&#39;une table TimeSeries.
@@ -27,7 +27,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 * `end_time` - L&#39;heure de fin de la plage d&#39;évaluation.
 * `step` - Le pas utilisé pour faire progresser le temps d&#39;évaluation de `start_time` à `end_time` (bornes incluses).
 
-## Valeur renvoyée {#returned-value}
+## Valeur renvoyée
 
 La fonction peut renvoyer différentes colonnes selon le type de résultat de la requête transmise au paramètre `promql_query` :
 
@@ -40,13 +40,13 @@ La fonction peut renvoyer différentes colonnes selon le type de résultat de la
 
 La colonne `samples` est nommée `time_series` si la table `TimeSeries` est en [version](/fr/reference/engines/table-engines/integrations/time-series#schema-versioning) 2 ou antérieure.
 
-## Fonctionnalités PromQL prises en charge {#supported-promql-features}
+## Fonctionnalités PromQL prises en charge
 
-### Sélecteurs {#selectors}
+### Sélecteurs
 
 Sélecteurs instantanés, sélecteurs de plage, correspondances de labels (`=`, `!=`, `=~`, `!~`), modificateurs `offset`, modificateurs d’horodatage `@` et sous-requêtes.
 
-### Fonctions {#functions}
+### Fonctions
 
 | Catégorie     | Fonctions                                                                                                                                                                                                                                                                                                            |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -63,7 +63,7 @@ Sélecteurs instantanés, sélecteurs de plage, correspondances de labels (`=`, 
 
 **Remarque** : `ts_of_min_over_time` et `ts_of_max_over_time` sont des fonctions expérimentales dans Prometheus (activées avec `--enable-feature=promql-experimental-functions`) ; ClickHouse les évalue sans exiger ce flag.
 
-### Opérateurs {#operators}
+### Opérateurs
 
 Opérateurs binaires arithmétiques (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) et de comparaison (`==`, `!=`, `<`, `>`, `<=`, `>=` avec `bool` en option), avec les modificateurs `on()`/`ignoring()` et `group_left()`/`group_right()`.
 
@@ -71,15 +71,15 @@ Opérateurs d’ensemble logiques `and`, `or` et `unless`, avec les modificateur
 
 Les opérateurs unaires `+` et `-`.
 
-### Opérateurs d&#39;agrégation {#aggregation-operators}
+### Opérateurs d&#39;agrégation
 
 `sum`, `avg`, `min`, `max`, `count`, `count_values`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — avec les modificateurs facultatifs `by()` ou `without()`.
 
-### Pas encore pris en charge {#not-yet-supported}
+### Pas encore pris en charge
 
 * Fonctions de plage `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
 
-## Exemple {#example}
+## Exemple
 
 ```sql
 SELECT * FROM prometheusQueryRange(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE)

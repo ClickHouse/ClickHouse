@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Le moteur de base de données `S3` expose les objects d&#39;Amazon S3 et des object storage compatibles S3 sous forme de tables en lecture seule. Un nom de table est résolu en object URL via la fonction de table [`s3`](/fr/reference/functions/table-functions/s3).
 
-## Création d&#39;une base de données {#creating-a-database}
+## Création d&#39;une base de données
 
 ```sql
 CREATE DATABASE s3_data
@@ -19,7 +19,7 @@ ENGINE = S3([url[, NOSIGN | access_key_id, secret_access_key]]);
 
 L&#39;engine peut également accepter une named collection. Les clés de configuration prises en charge sont `url`, `access_key_id`, `secret_access_key`, `no_sign_request` et `use_environment_credentials`.
 
-## Usage {#usage}
+## Usage
 
 Avec une URL de base, les noms de tables correspondent à des chemins d&#39;objets relatifs à cette URL :
 
@@ -32,7 +32,7 @@ SELECT * FROM s3_data.`events.parquet`;
 
 Sans base URL, utilisez l&#39;object URL complet comme nom de table. Le schema et le format sont inférés de la même manière que pour la fonction de table `s3`. La base de données ne contient aucune table definition et ne prend en charge ni le DDL de tables ni les writes.
 
-## Contrôle d&#39;accès {#access-control}
+## Contrôle d&#39;accès
 
 Les URL S3 sont vérifiées au regard du filtre d&#39;hôtes distants du serveur. La création de cette base de données requiert les grants de source `READ` et `WRITE` sur `S3`, quelle que soit la valeur de [`table_engines_require_grant`](/fr/reference/settings/server-settings/settings/other#table_engines_require_grant), par exemple :
 
@@ -42,7 +42,7 @@ GRANT READ, WRITE ON S3 TO user_name;
 
 Consultez les [privilèges `SOURCES`](/fr/reference/statements/grant#sources) pour plus de détails sur la version et la compatibilité.
 
-## Voir aussi {#see-also}
+## Voir aussi
 
 * [Fonction de table `s3`](/fr/reference/functions/table-functions/s3)
 * [Utiliser S3 avec ClickHouse](/fr/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

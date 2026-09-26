@@ -33,7 +33,7 @@ Les valeurs ne changent pas — seul le niveau auquel elles sont mesurées diff�
   ou nous examinerons ensemble comment les relever de façon maîtrisée.
 </Tip>
 
-## Limites de service {#service-limits}
+## Limites de service
 
 Les limites ci-dessous s’appliquent à un **service standalone** (et, pour le nombre d’objets de données, au stockage de ce service).
 
@@ -73,7 +73,7 @@ FROM system.server_settings
 WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
 ```
 
-## Limites des warehouses {#warehouse-limits}
+## Limites des warehouses
 
 Un [warehouse](/fr/products/cloud/features/infrastructure/warehouses) est un ensemble de services qui partagent les mêmes données.
 Les limites de warehouse s&#39;appliquent à ce groupe partagé dans son ensemble — et non à chaque service pris séparément ni à l&#39;échelle de l&#39;organisation.
@@ -94,7 +94,7 @@ Il n&#39;existe **aucun plafond distinct sur le nombre de services** dans un war
 
 Comme les services d&#39;un warehouse partagent un même catalog (les mêmes tables, bases de données, vues, etc.), les [limites d&#39;objets de données au niveau du service](#service-limits) ci-dessus sont comptabilisées **une seule fois par warehouse** plutôt que multipliées par service. Les warehouses distincts sont isolés les uns des autres : chaque warehouse comptabilise donc ses propres tables et bases de données au regard de ces limites.
 
-## Limites par organisation {#organization-limits}
+## Limites par organisation
 
 Ces limites s&#39;appliquent à l&#39;ensemble d&#39;une organisation ClickHouse Cloud, c&#39;est-à-dire à la totalité de ses warehouses et services réunis.
 

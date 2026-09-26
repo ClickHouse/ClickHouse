@@ -15,7 +15,7 @@ doc_type: 'guide'
 * メッセージ subject をパブリッシュまたはサブスクライブする。
 * 新しいメッセージが利用可能になり次第処理する。
 
-## テーブルの作成 {#creating-a-table}
+## テーブルの作成
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -140,7 +140,7 @@ NATS server の設定は、ClickHouse の設定ファイルを使用して追加
 </nats>
 ```
 
-## 説明 {#description}
+## 説明
 
 `SELECT` は、メッセージの読み取りにはあまり適していません (`debugging` 目的を除く) 。各メッセージは一度しか読み取れないためです。より実用的なのは、[materialized view](/ja/reference/statements/create/view) を使用してリアルタイムのスレッドを作成することです。これを行うには、次の手順に従います。
 
@@ -181,7 +181,7 @@ ATTACH TABLE consumer;
 
 `ALTER` を使用してターゲットテーブルを変更する場合は、ターゲットテーブルとビューのデータの不整合を避けるため、materialized viewを無効化することを推奨します。
 
-## 仮想カラム {#virtual-columns}
+## 仮想カラム
 
 * `_subject` - NATS メッセージの subject。データ型: `String`。
 
@@ -192,7 +192,7 @@ ATTACH TABLE consumer;
 
 注: 仮想カラム `_raw_message` と `_error` に値が入るのは、パース中に例外が発生した場合のみです。メッセージが正常にパースされた場合、これらは常に `NULL` です。
 
-## データフォーマットのサポート {#data-formats-support}
+## データフォーマットのサポート
 
 NATS エンジンは、ClickHouse でサポートされているすべての[フォーマット](/ja/reference/formats/index)に対応しています。
 1 つの NATS メッセージに含まれる行数は、そのフォーマットが行ベースかブロックベースかによって異なります。
@@ -200,7 +200,7 @@ NATS エンジンは、ClickHouse でサポートされているすべての[フ
 * 行ベースのフォーマットでは、1 つの NATS メッセージに含める行数を `nats_max_rows_per_message` の設定で制御できます。
 * ブロックベースのフォーマットでは、ブロックをより小さなパーツに分割することはできませんが、1 つのブロックに含まれる行数は一般設定の [max&#95;block&#95;size](/ja/reference/settings/session-settings/max#max_block_size) で制御できます。
 
-## JetStream の使用 {#using-jetstream}
+## JetStream の使用
 
 NATS JetStream で NATS エンジンを使用する前に、NATS の stream と durable pull コンシューマーを作成する必要があります。これには、たとえば [NATS CLI](https://github.com/nats-io/natscli) パッケージの `nats` ユーティリティを使用できます。
 
@@ -315,7 +315,7 @@ CREATE TABLE nats_jet_stream (
 
 JetStream テーブルでは少なくとも 1 回の配信が保証されます。メッセージは依存する materialized view への挿入後にのみ確認応答されるため、挿入に失敗したり中断されたりしたメッセージは未確認応答のままとなり、再配信されます。JetStream を使用しない Core NATS には確認応答や再生機能がないため、最大 1 回の配信となり、中断されたメッセージは失われます。
 
-## データ耐久性 {#data-durability}
+## データ耐久性
 
 このセクションは JetStream にのみ該当します。Core NATS には acknowledgement がなく、上述のとおり at-most-once であるため、acknowledgement 済みのメッセージが失われうる window は存在しません。
 

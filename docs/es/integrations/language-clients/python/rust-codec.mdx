@@ -11,7 +11,7 @@ ClickHouse Connect puede decodificar los resultados de las consultas y codificar
 
 El códec es experimental y de uso opcional. El códec de Python sigue siendo el predeterminado.
 
-## Instalación {#installation}
+## Instalación
 
 El códec compilado se distribuye como un wheel independiente llamado `clickhouse-connect-core`, que proporciona el módulo de extensión `_ch_core`. Para evaluarlo, instale el códec junto con PyArrow:
 
@@ -31,7 +31,7 @@ El códec, su empaquetado y su conjunto de dependencias son experimentales. Se e
 
 Si se selecciona un códec de Rust y el módulo compilado no está instalado, la creación del client lanza un `NotSupportedError` que indica este comando de instalación.
 
-## Habilitar el códec {#enabling-the-codec}
+## Habilitar el códec
 
 Seleccione el códec con la opción de client `native_codec`:
 
@@ -53,7 +53,7 @@ El valor predeterminado también puede definirse mediante el common setting `nat
 
 Esta opción se ignora en los clients con `interface="chdb"`, que siempre usan el códec de Python.
 
-## Cuándo usar el códec de Rust {#when-to-use-the-rust-codec}
+## Cuándo usar el códec de Rust
 
 El códec de Rust resulta más útil para resultados de DataFrame grandes con tipos de texto, de contenedor y complejos, como `String`, `LowCardinality`, `Map`, `Array`, `JSON`, `Decimal` y `UUID`. También puede beneficiar a streams de bloques grandes de filas y columnas, a cargas de trabajo con consultas concurrentes y a inserciones masivas.
 
@@ -63,7 +63,7 @@ Las llamadas a `query()` almacenadas temporalmente en el búfer sobre resultados
 
 Haz un benchmark de tu propia carga de trabajo antes de adoptar el códec. Usa `native_codec="rust_strict"` mientras mides, de modo que una opción no soportada o una dependencia faltante lance un error en lugar de redirigir silenciosamente la consulta a Python.
 
-## Reglas de fallback {#fallback-rules}
+## Reglas de fallback
 
 Las decisiones de fallback se toman antes de leer o enviar ningún byte, por lo que nunca se produce un cambio de códec a mitad del stream. En las queries, la elección ocurre antes de consumir el response body. En los inserts, el codificador de Rust solo se selecciona cuando todos los tipos de columna son compatibles; de lo contrario, todo el insert se ejecuta con el códec de Python.
 
@@ -73,7 +73,7 @@ Las queries de metadata internas del driver, incluidas las sentencias de reflect
 
 Los payloads Native malformados que detecta el códec de Rust generan `DataError`.
 
-## Control de versiones {#versioning}
+## Control de versiones
 
 `clickhouse-connect-core` se versiona de forma independiente de `clickhouse-connect`. El driver declara un rango compatible mediante el extra `rust`, y el módulo exporta una versión de la API de vinculación que el driver comprueba cuando se selecciona un códec de Rust. Si el wheel instalado es demasiado antiguo para el driver, la creación del client lanza un `NotSupportedError` que indica el comando de upgrade:
 
@@ -83,7 +83,7 @@ pip install --upgrade clickhouse-connect-core
 
 Las correcciones y las mejoras del rendimiento en el códec compilado se publican como versiones de `clickhouse-connect-core` y pueden incorporarse actualizando a un wheel de core compatible. Los cambios en la integración de Rust del driver requieren actualizar `clickhouse-connect`.
 
-## Diferencias de comportamiento conocidas {#known-behavior-differences}
+## Diferencias de comportamiento conocidas
 
 El códec de Rust busca la paridad celda a celda con el códec de Python. Se conocen las siguientes diferencias.
 

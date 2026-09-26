@@ -14,14 +14,14 @@ Esta é uma extensão da função de tabela [s3](/pt-BR/reference/functions/tabl
 
 Permite processar arquivos do [Amazon S3](https://aws.amazon.com/s3/) e do Google Cloud Storage [Google Cloud Storage](https://cloud.google.com/storage/) em paralelo usando muitos nós em um cluster especificado. No nó iniciador, cria uma conexão com todos os nós do cluster, expande os asteriscos no caminho do arquivo S3 e distribui cada arquivo dinamicamente. No nó worker, consulta o iniciador sobre a próxima tarefa a ser processada e a processa. Esse processo se repete até que todas as tarefas sejam concluídas.
 
-## Sintaxe {#syntax}
+## Sintaxe
 
 ```sql
 s3Cluster(cluster_name, url[, NOSIGN | access_key_id, secret_access_key,[session_token]][, format][, structure][, compression_method][, headers][, extra_credentials])
 s3Cluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
-## Argumentos {#arguments}
+## Argumentos
 
 | Argumento                               | Descrição                                                                                                                                                                                                                                                                                                                                                                                                          |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -45,11 +45,11 @@ Os argumentos também podem ser passados usando [coleções nomeadas](/pt-BR/con
 | `no_sign_request`             | desativado por padrão.                                                                                                                                                                                                                    |
 | `expiration_window_seconds`   | o valor padrão é 120.                                                                                                                                                                                                                     |
 
-## Valor retornado {#returned-value}
+## Valor retornado
 
 Uma tabela com a estrutura especificada para leitura ou gravação de dados no arquivo especificado.
 
-## Exemplos {#examples}
+## Exemplos
 
 Selecione os dados de todos os arquivos nas pastas `/root/data/clickhouse` e `/root/data/database/`, usando todos os nós do cluster `cluster_simple`:
 
@@ -83,15 +83,15 @@ SELECT count(*) FROM s3Cluster(
 )
 ```
 
-## Acessando buckets privados e públicos {#accessing-private-and-public-buckets}
+## Acessando buckets privados e públicos
 
 Os usuários podem usar as mesmas abordagens documentadas [aqui](/pt-BR/reference/functions/table-functions/s3#accessing-public-buckets) para a função de tabela s3.
 
-## Como otimizar o desempenho {#optimizing-performance}
+## Como otimizar o desempenho
 
 Para saber mais sobre como otimizar o desempenho da função de tabela s3, consulte [nosso guia detalhado](/pt-BR/integrations/connectors/data-ingestion/AWS/performance).
 
-## Relacionado {#related}
+## Relacionado
 
 * [motor S3](/pt-BR/reference/engines/table-engines/integrations/s3)
 * [função de tabela s3](/pt-BR/reference/functions/table-functions/s3)

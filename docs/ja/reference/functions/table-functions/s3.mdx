@@ -18,7 +18,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 
 `s3 table function` を [`INSERT INTO...SELECT`](/ja/reference/statements/insert-into#inserting-the-results-of-select) と併用すると、データはストリーミング方式で読み込まれ、挿入されます。S3 からブロックが継続的に読み込まれて宛先テーブルに送られるため、メモリ上に保持されるデータブロックはごく少数です。
 
-## 構文 {#syntax}
+## 構文
 
 ```sql
 s3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers], [,extra_credentials], [,partition_strategy], [,partition_columns_in_data_file])
@@ -73,11 +73,11 @@ s3(named_collection[, option=value [,..]])
 | `no_sign_request`             | デフォルトでは無効です。                                                                                                                                                                      |
 | `expiration_window_seconds`   | デフォルト値は 120 です。                                                                                                                                                                   |
 
-## 戻り値 {#returned-value}
+## 戻り値
 
 指定したファイル内のデータの読み書きに使用する、指定した構造を持つテーブル。
 
-## 例 {#examples}
+## 例
 
 S3 上のファイル `https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv` からテーブルの先頭 5 行を選択する例:
 
@@ -132,7 +132,7 @@ LIMIT 5;
   ```
 </Note>
 
-## 使用方法 {#usage}
+## 使用方法
 
 S3上に以下のURIを持つ複数のファイルがあるとします：
 
@@ -247,9 +247,9 @@ SELECT count(*)
 FROM s3(creds, url='https://s3-object-url.csv')
 ```
 
-## パーティション分割書き込み {#partitioned-write}
+## パーティション分割書き込み
 
-### パーティション方式 {#partition-strategy}
+### パーティション方式
 
 `INSERT`クエリでのみサポートされます。
 
@@ -295,7 +295,7 @@ INSERT INTO TABLE FUNCTION
 
 その結果、データは異なるバケット内の3つのファイル、`my_bucket_1/file.csv`、`my_bucket_10/file.csv`、`my_bucket_20/file.csv` に書き込まれます。
 
-## 公開バケットへのアクセス {#accessing-public-buckets}
+## 公開バケットへのアクセス
 
 ClickHouse は、さまざまなソースから認証情報を取得しようとします。
 そのため、公開バケットによってはアクセス時に問題が発生し、クライアントが `403` エラーコードを返すことがあります。
@@ -311,7 +311,7 @@ FROM s3(
 LIMIT 5;
 ```
 
-## S3認証情報の使用 (ClickHouse Cloud) {#using-s3-credentials-clickhouse-cloud}
+## S3認証情報の使用 (ClickHouse Cloud)
 
 公開されていないバケットでは、`aws_access_key_id` と `aws_secret_access_key` を関数に渡すことができます。例:
 
@@ -337,7 +337,7 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 
 さらに詳しい例は[こちら](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role)をご覧ください
 
-## アーカイブの扱い {#working-with-archives}
+## アーカイブの扱い
 
 S3 上に、次の URI を持つ複数のアーカイブファイルがあるとします。
 
@@ -363,18 +363,18 @@ FROM s3(
   ZIP アーカイブと TAR アーカイブはサポート対象の任意のストレージからアクセスできますが、7Z アーカイブは ClickHouse がインストールされているローカルのファイルシステムからのみ読み取れます。
 </Note>
 
-## データの挿入 {#inserting-data}
+## データの挿入
 
 行を挿入できるのは新しいファイルに対してのみである点に注意してください。マージサイクルやファイルの分割処理はありません。いったんファイルが書き込まれると、その後の挿入は失敗します。詳細は[こちら](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)を参照してください。
 
-## 仮想カラム {#virtual-columns}
+## 仮想カラム
 
 * `_path` — ファイルのパス。Type: `LowCardinality(String)`。アーカイブの場合は、`"{path_to_archive}::{path_to_file_inside_archive}"` 形式のパスを表示します。
 * `_file` — ファイル名。Type: `LowCardinality(String)`。アーカイブの場合は、アーカイブ内のファイル名を表示します。
 * `_size` — ファイルサイズ (バイト単位) 。Type: `Nullable(UInt64)`。ファイルサイズが不明な場合、値は `NULL` です。アーカイブの場合は、アーカイブ内のファイルの非圧縮サイズを表示します。
 * `_time` — ファイルの最終更新時刻。Type: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
 
-## use_hive_partitioning 設定 {#hive-style-partitioning}
+## use_hive_partitioning 設定
 
 これは、読み取り時に ClickHouse が Hive スタイルでパーティション化されたファイルを解析するためのヒントです。書き込みには影響しません。読み取りと書き込みを対称的に行うには、`partition_strategy` 引数を使用してください。
 
@@ -386,7 +386,7 @@ FROM s3(
 SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-## requester-pays バケットへのアクセス {#accessing-requester-pays-buckets}
+## requester-pays バケットへのアクセス
 
 requester-pays バケットにアクセスするには、すべてのリクエストにヘッダー `x-amz-request-payer = requester` を含める必要があります。これを行うには、s3関数にパラメーター `headers('x-amz-request-payer' = 'requester')` を渡します。例:
 
@@ -404,7 +404,7 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
-## 相対 URL の解決 {#resolving-relative-urls}
+## 相対 URL の解決
 
 [s3&#95;base](/ja/reference/settings/session-settings/s3#s3_base) 設定を使用すると、`s3` 関数に相対 URL を渡すことができます。`s3_base` が設定されており、関数の引数にスキームが指定されていない場合、[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) に従い、ベース URL を基準に解決されます。これは、[url](/ja/reference/functions/table-functions/url#resolving-relative-urls) 関数の [url&#95;base](/ja/reference/settings/session-settings/url#url_base) 設定と同じルールです。絶対 URL は変更されずにそのまま渡されます。
 
@@ -417,14 +417,14 @@ SET s3_base = 's3://clickhouse-public-datasets/';
 SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
-## ストレージ設定 {#storage-settings}
+## ストレージ設定
 
 * [s3&#95;truncate&#95;on&#95;insert](/ja/reference/settings/session-settings/s3#s3_truncate_on_insert) - ファイルに insert する前に、そのファイルを切り詰めることを許可します。デフォルトでは無効です。
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ja/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - フォーマットに接尾辞がある場合、insert のたびに新しいファイルを作成することを許可します。デフォルトでは無効です。
 * [s3&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings/s3#s3_skip_empty_files) - 読み取り時に空のファイルをスキップすることを許可します。デフォルトでは有効です。
 * [s3&#95;base](/ja/reference/settings/session-settings/s3#s3_base) - `s3` 関数に渡された相対 URL を解決するためのベース URL。デフォルトでは空 (無効) です。
 
-## ネストされた Avro スキーマ {#nested-avro-schemas}
+## ネストされた Avro スキーマ
 
 ファイルごとに構造が異なる**ネストされたレコード**を含む Avro ファイルを読み込むと (たとえば、一部のファイルではネストされたオブジェクト内に追加のフィールドがある場合) 、ClickHouse は次のようなエラーを返すことがあります。
 
@@ -454,7 +454,7 @@ FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
 ```
 
-## Related {#related}
+## Related
 
 * [S3 engine](/ja/reference/engines/table-engines/integrations/s3)
 * [Integrating S3 with ClickHouse](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

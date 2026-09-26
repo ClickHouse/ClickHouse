@@ -12,15 +12,15 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，由 ClickHouse 源代码自动生成。
 
-## asynchronous_metrics_enable_heavy_metrics {#asynchronous_metrics_enable_heavy_metrics}
+## asynchronous_metrics_enable_heavy_metrics
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />启用高开销异步指标的计算。
 
-## asynchronous_metrics_keeper_metrics_only {#asynchronous_metrics_keeper_metrics_only}
+## asynchronous_metrics_keeper_metrics_only
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="否" />使异步指标只计算 Keeper 相关指标。
 
-## asynchronous_metrics_key_values_mode {#asynchronous_metrics_key_values_mode}
+## asynchronous_metrics_key_values_mode
 
 <SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
 
@@ -36,7 +36,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 此设置可动态生效：每次更新异步指标时都会重新读取，因此无需重启，执行 `SYSTEM RELOAD CONFIG` 即可切换形式。
 
-## asynchronous_metrics_update_period_s {#asynchronous_metrics_update_period_s}
+## asynchronous_metrics_update_period_s
 
 <SettingsInfoBlock type="UInt32" default_value="1" changeable_without_restart="No" />更新异步指标的周期，单位为秒。
 

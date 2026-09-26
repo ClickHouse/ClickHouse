@@ -12,7 +12,7 @@ import { DeprecatedBadge } from "/snippets/es/components/DeprecatedBadge/Depreca
 
 Crea una nueva vista. Las vistas pueden ser [normales](#normal-view), [materializadas](#materialized-view) y [materializadas actualizables](#refreshable-materialized-view).
 
-## Vista normal {#normal-view}
+## Vista normal
 
 Sintaxis:
 
@@ -43,7 +43,7 @@ Esta consulta equivale por completo a usar la subconsulta:
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-## Vista parametrizada {#parameterized-view}
+## Vista parametrizada
 
 Las vistas parametrizadas son similares a las vistas normales, pero pueden crearse con parámetros que no se resuelven inmediatamente.
 Estas vistas pueden usarse con funciones de tabla, que especifican el nombre de la vista como nombre de la función y los valores de los parámetros como argumentos.
@@ -66,7 +66,7 @@ Además, las consultas `DESCRIBE` solo funcionarían si se proporcionan parámet
 DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
-## Vista materializada {#materialized-view}
+## Vista materializada
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
@@ -86,7 +86,7 @@ AS SELECT ...
 
 `OR REPLACE` e `IF NOT EXISTS` son mutuamente excluyentes: combinarlos da lugar a un error de sintaxis.
 
-### CREATE OR REPLACE MATERIALIZED VIEW {#create-or-replace-materialized-view}
+### CREATE OR REPLACE MATERIALIZED VIEW
 
 `CREATE OR REPLACE MATERIALIZED VIEW` reemplaza de forma atómica una vista materializada existente y su tabla de almacenamiento subyacente (si la hay). La operación requiere un motor de base de datos `Atomic` o `Replicated`.
 
@@ -184,7 +184,7 @@ Las vistas tienen el mismo aspecto que las tablas normales. Por ejemplo, aparece
 
 Para eliminar una vista, use [DROP VIEW](/es/reference/statements/drop#drop-view). Aunque `DROP TABLE` también funciona para las VIEW.
 
-## SQL security {#sql_security}
+## SQL security
 
 `DEFINER` y `SQL SECURITY` permiten especificar qué usuario de ClickHouse se utilizará al ejecutar la consulta subyacente de la vista.
 `SQL SECURITY` tiene tres valores válidos: `DEFINER`, `INVOKER` o `NONE`. Puede especificar cualquier usuario existente o `CURRENT_USER` en la cláusula `DEFINER`.
@@ -222,7 +222,7 @@ Para cambiar SQL security de una vista existente, use
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
-### Ejemplos {#examples}
+### Ejemplos
 
 ```sql
 CREATE VIEW test_view
@@ -236,7 +236,7 @@ SQL SECURITY INVOKER
 AS SELECT ...
 ```
 
-## Live View {#live-view}
+## Live View
 
 <DeprecatedBadge />
 
@@ -244,7 +244,7 @@ Esta función está obsoleta y se eliminará en el futuro.
 
 Para mayor comodidad, la documentación anterior está disponible [aquí](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## Vista materializada actualizable {#refreshable-materialized-view}
+## Vista materializada actualizable
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -283,7 +283,7 @@ Diferencias con las vistas materializadas normales no actualizables:
   La configuración de la parte `REFRESH ... SETTINGS` de la consulta corresponde a los parámetros de actualización (por ejemplo, `refresh_retries`), y es distinta de la configuración normal (por ejemplo, `max_threads`). La configuración normal puede especificarse con `SETTINGS` al final de la consulta.
 </Note>
 
-### Programación de actualización {#refresh-schedule}
+### Programación de actualización
 
 Ejemplos de programación de actualización:
 
@@ -311,7 +311,7 @@ Como máximo, puede haber una sola actualización en ejecución a la vez para un
 
 Normalmente, la primera actualización se inicia inmediatamente después de crear la vista materializada: el tiempo transcurrido desde la última actualización es infinito, por lo que cualquier programación indica que es momento de actualizarla. Si se especifica `EMPTY`, esta actualización inicial se omite y la primera actualización se realiza en el siguiente momento programado; por ejemplo, para `EVERY 1 HOUR`, la primera actualización se realizará al final de la hora actual.
 
-### En una DB Replicated {#in-replicated-db}
+### En una DB Replicated
 
 Si la vista materializada actualizable está en una [base de datos Replicated](/es/reference/engines/database-engines/replicated), las réplicas se coordinan entre sí para que solo una de ellas realice la actualización en cada momento programado. Se requiere el motor de tabla [ReplicatedMergeTree](/es/reference/engines/table-engines/mergetree-family/replication) para que todas las réplicas vean los datos generados por la actualización.
 
@@ -321,7 +321,7 @@ En el modo no `APPEND`, solo se admite la actualización coordinada. Para una ac
 
 La coordinación se realiza mediante Keeper. La ruta del znode se determina mediante la configuración de servidor [default&#95;replica&#95;path](/es/reference/settings/server-settings/settings/default-replica#default_replica_path).
 
-### Dependencias de actualización {#refresh-dependencies}
+### Dependencias de actualización
 
 `DEPENDS ON` sincroniza las actualizaciones de diferentes tablas:
 
@@ -347,7 +347,7 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
   `DEPENDS ON` solo funciona entre vistas materializadas actualizables. En particular, si la vista de la que depende usa `TO <table>`, asegúrate de usar el nombre de la vista y no el de la tabla. Si la lista de `DEPENDS ON` contiene una tabla normal, una vista no actualizable o un error tipográfico, la vista no se actualizará nunca y mostrará el estado `MissingDependencies` en `system.view_refreshes`. Las dependencias pueden modificarse o eliminarse con `ALTER`; consulta [Cambiar los parámetros de actualización](#changing-refresh-parameters).
 </Note>
 
-#### Uso de DEPENDS ON para una latencia de propagación constante {#using-depends-on-for-consistent-propagation-latency}
+#### Uso de DEPENDS ON para una latencia de propagación constante
 
 Si ambas vistas usan `REFRESH EVERY` con el mismo período, la dependencia se aplica en cada franja horaria.
 
@@ -371,7 +371,7 @@ Tanto la dependencia como la vista dependiente pueden omitir franjas horarias de
   Y:             └►[10:00 ru------un]└►[11:00 ru---------------un]└►[13:00 run]
 ```
 
-#### Uso de DEPENDS ON para el procesamiento de flujo por lotes {#using-depends-on-for-batched-stream-processing}
+#### Uso de DEPENDS ON para el procesamiento de flujo por lotes
 
 Si no se usa `REFRESH EVERY`, la vista dependiente X se actualiza si todas sus dependencias se han actualizado al menos una vez desde la última actualización de X. `REFRESH AFTER T` añade un retraso: la vista dependiente iniciará la actualización T unidades de tiempo después de que la dependencia complete una actualización.
 
@@ -417,7 +417,7 @@ Las cadenas más largas también funcionan.
 
 Esto solo funciona bien cuando la coordinación de actualización está habilitada, es decir, cuando las vistas están en una base de datos Replicated o Shared. Sin coordinación, un reinicio del servidor interrumpe el ciclo, por lo que se requiere un `SYSTEM REFRESH VIEW` manual después de cada reinicio, en lugar de solo una vez tras crear las vistas.
 
-### Parámetros de actualización {#refresh-settings}
+### Parámetros de actualización
 
 Parámetros de actualización disponibles:
 
@@ -426,7 +426,7 @@ Parámetros de actualización disponibles:
 * `refresh_retry_max_backoff_ms` - Límite del crecimiento exponencial del retraso entre intentos de actualización. Predeterminado: 60000 ms (1 minuto).
 * `all_replicas` - En una [base de datos Replicated](/es/reference/engines/database-engines/replicated) con `APPEND`, controla si todas las réplicas se actualizan de forma independiente o si solo una réplica se actualiza en cada momento programado. No se puede cambiar después de crear la vista. Predeterminado: `false`.
 
-### Cambiar los parámetros de actualización {#changing-refresh-parameters}
+### Cambiar los parámetros de actualización
 
 Los parámetros de actualización de una vista materializada actualizable existente se modifican mediante [`ALTER TABLE ... MODIFY REFRESH`](/es/reference/statements/alter/view#alter-table--modify-refresh-statement):
 
@@ -469,7 +469,7 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 
-### Otras operaciones {#other-operations}
+### Otras operaciones
 
 El estado de todas las vistas materializadas actualizables está disponible en la tabla [`system.view_refreshes`](/es/reference/system-tables/view_refreshes). En particular, incluye el progreso de la actualización (si está en curso), la hora de la última y de la próxima actualización, y el mensaje de excepción si una actualización falló.
 
@@ -481,12 +481,12 @@ Para esperar a que se complete una actualización, use [`SYSTEM WAIT VIEW`](/es/
   Dato curioso: la consulta de actualización puede leer de la vista que se está actualizando y ver la versión de los datos anterior a la actualización. Esto significa que puede implementar el juego de la vida de Conway: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 </Note>
 
-## Contenido relacionado {#related-content}
+## Contenido relacionado
 
 * Blog: [Cómo trabajar con datos de series temporales en ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * Blog: [Creación de una solución de observabilidad con ClickHouse - Parte 2 - Trazas](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
 
-## Vistas temporales {#temporary-views}
+## Vistas temporales
 
 ClickHouse admite **vistas temporales** con las siguientes características (en línea con las tablas temporales, cuando corresponde):
 
@@ -514,7 +514,7 @@ ClickHouse admite **vistas temporales** con las siguientes características (en 
 * **SHOW CREATE**
   Use `SHOW CREATE TEMPORARY VIEW view_name;` para mostrar el DDL de una vista temporal.
 
-### Sintaxis {#temporary-views-syntax}
+### Sintaxis
 
 ```sql
 CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
@@ -522,7 +522,7 @@ CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
 
 `OR REPLACE` **no** se admite para las vistas temporales (para mantener la coherencia con las tablas temporales). Si necesita “reemplazar” una vista temporal, elimínela y vuelva a crearla.
 
-### Ejemplos {#temporary-views-examples}
+### Ejemplos
 
 Cree una tabla fuente temporal y una vista temporal sobre esta:
 
@@ -550,7 +550,7 @@ Elimínela:
 DROP TEMPORARY VIEW IF EXISTS tview;  -- las vistas temporales se eliminan con la sintaxis TEMPORARY TABLE
 ```
 
-### No permitidos / limitaciones {#temporary-views-limitations}
+### No permitidos / limitaciones
 
 * `CREATE OR REPLACE TEMPORARY VIEW ...` → **no permitido** (usa `DROP` + `CREATE`).
 * `CREATE TEMPORARY MATERIALIZED VIEW ...` → **no permitido**.
@@ -558,11 +558,11 @@ DROP TEMPORARY VIEW IF EXISTS tview;  -- las vistas temporales se eliminan con l
 * `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **no permitido** (los objetos temporales son locales a la sesión).
 * `POPULATE`, `REFRESH`, `TO [db.table]`, motores internos y todas las cláusulas específicas de las MV → **no aplicables** a las vistas temporales.
 
-### Notas sobre las consultas distribuidas {#temporary-views-distributed-notes}
+### Notas sobre las consultas distribuidas
 
 Una **vista** temporal es solo una definición; no hay datos que transferir. Si la vista temporal hace referencia a **tablas** temporales (p. ej., `Memory`), sus datos pueden enviarse a servidores remotos durante la ejecución de consultas distribuidas, del mismo modo que ocurre con las tablas temporales.
 
-#### Ejemplo {#temporary-views-distributed-example}
+#### Ejemplo
 
 ```sql
 -- A session-scoped, in-memory table

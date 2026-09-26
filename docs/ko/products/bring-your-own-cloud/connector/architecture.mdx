@@ -11,7 +11,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
-## 구성 요소 {#components}
+## 구성 요소
 
 ClickHouse Connector는 세 개의 데몬을 실행하며, 모두 `clicklink` 바이너리에 내장되어 있습니다:
 
@@ -23,7 +23,7 @@ Kubernetes에서는 `clicklink-connector` Helm 차트가 사용자가 선택한 
 
 <Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse Connector architecture" />
 
-## 연결 {#connections}
+## 연결
 
 커넥터가 맺는 모든 연결은 아웃바운드입니다. 전체 목록은 다음과 같습니다:
 
@@ -45,7 +45,7 @@ Kubernetes에서는 `clicklink-connector` Helm 차트가 사용자가 선택한 
 
 인바운드의 경우 각 데몬은 로컬 health 포트를 하나씩 노출합니다. 스크레이퍼는 8082, troubleshooter는 8084, 실행기는 8086입니다. 해당 포트는 `/livez`, `/readyz`, `/healthz`를 제공하고 `/metrics`에서 데몬의 Prometheus 메트릭을 제공하며, 별도의 메트릭 포트는 없습니다. 실행기의 로컬 명령 API는 루프백에만 바인딩되며 이를 노출하는 Service는 없습니다. 그 외 유일한 리스너는 선택적 session gateway입니다. [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오. ClickHouse Cloud는 이들 중 어느 것에도 연결하지 않습니다.
 
-## 인증서 수명 주기 {#certificate-lifecycle}
+## 인증서 수명 주기
 
 커넥터는 스스로 발급받아 관리하는 클라이언트 인증서로 엔드포인트에 인증합니다. 세 데몬 모두 동일한 인증서를 제시합니다.
 
@@ -55,11 +55,11 @@ Kubernetes에서는 `clicklink-connector` Helm 차트가 사용자가 선택한 
 
 커넥터는 시스템 trust store를 기준으로 엔드포인트의 서버 인증서를 검증합니다. `api.tls.ca_file`(VM) 또는 `api.tls.caFile`(Helm)이 설정되어 있으면, 등록 번들의 CA 체인이 해당 루트 인증서에 추가됩니다.
 
-## 데이터 흐름 {#data-flow}
+## 데이터 흐름
 
 <Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="ClickHouse Connector 데이터 흐름" />
 
-### 환경 외부로 전송되는 항목 {#what-leaves}
+### 환경 외부로 전송되는 항목
 
 * **허용 목록에 포함된 시스템 테이블의 메트릭.** 스크레이퍼의 기본 대상은 `metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, `server_settings`입니다. 허용 목록은 명시적으로 구성되며, 스크레이퍼는 목록에 없는 항목을 읽지 않습니다.
 * **인프라 메타데이터.** API를 통해 동기화되는 서비스, 인프라 및 백업 인벤토리입니다. 관리형 서비스의 경우 해당 서비스의 상태, 현재 및 예상 레플리카 수, 실행 중인 서버 버전과 구성 버전이 포함됩니다.
@@ -68,14 +68,14 @@ Kubernetes에서는 `clicklink-connector` Helm 차트가 사용자가 선택한 
 * **제출한 서비스 정의.** `clicklink clctl instances create`는 환경 ID, 클라우드 및 리전, 서비스 이름, 버킷 이름과 IAM 역할 ARN, 멱등성 키를 전송합니다. 또한 default 사용자 비밀번호의 두 가지 해시(SHA-256 및 이중 SHA-1)를 전송합니다.
 * **지원 세션 출력.** 활성화한 세션 중 실행된 읽기 전용 진단 결과이며, 마스킹 후 제공됩니다.
 
-### 기본적으로 외부로 절대 전송되지 않는 항목 {#what-never-leaves}
+### 기본적으로 외부로 절대 전송되지 않는 항목
 
 * **스크레이프 경로의 원본 쿼리 텍스트.** `system.query_log`는 기본 스크레이프 대상에서 제외됩니다. 이 테이블의 쿼리 컬럼에는 리터럴 값이 포함될 수 있고, 그 안에 PII나 시크릿이 담길 수 있기 때문입니다. 이를 다시 추가하는 것은 배포별 재정의입니다. 기본 세션 테이블 허용 목록에는 실행 중인 쿼리의 텍스트를 보여주는 `system.processes`가 포함되어 있습니다. 이를 정리하는 방법은 [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오.
 * **테이블 데이터와 백업.** 사용자 계정 내의 버킷에 그대로 남아 있습니다. 실행기는 해당 버킷에 대한 자격 증명을 보유하지 않으므로 읽을 수 없습니다.
 * **자격 증명.** `init`은 설정 파일에 자격 증명을 기록하지 않습니다. ClickHouse는 커넥터 사용자 비밀번호의 bcrypt 해시만 저장하며, 시크릿은 Kubernetes 시크릿 또는 호스트의 root 전용 읽기 파일에 보관됩니다. 관리형 서비스의 default 사용자 비밀번호는 사용자 측에서 생성되어 한 번만 표시되며, 전송되는 것은 해시뿐입니다. 스크레이프 경로와 동기화 경로 어디에서도 자격 증명을 전송하지 않습니다.
 * **마스킹되지 않은 troubleshooter 출력.** Troubleshooter가 반환하는 모든 내용은 외부로 나가기 전에 민감 정보 마스킹 패턴(기본 제공 패턴 및 사용자가 정의한 패턴)을 거칩니다. [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오.
 
-## 신뢰 경계 {#trust-boundaries}
+## 신뢰 경계
 
 * **사용자 환경이 곧 경계입니다.** ClickHouse Cloud는 커넥터가 전송하는 것, 즉 스크레이프, 하트비트 및 상태, 명령 실행 결과, 활성 지원 세션이 반환하는 내용만 수신합니다. 내부로 연결을 먼저 시도하는 일은 결코 없습니다.
 * **세션 게이트웨이는 사용자 소유입니다.** Ingress를 통한 노출을 직접 선택하지 않는 한, 환경 내부에서만 접근할 수 있습니다(Kubernetes에서는 `kubectl port-forward`를 통해, VM에서는 로컬로). ClickHouse Cloud는 여기에 연결하지 않습니다.

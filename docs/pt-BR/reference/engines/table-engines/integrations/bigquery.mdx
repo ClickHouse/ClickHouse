@@ -14,7 +14,7 @@ A leitura usa a API REST do BigQuery (`tabledata.list`), portanto, apenas tabela
 
 As gravações não são atômicas: um `INSERT` grande é enviado em lotes (no máximo 500 linhas por solicitação e também dividido para permanecer abaixo do limite de 10 MB para o tamanho das solicitações do BigQuery), uma única solicitação pode ser parcialmente bem-sucedida (o BigQuery pode confirmar algumas linhas de uma solicitação e rejeitar outras com `insertErrors`) e um lote posterior pode ser rejeitado após lotes anteriores terem sido aceitos — em ambos os casos, as linhas já confirmadas permanecem no BigQuery enquanto a consulta relata um erro. Cada linha contém um `insertId` estável (derivado do ID da consulta e da posição ordinal da linha), para que o BigQuery deduplique, na medida do possível, as linhas reenviadas; como o `insertId` depende da posição ordinal, executar novamente o mesmo `INSERT` deduplica apenas quando as linhas são apresentadas na mesma ordem (por exemplo, em modo de thread única, com `max_threads = 1` e `max_insert_threads = 1`). Consulte as [limitações da função de tabela `bigquery`](/pt-BR/reference/functions/table-functions/bigquery#limitations) para obter detalhes.
 
-## Criar uma tabela {#creating-a-table}
+## Criar uma tabela
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -37,7 +37,7 @@ A lista de colunas é opcional: quando omitida, a estrutura é inferida a partir
 
 Os parâmetros também podem ser informados como uma [coleção nomeada](/pt-BR/concepts/features/configuration/server-config/named-collections), com substituições `key = value`. Consulte a [função de tabela `bigquery`](/pt-BR/reference/functions/table-functions/bigquery#arguments) para ver a lista completa de chaves e a descrição dos [métodos de autenticação](/pt-BR/reference/functions/table-functions/bigquery#authentication). Exatamente um método de autenticação deve ser fornecido; para uma tabela permanente, uma `service_account_key` ou um `refresh_token` é preferível a um `access_token`, pois os tokens de acesso expiram em uma hora.
 
-## Exemplo de uso {#usage-example}
+## Exemplo de uso
 
 ```sql
 CREATE TABLE shakespeare
@@ -53,7 +53,7 @@ ENGINE = BigQuery('my-project', 'my_dataset', 'events',
 INSERT INTO events VALUES (1, 'started');
 ```
 
-## Relacionados {#related}
+## Relacionados
 
 * [função de tabela `bigquery`](/pt-BR/reference/functions/table-functions/bigquery)
 

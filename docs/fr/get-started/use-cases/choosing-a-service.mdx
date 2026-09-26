@@ -10,7 +10,7 @@ Partez des requêtes et des exigences d’exactitude que votre application doit 
 
 ClickHouse Cloud est la plateforme des services managés : ClickHouse pour l’analytics et ClickHouse Managed Postgres pour les workloads transactionnels. Ces services reposent sur des database engines différents — ClickHouse et PostgreSQL — dont le comportement SQL diffère. Vous pouvez utiliser l’un ou l’autre service indépendamment, ou les combiner au sein de ClickHouse Cloud.
 
-## Associer la workload à un point de départ {#workload-map}
+## Associer la workload à un point de départ
 
 | Besoins de votre application                                                                                                                            | Commencez par évaluer                                                                          | Points à vérifier avant de choisir                                                                                                                     |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -24,7 +24,7 @@ Consultez la documentation produit liée pour connaître la disponibilité, les 
 
 Pour un self-managed ClickHouse server ou d&#39;autres options locales, consultez les [deployment modes](/fr/get-started/about/deployment-modes).
 
-## Exemple : résultats de rapports et historique des exécutions {#report-results-and-history}
+## Exemple : résultats de rapports et historique des exécutions
 
 Supposons qu&#39;une application traite des fichiers téléversés, produise des rapports et doive conserver des résultats interrogeables ainsi qu&#39;un historique des exécutions. Avant de choisir une base de données, distinguez les lignes de résultats des enregistrements d&#39;exécution :
 
@@ -33,7 +33,7 @@ Supposons qu&#39;une application traite des fichiers téléversés, produise des
 * **Exactitude :** plusieurs enregistrements doivent-ils être modifiés au sein d&#39;une même transaction ? La base de données doit-elle garantir l&#39;unicité ou empêcher deux workers de revendiquer le même job ?
 * **Fraîcheur :** au bout de combien de temps une écriture réussie doit-elle être visible, et les requêtes peuvent-elles tolérer une copie analytique incomplète ou différée ?
 
-### Exécutions terminées et résultats analytiques {#completed-runs}
+### Exécutions terminées et résultats analytiques
 
 Un service ClickHouse dans ClickHouse Cloud est un bon candidat lorsque le workload dominant consiste à analyser des lignes de résultat et que les enregistrements d&#39;exécution peuvent être ajoutés une fois l&#39;exécution terminée. Une petite table de metadata ne justifie pas à elle seule une seconde database.
 
@@ -41,19 +41,19 @@ Concevez et testez la manière dont les lecteurs distinguent une exécution comp
 
 Si vous stockez plusieurs versions d&#39;un enregistrement d&#39;exécution, définissez comment les requêtes sélectionnent la version courante. [ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree) prend en charge la deduplication au moment de la query avec `FINAL` ; l&#39;exactitude ne doit pas dépendre du fait que les background merges ont déjà eu lieu. La [référence update](/fr/reference/statements/update) décrit un autre mécanisme de mise à jour et ses limites. Il ne faut supposer d&#39;aucun de ces deux patterns qu&#39;il offre des garanties transactionnelles de type PostgreSQL.
 
-### État transactionnel des jobs {#transactional-job-state}
+### État transactionnel des jobs
 
 Envisagez ClickHouse Managed Postgres lorsque la table des exécutions fait aussi office de file d&#39;attente de travail transactionnelle ou de système de référence : par exemple, lorsqu&#39;un worker doit s&#39;attribuer un job de manière atomique alors que d&#39;autres workers se le disputent, ou lorsque plusieurs enregistrements applicatifs doivent être modifiés conjointement, avec application de contraintes.
 
 Postgres peut également répondre aux requêtes de reporting. N&#39;ajoutez un service analytique que si les exigences réelles de performance des requêtes, de concurrence ou d&#39;isolation le justifient, plutôt que de partir du principe que toute application de reporting nécessite deux bases de données.
 
-### Transactions et analytics ensemble {#transactions-and-analytics}
+### Transactions et analytics ensemble
 
 Lorsque les deux workloads justifient des services distincts, conservez l&#39;état transactionnel dans Postgres et répliquez les tables nécessaires vers ClickHouse à l&#39;aide de [ClickPipes](/fr/products/managed-postgres/clickpipes) ou [WalShadow](/fr/products/managed-postgres/walshadow). Tenez compte du décalage de réplication et continuez à utiliser la source transactionnelle pour les décisions qui exigent l&#39;état actuel de l&#39;application. La réplication n&#39;inscrit pas une écriture Postgres et une lecture ClickHouse dans une même transaction.
 
 L&#39;[extension pg&#95;clickhouse](/fr/products/managed-postgres/extensions/pg_clickhouse/introduction) permet d&#39;accéder à ClickHouse via Postgres. Un point d&#39;entrée de requête partagé ne transforme pas pour autant les deux services en un seul database engine et ne dispense pas de prendre en compte la fraîcheur des données.
 
-## Vérifier l&#39;adéquation avant le provisionnement {#check-fit}
+## Vérifier l&#39;adéquation avant le provisionnement
 
 Notez un petit ensemble de requêtes représentatives et testez-les sur des volumes de données réalistes. Incluez à la fois des recherches ciblées et des agrégats portant sur l&#39;ensemble de l&#39;historique, la charge concurrente que vous prévoyez, ainsi que les cas d&#39;exactitude qui importent pour votre application. Communiquez le schéma, la forme des requêtes, la taille du matériel ou du service et le comportement d&#39;ingestion en même temps que tout résultat de benchmark.
 

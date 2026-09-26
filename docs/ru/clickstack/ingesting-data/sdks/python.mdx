@@ -14,9 +14,9 @@ ClickStack использует стандарт OpenTelemetry для сбора
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## Начало работы {#getting-started}
+## Начало работы
 
-### Установите пакет ClickStack OpenTelemetry для инструментирования {#install-clickstack-otel-instrumentation-package}
+### Установите пакет ClickStack OpenTelemetry для инструментирования
 
 Используйте следующую команду, чтобы установить [пакет ClickStack OpenTelemetry для инструментирования](https://pypi.org/project/hyperdx-opentelemetry/).
 
@@ -31,7 +31,7 @@ pip install hyperdx-opentelemetry
 opentelemetry-bootstrap -a install
 ```
 
-### Настройте переменные окружения {#configure-environment-variables}
+### Настройте переменные окружения
 
 После этого настройте в вашей оболочке следующие переменные окружения, чтобы отправлять телеметрию в ClickStack через OpenTelemetry Collector:
 
@@ -54,7 +54,7 @@ opentelemetry-bootstrap -a install
 
 *Переменная окружения `OTEL_SERVICE_NAME` используется для идентификации вашего сервиса в приложении HyperDX; ей можно присвоить любое имя.*
 
-### Запустите приложение с агентом OpenTelemetry Python {#run-the-application-with-otel-python-agent}
+### Запустите приложение с агентом OpenTelemetry Python
 
 Теперь вы можете запустить приложение с помощью агента OpenTelemetry Python (`opentelemetry-instrument`).
 
@@ -62,7 +62,7 @@ opentelemetry-bootstrap -a install
 opentelemetry-instrument python app.py
 ```
 
-#### Если вы используете `Gunicorn`, `uWSGI` или `uvicorn` {#using-uvicorn-gunicorn-uwsgi}
+#### Если вы используете `Gunicorn`, `uWSGI` или `uvicorn`
 
 В этом случае для работы агента OpenTelemetry для Python потребуются дополнительные изменения.
 
@@ -95,9 +95,9 @@ opentelemetry-instrument python app.py
   </Tab>
 </Tabs>
 
-## Расширенная конфигурация {#advanced-configuration}
+## Расширенная конфигурация
 
-#### Захват сетевого трафика {#network-capture}
+#### Захват сетевого трафика
 
 Включив возможности захвата сетевого трафика, разработчики могут эффективно
 отлаживать заголовки HTTP-запросов и полезные нагрузки в их теле.
@@ -108,9 +108,9 @@ opentelemetry-instrument python app.py
 export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
 ```
 
-## Устранение неполадок {#troubleshooting}
+## Устранение неполадок
 
-### Журналы не отображаются из-за уровня логирования {#logs-not-appearing-due-to-log-level}
+### Журналы не отображаются из-за уровня логирования
 
 По умолчанию обработчик логирования OpenTelemetry использует уровень `logging.NOTSET`,
 что фактически означает уровень WARNING. Уровень логирования можно указать при создании
@@ -123,7 +123,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 ```
 
-### Вывод в консоль {#exporting-to-the-console}
+### Вывод в консоль
 
 Python SDK OpenTelemetry обычно выводит ошибки в консоль при их
 возникновении. Однако если ошибок нет, но вы замечаете, что данные

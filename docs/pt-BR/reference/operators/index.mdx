@@ -8,7 +8,7 @@ doc_type: 'reference'
 
 O ClickHouse transforma os operadores nas funções correspondentes durante a etapa de análise sintática da consulta, de acordo com sua prioridade, precedência e associatividade.
 
-## Operadores de acesso {#access-operators}
+## Operadores de acesso
 
 `a[N]` – Acesso a um elemento de um array. A função `arrayElement(a, N)`.
 `N` também pode ser um array de inteiros; nesse caso, os elementos em todas essas posições são retornados como um array,
@@ -18,13 +18,13 @@ o valor padrão do tipo de elemento, assim como para um índice `NULL` escalar.
 
 `a.N` – Acesso a um elemento de tupla. A função `tupleElement(a, N)`.
 
-## Operador de negação numérica {#numeric-negation-operator}
+## Operador de negação numérica
 
 `-a` – A função `negate(a)`.
 
 Para a negação de tuplas: [tupleNegate](/pt-BR/reference/functions/regular-functions/tuple-functions#tupleNegate).
 
-## Operadores de Multiplicação e Divisão {#multiplication-and-division-operators}
+## Operadores de Multiplicação e Divisão
 
 `a * b` – A função `multiply(a, b)`.
 
@@ -36,7 +36,7 @@ Para dividir tupla por um número: [tupleDivideByNumber](/pt-BR/reference/functi
 
 `a % b` – A função `modulo(a, b)`.
 
-## Operadores de adição e subtração {#addition-and-subtraction-operators}
+## Operadores de adição e subtração
 
 `a + b` – A função `plus(a, b)`.
 
@@ -46,73 +46,73 @@ Para adição de tuplas: [tuplePlus](/pt-BR/reference/functions/regular-function
 
 Para subtração de tuplas: [tupleMinus](/pt-BR/reference/functions/regular-functions/tuple-functions#tupleMinus).
 
-## Operadores de comparação {#comparison-operators}
+## Operadores de comparação
 
-### função equals {#equals-function}
+### função equals
 
 `a = b` – A função `equals(a, b)`.
 
 `a == b` – A função `equals(a, b)`.
 
-### função notEquals {#notequals-function}
+### função notEquals
 
 `a != b` – A função `notEquals(a, b)`.
 
 `a <> b` – A função `notEquals(a, b)`.
 
-### função lessOrEquals {#lessorequals-function}
+### função lessOrEquals
 
 `a <= b` – a função `lessOrEquals(a, b)`.
 
-### função greaterOrEquals {#greaterorequals-function}
+### função greaterOrEquals
 
 `a >= b` – A função `greaterOrEquals(a, b)`.
 
-### função less {#less-function}
+### função less
 
 `a < b` – A função `less(a, b)`.
 
-### função greater {#greater-function}
+### função greater
 
 `a > b` – A função `greater(a, b)`.
 
-### função like {#like-function}
+### função like
 
 `a LIKE b` – a função `like(a, b)`.
 
-### Função notLike {#notlike-function}
+### Função notLike
 
 `a NOT LIKE b` – a função `notLike(a, b)`.
 
-### função ilike {#ilike-function}
+### função ilike
 
 `a ILIKE b` – a função `ilike(a, b)`.
 
-### função match {#match-function}
+### função match
 
 `a REGEXP b` – A função `match(a, b)`.
 
 `a ~ b` – A função `match(a, b)` (correspondência por expressão regular no estilo PostgreSQL).
 
-### Função notMatch {#notmatch-function}
+### Função notMatch
 
 `a !~ b` – A função `notMatch(a, b)` (verifica se `a` não corresponde à expressão regular `b`).
 
-### Função matchCaseInsensitive {#matchcaseinsensitive-function}
+### Função matchCaseInsensitive
 
 `a ~* b` – A função `matchCaseInsensitive(a, b)` (correspondência de expressão regular sem distinção entre maiúsculas e minúsculas).
 
-### Função notMatchCaseInsensitive {#notmatchcaseinsensitive-function}
+### Função notMatchCaseInsensitive
 
 `a !~* b` – A função `notMatchCaseInsensitive(a, b)` (verifica se `a` não corresponde à expressão regular `b`, sem diferenciar maiúsculas de minúsculas).
 
-### Função BETWEEN {#between-function}
+### Função BETWEEN
 
 `a BETWEEN b AND c` – Equivale a `a >= b AND a <= c`.
 
 `a NOT BETWEEN b AND c` – Equivale a `a < b OR a > c`.
 
-### operador `is not distinct from` (`<=>`) {#is-not-distinct-from}
+### operador `is not distinct from` (`<=>`)
 
 <Note>
   A partir da versão 25.10, você pode usar `<=>` da mesma forma que qualquer outro operador.
@@ -146,48 +146,48 @@ SELECT
 └──────────────────────────┴──────────────────────────┘
 ```
 
-## Operadores para trabalhar com strings {#operators-for-working-with-strings}
+## Operadores para trabalhar com strings
 
-### OVERLAY {#overlay}
+### OVERLAY
 
 * `OVERLAY(string PLACING replacement FROM offset)` - A função `overlay(string, replacement, offset)`.
 * `OVERLAY(string PLACING replacement FROM offset FOR length)` - A função `overlay(string, replacement, offset, length)`.
 * `OVERLAYUTF8(string PLACING replacement FROM offset)` - A função `overlayUTF8(string, replacement, offset)`.
 * `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - A função `overlayUTF8(string, replacement, offset, length)`.
 
-## Operadores para trabalhar com conjuntos de dados {#operators-for-working-with-data-sets}
+## Operadores para trabalhar com conjuntos de dados
 
 Consulte os [operadores IN](/pt-BR/reference/statements/in) e o operador [EXISTS](/pt-BR/reference/operators/exists).
 
-### função in {#in-function}
+### função in
 
 `a IN ...` – a função `in(a, b)`.
 
-### função notIn {#notin-function}
+### função notIn
 
 `a NOT IN ...` – a função `notIn(a, b)`.
 
-### função globalIn {#globalin-function}
+### função globalIn
 
 `a GLOBAL IN ...` – a função `globalIn(a, b)`.
 
-### função globalNotIn {#globalnotin-function}
+### função globalNotIn
 
 `a GLOBAL NOT IN ...` – A função `globalNotIn(a, b)`.
 
-### função in de subconsulta {#in-subquery-function}
+### função in de subconsulta
 
 `a = ANY (subquery)` – A função `in(a, subquery)`.
 
-### notIn subconsulta function {#notin-subquery-function}
+### notIn subconsulta function
 
 `a != ANY (subquery)` – O mesmo que `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
-### função in subconsulta {#in-subquery-function-1}
+### função in subconsulta
 
 `a = ALL (subquery)` – O mesmo que `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
-### função de subconsulta `notIn` {#notin-subquery-function-1}
+### função de subconsulta `notIn`
 
 `a != ALL (subquery)` – A função `notIn(a, subquery)`.
 
@@ -225,7 +225,7 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 └───┘
 ```
 
-### `SOME` / `ALL` em arrays {#some-all-on-arrays}
+### `SOME` / `ALL` em arrays
 
 Além da forma de subconsulta descrita acima, o lado direito de `SOME` / `ALL` pode ser uma expressão de array (um literal de array, uma coluna do tipo array ou qualquer expressão que retorne um array). Esta é a sintaxe de quantificador de array no estilo do PostgreSQL. Ela é reconhecida durante o parse e reescrita como funções de array, portanto não é necessária nenhuma reescrita manual:
 
@@ -275,9 +275,9 @@ SELECT
   ```
 </Info>
 
-## Operadores para trabalhar com datas e horas {#operators-for-working-with-dates-and-times}
+## Operadores para trabalhar com datas e horas
 
-### EXTRACT {#extract}
+### EXTRACT
 
 ```sql
 EXTRACT(part FROM date);
@@ -363,7 +363,7 @@ FROM test.Orders;
 
 Você pode ver mais exemplos nos [testes](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql).
 
-### INTERVAL {#interval}
+### INTERVAL
 
 Cria um valor do tipo [Interval](/pt-BR/reference/data-types/special-data-types/interval) que deve ser usado em operações aritméticas com valores do tipo [Date](/pt-BR/reference/data-types/date) e [DateTime](/pt-BR/reference/data-types/datetime).
 
@@ -437,7 +437,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 * tipo de dado [Interval](/pt-BR/reference/data-types/special-data-types/interval)
 * [toInterval](/pt-BR/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) funções de conversão de tipo
 
-### Adição de data e hora {#date-time-addition}
+### Adição de data e hora
 
 Um valor [Date](/pt-BR/reference/data-types/date) ou [Date32](/pt-BR/reference/data-types/date32) pode ser somado a um valor [Time](/pt-BR/reference/data-types/time) ou [Time64](/pt-BR/reference/data-types/time64) usando o operador `+`. O resultado é um [DateTime](/pt-BR/reference/data-types/datetime) ou [DateTime64](/pt-BR/reference/data-types/datetime64) que representa a data no horário informado. A operação é comutativa.
 
@@ -487,7 +487,7 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 └─────────────────────────┴────────────────┘
 ```
 
-### AT TIME ZONE e AT LOCAL {#at-time-zone}
+### AT TIME ZONE e AT LOCAL
 
 Os operadores pós-fixados `AT TIME ZONE` e `AT LOCAL` convertem um valor `DateTime` ou `DateTime64` para outro fuso horário. Eles são açúcar sintático para a função [`toTimeZone`](/pt-BR/reference/functions/regular-functions/date-time-functions#toTimezone) já existente:
 
@@ -542,19 +542,19 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
 * [`toTimeZone`](/pt-BR/reference/functions/regular-functions/date-time-functions#toTimezone)
 * [`timeZone`](/pt-BR/reference/functions/regular-functions/date-time-functions#timezone)
 
-## Operador lógico AND {#logical-and-operator}
+## Operador lógico AND
 
 Sintaxe `SELECT a AND b` — calcula a conjunção lógica entre `a` e `b` usando a função [and](/pt-BR/reference/functions/regular-functions/logical-functions#and).
 
-## Operador lógico OR {#logical-or-operator}
+## Operador lógico OR
 
 Sintaxe `SELECT a OR b` — calcula a disjunção lógica entre `a` e `b` usando a função [or](/pt-BR/reference/functions/regular-functions/logical-functions#or).
 
-## Operador de negação lógica {#logical-negation-operator}
+## Operador de negação lógica
 
 Sintaxe `SELECT NOT a` — calcula a negação lógica de `a` usando a função [not](/pt-BR/reference/functions/regular-functions/logical-functions#not).
 
-## Operador condicional {#conditional-operator}
+## Operador condicional
 
 `a ? b : c` – A função `if(a, b, c)`.
 
@@ -562,7 +562,7 @@ Observação:
 
 O operador condicional calcula os valores de b e c, verifica se a condição a é satisfeita e, em seguida, retorna o valor correspondente. Se `b` ou `C` for a função [arrayJoin()](/pt-BR/reference/functions/regular-functions/array-join), cada linha será replicada independentemente da condição &quot;a&quot;.
 
-## Expressão condicional {#conditional-expression}
+## Expressão condicional
 
 ```sql
 CASE [x]
@@ -578,36 +578,36 @@ Se não houver a cláusula `ELSE c` na expressão, o valor padrão será `NULL`.
 
 A função `transform` não funciona com `NULL`.
 
-## Operador de concatenação {#concatenation-operator}
+## Operador de concatenação
 
 `s1 || s2` – A função `concat(s1, s2) function.`
 
-## Operador de criação de lambda {#lambda-creation-operator}
+## Operador de criação de lambda
 
 `x -> expr` – a função `lambda(x, expr)`.
 
 Os operadores a seguir não têm prioridade, pois são parênteses:
 
-## Operador de criação de Array {#array-creation-operator}
+## Operador de criação de Array
 
 `[x1, ...]` – A `função array(x1, ...).`
 
-## Operador de criação de tupla {#tuple-creation-operator}
+## Operador de criação de tupla
 
 `(x1, x2, ...)` – A `função tuple(x2, x2, ...).`
 
-## Associatividade {#associativity}
+## Associatividade
 
 Todos os operadores binários têm associatividade à esquerda. Por exemplo, `1 + 2 + 3` é transformado em `plus(plus(1, 2), 3)`.
 Às vezes, isso não funciona como você espera. Por exemplo, `SELECT 4 > 2 > 3` resultará em 0.
 
 Para maior eficiência, as funções `and` e `or` aceitam qualquer número de argumentos. As cadeias correspondentes de operadores `AND` e `OR` são transformadas em uma única chamada dessas funções.
 
-## Verificando `NULL` {#checking-for-null}
+## Verificando `NULL`
 
 O ClickHouse oferece suporte aos operadores `IS NULL` e `IS NOT NULL`.
 
-### IS NULL {#is_null}
+### IS NULL
 
 * Para valores do tipo [Nullable](/pt-BR/reference/data-types/nullable), o operador `IS NULL` retorna:
   * `1`, se o valor for `NULL`.
@@ -628,7 +628,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 └──────────────┘
 ```
 
-### IS NOT NULL {#is_not_null}
+### IS NOT NULL
 
 * Para valores do tipo [Nullable](/pt-BR/reference/data-types/nullable), o operador `IS NOT NULL` retorna:
   * `0`, se o valor for `NULL`.
@@ -649,7 +649,7 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 
 Pode ser otimizado ativando a configuração [optimize&#95;functions&#95;to&#95;subcolumns](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [null](/pt-BR/reference/data-types/nullable#finding-null), em vez de ler e processar todos os dados da coluna. A consulta `SELECT n IS NOT NULL FROM table` é transformada em `SELECT NOT n.null FROM TABLE`.
 
-## Verificando valores booleanos {#checking-boolean-values}
+## Verificando valores booleanos
 
 O ClickHouse oferece suporte aos operadores `IS TRUE`, `IS FALSE`, `IS UNKNOWN`, `IS NOT TRUE`, `IS NOT FALSE` e `IS NOT UNKNOWN`.
 Eles são usados com expressões [Bool](/pt-BR/reference/data-types/boolean) e `Nullable(Bool)`.

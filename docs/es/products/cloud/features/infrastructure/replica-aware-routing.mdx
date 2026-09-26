@@ -24,13 +24,13 @@ El enrutamiento con reconocimiento de réplicas está disponible en ambas interf
 
 Ambas se habilitan por separado y utilizan el mismo hash consistente detrás del proxy.
 
-## Prerrequisitos {#prerequisites}
+## Prerrequisitos
 
 * Tu servicio necesita **2 o más réplicas**. En un servicio con una sola réplica, no hay ninguna a la que anclarlo.
 * Un servicio de nivel **Enterprise**.
 * Compatible con los servicios estándar de ClickHouse Cloud y [BYOC](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview)
 
-## Configurar el enrutamiento con reconocimiento de réplicas {#configuring-replica-aware-routing}
+## Configurar el enrutamiento con reconocimiento de réplicas
 
 Los clientes Enterprise habilitan el enrutamiento con reconocimiento de réplicas desde la página de configuración del servicio en la ClickHouse Cloud console. Abra su servicio, vaya a **Settings** y active el toggle de la interfaz que desee:
 
@@ -41,7 +41,7 @@ Puede habilitar uno de los dos o ambos. No es necesario reiniciar y puede surtir
 
 Los toggles se están desplegando progresivamente en los planes del tier Enterprise. Si aún no están disponibles en su servicio, abra un ticket de [soporte](https://clickhouse.com/support/program) indicando el ID de su servicio para que se active la feature antes.
 
-## Enrutamiento basado en HTTP {#http-based-routing}
+## Enrutamiento basado en HTTP
 
 Para asignar una carga de trabajo a una réplica concreta, envíe un encabezado `X-ClickHouse-Replica-Tag` a través de la [interfaz HTTPS](/es/concepts/features/interfaces/http). El proxy aplica hash consistente al valor del encabezado, por lo que las solicitudes que lo comparten se dirigen a la misma réplica mientras el número de réplicas no cambie. Un valor distinto se procesa como hash de forma independiente y puede asignarse a la misma réplica o a otra, pero no puede elegir *a qué* réplica se asigna un valor.
 
@@ -63,7 +63,7 @@ Para clickhouse-go (v2), configure `Protocol: clickhouse.HTTP` y pase el encabez
   `X-ClickHouse-Replica-Tag` proporciona afinidad con una réplica sin crear una sesión HTTP de ClickHouse. Las solicitudes concurrentes pueden reutilizar la misma etiqueta sin encontrarse con `SESSION_IS_LOCKED`.
 </Info>
 
-## Routing mediante protocolo nativo {#native-protocol-routing}
+## Routing mediante protocolo nativo
 
 A través del [protocolo nativo](/es/interfaces/tcp), pase el routing value como nombre de servidor TLS con el formato `<routing-value>.sticky.<host>`. Conéctese al nombre del host habitual de su service como de costumbre. [ClickHouse Client](/es/interfaces/client) toma el routing value a través de `--tls-sni-override`:
 
@@ -77,7 +77,7 @@ clickhouse client \
 
 `--host` es el nombre del host habitual de su service, `--secure` activa TLS y `--tls-sni-override` transporta el routing value. TLS es obligatorio. No se necesita ningún certificate adicional ni entry de DNS.
 
-## Consistencia de lectura después de la escritura {#read-after-write-consistency}
+## Consistencia de lectura después de la escritura
 
 En un service con múltiples réplicas, una escritura realizada en una réplica puede no ser visible en las demás hasta que la replicación se ponga al día. Envíe la escritura con un routing value y reutilice ese mismo valor en las lecturas posteriores. El proxy dirige ambas operaciones a la misma réplica, de modo que lee su propia escritura incluso mientras las demás réplicas siguen rezagadas. Este patrón funciona para workloads que escriben y leen de inmediato los mismos datos, como aplicaciones interactivas o jobs de ETL que validan los inserts antes de continuar.
 
@@ -121,29 +121,29 @@ clickhouse client \
 
 Para obtener garantías más amplias en todas las réplicas, también puede definir [`select_sequential_consistency`](/es/reference/settings/session-settings#select_sequential_consistency) con el valor `1` en ClickHouse Cloud.
 
-## Compruebe qué réplica se ha utilizado {#check-which-replica}
+## Compruebe qué réplica se ha utilizado
 
 Ejecute de nuevo uno de los ejemplos `SELECT hostName()` con el mismo routing value. Debería obtener el mismo nombre del host mientras el número de réplicas no cambie. Un routing value diferente puede asignarse a otra réplica.
 
-## Limitaciones del enrutamiento con reconocimiento de réplicas {#limitations-of-replica-aware-routing}
+## Limitaciones del enrutamiento con reconocimiento de réplicas
 
-### La afinidad cambia cuando cambia el número de réplicas {#replica-aware-routing-does-not-guarantee-isolation}
+### La afinidad cambia cuando cambia el número de réplicas
 
 El escalado horizontal, tanto de ampliación como de reducción, cambia el anillo hash de enrutamiento. Las solicitudes que comparten el mismo routing value pueden acabar llegando a una réplica diferente. Si depende de tablas temporales o de configuración a nivel de sesión, prepárese para volver a crearlas tras una reasignación. `SELECT hostName()` siempre le indica en qué réplica se encuentra.
 
-### El enrutamiento con reconocimiento de réplicas no es aislamiento de cargas de trabajo {#not-workload-isolation}
+### El enrutamiento con reconocimiento de réplicas no es aislamiento de cargas de trabajo
 
 El enrutamiento con afinidad solo controla *qué* réplica gestiona una petición. Esa réplica puede seguir atendiendo otro tráfico. Para tener cómputo dedicado, usa [compute-compute separation](/es/products/cloud/features/infrastructure/warehouses).
 
-### Redes privadas {#private-networking}
+### Redes privadas
 
 Tanto el enrutamiento basado en HTTP como el del protocolo nativo funcionan con [redes privadas](/es/products/cloud/guides/security/connectivity/private-networking) en el nombre del host habitual de tu servicio. No se requieren registros DNS adicionales.
 
-### El enrutamiento por protocolo nativo requiere TLS {#native-protocol-routing-requires-tls}
+### El enrutamiento por protocolo nativo requiere TLS
 
 El enrutamiento por protocolo nativo requiere TLS, por lo que debe pasar `--secure`. Una conexión nativa sin cifrar mantiene el balanceo de carga normal.
 
-## Solución de problemas {#troubleshooting}
+## Solución de problemas
 
 **Las consultas siguen llegando a réplicas distintas con el mismo routing value**
 

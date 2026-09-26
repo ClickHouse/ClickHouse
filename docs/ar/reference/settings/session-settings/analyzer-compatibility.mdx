@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويتم توليدها تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested {#analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested}
+## analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يسمح بإضافة معرّفات مركّبة إلى Nested. هذا إعداد توافق لأنه يغيّر نتيجة الاستعلام. عند تعطيله، لا يعمل `SELECT a.b.c FROM table ARRAY JOIN a`، ولا يضمّن `SELECT a FROM table` العمود `a.b.c` ضمن نتيجة `Nested a`.
 
-## analyzer_compatibility_allow_non_aggregate_in_having {#analyzer_compatibility_allow_non_aggregate_in_having}
+## analyzer_compatibility_allow_non_aggregate_in_having
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -29,7 +29,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 عند تمكينه، يحاكي المحلّل السلوك القديم المتمثل في نقل الأجزاء غير التجميعية المرتبطة بـ AND من `HAVING` إلى `WHERE` بدلًا من إصدار `NOT_AN_AGGREGATE`. ويكون الرفض المتوافق مع المعيار هو السلوك الافتراضي؛ وهذا الإعداد وسيلة مساعدة في الترحيل للاستعلامات التي كانت تُقبل بصمت في تحليل الاستعلامات الذي كان ClickHouse يستخدمه قبل الإصدار v24.3. وتبقى الأجزاء المرتبطة التي تحتوي على دوال aggregate أو `grouping` أو دوال غير حتمية في `HAVING`. وإذا احتوى أي جزء مرتبط على دالة window function أو دالة ذات حالة (مثل `rowNumberInBlock`)، تُعطَّل إعادة الكتابة لكامل `HAVING`، بما يطابق سلوك `PredicateExpressionsOptimizer` القديم. كما يتم تجاهل هذا الإعداد عندما يستخدم `GROUP BY` `WITH CUBE` أو `WITH ROLLUP` أو `WITH TOTALS` أو `GROUPING SETS`.
 
-## analyzer_compatibility_apply_final_to_all_joined_tables {#analyzer_compatibility_apply_final_to_all_joined_tables}
+## analyzer_compatibility_apply_final_to_all_joined_tables
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -42,7 +42,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 - يُطبَّق `FINAL` على الجدول المحدد عليه فقط.
 * 1 - يُطبَّق `FINAL` الموجود على الجدول أقصى اليسار في JOIN على جميع الجداول المنضمة.
 
-## analyzer_compatibility_join_using_top_level_identifier {#analyzer_compatibility_join_using_top_level_identifier}
+## analyzer_compatibility_join_using_top_level_identifier
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,7 +50,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يفرض حلّ المعرّف في JOIN USING انطلاقًا من الإسقاط (على سبيل المثال، في `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` سيُجرى join باستخدام `t1.a + 1 = t2.b` بدلًا من `t1.b = t2.b`). وتُؤخذ أيضًا الأسماء المستعارة المعرّفة في التعبيرات الفرعية ضمن قائمة SELECT في الاعتبار (على سبيل المثال، في `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` يُجرى join باستخدام `t1.a + 1 = t2.b`). عندما يُعرَّف الاسم المستعار المطابق في تعبير فرعي ضمن قائمة SELECT بدلًا من تعريفه كاسم مستعار على المستوى الأعلى، تُعطَّل النسخ المتماثلة المتوازية لهذا الاستعلام. بالنسبة إلى الاستعلامات المُرسلة إلى الخوادم البعيدة (جداول `Distributed`، ودالة الجدول `remote`)، لا يُرفض هذا الاستعلام مع استثناء إلا إذا تعذر حلّ المعرّف على الخادم البعيد تمامًا؛ وإذا كان الاسم المستعار يحجب عمودًا حقيقيًا في الجدول الأيسر، فإن الخادم البعيد يجري join باستخدام ذلك العمود بدلًا منه، لذا قد تختلف النتائج عن التنفيذ المحلي.
 
-## analyzer_compatibility_multiple_joins_qualify_column_names {#analyzer_compatibility_multiple_joins_qualify_column_names}
+## analyzer_compatibility_multiple_joins_qualify_column_names
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -68,7 +68,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
 ```
 
-## analyzer_compatibility_prefer_alias_over_subcolumn {#analyzer_compatibility_prefer_alias_over_subcolumn}
+## analyzer_compatibility_prefer_alias_over_subcolumn
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

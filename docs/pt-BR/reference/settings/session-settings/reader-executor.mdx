@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## reader_executor_block_size {#reader_executor_block_size}
+## reader_executor_block_size
 
 <ExperimentalBadge />
 
@@ -24,7 +24,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Tamanho do fragmento de buffer para o `ReaderExecutor` experimental: as leituras da fonte preenchem nós com, no máximo, esse tamanho. Deve ser de pelo menos 128 KiB.
 
-## reader_executor_max_tail_for_drain {#reader_executor_max_tail_for_drain}
+## reader_executor_max_tail_for_drain
 
 <ExperimentalBadge />
 
@@ -34,7 +34,7 @@ Tamanho do fragmento de buffer para o `ReaderExecutor` experimental: as leituras
 
 Limite de drenagem para o `ReaderExecutor` experimental: uma conexão longa de origem descartada a essa quantidade de bytes de seu limite final é lida até esse limite primeiro, para que seja concluída e volte reutilizável ao pool de conexões, em vez de ser contabilizada como uma conexão incompleta.
 
-## reader_executor_min_bytes_for_seek {#reader_executor_min_bytes_for_seek}
+## reader_executor_min_bytes_for_seek
 
 <ExperimentalBadge />
 
@@ -44,7 +44,7 @@ Limite de drenagem para o `ReaderExecutor` experimental: uma conexão longa de o
 
 Limite de lacuna à frente para o `ReaderExecutor` experimental: uma lacuna de até esse valor é ignorada na conexão de origem aberta (bridged / read through), em vez de emitir uma leitura separada da origem ou reabrir a conexão. Defina-o próximo ao ponto de equilíbrio entre largura de banda e custo por request, para que o bridging continue sendo vantajoso em termos de custo.
 
-## reader_executor_use_long_connections {#reader_executor_use_long_connections}
+## reader_executor_use_long_connections
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ Limite de lacuna à frente para o `ReaderExecutor` experimental: uma lacuna de a
 
 Reutiliza uma conexão longa e delimitada de origem entre janelas no `ReaderExecutor` experimental. Uma conexão longa é aquela cujo intervalo excede a janela de leitura atual; quando desativada, o executor não consome orçamento do pool de conexões, e cada janela abre uma conexão temporária de uso único (o caminho sem estado).
 
-## reader_executor_window_size {#reader_executor_window_size}
+## reader_executor_window_size
 
 <ExperimentalBadge />
 

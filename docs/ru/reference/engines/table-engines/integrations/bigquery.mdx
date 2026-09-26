@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 Записи неатомарны: большой `INSERT` отправляется батчами (не более 500 строк в запросе; кроме того, он разбивается так, чтобы не превысить ограничение BigQuery на размер запроса в 10 МБ), при этом один запрос может быть выполнен лишь частично (BigQuery может закоммитить некоторые строки запроса, отклонив остальные с `insertErrors`), а последующий батч может быть отклонён после успешного принятия предыдущих. В обоих случаях уже закоммиченные строки остаются в BigQuery, а запрос завершается с ошибкой. Каждая строка содержит стабильный `insertId` (полученный из идентификатора запроса и порядкового номера строки), чтобы BigQuery по возможности выполнял дедупликацию повторно отправленных строк. Поскольку `insertId` зависит от порядкового номера, повторный запуск того же `INSERT` выполняет дедупликацию только в том случае, если строки передаются в том же порядке (например, в однопоточном режиме с `max_threads = 1` и `max_insert_threads = 1`). Подробнее см. в [ограничениях табличной функции `bigquery`](/ru/reference/functions/table-functions/bigquery#limitations).
 
-## Создание таблицы {#creating-a-table}
+## Создание таблицы
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -37,7 +37,7 @@ ENGINE = BigQuery(project, dataset, table[, access_token][, key = value, ...])
 
 Параметры также можно передать в виде [именованной коллекции](/ru/concepts/features/configuration/server-config/named-collections) с переопределениями `key = value`. Полный список ключей и описание [методов аутентификации](/ru/reference/functions/table-functions/bigquery#authentication) см. в [табличной функции `bigquery`](/ru/reference/functions/table-functions/bigquery#arguments). Необходимо указать ровно один метод аутентификации; для постоянной таблицы `service_account_key` или `refresh_token` предпочтительнее `access_token`, поскольку срок действия токенов доступа истекает в течение часа.
 
-## Пример использования {#usage-example}
+## Пример использования
 
 ```sql
 CREATE TABLE shakespeare
@@ -53,7 +53,7 @@ ENGINE = BigQuery('my-project', 'my_dataset', 'events',
 INSERT INTO events VALUES (1, 'started');
 ```
 
-## Связанные материалы {#related}
+## Связанные материалы
 
 * [Табличная функция `bigquery`](/ru/reference/functions/table-functions/bigquery)
 

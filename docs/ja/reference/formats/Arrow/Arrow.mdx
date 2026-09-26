@@ -15,13 +15,13 @@ doc_type: 'reference'
 | -- | -- | ----- |
 | ✔  | ✔  |       |
 
-## 説明 {#description}
+## 説明
 
 [Apache Arrow](https://arrow.apache.org/) には、組み込みの列指向ストレージフォーマットが 2 種類あります。
 ClickHouse はこれらのフォーマットの読み書きをサポートしています。
 `Arrow` は Apache Arrow の「ファイルモード」フォーマットで、メモリ内でのランダムアクセス向けに設計されています。
 
-## データ型の対応 {#data-types-matching}
+## データ型の対応
 
 以下の表は、サポートされているデータ型と、`INSERT` クエリおよび `SELECT` クエリでそれらが ClickHouse の [data types](/ja/reference/data-types/index) にどのように対応するかを示しています。
 
@@ -66,11 +66,11 @@ Array はネストでき、引数として `Nullable` 型の値を取ること�
 
 ClickHouse テーブルのカラムのデータ型は、対応する Arrow のデータフィールドと一致している必要はありません。データを挿入する際、ClickHouse はまず上の表に従ってデータ型を解釈し、その後、データを ClickHouse テーブルのカラムに設定されたデータ型に [キャスト](/ja/reference/functions/regular-functions/type-conversion-functions#CAST) します。
 
-## 使用例 {#example-usage}
+## 使用例
 
 以下の例では、[ClickHouse SQL playground](https://sql.clickhouse.com) で利用可能な `forex` データセットを使用します。
 
-### データの選択 {#selecting-data}
+### データの選択
 
 Playground から `EUR/USD` の為替レートの 1 日分を取得し、
 ローカルの `forex_eurusd.arrow` ファイルに保存します。HTTP
@@ -95,7 +95,7 @@ curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
         SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
 ```
 
-### ファイルを読み戻す {#reading-data}
+### ファイルを読み戻す
 
 これで、[`clickhouse-local`](/ja/concepts/features/tools-and-utilities/clickhouse-local) と
 [`file`](/ja/reference/functions/table-functions/file) テーブル関数を使って、ローカルの Arrow ファイルを読み戻せます。このファイルは
@@ -120,7 +120,7 @@ clickhouse-local --query "
    └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
 ```
 
-### データの挿入 {#inserting-data}
+### データの挿入
 
 Arrow ファイルを ClickHouse テーブルに読み込むには、`FORMAT Arrow` を指定して `clickhouse-client` にパイプして渡します:
 
@@ -128,7 +128,7 @@ Arrow ファイルを ClickHouse テーブルに読み込むには、`FORMAT Arr
 cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-## フォーマット設定 {#format-settings}
+## フォーマット設定
 
 | 設定                                                                           | 説明                                                                                                                                                                                                                                                                                          | デフォルト       |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |

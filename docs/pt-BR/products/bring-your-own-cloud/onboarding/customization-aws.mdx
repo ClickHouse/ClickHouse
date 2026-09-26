@@ -10,7 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <div id="customer-managed-vpc-aws">
-  ## VPC gerenciada pelo cliente (BYO-VPC) para AWS {#customer-managed-vpc-aws}
+  ## VPC gerenciada pelo cliente (BYO-VPC) para AWS
 </div>
 
 Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez de deixar que o ClickHouse Cloud provisione uma nova VPC, siga as etapas abaixo. Essa abordagem oferece maior controle sobre a configuração da rede e permite integrar o ClickHouse BYOC à infraestrutura de rede existente.
@@ -59,7 +59,7 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
       Storage buckets, Kubernetes cluster, and compute resources required for running ClickHouse aren&#39;t included in this initial setup. They will be provisioned in a later step. While you control your VPC, ClickHouse Cloud still requires IAM permissions to create and manage the Kubernetes cluster, IAM roles for service accounts, S3 buckets, and other essential resources in your AWS account.
     </Note>
 
-#### Módulo do Terraform {#terraform-module-aws}
+#### Módulo do Terraform
 
     Se você preferir usar Terraform em vez de CloudFormation, use o módulo [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -103,7 +103,7 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
   </Step>
 </Steps>
 
-### Subnets compartilhadas de outra conta (AWS RAM) {#shared-subnets-ram}
+### Subnets compartilhadas de outra conta (AWS RAM)
 
 Você pode executar o BYOC em uma conta spoke usando subnets compartilhadas por uma conta hub com o [AWS Resource Access Manager (RAM)](https://docs.aws.amazon.com/ram/latest/userguide/what-is.html), o que permite manter a rede centralizada. A configuração é a mesma descrita acima, com duas diferenças decorrentes do comportamento dos compartilhamentos do RAM:
 
@@ -112,7 +112,7 @@ Você pode executar o BYOC em uma conta spoke usando subnets compartilhadas por 
 
 Todo o restante permanece igual: três private subnets distribuídas em três availability zones, um CIDR mínimo de `/25` por subnet e a configuração do `ClickHouseManagementRole` na conta spoke onde a infraestrutura BYOC é executada.
 
-## IAM roles gerenciados pelo cliente {#customer-managed-iam-roles}
+## IAM roles gerenciados pelo cliente
 
 Para organizações com requisitos avançados de segurança ou políticas rígidas de compliance, você pode fornecer seus próprios IAM roles em vez de deixar que o ClickHouse Cloud os crie. Essa abordagem dá a você controle total sobre as permissões do IAM e permite aplicar as políticas de segurança da sua organização.
 

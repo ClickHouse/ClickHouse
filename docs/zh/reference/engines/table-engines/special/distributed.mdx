@@ -16,7 +16,7 @@ doc_type: 'reference'
 使用 Distributed 引擎的表本身不存储任何数据，而是支持在多台服务器上进行分布式查询处理。
 读取会自动并行执行。读取时，如果远程服务器上存在表索引，则会使用这些索引。
 
-## 创建表 {#distributed-creating-a-table}
+## 创建表
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -28,7 +28,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-### 从表复制 {#distributed-from-a-table}
+### 从表复制
 
 当 `Distributed` 表指向当前服务器上的某个表时，你可以沿用该表的 schema：
 
@@ -36,7 +36,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-### Remote 和 RemoteSecure 引擎 {#distributed-remote-engines}
+### Remote 和 RemoteSecure 引擎
 
 `Remote` 和 `RemoteSecure` 是持久化表引擎，使用与 [`remote` 和 `remoteSecure`](/zh/reference/functions/table-functions/remote) 表函数相同的地址表达式和凭据：
 
@@ -65,7 +65,7 @@ SELECT * FROM remote_one;
 
 目标也可以是表函数，例如 `Remote('127.0.0.1', numbers(10))` 或 `Remote('127.0.0.1', merge(db, '^table_'))`。这样的表是只读的：因为没有可供插入的远程表，所以 `INSERT` 会被拒绝，并返回 `NOT_IMPLEMENTED` 异常。这个只读限制同样适用于 `remote` 和 `remoteSecure` 表函数：对于普通的 `db`/`table` 目标，`SELECT` 和 `INSERT` 都受支持；但对于表函数目标 (`remote('127.0.0.1', numbers(10))`) ，出于同样的原因，它是只读的。
 
-### Distributed 参数 {#distributed-parameters}
+### Distributed 参数
 
 | 参数                  | 描述                                                                                                                                                                                                                                                                  |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,7 +80,7 @@ SELECT * FROM remote_one;
 * [distributed&#95;foreground&#95;insert](/zh/reference/settings/session-settings/distributed#distributed_foreground_insert) 设置
 * [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) 中的示例
 
-### Distributed 设置 {#distributed-settings}
+### Distributed 设置
 
 | 设置                                         | 描述                                                                                                                                                                                  | 默认值                            |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
@@ -125,7 +125,7 @@ SETTINGS
 
 你也可以用返回字符串的常量 表达式 来代替 database 名称。例如：`currentDatabase()`。
 
-## 集群 {#distributed-clusters}
+## 集群
 
 集群是在[服务器配置文件](/zh/concepts/features/configuration/server-config/configuration-files)中配置的：
 
@@ -211,7 +211,7 @@ SETTINGS
 
 如果你需要每次都向一组未知的分片和副本发送查询，则无需创建 `Distributed` 表，而应改用 `remote` 表函数。请参见 [表函数](/zh/reference/functions/table-functions/index) 部分。
 
-## 写入数据 {#distributed-writing-data}
+## 写入数据
 
 向集群写入数据有两种方式：
 
@@ -244,7 +244,7 @@ SETTINGS
 
 如果在向 `Distributed` 表执行 `INSERT` 后，服务器宕机或发生异常重启 (例如由于硬件故障) ，则已插入的数据可能会丢失。如果在表目录中检测到损坏的数据分区片段，它会被移至 `broken` 子目录，并且不再使用。
 
-## 读取数据 {#distributed-reading-data}
+## 读取数据
 
 查询 `Distributed` 表时，`SELECT` 查询会发送到所有分片，因此无论数据在各分片之间如何分布 (甚至可以是完全随机分布) ，都能正常工作。添加新分片时，无需将旧数据迁移到新分片中。相反，可以通过为其设置更高权重来写入新数据——这样数据分布会略有不均，但查询仍能正确且高效地执行。
 
@@ -252,9 +252,9 @@ SETTINGS
 
 要进一步了解分布式 `in` 和 `global in` 查询的处理方式，请参阅[此文档](/zh/reference/statements/in#distributed-subqueries)。
 
-## 虚拟列 {#virtual-columns}
+## 虚拟列
 
-#### _Shard_num {#_shard_num}
+#### _Shard_num
 
 `_shard_num` — 包含表 `system.clusters` 中的 `shard_num` 值。类型：[UInt32](/zh/reference/data-types/int-uint)。
 

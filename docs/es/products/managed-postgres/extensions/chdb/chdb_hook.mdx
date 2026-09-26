@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb_hook', 'Parquet', 'CSV', 'TSV']
 ---
 
-## Sinopsis {#synopsis}
+## Sinopsis
 
 ```psql
 # LOAD 'chdb_hook';
@@ -24,7 +24,7 @@ CREATE TABLE
 COPY 18
 ```
 
-## Descripción {#description}
+## Descripción
 
 El módulo chdb&#95;hook se engancha al comando [COPY](#copy-overloading) de
 PostgreSQL para usar [chDB] y copiar datos `TO` o `FROM` cualquiera de los
@@ -33,7 +33,7 @@ locales, buckets de [AWS S3], [Google Cloud Storage] y más. También se enganch
 a [CREATE TABLE], de modo que una tabla puede derivar sus columnas y cargar
 sus filas desde cualquiera de esos mismos destinos.
 
-## Carga {#loading}
+## Carga
 
 Cargue chdb&#95;hook de una de las siguientes maneras como super user. Utilice la
 que resulte más adecuada para su caso de uso:
@@ -90,7 +90,7 @@ que resulte más adecuada para su caso de uso:
   servidor de Postgres, así como en almacenamiento en la nube.
 </Warning>
 
-## Sobrecarga de COPY {#copy-overloading}
+## Sobrecarga de COPY
 
 Durante la [carga](#loading), chdb&#95;hook se engancha al comando [COPY] de Postgres para
 copiar datos `TO` o `FROM` cualquiera de los [formatos de datos compatibles que proporciona
@@ -108,7 +108,7 @@ CREATE TABLE times (
 COPY times FROM 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv';
 ```
 
-### Privilegios {#privileges}
+### Privilegios
 
 Un `COPY` de chdb&#95;hook requiere los mismos privilegios que el [COPY] al que reemplaza:
 `SELECT` sobre la relación o sobre cada columna copiada en el caso de `COPY TO`, e `INSERT`
@@ -116,7 +116,7 @@ en el de `COPY FROM`. Una URL `file://` lee o escribe un archivo en el servidor,
 también exige pertenecer a `pg_read_server_files` o `pg_write_server_files`.
 `COPY FROM` requiere una transacción de lectura-escritura.
 
-### Esquemas de URL {#url-schemes}
+### Esquemas de URL
 
 chdb&#95;hook solo se ejecuta para destinos `COPY` de tipo URL que utilicen uno de los
 siguientes esquemas:
@@ -130,11 +130,11 @@ siguientes esquemas:
 | `az`, `azure`, `abfss`, `abfs` | [Azure Blob Storage] o [Azure ABFS]      | [`azureBlobStorage()`] |
 | `hdfs`                         | [Hadoop Distributed File System]         | [`hdfs()`]             |
 
-### Formatos de URL {#url-formats}
+### Formatos de URL
 
 El formato de las URL varía según el destino.
 
-#### File {#file}
+#### File
 
 Debe ser una ruta absoluta en el servidor de Postgres. Una ruta relativa provoca un
 error. El usuario de Postgres debe ser miembro del rol `pg_read_server_files` o
@@ -147,7 +147,7 @@ contar con los permisos necesarios en el sistema de archivos. Ejemplo:
 file:///tmp/users.parquet
 ```
 
-#### HTTP {#http}
+#### HTTP
 
 Cualquier URL HTTP normal, incluidas las de almacenamiento en la nube público. Para `COPY TO`,
 chdb&#95;hook intentará enviar los datos a la URL mediante `POST`. Ejemplo:
@@ -156,7 +156,7 @@ chdb&#95;hook intentará enviar los datos a la URL mediante `POST`. Ejemplo:
 https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_1.csv
 ```
 
-#### S3 {#s3}
+#### S3
 
 Las URL de S3 pueden tener la forma de un URI de S3
 
@@ -170,7 +170,7 @@ O de una URL de objeto:
 s3://{bucket}.s3.{region}.amazonaws.com/{path}
 ```
 
-#### GCS {#GCS}
+#### GCS
 
 Las URL de GCS tienen el formato de una URL pública:
 
@@ -184,7 +184,7 @@ O un URI de Cloud Storage, que chdb&#95;hook convierte en una URL pública:
 gs://{bucket}/{path}
 ```
 
-#### Azure Blob Storage {#azure-blob-storage}
+#### Azure Blob Storage
 
 Utilice una URL `blob.windows.net` con el nombre de la cuenta como subdominio:
 
@@ -198,7 +198,7 @@ O utilice otro nombre del host:
 az://{host}/{container}/{blob}
 ```
 
-#### Azure ABFS {#azure-abfs}
+#### Azure ABFS
 
 Las URL de ABFS deben usar este formato:
 
@@ -206,7 +206,7 @@ Las URL de ABFS deben usar este formato:
 abfs://{container}@{account}.dfs.core.windows.net/{blob}
 ```
 
-#### URL de HDFS {#hdfs-urls}
+#### URL de HDFS
 
 Las URL de HDFS pueden usar URL con el estilo típico de HTTP y un puerto opcional:
 
@@ -215,7 +215,7 @@ hdfs://{host}/{path}
 hdfs://{host}:{port}/{path}
 ```
 
-### Comodines de ruta {#path-wildcards}
+### Comodines de ruta
 
 Las rutas URL pueden contener globs en los comandos `COPY FROM`. Los archivos deben coincidir con
 el patrón de ruta completo, no solo con el sufijo o el prefijo. La única excepción: cuando
@@ -253,18 +253,18 @@ CREATE TABLE times (
 COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
 ```
 
-### Opciones {#options}
+### Opciones
 
 El comando `COPY` de chdb&#95;hook admite las siguientes opciones:
 
-#### `format`: {#format}
+#### `format`:
 
 El formato de lectura o escritura. Debe ser uno de los [formats] que ofrece [chDB],
 entre los que se incluyen TSV, CSV, Parquet, Iceberg, JSON y otros. Omítalo o establézcalo en
 `auto` para que chDB determine el formato a partir de la extensión del nombre del archivo al final
 de la URL.
 
-#### `structure` {#structure}
+#### `structure`
 
 La estructura de datos de [chDB] para una fila. Consta de una lista de nombres de columnas,
 [tipos de datos de ClickHouse] y modificadores. Si se omite, chdb&#95;hook asigna los tipos de
@@ -280,7 +280,7 @@ COPY users TO 'file:///tmp/users.parquet' (
 );
 ```
 
-#### `access_key` y `access_secret` {#access_key-and-access_secret}
+#### `access_key` y `access_secret`
 
 Credenciales de larga duración del usuario de la cuenta de AWS para autenticar las solicitudes.
 
@@ -288,13 +288,13 @@ Credenciales de larga duración del usuario de la cuenta de AWS para autenticar 
 * **GCS:** Una [clave HMAC y su secreto] de GCP
 * **Azure:** Un nombre de cuenta de Azure Storage y su [clave de acceso]
 
-#### `session_token` {#session_token}
+#### `session_token`
 
 Token de sesión de AWS que se usa junto con `access_key` y `access_secret`, definido
 habitualmente por la variable de entorno `AWS_SESSION_TOKEN`. Se utiliza únicamente para
 URL de S3.
 
-#### `compression` {#compression}
+#### `compression`
 
 Formato de compresión del archivo. Úselo si la compresión no puede inferirse a partir del
 nombre del archivo. Valores admitidos:
@@ -309,12 +309,12 @@ nombre del archivo. Valores admitidos:
 * `bz2`
 * `snappy`
 
-#### `timeout` {#timeout}
+#### `timeout`
 
 Tiempo de espera de la solicitud en milisegundos. Se aplica a las URL de HTTP, S3, GCS y Azure.
 El valor predeterminado es `30000` (30 s).
 
-### Depuración {#debugging}
+### Depuración
 
 Cuando se produce un error, el comando `COPY` de chdb&#95;hook incluye en el contexto del error la consulta de [chDB] que intentó
 ejecutar:
@@ -349,7 +349,7 @@ superior para que chdb&#95;hook envíe la consulta y los parámetros al log de P
   y puede llenar el log con rapidez.
 </Warning>
 
-## Sobrecarga de CREATE TABLE {#create-table-overloading}
+## Sobrecarga de CREATE TABLE
 
 chdb&#95;hook también se engancha a [CREATE TABLE], de modo que una tabla puede derivar sus columnas y cargar sus filas desde una URL.
 
@@ -400,7 +400,7 @@ CREATE TABLE users () WITH (
 Ni `structure_from` ni `copy_from` funcionan con `IF NOT EXISTS`. Utilice
 [COPY] para cargar una relación existente.
 
-## Limitaciones {#limitations}
+## Limitaciones
 
 Debido a algunos problemas conocidos y a las variaciones en el comportamiento de los tipos de datos
 entre Postgres y chDB, chdb&#95;hook presenta las siguientes limitaciones:
@@ -443,13 +443,13 @@ entre Postgres y chDB, chdb&#95;hook presenta las siguientes limitaciones:
 * Los formatos CSVWithNames y CSVWithNamesAndTypes no pueden importar actualmente
   valores box o circle `NULL`. (ClickHouse/ClickHouse#115523)
 
-## Tipos de datos {#data-types}
+## Tipos de datos
 
 [COPY](#copy-overloading) asigna los tipos de Postgres de una relación a tipos de chDB,
 mientras que [CREATE TABLE](#create-table-overloading) asigna los tipos de chDB de una URL
 a tipos de Postgres.
 
-### Postgres a chDB {#postgres-to-chdb}
+### Postgres a chDB
 
 Si no se especifica explícitamente la opción [structure](#structure), chdb&#95;hook asigna
 los tipos de Postgres a equivalentes razonables de chDB. Cuando no se ajusten a su
@@ -509,7 +509,7 @@ Ningún tipo de Postgres se asigna a `Map` ni a `Tuple`, pero [structure](#struc
 indicar uno. Un `Map` puede convertirse en un array de pares clave-valor, y un `Tuple`
 se convierte en un array. Use `text[]` para admitir datos heterogéneos.
 
-### Conversión de timestamp {#timestamp-conversion}
+### Conversión de timestamp
 
 En formatos de texto plano (TSV, CSV, etc.), el hook `COPY` emite los valores DateTime y
 DateTime64 en formato ISO-8601, `YYYY-MM-DDThh:mm:ssZ`, sin tener en cuenta
@@ -543,7 +543,7 @@ Ejemplo del efecto de la configuración `timezone` sobre el timestamp
 | `America/New_York`        | `2026-08-28T16:00:00.000000Z` | `2026-08-28T16:00:00.000Z` |
 | `Japan`                   | `2026-08-28T03:00:00.000000Z` | `2026-08-28T03:00:00.000Z` |
 
-### chDB a Postgres {#chdb-to-postgres}
+### chDB a Postgres
 
 chdb&#95;hook asigna los tipos de ClickHouse devueltos por [`DESCRIBE`] a estos
 tipos de Postgres:
@@ -620,7 +620,7 @@ Postgres admite un rango más estrecho que chDB en algunos de estos tipos; por
 ello, la copia lanza un error con un `Time` o `Time64` que supere las 24 horas,
 y con un `Date32` fuera del rango de fechas de Postgres.
 
-### Codificación de texto {#text-encoding}
+### Codificación de texto
 
 chDB lee `String`, `FixedString`, `Enum` y `JSON` como bytes, sin
 ninguna garantía de codificación. Al copiar una columna de ese tipo a `text`, o a cualquier otro
@@ -644,9 +644,9 @@ CREATE TABLE logs (id bigint, payload bytea) WITH (
 
 `FixedString(N)` rellena con bytes NUL los valores más cortos. Al copiarlos a `text` se descartan los NUL finales, mientras que `bytea` conserva los N bytes.
 
-## Configuración {#settings}
+## Configuración
 
-### `chdb_hook.max_memory` {#chdb_hookmax_memory}
+### `chdb_hook.max_memory`
 
 ```sql
 SET chdb_hook.max_memory = '1 GB';
@@ -664,7 +664,7 @@ para indicar la cantidad de megabytes o una de las siguientes unidades de memori
 
 El valor predeterminado es `0`, que no impone ningún límite de memoria.
 
-### `chdb_hook.max_threads` {#chdb_hookmax_threads}
+### `chdb_hook.max_threads`
 
 ```sql
 SET chdb_hook.max_threads = 4;
@@ -674,7 +674,7 @@ El número máximo de subprocesos de procesamiento de consultas para una consult
 
 Recomendamos encarecidamente configurar `chdb_hook.max_threads` antes de ejecutar un `COPY` de gran tamaño, para evitar que chDB agote el uso de CPU en detrimento de PostgreSQL.
 
-### `chdb_hook.max_parsing_threads` {#chdb_hookmax_parsing_threads}
+### `chdb_hook.max_parsing_threads`
 
 ```sql
 SET chdb_hook.max_parsing_threads = 2;
@@ -689,7 +689,7 @@ Recomendamos definir `chdb_hook.max_parsing_threads` antes de ejecutar un `COPY`
 datos, para evitar que chDB acapare el uso de CPU en detrimento de
 PostgreSQL.
 
-## Política de control de versiones {#versioning-policy}
+## Política de control de versiones
 
 chdb&#95;hook sigue el [control de versiones semántico] en sus releases públicas.
 
@@ -704,12 +704,12 @@ Una vez instalado, PostgreSQL la versión mediante la función
 SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'chdb_hook';
 ```
 
-## Autores {#authors}
+## Autores
 
 * [David E. Wheeler](https://justatheory.com/)
 * [serprex](https://github.com/serprex)
 
-## Derechos de autor {#copyright}
+## Derechos de autor
 
 Copyright (c) 2026, ClickHouse
 

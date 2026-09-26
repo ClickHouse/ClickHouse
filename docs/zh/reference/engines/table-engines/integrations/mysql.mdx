@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 MySQL 引擎允许你对存储在远程 MySQL 服务器中的数据执行 `SELECT` 和 `INSERT` 查询。
 
-## 创建表 {#creating-a-table}
+## 创建表
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -56,7 +56,7 @@ SETTINGS
 
 其余条件以及 `LIMIT` 采样约束仅会在对 MySQL 的查询完成后由 ClickHouse 执行。
 
-## TLS/SSL {#tls-ssl}
+## TLS/SSL
 
 与 MySQL 的加密连接凭据以命名集合键 (或键值参数) 的形式传递：
 
@@ -82,7 +82,7 @@ SETTINGS
 </named_collections>
 ```
 
-## 传入查询而非表名 {#passing-a-query}
+## 传入查询而非表名
 
 `table` 参数除了可以是表名外，也可以是原样传递给 MySQL 的 `SELECT` 查询。表的结构会根据查询结果自动推断。该查询既可以写成子查询，也可以封装在 `query` 函数中：
 
@@ -105,7 +105,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-## 使用示例 {#usage-example}
+## 使用示例
 
 在 MySQL 中创建表：
 
@@ -170,11 +170,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-## 设置 {#mysql-settings}
+## 设置
 
 默认设置的效率并不高，因为它们甚至不会复用连接。通过这些设置，可以提高服务器每秒可执行的查询数量。
 
-### `connection_auto_close` {#connection-auto-close}
+### `connection_auto_close`
 
 允许在查询执行后自动关闭连接，即禁用连接复用。
 
@@ -185,7 +185,7 @@ SELECT * FROM mysql_table
 
 默认值：`1`。
 
-### `connection_max_tries` {#connection-max-tries}
+### `connection_max_tries`
 
 设置启用故障转移的连接池的重试次数。
 
@@ -196,7 +196,7 @@ SELECT * FROM mysql_table
 
 默认值：`3`。
 
-### `connection_pool_size` {#connection-pool-size}
+### `connection_pool_size`
 
 连接池大小 (如果所有连接都在使用中，查询会等待，直到有连接被释放) 。
 
@@ -206,7 +206,7 @@ SELECT * FROM mysql_table
 
 默认值：`16`。
 
-### `connection_wait_timeout` {#connection-wait-timeout}
+### `connection_wait_timeout`
 
 等待空闲连接的超时时间 (秒)  (当已有 `connection_pool_size` 个活动连接时) ，0 表示不等待。
 
@@ -216,7 +216,7 @@ SELECT * FROM mysql_table
 
 默认值：`5`。
 
-### `connect_timeout` {#connect-timeout}
+### `connect_timeout`
 
 连接超时时间 (以秒为单位) 。
 
@@ -226,7 +226,7 @@ SELECT * FROM mysql_table
 
 默认值：`10`。
 
-### `read_write_timeout` {#read-write-timeout}
+### `read_write_timeout`
 
 读写超时 (单位：秒) 。
 
@@ -236,7 +236,7 @@ SELECT * FROM mysql_table
 
 默认值：`300`。
 
-### `enable_compression` {#enable-compression}
+### `enable_compression`
 
 为 MySQL 协议连接启用压缩。
 
@@ -265,7 +265,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-## 另请参阅 {#see-also}
+## 另请参阅
 
 * [MySQL 表函数](/zh/reference/functions/table-functions/mysql)
 * [使用 MySQL 作为字典源](/zh/reference/statements/create/dictionary/sources/mysql)

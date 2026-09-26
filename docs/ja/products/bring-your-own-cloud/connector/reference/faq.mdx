@@ -10,9 +10,9 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-## よくある質問 {#faq}
+## よくある質問
 
-### 誰が、いつサービスを変更できますか？ {#who-can-change-my-services}
+### 誰が、いつサービスを変更できますか？
 
 managed モードでは、ClickHouse Cloud はマネージドサービスのみを変更します。executor ホストまたは ポッド にアクセスできるユーザーであれば、ローカルの `clicklink clctl instances` コマンドで操作することも可能です。[サービスライフサイクル](/ja/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)を参照してください。ClickHouse Cloud は、executor のアウトバウンドチャネルを介してライフサイクルコマンドを送信します:
 
@@ -28,7 +28,7 @@ managed モードでは、ClickHouse Cloud はマネージドサービスのみ�
 
 executor の操作はすべて Kubernetes API を経由します。admission ポリシーは、書き込みをサービスプレフィックス (デフォルトでは `ns-`) を持つネームスペースに限定します。加えて、executor 自身のネームスペース内では 3 つの書き込み、すなわちトークンの更新、サービスレジストリの ConfigMap、そして Kubernetes における `clicklink-mtls` Secret 内の更新されたクライアント証明書が許可されます。一方、同じリソースファミリーに対する読み取りはクラスター全体に及びます。承認されたプラットフォーム更新は、プラットフォームネームスペースに限定された別の `pcm-platform` identity として実行されます。ユーザー自身が運用するクラスターが変更されることは一切ありません: scraper とトラブルシューターは読み取り専用です。正確なスコープについては[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)のページを参照してください。
 
-### 環境から外部に出るデータは何ですか？ {#what-data-leaves-my-environment}
+### 環境から外部に出るデータは何ですか？
 
 データが外部に出る経路は 3 つあり、いずれもコネクタ自身が開くアウトバウンド接続を経由します。スクレイプ経路、executor、そして有効化したサポートセッションです。
 
@@ -44,7 +44,7 @@ executor は、実行した各コマンドの結果と、各マネージドサ�
 
 アウトバウンド接続の完全な一覧は[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)のページに記載されています。
 
-### ClickHouse によるクラスターの変更を止めるには？ {#stop-managed-mode}
+### ClickHouse によるクラスターの変更を止めるには？
 
 managed モードを使わずに実行してください。インストール時に `clicklink clctl init` へ `--no-managed` を渡すか、確認を求められた際に「いいえ」と回答します。デプロイされるのは scraper と トラブルシューター のみになるため、ClickHouse はサービスを作成・変更・削除できません。ただし、コネクタは引き続き読み取り専用の ClickHouse ユーザーと ServiceAccount をプロビジョニングします。詳細は[権限モデル](/ja/products/bring-your-own-cloud/connector/reference/privilege-model)を参照してください。
 
@@ -60,7 +60,7 @@ kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 
 ClickHouse が作成したサービスは稼働し続けますが、ClickHouse Cloud からはスケール、アップグレード、バックアップ、削除を実行できなくなり、これらに対する pending 状態のコマンドは失敗します。プラットフォーム更新も停止します。ワークロード側の半分を適用するのは executor であり、その executor がすでに稼働していないためです。
 
-### コネクタがオフラインになった場合はどうなりますか？ {#connector-down}
+### コネクタがオフラインになった場合はどうなりますか？
 
 ClickHouse サービスには影響しません。コネクタは data path 上には存在せず、managed service は executor なしでも稼働を続けます。影響が出るのは可視性と制御の面です。ClickHouse Cloud はテレメトリーの受信を停止し、コネクタが復帰するまで サポートセッション は使用不可になります。マネージドモードでは、ハートビートが 5 分間届かないと ClickHouse Cloud 上で環境がオフラインと表示され、次のハートビートが届いた時点で再び ready になります。
 
@@ -70,17 +70,17 @@ VM 上では、connector endpoint が reachable でない間、scraper は scrap
 
 診断するには、各 component の `/livez` エンドポイントを確認し (判断材料となるのは JSON の `status` フィールドであり、HTTP コードではありません) 、`clicklink clctl preflight` を実行してください (VM ホストでは `sudo` を付けます) 。Preflight では、設定、接続性、ClickHouse への到達性、access、ディスクを一度にチェックします。[運用](/ja/products/bring-your-own-cloud/connector/operations)を参照してください。コネクタの health が回復しない場合は、ClickHouse Support にお問い合わせください。
 
-### サービスを削除すると何が削除されますか？ {#what-is-deleted}
+### サービスを削除すると何が削除されますか？
 
 executor はサービスを停止し、その Kubernetes リソースを削除したうえで、ネームスペースを削除します。ネームスペースが消えた時点で、サービスは終了したと報告されます。Kubernetes の外にあるものはすべて残ります。データ用 バケット、バックアップ用 バケット、およびサービスの IAM role です。executor はお客様の バケット や IAM に対する認証情報を保持していないため、それらに触れることはできません。
 
 残りは、お客様の認証情報を用いて実行する `clicklink clctl executor teardown` で削除します。デフォルトでは IAM role を削除し、データと バックアップ は保持します。これらを削除するには明示的な flag の指定が必要です。[サービスの削除](/ja/products/bring-your-own-cloud/connector/managed-services#delete-a-service)を参照してください。
 
-### default ユーザーのパスワードはどこで確認できますか？ {#default-user-password}
+### default ユーザーのパスワードはどこで確認できますか？
 
 `clicklink clctl executor prepare` がユーザー側で生成し、一度だけ出力します。`--from-prepare` ではなく個別のフラグを指定して送信する場合は、`clicklink clctl instances create` が `--default-user-password-file` から読み取るか、新たに生成して出力します。ClickHouse Cloud に送信されるのはそのハッシュのみであるため、コネクタも ClickHouse も再度表示することはできません。表示されたら必ず保存してください。
 
-### ClickHouse のアクセスを取り消すにはどうすればよいですか？ {#how-do-i-revoke-access}
+### ClickHouse のアクセスを取り消すにはどうすればよいですか？
 
 影響が小さい順に説明します。
 
@@ -91,7 +91,7 @@ executor はサービスを停止し、その Kubernetes リソースを削除�
 5. **認証情報を取り消します。** `pcm_scraper` と `pcm_troubleshooter` の ClickHouse ユーザーを削除し、コネクタの Secret (Kubernetes) または `/etc/clicklink` 配下のファイル (VM) を削除します。
 6. **コネクタを完全に削除します。** [操作](/ja/products/bring-your-own-cloud/connector/operations)を参照してください。
 
-### エアギャップ環境や自前のミラー経由で実行できますか？ {#air-gapped-and-mirrors}
+### エアギャップ環境や自前のミラー経由で実行できますか？
 
 はい。インストール時に必要なアーティファクトはすべて、自組織の境界内から取得できます。
 
@@ -104,7 +104,7 @@ executor はサービスを停止し、その Kubernetes リソースを削除�
 
 [プライベートミラー](/ja/products/bring-your-own-cloud/connector/configuration) および [オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding) のエアギャップに関するセクションを参照してください。ただし、コネクタは実行時にコネクタエンドポイントへの経路を必要とします。経路がない場合、ClickHouse Cloud はテレメトリーを受信できず、ライフサイクルコマンドもexecutorに届きません。
 
-### サポートセッションはどのように監査されますか？ {#support-session-auditing}
+### サポートセッションはどのように監査されますか？
 
 セッション中に実行されたすべてのコマンドは、許可されたものもブロックされたものも、newline-delimited JSON形式で`/var/log/clicklink/troubleshoot-audit.log`に追記されます。各エントリには、`submitted_by` (コマンドチャネル上の組織ID) 、コマンドのテキスト、対象インスタンス、結果、および拒否されたコマンドの場合は`blocked_by`が記録されます。ゲートウェイ呼び出しは、拒否されたものも含め、トラブルシューター自身のログに構造化された`clctl.gateway`行として記録されます。これらはトークンによって証明されたオペレーターのメールアドレスに帰属され、自己申告の名前は使用されません。VM上のローカルセッションの変更では、実行元のホストユーザーが`/var/lib/clicklink/session.json`の`enabled_by`として記録されます。
 

@@ -15,20 +15,20 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются на основе исходного кода ClickHouse.
 
-## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
+## adaptive_write_buffer_initial_size
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
 Начальный размер адаптивного буфера для записи
 
-## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
+## add_implicit_sign_column_constraint_for_collapsing_engine
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Если значение равно `true`, добавляет неявное ограничение для столбца `sign` таблицы CollapsingMergeTree
 или VersionedCollapsingMergeTree, разрешающее только допустимые значения (`1` и `-1`).
 
-## alter_column_secondary_index_mode {#alter_column_secondary_index_mode}
+## alter_column_secondary_index_mode
 
 <SettingsInfoBlock type="AlterColumnSecondaryIndexMode" default_value="rebuild" />
 
@@ -45,14 +45,14 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * `compatibility`: Соответствует исходному поведению: `throw` для `ALTER ... MODIFY COLUMN` и `rebuild` для `ALTER ... UPDATE/DELETE`.
 * `ignore`: Предназначено для опытных пользователей. Оставляет индексы в несогласованном состоянии, что может привести к некорректным результатам запроса.
 
-## always_use_copy_instead_of_hardlinks {#always_use_copy_instead_of_hardlinks}
+## always_use_copy_instead_of_hardlinks
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Всегда копировать данные вместо создания жёстких ссылок при мутациях/заменах/отключениях
 и т. д.
 
-## apply_patches_on_merge {#apply_patches_on_merge}
+## apply_patches_on_merge
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -60,14 +60,14 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Если true, патч-части применяются при слияниях
 
-## assign_part_uuids {#assign_part_uuids}
+## assign_part_uuids
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Если параметр включен, каждой новой части присваивается уникальный идентификатор.
 Перед включением убедитесь, что все реплики поддерживают UUID версии 4.
 
-## auto_statistics_types {#auto_statistics_types}
+## auto_statistics_types
 
 <SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
 
@@ -77,20 +77,20 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Поддерживаемые типы статистики: basic, tdigest, countmin, uniq, uniq&#95;v2.
 Тип статистики `minmax` устарел: он является подмножеством `basic`, поэтому вместо него следует использовать `basic`.
 
-## background_task_preferred_step_execution_time_ms {#background_task_preferred_step_execution_time_ms}
+## background_task_preferred_step_execution_time_ms
 
 <SettingsInfoBlock type="Milliseconds" default_value="50" />
 
 Целевое время выполнения одного шага слияния или мутации. Может быть превышено, если
 выполнение одного шага занимает больше времени
 
-## clean_deleted_rows {#clean_deleted_rows}
+## clean_deleted_rows
 
 <SettingsInfoBlock type="CleanDeletedRows" default_value="Никогда" />
 
 Устаревшая настройка, не имеет эффекта.
 
-## clone_replica_zookeeper_create_get_part_batch_size {#clone_replica_zookeeper_create_get_part_batch_size}
+## clone_replica_zookeeper_create_get_part_batch_size
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -98,7 +98,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Размер батча для multi-create-запросов get-part к ZooKeeper при клонировании реплики.
 
-## compatibility_allow_sampling_expression_not_in_primary_key {#compatibility_allow_sampling_expression_not_in_primary_key}
+## compatibility_allow_sampling_expression_not_in_primary_key
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -106,7 +106,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 нужно только для того, чтобы временно разрешить запуск сервера с некорректными таблицами для
 обратной совместимости.
 
-## compute_exact_num_defaults_for_sparse_columns {#compute_exact_num_defaults_for_sparse_columns}
+## compute_exact_num_defaults_for_sparse_columns
 
 <BetaBadge />
 
@@ -122,7 +122,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Если оставить этот параметр отключённым, вставки/слияния останутся такими же быстрыми, как и раньше; при включении
 добавляется проход O(rows) для каждого столбца, поддерживающего разреженное хранение.
 
-## deduplicate_merge_projection_mode {#deduplicate_merge_projection_mode}
+## deduplicate_merge_projection_mode
 
 <SettingsInfoBlock type="DeduplicateMergeProjectionMode" default_value="throw" />
 
@@ -143,7 +143,7 @@ MergeTree эта настройка игнорируется. Она также 
 * `drop`
 * `rebuild`
 
-## deduplication_hashes_cache_update_wait_ms {#deduplication_hashes_cache_update_wait_ms}
+## deduplication_hashes_cache_update_wait_ms
 
 <SettingsInfoBlock type="Milliseconds" default_value="100" />
 
@@ -154,7 +154,7 @@ MergeTree эта настройка игнорируется. Она также 
 каталог `deduplication_hashes` в ClickHouse Keeper, чтобы вставки могли обнаруживать дубликаты без
 round-trip к Keeper.
 
-## default_compression_codec {#default_compression_codec}
+## default_compression_codec
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": ""},{"label": "Новая настройка"}]}]} />
 
@@ -166,11 +166,11 @@ round-trip к Keeper.
 3. Кодек сжатия по умолчанию, заданный в настройках `compression`
    Значение по умолчанию: пустая строка (не задано).
 
-## disk {#disk}
+## disk
 
 Название диска хранилища. Можно указать вместо политики хранения.
 
-## dynamic_serialization_version {#dynamic_serialization_version}
+## dynamic_serialization_version
 
 <SettingsInfoBlock type="MergeTreeDynamicSerializationVersion" default_value="v3" />
 
@@ -184,7 +184,7 @@ round-trip к Keeper.
 * `v2`
 * `v3`
 
-## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
+## enforce_index_structure_match_on_partition_manipulation
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -195,7 +195,7 @@ round-trip к Keeper.
 должны быть идентичны. В противном случае целевая таблица может содержать
 надмножество индексов и проекций исходной таблицы.
 
-## execute_merges_on_single_replica_time_threshold {#execute_merges_on_single_replica_time_threshold}
+## execute_merges_on_single_replica_time_threshold
 
 <SettingsInfoBlock type="Seconds" default_value="0" />
 
@@ -209,14 +209,14 @@ round-trip к Keeper.
 
 * Любое положительное целое число.
 
-## finished_mutations_to_keep {#finished_mutations_to_keep}
+## finished_mutations_to_keep
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Сколько записей о завершённых мутациях хранить. Если ноль, хранить
 все.
 
-## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
+## force_read_through_cache_for_merges
 
 <ExperimentalBadge />
 
@@ -224,19 +224,19 @@ round-trip к Keeper.
 
 Принудительно использовать файловый кэш для чтения при слияниях
 
-## initialization_retry_period {#initialization_retry_period}
+## initialization_retry_period
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 
 Период между повторными попытками инициализации таблицы, в секундах.
 
-## kill_threads {#kill_threads}
+## kill_threads
 
 <SettingsInfoBlock type="UInt64" default_value="128" />
 
 Устаревшая настройка, не имеет эффекта.
 
-## lightweight_mutation_projection_mode {#lightweight_mutation_projection_mode}
+## lightweight_mutation_projection_mode
 
 <SettingsInfoBlock type="LightweightMutationProjectionMode" default_value="throw" />
 
@@ -260,7 +260,7 @@ round-trip к Keeper.
 * `drop`
 * `rebuild`
 
-## load_existing_rows_count_for_old_parts {#load_existing_rows_count_for_old_parts}
+## load_existing_rows_count_for_old_parts
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -277,13 +277,13 @@ round-trip к Keeper.
 
 * настройка [exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](/ru/reference/settings/merge-tree-settings/exclude#exclude_deleted_rows_for_part_size_in_merge)
 
-## lock_acquire_timeout_for_background_operations {#lock_acquire_timeout_for_background_operations}
+## lock_acquire_timeout_for_background_operations
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
 Для фоновых операций, таких как слияния, мутации и т. д. Определяет, сколько секунд ждать, прежде чем попытка получить блокировку таблицы завершится неудачей.
 
-## mutation_workload {#mutation_workload}
+## mutation_workload
 
 Используется для регулирования использования и распределения ресурсов между мутациями и
 другими рабочими нагрузками. Указанное значение используется в качестве значения настройки `workload` для
@@ -294,7 +294,7 @@ round-trip к Keeper.
 
 * [Планирование рабочих нагрузок](/ru/concepts/features/configuration/server-config/workload-scheduling)
 
-## non_replicated_deduplication_window {#non_replicated_deduplication_window}
+## non_replicated_deduplication_window
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -312,7 +312,7 @@ round-trip к Keeper.
 охватывает весь вставленный блок. Хеш-суммы записываются в
 локальный файл на диске, а не в ClickHouse Keeper.
 
-## notify_newest_block_number {#notify_newest_block_number}
+## notify_newest_block_number
 
 <ExperimentalBadge />
 
@@ -322,7 +322,7 @@ round-trip к Keeper.
 
 Передавать SharedJoin или SharedSet номер последнего блока. Только в ClickHouse Cloud.
 
-## nullable_serialization_version {#nullable_serialization_version}
+## nullable_serialization_version
 
 <SettingsInfoBlock type="MergeTreeNullableSerializationVersion" default_value="basic" />
 
@@ -336,7 +336,7 @@ round-trip к Keeper.
 
 * allow&#95;sparse — Разрешить использование разреженного кодирования для `Nullable(T)`.
 
-## object_serialization_version {#object_serialization_version}
+## object_serialization_version
 
 <SettingsInfoBlock type="MergeTreeObjectSerializationVersion" default_value="v3" />
 
@@ -352,7 +352,7 @@ round-trip к Keeper.
 
 Только версия `v3` поддерживает изменение версии сериализации общих данных.
 
-## old_parts_lifetime {#old_parts_lifetime}
+## old_parts_lifetime
 
 <SettingsInfoBlock type="Seconds" default_value="480" />
 
@@ -386,7 +386,7 @@ round-trip к Keeper.
 для `old_parts_lifetime` было выбрано значение 480 секунд, в течение которых
 гарантированно происходит запись новой части на диск.
 
-## optimize_row_order {#optimize_row_order}
+## optimize_row_order
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -459,7 +459,7 @@ round-trip к Keeper.
 Не ожидается, что первичные ключи высокой мощности, например включающие столбцы временных меток типа
 `DateTime64`, дадут заметный выигрыш от этого параметра.
 
-## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
+## packed_skip_index_max_bytes
 
 <BetaBadge />
 
@@ -493,7 +493,7 @@ below the threshold)`.
 подстримы. Изменение этой настройки влияет только на вновь записанные части;
 существующие части сохраняют ту структуру, которая была у них на момент записи.
 
-## part_minmax_index_columns {#part_minmax_index_columns}
+## part_minmax_index_columns
 
 <SettingsInfoBlock type="MergeTreePartMinMaxIndexColumns" default_value="partition_key_only" />
 
@@ -506,7 +506,7 @@ below the threshold)`.
 * `partition_key_only` — отслеживаются только столбцы ключа партиции.
 * `with_block_number_offset` — столбцы ключа партиции, а также сохранённые виртуальные столбцы `_block_number` и `_block_offset`. Включает отсечение на уровне частей по этим столбцам.
 
-## patch_parts_version {#patch_parts_version}
+## patch_parts_version
 
 <SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
 
@@ -523,7 +523,7 @@ below the threshold)`.
 
 Патчи старого формата на диске остаются доступными для чтения независимо от этой настройки.
 
-## propagate_types_serialization_versions_to_nested_types {#propagate_types_serialization_versions_to_nested_types}
+## propagate_types_serialization_versions_to_nested_types
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -531,7 +531,7 @@ below the threshold)`.
 
 Если установлено значение true, версии сериализации, такие как `string_serialization_version`, будут распространяться на вложенные типы, такие как Array/Map/Nullable/JSON/etc. Если параметр отключён, версия сериализации будет применяться только к столбцам верхнего уровня этого типа и Tuple el
 
-## ratio_of_defaults_for_sparse_serialization {#ratio_of_defaults_for_sparse_serialization}
+## ratio_of_defaults_for_sparse_serialization
 
 <SettingsInfoBlock type="Float" default_value="0.9375" />
 
@@ -644,7 +644,7 @@ WHERE table LIKE 'my_sparse_table';
 └────────┴────────────────────┘
 ```
 
-## reduce_blocking_parts_sleep_ms {#reduce_blocking_parts_sleep_ms}
+## reduce_blocking_parts_sleep_ms
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -656,14 +656,14 @@ WHERE table LIKE 'my_sparse_table';
 значение этого параметра будет часто запускать задачи в background&#95;schedule&#95;pool,
 что приводит к большому количеству запросов к ZooKeeper в крупных кластерах
 
-## replace_long_file_name_to_hash {#replace_long_file_name_to_hash}
+## replace_long_file_name_to_hash
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Если имя файла для столбца слишком длинное (более &#39;max&#95;file&#95;name&#95;length&#39;
 байт), заменять его на SipHash128
 
-## replicated_can_become_leader {#replicated_can_become_leader}
+## replicated_can_become_leader
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -675,7 +675,7 @@ WHERE table LIKE 'my_sparse_table';
 * `true`
 * `false`
 
-## search_orphaned_parts_disks {#search_orphaned_parts_disks}
+## search_orphaned_parts_disks
 
 <SettingsInfoBlock type="SearchOrphanedPartsDisks" default_value="any" />
 
@@ -692,7 +692,7 @@ ClickHouse сканирует все диски на наличие осирот
 * local - область поиска ограничена локальными дисками.
 * none - пустая область, поиск не выполняется
 
-## serialization_info_version {#serialization_info_version}
+## serialization_info_version
 
 <SettingsInfoBlock type="MergeTreeSerializationInfoVersion" default_value="with_types" />
 
@@ -714,7 +714,7 @@ ClickHouse сканирует все диски на наличие осирот
 части данных, совместимые со старыми серверами. После завершения обновления
 переключитесь на `with_types` (или `with_missing_columns`), чтобы включить соответствующие возможности.
 
-## share_nested_offsets {#share_nested_offsets}
+## share_nested_offsets
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -727,7 +727,7 @@ ClickHouse сканирует все диски на наличие осирот
 семантики, и скалярный столбец может сосуществовать со столбцами типа Array с точками и тем же префиксом
 (например, n UInt32 вместе с n.a Array(String)). Этот параметр нельзя изменить после создания таблицы.
 
-## simultaneous_parts_removal_limit {#simultaneous_parts_removal_limit}
+## simultaneous_parts_removal_limit
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -735,7 +735,7 @@ ClickHouse сканирует все диски на наличие осирот
 `simultaneous_parts_removal_limit` частей за одну итерацию.
 Значение `simultaneous_parts_removal_limit`, равное `0`, означает, что ограничений нет.
 
-## skip_empty_columns_on_insert {#skip_empty_columns_on_insert}
+## skip_empty_columns_on_insert
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -757,13 +757,13 @@ ClickHouse сканирует все диски на наличие осирот
 значении ради поэтапного обновления, чтобы более старые серверы могли читать вновь записанные части)
 столбцы не пропускаются.
 
-## storage_policy {#storage_policy}
+## storage_policy
 
 <SettingsInfoBlock type="String" default_value="default" />
 
 Имя политики хранения на дисках
 
-## string_serialization_version {#string_serialization_version}
+## string_serialization_version
 
 <SettingsInfoBlock type="MergeTreeStringSerializationVersion" default_value="with_size_stream" />
 
@@ -784,7 +784,7 @@ ClickHouse сканирует все диски на наличие осирот
 * `single_stream` — Использовать стандартный формат сериализации со встроенными размерами.
 * `with_size_stream` — Использовать отдельный поток размеров для `String`-столбцов верхнего уровня.
 
-## temporary_directories_lifetime {#temporary_directories_lifetime}
+## temporary_directories_lifetime
 
 <SettingsInfoBlock type="Seconds" default_value="86400" />
 
@@ -792,7 +792,7 @@ ClickHouse сканирует все диски на наличие осирот
 поскольку слияния и мутации могут работать некорректно при низком значении этой
 настройки.
 
-## try_fetch_recompressed_part_timeout {#try_fetch_recompressed_part_timeout}
+## try_fetch_recompressed_part_timeout
 
 <SettingsInfoBlock type="Seconds" default_value="7200" />
 
@@ -808,7 +808,7 @@ part с повторным сжатием с реплики, которой на
 
 * Любое положительное целое число.
 
-## ttl_only_drop_parts {#ttl_only_drop_parts}
+## ttl_only_drop_parts
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -826,7 +826,7 @@ part с повторным сжатием с реплики, которой на
 по-прежнему назначаются при включенной настройке. Такое слияние все равно перезаписывает часть,
 а значит, также удаляет истекшие в ней строки.
 
-## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
+## wait_for_unique_parts_send_before_shutdown_ms
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
@@ -834,7 +834,7 @@ part с повторным сжатием с реплики, которой на
 (существующие только на текущей реплике) не будут получены другими репликами (0 означает,
 что параметр отключён).
 
-## zookeeper_session_expiration_check_period {#zookeeper_session_expiration_check_period}
+## zookeeper_session_expiration_check_period
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 

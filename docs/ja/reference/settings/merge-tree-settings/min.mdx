@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で確認でき、ClickHouse のソースコードから自動生成されています。
 
-## min_absolute_delay_to_close {#min_absolute_delay_to_close}
+## min_absolute_delay_to_close
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 クローズしてリクエストの処理を停止し、ステータスチェックで OK を返さなくなるまでの最小の絶対遅延。
 
-## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
+## min_columns_to_activate_adaptive_write_buffer
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -36,7 +36,7 @@ wide パーツが書き込むストリーム数と比較されます。この数
 * 0 - 無効
 * 1 - 常に有効
 
-## min_compress_block_size {#min_compress_block_size}
+## min_compress_block_size
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -44,7 +44,7 @@ wide パーツが書き込むストリーム数と比較されます。この数
 ([min&#95;compress&#95;block&#95;size](/ja/reference/settings/merge-tree-settings/min#min_compress_block_size)
 設定を参照) 。テーブルの作成時に指定した値は、この設定のグローバル値を上書きします。
 
-## min_index_granularity_bytes {#min_index_granularity_bytes}
+## min_index_granularity_bytes
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -52,7 +52,7 @@ wide パーツが書き込むストリーム数と比較されます。この数
 
 `index_granularity_bytes` が極端に小さいテーブルを誤って作成しないようにするための安全策です。
 
-## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
+## min_marks_to_honor_max_concurrent_queries
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -74,7 +74,7 @@ wide パーツが書き込むストリーム数と比較されます。この数
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
+## min_merge_bytes_to_use_direct_io
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -85,7 +85,7 @@ I/O アクセスを使用するために必要な、マージ操作の最小デ�
 direct I/O インターフェイス (`O_DIRECT` オプション) を使用して、ストレージディスクに対するデータの読み取りと書き込みを行います。
 `min_merge_bytes_to_use_direct_io = 0` の場合、direct I/O は無効になります。
 
-## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
+## min_partition_age_to_force_merge_seconds
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -133,7 +133,7 @@ Simple および StochasticSimple の merge selector では、
 
 * 正の整数。
 
-## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
+## min_parts_to_merge_at_once
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -141,7 +141,7 @@ merge selector が一度に選択して merge できる データパーツ の�
 (上級者向けの設定です。何をするものか理解していない場合は変更しないでください) 。
 0 - 無効。Simple および StochasticSimple merge selector で機能します。
 
-## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
+## min_replicated_logs_to_keep
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

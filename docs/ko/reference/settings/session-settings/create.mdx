@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)로부터 자동 생성됩니다.
 
-## create_if_not_exists {#create_if_not_exists}
+## create_if_not_exists
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -21,19 +21,19 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 기본적으로 `CREATE` 문에서 `IF NOT EXISTS`를 사용하도록 설정합니다. 이 설정이나 `IF NOT EXISTS`가 지정되어 있고, 지정한 이름의 테이블이 이미 존재하면 예외가 발생하지 않습니다.
 
-## create_index_ignore_unique {#create_index_ignore_unique}
+## create_index_ignore_unique
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 CREATE UNIQUE INDEX에서 UNIQUE keyword를 무시합니다. SQL 호환성 테스트용으로 만들어졌습니다.
 
-## create_replicated_merge_tree_fault_injection_probability {#create_replicated_merge_tree_fault_injection_probability}
+## create_replicated_merge_tree_fault_injection_probability
 
 <SettingsInfoBlock type="Float" default_value="0" />
 
 ZooKeeper에 메타데이터를 생성한 후 테이블 생성 중 fault injection이 발생할 확률
 
-## create_table_empty_primary_key_by_default {#create_table_empty_primary_key_by_default}
+## create_table_empty_primary_key_by_default
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,7 +41,7 @@ ZooKeeper에 메타데이터를 생성한 후 테이블 생성 중 fault injecti
 
 ORDER BY와 PRIMARY KEY를 지정하지 않은 경우 빈 기본 키를 사용하는 *MergeTree 테이블 생성을 허용합니다
 
-## create_token_default_ttl_seconds {#create_token_default_ttl_seconds}
+## create_token_default_ttl_seconds
 
 <SettingsInfoBlock type="UInt64" default_value="1800" />
 

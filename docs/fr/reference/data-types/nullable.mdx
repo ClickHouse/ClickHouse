@@ -21,7 +21,7 @@ Un champ de type `Nullable` ne peut pas être inclus dans les index de table.
 
 `NULL` est la valeur par défaut de tout type `Nullable`, sauf indication contraire dans la configuration du serveur ClickHouse.
 
-## Fonctionnalités de stockage {#storage-features}
+## Fonctionnalités de stockage
 
 Pour stocker des valeurs de type `Nullable` dans une colonne d&#39;une table, ClickHouse utilise, en plus du fichier de valeurs normal, un fichier distinct contenant des masques `NULL`. Les entrées du fichier de masques permettent à ClickHouse de distinguer `NULL` de la valeur par défaut du type de données correspondant pour chaque ligne de la table. En raison de ce fichier supplémentaire, une colonne `Nullable` consomme davantage d&#39;espace de stockage qu&#39;une colonne normale équivalente.
 
@@ -29,7 +29,7 @@ Pour stocker des valeurs de type `Nullable` dans une colonne d&#39;une table, Cl
   L&#39;utilisation de `Nullable` a presque toujours un impact négatif sur les performances. Gardez-le à l&#39;esprit lors de la conception de vos bases de données.
 </Note>
 
-## Trouver des valeurs NULL {#finding-null}
+## Trouver des valeurs NULL
 
 Il est possible de trouver des valeurs `NULL` dans une colonne en utilisant la sous-colonne `null` sans lire l’intégralité de la colonne. Elle renvoie l’octet du masque `NULL` stocké : `0` si la valeur correspondante est présente, et un octet non nul, canoniquement `1`, si elle est `NULL`. Utilisez `isNull` lorsqu’un `0` ou `1` strict est nécessaire.
 
@@ -52,7 +52,7 @@ SELECT n.null FROM nullable;
 └────────┘
 ```
 
-## Exemple d’utilisation {#usage-example}
+## Exemple d’utilisation
 
 ```sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog

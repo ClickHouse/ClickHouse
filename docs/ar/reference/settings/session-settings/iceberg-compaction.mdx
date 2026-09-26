@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد جرى إنشاؤها تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_compaction_commit_batch_size {#iceberg_compaction_commit_batch_size}
+## iceberg_compaction_commit_batch_size
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -26,7 +26,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 المتمثل في النشر فقط عند نفاد مرشحي الدمج، وهي حالة لا تحدث أبدًا ما دام الجدول يتلقى
 ملفات بيانات جديدة؛ لذلك يُكتب كل ناتج مدمج إلى تخزين الكائنات دون أن تتم الإشارة إليه مطلقًا من قِبل لقطة.
 
-## iceberg_compaction_data_cleanup {#iceberg_compaction_data_cleanup}
+## iceberg_compaction_data_cleanup
 
 <SettingsInfoBlock type="ثوانٍ" default_value="10800" />
 
@@ -34,7 +34,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 المدة التي ستُحذف بعدها البيانات.
 
-## iceberg_compaction_delay_bias {#iceberg_compaction_delay_bias}
+## iceberg_compaction_delay_bias
 
 <SettingsInfoBlock type="ثوانٍ" default_value="10800" />
 
@@ -42,7 +42,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 الحد الأدنى للمدة الفاصلة بين عمليتَي الدمج في الخلفية.
 
-## iceberg_compaction_max_bytes_in_data_file {#iceberg_compaction_max_bytes_in_data_file}
+## iceberg_compaction_max_bytes_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
@@ -55,7 +55,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 `iceberg_data_file_size_lower_threshold_compaction`، وإلا فسيظل كل ملف الإخراج دون الحد الأدنى
 ويُختار مجددًا لإجراء الدمج عليه.
 
-## iceberg_compaction_max_rows_in_data_file {#iceberg_compaction_max_rows_in_data_file}
+## iceberg_compaction_max_rows_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="18446744073709551615" />
 

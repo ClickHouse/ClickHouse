@@ -6,7 +6,7 @@ title: 'Arrow Flight 인터페이스'
 doc_type: 'reference'
 ---
 
-## 개요 {#overview}
+## 개요
 
 ClickHouse는 [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) 프로토콜을 지원합니다. 이 프로토콜은 [gRPC](https://grpc.io/)를 통해 [Arrow IPC](https://arrow.apache.org/docs/format/Columnar.html#serialization-and-interprocess-communication-ipc) 포맷을 사용해 열 지향 데이터를 효율적으로 전송할 수 있는 고성능 RPC 프레임워크입니다.
 
@@ -23,7 +23,7 @@ ClickHouse는 [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.
 * `PollFlightInfo`를 통한 점진적 결과 조회.
 * `CancelFlightInfo`를 통한 쿼리 취소.
 
-## Arrow Flight 서버 활성화 {#enabling-server}
+## Arrow Flight 서버 활성화
 
 Arrow Flight 서버를 활성화하려면 ClickHouse 서버 구성에 `arrowflight_port` 설정을 추가합니다:
 
@@ -39,7 +39,7 @@ Arrow Flight 서버를 활성화하려면 ClickHouse 서버 구성에 `arrowflig
 {} <Information> Application: Arrow Flight compatibility protocol: 0.0.0.0:9090
 ```
 
-## TLS 구성 {#tls-configuration}
+## TLS 구성
 
 Arrow Flight 인터페이스에서 TLS를 활성화하려면 다음 설정을 지정하십시오:
 
@@ -56,19 +56,19 @@ Arrow Flight 인터페이스에서 TLS를 활성화하려면 다음 설정을 �
 
 TLS가 활성화된 경우 클라이언트는 `grpc://` 대신 `grpc+tls://` 스킴으로 연결해야 합니다.
 
-## 인증 {#authentication}
+## 인증
 
 Arrow Flight 인터페이스는 두 가지 인증 메서드를 지원합니다:
 
-### 기본 인증 {#basic-auth}
+### 기본 인증
 
 클라이언트는 표준 HTTP `Authorization: Basic` 헤더를 사용해 사용자 이름과 비밀번호로 인증합니다. 인증에 성공하면 server는 응답 헤더에 Bearer 토큰을 반환합니다.
 
-### Bearer 토큰 인증 {#bearer-auth}
+### Bearer 토큰 인증
 
 이후 요청에서는 기본 인증으로 반환된 Bearer 토큰을 `Authorization: Bearer <token>` 헤더를 통해 사용할 수 있습니다. 이 토큰은 사용할 때마다 자동으로 갱신되며, `default_session_timeout` 서버 설정에 따라 만료됩니다(기본값: 60초).
 
-### Python 예시 {#auth-python-example}
+### Python 예시
 
 ```python
 import pyarrow.flight as flight
@@ -97,7 +97,7 @@ token_pair = client.authenticate_basic_token("default", "password")
 options = flight.FlightCallOptions(headers=[token_pair])
 ```
 
-## 세션 관리 {#session-management}
+## 세션 관리
 
 Arrow Flight 인터페이스는 사용자 지정 gRPC 메타데이터 헤더를 통해 ClickHouse 세션을 지원합니다.
 
@@ -114,7 +114,7 @@ Arrow Flight 인터페이스는 사용자 지정 gRPC 메타데이터 헤더를 
 
 세션을 사용하면 `SetSessionOptions` action을 통해 ClickHouse 설정을 지속적으로 적용할 수 있습니다([DoAction](#doaction) 참조).
 
-## 서버 구성 참고 {#configuration-reference}
+## 서버 구성 참고
 
 | 설정                                                            | 기본값     | 설명                                                                                                                                                                                                                                       |
 | ------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -132,9 +132,9 @@ Arrow Flight 인터페이스는 사용자 지정 gRPC 메타데이터 헤더를 
 | `default_session_timeout`                                     | `60`    | 기본 세션 타임아웃(초)입니다. Bearer token 만료에도 적용됩니다.                                                                                                                                                                                               |
 | `max_session_timeout`                                         | `3600`  | 허용되는 최대 세션 타임아웃(초)입니다.                                                                                                                                                                                                                   |
 
-## 지원되는 RPC 메서드 {#rpc-methods}
+## 지원되는 RPC 메서드
 
-### GetFlightInfo {#getflightinfo}
+### GetFlightInfo
 
 쿼리를 실행하고 결과 스키마, 데이터 검색에 사용할 티켓이 포함된 엔드포인트, 행 수, 바이트 수를 담은 `FlightInfo`를 반환합니다.
 
@@ -163,7 +163,7 @@ for endpoint in info.endpoints:
     print(table.to_pandas())
 ```
 
-### PollFlightInfo {#pollflightinfo}
+### PollFlightInfo
 
 장시간 실행되는 쿼리의 결과를 점진적으로 가져올 수 있도록 합니다. 전체 쿼리가 완료될 때까지 기다리는 `GetFlightInfo`와 달리, `PollFlightInfo`는 결과를 블록 단위로 반환합니다.
 
@@ -178,7 +178,7 @@ for endpoint in info.endpoints:
   현재 구현은 데이터 블록을 사용할 수 있을 때까지 대기하며, 데이터 없이 즉시 반환하지는 않습니다.
 </Note>
 
-### GetSchema {#getschema}
+### GetSchema
 
 전체 쿼리를 실행하지 않고 쿼리 결과의 Arrow 스키마를 반환합니다. `GetFlightInfo`와 동일한 디스크립터 유형을 지원합니다.
 
@@ -191,7 +191,7 @@ schema = schema_result.schema
 print(schema)  # x: int32, y: string
 ```
 
-### DoGet {#doget}
+### DoGet
 
 지정된 티켓에 대한 데이터를 가져옵니다. 다음 중 하나를 받습니다:
 
@@ -209,7 +209,7 @@ reader = client.do_get(ticket, options)
 table = reader.read_all()
 ```
 
-### DoPut {#doput}
+### DoPut
 
 데이터를 ClickHouse로 전송합니다. `FlightDescriptor`와 Arrow 레코드 배치 스트림을 인수로 받습니다.
 
@@ -253,11 +253,11 @@ Flight SQL 클라이언트는 DDL/DML SQL 문(CREATE, INSERT, ALTER 등)을 실�
   데이터 전송에는 `Arrow` 형식만 허용됩니다. SQL에서 다른 포맷을 지정하면(예: `FORMAT JSON`) 오류가 발생합니다.
 </Note>
 
-### DoAction {#doaction}
+### DoAction
 
 명명된 actions를 실행합니다. 지원되는 actions는 다음과 같습니다:
 
-#### CancelFlightInfo {#cancelflightinfo}
+#### CancelFlightInfo
 
 `FlightInfo`와 연결된 실행 중인 쿼리를 취소합니다. 쿼리 ID는 `FlightInfo`의 `app_metadata` 필드에서 추출됩니다. 또한 해당 쿼리와 연결된 모든 폴링 디스크립터도 취소합니다.
 
@@ -268,7 +268,7 @@ result = client.cancel_flight_info(cancel_request, options)
 # 성공 시 result.status는 CancelStatus.CANCELLED입니다
 ```
 
-#### SetSessionOptions {#setsessionoptions}
+#### SetSessionOptions
 
 현재 세션의 ClickHouse 서버 설정을 지정합니다. `x-clickhouse-session-id` 헤더를 통해 세션 ID가 설정되어 있어야 합니다.
 
@@ -276,11 +276,11 @@ result = client.cancel_flight_info(cancel_request, options)
 
 설정 이름을 인식할 수 없으면 오류 `INVALID_NAME`이 반환됩니다. 값을 파싱할 수 없으면 오류 `INVALID_VALUE`가 반환됩니다.
 
-#### GetSessionOptions {#getsessionoptions}
+#### GetSessionOptions
 
 현재 세션의 모든 ClickHouse 설정과 해당 값을 반환합니다. 설정 이름을 문자열 값에 매핑한 맵을 반환합니다(내부적으로 `system.settings`를 쿼리합니다).
 
-#### CreatePreparedStatement {#createpreparedstatement}
+#### CreatePreparedStatement
 
 서버 측 prepared statement를 생성하고 statement handle을 반환합니다. 요청에는 `?` 플레이스홀더가 포함된 SQL 쿼리 텍스트가 들어 있습니다.
 
@@ -310,7 +310,7 @@ Prepared statements는 단일 세션이 아니라 인증된 사용자가 소유�
 
 만료된 statements는 제거되며 더 이상 `arrowflight.max_prepared_statements_per_user`에 포함되지 않습니다.
 
-#### ClosePreparedStatement {#closepreparedstatement}
+#### ClosePreparedStatement
 
 요청에 비어 있지 않은 statement handle이 포함된 경우 prepared statement를 닫고, 관련 서버 측 리소스를 해제합니다.
 
@@ -321,11 +321,11 @@ ClickHouse는 handle이 비어 있을 때 `ClosePreparedStatement`를 사용한 
 
 prepared statement가 세션(`x-clickhouse-session-id`를 통해)에서 생성된 경우, 해당 세션이 종료될 때 자동으로 함께 닫힙니다.
 
-## Flight SQL 명령 {#flight-sql-commands}
+## Flight SQL 명령
 
 `CMD` 디스크립터에 직렬화된 [Flight SQL protobuf](https://arrow.apache.org/docs/format/FlightSql.html) 메시지가 포함된 경우, ClickHouse는 다음 명령을 처리합니다:
 
-### GetFlightInfo / GetSchema에서 지원 {#flightsql-getflightinfo}
+### GetFlightInfo / GetSchema에서 지원
 
 | Command                         | Description                                                          |
 | ------------------------------- | -------------------------------------------------------------------- |
@@ -338,7 +338,7 @@ prepared statement가 세션(`x-clickhouse-session-id`를 통해)에서 생성�
 | `CommandGetPrimaryKeys`         | 지정된 테이블의 프라이머리 키 컬럼을 가져옵니다.                                          |
 | `CommandPreparedStatementQuery` | 핸들로 준비된 `SELECT` 스타일 구문을 실행합니다.                                      |
 
-### DoPut을 통해 지원됩니다 {#flightsql-doput}
+### DoPut을 통해 지원됩니다
 
 | Command                          | Description                                                                                                                                                                              |
 | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -347,7 +347,7 @@ prepared statement가 세션(`x-clickhouse-session-id`를 통해)에서 생성�
 | `CommandPreparedStatementQuery`  | `DoPut`으로 전송할 때 prepared statement의 매개변수 값을 바인딩한 뒤, statement handle이 포함된 `DoPutPreparedStatementResult`를 반환합니다. 매개변수 집합은 1개(행 1개)만 허용되며, 바인딩된 값의 개수는 `?` placeholder의 개수와 정확히 일치해야 합니다. |
 | `CommandPreparedStatementUpdate` | handle로 prepared DDL/DML 문을 실행하고 영향을 받은 행 수를 반환합니다.                                                                                                                                      |
 
-### ClickHouse에서 지원되지 않음 {#flightsql-not-implemented}
+### ClickHouse에서 지원되지 않음
 
 다음 명령은 ClickHouse에서 제공하지 않는 기능에 해당하므로 Arrow Flight SQL 인터페이스에서 지원되지 않습니다.
 
@@ -358,7 +358,7 @@ prepared statement가 세션(`x-clickhouse-session-id`를 통해)에서 생성�
 | `CommandGetImportedKeys`        | ClickHouse는 관계형 데이터베이스가 아니며 외래 키 제약 조건을 구현하지 않으므로 가져온 키 메타데이터를 제공하지 않습니다. |
 | `CommandStatementSubstraitPlan` | ClickHouse는 Substrait plan을 지원하지 않습니다.                                    |
 
-## 전체 예시 {#complete-example}
+## 전체 예시
 
 ```python title="Query"
 import pyarrow as pa
@@ -398,7 +398,7 @@ for endpoint in info.endpoints:
 2   3     c
 ```
 
-## 데이터 포맷 {#data-format}
+## 데이터 포맷
 
 모든 데이터는 Apache Arrow IPC 포맷으로 전송됩니다. `Arrow` 형식만 지원되며, 다른 ClickHouse 포맷(예: `FORMAT JSON`, `FORMAT CSV`)을 지정하면 오류가 발생합니다.
 
@@ -427,7 +427,7 @@ ClickHouse 데이터 타입은 직렬화 과정에서 Arrow 타입으로 매핑�
 
 기존의 불리언 설정 `output_format_arrow_unsupported_types_as_binary`도 여전히 동작하며, `0`이면 `throw`, `1`이면 `binary`와 동일합니다. 이 설정은 `output_format_arrow_unsupported_types`가 기본값으로 유지된 경우에만 참조됩니다.
 
-## 호환성 {#compatibility}
+## 호환성
 
 Arrow Flight 인터페이스는 Arrow Flight 또는 Arrow Flight SQL 프로토콜을 지원하는 모든 클라이언트나 도구와 호환됩니다. 예를 들면 다음과 같습니다.
 
@@ -440,14 +440,14 @@ Arrow Flight 인터페이스는 Arrow Flight 또는 Arrow Flight SQL 프로토�
 
 사용하는 도구에 네이티브 ClickHouse 커넥터가 있다면(예: JDBC, ODBC, 네이티브 프로토콜), 성능 또는 포맷 호환성 때문에 Arrow Flight가 특별히 필요한 경우가 아니라면 해당 커넥터를 사용하는 것이 좋습니다.
 
-## 클라이언트 측 ArrowFlight 기능 {#client-side}
+## 클라이언트 측 ArrowFlight 기능
 
 ClickHouse는 외부 Arrow Flight 서버에서 데이터를 읽는 Flight 클라이언트로도 사용할 수 있습니다. 다음을 참조하십시오.
 
 * [ArrowFlight 테이블 엔진](/ko/reference/engines/table-engines/integrations/arrowflight)
 * [arrowFlight 테이블 함수](/ko/reference/functions/table-functions/arrowflight)
 
-## 관련 항목 {#see-also}
+## 관련 항목
 
 * [Apache Arrow Flight 명세](https://arrow.apache.org/docs/format/Flight.html)
 * [Apache Arrow Flight SQL 명세](https://arrow.apache.org/docs/format/FlightSql.html)

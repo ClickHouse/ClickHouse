@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## use_statistics {#use_statistics}
+## use_statistics
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ Estas opciones de configuración están disponibles en [system.settings](/es/ref
 /// se prefiere frente a &#39;allow&#95;statistics&#95;optimize&#39; por coherencia con &#39;use&#95;primary&#95;key&#39; y &#39;use&#95;skip&#95;indexes&#39;
 Permite usar estadísticas para optimizar las consultas
 
-## use_statistics_cache {#use_statistics_cache}
+## use_statistics_cache
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ Permite usar estadísticas para optimizar las consultas
 
 Use la caché de estadísticas en una consulta para evitar el coste adicional de cargar las estadísticas de todas las partes
 
-## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+## use_statistics_for_min_max_aggregation
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -47,7 +47,7 @@ Valores posibles:
 * 0 — Deshabilitado.
 * 1 — Habilitado.
 
-## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
+## use_statistics_for_part_pruning
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

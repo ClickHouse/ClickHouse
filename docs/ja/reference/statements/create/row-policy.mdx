@@ -57,7 +57,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
 
 `CREATE ROW POLICY` には、ポリシーを作成する対象テーブルに対する [CREATE ROW POLICY](/ja/reference/statements/grant#access-management) 権限が必要です。`OR REPLACE` は、同名の既存ポリシーを (適用対象のロールも含めて) 破棄するため、そのテーブルに対する [DROP ROW POLICY](/ja/reference/statements/grant#access-management) 権限も追加で必要になります。`DROP ROW POLICY` 権限は、ポリシーが既に存在するかどうかにかかわらず必要です。そのため、このステートメントを使ってどのポリシーが存在するかを調べることはできません。
 
-## 複数の名前とテーブル {#multiple-names-and-tables}
+## 複数の名前とテーブル
 
 有効な例:
 
@@ -94,11 +94,11 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-## USING 句 {#using-clause}
+## USING 句
 
 行を絞り込むための条件を指定できます。ある行に対する条件の評価結果が非ゼロの場合、その行はユーザーに表示されます。
 
-## TO 句 {#to-clause}
+## TO 句
 
 `TO` 句では、このポリシーの適用対象となるユーザーとロールの一覧を指定できます。たとえば、`CREATE ROW POLICY ... TO accountant, john@localhost` のように指定します。
 
@@ -106,7 +106,7 @@ CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 O
 
 `ALL EXCEPT` の後に指定したものも含め、`TO` 句に指定されたロールは、そのユーザーに付与されたすべてのロールではなく、現在のユーザーの有効なロール ([`system.enabled_roles`](/ja/reference/system-tables/enabled_roles)) と照合されます。そのため、[`SET ROLE`](/ja/reference/statements/set-role) によって適用されるポリシーが変わる可能性があります。
 
-## AS 句 {#as-clause}
+## AS 句
 
 同じユーザーに対して、同じテーブルに複数のポリシーを同時に有効化できます。そのため、複数のポリシーの条件を組み合わせる方法が必要です。
 
@@ -153,7 +153,7 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 ユーザー `peter` が `table1` の行を参照できるのは、`b=1` かつ `c=2` の場合だけです。ただし、
 mydb 内の他のテーブルには、そのユーザーに対して `b=1` のポリシーのみが適用されます。
 
-## Distributed テーブルとリモートバックエンドテーブル {#distributed-and-remote-backed-tables}
+## Distributed テーブルとリモートバックエンドテーブル
 
 行ポリシーは、テーブルデータが実際に読み取られる場所で行をフィルタリングします。[Distributed](/ja/reference/engines/table-engines/special/distributed) テーブルや、それをラップするテーブル (たとえば、ターゲットが `Distributed` の materialized view) のように、読み取りをリモートサーバーに委譲するテーブルは、クエリテキストをリモートサーバーに送信するだけであるため、リモートでの読み取りにポリシーのフィルターを適用できません。フィルターが暗黙的に削除されるのを防ぐため、ポリシーの適用対象となるユーザーがこのようなテーブルに対して実行するクエリは、`ILLEGAL_PREWHERE` エラーで拒否されます。
 
@@ -168,11 +168,11 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   これは、デフォルトであるクエリのテキスト送信時に機能します。[`serialize_query_plan = 1`](/ja/reference/settings/session-settings/serialize#serialize_query_plan) を指定すると、イニシエーターは代わりに構築済みの読み取りプランを送信します。このようなプランを実行するリモートサーバーは独自の行ポリシーを適用しないため、`local_table` 上の `Distributed` テーブルを読み取ると、フィルタリングされていない行が返されます。行ポリシーを適用する必要があるユーザーには、`serialize_query_plan = 0` を使用してください。[issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891) を参照してください。
 </Warning>
 
-## ON CLUSTER 句 {#on-cluster-clause}
+## ON CLUSTER 句
 
 クラスター全体に対して行ポリシーを作成できます。詳しくは[分散DDL](/ja/reference/statements/distributed-ddl)を参照してください。これにより、クラスター内のすべてのサーバー上のローカルテーブルにポリシーを簡単に作成できます。
 
-## 例 {#examples}
+## 例
 
 `CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
 

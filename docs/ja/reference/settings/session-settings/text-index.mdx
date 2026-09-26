@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## text_index_hint_max_selectivity {#text_index_hint_max_selectivity}
+## text_index_hint_max_selectivity
 
 <SettingsInfoBlock type="Float" default_value="0.2" />
 
@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 転置テキスト索引から構築されたヒントを使用する際の、フィルターの最大選択性です。
 
-## text_index_lazy_intersection_density_threshold {#text_index_lazy_intersection_density_threshold}
+## text_index_lazy_intersection_density_threshold
 
 **別名**: `text_index_density_threshold`
 
@@ -32,7 +32,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 遅延ポスティングリスト適用モード (`text_index_posting_list_apply_mode = 'lazy'`) で、積集合アルゴリズムを選択するポスティングリスト密度のしきい値です。
 しきい値未満: leapfrog 積集合 (スパースなポスティングリストに適しています) 。しきい値以上: ブルートフォースのビットマップ積集合 (高密度のポスティングリストに適しています) 。
 
-## text_index_like_max_postings_to_read {#text_index_like_max_postings_to_read}
+## text_index_like_max_postings_to_read
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -42,7 +42,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 `use_text_index_like_evaluation_by_dictionary_scan` を有効にする必要があります。
 
-## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
+## text_index_like_min_pattern_length
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
@@ -55,7 +55,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 `use_text_index_like_evaluation_by_dictionary_scan` を有効にする必要があります。
 
-## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
+## text_index_posting_list_apply_mode
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="lazy" />
 

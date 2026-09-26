@@ -15,13 +15,13 @@ ClickStack は、テレメトリーデータ (ログと
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## はじめに {#getting-started}
+## はじめに
 
 <Note>
   現在、このインテグレーションは **Java 8+** にのみ対応しています
 </Note>
 
-### OpenTelemetry Java agent をダウンロードする {#download-opentelemetry-java-agent}
+### OpenTelemetry Java agent をダウンロードする
 
 [`opentelemetry-javaagent.jar`](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar)
 をダウンロードし、任意のディレクトリに JAR ファイルを配置します。この JAR ファイルには、エージェント
@@ -32,7 +32,7 @@ ClickStack は、テレメトリーデータ (ログと
 curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
 ```
 
-### 環境変数を設定する {#configure-environment-variables}
+### 環境変数を設定する
 
 次に、OpenTelemetry Collector 経由でテレメトリーを ClickStack に送信するため、シェルで以下の環境変数を設定する必要があります。
 
@@ -63,7 +63,7 @@ curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/
 
 `OTEL_EXPORTER_OTLP_HEADERS` 環境変数には、HyperDX アプリの `Team Settings → API Keys` で確認できる APIキーが含まれます。
 
-### OpenTelemetry Java agentを使用してアプリケーションを実行する {#run-the-application-with-otel-java-agent}
+### OpenTelemetry Java agentを使用してアプリケーションを実行する
 
 ```shell
 java -jar target/<APPLICATION_JAR_FILE>

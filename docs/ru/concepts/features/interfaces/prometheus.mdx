@@ -14,11 +14,11 @@ ClickHouse реализует HTTP API Prometheus поверх таблицы [`
 
 Чтобы предоставить собственные метрики ClickHouse для сбора сервером Prometheus, см. [конечную точку метрик Prometheus](/ru/concepts/features/interfaces/prometheus-metrics).
 
-## Предварительные требования {#prerequisites}
+## Предварительные требования
 
 Шаги настройки различаются для ClickHouse Cloud и самоуправляемого ClickHouse. Следуйте разделу, соответствующему вашему развертыванию.
 
-### ClickHouse Cloud {#prerequisites-cloud}
+### ClickHouse Cloud
 
 <Note>
   Поддержка PromQL в ClickHouse Cloud доступна в режиме закрытой предварительной версии. В сервисах, участвующих в закрытой предварительной версии, параметр `enable_time_series_table` и конечные точки Prometheus API уже настроены. В остальных сервисах ClickHouse Cloud такой конфигурации нет, и включить эту возможность самостоятельно в подобном сервисе невозможно. Оператор `SET enable_time_series_table` и конфигурация `http_handlers`, описанные в следующих разделах, относятся к самоуправляемым развертываниям.
@@ -26,7 +26,7 @@ ClickHouse реализует HTTP API Prometheus поверх таблицы [`
 
 Если ваш сервис участвует в закрытой предварительной версии, переходите к разделу [Создание таблицы TimeSeries](#create-a-timeseries-table). Такой сервис обслуживает пути конечных точек, перечисленные в [таблице конечных точек](#configure-prometheus-api).
 
-### Самоуправляемый вариант: включение настройки TimeSeries {#enable-the-timeseries-setting}
+### Самоуправляемый вариант: включение настройки TimeSeries
 
 Включите настройку `enable_time_series_table` для пользователя, создающего таблицу и работающего с ней:
 
@@ -36,7 +36,7 @@ SET enable_time_series_table = 1;
 
 Для HTTP-запросов к API включите `enable_time_series_table` в профиле пользователя API.
 
-### Самоуправляемый вариант: настройка конечных точек API Prometheus {#configure-prometheus-api}
+### Самоуправляемый вариант: настройка конечных точек API Prometheus
 
 Настройте один обработчик с маршрутизацией по префиксу на основном HTTP-порту ClickHouse:
 
@@ -86,7 +86,7 @@ SET enable_time_series_table = 1;
 | `table`      | none         | Имя таблицы `TimeSeries`. Если не указано, запрос должен содержать параметр запроса `table`. Указанное имя может включать имя базы данных.                                            |
 | `database`   | none         | База данных, содержащая таблицу. Запрос может передать её в параметре запроса. Если не указано, ClickHouse использует базу данных из полного имени `table` или базу данных `default`. |
 
-### Создание таблицы TimeSeries {#create-a-timeseries-table}
+### Создание таблицы TimeSeries
 
 Создайте базу данных и таблицу `TimeSeries`:
 
@@ -95,7 +95,7 @@ CREATE DATABASE prometheus;
 CREATE TABLE prometheus.metrics ENGINE = TimeSeries;
 ```
 
-## Приём метрик через удалённую запись {#remote-write}
+## Приём метрик через удалённую запись
 
 ClickHouse поддерживает [протокол удалённой записи Prometheus](https://prometheus.io/docs/specs/remote_write_spec/). Настройте Prometheus на запись в обработчик:
 
@@ -118,7 +118,7 @@ remote_write:
 
 ClickHouse подтверждает асинхронный запрос удалённой записи только после сброса данных на диск во все внутренние таблицы таблицы `TimeSeries`, независимо от настройки [`wait_for_async_insert`](/ru/reference/settings/session-settings/wait-for#wait_for_async_insert): согласно протоколу удалённой записи подтверждённая запись считается надёжно сохранённой. Если сброс на диск завершается ошибкой, запрос возвращает ошибку, и Prometheus повторяет попытку.
 
-## Запрос с PromQL {#promql-query-support}
+## Запрос с PromQL
 
 Используйте конечную точку мгновенного запроса, чтобы вычислить выражение PromQL на определённый момент времени:
 
@@ -168,7 +168,7 @@ curl --user default:<password> --get \
 
 Список функций и операторов агрегации, поддерживаемых HTTP API, диалектом `promql` и табличными функциями, см. в разделе [Поддерживаемые возможности PromQL](/ru/reference/functions/table-functions/prometheusQueryRange#supported-promql-features).
 
-### Grafana {#grafana}
+### Grafana
 
 Настройте источник данных Prometheus, указав базовый URL без `/api/v1` в конце:
 
@@ -196,7 +196,7 @@ Grafana добавляет `/api/v1/query` или `/api/v1/query_range` к эт�
   Реализованы только конечные точки запросов `/api/v1/query`, `/api/v1/query_range` и `/api/v1/format_query`, а также конечные точки метаданных `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values` и `/api/v1/metadata`. Для `/api/v1/series` требуется как минимум один селектор серий `match[]`; она поддерживает необязательные параметры `start`, `end` и `limit` и возвращает объединение серий, соответствующих каждому селектору. `/api/v1/labels` принимает те же параметры, при этом `match[]` необязателен, и возвращает отсортированные имена меток соответствующих серий (или всех серий, если селекторы не указаны). `/api/v1/label/<name>/values` принимает те же параметры, что и `/api/v1/labels`, и возвращает отсортированные значения одной метки, причём в `<name>` может использоваться принятое в Prometheus экранирование `U__...` для имён меток, содержащих символы вне `[a-zA-Z0-9_]`. Этих конечных точек достаточно для всего, что источник данных Prometheus в Grafana использует для просмотра меток, переменных шаблона и автодополнения в конструкторе запросов.
 </Note>
 
-### Точки входа SQL {#sql-entry-points}
+### Точки входа SQL
 
 ClickHouse использует один и тот же конвертер PromQL для HTTP API, диалекта `promql`, а также табличных функций [`prometheusQuery`](/ru/reference/functions/table-functions/prometheusQuery) и [`prometheusQueryRange`](/ru/reference/functions/table-functions/prometheusQueryRange).
 
@@ -221,7 +221,7 @@ FROM prometheusQuery(
 );
 ```
 
-## Запрос метаданных метрик {#metadata}
+## Запрос метаданных метрик
 
 Конечная точка `/prometheus/api/v1/metadata` возвращает метаданные метрик, хранящиеся в целевой таблице `Metrics` таблицы `TimeSeries`: тип, текст справки и единицу измерения каждого семейства метрик. Она поддерживает следующие параметры Prometheus в строке запроса URL:
 
@@ -241,7 +241,7 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
-## Чтение метрик через удалённое чтение {#remote-read}
+## Чтение метрик через удалённое чтение
 
 ClickHouse поддерживает [протокол Prometheus удалённого чтения](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) по адресу `/prometheus/api/v1/read`.
 

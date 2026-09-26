@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## text_index_hint_max_selectivity {#text_index_hint_max_selectivity}
+## text_index_hint_max_selectivity
 
 <SettingsInfoBlock type="Float" default_value="0.2" />
 
@@ -21,7 +21,7 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 Selectividad máxima del filtro para usar la sugerencia construida a partir del índice de texto invertido.
 
-## text_index_lazy_intersection_density_threshold {#text_index_lazy_intersection_density_threshold}
+## text_index_lazy_intersection_density_threshold
 
 **Alias**: `text_index_density_threshold`
 
@@ -32,7 +32,7 @@ Selectividad máxima del filtro para usar la sugerencia construida a partir del 
 Umbral de densidad de posting list que elige el algoritmo de intersección en el modo diferido de aplicación de posting list (`text_index_posting_list_apply_mode = 'lazy'`).
 Por debajo del umbral: intersección leapfrog (favorece las posting lists dispersas). En el umbral o por encima: intersección bitmap de fuerza bruta (favorece las posting lists densas).
 
-## text_index_like_max_postings_to_read {#text_index_like_max_postings_to_read}
+## text_index_like_max_postings_to_read
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -42,7 +42,7 @@ Número máximo de postings grandes que se pueden leer cuando está habilitada l
 
 Requiere que `use_text_index_like_evaluation_by_dictionary_scan` esté habilitado.
 
-## text_index_like_min_pattern_length {#text_index_like_min_pattern_length}
+## text_index_like_min_pattern_length
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
@@ -55,7 +55,7 @@ Con el tokenizador `array`, donde cualquier patrón es apto, el umbral se compar
 
 Requiere que `use_text_index_like_evaluation_by_dictionary_scan` esté habilitado.
 
-## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
+## text_index_posting_list_apply_mode
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="lazy" />
 

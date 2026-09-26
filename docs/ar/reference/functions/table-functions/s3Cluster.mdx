@@ -12,14 +12,14 @@ doc_type: 'reference'
 
 يتيح معالجة الملفات من [Amazon S3](https://aws.amazon.com/s3/) وGoogle Cloud Storage [Google Cloud Storage](https://cloud.google.com/storage/) بالتوازي عبر عدة عقد ضمن عنقود محدد. على العقدة المُبادِرة، يُنشئ اتصالًا بجميع العقد في العنقود، ويفكّ توسيع أحرف النجمة في مسار ملف S3، ثم يوزّع كل ملف ديناميكيًا. وعلى العقدة العاملة، يستعلم من العقدة المُبادِرة عن المهمة التالية المطلوب معالجتها ثم يعالجها. ويتكرر ذلك حتى تكتمل جميع المهام.
 
-## الصيغة {#syntax}
+## الصيغة
 
 ```sql
 s3Cluster(cluster_name, url[, NOSIGN | access_key_id, secret_access_key,[session_token]][, format][, structure][, compression_method][, headers][, extra_credentials])
 s3Cluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
-## المعاملات {#arguments}
+## المعاملات
 
 | المعامل                                 | الوصف                                                                                                                                                                                                                                                                                                                                                                              |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -43,11 +43,11 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 | `no_sign_request`             | معطَّل افتراضيًا.                                                                                                                                                                                                      |
 | `expiration_window_seconds`   | القيمة الافتراضية هي 120.                                                                                                                                                                                              |
 
-## القيمة المُعادة {#returned-value}
+## القيمة المُعادة
 
 جدول بالبنية المحددة لقراءة البيانات من الملف المحدد أو كتابتها فيه.
 
-## أمثلة {#examples}
+## أمثلة
 
 اعرض البيانات من جميع الملفات في المجلدين `/root/data/clickhouse` و`/root/data/database/`، باستخدام جميع العُقد في عنقود `cluster_simple`:
 
@@ -81,15 +81,15 @@ SELECT count(*) FROM s3Cluster(
 )
 ```
 
-## الوصول إلى الحاويات الخاصة والعامة {#accessing-private-and-public-buckets}
+## الوصول إلى الحاويات الخاصة والعامة
 
 يمكن للمستخدمين استخدام الأساليب نفسها الموثقة للدالة s3 [هنا](/ar/reference/functions/table-functions/s3#accessing-public-buckets).
 
-## تحسين الأداء {#optimizing-performance}
+## تحسين الأداء
 
 للتعرّف على تفاصيل تحسين أداء الدالة `s3`، راجع [دليلنا المفصل](/ar/integrations/connectors/data-ingestion/AWS/performance).
 
-## مواضيع ذات صلة {#related}
+## مواضيع ذات صلة
 
 * [محرك S3](/ar/reference/engines/table-engines/integrations/s3)
 * [دالة الجدول S3](/ar/reference/functions/table-functions/s3)

@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 `Filesystem` 数据库引擎将本地目录中的文件以只读表的形式暴露出来。表名会被解析为相对于数据库目录的路径，并通过 [`file`](/zh/reference/functions/table-functions/file) 表函数进行读取。
 
-## 创建数据库 {#creating-a-database}
+## 创建数据库
 
 ```sql
 CREATE DATABASE files
@@ -19,7 +19,7 @@ ENGINE = Filesystem([path]);
 
 `path` 是包含这些文件的目录。如果省略该参数，ClickHouse 在 `clickhouse-local` 中使用当前目录，在 ClickHouse server 中则使用 `user_files` 目录。
 
-## Usage {#usage}
+## Usage
 
 例如，在所选目录中有 `data.csv`：
 
@@ -33,7 +33,7 @@ SELECT * FROM files.`data.csv`;
 
 该数据库本身不保存任何表定义：表在其文件首次被解析时创建，并仅被缓存以供后续访问。不支持通过该数据库执行 `CREATE TABLE`、`INSERT` 及其他写入操作。
 
-## 访问控制 {#access-control}
+## 访问控制
 
 在 ClickHouse server 上，数据库目录以及每个解析后的文件都必须位于 [`user_files_path`](/zh/reference/settings/server-settings/settings#user_files_path) 之内；即使经过符号链接跳转，该限制依然生效。`clickhouse-local` 不受 `user_files_path` 限制。
 
@@ -45,7 +45,7 @@ GRANT READ, WRITE ON FILE TO user_name;
 
 有关版本和兼容性详情，请参阅 [`SOURCES` 特权](/zh/reference/statements/grant#sources)。
 
-## 另请参阅 {#see-also}
+## 另请参阅
 
 * [`file` 表函数](/zh/reference/functions/table-functions/file)
 * [S3 数据库引擎](/zh/reference/engines/database-engines/s3)

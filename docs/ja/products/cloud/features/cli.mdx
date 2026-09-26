@@ -11,7 +11,7 @@ ClickHouse CLI (`clickhousectl`) は、ClickHouse Cloud リソースの管理や
 
 このページは `clickhousectl` 0.4.2 のコマンド体系に関するリファレンスです。インストール済みのバージョンを確認するには `clickhousectl --version` を実行し、各コマンドのフラグの一覧を確認するには `clickhousectl <command> --help` を実行してください。
 
-## インストール {#installation}
+## インストール
 
 ```bash
 curl https://clickhouse.com/cli | sh
@@ -26,11 +26,11 @@ clickhousectl update           # self-update
 clickhousectl update --check   # check for updates without installing
 ```
 
-## Cloud 管理 {#cloud-management}
+## Cloud 管理
 
 ClickHouse Cloud にログインし、コマンドラインから直接サービスを管理します。
 
-### 認証 {#authentication}
+### 認証
 
 ```bash
 # Log in with an API key (read/write access)
@@ -60,7 +60,7 @@ export CLICKHOUSE_CLOUD_API_SECRET=your-secret
 
 OAuth トークンは読み取り専用です。書き込み系のコマンド (create、delete、start、stop、update、scale) には API キーによる認証が必要です。
 
-### サービス {#services}
+### サービス
 
 ```bash
 # List services
@@ -94,7 +94,7 @@ clickhousectl cloud service reset-password <service-id>
 clickhousectl cloud service delete <service-id>
 ```
 
-### Running queries {#running-queries}
+### Running queries
 
 Query API を使用して HTTP 経由で Cloud サービスに対して SQL を実行します。ローカルの `clickhouse` binary やサービスの password は必要ありません。`--id` または `--name` のいずれか一方を必ず指定してください:
 
@@ -125,7 +125,7 @@ API キー認証を使用する場合、クエリは読み取りおよび書き�
 * 保存済みの Query API キーが endpoint に HTTP 401/403 で拒否されても、自動的に置き換えられることはありません。CLI は、その理由を報告するためだけにキーの management レコードを読み取ります。この認証情報のみを置き換えるには `clickhousectl cloud service repair-query-key <service-id>` を実行してください。このコマンドは置き換え前のキーも削除します。稼働中のサービスでは、新しいキーによる probe クエリが成功した場合にのみ終了コード 0 で終了し、その結果は `--json` 出力の `verification` に報告されます。readiness の待機期間が終了しても Query API がキーを拒否し続ける場合、コマンドは終了コード 1 で終了しますが、修復自体は有効です。再実行せず、代わりに `cloud service query` を実行してください。
 * Query API は約 30 秒でタイムアウトします。ステートメントはサービス上で実行され続けますが、結果は失われます。それより長時間かかる処理では、`clickhousectl local use latest` を実行して標準の `clickhouse` binary を `PATH` に配置し、`clickhouse client --host <host> --secure --port 9440 --user default --password <password>` で接続してください。
 
-### サービスエンドポイントと設定 {#service-endpoints-and-configuration}
+### サービスエンドポイントと設定
 
 ```bash
 # Query endpoints (used by the Query API)
@@ -153,7 +153,7 @@ clickhousectl cloud service prometheus <service-id>
 
 `--clear-backup-start-time` は保存された開始時刻を削除し、この制限を解除します。`--backup-period-hours` と組み合わせれば、開始時刻の消去と任意の間隔の設定を 1 回の呼び出しで行えます。このオプションは `--backup-start-time` と競合します。
 
-### バックアップ {#backups}
+### バックアップ
 
 ```bash
 clickhousectl cloud backup list <service-id>
@@ -162,7 +162,7 @@ clickhousectl cloud backup get <service-id> <backup-id>
 
 バックアップをリストアするには、そのバックアップから新しいサービスを作成します: `clickhousectl cloud service create --name restored-service --backup-id <backup-id>`。
 
-### ClickPipes {#clickpipes}
+### ClickPipes
 
 Cloud サービスへデータを取り込むための [ClickPipes](/ja/integrations/clickpipes) を管理します。ほとんどのコマンドは、第一引数としてサービス ID を受け取ります。
 
@@ -233,7 +233,7 @@ clickhousectl cloud clickpipe reverse-private-endpoint delete <service-id> <endp
 * パイプが利用できるのは `Ready` ステータスに達した Reverse Private Endpoint のみです。AWS PrivateLink endpoint は、ソースを所有するアカウントで接続リクエストが承認されるまで `PendingAcceptance` のままとなります。Kafka のパイプは `--reverse-private-endpoint-id` (繰り返し指定可能) で endpoint を ID により参照します。Postgres および MySQL の CDC (変更データキャプチャ) パイプでは、endpoint の `dnsNames` のいずれかを `--host` として渡します。
 * Google Cloud Pub/Sub のパイプはリミテッドプレビュー段階です。作成する前に、サポートに連絡して組織向けに機能を有効化してもらってください。`--service-account-file` には GCP サービスアカウントの JSON キーのパスを指定するか、`-` を指定して標準入力からキーを読み込みます。キーをインラインで指定することはできないため、プロセス一覧やシェル履歴に残ることはありません。
 
-### Postgres サービス (ベータ) {#postgres-services}
+### Postgres サービス (ベータ)
 
 [ClickHouse Cloud Postgres](/ja/products/managed-postgres/overview) サービスを作成・管理します。
 
@@ -285,7 +285,7 @@ clickhousectl cloud postgres delete <pg-id>
 * ロールの変更は結果整合性であり、API は `promote` と `switchover` を実際に適用する前に受理を返します。そのため、終了コードが 0 であることだけではロールが変更されたとは確認できません。どちらのコマンドも `--wait` を指定すると、対象が新しいロールを報告するまでポーリングし、`--wait-timeout <seconds>`(デフォルト 300)でポーリングの上限時間を指定できます。切り替え前のプライマリは、その後も数分間 `isPrimary=true` を報告し続けることがあるため、`clickhousectl cloud postgres list --filter isPrimary=true` でプライマリのサービスがちょうど 1 つであることを確認してください。
 * `postgres delete` は `running` を含むあらゆる状態から実行できるため、事前にサービスを停止する必要はありません。
 
-### 組織 {#organizations}
+### 組織
 
 ```bash
 clickhousectl cloud org list
@@ -295,7 +295,7 @@ clickhousectl cloud org prometheus
 clickhousectl cloud org usage --from-date 2026-08-01 --to-date 2026-08-31
 ```
 
-### API キー {#api-keys}
+### API キー
 
 ```bash
 clickhousectl cloud key list
@@ -305,7 +305,7 @@ clickhousectl cloud key update <key-id>
 clickhousectl cloud key delete <key-id>
 ```
 
-### メンバーと招待 {#members-and-invitations}
+### メンバーと招待
 
 ```bash
 clickhousectl cloud member list
@@ -319,14 +319,14 @@ clickhousectl cloud invitation get <invitation-id>
 clickhousectl cloud invitation delete <invitation-id>
 ```
 
-### アクティビティログ {#activity-log}
+### アクティビティログ
 
 ```bash
 clickhousectl cloud activity list --from-date 2026-08-01 --to-date 2026-08-31
 clickhousectl cloud activity get <activity-id>
 ```
 
-### JSON 出力 {#json-output}
+### JSON 出力
 
 任意の cloud コマンドで JSON 形式のレスポンスを取得するには、`--json` フラグを使用します。
 
@@ -336,7 +336,7 @@ clickhousectl cloud service list --json
 
 `org prometheus` および `service prometheus` コマンドは例外で、常に生の Prometheus exposition テキストを出力し、`--json` は黙って無視されます。
 
-## ローカル開発 {#local-development}
+## ローカル開発
 
 CLI は、ローカルの ClickHouse インストール、ローカルサーバー、Docker ベースのローカル Postgres インスタンスの管理も行えます。ローカル開発を始めるには、[clickhousectl (CLI)](/ja/get-started/setup/self-managed/clickhousectl) ページを参照してください。
 
@@ -384,7 +384,7 @@ clickhousectl local postgres dotenv
 * `local client` は、ホスト/ポートを直接指定するモードで `-v`/`--version` によりインストール済みのクライアントバージョンを選択でき、`-q` を繰り返し指定することで複数のクエリを渡せるほか、`--queries-file` には複数のパスを指定できます。`--query` と `--queries-file` の併用は使用方法の誤りとなります。
 * `local postgres start` は PostgreSQL が接続を受け付けるまでブロックします。待機時間の上限は `--wait-timeout` 秒です(デフォルト 60、最大 600)。`--port` を省略した場合、5432 が空いていればそれを使用し、空いていなければポートを自動選択します。明示的に指定したポートが既に使用中の場合は拒否されます。
 
-## その他のコマンド {#other-commands}
+## その他のコマンド
 
 ```bash
 # Install the ClickHouse agent skills into supported coding agents
@@ -397,7 +397,7 @@ clickhousectl telemetry disable
 clickhousectl telemetry enable
 ```
 
-## 要件 {#requirements}
+## 要件
 
 * macOS (aarch64、x86&#95;64) または Linux (aarch64、x86&#95;64)
 * Cloud コマンドで書き込みアクセスを行うには [ClickHouse Cloud API キー](/ja/products/cloud/features/admin-features/api/openapi) が必要です。OAuth ログインは read-only です

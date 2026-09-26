@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## s3_upload_checksum_algorithm {#s3_upload_checksum_algorithm}
+## s3_upload_checksum_algorithm
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": ""},{"label": "Новая настройка для выбора алгоритма контрольной суммы при загрузке в S3."}]}]} />
 
@@ -29,13 +29,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Копирование на стороне сервера игнорирует эту настройку.
 
-## s3_upload_part_size_multiply_factor {#s3_upload_part_size_multiply_factor}
+## s3_upload_part_size_multiply_factor
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
 Увеличивайте `s3_min_upload_part_size` в это число раз каждый раз, когда за одну запись в S3 было загружено `s3_multiply_parts_count_threshold` частей.
 
-## s3_upload_part_size_multiply_parts_count_threshold {#s3_upload_part_size_multiply_parts_count_threshold}
+## s3_upload_part_size_multiply_parts_count_threshold
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 

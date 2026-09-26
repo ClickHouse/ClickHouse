@@ -13,9 +13,9 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 이 페이지에서는 등록 토큰을 사용해 관리형 모드에서 검증된 커넥터를 구성하는 방법을 안내합니다. 관리형 모드에서는 실행기가 ClickHouse Cloud가 주도하는 서비스 수명 주기를 적용합니다. 커넥터는 Kubernetes 클러스터(Helm) 또는 Linux VM(systemd)에 설치할 수 있습니다. 토큰 등록이 표준 절차입니다. 환경에서 엔드포인트에 직접 연결할 수 없는 경우 [에어갭 및 미러 설치](#air-gapped-and-mirrored-installs)를 참조하십시오. 실행기 없이 직접 운영하는 ClickHouse를 관찰하려면 `--no-managed`를 전달하십시오.
 
-## 사전 요구 사항 {#prerequisites}
+## 사전 요구 사항
 
-### 환경 등록 {#registration}
+### 환경 등록
 
 등록하기 전에 계정 담당 팀(account team)이 사용자의 환경을 등록하고 조직에 관리형 모드를 활성화합니다. 다음 정보를 전달하십시오.
 
@@ -27,7 +27,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 그러면 ClickHouse Cloud가 엔드포인트와 일회용 등록 토큰을 발급합니다. 이 토큰이 사용자의 환경을 식별하므로 등록 시 추가 ID가 필요하지 않습니다.
 
-### 모든 설치에 공통 {#prerequisites-every-install}
+### 모든 설치에 공통
 
 * **커넥터 v0.17.0 이상.** 이전 릴리스에는 관리형 모드, `platform` 명령어, `instances create`가 없습니다. 설치 프로그램은 `--version`을 전달하지 않는 한 최신 릴리스를 제공합니다.
 * **[등록](#registration) 과정에서 제공된 엔드포인트와 등록 토큰**.
@@ -37,7 +37,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * **아직 ClickHouse가 없어야 합니다.** 관리형 설치는 서비스 없이 시작하며, 실행기가 생성한 서비스들이 스스로 등록됩니다. 관리형 모드에서 `init`은 사용자가 직접 운영하는 ClickHouse를 등록하지 않습니다(Kubernetes에서는 `--instance`와 `--instance-namespace`를 거부합니다). 이러한 클러스터를 관찰하려면 `--no-managed`로 별도의 커넥터 배포를 설치하십시오. `--ch-user-suffix`를 사용하면 두 배포가 커넥터의 USER 충돌 없이 하나의 instance를 공유할 수 있습니다. 해당 배포에는 연결할 수 있는 네이티브 listener가 필요합니다. 보안 포트 9440 또는 plaintext 포트 9000이며, Kubernetes에서는 자동으로 감지됩니다. 또한 provisioning을 위한 ClickHouse admin 액세스가 필요합니다. 비밀번호가 없는 `default` USER, `--ch-admin-password-stdin` 또는 프롬프트로 전달하는 password, 혹은 연산자 관리형 instance의 CR injection 중 하나를 사용합니다.
 * 릴리스 아티팩트를 내려받는 모든 환경에는 **cosign**이 필요합니다. 설치 프로그램은 항상 SHA-256 체크섬을 검증합니다. cosign이 설치되어 있으면 릴리스 서명도 함께 검증하며, `CLICKLINK_REQUIRE_COSIGN=1`이 설정된 경우 cosign 없이는 진행을 거부합니다.
 
-### Kubernetes(Helm) 설치 시 {#prerequisites-kubernetes}
+### Kubernetes(Helm) 설치 시
 
 * **kubeconfig**: 현재 컨텍스트가 EKS 클러스터를 가리켜야 합니다. 커넥터 네임스페이스를 생성하고 읽을 수 있어야 하며, Secret 적용, ServiceAccount·Role·RoleBinding 생성, 차트 설치, 실행기에 대한 클러스터 전역 액세스 부여가 가능해야 합니다.
 * **AWS 자격 증명**: 워크스테이션(환경 변수 또는 프로필)에 `eks:DescribeCluster` 및 `ec2:DescribeVpcs` 권한이 있어야 합니다. `init`은 이 권한으로 NetworkPolicy에 필요한 클러스터 VPC의 CIDR 블록을 읽습니다. 조회에 실패하면 경고를 출력하고, 해당 목록은 직접 입력하도록 비워 둡니다.
@@ -45,7 +45,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * **기본 StorageClass** 또는 `--storage-class`로 전달할 클래스: Troubleshooter와 실행기는 PersistentVolumeClaim에 상태를 유지합니다.
 * **image 풀 액세스**: 클러스터 노드가 퍼블릭 ECR image 또는 직접 호스팅하는 미러에서 image를 가져올 수 있어야 합니다.
 
-### Linux VM(systemd) 설치 {#prerequisites-vm}
+### Linux VM(systemd) 설치
 
 * **systemd를 사용하는 모든 Linux 호스트**, amd64 또는 arm64. Linux 빌드는 FIPS 모드로 실행됩니다.
 * 설치 관리자와 `init` 실행에 필요한 **루트 액세스**.
@@ -56,7 +56,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   VM에서 Kubernetes API 서버 요구 사항을 우회하는 유일한 방법은 `--skip-provision`이며, 이는 stage 전용입니다. 이 옵션은 ClickHouse 사용자 provisioning, 실행기의 grant, 유닛 활성화, 검증을 모두 건너뛰므로 이것만으로는 실행 중인 커넥터가 생성되지 않습니다. Kubernetes에서는 ClickHouse 사용자 provisioning만 건너뜁니다. 차트의 실행기는 grant된 ServiceAccount 없이는 스케줄링될 수 없으므로 실행기의 grant는 그대로 적용됩니다.
 </Note>
 
-## 설치 및 등록 {#install-and-enroll}
+## 설치 및 등록
 
 <Steps>
   <Step title="커넥터 엔드포인트 및 등록 토큰 확인" id="get-endpoint-and-token">
@@ -170,7 +170,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   </Step>
 </Steps>
 
-## 에어갭 및 미러 설치 {#air-gapped-and-mirrored-installs}
+## 에어갭 및 미러 설치
 
 환경에서 연결 가능한 범위에 따라 두 가지 요소를 대역 외(out of band)로 처리할 수 있습니다. 실행기에는 추가로 필요한 것이 없습니다. 실행기는 다른 구성 요소와 동일한 클라이언트 인증서 및 API 자격 증명으로 인증합니다. 실행기의 클러스터 전역 grant는 네트워크가 아니라 kubeconfig를 통해 적용합니다.
 
@@ -182,7 +182,7 @@ Kubernetes에서 `--chart`에는 `--chart-repo`를 통해 해석되는 차트 �
 
 설치 프로그램은 미러에서도 동작합니다. 릴리스 아티팩트와 `install.sh`를 자체 미러에 호스팅한 뒤 `CLICKLINK_MIRROR_URL`로 해당 위치를 지정하십시오.
 
-### 수동 다운로드 및 검증 {#manual-download-and-verification}
+### 수동 다운로드 및 검증
 
 설치 프로그램을 파이프로 실행하지 않으려면 릴리스를 직접 다운로드하여 검증하십시오. 아래 블록은 플랫폼과 아키텍처를 감지하므로 macOS 또는 Linux, amd64 또는 arm64 환경에서 그대로 실행할 수 있습니다:
 
@@ -220,7 +220,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 VM에서는 tarball의 압축을 풀고 추출한 디렉터리에서 `sudo ./install.sh`를 실행하십시오. 이 스크립트는 릴리스 아티팩트 옆에 설치되며, `--host`와 동일하게 호스트에 설치합니다.
 
-## 문제가 발생한 경우 {#if-something-fails}
+## 문제가 발생한 경우
 
 동일한 명령을 다시 실행하십시오. `init`은 멱등적입니다. 다시 실행해도 동일한 상태로 수렴하며, 기존 구성과 스테이징된 파일을 그대로 유지하고 이미 완료된 작업은 건너뜁니다. 어떤 단계가 도중에 실패하면 CLI가 복구 명령어를 정확히 출력하며, 이 명령어는 반복 실행해도 안전합니다.
 

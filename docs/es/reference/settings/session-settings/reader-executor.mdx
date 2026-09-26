@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/Exp
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## reader_executor_block_size {#reader_executor_block_size}
+## reader_executor_block_size
 
 <ExperimentalBadge />
 
@@ -24,7 +24,7 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
 
 Tamaño del fragmento de búfer para el `ReaderExecutor` experimental: las lecturas desde el origen llenan nodos de hasta este tamaño. Debe ser de al menos 128 KiB.
 
-## reader_executor_max_tail_for_drain {#reader_executor_max_tail_for_drain}
+## reader_executor_max_tail_for_drain
 
 <ExperimentalBadge />
 
@@ -34,7 +34,7 @@ Tamaño del fragmento de búfer para el `ReaderExecutor` experimental: las lectu
 
 Límite de drenaje para el `ReaderExecutor` experimental: si una conexión de origen larga se pierde cuando está a esta cantidad de bytes o menos de su límite derecho, primero se termina de leer hasta ese límite, de modo que pueda completarse y volver al pool de conexiones como reutilizable, en lugar de contarse como una conexión incompleta.
 
-## reader_executor_min_bytes_for_seek {#reader_executor_min_bytes_for_seek}
+## reader_executor_min_bytes_for_seek
 
 <ExperimentalBadge />
 
@@ -44,7 +44,7 @@ Límite de drenaje para el `ReaderExecutor` experimental: si una conexión de or
 
 Límite de separación hacia adelante para el `ReaderExecutor` experimental: una separación de hasta este valor se omite en la conexión de origen abierta (bridged / read through), en lugar de emitir una lectura independiente del origen o reabrir la conexión. Ajústelo cerca del punto de equilibrio entre el costo del ancho de banda y el de las solicitudes para que el puenteo siga siendo rentable.
 
-## reader_executor_use_long_connections {#reader_executor_use_long_connections}
+## reader_executor_use_long_connections
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ Límite de separación hacia adelante para el `ReaderExecutor` experimental: una
 
 Reutiliza una conexión de origen larga y limitada entre ventanas en el `ReaderExecutor` experimental. Una conexión de origen larga es aquella cuyo rango excede la ventana de lectura actual; cuando está deshabilitada, el ejecutor no consume presupuesto del pool de conexiones y cada ventana abre una conexión efímera de un solo uso (la ruta sin estado).
 
-## reader_executor_window_size {#reader_executor_window_size}
+## reader_executor_window_size
 
 <ExperimentalBadge />
 

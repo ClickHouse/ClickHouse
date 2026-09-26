@@ -13,13 +13,13 @@ keywords: ['حِزم SDK لـ ClickStack', 'حِزم SDK الخاصة باللغ
 
 في البيئات المستندة إلى المتصفح، قد تتولى حِزم SDK أيضًا مسؤولية جمع **بيانات الجلسات**، بما في ذلك أحداث UI والنقرات والتنقل، مما يتيح إعادة تشغيل جلسات المستخدمين.
 
-## كيف يعمل {#how-it-works}
+## كيف يعمل
 
 1. يستخدم تطبيقك إحدى حزم SDK الخاصة بـ ClickStack (مثل Node.js أو بايثون أو Go). وتعتمد هذه الحزم على OpenTelemetry SDKs مع مزايا إضافية وتحسينات في سهولة الاستخدام.
 2. تجمع حزمة SDK التتبعات والسجلات وتُصدّرها عبر OTLP ‏(HTTP أو gRPC).
 3. يتلقى OpenTelemetry Collector بيانات القياس عن بُعد ويكتبها إلى ClickHouse عبر exporterات المُعدّة.
 
-## اللغات المدعومة {#supported-languages}
+## اللغات المدعومة
 
 <Info>
   **التوافق مع OpenTelemetry**
@@ -44,7 +44,7 @@ keywords: ['حِزم SDK لـ ClickStack', 'حِزم SDK الخاصة باللغ
 | React Native | تطبيقات React Native للأجهزة المحمولة         | [الوثائق](/ar/clickstack/ingesting-data/sdks/react-native) |
 | Ruby         | تطبيقات Ruby on Rails وخدمات الويب            | [الوثائق](/ar/clickstack/ingesting-data/sdks/ruby)         |
 
-## التأمين باستخدام مفتاح API {#securing-api-key}
+## التأمين باستخدام مفتاح API
 
 <Info>
   **غير مطلوب لـ Managed ClickStack**
@@ -66,7 +66,7 @@ OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
 export OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 ```
 
-## تكامل Kubernetes {#kubernetes-integration}
+## تكامل Kubernetes
 
 تدعم جميع SDKs الربط التلقائي ببيانات Kubernetes الوصفية (اسم الكبسولة، ومساحة الاسم، وما إلى ذلك) عند التشغيل ضمن بيئة Kubernetes. يتيح لك ذلك ما يلي:
 

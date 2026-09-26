@@ -11,7 +11,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 確約契約で前払いクレジットを購入した場合、そのクレジットを ClickHouse 組織間でどのように割り当てるかを管理できます。
 残高の確認や組織間でのクレジットの移動には、**Prepaid credits** ページを使用します。
 
-## 前払いクレジットへのアクセス {#access-prepaid-credits}
+## 前払いクレジットへのアクセス
 
 ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Prepaid credits** を選択します。
 
@@ -29,7 +29,7 @@ ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Pr
   いずれの組織にも前払いクレジットがない場合、このタブは空の状態となり、pricing calculator と営業へのお問い合わせフォームへのリンクが表示されます。
 </Note>
 
-## クレジット残高を表示する {#view-credit-balances}
+## クレジット残高を表示する
 
 サマリーには、上記のアクセス権を持つ組織全体の前払いクレジットの合計が表示されます。
 
@@ -46,7 +46,7 @@ ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Pr
 
 すべての金額は ClickHouse Credits (CHC) で表されます。1 CHC は利用量 $1 に相当します。割引価格でクレジットを購入した場合、支払った金額 (ドル) よりも多くの CHC が付与されることがあります。
 
-### 組織の残高 {#organization-balances}
+### 組織の残高
 
 サマリーの下にあるテーブルの各行は 1 つの組織を表し、その組織のすべての前払い残高を反映したデータが表示されます。
 
@@ -65,7 +65,7 @@ ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Pr
 
 <Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Prepaid credit summary metrics and balances by organization" size="lg" />
 
-## クレジットの移管 {#transfer-credits}
+## クレジットの移管
 
 クレジットの移管は分割 (split) とも呼ばれ、前払いクレジットを移管元の組織から移管先の組織へ移動する操作です。
 
@@ -79,7 +79,7 @@ ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Pr
 
 <Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="移管元のグラント、移管先の組織、移管金額、移管後の残高を表示したクレジット移管パネル" size="md" />
 
-### 移管のルール {#transfer-rules}
+### 移管のルール
 
 * 移管できるのは**有効な 前払いクレジット** のみです。trial credits は移管できません。
 * クレジットの移管により、移管元および移管先の組織で利用可能な 前払いクレジット が変動します。確約契約に基づいて付与された有効なクレジットの合計は変わりません。
@@ -88,7 +88,7 @@ ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Pr
 * ClickHouse Cloud と [Bring Your Own Cloud (BYOC)](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview) の組織間でクレジットを移管することはできません。
 * AWS Marketplace と Google Cloud Marketplace のように、異なるクラウドマーケットプレイス経由で請求されている組織間でクレジットを移管することはできません。
 
-### 移管後のマーケットプレイス請求 {#marketplace-billing-after-a-transfer}
+### 移管後のマーケットプレイス請求
 
 移管元の組織が有効な AWS、Google Cloud、または Azure Marketplace の契約を通じて請求されている場合、移管先の組織の請求設定によって次のように動作が異なります。
 
@@ -100,7 +100,7 @@ ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Pr
 
 両方の組織の超過分を同一のマーケットプレイスサブスクリプションで請求するには、[他の組織のマーケットプレイスサブスクリプションを使用する方法](/ja/products/cloud/reference/billing/managing-payment-methods#steps-switch-org-different-org)を参照してください。
 
-## 移管履歴と通知の確認 {#review-transfer-history-and-notifications}
+## 移管履歴と通知の確認
 
 移管が完了すると、次のようになります。
 

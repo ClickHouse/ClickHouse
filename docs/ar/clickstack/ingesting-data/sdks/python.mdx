@@ -12,9 +12,9 @@ import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrat
 
 <ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-## البدء {#getting-started}
+## البدء
 
-### تثبيت حزمة التضمين لـ ClickStack OpenTelemetry {#install-clickstack-otel-instrumentation-package}
+### تثبيت حزمة التضمين لـ ClickStack OpenTelemetry
 
 استخدم الأمر التالي لتثبيت [حزمة التضمين الخاصة بـ ClickStack OpenTelemetry](https://pypi.org/project/hyperdx-opentelemetry/).
 
@@ -29,7 +29,7 @@ pip install hyperdx-opentelemetry
 opentelemetry-bootstrap -a install
 ```
 
-### تكوين متغيرات البيئة {#configure-environment-variables}
+### تكوين متغيرات البيئة
 
 بعد ذلك، ستحتاج إلى تكوين متغيرات البيئة التالية في الـ shell لديك لإرسال بيانات القياس عن بُعد إلى ClickStack عبر OpenTelemetry Collector:
 
@@ -52,7 +52,7 @@ opentelemetry-bootstrap -a install
 
 *يُستخدم متغير البيئة `OTEL_SERVICE_NAME` للتعرّف على خدمتك في تطبيق HyperDX، ويمكن أن يكون أي اسم تريده.*
 
-### شغّل التطبيق باستخدام وكيل OpenTelemetry لبايثون {#run-the-application-with-otel-python-agent}
+### شغّل التطبيق باستخدام وكيل OpenTelemetry لبايثون
 
 يمكنك الآن تشغيل التطبيق باستخدام وكيل OpenTelemetry لبايثون (`opentelemetry-instrument`).
 
@@ -60,7 +60,7 @@ opentelemetry-bootstrap -a install
 opentelemetry-instrument python app.py
 ```
 
-#### إذا كنت تستخدم `Gunicorn` أو `uWSGI` أو `uvicorn` {#using-uvicorn-gunicorn-uwsgi}
+#### إذا كنت تستخدم `Gunicorn` أو `uWSGI` أو `uvicorn`
 
 في هذه الحالة، سيتطلب وكيل OpenTelemetry لبايثون بعض التغييرات الإضافية لكي يعمل.
 
@@ -93,9 +93,9 @@ opentelemetry-instrument python app.py
   </Tab>
 </Tabs>
 
-## الإعدادات المتقدمة {#advanced-configuration}
+## الإعدادات المتقدمة
 
-#### التقاط الشبكة {#network-capture}
+#### التقاط الشبكة
 
 من خلال تمكين ميزات التقاط الشبكة، يصبح بإمكان المطورين تصحيح أخطاء
 رؤوس طلبات HTTP وحمولات المتن بفعالية. ويمكن تحقيق ذلك
@@ -105,9 +105,9 @@ opentelemetry-instrument python app.py
 export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
 ```
 
-## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+## استكشاف الأخطاء وإصلاحها
 
-### عدم ظهور السجلات بسبب مستوى التسجيل {#logs-not-appearing-due-to-log-level}
+### عدم ظهور السجلات بسبب مستوى التسجيل
 
 يستخدم معالج logging في OpenTelemetry، افتراضيًا، المستوى `logging.NOTSET`، والذي
 يُعيَّن افتراضيًا إلى مستوى WARNING. يمكنك تحديد مستوى logging عند إنشاء
@@ -120,7 +120,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 ```
 
-### التصدير إلى وحدة التحكم {#exporting-to-the-console}
+### التصدير إلى وحدة التحكم
 
 تعرض حزمة OpenTelemetry SDK الخاصة بـ بايثون عادةً الأخطاء في وحدة التحكم عند
 حدوثها. ومع ذلك، إذا لم تواجه أي أخطاء ولكن لاحظت أن بياناتك لا

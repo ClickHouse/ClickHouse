@@ -13,11 +13,11 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h)에서 자동으로 생성되었습니다.
 
-## format_schema {#format_schema}
+## format_schema
 
 이 매개변수는 [Cap&#39;n Proto](https://capnproto.org/) 또는 [Protobuf](https://developers.google.com/protocol-buffers/)처럼 스키마 정의가 필요한 포맷을 사용할 때 유용합니다. 값은 포맷에 따라 달라집니다.
 
-## format_schema_message_name {#format_schema_message_name}
+## format_schema_message_name
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": ""},{"label": "새로운 설정"}]}]} />
 
@@ -27,7 +27,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * `format_schema_message_name`을 지정하지 않으면, 메시지 이름은 기존 `format_schema` 값의 `message_name` 부분에서 추론됩니다.
 * 기존 포맷을 사용하는 상태에서 `format_schema_message_name`을 지정하면 오류가 발생합니다.
 
-## format_schema_source {#format_schema_source}
+## format_schema_source
 
 <SettingsInfoBlock type="String" default_value="file" />
 

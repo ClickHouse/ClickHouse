@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.merge&#95;tree&#95;settings](/pt-BR/reference/system-tables/merge_tree_settings) e são autogeradas a partir do código-fonte do ClickHouse.
 
-## max_avg_part_size_for_too_many_parts {#max_avg_part_size_for_too_many_parts}
+## max_avg_part_size_for_too_many_parts
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" />
 
@@ -25,7 +25,7 @@ rejeitados. Isso permite ter centenas de terabytes em uma única tabela em um
 único servidor se as partes forem mescladas com sucesso em partes maiores. Isso
 não afeta os limiares de partes inativas nem o total de partes.
 
-## max_buckets_in_map {#max_buckets_in_map}
+## max_buckets_in_map
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
 
@@ -35,13 +35,13 @@ O número máximo de buckets para a serialização de `Map`. Funciona com a seri
 O número efetivo de buckets é determinado por [map&#95;buckets&#95;strategy](/pt-BR/reference/settings/merge-tree-settings/map-buckets#map_buckets_strategy).
 O valor máximo permitido é 256.
 
-## max_cleanup_delay_period {#max_cleanup_delay_period}
+## max_cleanup_delay_period
 
 <SettingsInfoBlock type="UInt64" default_value="300" />
 
 Período máximo para limpar logs antigos da fila, hashes de blocos e partes.
 
-## max_compress_block_size {#max_compress_block_size}
+## max_compress_block_size
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -51,7 +51,7 @@ em uma tabela. Você também pode especificar essa configuração nas configura�
 O valor especificado quando a tabela é criada substitui o valor global
 dessa configuração.
 
-## max_concurrent_queries {#max_concurrent_queries}
+## max_concurrent_queries
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -71,7 +71,7 @@ Valor padrão: `0` (sem limite).
 <max_concurrent_queries>50</max_concurrent_queries>
 ```
 
-## max_digestion_size_per_segment {#max_digestion_size_per_segment}
+## max_digestion_size_per_segment
 
 <SettingsInfoBlock type="UInt64" default_value="268435456" />
 
@@ -79,7 +79,7 @@ Valor padrão: `0` (sem limite).
 
 Configuração obsoleta, não faz nada.
 
-## max_file_name_length {#max_file_name_length}
+## max_file_name_length
 
 <SettingsInfoBlock type="UInt64" default_value="127" />
 
@@ -89,7 +89,7 @@ O valor desta configuração não inclui o comprimento da extensão do arquivo. 
 recomenda-se defini-la abaixo do comprimento máximo do nome do arquivo (geralmente 255
 bytes), com alguma folga para evitar erros no filesystem.
 
-## max_partitions_to_read {#max_partitions_to_read}
+## max_partitions_to_read
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -105,13 +105,13 @@ Valores possíveis:
 Você também pode especificar uma configuração de complexidade da consulta [max&#95;partitions&#95;to&#95;read](/pt-BR/reference/settings/session-settings/max-partitions#max_partitions_to_read)
 no nível de consulta / sessão / perfil.
 
-## max_projections {#max_projections}
+## max_projections
 
 <SettingsInfoBlock type="UInt64" default_value="25" />
 
 Número máximo de projeções de MergeTree.
 
-## max_table_size_bytes_compressed {#max_table_size_bytes_compressed}
+## max_table_size_bytes_compressed
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -139,7 +139,7 @@ Valores possíveis:
 
 É útil para serviços multilocatários, temporários e de demonstração.
 
-## max_table_size_bytes_uncompressed {#max_table_size_bytes_uncompressed}
+## max_table_size_bytes_uncompressed
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -156,7 +156,7 @@ Valores possíveis:
 
 É útil para serviços multilocatários, temporários e de demonstração.
 
-## max_table_size_rows {#max_table_size_rows}
+## max_table_size_rows
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -181,7 +181,7 @@ Valores possíveis:
 
 É útil para serviços multilocatários, temporários e de demonstração.
 
-## max_uncompressed_bytes_in_patches {#max_uncompressed_bytes_in_patches}
+## max_uncompressed_bytes_in_patches
 
 <SettingsInfoBlock type="UInt64" default_value="32212254720" />
 

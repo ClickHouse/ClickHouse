@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## max_rows_for_lazy_final {#max_rows_for_lazy_final}
+## max_rows_for_lazy_final
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" />
 
@@ -21,13 +21,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Максимальное количество строк во множестве для отложенной оптимизации FINAL. При превышении этого значения используется обычный FINAL.
 
-## max_rows_in_distinct {#max_rows_in_distinct}
+## max_rows_in_distinct
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Максимальное количество уникальных строк при использовании DISTINCT.
 
-## max_rows_in_join {#max_rows_in_join}
+## max_rows_in_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -43,13 +43,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * Положительное целое число.
 * `0` — Неограниченное количество строк.
 
-## max_rows_in_set {#max_rows_in_set}
+## max_rows_in_set
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Максимальное количество строк в наборе данных для условия IN, созданного из подзапроса.
 
-## max_rows_in_set_to_optimize_join {#max_rows_in_set_to_optimize_join}
+## max_rows_in_set_to_optimize_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -62,7 +62,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 — Отключено.
 * Любое положительное целое число.
 
-## max_rows_to_group_by {#max_rows_to_group_by}
+## max_rows_to_group_by
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -74,7 +74,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 &#39;group&#95;by&#95;overflow&#95;mode&#39;, который по умолчанию имеет значение `throw`, но его также можно переключить
 в приблизительный режим GROUP BY.
 
-## max_rows_to_read {#max_rows_to_read}
+## max_rows_to_read
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -83,7 +83,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 наиболее глубокому табличному выражению, а при чтении с удалённого сервера проверяется только на
 удалённом сервере.
 
-## max_rows_to_read_leaf {#max_rows_to_read_leaf}
+## max_rows_to_read_leaf
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -104,7 +104,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
   Эта настройка нестабильна при `prefer_localhost_replica=1`.
 </Note>
 
-## max_rows_to_sort {#max_rows_to_sort}
+## max_rows_to_sort
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -112,7 +112,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Если для операции ORDER BY требуется обработать больше записей, чем указано,
 поведение будет определяться параметром `sort_overflow_mode`, который по умолчанию имеет значение `throw`.
 
-## max_rows_to_transfer {#max_rows_to_transfer}
+## max_rows_to_transfer
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

@@ -9,7 +9,7 @@ doc_type: '참고'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-## GCP용 고객 관리형 VPC(BYO-VPC) {#customer-managed-vpc-gcp}
+## GCP용 고객 관리형 VPC(BYO-VPC)
 
 ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC를 사용하여 ClickHouse BYOC를 배포하려면 아래 단계를 따르십시오. 이 방식은 네트워크 구성에 대한 제어 수준을 높여 주며, ClickHouse BYOC를 기존 네트워크 인프라에 통합할 수 있게 해줍니다.
 
@@ -57,7 +57,7 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하도록 하는 대신 기존 VPC
   </Step>
 </Steps>
 
-### 호스트 프로젝트의 공유 VPC {#shared-vpc-host-project}
+### 호스트 프로젝트의 공유 VPC
 
 별도의 [공유 VPC(Shared VPC)](https://cloud.google.com/vpc/docs/shared-vpc) 호스트 프로젝트에 있는 네트워크 위에서 서비스 프로젝트에 BYOC를 실행할 수 있으며, 이렇게 하면 네트워킹을 중앙에서 일괄 관리할 수 있습니다. VPC와 그 서브넷은 **호스트** 프로젝트가 소유하고, BYOC 인프라는 여기에 연결된 **서비스** 프로젝트에서 실행됩니다. 위에서 설명한 요구 사항은 달라지지 않으며, 호스트 프로젝트의 서브넷에 그대로 적용됩니다.
 

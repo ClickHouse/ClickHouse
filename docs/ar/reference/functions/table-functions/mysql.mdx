@@ -10,13 +10,13 @@ doc_type: 'reference'
 
 يتيح تنفيذ استعلامات `SELECT` و`INSERT` على البيانات المخزّنة على خادم MySQL بعيد.
 
-## البنية {#syntax}
+## البنية
 
 ```sql
 mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 ```
 
-## الوسيطات {#arguments}
+## الوسيطات
 
 | Argument              | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -34,7 +34,7 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 
 أما بقية الشروط وقيد `LIMIT` لأخذ العينات، فتُنفَّذ في ClickHouse فقط بعد انتهاء الاستعلام إلى MySQL.
 
-## TLS/SSL {#tls-ssl}
+## TLS/SSL
 
 تُمرَّر بيانات اعتماد اتصال MySQL المشفّر كمفاتيح لمجموعة مسمّاة (أو كوسيطات مفتاح-قيمة):
 
@@ -48,7 +48,7 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 
 يمكن أيضًا توفير بيانات الاعتماد نفسها كمسارات لملفات على الخادم، في `ssl_ca` و`ssl_cert` و`ssl_key` — ولكن **فقط ضمن مجموعة مسمّاة محددة في ملف تهيئة الخادم**، ولا يمكن تجاوز هذه القيمة في استعلام. يفتح الخادم تلك الملفات بصلاحياته الخاصة، لذا فإن قبول مسار من SQL سيسمح لأي مستخدم قادر على تعريف مصدر MySQL بفحص نظام الملفات المحلي والمصادقة باستخدام شهادة ومفتاح لا يُسمح له بقراءتهما بنفسه.
 
-## تمرير استعلام بدلًا من اسم جدول {#passing-a-query}
+## تمرير استعلام بدلًا من اسم جدول
 
 بدلًا من اسم جدول، يمكن أن تكون الوسيطة الثالثة استعلام `SELECT` يُمرَّر إلى MySQL كما هو. ويُستدل على بنية الجدول الناتج من نتيجة الاستعلام. ويمكن كتابة الاستعلام إما على شكل استعلام فرعي، أو تغليفه داخل الدالة `query`:
 
@@ -77,7 +77,7 @@ SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'us
 SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
 ```
 
-## القيمة المُعادة {#returned-value}
+## القيمة المُعادة
 
 كائن جدول له الأعمدة نفسها الموجودة في جدول MySQL الأصلي.
 
@@ -89,7 +89,7 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
   في استعلام `INSERT`، وللتمييز بين دالة الجدول `mysql(...)` واسم جدول يتبعه قائمة بأسماء الأعمدة، يجب استخدام الكلمتين المفتاحيتين `FUNCTION` أو `TABLE FUNCTION`. راجع الأمثلة أدناه.
 </Note>
 
-## أمثلة {#examples}
+## أمثلة
 
 جدول في MySQL:
 
@@ -133,7 +133,7 @@ SELECT * FROM mysql(creds, table='test');
 └────────┴───────┘
 ```
 
-### `enable_compression` {#enable-compression}
+### `enable_compression`
 
 يُفعّل الضغط لاتصال بروتوكول MySQL.
 
@@ -201,7 +201,7 @@ SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
 WHERE id > (SELECT max(id) FROM mysql_copy);
 ```
 
-## مواضيع ذات صلة {#related}
+## مواضيع ذات صلة
 
 * [محرك الجدول &#39;MySQL&#39;](/ar/reference/engines/table-engines/integrations/mysql)
 * [استخدام MySQL كمصدر للقاموس](/ar/reference/statements/create/dictionary/sources/mysql)

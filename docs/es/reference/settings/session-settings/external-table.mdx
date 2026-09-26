@@ -12,7 +12,7 @@ import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/Setting
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## external_table_functions_use_nulls {#external_table_functions_use_nulls}
+## external_table_functions_use_nulls
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -27,7 +27,7 @@ Valores posibles:
 
 Si esta configuración se establece en `0`, la función de tabla no crea columnas Nullable y, en su lugar, inserta valores predeterminados en vez de NULL. Esto también se aplica a los valores NULL dentro de los arrays.
 
-## external_table_strict_query {#external_table_strict_query}
+## external_table_strict_query
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

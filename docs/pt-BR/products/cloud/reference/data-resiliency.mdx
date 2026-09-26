@@ -17,7 +17,7 @@ No momento, o ClickHouse Cloud não oferece suporte a failover automático nem �
 </Tip>
 
 <div id="definitions">
-  ## Definições {#definitions}
+  ## Definições
 </div>
 
 Antes, é útil revisar algumas definições.
@@ -29,7 +29,7 @@ Antes, é útil revisar algumas definições.
 **Backups e snapshots de banco de dados**: Os backups fornecem armazenamento durável de longo prazo com uma cópia separada dos dados. Os snapshots não criam uma cópia adicional dos dados, geralmente são mais rápidos e proporcionam RPOs melhores.
 
 <div id="database-backups">
-  ## Backups de banco de dados {#database-backups}
+  ## Backups de banco de dados
 </div>
 
 Manter um backup do seu serviço primário é uma forma eficaz de restaurá-lo em caso de indisisponibilidade do serviço primário.
@@ -60,13 +60,13 @@ Os backups atualmente disponíveis para o serviço estão listados na página �
 Esta seção também mostra o status de sucesso/falha de cada backup.
 
 <div id="restoring-from-a-backup">
-  ## Restauração a partir de um backup {#restoring-from-a-backup}
+  ## Restauração a partir de um backup
 </div>
 
 1. Os backups padrão, no bucket do ClickHouse Cloud, podem ser restaurados em um novo serviço na mesma região.
 2. Os backups externos (no armazenamento de objetos do cliente) podem ser restaurados em um novo serviço na mesma região ou em outra região.
 
-## Orientações sobre a duração de backups e restaurações {#backup-and-restore-duration-guidance}
+## Orientações sobre a duração de backups e restaurações
 
 A duração de backups e restaurações varia significativamente conforme o volume de dados, a complexidade do schema e o número de tabelas. Os números abaixo são observações de testes internos e não constituem compromissos de desempenho.
 
@@ -82,19 +82,19 @@ Como a duração depende muito dos seus dados, schema e configuração de backup
 </Note>
 
 <div id="recovery-process">
-  ## Processo de recuperação {#recovery-process}
+  ## Processo de recuperação
 </div>
 
 Esta seção explica as várias opções de recuperação e o procedimento a ser seguido em cada caso.
 
 <div id="primary-service-data-corruption">
-  ### Corrupção de dados do serviço primário {#primary-service-data-corruption}
+  ### Corrupção de dados do serviço primário
 </div>
 
 Nesse caso, os dados [podem ser restaurados](/pt-BR/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup) a partir do backup em outro serviço na mesma região.
 O backup pode ter até 24 horas ao usar a política de backup padrão, ou até 6 horas (ao usar backups configuráveis com frequência de 6 horas).
 
-#### Etapas de restauração {#restoration-steps}
+#### Etapas de restauração
 
 Para restaurar a partir de um backup existente
 
@@ -105,7 +105,7 @@ Para restaurar a partir de um backup existente
 <Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="Restaurar a partir de um backup" />
 
 <div id="primary-region-downtime">
-  ### Indisponibilidade da região primária {#primary-region-downtime}
+  ### Indisponibilidade da região primária
 </div>
 
 Você pode [exportar backups](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) para um bucket no seu próprio provedor de cloud.
@@ -125,7 +125,7 @@ Isso pode envolver:
 </Note>
 
 <div id="additional-options">
-  ## Opções adicionais {#additional-options}
+  ## Opções adicionais
 </div>
 
 Há algumas opções adicionais a considerar.

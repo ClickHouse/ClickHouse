@@ -10,7 +10,7 @@ keywords: ['concurrency', 'QPS']
 
 はい。ClickHouse は、外部ユーザーに直接サービスを提供できるリアルタイム分析アプリケーション向けに設計されています。履歴データとリアルタイムの挿入を組み合わせながら、ペタバイト規模のデータベースに対して、低レイテンシ (10 ミリ秒未満) かつ高い同時実行性 (毎秒 10,000 件を超えるクエリ) で分析クエリを処理できます。
 
-## 高い同時実行性を可能にする要素 {#what-makes-high-concurrency-possible}
+## 高い同時実行性を可能にする要素
 
 個々のクエリを高速に実行することが、高い QPS の基盤となります。各クエリの処理量が少ないほど、サーバーが同時に実行できるクエリ数は増えます。クエリごとの処理を削減する主な機能は次のとおりです。
 
@@ -18,14 +18,14 @@ keywords: ['concurrency', 'QPS']
 * 繰り返し実行される `SELECT` クエリに対してキャッシュ済みの結果を直接返す、[クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache)などのキャッシュ。
 * 挿入時にデータを事前計算し、ClickHouse が自動的に選択できる[プロジェクション](/ja/concepts/features/projections/projections)と、事前計算された結果を別のターゲットテーブルに格納し、クエリから直接読み取れるようにする[materialized view](/ja/concepts/features/materialized-views/index)。
 
-## 同時実行数の制御と制限 {#controlling-and-limiting-concurrency}
+## 同時実行数の制御と制限
 
 デフォルトでは、ClickHouse OSS は同時実行クエリ数を制限しません。ClickHouse Cloud では、`max_concurrent_queries_for_all_users` はデフォルトで `1000` に設定されています。制限は複数のレベルで設定できます。
 
 * [`max_concurrent_queries`](/ja/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries) は、サーバーで同時に実行されるクエリの合計数を制限します。[`max_concurrent_insert_queries`](/ja/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries) と [`max_concurrent_select_queries`](/ja/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries) は、それぞれ `INSERT` クエリと `SELECT` クエリに同じ制限を適用します。いずれもデフォルトは `0` (無制限) です。
 * [`max_concurrent_queries_for_user`](/ja/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user) と [`max_concurrent_queries_for_all_users`](/ja/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) は、ユーザーごと、または全ユーザーを対象に同時実行数を制限します。
 
-## ワークロードの分離 {#isolating-workloads}
+## ワークロードの分離
 
 同時実行されるワークロード同士が干渉しないよう、ClickHouse には次の機能が用意されています。
 

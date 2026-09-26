@@ -12,7 +12,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 먼저 데이터셋을 ClickHouse Cloud에 로드하고 스키마(schema)를 확인한 다음, 수천만 개의 행을 대상으로 집계 쿼리(aggregation query)를 실행합니다.
 이어서 딕셔너리(Dictionary)로 데이터를 보강하고, `pointInPolygon` 함수로 독일 내 기지국 수를 집계한 뒤, ClickHouse Agents를 사용하여 결과를 지도에 시각화합니다.
 
-## 사전 요구 사항 {#prerequisites}
+## 사전 요구 사항
 
 이 튜토리얼을 진행하려면 다음이 필요합니다.
 
@@ -247,7 +247,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   </Step>
 </Steps>
 
-## 다음 단계 {#next-steps}
+## 다음 단계
 
 이 튜토리얼에서는 OpenCelliD 기지국 데이터셋을 ClickHouse Cloud에 로드하고, 스키마를 살펴본 뒤, 수천만 개의 행을 대상으로 집계 쿼리를 실행했습니다.
 또한 딕셔너리(Dictionary)를 생성하여 숫자형 `mcc` 컬럼에 국가 이름을 보강하고, 독일의 경계를 다각형으로 저장한 다음, `pointInPolygon`을 사용하여 그 안에 있는 기지국 수를 계산했습니다.

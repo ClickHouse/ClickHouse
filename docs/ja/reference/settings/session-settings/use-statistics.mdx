@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-## use_statistics {#use_statistics}
+## use_statistics
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -22,7 +22,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 /// &#39;use&#95;primary&#95;key&#39; および &#39;use&#95;skip&#95;indexes&#39; との整合性を保つため、&#39;allow&#95;statistics&#95;optimize&#39; よりこちらが推奨されます
 クエリの最適化にSTATISTICSを使用できるようにします
 
-## use_statistics_cache {#use_statistics_cache}
+## use_statistics_cache
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -30,7 +30,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 各パーツのSTATISTICSの読み込みオーバーヘッドを避けるため、クエリでSTATISTICSキャッシュを使用します
 
-## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+## use_statistics_for_min_max_aggregation
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -47,7 +47,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 0 — 無効。
 * 1 — 有効。
 
-## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
+## use_statistics_for_part_pruning
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

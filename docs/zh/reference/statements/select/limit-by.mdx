@@ -23,7 +23,7 @@ ClickHouse 支持以下语法变体：
 
 如果你想在 `LIMIT BY` 子句中使用列编号而不是列名，请启用设置 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments)。
 
-## 示例 {#examples}
+## 示例
 
 示例表：
 
@@ -122,7 +122,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT -2 OFFSET 1 BY id;
 
 对于 `id = 1`，第一行 (`10`) 会被跳过；`11, 12` 中最后两行都会返回。对于 `id = 2`，第一行 (`20`) 会被跳过，因此只剩下 `21`。
 
-## LIMIT BY ALL {#limit-by-all}
+## LIMIT BY ALL
 
 `LIMIT BY ALL` 等同于列出所有已 SELECT 且非聚合函数的表达式。
 
@@ -152,7 +152,7 @@ SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIM
 SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2);
 ```
 
-## 示例 {#examples-limit-by-all}
+## 示例
 
 示例表：
 

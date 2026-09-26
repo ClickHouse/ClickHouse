@@ -14,7 +14,7 @@ Le moteur de base de données `Ordinary` est le moteur de base de données legac
   `Ordinary` est obsolète. Ne l&#39;utilisez pas pour de nouvelles bases de données.
 </Warning>
 
-## Création d&#39;une base de données {#creating-a-database}
+## Création d&#39;une base de données
 
 La création d&#39;une base de données `Ordinary` nécessite d&#39;activer [`allow_deprecated_database_ordinary`](/fr/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary) :
 
@@ -25,11 +25,11 @@ CREATE DATABASE legacy
 ENGINE = Ordinary;
 ```
 
-## Migration {#migration}
+## Migration
 
 Utilisez `Atomic` pour les nouvelles bases de données. Il s&#39;agit du moteur de base de données par défaut dans ClickHouse open-source, et il prend en charge les opérations atomiques sur les métadonnées, y compris les `DROP TABLE` et `RENAME TABLE` non-blocking.
 
-## Voir aussi {#see-also}
+## Voir aussi
 
 * [Moteur de base de données Atomic](/fr/reference/engines/database-engines/atomic)
 * [`allow_deprecated_database_ordinary`](/fr/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary)

@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 쓰기 작업은 원자적이지 않습니다. 대규모 `INSERT`는 배치 단위로 전송되며(요청당 최대 500개 행, BigQuery&#39;s 10MB 요청 크기 제한을 넘지 않도록 추가 분할), 단일 요청도 부분적으로 성공할 수 있습니다(BigQuery는 요청의 일부 행을 커밋하고 나머지는 `insertErrors`와 함께 거부할 수 있음). 또한 이전 배치가 수락된 후 이후 배치가 거부될 수 있습니다. 두 경우 모두 이미 커밋된 행은 BigQuery에 남고 쿼리는 오류를 보고합니다. 각 행에는 안정적인 `insertId`(쿼리 ID와 행의 서수 위치에서 파생됨)가 포함되므로 BigQuery는 재시도된 행을 최선의 노력으로 중복 제거합니다. `insertId`는 서수 위치에 따라 달라지므로, 동일한 `INSERT`를 다시 실행할 때 행이 동일한 순서로 제공되는 경우에만 중복 제거됩니다(예: `max_threads = 1` 및 `max_insert_threads = 1`을 사용하는 단일 스레드 환경). 자세한 내용은 [`bigquery` 테이블 함수의 제한 사항](/ko/reference/functions/table-functions/bigquery#limitations)을 참조하십시오.
 
-## 테이블 생성 {#creating-a-table}
+## 테이블 생성
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -37,7 +37,7 @@ ENGINE = BigQuery(project, dataset, table[, access_token][, key = value, ...])
 
 매개변수는 `key = value` 재정의를 사용하는 [명명된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)으로도 전달할 수 있습니다. 전체 키 목록과 [인증 메서드](/ko/reference/functions/table-functions/bigquery#authentication)에 관한 설명은 [`bigquery` 테이블 함수](/ko/reference/functions/table-functions/bigquery#arguments)를 참조하십시오. 정확히 하나의 인증 메서드를 제공해야 합니다. 액세스 토큰은 1시간 이내에 만료되므로 영구 테이블에는 `access_token`보다 `service_account_key` 또는 `refresh_token`을 사용하는 것이 좋습니다.
 
-## 사용 예시 {#usage-example}
+## 사용 예시
 
 ```sql
 CREATE TABLE shakespeare
@@ -53,7 +53,7 @@ ENGINE = BigQuery('my-project', 'my_dataset', 'events',
 INSERT INTO events VALUES (1, 'started');
 ```
 
-## 관련 항목 {#related}
+## 관련 항목
 
 * [`bigquery` 테이블 함수](/ko/reference/functions/table-functions/bigquery)
 

@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/Exp
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
+## iceberg_delete_data_on_drop
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -22,7 +22,7 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 Indica si se deben eliminar todos los archivos de Iceberg al hacer drop.
 
-## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+## iceberg_file_entries_queue_size
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -34,7 +34,7 @@ Las tareas de decodificación se pausan cuando la cola se llena y la consulta no
 
 Debe ser mayor que cero.
 
-## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+## iceberg_manifest_decode_concurrency
 
 **Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
@@ -50,7 +50,7 @@ Los valores más altos elevan el pico de memoria cuando la caché de metadata fi
 
 Debe ser mayor que cero; con `1` los manifiestos se decodifican de uno en uno.
 
-## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
+## iceberg_manifest_min_count_to_compact
 
 <ExperimentalBadge />
 
@@ -65,7 +65,7 @@ Requiere que allow&#95;experimental&#95;iceberg&#95;compaction esté habilitado.
 El valor predeterminado refleja el valor predeterminado documentado de la propiedad de tabla Iceberg `commit.manifest.min-count-to-merge` (100),
 consulte https://iceberg.apache.org/docs/1.5.2/configuration/.
 
-## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
+## iceberg_max_number_datafiles_to_compact
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -73,7 +73,7 @@ consulte https://iceberg.apache.org/docs/1.5.2/configuration/.
 
 Umbral para los archivos de datos de compactación en Iceberg.
 
-## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
+## iceberg_orphan_files_older_than_seconds
 
 <ExperimentalBadge />
 
@@ -83,7 +83,7 @@ Umbral para los archivos de datos de compactación en Iceberg.
 
 Umbral predeterminado de antigüedad, en segundos, para eliminar archivos huérfanos en tablas Iceberg. Los archivos más recientes que este umbral no se consideran huérfanos. Se usa cuando se omite el argumento older&#95;than en la llamada al procedimiento `remove_orphan_files()`. El valor predeterminado es 259200 (3 días).
 
-## iceberg_snapshot_id {#iceberg_snapshot_id}
+## iceberg_snapshot_id
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -91,7 +91,7 @@ Umbral predeterminado de antigüedad, en segundos, para eliminar archivos huérf
 
 Consulta la tabla Iceberg con el ID de instantánea especificado.
 
-## iceberg_timestamp_ms {#iceberg_timestamp_ms}
+## iceberg_timestamp_ms
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -99,7 +99,7 @@ Consulta la tabla Iceberg con el ID de instantánea especificado.
 
 Consulta la tabla Iceberg con la instantánea vigente en una marca temporal específica.
 
-## iceberg_tolerate_conflicting_manifest_schemas {#iceberg_tolerate_conflicting_manifest_schemas}
+## iceberg_tolerate_conflicting_manifest_schemas
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

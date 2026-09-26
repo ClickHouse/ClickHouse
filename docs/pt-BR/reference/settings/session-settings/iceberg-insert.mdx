@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
+## iceberg_insert_max_bytes_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
@@ -26,7 +26,7 @@ consulte https://iceberg.apache.org/docs/1.5.2/configuration/. Observe que o Cli
 tamanho descomprimido dos dados já gravados no arquivo, enquanto a propriedade do Iceberg tem como alvo o tamanho do
 arquivo resultante, e que `iceberg_insert_max_rows_in_data_file` limita o arquivo independentemente de seu tamanho.
 
-## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
+## iceberg_insert_max_partitions
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -34,7 +34,7 @@ arquivo resultante, e que `iceberg_insert_max_rows_in_data_file` limita o arquiv
 
 Número máximo de partições permitido por operação de insert para o mecanismo de tabela Iceberg.
 
-## iceberg_insert_max_rows_in_data_file {#iceberg_insert_max_rows_in_data_file}
+## iceberg_insert_max_rows_in_data_file
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 

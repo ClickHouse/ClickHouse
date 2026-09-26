@@ -17,13 +17,13 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 * [&quot;ClickHouse Cloud에서 백업이 작동하는 방식&quot;](/ko/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (기능 개요 페이지)을 읽었습니다.
 
-## Backup 상태 목록 {#backup-status-list}
+## Backup 상태 목록
 
 백업은 기본 일일 일정이든 사용자가 선택한 [사용자 지정 일정](/ko/products/cloud/guides/backups/configurable-backups)이든 서비스에 구성된 일정에 따라 실행됩니다. 사용 가능한 모든 백업은 서비스의 **Backups** 탭에서 확인할 수 있습니다. 여기에서 백업 상태, 소요 시간, 백업 크기를 확인할 수 있습니다. 또한 **Actions** 컬럼에서 특정 백업을 복원할 수 있습니다.
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud의 백업 상태 목록" border />
 
-## Backup 비용 이해하기 {#understanding-backup-cost}
+## Backup 비용 이해하기
 
 다른 일정으로 구성하지 않는 한 서비스는 24시간마다 한 번 Backup되며, 각 Backup은 24시간 동안 보존됩니다. Backup 일정을 구성할 수 있는 기능은 서비스 및 플랜에 따라 다릅니다. 더 많은 데이터를 보존해야 하거나 Backup 빈도가 더 높아지는 일정을 선택하면 Backup 저장소에 대한 추가 요금이 발생할 수 있습니다.
 
@@ -42,7 +42,7 @@ Backup의 총비용을 추정하려면 일정을 설정해야 합니다. 일정�
   서비스의 데이터 크기는 시간이 지남에 따라 증가하므로 Backup 예상 비용도 달라질 수 있다는 점에 유의하십시오.
 </Note>
 
-## 백업 복원 {#restore-a-backup}
+## 백업 복원
 
 백업은 백업이 생성된 기존 서비스가 아니라 새로운 ClickHouse Cloud 서비스로 복원됩니다.
 
@@ -55,7 +55,7 @@ Backup의 총비용을 추정하려면 일정을 설정해야 합니다. 일정�
 <Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="서비스 프로비저닝 진행 중" border />
 
 <div id="working-with-your-restored-service">
-  ## 복원된 서비스 사용하기 {#working-with-your-restored-service}
+  ## 복원된 서비스 사용하기
 </div>
 
 백업이 복원되면 서로 비슷한 두 개의 서비스가 생깁니다. 하나는 복원이 필요했던 **원본 서비스**이고, 다른 하나는 원본의 백업으로부터 새로 생성된 **복원된 서비스**입니다.
@@ -66,7 +66,7 @@ Backup의 총비용을 추정하려면 일정을 설정해야 합니다. 일정�
 * 새로 복원된 서비스의 데이터를 원본 서비스로 다시 마이그레이션한 후, 새로 복원된 서비스를 제거합니다.
 
 <div id="use-the-new-restored-service">
-  ### **새로 복원된 서비스** 사용 {#use-the-new-restored-service}
+  ### **새로 복원된 서비스** 사용
 </div>
 
 새 서비스를 사용하려면 다음 단계를 수행하십시오.
@@ -76,7 +76,7 @@ Backup의 총비용을 추정하려면 일정을 설정해야 합니다. 일정�
 3. 원본 서비스를 제거하십시오.
 
 <div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
-  ### **새로 복원된 서비스**의 데이터를 **원본 서비스**로 다시 마이그레이션 {#migrate-data-from-the-newly-restored-service-back-to-the-original-service}
+  ### **새로 복원된 서비스**의 데이터를 **원본 서비스**로 다시 마이그레이션
 </div>
 
 어떤 이유로든 새로 복원된 서비스를 사용할 수 없는 상황을 가정해 보겠습니다. 예를 들어, 기존 서비스에 계속 연결하는 사용자나 애플리케이션이 있을 수 있습니다. 이 경우 새로 복원된 데이터를 원본 서비스로 마이그레이션할 수 있습니다. 마이그레이션은 다음 단계에 따라 수행합니다.
@@ -142,7 +142,7 @@ Backup의 총비용을 추정하려면 일정을 설정해야 합니다. 일정�
 데이터를 원본 서비스에 성공적으로 삽입한 후에는 원본 서비스의 데이터를 반드시 확인하십시오. 또한 데이터 확인이 끝나면 새  서비스를 삭제해야 합니다.
 
 <div id="undeleting-or-undropping-tables">
-  ## 삭제된 테이블 복구 {#undeleting-or-undropping-tables}
+  ## 삭제된 테이블 복구
 </div>
 
 `UNDROP` 명령은 ClickHouse Cloud에서 [Shared Catalog](/ko/products/cloud/features/infrastructure/shared-catalog)를 통해 지원됩니다.
@@ -163,7 +163,7 @@ Backup의 총비용을 추정하려면 일정을 설정해야 합니다. 일정�
   기존 요금제: 기존 요금제를 사용하는 고객의 경우, 24시간 동안 보관되는 기본 일일 백업이 스토리지 비용에 포함됩니다.
 </Note>
 
-## Backup 소요 시간 {#backup-durations}
+## Backup 소요 시간
 
 Backup 및 복원에 걸리는 시간은 데이터 크기, 스키마 복잡성 및 테이블 수에 따라 크게 달라집니다. 아래 수치는 내부 테스트에서 관찰한 결과이며, 성능을 보장하는 것은 아닙니다.
 
@@ -178,11 +178,11 @@ Backup 및 복원에 걸리는 시간은 데이터 크기, 스키마 복잡성 �
 </Note>
 
 <div id="configurable-backups">
-  ## 설정 가능한 백업 {#configurable-backups}
+  ## 설정 가능한 백업
 </div>
 
 기본 백업 일정과 다른 일정으로 백업을 설정하려면 [설정 가능한 백업](/ko/products/cloud/guides/backups/configurable-backups)을 참조하세요.
 
-## 자체 클라우드 계정으로 백업 내보내기 {#export-backups-to-your-own-cloud-account}
+## 자체 클라우드 계정으로 백업 내보내기
 
 백업을 자체 클라우드 계정으로 내보내려면 [여기](/ko/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)를 참조하십시오.

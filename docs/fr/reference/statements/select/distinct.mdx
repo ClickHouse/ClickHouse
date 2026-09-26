@@ -54,7 +54,7 @@ SELECT DISTINCT ON (a,b) * FROM t1;
 └───┴───┴───┘
 ```
 
-## DISTINCT et ORDER BY {#distinct-and-order-by}
+## DISTINCT et ORDER BY
 
 ClickHouse permet d’utiliser les clauses `DISTINCT` et `ORDER BY` sur des colonnes différentes dans une même requête. La clause `DISTINCT` est exécutée avant la clause `ORDER BY`.
 
@@ -101,11 +101,11 @@ La ligne `2, 4` a été tronquée avant le tri.
 
 Tenez compte de cette spécificité d’implémentation lors de l’écriture de requêtes.
 
-## Traitement de NULL {#null-processing}
+## Traitement de NULL
 
 `DISTINCT` traite [NULL](/fr/reference/syntax#null) comme si `NULL` était une valeur spécifique, et `NULL==NULL`. Autrement dit, dans les résultats de `DISTINCT`, les différentes combinaisons avec `NULL` n&#39;apparaissent qu&#39;une seule fois. Cela diffère du traitement de `NULL` dans la plupart des autres contextes.
 
-## Alternatives {#alternatives}
+## Alternatives
 
 Il est possible d&#39;obtenir le même résultat en appliquant [GROUP BY](/fr/reference/statements/select/group-by) sur le même ensemble de valeurs que celui spécifié dans la clause `SELECT`, sans utiliser de fonctions d&#39;agrégation. Mais il existe quelques différences par rapport à l&#39;approche `GROUP BY` :
 
@@ -114,7 +114,7 @@ Il est possible d&#39;obtenir le même résultat en appliquant [GROUP BY](/fr/re
 * Avant le démarrage de l&#39;exécution externe et lorsque `ORDER BY` est omis, une plage [`LIMIT ... AFTER ... UNTIL`](/fr/reference/statements/select/limit#limit-after-until) sans `ALL` peut également arrêter la requête dès que la plage est terminée.
 * Les blocs de données sont affichés au fur et à mesure de leur traitement jusqu&#39;au démarrage de l&#39;exécution externe.
 
-## DISTINCT en mémoire externe {#distinct-in-external-memory}
+## DISTINCT en mémoire externe
 
 `DISTINCT` peut écrire des données temporaires sur disque afin de traiter des ensembles de valeurs uniques trop
 volumineux pour tenir en mémoire. Cela nécessite des E/S disque supplémentaires et peut ralentir les requêtes.

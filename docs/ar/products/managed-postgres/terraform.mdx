@@ -17,7 +17,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   هذا المورد في مرحلة alpha، وقد يتغير سلوكه في الإصدارات المستقبلية من الموفّر. وهو متضمن في الإصدار الاعتيادي للموفّر. توثّق هذه الصفحة إصدار الموفّر **v3.21.0** والإصدارات الأحدث. راجع [إصدارات الموفّر](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) للاطلاع على التفاصيل.
 </Note>
 
-## إعداد الموفّر {#provider-setup}
+## إعداد الموفّر
 
 أضِف موفّر ClickHouse إلى إعدادات Terraform الخاصة بك:
 
@@ -40,7 +40,7 @@ provider "clickhouse" {
 
 راجع [إدارة مفاتيح API](/ar/products/cloud/features/admin-features/api/openapi) للاطّلاع على إرشادات إنشاء مفتاح API لاستخدامه مع الموفّر.
 
-## نظرة عامة على المورد {#resource-overview}
+## نظرة عامة على المورد
 
 يحتوي المورد `clickhouse_postgres_service` على الوسيطات التالية:
 
@@ -67,7 +67,7 @@ provider "clickhouse" {
   تُخزَّن قيمة `password` كنص عادي في حالة Terraform لديك. لذلك احمِ ملف الحالة بالشكل المناسب، على سبيل المثال باستخدام backend بعيد مع التشفير أثناء التخزين، أو استخدم `password_wo` لإبقاء كلمة المرور خارج الحالة بالكامل.
 </Warning>
 
-## إنشاء خدمة {#create-a-service}
+## إنشاء خدمة
 
 ```hcl
 resource "clickhouse_postgres_service" "example" {
@@ -92,7 +92,7 @@ resource "clickhouse_postgres_service" "example" {
 
 يجب أن تُصرِّح الخدمة القياسية بـ `password` أو `password_wo`. يجب ألا يقل طول القيمة عن 12 حرفًا، وأن تتضمن حرفًا صغيرًا واحدًا على الأقل، وحرفًا كبيرًا واحدًا على الأقل، ورقمًا واحدًا. يطبّق `password_wo` (مع `password_wo_version`) قواعد كلمة المرور نفسها، لكنه لا يُخزَّن أبدًا في الحالة؛ غيّر `password_wo_version` لإجراء التدوير. ونظرًا لأن واجهة برمجة تطبيقات لا تُرجع بيانات الاعتماد، يجب أن تظل Terraform الجهة الوحيدة التي تعيّن كلمة المرور: لا يُكتشَف تدوير كلمة المرور خارج Terraform (وحدة التحكم أو واجهة برمجة تطبيقات)، وتعيد عملية التدوير التالية التي تُدار بواسطة Terraform تعيين القيمة المُصرَّح بها.
 
-## التوافر العالي {#high-availability}
+## التوافر العالي
 
 تتحكم الوسيطة `ha_type` في عدد النسخ الاحتياطية الجاهزة:
 
@@ -104,7 +104,7 @@ resource "clickhouse_postgres_service" "example" {
 
 يمكن تغيير `ha_type` بعد الإنشاء؛ ويؤدي تغييرها إلى انتقال في التوافر العالي. راجع [التوافر العالي](/ar/products/managed-postgres/high-availability) للتفاصيل.
 
-## النسخ المتماثلة للقراءة {#read-replicas}
+## النسخ المتماثلة للقراءة
 
 عيّن `read_replica_of` إلى قيمة `id` الخاصة بخدمة أساسية لإنشاء نسخة متماثلة للقراءة بتدفّق مستمر. ترث النسخة المتماثلة `cloud_provider` و`region` و`postgres_version` ومستخدم فائق الصلاحيات من الخدمة الأساسية، لذا اترك هذه القيم (و`password`) فارغة:
 
@@ -118,7 +118,7 @@ resource "clickhouse_postgres_service" "replica" {
 
 راجع [النسخ المتماثلة للقراءة](/ar/products/managed-postgres/read-replicas) لمزيد من التفاصيل.
 
-## الاستعادة إلى نقطة زمنية {#point-in-time-restore}
+## الاستعادة إلى نقطة زمنية
 
 عيّن `restore_to_point_in_time` لإنشاء خدمة من خلال استعادة نسخة احتياطية لخدمة أخرى إلى نقطة زمنية محددة. تكون `cloud_provider` و`region` و`postgres_version` موروثة من المصدر (لذا احذفها)، كما يجب حذف `size` و`ha_type`:
 
@@ -135,7 +135,7 @@ resource "clickhouse_postgres_service" "restored" {
 
 هذه الكتلة بأكملها مخصّصة لوقت الإنشاء فقط: إن تغيير `source_id` أو `restore_target`، أو إزالة الكتلة، يؤدي إلى حذف الخدمة وإعادة إنشائها. راجع [النسخ الاحتياطي والاستعادة](/ar/products/managed-postgres/backup-and-restore) للاطلاع على التفاصيل.
 
-## مصادر البيانات {#data-sources}
+## مصادر البيانات
 
 تتيح لك ثلاثة مصادر بيانات مرافقة العثور على الخدمات الحالية:
 
@@ -154,7 +154,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
 }
 ```
 
-## استيراد الخدمات الحالية {#importing-existing-services}
+## استيراد الخدمات الحالية
 
 يمكن استيراد خدمات ClickHouse Managed Postgres الحالية إلى حالة Terraform باستخدام معرّف الخدمة:
 
@@ -164,7 +164,7 @@ terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxx
 
 لا تُستعاد كلمة المرور عند الاستيراد (إذ لا تُرجعها واجهة برمجة تطبيقات). بعد الاستيراد، تؤدي أول عملية apply إلى تبديل الخدمة إلى `password` أو `password_wo` المعرَّفين في الإعدادات الخاصة بك.
 
-## العمليات غير المدعومة {#unsupported-operations}
+## العمليات غير المدعومة
 
 العناصر التالية غير موجودة عمدًا في مخطط المورد:
 

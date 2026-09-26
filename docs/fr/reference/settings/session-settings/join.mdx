@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## join_algorithm {#join_algorithm}
+## join_algorithm
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -110,7 +110,7 @@ ClickHouse essaie toujours d&#39;utiliser la jointure `partial_merge` si possibl
 Valeur legacy, à ne plus utiliser.
 Identique à `direct,hash`, c&#39;est-à-dire essayer d&#39;utiliser la jointure directe puis la jointure par hachage (dans cet ordre).
 
-## join_any_take_last_row {#join_any_take_last_row}
+## join_any_take_last_row
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,7 +133,7 @@ Voir aussi :
 * [moteur de table Join](/fr/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/fr/reference/settings/session-settings/join#join_default_strictness)
 
-## join_default_strictness {#join_default_strictness}
+## join_default_strictness
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -146,7 +146,7 @@ Valeurs possibles :
 * `ASOF` — Pour joindre des séquences avec une correspondance incertaine.
 * `Chaîne vide` — Si `ALL` ou `ANY` n&#39;est pas spécifié dans la requête, ClickHouse lève une exception.
 
-## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
+## join_on_disk_max_files_to_merge
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -158,7 +158,7 @@ Valeurs possibles :
 
 * Tout entier positif à partir de 2.
 
-## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
+## join_output_by_rowlist_perkey_rows_threshold
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -166,7 +166,7 @@ Valeurs possibles :
 
 La limite inférieure de la moyenne de lignes par clé dans la table de droite, utilisée pour déterminer s’il faut produire la sortie sous forme de liste de lignes dans un hash join.
 
-## join_overflow_mode {#join_overflow_mode}
+## join_overflow_mode
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -196,7 +196,7 @@ Valeur par défaut : `THROW`.
 * [clause JOIN](/fr/reference/statements/select/join)
 * [moteur de table Join](/fr/reference/engines/table-engines/special/join)
 
-## join_use_nulls {#join_use_nulls}
+## join_use_nulls
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

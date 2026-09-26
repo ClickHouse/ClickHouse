@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## compatibility {#compatibility}
+## compatibility
 
 Le paramètre `compatibility` fait que ClickHouse utilise les paramètres par défaut d’une version antérieure de ClickHouse, à l’exception des modifications consignées dans l’historique des changements de paramètres.
 
@@ -30,7 +30,7 @@ Désactivé par défaut.
   Cependant, le paramètre `compatibility` peut être surchargé au niveau de l’utilisateur, du rôle, du profil, de la requête ou de la session à l’aide des mécanismes standard de configuration de ClickHouse, par exemple `SET compatibility = '22.3'` dans une session ou `SETTINGS compatibility = '22.3'` dans une requête.
 </Note>
 
-## compatibility_s3_presigned_url_query_in_path {#compatibility_s3_presigned_url_query_in_path}
+## compatibility_s3_presigned_url_query_in_path
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

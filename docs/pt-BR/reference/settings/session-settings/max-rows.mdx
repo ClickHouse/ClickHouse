@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## max_rows_for_lazy_final {#max_rows_for_lazy_final}
+## max_rows_for_lazy_final
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" />
 
@@ -21,13 +21,13 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 
 Número máximo de linhas no Set usado na otimização lazy FINAL. Se esse limite for excedido, volta para o FINAL normal.
 
-## max_rows_in_distinct {#max_rows_in_distinct}
+## max_rows_in_distinct
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 O número máximo de linhas distintas ao usar DISTINCT.
 
-## max_rows_in_join {#max_rows_in_join}
+## max_rows_in_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,13 +53,13 @@ Valores possíveis:
 * Inteiro positivo.
 * `0` — Número ilimitado de linhas.
 
-## max_rows_in_set {#max_rows_in_set}
+## max_rows_in_set
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 O número máximo de linhas de um Set de dados na cláusula IN criado a partir de uma subconsulta.
 
-## max_rows_in_set_to_optimize_join {#max_rows_in_set_to_optimize_join}
+## max_rows_in_set_to_optimize_join
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -72,7 +72,7 @@ Valores possíveis:
 * 0 — Desabilita.
 * Qualquer inteiro positivo.
 
-## max_rows_to_group_by {#max_rows_to_group_by}
+## max_rows_to_group_by
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -84,7 +84,7 @@ linhas (chaves GROUP BY únicas), o comportamento será determinado por
 &#39;group&#95;by&#95;overflow&#95;mode&#39;, que por padrão é `throw`, mas também pode ser alterado
 para um modo aproximado de GROUP BY.
 
-## max_rows_to_read {#max_rows_to_read}
+## max_rows_to_read
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -93,7 +93,7 @@ A restrição é verificada para cada fragmento de dados processado, aplicada ap
 expressão de tabela mais profunda e, ao ler de um servidor remoto, verificada apenas no
 servidor remoto.
 
-## max_rows_to_read_leaf {#max_rows_to_read_leaf}
+## max_rows_to_read_leaf
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -114,7 +114,7 @@ A restrição é verificada para cada fragmento de dados processado.
   Essa configuração é instável com `prefer_localhost_replica=1`.
 </Note>
 
-## max_rows_to_sort {#max_rows_to_sort}
+## max_rows_to_sort
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -122,7 +122,7 @@ O número máximo de linhas antes da ordenação. Isso permite limitar o consumo
 Se for necessário processar mais registros do que a quantidade especificada para a operação ORDER BY,
 o comportamento será determinado por `sort_overflow_mode`, que por padrão está definido como `throw`.
 
-## max_rows_to_transfer {#max_rows_to_transfer}
+## max_rows_to_transfer
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

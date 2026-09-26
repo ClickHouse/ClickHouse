@@ -39,7 +39,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
   إذا كان `alter_sync` مضبوطًا على `2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`. مع `alter_sync = 3` لا يُنتظر وصول النسخ المتماثلة غير النشطة، لذا لا يُطرح أي استثناء.
 </Note>
 
-## DRY RUN {#dry-run}
+## DRY RUN
 
 يحاكي عبارة `DRY RUN` دمج الأجزاء المحددة من دون تثبيت النتيجة. ويُكتب الجزء المدموج في موقع مؤقت، ثم يُتحقَّق منه ويُتخلَّص منه بعد ذلك. وتبقى الأجزاء الأصلية وبيانات الجدول من دون تغيير.
 
@@ -88,7 +88,7 @@ ORDER BY name;
 └─────────────┴──────┘
 ```
 
-## تعبير BY {#by-expression}
+## تعبير BY
 
 إذا كنت تريد إجراء إزالة التكرار على مجموعة مخصّصة من الأعمدة بدلًا من جميع الأعمدة، فيمكنك تحديد قائمة الأعمدة صراحةً أو استخدام أي مزيج من تعبيرات [`*`](/ar/reference/statements/select/index#asterisk) و[`COLUMNS`](/ar/reference/statements/select/index#select-clause) و[`EXCEPT`](/ar/reference/statements/select/except_modifier). ويجب أن تتضمن قائمة الأعمدة المكتوبة صراحةً أو الموسَّعة ضمنيًا جميع الأعمدة المحددة في تعبير ترتيب الصفوف (أي كلًّا من المفتاح الأساسي ومفتاح الفرز) وتعبير التقسيم (مفتاح التقسيم).
 
@@ -155,7 +155,7 @@ SELECT * FROM example;
 
 تُنفَّذ جميع الأمثلة التالية على هذه الحالة، التي تضم 5 صفوف.
 
-#### `DEDUPLICATE` {#deduplicate}
+#### `DEDUPLICATE`
 
 عندما لا تُحدَّد الأعمدة المستخدمة لإزالة التكرار، تُؤخذ جميعها في الحسبان. ولا يُزال الصف إلا إذا كانت جميع القيم في كل الأعمدة مساويةً للقيم المناظرة في الصف السابق:
 
@@ -180,7 +180,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-#### `DEDUPLICATE BY *` {#deduplicate-by-}
+#### `DEDUPLICATE BY *`
 
 عندما تُحدَّد الأعمدة ضمنيًا، يُزال التكرار من الجدول استنادًا إلى جميع الأعمدة التي ليست `ALIAS` أو `MATERIALIZED`. وبالنظر إلى الجدول أعلاه، فهذه هي الأعمدة `primary_key` و`secondary_key` و`value` و`partition_key`:
 
@@ -205,7 +205,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-#### `DEDUPLICATE BY * EXCEPT` {#deduplicate-by--except}
+#### `DEDUPLICATE BY * EXCEPT`
 
 أزل التكرار بحسب جميع الأعمدة التي ليست `ALIAS` أو `MATERIALIZED`، مع استبعاد `value` صراحةً: أعمدة `primary_key` و`secondary_key` و`partition_key`.
 
@@ -229,7 +229,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-#### `DEDUPLICATE BY <list of columns>` {#deduplicate-by-list-of-columns}
+#### `DEDUPLICATE BY <list of columns>`
 
 أزل التكرار صراحةً استنادًا إلى الأعمدة `primary_key` و`secondary_key` و`partition_key`:
 
@@ -253,7 +253,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-#### `DEDUPLICATE BY COLUMNS(<regex>)` {#deduplicate-by-columnsregex}
+#### `DEDUPLICATE BY COLUMNS(<regex>)`
 
 أزل التكرار استنادًا إلى جميع الأعمدة التي تطابق تعبيرًا نمطيًا: الأعمدة `primary_key` و`secondary_key` و`partition_key`:
 

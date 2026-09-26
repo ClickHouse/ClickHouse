@@ -17,7 +17,7 @@ import DataTypesMatching from '/snippets/ja/data-types-matching.mdx';
 | -- | -- | ----- |
 | ✔  | ✔  |       |
 
-## 説明 {#description}
+## 説明
 
 [Apache Avro](https://avro.apache.org/) は、効率的なデータ処理のためにバイナリエンコーディングを使用する、行指向のシリアライゼーションフォーマットです。`AvroConfluent` フォーマットは、[Confluent スキーマレジストリ](https://docs.confluent.io/current/schema-registry/index.html) (または API 互換のサービス) を使用した、Avro エンコード済みメッセージの読み書きをサポートします。
 
@@ -25,11 +25,11 @@ import DataTypesMatching from '/snippets/ja/data-types-matching.mdx';
 
 <a id="data-types-matching" />
 
-## データ型マッピング {#data-type-mapping}
+## データ型マッピング
 
 <DataTypesMatching />
 
-## フォーマット設定 {#format-settings}
+## フォーマット設定
 
 [//]: # "NOTE これらの設定はセッションレベルでも設定できますが、一般的ではないため、あまり目立つように記載するとユーザーを混乱させる可能性があります。"
 
@@ -44,9 +44,9 @@ import DataTypesMatching from '/snippets/ja/data-types-matching.mdx';
 | `output_format_avro_confluent_subject`           | 出力用: スキーマレジストリでスキーマを登録する subject 名。書き込み時に必須です。                                                      |         |
 | `output_format_avro_string_column_pattern`       | 出力用: Avro `string` としてシリアライズする String カラムの正規表現 (デフォルトは `bytes`) 。                                   |         |
 
-## 例 {#examples}
+## 例
 
-### Kafka からの読み込み {#reading-from-kafka}
+### Kafka からの読み込み
 
 [Kafka table engine](/ja/reference/engines/table-engines/integrations/kafka) を使用して Avro でエンコードされた Kafka トピックを読み込むには、`format_avro_schema_registry_url` 設定でスキーマレジストリの URL を指定します。
 
@@ -67,7 +67,7 @@ format_avro_schema_registry_url = 'http://schema-registry-url';
 SELECT * FROM topic1_stream;
 ```
 
-### Kafka への書き込み {#writing-to-kafka}
+### Kafka への書き込み
 
 AvroConfluent メッセージを Kafka トピック に書き込むには、スキーマレジストリの URL と subject 名の両方を設定します。スキーマは最初の書き込み時に、自動的にレジストリへ登録されます。
 
@@ -88,7 +88,7 @@ output_format_avro_confluent_subject = 'topic1-value';
 INSERT INTO topic1_sink VALUES ('hello', 'world');
 ```
 
-#### Basic認証を使用する {#using-basic-authentication}
+#### Basic認証を使用する
 
 スキーマレジストリでBasic認証が必要な場合 (例: Confluent Cloud を使用している場合) 、`format_avro_schema_registry_url` 設定に URL エンコードされた認証情報を指定できます。
 
@@ -107,7 +107,7 @@ kafka_format = 'AvroConfluent',
 format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry-url';
 ```
 
-## トラブルシューティング {#troubleshooting}
+## トラブルシューティング
 
 インジェストの進行状況を監視し、Kafkaコンシューマーのエラーをデバッグするには、[`system.kafka_consumers` システムテーブル](/ja/reference/system-tables/kafka_consumers)をクエリします。デプロイ環境に複数のレプリカがある場合 (例: ClickHouse Cloud) は、[`clusterAllReplicas`](/ja/reference/functions/table-functions/cluster) テーブル関数を使用する必要があります。
 

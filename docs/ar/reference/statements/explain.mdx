@@ -60,7 +60,7 @@ Union
             Output: number
 ```
 
-## أنواع EXPLAIN {#explain-types}
+## أنواع EXPLAIN
 
 * `AST` — شجرة البنية النحوية المجردة.
 * `SYNTAX` — نص الاستعلام بعد التحسينات على مستوى AST.
@@ -71,7 +71,7 @@ Union
 * `ESTIMATE` — العدد التقديري للصفوف والعلامات والأجزاء التي ستُقرأ من الجداول أثناء معالجة الاستعلام.
 * `TABLE OVERRIDE` — النتيجة التي تم التحقق من صحتها لتجاوز جدول على مخطط دالة الجدول.
 
-### EXPLAIN AST {#explain-ast}
+### EXPLAIN AST
 
 يعرض AST للاستعلام. يدعم جميع أنواع الاستعلامات، وليس `SELECT` فقط.
 
@@ -109,7 +109,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-### EXPLAIN SYNTAX {#explain-syntax}
+### EXPLAIN SYNTAX
 
 يعرض شجرة البنية النحوية المجرّدة (AST) للاستعلام بعد تحليل البنية النحوية.
 
@@ -150,7 +150,7 @@ ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
 ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-### EXPLAIN شجرة الاستعلام {#explain-query-tree}
+### EXPLAIN شجرة الاستعلام
 
 الإعدادات:
 
@@ -179,7 +179,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-### EXPLAIN PLAN {#explain-plan}
+### EXPLAIN PLAN
 
 يعرض خطوات خطة تنفيذ الاستعلام.
 
@@ -651,7 +651,7 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
-### EXPLAIN PIPELINE {#explain-pipeline}
+### EXPLAIN PIPELINE
 
 الإعدادات:
 
@@ -691,7 +691,7 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-### EXPLAIN ANALYZE {#explain-analyze}
+### EXPLAIN ANALYZE
 
 يقوم `EXPLAIN ANALYZE` فعليًا بتشغيل الاستعلام، ثم يتجاهل صفوف النتائج ويطبع شجرة الخطة نفسها كما في `EXPLAIN PLAN`، مع إرفاق كل خطوة بتفاصيل عمّا حدث فعليًا أثناء التنفيذ.
 
@@ -801,7 +801,7 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. الحد الأقصى لعدد خيوط معالجة الاستعلام المحدَّد في `max_threads`.
 </Note>
 
-#### خطوات الربط {#explain-analyze-join-steps}
+#### خطوات الربط
 
 في خطوة ربط، يطبع `EXPLAIN ANALYZE` أسطرًا تقارن تقديرات محسّن ترتيب الربط بما حدث فعليًا (انظر [مقاييس الربط المقدّرة مقابل الفعلية](#explain-analyze-join-estimation))، وأسطر *المشاركة* لكل جانب — `Left` و`Right` — ثم أي أسطر خاصة بتنفيذ الربط. تُغطّى جميع قيم [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm) (`hash`، `parallel_hash`، `grace_hash`، `partial_merge`، `full_sorting_merge`، `parallel_full_sorting_merge`، `direct`)، وكذلك التنفيذان اللذان لا يمكن للإعداد اختيارهما: ربط `CROSS` أو `COMMA`، وأي قسم `ON` لا يحتوي على مساواة مفتاح، ومحرك الجدول [`Join`](/ar/reference/engines/table-engines/special/join). يُبلّغ معظمها عن كلا الجانبين، بينما يُبلّغ بعضها فقط عن الجانب الذي يجسّده ماديًا (على سبيل المثال، يطبع `direct` ‏`Left:` فقط).
 
@@ -822,7 +822,7 @@ Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <ma
 
 يُعرض الرقم الذي لا يمكن اشتقاقه بدقة على أنه `not collected` بدلًا من `0`. يُشتق كل من `match rate` و`fanout` من `matched`، لذا يعرض الجانب الذي لا تتوفر لديه قيمة `matched` القيم الثلاث كلها باعتبارها `not collected`.
 
-#### مقاييس ربط التقديرية والفعلية {#explain-analyze-join-estimation}
+#### مقاييس ربط التقديرية والفعلية
 
 تتضمن خطوة ربط تقديرات محسّن ترتيب الربط — وهي نفسها التي يعرضها `EXPLAIN PLAN` (راجع قسم [EXPLAIN PLAN](#explain-plan)) — ويطبع `EXPLAIN ANALYZE` كلًا منها إلى جانب القيمة المقاسة:
 
@@ -860,7 +860,7 @@ Join (JOIN FillRightFirst)
 │    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
 ```
 
-#### Fanout {#explain-analyze-fanout}
+#### Fanout
 
 يقيس `fanout` مدى تضاعف الصفوف:
 
@@ -875,7 +875,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 * `fanout = 1` — ربط نظيف بنسبة 1:1؛ إذ أنتج كل صف متطابق صف إخراج واحدًا بالضبط.
 * `fanout > 1` — ربط بنسبة 1:N؛ إذ ضاعفت المفاتيح المكررة في الجانب الآخر عدد الصفوف. وتشير قيمة كبيرة في كلا الجانبين في الوقت نفسه إلى تضخم ديكارتي غير مقصود.
 
-#### عندما تتطلب الأرقام `matches = 1` {#explain-analyze-matches}
+#### عندما تتطلب الأرقام `matches = 1`
 
 تنتج معظم هذه الأرقام تلقائيًا عن البيانات التي ينشئها الربط، ويعرضها `EXPLAIN ANALYZE` العادي. أما البقية فتتطلب تتبعًا إضافيًا لا يجريه الربط لولا ذلك، لذا لا تُعرض إلا مع `EXPLAIN ANALYZE matches = 1`. ويعتمد ذلك على الخوارزمية؛ ففي عائلة التجزئة توجد حالتان:
 
@@ -924,7 +924,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 عندما تُرجع خوارزميتان رقمًا، تكون الأرقام متطابقة. تمتلك خوارزميات الدمج معلومات إضافية فحسب، لكنها لا تختلف في تعريف ما يُعدّ تطابقًا.
 
-#### الأسطر الخاصة بالخوارزمية {#explain-analyze-join-algorithm-lines}
+#### الأسطر الخاصة بالخوارزمية
 
 لنلقِ نظرة على الأسطر الإضافية التي يضيفها كل تنفيذ لعملية الربط.
 
@@ -981,7 +981,7 @@ Spill: yes · right spilled <right_spilled_bytes>
 
 في عملية ربط مع محرك الجدول [`Join`](/ar/reference/engines/table-engines/special/join)، يُبلّغ عن كلا الجانبين، إلى جانب السطر `Hash table:` الذي يصف الجدول المُنشأ مسبقًا. ويعرض الجانب الأيمن عدد الصفوف المخزنة في المحرك، لا صفوف عملية بناء خاصة بكل query.
 
-#### الأوقات لكل معالِج {#explain-analyze-processors}
+#### الأوقات لكل معالِج
 
 عند استخدام `processors = 1`، يُطبَع سطر إضافي أسفل كل مرحلة يوضح توزيع الزمن المنقضي عبر معالجات المرحلة:
 
@@ -991,7 +991,7 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 يشير `<n>` إلى عدد المعالِجات في هذه المرحلة. ويشير الفارق الكبير بين `median` و`max` إلى اختلال في توازن الحمل بين المعالِجات المتوازية.
 
-### EXPLAIN ESTIMATE {#explain-estimate}
+### EXPLAIN ESTIMATE
 
 يعرض العدد التقديري للصفوف والعلامات والأجزاء التي ستُقرأ من الجداول عند معالجة الاستعلام. يعمل مع الجداول من عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -1015,7 +1015,7 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-### EXPLAIN WHATIF {#explain-whatif}
+### EXPLAIN WHATIF
 
 يقدّر الفائدة التي يمكن أن يوفّرها فهرس تخطٍّ افتراضي لاستعلام `SELECT`، *من دون* إجراء materializing للفهرس على القرص. حدِّد مرشحًا واحدًا أو أكثر باستخدام [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index#create-hypothetical-index)، ثم شغّل `EXPLAIN WHATIF SELECT ...` لمعرفة ما يلي لكل مرشح: مدى قابليته للتطبيق، والعدد التقديري للعلامات المقروءة، والبايتات التقديرية، ونسبة التخطي.
 
@@ -1139,7 +1139,7 @@ Estimation:
 
 إذا لم يكن أيٌّ من المسارين متاحًا (مثلًا، `empirical = 0` ولم تُعرَّف أي إحصاءات أعمدة)، فإن المُقدِّر يُرجع `source: applicability_only` و`skip_ratio: 0.0%` بشكل متحفّظ.
 
-### EXPLAIN TABLE OVERRIDE {#explain-table-override}
+### EXPLAIN TABLE OVERRIDE
 
 يعرض ناتج تطبيق تجاوز على مخطط جدول تم الوصول إليه عبر دالة جدول.
 كما يُجري بعض عمليات التحقق، ويُطلق استثناءً إذا كان هذا التجاوز سيتسبب في أي نوع من الإخفاق.

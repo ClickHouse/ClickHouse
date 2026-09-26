@@ -10,7 +10,7 @@ doc_type: 'guide'
 
 이 엔진을 사용하면 ClickHouse를 [Redis](https://redis.io/)와 통합할 수 있습니다. Redis는 키-값(kv) 모델을 사용하므로, `where k=xx` 또는 `where k in (xx, xx)`와 같이 특정 키를 지정하는 방식으로만 쿼리할 것을 강력히 권장합니다.
 
-## 테이블 생성하기 {#creating-a-table}
+## 테이블 생성하기
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -42,7 +42,7 @@ PRIMARY KEY(primary_key_name);
   `key equals` 또는 `in filtering`이 있는 쿼리는 Redis의 다중 키 조회로 최적화됩니다. 필터링 키 없이 쿼리하면 전체 테이블 스캔이 발생하며, 이는 비용이 큰 작업입니다.
 </Note>
 
-## 사용 예시 {#usage-example}
+## 사용 예시
 
 일반 인수로 `Redis` engine을 사용하여 ClickHouse에 테이블을 생성합니다:
 
@@ -148,7 +148,7 @@ TRUNCATE TABLE redis_table SYNC;
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
-## 제한 사항 {#limitations}
+## 제한 사항
 
 Redis engine는 `where k > xx`와 같은 스캔 쿼리도 지원하지만, 몇 가지 제한 사항이 있습니다.
 

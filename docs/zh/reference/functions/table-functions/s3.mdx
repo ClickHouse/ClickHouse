@@ -19,7 +19,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 使用 `s3 表函数` 配合 [`INSERT INTO...SELECT`](/zh/reference/statements/insert-into#inserting-the-results-of-select) 时，数据会以流式方式读取并插入。内存中只会保留少量数据块，同时这些块会持续从 S3 读取并写入目标表。
 
-## 语法 {#syntax}
+## 语法
 
 ```sql
 s3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers], [,extra_credentials], [,partition_strategy], [,partition_columns_in_data_file])
@@ -74,11 +74,11 @@ s3(named_collection[, option=value [,..]])
 | `no_sign_request`             | 默认禁用。                                                                                                                                                               |
 | `expiration_window_seconds`   | 默认值为 120。                                                                                                                                                           |
 
-## 返回值 {#returned-value}
+## 返回值
 
 一个具有指定结构的表，用于从指定文件读取数据或向其中写入数据。
 
-## 示例 {#examples}
+## 示例
 
 从 S3 文件 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv` 对应的表中选择前 5 行：
 
@@ -133,7 +133,7 @@ LIMIT 5;
   ```
 </Note>
 
-## 使用方法 {#usage}
+## 使用方法
 
 假设我们在 S3 上有若干文件，URI 如下：
 
@@ -248,9 +248,9 @@ SELECT count(*)
 FROM s3(creds, url='https://s3-object-url.csv')
 ```
 
-## 分区写入 {#partitioned-write}
+## 分区写入
 
-### 分区策略 {#partition-strategy}
+### 分区策略
 
 仅支持 `INSERT` 查询。
 
@@ -296,7 +296,7 @@ INSERT INTO TABLE FUNCTION
 
 因此，数据会分别写入不同存储桶中的三个文件：`my_bucket_1/file.csv`、`my_bucket_10/file.csv` 和 `my_bucket_20/file.csv`。
 
-## 访问公共桶 {#accessing-public-buckets}
+## 访问公共桶
 
 ClickHouse 会尝试从多种不同类型的来源获取凭证。
 有时，访问某些公共桶时会因此出现问题，导致客户端返回 `403` 错误码。
@@ -312,7 +312,7 @@ FROM s3(
 LIMIT 5;
 ```
 
-## 使用 S3 凭证 (ClickHouse Cloud) {#using-s3-credentials-clickhouse-cloud}
+## 使用 S3 凭证 (ClickHouse Cloud)
 
 对于非公开 桶，用户可以向该函数传入 `aws_access_key_id` 和 `aws_secret_access_key`。例如：
 
@@ -338,7 +338,7 @@ SELECT count() FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.co
 
 更多示例可在[此处](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely#access-your-s3-bucket-with-the-clickhouseaccess-role)查看
 
-## 处理归档文件 {#working-with-archives}
+## 处理归档文件
 
 假设我们在 S3 上有几个具有以下 URI 的归档文件：
 
@@ -364,18 +364,18 @@ FROM s3(
   ZIP 和 TAR 归档可从任何受支持的存储位置访问，而 7Z 归档只能从安装 ClickHouse 的本地文件系统读取。
 </Note>
 
-## 插入数据 {#inserting-data}
+## 插入数据
 
 请注意，只能向新文件中插入数据行。不会执行合并周期或文件拆分操作。文件一旦写入，后续插入就会失败。更多详情请参见[此处](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data)。
 
-## 虚拟列 {#virtual-columns}
+## 虚拟列
 
 * `_path` — 文件路径。Type: `LowCardinality(String)`。如果是归档文件，则按以下格式显示路径：`"{path_to_archive}::{path_to_file_inside_archive}"`
 * `_file` — 文件名。Type: `LowCardinality(String)`。如果是归档文件，则显示归档内文件的名称。
 * `_size` — 文件大小 (以字节为单位) 。Type: `Nullable(UInt64)`。如果文件大小未知，则值为 `NULL`。如果是归档文件，则显示归档内文件的未压缩大小。
 * `_time` — 文件的最后修改时间。Type: `Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
 
-## use_hive_partitioning 设置 {#hive-style-partitioning}
+## use_hive_partitioning 设置
 
 这是向 ClickHouse 提供的一个提示，用于在读取时解析采用 Hive 风格分区的文件。它对写入没有影响。若要实现读写对称，请使用 `partition_strategy` 参数。
 
@@ -387,7 +387,7 @@ FROM s3(
 SELECT * FROM s3('s3://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-## 访问请求方付费桶 {#accessing-requester-pays-buckets}
+## 访问请求方付费桶
 
 要访问请求方付费桶，必须在所有请求中传递请求头 `x-amz-request-payer = requester`。这可以通过向 s3 函数传入参数 `headers('x-amz-request-payer' = 'requester')` 来实现。例如：
 
@@ -405,7 +405,7 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
-## 解析相对 URL {#resolving-relative-urls}
+## 解析相对 URL
 
 [s3&#95;base](/zh/reference/settings/session-settings/s3#s3_base) 设置允许向 `s3` 函数传递相对 URL。设置 `s3_base` 后，如果函数参数不包含方案，则会根据 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) 以基础 URL 为基准进行解析，规则与 [url](/zh/reference/functions/table-functions/url#resolving-relative-urls) 函数的 [url&#95;base](/zh/reference/settings/session-settings/url#url_base) 设置相同。绝对 URL 将保持不变并直接传递。
 
@@ -418,14 +418,14 @@ SET s3_base = 's3://clickhouse-public-datasets/';
 SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
-## 存储设置 {#storage-settings}
+## 存储设置
 
 * [s3&#95;truncate&#95;on&#95;insert](/zh/reference/settings/session-settings/s3#s3_truncate_on_insert) - 允许在插入前先截断文件。默认禁用。
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/zh/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - 如果 format 带有后缀，则允许在每次插入时创建新文件。默认禁用。
 * [s3&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings/s3#s3_skip_empty_files) - 允许在读取时跳过空文件。默认启用。
 * [s3&#95;base](/zh/reference/settings/session-settings/s3#s3_base) - 用于解析传递给 `s3` 函数的相对 URL 的基础 URL。默认为空 (禁用) 。
 
-## 嵌套 Avro schema {#nested-avro-schemas}
+## 嵌套 Avro schema
 
 读取包含**嵌套记录**且各文件之间存在差异的 Avro 文件时 (例如，某些文件在嵌套对象内多了一个额外字段) ，ClickHouse 可能会返回类似以下错误：
 
@@ -455,7 +455,7 @@ FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
 ```
 
-## Related {#related}
+## Related
 
 * [S3 engine](/zh/reference/engines/table-engines/integrations/s3)
 * [Integrating S3 with ClickHouse](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

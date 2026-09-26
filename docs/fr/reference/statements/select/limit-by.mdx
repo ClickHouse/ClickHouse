@@ -23,7 +23,7 @@ Lors du traitement de la requête, ClickHouse sélectionne les données triées 
 
 Si vous souhaitez utiliser des numéros de colonne au lieu de noms de colonnes dans la clause `LIMIT BY`, activez le paramètre [enable&#95;positional&#95;arguments](/fr/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments).
 
-## Exemples {#examples}
+## Exemples
 
 Table d’exemple :
 
@@ -122,7 +122,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT -2 OFFSET 1 BY id;
 
 Pour `id = 1`, la première ligne (`10`) est ignorée ; les 2 dernières (`11` et `12`) sont toutes deux renvoyées. Pour `id = 2`, la première ligne (`20`) est ignorée, ne laissant que `21`.
 
-## LIMIT BY ALL {#limit-by-all}
+## LIMIT BY ALL
 
 `LIMIT BY ALL` revient à lister toutes les expressions du SELECT qui ne sont pas des fonctions d’agrégation.
 
@@ -152,7 +152,7 @@ est identique à
 SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2);
 ```
 
-## Exemples {#examples-limit-by-all}
+## Exemples
 
 Exemple de table :
 

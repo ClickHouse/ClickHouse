@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Fournit une interface de type table pour les tables [Delta Lake](https://github.com/delta-io/delta) dans Amazon S3, Azure Blob Storage ou un système de fichiers monté localement, avec prise en charge de la lecture et de l&#39;écriture (écriture pour S3 et GCS à partir de la v25.10, pour Azure à partir de la v26.9)
 
-## Syntaxe {#syntax}
+## Syntaxe
 
 `deltaLake` est un alias de `deltaLakeS3`, maintenu pour des raisons de compatibilité.
 
@@ -24,20 +24,20 @@ deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, 
 deltaLakeLocal(path, [,format])
 ```
 
-## Arguments {#arguments}
+## Arguments
 
 Les arguments de cette fonction de table sont les mêmes que ceux des fonctions de table `s3`, `azureBlobStorage`, `HDFS` et `file`.
 L’argument `format` correspond au format des fichiers de données de la table Delta Lake.
 
 Un paramètre facultatif `extra_credentials` peut être utilisé pour transmettre un `role_arn` afin d’utiliser le contrôle d’accès basé sur les rôles dans ClickHouse Cloud. Consultez [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour les étapes de configuration.
 
-## Valeur renvoyée {#returned-value}
+## Valeur renvoyée
 
 Renvoie une table ayant la structure spécifiée pour lire des données depuis la table Delta Lake indiquée ou y écrire des données.
 
-## Exemples {#examples}
+## Exemples
 
-### Lecture des données {#reading-data}
+### Lecture des données
 
 Prenons une table dans un stockage S3 à l’adresse `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`.
 Pour lire les données de cette table dans ClickHouse, exécutez :
@@ -58,7 +58,7 @@ LIMIT 2
 └───────────────────────────────────────────────────────────────────────┴───────────┘
 ```
 
-### Insertion de données {#inserting-data}
+### Insertion de données
 
 Considérez une table dans un stockage S3 à l’emplacement `s3://ch-docs-s3-bucket/people_10k/`.
 Les écritures Delta Lake sont une fonctionnalité bêta désactivée par défaut. Activez-les comme suit (`allow_delta_lake_writes` est disponible à partir de la version 26.7 ; sur les versions antérieures, utilisez `allow_experimental_delta_lake_writes`) :
@@ -97,7 +97,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
    └───────┴───────────┴──────────┴────────┴─────┘
 ```
 
-## Colonnes virtuelles {#virtual-columns}
+## Colonnes virtuelles
 
 * `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
 * `_file` — Nom du fichier. Type : `LowCardinality(String)`.
@@ -105,7 +105,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 * `_time` — Date et heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si cette information est inconnue, la valeur est `NULL`.
 * `_etag` — ETag du fichier. Type : `LowCardinality(String)`. Si l’ETag est inconnu, la valeur est `NULL`.
 
-## Voir aussi {#related}
+## Voir aussi
 
 * [Moteur DeltaLake](/fr/reference/engines/table-engines/integrations/deltalake)
 * [Fonction de table DeltaLake cluster](/fr/reference/functions/table-functions/deltalakeCluster)

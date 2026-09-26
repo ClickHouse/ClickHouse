@@ -14,7 +14,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 Un cluster managé exécute une petite couche plateforme dont dépendent les services ClickHouse. ClickHouse Cloud propose des mises à jour de cette couche ; l&#39;executor n&#39;applique rien tant que vous ne les avez pas approuvées une à une avec vos propres identifiants de cluster.
 
-## Qu&#39;est-ce qu&#39;une mise à jour de la plateforme {#what-a-platform-update-is}
+## Qu&#39;est-ce qu&#39;une mise à jour de la plateforme
 
 La couche plateforme se compose de trois composants : le snapshot controller, le ClickHouse Operator et les collectors de supervision. Ils s&#39;installent dans cet ordre, car chacun a besoin des définitions de custom resource du précédent. Les services utilisent une StorageClass nommée `gp3-encrypted` (volumes gp3 chiffrés) livrée avec eux.
 
@@ -27,11 +27,11 @@ Un bundle s&#39;applique en deux volets :
 
 L&#39;executor n&#39;applique jamais un bundle que vous n&#39;avez pas approuvé. Il refuse toute synchronisation de plateforme dont le volet permissions est absent, dont le sha256 diffère de celui approuvé, ou dont le jeton a expiré. Le refus signale qu&#39;une approbation est nécessaire et précise le sha256 du bundle en attente. La création d&#39;un service nécessitant une définition de custom resource absente de votre plateforme actuelle échoue de la même manière, avec la même commande à exécuter.
 
-## Approuver une mise à jour de la plateforme {#approve-a-platform-update}
+## Approuver une mise à jour de la plateforme
 
 <Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="Flux d'approbation de la plateforme ClickHouse Connector" />
 
-### Identifiants de registry {#registry-credentials}
+### Identifiants de registry
 
 L&#39;authentication auprès du registry dépend du mode de distribution d&#39;image enregistré pour votre environnement :
 
@@ -127,7 +127,7 @@ Réservez la procédure depuis un poste de travail Kubernetes décrite ci-dessou
   </Step>
 </Steps>
 
-## La fenêtre d&#39;approbation {#the-approval-window}
+## La fenêtre d&#39;approbation
 
 Une approbation émet un jeton pour l&#39;identity `pcm-platform`, valable 2 heures par défaut (`--ttl` permet de modifier cette durée). L&#39;executor ne le renouvelle jamais. Une fois expiré, l&#39;executor ne peut plus agir sur la couche plateforme et refuse la synchronisation de plateforme suivante en affichant de nouveau le message d&#39;approbation. Il s&#39;agit d&#39;un comportement voulu, indépendant de la connectivité : une approbation accordée alors que le connector est hors ligne expire tout de même selon sa propre horloge.
 
@@ -139,7 +139,7 @@ Exécutez de nouveau `approve` dans les cas suivants :
 
 Approuver de nouveau le même bundle ne présente aucun risque et remplace le jeton. Le bundle préparé reste en place après la synchronisation : une nouvelle approbation ne nécessite donc aucune nouvelle proposition.
 
-## Ce qu&#39;accorde l&#39;approbation {#what-the-approval-grants}
+## Ce qu&#39;accorde l&#39;approbation
 
 Vous appliquez le volet permissions : elle porte donc votre autorité ; l&#39;executor n&#39;en applique aucun élément. `approve` y appose le sha256 du bundle, et, avant de toucher à quoi que ce soit, l&#39;executor vérifie que chaque objet de permission du bundle qui lui a été transmis est présent et approuvé.
 
@@ -151,7 +151,7 @@ L&#39;executor applique le volet charge de travail en tant que `pcm-platform`. C
 
 L&#39;identity de cycle de vie des services de l&#39;executor, `pcm-executor`, est distincte et confinée aux namespaces des services. Elle ne peut pas écrire dans les namespaces de la plateforme ; ses reads, en revanche, ne sont pas limités par la protection par prefix. Pour l&#39;énumération complète des deux identities, consultez le [modèle de privilèges](/fr/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-## Réinitialiser un cluster de test {#resetting-a-test-cluster}
+## Réinitialiser un cluster de test
 
 `clicklink clctl platform reset` est destinée aux clusters de test : cette commande désinstalle les composants de la plateforme afin de pouvoir rejouer leur première installation. Avant toute modification, elle liste les clusters ClickHouse présents dans les namespaces appartenant à ce connector et refuse de poursuivre si un service existe.
 

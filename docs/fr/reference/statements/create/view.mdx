@@ -12,7 +12,7 @@ import { DeprecatedBadge } from "/snippets/fr/components/DeprecatedBadge/Depreca
 
 Crée une nouvelle vue. Les vues peuvent être [normales](#normal-view), [matérialisées](#materialized-view) et [matérialisées actualisables](#refreshable-materialized-view).
 
-## Vue normale {#normal-view}
+## Vue normale
 
 Syntaxe :
 
@@ -43,7 +43,7 @@ Cette requête est strictement équivalente à l’utilisation de la sous-requê
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-## Vue paramétrée {#parameterized-view}
+## Vue paramétrée
 
 Les vues paramétrées sont similaires aux vues normales, mais elles peuvent être créées avec des paramètres qui ne sont pas évalués immédiatement.
 Ces vues peuvent être utilisées avec des fonctions de table, en utilisant le nom de la vue comme nom de fonction et les valeurs des paramètres comme arguments.
@@ -66,7 +66,7 @@ De plus, les requêtes `DESCRIBE` ne fonctionnent que si des paramètres sont fo
 DESCRIBE view(column1=value1, column2=value2 ...)
 ```
 
-## Vue matérialisée {#materialized-view}
+## Vue matérialisée
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
@@ -86,7 +86,7 @@ AS SELECT ...
 
 `OR REPLACE` et `IF NOT EXISTS` sont mutuellement exclusifs : les combiner provoque une erreur de syntaxe.
 
-### CREATE OR REPLACE MATERIALIZED VIEW {#create-or-replace-materialized-view}
+### CREATE OR REPLACE MATERIALIZED VIEW
 
 `CREATE OR REPLACE MATERIALIZED VIEW` remplace de manière atomique une vue matérialisée existante ainsi que sa table de stockage interne, s’il y en a une. Cette opération nécessite un moteur de base de données `Atomic` ou `Replicated`.
 
@@ -184,7 +184,7 @@ Les vues se présentent comme des tables normales. Par exemple, elles figurent d
 
 Pour supprimer une vue, utilisez [DROP VIEW](/fr/reference/statements/drop#drop-view). Bien que `DROP TABLE` fonctionne également pour les VIEWs.
 
-## Sécurité SQL {#sql_security}
+## Sécurité SQL
 
 `DEFINER` et `SQL SECURITY` permettent de spécifier quel utilisateur ClickHouse utiliser lors de l’exécution de la requête sous-jacente de la vue.
 `SQL SECURITY` a trois valeurs possibles : `DEFINER`, `INVOKER` ou `NONE`. Vous pouvez spécifier n’importe quel utilisateur existant ou `CURRENT_USER` dans la clause `DEFINER`.
@@ -222,7 +222,7 @@ Pour modifier la sécurité SQL d’une vue existante, utilisez
 ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
 ```
 
-### Exemples {#examples}
+### Exemples
 
 ```sql
 CREATE VIEW test_view
@@ -236,7 +236,7 @@ SQL SECURITY INVOKER
 AS SELECT ...
 ```
 
-## Live View {#live-view}
+## Live View
 
 <DeprecatedBadge />
 
@@ -244,7 +244,7 @@ Cette fonctionnalité est obsolète et sera supprimée à l’avenir.
 
 Pour vous faciliter la tâche, l’ancienne documentation est disponible [ici](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
 
-## Vue matérialisée rafraîchissable {#refreshable-materialized-view}
+## Vue matérialisée rafraîchissable
 
 ```sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -283,7 +283,7 @@ Différences par rapport aux vues matérialisées classiques non rafraîchissabl
   Les paramètres de la partie `REFRESH ... SETTINGS` de la requête sont des paramètres de rafraîchissement (par ex. `refresh_retries`), distincts des paramètres classiques (par ex. `max_threads`). Les paramètres classiques peuvent être spécifiés à l’aide de `SETTINGS` à la fin de la requête.
 </Note>
 
-### Planification du rafraîchissement {#refresh-schedule}
+### Planification du rafraîchissement
 
 Exemples de planifications de rafraîchissement :
 
@@ -311,7 +311,7 @@ Au plus un seul rafraîchissement peut être en cours à la fois pour une vue do
 
 En général, le premier rafraîchissement démarre immédiatement après la création de la vue matérialisée : le temps écoulé depuis le dernier rafraîchissement est infini, donc toute planification indique qu’il faut la rafraîchir immédiatement. Si `EMPTY` est spécifié, ce rafraîchissement initial est ignoré, et le premier rafraîchissement a lieu à l’heure planifiée suivante ; par exemple, pour `EVERY 1 HOUR`, le premier rafraîchissement aura lieu à la fin de l’heure en cours.
 
-### Dans une base de données Replicated {#in-replicated-db}
+### Dans une base de données Replicated
 
 Si la vue matérialisée actualisable se trouve dans une [base de données Replicated](/fr/reference/engines/database-engines/replicated), les répliques se coordonnent entre elles afin qu&#39;une seule réplique effectue le rafraîchissement à chaque échéance planifiée. Le moteur de table [ReplicatedMergeTree](/fr/reference/engines/table-engines/mergetree-family/replication) est requis afin que toutes les répliques voient les données produites par le rafraîchissement.
 
@@ -321,7 +321,7 @@ En mode non-`APPEND`, seul le rafraîchissement coordonné est pris en charge. P
 
 La coordination s&#39;effectue via Keeper. Le chemin du znode est déterminé par le paramètre serveur [default&#95;replica&#95;path](/fr/reference/settings/server-settings/settings/default-replica#default_replica_path).
 
-### Dépendances d’actualisation {#refresh-dependencies}
+### Dépendances d’actualisation
 
 `DEPENDS ON` synchronise l’actualisation de différentes tables :
 
@@ -347,7 +347,7 @@ CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
   `DEPENDS ON` fonctionne uniquement entre des vues matérialisées actualisables. En particulier, si la vue dont elle dépend utilise `TO <table>`, veillez à utiliser le nom de la vue plutôt que celui de la table. Si la liste `DEPENDS ON` contient une table ordinaire, une vue non actualisable ou une faute de frappe, la vue ne sera jamais rafraîchie et affichera l’état `MissingDependencies` dans `system.view_refreshes`. Les dépendances peuvent être modifiées ou supprimées à l’aide de `ALTER` ; voir [Modification des paramètres de rafraîchissement](#changing-refresh-parameters).
 </Note>
 
-#### Utilisation de DEPENDS ON pour une latence de propagation cohérente {#using-depends-on-for-consistent-propagation-latency}
+#### Utilisation de DEPENDS ON pour une latence de propagation cohérente
 
 Si les deux vues utilisent `REFRESH EVERY` avec la même période, la dépendance s’applique à chaque créneau temporel.
 
@@ -371,7 +371,7 @@ La dépendance comme l’élément dépendant peuvent chacun sauter des créneau
   Y:             └►[10:00 ru------un]└►[11:00 ru---------------un]└►[13:00 run]
 ```
 
-#### Utilisation de DEPENDS ON pour le traitement de flux par lots {#using-depends-on-for-batched-stream-processing}
+#### Utilisation de DEPENDS ON pour le traitement de flux par lots
 
 Si `REFRESH EVERY` n’est pas utilisé, la vue dépendante X se rafraîchit si toutes ses dépendances ont été rafraîchies au moins une fois depuis le dernier rafraîchissement de X. `REFRESH AFTER T` ajoute un délai : la vue dépendante commencera à se rafraîchir T unités de temps après qu’une dépendance a terminé un rafraîchissement.
 
@@ -417,7 +417,7 @@ Les chaînes plus longues fonctionnent également.
 
 Cela ne fonctionne correctement que lorsque la coordination du rafraîchissement est activée, c’est-à-dire lorsque les vues se trouvent dans une base de données Replicated ou Shared database. Sans coordination, le redémarrage du serveur interrompt le cycle, ce qui nécessite un `SYSTEM REFRESH VIEW` manuel après chaque redémarrage, plutôt qu’une seule fois après la création des vues.
 
-### Paramètres de rafraîchissement {#refresh-settings}
+### Paramètres de rafraîchissement
 
 Paramètres de rafraîchissement disponibles :
 
@@ -426,7 +426,7 @@ Paramètres de rafraîchissement disponibles :
 * `refresh_retry_max_backoff_ms` - Limite de la croissance exponentielle du délai entre les tentatives de rafraîchissement. Par défaut : 60000 ms (1 minute).
 * `all_replicas` - Dans une [base de données Replicated](/fr/reference/engines/database-engines/replicated) avec `APPEND`, contrôle si toutes les répliques se rafraîchissent indépendamment ou si une seule réplique se rafraîchit à chaque heure planifiée. Ne peut pas être modifié après la création de la vue. Par défaut : `false`.
 
-### Modification des paramètres de rafraîchissement {#changing-refresh-parameters}
+### Modification des paramètres de rafraîchissement
 
 Les paramètres de rafraîchissement d’une vue matérialisée actualisable existante peuvent être modifiés à l’aide de [`ALTER TABLE ... MODIFY REFRESH`](/fr/reference/statements/alter/view#alter-table--modify-refresh-statement) :
 
@@ -469,7 +469,7 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 
-### Autres opérations {#other-operations}
+### Autres opérations
 
 L’état de toutes les vues matérialisées actualisables est disponible dans la table [`system.view_refreshes`](/fr/reference/system-tables/view_refreshes). Elle contient notamment la progression du rafraîchissement (s’il est en cours), la date et l’heure du dernier et du prochain rafraîchissement, ainsi que le message d’exception si un rafraîchissement a échoué.
 
@@ -481,12 +481,12 @@ Pour attendre la fin d’un rafraîchissement, utilisez [`SYSTEM WAIT VIEW`](/fr
   Fait amusant : la requête de rafraîchissement peut lire dans la vue en cours de rafraîchissement et voir la version des données antérieure au rafraîchissement. Cela signifie que vous pouvez implémenter le jeu de la vie de Conway : https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
 </Note>
 
-## Contenu associé {#related-content}
+## Contenu associé
 
 * Blog : [Travailler avec des données de séries temporelles dans ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
 * Blog : [Créer une solution d’observabilité avec ClickHouse - Partie 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
 
-## Vues temporaires {#temporary-views}
+## Vues temporaires
 
 ClickHouse prend en charge les **vues temporaires** avec les caractéristiques suivantes (comme pour les tables temporaires, le cas échéant) :
 
@@ -514,7 +514,7 @@ ClickHouse prend en charge les **vues temporaires** avec les caractéristiques s
 * **SHOW CREATE**
   Utilisez `SHOW CREATE TEMPORARY VIEW view_name;` pour afficher le DDL d’une vue temporaire.
 
-### Syntaxe {#temporary-views-syntax}
+### Syntaxe
 
 ```sql
 CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
@@ -522,7 +522,7 @@ CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
 
 `OR REPLACE` n’est **pas** pris en charge pour les vues temporaires (comme pour les tables temporaires). Si vous devez « remplacer » une vue temporaire, supprimez-la, puis recréez-la.
 
-### Exemples {#temporary-views-examples}
+### Exemples
 
 Créez une table source temporaire, ainsi qu’une vue temporaire basée sur celle-ci :
 
@@ -550,7 +550,7 @@ Supprimez-la :
 DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPORARY TABLE syntax
 ```
 
-### Restrictions / limites {#temporary-views-limitations}
+### Restrictions / limites
 
 * `CREATE OR REPLACE TEMPORARY VIEW ...` → **non autorisé** (utilisez `DROP` + `CREATE`).
 * `CREATE TEMPORARY MATERIALIZED VIEW ...` → **non autorisé**.
@@ -558,11 +558,11 @@ DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPOR
 * `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **non autorisé** (les objets temporaires sont locaux à la session).
 * `POPULATE`, `REFRESH`, `TO [db.table]`, les moteurs internes et toutes les clauses propres aux MV → **non applicables** aux vues temporaires.
 
-### Remarques sur les requêtes distribuées {#temporary-views-distributed-notes}
+### Remarques sur les requêtes distribuées
 
 Une **vue** temporaire n’est qu’une définition ; il n’y a donc aucune donnée à faire circuler. Si votre vue temporaire fait référence à des **tables** temporaires (par ex., `Memory`), leurs données peuvent être envoyées vers des serveurs distants lors de l’exécution distribuée des requêtes, de la même manière que pour les tables temporaires.
 
-#### Exemple {#temporary-views-distributed-example}
+#### Exemple
 
 ```sql
 -- A session-scoped, in-memory table

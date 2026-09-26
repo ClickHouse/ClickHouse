@@ -14,7 +14,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## allow_experimental_analyzer {#allow_experimental_analyzer}
+## allow_experimental_analyzer
 
 **الأسماء البديلة**: `enable_analyzer`
 
@@ -26,7 +26,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 المحلّل هو البنية التحتية لتحليل الاستعلامات وتخطيطها، وهو الإعداد الافتراضي منذ الإصدار v24.3. في الإصدار v26.9، تم تثبيت هذا الإعداد على قيمته المدعومة الوحيدة، `1`: تُرفض أي محاولة لتعيينه إلى `0`، ولم يعد إعداد `compatibility` يعيد تفعيله. وفي الإصدار v26.10، أُزيل تحليل الاستعلامات الذي كان ينتقل إليه. أزل `enable_analyzer = 0` من الاستعلامات وإعدادات الجلسة وملفات تعريف الإعدادات وإعدادات العميل. لمقارنة سلوك استعلام أو أدائه بتحليل الاستعلامات القديم، استخدم إصدارًا من ClickHouse أقدم من v26.9.
 
-## allow_experimental_cleanup_old_data_files_compaction {#allow_experimental_cleanup_old_data_files_compaction}
+## allow_experimental_cleanup_old_data_files_compaction
 
 <ExperimentalBadge />
 
@@ -36,7 +36,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يتيح تنظيف ملفات البيانات القديمة أثناء دمج Iceberg.
 
-## allow_experimental_database_hms_catalog {#allow_experimental_database_hms_catalog}
+## allow_experimental_database_hms_catalog
 
 <ExperimentalBadge />
 
@@ -46,7 +46,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 السماح باستخدام محرك قاعدة البيانات التجريبي DataLakeCatalog مع ‎catalog&#95;type = &#39;hms&#39;‎
 
-## allow_experimental_database_materialized_postgresql {#allow_experimental_database_materialized_postgresql}
+## allow_experimental_database_materialized_postgresql
 
 <ExperimentalBadge />
 
@@ -54,7 +54,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يسمح بإنشاء قاعدة بيانات باستخدام Engine=MaterializedPostgreSQL(...).
 
-## allow_experimental_database_paimon_rest_catalog {#allow_experimental_database_paimon_rest_catalog}
+## allow_experimental_database_paimon_rest_catalog
 
 <ExperimentalBadge />
 
@@ -64,7 +64,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 السماح باستخدام محرك قاعدة البيانات التجريبي DataLakeCatalog مع `catalog_type = 'paimon_rest'`
 
-## allow_experimental_eval_table_function {#allow_experimental_eval_table_function}
+## allow_experimental_eval_table_function
 
 <ExperimentalBadge />
 
@@ -74,7 +74,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يُمكّن دالة الجدول التجريبية `eval`.
 
-## allow_experimental_expire_snapshots {#allow_experimental_expire_snapshots}
+## allow_experimental_expire_snapshots
 
 <ExperimentalBadge />
 
@@ -84,7 +84,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يسمح بتنفيذ أمر Iceberg التجريبي `ALTER TABLE ... EXECUTE expire_snapshots`.
 
-## allow_experimental_hash_functions {#allow_experimental_hash_functions}
+## allow_experimental_hash_functions
 
 <ExperimentalBadge />
 
@@ -92,7 +92,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تفعيل دوال التجزئة التجريبية
 
-## allow_experimental_iceberg_compaction {#allow_experimental_iceberg_compaction}
+## allow_experimental_iceberg_compaction
 
 <ExperimentalBadge />
 
@@ -102,7 +102,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 السماح بالاستخدام الصريح لـ &#39;OPTIMIZE&#39; مع جداول Iceberg.
 
-## allow_experimental_kusto_dialect {#allow_experimental_kusto_dialect}
+## allow_experimental_kusto_dialect
 
 <ExperimentalBadge />
 
@@ -112,7 +112,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يتيح استخدام لهجة Kusto Query Language (KQL) كبديل لـ SQL.
 
-## allow_experimental_nlp_functions {#allow_experimental_nlp_functions}
+## allow_experimental_nlp_functions
 
 <ExperimentalBadge />
 
@@ -120,7 +120,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تمكين الدوال التجريبية لمعالجة اللغة الطبيعية.
 
-## allow_experimental_object_storage_queue_hive_partitioning {#allow_experimental_object_storage_queue_hive_partitioning}
+## allow_experimental_object_storage_queue_hive_partitioning
 
 <ExperimentalBadge />
 
@@ -130,7 +130,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 السماح باستخدام تقسيم Hive مع المحرّكين S3Queue/AzureQueue
 
-## allow_experimental_paimon_storage_engine {#allow_experimental_paimon_storage_engine}
+## allow_experimental_paimon_storage_engine
 
 <ExperimentalBadge />
 
@@ -140,7 +140,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يسمح بإنشاء جداول باستخدام محركات الجداول Paimon*.
 
-## allow_experimental_parallel_reading_from_replicas {#allow_experimental_parallel_reading_from_replicas}
+## allow_experimental_parallel_reading_from_replicas
 
 **الأسماء البديلة**: `enable_parallel_replicas`
 
@@ -148,7 +148,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 استخدم ما يصل إلى `max_parallel_replicas` من النسخ المتماثلة من كل shard لتنفيذ استعلام SELECT. تجري القراءة بالتوازي ويُنسَّق بينها ديناميكيًا. 0 - معطّل، 1 - مفعّل، مع تعطيلها بصمت عند الفشل، 2 - مفعّل، مع إصدار استثناء عند الفشل
 
-## allow_experimental_polyglot_dialect {#allow_experimental_polyglot_dialect}
+## allow_experimental_polyglot_dialect
 
 <ExperimentalBadge />
 
@@ -158,7 +158,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تمكين مُحوِّل SQL متعدد اللهجات — يحوّل SQL من أكثر من 30 لهجة (MySQL وPostgreSQL وSQLite وSnowflake وDuckDB وغيرها) إلى ClickHouse SQL.
 
-## allow_experimental_prql_dialect {#allow_experimental_prql_dialect}
+## allow_experimental_prql_dialect
 
 <ExperimentalBadge />
 
@@ -168,7 +168,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يتيح PRQL، وهو بديل لـ SQL.
 
-## allow_experimental_ytsaurus_dictionary_source {#allow_experimental_ytsaurus_dictionary_source}
+## allow_experimental_ytsaurus_dictionary_source
 
 <ExperimentalBadge />
 
@@ -178,7 +178,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 مصدر قاموس تجريبي للتكامل مع YTsaurus.
 
-## allow_experimental_ytsaurus_table_engine {#allow_experimental_ytsaurus_table_engine}
+## allow_experimental_ytsaurus_table_engine
 
 <ExperimentalBadge />
 
@@ -188,7 +188,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 محرك الجدول تجريبي للتكامل مع YTsaurus.
 
-## allow_experimental_ytsaurus_table_function {#allow_experimental_ytsaurus_table_function}
+## allow_experimental_ytsaurus_table_function
 
 <ExperimentalBadge />
 

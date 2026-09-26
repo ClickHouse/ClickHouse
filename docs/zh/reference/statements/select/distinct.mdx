@@ -54,7 +54,7 @@ SELECT DISTINCT ON (a,b) * FROM t1;
 └───┴───┴───┘
 ```
 
-## DISTINCT 和 ORDER BY {#distinct-and-order-by}
+## DISTINCT 和 ORDER BY
 
 ClickHouse 支持在同一个查询中，对不同的列分别使用 `DISTINCT` 和 `ORDER BY` 子句。`DISTINCT` 子句会在 `ORDER BY` 子句之前执行。
 
@@ -101,11 +101,11 @@ SELECT DISTINCT a FROM t1 ORDER BY b DESC;
 
 编写查询时，请将这一实现上的特性考虑在内。
 
-## NULL 处理 {#null-processing}
+## NULL 处理
 
 `DISTINCT` 对 [NULL](/zh/reference/syntax#null) 的处理方式相当于将 `NULL` 视为一个特定值，且 `NULL==NULL`。换句话说，在 `DISTINCT` 的结果中，包含 `NULL` 的不同组合都只会出现一次。这与 `NULL` 在大多数其他场景下的处理方式不同。
 
-## 替代方案 {#alternatives}
+## 替代方案
 
 也可以不使用任何聚合函数，而是对 `SELECT` 子句中指定的同一组值应用 [GROUP BY](/zh/reference/statements/select/group-by)，从而获得相同的结果。不过，与 `GROUP BY` 的做法相比，还是有几点不同：
 
@@ -114,7 +114,7 @@ SELECT DISTINCT a FROM t1 ORDER BY b DESC;
 * 在外部执行开始之前且省略 `ORDER BY` 时，不带 `ALL` 的 [`LIMIT ... AFTER ... UNTIL`](/zh/reference/statements/select/limit#limit-after-until) 范围同样可以在该范围结束后让查询停止执行。
 * 在外部执行开始之前，数据块会在处理过程中直接输出。
 
-## 外部内存中的 DISTINCT {#distinct-in-external-memory}
+## 外部内存中的 DISTINCT
 
 `DISTINCT` 可以将临时数据写入磁盘，以处理过大、无法全部驻留在内存中的唯一值集合。这会带来额外的磁盘 I/O，并可能导致查询变慢。
 

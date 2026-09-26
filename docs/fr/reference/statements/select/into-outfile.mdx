@@ -22,7 +22,7 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `level` est un littéral numérique. Les entiers positifs des plages suivantes sont pris en charge : `1-12` pour les types `gzip`, `deflate` et `lz4`, `1-22` pour le type `zstd` et `1-9` pour les autres types de compression. Pour `gzip` et `deflate`, les niveaux supérieurs à `9` nécessitent la build par défaut avec `libdeflate` ; une build sans `libdeflate` prend en charge les niveaux `1-9`.
 
-## Détails d’implémentation {#implementation-details}
+## Détails d’implémentation
 
 * Cette fonctionnalité est disponible dans le [client en ligne de commande](/fr/concepts/features/interfaces/client) et [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local). Par conséquent, une requête envoyée via l’[interface HTTP](/fr/concepts/features/interfaces/http) échouera.
 * La requête échouera si un fichier portant le même nom existe déjà.

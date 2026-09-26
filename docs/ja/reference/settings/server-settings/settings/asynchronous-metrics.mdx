@@ -12,15 +12,15 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーの構成に使用され、ClickHouseのソースコードから自動生成されています。
 
-## asynchronous_metrics_enable_heavy_metrics {#asynchronous_metrics_enable_heavy_metrics}
+## asynchronous_metrics_enable_heavy_metrics
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />負荷の高い非同期メトリクスの計算を有効にします。
 
-## asynchronous_metrics_keeper_metrics_only {#asynchronous_metrics_keeper_metrics_only}
+## asynchronous_metrics_keeper_metrics_only
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />非同期メトリクスで計算する対象を、Keeper 関連のメトリクスのみにします。
 
-## asynchronous_metrics_key_values_mode {#asynchronous_metrics_key_values_mode}
+## asynchronous_metrics_key_values_mode
 
 <SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
 
@@ -36,7 +36,7 @@ CPU コア、ブロックデバイス、ネットワークインターフェイ�
 
 この設定はオンザフライで適用されます。非同期メトリクスが更新されるたびに再読み込みされるため、再起動せずに形式を切り替えるには `SYSTEM RELOAD CONFIG` で十分です。
 
-## asynchronous_metrics_update_period_s {#asynchronous_metrics_update_period_s}
+## asynchronous_metrics_update_period_s
 
 <SettingsInfoBlock type="UInt32" default_value="1" changeable_without_restart="No" />非同期メトリクスの更新間隔 (秒) 。
 

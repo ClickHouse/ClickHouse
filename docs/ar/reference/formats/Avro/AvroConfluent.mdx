@@ -17,7 +17,7 @@ import DataTypesMatching from '/snippets/ar/data-types-matching.mdx';
 | ------- | ------- | -------- |
 | ✔       | ✔       |          |
 
-## الوصف {#description}
+## الوصف
 
 يُعد [Apache Avro](https://avro.apache.org/) تنسيق تسلسل موجَّهًا للصفوف يستخدم الترميز الثنائي لمعالجة البيانات بكفاءة. ويدعم تنسيق `AvroConfluent` قراءة الرسائل المرمّزة بـ Avro وكتابتها باستخدام [Confluent Schema Registry](https://docs.confluent.io/current/schema-registry/index.html) (أو الخدمات المتوافقة مع واجهة برمجة التطبيقات).
 
@@ -25,11 +25,11 @@ import DataTypesMatching from '/snippets/ar/data-types-matching.mdx';
 
 <a id="data-types-matching" />
 
-## تعيين أنواع البيانات {#data-type-mapping}
+## تعيين أنواع البيانات
 
 <DataTypesMatching />
 
-## إعدادات التنسيق {#format-settings}
+## إعدادات التنسيق
 
 [//]: # "ملاحظة: يمكن ضبط هذه الإعدادات على مستوى الجلسة، لكن هذا غير شائع، وقد يؤدي توثيق ذلك بشكل بارز جدًا إلى إرباك المستخدمين."
 
@@ -44,9 +44,9 @@ import DataTypesMatching from '/snippets/ar/data-types-matching.mdx';
 | `output_format_avro_confluent_subject`           | للإخراج: اسم subject الذي يُسجَّل المخطط تحته في Schema Registry. وهو مطلوب عند الكتابة.                                                                                      |                   |
 | `output_format_avro_string_column_pattern`       | للإخراج: تعبير نمطي لأعمدة String لتسلسلها كـ Avro `string` (القيمة الافتراضية هي `bytes`).                                                                                   |                   |
 
-## أمثلة {#examples}
+## أمثلة
 
-### القراءة من Kafka {#reading-from-kafka}
+### القراءة من Kafka
 
 لقراءة موضوع Kafka مُشفَّرًا باستخدام Avro عبر [محرك جدول Kafka](/ar/reference/engines/table-engines/integrations/kafka)، استخدم الإعداد `format_avro_schema_registry_url` لتحديد URL لسجل المخططات.
 
@@ -67,7 +67,7 @@ format_avro_schema_registry_url = 'http://schema-registry-url';
 SELECT * FROM topic1_stream;
 ```
 
-### الكتابة إلى Kafka {#writing-to-kafka}
+### الكتابة إلى Kafka
 
 لكتابة رسائل AvroConfluent إلى موضوع Kafka، عيّن عنوان URL لسجل المخططات واسم الـsubject. يُسجَّل المخطط تلقائيًا في السجل عند أول عملية كتابة.
 
@@ -88,7 +88,7 @@ output_format_avro_confluent_subject = 'topic1-value';
 INSERT INTO topic1_sink VALUES ('hello', 'world');
 ```
 
-#### استخدام المصادقة الأساسية {#using-basic-authentication}
+#### استخدام المصادقة الأساسية
 
 إذا كان سجل المخططات لديك يتطلب المصادقة الأساسية (على سبيل المثال، إذا كنت تستخدم Confluent Cloud)، فيمكنك تمرير بيانات الاعتماد المرمَّزة وفق URL في الإعداد `format_avro_schema_registry_url`.
 
@@ -107,7 +107,7 @@ kafka_format = 'AvroConfluent',
 format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry-url';
 ```
 
-## استكشاف الأخطاء وإصلاحها {#troubleshooting}
+## استكشاف الأخطاء وإصلاحها
 
 لمراقبة تقدّم الإدخال واستكشاف أخطاء مستهلك Kafka، يمكنك الاستعلام عن [جدول النظام `system.kafka_consumers`](/ar/reference/system-tables/kafka_consumers). إذا كان النشر لديك يتضمن عدة نُسخ متماثلة (على سبيل المثال، ClickHouse Cloud)، فيجب عليك استخدام [دالة الجدول `clusterAllReplicas`](/ar/reference/functions/table-functions/cluster).
 

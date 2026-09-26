@@ -12,7 +12,7 @@ keywords: ['Apache Airflow', 'airflow-clickhouse-plugin', 'migration', 'clickhou
 ClickHouse。本指南将介绍如何将现有部署迁移到 `apache-airflow-providers-clickhousedb`。若想了解该
 provider 本身的工作原理，请参阅[将 Apache Airflow 连接到 ClickHouse](/zh/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse)。
 
-## 为什么要用原生 provider？ {#why-a-native-provider}
+## 为什么要用原生 provider？
 
 Airflow 正是通过 provider 与第三方系统集成的。provider 与 Airflow 生态的其他部分一同发布、测试并编写文档，而这个 provider 由 Airflow 社区与 ClickHouse 团队共同维护。它构建在 [clickhouse-connect](/zh/integrations/language-clients/python/index) 之上——这是 ClickHouse 官方开发并提供支持的 Python 客户端，而非社区维护的 driver。因此，服务端的新特性和修复都能通过受支持的路径传递给 Airflow 用户。迁移到该 provider 后，你将获得一个有官方归属的软件包、标准的 `common.sql` operator 和 sensor，以及一种和其他数据库一样出现在 Airflow UI 中的连接类型。
 
@@ -22,7 +22,7 @@ Airflow 正是通过 provider 与第三方系统集成的。provider 与 Airflow
   在做任何改动之前，请先把本指南完整读一遍。尤其是连接方式的变更，会同时影响所有 DAG。
 </Note>
 
-## 概览 {#at-a-glance}
+## 概览
 
 |               | `airflow-clickhouse-plugin`                                                    | `apache-airflow-providers-clickhousedb`                                                                              |
 | ------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
@@ -35,7 +35,7 @@ Airflow 正是通过 provider 与第三方系统集成的。provider 与 Airflow
 | Hook          | `ClickHouseHook` (`BaseHook`) 和 `ClickHouseDbApiHook` (`DbApiHook`)            | 仅一个 `ClickHouseHook` (`DbApiHook`)                                                                                   |
 | 最低 Airflow 版本 | 2.0                                                                            | 2.11                                                                                                                 |
 
-## 步骤 1：检查前置条件并安装 {#step-1-check-prerequisites-and-install}
+## 步骤 1：检查前置条件并安装
 
 该提供商要求 Airflow 2.11 或更高版本，以及 `apache-airflow-providers-common-sql` 1.32.0 或更高版本。如果你使用的是更旧的版本，请先升级 Airflow。
 
@@ -49,7 +49,7 @@ pip install apache-airflow-providers-clickhousedb
 pip uninstall airflow-clickhouse-plugin clickhouse-driver
 ```
 
-## 步骤 2：更新连接 {#step-2-update-connections}
+## 步骤 2：更新连接
 
 这一步如果跳过，就会出问题。现有的每一个 ClickHouse 连接都指向 native 端口，而 provider 需要的是 HTTP 端口。
 
@@ -65,7 +65,7 @@ pip uninstall airflow-clickhouse-plugin clickhouse-driver
 
 以 URI 形式存储的连接 (`clickhouse://user:pass@host:9000/db?secure=true`) 已经是 `clickhouse` 连接类型，因为 Airflow 会从 URI 的 scheme 推导出类型。这类连接只需修改端口和 extra 中的键；查询字符串中的值会按 JSON 解析，因此 `secure=true` 仍是布尔值。
 
-### 连接额外参数 {#connection-extras}
+### 连接额外参数
 
 该插件会将 `extra` 中的每个键直接传给 `clickhouse_driver.Client`，因此连接中可以携带任意 `clickhouse-driver` 的 keyword argument。而 provider 只读取一组固定的键，其余内容通过 `client_kwargs` 转发。请按如下方式进行转换：
 
@@ -127,7 +127,7 @@ pip uninstall airflow-clickhouse-plugin clickhouse-driver
 airflow connections test clickhouse_default
 ```
 
-## 步骤 3：替换导入 {#step-3-replace-imports}
+## 步骤 3：替换导入
 
 | 插件类                                                                                      | Provider 替代项                                                         |
 | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
@@ -148,7 +148,7 @@ airflow connections test clickhouse_default
 带 `ClickHouse` 前缀的 `common.sql` wrapper 存在的唯一目的，就是注入插件的 hook。该 provider 会注册 `clickhouse` 连接类型，因此不带前缀的 `common.sql` 类可以自行从 connection 中解析出 hook。如果你之前用的是这些 wrapper，迁移通常只需改动 import 行、去掉 `ClickHouse` 前缀，并显式传入 `conn_id` (参见
 [步骤 7](#step-7-the-commonsql-wrapper-family)) 。
 
-## 第 4 步：`ClickHouseOperator` 迁移到 `SQLExecuteQueryOperator` {#step-4-clickhouseoperator-to-sqlexecutequeryoperator}
+## 第 4 步：`ClickHouseOperator` 迁移到 `SQLExecuteQueryOperator`
 
 | `ClickHouseOperator` 参数           | `SQLExecuteQueryOperator` 等价写法                          | 说明                                                                                                                                                                                                                                               |
 | --------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -215,7 +215,7 @@ update_income_aggregate = SQLExecuteQueryOperator(
 )
 ```
 
-### 多语句结果 {#multi-statement-results}
+### 多语句结果
 
 该插件只将**最后一条**语句的结果推送到 XCom。当 `sql` 为列表时,`SQLExecuteQueryOperator` 会为每条语句各返回一个结果,
 因此上面的示例推送的是 `[[], [(12345.0,)]]`,而插件推送的是 `[(12345.0,)]`。可采用以下任一方式处理:
@@ -256,7 +256,7 @@ load_rows = SQLInsertRowsOperator(
 
 请始终传入 `columns`；否则该 operator 会通过 SQLAlchemy 去查找该表。
 
-### 保留列类型 {#keeping-column-types}
+### 保留列类型
 
 `with_column_types=True` 会返回 `(rows, [(name, type), ...])`。可以借助 handler 实现同样的效果；`clickhouse-connect` 的 cursor 会在 `cursor.description` 中给出 ClickHouse 类型名称：
 
@@ -273,7 +273,7 @@ SQLExecuteQueryOperator(
 )
 ```
 
-## 第 5 步：从 `ClickHouseHook.execute` 迁移到 `DbApiHook` 方法 {#step-5-clickhousehookexecute-to-dbapihook-methods}
+## 第 5 步：从 `ClickHouseHook.execute` 迁移到 `DbApiHook` 方法
 
 插件的 hook 只暴露了一个方法 `execute`，与 `clickhouse_driver.Client.execute` 一一对应。而 provider 的 hook 是一个 `DbApiHook`，因此它具备其他所有 SQL provider 都有的标准方法：
 `run`、`get_records`、`get_first`、`get_pandas_df`、`get_df`、`insert_rows` 和 `test_connection`。
@@ -337,7 +337,7 @@ with hook.get_client() as client:
     columns = result.result_columns
 ```
 
-## 步骤 6：`ClickHouseSensor` 迁移为 `SqlSensor` {#step-6-clickhousesensor-to-sqlsensor}
+## 步骤 6：`ClickHouseSensor` 迁移为 `SqlSensor`
 
 这是唯一一处可调用对象输入会发生变化的替换。
 
@@ -382,7 +382,7 @@ SqlSensor(
 
 如果可调用对象需要整行数据，可传入 `selector=lambda row: row`。如果它需要所有行，则应将该 check 写成 SQL，让查询返回单个布尔值或计数值。
 
-## 步骤 7：`common.sql` 包装类家族 {#step-7-the-commonsql-wrapper-family}
+## 步骤 7：`common.sql` 包装类家族
 
 使用 `ClickHouseSQLExecuteQueryOperator`、`ClickHouseSqlSensor` 以及其他以
 `ClickHouse` 为前缀的 wrapper 的代码改动最少：
@@ -397,7 +397,7 @@ SqlSensor(
   `database` 是 ClickHouse 的 native 写法，两者同时给出时以 `database` 为准。
 * connection 仍需完成步骤 2 中的端口与 extras 变更，因为这些 wrapper 同样使用原生协议。
 
-## 需要注意的行为差异 {#behavior-differences-to-review}
+## 需要注意的行为差异
 
 即使代码能够编译通过，仍有一些行为在运行时会有所不同。
 
@@ -417,7 +417,7 @@ SqlSensor(
 
 **连接处理。** hook 会为每次 `run` 或 `get_client` 调用创建一个 `clickhouse-connect` 客户端，这与插件为每次 `execute` 打开一个新原生连接的做法类似。客户端共享进程级的 HTTP 连接池，因此对 `get_client()` 返回的客户端调用 `close()` 只是良好习惯，而非必需；任务进程退出时连接池会被释放。该客户端本身是上下文管理器，因此 `with hook.get_client() as client:` 是最简洁的写法。
 
-## 检查清单 {#checklist}
+## 检查清单
 
 1. Airflow 版本为 2.11 或更高。
 2. 工作线程可访问 HTTP 端口；HTTP 端点使用的 TLS 证书有效。
@@ -432,7 +432,7 @@ SqlSensor(
 11. 捕获 `clickhouse_driver` 异常的代码已更新。
 12. 已卸载 `airflow-clickhouse-plugin` 和 `clickhouse-driver`。
 
-## 使用 AI 编码助手 {#using-an-ai-coding-assistant}
+## 使用 AI 编码助手
 
 上述 mapping 有意设计得较为机械，以便编码助手能够将其应用于 DAG repository。以下 prompt 的实际效果不错：
 
@@ -458,7 +458,7 @@ Show the diff and a summary of items flagged for human review.
 
 请仔细检查差异内容。connection 的改动、sensor 语义以及 XCom 消费者，正是自动化 rewrite 最容易出错的地方。
 
-## 相关内容 {#related-content}
+## 相关内容
 
 * [将 Apache Airflow 连接到 ClickHouse](/zh/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse)
 * [`clickhouse-connect` Python 客户端](/zh/integrations/language-clients/python/index)

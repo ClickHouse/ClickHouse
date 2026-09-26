@@ -18,9 +18,9 @@ ClickStack은 Next 13.2+의
   세션 리플레이 또는 브라우저 측 모니터링이 필요하다면, 대신 [브라우저 통합](/ko/clickstack/ingesting-data/sdks/browser)을 설치하세요.
 </Note>
 
-## 설치하기 {#installing}
+## 설치하기
 
-### instrumentation hook 활성화(v15 이하 필수) {#enable-instrumentation-hook}
+### instrumentation hook 활성화(v15 이하 필수)
 
 시작하려면 `next.config.js`에서 `experimental.instrumentationHook = true;`를 설정해 Next.js instrumentation hook을 활성화해야 합니다.
 
@@ -47,7 +47,7 @@ const nextConfig = {
 module.exports = nextConfig;
 ```
 
-### ClickHouse OpenTelemetry SDK 설치하기 {#install-sdk}
+### ClickHouse OpenTelemetry SDK 설치하기
 
 <Tabs>
   <Tab title="NPM">
@@ -63,7 +63,7 @@ module.exports = nextConfig;
   </Tab>
 </Tabs>
 
-### instrumentation 파일 만들기 {#create-instrumentation-files}
+### instrumentation 파일 만들기
 
 Next.js 프로젝트 루트에 `instrumentation.ts`(또는 `.js`) 파일을 만들고, 아래 내용을 추가하십시오:
 
@@ -82,7 +82,7 @@ export async function register() {
 
 이렇게 하면 Next.js가 서버리스 함수가 호출될 때마다 OpenTelemetry instrumentation을 불러올 수 있습니다.
 
-### 환경 변수 구성 {#configure-environment-variables}
+### 환경 변수 구성
 
 OpenTelemetry를 통해 트레이스를 ClickStack으로 직접 전송하는 경우, 스팬이 OTel collector로 전송되도록 다음 환경 변수를 설정하여 Next.js
 서버를 시작해야 합니다:

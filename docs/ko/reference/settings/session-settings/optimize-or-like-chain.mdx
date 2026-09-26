@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-## optimize_or_like_chain {#optimize_or_like_chain}
+## optimize_or_like_chain
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,7 +25,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 체인은 동일한 좌변 표현식을 공유하는 분기가 충분히 많아 재작성이 단락 평가 `OR`보다 확실히 더 빠르다고 판단될 때만 재작성됩니다. `multiSearchAny` 경로에는 최소 `optimize_or_like_chain_min_substrings`개의 분기가 필요하고, `multiMatchAny` 경로에는 최소 `optimize_or_like_chain_min_patterns`개의 분기가 필요합니다.
 
-## optimize_or_like_chain_min_patterns {#optimize_or_like_chain_min_patterns}
+## optimize_or_like_chain_min_patterns
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -33,7 +33,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 동일한 좌변 표현식을 공유하는 순수 부분 문자열이 아닌 `LIKE`/`ILIKE`/`match` 분기(prefix/suffix/regexp 패턴)가 `optimize_or_like_chain`에 의해 체인에서 `multiMatchAny`로 재작성되기 위해 필요한 최소 개수입니다. `hits` 데이터셋을 기준으로 보정되었습니다(`tests/performance/optimize_or_like_chain_hits.xml` 참조). prefix/regexp `LIKE` 체인에 대한 `multiMatchAny`(Hyperscan) 재작성은 대략 9개의 분기부터만 단락 평가 `OR` 평가보다 빨라지므로, 더 짧은 체인은 성능 저하를 피하기 위해 그대로 유지됩니다. 값이 0 또는 1이면 이 임계값이 비활성화됩니다. `optimize_or_like_chain`이 비활성화된 경우에는 영향을 주지 않습니다. 순수 부분 문자열(`multiSearchAny`) 경로는 `optimize_or_like_chain_min_substrings`도 참조하십시오.
 
-## optimize_or_like_chain_min_substrings {#optimize_or_like_chain_min_substrings}
+## optimize_or_like_chain_min_substrings
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 

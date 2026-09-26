@@ -14,14 +14,14 @@ Il s’agit d’une extension de la fonction de table [s3](/fr/reference/functio
 
 Elle permet de traiter des fichiers provenant d’[Amazon S3](https://aws.amazon.com/s3/) et de Google Cloud Storage [Google Cloud Storage](https://cloud.google.com/storage/) en parallèle sur de nombreux nœuds d’un cluster spécifié. Sur le nœud initiateur, elle établit une connexion à tous les nœuds du cluster, résout les astérisques dans le chemin de fichier S3 et répartit dynamiquement chaque fichier. Sur le nœud worker, elle demande à l’initiateur la tâche suivante à traiter, puis la traite. Cette opération se répète jusqu’à ce que toutes les tâches soient terminées.
 
-## Syntaxe {#syntax}
+## Syntaxe
 
 ```sql
 s3Cluster(cluster_name, url[, NOSIGN | access_key_id, secret_access_key,[session_token]][, format][, structure][, compression_method][, headers][, extra_credentials])
 s3Cluster(cluster_name, named_collection[, option=value [,..]])
 ```
 
-## Arguments {#arguments}
+## Arguments
 
 | Argument                                | Description                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -45,11 +45,11 @@ Les arguments peuvent également être transmis à l’aide de [collection nomm�
 | `no_sign_request`             | Désactivé par défaut.                                                                                                                                                                                                                                            |
 | `expiration_window_seconds`   | La valeur par défaut est 120.                                                                                                                                                                                                                                    |
 
-## Valeur retournée {#returned-value}
+## Valeur retournée
 
 Une table ayant la structure spécifiée pour lire ou écrire des données dans le fichier spécifié.
 
-## Exemples {#examples}
+## Exemples
 
 Sélectionnez les données de tous les fichiers contenus dans les dossiers `/root/data/clickhouse` et `/root/data/database/`, en utilisant tous les nœuds du cluster `cluster_simple` :
 
@@ -83,15 +83,15 @@ SELECT count(*) FROM s3Cluster(
 )
 ```
 
-## Accéder aux buckets privés et publics {#accessing-private-and-public-buckets}
+## Accéder aux buckets privés et publics
 
 Les utilisateurs peuvent utiliser les mêmes approches que celles décrites pour la fonction s3 [ici](/fr/reference/functions/table-functions/s3#accessing-public-buckets).
 
-## Optimisation des performances {#optimizing-performance}
+## Optimisation des performances
 
 Pour plus de détails sur l’optimisation des performances de la fonction s3, consultez [notre guide détaillé](/fr/integrations/connectors/data-ingestion/AWS/performance).
 
-## Voir aussi {#related}
+## Voir aussi
 
 * [moteur S3](/fr/reference/engines/table-engines/integrations/s3)
 * [fonction de table S3](/fr/reference/functions/table-functions/s3)

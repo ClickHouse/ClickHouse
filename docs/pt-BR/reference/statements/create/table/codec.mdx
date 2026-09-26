@@ -56,27 +56,27 @@ A compressão é compatível com os seguintes motores de tabela:
 
 O ClickHouse oferece suporte a codecs de uso geral e codecs especializados.
 
-## Codecs de Uso Geral {#general-purpose-codecs}
+## Codecs de Uso Geral
 
-### NONE {#none}
+### NONE
 
 `NONE` — Sem compressão.
 
-### LZ4 {#lz4}
+### LZ4
 
 `LZ4` — [algoritmo de compressão de dados](https://github.com/lz4/lz4) sem perdas usado por padrão. Aplica a compressão rápida LZ4.
 
-### LZ4HC {#lz4hc}
+### LZ4HC
 
 `LZ4HC[(level)]` — algoritmo LZ4 HC (alta compressão) com nível configurável. Nível padrão: 9. Definir `level <= 0` aplica o nível padrão. Níveis possíveis: [1, 12]. Faixa de níveis recomendada: [4, 9].
 
-### ZSTD {#zstd}
+### ZSTD
 
 `ZSTD[(level)]` — [algoritmo de compressão ZSTD](https://en.wikipedia.org/wiki/Zstandard) com `level` configurável. Níveis possíveis: [1, 22]. Nível padrão: 1.
 
 Níveis altos de compressão são úteis em cenários assimétricos, como compactar uma vez e descompactar várias vezes. Níveis mais altos proporcionam melhor compressão e maior uso de CPU.
 
-### ZXC {#zxc}
+### ZXC
 
 <ExperimentalBadge />
 
@@ -88,35 +88,35 @@ Níveis altos de compressão são úteis em cenários assimétricos, como compac
   Este codec é experimental e requer `SET enable_zxc_codec = 1` para ser usado.
 </Note>
 
-### Obsoleto: ZSTD_QAT {#zstd_qat}
+### Obsoleto: ZSTD_QAT
 
 <CloudNotSupportedBadge />
 
-### Obsoleto: DEFLATE_QPL {#deflate_qpl}
+### Obsoleto: DEFLATE_QPL
 
 <CloudNotSupportedBadge />
 
-## Codecs especializados {#specialized-codecs}
+## Codecs especializados
 
 Estes codecs foram projetados para tornar a compressão mais eficaz ao explorar características específicas dos dados. Alguns deles não comprimem os dados diretamente; em vez disso, fazem o pré-processamento dos dados para que um segundo estágio de compressão, usando um codec de uso geral, possa alcançar uma taxa de compressão maior.
 
-### Delta {#delta}
+### Delta
 
 `Delta(delta_bytes)` — Abordagem de compressão em que valores brutos são substituídos pela diferença entre dois valores adjacentes, exceto o primeiro, que permanece inalterado. `delta_bytes` é o tamanho máximo dos valores brutos; o valor padrão é `sizeof(type)`. Especificar `delta_bytes` como argumento está obsoleto, e o suporte será removido em um lançamento futuro. Delta é um codec de preparação de dados, ou seja, não pode ser usado isoladamente.
 
-### DoubleDelta {#doubledelta}
+### DoubleDelta
 
 `DoubleDelta(bytes_size)` — Calcula a delta das deltas e a grava em formato binário compacto. `bytes_size` tem significado semelhante a `delta_bytes` no codec [Delta](#delta). Especificar `bytes_size` como argumento está obsoleto, e o suporte será removido em um lançamento futuro. As taxas ideais de compressão são obtidas para sequências monotônicas com stride constante, como dados de séries temporais. Pode ser usado com qualquer tipo numérico. Implementa o algoritmo usado no Gorilla TSDB, estendendo-o para oferecer suporte a tipos de 64 bits. Usa 1 bit adicional para deltas de 32 bits: prefixos de 5 bits em vez de prefixos de 4 bits. Para mais informações, consulte Compressing Time Stamps em [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). DoubleDelta é um codec de preparação de dados, ou seja, não pode ser usado isoladamente.
 
-### GCD {#gcd}
+### GCD
 
 `GCD()` - - Calcula o máximo divisor comum (GCD) dos valores da coluna e, em seguida, divide cada valor pelo GCD. Pode ser usado com colunas de inteiros, decimais e data/hora. O codec é adequado para colunas cujos valores variam (aumentam ou diminuem) em múltiplos do GCD, por exemplo, 24, 28, 16, 24, 8, 24 (GCD = 4). GCD é um codec de preparação de dados, ou seja, não pode ser usado isoladamente.
 
-### Gorilla {#gorilla}
+### Gorilla
 
 `Gorilla(bytes_size)` — Calcula o XOR entre o valor de ponto flutuante atual e o anterior e o grava em formato binário compacto. Quanto menor a diferença entre valores consecutivos, ou seja, quanto mais lentamente os valores da série variarem, melhor será a taxa de compressão. Implementa o algoritmo usado no Gorilla TSDB e o estende para oferecer suporte a tipos de 64 bits. Valores possíveis de `bytes_size`: 1, 2, 4, 8; o valor padrão é `sizeof(type)` se for igual a 1, 2, 4 ou 8. Em todos os outros casos, é 1. Para mais informações, consulte a seção 4.1 de [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
 
-### ALP {#alp}
+### ALP
 
 <BetaBadge />
 
@@ -132,11 +132,11 @@ O codec aceita um argumento de variante opcional:
   Este codec está em beta e requer `SET enable_alp_codec = 1` para ser usado.
 </Note>
 
-### FPC {#fpc}
+### FPC
 
 `FPC(level, float_size)` - Prevê repetidamente o próximo valor de ponto flutuante da sequência usando o melhor de dois preditores, aplica XOR entre o valor real e o previsto e, em seguida, comprime o resultado eliminando zeros à esquerda. Assim como o Gorilla, é eficiente para armazenar uma série de valores de ponto flutuante que mudam lentamente. Para valores de 64 bits (double), o FPC é mais rápido que o Gorilla; para valores de 32 bits, o desempenho pode variar. Valores possíveis de `level`: 1-28; o valor padrão é 12. Valores possíveis de `float_size`: 4, 8; o valor padrão é `sizeof(type)` se o tipo for Float. Em todos os outros casos, é 4. Para uma descrição detalhada do algoritmo, consulte [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
 
-### SZ3 {#sz3}
+### SZ3
 
 <ExperimentalBadge />
 
@@ -146,7 +146,7 @@ O codec aceita um argumento de variante opcional:
   Este codec é experimental e requer `SET enable_sz3_codec = 1` para ser usado.
 </Note>
 
-### T64 {#t64}
+### T64
 
 `T64` — Abordagem de compressão que elimina os bits mais significativos não utilizados dos valores em tipos de dados inteiros (incluindo `Enum`, `Date` e `DateTime`). Em cada passo do algoritmo, o codec recebe um bloco de 64 valores, organiza-os em uma matriz de bits 64x64, transpõe-a, elimina os bits não utilizados dos valores e retorna o restante como uma sequência. Bits não utilizados são aqueles que não diferem entre os valores máximo e mínimo em toda a parte de dados para a qual a compressão é usada.
 
@@ -161,7 +161,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-### Quantized {#quantized}
+### Quantized
 
 <ExperimentalBadge />
 
@@ -190,17 +190,17 @@ CREATE TABLE vectors
 ENGINE = MergeTree ORDER BY id;
 ```
 
-## Codecs de criptografia {#encryption-codecs}
+## Codecs de criptografia
 
 Esses codecs não comprimem os dados, mas os criptografam no disco. Eles só estão disponíveis quando uma chave de criptografia é especificada nas configurações de [encryption](/pt-BR/reference/settings/server-settings/settings/other#encryption). Observe que a criptografia só faz sentido no final dos pipelines de codecs, pois dados criptografados geralmente não podem ser comprimidos de maneira significativa.
 
 Codecs de criptografia:
 
-### AES_128_GCM_SIV {#aes_128_gcm_siv}
+### AES_128_GCM_SIV
 
 `CODEC('AES-128-GCM-SIV')` — Criptografa dados com AES-128 no modo GCM-SIV especificado na [RFC 8452](https://tools.ietf.org/html/rfc8452).
 
-### AES-256-GCM-SIV {#aes-256-gcm-siv}
+### AES-256-GCM-SIV
 
 `CODEC('AES-256-GCM-SIV')` — Criptografa dados com AES-256 no modo GCM-SIV.
 
@@ -238,7 +238,7 @@ CREATE TABLE mytable
 ENGINE = MergeTree ORDER BY x;
 ```
 
-## Seleção Adaptativa de Codecs {#adaptive-codec-selection}
+## Seleção Adaptativa de Codecs
 
 <ExperimentalBadge />
 
@@ -277,7 +277,7 @@ SELECT column, codec_block_counts FROM mergeTreeCodecBlockCounts(currentDatabase
    └─────────┴────────────────────┘
 ```
 
-## Conteúdo relacionado {#related-content}
+## Conteúdo relacionado
 
 * Blog: [Como otimizar o ClickHouse com schemas e codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * Blog: [Como trabalhar com dados de séries temporais no ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

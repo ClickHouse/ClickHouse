@@ -13,7 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-## temporary_files_buffer_size {#temporary_files_buffer_size}
+## temporary_files_buffer_size
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
 
@@ -21,7 +21,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Размер буфера для записи временных файлов. Увеличение размера буфера уменьшает число системных вызовов, но повышает потребление памяти. Значение больше 1 ГиБ уменьшается до 1 ГиБ.
 
-## temporary_files_codec {#temporary_files_codec}
+## temporary_files_codec
 
 <SettingsInfoBlock type="String" default_value="LZ4" />
 

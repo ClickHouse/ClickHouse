@@ -17,7 +17,7 @@ import DataTypesMatching from '/snippets/ko/data-types-matching.mdx';
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-## 설명 {#description}
+## 설명
 
 [Apache Avro](https://avro.apache.org/)는 효율적인 데이터 처리를 위해 binary encoding을 사용하는 행 지향 직렬화 포맷입니다. `AvroConfluent` 포맷은 [Confluent 스키마 레지스트리](https://docs.confluent.io/current/schema-registry/index.html)(또는 API 호환 서비스)를 사용해 Avro로 인코딩된 메시지를 읽고 쓸 수 있습니다.
 
@@ -25,11 +25,11 @@ import DataTypesMatching from '/snippets/ko/data-types-matching.mdx';
 
 <a id="data-types-matching" />
 
-## 데이터 타입 매핑 {#data-type-mapping}
+## 데이터 타입 매핑
 
 <DataTypesMatching />
 
-## 포맷 설정 {#format-settings}
+## 포맷 설정
 
 [//]: # "참고: 이러한 설정은 세션 수준에서도 지정할 수 있지만, 일반적인 방식은 아니며 너무 눈에 띄게 문서화하면 사용자에게 혼란을 줄 수 있습니다."
 
@@ -44,9 +44,9 @@ import DataTypesMatching from '/snippets/ko/data-types-matching.mdx';
 | `output_format_avro_confluent_subject`           | 출력용: 스키마 레지스트리에서 스키마가 등록되는 subject 이름입니다. 쓰기 시 필요합니다.                                               |     |
 | `output_format_avro_string_column_pattern`       | 출력용: String 컬럼 중 Avro `string`으로 직렬화할 대상을 지정하는 정규식입니다(기본값은 `bytes`).                                |     |
 
-## 예시 {#examples}
+## 예시
 
-### Kafka에서 읽기 {#reading-from-kafka}
+### Kafka에서 읽기
 
 Avro로 인코딩된 Kafka 토픽을 [Kafka 테이블 엔진](/ko/reference/engines/table-engines/integrations/kafka)으로 읽으려면 `format_avro_schema_registry_url` 설정을 사용하여 스키마 레지스트리 URL을 지정하십시오.
 
@@ -67,7 +67,7 @@ format_avro_schema_registry_url = 'http://schema-registry-url';
 SELECT * FROM topic1_stream;
 ```
 
-### Kafka에 쓰기 {#writing-to-kafka}
+### Kafka에 쓰기
 
 AvroConfluent 메시지를 Kafka 토픽에 쓰려면 스키마 레지스트리 URL과 subject 이름을 모두 설정하십시오. 스키마는 처음 쓸 때 레지스트리에 자동으로 등록됩니다.
 
@@ -88,7 +88,7 @@ output_format_avro_confluent_subject = 'topic1-value';
 INSERT INTO topic1_sink VALUES ('hello', 'world');
 ```
 
-#### 기본 인증 사용 {#using-basic-authentication}
+#### 기본 인증 사용
 
 스키마 레지스트리에서 기본 인증이 필요한 경우(예: Confluent Cloud를 사용하는 경우), `format_avro_schema_registry_url` 설정에 URL로 인코딩된 자격 증명을 지정할 수 있습니다.
 
@@ -107,7 +107,7 @@ kafka_format = 'AvroConfluent',
 format_avro_schema_registry_url = 'https://<username>:<password>@schema-registry-url';
 ```
 
-## 문제 해결 {#troubleshooting}
+## 문제 해결
 
 수집 진행 상황을 모니터링하고 Kafka consumer의 오류를 디버깅하려면 [`system.kafka_consumers` 시스템 테이블](/ko/reference/system-tables/kafka_consumers)을 조회할 수 있습니다. 배포 환경에 여러 레플리카가 있는 경우(예: ClickHouse Cloud)에는 [`clusterAllReplicas`](/ko/reference/functions/table-functions/cluster) 테이블 함수를 사용해야 합니다.
 

@@ -12,15 +12,15 @@ doc_type: 'reference'
 
 読み取りは自動的に並列化されます。テーブルへの書き込みはサポートされていません。読み取り時には、実際に読み取られるテーブルに索引が存在する場合、それらが使用されます。
 
-## テーブルの作成 {#creating-a-table}
+## テーブルの作成
 
 ```sql
 CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
-## エンジンパラメータ {#engine-parameters}
+## エンジンパラメータ
 
-### `db_name` {#db_name}
+### `db_name`
 
 `db_name` — 設定可能な値:
 
@@ -28,21 +28,21 @@ CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
   * データベース名を表す文字列を返す定数式。たとえば `currentDatabase()`、
   * `REGEXP(expression)`。ここで `expression` は DB 名に一致する正規表現です。
 
-### `tables_regexp` {#tables_regexp}
+### `tables_regexp`
 
 `tables_regexp` — 指定したDBまたは複数のDB内のテーブル名にマッチさせるための正規表現です。
 
 正規表現 — [re2](https://github.com/google/re2) (PCRE の一部をサポート) で、大文字と小文字は区別されます。
 正規表現内での記号のエスケープについては、「match」セクションの注記を参照してください。
 
-## 使用法 {#usage}
+## 使用法
 
 読み取るテーブルを選択する際、`Merge` テーブル自体は、正規表現に一致していても選択されません。これはループを避けるためです。
 互いのデータを無限に読み取ろうとする 2 つの `Merge` テーブルを作成することは可能ですが、これは良い考えではありません。
 
 `Merge` エンジンの一般的な使い方は、多数の `TinyLog` テーブルを 1 つのテーブルのように扱うことです。
 
-## 例 {#examples}
+## 例
 
 **例 1**
 
@@ -95,7 +95,7 @@ SELECT * FROM WatchLog;
 └────────────┴────────┴───────────┴─────┘
 ```
 
-## 仮想カラム {#virtual-columns}
+## 仮想カラム
 
 * `_table` — データの読み取り元であるテーブルの名前です。型: [String](/ja/reference/data-types/string).
 

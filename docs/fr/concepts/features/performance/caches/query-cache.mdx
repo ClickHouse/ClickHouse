@@ -10,7 +10,7 @@ Le cache des requêtes permet de calculer les requêtes `SELECT` une seule fois,
 Selon le type de requêtes, cela peut réduire considérablement la latence et la consommation de ressources du serveur ClickHouse.
 
 <div id="background-design-and-limitations">
-  ## Contexte, conception et limites {#background-design-and-limitations}
+  ## Contexte, conception et limites
 </div>
 
 Les caches de requêtes peuvent généralement être considérés comme cohérents ou incohérents sur le plan transactionnel.
@@ -33,7 +33,7 @@ configuration sont souvent dupliquées. Avec le cache de requêtes de ClickHouse
 et évite les redondances.
 
 <div id="configuration-settings-and-usage">
-  ## Paramètres de configuration et utilisation {#configuration-settings-and-usage}
+  ## Paramètres de configuration et utilisation
 </div>
 
 <Note>
@@ -175,7 +175,7 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 Pour supprimer uniquement les entrées portant le tag `tag` du cache de requêtes, vous pouvez utiliser l’instruction `SYSTEM CLEAR QUERY CACHE TAG 'tag'`.
 
 <div id="subquery-caching">
-  ## Mise en cache des sous-requêtes {#subquery-caching}
+  ## Mise en cache des sous-requêtes
 </div>
 
 Par défaut, `use_query_cache` dans la requête externe n&#39;est pas appliqué aux sous-requêtes. Cela signifie que chaque sous-requête doit activer explicitement la mise en cache :
@@ -251,7 +251,7 @@ ROW POLICY sur une table en exécutant la même requête qu’un autre utilisate
 [query&#95;cache&#95;share&#95;between&#95;users](/fr/reference/settings/session-settings/query-cache#query_cache_share_between_users).
 
 <div id="related-content">
-  ## Contenu connexe {#related-content}
+  ## Contenu connexe
 </div>
 
 * Blog : [Présentation du cache de requêtes de ClickHouse](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

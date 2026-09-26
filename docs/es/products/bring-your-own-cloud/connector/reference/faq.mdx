@@ -10,9 +10,9 @@ import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-## Preguntas frecuentes {#faq}
+## Preguntas frecuentes
 
-### ¿Quién puede cambiar mis servicios y cuándo? {#who-can-change-my-services}
+### ¿Quién puede cambiar mis servicios y cuándo?
 
 En modo gestionado, ClickHouse Cloud solo modifica los servicios que le pediste gestionar. Cualquier persona con acceso al host o al pod de Kubernetes del executor también puede controlarlos con los comandos locales `clicklink clctl instances`; consulta el [ciclo de vida del servicio](/es/products/bring-your-own-cloud/connector/managed-services#service-lifecycle). ClickHouse Cloud envía los comandos de ciclo de vida por el canal saliente del executor:
 
@@ -28,7 +28,7 @@ Dos cosas dependen de ti. Crear un servicio requiere tus comandos `clicklink clc
 
 Todo lo que hace el executor ocurre a través de la Kubernetes API. Una política de admission restringe sus escrituras a los espacios de nombres con el prefijo del servicio (`ns-` de forma predeterminada). También admite tres escrituras en el propio espacio de nombres del executor: la renovación de su token, el ConfigMap del registry de servicios y, en Kubernetes, el certificado de client renovado en el secreto `clicklink-mtls`. Sus lecturas de esas mismas familias de recursos abarcan todo el cluster. Las actualizaciones de plataforma aprobadas se ejecutan con una identidad `pcm-platform` independiente, limitada a los espacios de nombres de la plataforma. Los clusters que operas tú mismo nunca se modifican: el scraper y el solucionador de problemas son de solo lectura. Los ámbitos exactos figuran en la página del [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-### ¿Qué datos salen de mi entorno? {#what-data-leaves-my-environment}
+### ¿Qué datos salen de mi entorno?
 
 Hay tres vías por las que salen datos, todas mediante conexiones salientes que el propio connector abre: la ruta de scrape, el executor y las sesiones de soporte que habilites.
 
@@ -44,7 +44,7 @@ Durante una [sesión de soporte](/es/products/bring-your-own-cloud/connector/sup
 
 La lista completa de conexiones salientes está en la página del [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-### ¿Cómo evito que ClickHouse modifique mis clusters? {#stop-managed-mode}
+### ¿Cómo evito que ClickHouse modifique mis clusters?
 
 Ejecútelo sin el modo gestionado. Durante la instalación, pase `--no-managed` a `clicklink clctl init`, o responda que no cuando se le pregunte. Solo se despliegan el scraper y el solucionador de problemas, de modo que ClickHouse no puede crear, modificar ni eliminar servicios. El connector sigue aprovisionando usuarios de ClickHouse de solo lectura y ServiceAccounts; consulte el [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model).
 
@@ -60,7 +60,7 @@ kubectl delete serviceaccount pcm-executor -n <executor-namespace>
 
 Los servicios que ClickHouse creó siguen en ejecución, pero ClickHouse Cloud ya no puede escalarlos, actualizarlos, respaldarlos ni eliminarlos, y los comandos pendientes para ellos fallan. Las actualizaciones de la plataforma también se detienen: la parte del workload la aplica el executor, y este ya no está en ejecución.
 
-### ¿Qué sucede si el connector está fuera de línea? {#connector-down}
+### ¿Qué sucede si el connector está fuera de línea?
 
 Sus servicios de ClickHouse no se ven afectados: el connector no forma parte de ninguna ruta de datos y un servicio gestionado sigue funcionando sin el executor. El impacto es la pérdida de visibilidad y control. ClickHouse Cloud deja de recibir telemetría y las sesiones de soporte dejan de estar disponibles hasta que el connector vuelva. En el modo gestionado, ClickHouse Cloud muestra su entorno como fuera de línea cuando no ha recibido ningún latido durante 5 minutos, y vuelve a mostrarlo como listo en cuanto llega el siguiente.
 
@@ -70,17 +70,17 @@ En una VM, el scraper almacena en búfer los datos recopilados en `/var/lib/clic
 
 Para diagnosticar, compruebe el endpoint `/livez` de cada componente (la señal es el campo JSON `status`, no el código HTTP) y ejecute `clicklink clctl preflight` (con `sudo` en el host de la VM). Preflight comprueba en una sola pasada la configuración, la conectividad, la accesibilidad de ClickHouse, el acceso y el disco. Consulte [operaciones](/es/products/bring-your-own-cloud/connector/operations); si el connector sigue sin estar en buen estado, póngase en contacto con el soporte de ClickHouse.
 
-### ¿Qué se elimina cuando se elimina un servicio? {#what-is-deleted}
+### ¿Qué se elimina cuando se elimina un servicio?
 
 El executor detiene el servicio, elimina sus recursos de Kubernetes y borra su espacio de nombres. Informa de que el servicio ha terminado una vez que el espacio de nombres ya no existe. Todo lo que está fuera de Kubernetes se conserva: el bucket de datos, el bucket de copias de seguridad y el rol de IAM del servicio. El executor no dispone de credenciales para tus buckets ni para IAM, por lo que no puede tocarlos.
 
 El resto se elimina con `clicklink clctl executor teardown`, ejecutado con tus credenciales. De forma predeterminada, elimina el rol de IAM y conserva los datos y las copias de seguridad; para borrarlos hay que usar indicadores explícitos. Consulta [eliminar un servicio](/es/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
 
-### ¿Dónde está la contraseña de mi usuario `default`? {#default-user-password}
+### ¿Dónde está la contraseña de mi usuario `default`?
 
 `clicklink clctl executor prepare` la genera localmente y la muestra una única vez. Si realizas el envío con los indicadores individuales en lugar de `--from-prepare`, `clicklink clctl instances create` la lee desde `--default-user-password-file` o bien la genera y la muestra. A ClickHouse Cloud solo se envían sus hash, por lo que ni el connector ni ClickHouse podrán volver a mostrártela. Guárdala en cuanto aparezca en pantalla.
 
-### ¿Cómo revoco el acceso de ClickHouse? {#how-do-i-revoke-access}
+### ¿Cómo revoco el acceso de ClickHouse?
 
 En orden creciente:
 
@@ -91,7 +91,7 @@ En orden creciente:
 5. **Revoque las credenciales.** Elimine los usuarios de ClickHouse `pcm_scraper` y `pcm_troubleshooter`, y elimine los secretos del connector (Kubernetes) o los archivos en `/etc/clicklink` (VM).
 6. **Elimine el connector por completo.** Consulte [operaciones](/es/products/bring-your-own-cloud/connector/operations).
 
-### ¿Puedo ejecutarlo en un entorno aislado o a través de mis propios mirrors? {#air-gapped-and-mirrors}
+### ¿Puedo ejecutarlo en un entorno aislado o a través de mis propios mirrors?
 
 Sí. Todos los artifacts necesarios en el momento de la instalación pueden provenir del interior de su boundary:
 
@@ -104,7 +104,7 @@ Sí. Todos los artifacts necesarios en el momento de la instalación pueden prov
 
 Consulte [private mirrors](/es/products/bring-your-own-cloud/connector/configuration) y la sección sobre entornos aislados de [onboarding](/es/products/bring-your-own-cloud/connector/onboarding). El connector sigue necesitando una ruta hacia su endpoint del connector en runtime; sin ella, ClickHouse Cloud no recibe telemetría y ningún comando del ciclo de vida llega al executor.
 
-### ¿Cómo se auditan las sesiones de soporte? {#support-session-auditing}
+### ¿Cómo se auditan las sesiones de soporte?
 
 Cada comando ejecutado durante una sesión, tanto si se acepta como si se bloquea, se añade a `/var/log/clicklink/troubleshoot-audit.log` en formato JSON delimitado por saltos de línea. Cada entrada registra `submitted_by` (el Organization ID en el canal de comandos), el texto del comando, la instance de destino, el resultado y `blocked_by` para los comandos rechazados. Las llamadas al gateway, incluidas las denegadas, se registran como líneas `clctl.gateway` estructuradas en el propio log del solucionador de problemas. Se atribuyen al correo electrónico del operador acreditado por el token, nunca a un nombre declarado por el propio usuario. Los cambios de sesión local en una VM registran el usuario del host que los invoca como `enabled_by` en `/var/lib/clicklink/session.json`.
 

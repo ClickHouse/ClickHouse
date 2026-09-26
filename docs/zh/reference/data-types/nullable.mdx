@@ -21,7 +21,7 @@ doc_type: 'reference'
 
 除非在 ClickHouse 服务器配置中另有指定，否则 `NULL` 是所有 `Nullable` 类型的默认值。
 
-## 存储特性 {#storage-features}
+## 存储特性
 
 要在表的列中存储 `Nullable` 类型的值，ClickHouse 除了存放值的普通文件外，还会使用一个单独的文件来存储 `NULL` 掩码。掩码文件中的条目使 ClickHouse 能够区分每个表行中的 `NULL` 和相应数据类型的默认值。由于多了一个额外文件，`Nullable` 列相比类似的普通列会占用更多存储空间。
 
@@ -29,7 +29,7 @@ doc_type: 'reference'
   使用 `Nullable` 几乎总会对性能产生负面影响，设计数据库时请牢记这一点。
 </Note>
 
-## 查找 NULL {#finding-null}
+## 查找 NULL
 
 可以通过 `null` 子列在无需读取整列的情况下查找列中的 `NULL` 值。它返回所存储的 `NULL` 掩码字节：若对应的值存在，则为 `0`；若其为 `NULL`，则为一个非零字节 (规范形式为 `1`) 。如果需要严格的 `0` 或 `1`，请使用 `isNull`。
 
@@ -52,7 +52,7 @@ SELECT n.null FROM nullable;
 └────────┘
 ```
 
-## 使用示例 {#usage-example}
+## 使用示例
 
 ```sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog

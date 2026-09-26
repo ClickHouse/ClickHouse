@@ -13,7 +13,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 Esta página é a referência de segurança do ClickHouse Connector: suas identidades, conexões, privilégios exatos, limites estruturais e como cada ação é atribuída. Para entender como as partes se encaixam, consulte [arquitetura](/pt-BR/products/bring-your-own-cloud/connector/architecture).
 
-## Identidades {#identities}
+## Identidades
 
 <Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="Modelo de identidade do ClickHouse Connector" />
 
@@ -26,9 +26,9 @@ Esta página é a referência de segurança do ClickHouse Connector: suas identi
 * **O instance profile da VM EC2 do connector** assume a ECR puller role read-only do seu ambiente para acesso direto à plataforma, tanto para o login no chart quanto para as verificações de imagem. A CLI de aprovação usa o mesmo caminho de instance profile; perfis AWS da workstation ou credenciais de SSO não o substituem. Outros registries de chart no ECR usam credenciais AWS ambientes. Os image pulls acontecem nos seus nodes sob a própria pull role deles. O executor não detém credenciais para os seus buckets nem para o IAM e não faz chamadas ao S3 ou ao IAM. Consulte [credenciais de registry](/pt-BR/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
 * **As suas próprias credenciais** aplicam cada concessão: a concessão de acesso do executor no `init --managed`, os buckets e a role no `prepare`, a metade de permissões de cada atualização de plataforma no `approve` e a limpeza no `teardown`.
 
-## O que o conector pode fazer {#what-the-connector-can-do}
+## O que o conector pode fazer
 
-### Conexões de saída {#outbound-connections}
+### Conexões de saída
 
 Toda connection que o connector abre se origina dentro do seu ambiente. A lista completa:
 
@@ -47,7 +47,7 @@ Toda connection que o connector abre se origina dentro do seu ambiente. A lista 
 
 Na entrada, cada daemon expõe uma única porta local de health, que também serve suas metrics do Prometheus, além do gateway de sessão opcional. A API de comandos local do executor faz bind apenas no loopback. Nada mais fica escutando. O ClickHouse Cloud nunca inicia conexões para o seu ambiente: ele só pode responder aos dois WebSockets de saída.
 
-### Permissões do ClickHouse {#clickhouse-grants}
+### Permissões do ClickHouse
 
 O Provisioning cria um usuário read-only para cada componente observado. Os usuários são criados com `IDENTIFIED WITH bcrypt_hash`, portanto, no SQL de provisionamento existe apenas um hash bcrypt com salt. A senha em texto simples fica somente no arquivo de credenciais que o daemon lê em runtime. A linha `ALTER USER` após cada `CREATE USER` rotaciona o hash com `--force`. O executor não possui um usuário do ClickHouse e nunca se conecta ao ClickHouse. As concessões são exatamente estas, com os conjuntos de tabelas default:
 
@@ -106,9 +106,9 @@ A concessão `system.user_directories` para ambos os usuários serve a um único
 
 Não há permissões de `INSERT`, DDL, gerenciamento de usuários, configurações nem controle de processos. Quando uma segunda implantação do conector compartilha uma instância, seus usuários recebem um sufixo (`pcm_scraper_<suffix>`) com o mesmo conjunto de permissões.
 
-### RBAC do Kubernetes {#kubernetes-rbac}
+### RBAC do Kubernetes
 
-#### Scraper e solucionador de problemas {#kubernetes-rbac-observing}
+#### Scraper e solucionador de problemas
 
 O scraper e o solucionador de problemas não possuem Função de cluster nem ClusterRoleBinding. O chart cria Roles com escopo de espaço de nomes no espaço de nomes do connector, e cada pacote de acesso por instância cria uma Role no espaço de nomes do ClickHouse ou do serviço dessa instância.
 
@@ -121,7 +121,7 @@ O scraper e o solucionador de problemas não possuem Função de cluster nem Clu
 | `pods`, `pods/log`, `pods/status`, `services`, `configmaps`, `events`, `persistentvolumeclaims` | `get`, `list`, `watch` | Somente para o Troubleshooter                                                                                                                                   |
 | `deployments`, `statefulsets`, `replicasets` (`apps`)                                           | `get`, `list`, `watch` | Somente para o Troubleshooter                                                                                                                                   |
 
-#### Executor {#kubernetes-rbac-executor}
+#### Executor
 
 No modo gerenciado, `clicklink clctl init --managed` (ou `clicklink clctl executor access grant --cluster` seguido de `apply --cluster`) aplica o grant do executor com as suas credenciais. O grant é composto pelo ServiceAccount `pcm-executor` (no espaço de nomes do connector no Kubernetes, ou em `clicklink-system` numa instalação em VM), uma Função de cluster vinculada a ele e a ValidatingAdmissionPolicy `pcm-executor-prefix-guard`.
 
@@ -146,13 +146,13 @@ Numa VM, `clicklink clctl executor prepare` também aplica um pacote por serviç
 
 O admission não é executado em `get`, `list` ou `watch`, portanto as leituras dessas famílias de resources pelo executor não ficam confinadas ao prefixo.
 
-#### Identidade da plataforma {#kubernetes-rbac-platform}
+#### Identidade da plataforma
 
 `clicklink clctl platform approve` aplica a metade de permissões de uma atualização de plataforma com as suas credenciais: Espaços de nomes, CustomResourceDefinitions, ServiceAccounts, Funções de cluster e ClusterRoleBindings, Funções e RoleBindings, configurações de webhook e de admission, PriorityClasses e a StorageClass. Em seguida, aplica o ServiceAccount `pcm-platform`, sua Função de cluster, a ValidatingAdmissionPolicy `pcm-platform-scope-guard` e o binding, e emite um token vinculado válido por 2 horas.
 
 Com esse token, o executor pode gravar apenas `deployments`, `services`, `configmaps`, `secrets`, `jobs` e `poddisruptionbudgets`, e somente nos espaços de nomes da plataforma permitidos pelo scope guard. Ele pode ler `pods`, `events`, `namespaces`, `serviceaccounts`, CustomResourceDefinitions, objetos de RBAC, configurações de webhook, StorageClasses e PriorityClasses para verificar se a metade de permissões já está em vigor antes de aplicar qualquer coisa. Ele nunca detém `escalate`, `bind` ou `impersonate`, nunca grava um kind com escopo de cluster nem um objeto de RBAC, e não pode emitir nem renovar o próprio token. O token autoriza exatamente um pacote: o digest que você aprovou fica registrado no ServiceAccount, e o executor recusa qualquer outro.
 
-## O que o connector não pode fazer {#what-the-connector-cannot-do}
+## O que o connector não pode fazer
 
 * **Nenhuma gravação em dados ou estado do ClickHouse.** As concessões acima não contêm `INSERT`, nem DDL, nem privilégios de gerenciamento de usuários, settings ou controle de processos. A única concessão de classe system, o `SYSTEM FLUSH LOGS` do scraper, apenas faz com que as log tables persistam o que já está em buffer. O executor não possui usuário do ClickHouse. Nenhum componente pode modificar dados, esquemas, usuários ou settings por meio do ClickHouse.
 * **Nenhum exec.** Nenhum RBAC contém `pods/exec`; nenhum componente pode executar comandos nos seus pods.
@@ -162,7 +162,7 @@ Com esse token, o executor pode gravar apenas `deployments`, `services`, `config
 * **Nenhum conhecimento da senha do seu default user.** O `clicklink clctl executor prepare` a gera do seu lado e a exibe uma única vez (ou o `clicklink clctl instances create` faz isso, quando você passa as entradas como flags). Apenas seus hashes são enviados, portanto nem o connector nem o ClickHouse Cloud conseguem recuperá-la.
 * **Nada de entrada.** O ClickHouse Cloud nunca abre uma connection para dentro do seu ambiente. Os únicos caminhos de comando são os dois WebSockets de saída. O solucionador de problemas recusa todos os comandos, a menos que uma sessão de suporte habilitada por você esteja ativa. O executor aceita comandos de ciclo de vida apenas para os serviços cujo gerenciamento você solicitou ao ClickHouse, dentro dos escopos acima. Mesmo durante uma sessão, o solucionador de problemas é limitado dos dois lados. As consultas ao ClickHouse ficam restritas à allowlist de tabelas, que recusa `query_log` e `text_log`, de modo que eles nunca são concedidos. O acesso ao Kubernetes fica restrito às visualizações read-only e aos logs de pods concedidos pelas Funções com escopo de espaço de nomes.
 
-## O que exige sua ação {#what-requires-your-action}
+## O que exige sua ação
 
 * **Habilitar o modo gerenciado.** O executor só é executado, e sua concessão no Kubernetes só existe, depois que você habilita o modo gerenciado no `init`; a concessão é aplicada com permissões de administrador do cluster. Consulte [serviços gerenciados](/pt-BR/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode).
 * **Criar um serviço.** O `clicklink clctl executor prepare` é executado com suas credenciais da AWS para criar os buckets e a IAM role, e o `clicklink clctl instances create` envia a definição. O ClickHouse Cloud não consegue criar um serviço no seu cluster sem os dois. Consulte [criar um serviço](/pt-BR/products/bring-your-own-cloud/connector/managed-services#create-a-service).
@@ -173,7 +173,7 @@ Com esse token, o executor pode gravar apenas `deployments`, `services`, `config
 * **Exposição do gateway.** O gateway de sessão permanece desativado até que você o habilite e só pode ser acessado por redirecionamento de porta, a menos que você habilite uma Entrada. Em uma VM, cada operador deve fixar a impressão digital do certificado autossinado, ou verificá-lo com um bundle de CA informado em `--gateway-ca`, antes que os comandos da sessão se comuniquem com ele.
 * **Egress de rede.** Em uma CNI que aplica regras, nenhum daemon alcança o endpoint do seu connector até que você liste os CIDRs dele em `networkPolicy.allowEgressCIDRs`. O executor também precisa dos CIDRs do Kubernetes API server (`networkPolicy.apiserverCIDRs`), que o `init --managed` deriva da VPC do cluster. Se os charts da plataforma vierem do Amazon ECR, adicione também os intervalos do ECR e do STS.
 
-## Como o acesso é atribuído {#how-access-is-attributed}
+## Como o acesso é atribuído
 
 * **Identidade da implantação.** O common name do certificado de cliente mTLS é o ID da sua organização, e seu único DNS name está vinculado ao host do seu endpoint. Isso torna toda conexão de API atribuível à sua organização. A renovação é automática e ocorre dentro do daemon; nenhum operador manipula o material da chave.
 * **Integridade da requisição.** Toda requisição de API também carrega uma assinatura HMAC-SHA256 (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) sobre o método, o caminho, o timestamp e o hash do corpo, usando o par de chaves emitido na inscrição.
@@ -182,7 +182,7 @@ Com esse token, o executor pode gravar apenas `deployments`, `services`, `config
 * **Aprovações de plataforma.** O digest do pacote que você aprovou é registrado na ServiceAccount `pcm-platform`. Todo objeto aplicado por suas credenciais carrega um hash de conteúdo, que o executor verifica antes de gravar qualquer coisa. Um pacote com qualquer outro digest é recusado.
 * **Trilha de auditoria.** Todo comando de session, aceito ou bloqueado, é anexado ao log de auditoria NDJSON com a identidade da organização obtida do canal de comandos. As chamadas ao gateway são registradas como linhas estruturadas `clctl.gateway` no log do solucionador de problemas, com o e-mail atestado do operador. Alterações de session locais na VM registram o usuário do host em `session.json`. Consulte o log de auditoria com `clicklink clctl troubleshoot audit tail`; veja a [CLI reference](/pt-BR/products/bring-your-own-cloud/connector/reference/cli).
 
-## Padrões de minimização de dados {#data-minimization-defaults}
+## Padrões de minimização de dados
 
 * **A `query_log` fica fora dos scrapes por padrão.** Suas colunas contêm SQL bruto com valores literais, que podem incluir dados pessoais ou secrets. Ela não sai da sua fronteira a menos que você a adicione.
 * **O solucionador de problemas lê apenas tabelas na allowlist.** `query_log` e `text_log` são recusadas na própria configuração da allowlist, de modo que nunca são concedidas e o histórico de consultas nunca fica legível. A allowlist padrão inclui `system.processes` (texto das consultas em execução); reduza-a (`troubleshooter.allowedTables` no Kubernetes, `troubleshooter.allowed_tables` em uma VM) se isso precisar permanecer oculto durante as sessões.

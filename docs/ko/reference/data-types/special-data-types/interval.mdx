@@ -39,7 +39,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## 사용 시 유의사항 {#usage-remarks}
+## 사용 시 유의사항
 
 `인터벌` 타입 값은 [Date](/ko/reference/data-types/date) 및 [DateTime](/ko/reference/data-types/datetime) 타입 값과 함께 산술 연산에 사용할 수 있습니다. 예를 들어, 현재 시간에 4일을 더할 수 있습니다:
 
@@ -87,7 +87,7 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## 집계 {#aggregation}
+## 집계
 
 `Interval` 컬럼에 `sum`, `avg`, `min`, `max`, `any`를 적용하면 동일한 타입의 인터벌이 반환됩니다.
 `sum`은 단위 수를 합산하고, `avg`는 단위 수의 평균을 구한 뒤 결과를 정수 단위로
@@ -113,7 +113,7 @@ FROM VALUES('duration IntervalMillisecond',
 공통 단위가 없으므로(한 달의 일수는 고정되어 있지 않음) 더 작은 단위와는
 전혀 혼합할 수 없습니다.
 
-## 혼합형 인터벌 {#mixed-type-intervals}
+## 혼합형 인터벌
 
 혼합형 인터벌(예: 여러 시간과 여러 분으로 이루어진 인터벌)은 `INTERVAL 'value' <from_kind> TO <to_kind>` 구문을 사용해 만들 수 있습니다.
 결과는 2개 이상의 인터벌로 구성된 튜플입니다.
@@ -156,7 +156,7 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-## 관련 항목 {#see-also}
+## 관련 항목
 
 * [INTERVAL](/ko/reference/operators/index#interval) 연산자
 * [toInterval](/ko/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 변환 함수

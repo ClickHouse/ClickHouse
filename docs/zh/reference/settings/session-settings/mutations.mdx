@@ -12,13 +12,13 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，且由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-## mutations_max_literal_size_to_replace {#mutations_max_literal_size_to_replace}
+## mutations_max_literal_size_to_replace
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
 在 `UPDATE` 和 `DELETE` 查询中，可被替换的已序列化 literal 的最大大小 (以字节为单位) 。仅当上述两个设置中至少启用了一个时，此设置才会生效。默认值：16384 (16 KiB) 。
 
-## mutations_sync {#mutations_sync}
+## mutations_sync
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

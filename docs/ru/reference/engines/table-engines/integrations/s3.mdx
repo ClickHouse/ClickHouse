@@ -11,7 +11,7 @@ doc_type: 'reference'
 
 Этот движок обеспечивает интеграцию с экосистемой [Amazon S3](https://aws.amazon.com/s3/). Он аналогичен движку [HDFS](/ru/reference/engines/table-engines/integrations/hdfs), но предоставляет возможности, специфичные для S3.
 
-## Пример {#example}
+## Пример
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
@@ -30,7 +30,7 @@ SELECT * FROM s3_engine_table LIMIT 2;
 └──────┴───────┘
 ```
 
-## Создайте таблицу {#creating-a-table}
+## Создайте таблицу
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
@@ -39,7 +39,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-### Параметры движка {#parameters}
+### Параметры движка
 
 * `path` — URL бакета с путём к файлу. В режиме `readonly` поддерживаются следующие подстановочные шаблоны: `*`, `**`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, а `'abc'`, `'def'` — строки. Подробнее см. [ниже](#wildcards-in-path).
 * `NOSIGN` - Если это ключевое слово указано вместо учётных данных, запросы не будут подписываться.
@@ -51,7 +51,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `storage_class_name` - Варианты: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Поддерживаются только классы хранилища S3, допускающие немедленное извлечение данных (архивные классы, такие как `GLACIER` и `DEEP_ARCHIVE`, не поддерживаются). Позволяет указать [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
 * `extra_credentials` - Необязательный параметр. Используется для передачи `role_arn` для ролевого доступа в ClickHouse Cloud. Инструкции по настройке см. в [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).
 
-### Кэш данных {#data-cache}
+### Кэш данных
 
 Движок таблицы `S3` поддерживает кэширование данных на локальном диске.
 Параметры конфигурации и использование файлового кэша описаны в этом [разделе](/ru/concepts/features/configuration/server-config/storing-data#using-local-cache).
@@ -82,13 +82,13 @@ SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
 
 2. повторно использовать конфигурацию кэша (а значит, и хранилище кэша) из раздела `storage_configuration` в ClickHouse, [описанного здесь](/ru/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
-### PARTITION BY {#partition-by}
+### PARTITION BY
 
 `PARTITION BY` — необязателен. В большинстве случаев ключ партиционирования не нужен, а если он всё же нужен, то, как правило, достаточно партиционирования по месяцам. Партиционирование не ускоряет запросы (в отличие от выражения ORDER BY). Никогда не используйте слишком мелкое партиционирование. Не разбивайте данные на партиции по идентификаторам или именам клиентов (вместо этого сделайте идентификатор или имя клиента первым столбцом в выражении ORDER BY).
 
 Для партиционирования по месяцам используйте выражение `toYYYYMM(date_column)`, где `date_column` — столбец с датой типа [Date](/ru/reference/data-types/date). Имена партиций в этом случае имеют формат `"YYYYMM"`.
 
-#### Стратегия партиционирования {#partition-strategy}
+#### Стратегия партиционирования
 
 `wildcard`: Заменяет подстановочный знак `{_partition_id}` в пути к файлу фактическим ключом партиционирования. Чтение не поддерживается. По умолчанию выбирается, когда путь содержит `{_partition_id}`.
 
@@ -138,7 +138,7 @@ select _path, * from t_03363_parquet;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-### Запросы к данным, разбитым на партиции {#querying-partitioned-data}
+### Запросы к данным, разбитым на партиции
 
 В этом примере используется [рецепт Docker Compose](https://github.com/ClickHouse/examples/tree/5fdc6ff72f4e5137e23ea075c88d3f44b0202490/docker-compose-recipes/recipes/ch-and-minio-S3), который интегрирует ClickHouse и MinIO. Вы сможете воспроизвести те же запросы с S3, заменив значения конечной точки и аутентификации.
 
@@ -157,7 +157,7 @@ select _path, * from t_03363_parquet;
   по частям — отсюда и запись с разбиением на партиции.
 </Note>
 
-#### Создание таблицы {#create-the-table}
+#### Создание таблицы
 
 ```sql highlight={8}
 CREATE TABLE p
@@ -175,13 +175,13 @@ ENGINE = S3(
 PARTITION BY column3
 ```
 
-#### Вставка данных {#insert-data}
+#### Вставка данных
 
 ```sql
 INSERT INTO p VALUES (1, 2, 3), (3, 2, 1), (78, 43, 45)
 ```
 
-#### Выборка из партиции 3 {#select-from-partition-3}
+#### Выборка из партиции 3
 
 <Tip>
   В этом запросе используется табличная функция S3
@@ -198,7 +198,7 @@ FROM s3('http://minio:10000/clickhouse//test_3.csv', 'minioadmin', 'minioadminpa
 └────┴────┴────┘
 ```
 
-#### Выборка из партиции 1 {#select-from-partition-1}
+#### Выборка из партиции 1
 
 ```sql
 SELECT *
@@ -211,7 +211,7 @@ FROM s3('http://minio:10000/clickhouse//test_1.csv', 'minioadmin', 'minioadminpa
 └────┴────┴────┘
 ```
 
-#### Выборка данных из партиции 45 {#select-from-partition-45}
+#### Выборка данных из партиции 45
 
 ```sql
 SELECT *
@@ -224,7 +224,7 @@ FROM s3('http://minio:10000/clickhouse//test_45.csv', 'minioadmin', 'minioadminp
 └────┴────┴────┘
 ```
 
-#### Ограничение {#limitation}
+#### Ограничение
 
 Возможно, вы попробуете выполнить `Select * from p`, но, как отмечалось выше, этот запрос завершится ошибкой; используйте запрос выше.
 
@@ -237,11 +237,11 @@ Received exception from server (version 23.4.1):
 Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading from a partitioned S3 storage is not implemented yet. (NOT_IMPLEMENTED)
 ```
 
-## Вставка данных {#inserting-data}
+## Вставка данных
 
 Обратите внимание: строки можно вставлять только в новые файлы. Операции разделения файлов и циклы слияния не поддерживаются. После записи файла все последующие вставки завершатся ошибкой. Чтобы этого избежать, можно использовать настройки `s3_truncate_on_insert` и `s3_create_new_file_on_insert`. Подробнее см. [здесь](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#inserting-data).
 
-## Виртуальные столбцы {#virtual-columns}
+## Виртуальные столбцы
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
@@ -252,7 +252,7 @@ Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading fr
 
 Подробнее о виртуальных столбцах см. [здесь](/ru/reference/engines/table-engines/index#table_engines-virtual_columns).
 
-## Подробности реализации {#implementation-details}
+## Подробности реализации
 
 * Чтение и запись могут выполняться параллельно
 * Не поддерживаются:
@@ -264,7 +264,7 @@ Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading fr
   В ClickHouse версии 22.8 и выше репликация с нулевым копированием по умолчанию отключена. Эта возможность не рекомендуется для использования в продакшне.
 </Note>
 
-## Подстановочные шаблоны в path {#wildcards-in-path}
+## Подстановочные шаблоны в path
 
 Аргумент `path` может задавать несколько файлов с помощью bash-подобных подстановочных шаблонов. Чтобы файл был обработан, он должен существовать и соответствовать всему шаблону пути. Список файлов определяется во время выполнения `SELECT` (а не в момент `CREATE`).
 
@@ -323,7 +323,7 @@ CREATE TABLE table_with_asterisk (name String, value UInt32)
     ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/*', 'CSV');
 ```
 
-## Разрешение относительных URL {#resolving-relative-urls}
+## Разрешение относительных URL
 
 Настройка [s3&#95;base](/ru/reference/settings/session-settings/s3#s3_base) позволяет использовать относительный URL в движке `S3`. Если задан параметр `s3_base`, а путь не содержит схемы, он разрешается относительно базового URL в соответствии с [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). Полное описание правил разрешения приведено в [документации по табличной функции s3](/ru/reference/functions/table-functions/s3#resolving-relative-urls). Разрешённый URL материализуется в сохранённом определении таблицы, поэтому после создания таблица не зависит от значения `s3_base`.
 
@@ -333,14 +333,14 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
     ENGINE = S3('aapl_stock.csv', NOSIGN, 'CSVWithNames');
 ```
 
-## Настройки хранилища {#storage-settings}
+## Настройки хранилища
 
 * [s3&#95;truncate&#95;on&#95;insert](/ru/reference/settings/session-settings/s3#s3_truncate_on_insert) - позволяет обрезать файл перед вставкой данных. По умолчанию отключена.
 * [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/ru/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - позволяет создавать новый файл при каждой вставке, если у формата есть суффикс. По умолчанию отключена.
 * [s3&#95;skip&#95;empty&#95;files](/ru/reference/settings/session-settings/s3#s3_skip_empty_files) - позволяет пропускать пустые файлы при чтении. По умолчанию включена.
 * [s3&#95;base](/ru/reference/settings/session-settings/s3#s3_base) - базовый URL для разрешения относительных URL, передаваемых движку. По умолчанию пусто (отключено).
 
-## Настройки, связанные с S3 {#settings}
+## Настройки, связанные с S3
 
 Следующие настройки можно задать перед выполнением запроса или указать в конфигурационном файле.
 
@@ -358,7 +358,7 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 
 Соображение безопасности: если злоумышленник может указывать произвольные URL S3, `s3_max_redirects` необходимо установить в ноль, чтобы избежать атак [SSRF](https://en.wikipedia.org/wiki/Server-side_request_forgery); либо, в качестве альтернативы, в конфигурации сервера необходимо указать `remote_host_filter`.
 
-## Настройки для конечных точек {#endpoint-settings}
+## Настройки для конечных точек
 
 Следующие настройки можно указать в файле конфигурации для заданной конечной точки (которая будет сопоставляться по точному префиксу URL):
 
@@ -401,7 +401,7 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 </s3>
 ```
 
-## Работа с архивами {#working-with-archives}
+## Работа с архивами
 
 Предположим, что у нас есть несколько архивных файлов со следующими URI в S3:
 
@@ -427,7 +427,7 @@ FROM s3(
   Хотя к архивам ZIP и TAR можно обращаться из любого поддерживаемого места хранения, архивы 7Z можно читать только из локальной файловой системы, на которой установлен ClickHouse.
 </Note>
 
-## Доступ к публичным бакетам {#accessing-public-buckets}
+## Доступ к публичным бакетам
 
 ClickHouse пытается получать учетные данные из множества различных источников.
 Иногда это может вызывать проблемы при доступе к некоторым публичным бакетам, из-за чего клиент возвращает ошибку `403`.
@@ -438,11 +438,11 @@ CREATE TABLE big_table (name String, value UInt32)
     ENGINE = S3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv', NOSIGN, 'CSVWithNames');
 ```
 
-## Оптимизация производительности {#optimizing-performance}
+## Оптимизация производительности
 
 Подробнее об оптимизации производительности функции s3 см. в [нашем подробном руководстве](/ru/integrations/connectors/data-ingestion/AWS/performance).
 
-## Ролевой доступ {#role-based-access}
+## Ролевой доступ
 
 В ClickHouse Cloud для аутентификации в S3 можно использовать ролевой доступ вместо ключей доступа. Шаги по настройке см. в разделе [Secure S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).
 
@@ -460,7 +460,7 @@ CREATE TABLE my_s3_table(name String, value UInt32)
 ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', external_id = 'my-external-id'), 'CSV')
 ```
 
-## См. также {#see-also}
+## См. также
 
 * [табличная функция S3](/ru/reference/functions/table-functions/s3)
 * [Интеграция S3 с ClickHouse](/ru/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)

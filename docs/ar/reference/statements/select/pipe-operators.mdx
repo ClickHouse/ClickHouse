@@ -39,7 +39,7 @@ ORDER BY total DESC
 LIMIT 3
 ```
 
-## استعلامات FROM {#from-queries}
+## استعلامات FROM
 
 يمكن أن يبدأ الاستعلام بعبارة `FROM`، وتكون عبارة `SELECT` اختيارية في هذه الاستعلامات. وعند حذفها، يعمل الاستعلام كما لو كانت `SELECT *` مكتوبة:
 
@@ -55,9 +55,9 @@ FROM orders |> WHERE amount > 100;
 
 لا يمكن حذف عبارة `SELECT` عندما يمكن تفسير إزاحة العينة للجدول الأخير أيضًا على أنها `OFFSET` على مستوى الاستعلام، لأن `OFFSET` في `FROM t SAMPLE 1/10 OFFSET 5` تتبع `SAMPLE`، بينما تكون `OFFSET` في `FROM t SAMPLE 1/10 SELECT * OFFSET 5` على مستوى الاستعلام؛ لذا يلزم استخدام `SELECT` الصريحة لإزالة الالتباس بينهما. وعندما يتابع الاستعلام بعبارة لا يمكن أن تسبقها `OFFSET` على مستوى الاستعلام، فلا يوجد التباس وتبقى عبارة `SELECT` اختيارية كالمعتاد: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`، `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
 
-## العوامل {#operators}
+## العوامل
 
-### WHERE {#where}
+### WHERE
 
 يُصفّي `|> WHERE condition` صفوف الإدخال. وعند استخدامه بعد عملية تجميع، يعمل مثل `HAVING`:
 
@@ -67,7 +67,7 @@ FROM orders
 |> WHERE total > 100
 ```
 
-### SELECT {#select}
+### SELECT
 
 يُبقي `|> SELECT [DISTINCT] expr1 [AS alias1], ...` التعبيرات المُدرجة فقط كأعمدة الإخراج:
 
@@ -77,7 +77,7 @@ FROM orders |> SELECT customer, amount * 2 AS doubled
 
 يُسمح بوضع فاصلة لاحقة في نهاية قائمة التعبيرات، في المواضع نفسها المسموح بها ضمن عبارة `SELECT` في استعلام عادي. ويمكن أن يليها هنا إما نهاية الاستعلام أو العامل `|>` التالي: `FROM orders |> SELECT customer, amount, |> LIMIT 1`. وينطبق الأمر نفسه على عاملي `EXTEND` و`AGGREGATE`.
 
-### EXTEND {#extend}
+### EXTEND
 
 `|> EXTEND expr1 [AS alias1], ...` يضيف التعبيرات المُدرجة إلى أعمدة الإدخال؛ وهو مكافئ لـ `SELECT *, expr1 AS alias1, ...`:
 
@@ -85,7 +85,7 @@ FROM orders |> SELECT customer, amount * 2 AS doubled
 FROM orders |> EXTEND amount * 10 AS big
 ```
 
-### SET {#set}
+### SET
 
 يستبدل `|> SET column1 = expr1, ...` قيم الأعمدة المذكورة؛ وهو مكافئ لـ `SELECT * REPLACE (expr1 AS column1, ...)`:
 
@@ -93,7 +93,7 @@ FROM orders |> EXTEND amount * 10 AS big
 FROM orders |> SET amount = amount + 1000
 ```
 
-### DROP {#drop}
+### DROP
 
 `|> DROP column1, ...` يزيل الأعمدة المحددة؛ وهو مكافئ لـ `SELECT * EXCEPT (column1, ...)`:
 
@@ -101,7 +101,7 @@ FROM orders |> SET amount = amount + 1000
 FROM orders |> DROP cancelled
 ```
 
-### AS {#as}
+### AS
 
 يُسنِد `|> AS alias` اسمًا مستعارًا إلى إدخال العامل التالي، بحيث يمكن الإشارة إليه ضمن ذلك العامل، وهو مفيد خصوصًا في عمليات الربط:
 
@@ -112,7 +112,7 @@ FROM orders
 |> JOIN orders AS o ON agg.customer = o.customer
 ```
 
-### AGGREGATE {#aggregate}
+### AGGREGATE
 
 تجمع ‎`|> AGGREGATE agg1 [AS alias1], ... [GROUP BY expr1 [AS alias1], ...]`‎ صفوف الإدخال. تتكون أعمدة الإخراج من أعمدة التجميع، تليها الأعمدة المجمّعة. من دون ‎`GROUP BY`‎، يُجمَّع الإدخال بالكامل في صف واحد:
 
@@ -121,11 +121,11 @@ FROM orders |> AGGREGATE count() AS c, sum(amount) AS total GROUP BY customer;
 FROM orders |> AGGREGATE count() AS c;
 ```
 
-### DISTINCT {#distinct}
+### DISTINCT
 
 يزيل `|> DISTINCT` الصفوف المكررة، وهو يعادل `SELECT DISTINCT *`.
 
-### ORDER BY {#order-by}
+### ORDER BY
 
 `|> ORDER BY expr1 [ASC/DESC], ...` يفرز صفوف الإدخال. يُدعم بناء عبارة `ORDER BY` بالكامل، بما في ذلك `ORDER BY ALL` و`WITH FILL` و`INTERPOLATE`:
 
@@ -135,7 +135,7 @@ FROM orders |> SELECT customer, amount |> ORDER BY ALL;
 FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
 ```
 
-### LIMIT وOFFSET {#limit-and-offset}
+### LIMIT وOFFSET
 
 تحدّ `|> LIMIT length [OFFSET offset]` و`|> OFFSET offset` عدد الصفوف:
 
@@ -143,7 +143,7 @@ FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
 FROM orders |> ORDER BY amount DESC |> LIMIT 3 OFFSET 1
 ```
 
-### JOIN و ARRAY JOIN {#join-and-array-join}
+### JOIN و ARRAY JOIN
 
 `|> [GLOBAL] [ANY/ALL/ASOF/SEMI/ANTI] [INNER/LEFT/RIGHT/FULL/CROSS] JOIN table [ON expr | USING (columns)]` يضمّ الإدخال إلى جدول أو استعلام فرعي أو دالة جدول أخرى. جميع أنواع [JOIN](/ar/reference/statements/select/join) و[ARRAY JOIN](/ar/reference/statements/select/array-join) مدعومة، ويمكن أن يتضمن عامل واحد عدة عمليات JOIN، على غرار عبارة `FROM`:
 
@@ -160,7 +160,7 @@ FROM customers
 
 وكما في عبارة `FROM` في استعلام عادي، لا يُدعَم comma (cross) join مباشرةً بعد `ARRAY JOIN`: إذ تنتمي الفاصلة التي تلي `ARRAY JOIN` دائمًا إلى قائمة تعبيرات الخاصة به.
 
-### UNION وINTERSECT وEXCEPT {#union-intersect-and-except}
+### UNION وINTERSECT وEXCEPT
 
 تدمج `|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]` و`|> INTERSECT [ALL/DISTINCT] ...` و`|> EXCEPT [ALL/DISTINCT] ...` الإدخال مع نتائج الاستعلامات الأخرى:
 
@@ -173,7 +173,7 @@ FROM orders
 
 الأقواس حول المعامل اختيارية في الاستعلام الواحد، لكنها مطلوبة إذا استمرت السلسلة بعامل الأنبوب آخر بعد عملية المجموعات، وإلا فلن يتضح ما إذا كان العامل التالي ينطبق على المعامل الأخير أم على النتيجة بأكملها.
 
-## ملاحظات {#notes}
+## ملاحظات
 
 * تظل عبارة `WITH` في الاستعلام مرئية لجميع عوامل الأنبوب اللاحقة، سواء للأسماء المستعارة القياسية أو لتعبيرات الجدول الشائعة: `WITH 10 AS threshold FROM t |> WHERE x < threshold`.
 * في `INSERT ... SELECT`، تُرفق عبارة `WITH` المكتوبة قبل `INSERT` بأقصى استعلام `SELECT` خارجي مُولَّد، وتصل إلى مراحل الأنبوب الداخلية أثناء التفسير عبر الإعداد `enable_global_with_statement` (المفعّل افتراضيًا)، تمامًا كما تصل إلى استعلام فرعي متداخل مكتوب يدويًا. إذا عُطّل هذا الإعداد، فلن تكون الأسماء المستعارة وتعبيرات الجدول الشائعة من عبارة `WITH` ضمن نطاق `INSERT` مرئية داخل مراحل الأنبوب، تمامًا كما لا تكون مرئية داخل استعلام فرعي مكتوب يدويًا.

@@ -12,18 +12,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يدعم ClickHouse BYOC على GCP خيارين للاتصال الخاص، هما VPC Peering وPSC ‏(Private Service Connect).
 
 <div id="common-prerequisites">
-  ## المتطلبات الأساسية {#common-prerequisites}
+  ## المتطلبات الأساسية
 </div>
 
 الخطوات المشتركة اللازمة لكلٍّ من VPC peering وPSC.
 
-### فعّل موازن التحميل الخاص لـ ClickHouse BYOC {#step-enable-private-load-balancer-for-clickhouse-byoc}
+### فعّل موازن التحميل الخاص لـ ClickHouse BYOC
 
 في وحدة تحكم ClickHouse Cloud، فعّل **موازن التحميل الخاص** للبنية التحتية لـ BYOC الخاصة بك.
 
 <Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC تفعيل موازن التحميل الخاص" border />
 
-## إعداد VPC peering {#gcp-vpc-peering}
+## إعداد VPC peering
 
 يُرجى الاطلاع على [ميزة GCP VPC peering](https://docs.cloud.google.com/vpc/docs/vpc-peering) والانتباه إلى قيود VPC peering (على سبيل المثال، لا يمكن أن تتداخل نطاقات IP للشبكات الفرعية بين شبكات VPC المترابطة). يستخدم ClickHouse BYOC موازن تحميل خاصًا لإتاحة الاتصال الشبكي عبر peering إلى خدمات ClickHouse.
 
@@ -63,7 +63,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-## إعداد PSC ‏(Private Service Connect) {#setup-psc}
+## إعداد PSC ‏(Private Service Connect)
 
 يوفّر GCP PSC ‏(Private Service Connect) اتصالاً آمناً وخاصاً بخدمات ClickHouse BYOC دون الحاجة إلى VPC peering أو بوابات الإنترنت. تمرّ جميع حركة البيانات داخل شبكة GCP، مما يضمن عدم مرورها عبر الإنترنت العام مطلقاً.
 
