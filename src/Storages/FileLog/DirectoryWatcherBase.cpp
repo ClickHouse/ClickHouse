@@ -440,8 +440,7 @@ void DirectoryWatcherBase::watchFunc()
         try
         {
             const bool complete = scan(current);
-            /// A rename landing inside `scan` can list the file under neither of its names or under both, which the
-            /// diff reports as REMOVED + ADDED (re-read from offset 0), so a scan the directory changed under is not diffed.
+            /// Listing then `stat` is not atomic with a rename, so a scan the directory changed under is not diffed.
             const auto drained = drain_events();
             /// The drain consumed wakeups that the scan may not reflect.
             rescan_without_waiting = drained.any || !complete;
