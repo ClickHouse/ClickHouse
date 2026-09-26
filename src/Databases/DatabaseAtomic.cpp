@@ -21,6 +21,7 @@
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/ProcessList.h>
 
 
@@ -32,6 +33,11 @@ namespace Setting
 {
     extern const SettingsBool check_referential_table_dependencies;
     extern const SettingsBool check_table_dependencies;
+}
+
+namespace FailPoints
+{
+    extern const char rename_database_after_dependency_check[];
 }
 
 namespace ErrorCodes
@@ -763,6 +769,23 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
     }
 
+    /// The rename re-keys every table of the database under the new name in the server-wide dependency
+    /// graph, which can close a cycle - the simplest case being a table `db.t = Alias(<new name>, t)`,
+    /// accepted at `CREATE` because the target database did not exist yet and thus becoming a
+    /// self-reference. Refuse such a rename before anything is modified, the same way `RENAME TABLE`
+    /// refuses it for a single table. The check is done here, under `mutex` and the exclusive database
+    /// DDL lock held by the caller, so that it sees exactly the set of tables that is about to be
+    /// re-keyed below: no table can be created, attached or dropped in between.
+    Strings table_names;
+    table_names.reserve(tables.size());
+    for (const auto & table : tables)
+        table_names.push_back(table.first);
+    DatabaseCatalog::instance().checkDatabaseCanBeRenamedWithNoCyclicDependencies(database_name, new_name, table_names);
+
+    /// Lets a test hold the rename between the dependency check and the catalog rewrite, to prove
+    /// that a concurrent `CREATE TABLE` cannot slip a new table into the database at this point.
+    FailPointInjection::pauseFailPoint(FailPoints::rename_database_after_dependency_check);
+
 
     try
     {
@@ -783,13 +806,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     String old_path_to_table_symlinks;
 
     {
-        {
-            Strings table_names;
-            table_names.reserve(tables.size());
-            for (auto & table : tables)
-                table_names.push_back(table.first);
-            DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
-        }
+        DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
         database_name = new_name;
 
         onDatabaseRenamed();
