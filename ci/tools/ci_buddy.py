@@ -1,17 +1,22 @@
 import argparse
 import json
 import os
+import sys
+from pathlib import Path
 from typing import Dict, List, Union
 
 import requests
 from botocore.exceptions import ClientError
 
-from ci_utils import GH, Envs, Shell, WithIter
+from ci_utils import GH, Envs
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+from ci.praktika.utils import MetaClasses, Shell
 
-class Channels(metaclass=WithIter):
+
+class Channels(metaclass=MetaClasses.WithIter):
     # Channel names must match json keys in ParameterStore
     ALERTS = "alerts-channel"
     INFO = "info-channel"
