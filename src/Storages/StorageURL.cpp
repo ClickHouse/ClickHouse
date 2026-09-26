@@ -588,6 +588,9 @@ StorageURLSource::StorageURLSource(
                 reader_format_filter_info->current_schema_column_mapper = format_filter_info->current_schema_column_mapper;
                 reader_format_filter_info->condition_hash = format_filter_info->condition_hash;
                 reader_format_filter_info->rows_to_read = format_filter_info->rows_to_read;
+                /// Keep TopN dynamic filtering: sort key is still read from the file even when
+                /// row policy / PREWHERE on missing DEFAULT columns is deferred past the format.
+                reader_format_filter_info->top_k_filter = format_filter_info->top_k_filter;
 
                 auto add_filter_inputs = [&](const ActionsDAG & dag)
                 {
