@@ -23,3 +23,14 @@ SELECT timeSeriesTagsToMap(map('__name__', 'bar', 'x', '1'), '__name__', '');
 
 SELECT 'Empty input produces an empty map:';
 SELECT timeSeriesTagsToMap(CAST([], 'Array(Tuple(String, String))'));
+
+SELECT 'FixedString values in the tags array are normalized:';
+
+WITH
+    timeSeriesTagsToMap(
+        CAST([('a', 'x')], 'Array(Tuple(FixedString(3), FixedString(3)))')
+    ) AS from_array,
+    timeSeriesTagsToMap([], toFixedString('a', 3), toFixedString('x', 3)) AS from_arguments
+SELECT from_array = from_arguments,
+       mapContains(from_array, 'a'),
+       mapContains(from_arguments, 'a');

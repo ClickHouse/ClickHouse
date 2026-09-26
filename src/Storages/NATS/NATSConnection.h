@@ -71,6 +71,13 @@ public:
 
     String connectionInfoForLog() const;
 
+    /// The error the client library recorded last on the connection, `Authorization Violation`
+    /// for a connection it closed for good after the server rejected the credentials twice. The
+    /// library keeps it on a closed connection, which lets the table report why it lost the one it
+    /// is replacing; the asynchronous error handler below cannot do that, because it only knows the
+    /// connection, not the table.
+    String lastErrorForLog();
+
 private:
     bool isConnectedImpl(const Lock & connection_lock) const;
     bool isDisconnectedImpl(const Lock & connection_lock) const;
@@ -82,6 +89,7 @@ private:
 
     static void disconnectedCallback(natsConnection * nc, void * connection);
     static void reconnectedCallback(natsConnection * nc, void * connection);
+    static void errorCallback(natsConnection * nc, natsSubscription * subscription, natsStatus status, void * connection);
 
     NATSConfiguration configuration;
     LoggerPtr log;

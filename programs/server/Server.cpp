@@ -377,6 +377,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
+    extern const ServerSettingsUInt64 min_allocation_size_to_log_stack_trace;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
@@ -1387,6 +1388,10 @@ try
     if (has_trace_collector)
     {
         global_context->createTraceCollector();
+
+        /// The config reloader applies this too; the seed here covers startup, which runs before its first callback.
+        MemoryTracker::setMinAllocationSizeToLogStackTrace(
+            server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
 
         /// Set up server-wide memory profiler (for total memory tracker).
         if (server_settings[ServerSetting::total_memory_profiler_step])
@@ -2577,6 +2582,9 @@ try
             CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
                 new_server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
 
+            MemoryTracker::setMinAllocationSizeToLogStackTrace(
+                new_server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
+
             per_cpu_memory.setBudgetCapacity(new_server_settings[ServerSetting::max_per_cpu_untracked_memory]);
             per_cpu_memory.setThreadBuffer(new_server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
 
@@ -2653,11 +2661,6 @@ try
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
             global_context->setUsersToIgnoreEarlyMemoryLimitCheck(new_server_settings[ServerSetting::users_to_ignore_early_memory_limit_check]);
             global_context->allowSystemAllocateMemory(config().getBool("allow_system_allocate_memory", false));
-
-            global_context->setMutationsUseAnalyzerOverride(
-                config().has("use_analyzer_for_mutations")
-                    ? std::make_optional(config().getBool("use_analyzer_for_mutations"))
-                    : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
             global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::enable_read_through_distributed_cache]);
@@ -3705,12 +3708,20 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Wait for unfinished backups and restores.
-            /// This must be done after closing listening sockets (no more backups/restores) but before ProcessList::killAllQueries
+            /// This must be done after closing listening sockets (no more socket-delivered backups/restores) but before ProcessList::killAllQueries
             /// (because killAllQueries() will cancel all running backups/restores).
+            bool backups_finished = true;
             if (server_settings[ServerSetting::shutdown_wait_backups_and_restores])
                 global_context->waitAllBackupsAndRestores();
             else
-                global_context->cancelAllBackupsAndRestores();
+            {
+                /// Refused first so that the wait cannot miss an operation started after it took
+                /// its snapshot; a distributed DDL query can still deliver one here.
+                global_context->stopAcceptingNewBackupsAndRestores();
+                backups_finished = global_context->cancelAllBackupsAndRestores(
+                    std::chrono::steady_clock::now()
+                    + std::chrono::seconds(server_settings[ServerSetting::shutdown_wait_unfinished]));
+            }
 
             stop_oom_canary();
 
@@ -3739,7 +3750,13 @@ try
 
             dns_cache_updater.reset();
 
-            if (current_connections || !joined_refresh_tasks || !joined_background_queries)
+            /// killAllQueries() and the waits above can have driven a cancelled backup to a final
+            /// status, and then the normal teardown is able to complete. Sound because this is false
+            /// only where new operations are already refused, so the unfinished set cannot grow.
+            if (!backups_finished)
+                backups_finished = !global_context->hasUnfinishedBackupsAndRestores();
+
+            if (current_connections || !joined_refresh_tasks || !joined_background_queries || !backups_finished)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live

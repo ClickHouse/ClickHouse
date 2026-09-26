@@ -9,7 +9,7 @@ Expression (Project names)
               ReadFromMergeTree (default.t_corr_right_multi)
           GatherExchange
             Aggregating
-              Expression
+              Expression ((Apply runtime join filter + Change column names to column identifiers))
                 ReadFromMergeTree (ParallelRead default.t_corr_left)
 -- canary: variant B (full pushdown) fires for case 13\'s query (single Aggregating, below the join)
 Expression (Project names)

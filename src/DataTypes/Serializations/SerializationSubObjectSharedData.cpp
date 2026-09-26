@@ -113,7 +113,8 @@ void SerializationSubObjectSharedData::enumerateStreams(
                                 .withDeserializeState(sub_object_shared_data_state ? sub_object_shared_data_state->bucket_map_states[bucket] : nullptr);
             serialization_map->enumerateStreams(settings, callback, map_data);
         }
-        else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+        else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED
+                 || serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED)
         {
             if (settings.use_specialized_prefixes_and_suffixes_substreams)
                 addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructurePrefix);
@@ -185,7 +186,8 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkStatePrefix(
             settings.path.pop_back();
         }
     }
-    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED
+             || serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED)
     {
         shared_data_state->bucket_structure_states.resize(buckets);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
@@ -305,39 +307,40 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         /// Now we have map column from each bucket and can collect all paths with specified prefix from them.
         collectSharedDataFromBuckets(bucket_map_columns, column, &paths_prefix);
     }
-    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+    else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED
+             || serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED)
     {
-        std::vector<std::shared_ptr<SerializationObjectSharedData::PathsDataGranules>> bucket_paths_data_granules(buckets);
-        /// We need to remember offset and limit from each granule to know which rows to insert in the result.
-        std::vector<std::pair<size_t, size_t>> granules_offset_and_limit;
+        std::vector<std::shared_ptr<SerializationObjectSharedData::PathsDataChunks>> bucket_paths_data_chunks(buckets);
+        /// We need to remember offset and limit from each chunk to know which rows to insert in the result.
+        std::vector<std::pair<size_t, size_t>> chunks_offset_and_limit;
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);
             settings.path.back().bucket = bucket;
 
             auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(sub_object_shared_data_state->bucket_structure_states[bucket]);
-            auto structure_granules = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
-            auto paths_infos_granules = SerializationObjectSharedData::deserializePathsInfos(*structure_granules, *shared_data_structure_state, settings, cache);
-            bucket_paths_data_granules[bucket] = SerializationObjectSharedData::deserializePathsData(*structure_granules, *paths_infos_granules, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, cache);
+            auto chunk_structures = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
+            auto paths_infos_chunks = SerializationObjectSharedData::deserializePathsInfos(*chunk_structures, *shared_data_structure_state, settings, cache);
+            bucket_paths_data_chunks[bucket] = SerializationObjectSharedData::deserializePathsData(*chunk_structures, *paths_infos_chunks, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, cache);
 
-            /// Init offset and limit for each granule
+            /// Init offset and limit for each chunk.
             if (bucket == 0)
             {
-                granules_offset_and_limit.reserve(structure_granules->size());
-                for (size_t granule = 0; granule != structure_granules->size(); ++granule)
-                    granules_offset_and_limit.emplace_back((*structure_granules)[granule].offset, (*structure_granules)[granule].limit);
+                chunks_offset_and_limit.reserve(chunk_structures->size());
+                for (size_t chunk_idx = 0; chunk_idx != chunk_structures->size(); ++chunk_idx)
+                    chunks_offset_and_limit.emplace_back((*chunk_structures)[chunk_idx].offset, (*chunk_structures)[chunk_idx].limit);
             }
             settings.path.pop_back();
         }
 
         auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(column);
-        for (size_t granule = 0; granule != bucket_paths_data_granules[0]->size(); ++granule)
+        for (size_t chunk_idx = 0; chunk_idx != bucket_paths_data_chunks[0]->size(); ++chunk_idx)
         {
-            /// Collect list of all paths that match prefix from all buckets in this granule.
+            /// Collect list of all paths that match prefix from all buckets in this chunk.
             std::vector<std::pair<String, const ColumnDynamic *>> all_paths;
-            for (const auto & paths_data_granules : bucket_paths_data_granules)
+            for (const auto & paths_data_chunks : bucket_paths_data_chunks)
             {
-                const auto & paths_data = (*paths_data_granules)[granule].paths_data;
+                const auto & paths_data = (*paths_data_chunks)[chunk_idx].paths_data;
                 for (const auto & [path, path_column] : paths_data)
                 {
                     if (path.starts_with(paths_prefix))
@@ -350,9 +353,9 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
 
             /// Paths in shared data column are stored in sorted order.
             std::sort(all_paths.begin(), all_paths.end());
-            auto [granule_offset, granule_limit] = granules_offset_and_limit[granule];
-            size_t granule_end = granule_offset + granule_limit;
-            for (size_t i = granule_offset; i != granule_end; ++i)
+            auto [chunk_offset, chunk_limit] = chunks_offset_and_limit[chunk_idx];
+            size_t chunk_end = chunk_offset + chunk_limit;
+            for (size_t i = chunk_offset; i != chunk_end; ++i)
             {
                 for (const auto & [path, path_column] : all_paths)
                     ColumnObject::serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, path, *path_column, i);

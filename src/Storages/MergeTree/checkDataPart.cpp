@@ -437,14 +437,34 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     /// Handle unknown projections: on disk and in checksums but not in the
     /// part's projection list (e.g. a projection was dropped while the part
-    /// was detached, then re-attached).  Remove them from checksums_txt so
-    /// that the checkEqual below does not fail, and mark the part as having
-    /// a broken projection so the caller can handle it gracefully.
+    /// was detached, then re-attached, or an INSERT that had started before
+    /// `DROP PROJECTION` committed wrote the part afterwards).  Remove them
+    /// from checksums_txt so that the checkEqual below does not fail, and mark
+    /// the part as having a broken projection so the caller can handle it
+    /// gracefully.
     if (!projections_on_disk.empty())
     {
         is_broken_projection = true;
-        for (const auto & projection_file : projections_on_disk)
-            checksums_txt.remove(projection_file);
+
+        for (auto it = projections_on_disk.begin(); it != projections_on_disk.end();)
+        {
+            /// A directory the part itself lists in its `checksums.txt` was written deliberately, with
+            /// a projection the table has since dropped; the part is intact and has to keep passing the
+            /// check. Drop it from the unexpected set as well, or the `require_checksums` branch below
+            /// reports the part as broken - which is what happens to every mutation descendant of such
+            /// a part, because a mutation hardlinks the directory and is checked with checksums
+            /// required. A directory that the part does not list is a leftover nobody wrote as part of
+            /// it, so it stays unexpected.
+            if (checksums_txt.files.contains(*it))
+            {
+                checksums_txt.remove(*it);
+                it = projections_on_disk.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
     }
 
     /// Also handle leftover checksums entries for projections that are unknown to the current metadata
