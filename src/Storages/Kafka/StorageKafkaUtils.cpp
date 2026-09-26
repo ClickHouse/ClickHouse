@@ -55,7 +55,7 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_kafka_offsets_storage_in_keeper;
+    extern const SettingsBool allow_kafka_offsets_storage_in_keeper;
     extern const SettingsBool kafka_disable_num_consumers_limit;
 }
 
@@ -289,10 +289,10 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
         if (args.mode <= LoadingStrictnessLevel::CREATE
-            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper])
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_kafka_offsets_storage_in_keeper])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
-                "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "
+                "Storing the Kafka offsets in Keeper is experimental. Set `allow_kafka_offsets_storage_in_keeper` setting "
                 "to enable it");
 
         if (!has_keeper_path || !has_replica_name)
@@ -369,9 +369,9 @@ import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 
 # Kafka table engine
 
-:::tip
+<Tip>
 If you're on ClickHouse Cloud, we recommend using [ClickPipes](/integrations/clickpipes/home) instead. ClickPipes natively supports private network connections, scaling ingestion and cluster resources independently, and comprehensive monitoring for streaming Kafka data into ClickHouse.
-:::
+</Tip>
 
 - Publish or subscribe to data flows.
 - Organize fault-tolerant storage.
@@ -463,6 +463,19 @@ Note: Kafka brokers must be configured with `broker.rack` and `replica.selector.
 - `kafka_partition_shard_num` — The current shard number for static partition-to-shard affinity. Must be between 1 and `kafka_shard_count` inclusive. Partitions are assigned by the formula `partition_id % kafka_shard_count == kafka_partition_shard_num - 1`. Supports macro expansion (e.g., `'{shard}'`). Must be used together with `kafka_shard_count`. Only supported with StorageKafka2 (requires `kafka_keeper_path` and `kafka_replica_name`). Default: `''` (disabled).
 - `kafka_shard_count` — Total number of shards participating in consumption. Used together with `kafka_partition_shard_num` to statically assign partitions. Must be used together with `kafka_partition_shard_num`. Only supported with StorageKafka2. Default: `0` (disabled).
 
+## OAUTHBEARER/OIDC authentication {#oauthbearer-oidc-authentication}
+
+`OAUTHBEARER` authentication uses [librdkafka configuration properties](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md). Configure `sasl.oauthbearer.method`, `sasl.oauthbearer.client.id`, `sasl.oauthbearer.client.secret`, `sasl.oauthbearer.token.endpoint.url`, and `sasl.oauthbearer.scope` for the OIDC client credentials flow.
+
+When defining these properties in ClickHouse XML, replace periods with underscores. For example, use `<sasl_oauthbearer_client_id>` for `sasl.oauthbearer.client.id`.
+
+For `ENGINE = Kafka(named_collection)`, use two namespaces in the named collection:
+
+- Top-level `kafka_*` keys are Kafka table-engine settings, such as `kafka_security_protocol` and `kafka_sasl_mechanism`.
+- Keys nested under `<kafka>` are extended `librdkafka` settings, including the OIDC properties above.
+
+The global server `<kafka>` configuration is not merged when a named collection is used, so each collection must include all required OIDC properties. See [Kafka named collections](/concepts/features/configuration/server-config/named-collections#oauthbearer-oidc-authentication) for a complete example.
+
 Examples:
 
 ```sql
@@ -497,9 +510,9 @@ CREATE TABLE queue3 (
 
 <summary>Deprecated Method for Creating a Table</summary>
 
-:::note
+<Note>
 Do not use this method in new projects. If possible, switch old projects to the method described above.
-:::
+</Note>
 
 ```sql
 Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
@@ -508,9 +521,9 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 </details>
 
-:::info
+<Info>
 The Kafka table engine doesn't support columns with [default value](/reference/statements/create/table#default_values). If you need columns with default value, you can add them at materialized view level (see below).
-:::
+</Info>
 
 ## Description {#description}
 
@@ -617,9 +630,9 @@ For a list of possible configuration options, see the [librdkafka configuration 
 
 ### AWS MSK IAM Authentication {#kafka-aws-msk-iam}
 
-:::note
+<Note>
 AWS MSK IAM authentication requires ClickHouse to be built with AWS S3 support enabled.
-:::
+</Note>
 
 AWS MSK supports IAM-based authentication, allowing connection to Kafka clusters using AWS credentials instead of managing separate usernames and passwords.
 
@@ -805,7 +818,7 @@ The number of rows in one Kafka message depends on whether the format is row-bas
 
 <ExperimentalBadge/>
 
-If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
+If `allow_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
 - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
 - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
 
@@ -834,7 +847,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '1',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 
 -- Shard 2: consumes partitions 1, 4, 7, 10
 CREATE TABLE kafka_shard2 (key UInt64, value String)
@@ -844,7 +857,7 @@ SETTINGS
     kafka_replica_name = '{replica}',
     kafka_partition_shard_num = '2',
     kafka_shard_count = 3
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper = 1;
+SETTINGS allow_kafka_offsets_storage_in_keeper = 1;
 ```
 
 When combined with replicas (multiple `kafka_replica_name` values sharing the same `kafka_keeper_path`), the affinity filter is applied first to determine eligible partitions, then ZooKeeper locks distribute those eligible partitions among replicas.
@@ -857,7 +870,7 @@ ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
 SETTINGS
 kafka_keeper_path = '/clickhouse/{database}/{uuid}',
 kafka_replica_name = '{replica}'
-SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+SETTINGS allow_kafka_offsets_storage_in_keeper=1;
 ```
 
 ### Known limitations {#known-limitations}
