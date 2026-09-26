@@ -497,6 +497,11 @@ VortexExpressionPtr VortexExpressionConverter::convertIn(const RPNBuilderFunctio
     auto future_set = node.getArgumentAt(1).tryGetPreparedSet();
     if (!future_set)
         return nullptr;
+    /// A set backed by a `Set` table can still grow while the query runs, and the `in` above the
+    /// scan sees the live set: a snapshot pushed into the scan would drop rows that the final
+    /// filter accepts after a concurrent insert.
+    if (future_set->isMutableDuringQuery())
+        return nullptr;
     auto built_set = future_set->get();
     if (!built_set)
         return nullptr;
