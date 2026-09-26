@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 
 #include <Storages/StorageProxy.h>
@@ -61,11 +62,59 @@ public:
         LOG_TRACE(log, "Loading lazy table on first access");
 
         auto nested_storage = get_nested();
+        /// The database replaces this proxy with the loaded storage as soon as it notices the load
+        /// (see `DatabaseWithOwnTablesBase::replaceLoadedLazyTableUnlocked`), after which the two
+        /// objects are both around and both reachable as this table. Hand over the table-level
+        /// locks, so that they keep excluding each other across the replacement.
+        nested_storage->takeTableLocksFrom(*this);
         nested_storage->startup();
         nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;
         get_nested = {};
+        is_loaded.store(true, std::memory_order_release);
         return nested;
+    }
+
+    StoragePtr getLoadedLazyTable() const override
+    {
+        /// Never wait for the load to finish, and do not take `nested_mutex` at all: this is called
+        /// by the database with its own mutex held, while `getNested` keeps `nested_mutex` for as
+        /// long as the table takes to load. `nested` is assigned once, before `is_loaded` is set,
+        /// and never changes after that, so it can be read without the mutex once `is_loaded` is.
+        if (!is_loaded.load(std::memory_order_acquire))
+            return nullptr;
+        return nested;
+    }
+
+    /// Once the table has been loaded, the database replaces this proxy with the loaded storage, and
+    /// `DETACH` or `DROP` from then on marks only the loaded storage. A query that resolved the proxy
+    /// before the replacement must still see that, otherwise it could lock a table that is gone.
+    bool isDroppedOrDetached() const override
+    {
+        if (IStorage::isDroppedOrDetached()) // NOLINT(bugprone-parent-virtual-call)
+            return true;
+        auto loaded = getLoadedLazyTable();
+        return loaded && loaded->isDroppedOrDetached();
+    }
+
+    StoragePtr loadLazyTable() const override { return getNested(); }
+
+    /// `StorageProxy` forwards `mutate`, but not the checks that gate a mutation, an UPDATE or a
+    /// DELETE. Without these, the first such statement addressed to a table that has not been loaded
+    /// yet is answered by the `IStorage` defaults and rejected, e.g. with
+    /// `Table engine MergeTree doesn't support mutations`. They all mean the table is about to be
+    /// written to, so materializing it here costs nothing.
+    void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override
+    {
+        getNested()->checkMutationIsPossible(commands, settings);
+    }
+
+    bool supportsDelete() const override { return getNested()->supportsDelete(); }
+    bool supportsLightweightDelete() const override { return getNested()->supportsLightweightDelete(); }
+    std::expected<void, PreformattedMessage> supportsLightweightUpdate() const override { return getNested()->supportsLightweightUpdate(); }
+    QueryPipeline updateLightweight(const MutationCommands & commands, ContextPtr context) override
+    {
+        return getNested()->updateLightweight(commands, context);
     }
 
     bool storesDataOnDisk() const override { return true; }
@@ -203,6 +252,7 @@ private:
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    mutable std::atomic<bool> is_loaded{false}; /// Set once `nested` has been assigned, see getLoadedLazyTable.
     LoggerPtr log;
 };
 
