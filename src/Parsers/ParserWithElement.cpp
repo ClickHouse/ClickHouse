@@ -258,7 +258,7 @@ SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
 
 - **Experimental setting required**: The setting `enable_materialized_cte` must be enabled. Otherwise `MATERIALIZED` results in a `SUPPORT_IS_DISABLED` exception, unless `force_materialized_cte = 0`, in which case the keyword is ignored and the CTE is inlined like an ordinary CTE.
 - **Not supported in view definitions**: the CTE would be inlined when the definition is stored, so `CREATE VIEW`, `CREATE MATERIALIZED VIEW` and `ALTER TABLE ... MODIFY QUERY` reject it unless `force_materialized_cte = 0`. This includes materialized CTEs introduced by SQL user-defined functions used in the definition.
-- **Lightweight `UPDATE` and `DELETE`**: materialized CTEs are supported. If the server is configured with `use_analyzer_for_mutations = 0`, such a statement cannot run a CTE at all, so `MATERIALIZED` is rejected there regardless of `force_materialized_cte`.
+- **Lightweight `UPDATE` and `DELETE`**: materialized CTEs are supported.
 - **Not supported with `RECURSIVE`**: Combining `MATERIALIZED` and `RECURSIVE` keywords is not allowed and results in an `UNSUPPORTED_METHOD` exception.
 - **Correlated CTEs are forbidden**: A materialized CTE cannot reference columns from outer query scopes.
 

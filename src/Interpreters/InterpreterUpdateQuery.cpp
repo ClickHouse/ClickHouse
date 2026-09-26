@@ -112,16 +112,9 @@ BlockIO InterpreterUpdateQuery::execute()
 
     /// The mutation command is stored as text, which undoes the CTE rewrite below, so a lightweight update
     /// materializes its CTEs like a `SELECT`. The check runs here so a rejection precedes the Replicated enqueue,
-    /// the table lock and the block-number allocation. Without the analyzer the mutation cannot run a CTE at all,
-    /// so `AS MATERIALIZED` is rejected regardless of `force_materialized_cte`.
+    /// the table lock and the block-number allocation.
     std::optional<RejectMaterializedCTEVisitor::Data> reject;
-    if (!shouldUseAnalyzerForMutations(getContext()))
-    {
-        reject.emplace();
-        reject->reason = "require the analyzer, which is not used for this mutation";
-        reject->remedy = "The server setting `use_analyzer_for_mutations` disables the analyzer for mutations";
-    }
-    else if (shouldRejectMaterializedCTE(getContext()) && !settings[Setting::enable_materialized_cte])
+    if (shouldRejectMaterializedCTE(getContext()) && !settings[Setting::enable_materialized_cte])
     {
         reject.emplace();
         reject->reason = "are disabled";

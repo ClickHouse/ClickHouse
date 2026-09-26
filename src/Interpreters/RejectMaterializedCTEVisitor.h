@@ -16,7 +16,7 @@ namespace ErrorCodes
 }
 
 /// Throws for a `WITH` element declared `AS MATERIALIZED` anywhere in the query, so a path that cannot
-/// materialize it (stored view definition, a mutation run without the analyzer) never inlines it silently.
+/// materialize it (a stored view definition) never inlines it silently.
 class RejectMaterializedCTEMatcher
 {
 public:
