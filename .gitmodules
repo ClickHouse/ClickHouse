@@ -63,7 +63,7 @@
 	url = https://github.com/ClickHouse/cppkafka
 [submodule "contrib/brotli"]
 	path = contrib/brotli
-	url = https://github.com/ClickHouse/brotli
+	url = https://github.com/google/brotli
 [submodule "contrib/h3"]
 	path = contrib/h3
 	url = https://github.com/ClickHouse/h3
