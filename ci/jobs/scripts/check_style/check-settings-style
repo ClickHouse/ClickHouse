@@ -92,7 +92,10 @@ done
 
 # We append all uses of extern found in implementation files to validate them in a single pass and avoid reading the same files over and over
 # Note that rg outputs 'path:$line', so with replace ':' with a space and then reorder to have "$setting $type $path"
-rg "^\s*extern const .*Settings" --glob '*.cpp' --glob '*.h' \
+# The type is what carries "Settings" (`extern const SettingsUInt64 x;`), not the name. Matching
+# "Settings" anywhere on the line also catches `extern const Event SomethingSettings;`, which is a
+# ProfileEvent and has no business being looked up in the settings list.
+rg "^\s*extern const \w*Settings\w* " --glob '*.cpp' --glob '*.h' \
     "$ROOT_PATH/src" "$ROOT_PATH/base" "$ROOT_PATH/programs" "$ROOT_PATH/utils" | \
     tr ':' ' ' | grep -v "NOLINT" | \
     awk '{print substr($5, 0, length($5) -1) " " $4 " " $1}' >> "${SETTINGS_FILE}"
