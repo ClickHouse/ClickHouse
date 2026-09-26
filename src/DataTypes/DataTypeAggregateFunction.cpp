@@ -339,6 +339,12 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     AggregateFunctionProperties properties;
     AggregateFunctionPtr function = AggregateFunctionFactory::instance().get(function_name, action, argument_types, params_row, properties);
+
+    if (function->isOnlyWindowFunction())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The function '{}' can only be used as a window function, not as an aggregate function, "
+                        "so its state cannot be used as a data type", function_name);
+
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 

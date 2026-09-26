@@ -386,6 +386,20 @@ private:
 
             ResultType current = 0;
 
+            [[maybe_unused]] bool item_is_null = false;
+            if constexpr (!IsConst && HasNullMapItem)
+                item_is_null = (*item_map)[i];
+
+            if constexpr (!IsConst && HasNullMapItem && !HasNullMapData)
+            {
+                if (item_is_null)
+                {
+                    result[i] = current;
+                    current_offset = offsets[i];
+                    continue;
+                }
+            }
+
             for (size_t j = 0; j < array_size; ++j)
             {
                 const ArrayOffset string_pos = string_offsets[current_offset + j - 1];
@@ -407,14 +421,28 @@ private:
                         if constexpr (!HasNullMapItem)
                             continue;
 
-                        if (!(*item_map)[i])
+                        if (!item_is_null)
                             continue;
                     }
-                    else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
+                    else
+                    {
+                        if constexpr (HasNullMapItem)
+                            if (item_is_null)
+                                continue;
+
+                        if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
+                            continue;
+                    }
+                }
+                else
+                {
+                    if constexpr (HasNullMapItem)
+                        if (item_is_null)
+                            continue;
+
+                    if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
                         continue;
                 }
-                else if (!memequalSmallAllowOverflow15(&item_values[value_pos], value_size, &data[string_pos], string_size))
-                    continue;
 
                 ConcreteAction::apply(current, j);
 

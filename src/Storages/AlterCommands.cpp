@@ -791,6 +791,20 @@ void AlterCommand::apply(
         return if_exists && !metadata.columns.has(column_name);
     };
 
+    /// validate() screens these column names too, but against a model that tracks only ADD/DROP/MODIFY/RENAME
+    /// COLUMN - not MODIFY QUERY, which replaces a materialized view's columns with its new query's output.
+    auto skip_absent_column_or_fail = [&](std::string_view action) -> bool
+    {
+        if (should_skip_column_operation())
+            return true;
+        if (metadata.columns.has(column_name))
+            return false;
+
+        auto message = PreformattedMessage::create("Wrong column name. Cannot find column {} to {}", backQuote(column_name), action);
+        metadata.columns.appendHintsMessage(message.text, column_name);
+        throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+    };
+
     if (type == ADD_COLUMN)
     {
         ColumnDescription column(column_name, data_type);
@@ -852,7 +866,7 @@ void AlterCommand::apply(
     }
     else if (type == MODIFY_COLUMN)
     {
-        if (should_skip_column_operation())
+        if (skip_absent_column_or_fail("modify"))
             return;
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
@@ -971,7 +985,7 @@ void AlterCommand::apply(
     }
     else if (type == COMMENT_COLUMN)
     {
-        if (should_skip_column_operation())
+        if (skip_absent_column_or_fail("comment"))
             return;
 
         metadata.columns.modify(column_name,
@@ -1819,6 +1833,8 @@ void AlterCommands::apply(
             command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, settings_defaults);
     }
 
+    const bool columns_changed = metadata_copy.columns != metadata.columns;
+
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
     if (metadata_copy.primary_key.definition_ast != nullptr)
@@ -1834,18 +1850,16 @@ void AlterCommands::apply(
 
     /// And in partition key expression
     if (metadata_copy.partition_key.definition_ast != nullptr)
-    {
         metadata_copy.partition_key.recalculateWithNewAST(metadata_copy.partition_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
 
-        /// If partition key expression is changed, we also need to rebuild minmax_count_projection
-        if (metadata.minmax_count_projection && !blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
-        {
-            auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
-            auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
-            FunctionNameNormalizer::visit(partition_key.get());
-            metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
-        }
+    /// Derived inputs and types can change even when the partition key output structure does not.
+    if (metadata_copy.minmax_count_projection && columns_changed)
+    {
+        auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
+        auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
+        FunctionNameNormalizer::visit(partition_key.get());
+        metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+            metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
     }
 
     // /// And in sample key expression
