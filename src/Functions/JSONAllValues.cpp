@@ -6,8 +6,12 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
+#include <DataTypes/Serializations/SerializationString.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Formats/FormatSettings.h>
@@ -90,7 +94,46 @@ private:
         SerializationPtr serialization;
         bool is_dynamic; /// dynamic paths need a null check before serialization
         bool is_typed; /// typed paths may need a null check when skip_null_typed_paths is enabled
+
+        const ColumnVariant * variant_column = nullptr;
+        const ColumnVariant::Discriminator * local_discriminators = nullptr;
+        /// Indexed by the local discriminator. nullptr for the shared variant: its values carry their own type and are
+        /// decoded one by one by SerializationDynamic.
+        VectorWithMemoryTracking<SerializationPtr> variant_serializations{};
+        VectorWithMemoryTracking<const ColumnString *> variant_string_columns{};
     };
+
+    static PathInfo makeDynamicPathInfo(std::string_view path, const IColumn & column, const SerializationPtr & dynamic_serialization)
+    {
+        PathInfo info{path, &column, dynamic_serialization, true, false};
+
+        const auto & dynamic_column = assert_cast<const ColumnDynamic &>(column);
+        const auto & variant_column = dynamic_column.getVariantColumn();
+        const auto & variant_info = dynamic_column.getVariantInfo();
+        const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+        const auto shared_variant_discriminator = dynamic_column.getSharedVariantDiscriminator();
+
+        info.variant_column = &variant_column;
+        info.local_discriminators = variant_column.getLocalDiscriminators().data();
+
+        size_t num_variants = variant_column.getNumVariants();
+        info.variant_serializations.resize(num_variants);
+        info.variant_string_columns.resize(num_variants);
+        for (size_t local_discr = 0; local_discr != num_variants; ++local_discr)
+        {
+            auto global_discr = variant_column.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local_discr));
+            if (global_discr == shared_variant_discriminator)
+                continue;
+
+            /// The same serialization SerializationDynamic::serializeText uses for this variant.
+            auto serialization = getDataTypesCache().getSerialization(variant_info.variant_names[global_discr], variant_types[global_discr]);
+            if (typeid_cast<const SerializationString *>(serialization.get()))
+                info.variant_string_columns[local_discr] = typeid_cast<const ColumnString *>(&variant_column.getVariantByLocalDiscriminator(local_discr));
+            info.variant_serializations[local_discr] = std::move(serialization);
+        }
+
+        return info;
+    }
 
     ColumnPtr execute(const ColumnObject & column_object, const DataTypeObject & type_object) const
     {
@@ -119,7 +162,7 @@ private:
         }
 
         for (const auto & [path, column] : dynamic_path_columns)
-            sorted_paths.push_back({path, column.get(), dynamic_serialization, true, false});
+            sorted_paths.push_back(makeDynamicPathInfo(path, *column, dynamic_serialization));
 
         std::sort(sorted_paths.begin(), sorted_paths.end(),
             [](const PathInfo & a, const PathInfo & b) { return a.path < b.path; });
@@ -172,8 +215,28 @@ private:
         const FormatSettings & format_settings,
         ColumnString & result_data) const
     {
-        if (entry.is_dynamic && entry.column->isNullAt(row))
+        if (entry.is_dynamic)
+        {
+            auto local_discr = entry.local_discriminators[row];
+            if (local_discr == ColumnVariant::NULL_DISCRIMINATOR)
+                return;
+
+            size_t offset = entry.variant_column->offsetAt(row);
+            if (const auto * string_column = entry.variant_string_columns[local_discr])
+            {
+                auto value = string_column->getDataAt(offset);
+                result_data.insertData(value.data(), value.size());
+            }
+            else if (const auto & serialization = entry.variant_serializations[local_discr])
+            {
+                serializeValueIntoResult(*serialization, entry.variant_column->getVariantByLocalDiscriminator(local_discr), offset, format_settings, result_data);
+            }
+            else
+            {
+                serializeValueIntoResult(*entry.serialization, *entry.column, row, format_settings, result_data);
+            }
             return;
+        }
 
         if (entry.is_typed && skip_null_typed_paths && entry.column->isNullAt(row))
             return;

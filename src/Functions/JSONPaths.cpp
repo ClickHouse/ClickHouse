@@ -7,7 +7,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObject.h>
 #include <Core/ColumnNumbers.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
@@ -35,6 +37,34 @@ namespace ErrorCodes
 
 namespace
 {
+
+struct PathNullCheck
+{
+    std::string_view path;
+    /// ColumnDynamic::isNullAt(n) is ColumnVariant::isNullAt(n), i.e. the row is NULL exactly when its
+    /// local discriminator is NULL_DISCRIMINATOR.
+    const ColumnVariant::Discriminator * dynamic_discriminators = nullptr;
+    /// A typed path is checked only when type_json_skip_null_typed_paths is enabled.
+    const IColumn * typed_column_to_check = nullptr;
+
+    static PathNullCheck dynamic(std::string_view path, const IColumn & column)
+    {
+        const auto & variant_column = assert_cast<const ColumnDynamic &>(column).getVariantColumn();
+        return {.path = path, .dynamic_discriminators = variant_column.getLocalDiscriminators().data()};
+    }
+
+    static PathNullCheck typed(std::string_view path, const IColumn & column, bool skip_null)
+    {
+        return {.path = path, .typed_column_to_check = skip_null ? &column : nullptr};
+    }
+
+    bool isNullAt(size_t row) const
+    {
+        if (dynamic_discriminators)
+            return dynamic_discriminators[row] == ColumnVariant::NULL_DISCRIMINATOR;
+        return typed_column_to_check && typed_column_to_check->isNullAt(row);
+    }
+};
 
 enum class PathsMode
 {
@@ -154,22 +184,22 @@ private:
         {
             /// Collect all dynamic paths.
             const auto & dynamic_path_columns = column_object.getDynamicPaths();
-            VectorWithMemoryTracking<std::string_view> dynamic_paths;
+            VectorWithMemoryTracking<PathNullCheck> dynamic_paths;
             dynamic_paths.reserve(dynamic_path_columns.size());
-            for (const auto & [path, _] : dynamic_path_columns)
-                dynamic_paths.push_back(path);
+            for (const auto & [path, column] : dynamic_path_columns)
+                dynamic_paths.push_back(PathNullCheck::dynamic(path, *column));
             /// We want the resulting arrays of paths to be sorted for consistency.
-            std::sort(dynamic_paths.begin(), dynamic_paths.end());
+            std::sort(dynamic_paths.begin(), dynamic_paths.end(), [](const auto & lhs, const auto & rhs) { return lhs.path < rhs.path; });
 
             size_t size = column_object.size();
             for (size_t i = 0; i != size; ++i)
             {
-                for (const auto path : dynamic_paths)
+                for (const auto & entry : dynamic_paths)
                 {
                     /// Don't include path if it contains NULL, because we consider
                     /// it to be equivalent to the absence of this path in this row.
-                    if (!dynamic_path_columns.find(path)->second->isNullAt(i))
-                        data.insertData(path.data(), path.size());
+                    if (!entry.isNullAt(i))
+                        data.insertData(entry.path.data(), entry.path.size());
                 }
                 offsets.push_back(data.size());
             }
@@ -177,17 +207,18 @@ private:
         }
 
         /// Collect all paths: typed, dynamic and paths from shared data.
-        VectorWithMemoryTracking<std::string_view> sorted_dynamic_and_typed_paths;
+        /// Dynamic paths are skipped when NULL. Typed paths are also skipped when NULL if the setting is enabled.
+        VectorWithMemoryTracking<PathNullCheck> sorted_dynamic_and_typed_paths;
         const auto & typed_path_columns = column_object.getTypedPaths();
         const auto & dynamic_path_columns = column_object.getDynamicPaths();
         sorted_dynamic_and_typed_paths.reserve(typed_path_columns.size() + dynamic_path_columns.size());
-        for (const auto & [path, _] : typed_path_columns)
-            sorted_dynamic_and_typed_paths.push_back(path);
-        for (const auto & [path, _] : dynamic_path_columns)
-            sorted_dynamic_and_typed_paths.push_back(path);
+        for (const auto & [path, column] : typed_path_columns)
+            sorted_dynamic_and_typed_paths.push_back(PathNullCheck::typed(path, *column, skip_null_typed_paths));
+        for (const auto & [path, column] : dynamic_path_columns)
+            sorted_dynamic_and_typed_paths.push_back(PathNullCheck::dynamic(path, *column));
 
         /// We want the resulting arrays of paths to be sorted for consistency.
-        std::sort(sorted_dynamic_and_typed_paths.begin(), sorted_dynamic_and_typed_paths.end());
+        std::sort(sorted_dynamic_and_typed_paths.begin(), sorted_dynamic_and_typed_paths.end(), [](const auto & lhs, const auto & rhs) { return lhs.path < rhs.path; });
 
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
         const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
@@ -200,12 +231,11 @@ private:
             for (size_t j = start; j != end; ++j)
             {
                 auto shared_data_path = shared_data_paths->getDataAt(j);
-                while (sorted_paths_index != sorted_dynamic_and_typed_paths.size() && sorted_dynamic_and_typed_paths[sorted_paths_index] < shared_data_path)
+                while (sorted_paths_index != sorted_dynamic_and_typed_paths.size() && sorted_dynamic_and_typed_paths[sorted_paths_index].path < shared_data_path)
                 {
-                    const auto path = sorted_dynamic_and_typed_paths[sorted_paths_index];
-                    /// Dynamic paths are skipped when NULL. Typed paths are also skipped when NULL if the setting is enabled.
-                    if (shouldIncludePath(path, i, dynamic_path_columns, typed_path_columns))
-                        data.insertData(path.data(), path.size());
+                    const auto & entry = sorted_dynamic_and_typed_paths[sorted_paths_index];
+                    if (!entry.isNullAt(i))
+                        data.insertData(entry.path.data(), entry.path.size());
                     ++sorted_paths_index;
                 }
 
@@ -214,9 +244,9 @@ private:
 
             for (; sorted_paths_index != sorted_dynamic_and_typed_paths.size(); ++sorted_paths_index)
             {
-                const auto path = sorted_dynamic_and_typed_paths[sorted_paths_index];
-                if (shouldIncludePath(path, i, dynamic_path_columns, typed_path_columns))
-                    data.insertData(path.data(), path.size());
+                const auto & entry = sorted_dynamic_and_typed_paths[sorted_paths_index];
+                if (!entry.isNullAt(i))
+                    data.insertData(entry.path.data(), entry.path.size());
             }
 
             offsets.push_back(data.size());
@@ -399,26 +429,6 @@ private:
         if (isNothing(type))
             return std::nullopt;
         return type->getName();
-    }
-
-    /// Returns true if the path should be included in the output.
-    /// Dynamic paths are skipped when NULL. Typed paths are skipped when NULL only if skip_null_typed_paths is enabled.
-    bool shouldIncludePath(
-        std::string_view path,
-        size_t row,
-        const auto & dynamic_path_columns,
-        const auto & typed_path_columns) const
-    {
-        if (auto it = dynamic_path_columns.find(path); it != dynamic_path_columns.end())
-            return !it->second->isNullAt(row);
-
-        if (skip_null_typed_paths)
-        {
-            if (auto it = typed_path_columns.find(path); it != typed_path_columns.end())
-                return !it->second->isNullAt(row);
-        }
-
-        return true;
     }
 
     bool skip_null_typed_paths = false;
