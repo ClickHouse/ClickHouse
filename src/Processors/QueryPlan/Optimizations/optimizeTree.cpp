@@ -574,6 +574,15 @@ void optimizeTreeSecondPass(
                 pushLimitByIntoSort(frame_node);
         });
 
+    /// The TopK filter is merged into the read's PREWHERE, so it needs the final read: after PREWHERE
+    /// promotion, after a projection has replaced the read, and after reading in order was decided.
+    /// All three change what there is to merge into, and the last one whether to merge at all.
+    traverseQueryPlan(stack, root,
+        [&](auto & frame_node)
+        {
+            installTopKDynamicFilter(frame_node, nodes);
+        });
+
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
     /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
     /// Which would cause an exception when force_use_projection is enabled.
