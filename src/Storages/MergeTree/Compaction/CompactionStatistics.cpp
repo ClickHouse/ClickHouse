@@ -38,7 +38,7 @@ constexpr static double DISK_USAGE_COEFFICIENT_TO_RESERVE = 1.1;
 namespace CompactionStatistics
 {
 
-UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted, bool expired_parts_leave_no_rows)
+UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted)
 {
     size_t bytes_size = 0;
     time_t current_time = std::time(nullptr);
@@ -47,7 +47,7 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
     {
         /// Exclude expired parts
         time_t part_max_ttl = part->ttl_infos.part_max_ttl;
-        if (expired_parts_leave_no_rows && part_max_ttl && part_max_ttl <= current_time)
+        if (part->ttl_infos.table_ttl.max && part_max_ttl && part_max_ttl <= current_time)
             continue;
 
         if (account_for_deleted)

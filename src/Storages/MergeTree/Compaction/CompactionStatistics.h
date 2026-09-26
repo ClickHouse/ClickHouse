@@ -10,9 +10,9 @@ namespace CompactionStatistics
 {
 
 /** Estimate approximate amount of disk space needed for merge or mutation. With a surplus.
-  * Completely expired parts are skipped if `expired_parts_leave_no_rows`.
+  * Skips completely expired parts with rows TTL values, since a merge drops all their rows.
   */
-UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted = false, bool expired_parts_leave_no_rows = true);
+UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted = false);
 
 /** Estimate approximate amount of disk space needed to be free before schedule such merge.
   */

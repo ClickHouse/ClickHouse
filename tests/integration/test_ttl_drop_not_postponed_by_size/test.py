@@ -321,22 +321,31 @@ def test_row_retaining_drop_is_still_postponed_by_source_size(started_cluster):
     node.query("DROP TABLE t_b SYNC")
 
 
-def test_row_retaining_drop_waits_for_free_space(started_cluster):
+@pytest.mark.parametrize(
+    "ttl",
+    [
+        "event_time + INTERVAL 1 DAY GROUP BY id SET v = max(v)",
+        "delete_at DELETE, event_time + INTERVAL 1 DAY GROUP BY id SET v = max(v)",
+    ],
+    ids=["group_by", "delete_without_value"],
+)
+def test_row_retaining_drop_waits_for_free_space(started_cluster, ttl):
     """A whole-part drop that keeps rows must not start while the disk cannot hold them.
 
-    Same GROUP BY TTL as above on a non-replicated table. With less free space than the
-    expired part holds, the merge must not be attempted: neither started, nor selected and
-    then refused for lack of space. Once there is room, the rollup runs, reserves at least
-    what the part holds and keeps every row, since all ids are distinct.
+    Same GROUP BY TTL as above on a non-replicated table, also next to a DELETE TTL that has
+    no value for any row. With less free space than the expired part holds, the merge must
+    not be attempted: neither started, nor selected and then refused for lack of space. Once
+    there is room, the rollup runs, reserves at least what the part holds and keeps every
+    row, since all ids are distinct.
     """
     node.query("DROP TABLE IF EXISTS t_c SYNC")
     node.query("DROP TABLE IF EXISTS filler SYNC")
     node.query(
-        """
-        CREATE TABLE t_c (id UInt64, v UInt64, s String, event_time DateTime)
+        f"""
+        CREATE TABLE t_c (id UInt64, v UInt64, s String, event_time DateTime, delete_at DateTime DEFAULT 0)
         ENGINE = MergeTree
         ORDER BY id
-        TTL event_time + INTERVAL 1 DAY GROUP BY id SET v = max(v)
+        TTL {ttl}
         SETTINGS storage_policy = 'only_c',
                  ttl_only_drop_parts = 1,
                  merge_with_ttl_timeout = 0,
@@ -345,7 +354,8 @@ def test_row_retaining_drop_waits_for_free_space(started_cluster):
     )
     node.query("SYSTEM STOP TTL MERGES t_c")
     node.query(
-        "INSERT INTO t_c SELECT number, number, randomString(1024), now() - INTERVAL 10 DAY "
+        "INSERT INTO t_c (id, v, s, event_time) "
+        "SELECT number, number, randomString(1024), now() - INTERVAL 10 DAY "
         f"FROM numbers({ROWS_PER_INSERT})"
     )
     bytes_before = part_bytes("t_c")
@@ -365,6 +375,16 @@ def test_row_retaining_drop_waits_for_free_space(started_cluster):
         f"a merge of t_c was selected and then refused for lack of space {refused} times"
     )
     assert query_int("SELECT count() FROM t_c") == ROWS_PER_INSERT
+
+    part_name = node.query(
+        "SELECT name FROM system.parts WHERE active "
+        "AND database = currentDatabase() AND table = 't_c'"
+    ).strip()
+    error = node.query_and_get_error(f"OPTIMIZE TABLE t_c DRY RUN PARTS '{part_name}'")
+    assert "NOT_ENOUGH_SPACE" in error, (
+        "the dry run of t_c was not refused at reservation although the disk cannot hold "
+        f"its rows:\n{error}"
+    )
 
     since = node.query("SELECT now64(6)").strip()
     node.query("DROP TABLE filler SYNC")
