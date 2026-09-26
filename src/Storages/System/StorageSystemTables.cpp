@@ -1,6 +1,7 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
+#include <Storages/System/extractTableNameFilter.h>
 
 #include <set>
 
@@ -44,7 +45,6 @@
 #include <Functions/IFunction.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/typeid_cast.h>
 
 #include <boost/range/adaptor/map.hpp>
 
@@ -62,140 +62,6 @@ namespace Setting
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
-}
-
-namespace
-{
-
-/// Try to read a constant string from `node` and return its single value.
-/// Unwraps aliases and reads the value via `ColumnConst::getField`, which works
-/// even for a `ColumnConst` of logical size 0 (a "pure" constant, as produced by
-/// the analyzer) — unlike `column[0]`, which an `empty()` check has to guard.
-std::optional<String> tryReadConstString(const ActionsDAG::Node * node)
-{
-    while (node && node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-        node = node->children[0];
-    if (!node || !node->column)
-        return {};
-    const IColumn * column = node->column.get();
-    /// Unwrap `ColumnConst` to its single-row data column. This reads the value
-    /// even for a `ColumnConst` of logical size 0 (the analyzer's "pure" constant).
-    if (const auto * const_column = typeid_cast<const ColumnConst *>(column))
-        column = &const_column->getDataColumn();
-    if (column->empty())
-        return {};
-    Field field = (*column)[0];
-    if (field.getType() != Field::Types::String)
-        return {};
-    return field.safeGet<String>();
-}
-
-/// Unwrap ALIAS nodes to reach the underlying node.
-const ActionsDAG::Node * skipAliases(const ActionsDAG::Node * node)
-{
-    while (node && node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-        node = node->children[0];
-    return node;
-}
-
-/// Escape SQL LIKE wildcards (`%`, `_`) and the escape char (`\`) so a literal
-/// prefix (e.g. from `startsWith`) becomes an equivalent LIKE pattern.
-String escapeForLikeLiteral(const String & s)
-{
-    String result;
-    result.reserve(s.size());
-    for (char c : s)
-    {
-        if (c == '%' || c == '_' || c == '\\')
-            result += '\\';
-        result += c;
-    }
-    return result;
-}
-
-/// Extract a namespace-pushdown hint from a top-level `name` conjunct: `name = '…'`
-/// (Equals), or `name LIKE '…%'` / its analyzer rewrite `startsWith(name, '…')` (Like).
-TablesFilter extractTableNameFilter(const ActionsDAG::Node * predicate)
-{
-    if (!predicate)
-        return {};
-
-    /// Collect top-level conjuncts.
-    std::vector<const ActionsDAG::Node *> conjuncts;
-    const auto * node = predicate;
-    while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
-        node = node->children[0];
-
-    if (node->type == ActionsDAG::ActionType::FUNCTION
-        && node->function_base
-        && node->function_base->getName() == "and")
-    {
-        for (const auto * child : node->children)
-            conjuncts.push_back(child);
-    }
-    else
-    {
-        conjuncts.push_back(node);
-    }
-
-    TablesFilter like_filter;
-    for (const auto * conjunct : conjuncts)
-    {
-        while (conjunct->type == ActionsDAG::ActionType::ALIAS && !conjunct->children.empty())
-            conjunct = conjunct->children[0];
-
-        if (conjunct->type != ActionsDAG::ActionType::FUNCTION
-            || !conjunct->function_base
-            || conjunct->children.size() != 2)
-            continue;
-
-        const auto & fn_name = conjunct->function_base->getName();
-
-        const auto * lhs = skipAliases(conjunct->children[0]);
-        const auto * rhs = skipAliases(conjunct->children[1]);
-
-        /// The `name` column reads as an INPUT named "name" once aliases are
-        /// unwrapped. (A constant carries `column`; the column reference does not.)
-        auto is_name_column = [](const ActionsDAG::Node * n)
-        {
-            return n && n->result_name == "name" && !n->column;
-        };
-        const bool lhs_is_name = is_name_column(lhs);
-        const bool rhs_is_name = is_name_column(rhs);
-        if (!lhs_is_name && !rhs_is_name)
-            continue;
-
-        if (fn_name == "equals")
-        {
-            /// `equals` is symmetric (literal either side); prefer it — most selective.
-            if (auto literal = tryReadConstString(lhs_is_name ? rhs : lhs))
-                return {TablesFilter::Kind::Equals, std::move(*literal)};
-        }
-        else if (fn_name == "like")
-        {
-            /// Not symmetric: only `name LIKE 'pattern'` (name on lhs) constrains `name`.
-            /// Keep the first such pattern if no `equals` is found.
-            if (lhs_is_name && like_filter.kind == TablesFilter::Kind::None)
-            {
-                if (auto literal = tryReadConstString(rhs))
-                    like_filter = {TablesFilter::Kind::Like, std::move(*literal)};
-            }
-        }
-        else if (fn_name == "startsWith")
-        {
-            /// Analyzer rewrite of a perfect-prefix `name LIKE 'prefix%'`. The literal
-            /// is a plain prefix, so escape it and append `%` to recover the LIKE pattern.
-            if (lhs_is_name && like_filter.kind == TablesFilter::Kind::None)
-            {
-                if (auto literal = tryReadConstString(rhs))
-                    like_filter = {TablesFilter::Kind::Like, escapeForLikeLiteral(*literal) + "%"};
-            }
-        }
-    }
-
-    return like_filter;
-}
-
 }
 
 namespace detail
@@ -237,7 +103,7 @@ ColumnPtr getFilteredTables(
 
     TablesFilter tables_filter;
     if (dag)
-        tables_filter = extractTableNameFilter(dag->getOutputs().at(0));
+        tables_filter = extractTableNameFilter(dag->getOutputs().at(0), "name");
 
     if (dag)
     {
@@ -594,6 +460,12 @@ protected:
                             = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {});
                         const bool can_show_columns_temp
                             = !alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {});
+                        const bool can_expose_declared_definition
+                            = !alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {});
+                        /// The CREATE query exposes only the alias's own stored definition, so, as for
+                        /// `SHOW CREATE TABLE`, the declared target is checked rather than the whole chain.
+                        const bool can_show_declared_columns_temp
+                            = !alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_COLUMNS, {});
                         size_t src_index = 0;
                         size_t res_index = 0;
 
@@ -646,7 +518,7 @@ protected:
                         if (columns_mask[src_index++])
                         {
                             auto temp_db = DatabaseCatalog::instance().getDatabaseForTemporaryTables();
-                            ASTPtr ast = can_expose_metadata && can_show_columns_temp && temp_db
+                            ASTPtr ast = can_expose_declared_definition && can_show_declared_columns_temp && temp_db
                                 ? temp_db->tryGetCreateTableQuery(table.second->getStorageID().getTableName(), context)
                                 : nullptr;
                             res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
@@ -773,6 +645,8 @@ protected:
                 const auto * alias = table ? table->as<StorageAlias>() : nullptr;
                 const bool can_expose_metadata
                     = table && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}));
+                const bool can_expose_declared_definition
+                    = table && (!alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_TABLES, {}));
 
                 /// A table's schema -- its columns, their types, and any expression, index or view
                 /// parameter defined over them -- is `SHOW COLUMNS`-grade information, which is the
@@ -781,11 +655,17 @@ protected:
                     || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
                         && (!alias || alias->isTargetTableGranted(context, AccessType::SHOW_COLUMNS, {})));
 
+                /// The CREATE query exposes only the alias's own stored definition and resolves nothing
+                /// through it, so, as for `SHOW CREATE TABLE`, only the declared target is checked.
+                const bool can_show_declared_columns = !need_to_check_access_for_columns
+                    || (access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name)
+                        && (!alias || alias->isDeclaredTargetGranted(context, AccessType::SHOW_COLUMNS, {})));
+
                 /// `SHOW CREATE DICTIONARY` is authorized by `SHOW DICTIONARIES`, which `SHOW COLUMNS` does not
                 /// imply, so that privilege alone makes a dictionary's CREATE query readable. A non-null
                 /// configuration holds exactly for a `CREATE DICTIONARY` object.
                 const auto * storage_dictionary = table ? table->as<StorageDictionary>() : nullptr;
-                const bool can_show_create_query = can_show_columns
+                const bool can_show_create_query = can_show_declared_columns
                     || (storage_dictionary && storage_dictionary->getConfiguration()
                         && access->isGranted(AccessType::SHOW_DICTIONARIES, database_name, table_name));
 
@@ -900,14 +780,14 @@ protected:
                         .engine_full = columns_mask[src_index + 1] != 0,
                         .as_select = columns_mask[src_index + 2] != 0};
 
-                    auto rendered = can_expose_metadata && can_show_create_query
+                    auto rendered = can_expose_declared_definition && can_show_create_query
                         ? database->getRenderedCreateTableQuery(table_name, context, fields)
                         : renderCreateQuery(nullptr, RenderOptions{}, fields);
 
                     /// The dictionary disjunct is decided on the object the iterator captured, while
                     /// the rendering resolves the name again. Emit it only when that one rendering is
                     /// itself a dictionary, as `SHOW CREATE DICTIONARY` requires.
-                    if (!can_show_columns && !rendered->is_dictionary)
+                    if (!can_show_declared_columns && !rendered->is_dictionary)
                         rendered = renderCreateQuery(nullptr, RenderOptions{}, fields);
 
                     if (columns_mask[src_index++])
@@ -1297,7 +1177,7 @@ void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUUID>(), "uuid"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
     if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context))
-        tables_filter = extractTableNameFilter(dag->getOutputs().at(0));
+        tables_filter = extractTableNameFilter(dag->getOutputs().at(0), "name");
 }
 
 void ReadFromSystemTables::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
