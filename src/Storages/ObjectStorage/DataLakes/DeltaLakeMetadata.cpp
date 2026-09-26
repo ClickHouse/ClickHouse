@@ -63,7 +63,6 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -247,8 +246,8 @@ struct DeltaLakeMetadataImpl
 
     /// Read metadata file and fill `file_schema`, `file_parition_columns`, `result`.
     /// `result` is a list of data files.
-    /// `file_schema` is a common schema for all files.
-    /// Schema evolution is not supported, so we check that all files have the same schema.
+    /// `file_schema` is the table schema as of the last processed commit: a `metaData` action
+    /// replaces it, so callers must process commits in ascending version order.
     /// `file_partiion_columns` is information about partition columns of data files.
     void processMetadataFile(
         const String & metadata_file_path,
@@ -307,17 +306,8 @@ struct DeltaLakeMetadataImpl
 
                 auto current_schema = parseMetadata(fields_object);
                 validatePartitionColumns(metadata_object, fields_object);
-                if (file_schema.empty())
-                {
-                    file_schema = current_schema;
-                }
-                else if (file_schema != current_schema)
-                {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                    "Reading from files with different schema is not possible "
-                                    "({} is different from {})",
-                                    file_schema.toString(), current_schema.toString());
-                }
+                /// The Delta protocol defines the table schema as the one of the latest `metaData` action.
+                file_schema = current_schema;
             }
 
             if (object->has("add"))
@@ -617,8 +607,9 @@ struct DeltaLakeMetadataImpl
                 }
                 else if (file_schema != current_schema)
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                    "Reading from files with different schema is not possible "
+                    /// A checkpoint snapshots one version, so it carries one `metaData` action.
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                                    "Checkpoint contains conflicting `metaData` actions "
                                     "({} is different from {})",
                                     file_schema.toString(), current_schema.toString());
                 }
@@ -911,6 +902,12 @@ Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_ty
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type for {}", check_type->getColumnType());
+}
+
+void DeltaLakeMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context &) const
+{
+    /// A data file committed before a column was added does not contain that column.
+    format_settings.parquet.allow_missing_columns = true;
 }
 
 ObjectIterator DeltaLakeMetadata::iterate(
