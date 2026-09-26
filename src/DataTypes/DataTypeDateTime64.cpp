@@ -63,7 +63,16 @@ bool DataTypeDateTime64::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeDateTime64::doGetSerialization(const SerializationInfoSettings &) const
 {
-    return std::make_shared<SerializationDateTime64>(scale, *this);
+    if (!has_explicit_time_zone)
+    {
+        const auto & effective_tz = DateLUT::instance();
+        if (&effective_tz != &time_zone)
+        {
+            TimezoneMixin overridden(effective_tz.getTimeZone());
+            return SerializationDateTime64::create(scale, overridden);
+        }
+    }
+    return SerializationDateTime64::create(scale, *this);
 }
 
 std::string getDateTimeTimezone(const IDataType & data_type)

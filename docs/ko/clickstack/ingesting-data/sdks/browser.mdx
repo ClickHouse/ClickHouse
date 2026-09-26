@@ -1,0 +1,199 @@
+---
+slug: /use-cases/observability/clickstack/sdks/browser
+description: 'ClickStack용 브라우저 SDK - ClickHouse 관측성 스택'
+title: '브라우저 JS'
+doc_type: 'guide'
+keywords: ['ClickStack', 'browser-sdk', 'javascript', 'session-replay', 'frontend']
+---
+
+ClickStack 브라우저 SDK를 사용하면 프런트엔드 애플리케이션을 계측해
+이벤트를 ClickStack으로 전송할 수 있습니다. 이를 통해 네트워크
+요청과 예외를 백엔드 이벤트와 함께 단일 타임라인에서 확인할 수 있습니다.
+
+또한 세션 리플레이 데이터를 자동으로 캡처하고 연관시키므로,
+애플리케이션을 사용하는 동안 사용자가 보고 있던 내용을 시각적으로
+단계별로 따라가며 디버깅할 수 있습니다.
+
+이 가이드에서는 다음 항목을 통합합니다:
+
+* **콘솔 로그**
+* **세션 리플레이**
+* **XHR/Fetch/WebSocket 요청**
+* **예외**
+
+<div id="getting-started">
+  ## 시작하기
+</div>
+
+<br />
+
+<Tabs>
+  <Tab title="패키지 import">
+    **패키지 import로 설치(권장)**
+
+    다음 명령으로 [브라우저 패키지](https://www.npmjs.com/package/@hyperdx/browser)를 설치합니다.
+
+    ```shell
+    npm install @hyperdx/browser
+    ```
+
+    **ClickStack 초기화**
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack에서는 생략
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i], // 프런트엔드 요청과 백엔드 요청의 트레이스를 연결하도록 설정
+        consoleCapture: true, // 콘솔 로그 수집(기본값: false)
+        advancedNetworkCapture: true, // HTTP 요청/응답의 전체 헤더와 본문 수집(기본값: false)
+    });
+    ```
+  </Tab>
+
+  <Tab title="스크립트 태그">
+    **스크립트 태그로 설치(대안)**
+
+    NPM으로 설치하는 대신 스크립트 태그로 스크립트를 포함해 사용할 수도
+    있습니다. 이렇게 하면 전역 변수 `HyperDX`가 제공되며, NPM 패키지와 동일한
+    방식으로 사용할 수 있습니다.
+
+    현재 사이트를 번들러로 빌드하지 않는 경우 이 방법을 권장합니다.
+
+    ```html
+    <script src="//www.unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+    <script>
+      window.HyperDX.init({
+        url: 'http://localhost:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack에서는 생략
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i], // 프런트엔드 요청과 백엔드 요청의 트레이스를 연결하도록 설정
+      });
+    </script>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="options">
+  ### 옵션
+</div>
+
+* `apiKey` - ClickStack 수집 API Key입니다.
+* `service` - HyperDX UI에 이벤트가 표시될 서비스 이름입니다.
+* `tracePropagationTargets` - 프론트엔드와 백엔드 trace를 연결하기 위해 HTTP
+  요청과 대조할 regex 패턴 목록입니다. 패턴 중 하나와 일치하는 모든 요청에
+  추가 `traceparent` header를 추가합니다. 백엔드 API 도메인(예:
+  `api.yoursite.com`)으로 설정해야 합니다.
+* `consoleCapture` - (선택 사항) 모든 콘솔 로그를 수집합니다(기본값 `false`).
+* `advancedNetworkCapture` - (선택 사항) 전체 요청/응답 headers
+  및 본문을 수집합니다(기본값 `false`).
+* `url` - (선택 사항) OpenTelemetry collector URL이며,
+  자체 호스팅 인스턴스에서만 필요합니다.
+* `maskAllInputs` - (선택 사항) 세션 리플레이에서 모든 입력 필드를
+  마스킹할지 여부입니다(기본값 `false`).
+* `maskAllText` - (선택 사항) 세션 리플레이에서 모든 텍스트를 마스킹할지 여부입니다(기본값
+  `false`).
+* `disableIntercom` - (선택 사항) Intercom 통합을 비활성화할지 여부입니다(기본값 `false`)
+* `disableReplay` - (선택 사항) 세션 리플레이를 비활성화할지 여부입니다(기본값 `false`)
+
+<div id="additional-configuration">
+  ## 추가 구성
+</div>
+
+<div id="attach-user-information-or-metadata">
+  ### 사용자 정보 또는 메타데이터 추가
+</div>
+
+사용자 정보를 추가하면 HyperDX UI에서 세션과 이벤트를 검색하거나 필터링할 수
+있습니다. 이는 클라이언트 세션 중 언제든지 호출할 수 있습니다. 현재
+클라이언트 세션과 이 호출 이후에 전송되는 모든 이벤트는 사용자 정보와 연결
+됩니다.
+
+`userEmail`, `userName`, `teamName`은 세션 UI에 해당 값을 표시하는 데
+사용되지만 생략할 수도 있습니다. 그 외의 추가 값도 지정할 수 있으며,
+이벤트를 검색하는 데 사용할 수 있습니다.
+
+```javascript
+HyperDX.setGlobalAttributes({
+  userId: user.id,
+  userEmail: user.email,
+  userName: user.name,
+  teamName: user.team.name,
+  // 기타 사용자 정의 속성...
+});
+```
+
+<div id="auto-capture-react-error-boundary-errors">
+  ### React error boundary 오류 자동 수집
+</div>
+
+React를 사용하는 경우, 에러 바운더리(error boundary) 컴포넌트를
+`attachToReactErrorBoundary` 함수에 전달하면 React error boundary 내에서 발생하는
+오류를 자동으로 수집할 수 있습니다.
+
+```javascript
+// ErrorBoundary를 가져옵니다 (예시로 react-error-boundary를 사용합니다)
+import { ErrorBoundary } from 'react-error-boundary';
+
+// ErrorBoundary 컴포넌트에 연결하여 해당 컴포넌트의 모든 인스턴스에서 발생하는
+// 오류를 캡처합니다.
+HyperDX.attachToReactErrorBoundary(ErrorBoundary);
+```
+
+<div id="send-custom-actions">
+  ### 사용자 지정 액션 보내기
+</div>
+
+특정 애플리케이션 이벤트(예: 회원 가입, 제출 등)를 명시적으로 추적하려면 이벤트 이름과 선택적 메타데이터를 함께 지정해 `addAction` 함수를 호출할 수 있습니다.
+
+예시:
+
+```javascript
+HyperDX.addAction('Form-Completed', {
+  formId: 'signup-form',
+  formName: 'Signup Form',
+  formType: 'signup',
+});
+```
+
+<div id="enable-network-capture-dynamically">
+  ### 네트워크 캡처 동적으로 활성화하기
+</div>
+
+네트워크 캡처를 동적으로 활성화하거나 비활성화하려면 필요에 따라 `enableAdvancedNetworkCapture` 또는 `disableAdvancedNetworkCapture` 함수를 호출하면 됩니다.
+
+```javascript
+HyperDX.enableAdvancedNetworkCapture();
+```
+
+<div id="enable-resource-timing-for-cors-requests">
+  ### CORS 요청에 대한 리소스 타이밍 활성화
+</div>
+
+프런트엔드 애플리케이션이 다른 도메인으로 API 요청을 보내는 경우,
+선택적으로 `Timing-Allow-Origin`[헤더](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Timing-Allow-Origin)가 요청과 함께 전송되도록 설정할 수
+있습니다. 이렇게 하면 ClickStack이 [`PerformanceResourceTiming`](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceResourceTiming)을 통해 DNS 조회, 응답
+다운로드 등 요청에 대한 세부적인 리소스 타이밍 정보를 수집할 수 있습니다.
+
+`cors` 패키지와 함께 `express`를 사용 중이라면, 다음
+스니펫을 사용하여 헤더를 활성화할 수 있습니다:
+
+```javascript
+var cors = require('cors');
+var onHeaders = require('on-headers');
+
+// ... 나머지 코드
+
+app.use(function (req, res, next) {
+  onHeaders(res, function () {
+    var allowOrigin = res.getHeader('Access-Control-Allow-Origin');
+    if (allowOrigin) {
+      res.setHeader('Timing-Allow-Origin', allowOrigin);
+    }
+  });
+  next();
+});
+app.use(cors());
+```

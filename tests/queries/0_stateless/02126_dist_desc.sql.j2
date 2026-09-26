@@ -14,7 +14,7 @@ select anyIf(query, is_initial_query), groupArrayIf(query, query_kind = 'Describ
 where
     event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish' and
-    query not like '%FLUSH LOGS%' and
+    query not ilike '%FLUSH LOGS%' and
     -- current_database is not set for queries on shards
     -- (so 'current_database = currentDatabase()' will not show DESC queries)
     log_comment like '%' || currentDatabase() || '%'

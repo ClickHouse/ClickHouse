@@ -1,6 +1,7 @@
 import multiprocessing
 import os
 import pty
+import select
 import shlex
 import sys
 import time
@@ -74,15 +75,19 @@ def test_completion(program, argv, input_text, expected_text, test_name, state=N
 
             state.value = 1
 
-            # Type the input text
+            # Type the input text and wait for it to be echoed back.
+            # We poll instead of using a fixed sleep to avoid flakiness
+            # under heavy CI load where echo latency is unpredictable.
             os.write(master, input_text.encode())
-            time.sleep(0.05)
-
-            # Read back what was echoed
-            output_b = os.read(master, 4096)
-            output = output_b.decode(errors="replace")
-            debug_log_fd.write(repr(output_b) + "\n")
-            debug_log_fd.flush()
+            output = ""
+            while input_text not in output:
+                ready, _, _ = select.select([master], [], [], 5)
+                if not ready:
+                    break
+                output_b = os.read(master, 4096)
+                output += output_b.decode(errors="replace")
+                debug_log_fd.write(repr(output_b) + "\n")
+                debug_log_fd.flush()
 
             # Send TAB
             os.write(master, b"\t")
@@ -135,29 +140,110 @@ if __name__ == "__main__":
             "name": "command_completion",
         },
         # Test 2: Path completion — type partial path prefix that uniquely matches
-        # our test znode. The opening quote is auto-inserted by prependDoubleQuoteForPath.
+        # our test znode. Paths use shell-like escaping (no quotes).
         {
-            "input": f"ls \"{test_path}/uni",
+            "input": f"ls {test_path}/uni",
             "expected": f"{test_path}/unique_prefix_xyz",
             "name": "path_completion_unique_match",
         },
         # Test 3: Directory completion — unique directory match should get trailing /
         {
-            "input": f'ls "{test_path}/dir_no',
+            "input": f"ls {test_path}/dir_no",
             "expected": f"{test_path}/dir_node/",
             "name": "directory_completion_trailing_slash",
         },
-        # Test 4: Leaf completion — unique leaf match should get closing quote
+        # Test 4: Leaf completion — unique leaf match, no trailing suffix
         {
-            "input": f'ls "{test_path}/leaf',
-            "expected": f'{test_path}/leaf_node"',
-            "name": "leaf_completion_closing_quote",
+            "input": f"ls {test_path}/leaf",
+            "expected": f"{test_path}/leaf_node",
+            "name": "leaf_completion",
         },
         # Test 5: Drill into directory — complete children after /
         {
-            "input": f'ls "{test_path}/dir_node/',
+            "input": f"ls {test_path}/dir_node/",
             "expected": "child",
             "name": "drill_into_directory",
+        },
+        # Test 6: Completion escapes spaces in node names with backslash
+        {
+            "input": f"ls {test_path}/space",
+            "expected": r"space\ node",
+            "name": "completion_escapes_spaces",
+        },
+        # Test 7: Drill into a node whose name contains a space
+        {
+            "input": f"ls {test_path}/space\\ node/",
+            "expected": "inner",
+            "name": "drill_into_space_node",
+        },
+        # Test 8: Quoted completion — spaces are not escaped, closing quote on leaf
+        {
+            "input": f'ls "{test_path}/leaf',
+            "expected": f'{test_path}/leaf_node"',
+            "name": "quoted_completion_leaf",
+        },
+        # Test 9: Quoted completion — directory gets trailing /
+        {
+            "input": f'ls "{test_path}/dir_no',
+            "expected": f"{test_path}/dir_node/",
+            "name": "quoted_completion_directory",
+        },
+        # Test 10: Quoted completion — spaces in names are not escaped
+        {
+            "input": f'ls "{test_path}/space',
+            "expected": f"{test_path}/space node/",
+            "name": "quoted_completion_space_unescaped",
+        },
+        # Test 11: Quoted completion — drill past a space in the path.
+        # The space inside the quotes causes replxx to split last_word,
+        # so the offset calculation must account for the opening quote.
+        {
+            "input": f'ls "{test_path}/space node/in',
+            "expected": "inner",
+            "name": "quoted_completion_past_space",
+        },
+        # Test 12: Escaped backslash before space is a word break, not an escaped space.
+        # "get /path/leaf_node\\ /path/uni<TAB>" — the \\ is a literal backslash,
+        # so the space after it is a genuine argument separator. The completion
+        # scanner must see /path/uni as the current argument and complete it.
+        {
+            "input": f"get {test_path}/leaf_node\\\\ {test_path}/uni",
+            "expected": f"{test_path}/unique_prefix_xyz",
+            "name": "escaped_backslash_word_break",
+        },
+        # Test 13: Escaped quote inside double-quoted path.
+        # The \" must not close the quoted mode — completion should still
+        # treat us as inside the double-quoted argument and complete children.
+        {
+            "input": f'ls "{test_path}/has\\"quote/d',
+            "expected": "deep",
+            "name": "escaped_quote_inside_quotes",
+        },
+        # Test 14: Drill into a directory whose name was formatted with single
+        # quotes by formatKeeperNodeName (e.g. 'has"quote'). After the closed
+        # quote segment, arg_start must not be stuck inside it — otherwise the
+        # parent path is truncated and completion fails.
+        {
+            "input": f"ls {test_path}/'has\"quote'/d",
+            "expected": "deep",
+            "name": "completion_after_closed_quote",
+        },
+        # Test 15: Quoted completion with a bare path prefix before the opening
+        # quote (e.g. ls /path/'child_prefix). full_completion must include
+        # the bare /path/ prefix so that replxx prefix matching works.
+        {
+            "input": f"ls {test_path}/'has\"q",
+            "expected": "has\"quote",
+            "name": "quoted_with_bare_prefix",
+        },
+        # Test 16: Double-quoted completion of a child whose name contains the
+        # active quote character (`"`). The `"` in the child name must be escaped
+        # as `\"` so it doesn't prematurely close the quoted string.
+        # Uses the unique prefix `dq` which only matches `dq"node`.
+        {
+            "input": f'ls "{test_path}/dq',
+            "expected": 'dq\\"node/',
+            "name": "quoted_completion_escapes_active_quote",
         },
     ]
 

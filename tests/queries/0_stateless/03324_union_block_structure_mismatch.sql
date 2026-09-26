@@ -1,3 +1,5 @@
+SET optimize_use_projections = 1;
+
 -- Test for "Block structure mismatch in UnionStep" bug
 -- When projection optimization creates a Union between projection and non-projection reads,
 -- the branches may have different headers (e.g., due to different query DAGs being applied).

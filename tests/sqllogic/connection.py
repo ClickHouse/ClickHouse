@@ -168,10 +168,15 @@ class ConnectionWrap:
             return
 
         list_result = execute_request(list_query, self)
-        logger.info("tables will be dropped: %s", list_result.get_result())
-        for table_name in list_result.get_result():
+        try:
+            tables = list_result.get_result()
+        except ProgramError:
+            logger.warning("failed to list tables in %s, re-raising", self.DATABASE_NAME)
+            raise
+        logger.info("tables will be dropped: %s", tables)
+        for table_name in tables:
             table_name = table_name[0]
-            execute_request(f"DROP TABLE {table_name}", self).assert_no_exception()
+            execute_request(f"DROP TABLE IF EXISTS {table_name}", self).assert_no_exception()
             logger.debug("success drop table: %s", table_name)
 
     def _use_database(self, database="default"):
@@ -201,10 +206,16 @@ class ConnectionWrap:
     @contextmanager
     def with_test_database_scope(self):
         self.use_random_database()
+        db_name = self.DATABASE_NAME
         try:
             yield self
         finally:
             self._use_database()
+            if self.DBMS_NAME == KnownDBMS.clickhouse.value and db_name != "default":
+                result = execute_request(f"DROP DATABASE IF EXISTS {db_name}", self)
+                exc = result.get_exception()
+                if exc is not None:
+                    logger.warning("Failed to drop database %s: %s", db_name, exc)
 
     def __exit__(self, *args):
         if hasattr(self._connection, "close"):

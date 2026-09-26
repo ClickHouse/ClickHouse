@@ -1,0 +1,347 @@
+---
+description: 'مجموعة بيانات تحتوي على مليون مقالة من Wikipedia وتضميناتها المتجهية'
+sidebarTitle: 'مجموعة بيانات dbpedia'
+slug: /getting-started/example-datasets/dbpedia-dataset
+title: 'مجموعة بيانات dbpedia'
+keywords: ['البحث الدلالي', 'تشابه المتجهات', 'أقرب الجيران التقريبيون', 'التضمينات']
+doc_type: 'guide'
+---
+
+تحتوي [مجموعة بيانات dbpedia](https://huggingface.co/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M) على مليون مقالة من Wikipedia، مع تضميناتها المتجهية المُولَّدة باستخدام نموذج [text-embedding-3-large](https://platform.openai.com/docs/models/text-embedding-3-large) من OpenAI.
+
+تُعد مجموعة البيانات هذه نقطة انطلاق ممتازة لفهم التضمينات المتجهية، والبحث عن تشابه المتجهات، والذكاء الاصطناعي التوليدي. ونستخدمها لعرض [البحث التقريبي عن أقرب الجيران](/ar/reference/engines/table-engines/mergetree-family/annindexes) في ClickHouse، إلى جانب تطبيق أسئلة وأجوبة بسيط لكنه فعّال.
+
+<div id="dataset-details">
+  ## تفاصيل مجموعة البيانات
+</div>
+
+تتضمن مجموعة البيانات 26 ملفًا بتنسيق `Parquet` موجودة على [huggingface.co](https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/). وتحمل هذه الملفات الأسماء `0.parquet` و`1.parquet` و... و`25.parquet`. للاطلاع على بعض الصفوف النموذجية من مجموعة البيانات، يُرجى زيارة صفحة [Hugging Face](https://huggingface.co/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M) هذه.
+
+<div id="create-table">
+  ## إنشاء جدول
+</div>
+
+أنشئ الجدول `dbpedia` لتخزين معرّف المقالة والعنوان والنص ومتجه التضمين:
+
+```sql
+CREATE TABLE dbpedia
+(
+  id      String,
+  title   String,
+  text    String,
+  vector  Array(Float32) CODEC(NONE)
+) ENGINE = MergeTree ORDER BY (id);
+
+```
+
+<div id="load-table">
+  ## تحميل الجدول
+</div>
+
+لتحميل مجموعة البيانات من جميع ملفات Parquet، شغِّل أمر الشل التالي:
+
+```shell
+for i in $(seq 0 25); do
+  echo "Processing file ${i}..."
+  clickhouse client -q "INSERT INTO dbpedia SELECT _id, title, text, \"text-embedding-3-large-1536-embedding\" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/${i}.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;"
+  echo "File ${i} complete."
+done
+```
+
+بدلًا من ذلك، يمكن تنفيذ عبارات SQL كلٌّ على حدة، كما هو موضح أدناه، لتحميل كل واحد من ملفات Parquet الخمسة والعشرين:
+
+```sql
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/0.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/1.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+...
+INSERT INTO dbpedia SELECT _id, title, text, "text-embedding-3-large-1536-embedding" FROM url('https://huggingface.co/api/datasets/Qdrant/dbpedia-entities-openai3-text-embedding-3-large-1536-1M/parquet/default/train/25.parquet') SETTINGS max_http_get_redirects=5,enable_url_encoding=0;
+
+```
+
+تأكد من ظهور مليون صف في جدول `dbpedia`:
+
+```sql
+SELECT count(*)
+FROM dbpedia
+```
+
+```response
+   ┌─count()─┐
+1. │ 1000000 │
+   └─────────┘
+```
+
+<div id="semantic-search">
+  ## البحث الدلالي
+</div>
+
+قراءة موصى بها: [&quot;التضمينات المتجهية
+&quot; دليل OpenAPI](https://platform.openai.com/docs/guides/embeddings)
+
+يتضمن البحث الدلالي (ويُشار إليه أيضًا باسم *البحث بالتشابه*) باستخدام التضمينات المتجهية
+الخطوات التالية:
+
+* تلقّي عبارة بحث من مستخدم بلغة طبيعية، مثل *&quot;أخبرني عن بعض رحلات القطارات ذات المناظر الخلابة&quot;* أو *&quot;روايات تشويق تدور أحداثها في أوروبا&quot;* وما إلى ذلك
+* إنشاء متجه تضمين لعبارة البحث باستخدام نموذج LLM
+* العثور على أقرب الجيران لمتجه تضمين البحث في مجموعة البيانات
+
+تمثل *أقرب الجيران* مستندات أو صورًا أو محتوى يشكّل نتائج ذات صلة بعبارة بحث المستخدم.
+وتُعد النتائج المسترجعة المدخل الأساسي في التوليد المعزّز بالاسترجاع (RAG) في تطبيقات الذكاء الاصطناعي التوليدي.
+
+<div id="run-a-brute-force-vector-similarity-search">
+  ## نفّذ بحثًا بطريقة brute-force عن تشابه المتجهات
+</div>
+
+يتضمن بحث KNN ‏(k - أقرب الجيران) أو البحث بطريقة brute-force حساب المسافة بين كل متجه في مجموعة البيانات
+ومتجه التضمين المستخدم في البحث، ثم ترتيب هذه المسافات للحصول على أقرب الجيران. ومع مجموعة البيانات `dbpedia`،
+فإن من أسرع الطرق لملاحظة البحث الدلالي بصريًا استخدام متجهات التضمين من مجموعة البيانات نفسها كمتجهات
+للبحث. على سبيل المثال:
+
+```sql title="Query"
+SELECT id, title
+FROM dbpedia
+ORDER BY cosineDistance(vector, ( SELECT vector FROM dbpedia WHERE id = '<dbpedia:The_Remains_of_the_Day>') ) ASC
+LIMIT 20
+```
+
+```response title="Response" highlight={23}
+    ┌─id────────────────────────────────────────┬─title───────────────────────────┐
+ 1. │ <dbpedia:The_Remains_of_the_Day>          │ The Remains of the Day          │
+ 2. │ <dbpedia:The_Remains_of_the_Day_(film)>   │ The Remains of the Day (film)   │
+ 3. │ <dbpedia:Never_Let_Me_Go_(novel)>         │ Never Let Me Go (novel)         │
+ 4. │ <dbpedia:Last_Orders>                     │ Last Orders                     │
+ 5. │ <dbpedia:The_Unconsoled>                  │ The Unconsoled                  │
+ 6. │ <dbpedia:The_Hours_(novel)>               │ The Hours (novel)               │
+ 7. │ <dbpedia:An_Artist_of_the_Floating_World> │ An Artist of the Floating World │
+ 8. │ <dbpedia:Heat_and_Dust>                   │ Heat and Dust                   │
+ 9. │ <dbpedia:A_Pale_View_of_Hills>            │ A Pale View of Hills            │
+10. │ <dbpedia:Howards_End_(film)>              │ Howards End (film)              │
+11. │ <dbpedia:When_We_Were_Orphans>            │ When We Were Orphans            │
+12. │ <dbpedia:A_Passage_to_India_(film)>       │ A Passage to India (film)       │
+13. │ <dbpedia:Memoirs_of_a_Survivor>           │ Memoirs of a Survivor           │
+14. │ <dbpedia:The_Child_in_Time>               │ The Child in Time               │
+15. │ <dbpedia:The_Sea,_the_Sea>                │ The Sea, the Sea                │
+16. │ <dbpedia:The_Master_(novel)>              │ The Master (novel)              │
+17. │ <dbpedia:The_Memorial>                    │ The Memorial                    │
+18. │ <dbpedia:The_Hours_(film)>                │ The Hours (film)                │
+19. │ <dbpedia:Human_Remains_(film)>            │ Human Remains (film)            │
+20. │ <dbpedia:Kazuo_Ishiguro>                  │ Kazuo Ishiguro                  │
+    └───────────────────────────────────────────┴─────────────────────────────────┘
+20 rows in set. Elapsed: 0.261 sec. Processed 1.00 million rows, 6.22 GB (3.84 million rows/s., 23.81 GB/s.)
+```
+
+دوّن زمن استجابة الاستعلام حتى نتمكن من مقارنته بزمن استجابة استعلام ANN (باستخدام فهرس المتجهات).
+وسجّل أيضًا زمن استجابة الاستعلام مع ذاكرة التخزين المؤقت الباردة لملفات نظام التشغيل ومع `max_threads=1` لتحديد الاستخدام الفعلي لقدرة المعالجة
+واستهلاك عرض نطاق التخزين (واستقرئه على مجموعة بيانات إنتاجية تضم ملايين المتجهات!)
+
+<div id="build-vector-similarity-index">
+  ## إنشاء فهرس لتشابه المتجهات
+</div>
+
+نفّذ عبارة SQL التالية لتعريف فهرس لتشابه المتجهات وإنشائه على العمود `vector`:
+
+```sql
+ALTER TABLE dbpedia ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 1536, 'bf16', 64, 512);
+
+ALTER TABLE dbpedia MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
+```
+
+ترد المعلمات واعتبارات الأداء الخاصة بإنشاء الفهرس والبحث في [الوثائق](/ar/reference/engines/table-engines/mergetree-family/annindexes).
+
+قد يستغرق إنشاء الفهرس وحفظه بضع دقائق، بحسب عدد أنوية CPU المتاحة وعرض النطاق الترددي للتخزين.
+
+<div id="perform-ann-search">
+  ## إجراء بحث ANN
+</div>
+
+يشير *أقرب الجيران التقريبيون* أو ANN إلى مجموعة من التقنيات (مثل هياكل البيانات المتخصصة كالرُّسوم البيانية والغابات العشوائية) التي تحسب النتائج بسرعة أكبر بكثير من البحث المتجهي الدقيق. وتكون دقة النتائج عادةً &quot;جيدة بما يكفي&quot; للاستخدام العملي. كما توفّر العديد من التقنيات التقريبية معلمات لضبط الموازنة بين دقة النتائج ووقت البحث.
+
+بمجرد إنشاء فهرس لتشابه المتجهات، ستستخدم استعلامات البحث المتجهي هذا الفهرس تلقائيًا:
+
+```sql title="Query"
+SELECT
+    id,
+    title
+FROM dbpedia
+ORDER BY cosineDistance(vector, (
+        SELECT vector
+        FROM dbpedia
+        WHERE id = '<dbpedia:Glacier_Express>'
+    )) ASC
+LIMIT 20
+```
+
+```response title="Response" highlight={23}
+    ┌─id──────────────────────────────────────────────┬─title─────────────────────────────────┐
+ 1. │ <dbpedia:Glacier_Express>                       │ Glacier Express                       │
+ 2. │ <dbpedia:BVZ_Zermatt-Bahn>                      │ BVZ Zermatt-Bahn                      │
+ 3. │ <dbpedia:Gornergrat_railway>                    │ Gornergrat railway                    │
+ 4. │ <dbpedia:RegioExpress>                          │ RegioExpress                          │
+ 5. │ <dbpedia:Matterhorn_Gotthard_Bahn>              │ Matterhorn Gotthard Bahn              │
+ 6. │ <dbpedia:Rhaetian_Railway>                      │ Rhaetian Railway                      │
+ 7. │ <dbpedia:Gotthard_railway>                      │ Gotthard railway                      │
+ 8. │ <dbpedia:Furka–Oberalp_railway>                 │ Furka–Oberalp railway                 │
+ 9. │ <dbpedia:Jungfrau_railway>                      │ Jungfrau railway                      │
+10. │ <dbpedia:Monte_Generoso_railway>                │ Monte Generoso railway                │
+11. │ <dbpedia:Montreux–Oberland_Bernois_railway>     │ Montreux–Oberland Bernois railway     │
+12. │ <dbpedia:Brienz–Rothorn_railway>                │ Brienz–Rothorn railway                │
+13. │ <dbpedia:Lauterbrunnen–Mürren_mountain_railway> │ Lauterbrunnen–Mürren mountain railway │
+14. │ <dbpedia:Luzern–Stans–Engelberg_railway_line>   │ Luzern–Stans–Engelberg railway line   │
+15. │ <dbpedia:Rigi_Railways>                         │ Rigi Railways                         │
+16. │ <dbpedia:Saint-Gervais–Vallorcine_railway>      │ Saint-Gervais–Vallorcine railway      │
+17. │ <dbpedia:Gatwick_Express>                       │ Gatwick Express                       │
+18. │ <dbpedia:Brünig_railway_line>                   │ Brünig railway line                   │
+19. │ <dbpedia:Regional-Express>                      │ Regional-Express                      │
+20. │ <dbpedia:Schynige_Platte_railway>               │ Schynige Platte railway               │
+    └─────────────────────────────────────────────────┴───────────────────────────────────────┘
+20 rows in set. Elapsed: 0.025 sec. Processed 32.03 thousand rows, 2.10 MB (1.29 million rows/s., 84.80 MB/s.)
+```
+
+<div id="generating-embeddings-for-search-query">
+  ## إنشاء متجهات التضمين لاستعلام البحث
+</div>
+
+تستخدم استعلامات البحث بالتشابه التي رأيناها حتى الآن أحد المتجهات الموجودة في الجدول `dbpedia`
+باعتباره متجه البحث. في التطبيقات العملية، يجب
+إنشاء متجه البحث لاستعلام يُدخله المستخدم، وقد يكون
+بلغة طبيعية. وينبغي إنشاء متجه البحث
+باستخدام نموذج LLM نفسه المستخدَم لإنشاء متجهات التضمين
+لمجموعة البيانات.
+
+يَرِد أدناه مثال لبرنامج نصي بلغة بايثون يوضح كيفية استدعاء OpenAI API برمجيًا من أجل
+إنشاء متجهات التضمين باستخدام النموذج `text-embedding-3-large`. ثم يُمرَّر متجه التضمين الخاص بالبحث
+كوسيط إلى الدالة `cosineDistance()` في استعلام `SELECT`.
+
+يتطلب تشغيل البرنامج النصي تعيين مفتاح OpenAI API في متغير البيئة `OPENAI_API_KEY`.
+ويمكن الحصول على مفتاح OpenAI API بعد التسجيل على https://platform.openai.com.
+
+```python
+import sys
+from openai import OpenAI
+import clickhouse_connect
+
+ch_client = clickhouse_connect.get_client(compress=False) # Pass ClickHouse credentials
+openai_client = OpenAI() # Set OPENAI_API_KEY environment variable
+
+def get_embedding(text, model):
+  text = text.replace("\n", " ")
+  return openai_client.embeddings.create(input = [text], model=model, dimensions=1536).data[0].embedding
+
+while True:
+    # Accept the search query from user
+    print("Enter a search query :")
+    input_query = sys.stdin.readline();
+
+    # Call OpenAI API endpoint to get the embedding
+    print("Generating the embedding for ", input_query);
+    embedding = get_embedding(input_query,
+                              model='text-embedding-3-large')
+
+    # Execute vector search query in ClickHouse
+    print("Querying clickhouse...")
+    params = {'v1':embedding, 'v2':10}
+    result = ch_client.query("SELECT id,title,text FROM dbpedia ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
+
+    for row in result.result_rows:
+        print(row[0], row[1], row[2])
+        print("---------------")
+```
+
+<div id="q-and-a-demo-application">
+  ## التطبيق التجريبي للأسئلة والأجوبة
+</div>
+
+أوضحت الأمثلة أعلاه البحث الدلالي واسترجاع المستندات باستخدام ClickHouse. ونستعرض فيما يلي تطبيقًا بسيطًا جدًا، لكنه واعد للغاية، للذكاء الاصطناعي التوليدي.
+
+ينفّذ التطبيق الخطوات التالية:
+
+1. يستقبل *موضوعًا* كمدخل من المستخدم
+2. يُنشئ متجه تضمين للـ *موضوع* عبر استدعاء OpenAI API باستخدام النموذج `text-embedding-3-large`
+3. يسترجع مقالات/مستندات Wikipedia عالية الصلة باستخدام البحث عن تشابه المتجهات على الجدول `dbpedia`
+4. يستقبل من المستخدم سؤالًا مفتوح الصياغة بلغة طبيعية يتعلق بالـ *موضوع*
+5. يستخدم OpenAI `gpt-3.5-turbo` Chat API للإجابة عن السؤال استنادًا إلى المعرفة الواردة في المستندات المسترجعة في الخطوة رقم 3.
+   وتُمرَّر المستندات المسترجعة في الخطوة رقم 3 باعتبارها *سياقًا* إلى Chat API، وهي حلقة الوصل الأساسية في الذكاء الاصطناعي التوليدي.
+
+يُعرض أولًا أدناه مثالان لمحادثات ناتجة عن تشغيل تطبيق الأسئلة والأجوبة، يليهما الكود
+الخاص بتطبيق الأسئلة والأجوبة. ويتطلب تشغيل التطبيق ضبط مفتاح OpenAI API في متغير البيئة
+`OPENAI_API_KEY`. ويمكن الحصول على مفتاح OpenAI API بعد التسجيل على https://platform.openai.com.
+
+```shell
+$ python3 QandA.py
+
+Enter a topic : FIFA world cup 1990
+Generating the embedding for 'FIFA world cup 1990' and collecting 100 articles related to it from ClickHouse...
+
+Enter your question : Who won the golden boot
+Salvatore Schillaci of Italy won the Golden Boot at the 1990 FIFA World Cup.
+
+Enter a topic : Cricket world cup
+Generating the embedding for 'Cricket world cup' and collecting 100 articles related to it from ClickHouse...
+
+Enter your question : Which country has hosted the world cup most times
+England and Wales have hosted the Cricket World Cup the most times, with the tournament being held in these countries five times - in 1975, 1979, 1983, 1999, and 2019.
+
+$
+```
+
+الكود:
+
+```Python
+import sys
+import time
+from openai import OpenAI
+import clickhouse_connect
+
+ch_client = clickhouse_connect.get_client(compress=False) # Pass ClickHouse credentials here
+openai_client = OpenAI() # Set the OPENAI_API_KEY environment variable
+
+def get_embedding(text, model):
+  text = text.replace("\n", " ")
+  return openai_client.embeddings.create(input = [text], model=model, dimensions=1536).data[0].embedding
+
+while True:
+    # Take the topic of interest from user
+    print("Enter a topic : ", end="", flush=True)
+    input_query = sys.stdin.readline()
+    input_query = input_query.rstrip()
+
+    # Generate an embedding vector for the search topic and query ClickHouse
+    print("Generating the embedding for '" + input_query + "' and collecting 100 articles related to it from ClickHouse...");
+    embedding = get_embedding(input_query,
+                              model='text-embedding-3-large')
+
+    params = {'v1':embedding, 'v2':100}
+    result = ch_client.query("SELECT id,title,text FROM dbpedia ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
+
+    # Collect all the matching articles/documents
+    results = ""
+    for row in result.result_rows:
+        results = results + row[2]
+
+    print("\nEnter your question : ", end="", flush=True)
+    question = sys.stdin.readline();
+
+    # Prompt for the OpenAI Chat API
+    query = f"""Use the below content to answer the subsequent question. If the answer cannot be found, write "I don't know."
+
+Content:
+\"\"\"
+{results}
+\"\"\"
+
+Question: {question}"""
+
+    GPT_MODEL = "gpt-3.5-turbo"
+    response = openai_client.chat.completions.create(
+        messages=[
+        {'role': 'system', 'content': "You answer questions about {input_query}."},
+        {'role': 'user', 'content': query},
+       ],
+       model=GPT_MODEL,
+       temperature=0,
+    )
+
+    # Print the answer to the question!
+    print(response.choices[0].message.content)
+    print("\n")
+```

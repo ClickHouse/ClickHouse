@@ -12,25 +12,32 @@ namespace ErrorCodes
 }
 
 SquashingTransform::SquashingTransform(
-    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes,
+    size_t max_block_size_rows, size_t max_block_size_bytes, bool squash_with_strict_limits)
     : ExceptionKeepingTransform(header, header, false)
-    , squashing(header, min_block_size_rows, min_block_size_bytes)
+    , squashing(header, min_block_size_rows, min_block_size_bytes,
+                max_block_size_rows, max_block_size_bytes, squash_with_strict_limits)
 {
 }
 
 void SquashingTransform::onConsume(Chunk chunk)
 {
-    cur_chunk = Squashing::squash(
-        squashing.add(std::move(chunk)),
-        getInputPort().getSharedHeader());
+    squashing.add(std::move(chunk));
 }
 
 SquashingTransform::GenerateResult SquashingTransform::onGenerate()
 {
+    cur_chunk = Squashing::squash(squashing.generate(), getInputPort().getSharedHeader());
+
     GenerateResult res;
     res.chunk = std::move(cur_chunk);
-    res.is_done = true;
+    res.is_done = !canGenerate();
     return res;
+}
+
+bool SquashingTransform::canGenerate()
+{
+    return squashing.canGenerate();
 }
 
 void SquashingTransform::onFinish()
@@ -65,11 +72,13 @@ SimpleSquashingChunksTransform::SimpleSquashingChunksTransform(
 
 void SimpleSquashingChunksTransform::consume(Chunk chunk)
 {
-    squashed_chunk = Squashing::squash(squashing.add(std::move(chunk)), getOutputPort().getSharedHeader());
+    squashing.add(std::move(chunk));
 }
 
 Chunk SimpleSquashingChunksTransform::generate()
 {
+    squashed_chunk = Squashing::squash(squashing.generate(), getOutputPort().getSharedHeader());
+
     if (squashed_chunk.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in SimpleSquashingChunksTransform");
 
@@ -80,7 +89,7 @@ Chunk SimpleSquashingChunksTransform::generate()
 
 bool SimpleSquashingChunksTransform::canGenerate()
 {
-    return squashed_chunk.hasRows();
+    return squashing.canGenerate();
 }
 
 Chunk SimpleSquashingChunksTransform::getRemaining()
