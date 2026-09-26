@@ -408,7 +408,8 @@ struct PositionImpl
                 size_t pos = searcher.search(reinterpret_cast<const UInt8 *>(beg), &haystack_data[haystack_offsets[i]])
                     - &haystack_data[prev_haystack_offset];
 
-                if (pos != haystack_size)
+                /// Like for a constant needle, a match whose needle bytes run past the end of the string is not a match.
+                if (pos != haystack_size && needle_size <= haystack_size - pos)
                 {
                     res[i] = 1
                         + Impl::countChars(
@@ -471,7 +472,8 @@ struct PositionImpl
                                  reinterpret_cast<const UInt8 *>(haystack.data()) + haystack.size())
                     - reinterpret_cast<const UInt8 *>(haystack.data());
 
-                if (pos != haystack.size())
+                /// Like for a constant needle, a match whose needle bytes run past the end of the string is not a match.
+                if (pos != haystack.size() && needle_size <= haystack.size() - pos)
                 {
                     res[i] = 1 + Impl::countChars(haystack.data(), haystack.data() + pos);
                 }
