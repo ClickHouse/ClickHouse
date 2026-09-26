@@ -6,6 +6,7 @@
 #include <cstring>
 #include <initializer_list>
 #include <memory>
+#include <random>
 #include <utility>
 #include <vector>
 
@@ -47,5 +48,43 @@ TEST(CompressionCodecMultiple, ExactBuffersAndTails)
             EXPECT_EQ(memcmp(output.get(), raw.data(), raw.size()), 0);
             EXPECT_EQ(memcmp(input.get(), compressed.data(), compressed.size()), 0);
         }
+    }
+}
+
+/// Resuming a chain after any number of completed stages writes the bytes `compress` writes.
+TEST(CompressionCodecMultiple, CompressRemainingStagesMatchesCompress)
+{
+    auto & factory = CompressionCodecFactory::instance();
+    const auto first = factory.get("LZ4", {});
+    CompressionCodecMultiple chain(Codecs{first, factory.get("ZSTD", {})});
+
+    for (const UInt32 size : {1u, 40003u})
+    {
+        /// Low-entropy bytes, so both stages have something to compress.
+        std::mt19937 rng(size);
+        std::vector<char> bytes(size);
+        for (auto & byte : bytes)
+            byte = static_cast<char>(rng() % 16);
+
+        std::vector<char> whole(chain.getCompressedReserveSize(size));
+        const UInt32 whole_size = chain.compress(bytes.data(), size, whole.data());
+
+        std::vector<char> first_stage(first->getCompressedReserveSize(size));
+        const UInt32 first_stage_size = first->compress(bytes.data(), size, first_stage.data());
+
+        const auto check = [&](size_t completed_stages, const char * input, UInt32 input_size)
+        {
+            SCOPED_TRACE(testing::Message() << "size " << size << ", completed stages " << completed_stages);
+            std::vector<char> resumed(chain.getCompressedReserveSize(size));
+            const UInt32 resumed_size = chain.compressRemainingStages(completed_stages, input, input_size, size, resumed.data());
+            ASSERT_EQ(resumed_size, whole_size);
+            EXPECT_EQ(memcmp(resumed.data(), whole.data(), whole_size), 0);
+        };
+
+        check(0, bytes.data(), size);
+        check(1, first_stage.data(), first_stage_size);
+
+        const UInt32 frame_size = ICompressionCodec::getHeaderSize() + 3;
+        check(2, whole.data() + frame_size, whole_size - frame_size);
     }
 }
