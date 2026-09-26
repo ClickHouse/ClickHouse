@@ -18,10 +18,10 @@ namespace DB
   * column holding NULL — NOT as `ColumnPtr{}`.
   *
   * The purpose is to convert constants WITHOUT materializing a `Field`. Cases that can be done
-  * column-natively (currently: plain numeric-to-numeric in the default mode) go through
-  * `IColumn`/CAST; the rest still delegate to `convertFieldToType` (same behavior, just not yet
-  * `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against `convertFieldToType`,
-  * so more column-native fast paths can be added without changing results.
+  * column-natively (plain numeric-to-numeric, and a `Variant`-carrying target) go through
+  * `IColumn`/`CAST`; the rest still delegate to `convertFieldToType` (same behavior, just not yet
+  * `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against
+  * `convertFieldToType`, so more column-native fast paths can be added without changing results.
   *
   * The equivalence holds for scalar `Bool` and for `Bool` nested under the structural carriers
   * `Array`/`Tuple`/`Map` (and under `Nullable`/`LowCardinality`), including tag-sensitive conversions
@@ -40,6 +40,10 @@ namespace DB
   * Known limitation: a conversion whose `from` is itself a composite over the carrier - e.g.
   * `Array(Dynamic)` to `Array(String)` - is NOT faithful, because `convertFieldToType` converts the
   * elements of a composite with no element type at hand, so a per-element alternative is never reached.
+  *
+  * A `Variant` target is the one deliberate divergence from `convertFieldToType`, which cannot express
+  * such a result: it returns the value unchanged and the alternative is chosen only on insertion into a
+  * `ColumnVariant`, by the first one that accepts it. `CAST` chooses it by type instead.
   */
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,
@@ -57,6 +61,11 @@ ColumnPtr tryConvertColumnToTypeOrNull(
     const FormatSettings & format_settings = {},
     bool strict = false,
     bool convert_inexact_floats = false);
+
+/// Whether a `Field` can lose which `Variant` alternative (or `Dynamic` element type) a value of either
+/// type occupies: a `Field` records the value and not the alternative, and `ColumnVariant::tryInsert`
+/// then takes the first alternative that accepts it. A single-alternative `Variant` has no choice to lose.
+bool fieldCanLoseVariantAlternative(const DataTypePtr & from, const DataTypePtr & to);
 
 /// Twin of `convertFieldToTypeOrThrow`: throws `TYPE_MISMATCH` for a NULL value that `to` cannot hold,
 /// and `ARGUMENT_OUT_OF_BOUND` for a non-NULL value that is not representable in `to`.

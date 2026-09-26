@@ -126,6 +126,112 @@ void retagBoolInField(Field & field, const DataTypePtr & type)
     }
 }
 
+/// Whether a value of `type` occupies one of SEVERAL `Variant` alternatives, at any nesting depth. A
+/// single-alternative `Variant` has no choice to lose, so it is not this class.
+bool carriesAmbiguousVariant(const IDataType & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & nested)
+    {
+        if (const auto * variant = typeid_cast<const DataTypeVariant *>(&nested))
+            result |= variant->getVariants().size() > 1;
+    };
+    check(type);
+    type.forEachChild(check);
+    return result;
+}
+
+/// `CAST` resolves a `Variant` target's alternatives BY NAME, so it can choose the alternative for an
+/// identity conversion, for a source type that names one, and for a `Variant` source whose alternatives
+/// the target all names. By name, not `equals`: `equals` conflates types the lookup does not (a `DateTime`
+/// timezone, an `AggregateFunction`'s serialization version). An ordinary `LowCardinality` survives the
+/// source normalization, since it can be an alternative itself. Two tuples that both name their elements
+/// are paired by NAME by `CAST` and positionally by `convertFieldToType`, so they qualify only where the
+/// two pairings coincide.
+bool variantAlternativeIsChosenByType(const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (from->getName() == to->getName())
+        return true;
+
+    /// The lookup below ignores a source `Nullable`, while `CAST` cannot place a NULL in a target that
+    /// does not hold one, so by type alone such a pair is refused and keeps the `Field` path, which owns
+    /// the "not representable" answer for it. A `Variant` does hold a NULL, through its own discriminator.
+    if (isNullableOrLowCardinalityNullable(from) && !canContainNull(*to))
+        return false;
+
+    const DataTypePtr source = removeNullableOrLowCardinalityNullable(from);
+
+    /// A `Nullable` target adds a NULL flag over a conversion `CAST` performs unchanged, so the nested
+    /// type answers the same question. Only a composite is reached: a `Variant` cannot be inside `Nullable`.
+    if (const auto * to_nullable = typeid_cast<const DataTypeNullable *>(to.get()))
+        return variantAlternativeIsChosenByType(source, to_nullable->getNestedType());
+
+    if (const auto * to_variant = typeid_cast<const DataTypeVariant *>(to.get()))
+    {
+        if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(source.get()))
+        {
+            for (const auto & alternative : from_variant->getVariants())
+                if (!to_variant->tryGetVariantDiscriminator(alternative->getName()))
+                    return false;
+            return true;
+        }
+
+        return to_variant->tryGetVariantDiscriminator(source->getName()).has_value();
+    }
+
+    if (const auto * to_array = typeid_cast<const DataTypeArray *>(to.get()))
+    {
+        const auto * from_array = typeid_cast<const DataTypeArray *>(source.get());
+        return from_array && variantAlternativeIsChosenByType(from_array->getNestedType(), to_array->getNestedType());
+    }
+
+    if (const auto * to_map = typeid_cast<const DataTypeMap *>(to.get()))
+    {
+        const auto * from_map = typeid_cast<const DataTypeMap *>(source.get());
+        return from_map && variantAlternativeIsChosenByType(from_map->getKeyType(), to_map->getKeyType())
+            && variantAlternativeIsChosenByType(from_map->getValueType(), to_map->getValueType());
+    }
+
+    if (const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get()))
+    {
+        const auto * from_tuple = typeid_cast<const DataTypeTuple *>(source.get());
+        if (!from_tuple || from_tuple->getElements().size() != to_tuple->getElements().size())
+            return false;
+
+        if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames()
+            && from_tuple->getElementNames() != to_tuple->getElementNames())
+            return false;
+
+        for (size_t i = 0; i < to_tuple->getElements().size(); ++i)
+            if (!variantAlternativeIsChosenByType(from_tuple->getElements()[i], to_tuple->getElements()[i]))
+                return false;
+        return true;
+    }
+
+    return false;
+}
+
+/// A `Field` cannot express a `Variant` result: `convertFieldToType` returns the value unchanged, and the
+/// alternative is then chosen on insertion into a `ColumnVariant`, by the first one that accepts it (so
+/// `1 :: UInt64` lands in `Date` for `Variant(Date, UInt64)`). `CAST` chooses it by type.
+std::optional<ColumnPtr> tryConvertVariantColumnNative(
+    const IColumn & value, const DataTypePtr & from, const DataTypePtr & to)
+{
+    if (!carriesAmbiguousVariant(*to))
+        return std::nullopt;
+
+    /// A `Nullable` that this row does not use holds no NULL for `CAST` to place, so the outermost one is
+    /// decided by the row; the levels below have no value here and keep the type-level answer.
+    const DataTypePtr source = value.isNullAt(0) ? from : removeNullableOrLowCardinalityNullable(from);
+
+    if (!variantAlternativeIsChosenByType(source, to))
+        return std::nullopt;
+
+    /// The value keeps its own type here, so it stays representable, and neither `strict` nor
+    /// `convert_inexact_floats` applies.
+    return castColumn({value.getPtr(), from, ""}, to)->convertToFullColumnIfConst();
+}
+
 /// The type of the alternative that row 0 of a `Variant`/`Dynamic` column occupies, else `from`. A
 /// genuine value of such a constant has that type rather than the carrier's - the carrier only records
 /// which alternative it is - and `convertFieldToType` keys its conversions on the source type (an `Enum`
@@ -154,6 +260,12 @@ DataTypePtr resolveActiveAlternativeType(const IColumn & value, const DataTypePt
 
 }
 
+bool fieldCanLoseVariantAlternative(const DataTypePtr & from, const DataTypePtr & to)
+{
+    return carriesAmbiguousVariant(*from) || carriesAmbiguousVariant(*to) || from->hasDynamicStructure()
+        || to->hasDynamicStructure();
+}
+
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,
     const DataTypePtr & from,
@@ -172,6 +284,9 @@ ColumnPtr convertColumnToTypeOrNull(
 
     if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, convert_inexact_floats))
         return std::move(*native);
+
+    if (auto variant = tryConvertVariantColumnNative(unwrapped, from, to))
+        return std::move(*variant);
 
     /// Fallback: materialize a `Field`, reuse `convertFieldToType`, rebuild a column. Column-native
     /// fast paths above shrink this over time; the differential test pins equivalence.
