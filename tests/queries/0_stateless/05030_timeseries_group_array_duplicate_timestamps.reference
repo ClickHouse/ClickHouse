@@ -8,3 +8,5 @@ NaN loses to a real value:
 NaN survives when all values at the timestamp are NaN:
 [(95,nan)]
 [(90,1),(95,nan)]
+[(95,'7FF8000000000000')]
+[(95,'7FF8000000000000')]

@@ -18,3 +18,11 @@ NaN loses to a real value:
 NaN survives when all values at the timestamp are NaN:
 [nan]
 [nan]
+['7FF8000000000000']
+['7FF8000000000000']
+['7FF8000000000000']
+['7FF8000000000000']
+['7FF8000000000000']
+['7FF8000000000000']
+['7FC00001']
+['7FC00001']
