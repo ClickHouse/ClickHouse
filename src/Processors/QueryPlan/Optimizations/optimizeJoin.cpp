@@ -946,6 +946,25 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
 
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
+    /// Relation estimates are taken before the join applies its ON clause: a condition on a single
+    /// relation filters it first, so its estimate is not a lower bound, and an `arrayJoin` in the
+    /// join expressions can change the row count of an input either way, so no bound holds.
+    for (const auto & edge : query_graph_builder.join_edges)
+    {
+        auto relation = edge.getSourceRelations().getSingleBit();
+        if (relation && *relation < query_graph_builder.relation_stats.size())
+            query_graph_builder.relation_stats[*relation].estimated_rows_is_lower_bound = false;
+    }
+
+    if (auto dag = query_graph_builder.expression_actions.getActionsDAG(); dag && dag->hasArrayJoin())
+    {
+        for (auto & stats : query_graph_builder.relation_stats)
+        {
+            stats.estimated_rows_upper.reset();
+            stats.estimated_rows_is_lower_bound = false;
+        }
+    }
+
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);

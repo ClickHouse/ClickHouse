@@ -161,6 +161,49 @@ SELECT 'degenerate-predicate leaf keeps orientation',
 
 DROP TABLE cross_04726;
 
+-- An `arrayJoin` in the ON clause multiplies the rows of its side before the join, so the bound
+-- estimated for `aj_l_04726` (1 row read, 1000 after the expansion) must not move it to the build side.
+CREATE TABLE aj_l_04726 (id UInt64, tag String, arr Array(UInt64)) ENGINE = MergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '';
+CREATE TABLE aj_r_04726 (id UInt64) ENGINE = MergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '';
+INSERT INTO aj_l_04726 SELECT 1, 'keep', range(1000);
+INSERT INTO aj_r_04726 SELECT number FROM numbers(100);
+
+-- The first condition keeps the assertion non-vacuous if the relation stops appearing at all.
+SELECT 'arrayJoin-expanded side keeps orientation',
+        countIf(explain ILIKE '%aj\_r\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: aj\_l\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM aj_l_04726 JOIN aj_r_04726 ON arrayJoin(aj_l_04726.arr) = aj_r_04726.id
+    WHERE aj_l_04726.tag = 'keep'
+) WHERE explain ILIKE '%Join:%';
+
+DROP TABLE aj_l_04726;
+DROP TABLE aj_r_04726;
+
+-- A condition on one side kept in the ON clause filters that side before the join, so the unfiltered
+-- estimate of `pf_r_04726` (1000 rows, none with `pad = 1`) must not move it off the build side.
+CREATE TABLE pf_l_04726 (id UInt64, tag String) ENGINE = MergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '';
+CREATE TABLE pf_r_04726 (id UInt64, pad UInt8) ENGINE = MergeTree ORDER BY id
+    SETTINGS auto_statistics_types = '';
+INSERT INTO pf_l_04726 SELECT number, 'keep' FROM numbers(20);
+INSERT INTO pf_r_04726 SELECT number, 0 FROM numbers(1000);
+
+-- The first condition keeps the assertion non-vacuous if the relation stops appearing at all.
+SELECT 'single-side ON condition keeps orientation',
+        countIf(explain ILIKE '%pf\_r\_04726%') > 0
+    AND countIf(explain ILIKE '%Join: pf\_l\_04726%') > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT count() FROM pf_l_04726 JOIN pf_r_04726 ON pf_l_04726.id = pf_r_04726.id AND pf_r_04726.pad = 1
+    WHERE pf_l_04726.tag = 'keep'
+    SETTINGS query_plan_split_filter = 0
+) WHERE explain ILIKE '%Join:%';
+
+DROP TABLE pf_l_04726;
+DROP TABLE pf_r_04726;
+
 -- A join graph capped at two relations optimizes the inner join separately, so the filtered side
 -- reaches the outer join as a sub-join instead of a table. Its bound must survive that boundary.
 -- The first condition keeps the assertion non-vacuous if the fixture stops appearing at all.
