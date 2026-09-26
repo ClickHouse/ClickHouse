@@ -43,6 +43,12 @@
                 <!-- default: 10000 -->
                 <session_timeout_ms>6001</session_timeout_ms>
             </kafka_topic>
+            <kafka_topic>
+                <name>restart_leave_group</name>
+                <!-- The restart test expects consumption to resume well before a member that does not send
+                     `LeaveGroup` would expire. -->
+                <session_timeout_ms>45000</session_timeout_ms>
+            </kafka_topic>
         </consumer>
         <producer>
             <kafka_separate_settings>
