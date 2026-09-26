@@ -710,7 +710,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Bad get: has String, requested UInt64. (BAD_GET" \
            -e "Disk does not support stat. (NOT_IMPLEMENTED" \
            -e "QUALIFY clause is not supported in the old analyzer" \
-           -e "Cannot attach table \`test_7\`" \
            -e "Cannot open file /var/lib/clickhouse/access/" \
            -e "NO_SUCH_INTERSERVER_IO_ENDPOINT" \
            -e "Mapping for table with UUID=1f474183-1403-4282-9309-21f6e3518dab already exists" \

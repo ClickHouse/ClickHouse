@@ -166,6 +166,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
     PAUSEABLE_ONCE(delta_lake_create_table_pause) \
     ONCE(delta_lake_write_cancel_in_commit_window) \
+    ONCE(delta_lake_commit_fail_before_log_write) \
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
@@ -223,6 +224,7 @@ static struct InitFiu
     REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
+    PAUSEABLE(async_insert_pause_before_schedule) \
     PAUSEABLE_ONCE(completed_pipeline_pause_before_teardown) \
     PAUSEABLE(system_replicas_schedule_requests_pause) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
@@ -339,6 +341,7 @@ static struct InitFiu
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
     ONCE(local_object_storage_network_error_during_remove) \
+    REGULAR(local_object_storage_network_error_during_every_remove) \
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \
     REGULAR(check_database_datalake_negative) \
@@ -392,6 +395,7 @@ static struct InitFiu
     PAUSEABLE(keeper_changelog_readahead_pre_drain) \
     PAUSEABLE(object_storage_source_pause_before_virtual_columns) \
     REGULAR(keeper_changelog_readahead_fill_exception) \
+    ONCE(keeper_changelog_preallocate_no_space) \
     ONCE(distributed_plan_record_failure_while_starting_tasks) \
     ONCE(distributed_plan_delay_root_cause_report) \
     ONCE(zk_send_thread_request_window_throw) \
@@ -404,6 +408,16 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(storage_url_pause_before_empty_file_probe) \
+    PAUSEABLE_ONCE(storage_url_pause_between_metadata_probes) \
+    PAUSEABLE_ONCE(storage_url_pause_before_read_buffer_creation) \
+    PAUSEABLE_ONCE(storage_url_pause_before_request_attempt) \
+    PAUSEABLE_ONCE(storage_url_pause_before_retry_attempt) \
+    PAUSEABLE_ONCE(storage_url_pause_before_input_format_initialization) \
+    PAUSEABLE_ONCE(storage_url_pause_after_pull) \
+    PAUSEABLE_ONCE(storage_url_pause_before_handling_interrupted_read_error) \
+    PAUSEABLE_ONCE(storage_url_pause_before_handling_option_error) \
+    PAUSEABLE_ONCE(http_read_buffer_pause_before_metadata_fallback) \
     ONCE(aggregating_in_order_transform_cancel_mid_loop) \
     ONCE(mysql_output_format_cancel_mid_loop) \
     ONCE(postgresql_output_format_cancel_mid_loop) \
