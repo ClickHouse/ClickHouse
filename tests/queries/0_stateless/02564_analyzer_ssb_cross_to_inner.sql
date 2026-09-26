@@ -95,9 +95,12 @@ CREATE TABLE date
 )
 ENGINE = MergeTree ORDER BY D_DATEKEY;
 
-set cross_to_inner_join_rewrite = 2;
+SET cross_to_inner_join_rewrite = 2;
+SET query_plan_optimize_join_order_randomize = 0;
+-- `date, customer` only get connected through `lineorder`, so the comma joins need the join reordering.
+SET query_plan_optimize_join_order_limit = 10;
 
-EXPLAIN QUERY TREE dump_ast=1
+-- Every comma join gets its key from `WHERE`; in force mode a comma join left as a cross product is an error.
 select D_YEARMONTHNUM, S_CITY, P_BRAND, sum(LO_REVENUE - LO_SUPPLYCOST) as profit
 from date, customer, supplier, part, lineorder
 where LO_CUSTKEY = C_CUSTKEY
@@ -109,4 +112,47 @@ where LO_CUSTKEY = C_CUSTKEY
   and (LO_QUANTITY between 34 and 44)
   and (LO_ORDERDATE between toDate('1996-01-01') and toDate('1996-12-31'))
 group by D_YEARMONTHNUM, S_CITY, P_BRAND
-order by D_YEARMONTHNUM, S_CITY, P_BRAND;
+order by D_YEARMONTHNUM, S_CITY, P_BRAND
+FORMAT Null;
+
+SELECT countIf(explain ILIKE '%Type: INNER%'), countIf(explain ILIKE '%Type: CROSS%' OR explain ILIKE '%Type: COMMA%')
+FROM (
+    EXPLAIN actions = 1
+select D_YEARMONTHNUM, S_CITY, P_BRAND, sum(LO_REVENUE - LO_SUPPLYCOST) as profit
+from date, customer, supplier, part, lineorder
+where LO_CUSTKEY = C_CUSTKEY
+  and LO_SUPPKEY = S_SUPPKEY
+  and LO_PARTKEY = P_PARTKEY
+  and LO_ORDERDATE = D_DATEKEY
+  and S_NATION = 'UNITED KINGDOM'
+  and P_CATEGORY = 'MFGR#21'
+  and (LO_QUANTITY between 34 and 44)
+  and (LO_ORDERDATE between toDate('1996-01-01') and toDate('1996-12-31'))
+group by D_YEARMONTHNUM, S_CITY, P_BRAND
+order by D_YEARMONTHNUM, S_CITY, P_BRAND
+);
+
+SELECT trimLeft(explain) AS keys
+FROM (
+    EXPLAIN keep_logical_steps = 1, actions = 1
+select D_YEARMONTHNUM, S_CITY, P_BRAND, sum(LO_REVENUE - LO_SUPPLYCOST) as profit
+from date, customer, supplier, part, lineorder
+where LO_CUSTKEY = C_CUSTKEY
+  and LO_SUPPKEY = S_SUPPKEY
+  and LO_PARTKEY = P_PARTKEY
+  and LO_ORDERDATE = D_DATEKEY
+  and S_NATION = 'UNITED KINGDOM'
+  and P_CATEGORY = 'MFGR#21'
+  and (LO_QUANTITY between 34 and 44)
+  and (LO_ORDERDATE between toDate('1996-01-01') and toDate('1996-12-31'))
+group by D_YEARMONTHNUM, S_CITY, P_BRAND
+order by D_YEARMONTHNUM, S_CITY, P_BRAND
+)
+WHERE explain LIKE '%Expression: equals(%'
+ORDER BY keys;
+
+DROP TABLE customer;
+DROP TABLE part;
+DROP TABLE supplier;
+DROP TABLE lineorder;
+DROP TABLE date;

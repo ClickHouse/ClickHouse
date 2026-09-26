@@ -23,17 +23,17 @@ QUERY id: 0
           COLUMN id: 12, column_name: l_extendedprice, result_type: Decimal(15, 2), source_id: 11
           COLUMN id: 13, column_name: p_partkey, result_type: Int32, source_id: 14
       JOIN TREE
-        JOIN id: 15, strictness: ALL, kind: INNER
+        JOIN id: 15, kind: COMMA
           LEFT TABLE EXPRESSION
             TABLE id: 11, alias: __table2, table_name: default.lineitem
           RIGHT TABLE EXPRESSION
             TABLE id: 14, alias: __table3, table_name: default.part
-          JOIN EXPRESSION
-            FUNCTION id: 16, function_name: equals, function_type: ordinary, result_type: UInt8
-              ARGUMENTS
-                LIST id: 17, nodes: 2
-                  COLUMN id: 18, column_name: p_partkey, result_type: Int32, source_id: 14
-                  COLUMN id: 19, column_name: l_partkey, result_type: Int32, source_id: 11
+      WHERE
+        FUNCTION id: 16, function_name: equals, function_type: ordinary, result_type: UInt8
+          ARGUMENTS
+            LIST id: 17, nodes: 2
+              COLUMN id: 18, column_name: p_partkey, result_type: Int32, source_id: 14
+              COLUMN id: 19, column_name: l_partkey, result_type: Int32, source_id: 11
   WHERE
     FUNCTION id: 20, function_name: less, function_type: ordinary, result_type: Nullable(UInt8)
       ARGUMENTS

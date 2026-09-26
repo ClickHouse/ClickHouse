@@ -1,5 +1,7 @@
 #include <Planner/Utils.h>
 
+#include <ranges>
+
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -402,14 +404,6 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             {
                 return true;
             }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : cross_join_node.getTableExpressions())
-                    join_tree_nodes_to_process.push_back(expr);
-
-                break;
-            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = join_tree_node_to_process->as<JoinNode &>();
@@ -472,14 +466,6 @@ bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node)
             {
                 const auto & array_join_node = join_tree_node_to_process->as<ArrayJoinNode &>();
                 join_tree_nodes_to_process.push_back(array_join_node.getTableExpressionNode().get());
-                break;
-            }
-            case QueryTreeNodeType::CROSS_JOIN:
-            {
-                const auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
-                for (const auto & expr : cross_join_node.getTableExpressions())
-                    join_tree_nodes_to_process.push_back(expr.get());
-
                 break;
             }
             case QueryTreeNodeType::JOIN:
@@ -855,7 +841,8 @@ ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate)
             bool is_conjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
             if (is_conjunction)
             {
-                for (const auto & child : node->children)
+                /// The stack pops the last child first, so the children go in reverse to keep the order of the query text.
+                for (const auto & child : node->children | std::views::reverse)
                 {
                     if (!visited_nodes.contains(child))
                     {

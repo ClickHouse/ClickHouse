@@ -1119,47 +1119,14 @@ QueryTreeNodePtr QueryTreeBuilder::buildJoinTree(bool is_subquery, const ASTSele
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ANY FULL JOINs are not implemented");
             }
 
-            QueryTreeNodePtr join_node;
-            if (result_join_kind == JoinKind::Cross || result_join_kind == JoinKind::Comma)
-            {
-                CrossJoinNode * cross_join = nullptr;
-                if (auto * left_cross_join = left_table_expression->as<CrossJoinNode>())
-                    cross_join = left_cross_join;
-                else
-                {
-                    auto new_cross_join = std::make_shared<CrossJoinNode>(std::move(left_table_expression));
-                    cross_join = new_cross_join.get();
-                    left_table_expression = std::move(new_cross_join);
-                }
-
-                CrossJoinNode::JoinType join_type{result_join_kind == JoinKind::Comma, table_join.locality};
-
-                if (auto * right_cross_join = right_table_expression->as<CrossJoinNode>())
-                {
-                    const auto & expr = right_cross_join->getTableExpressions();
-                    cross_join->appendTable(expr.front(), join_type);
-
-                    const auto & join_types = right_cross_join->getJoinTypes();
-                    for (size_t i = 0; i < join_types.size(); ++i)
-                        cross_join->appendTable(expr[i + 1], join_types[i]);
-                }
-                else
-                    cross_join->appendTable(right_table_expression, join_type);
-
-                join_node = std::move(left_table_expression);
-            }
-            else
-            {
-                join_node = std::make_shared<JoinNode>(std::move(left_table_expression),
-                    std::move(right_table_expression),
-                    std::move(join_expression),
-                    table_join.locality,
-                    result_join_strictness,
-                    result_join_kind,
-                    table_join.using_expression_list != nullptr);
-                join_node->as<JoinNode &>().setNatural(table_join.is_natural);
-            }
-
+            auto join_node = std::make_shared<JoinNode>(std::move(left_table_expression),
+                std::move(right_table_expression),
+                std::move(join_expression),
+                table_join.locality,
+                result_join_strictness,
+                result_join_kind,
+                table_join.using_expression_list != nullptr);
+            join_node->setNatural(table_join.is_natural);
             join_node->setOriginalAST(table_element.table_join);
 
             /** Original AST is not set because it will contain only join part and does

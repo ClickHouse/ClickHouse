@@ -1,4 +1,4 @@
-Expression ((Project names + (Projection + Join output actions)))
+Expression ((Project names + (Projection + ( + Join output actions))))
 Header: id Int32
 Actions: INPUT : 0 -> __table1.id Int32 : 0
          ALIAS __table1.id :: 0 -> id Int32 : 1

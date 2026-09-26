@@ -20,7 +20,7 @@ Expression ((Project names + Projection))
   MergingAggregated (merge)
     GatherExchange
       Aggregating (partial)
-        Expression (Before GROUP BY)
+        Expression ((Before GROUP BY + ))
           JoinLogical
             ScatterExchange (any scatter)
               Expression (Change column names to column identifiers)

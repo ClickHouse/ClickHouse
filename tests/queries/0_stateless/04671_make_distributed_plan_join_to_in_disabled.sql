@@ -10,6 +10,10 @@ INSERT INTO tj2 SELECT number * 2, number FROM numbers(50);
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1, join_algorithm = 'hash', query_plan_convert_join_to_in = 1;
 SET enable_parallel_replicas = 0, max_rows_to_group_by = 0, query_plan_join_swap_table = 0, query_plan_optimize_join_order_randomize = 0;
+-- The comma join becomes `INNER` in the query plan, and the right column its `WHERE` used stays in
+-- the join output until the unused-column removal drops it; the conversion to `IN` needs a right side
+-- that contributes no output column.
+SET query_plan_remove_unused_columns = 1;
 
 SELECT '-- without make_distributed_plan the join converts to IN';
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tj1, tj2 WHERE tj1.id = tj2.id)

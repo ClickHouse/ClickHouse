@@ -1,6 +1,6 @@
 Expression (Project names)
   GatherExchange
-    Expression ((Before ORDER BY + Projection))
+    Expression ((Before ORDER BY + (Projection + )))
       Sorting
         JoinLogical (Shuffle HashJoin )
           Expression (Change column names to column identifiers)

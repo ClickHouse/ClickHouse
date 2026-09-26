@@ -2,7 +2,7 @@ Expression ((Project names + Projection))
   MergingAggregated (merge)
     GatherExchange
       Aggregating (partial)
-        Expression (Before GROUP BY)
+        Expression ((Before GROUP BY + ))
           JoinLogical
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (default.big)
@@ -16,7 +16,7 @@ Expression ((Project names + Projection))
     GatherExchange
       Aggregating (partial)
         ScatterExchange (any)
-          Expression (Before GROUP BY)
+          Expression ((Before GROUP BY + ))
             GatherExchange
               JoinLogical
                 ScatterExchange (any scatter)
@@ -31,7 +31,7 @@ Expression ((Project names + Projection))
   MergingAggregated (merge)
     GatherExchange
       Aggregating (partial)
-        Expression (Before GROUP BY)
+        Expression ((Before GROUP BY + ))
           JoinLogical
             ScatterExchange (by hash([__table1.sid]))
               Expression (Change column names to column identifiers)
@@ -46,7 +46,7 @@ Expression ((Project names + Projection))
   MergingAggregated (merge)
     GatherExchange
       Aggregating (partial)
-        Expression (Before GROUP BY)
+        Expression ((Before GROUP BY + ))
           JoinLogical
             ShuffleExchange (any scatter)
               Expression (Change column names to column identifiers)

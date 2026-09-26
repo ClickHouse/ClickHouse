@@ -2,7 +2,7 @@
 13039736836325006954
 Expression ((Project names + Projection))
   Aggregating
-    Expression (Before GROUP BY)
+    Expression ((Before GROUP BY + ))
       Expression (Post Join Actions)
         Join (JOIN FillRightFirst)
           Expression (Left Pre Join Actions)
@@ -25,7 +25,7 @@ Expression ((Project names + Projection))
                           ReadFromMergeTree (default.cyc_a)
 Expression ((Project names + Projection))
   Aggregating
-    Expression (Before GROUP BY)
+    Expression ((Before GROUP BY + ))
       Expression (Post Join Actions)
         Join (JOIN FillRightFirst)
           Expression (Left Pre Join Actions)

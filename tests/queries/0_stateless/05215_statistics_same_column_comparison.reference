@@ -1,0 +1,10 @@
+-- no condition on t2
+Join: t1[1000] ⋈ t2[100]
+-- always true: x = x, x <= x, x >= x
+Join: t1[1000] ⋈ t2[100]
+-- always false: x != x
+Join: t1[1000] ⋈ t2[0]
+-- always false: x < x
+Join: t1[1000] ⋈ t2[0]
+-- a real condition still counts
+Join: t1[1000] ⋈ t2[10]
