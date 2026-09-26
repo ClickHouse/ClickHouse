@@ -8,6 +8,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context_fwd.h>
@@ -148,9 +149,10 @@ class OptimizeShardingKeyRewriteIn : public InDepthQueryTreeVisitorWithContext<O
 public:
     using Base = InDepthQueryTreeVisitorWithContext<OptimizeShardingKeyRewriteIn>;
 
-    OptimizeShardingKeyRewriteIn(OptimizeShardingKeyRewriteInVisitor::Data data_, ContextPtr context)
+    OptimizeShardingKeyRewriteIn(OptimizeShardingKeyRewriteInVisitor::Data data_, String sharded_table_alias_, ContextPtr context)
         : Base(std::move(context))
         , data(std::move(data_))
+        , sharded_table_alias(std::move(sharded_table_alias_))
     {}
 
     /// Rewrite the set only inside the filtering clauses. Pruning the set to the elements routed to
@@ -198,9 +200,17 @@ public:
         if (!column)
             return;
 
+        /// Only a column of the distributed table itself is partitioned by its sharding key. A column of
+        /// another source in the same query (the other side of a `JOIN`, a subquery) can share the name
+        /// of the sharding column, but its values are not routed by it.
+        auto column_source = column->getColumnSourceOrNull();
+        if (!column_source || !(column_source->as<TableNode>() || column_source->as<TableFunctionNode>())
+            || column_source->getAlias() != sharded_table_alias)
+            return;
+
         auto name = column->getColumnName();
 
-        if (!data.sharding_key_expr->getRequiredColumnsWithTypes().contains(column->getColumnName()))
+        if (!data.sharding_key_expr->getRequiredColumnsWithTypes().contains(name))
             return;
 
         if (auto * constant = arguments[1]->as<ConstantNode>())
@@ -236,11 +246,18 @@ public:
     }
 
     OptimizeShardingKeyRewriteInVisitor::Data data;
+    String sharded_table_alias;
 };
 
-void optimizeShardingKeyRewriteIn(QueryTreeNodePtr & node, OptimizeShardingKeyRewriteInVisitor::Data data, ContextPtr context)
+void optimizeShardingKeyRewriteIn(
+    QueryTreeNodePtr & node, OptimizeShardingKeyRewriteInVisitor::Data data, const String & sharded_table_alias, ContextPtr context)
 {
-    OptimizeShardingKeyRewriteIn visitor(std::move(data), std::move(context));
+    /// The alias is the only way to recognize the distributed table in the query for the shard, where
+    /// it has been replaced by the remote table. Without it there is nothing to match safely.
+    if (sharded_table_alias.empty())
+        return;
+
+    OptimizeShardingKeyRewriteIn visitor(std::move(data), sharded_table_alias, std::move(context));
     visitor.visit(node);
 }
 

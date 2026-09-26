@@ -44,4 +44,10 @@ SELECT count() FROM dist_05071 CROSS JOIN (SELECT dummy IN (0, 2) FROM system.on
 -- its name, so pruning it would drop the `(0, 2)` row from the shard that keeps `a.dummy = 0`.
 SELECT a.dummy, b.dummy FROM dist_05071 AS a JOIN (SELECT arrayJoin([0, 2]) AS dummy, 0 AS key) AS b ON a.dummy = b.key AND b.dummy IN (0, 2) WHERE a.dummy IN (0, 2) ORDER BY ALL;
 
+-- The same holds for a filter in `WHERE`: only an `IN` over a column of the distributed table itself
+-- is rewritten, so the one over `b.dummy` keeps its set and both rows of `b` join `a.dummy = 0`.
+SELECT a.dummy, b.dummy FROM dist_05071 AS a JOIN (SELECT arrayJoin([0, 2]) AS dummy, 0 AS key) AS b ON a.dummy = b.key WHERE a.dummy IN (0, 2) AND b.dummy IN (0, 2) ORDER BY ALL;
+-- And for a filter inside a subquery over another table.
+SELECT a.dummy, b.dummy FROM dist_05071 AS a JOIN (SELECT dummy FROM (SELECT arrayJoin([0, 2]) AS dummy) WHERE dummy IN (0, 2)) AS b ON a.dummy = 0 WHERE a.dummy IN (0, 2) ORDER BY ALL;
+
 DROP TABLE dist_05071;
