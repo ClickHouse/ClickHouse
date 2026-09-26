@@ -2,6 +2,7 @@
 #include <functional>
 #include <iterator>
 #include <span>
+#include <base/sort.h>
 #include <Access/ContextAccess.h>
 #include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Analyzer/ConstantNode.h>
@@ -43,6 +44,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
@@ -1936,14 +1938,11 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// `generateFilterActions` in `InterpreterSelectQuery` clones for the same reason.
     ASTPtr expr = row_policy_filter_ptr->expression->clone();
 
-    auto syntax_result = TreeRewriter(local_context).analyze(expr, needed_columns);
-    auto expression_analyzer = ExpressionAnalyzer{expr, syntax_result, local_context};
-
-    actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
-
-    /// Keep the analyzer's set registry: it is the only list of the predicate's IN-subqueries,
-    /// and addFilterTransform needs it to plant the step that builds them.
-    prepared_sets = expression_analyzer.getPreparedSets();
+    /// Leave the predicate's `IN (subquery)` sets unbuilt and keep them: `addFilterTransform` plants
+    /// the step that builds them, and until then an unbuilt set is what lets the index analysis of
+    /// `addStorageFilter` build it as an ordered set and prune granules.
+    actions_dag = analyzeExpressionToActionsDAG(
+        expr, needed_columns, local_context, /* add_aliases */ false, /* project_result */ true, /* build_subquery_sets */ false, &subquery_sets);
 
     /// The filter column is dropped from the stream after filtering, so it must be a dedicated
     /// column that does not coincide with a data column. Wrap the policy predicate in a
@@ -1968,10 +1967,32 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// Keep only the source (input) columns and the alias as outputs. This drops the raw predicate
     /// output regardless of query_plan_enable_optimizations, so a single table does not leak it and
     /// a Merge over children with different policies keeps matching headers in Pipe::unitePipes.
-    ActionsDAG::NodeRawConstPtrs new_outputs;
+    ///
+    /// The source columns are listed in `needed_columns` (table) order: `PlannerActionsVisitor`
+    /// registers DAG inputs in first-use order, so for a bare-column policy such as `USING b` over
+    /// `[a, b, c]` the predicate input `b` comes first in the outputs. `ActionsDAG::updateHeader`
+    /// materializes the result block in output order, so keeping that order would reorder the
+    /// stream header behind the filter.
+    ActionsDAG::NodeRawConstPtrs source_outputs;
     for (const auto * output : actions_dag.getOutputs())
         if (output->type == ActionsDAG::ActionType::INPUT)
-            new_outputs.push_back(output);
+            source_outputs.push_back(output);
+
+    std::unordered_map<std::string_view, size_t> column_positions;
+    for (const auto & column : needed_columns)
+        column_positions.emplace(column.name, column_positions.size());
+
+    ::sort(source_outputs.begin(), source_outputs.end(), [&](const auto * lhs, const auto * rhs)
+    {
+        auto position = [&](const auto * node)
+        {
+            auto it = column_positions.find(node->result_name);
+            return it == column_positions.end() ? column_positions.size() : it->second;
+        };
+        return position(lhs) < position(rhs);
+    });
+
+    ActionsDAG::NodeRawConstPtrs new_outputs = std::move(source_outputs);
     new_outputs.push_back(&alias_node);
     actions_dag.getOutputs() = std::move(new_outputs);
 
@@ -2009,7 +2030,7 @@ void ReadFromMerge::RowPolicyData::addFilterTransform(QueryPlan & plan, ContextP
 
     /// No other path builds these sets for every engine and for FINAL: addStorageFilter is only an
     /// additional pushdown. No subquery adds no step.
-    addDelayedCreatingSetsStep(plan, prepared_sets, local_context);
+    addDelayedCreatingSetsStep(plan, subquery_sets, local_context);
 }
 
 StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(

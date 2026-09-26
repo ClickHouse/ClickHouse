@@ -114,7 +114,8 @@ BlockIO createHypotheticalIndex(
         metadata->getColumns(),
         /* is_implicitly_created = */ false,
         /* escape_filenames = */ true,
-        context);
+        context,
+        /* validate_expressions = */ true);
 
     /// Empirical estimation reads the index's columns, so require column-level
     /// SELECT — otherwise a user with table-level access could infer a restricted

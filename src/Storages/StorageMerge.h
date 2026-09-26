@@ -12,6 +12,9 @@
 namespace DB
 {
 
+class FutureSetFromSubquery;
+using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
+
 struct QueryPlanResourceHolder;
 
 class ReadFromMergeTree;
@@ -283,8 +286,8 @@ private:
         ActionsDAG actions_dag;
         ExpressionActionsPtr filter_actions;
         StorageMetadataPtr storage_metadata_snapshot;
-        /// Owns the policy predicate's IN-subqueries, which stay unbuilt until a set-building step is planted.
-        PreparedSetsPtr prepared_sets;
+        /// The policy predicate's IN-subqueries, which stay unbuilt until a set-building step is planted.
+        std::vector<FutureSetFromSubqueryPtr> subquery_sets;
     };
 
     using RowPolicyDataOpt = std::optional<RowPolicyData>;

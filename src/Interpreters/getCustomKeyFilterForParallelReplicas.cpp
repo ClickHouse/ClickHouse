@@ -11,6 +11,9 @@
 
 #include <Interpreters/Context.h>
 
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <Storages/extractKeyExpressionList.h>
+
 
 #include <boost/rational.hpp>
 
@@ -191,7 +194,7 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
     /// Try to parse expression
     ParserExpression parser;
     const auto & settings = context.getSettingsRef();
-    return parseQuery(
+    ASTPtr custom_key_ast = parseQuery(
         parser,
         custom_key.data(),
         custom_key.data() + custom_key.size(),
@@ -199,6 +202,22 @@ ASTPtr parseCustomKeyForTable(const String & custom_key, const Context & context
         settings[Setting::max_query_size],
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
+
+    /// The DDL interpreters inline SQL UDFs before table metadata is built, but the custom key
+    /// arrives as a setting string parsed right here, so inline UDFs explicitly. Otherwise a UDF
+    /// body could hide a subquery or a column matcher from the key-expression validation.
+    ///
+    /// Validate right here as well, rather than only in `KeyDescription::getKeyFromAST`: the callers
+    /// analyze the key over the table (e.g. `buildFilterQueryTree` for the access check) before a
+    /// `custom_key_range` key reaches `getKeyFromAST`, and a `custom_key_sampling` key never does.
+    if (custom_key_ast)
+    {
+        UserDefinedSQLFunctionVisitor::visit(custom_key_ast, context.shared_from_this());
+        checkExpressionDoesntContainSubqueries(*custom_key_ast);
+        checkExpressionDoesntContainMatchers(*custom_key_ast);
+    }
+
+    return custom_key_ast;
 }
 
 }

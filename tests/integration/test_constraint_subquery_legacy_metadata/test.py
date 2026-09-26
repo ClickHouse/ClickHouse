@@ -46,14 +46,18 @@ def test_legacy_unqualified_constraint_subquery(started_cluster):
         "CREATE TABLE db1.source (id UInt64) ENGINE = MergeTree ORDER BY tuple()"
     )
     node.query("INSERT INTO db1.source VALUES (1)")
+    # `CREATE TABLE` rejects a scalar subquery in a `CHECK` constraint, but metadata written
+    # before that validation existed keeps loading: create the table with a valid constraint and
+    # put the legacy one, with the unqualified name, into the stored metadata.
     node.query(
-        "CREATE TABLE db1.dependent (x UInt64,"
-        " CONSTRAINT c CHECK x < (SELECT max(id) + 1000 FROM db1.source))"
+        "CREATE TABLE db1.dependent (x UInt64, CONSTRAINT c CHECK x < 1000)"
         " ENGINE = MergeTree ORDER BY tuple()"
     )
 
     restart_with_edited_metadata(
-        get_metadata_path("db1", "dependent"), "db1.source", "source"
+        get_metadata_path("db1", "dependent"),
+        "x < 1000",
+        "x < (SELECT max(id) + 1000 FROM source)",
     )
 
     # The bare `FROM source` has resolved against `db1`, which owns the table, and not against
@@ -200,15 +204,14 @@ def test_legacy_unqualified_in_table_in_constraint(started_cluster):
     )
     node.query("INSERT INTO db5.allowed VALUES (1)")
     # The right-hand side of `IN` is a table name rather than a scalar subquery, and it is the
-    # only reference to `db5.allowed` in the definition.
+    # only reference to `db5.allowed` in the definition. `CREATE TABLE` rejects a table name
+    # there, so the legacy constraint is put into the stored metadata of a valid table.
     node.query(
-        "CREATE TABLE db5.t (x UInt64, CONSTRAINT c CHECK x IN db5.allowed)"
+        "CREATE TABLE db5.t (x UInt64, CONSTRAINT c CHECK x < 1000)"
         " ENGINE = MergeTree ORDER BY tuple()"
     )
 
-    restart_with_edited_metadata(
-        get_metadata_path("db5", "t"), "db5.allowed", "allowed"
-    )
+    restart_with_edited_metadata(get_metadata_path("db5", "t"), "x < 1000", "x IN allowed")
 
     assert (
         node.query(

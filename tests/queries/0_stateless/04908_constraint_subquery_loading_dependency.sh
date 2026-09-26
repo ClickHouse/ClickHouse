@@ -8,18 +8,31 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 UDF="${CLICKHOUSE_DATABASE}_udf"
 DB2="${CLICKHOUSE_DATABASE}_1"
 
-$CLICKHOUSE_CLIENT --query "
--- A table read by a scalar subquery inside a CONSTRAINT is read while the dependent table is being
--- attached, so it must be a loading dependency: otherwise it can be dropped and the server does not
--- start anymore.
+# A table read by a scalar subquery inside a CONSTRAINT is read while the dependent table is being
+# attached, so it must be a loading dependency: otherwise it can be dropped and the server does not
+# start anymore. Such a constraint is rejected by CREATE TABLE, but metadata written before that
+# validation existed keeps loading. To obtain it, create the table with a valid constraint in a
+# `clickhouse local` session with a persistent path, rewrite the constraint in the stored metadata
+# file, and start a second session.
 
+WORK_DIR=$CLICKHOUSE_TMP/04908_constraint_subquery_loading_dependency
+rm -rf "$WORK_DIR"
+
+$CLICKHOUSE_LOCAL --path "$WORK_DIR" < /dev/null --query "
 CREATE TABLE t_constraint_dep_source (id UInt64) ENGINE = MergeTree ORDER BY tuple();
-CREATE TABLE t_constraint_dep_user (x UInt64, CONSTRAINT c CHECK x < (SELECT max(id) + 1000 FROM t_constraint_dep_source)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_constraint_dep_user (x UInt64, CONSTRAINT c CHECK x < 1000) ENGINE = MergeTree ORDER BY tuple();
+"
 
+sed -i "s/CHECK x < 1000/CHECK x < (SELECT max(id) + 1000 FROM default.t_constraint_dep_source)/" "$WORK_DIR"/store/*/*/t_constraint_dep_user.sql
+
+$CLICKHOUSE_LOCAL --path "$WORK_DIR" < /dev/null --query "
 SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 't_constraint_dep_user';
-
 DROP TABLE t_constraint_dep_source; -- { serverError HAVE_DEPENDENT_OBJECTS }
+"
 
+rm -rf "$WORK_DIR"
+
+$CLICKHOUSE_CLIENT --query "
 -- A subquery in the right argument of IN is not executed while the table is attached, so it stays
 -- out of the loading dependencies and the table it reads can be dropped.
 
@@ -30,13 +43,11 @@ SELECT loading_dependencies_table FROM system.tables WHERE database = currentDat
 
 DROP TABLE t_constraint_in_source;
 
-DROP TABLE t_constraint_dep_user;
-DROP TABLE t_constraint_dep_source;
 DROP TABLE t_constraint_in_user;
 "
 
 # SQL UDF expansion happens after database qualification. The subquery introduced by the UDF still
-# has to use the CREATE query's current database when collecting loading dependencies.
+# has to use the CREATE query's current database.
 
 $CLICKHOUSE_CLIENT --query "
 CREATE DATABASE ${DB2};
@@ -44,23 +55,16 @@ CREATE TABLE ${DB2}.source (id UInt64) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO ${DB2}.source VALUES (1);
 USE ${DB2};
 CREATE FUNCTION ${UDF} AS () -> (SELECT max(id) + 1000 FROM source);
-CREATE TABLE user (x UInt64, CONSTRAINT c CHECK x < ${UDF}()) ENGINE = MergeTree ORDER BY tuple();
 -- The scalar subquery gets an explicit alias: a view whose only projection is an unaliased scalar
 -- subquery cannot be read at all, and that is an unrelated pre-existing issue.
 CREATE VIEW udf_view AS SELECT ${UDF}() AS v;
 
-SELECT loading_dependencies_table FROM system.tables WHERE database = currentDatabase() AND name = 'user';
 SELECT create_table_query LIKE '%' || currentDatabase() || '.source%' FROM system.tables WHERE database = currentDatabase() AND name = 'udf_view';
 
-DROP TABLE source; -- { serverError HAVE_DEPENDENT_OBJECTS }
-
-DETACH TABLE user;
 USE ${CLICKHOUSE_DATABASE};
-ATTACH TABLE ${DB2}.user;
 SELECT * FROM ${DB2}.udf_view;
 
 USE ${DB2};
-DROP TABLE user;
 DROP VIEW udf_view;
 DROP FUNCTION ${UDF};
 "

@@ -5,8 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
@@ -21,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
 }
@@ -166,6 +166,7 @@ KeyDescription KeyDescription::getKeyFromAST(
     result.additional_columns = additional_columns;
     auto key_expression_list = extractKeyExpressionList(definition_ast);
     checkExpressionDoesntContainSubqueries(*key_expression_list);
+    checkExpressionDoesntContainMatchers(*key_expression_list);
 
     std::tie(result.expression_list_ast, result.column_names, result.reverse_flags) = buildKeyColumns(key_expression_list, additional_columns);
     if (!result.reverse_flags.empty() && result.reverse_flags.size() != result.expression_list_ast->children.size())
@@ -177,18 +178,31 @@ KeyDescription KeyDescription::getKeyFromAST(
     {
         auto expr = result.expression_list_ast->clone();
         auto all_columns = VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals);
-        /// Subcolumns and virtual columns are legal in a key wherever the caller has put them into `columns`
-        /// and `virtuals`, so by default a typo may be resolved to any of them; a caller that accepts less
-        /// narrows the suggestions down.
-        TreeRewriter tree_rewriter(context);
-        if (hint_columns)
-            tree_rewriter.setHintColumns(*hint_columns);
-        auto syntax_result = tree_rewriter.analyze(expr, all_columns);
+        /// Build the analyzer DAG once: `analyzeExpressionToActionsDAG` runs
+        /// `buildSetInplace` for any `IN (subquery)` set, so calling it twice
+        /// would execute the subquery twice and could pick up inconsistent rows.
+        ///
+        /// Subcolumns and virtual columns are legal in a key wherever the caller has put them into
+        /// `columns` and `virtuals`, so by default a typo may be resolved to any of them; a caller
+        /// that accepts less narrows the suggestions down.
+        auto analyzed = analyzeExpressionToActionsAndSampleBlock(
+            expr, all_columns, context, CompileExpressions::no, hint_columns);
         /// In expression we also need to store source columns
-        result.expression = ExpressionAnalyzer(expr, syntax_result, context).getActions(false);
+        result.expression = std::move(analyzed.expression);
         /// In sample block we use just key columns
-        result.sample_block = ExpressionAnalyzer(expr, syntax_result, context).getActions(true)->getSampleBlock();
+        result.sample_block = std::move(analyzed.sample_block);
     }
+
+    /// Reject wildcards / column matchers in key expressions: the Analyzer expands
+    /// `*` or `COLUMNS(...)` into multiple columns, which would desync `column_names`
+    /// (one per AST child) from `sample_block` (one per resolved output) and crash
+    /// downstream code that indexes both arrays in lockstep.
+    if (result.sample_block.columns() != result.column_names.size())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Key expression cannot contain wildcards or column matchers; "
+            "got {} resolved column(s) for {} key element(s)",
+            result.sample_block.columns(), result.column_names.size());
 
     for (size_t i = 0; i < result.sample_block.columns(); ++i)
     {

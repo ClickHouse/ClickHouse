@@ -1,6 +1,6 @@
 === a typo in an index or TTL expression suggests the column
 --- ALTER TABLE t ADD INDEX i ix TYPE minmax GRANULARITY 1
-Code: 47. Missing columns: 'ix' while processing: 'ix', required columns: 'ix', maybe you meant: 'id'. (UNKNOWN_IDENTIFIER)
+Code: 47. Unknown expression identifier `ix`. Maybe you meant: ['id']. In scope ix. (UNKNOWN_IDENTIFIER)
 --- ALTER TABLE t MODIFY TTL ix + INTERVAL 1 DAY
 Code: 47. Missing columns: 'ix' while processing: 'ix + toIntervalDay(1)', required columns: 'ix', maybe you meant: 'id'. (UNKNOWN_IDENTIFIER)
 
@@ -10,19 +10,19 @@ Code: 47. Missing columns: 'zzzzzzzzzzzz' while processing: 'zzzzzzzzzzzz + toIn
 
 === an expression added to the sorting key may use only the columns added by the same ALTER, so only they are suggested
 --- ALTER TABLE t ADD COLUMN idx UInt32, MODIFY ORDER BY (id, idz)
-Code: 47. Missing columns: 'idz' while processing: 'id, idz', required columns: 'id' 'idz', maybe you meant: 'idx'. (UNKNOWN_IDENTIFIER)
+Code: 47. Unknown expression identifier `idz`. Maybe you meant: ['idx']. In scope id, idz. (UNKNOWN_IDENTIFIER)
 --- ALTER TABLE t ADD COLUMN n UInt32, MODIFY ORDER BY (id, idz)
-Code: 47. Missing columns: 'idz' while processing: 'id, idz', required columns: 'id' 'idz', available columns: 'n'. (UNKNOWN_IDENTIFIER)
+Code: 47. Unknown expression identifier `idz`. In scope id, idz. (UNKNOWN_IDENTIFIER)
 --- ALTER TABLE t MODIFY ORDER BY (id, idz)
-Code: 47. Missing columns: 'idz' while processing: 'id, idz', required columns: 'id' 'idz'. (UNKNOWN_IDENTIFIER)
+Code: 47. Unknown expression identifier `idz`. In scope id, idz. (UNKNOWN_IDENTIFIER)
 --- ALTER TABLE t MODIFY ORDER BY (id, _part_indez)
-Code: 47. Missing columns: '_part_indez' while processing: 'id, _part_indez', required columns: 'id' '_part_indez'. (UNKNOWN_IDENTIFIER)
+Code: 47. Unknown expression identifier `_part_indez`. In scope id, _part_indez. (UNKNOWN_IDENTIFIER)
 
 === a subcolumn is legal in a key, so it is suggested too
 --- ALTER TABLE t ADD COLUMN tp2 Tuple(a UInt32, b String), MODIFY ORDER BY (id, tp2.c)
-Code: 47. Missing columns: 'tp2.c' while processing: 'id, tp2.c', required columns: 'id' 'tp2.c', maybe you meant: 'tp2.b' or 'tp2.a'. (UNKNOWN_IDENTIFIER)
+Code: 47. Unknown expression identifier `tp2.c`. Maybe you meant: ['tp2.b','tp2.a']. In scope id, tp2.c. (UNKNOWN_IDENTIFIER)
 --- CREATE TABLE t2 (id UInt32, tp Tuple(a UInt32, b String)) ENGINE = MergeTree ORDER BY (id, tp.c)
-Code: 47. Missing columns: 'tp.c' while processing: 'id, tp.c', required columns: 'id' 'tp.c', maybe you meant: 'tp.b' or 'tp.a'. (UNKNOWN_IDENTIFIER)
+Code: 47. Unknown expression identifier `tp.c`. Maybe you meant: ['tp.b']. In scope id, tp.c. (UNKNOWN_IDENTIFIER)
 
 === the same expressions, spelled correctly
 id, idx, tp2.a
