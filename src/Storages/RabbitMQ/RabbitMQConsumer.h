@@ -88,10 +88,26 @@ public:
 
     void closeConnections();
 
+    /// True once the broker has answered the channel.close sent by closeConnections(). A consumer
+    /// that never had a channel reports true, as there is nothing to wait for.
+    bool isChannelCloseCompleted() const { return !close_state || close_state->completed; }
+
+    /// Stop expecting that answer, so a callback dispatched later becomes a no-op.
+    void abandonChannelClose() { if (close_state) close_state->abandoned = true; }
+
 private:
     void subscribe();
     bool isChannelUsable();
     void updateCommitInfo(CommitInfo record);
+
+    /// Shared by value into the close() callbacks, mirroring RabbitMQProducer::finish, so that a
+    /// late dispatch after the wait was abandoned cannot touch a destroyed consumer.
+    struct ChannelCloseState
+    {
+        std::atomic<bool> completed = false;
+        std::atomic<bool> abandoned = false;
+    };
+    std::shared_ptr<ChannelCloseState> close_state;
 
     ChannelPtr consumer_channel;
     RabbitMQHandler & event_handler; /// Used concurrently, but is thread safe.
