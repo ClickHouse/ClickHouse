@@ -253,7 +253,7 @@ void patchNullSlots(
     {
         if (!args[i].type->isNullable())
             continue;
-        if (only_enums && !isEnum(removeNullable(args[i].type)))
+        if (only_enums && removeNullable(args[i].type)->isDefaultInsertTrivial())
             continue;
 
         const auto & nested_type = nested_args[i].type;
