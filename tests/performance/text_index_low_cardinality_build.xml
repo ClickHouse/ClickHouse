@@ -1,0 +1,26 @@
+<test>
+    <!-- Building a text index over LowCardinality values: a column with 50 distinct values, and arrays of values from 1000 distinct ones. -->
+    <create_query>
+        CREATE TABLE text_index_low_cardinality
+        (
+            service LowCardinality(String),
+            tags Array(LowCardinality(String))
+        )
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO text_index_low_cardinality SELECT
+            concat('service-', toString(cityHash64(number) % 50)),
+            arrayMap(i -> concat('tag-', toString(cityHash64(number, i) % 1000)), range(10))
+        FROM numbers(2000000)
+        SETTINGS max_insert_threads = 1, max_threads = 1, min_insert_block_size_rows = 3000000, min_insert_block_size_bytes = 0
+    </fill_query>
+    <fill_query>ALTER TABLE text_index_low_cardinality ADD INDEX idx_service service TYPE text(tokenizer = 'splitByNonAlpha')</fill_query>
+    <fill_query>ALTER TABLE text_index_low_cardinality ADD INDEX idx_tags tags TYPE text(tokenizer = 'splitByNonAlpha')</fill_query>
+
+    <query>ALTER TABLE text_index_low_cardinality CLEAR INDEX idx_service, MATERIALIZE INDEX idx_service SETTINGS mutations_sync = 2</query>
+    <query>ALTER TABLE text_index_low_cardinality CLEAR INDEX idx_tags, MATERIALIZE INDEX idx_tags SETTINGS mutations_sync = 2</query>
+
+    <drop_query>DROP TABLE IF EXISTS text_index_low_cardinality</drop_query>
+</test>

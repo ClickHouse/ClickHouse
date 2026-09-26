@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -1831,6 +1832,172 @@ void MergeTreeIndexTextGranuleBuilder::incrementCurrentRow()
     ++current_row;
 }
 
+namespace
+{
+
+template <typename Func>
+void callWithLowCardinalityIndexes(const ColumnLowCardinality & column, Func && func)
+{
+    const IColumn & indexes = column.getIndexes();
+    switch (column.getSizeOfIndexType())
+    {
+        case sizeof(UInt8): func(assert_cast<const ColumnUInt8 &>(indexes).getData()); break;
+        case sizeof(UInt16): func(assert_cast<const ColumnUInt16 &>(indexes).getData()); break;
+        case sizeof(UInt32): func(assert_cast<const ColumnUInt32 &>(indexes).getData()); break;
+        case sizeof(UInt64): func(assert_cast<const ColumnUInt64 &>(indexes).getData()); break;
+        default: throwUnexpectedLowCardinalityIndexType(column.getSizeOfIndexType());
+    }
+}
+
+/// Caches the posting list builders of the tokens of each dictionary value for its later occurrences.
+class LowCardinalityDocumentsAdder
+{
+public:
+    LowCardinalityDocumentsAdder(
+        MergeTreeIndexTextGranuleBuilder & builder_, const ColumnLowCardinality & column, const PostingListBuildContext & context_)
+        : builder(builder_)
+        , dictionary(column.getDictionary())
+        , context(context_)
+        , values(dictionary.size())
+    {
+    }
+
+    static bool isApplicable(const MergeTreeIndexTextGranuleBuilder & builder, const ColumnLowCardinality & column, size_t num_documents)
+    {
+        static constexpr size_t min_documents_per_value = 8;
+        /// A stateful tokenizer can depend on its previous call, so the tokens of a value are not cached for it.
+        return !builder.postprocessor_drop_filter && !builder.tokenizer->isStateful()
+            && column.getDictionary().size() * min_documents_per_value <= num_documents;
+    }
+
+    ALWAYS_INLINE void add(size_t index)
+    {
+        Value & value = values[index];
+        const size_t buffer_size = builder.tokens_map.getBufferSizeInCells();
+        /// The builders live in the cells of the map, which move only when the map grows.
+        /// The map shrinks only in MergeTreeIndexTextGranuleBuilder::reset, which is never called inside `update`.
+        chassert(buffer_size >= value.buffer_size);
+        if (value.buffer_size != buffer_size) [[unlikely]]
+        {
+            addAndCache(index, value);
+            return;
+        }
+
+        const auto row = static_cast<UInt32>(builder.current_row);
+        /// Without a postprocessor drop filter no builder is `Filtered`.
+        for (size_t i = value.begin; i < value.begin + value.size; ++i)
+            tokens[i].posting_list->add(row, tokens[i].position, context);
+
+        builder.num_processed_tokens += value.size;
+    }
+
+private:
+    struct Value
+    {
+        size_t begin = 0;
+        size_t size = 0;
+        /// Buffer size of the map when the builders were taken, 0 if they are not taken.
+        size_t buffer_size = 0;
+    };
+
+    struct Token
+    {
+        PostingListBuilder * posting_list;
+        UInt32 position;
+    };
+
+    void addAndCache(size_t index, Value & value)
+    {
+        const size_t buffer_size = builder.tokens_map.getBufferSizeInCells();
+        /// The builders taken at a smaller buffer size are stale.
+        if (buffer_size != tokens_buffer_size)
+        {
+            tokens.clear();
+            tokens_buffer_size = buffer_size;
+        }
+        const size_t begin = tokens.size();
+
+        if (!dictionary.isNullAt(index))
+        {
+            const std::string_view document = dictionary.getDataAt(index);
+            UInt32 token_position = 0;
+            forEachToken(
+                *builder.tokenizer,
+                document.data(),
+                document.size(),
+                [&](const char * token_start, size_t token_length)
+                {
+                    builder.addToken({token_start, token_length}, token_position, context);
+                    auto * it = builder.tokens_map.find(PackedStringRef::build(token_start, token_length, PackedStringRefHash{}));
+                    chassert(it);
+                    tokens.push_back({&it->getMapped(), token_position});
+                    ++token_position;
+                    return false;
+                });
+        }
+
+        /// A resize moves the builders taken before it, so they are taken again at the next occurrence.
+        if (builder.tokens_map.getBufferSizeInCells() == buffer_size)
+        {
+            value = {begin, tokens.size() - begin, buffer_size};
+        }
+        else
+        {
+            tokens.resize(begin);
+            value.buffer_size = 0;
+        }
+    }
+
+    MergeTreeIndexTextGranuleBuilder & builder;
+    const IColumnUnique & dictionary;
+    const PostingListBuildContext & context;
+    std::vector<Value> values;
+    std::vector<Token> tokens;
+    /// Buffer size of the map when the builders in tokens were taken.
+    size_t tokens_buffer_size = 0;
+};
+
+NO_INLINE void addLowCardinalityDocuments(
+    MergeTreeIndexTextGranuleBuilder & builder,
+    const ColumnLowCardinality & column,
+    size_t start_row,
+    size_t rows_read,
+    const PostingListBuildContext & context)
+{
+    LowCardinalityDocumentsAdder adder(builder, column, context);
+    callWithLowCardinalityIndexes(column, [&](const auto & indexes)
+    {
+        for (size_t i = start_row; i < start_row + rows_read; ++i)
+        {
+            adder.add(indexes[i]);
+            builder.incrementCurrentRow();
+        }
+    });
+}
+
+/// Every array element is a separate document, so token positions restart from 0 in each element.
+NO_INLINE void addLowCardinalityArrayDocuments(
+    MergeTreeIndexTextGranuleBuilder & builder,
+    const ColumnLowCardinality & data,
+    const IColumn::Offsets & offsets,
+    size_t start_row,
+    size_t rows_read,
+    const PostingListBuildContext & context)
+{
+    LowCardinalityDocumentsAdder adder(builder, data, context);
+    callWithLowCardinalityIndexes(data, [&](const auto & indexes)
+    {
+        for (size_t i = start_row; i < start_row + rows_read; ++i)
+        {
+            for (size_t element_idx = offsets[i - 1]; element_idx < offsets[i]; ++element_idx)
+                adder.add(indexes[element_idx]);
+            builder.incrementCurrentRow();
+        }
+    });
+}
+
+}
+
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
 {
     SortedTokens sorted_tokens;
@@ -1939,6 +2106,11 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     {
         addDocumentsFromMap(preprocessed_column, offset, rows_read, context);
     }
+    else if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(preprocessed_column.get());
+             column_low_cardinality && LowCardinalityDocumentsAdder::isApplicable(granule_builder, *column_low_cardinality, rows_read))
+    {
+        addLowCardinalityDocuments(granule_builder, *column_low_cardinality, offset, rows_read, context);
+    }
     else
     {
         const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*preprocessed_column);
@@ -1964,6 +2136,17 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
     const IColumn & column_data = column_array->getData();
     const IColumn::Offsets & column_offsets = column_array->getOffsets();
     const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(column_data);
+
+    if constexpr (tokenize)
+    {
+        const size_t num_elements = column_offsets[start_row + rows_read - 1] - column_offsets[start_row - 1];
+        const auto * data_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column_data);
+        if (data_low_cardinality && LowCardinalityDocumentsAdder::isApplicable(granule_builder, *data_low_cardinality, num_elements))
+        {
+            addLowCardinalityArrayDocuments(granule_builder, *data_low_cardinality, column_offsets, start_row, rows_read, context);
+            return;
+        }
+    }
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
