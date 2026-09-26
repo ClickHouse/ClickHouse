@@ -13,6 +13,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -59,7 +60,9 @@ struct TableFixture
     /// binary, so a generic name like "test" would collide with whichever of them runs first.
     static constexpr auto database_name = "read_from_merge_tree_qcc_flag_test_db";
 
-    TableFixture()
+    /// `with_row = false` leaves the table without parts, under its own data path so that parts other
+    /// fixtures wrote are not loaded by `ATTACH`: what a replica whose local copy is empty resolves.
+    explicit TableFixture(bool with_row = true)
         : context(Context::createCopy(getContext().context))
     {
         MainThreadStatus::getInstance();
@@ -93,7 +96,7 @@ struct TableFixture
         /// `ATTACH` skips the sanity checks a fresh `CREATE` would run against the (empty) data path.
         storage = std::make_shared<StorageMergeTree>(
             StorageID(database_name, "t"),
-            "store/test_read_from_merge_tree_qcc_flag/",
+            with_row ? "store/test_read_from_merge_tree_qcc_flag/" : "store/test_read_from_merge_tree_qcc_flag_empty/",
             metadata,
             LoadingStrictnessLevel::ATTACH,
             context,
@@ -123,7 +126,8 @@ struct TableFixture
         /// One row, hence one part: `readFromParts` (used by both the fixture and
         /// `ReadFromMergeTree::deserialize`) short-circuits to no step at all for a part-less read,
         /// so an empty table could not carry a round-trip.
-        insertOneRow();
+        if (with_row)
+            insertOneRow();
 
         storage_snapshot = storage->getStorageSnapshot(metadata_handle, context);
     }
@@ -216,7 +220,7 @@ String serializeRead(const ReadFromMergeTree & read, UInt64 version)
     return out.str();
 }
 
-std::unique_ptr<ReadFromMergeTree> deserializeRead(const String & bytes, const TableFixture & fixture, UInt64 version)
+QueryPlanStepPtr deserializeStep(const String & bytes, const TableFixture & fixture, UInt64 version)
 {
     ReadBufferFromString in(bytes);
     DeserializedSetsRegistry registry;
@@ -231,7 +235,12 @@ std::unique_ptr<ReadFromMergeTree> deserializeRead(const String & bytes, const T
     IQueryPlanStep::Deserialization ctx{
         in, registry, {}, context, input_headers, output_header, settings, 0, version, step_version, false};
 
-    auto step = ReadFromMergeTree::deserialize(ctx);
+    return ReadFromMergeTree::deserialize(ctx);
+}
+
+std::unique_ptr<ReadFromMergeTree> deserializeRead(const String & bytes, const TableFixture & fixture, UInt64 version)
+{
+    auto step = deserializeStep(bytes, fixture, version);
     if (!typeid_cast<ReadFromMergeTree *>(step.get()))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "deserialize did not produce a ReadFromMergeTree step");
 
@@ -302,4 +311,26 @@ TEST(ReadFromMergeTreeQueryConditionCacheFlag, RoundTripKeepsEnabledCache)
 
     EXPECT_NO_THROW(serializeRead(*restored, too_old_version));
     EXPECT_EQ(serializeRead(*restored, DBMS_QUERY_PLAN_SERIALIZATION_VERSION), bytes);
+}
+
+/// A replica whose local copy of the table has no parts rebuilds the read as an empty read, whether
+/// or not the coordinator disabled the cache: `readFromParts` builds no step for a part-less read, and
+/// the plan deserializer dereferences whatever step comes back.
+TEST(ReadFromMergeTreeQueryConditionCacheFlag, DeserializationOnEmptyTableIsEmptyRead)
+{
+    for (const bool cache_disabled : {true, false})
+    {
+        String bytes;
+        {
+            TableFixture fixture;
+            auto read = fixture.makeRead();
+            if (cache_disabled)
+                read->disableQueryConditionCache();
+            bytes = serializeRead(*read, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+        }
+
+        TableFixture empty_fixture(/*with_row=*/false);
+        auto step = deserializeStep(bytes, empty_fixture, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+        EXPECT_NE(typeid_cast<ReadNothingStep *>(step.get()), nullptr) << "cache_disabled = " << cache_disabled;
+    }
 }

@@ -7054,6 +7054,13 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         enable_parallel_reading,
         /*extension*/ nullptr);
 
+    /// `readFromParts` builds no step when the local snapshot has no parts. `MergeTreeDataSelectExecutor::read`
+    /// turns that into an empty plan, so rebuild it as an empty read here too: the caller dereferences the step,
+    /// and the `allow_query_condition_cache` bit only matters for a read that exists. A bucketed read keeps
+    /// failing below, because its exchange contract has not been checked against an empty replica.
+    if (!step && !distributed_read_bucket_count)
+        return std::make_unique<ReadNothingStep>(ctx.output_header);
+
     if (distributed_read_bucket_count || query_condition_cache_disabled)
     {
         auto * read_from_merge_tree_step = dynamic_cast<ReadFromMergeTree *>(step.get());
