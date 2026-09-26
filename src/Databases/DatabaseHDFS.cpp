@@ -13,6 +13,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <Storages/IStorage.h>
+#include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Logger.h>
 #include <Common/quoteString.h>
@@ -103,15 +104,29 @@ bool DatabaseHDFS::checkUrl(const std::string & url, ContextPtr context_, bool t
 
 bool DatabaseHDFS::isTableExist(const String & name, ContextPtr context_) const
 {
-    std::lock_guard lock(mutex);
-    if (loaded_tables.contains(name))
-        return true;
+    /// A name exists when it forms a URL this database may use, which needs no HDFS request. The cache
+    /// must not answer it: that reports which names other callers resolved, past any filter tightening.
+    if (source.empty() && !name.starts_with("hdfs://"))
+        return false;
 
-    return checkUrl(name, context_, false);
+    return checkUrl(getTablePath(name), context_, false);
 }
 
 StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) const
 {
+    auto url = getTablePath(name);
+    auto args = makeASTFunction("hdfs", make_intrusive<ASTLiteral>(url));
+
+    auto table_function = TableFunctionFactory::instance().get(args, context_);
+    if (!table_function)
+        return nullptr;
+
+    /// The cache is keyed on the name alone, so what authorizes a resolution is checked above it. The
+    /// grant is the table function's to check: a filtered grant matches the URI it reports, not the path.
+    table_function->checkSourceAccess(context_, /* is_insert_query */ false);
+
+    checkUrl(url, context_, true);
+
     /// Check if the table exists in the loaded tables map.
     {
         std::lock_guard lock(mutex);
@@ -119,16 +134,6 @@ StoragePtr DatabaseHDFS::getTableImpl(const String & name, ContextPtr context_) 
         if (it != loaded_tables.end())
             return it->second;
     }
-
-    auto url = getTablePath(name);
-
-    checkUrl(url, context_, true);
-
-    auto args = makeASTFunction("hdfs", make_intrusive<ASTLiteral>(url));
-
-    auto table_function = TableFunctionFactory::instance().get(args, context_);
-    if (!table_function)
-        return nullptr;
 
     /// TableFunctionHDFS throws exceptions, if table cannot be created.
     auto table_storage = table_function->execute(args, context_, name);
@@ -275,7 +280,45 @@ void registerDatabaseHDFS(DatabaseFactory & factory)
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::HDFS,
     }, Documentation{
-        .description = "A read-only database that exposes files in HDFS as tables.",
+        .description = R"DOCS_MD(
+The `HDFS` database engine exposes files in HDFS as read-only tables. A table name is resolved through the [`hdfs`](/reference/functions/table-functions/hdfs) table function.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE hdfs_data
+ENGINE = HDFS([hdfs_host_and_root_path]);
+```
+
+`hdfs_host_and_root_path` optionally sets a base HDFS URL. When it is present, table names are paths relative to that URL. Without it, table names must be full `hdfs://` URLs.
+
+## Usage {#usage}
+
+```sql
+CREATE DATABASE hdfs_data
+ENGINE = HDFS('hdfs://namenode:9000/data');
+
+SELECT * FROM hdfs_data.`events.parquet`;
+```
+
+The schema and format are inferred in the same way as for the `hdfs` table function. The database owns no table definitions and does not support table DDL or writes.
+
+## Access control {#access-control}
+
+HDFS URLs are checked against the server's remote-host filter. Creating this database requires `READ` and `WRITE` source grants on `HDFS`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant), for example:
+
+```sql
+GRANT READ, WRITE ON HDFS TO user_name;
+```
+
+See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
+
+## See also {#see-also}
+
+- [`hdfs` table function](/reference/functions/table-functions/hdfs)
+- [Filesystem database engine](/reference/engines/database-engines/filesystem)
+- [S3 database engine](/reference/engines/database-engines/s3)
+)DOCS_MD",
         .syntax = "ENGINE = HDFS([hdfs_host_and_root_path])",
         .related = {"S3", "Filesystem"}});
 }

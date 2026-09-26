@@ -37,6 +37,7 @@
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <base/sleep.h>
+#include <base/defines.h>
 
 namespace CurrentMetrics
 {
@@ -519,6 +520,15 @@ time_t DiskObjectStorage::getLastChanged(const String & path) const
     return metadata_storage->getLastChanged(path);
 }
 
+bool DiskObjectStorage::isRemote() const
+{
+    for (const auto & location : cluster->getEnabledLocations())
+        if (object_storages->takePointingTo(location)->isRemote())
+            return true;
+
+    return metadata_storage->isRemote();
+}
+
 struct stat DiskObjectStorage::stat(const String & path) const
 {
     return metadata_storage->stat(path);
@@ -784,7 +794,7 @@ bool DiskObjectStorage::isSharedCompatible() const
 
 bool DiskObjectStorage::supportsHardLinks() const
 {
-    return metadata_storage->supportsHardLinks();
+    return !metadata_storage->isWriteOnce() && !metadata_storage->isPlain();
 }
 
 String DiskObjectStorage::getReadResourceNameNoLock() const
@@ -1006,8 +1016,11 @@ void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration
     metadata_storage->applyNewSettings(config, config_prefix, context);
 
     /// FIXME we cannot use config_prefix that was passed through arguments because the disk may be wrapped with cache and we need another name
+    /// The client is rebuilt unconditionally on config reload: this is where a server disk picks up changes that the
+    /// settings comparison in `applyNewSettings` does not cover (e.g. the proxy configuration).
     for (const auto & [location, info] : cluster->getConfiguration())
-        object_storages->takePointingTo(location)->applyNewSettings(config, info.config_prefix, context, IObjectStorage::ApplyNewSettingsOptions{ .allow_client_change = true });
+        object_storages->takePointingTo(location)->applyNewSettings(
+            config, info.config_prefix, context, IObjectStorage::ApplyNewSettingsOptions{.allow_client_change = true, .force_client_rebuild = true});
 
     {
         std::unique_lock lock(resource_mutex);

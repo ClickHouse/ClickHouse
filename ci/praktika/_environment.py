@@ -35,14 +35,16 @@ class _Environment(MetaClasses.Serializable):
     USER_LOGIN: str
     FORK_NAME: str
     COMMIT_MESSAGE: str = ""
+    RUN_ATTEMPT: int = 0
     EVENT_ACTION: str = ""
-    # `created_at` of this workflow run, resolved once by the config job (see
+    # Unix timestamp resolved once by the config job (see
     # native_jobs._config_workflow) and inherited by every other job with this
     # environment, so all of them agree on when the run started.
-    WORKFLOW_START_TIME: str = ""
+    WORKFLOW_START_TIME: float = 0.0
     # merged PR for "push" or "merge_group" workflow
     LINKED_PR_NUMBER: int = 0
     LOCAL_RUN: bool = False
+    PR_IS_DRAFT: bool = False
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
     REPORT_MESSAGES: List[Dict[str, str]] = dataclasses.field(default_factory=list)
     JOB_CONFIG: Optional[Job.Config] = None
@@ -54,6 +56,16 @@ class _Environment(MetaClasses.Serializable):
     JOB_KV_DATA_BASE_KEYS: List[str] = dataclasses.field(default_factory=list)
     COMMIT_AUTHORS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_CONFIG: Optional[Dict[str, Any]] = None
+    # How many times this job was manually re-run (0 = first attempt). Set
+    # per-job by the orchestrator; job code can read it via Info().
+    RERUN_COUNT: int = 0
+    # True when this run is driven by the native orchestrator, which is the SOLE
+    # writer of the workflow report summary. Job-side report writers
+    # (push_pending_ci_report / configure / pre_run / post_run's summary merge /
+    # Finish Workflow's NOT_FINALIZED loop) skip when this is set — see
+    # orchestrator/REPORT_OWNERSHIP.md. False for local runs and GitHub Actions,
+    # which keep the per-job writers.
+    ORCHESTRATOR_OWNS_REPORT: bool = False
     name = "environment"
 
     @classmethod
@@ -85,6 +97,7 @@ class _Environment(MetaClasses.Serializable):
         PR_BODY = ""
         PR_TITLE = ""
         PR_LABELS = []
+        PR_IS_DRAFT = False
         LINKED_PR_NUMBER = 0
         EVENT_TIME = ""
         EVENT_ACTION = ""
@@ -108,6 +121,7 @@ class _Environment(MetaClasses.Serializable):
                 PR_LABELS = [
                     label["name"] for label in github_event["pull_request"]["labels"]
                 ]
+                PR_IS_DRAFT = bool(github_event["pull_request"].get("draft", False))
                 USER_LOGIN = github_event["pull_request"]["user"]["login"]
                 EVENT_TIME = github_event.get("pull_request", {}).get(
                     "updated_at", None
@@ -223,6 +237,7 @@ class _Environment(MetaClasses.Serializable):
             EVENT_TIME=EVENT_TIME,
             PR_NUMBER=PR_NUMBER,
             RUN_ID=RUN_ID,
+            RUN_ATTEMPT=int(os.getenv("GITHUB_RUN_ATTEMPT", "0")),
             CHANGE_URL=CHANGE_URL,
             COMMIT_URL=COMMIT_URL,
             RUN_URL=RUN_URL,
@@ -236,6 +251,7 @@ class _Environment(MetaClasses.Serializable):
             FORK_NAME=FORK_NAME,
             COMMIT_MESSAGE=COMMIT_MESSAGE,
             PR_LABELS=PR_LABELS,
+            PR_IS_DRAFT=PR_IS_DRAFT,
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_MESSAGES=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
@@ -261,6 +277,10 @@ class _Environment(MetaClasses.Serializable):
         # CI engine environments serialised by `_build_ci_environment` are not wiped.
         JOB_OUTPUT_STREAM = os.getenv("GITHUB_OUTPUT", "") or obj.get("JOB_OUTPUT_STREAM", "")
         obj["JOB_OUTPUT_STREAM"] = JOB_OUTPUT_STREAM
+        # A failed-job rerun inherits the config job's previous environment.
+        # Capture the current attempt on the host before serializing for Docker.
+        if "GITHUB_RUN_ATTEMPT" in os.environ:
+            obj["RUN_ATTEMPT"] = int(os.environ["GITHUB_RUN_ATTEMPT"])
         if "PARAMETER" in obj:
             obj["PARAMETER"] = _to_object(obj["PARAMETER"])
         # Filter out unexpected arguments - only keep fields defined in the dataclass

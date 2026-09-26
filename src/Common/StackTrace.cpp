@@ -77,6 +77,11 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
+bool StackTrace::showAddresses()
+{
+    return show_addresses.load(std::memory_order_relaxed);
+}
+
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
@@ -340,19 +345,40 @@ resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_ad
 }
 #endif
 
-StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
-{
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+namespace
+{
+StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
+{
     const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
 
     if (!object)
-        return {virtual_addr, {}, AddressKind::UnknownMapping};
+        return {virtual_addr, {}, StackTrace::AddressKind::UnknownMapping};
     if (object == symbol_index.thisObject())
-        return {reinterpret_cast<const void *>(address), {}, AddressKind::MainObject};
-    return {reinterpret_cast<const void *>(address), object->name, AddressKind::OtherObject};
+        return {reinterpret_cast<const void *>(address), {}, StackTrace::AddressKind::MainObject};
+    return {reinterpret_cast<const void *>(address), object->name, StackTrace::AddressKind::OtherObject};
+}
+}
+#endif
+
+StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
+{
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    return ::resolveAddress(DB::SymbolIndex::instance(), virtual_addr);
 #else
     return {virtual_addr, {}, AddressKind::Unsupported};
+#endif
+}
+
+std::optional<StackTrace::ResolvedAddress> StackTrace::tryResolveAddress(const void * virtual_addr)
+{
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    const DB::SymbolIndex * symbol_index = DB::SymbolIndex::instanceIfInitialized();
+    if (!symbol_index)
+        return std::nullopt;
+    return ::resolveAddress(*symbol_index, virtual_addr);
+#else
+    return ResolvedAddress{virtual_addr, {}, AddressKind::Unsupported};
 #endif
 }
 
@@ -360,8 +386,8 @@ UInt64 StackTrace::resolveAddressForStorage(const void * virtual_addr)
 {
     const ResolvedAddress resolved = resolveAddress(virtual_addr);
     /// Only the main executable's offsets are unambiguous on their own: a column of bare numbers has
-    /// nowhere to record which library an offset belongs to, and `addressToSymbol` on such a number
-    /// would answer with the main executable's symbol at the same offset.
+    /// nowhere to record which object an offset belongs to. A runtime address keeps that information,
+    /// because the object that contains it is the one it is mapped into.
     if (resolved.kind != AddressKind::MainObject)
         return reinterpret_cast<UInt64>(virtual_addr);
     return reinterpret_cast<UInt64>(resolved.address);
