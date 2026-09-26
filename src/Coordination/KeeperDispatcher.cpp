@@ -112,14 +112,20 @@ KeeperDispatcher::KeeperDispatcher()
     , log(getLogger("KeeperDispatcher"))
 {}
 
+static CoordinationSettingsPtr loadCoordinationSettings(const Poco::Util::AbstractConfiguration & config, int server_id)
+{
+    auto settings = std::make_shared<CoordinationSettings>();
+    settings->loadFromConfig(
+        "keeper_server.coordination_settings", config, "keeper_server.per_server_coordination_settings", server_id);
+    return settings;
+}
+
 void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async, const MultiVersion<Macros>::Version & macros)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
     server_config = KeeperConfiguration::loadFromConfig(config, standalone_keeper);
-    auto coordination_settings = std::make_shared<CoordinationSettings>();
-    coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
-    keeper_context = std::make_shared<KeeperContext>(standalone_keeper, std::move(coordination_settings));
+    keeper_context = std::make_shared<KeeperContext>(standalone_keeper, loadCoordinationSettings(config, server_config->server_id));
 
     keeper_context->initialize(config, this);
 
@@ -817,9 +823,7 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
 
     keeper_context->updateKeeperMemorySoftLimit(config);
 
-    auto new_settings = std::make_shared<CoordinationSettings>();
-    new_settings->loadFromConfig("keeper_server.coordination_settings", config);
-    keeper_context->updateSettings(new_settings);
+    keeper_context->updateSettings(loadCoordinationSettings(config, server_config->server_id));
 }
 
 void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms, uint64_t subrequests)

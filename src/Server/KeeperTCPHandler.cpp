@@ -54,6 +54,8 @@ namespace DB
 
 namespace CoordinationSetting
 {
+    extern const CoordinationSettingsMilliseconds min_session_timeout_ms;
+    extern const CoordinationSettingsMilliseconds session_timeout_ms;
     extern const CoordinationSettingsUInt64 log_slow_connection_operation_threshold_ms;
     extern const CoordinationSettingsUInt64 log_slow_total_threshold_ms;
     extern const CoordinationSettingsUInt64 max_request_size;
@@ -244,7 +246,6 @@ struct SocketInterruptablePollWrapper
 };
 
 KeeperTCPHandler::KeeperTCPHandler(
-    const Poco::Util::AbstractConfiguration & config_ref,
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
     Poco::Timespan receive_timeout_,
     Poco::Timespan send_timeout_,
@@ -258,9 +259,9 @@ KeeperTCPHandler::KeeperTCPHandler(
     /// preserved up to the full Poco::Timespan::TimeDiff (Int64) range rather than clamped to a
     /// wait bound. The wait itself is bounded inside KeeperDispatcher::getSessionID.
     , min_session_timeout(saturatedMicrosecondsFromMilliseconds(
-          config_ref.getInt64("keeper_server.coordination_settings.min_session_timeout_ms", Coordination::DEFAULT_MIN_SESSION_TIMEOUT_MS)))
+          keeper_context->getFixedCoordinationSettings()[CoordinationSetting::min_session_timeout_ms].totalMilliseconds()))
     , max_session_timeout(saturatedMicrosecondsFromMilliseconds(
-          config_ref.getInt64("keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS)))
+          keeper_context->getFixedCoordinationSettings()[CoordinationSetting::session_timeout_ms].totalMilliseconds()))
     , poll_wrapper(std::make_shared<SocketInterruptablePollWrapper>(socket_))
     , send_timeout(send_timeout_)
     , receive_timeout(receive_timeout_)

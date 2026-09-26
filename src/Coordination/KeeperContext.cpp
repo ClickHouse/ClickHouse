@@ -171,10 +171,79 @@ bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::
     return true;
 }
 
+/// Copies every leaf under `from` to the same relative key under `to`, replacing `pattern` with
+/// `replacement` in the value of the leaf named `leaf_to_rewrite`.
+void copyConfigSubtree(
+    Poco::Util::AbstractConfiguration & config,
+    const std::string & from,
+    const std::string & to,
+    const std::string & leaf_to_rewrite,
+    const std::string & pattern,
+    const std::string & replacement)
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(from, keys);
+    if (keys.empty())
+    {
+        std::string value = config.getString(from);
+        if (from.ends_with("." + leaf_to_rewrite))
+            boost::replace_all(value, pattern, replacement);
+        config.setString(to, value);
+        return;
+    }
+
+    for (const auto & key : keys)
+        copyConfigSubtree(config, from + "." + key, to + "." + key, leaf_to_rewrite, pattern, replacement);
+}
+
+/// TEMPORARY HACK so that the LSMT node storage can be tried on existing deployments without a
+/// config change: if there's a disk `s3_keeper_snapshot_disk` whose endpoint ends with `/snapshots/`,
+/// synthesize a disk `s3_keeper_data_disk` that is a copy of it with `/snapshots/` replaced by
+/// `/data/`, and use it as `data_storage_disk` when snapshots are stored on `s3_keeper_snapshot_disk`
+/// (unless the node storage location is configured explicitly).
+void addDataDiskDerivedFromSnapshotDisk(const Poco::Util::AbstractConfiguration & const_config)
+{
+    static constexpr auto snapshot_disk_name = "s3_keeper_snapshot_disk";
+    static constexpr auto data_disk_name = "s3_keeper_data_disk";
+    static constexpr auto snapshots_suffix = "/snapshots/";
+    static constexpr auto data_suffix = "/data/";
+
+    const std::string snapshot_disk_prefix = fmt::format("storage_configuration.disks.{}", snapshot_disk_name);
+    const std::string data_disk_prefix = fmt::format("storage_configuration.disks.{}", data_disk_name);
+
+    if (!const_config.has(snapshot_disk_prefix) || const_config.has(data_disk_prefix))
+        return;
+
+    const std::string endpoint = const_config.getString(snapshot_disk_prefix + ".endpoint", "");
+    if (!endpoint.ends_with(snapshots_suffix))
+        return;
+
+    /// The configuration is passed around as const everywhere in Keeper, but it's a mutable object
+    /// underneath (an `XMLConfiguration` produced by `ConfigProcessor`).
+    auto & config = const_cast<Poco::Util::AbstractConfiguration &>(const_config);
+
+    copyConfigSubtree(config, snapshot_disk_prefix, data_disk_prefix, "endpoint", snapshots_suffix, data_suffix);
+    LOG_INFO(
+        getLogger("KeeperContext"),
+        "Added disk '{}' derived from '{}' with endpoint '{}'",
+        data_disk_name,
+        snapshot_disk_name,
+        config.getString(data_disk_prefix + ".endpoint"));
+
+    if (config.getString("keeper_server.snapshot_storage_disk", "") == snapshot_disk_name
+        && !config.has("keeper_server.data_storage_disk")
+        && !config.has("keeper_server.data_storage_path"))
+    {
+        config.setString("keeper_server.data_storage_disk", data_disk_name);
+        LOG_INFO(getLogger("KeeperContext"), "Using disk '{}' as data_storage_disk", data_disk_name);
+    }
+}
+
 }
 
 void KeeperContext::initializeDiskSelector(const Poco::Util::AbstractConfiguration & config)
 {
+    addDataDiskDerivedFromSnapshotDisk(config);
     disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance(), diskValidator);
 }
 
