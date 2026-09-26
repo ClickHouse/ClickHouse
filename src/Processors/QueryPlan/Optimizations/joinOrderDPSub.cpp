@@ -52,7 +52,7 @@ private:
     friend class DB::EnumeratorCheckerWithCosts;
 
     std::optional<UInt64> estimateCardinality(
-        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind,
         JoinStrictness strictness = JoinStrictness::All) const;
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
@@ -71,15 +71,15 @@ private:
 
     bool useConflictDetector() const
     {
-        return query_graph.use_conflict_detector_a || query_graph.use_conflict_detector_c;
+        return query_graph.conflict_detector != JoinOrderConflictDetector::NONE;
     }
     ConflictDetector conflictDetectorKind() const
     {
-        return query_graph.use_conflict_detector_c ? ConflictDetector::CDC : ConflictDetector::CDA;
+        return query_graph.conflict_detector == JoinOrderConflictDetector::CD_C ? ConflictDetector::CDC : ConflictDetector::CDA;
     }
 
     const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
-    SelectivityEstimate computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
 
     QueryGraph & query_graph;
     SelectivityCache expression_selectivity;
@@ -127,7 +127,7 @@ private:
 };
 
 std::optional<UInt64> DPSubJoinOrderOptimizer::estimateCardinality(
-    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind,
     JoinStrictness strictness) const
 {
     return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind, strictness);
@@ -176,7 +176,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
 
         dpsub_data.conflict_operators = computeConflictOperators(ops, conflictDetectorKind(), log);
         LOG_TRACE(log, "DPsub: using {} conflict detector over {} captured join operators",
-                  query_graph.use_conflict_detector_c ? "CD-C" : "CD-A", dpsub_data.conflict_operators.size());
+                  toString(query_graph.conflict_detector), dpsub_data.conflict_operators.size());
     }
     else
     {
@@ -411,10 +411,10 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
     return out;
 }
 
-SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
+double DPSubJoinOrderOptimizer::computeSelectivityMask(
     const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
 {
-    auto estimate = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
+    double selectivity = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
 
     /// Account for transitively-equivalent columns spanning both sides, visiting only the classes
     /// incident to the left relations. A generation stamp deduplicates classes without allocating
@@ -431,7 +431,7 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 continue;
             dpsub_data.class_visited[class_idx] = generation;
 
-            UInt64 max_ndv = 0;
+            size_t max_ndv = 0;
             bool has_left = false;
             bool has_right = false;
             for (const auto & equiv_member : *dpsub_data.equiv_classes[class_idx])
@@ -443,27 +443,20 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 if (left_mask & relation_bit)
                 {
                     has_left = true;
-                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()).value_or(0));
+                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
                 }
                 else if (right_mask & relation_bit)
                 {
                     has_right = true;
-                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()).value_or(0));
+                    max_ndv = std::max(max_ndv, getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
                 }
             }
-            if (has_left && has_right)
-            {
-                estimate.has_equi = true;
-                if (max_ndv > 0)
-                {
-                    estimate.value = std::min(estimate.value, 1.0 / static_cast<double>(max_ndv));
-                    estimate.reliable = true;
-                }
-            }
+            if (has_left && has_right && max_ndv > 0)
+                selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
         }
     }
 
-    return estimate;
+    return selectivity;
 }
 
 template <typename DPTable, std::unsigned_integral TUInt>
