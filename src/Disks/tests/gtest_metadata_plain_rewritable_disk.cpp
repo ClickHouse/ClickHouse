@@ -57,7 +57,7 @@ public:
     {
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
         auto object_storage = active_object_storages.at(key_prefix);
-        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", snapshot_settings);
         return active_metadatas.at(key_prefix);
     }
 
@@ -85,7 +85,7 @@ private:
         fs::remove_all("./" + key_prefix);
         LocalObjectStorageSettings settings("test", "./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
-        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", snapshot_settings);
 
         active_metadatas.emplace(key_prefix, metadata_storage);
         active_object_storages.emplace(key_prefix, object_storage);
@@ -94,6 +94,9 @@ private:
     }
 
     static inline bool initialized = false;
+
+    /// The snapshot is written right after every commit, so that every restart goes through the snapshot and the reconcile.
+    static constexpr PlainRewritableSnapshotSettings snapshot_settings{.enabled = true, .write_delay_ms = 0};
 
     std::mutex active_metadatas_mutex;
     std::unordered_map<std::string, std::shared_ptr<IMetadataStorage>> active_metadatas;

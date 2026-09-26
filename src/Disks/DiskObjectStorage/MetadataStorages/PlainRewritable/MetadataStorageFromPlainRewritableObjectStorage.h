@@ -55,7 +55,9 @@ struct PlainRewritableSnapshotSettings
     bool enabled = true;
     /// Zero means the snapshot is rewritten right after every modification (in the committing thread).
     /// A larger value means it is rewritten in the background not more often than the delay, as long as there were modifications.
-    UInt64 write_delay_ms = 0;
+    /// The whole state is serialized on every write, so writing it in the committing thread would make the latency of
+    /// every commit proportional to the size of the whole disk; that is why it is delayed by default.
+    UInt64 write_delay_ms = 1000;
 };
 
 class MetadataStorageFromPlainRewritableObjectStorage final : public IMetadataStorage
@@ -155,7 +157,7 @@ private:
 
     std::mutex load_mutex;
     AtomicStopwatch previous_refresh;
-    /// ETag of the snapshot file the state was loaded from; a refresh is skipped if the file did not change.
+    /// ETag of the snapshot file the state was loaded from; a refresh does not read the file again if it did not change.
     /// Guarded by `load_mutex`.
     std::string loaded_snapshot_etag;
 

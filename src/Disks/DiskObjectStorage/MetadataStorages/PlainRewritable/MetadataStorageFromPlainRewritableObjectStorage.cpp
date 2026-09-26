@@ -567,19 +567,21 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
     LOG_DEBUG(log, "Loading metadata");
 
-    /// The state is obtained either from the snapshot file (see `PlainRewritableSnapshotFile.h`) in a single request,
-    /// or by listing the object storage (see `listRemoteLayout`), which is a request per directory.
+    /// The state is obtained either from the snapshot file (see `PlainRewritableSnapshotFile.h`) reconciled with a listing
+    /// of the `__meta` directory, or by listing the object storage (see `listRemoteLayout`), which is a request per directory.
     ///
-    /// The snapshot can lag behind the actual state: it is written after the changes, and the server writing it could
-    /// have crashed in between (or the write is delayed by `write_delay_ms`).
-    /// - The disk that writes the data (and the snapshot) uses the snapshot only at startup, and reconciles it with the
-    ///   listing of the `__meta` directory. This is cheap (a request per thousand directories) and detects the directories
-    ///   that were created, removed or renamed after the snapshot was written; only those are loaded from the object storage.
+    /// The snapshot can lag behind the actual state: it is written after the changes, the server writing it could
+    /// have crashed in between, the write is delayed by `write_delay_ms`, or it has failed (a failed write does not fail
+    /// the commit). So the snapshot is never trusted alone: it is always reconciled with the listing of the `__meta`
+    /// directory. This is cheap (a request per thousand directories) and detects the directories that were created,
+    /// removed or renamed after the snapshot was written; only those are loaded from the object storage.
+    /// - The disk that writes the data (and the snapshot) uses the snapshot only at startup.
     ///   Later reloads of the writer (`SYSTEM RESTART DISK`, `SYSTEM CLEAR DISK METADATA CACHE`) list the object storage:
     ///   the state in memory is authoritative and the snapshot is derived from it, so it cannot be a source of the state.
-    /// - A read-only disk uses the snapshot both at startup and on the periodic refreshes, skipping the refresh when the
-    ///   ETag of the file did not change, and lists the object storage only when there is no snapshot or when the cache
-    ///   is dropped explicitly. The lag of the snapshot is acceptable for read-only replicas of MergeTree tables.
+    /// - A read-only disk uses the snapshot both at startup and on the periodic refreshes. When the ETag of the file did
+    ///   not change since the previous refresh, the file is not read again and the state in memory is reconciled with
+    ///   the listing instead. It lists the object storage fully only when there is no snapshot or when the cache
+    ///   is dropped explicitly.
 
     const bool writer = isSnapshotWriter();
     const bool use_snapshot = snapshot_settings.enabled && mode != LoadMode::Full && (mode == LoadMode::Initial || !writer);
@@ -590,36 +592,33 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(LoadMode mode)
         auto snapshot = tryReadSnapshotFile(log, mode == LoadMode::Incremental ? std::make_optional(loaded_snapshot_etag) : std::nullopt);
         snapshot_file_exists = snapshot.exists;
 
-        if (snapshot.unchanged)
+        if (snapshot.unchanged || snapshot.layout)
         {
-            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotUnchanged);
-            LOG_DEBUG(log, "The snapshot file did not change, skipping the refresh");
-            previous_refresh.restart();
-            return;
-        }
-
-        if (snapshot.layout)
-        {
-            ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotRead);
-
-            if (writer)
+            PlainRewritableRemoteLayout base;
+            if (snapshot.unchanged)
             {
-                bool differs = false;
-                auto remote_layout = listRemoteLayout(&snapshot.layout.value(), differs, log);
-                LOG_DEBUG(log, "Loaded metadata for {} directories from the snapshot file{}", remote_layout.size(), differs ? ", the object storage had changes after the snapshot" : "");
-                fs.applyLayout(std::move(remote_layout));
-                previous_refresh.restart();
-
-                if (differs)
-                    onLayoutChanged();
+                /// The state in memory already includes everything from this snapshot, and possibly more.
+                ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotUnchanged);
+                base = getCurrentLayout();
             }
             else
             {
-                LOG_DEBUG(log, "Loaded metadata for {} directories from the snapshot file", snapshot.layout->size());
+                ProfileEvents::increment(ProfileEvents::DiskPlainRewritableSnapshotRead);
                 loaded_snapshot_etag = snapshot.etag;
-                fs.applyLayout(std::move(snapshot.layout.value()));
-                previous_refresh.restart();
+                base = std::move(snapshot.layout.value());
             }
+
+            bool differs = false;
+            auto remote_layout = listRemoteLayout(&base, differs, log);
+            LOG_DEBUG(log, "Loaded metadata for {} directories from the {} snapshot file{}",
+                remote_layout.size(),
+                snapshot.unchanged ? "unchanged" : "new",
+                differs ? ", the object storage had changes after the snapshot" : "");
+            fs.applyLayout(std::move(remote_layout));
+            previous_refresh.restart();
+
+            if (writer && differs)
+                onLayoutChanged();
 
             return;
         }
@@ -679,7 +678,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::onLayoutChanged()
 
     snapshot_dirty = true;
 
-    if (snapshot_settings.write_delay_ms == 0)
+    /// When everything was removed from the disk, the snapshot is removed right away regardless of the delay:
+    /// this is a single cheap request, and nothing should be left behind in the object storage after the last `DROP`.
+    if (snapshot_settings.write_delay_ms == 0 || fs.takeReadOnlySnapshot()->listDirectory("").empty())
         writeSnapshotIfDirty();
     else
         snapshot_write_task->scheduleAfter(snapshot_settings.write_delay_ms, /*overwrite=*/ false);

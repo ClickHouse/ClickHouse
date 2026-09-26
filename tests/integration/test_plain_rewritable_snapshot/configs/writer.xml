@@ -8,7 +8,18 @@
                 <endpoint>http://minio1:9001/root/data/snapshot/</endpoint>
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <metadata_snapshot_write_delay_ms>0</metadata_snapshot_write_delay_ms>
             </disk_snapshot>
+            <disk_snapshot_lazy>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <endpoint>http://minio1:9001/root/data/snapshot_lazy/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <!-- Not written during the test, only on shutdown: the snapshot lags behind the object storage. -->
+                <metadata_snapshot_write_delay_ms>3600000</metadata_snapshot_write_delay_ms>
+            </disk_snapshot_lazy>
             <disk_snapshot_delayed>
                 <type>object_storage</type>
                 <object_storage_type>s3</object_storage_type>
@@ -36,6 +47,13 @@
                     </main>
                 </volumes>
             </snapshot>
+            <snapshot_lazy>
+                <volumes>
+                    <main>
+                        <disk>disk_snapshot_lazy</disk>
+                    </main>
+                </volumes>
+            </snapshot_lazy>
             <snapshot_delayed>
                 <volumes>
                     <main>

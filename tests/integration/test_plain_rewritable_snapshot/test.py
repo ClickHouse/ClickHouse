@@ -73,7 +73,7 @@ def test_snapshot_is_written_and_loaded_on_restart(start_cluster):
     writer.query("DROP TABLE IF EXISTS t_snapshot SYNC")
     writer.query("CREATE TABLE t_snapshot (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'snapshot'")
 
-    # The snapshot is rewritten right after every commit by default.
+    # The snapshot is rewritten right after every commit with `metadata_snapshot_write_delay_ms = 0`.
     etag_after_create = snapshot_etag()
     assert etag_after_create is not None
     writer.query("INSERT INTO t_snapshot SELECT number FROM numbers(10)")
@@ -158,13 +158,44 @@ def test_readonly_replica_uses_snapshot(start_cluster):
     wait_for(lambda: reader.query("SELECT count(), sum(id) FROM t_reader") == "20\t190\n")
     assert event(reader, "DiskPlainRewritableSnapshotRead") > reads_before
 
-    # Without changes, the periodic refresh finds the same ETag and does nothing.
+    # Without changes, the periodic refresh finds the same ETag and does not read the snapshot again.
     unchanged_before = event(reader, "DiskPlainRewritableSnapshotUnchanged")
     wait_for(lambda: event(reader, "DiskPlainRewritableSnapshotUnchanged") > unchanged_before)
     assert event(reader, "DiskPlainRewritableSnapshotWritten") == 0
 
     reader.query("DROP TABLE t_reader SYNC")
     writer.query("DROP TABLE t_reader SYNC")
+
+
+def test_readonly_replica_does_not_trust_stale_snapshot(start_cluster):
+    key = "data/snapshot_lazy/__meta/snapshot.bin"
+
+    writer.query("DROP TABLE IF EXISTS t_lazy SYNC")
+    writer.query("CREATE TABLE t_lazy (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'snapshot_lazy'")
+    writer.query("INSERT INTO t_lazy SELECT number FROM numbers(10)")
+    table_uuid = writer.query("SELECT uuid FROM system.tables WHERE database = 'default' AND table = 't_lazy'").strip()
+
+    # The snapshot is written on shutdown, and not again during the test.
+    writer.restart_clickhouse()
+    etag = snapshot_etag(key)
+    assert etag is not None
+
+    # The read-only disk loads the state from this snapshot on startup.
+    reader.query("DROP TABLE IF EXISTS t_lazy SYNC")
+    reader.restart_clickhouse()
+    reader.query(f"ATTACH TABLE t_lazy UUID '{table_uuid}' (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS storage_policy = 'snapshot_lazy_readonly', refresh_parts_interval = 1")
+    assert reader.query("SELECT count(), sum(id) FROM t_lazy") == "10\t45\n"
+
+    # The snapshot stays the same (as if its write failed or was delayed), but the committed parts
+    # are still visible to the reader, because the snapshot is reconciled with the listing of `__meta`.
+    writer.query("INSERT INTO t_lazy SELECT number FROM numbers(10, 10)")
+    wait_for(lambda: reader.query("SELECT count(), sum(id) FROM t_lazy") == "20\t190\n")
+    assert snapshot_etag(key) == etag
+
+    reader.query("DROP TABLE t_lazy SYNC")
+    # The last `DROP` removes the snapshot right away, regardless of the delay.
+    writer.query("DROP TABLE t_lazy SYNC")
+    assert snapshot_etag(key) is None
 
 
 def test_delayed_snapshot_write(start_cluster):
