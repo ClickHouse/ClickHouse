@@ -39,6 +39,9 @@ SET max_bytes_before_external_sort=0, max_bytes_ratio_before_external_sort=0;
 SET max_threads=0;
 SET use_uncompressed_cache=0;
 SET use_query_condition_cache=0;
+-- The columns cache serves repeated reads from memory, which lowers `ReadCompressedBytes` below the
+-- estimate for every query after the first one.
+SET use_columns_cache=0;
 
 DROP TABLE IF EXISTS ij_big;
 DROP TABLE IF EXISTS ij_small;

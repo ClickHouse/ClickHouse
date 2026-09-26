@@ -128,6 +128,7 @@
 #include <Interpreters/TraceCollector.h>
 #include <IO/AsyncReadCounters.h>
 #include <IO/UncompressedCache.h>
+#include <Storages/MergeTree/ColumnsCache.h>
 #include <IO/MMappedFileCache.h>
 #include <IO/WriteSettings.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -290,6 +291,8 @@ namespace CurrentMetrics
     extern const Metric DeleteBitmapCacheEntries;
     extern const Metric UncompressedCacheBytes;
     extern const Metric UncompressedCacheCells;
+    extern const Metric ColumnsCacheBytes;
+    extern const Metric ColumnsCacheEntries;
     extern const Metric IndexUncompressedCacheBytes;
     extern const Metric IndexUncompressedCacheCells;
     extern const Metric ZooKeeperSessionExpired;
@@ -640,6 +643,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable OnceFlag iceberg_catalog_threadpool_initialized;
     mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
+    mutable ColumnsCachePtr columns_cache TSA_GUARDED_BY(mutex);                      /// Cache of deserialized columns for MergeTree tables.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable bool index_uncompressed_cache_enabled TSA_GUARDED_BY(mutex) = false;      /// Whether index_uncompressed_cache should be used.
     mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
@@ -1490,6 +1494,7 @@ ContextData::ContextData(const ContextData &o) :
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
+    columns_cache_write_budget(o.columns_cache_write_budget),
     kitchen_sink(o.kitchen_sink),
     query_parameters(o.query_parameters),
     host_context(o.host_context),
@@ -1538,6 +1543,7 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
     res->query_access_info = std::make_shared<QueryAccessInfo>();
     res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     res->async_read_counters = std::make_shared<AsyncReadCounters>();
+    res->columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
     return res;
 }
 
@@ -4104,6 +4110,7 @@ void Context::makeQueryContext()
     async_read_counters = std::make_shared<AsyncReadCounters>();
     query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
+    columns_cache_write_budget = std::make_shared<ColumnsCacheWriteBudget>();
 
     /// A context that becomes a query context without going through a client-facing handshake -
     /// server-initiated queries such as background flushes of `Buffer` tables, streaming consumers
@@ -4740,6 +4747,49 @@ void Context::clearUncompressedCache() const
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
         cache->clear();
+
+    JemallocCacheArena::purge();
+}
+
+void Context::setColumnsCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->columns_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns cache has been already created.");
+
+    shared->columns_cache = std::make_shared<ColumnsCache>(cache_policy, CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries, max_size_in_bytes, 0, size_ratio);
+}
+
+void Context::updateColumnsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t default_size, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->columns_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Columns cache was not created yet.");
+
+    size_t size = config.getUInt64("columns_cache_size", default_size);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered columns cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->columns_cache->setConfiguredMaxSizeInBytes(size);
+}
+
+ColumnsCachePtr Context::getColumnsCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->columns_cache;
+}
+
+void Context::clearColumnsCache() const
+{
+    ColumnsCachePtr cache = getColumnsCache();
+
+    /// Clear both the base cache and interval index without holding context mutex
+    if (cache)
+        cache->clearAll();
 
     JemallocCacheArena::purge();
 }
@@ -9236,6 +9286,11 @@ void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_looku
 RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
 {
     return runtime_filter_lookup;
+}
+
+ColumnsCacheWriteBudgetPtr Context::getColumnsCacheWriteBudget() const
+{
+    return columns_cache_write_budget;
 }
 
 UInt64 Context::getClientProtocolVersion() const

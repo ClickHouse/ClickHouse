@@ -22,10 +22,13 @@ INSERT INTO test_s3 SELECT number, number FROM numbers_mt(1);
 # (due to random time difference between the queries and random activity in parallel)
 # but should happen most of the time.
 
+# The columns cache must be disabled: otherwise the retried queries are served
+# from the cache and never touch S3, so no disk connection is ever preserved.
+
 for _ in {0..9}
 do
     query="SELECT a, b FROM test_s3"
-    query_id=$(${CLICKHOUSE_CLIENT} --query "select queryID() from ($query) limit 1" 2>&1)
+    query_id=$(${CLICKHOUSE_CLIENT} --use_columns_cache=0 --query "select queryID() from ($query) limit 1" 2>&1)
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 
     RES=$(${CLICKHOUSE_CLIENT} -m --query "

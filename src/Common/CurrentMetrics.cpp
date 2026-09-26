@@ -410,6 +410,9 @@
     M(PageCacheCells, "Total number of entries in the userspace page cache") \
     M(UncompressedCacheBytes, "Total size of uncompressed cache in bytes. Uncompressed cache does not usually improve the performance and should be mostly avoided") \
     M(UncompressedCacheCells, "Total number of entries in the uncompressed cache. Each entry represents a decompressed block of data. Uncompressed cache does not usually improve performance and should be mostly avoided") \
+    M(ColumnsCacheBytes, "Total size of columns cache in bytes. The columns cache stores deserialized columns from MergeTree tables to avoid repeated decompression and deserialization.") \
+    M(ColumnsCacheEntries, "Total number of entries in the columns cache.") \
+    M(ColumnsCacheSizeLimit, "The size limit of the columns cache in bytes currently in effect. It is lowered below the configured `columns_cache_size` while the rest of the server is short of memory, and raised back towards it once that usage subsides, see `columns_cache_free_memory_ratio`.") \
     M(IndexMarkCacheBytes, "Total size of mark cache for secondary indices in bytes") \
     M(IndexMarkCacheFiles, "Total number of mark files cached in the mark cache for secondary indices") \
     M(IndexUncompressedCacheBytes, "Total size of uncompressed cache in bytes for secondary indices. Uncompressed cache does not usually improve the performance and should be mostly avoided") \

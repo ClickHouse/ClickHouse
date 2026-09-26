@@ -271,6 +271,9 @@ public:
     /// Returns true if data related to data part may be stored in mark and primary index caches.
     bool mayStoreDataInCaches() const;
 
+    /// Whether the columns cache can hold entries of this part at all, by its type and its table.
+    bool mayStoreColumnsInColumnsCache() const;
+
     String getMarksFileExtension() const { return index_granularity_info.mark_type.getFileExtension(); }
 
     /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
