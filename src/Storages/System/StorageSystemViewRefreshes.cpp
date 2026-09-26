@@ -1,4 +1,5 @@
 #include <Core/ServerSettings.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 
 #include <Access/ContextAccess.h>
@@ -35,7 +36,7 @@ ColumnsDescription StorageSystemViewRefreshes::getColumnsDescription()
         {"last_refresh_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
             "Time when the latest refresh attempt finished (if known) or started (if unknown or still running). NULL if no refresh attempts happened since server startup or table creation."},
         {"last_refresh_replica", std::make_shared<DataTypeString>(), "If coordination is enabled, name of the replica that made the current (if running) or previous (if not running) refresh attempt."},
-        {"next_refresh_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which the next refresh is scheduled to start. NULL if the next refresh time is not currently known, e.g. when waiting for dependencies (status `WaitingForDependencies` or `MissingDependencies`)."},
+        {"next_refresh_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time at which the next refresh is scheduled to start on this replica (unless another replica starts it first). NULL if the next refresh time is not currently known, e.g. when waiting for dependencies (status `WaitingForDependencies` or `MissingDependencies`)."},
         {"exception", std::make_shared<DataTypeString>(), "Error message from previous attempt if it failed."},
         {"retry", std::make_shared<DataTypeUInt64>(), "How many failed attempts there were so far, for the current refresh. Not available if status is `RunningOnAnotherReplica`."},
         {"progress", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()), "Progress of the current running or most recently completed refresh at the given replica, between 0 and 1. NULL if status is `RunningOnAnotherReplica` or the refresh is not running."},
@@ -128,3 +129,6 @@ void StorageSystemViewRefreshes::fillData(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemViewRefreshes) }

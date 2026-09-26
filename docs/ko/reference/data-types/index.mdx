@@ -1,0 +1,66 @@
+---
+description: 'ClickHouse의 데이터 타입 문서'
+sidebarTitle: '데이터 타입 목록'
+slug: /sql-reference/data-types/
+title: 'ClickHouse의 데이터 타입'
+doc_type: 'reference'
+mode: wide
+---
+
+이 섹션에서는 ClickHouse에서 지원하는 데이터 타입을 설명합니다. 예를 들어 [정수](/ko/reference/data-types/int-uint), [부동소수점](/ko/reference/data-types/float), [문자열](/ko/reference/data-types/string) 등이 있습니다.
+
+데이터 타입에 따라 서로 다른 [압축 코덱](/ko/reference/statements/create/table/codec)의 이점을 얻을 수 있습니다.
+
+시스템 테이블 [system.data&#95;type&#95;families](/ko/reference/system-tables/data_type_families)은 사용 가능한 모든 데이터 타입에 대한
+개요를 제공합니다.
+또한 각 데이터 타입이 다른 데이터 타입의 별칭인지, 그리고 이름이 대소문자를 구분하는지도 보여줍니다(예: `bool` vs. `BOOL`).
+
+<div id="data-type-categories">
+  ## 데이터 타입 카테고리
+</div>
+
+<CardGroup cols={2}>
+  <Card title="숫자 타입">
+    [정수](/ko/reference/data-types/int-uint), [부동 소수점 값](/ko/reference/data-types/float), 고정 정밀도의 [`Decimal` 값](/ko/reference/data-types/decimal), [`Bool` 플래그](/ko/reference/data-types/boolean)를 저장합니다.
+  </Card>
+
+  <Card title="String 타입">
+    가변 길이 [`String` 값](/ko/reference/data-types/string) 또는 고정 길이 [`FixedString` 값](/ko/reference/data-types/fixedstring)을 저장합니다.
+  </Card>
+
+  <Card title="날짜 및 시간 타입">
+    날짜는 [`Date`](/ko/reference/data-types/date) 및 [`Date32`](/ko/reference/data-types/date32)로, 타임스탬프는 [`DateTime`](/ko/reference/data-types/datetime) 및 [`DateTime64`](/ko/reference/data-types/datetime64)로, 시간 값은 [`Time`](/ko/reference/data-types/time) 및 [`Time64`](/ko/reference/data-types/time64)로 표현합니다.
+  </Card>
+
+  <Card title="네트워크 타입">
+    [`IPv4`](/ko/reference/data-types/ipv4) 및 [`IPv6`](/ko/reference/data-types/ipv6) 주소를 압축된 바이너리 형식으로 저장합니다.
+  </Card>
+
+  <Card title="복합 타입">
+    [`Array`](/ko/reference/data-types/array), [`Tuple`](/ko/reference/data-types/tuple), [`Map`](/ko/reference/data-types/map), [`Nested`](/ko/reference/data-types/nested-data-structures/index) 구조로 값을 결합합니다.
+  </Card>
+
+  <Card title="반정형 타입">
+    [`JSON`](/ko/reference/data-types/newjson), [`Dynamic`](/ko/reference/data-types/dynamic), [`Variant`](/ko/reference/data-types/variant)를 사용해 변화하거나 이질적인 데이터를 저장합니다.
+  </Card>
+
+  <Card title="널 허용 및 선택적 타입">
+    누락된 값은 [`Nullable`](/ko/reference/data-types/nullable)로 표현하고, 반복되는 값은 [`LowCardinality`](/ko/reference/data-types/lowcardinality)로 저장 공간을 줄입니다.
+  </Card>
+
+  <Card title="특수 목적 타입">
+    [`UUID` 값](/ko/reference/data-types/uuid), [`Enum` 값](/ko/reference/data-types/enum), [지리 공간 객체](/ko/reference/data-types/geo), [근사 검색용 벡터](/ko/reference/data-types/qbit), [도메인](/ko/reference/data-types/domains/index)을 모델링합니다.
+  </Card>
+
+  <Card title="집계 함수 타입">
+    [`AggregateFunction`](/ko/reference/data-types/aggregatefunction) 및 [`SimpleAggregateFunction`](/ko/reference/data-types/simpleaggregatefunction)으로 중간 집계 상태를 저장합니다.
+  </Card>
+
+  <Card title="특수 데이터 타입">
+    중간 쿼리 결과에 사용되는 [`Expression`](/ko/reference/data-types/special-data-types/expression), [`Interval`](/ko/reference/data-types/special-data-types/interval), [`Nothing`](/ko/reference/data-types/special-data-types/nothing), [`Set`](/ko/reference/data-types/special-data-types/set)에 대해 알아봅니다.
+  </Card>
+
+  <Card title="바이너리 인코딩">
+    각 데이터 타입의 직렬화 표현은 [바이너리 인코딩 사양](/ko/reference/data-types/data-types-binary-encoding)을 참조하십시오.
+  </Card>
+</CardGroup>

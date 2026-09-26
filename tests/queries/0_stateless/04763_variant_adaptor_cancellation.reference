@@ -1,0 +1,8 @@
+positive control: one Variant argument resolves and executes normally
+Nullable(String)	az
+Nullable(String)
+positive control: several Variant arguments still return the right type when not cancelled
+Nullable(String)	aaaz
+cancellation is observed while resolving alternatives
+cancellation is observed with variant_throw_on_type_mismatch disabled
+cancellation is observed with several discriminators present in the data

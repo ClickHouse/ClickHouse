@@ -43,6 +43,13 @@ bool S3Exception::isAccessTokenExpiredError() const
     return code == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID || code == Aws::S3::S3Errors::ACCESS_DENIED || code == Aws::S3::S3Errors::INVALID_SIGNATURE || code == Aws::S3::S3Errors::UNKNOWN;
 }
 
+bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error)
+{
+    return error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY
+        || error.GetExceptionName() == "InvalidPart"
+        || error.GetExceptionName() == "InvalidPartOrder";
+}
+
 }
 
 #endif

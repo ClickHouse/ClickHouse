@@ -128,6 +128,8 @@ enum class JoinAlgorithm : uint8_t
     GRACE_HASH,
     DIRECT,
     FULL_SORTING_MERGE,
+    IE_JOIN,
+    PARALLEL_FULL_SORTING_MERGE,
 };
 
 const char * toString(JoinAlgorithm join_algorithm);
@@ -144,10 +146,28 @@ enum class JoinOrderAlgorithm : uint8_t
 {
     GREEDY = 0,
     DPSIZE,
-    DPHYP,
+    DPSUB,
+    DPHYP
 };
 
 const char * toString(JoinOrderAlgorithm join_order_algorithm);
 
+/// Which conflict detector the `dpsub` join order algorithm uses to decide whether a reordering is
+/// valid. `NONE` keeps the per-relation ON-clause restriction; CD-A is correct but incomplete;
+/// CD-C is correct and complete.
+enum class JoinOrderConflictDetector : uint8_t
+{
+    NONE = 0,
+    CD_A,
+    CD_C
+};
 
+const char * toString(JoinOrderConflictDetector join_order_conflict_detector);
+
+enum class JoinAnalyzeMode : uint8_t
+{
+    None = 0,
+    Derived,
+    Exact,
+};
 }

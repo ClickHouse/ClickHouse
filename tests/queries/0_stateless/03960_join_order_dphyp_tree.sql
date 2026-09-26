@@ -26,6 +26,7 @@ SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
+SET explain_query_plan_default = 'legacy';
 -- Transitive predicates would derive `la.hub_id = ra.hub_id` and turn this tree topology
 -- into a cyclic graph; keep them off to preserve the tree shape this test is about.
 SET enable_join_transitive_predicates = 0;

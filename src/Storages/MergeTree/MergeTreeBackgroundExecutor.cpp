@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <optional>
 
+#include <base/scope_guard.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
@@ -12,6 +13,7 @@
 #include <Common/LockGuardWithStopWatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/FailPoint.h>
 
 
 namespace CurrentMetrics
@@ -23,6 +25,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char merge_tree_background_task_marked_for_deletion[];
+}
 
 namespace ErrorCodes
 {
@@ -92,15 +99,42 @@ MergeTreeBackgroundExecutor<Queue>::~MergeTreeBackgroundExecutor()
 }
 
 template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::requestShutdown()
+{
+    LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+    shutdown = true;
+    has_tasks.notify_all();
+}
+
+template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::wait()
 {
-    {
-        LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
-        shutdown = true;
-        has_tasks.notify_all();
-    }
+    requestShutdown();
+
+    /// `threadFunction` breaks before popping once `shutdown` is set, so a task that `routine`
+    /// re-pushed keeps what it owns alive forever. Draining after `pool->wait()` is what makes it
+    /// complete: no worker can push to `pending` past that point. Also runs if `wait()` rethrows.
+    SCOPE_EXIT({ drainPendingTasks(); });
 
     pool->wait();
+}
+
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::drainPendingTasks()
+{
+    std::vector<TaskRuntimeDataPtr> tasks_to_cancel;
+    {
+        LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+        while (!pending.empty())
+            tasks_to_cancel.push_back(pending.pop());
+    }
+
+    /// Cancelling and destroying a task can be slow, so do it outside the lock.
+    for (auto & item : tasks_to_cancel)
+    {
+        item->cancel();
+        item.reset();
+    }
 }
 
 template <class Queue>
@@ -227,6 +261,14 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
             }
         }
     }
+
+    /// At this point every active task for this storage is flagged is_currently_deleting, so when
+    /// it resumes it is guaranteed to take the destruction path (cancel + destroy) rather than
+    /// being requeued and finalized normally. A test can synchronize here to be sure a paused
+    /// task will be torn down while still holding its resources (e.g. a zero-copy lock). Pause only
+    /// when this executor actually owns a task being deleted, and outside the mutex.
+    if (!tasks_to_wait.empty())
+        FailPointInjection::pauseFailPoint(FailPoints::merge_tree_background_task_marked_for_deletion);
 
     for (auto & item : tasks_to_cancel)
     {
