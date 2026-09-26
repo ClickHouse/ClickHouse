@@ -218,12 +218,14 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// the other replicas and the optimization would give up. Settings written after `FORMAT` land on
     /// `ASTQueryWithOutput` and are not re-applied, which is why the very same query used to be
     /// optimized or not depending on where its `SETTINGS` clause was written. Drop the overridden
-    /// settings from the (cloned) AST so that the overrides above actually hold.
+    /// settings from the top-level `SETTINGS` carriers of the (cloned) AST so that the overrides above
+    /// actually hold. A subquery's `SETTINGS` clause is part of its query-node tree hash, and that hash
+    /// is the identity its prepared set and its read step are matched by against the single-node plan.
     static constexpr std::array settings_overridden_for_this_plan{
         std::string_view{"automatic_parallel_replicas_mode"},
         std::string_view{"force_primary_key"},
     };
-    removeSettingsFromQuery(ast, settings_overridden_for_this_plan);
+    removeSettingsFromQueryTopLevel(ast, settings_overridden_for_this_plan);
 
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
 
@@ -245,7 +247,7 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
     /// `prefer_global_in_and_join` and `parallel_replicas_prefer_local_join`, and a query carries its
     /// own `SETTINGS` for those. `QueryTreeBuilder::buildSelectExpression` applies them to the context
     /// it is handed - `ctx` - while building the tree above, which is the same mechanism
-    /// `removeSettingsFromQuery` had to counteract. Asking before that would read pre-query settings
+    /// `removeSettingsFromQueryTopLevel` had to counteract. Asking before that would read pre-query settings
     /// and could answer no for a query that does materialize.
     if (shippingQueryMaterializesSubqueries(interpreter.getQueryTree(), ctx))
     {
