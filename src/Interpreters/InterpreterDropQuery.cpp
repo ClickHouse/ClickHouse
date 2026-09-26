@@ -14,6 +14,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageTableProxy.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -326,6 +327,13 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             table->checkTableCanBeDropped(context_);
 
+            /// A `lazy_load_tables` database hands out a `StorageTableProxy`, which forwards `truncate` to
+            /// the nested storage, so the lock choice below has to be decided on that storage. `nested` is
+            /// already materialized: `checkTableCanBeDropped` above resolves it unconditionally.
+            StoragePtr table_to_classify = table;
+            if (const auto lazy_proxy = std::dynamic_pointer_cast<StorageTableProxy>(table))
+                table_to_classify = lazy_proxy->getNested();
+
             TableExclusiveLockHolder table_excl_lock;
             TableLockHolder table_shared_lock;
             /// MergeTree removes its data under its own locks, but the storage still must not be
@@ -333,7 +341,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             /// For the rest of tables types exclusive lock is needed
             /// An `Alias` runs the truncate on its target, so the exemption follows the target:
             /// `isMergeTree()` resolves it, and is false while it is missing or not loaded yet.
-            if (table->isMergeTree())
+            if (table_to_classify->isMergeTree())
                 table_shared_lock = table->lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
             else
                 table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
