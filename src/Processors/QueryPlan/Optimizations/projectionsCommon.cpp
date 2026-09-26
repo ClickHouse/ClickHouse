@@ -117,6 +117,13 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
         return std::unexpected("the table has unmaterialized mutations or patch parts");
 
+    /// Pending metadata mutations (RENAME/DROP COLUMN) are applied at read time by `AlterConversions`
+    /// of the parent part only; a projection part is read without them. So a projection part may still
+    /// carry a column the metadata no longer has under that name: after `DROP COLUMN c, ADD COLUMN c`
+    /// the projection would return the old values of `c` instead of the new column's default.
+    if (mutations_snapshot->hasMetadataMutations())
+        return std::unexpected("the table has unmaterialized RENAME COLUMN or DROP COLUMN mutations");
+
     return {};
 }
 
