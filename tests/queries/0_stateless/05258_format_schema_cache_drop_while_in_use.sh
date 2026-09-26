@@ -4,7 +4,7 @@
 # Tag no-parallel: enables a server-wide failpoint and clears the server-wide schema cache
 #
 # A schema given by `format_schema_source` is published into the on-disk schema cache and read back
-# from there by the Protobuf importer. `SYSTEM DROP FORMAT SCHEMA CACHE` must keep a file that a
+# from there by the Protobuf importer. `SYSTEM CLEAR FORMAT SCHEMA CACHE` must keep a file that a
 # query has published and not read back yet, and must still remove it once the query is over. It must
 # equally keep the staging file of a publish that has not renamed it into place yet.
 
@@ -15,7 +15,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FAILPOINT=format_schema_cache_pause_before_read
 FAILPOINT_PUBLISH=format_schema_cache_pause_before_publish
 # Unique per run, so the schema is not cached already and really has to be published.
-MESSAGE="M05076_${CLICKHOUSE_DATABASE}"
+MESSAGE="M05258_${CLICKHOUSE_DATABASE}"
 CACHE_DIR="$CLICKHOUSE_SCHEMA_FILES/__cache__"
 
 count_cached() { ls -1 "$CACHE_DIR" 2>/dev/null | wc -l; }
@@ -39,7 +39,7 @@ SETTINGS format_schema_source = 'string',
          format_schema_message_name = '${MESSAGE}';
 "
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FORMAT SCHEMA CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR FORMAT SCHEMA CACHE"
 echo "cached files at start: $(count_cached)"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT ${FAILPOINT}"
@@ -50,7 +50,7 @@ query_pid=$!
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT FAILPOINT ${FAILPOINT} PAUSE"
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FORMAT SCHEMA CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR FORMAT SCHEMA CACHE"
 echo "cached files kept while in use: $(count_cached)"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT}"
@@ -60,13 +60,13 @@ else
     echo "query succeeded: 0"
 fi
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FORMAT SCHEMA CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR FORMAT SCHEMA CACHE"
 echo "cached files after the query: $(count_cached)"
 
 # The drop must also keep the staging file that a publish is about to rename into place. A schema of
 # its own gives this arm a cache file that has never existed, so the insert publishes whatever the
 # drops above did or did not remove.
-MESSAGE_PUBLISH="M05076p_${CLICKHOUSE_DATABASE}"
+MESSAGE_PUBLISH="M05258p_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE dest_publish (s String) ENGINE = File(ProtobufSingle)
 SETTINGS format_schema_source = 'string',
@@ -82,7 +82,7 @@ publish_pid=$!
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT FAILPOINT ${FAILPOINT_PUBLISH} PAUSE"
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FORMAT SCHEMA CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR FORMAT SCHEMA CACHE"
 echo "staged files kept while publishing: $(count_temp)"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT_PUBLISH}"
@@ -95,9 +95,9 @@ fi
 # A schema given by a query is resolved through a code path of its own, keyed by the querying user, so
 # it is kept in use independently of a schema given as a string. The drop above leaves the arm before
 # this one published, so the cache has to be emptied before this arm counts it.
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FORMAT SCHEMA CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR FORMAT SCHEMA CACHE"
 
-MESSAGE_QUERY="M05076q_${CLICKHOUSE_DATABASE}"
+MESSAGE_QUERY="M05258q_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query "
 CREATE TABLE dest_query (s String) ENGINE = File(ProtobufSingle)
 SETTINGS format_schema_source = 'query',
@@ -113,7 +113,7 @@ query_source_pid=$!
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM WAIT FAILPOINT ${FAILPOINT} PAUSE"
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FORMAT SCHEMA CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR FORMAT SCHEMA CACHE"
 echo "query-source cached files kept while in use: $(count_cached)"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT ${FAILPOINT}"
@@ -123,5 +123,5 @@ else
     echo "query-source query succeeded: 0"
 fi
 
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP FORMAT SCHEMA CACHE"
+${CLICKHOUSE_CLIENT} --query "SYSTEM CLEAR FORMAT SCHEMA CACHE"
 echo "query-source cached files after the query: $(count_cached)"
