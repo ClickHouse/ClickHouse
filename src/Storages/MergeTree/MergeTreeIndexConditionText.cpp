@@ -2135,9 +2135,7 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
         element_node->result_name,
     };
 
-    /// `substitute` rewrites a node in place, which would leave the subcolumn spelling's element
-    /// listed as a required input, so rewire the consumers of that spelling instead and let
-    /// `removeUnusedActions` drop the input it no longer feeds.
+    /// `substitute` leaves a replaced INPUT in `inputs`, where `getRequiredColumns` still finds it.
     if (element_node->type == ActionsDAG::ActionType::INPUT)
         subdag.substituteInputForConsumersOnly(element_node->result_name, default_element);
     else
@@ -2145,8 +2143,6 @@ bool MergeTreeIndexConditionText::traverseMapElementValueNode(
 
     subdag.removeUnusedActions(/*allow_remove_inputs=*/ true);
 
-    /// The function reads something besides the map element, e.g. a non-constant argument,
-    /// so its result for the default is not determined by the substitution alone.
     if (!subdag.getRequiredColumns().empty())
         return false;
 
