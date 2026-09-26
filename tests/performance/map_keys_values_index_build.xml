@@ -1,0 +1,86 @@
+<test>
+    <!-- INSERT into tables with bloom_filter indexes over mapKeys(m) / mapValues(m) of a map with LowCardinality keys and
+         values, and into the OpenTelemetry exporter logs schema, whose six attribute indexes have that shape. Each is
+         paired with an INSERT of the same rows into a table without those indexes. -->
+
+    <settings>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>CREATE TABLE map_src (m Map(LowCardinality(String), LowCardinality(String))) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE map_none (id UInt64, m Map(LowCardinality(String), LowCardinality(String))) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE map_keys (id UInt64, m Map(LowCardinality(String), LowCardinality(String)), INDEX ik mapKeys(m) TYPE bloom_filter(0.01) GRANULARITY 1) ENGINE = MergeTree ORDER BY id</create_query>
+    <create_query>CREATE TABLE map_values (id UInt64, m Map(LowCardinality(String), LowCardinality(String)), INDEX iv mapValues(m) TYPE bloom_filter(0.01) GRANULARITY 1) ENGINE = MergeTree ORDER BY id</create_query>
+
+    <create_query>
+        CREATE TABLE otel_src
+        (
+            Timestamp DateTime64(9), TimestampTime DateTime DEFAULT toDateTime(Timestamp), TraceId String, SpanId String, TraceFlags UInt8,
+            SeverityText LowCardinality(String), SeverityNumber UInt8, ServiceName LowCardinality(String), Body String,
+            ResourceSchemaUrl LowCardinality(String), ResourceAttributes Map(LowCardinality(String), String),
+            ScopeSchemaUrl LowCardinality(String), ScopeName String, ScopeVersion LowCardinality(String),
+            ScopeAttributes Map(LowCardinality(String), String), LogAttributes Map(LowCardinality(String), String)
+        ) ENGINE = Memory
+    </create_query>
+    <create_query>CREATE TABLE otel_none AS otel_src ENGINE = MergeTree PARTITION BY toDate(TimestampTime) PRIMARY KEY (ServiceName, TimestampTime) ORDER BY (ServiceName, TimestampTime, Timestamp)</create_query>
+    <create_query>
+        CREATE TABLE otel_logs
+        (
+            Timestamp DateTime64(9) CODEC(Delta(8), ZSTD(1)), TimestampTime DateTime DEFAULT toDateTime(Timestamp),
+            TraceId String CODEC(ZSTD(1)), SpanId String CODEC(ZSTD(1)), TraceFlags UInt8,
+            SeverityText LowCardinality(String) CODEC(ZSTD(1)), SeverityNumber UInt8, ServiceName LowCardinality(String) CODEC(ZSTD(1)),
+            Body String CODEC(ZSTD(1)), ResourceSchemaUrl LowCardinality(String) CODEC(ZSTD(1)),
+            ResourceAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)), ScopeSchemaUrl LowCardinality(String) CODEC(ZSTD(1)),
+            ScopeName String CODEC(ZSTD(1)), ScopeVersion LowCardinality(String) CODEC(ZSTD(1)),
+            ScopeAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)), LogAttributes Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+            INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
+            INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+            INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+            INDEX idx_scope_attr_key mapKeys(ScopeAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+            INDEX idx_scope_attr_value mapValues(ScopeAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+            INDEX idx_log_attr_key mapKeys(LogAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+            INDEX idx_log_attr_value mapValues(LogAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+            INDEX idx_body Body TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 8
+        )
+        ENGINE = MergeTree PARTITION BY toDate(TimestampTime) PRIMARY KEY (ServiceName, TimestampTime) ORDER BY (ServiceName, TimestampTime, Timestamp)
+    </create_query>
+    <create_query>SYSTEM STOP MERGES</create_query>
+
+    <fill_query>
+        INSERT INTO map_src SELECT mapFromArrays(
+            arrayMap(i -> concat(['http', 'k8s', 'db', 'net', 'user', 'app'][1 + cityHash64(number, i) % 6], '.attr_', toString(cityHash64(number, i) % 300)), range(8 + number % 5)),
+            arrayMap(i -> toString(cityHash64(number, i, 7) % 1000), range(8 + number % 5)))
+        FROM numbers(2000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO otel_src (Timestamp, TraceId, SpanId, TraceFlags, SeverityText, SeverityNumber, ServiceName, Body, ResourceSchemaUrl,
+                              ResourceAttributes, ScopeSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, LogAttributes)
+        SELECT toDateTime64('2026-09-01 00:00:00', 9) + number / 100, hex(cityHash64(number, 1)) || hex(cityHash64(number, 2)), hex(cityHash64(number, 3)), 1,
+            ['INFO', 'INFO', 'INFO', 'WARN', 'ERROR', 'DEBUG'][1 + cityHash64(number, 4) % 6], 9, concat('service-', toString(cityHash64(number) % 50)) AS service,
+            concat('GET /api/v', toString(number % 3), '/', toString(cityHash64(number, 5) % 1250), ' status=', toString(200 + cityHash64(number, 6) % 5 * 100)),
+            'https://opentelemetry.io/schemas/1.21.0',
+            map('service.name', service, 'host.name', concat('host-', toString(cityHash64(number, 7) % 200)),
+                'k8s.pod.name', concat(service, '-', toString(cityHash64(number, 8) % 20)), 'k8s.namespace.name', concat('ns-', toString(cityHash64(number, 9) % 8)),
+                'cloud.region', ['eu-west-1', 'us-east-1', 'ap-south-1'][1 + cityHash64(number, 10) % 3], 'telemetry.sdk.language', 'go'),
+            '', 'otelcol', '0.110.0', map(),
+            mapFromArrays(
+                arrayMap(i -> concat(['http', 'k8s', 'db', 'net', 'user', 'app'][1 + cityHash64(number, i) % 6], '.attr_', toString(cityHash64(number, i) % 300)), range(8 + number % 5)),
+                arrayMap(i -> toString(cityHash64(number, i, 7) % 100000), range(8 + number % 5)))
+        FROM numbers(2000000)
+    </fill_query>
+
+    <query>INSERT INTO map_none SELECT rowNumberInAllBlocks(), m FROM map_src</query>
+    <query>INSERT INTO map_keys SELECT rowNumberInAllBlocks(), m FROM map_src</query>
+    <query>INSERT INTO map_values SELECT rowNumberInAllBlocks(), m FROM map_src</query>
+    <query>INSERT INTO otel_none SELECT * FROM otel_src</query>
+    <query>INSERT INTO otel_logs SELECT * FROM otel_src</query>
+
+    <drop_query>SYSTEM START MERGES</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_none</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_keys</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_values</drop_query>
+    <drop_query>DROP TABLE IF EXISTS otel_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS otel_none</drop_query>
+    <drop_query>DROP TABLE IF EXISTS otel_logs</drop_query>
+</test>
