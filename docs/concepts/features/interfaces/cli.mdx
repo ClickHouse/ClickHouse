@@ -448,7 +448,7 @@ clickhousectl cloud service backup-config update <service-id> \
 
 ### Postgres services {#postgres-services}
 
-`clickhousectl` can also create and manage [ClickHouse Cloud Postgres](/products/managed-postgres/overview) services, mirroring the ClickHouse service commands above.
+`clickhousectl` can also create and manage [ClickHouse Cloud Postgres](/products/managed-postgres/overview) services, mirroring the ClickHouse service commands above. GCP is in [private preview](https://clickhouse.com/cloud/postgres#gcp-waitlist); pass `--provider gcp` with a GCP region and instance size.
 
 ```bash
 # List and inspect
@@ -456,13 +456,21 @@ clickhousectl cloud postgres list
 clickhousectl cloud postgres list --filter state=running
 clickhousectl cloud postgres get <pg-id>
 
-# Create a service
+# Create a service on AWS (the default provider)
 clickhousectl cloud postgres create \
   --name my-pg \
   --region us-east-1 \
   --size m7i.2xlarge \
   --pg-version 17 \
   --ha-type sync
+
+# Create a service on GCP (private preview); region and size use GCP names
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --provider gcp \
+  --region us-central1 \
+  --size c4-standard-4 \
+  --pg-version 18
 
 # Update and delete
 clickhousectl cloud postgres update <pg-id> --size m7i.4xlarge
@@ -496,9 +504,9 @@ clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 20
 | Option | Description |
 |--------|-------------|
 | `--name` | Service name (required) |
-| `--region` | Region, e.g. `us-east-1` (required) |
-| `--size` | Instance size, e.g. `m7i.2xlarge` (required) |
-| `--provider` | Cloud provider (default: `aws`) |
+| `--region` | Region, e.g. `us-east-1` on AWS or `us-central1` on GCP (required) |
+| `--size` | Instance size, e.g. `m7i.2xlarge` on AWS or `c4-standard-4` on GCP (required) |
+| `--provider` | Cloud provider: `aws`, `gcp` (default: `aws`) |
 | `--pg-version` | Major version: `18`, `17` |
 | `--ha-type` | High availability: `none`, `async`, `sync` |
 | `--tag` | Resource tag `key` or `key=value` (repeatable) |

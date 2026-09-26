@@ -6,6 +6,8 @@
 
 #include <Core/NamesAndTypes.h>
 #include <delta_kernel_ffi.hpp>
+#include <Poco/JSON/Array.h>
+#include <exception>
 
 namespace ffi
 {
@@ -36,6 +38,24 @@ DB::NamesAndTypesList getWriteSchema(ffi::SharedWriteContext * write_context, ff
 DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot);
 
 DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine);
+
+/// Raw Delta `StructType.fields` JSON for the snapshot's logical schema, preserving the exact Delta types
+/// (`binary`, `timestamp_ntz`, `decimal(p,s)`, nested array/map/struct) that `convertToClickHouseSchema`
+/// collapses. Used for catalog registration so the registered schema matches the `_delta_log` on storage.
+Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(ffi::SharedSnapshot * snapshot);
+
+/// Validate that every column type round-trips through Delta metadata (throwing otherwise) before the create-table FFI.
+void validateSchemaForDeltaCreate(const DB::NamesAndTypesList & schema);
+
+/// Caller-owned state for the kernel create-schema visitor: the schema to visit plus any exception it raised.
+struct KernelCreateSchemaState
+{
+    const DB::NamesAndTypesList * schema_list = nullptr;
+    std::exception_ptr exception;
+};
+
+/// Build a delta-kernel `EngineSchema` over `state.schema_list`; `state` must outlive the FFI call.
+ffi::EngineSchema buildKernelEngineSchema(KernelCreateSchemaState & state);
 
 }
 
