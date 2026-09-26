@@ -200,3 +200,41 @@ TEST(ZooKeeperTest, MultiRequestRejectsCloseSubrequest)
     ReadBufferFromString in(out.str());
     EXPECT_THROW(request->readImpl(in), Coordination::Exception);
 }
+
+TEST(ZooKeeperTest, AsyncTryGetIsAwaitedOnFirstAccess)
+{
+    auto zk = makeTestKeeperClient(/*session_timeout_ms=*/ 200);
+    zk->create("/first", "1", zkutil::CreateMode::Persistent);
+    zk->create("/second", "2", zkutil::CreateMode::Persistent);
+
+    /// Both requests are sent before either response is awaited; the number of responses is known before they arrive.
+    auto first = zk->asyncTryGet(Strings{"/first", "/missing"});
+    auto second = zk->asyncTryGet(Strings{"/second"});
+    EXPECT_EQ(first.size(), 2);
+    EXPECT_EQ(second.size(), 1);
+
+    /// Awaited in any order; a missing node is a per-path result, as with `tryGet`.
+    EXPECT_EQ(second[0].data, "2");
+    EXPECT_EQ(first[0].data, "1");
+    EXPECT_EQ(first[1].error, Error::ZNONODE);
+
+    /// `waitForResponses` awaits a request that has not been accessed yet.
+    auto third = zk->asyncTryGet(Strings{"/first", "/second"});
+    EXPECT_NO_THROW(third.waitForResponses());
+    EXPECT_EQ(third[1].data, "2");
+}
+
+TEST(ZooKeeperTest, MultiReadResponsesInFlightThrowHardwareErrorOnAccess)
+{
+    /// A MultiRead request whose response is a hardware error: `tryGet` throws it in the call,
+    /// `asyncTryGet` on the first access to the result.
+    std::promise<MultiResponse> promise;
+    zkutil::ZooKeeper::MultiTryGetResponse responses(promise.get_future(), /*num_requests=*/ 1);
+    EXPECT_EQ(responses.size(), 1);
+
+    MultiResponse multi_response;
+    multi_response.error = Error::ZSESSIONEXPIRED;
+    promise.set_value(multi_response);
+
+    EXPECT_THROW(responses[0], zkutil::KeeperException);
+}
