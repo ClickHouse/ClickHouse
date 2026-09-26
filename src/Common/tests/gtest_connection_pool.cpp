@@ -1186,7 +1186,7 @@ TEST_F(ConnectionPoolTest, ResponseBodyUntilEOFIsNotPreserved)
         Poco::Net::StreamSocket socket = server_socket.acceptConnection();
         std::string request;
         char buf[1024];
-        while (request.find("\r\n\r\n") == std::string::npos)
+        while (!request.contains("\r\n\r\n"))
         {
             const int n = socket.receiveBytes(buf, sizeof(buf));
             if (n <= 0)
