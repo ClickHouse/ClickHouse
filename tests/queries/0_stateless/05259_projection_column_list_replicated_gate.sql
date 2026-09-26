@@ -10,7 +10,7 @@ DROP TABLE IF EXISTS t_projection_column_list_cluster_alter ON CLUSTER test_shar
 DROP TABLE IF EXISTS t_projection_column_list_cluster_copy ON CLUSTER test_shard_localhost FORMAT Null;
 DROP TABLE IF EXISTS t_projection_column_list_cluster_inherited ON CLUSTER test_shard_localhost FORMAT Null;
 DROP TABLE IF EXISTS t_projection_column_list_cluster_memory ON CLUSTER test_shard_localhost FORMAT Null;
-DROP TABLE IF EXISTS t_projection_column_list_cluster_source;
+DROP TABLE IF EXISTS default.t_05259_projection_column_list_source;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 
 -- A local MergeTree may use the syntax without the compatibility override.
@@ -56,7 +56,8 @@ DROP TABLE t_projection_column_list_gate;
 SET distributed_ddl_entry_format_version = 1;
 SET distributed_ddl_task_timeout = 0;
 SET allow_projection_column_list_in_replicated_metadata = 0;
-CREATE TABLE t_projection_column_list_cluster_source
+-- The old-format worker's current database is `default`. Qualify the source on both legs.
+CREATE TABLE default.t_05259_projection_column_list_source
     (x UInt64, PROJECTION p (x CODEC(ZSTD)) AS (SELECT x ORDER BY x))
     ENGINE = MergeTree ORDER BY x;
 CREATE TABLE t_projection_column_list_cluster_create ON CLUSTER test_shard_localhost
@@ -74,13 +75,13 @@ SELECT count() FROM system.projections
 
 -- The syntax can also arrive indirectly: old-format workers expand AS <source> after enqueueing.
 CREATE TABLE t_projection_column_list_cluster_copy ON CLUSTER test_shard_localhost
-    AS {CLICKHOUSE_DATABASE:Identifier}.t_projection_column_list_cluster_source
+    AS default.t_05259_projection_column_list_source
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_projection_column_list_cluster_copy', 'r1')
     ORDER BY x; -- { serverError SUPPORT_IS_DISABLED }
 SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_column_list_cluster_copy';
 CREATE TABLE t_projection_column_list_cluster_inherited ON CLUSTER test_shard_localhost
-    AS {CLICKHOUSE_DATABASE:Identifier}.t_projection_column_list_cluster_source; -- { serverError SUPPORT_IS_DISABLED }
+    AS default.t_05259_projection_column_list_source; -- { serverError SUPPORT_IS_DISABLED }
 SELECT count() FROM system.tables
     WHERE database = currentDatabase() AND name = 't_projection_column_list_cluster_inherited';
 
@@ -90,7 +91,7 @@ SET distributed_ddl_task_timeout = 180;
 SET distributed_ddl_output_mode = 'throw';
 -- A destination that cannot store projections is safe, even when the source has a column list.
 CREATE TABLE t_projection_column_list_cluster_memory ON CLUSTER test_shard_localhost
-    AS {CLICKHOUSE_DATABASE:Identifier}.t_projection_column_list_cluster_source ENGINE = Memory FORMAT Null;
+    AS default.t_05259_projection_column_list_source ENGINE = Memory FORMAT Null;
 SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_memory';
 SET allow_projection_column_list_in_replicated_metadata = 1;
@@ -105,13 +106,13 @@ SELECT count() FROM system.projections
 SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_alter';
 CREATE TABLE t_projection_column_list_cluster_copy ON CLUSTER test_shard_localhost
-    AS {CLICKHOUSE_DATABASE:Identifier}.t_projection_column_list_cluster_source
+    AS default.t_05259_projection_column_list_source
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_projection_column_list_cluster_copy', 'r1')
     ORDER BY x FORMAT Null;
 SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_copy';
 CREATE TABLE t_projection_column_list_cluster_inherited ON CLUSTER test_shard_localhost
-    AS {CLICKHOUSE_DATABASE:Identifier}.t_projection_column_list_cluster_source FORMAT Null;
+    AS default.t_05259_projection_column_list_source FORMAT Null;
 SELECT count() FROM system.projections
     WHERE database = currentDatabase() AND table = 't_projection_column_list_cluster_inherited';
 DROP TABLE t_projection_column_list_cluster_create ON CLUSTER test_shard_localhost FORMAT Null;
@@ -119,7 +120,7 @@ DROP TABLE t_projection_column_list_cluster_alter ON CLUSTER test_shard_localhos
 DROP TABLE t_projection_column_list_cluster_copy ON CLUSTER test_shard_localhost FORMAT Null;
 DROP TABLE t_projection_column_list_cluster_inherited ON CLUSTER test_shard_localhost FORMAT Null;
 DROP TABLE t_projection_column_list_cluster_memory ON CLUSTER test_shard_localhost FORMAT Null;
-DROP TABLE t_projection_column_list_cluster_source;
+DROP TABLE default.t_05259_projection_column_list_source;
 SET distributed_ddl_output_mode = 'none';
 SET distributed_ddl_entry_format_version = 5;
 SET allow_projection_column_list_in_replicated_metadata = 0;
