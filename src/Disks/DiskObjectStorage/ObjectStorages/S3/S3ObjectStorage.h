@@ -108,6 +108,10 @@ public:
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 
+    /// Removes exactly one version of the object, leaving every other one (and the key itself) in place.
+    /// Only meaningful on a bucket with versioning enabled.
+    void removeObjectVersionIfExists(const StoredObject & object, const String & version_id);
+
     /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
     void removeObjectsIfExist( /// NOLINT
@@ -123,6 +127,9 @@ public:
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
+
+    /// Like `tryGetObjectMetadata`, but for one version of the object; an empty `version_id` means the current one.
+    std::optional<ObjectMetadata> tryGetObjectVersionMetadata(const std::string & path, const String & version_id, bool with_tags) const;
 
     void copyObject( /// NOLINT
         const StoredObject & object_from,

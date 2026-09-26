@@ -35,7 +35,8 @@ public:
         bool restricted_seek_ = false,
         size_t read_until_position_ = 0,
         BlobStorageLogWriterPtr blob_storage_log_ = {},
-        String container_for_logging_ = {});
+        String container_for_logging_ = {},
+        const String & expected_etag_ = {});
 
     off_t seek(off_t off, int whence) override;
 
@@ -105,6 +106,7 @@ private:
 
     mutable BlobStorageLogWriterPtr blob_storage_log;
     String container_for_logging;
+    String expected_etag;
 };
 
 }

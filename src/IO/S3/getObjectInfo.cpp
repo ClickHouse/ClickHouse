@@ -76,10 +76,22 @@ namespace
         object_info.is_size_known = result.ContentLengthHasBeenSet();
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
+        object_info.version_id = result.GetVersionId();
+
+        object_info.headers.content_type = result.GetContentType();
+        object_info.headers.content_encoding = result.GetContentEncoding();
+        object_info.headers.content_language = result.GetContentLanguage();
+        object_info.headers.content_disposition = result.GetContentDisposition();
+        object_info.headers.cache_control = result.GetCacheControl();
+        object_info.headers.expires = result.GetExpires();
+        object_info.headers.website_redirect_location = result.GetWebsiteRedirectLocation();
 
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
 
+        /// `HeadObject` reports the tag count, so an untagged object costs no `GetObjectTagging` round
+        /// trip, and anonymous or restricted readers are never sent a request they cannot make. A caller
+        /// that must see tags a restricted `HeadObject` hides asks for them with `getObjectTags()`.
         if (with_tags && result.GetTagCount() > 0)
             object_info.tags = getObjectTags(client, bucket, key, version_id);
 

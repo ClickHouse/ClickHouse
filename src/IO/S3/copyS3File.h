@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <IO/S3Settings.h>
+#include <IO/S3/getObjectInfo.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <base/types.h>
@@ -19,6 +20,27 @@ class SeekableReadBuffer;
 class StdStreamFromReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
+
+/// What a guarded copy asks of the DESTINATION, and which generation of the SOURCE it may read.
+struct S3CopyFileSettings
+{
+    /// Refuses the write when the destination already exists, as `If-None-Match: *`.
+    String if_none_match;
+    /// Restated on the re-upload a guard forces, which `CopyObject` would have carried for free.
+    std::optional<S3::ObjectHeaders> source_headers;
+    std::optional<ObjectAttributes> source_tags;
+    /// The `ETag` of the source generation the caller decided to copy, or empty for a copy by key
+    /// alone. The native copy carries it as `x-amz-copy-source-if-match` on the `CopyObject` and on
+    /// every `UploadPartCopy`, so a source overwritten in place after the caller looked at it is not
+    /// copied as its newer generation and a multipart copy cannot stitch two generations together:
+    /// the copy throws `S3_OBJECT_CHANGED_DURING_READ` instead. The read-and-write fallback reads
+    /// through `fallback_file_reader`, which the caller has to pin to the same generation itself.
+    String source_if_match;
+    /// The version of the source to copy on a versioned bucket, or empty for the current version.
+    /// The native copy addresses the source as `bucket/key?versionId=...`; the read-and-write
+    /// fallback has to be opened at the same version by the caller.
+    String source_version_id;
+};
 
 /// Builds the S3 upload request body for the part [offset, offset + size) of the source.
 /// The part is read fully into memory up front, so the returned body has no failable inner
@@ -51,7 +73,8 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    const S3CopyFileSettings & copy_settings = {});
 
 /// Copies exactly `[src_offset, src_offset + src_size)` of a LARGER source object of size `src_object_size`.
 ///
@@ -91,8 +114,8 @@ void copyDataToS3File(
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
-
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    const S3CopyFileSettings & copy_settings = {});
 }
 
 #endif
