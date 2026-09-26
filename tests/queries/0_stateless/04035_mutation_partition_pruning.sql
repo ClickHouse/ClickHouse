@@ -224,3 +224,95 @@ SELECT 'test 10: multi-partition ID delete';
 SELECT * FROM t_mut_multi_3 ORDER BY key;
 
 DROP TABLE t_mut_multi_3 SYNC;
+
+-- ============================================================
+-- Phase 3: Pruning of DateTime predicates rewritten for the session timezone
+-- ============================================================
+-- Each table holds two rows per partition at the two instants the same literal denotes:
+-- key 1 in the session timezone and key 9 in UTC. The assertions therefore hold whatever
+-- timezone the server runs in. Midday mid-month keeps every row in its own month.
+
+-- Test 11: a literal list rewritten with the session timezone still prunes to 1 partition
+DROP TABLE IF EXISTS t_mut_prune_11;
+CREATE TABLE t_mut_prune_11 (key UInt64, time DateTime)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mut_prune_11', '1')
+PARTITION BY toYYYYMM(time) ORDER BY key;
+
+SET session_timezone = 'America/Denver';
+
+INSERT INTO t_mut_prune_11 SELECT number * 10 + 1, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00')) FROM numbers(3);
+INSERT INTO t_mut_prune_11 SELECT number * 10 + 9, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00'), 'UTC') FROM numbers(3);
+
+SELECT 'test 11: rows the identical SELECT matches';
+SELECT key FROM t_mut_prune_11 WHERE time IN ('2024-06-15 12:00:00') ORDER BY key;
+
+ALTER TABLE t_mut_prune_11 DELETE WHERE time IN ('2024-06-15 12:00:00');
+
+SELECT 'test 11: survivors';
+SELECT key FROM t_mut_prune_11 ORDER BY key;
+
+SELECT 'test 11: affected partitions';
+SELECT arraySort(block_numbers.partition_id) as partitions
+FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_mut_prune_11' AND NOT is_killed
+ORDER BY mutation_id;
+
+DROP TABLE t_mut_prune_11 SYNC;
+
+-- Test 12: a subquery right-hand side is a prepared set, so it must still not prune
+DROP TABLE IF EXISTS t_mut_prune_12;
+CREATE TABLE t_mut_prune_12 (key UInt64, time DateTime)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mut_prune_12', '1')
+PARTITION BY toYYYYMM(time) ORDER BY key;
+
+INSERT INTO t_mut_prune_12 SELECT number * 10 + 1, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00')) FROM numbers(3);
+INSERT INTO t_mut_prune_12 SELECT number * 10 + 9, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00'), 'UTC') FROM numbers(3);
+
+ALTER TABLE t_mut_prune_12 DELETE WHERE time IN (SELECT toDateTime('2024-06-15 12:00:00')) SETTINGS allow_nondeterministic_mutations = 1;
+
+SELECT 'test 12: affected partitions (should be all)';
+SELECT arraySort(block_numbers.partition_id) as partitions
+FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_mut_prune_12' AND NOT is_killed
+ORDER BY mutation_id;
+
+DROP TABLE t_mut_prune_12 SYNC;
+
+-- Test 13: a cast to a DateTime array that pins no timezone denotes different instants on
+-- servers in different timezones, so it must still not prune
+DROP TABLE IF EXISTS t_mut_prune_13;
+CREATE TABLE t_mut_prune_13 (key UInt64, time DateTime)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mut_prune_13', '1')
+PARTITION BY toYYYYMM(time) ORDER BY key;
+
+INSERT INTO t_mut_prune_13 SELECT number * 10 + 1, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00')) FROM numbers(3);
+INSERT INTO t_mut_prune_13 SELECT number * 10 + 9, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00'), 'UTC') FROM numbers(3);
+
+ALTER TABLE t_mut_prune_13 DELETE WHERE time IN CAST(['2024-06-15 12:00:00'], 'Array(DateTime)');
+
+SELECT 'test 13: affected partitions (should be all)';
+SELECT arraySort(block_numbers.partition_id) as partitions
+FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_mut_prune_13' AND NOT is_killed
+ORDER BY mutation_id;
+
+-- The same cast with the timezone pinned in the target type prunes, which shows test 13
+-- turns on the missing timezone and not on the cast
+DROP TABLE IF EXISTS t_mut_prune_13b;
+CREATE TABLE t_mut_prune_13b (key UInt64, time DateTime)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_mut_prune_13b', '1')
+PARTITION BY toYYYYMM(time) ORDER BY key;
+
+INSERT INTO t_mut_prune_13b SELECT number * 10 + 1, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00')) FROM numbers(3);
+INSERT INTO t_mut_prune_13b SELECT number * 10 + 9, toDateTime(concat('2024-', lpad(toString(number * 5 + 1), 2, '0'), '-15 12:00:00'), 'UTC') FROM numbers(3);
+
+ALTER TABLE t_mut_prune_13b DELETE WHERE time IN CAST(['2024-06-15 12:00:00'], 'Array(DateTime(\'UTC\'))');
+
+SELECT 'test 13b: affected partitions';
+SELECT arraySort(block_numbers.partition_id) as partitions
+FROM system.mutations
+WHERE database = currentDatabase() AND table = 't_mut_prune_13b' AND NOT is_killed
+ORDER BY mutation_id;
+
+DROP TABLE t_mut_prune_13 SYNC;
+DROP TABLE t_mut_prune_13b SYNC;
