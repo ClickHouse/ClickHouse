@@ -61,6 +61,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_mutation_query", true, true, "Obsolete setting: mutation queries are always validated before being accepted. The recorded value does not change, because validation was already enabled by default and `compatibility` must not turn it back off."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
             {"parallel_replicas_for_queries_with_multiple_tables", true, true, "New setting to control whether parallel replicas are used for queries joining multiple tables (queries with JOIN). It does not affect a UNION query without a JOIN, nor ARRAY JOIN."},
+            {"reattach_tables_before_query_execution", false, false, "New setting for testing table reattachment before query execution."},
+            {"reattach_tables_before_query_execution_probability", 0., 0., "New setting for testing table reattachment before query execution."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
