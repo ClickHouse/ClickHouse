@@ -423,8 +423,25 @@ void EnabledQuota::usedForQuery(UInt64 normalized_query_hash, std::initializer_l
         auto target = resolveTargetIntervals(*quota, normalized_query_hash);
         if (!target)
             continue;
+
+        /// Start a new interval (resetting its counters) before accounting anything, if the previous one
+        /// has ended. Otherwise a later counter of this call could overflow the stale value of the ended
+        /// interval, reset all the counters in `Impl::used` and wipe the earlier counters of the same chunk.
+        for (const auto & interval : target->intervals)
+            interval.getEndOfInterval(current_time);
+
+        /// Account every counter first and check for overflow only afterwards: the usages of one call
+        /// describe the same chunk of work (e.g. `WRITTEN_ROWS` and `WRITTEN_BYTES` of one inserted
+        /// block), so if the first counter throws before the rest are added, the other counters
+        /// underreport the attempted usage and stop being independent of each other.
         for (const auto & usage : usages)
-            Impl::used(getUserName(), *target, usage.first, usage.second, current_time, check_exceeded);
+            Impl::used(getUserName(), *target, usage.first, usage.second, current_time, /* check_exceeded = */ false);
+
+        if (check_exceeded)
+        {
+            for (const auto & usage : usages)
+                Impl::checkExceeded(getUserName(), *target, usage.first, current_time);
+        }
     }
 }
 
