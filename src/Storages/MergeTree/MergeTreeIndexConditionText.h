@@ -169,11 +169,14 @@ private:
     bool tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const;
 
     bool traverseFunctionNode(
-        const RPNBuilderFunctionTreeNode & function_node,
+        const String & function_name,
         const RPNBuilderTreeNode & index_column_node,
         DataTypePtr value_type,
         Field value_field,
         RPNElement & out) const;
+
+    /// `position(s, 'x') > 0` and similar checks, handled as `s LIKE '%x%'`.
+    bool traverseSubstringOccurrenceNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     TextIndexDirectReadMode getHintOrNoneMode() const;
 
