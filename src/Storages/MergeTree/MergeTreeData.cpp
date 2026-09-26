@@ -49,6 +49,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
@@ -146,6 +147,8 @@
 #include <base/sleep.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
+#include <Common/LocalDate.h>
+#include <Common/LocalDateTime.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/StackTrace.h>
@@ -10038,6 +10041,71 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
     UNREACHABLE();
 }
 
+/// Converts one field of a partition value to the type of the partition key column.
+///
+/// Text parsing of the date and time types is lenient: a day or a time of day that does not exist rolls over
+/// (`'2024-02-30'` is read as `2024-03-01`, `'2024-02-29 25:00:00'` as `2024-03-01 01:00:00`), and a value outside
+/// the range of the type is clamped to its boundary or replaced with the zero date. Such a string would name another
+/// partition, which a statement like `DROP PARTITION` would then remove. So it is parsed with the range checks of
+/// `date_time_overflow_behavior = 'throw'`, and the date and time it spells must be the ones of the parsed value.
+static Field convertPartitionFieldToType(const Field & value, const DataTypePtr & type)
+{
+    const DataTypePtr nested_type = removeLowCardinalityAndNullable(type);
+    const WhichDataType which(nested_type);
+    if (value.getType() != Field::Types::String || !which.isDateOrDate32OrDateTimeOrDateTime64())
+        return convertFieldToTypeOrThrow(value, *type);
+
+    FormatSettings format_settings;
+    format_settings.date_time_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
+    Field converted = convertFieldToTypeOrThrow(value, *type, nullptr, format_settings);
+
+    const String & literal = value.safeGet<String>();
+    auto column = nested_type->createColumn();
+    column->insert(converted);
+    WriteBufferFromOwnString parsed_text;
+    nested_type->getDefaultSerialization()->serializeText(*column, 0, parsed_text, {});
+
+    bool spells_parsed_value = true;
+    if (which.isDateOrDate32())
+    {
+        /// The same reader as in the text parsing of `Date`, so it accepts every form the conversion accepted.
+        LocalDate spelled;
+        LocalDate parsed;
+        ReadBufferFromString spelled_in(literal);
+        ReadBufferFromString parsed_in(parsed_text.str());
+        readDateText(spelled, spelled_in);
+        readDateText(parsed, parsed_in);
+        spells_parsed_value = spelled == parsed;
+    }
+    else
+    {
+        /// `DateTime` text parsing reads a broken-down `YYYY-MM-DD[ hh:mm:ss]` if the fifth character is not a digit,
+        /// and a Unix timestamp otherwise, which is read as an integer and cannot roll over.
+        const bool is_broken_down = literal.size() >= 10
+            && isNumericASCII(literal[0]) && isNumericASCII(literal[1]) && isNumericASCII(literal[2]) && isNumericASCII(literal[3])
+            && !isNumericASCII(literal[4]) && isNumericASCII(literal[5]) && isNumericASCII(literal[6])
+            && !isNumericASCII(literal[7]) && isNumericASCII(literal[8]) && isNumericASCII(literal[9]);
+        if (is_broken_down)
+        {
+            /// Reads the date and the optional time of day; the fractional part of `DateTime64` is not compared.
+            LocalDateTime spelled;
+            LocalDateTime parsed;
+            ReadBufferFromString spelled_in(literal);
+            ReadBufferFromString parsed_in(parsed_text.str());
+            readDateTimeText(spelled, spelled_in);
+            readDateTimeText(parsed, parsed_in);
+            spells_parsed_value = spelled == parsed;
+        }
+    }
+
+    if (!spells_parsed_value)
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                        "Partition value '{}' is not a valid value of type {}: it is read as {}",
+                        literal, type->getName(), parsed_text.str());
+
+    return converted;
+}
+
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, const DataPartsLock * acquired_lock) const
 {
     const auto & partition_ast = ast->as<ASTPartition &>();
@@ -10195,7 +10263,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
             partition_key_value = std::move(tuple_value[0]);
         }
 
-        partition_row[0] = convertFieldToTypeOrThrow(partition_key_value, *key_sample_block.getByPosition(0).type);
+        partition_row[0] = convertPartitionFieldToType(partition_key_value, key_sample_block.getByPosition(0).type);
     }
     else
     {
@@ -10211,7 +10279,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
                             "Wrong number of fields in the partition expression: {}, must be: {}", tuple.size(), fields_count);
 
         for (size_t i = 0; i < fields_count; ++i)
-            partition_row[i] = convertFieldToTypeOrThrow(tuple[i], *key_sample_block.getByPosition(i).type);
+            partition_row[i] = convertPartitionFieldToType(tuple[i], key_sample_block.getByPosition(i).type);
     }
 
     MergeTreePartition partition(std::move(partition_row));
