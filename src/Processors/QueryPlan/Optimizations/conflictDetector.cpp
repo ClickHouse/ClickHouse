@@ -256,6 +256,15 @@ computeConflictOperators(const std::vector<ConflictOpMask> & ops, ConflictDetect
         desc.freely_reorderable = isFreelyReorderable(b.category);
         desc.rules = std::move(rules);
 
+        /// An inner join's ON clause is split into parts placed independently, so demanding all of
+        /// it here would only lock the join where it sat in the original query. CD-A keeps the
+        /// demand (its conflicts live here), as do outer and semi/anti joins (they need the sides).
+        if (cdc && desc.freely_reorderable && !desc.degenerate)
+        {
+            desc.required_left = 0;
+            desc.required_right = 0;
+        }
+
         LOG_TEST(log, "{} op: relations {} nel {} nrRels {} reqL {} reqR {} rules {} kind {} strictness {} free {}",
                  cdc ? "CD-C" : "CD-A", b_rel, nel, b.nr_rels, desc.required_left, desc.required_right,
                  desc.rules.size(), static_cast<int>(desc.kind), static_cast<int>(desc.strictness),

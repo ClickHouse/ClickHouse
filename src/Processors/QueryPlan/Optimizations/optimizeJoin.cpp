@@ -26,6 +26,7 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -309,6 +310,10 @@ struct QueryGraphBuilder
         SortingStep::Settings sorting_settings;
         String stats_hint;
         UInt64 effective_randomize_seed = 0;
+        /// Whether semi/anti joins join the group of tables we reorder. Decided once per query in
+        /// `optimizeJoinLogicalImpl`, which also counts the tables: only DPsub can plan such a group,
+        /// and it turns down more tables than `DPSUB_MAX_RELATIONS`.
+        bool allow_semi_anti_flattening = false;
 
         BuilderContext(
             const QueryPlanOptimizationSettings & optimization_settings_,
@@ -404,16 +409,23 @@ constexpr bool isInnerOrCross(JoinKind kind)
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
 
-/// Semi/anti joins may be fully reordered (not just swapped) only when a conflict detector (CD-A or
-/// CD-C) is on AND DPsub is the sole join-order algorithm. A conflict detector is the only validity
-/// model that can express their non-commutativity, and only the DPsub solver consumes it, so
-/// exposing semi/anti to any other solver (greedy/dpsize/dphyp) would let it build an invalid order.
-static bool conflictDetectorReordersSemiAnti(const QueryPlanOptimizationSettings & optimization_settings)
+/// Whether DPsub is the algorithm that will plan this query. Algorithms are tried in order, so when
+/// DPsub comes first it plans everything it accepts and the rest only see what it turns down.
+static bool dpsubLeadsJoinOrderChain(const QueryPlanOptimizationSettings & optimization_settings)
 {
     const auto & algorithms = optimization_settings.query_plan_optimize_join_order_algorithm;
+    return !algorithms.empty() && algorithms.front() == JoinOrderAlgorithm::DPSUB;
+}
+
+/// Semi/anti joins can be moved around freely, rather than just swapped, only with a conflict
+/// detector on and DPsub planning. Those joins do not commute, and DPsub with a detector is the
+/// only combination that knows it -- any other algorithm would reorder them into a wrong plan.
+/// A later algorithm in the chain is allowed: a graph that flattened them is marked and only
+/// DPsub will solve it, and the relation count is checked before flattening so DPsub accepts it.
+static bool conflictDetectorReordersSemiAnti(const QueryPlanOptimizationSettings & optimization_settings)
+{
     return optimization_settings.query_plan_optimize_join_order_conflict_detector != JoinOrderConflictDetector::NONE
-        && algorithms.size() == 1
-        && algorithms.front() == JoinOrderAlgorithm::DPSUB;
+        && dpsubLeadsJoinOrderChain(optimization_settings);
 }
 
 /// `mergeInplace` binds a merged expression's inputs to the graph's outputs by `result_name`, and it
@@ -501,11 +513,10 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
             auto child_join_kind = child_join_step->getJoinOperator().kind;
             bool allow_child_join_kind = isInnerOrCross(child_join_kind) || isLeft(child_join_kind) || isRight(child_join_kind);
             const auto child_strictness = child_join_step->getJoinOperator().strictness;
-            /// Normally only plain (All) joins are flattened into the reorderable graph. With CD-A
-            /// semi/anti reordering enabled, Semi/Anti children are flattened too so DPsub can
-            /// reorder them under the CD-A conflict detector.
+            /// Normally only plain joins enter the group of tables we reorder. Once semi/anti
+            /// reordering is ON they come along too, so DPsub can re-order them as well.
             const bool allow_child_strictness = child_strictness == JoinStrictness::All
-                || (conflictDetectorReordersSemiAnti(graph.context->optimization_settings)
+                || (graph.context->allow_semi_anti_flattening
                     && (child_strictness == JoinStrictness::Semi || child_strictness == JoinStrictness::Anti));
             allow_child_join_kind = allow_child_join_kind && allow_child_strictness;
             /// Do not flatten joins that have type-changing sides (e.g., LEFT JOIN
@@ -945,6 +956,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
+    query_graph.semi_anti_flattened = query_graph_builder.context->allow_semi_anti_flattening;
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
 
@@ -960,7 +972,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
             .estimated_rows = rel.estimated_rows,
             .source = rel.source,
-            .imprecise_estimate = rel.imprecise_estimate};
+            .imprecise_estimate = rel.imprecise_estimate,
+            .composite = rel.composite};
 
         if (isMissingStatisticsSource(rel.source))
             relations_without_statistics.push_back(rel.table_name.empty() ? fmt::format("table{}", i) : rel.table_name);
@@ -1494,16 +1507,30 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         return;
     }
 
-    /// When CD-A semi/anti reordering is enabled, Semi/Anti joins are fully reorderable rather than
-    /// swap-only, so we keep the full graph size limit for them. Full joins (swap-only *kind*) and
-    /// the Any strictness stay capped -- CD-A does not model those for reordering.
-    const bool cda_reorder_semi_anti = conflictDetectorReordersSemiAnti(optimization_settings)
+    /// With conflict detector (CD), semi/anti reordering is enabled, Semi/Anti joins are fully reorderable
+    /// rather than swap-only, so we keep the full graph size limit for them. Full joins (swap-only *kind*) and
+    /// the Any strictness stay capped, as CD does not model those for reordering.
+    bool reorder_semi_anti = conflictDetectorReordersSemiAnti(optimization_settings);
+    const bool cd_reorder_semi_anti = reorder_semi_anti
         && (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti);
 
     int query_graph_size_limit = safe_cast<int>(optimization_settings.query_plan_optimize_join_order_limit);
-    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2 && !cda_reorder_semi_anti)
+    if ((isSwapOnlyJoinStrictness(strictness) || isSwapOnlyJoinKind(kind)) && query_graph_size_limit > 2 && !cd_reorder_semi_anti)
         /// Do not reorder joins, only allow swap
         query_graph_size_limit = 2;
+
+    /// Only DPsub can plan a group of tables that holds a semi/anti join, and it turns down more
+    /// tables than `DPSUB_MAX_RELATIONS`. So count the tables the group would end up with, and leave
+    /// the semi/anti joins out of it when there are too many: the group is then an ordinary one that
+    /// greedy can take over, whole, instead of being cut down to a size DPsub accepts.
+    if (reorder_semi_anti)
+    {
+        std::vector<SharedHeader> flattened_relations;
+        collectJoinGraphRelationHeadersForJoin(
+            node, query_graph_size_limit, join_step->getJoinSettings(),
+            optimization_settings.merge_expression_into_join, flattened_relations, /*allow_semi_anti_children=*/ true);
+        reorder_semi_anti = flattened_relations.size() <= DPSUB_MAX_RELATIONS;
+    }
 
     /// Skip join order optimization when the join graph contains relations with overlapping column
     /// names, which the `JoinExpressionActions`-based reconstruction does not support. See the comment
@@ -1511,7 +1538,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     /// the whole flattened relation set, so it also covers overlaps that only appear after flattening.
     if (joinGraphHasOverlappingColumnNames(
             node, query_graph_size_limit, join_step->getJoinSettings(),
-            optimization_settings.merge_expression_into_join, conflictDetectorReordersSemiAnti(optimization_settings)))
+            optimization_settings.merge_expression_into_join, reorder_semi_anti))
     {
         join_step->setOptimized();
         return;
@@ -1519,6 +1546,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
+    query_graph_builder.context->allow_semi_anti_flattening = reorder_semi_anti;
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);

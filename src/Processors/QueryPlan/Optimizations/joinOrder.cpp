@@ -322,8 +322,21 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 
     std::shared_ptr<DPJoinEntry> best_plan;
 
+    /// Only DPsub may plan a set of tables holding a semi or anti join; another algorithm would
+    /// turn the inner joins around it into semi/anti joins and quietly change the answer. It should
+    /// never come to that, but the damage would be wrong rows, so fail loudly rather than silently.
+    const bool semi_anti_in_graph
+        = query_graph.semi_anti_flattened
+        && std::ranges::any_of(
+               query_graph.conflict_ops, [](const auto & op) { return op.strictness != JoinStrictness::All; });
+
     for (const auto & algorithm : enabled_algorithms)
     {
+        if (semi_anti_in_graph && algorithm != JoinOrderAlgorithm::DPSUB)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Join order algorithm {} cannot plan a join graph containing a semi/anti join operator, "
+                "only DPsub can. This graph should not have reached it.", toString(algorithm));
+
         LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
         switch (algorithm)
         {
@@ -372,6 +385,7 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     /// Carry the conflict-detector setting on the graph so DPsub (which only receives the
     /// `QueryGraph`) can decide whether to build its reordering constraints from CD-A/CD-C.
     query_graph.conflict_detector = optimization_settings.query_plan_optimize_join_order_conflict_detector;
+    query_graph.join_swap_table = optimization_settings.join_swap_table;
 
     JoinOrderOptimizer reorderer(
         std::move(query_graph),
