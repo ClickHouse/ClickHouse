@@ -353,7 +353,7 @@ static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.reloadDictionary({query.getDatabase(), query.getTable()});
+        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
         return;
     }
 
@@ -364,7 +364,7 @@ static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader,
 {
     if (query.database)
     {
-        loader.unloadDictionary({query.getDatabase(), query.getTable()});
+        loader.unloadDictionary({query.getDatabase(), query.getTable()}, context);
         return;
     }
 
@@ -1259,6 +1259,10 @@ BlockIO InterpreterSystemQuery::execute()
             LOG_INFO(getLogger("InterpreterSystemQuery"),
                 "SYSTEM SET COVERAGE TEST '{}' received", query.coverage_test_name);
 #if WITH_COVERAGE_DEPTH
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+            /// The process writes its coverage to files, see `initCoverageFromEnvironment`.
+            if (!isCoverageFileSinkEnabled())
+#endif
             {
                 /// Register (or re-register) the flush callback so coverage data is
                 /// resolved and inserted into system.coverage_log when the previous
