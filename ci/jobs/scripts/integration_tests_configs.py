@@ -36,6 +36,14 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     "test_distributed_respect_user_timeouts/",
 ]
 
+# Additionally skipped on the per-test coverage build (`WITH_COVERAGE_DEPTH`).
+PER_TEST_COVERAGE_SKIP_PREFIXES = [
+    # Keeper of this build uses 295-343 MiB right after start, above the 286 MiB
+    # `max_memory_usage_soft_limit` of the test, so it refuses every write and the
+    # test times out.
+    "test_keeper_memory_soft_limit/",
+]
+
 TEST_CONFIGS = [
     TC(
         "test_dns_cache/",

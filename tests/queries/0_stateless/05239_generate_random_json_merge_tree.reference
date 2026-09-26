@@ -1,0 +1,14 @@
+-- the same seed gives the same values twice
+1
+-- inserting the generated documents into a table, with the structure taken from it
+10	10
+5000
+1
+-- arrays of objects under the tightest `max_dynamic_types` and `max_dynamic_paths`
+1000	1000
+1	1
+1	1
+-- an engine table with the settings in its `SETTINGS` clause, and `JSON` inside `Nested`
+1000	1
+2
+1
