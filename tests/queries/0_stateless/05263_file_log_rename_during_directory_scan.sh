@@ -3,8 +3,9 @@
 # Tag no-parallel: the test pauses a server-wide fail point that every FileLog directory watcher on macOS
 # passes, and waits for it.
 
-# A file renamed while a FileLog table rescans its directory keeps its read offset, so its rows are not
-# read twice, and a file moved out of the directory does not stop later changes from being picked up.
+# A file renamed while a FileLog table rescans its directory keeps its read offset, also when its old
+# name is recreated at once as log rotation does, so its rows are not read twice, and a file moved out
+# of the directory does not stop later changes from being picked up.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -32,16 +33,38 @@ function select_all()
     ${CLICKHOUSE_CLIENT} -q "SELECT k FROM file_log ORDER BY k SETTINGS stream_like_engine_allow_direct_select = 1"
 }
 
-# Prints the first non-empty result of `select_all` within 10 seconds.
+# Prints, sorted, the rows that successive `select_all` calls return, once at least $1 of them (1 if
+# omitted) arrived or after 5 seconds.
 function wait_rows()
 {
+    local want=${1:-1}
+    local rows=""
     local out=""
-    local deadline=$((SECONDS + 10))
-    while [ -z "${out}" ] && [ "${SECONDS}" -lt "${deadline}" ]; do
+    local deadline=$((SECONDS + 5))
+    while [ "$(printf '%s' "${rows}" | grep -c .)" -lt "${want}" ] && [ "${SECONDS}" -lt "${deadline}" ]; do
         out=$(select_all)
-        [ -n "${out}" ] || sleep 0.1
+        if [ -n "${out}" ]; then
+            rows=$(printf '%s\n%s' "${rows}" "${out}")
+        else
+            sleep 0.1
+        fi
     done
-    echo "${out}"
+    printf '%s\n' "${rows}" | grep . | sort -n
+}
+
+# Pauses the watcher's next directory scan right after it listed the directory.
+function pause_next_scan()
+{
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT file_log_directory_watcher_pause_after_listing"
+    if ! timeout 10 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT file_log_directory_watcher_pause_after_listing PAUSE"; then
+        echo "the watcher did not reach the fail point"
+        exit 1
+    fi
+}
+
+function resume_scan()
+{
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT file_log_directory_watcher_pause_after_listing"
 }
 
 echo '-- initial'
@@ -49,24 +72,29 @@ select_all
 
 echo 4 >> "${logs_dir}/a.txt"
 echo '-- append'
-wait_rows
+wait_rows 1
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT file_log_directory_watcher_pause_after_listing"
-if ! timeout 10 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT file_log_directory_watcher_pause_after_listing PAUSE"; then
-    echo "the watcher did not reach the fail point"
-    exit 1
-fi
+pause_next_scan
 # The paused scan has listed a.txt and not looked at it yet.
 mv "${logs_dir}/a.txt" "${logs_dir}/b.txt"
-${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT file_log_directory_watcher_pause_after_listing"
+resume_scan
 echo 5 >> "${logs_dir}/b.txt"
 echo '-- renamed during a scan, then appended'
-wait_rows
+wait_rows 1
+
+pause_next_scan
+# Log rotation inside the paused scan: the listed name b.txt still exists, as a new file.
+mv "${logs_dir}/b.txt" "${logs_dir}/b.txt.1"
+printf '100\n' > "${logs_dir}/b.txt"
+resume_scan
+echo 6 >> "${logs_dir}/b.txt.1"
+echo '-- rotated during a scan, then appended'
+wait_rows 2
 
 mv "${logs_dir}/b.txt" "${moved_dir}/b.txt"
 printf '10\n20\n' > "${logs_dir}/c.txt"
 echo '-- moved out, new file'
-wait_rows
+wait_rows 2
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 rm -rf "${logs_dir}" "${moved_dir}"
