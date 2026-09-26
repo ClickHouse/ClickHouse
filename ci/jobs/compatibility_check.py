@@ -104,18 +104,26 @@ def main():
         "aarch64" not in check_name.lower() and "arm" not in check_name.lower()
     )
 
-    for package in temp_path.iterdir():
-        if package.suffix == ".deb":
+    debs = [p for p in temp_path.iterdir() if p.suffix == ".deb"]
+    if debs:
+        for package in debs:
             Shell.check(
                 f"dpkg -x {package} {temp_path} && rm {package}",
                 verbose=True,
                 strict=True,
             )
-    Shell.check(
-        f"mv {temp_path}/usr/bin/clickhouse {temp_path}/clickhouse",
-        verbose=True,
-        strict=True,
-    )
+        Shell.check(
+            f"mv {temp_path}/usr/bin/clickhouse {temp_path}/clickhouse",
+            verbose=True,
+            strict=True,
+        )
+    else:
+        # The compat builds are not packaged: their self-extracting binary replaces itself with the executable on the first run.
+        Shell.check(
+            f"chmod +x {temp_path}/clickhouse && {temp_path}/clickhouse --version",
+            verbose=True,
+            strict=True,
+        )
     # Shell.check(f"chmod +x {temp_path}/clickhouse", verbose=True, strict=True)
 
     test_results = []

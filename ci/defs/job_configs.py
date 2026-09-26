@@ -1461,6 +1461,16 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_TINY,
             requires=[ArtifactNames.DEB_ARM_RELEASE],
         ),
+        Job.ParamSet(
+            parameter="amd_compat",
+            runs_on=RunnerLabels.AMD_TINY,
+            requires=[ArtifactNames.CH_AMD_COMPAT],
+        ),
+        Job.ParamSet(
+            parameter="arm_v80compat",
+            runs_on=RunnerLabels.ARM_TINY,
+            requires=[ArtifactNames.CH_ARM_V80COMPAT],
+        ),
     )
     ast_fuzzer_jobs = Job.Config(
         name=JobNames.ASTFUZZER,
