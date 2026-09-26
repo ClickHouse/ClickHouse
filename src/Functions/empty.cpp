@@ -210,8 +210,10 @@ An array is considered empty if it does not contain any elements.
 <Note>
 Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 
-For String columns, the same setting can rewrite `empty(s)` as `s.size = 0`, including in `WHERE` and `PREWHERE` when the query also needs the full `s`.
-On MergeTree parts written with `string_serialization_version = 'with_size_stream'`, PREWHERE can filter on sizes before reading String data for surviving rows.
+For String columns, the same setting can rewrite `empty(s)` as `s.size = 0`.
+When the query also needs the full `s`, rewrites in `WHERE` and `PREWHERE` additionally require [`optimize_string_size_subcolumn_with_full_read = 1`](/reference/settings/session-settings/optimize#optimize_string_size_subcolumn_with_full_read).
+This extra optimization is disabled by default because it may add overhead when the filter does not reject whole granules.
+On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, `PREWHERE` can filter on sizes before reading String data for surviving granules.
 On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. When both `s` and `s.size` are needed, they are read together to avoid scanning that stream twice.
 </Note>
 
@@ -225,8 +227,10 @@ An array is considered non-empty if it contains at least one element.
 <Note>
 Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
 
-For String columns, the same setting can rewrite `notEmpty(s)` as `s.size != 0`, including in `WHERE` and `PREWHERE` when the query also needs the full `s`.
-On MergeTree parts written with `string_serialization_version = 'with_size_stream'`, PREWHERE can filter on sizes before reading String data for surviving rows.
+For String columns, the same setting can rewrite `notEmpty(s)` as `s.size != 0`.
+When the query also needs the full `s`, rewrites in `WHERE` and `PREWHERE` additionally require [`optimize_string_size_subcolumn_with_full_read = 1`](/reference/settings/session-settings/optimize#optimize_string_size_subcolumn_with_full_read).
+This extra optimization is disabled by default because it may add overhead when the filter does not reject whole granules.
+On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, `PREWHERE` can filter on sizes before reading String data for surviving granules.
 On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. When both `s` and `s.size` are needed, they are read together to avoid scanning that stream twice.
 </Note>
 
@@ -250,8 +254,10 @@ A string is considered non-empty if it contains at least one byte, even if this 
 The function is also available for [arrays](/reference/functions/regular-functions/array-functions#empty) and [UUIDs](/reference/data-types/uuid).
 
 <Note>
-For String columns, [`optimize_functions_to_subcolumns = 1`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) can rewrite `empty(s)` as `s.size = 0`, including in `WHERE` and `PREWHERE` when the query also needs the full `s`.
-On MergeTree parts written with `string_serialization_version = 'with_size_stream'`, PREWHERE can filter on sizes before reading String data for surviving rows.
+For String columns, [`optimize_functions_to_subcolumns = 1`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) can rewrite `empty(s)` as `s.size = 0`.
+When the query also needs the full `s`, rewrites in `WHERE` and `PREWHERE` additionally require [`optimize_string_size_subcolumn_with_full_read = 1`](/reference/settings/session-settings/optimize#optimize_string_size_subcolumn_with_full_read).
+This extra optimization is disabled by default because it may add overhead when the filter does not reject whole granules.
+On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, `PREWHERE` can filter on sizes before reading String data for surviving granules.
 On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. When both `s` and `s.size` are needed, they are read together to avoid scanning that stream twice.
 </Note>
 )";
@@ -261,8 +267,10 @@ A string is considered non-empty if it contains at least one byte, even if this 
 The function is also available for [arrays](/reference/functions/regular-functions/array-functions#empty) and [UUIDs](/reference/data-types/uuid).
 
 <Note>
-For String columns, [`optimize_functions_to_subcolumns = 1`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) can rewrite `notEmpty(s)` as `s.size != 0`, including in `WHERE` and `PREWHERE` when the query also needs the full `s`.
-On MergeTree parts written with `string_serialization_version = 'with_size_stream'`, PREWHERE can filter on sizes before reading String data for surviving rows.
+For String columns, [`optimize_functions_to_subcolumns = 1`](/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) can rewrite `notEmpty(s)` as `s.size != 0`.
+When the query also needs the full `s`, rewrites in `WHERE` and `PREWHERE` additionally require [`optimize_string_size_subcolumn_with_full_read = 1`](/reference/settings/session-settings/optimize#optimize_string_size_subcolumn_with_full_read).
+This extra optimization is disabled by default because it may add overhead when the filter does not reject whole granules.
+On `MergeTree` parts written with `string_serialization_version = 'with_size_stream'`, `PREWHERE` can filter on sizes before reading String data for surviving granules.
 On legacy `single_stream` parts, `s.size` is virtual and still requires the regular String stream. When both `s` and `s.size` are needed, they are read together to avoid scanning that stream twice.
 </Note>
 )";

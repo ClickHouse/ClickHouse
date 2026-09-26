@@ -61,6 +61,7 @@ namespace Setting
     extern const SettingsBool json_type_escape_dots_in_keys;
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool optimize_functions_to_subcolumns;
+    extern const SettingsBool optimize_string_size_subcolumn_with_full_read;
 }
 
 namespace
@@ -920,7 +921,9 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// transformation is beneficial when the occurrence is in WHERE/PREWHERE: only
 /// the relevant subcolumn is read for the filter (letting a
 /// skip index on that subcolumn prune granules), while the full column is still
-/// read for matching rows in SELECT. For legacy String parts where .size is virtual,
+/// read for matching rows in SELECT. String rewrites additionally require
+/// `optimize_string_size_subcolumn_with_full_read` because splitting reads may add work
+/// when the size filter does not reject whole granules. For legacy String parts where .size is virtual,
 /// the MergeTree read planner co-reads the parent String in PREWHERE to avoid
 /// scanning the regular String stream again after filtering.
 /// The second pass applies this permission at identifier granularity, so another
@@ -1584,7 +1587,9 @@ private:
             if (transformers_safe_with_indexes.contains(transformer_key))
                 ++optimized_identifiers_index_safe_count[qualified_name];
             if (transformers_optimize_in_filter_with_full_column.contains(transformer_key)
-                && !in_where_prewhere_stack.empty() && in_where_prewhere_stack.back())
+                && !in_where_prewhere_stack.empty() && in_where_prewhere_stack.back()
+                && (transformer_key.first != TypeIndex::String
+                    || getSettings()[Setting::optimize_string_size_subcolumn_with_full_read]))
                 identifiers_with_filter_optimization.insert(qualified_name);
         }
     }
@@ -1703,7 +1708,9 @@ public:
             if (!should_optimize
                 && identifiers_to_optimize.filter_only.contains(qualified_name)
                 && !in_where_prewhere_stack.empty()
-                && in_where_prewhere_stack.back())
+                && in_where_prewhere_stack.back()
+                && (column.type->getTypeId() != TypeIndex::String
+                    || getSettings()[Setting::optimize_string_size_subcolumn_with_full_read]))
                 should_optimize = true;
 
             if (!should_optimize)

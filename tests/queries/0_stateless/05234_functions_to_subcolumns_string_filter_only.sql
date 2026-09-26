@@ -1,5 +1,7 @@
 SET enable_analyzer = 1;
 SET optimize_empty_string_comparisons = 1;
+SET optimize_functions_to_subcolumns = 1;
+SET optimize_string_size_subcolumn_with_full_read = 0;
 
 DROP TABLE IF EXISTS test_string_filter_only;
 CREATE TABLE test_string_filter_only
@@ -12,6 +14,72 @@ ORDER BY id
 SETTINGS string_serialization_version = 'with_size_stream';
 
 INSERT INTO test_string_filter_only VALUES (0, ''), (1, 'hello'), (2, ''), (3, 'world');
+
+SELECT 'full String filter rewrite is opt-in';
+SELECT `default` = '0' FROM system.settings WHERE name = 'optimize_string_size_subcolumn_with_full_read';
+SELECT countIf(explain ILIKE '%s.size%') = 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT s
+    FROM test_string_filter_only
+    PREWHERE length(s) > 0
+    SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0);
+SELECT countIf(explain ILIKE '%s.size%') = 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT s
+    FROM test_string_filter_only
+    PREWHERE empty(s)
+    SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0);
+SELECT countIf(explain ILIKE '%s.size%') = 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT s
+    FROM test_string_filter_only
+    PREWHERE notEmpty(s)
+    SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0);
+SELECT countIf(explain ILIKE '%s.size%') = 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT s
+    FROM test_string_filter_only
+    PREWHERE s = ''
+    SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0);
+SELECT countIf(explain ILIKE '%s.size%') = 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT s
+    FROM test_string_filter_only
+    PREWHERE s != ''
+    SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0);
+SELECT 'grouped CTE String filter with opt-in 0';
+SELECT countIf(explain ILIKE '%s.size%') = 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    WITH cte AS (SELECT s, id FROM test_string_filter_only WHERE s != '')
+    SELECT s, count() FROM cte GROUP BY s
+    SETTINGS optimize_move_to_prewhere = 1);
+WITH cte AS (SELECT s, id FROM test_string_filter_only WHERE s != '')
+SELECT s, count() FROM cte GROUP BY s ORDER BY s
+SETTINGS optimize_move_to_prewhere = 1;
+
+SELECT 'String size-only rewrites remain enabled';
+SELECT countIf(explain ILIKE '%s.size%') > 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT length(s), empty(s), notEmpty(s)
+    FROM test_string_filter_only
+    SETTINGS optimize_functions_to_subcolumns = 1);
+SELECT countIf(explain ILIKE '%s.size%') > 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    SELECT id
+    FROM test_string_filter_only
+    PREWHERE notEmpty(s)
+    SETTINGS optimize_functions_to_subcolumns = 1, optimize_move_to_prewhere = 0);
+SET optimize_string_size_subcolumn_with_full_read = 1;
+
+SELECT 'grouped CTE String filter with opt-in 1';
+SELECT countIf(explain ILIKE '%s.size%') > 0
+FROM (EXPLAIN actions = 1, compact = 0, pretty = 0
+    WITH cte AS (SELECT s, id FROM test_string_filter_only WHERE s != '')
+    SELECT s, count() FROM cte GROUP BY s
+    SETTINGS optimize_move_to_prewhere = 1);
+WITH cte AS (SELECT s, id FROM test_string_filter_only WHERE s != '')
+SELECT s, count() FROM cte GROUP BY s ORDER BY s
+SETTINGS optimize_move_to_prewhere = 1;
 
 SELECT 'length uses String size with full column';
 SELECT countIf(explain ILIKE '%s.size%') > 0

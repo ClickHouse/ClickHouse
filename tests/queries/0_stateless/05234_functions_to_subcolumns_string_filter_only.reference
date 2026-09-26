@@ -1,3 +1,21 @@
+full String filter rewrite is opt-in
+1
+1
+1
+1
+1
+1
+grouped CTE String filter with opt-in 0
+1
+hello	1
+world	1
+String size-only rewrites remain enabled
+1
+1
+grouped CTE String filter with opt-in 1
+1
+hello	1
+world	1
 length uses String size with full column
 1
 empty uses String size with full column
