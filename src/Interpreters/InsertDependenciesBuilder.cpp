@@ -25,6 +25,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -635,9 +636,17 @@ private:
             std::move(data_block),
             source_metadata->virtuals));
 
-        InterpreterSelectQueryAnalyzer interpreter(
-            select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
-        QueryPipelineBuilder pipeline = interpreter.buildQueryPipeline();
+        QueryPipelineBuilder pipeline;
+
+        {
+            /// Mark this region to avoid counting the `QueryExecutionCounters` metrics several times:
+            /// the pipeline is built again for every source block.
+            QueryExecutionCounters::RepeatedPipelineBuildScope repeated_build_scope(view_id.getFullTableName());
+
+            InterpreterSelectQueryAnalyzer interpreter(
+                select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
+            pipeline = interpreter.buildQueryPipeline();
+        }
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
 
