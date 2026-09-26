@@ -16,7 +16,7 @@
 
 SET optimize_group_by_constant_keys = 1;
 SET enable_software_prefetch_in_aggregation = 1;
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 -- Pattern derived from the AST fuzzer query that produced the report:
 -- all-constant tuple keys force the aggregator's `all_keys_are_const` path
