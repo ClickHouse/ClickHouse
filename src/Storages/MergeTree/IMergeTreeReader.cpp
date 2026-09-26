@@ -153,6 +153,9 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         if (isTextIndexVirtualColumn(it->name))
             continue;
 
+        if (virtual_columns.getDefault(it->name))
+            continue;
+
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
             field = field_it->second;
