@@ -20,10 +20,11 @@ wait_for_lines()
     do
         if [ "$(wc -l < "$file")" -ge "$expected" ]
         then
-            return
+            return 0
         fi
         sleep 0.1
     done
+    return 1
 }
 
 wait_for_content()
@@ -56,7 +57,12 @@ output="${CLICKHOUSE_TMP}/05061_pretty_squash_flush.out"
 $CLICKHOUSE_LOCAL --max_threads=1 --output_format_pretty_squash_consecutive_ms=50 --query "SELECT DISTINCT number % 2 AS x FROM numbers(1e18) FORMAT PrettyCompact" > "$output" 2>/dev/null &
 pid=$!
 
-wait_for_lines "$output" 4
+# The table must be there before the query is cancelled: a cancelled query finalizes the output and
+# would write out the buffered table as well, so the output after `kill` proves nothing.
+if ! wait_for_lines "$output" 4
+then
+    echo "The table did not arrive while the query was running"
+fi
 
 # The braces keep the shell's report about the terminated job out of stderr.
 { kill "$pid"; wait "$pid"; } 2>/dev/null

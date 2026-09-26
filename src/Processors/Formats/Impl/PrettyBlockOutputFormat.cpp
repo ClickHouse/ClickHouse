@@ -191,6 +191,8 @@ void PrettyBlockOutputFormat::calculateWidths(
 
 void PrettyBlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 {
+    rethrowBackgroundExceptionIfAny();
+
     if (total_rows >= format_settings.pretty.max_rows)
     {
         total_rows += chunk.getNumRows();
@@ -229,15 +231,31 @@ void PrettyBlockOutputFormat::writingThread()
 {
     std::unique_lock lock(writing_mutex);
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-    while (!finish)
+    try
     {
-        if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
-            || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
+        while (!finish)
         {
-            writeMonoChunkIfNeeded();
-            watch.restart();
+            if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
+                || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
+            {
+                writeMonoChunkIfNeeded();
+                watch.restart();
+            }
         }
     }
+    catch (...)
+    {
+        /// A write error (for example, the client has gone away and the pipe is broken) has to reach
+        /// the query: otherwise the thread just exits, and the query keeps reading and accumulating
+        /// chunks that are never written. Passed to the writing methods, which run under the same mutex.
+        background_exception = std::current_exception();
+    }
+}
+
+void PrettyBlockOutputFormat::rethrowBackgroundExceptionIfAny()
+{
+    if (background_exception)
+        std::rethrow_exception(background_exception);
 }
 
 void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
@@ -851,6 +869,7 @@ PrettyBlockOutputFormat::~PrettyBlockOutputFormat()
 
 void PrettyBlockOutputFormat::writeSuffix()
 {
+    rethrowBackgroundExceptionIfAny();
     stopThread();
     writeMonoChunkIfNeeded();
     writeSuffixImpl();
