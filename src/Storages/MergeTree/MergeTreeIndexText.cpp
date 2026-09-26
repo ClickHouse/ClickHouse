@@ -93,6 +93,7 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
+    extern const SettingsUInt64 text_index_like_max_matched_tokens;
     extern const SettingsFloat text_index_hint_max_selectivity;
     extern const SettingsBool use_text_index_negative_tokens_cache;
 }
@@ -719,9 +720,23 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     if (sparse_index.empty())
         return;
 
-    const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
-    const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
+    const auto & settings = condition_text.getContext()->getSettingsRef();
+    const size_t max_postings_to_read = settings[Setting::text_index_like_max_postings_to_read];
+    const size_t max_matched_tokens = settings[Setting::text_index_like_max_matched_tokens];
+    const auto key_ranges = analyzer->getPatternTokenKeyRanges();
+    const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, key_ranges);
     const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
+
+    /// Reading a whole dictionary with more tokens than half the rows costs more than checking the column on several threads.
+    /// As for the cap below, a dictionary of up to `max_matched_tokens` tokens is read. The last block may be short.
+    const size_t min_num_tokens = (sparse_index.size() - 1) * params.dictionary_block_size;
+    if (!key_ranges && analyzer->hasPerTokenPatterns() && max_matched_tokens
+        && min_num_tokens > std::max<size_t>(max_matched_tokens, state.part_info.getRowCount() / 2))
+    {
+        analyzer->bypassPatternQueries();
+        ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);
+        return;
+    }
 
     size_t postings_to_read = 0;
     std::vector<size_t> matched_indices;
@@ -769,9 +784,12 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
                 analyzer->addTokenInfo(token, infos[i]);
             }
 
-            if (postings_to_read > max_postings_to_read)
+            /// Reading postings for very many tokens is slower than checking the column, so the tokens of
+            /// hasAnyTokenPrefix/Like, hasAllTokenLike and hasAnyTokenRegexp are capped (not those of `LIKE`).
+            if (postings_to_read > max_postings_to_read
+                || (max_matched_tokens && analyzer->getNumPerTokenPatternTokens() > max_matched_tokens))
             {
-                /// Too many large-posting tokens matched.
+                /// Too many tokens matched.
                 /// Not all dictionary blocks were scanned, so the set of matched pattern tokens is incomplete.
                 analyzer->bypassPatternQueries();
                 ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScan);

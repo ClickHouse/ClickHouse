@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <absl/container/flat_hash_map.h>
 
+#include <deque>
+
 namespace DB
 {
 
@@ -89,6 +91,9 @@ public:
     /// Attaches a scan-discovered `token` to every pattern query whose regex matches it.
     /// Returns true if any pattern matched.
     bool addTokenToPatterns(std::string_view token);
+    /// Number of tokens that matched a hasAnyTokenPrefix/Like, hasAllTokenLike or hasAnyTokenRegexp pattern.
+    size_t getNumPerTokenPatternTokens() const { return num_per_token_pattern_tokens; }
+    bool hasPerTokenPatterns() const { return !per_token_patterns.empty(); }
     /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
     std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
     bool canFilterTokensByLiterals() const;
@@ -130,6 +135,10 @@ private:
     absl::flat_hash_map<String, QueryHashes> queries_by_token;
     /// Pattern queries grouped by their compiled regex; static for the analyzer's lifetime.
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
+    /// Patterns of hasAnyTokenPrefix/Like, hasAllTokenLike and hasAnyTokenRegexp, the only ones that are capped.
+    absl::flat_hash_set<const OptimizedRegularExpression *> per_token_patterns;
+    /// This analyzer's own copies of the patterns that use re2, because threads that share one re2 object contend on its cache.
+    std::deque<OptimizedRegularExpression> own_patterns;
 
     /* Fields updated dynamically during text index analysis. */
 
@@ -140,6 +149,8 @@ private:
     absl::flat_hash_set<String> missing_tokens;
     /// Tokens whose posting list has been added (embedded or read from disk).
     absl::flat_hash_set<String> tokens_with_postings;
+    /// Tokens that matched one of `per_token_patterns`.
+    size_t num_per_token_pattern_tokens = 0;
     /// Row ranges still readable after the analysis of the primary key and prior skip indexes.
     std::optional<ReadableRows> readable_rows;
 };
