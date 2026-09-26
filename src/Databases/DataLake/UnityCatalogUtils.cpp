@@ -6,6 +6,7 @@
 #include <unordered_set>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Poco/URI.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 
 namespace DB::ErrorCodes
@@ -138,6 +139,13 @@ void throwUnityManagedTableWriteRefusal(const String & full_table_name)
         DB::ErrorCodes::NOT_IMPLEMENTED,
         "INSERT into Unity Catalog managed table `{}` is not supported, only external tables can be written",
         full_table_name);
+}
+
+String encodeUnityFullName(const String & full_name)
+{
+    String encoded;
+    Poco::URI::encode(full_name, "/?#", encoded);
+    return encoded;
 }
 
 }

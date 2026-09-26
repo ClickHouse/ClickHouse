@@ -27,6 +27,9 @@ bool isManagedUnityTable(const Poco::JSON::Object::Ptr & table_json);
 
 [[noreturn]] void throwUnityManagedTableWriteRefusal(const String & full_table_name);
 
+/// Percent-encodes a dot-separated Unity full name (`catalog.schema[.table]`) as one URL path segment.
+String encodeUnityFullName(const String & full_name);
+
 }
 
 #endif

@@ -491,6 +491,9 @@ MANAGED_TABLE = "managed_delta"
 CLONE_TABLE = "clone_delta"
 EXTERNAL_TABLE = "external_delta"
 
+# Must match `ESCAPED_NAME` in mock_servers/uc_proxy.py, which serves `managed_delta` under it.
+ESCAPED_NAME = "a?b#c%41/é"
+
 
 def create_delta_table(node, db_name, schema_name, table_name):
     """`DeltaLakeLocal` stores the table in the container's filesystem, so the write
@@ -551,6 +554,16 @@ def assert_managed_table_insert_is_rejected(node, creating_db, managed_db):
     direct = f"{creating_db}.`{schema_name}.{MANAGED_TABLE}`"
     node.query(f"INSERT INTO {direct} VALUES (3)", settings=DELTA_WRITE_SETTINGS)
     assert node.query(f"SELECT id FROM {direct}").strip() == "3"
+    assert len(delta_log_commits(node, managed_location)) == 2
+
+    # A name with characters that are special in a URL path reaches the catalog intact.
+    escaped = f"{managed_db}.`{schema_name}.{ESCAPED_NAME}`"
+    assert node.query(f"EXISTS TABLE {escaped}").strip() == "1"
+    assert node.query(f"SELECT id FROM {escaped}").strip() == "3"
+    error = node.query_and_get_error(
+        f"INSERT INTO {escaped} VALUES (4)", settings=DELTA_WRITE_SETTINGS
+    )
+    assert "only external tables can be written" in error
     assert len(delta_log_commits(node, managed_location)) == 2
 
     return schema_name
