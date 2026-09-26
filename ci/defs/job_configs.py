@@ -673,7 +673,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
-        timeout=900,
+        timeout=1800,
         # Unpacking the packages needs ~4.4 GB, so reclaim another job's leftover
         # images before installing, not just afterwards. Best-effort: praktika does
         # not propagate a hook's exit code to the job status.
@@ -712,7 +712,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
-        timeout=900,
+        timeout=1800,
         # See install_check_jobs above.
         pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
@@ -2142,6 +2142,7 @@ class JobConfigs:
                 "./ci/jobs/llvm_coverage_job.py",
                 "./ci/jobs/scripts/merge_llvm_coverage.sh",
                 "./ci/jobs/scripts/generate_diff_coverage_report.sh",
+                "./ci/jobs/scripts/coverage_ignore_paths.sh",
                 "./ci/jobs/scripts/print_uncovered_code.py",
                 "./ci/jobs/scripts/dedup_lcov_instantiations.py",
                 "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",

@@ -1,0 +1,41 @@
+-- The average of a set of intervals is an interval of the same unit
+200	IntervalMillisecond
+-- Every interval kind
+2	IntervalNanosecond
+2	IntervalMicrosecond
+2	IntervalMillisecond
+2	IntervalSecond
+2	IntervalMinute
+2	IntervalHour
+2	IntervalDay
+2	IntervalWeek
+2	IntervalMonth
+2	IntervalQuarter
+2	IntervalYear
+-- A fractional average is rounded half to even, as for the date and time types
+100
+102
+-100
+-102
+-- The division is exact above the range where Float64 holds every integer
+2305843009213693953
+-- An empty input gives a zero-length interval, as an empty input gives the epoch for a date
+0	IntervalDay
+-- A single row
+7
+-- Nullable
+20	Nullable(IntervalSecond)
+\N	Nullable(IntervalSecond)
+-- Combinators
+4	IntervalSecond
+3	IntervalMinute
+3	IntervalMinute
+1	IntervalSecond
+[4,5]	Array(IntervalDay)
+2	IntervalHour
+-- GROUP BY
+0	4
+1	4
+2	5
+-- The average of an interval can be added to a date
+2026-01-01 00:00:05
