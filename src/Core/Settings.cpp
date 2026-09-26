@@ -1367,6 +1367,11 @@ Possible values:
 - 0 — Positional arguments aren't supported.
 - 1 — Positional arguments are supported: column numbers can use instead of column names.
 )", 0) \
+    DECLARE(Bool, allow_projection_column_list_in_replicated_metadata, false, R"(
+Allow a projection column list to be stored by a replicated table, a Replicated database, or an ON CLUSTER DDL query.
+Versions before 26.9 cannot parse this syntax. Enable only after every replica and cluster host that may load the metadata or replay the DDL has been upgraded.
+This setting is checked when the definition is first accepted, not when stored metadata is loaded.
+)", 0) \
     DECLARE(Bool, enable_extended_results_for_datetime_functions, false, R"(
 Enables or disables returning results of type `Date32` with extended range (compared to type `Date`)
 or `DateTime64` with extended range (compared to type `DateTime`).

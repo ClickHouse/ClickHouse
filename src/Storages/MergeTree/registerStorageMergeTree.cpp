@@ -2026,9 +2026,11 @@ Lossy codecs are rejected for projection columns. Projection selection is transp
 values in a projection would make the same query return different results depending on whether the
 optimizer reads the projection or the parent table.
 
-ClickHouse versions before 26.9 cannot parse a projection column list, so a table using one will not load
-on a downgrade, and `ALTER TABLE ... ADD PROJECTION` with a column list will fail on a replica that has not
-been upgraded yet. Upgrade every replica before using the syntax.
+ClickHouse versions before 26.9 cannot parse a projection column list. For replicated tables,
+Replicated databases, and `ON CLUSTER` DDL, the syntax is disabled by default. After upgrading
+every replica and cluster host that may load the metadata or replay the DDL, explicitly set
+`allow_projection_column_list_in_replicated_metadata = 1` to use it. A downgrade after storing
+the new syntax is not supported.
 
 The effective codecs of a projection's columns are exposed by the `codecs` column of
 [`system.projections`](/reference/system-tables/projections).

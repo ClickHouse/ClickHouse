@@ -40,6 +40,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
@@ -130,6 +131,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
+    extern const SettingsBool allow_projection_column_list_in_replicated_metadata;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_materialized_view_with_bad_select;
@@ -2126,6 +2128,26 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         {
             if (isReplicated(*inner_table_engine))
                 is_storage_replicated = true;
+        }
+    }
+
+    /// Older replicas cannot parse the column-list syntax at all. Check before the CREATE
+    /// enters a Replicated database or distributed DDL log, or a replicated table's metadata.
+    /// A secondary replay or stored ATTACH must keep accepting metadata already written.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax)
+        && !getContext()->isRecoveryFromStoredMetadata()
+        && !getContext()->getSettingsRef()[Setting::allow_projection_column_list_in_replicated_metadata]
+        && (is_storage_replicated || !create.cluster.empty()
+            || (database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared")))
+        && create.columns_list && create.columns_list->projections)
+    {
+        for (const auto & projection_ast : create.columns_list->projections->children)
+        {
+            if (projection_ast->as<const ASTProjectionDeclaration &>().columns)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Projection column lists in replicated metadata require setting "
+                    "allow_projection_column_list_in_replicated_metadata = 1. "
+                    "Upgrade every replica before enabling it");
         }
     }
 
