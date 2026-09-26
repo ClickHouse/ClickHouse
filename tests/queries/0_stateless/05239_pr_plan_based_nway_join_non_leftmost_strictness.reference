@@ -1,0 +1,17 @@
+array join then any/right: reads from replicas
+1
+0	0	3
+2	1	2
+array join then semi/right: reads from replicas
+1
+2	1
+array join then anti/right: reads from replicas
+1
+3
+array join then all/inner: reads from replicas
+1
+2	1
+2	2
+array join then inner/any: reads from replicas
+0
+1	1
