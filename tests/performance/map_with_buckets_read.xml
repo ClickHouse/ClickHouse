@@ -1,0 +1,62 @@
+<test>
+    <!-- Reading whole `Map` columns with `with_buckets` serialization restores the original order of the pairs from the buckets. -->
+    <create_query>
+        CREATE TABLE t_map_with_buckets_read_lc (m Map(LowCardinality(String), LowCardinality(String)))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+            map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
+            map_buckets_strategy = 'constant', max_buckets_in_map = 16, map_buckets_min_avg_size = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE t_map_with_buckets_read_lc_keys (m Map(LowCardinality(String), String))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+            map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
+            map_buckets_strategy = 'constant', max_buckets_in_map = 16, map_buckets_min_avg_size = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE t_map_with_buckets_read_string (m Map(String, String))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+            map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
+            map_buckets_strategy = 'constant', max_buckets_in_map = 16, map_buckets_min_avg_size = 0
+    </create_query>
+    <create_query>
+        CREATE TABLE t_map_with_buckets_read_uint64 (m Map(String, UInt64))
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+            map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
+            map_buckets_strategy = 'constant', max_buckets_in_map = 16, map_buckets_min_avg_size = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_map_with_buckets_read_lc
+        SELECT CAST(arrayMap(x -> tuple('flag_' || toString(cityHash64(number % 1000, x) % 500), toString(cityHash64(number, x) % 4)), range(30)), 'Map(LowCardinality(String), LowCardinality(String))')
+        FROM numbers(2000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO t_map_with_buckets_read_lc_keys
+        SELECT CAST(arrayMap(x -> tuple('flag_' || toString(cityHash64(number % 1000, x) % 500), toString(cityHash64(number, x) % 4)), range(30)), 'Map(LowCardinality(String), String)')
+        FROM numbers(2000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO t_map_with_buckets_read_string
+        SELECT CAST(arrayMap(x -> tuple('flag_' || toString(cityHash64(number % 1000, x) % 500), toString(cityHash64(number, x) % 4)), range(30)), 'Map(String, String)')
+        FROM numbers(2000000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO t_map_with_buckets_read_uint64
+        SELECT CAST(arrayMap(x -> tuple('flag_' || toString(cityHash64(number % 1000, x) % 500), toString(cityHash64(number, x) % 4)), range(30)), 'Map(String, UInt64)')
+        FROM numbers(2000000)
+    </fill_query>
+
+    <query>SELECT m FROM t_map_with_buckets_read_lc FORMAT Null</query>
+    <query>SELECT m FROM t_map_with_buckets_read_lc_keys FORMAT Null</query>
+    <query>SELECT m FROM t_map_with_buckets_read_string FORMAT Null</query>
+    <query>SELECT m FROM t_map_with_buckets_read_uint64 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_map_with_buckets_read_lc</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_map_with_buckets_read_lc_keys</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_map_with_buckets_read_string</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_map_with_buckets_read_uint64</drop_query>
+</test>
