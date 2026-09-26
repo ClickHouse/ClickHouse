@@ -21,9 +21,12 @@ public:
     {
         std::map<String, ASTPtr> subqueries;
         std::map<String, ASTPtr> literals;
+        /// Expression aliases declared with `enable_scopes_for_with_statement` disabled. They reach every
+        /// nested select, including through one that does not resolve them itself, so they are kept apart
+        /// from the aliases visible in the current scope.
+        std::map<String, ASTPtr> exported_literals;
         /// When set, each subquery's own settings are applied while descending, so that an inherited
-        /// `subqueries` element is not substituted into a subquery whose settings hide it. Inherited
-        /// `literals` are substituted either way.
+        /// element is not substituted into a subquery whose settings hide it.
         ContextPtr context;
     };
 
