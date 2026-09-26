@@ -1,0 +1,43 @@
+<test>
+    <!-- The first, a middle, the last and an absent key, so that a lookup cost growing with the
+         position of the key in the row shows up as a spread between the queries. -->
+
+    <create_query>
+        CREATE TABLE map_lc_keys (id UInt64, m Map(LowCardinality(String), String))
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_lc_keys
+        SELECT number, mapFromArrays(
+            arrayMap(x -> concat('k', leftPad(toString(x), 2, '0')), range(20)),
+            arrayMap(x -> concat('v', toString(cityHash64(number, x) % 1000)), range(20)))
+        FROM numbers(1500000)
+    </fill_query>
+
+    <query>SELECT sum(ignore(m['k00'])) FROM map_lc_keys SETTINGS max_threads = 1</query>
+    <query>SELECT sum(ignore(m['k09'])) FROM map_lc_keys SETTINGS max_threads = 1</query>
+    <query>SELECT sum(ignore(m['k19'])) FROM map_lc_keys SETTINGS max_threads = 1</query>
+    <query>SELECT sum(ignore(m['absent'])) FROM map_lc_keys SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE map_lc_keys</drop_query>
+
+    <!-- Key and value types that used to be handled by the generic per-row fallbacks. -->
+
+    <create_query>
+        CREATE TABLE map_uuid_keys (id UInt64, m Map(UUID, DateTime64(3)))
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_uuid_keys
+        SELECT number, mapFromArrays(
+            arrayMap(x -> reinterpretAsUUID(toFixedString(leftPad(toString(x), 16, '0'), 16)), range(20)),
+            arrayMap(x -> toDateTime64(number + x, 3), range(20)))
+        FROM numbers(1000000)
+    </fill_query>
+
+    <query>SELECT sum(ignore(m[reinterpretAsUUID(toFixedString('0000000000000019', 16))])) FROM map_uuid_keys SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE map_uuid_keys</drop_query>
+</test>

@@ -663,8 +663,7 @@ class PackageDownloader:
         self.with_signed_macos = with_signed_macos
         self.package_names = list(self.PACKAGES)
         self.release = release
-        self.s3_release_prefix = release_packages.s3_release_prefix(release)
-        self.commit_sha = commit_sha
+        self.s3_commit_prefix = release_packages.s3_commit_prefix(release, commit_sha)
         self.version = version
         self.s3 = S3Helper()
         self.deb_package_files = []
@@ -754,8 +753,7 @@ class PackageDownloader:
             local_path = self.LOCAL_DIR + "/" + package_file
             print(f"Downloading: [{package_file}]")
             s3_path = "/".join([
-                self.s3_release_prefix,
-                self.commit_sha,
+                self.s3_commit_prefix,
                 self.file_to_job_name[package_file],
                 package_file,
             ])
@@ -774,8 +772,7 @@ class PackageDownloader:
             # be skipped — always re-download to overwrite it.
             print(f"Downloading: [{job_name}] binary to [{macos_binary}]")
             s3_path = "/".join([
-                self.s3_release_prefix,
-                self.commit_sha,
+                self.s3_commit_prefix,
                 job_name,
                 "clickhouse",
             ])
@@ -789,8 +786,7 @@ class PackageDownloader:
             local_path = self.LOCAL_DIR + "/" + macos_zip
             print(f"Downloading: [{job_name}] signed zip to [{macos_zip}]")
             s3_path = "/".join([
-                self.s3_release_prefix,
-                self.commit_sha,
+                self.s3_commit_prefix,
                 job_name,
                 release_packages.MACOS_SIGNED_S3_OBJECT,
             ])
