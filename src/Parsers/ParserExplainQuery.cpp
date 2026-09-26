@@ -516,6 +516,8 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 
 With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` or `Skip`) and optional keys:
 
+The `Statistics` index uses per-part column statistics (min/max values, and the number of `NULL` values for `Nullable` columns) to skip parts that cannot match the query filter.
+
 - `Name` — The index name (currently only used for `Skip` indexes).
 - `Keys` — The array of columns used by the index.
 - `Condition` —  The used condition.
@@ -752,9 +754,10 @@ With `pretty` = 1, the plan tree is displayed using line-drawing characters inst
 - **Filter steps** display the filter condition in SQL notation. When runtime join filters are present, they are shown separately.
 - **Aggregation steps** display keys and aggregate functions with their arguments (e.g., `sum(c)`, `count()`).
 - **IN sets** from tuple literals show their values (truncated for large sets), subquery-based sets are labeled `subquery1`, `subquery2`, etc., and sets from `Set` engine tables show the table name.
-- **Join steps** display the join relation using mathematical notation, estimated result row count,
-  and which output columns come from the left vs. right side. The following symbols are used to
-  represent different join types:
+- **Join steps** display the join relation using mathematical notation, the estimates the
+  join-order optimizer produced for the step (cost, selectivity, output rows, and per-side rows),
+  and the input columns of each side. The following symbols are used to represent different join
+  types:
 
 | Symbol | Join Type |
 |--------|-----------|
@@ -772,11 +775,48 @@ For example, `t1 ⟕ t2` means a left join between tables `t1` and `t2`.
 The number in brackets after the table name (e.g., `t1[100]`) indicates the estimated row count
 when table statistics are available.
 
+Below the join relation, each join step prints the estimates the join-order optimizer produced for it:
+
+```txt
+Cost: estimated <cost>
+Selectivity: estimated (NDV) <selectivity>
+Output rows: estimated <rows>
+Left: rows estimated <left_rows>
+Right: rows estimated <right_rows>
+```
+
+- `Cost` — the cost of the whole join subtree under this step, which is the value the optimizer
+  minimizes when it compares candidate join orders. The cost of a join is its estimated number of
+  matched row pairs, `<selectivity> * <left_rows> * <right_rows>`, plus the cost of its inputs.
+- `Selectivity` — the estimated fraction of the Cartesian product of the two sides that survives
+  the join condition. It is derived from the number of distinct values (NDV) of the join keys:
+  a key equality keeps about `1 / max(NDV_left, NDV_right)` of the pairs, and the smallest
+  fraction over the join conditions is used.
+- `Output rows` — the estimated number of rows the join produces:
+  `<selectivity> * <left_rows> * <right_rows>` for an inner join, floored at `<left_rows>` for
+  `LEFT`, at `<right_rows>` for `RIGHT`, and at `<left_rows> + <right_rows>` for `FULL`, because an
+  outer join keeps every row of its preserved side. When a `SEMI` or `ANTI` join takes part in the
+  reordering, it is estimated as a fraction of its preserved side,
+  `<preserved_rows> * min(1, <selectivity> * <other_rows>)` for `SEMI` and the remaining rows for
+  `ANTI`; otherwise it uses the formula of its join kind.
+- `Left` / `Right` — the estimated number of rows entering the join from each side.
+
+A value the optimizer could not estimate is reported as `no stats`. This happens when the
+join-order optimization did not run — for example, when
+[`query_plan_optimize_join_order_limit`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)
+is `0` — or when there is no basis for the estimate.
+
+The `Input (left):` and `Input (right):` lines list the columns each side feeds into the join.
+
 The `pretty` option works well together with `compact = 1`, which hides `Expression` steps and detailed action info, making the plan easier to read.
 
-A detailed example with joins:
+A detailed example with joins. The
+[`join_runtime_filter_min_probe_rows`](/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows)
+setting is lowered only so that a table this small still builds a runtime join filter:
 
 ```sql
+SET join_runtime_filter_min_probe_rows = 10;
+
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
@@ -792,11 +832,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -871,6 +914,7 @@ Settings:
 - `pretty` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
 - `processors` — For `EXPLAIN ANALYZE`, prints an additional line per stage with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
 - `matches` — For `EXPLAIN ANALYZE`, makes join steps do the extra bookkeeping needed for the `matched`, `match rate` and `fanout` metrics in the cases where those numbers cannot be derived from what the join produces anyway. Where they can, they are reported without this option. See [Join steps](#explain-analyze-join-steps). Default: 0.
+- `time` — For `EXPLAIN ANALYZE`, prints per-step `Time` and `Concurrency` lines with the wall-clock time and the concurrency level of the step and of its branch. See [Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency). Default: 1.
 
 <Note>
 Because `EXPLAIN ANALYZE` actually executes the wrapped query, it behaves like that
@@ -896,29 +940,38 @@ EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP 
 
 ```text
 Query summary:
-  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
-  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
-  Peak memory: 28.98 KiB
+  Time:        22.65 ms (planning 7.98 ms · execution 14.66 ms)
+  Execution:   in steps 3.46 ms (23.60%) · outside steps 16.60 us (0.11%) · idle 11.19 ms (76.29%)
+  Read:        1.00 million rows, 8.00 MB (68.20 million rows/s., 545.59 MB/s.)
+  Peak memory: 16.00 KiB
 
 Output: number MOD 10, count()
 
 Expression ((Project names + Projection))
 │  I/O: rows 10 → 10 · 90 B → 90 B
-│    time 21.82 us (0.5%) · parallelism 0.98/1
+│  Time: step 12.09 us (0.08%) · branch 3.46 ms (23.60%)
+│  Concurrency: step 1.00/16 · branch 4.96/16
+│    time 12.36 us (0.08%) · parallelism 0.98/1
 └──Aggregating
    │  Keys: number MOD 10
    │  Aggregates: count()
    │  Skip merging: 0
    │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
-   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
-   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   │  Time: step 2.03 ms (13.85%) · branch 3.45 ms (23.52%)
+   │  Concurrency: step 5.93/16 · branch 4.97/16
+   │    Stage (partial aggregation): time 1.69 ms (11.50%) · parallelism 1.80/15
+   │    Stage (final aggregation): time 351.39 us (2.40%) · parallelism 1.10/16
    └──Expression ((Before GROUP BY + Change column names to column identifiers))
       │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
-      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      │  Time: step 2.02 ms (13.78%) · branch 2.76 ms (18.81%)
+      │  Concurrency: step 7.13/16 · branch 5.87/16
+      │    time 2.02 ms (13.81%) · parallelism 2.26/11
       └──ReadFromSystemNumbers
             Output: number
             I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
-              time 993.94 us (23.3%) · parallelism 7.52/15
+            Time: step 2.58 ms (17.57%) · branch 2.58 ms (17.57%)
+            Concurrency: step 5.98/16 · branch 5.98/16
+              time 2.58 ms (17.58%) · parallelism 3.55/15
 ```
 
 Let's examine the output. First let's look at the header.
@@ -926,11 +979,13 @@ Let's examine the output. First let's look at the header.
 ```txt
    Query summary:
      Time:        <total> (planning <planning> · execution <execution>)
+     Execution:   in steps <t> (<share>%) · outside steps <t> (<share>%) · idle <t> (<share>%)
      Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
      Peak memory: <peak>
 ```
 
 - `Time` — total time split into planning (i.e. creation of plan + optimization of plan + pipeline construction) and execution (running the pipeline) phases.
+- `Execution` — not printed with `time = 0`. Splits the execution time into `in steps`, `outside steps` and `idle`. The parts add up to `execution`. See [Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency).
 - `Read` — rows and uncompressed bytes read from tables, with throughput - the same numbers the normal query footer reports as "Processed".
 - `Peak memory` — peak memory the query used.
 
@@ -946,11 +1001,11 @@ Rows and bytes are reported once for the whole step (the `I/O` line). Time and p
 - `rows <in> → <out>` — rows that entered and left the step; (`<selectivity>`%) shows how much the step filtered (`out/in`) or expanded the data, it is hidden when input rows equals output rows and when input rows equals `0`.
 - `<bytes_in> → <bytes_out>` — uncompressed in-memory bytes flowing through the step (omitted when both are zero).
 - `time <t> (<share>%)` — wall-clock time the stage was active, and its share of query execution time (i.e. without build time). Note shares can add up to more than 100% because stages and steps run concurrently.
-- `parallelism <avg>/<max>` — average number of CPU threads working within this stage at once, out of the maximum it could use. A value near max means the stage was well parallelized; near 1 means it ran mostly serially.
+- `parallelism <avg>/<max>` — average number of CPU threads working within this stage at once, out of the maximum it could use. This metric is local to the stage: threads that work on other steps of the query at the same time do not count. A value near max means the stage was well parallelized; near 1 means it ran mostly serially.
 - `Stage (<stage>)` — the name of the stage. A step with a single stage prints the time line directly, without a `Stage (...)` label. Steps with several stages print one labeled line per stage, e.g. `Aggregating` shows `Stage (partial aggregation)` and `Stage (final aggregation)`, and a hash join shows `Stage (build)` and `Stage (probe)`.
 
 <Note>
-ClickHouse parallelizes not only execution of tasks within a plan step, but also the execution of plan steps. The `parallelism` metric reflects only the work of this step. Other steps may run concurrently, so this number does not show how the step's parallelism compares to the whole query.
+ClickHouse parallelizes not only execution of tasks within a plan step, but also the execution of plan steps. The `parallelism` metric reflects only the work of this step. Other steps may run concurrently, so this number does not show how the step's parallelism compares to the whole query. For that query-wide view, see the `Concurrency` metric printed with `time = 1` ([Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency)).
 </Note>
 
 <Note>
@@ -961,23 +1016,62 @@ The maximum number in `parallelism` is computed as a minimum between:
 
 #### Join steps {#explain-analyze-join-steps}
 
-For a join step `EXPLAIN ANALYZE` prints per-side *participation* lines — `Left` and `Right` — followed by any lines specific to the join implementation. `Left` and `Right` correspond to logical SQL sides. In most of the cases `Left` would also be the probe side of the join, and `Right` would be the build side of the join. However this is not always the case due to the swap that can happen during execution of the join. Every value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is covered (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), and so are the two implementations that setting cannot select: a `CROSS` or `COMMA` join and any `ON` section without a key equality, and the [`Join`](/reference/engines/table-engines/special/join) table engine. Most of them report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
+For a join step `EXPLAIN ANALYZE` prints lines comparing the join-order optimizer's estimates with what actually happened (see [Estimated vs. actual join metrics](#explain-analyze-join-estimation)) and per-side *participation* lines — `Left` and `Right` — followed by any lines specific to the join implementation. Every value of [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm) is covered (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), and so are the two implementations that setting cannot select: a `CROSS` or `COMMA` join and any `ON` section without a key equality, and the [`Join`](/reference/engines/table-engines/special/join) table engine. Most of them report both sides; some report only the side they materialize (for example `direct` prints only `Left:`).
 
 The per-side lines share the same shape:
 
 ```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
 For each side `EXPLAIN ANALYZE` reports:
 
+- `rows estimated <estimated_rows>` — the join-order optimizer's estimate of that side's rows, printed for comparison with the actual `rows` next to it; `no stats` when the optimizer produced no estimate (see [Estimated vs. actual join metrics](#explain-analyze-join-estimation)).
 - `rows <rows>` — the total number of rows of that side that passed through the join.
 - `matched <matched_rows>` — the number of rows of that side that found at least one join partner on the other side. This counts *rows*, not keys: if a key occurs three times on the right and matches, all three right rows count as matched.
 - `match rate <match_rate>%` — the percentage of that side's rows that matched, computed as `100 * <matched_rows> / <rows>`.
 - `fanout <fanout>` — how many output rows an average matched row of that side produced.
 
 A number that cannot be derived exactly is reported as `not collected` rather than as `0`. `match rate` and `fanout` are derived from `matched`, so a side without it reports all three as `not collected`.
+
+#### Estimated vs. actual join metrics {#explain-analyze-join-estimation}
+
+A join step carries the join-order optimizer's estimates — the same ones `EXPLAIN PLAN` shows (see the [EXPLAIN PLAN](#explain-plan) section) — and `EXPLAIN ANALYZE` prints each of them next to the measured value:
+
+```txt
+Cost: estimated <cost> · actual <cost>
+Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
+Output rows: estimated <rows> · actual <rows> · q-error <ratio>
+```
+
+- `Cost` — both values count matched output rows. The estimate is the optimizer's cost of the join subtree: `<selectivity> * <left_rows> * <right_rows>` plus the cost of its inputs. The actual value is measured the same way — the matched output rows of this join plus the actual cost of every join below it that belongs to the same reorder cluster.
+- `Selectivity` — the estimate is derived from the number of distinct values of the join keys; the actual value is the measured fraction of the Cartesian product that ended up in the output: `<matched output rows> / (<left rows> * <right rows>)`, since this is what optimizer tries to estimate.
+- `Output rows` — the estimated and the actual number of rows the join produced. When both are non-zero, `q-error` reports `max(estimated / actual, actual / estimated)`, the standard measure of cardinality-estimation quality: `1.00` means a perfect estimate, and a large value means the optimizer picked the join order using a badly wrong cardinality.
+
+An estimate that was never made is reported as `no stats` — for example, when the join-order optimization did not run because [`query_plan_optimize_join_order_limit`](/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) is `0`. This is distinct from `not collected`, which marks an actual value the execution could not measure. Joins with a pre-filled right side (the [`Join`](/reference/engines/table-engines/special/join) table engine, `direct` joins) do not go through the join-order optimizer and print only the participation lines.
+
+The join step also prints `Input (left):` and `Input (right):` lines with the columns each side feeds into the join.
+
+For the tables of the [EXPLAIN PLAN](#explain-plan) join example, the join step of `EXPLAIN ANALYZE SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id` looks like this:
+
+```text
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: id = id
+│  Cost: estimated 100.00 · actual 100.00
+│  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
+│  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
+│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Hash table: unique keys 100.00 · memory 6.27 KB
+│  Input (left): id, value
+│  Input (right): id, value
+│  I/O: rows 200 → 100 (50.00%) · 3.58 KB → 3.58 KB
+│    Stage (build): time 127.45 us (1.2%) · parallelism 0.99/1
+│    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
+```
 
 #### Fanout {#explain-analyze-fanout}
 
@@ -1070,7 +1164,7 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 For `partial_merge` join the `Right:` line carries extra information about how the right table was buffered and sorted, and the sorting time is shown on the `Stage (build)` and `Stage (probe)` lines:
 
 ```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```
@@ -1110,6 +1204,34 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 `<n>` is the number of processors in the stage. A large gap between `median` and `max` points to load skew between parallel processors.
 
+#### Step and branch wall-clock time and concurrency levels {#explain-analyze-concurrency}
+
+Unless `time = 0`, two more lines are printed for every query plan step:
+
+```txt
+Time: step <t> (<share>%) · branch <t> (<share>%)
+Concurrency: step <n>/<m> · branch <n>/<m>
+```
+
+Here `step` refers to the step itself. `branch` refers to the subtree rooted at the step: the step together with all steps below it in the plan.
+
+- `Time` — the wall-clock time during which at least one thread did work for the step (`step`), or for any step of the subtree (`branch`). `<share>` is that time as a percentage of the query execution time.
+- `Concurrency` — the average number of threads that were busy with *any* step of the query — not only this one — while the step (`step`) or its subtree (`branch`) was active. `<m>` is the maximum number of threads the query could use. Steps that own no processors, for example `Union` when its inputs already have the same header, print `Unknown` for `step`: there is no work to measure. `branch` is still reported.
+
+Both metrics are derived from work intervals. Each time a thread finishes a piece of work, the executor records an interval: the start time, the end time, and the step the work belongs to.
+
+`Time` of a step is the length of the union of that step's intervals. Gaps, where no thread worked on the step, do not count. `Time` of a branch unites the intervals of all steps of the subtree first.
+
+The `branch` of the root step is the whole plan, but its share is normally below 100%. The `Execution` line of the query summary shows where the rest of the execution time went (see the query summary in the example above):
+
+- `in steps` — the union of the intervals of every step of the plan. This is the `branch` time of the root step, and the share is the same number.
+- `outside steps` — the time when at least one thread ran a processor, but none of them belonged to a step of this plan: the output sink, `Resize`, converting transforms, and the steps of plans that are not reachable from this one.
+- `idle` — the time when no thread ran any processor: the start-up and shutdown of the executor, and the moments when every thread waited.
+
+The `Time` shares, the per-stage `time` shares, and the `Execution` shares use the same denominator, so they can be compared with each other.
+
+`Concurrency` is the total busy time of all query threads inside that union, divided by the length of the union. It counts threads busy with *any* step of the query, unlike the per-stage `parallelism` metric, which counts only the threads of the stage itself. It answers: "while this step (branch) was active, how busy was the query as a whole?" A value near `<m>` means the query stayed fully parallel during that step's lifetime. A value near `1` means the query serialized during that time: for `step`, the single busy thread was working on this step itself, which makes the step a serialization point; for `branch`, the thread was working somewhere in the subtree, not necessarily on this step. A serialized step is a real bottleneck only when its `Time` share is also significant.
+
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
 Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) family.
@@ -1138,7 +1260,7 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 Estimates the benefit a hypothetical skip index would have on a `SELECT` query, *without* materializing the index on disk. Define one or more candidates with [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#create-hypothetical-index), then run `EXPLAIN WHATIF SELECT ...` to see, for each candidate: applicability, estimated marks read, estimated bytes, and skip ratio.
 
-Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are listed as candidates too, but their benefit is not estimated yet: each is reported with `status: not_applicable`. A projection whose definition no longer applies to the table — a dropped column, or a setting change that disables the features it needs — is reported with that reason instead.
+Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. A normal projection is estimated by building its primary index in memory over the parts the query would read and pruning it as a materialized projection would be pruned. The report gives the marks and rows the projection read would touch, a `read_ratio` against the base-table read (below `1x` means less work, above means more) and a `verdict` with the reason behind it, following the optimizer's rule: the projection wins when it reads fewer marks than the base table, or the same number while serving an outer `ORDER BY`. Listed as `status: not_applicable` and not estimated yet: aggregate projections, projections with a `WHERE` clause or their own skip indexes (`WITH SETTINGS add_minmax_index_*`), projections ordered by the commit order (`TYPE commit_order` and its `_block_number, _block_offset` query form), projections whose sort key is not among the columns they store (for example `ORDER BY _part_offset`), projections that store `_block_number` (the writer builds those only when a part is merged), and projections that do not provide every column the query reads. `force_optimize_projection`, `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored. The mark count is modelled by sizing granules the way the writer does, one granule size per block the writer is handed. Which blocks that is depends on the path that writes the projection part - one squashed block for an insert or a materialization, runs of `merge_max_block_size` for a merge - and a part records none of it, so the estimate is computed for each of those layouts. When they do not agree on the comparison with the base read, the report gives the range and `verdict: too close to call` instead of a decision. A projection whose definition no longer fits the table is reported with that reason.
 
 **Syntax**
 
@@ -1157,6 +1279,7 @@ Baseline (after PK + partition + existing indexes):
   table:       db.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   1.50 MiB             (only when the query reads rows)
 
 With idx_b (minmax, hypothetical):
@@ -1210,6 +1333,7 @@ Baseline (after PK + partition + existing indexes):
   table:       default.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   85.52 KiB
 
 With idx_b (minmax, hypothetical):
@@ -1257,6 +1381,43 @@ Estimation:
 The number comes from the column-statistic selectivity of `b < 10` (about 10 rows out of 10000) and is reported as an upper bound on `skip_ratio`. There are no `sampled_parts` / `sampled_marks` — no data was read.
 
 If neither path is available (e.g. `empirical = 0` and no column statistics defined), the estimator reports `source: applicability_only` and a conservative `skip_ratio: 0.0%`.
+
+**Hypothetical projections**
+
+A normal projection is estimated the same way, against the parts the query would read after primary-key and partition pruning:
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+INSERT INTO t SELECT number, number % 100, number FROM numbers(10000);
+CREATE HYPOTHETICAL PROJECTION p_b ON t (SELECT a, b, v ORDER BY b);
+EXPLAIN WHATIF SELECT count() FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  rows:        10000
+  est_bytes:   80.79 KiB
+
+With p_b (normal projection, hypothetical):
+  status:       applicable
+  marks:        2
+  rows:         200
+  read_ratio:   0.02x
+  verdict:      chosen
+  reason:       2 marks would be read instead of 100 from the base table
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       1126
+```
+
+`marks` and `rows` are what the projection read itself would touch, not a share of the base-table read, because a projection granule holds different rows than a base granule. `read_ratio` is those marks over the base-table marks, so `0.02x` is fifty times less work and `15x` is fifteen times more. `verdict` applies the optimizer's own rule — fewer marks than the base table, or the same number when the projection serves the query's `ORDER BY` — so a candidate can be `applicable` and still not be chosen.
 
 ### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
