@@ -259,6 +259,10 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
     return result;
 }
 
+bool typesEqualForFieldConversion(const IDataType & from, const IDataType & to, bool strict)
+{
+    return from.equals(to) && (!strict || from.getName() == to.getName());
+}
 
 /// Rescales a `Decimal64` `Field` holding a `DateTime64` or `Time64` value to the scale of `to_type`
 /// (`DateTime64(a)` -> `DateTime64(b)`, `Time64(a)` -> `Time64(b)`).
@@ -301,7 +305,8 @@ Field rescaleDecimal64Field(const Field & src, const ToDataType & to_type, bool 
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
-    if (from_type_hint && from_type_hint->equals(type))
+    if (from_type_hint
+        && typesEqualForFieldConversion(*from_type_hint, type, strict))
     {
         return src;
     }
@@ -1145,7 +1150,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     if (from_value.isNull())
         return from_value;
 
-    if (from_type_hint && from_type_hint->equals(to_type))
+    if (from_type_hint && typesEqualForFieldConversion(*from_type_hint, to_type, strict))
         return from_value;
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
@@ -1158,7 +1163,7 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
         if (WhichDataType(nested_type).isNothing())
             return {};
 
-        if (from_type_hint && from_type_hint->equals(nested_type))
+        if (from_type_hint && typesEqualForFieldConversion(*from_type_hint, nested_type, strict))
             return from_value;
         return convertFieldToTypeImpl(from_value, nested_type, from_type_hint, format_settings, strict, convert_inexact_floats);
     }

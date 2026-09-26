@@ -1,0 +1,75 @@
+[1,3,4]
+1
+[7]
+1
+[1]
+0
+[1,3]
+FixedString set fallback
+[1,3]
+projected nullable predicate
+1	1
+2	0
+3	\N
+1
+1
+map key pruning
+1
+0
+LowCardinality(FixedString(3))
+[1]
+[1]
+LowCardinality(Nullable(FixedString(3)))
+[1]
+[1]
+1
+1	1
+3	\N
+4	\N
+1	1
+3	\N
+4	\N
+[2]
+[2]
+1
+1
+exact predicates
+[1]
+[1,2]
+[1,2]
+[1]
+patterns
+[1]
+[2]
+[1]
+[1]
+[3]
+[1]
+[1,2]
+[6]
+[5]
+0
+path and boolean composition
+[5]
+[1]
+[1]
+[1,2]
+[2,3,4,5,6]
+dynamic equality
+[1,2]
+[1,2,3]
+[6]
+[1,2,3]
+ground truth and read modes
+[1]
+[1]
+[1]
+unsupported analyzer forms
+[4]
+1
+[1]
+1
+[]
+supported plans
+1
+1

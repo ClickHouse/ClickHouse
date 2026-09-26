@@ -1534,6 +1534,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"text_index_serialization_version", "v2_with_positions", "v2_with_positions", "Allow the `v3_with_tokenizer_config` text index format required by `jsonPathValues` indexes. The default remains `v2_with_positions`; indexes that require v3 choose it automatically."},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},
