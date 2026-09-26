@@ -422,6 +422,19 @@ public:
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
+
+    /// A `DateTime64` x-axis passes `begin_x`/`end_x` as `DecimalField`, which prints as a quoted
+    /// string and reparses as a `String` parameter, so the state type name needs ::Type suffixes
+    /// to round-trip. Other bounds are plain integers and keep the untyped spelling.
+    bool shouldPrintParametersWithTypes() const override
+    {
+        if (nested_function->shouldPrintParametersWithTypes())
+            return true;
+        for (const auto & param : this->parameters)
+            if (Field::isDecimal(param.getType()))
+                return true;
+        return false;
+    }
 };
 
 }
