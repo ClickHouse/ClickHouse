@@ -120,90 +120,11 @@ spec:
   clusterDomain: cluster.local   # default; override only for a custom domain
 ```
 
-Оператор обращается к каждому поду через headless Service по адресу
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Этот суффикс используется
-в двух частях сгенерированной конфигурации:
+Для реплик ClickHouse оператор создаёт управляющий headless Service `<cluster-name>-clickhouse-headless`, обслуживающий клиентский трафик.
+А также сервисы для каждой реплики `<cluster-name>-clickhouse-internal-<shard>-<index>`, которые публикуют неготовые поды для внутреннего трафика
+и запросов управления от оператора. Это можно использовать для восстановления реплики, если она не может перейти в состояние готовности самостоятельно.
 
-* В `ClickHouseCluster` его значение используется для имен хостов реплик в
-  `remote_servers` (межрепличные запросы и запросы `Distributed`).
-* В `KeeperCluster` его значение формирует имена хостов узлов Keeper, которые
-  ClickHouse использует для координации.
-
-<Note>
-  Переопределяйте это только в том случае, если `kubelet` в вашем кластере запущен с параметром `--cluster-domain`,
-  отличным от `cluster.local`. Если значение не совпадает с фактическим доменом кластера,
-  ClickHouse не сможет разрешить имена хостов Keeper и реплик — координация и
-  запросы `Distributed` будут завершаться ошибками DNS resolution. Установите **одно и то же** значение в
-  `ClickHouseCluster` и в `KeeperCluster`, на который он ссылается.
-</Note>
-
-<div id="multi-disk-jbod-storage">
-  ### Многодисковое (JBOD) хранилище
-</div>
-
-`additionalVolumeClaimTemplates` подключает дополнительные диски к каждой реплике ClickHouse в дополнение к основному `dataVolumeClaimSpec`, который обязателен для их использования.
-Каждая запись представляет собой шаблон PVC — `metadata.name` и PVC `spec`.
-Эти диски обрабатываются точно так же, как и основной диск данных, — как `volumeClaimTemplates` в StatefulSet, — поэтому контроллер StatefulSet создает и сохраняет по одному PVC для каждой реплики с именем `<name>-<statefulset>-0`.
-
-```yaml
-spec:
-  dataVolumeClaimSpec:
-    storageClassName: fast-ssd
-    resources:
-      requests:
-        storage: 100Gi
-  additionalVolumeClaimTemplates:
-    - metadata:
-        name: disk1
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-    - metadata:
-        name: disk2
-      spec:
-        storageClassName: fast-ssd
-        resources:
-          requests:
-            storage: 100Gi
-```
-
-Оператор монтирует каждый дополнительный том в `/var/lib/clickhouse/disks/<name>` и добавляет его в автоматически сгенерированную конфигурацию хранилища ClickHouse.
-Дефисы в имени заменяются на символы подчёркивания в идентификаторе диска ClickHouse; путь монтирования сохраняет исходное имя.
-
-Основной диск данных и все дополнительные диски помещаются в один том политики хранилища `default`, поэтому ClickHouse распределяет новые части данных между ними по циклу round-robin.
-Полезная ёмкость равна сумме ёмкостей всех дисков, и каждая таблица, для которой не задана собственная `storage_policy` (включая таблицы `system.*`), использует этот объединённый набор.
-
-<Note>
-  Имена PVC должны соответствовать шаблону `^[a-z]([-a-z0-9]*[a-z0-9])?$` и не должны совпадать с именем основного тома данных.
-  Как и в случае с основным диском данных, набор дополнительных дисков фиксируется при создании: добавление, удаление или переименование записей после создания не допускается.
-  Дополнительные PVC сохраняются при удалении кластера, как и основной диск данных.
-  Размер хранилища для существующей записи можно увеличить, если класс хранилища поддерживает расширение.
-</Note>
-
-<div id="cluster-domain">
-  ## Домен кластера
-</div>
-
-`spec.clusterDomain` задаёт DNS-суффикс Kubernetes, который оператор использует при формировании
-полных доменных имён подов, записываемых в конфигурацию
-сервера ClickHouse. По умолчанию используется `cluster.local`; этот параметр есть как в
-`ClickHouseCluster`, так и в `KeeperCluster`.
-
-```yaml
-spec:
-  clusterDomain: cluster.local   # default; override only for a custom domain
-```
-
-Оператор обращается к каждому поду через headless Service по адресу
-`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Этот суффикс используется
-в двух частях сгенерированной конфигурации:
-
-* В `ClickHouseCluster` его значение используется для имен хостов реплик в
-  `remote_servers` (межрепличные запросы и запросы `Distributed`).
-* В `KeeperCluster` его значение формирует имена хостов узлов Keeper, которые
-  ClickHouse использует для координации.
+Узлы Keeper используют имена подов через свой headless Service: `<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`.
 
 <Note>
   Переопределяйте это только в том случае, если `kubelet` в вашем кластере запущен с параметром `--cluster-domain`,
@@ -598,7 +519,7 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
   ## Дополнительные порты
 </div>
 
-Оператор предоставляет фиксированный набор портов на каждом поде ClickHouse и в его headless Service: `8123` HTTP, `9000` native, `9009` interserver, `9001` management, `9363` метрики Prometheus, а также варианты с TLS `8443`/`9440`, если TLS включен. Чтобы ClickHouse прослушивал дополнительные протоколы — MySQL, PostgreSQL, gRPC — или любой пользовательский порт, объявите их в `spec.additionalPorts`:
+Оператор предоставляет фиксированный набор портов на каждом поде ClickHouse и в его публичном headless Service: `8123` HTTP, `9000` нативный, `9009` interserver, `9001`/`9002` management, `9363` метрики Prometheus, а также варианты с TLS `8443`/`9440`, если TLS включен. Порты `interserver` и management дополнительно предоставляются через внутренние Service каждой реплики, чтобы реплики и оператор могли взаимодействовать до того, как реплика станет готовой. Чтобы ClickHouse прослушивал дополнительные протоколы — MySQL, PostgreSQL, gRPC — или любой пользовательский порт, объявите их в `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -611,7 +532,8 @@ spec:
       port: 9100
 ```
 
-Оператор добавляет эти порты в `containerPorts` пода и в headless Service. Полный пример приведён в [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+Оператор добавляет эти порты в `containerPorts` пода и в публичный headless Service.
+Полный пример приведён в [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
   `additionalPorts` открывает порты только на стороне Kubernetes. Он **не** настраивает сервер ClickHouse на прослушивание этих портов. Также нужно включить соответствующий протокол в `spec.settings.extraConfig.protocols`. Иначе порт будет открыт на Service, но внутри пода на нём ничего не будет отвечать.
@@ -637,7 +559,7 @@ spec:
       requests:
         storage: 2Gi
 
-  # 1) Open the port on the Pod and the headless Service.
+  # 1) Open the port on the Pod and the public headless Service.
   additionalPorts:
     - name: mysql
       port: 9004
@@ -932,7 +854,8 @@ data:
           - '@from_env': READER_PASSWORD
         profile: default
         grants:
-          - query: "GRANT SELECT ON *.*"
+          query:
+            - "GRANT SELECT ON *.*"
 ---
 apiVersion: v1
 kind: Secret
@@ -974,10 +897,16 @@ spec:
 ```yaml
 spec:
   settings:
-    enableDatabaseSync: true  # По умолчанию: true
+    enableDatabaseSync: true  # Default: true
 ```
 
 Когда эта настройка включена, оператор синхронизирует таблицы Replicated и интеграционные таблицы на новые реплики.
+
+Каждый под реплики имеет шлюз готовности `clickhouse.com/ReplicaInitialized`, поэтому новая реплика публикуется через публичный headless Service только после того, как оператор завершит ее инициализацию: база данных `default` преобразуется в движок Replicated, а схема синхронизируется. До этого оператор и другие реплики обращаются к ней через ее внутренний Service. При `enableDatabaseSync: false` оператор сразу помечает реплики как инициализированные, поэтому готовность определяется только проверками контейнера.
+
+Оператор никогда не удаляет заполненную нереплицируемую базу данных `default`. Такая реплика все равно начинает обслуживать клиентский трафик после подготовки схемы, но кластер сообщает `SchemaInSync=False` с причиной `DefaultDatabaseNotReplicated`, пока вы самостоятельно не устраните проблему с этой базой данных.
+
+Перед удалением реплики при масштабировании вниз оператор сначала перенаправляет клиентский трафик с нее, ожидает, пока она перестанет публиковаться, реплицирует оставшиеся данные на оставшиеся реплики и только затем удаляет ее.
 
 <div id="server-logging">
   ### Логирование сервера

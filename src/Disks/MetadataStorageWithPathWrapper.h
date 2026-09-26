@@ -194,6 +194,10 @@ public:
     /// Metadata on disk for an empty file can store empty list of blobs and size=0
     bool supportsEmptyFilesWithoutBlobs() const override { return delegate->supportsEmptyFilesWithoutBlobs(); }
 
+    bool supportsInlineData() const override { return delegate->supportsInlineData(); }
+
+    bool appliesOperationsEagerly() const override { return delegate->appliesOperationsEagerly(); }
+
     bool areBlobPathsRandom() const override
     {
         return delegate->areBlobPathsRandom();
@@ -273,6 +277,11 @@ public:
     bool isReadOnly() const override
     {
         return delegate->isReadOnly();
+    }
+
+    bool isRemote() const override
+    {
+        return delegate->isRemote();
     }
 
     void updateCache(const std::vector<std::string> & paths, bool recursive, bool enforce_fresh, std::string * serialized_cache_update_description) override

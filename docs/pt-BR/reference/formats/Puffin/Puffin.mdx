@@ -1,0 +1,51 @@
+---
+description: 'Documentação sobre o formato Puffin'
+keywords: ['Puffin']
+slug: /interfaces/formats/Puffin
+title: 'Puffin'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+Formato de entrada para leitura de arquivos [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/).
+
+O formato expõe as posições das linhas excluídas de blobs `deletion-vector-v1`. Esse é o único tipo de blob compatível: um arquivo que contenha qualquer outro tipo de blob (por exemplo, `apache-datasketches-theta-v1`) é rejeitado.
+Se um arquivo Puffin contiver vários blobs `deletion-vector-v1`, o formato produz uma linha para cada um deles.
+
+Colunas de saída fixas:
+
+* `referenced_data_file` (`String`) - localização do arquivo de dados ao qual o vetor de exclusão se aplica (propriedade do blob `referenced-data-file`)
+* `deleted_rows` (`Array(UInt64)`) - posições de linhas de 64 bits excluídas de acordo com o bitmap Roaring do vetor de exclusão
+
+Vetores de exclusão cuja `cardinality` declarada excede um limite absoluto de materialização são rejeitados quando `deleted_rows` é solicitado. As propriedades de rodapé de `deletion-vector-v1` (inclusive a validação de que `cardinality` é analisada como um inteiro sem sinal) são sempre verificadas. Selecionar somente `referenced_data_file` ignora a E/S do payload em disco e, portanto, também ignora o envelope, o CRC, a desserialização Roaring e o limite de materialização — intencionalmente, para que uma projeção apenas do caminho não leia dados até o limite de tamanho do blob.
+
+O comprimento em disco do blob `deletion-vector-v1` é limitado por um teto absoluto (alinhado à verificação de tamanho de conteúdo de 2 GiB do Iceberg). Quando `deleted_rows` é solicitado, o leitor inspeciona o cabeçalho do envelope (comprimento combinado e magic) antes de alocar o payload completo; o CRC é verificado após a leitura limitada.
+
+Há suporte para rodapés Puffin comprimidos com LZ4 e não comprimidos. O tamanho do payload do rodapé (e o tamanho de conteúdo LZ4 declarado) é limitado, quando aplicável, por uma razão de compressão e por um teto absoluto; rodapés muito grandes são rejeitados antes da alocação.
+
+Apenas um subconjunto das colunas de saída pode ser solicitado. Uma estrutura fornecida pelo usuário com nomes ou tipos de coluna inesperados é rejeitada durante a criação do formato.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Leia as posições das linhas excluídas usando o arquivo de dados referenciado:
+
+```sql
+SELECT referenced_data_file, deleted_rows
+FROM file(deletes.puffin, Puffin);
+```
+
+Expanda as posições excluídas em linhas individuais:
+
+```sql
+SELECT referenced_data_file, row_number
+FROM file(deletes.puffin, Puffin)
+ARRAY JOIN deleted_rows AS row_number
+ORDER BY referenced_data_file, row_number;
+```
+
+Use `PuffinMetadata` para inspecionar os descritores de blobs do rodapé antes de ler os vetores de exclusão.

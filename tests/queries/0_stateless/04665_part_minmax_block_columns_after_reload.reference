@@ -1,0 +1,6 @@
+-- before reload --
+all_1_1_0_4	(1,1)	(0,8)
+-- after reload --
+all_1_1_0_4	(1,1)	(0,8)
+-- after delete and reload --
+all_1_1_0_5	(1,1)	(1,8)

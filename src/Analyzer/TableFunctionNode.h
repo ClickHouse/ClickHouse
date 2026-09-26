@@ -101,6 +101,9 @@ public:
         return storage;
     }
 
+    /// True for a parameterized view call resolved into its `StorageView` (no real table function behind it)
+    bool isParameterizedView() const;
+
     /// Resolve table function with table function, storage and context
     void resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, VectorWithMemoryTracking<size_t> unresolved_arguments_indexes_);
 
@@ -145,11 +148,8 @@ public:
         settings_changes = std::move(settings_changes_);
     }
 
-    /// Set table expression modifiers
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
-    {
-        table_expression_modifiers = std::move(table_expression_modifiers_value);
-    }
+    /// Set table expression modifiers and update the storage snapshot metadata accordingly
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value);
 
     QueryTreeNodeType getNodeType() const override
     {

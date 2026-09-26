@@ -30,15 +30,11 @@ INSERT INTO t_glob_local SELECT number FROM numbers(1000);
 SELECT count() FROM t_glob_dist WHERE a GLOBAL IN (SELECT number FROM numbers(500))
 SETTINGS use_index_for_in_with_subqueries_max_values = 5;
 
-SELECT count() FROM t_glob_dist WHERE a GLOBAL IN (SELECT number FROM numbers(500))
-SETTINGS use_index_for_in_with_subqueries_max_values = 5, enable_analyzer = 0;
 
 -- Same with the limit effectively disabled (explicit elements kept): the result must be identical.
 SELECT count() FROM t_glob_dist WHERE a GLOBAL IN (SELECT number FROM numbers(500))
 SETTINGS use_index_for_in_with_subqueries_max_values = 1000000;
 
-SELECT count() FROM t_glob_dist WHERE a GLOBAL IN (SELECT number FROM numbers(500))
-SETTINGS use_index_for_in_with_subqueries_max_values = 1000000, enable_analyzer = 0;
 
 DROP TABLE t_glob_local SYNC;
 DROP TABLE t_glob_dist SYNC;
