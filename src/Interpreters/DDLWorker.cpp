@@ -17,6 +17,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateIndexQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
 #include <Parsers/ASTDropIndexQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTOptimizeQuery.h>
@@ -825,7 +826,8 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
         !ast_ddl->as<ASTOptimizeQuery>() &&
         !ast_ddl->as<ASTDropQuery>() &&
         !ast_ddl->as<ASTCreateIndexQuery>() &&
-        !ast_ddl->as<ASTDropIndexQuery>())
+        !ast_ddl->as<ASTDropIndexQuery>() &&
+        !ast_ddl->as<ASTDeleteQuery>())
         return false;
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
@@ -1401,7 +1403,7 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         {
             HostID interserver_io_secure_host_id = {host_port.first, *maybe_secure_port};
             all_host_ids.emplace(interserver_io_secure_host_id.toString());
-            LOG_INFO(log, "Add interserver IO secure host ID  {}", interserver_io_secure_host_id.toString());
+            LOG_INFO(log, "Add interserver IO secure host ID {}", interserver_io_secure_host_id.toString());
         }
     }
     catch (const Exception & e)
@@ -1496,6 +1498,12 @@ void DDLWorker::markReplicasActive(bool reinitialized)
                 }
 
                 auto code = zookeeper->tryRemove(active_path, stat.version);
+                if (code == Coordination::Error::ZBADVERSION)
+                {
+                    // The node was rewritten after it was read, so the check above no longer describes it.
+                    LOG_TRACE(log, "Loopback host {} was rewritten while it was being claimed, skipping it", host_id);
+                    continue;
+                }
                 if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
                     throw Coordination::Exception::fromPath(code, active_path);
             }
