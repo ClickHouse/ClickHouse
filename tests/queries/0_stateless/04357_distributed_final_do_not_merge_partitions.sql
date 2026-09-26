@@ -1,11 +1,10 @@
--- Tags: no-darwin, no-old-analyzer
+-- Tags: no-darwin
 -- Distributed FINAL must reproduce per-partition deduplication. When FINAL does not merge across
 -- partitions, a primary-key value may repeat in several partitions and both copies must survive. The
 -- distributed read splits a FINAL into primary-key-range layers per partition so a layer never merges
 -- keys from different partitions, matching local FINAL.
 
 SET enable_parallel_replicas = 0, max_rows_to_group_by = 0, distributed_plan_default_reader_bucket_count = 4;
-SET automatic_parallel_replicas_mode = 0;
 
 -- Partition key is not part of the sort key, with do_not_merge_across_partitions_select_final = 1: every
 -- key appears in both partitions and both copies must survive. Merging across partitions (the bug) would

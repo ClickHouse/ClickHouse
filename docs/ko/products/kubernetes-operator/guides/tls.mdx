@@ -49,171 +49,178 @@ TLS는 `spec.settings.tls.serverCertSecret`이 서버 키 쌍을 포함한 시�
   `required: true`도 거부합니다.
 </Note>
 
-<Steps>
-  <Step title="cert-manager로 CA 초기 설정하기" id="step-1-ca">
-    가장 재현성이 높은 구성은 자체 서명된 CA로 서버
-    인증서에 서명하는 방식입니다. 이렇게 하면 클라이언트가 신뢰할 수 있는 안정적인 `ca.crt`를 사용할 수 있습니다.
+<div id="step-1-ca">
+  ## 1단계 — cert-manager로 CA Bootstrap
+</div>
 
-    ```yaml
-    # A self-signed issuer used only to mint the CA certificate
-    apiVersion: cert-manager.io/v1
+가장 재현 가능한 구성은 자체 서명된 CA를 생성한 뒤, 해당 CA로 서버 인증서에 서명하는 방식입니다. 이렇게 하면 클라이언트가 신뢰할 수 있는 안정적인 `ca.crt`를 사용할 수 있습니다.
+
+```yaml
+# A self-signed issuer used only to mint the CA certificate
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-bootstrap
+  namespace: <namespace>
+spec:
+  selfSigned: {}
+---
+# The CA certificate itself
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-ca
+  namespace: <namespace>
+spec:
+  isCA: true
+  commonName: clickhouse-ca
+  secretName: clickhouse-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-bootstrap
     kind: Issuer
-    metadata:
-      name: selfsigned-bootstrap
-      namespace: <namespace>
-    spec:
-      selfSigned: {}
-    ---
-    # The CA certificate itself
-    apiVersion: cert-manager.io/v1
-    kind: Certificate
-    metadata:
-      name: clickhouse-ca
-      namespace: <namespace>
-    spec:
-      isCA: true
-      commonName: clickhouse-ca
-      secretName: clickhouse-ca
-      privateKey:
-        algorithm: ECDSA
-        size: 256
-      issuerRef:
-        name: selfsigned-bootstrap
-        kind: Issuer
-    ---
-    # A CA issuer that signs leaf certificates from the CA above
-    apiVersion: cert-manager.io/v1
+---
+# A CA issuer that signs leaf certificates from the CA above
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: clickhouse-ca-issuer
+  namespace: <namespace>
+spec:
+  ca:
+    secretName: clickhouse-ca
+```
+
+운영 환경에서는 자체 서명된 Bootstrap을 실제 issuer(사내
+CA, Vault, ACME 등)로 대체하십시오. 변경되는 것은 Step 2뿐이며, 클러스터 구성은
+동일합니다.
+
+<div id="step-2-cert">
+  ## 2단계 — 서버 인증서 발급
+</div>
+
+CA issuer에 리프 인증서를 요청합니다. `dnsNames`는 클라이언트가
+파드에 접속할 때 사용하는 주소를 포함해야 합니다. 연산자는
+`<cluster-name>-clickhouse-headless`라는 이름의 단일 **헤드리스** Service를 생성하며,
+각 레플리카 파드는
+`<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`로
+주소를 지정할 수 있습니다.
+헤드리스 Service 도메인에 대한 와일드카드를 사용하면 모든 레플리카를 포괄할 수 있습니다:
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-server
+  namespace: <namespace>
+spec:
+  secretName: clickhouse-cert        # <-- the Secret the operator will read
+  duration: 8760h                    # 1 year
+  renewBefore: 720h                  # rotate 30 days early
+  issuerRef:
+    name: clickhouse-ca-issuer
     kind: Issuer
-    metadata:
-      name: clickhouse-ca-issuer
-      namespace: <namespace>
-    spec:
-      ca:
-        secretName: clickhouse-ca
-    ```
+  dnsNames:
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
+    - "localhost"
+```
 
-    운영 환경에서는 자체 서명된 Bootstrap을 실제 issuer(사내 CA, Vault, ACME 등)로
-    대체하십시오. 변경되는 것은 2단계뿐이며, 클러스터 연결 구성은
-    동일합니다.
-  </Step>
+<Note>
+  연산자는 클러스터 전반에서 사용하는(로드 밸런싱된) Service를 **생성하지 않습니다**. 연결에
+  사용할 안정적인 단일 endpoint가 필요하면, 클러스터의 파드를 선택하는 `클러스터 IP` Service를
+  직접 생성하고 해당 DNS 이름을 위의 `dnsNames`에 추가하십시오.
+</Note>
 
-  <Step title="서버 인증서 발급" id="step-2-cert">
-    CA issuer에 리프 인증서를 요청합니다. `dnsNames`는 클라이언트가
-    파드에 접속할 때 사용하는 주소를 포함해야 합니다. 연산자는
-    `<cluster-name>-clickhouse-headless`라는 이름의 단일 **헤드리스** Service를 생성하며,
-    각 레플리카 파드는
-    `<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`로
-    주소를 지정할 수 있습니다.
-    헤드리스 Service 도메인에 대한 와일드카드를 사용하면 모든 레플리카를 포괄할 수 있습니다:
+cert-manager는 `tls.crt`, `tls.key`, `ca.crt`가 포함된 `clickhouse-cert` 시크릿을 생성하며,
+만료 전에 이를 갱신합니다. 다음과 같이 존재 여부를 확인하십시오:
 
-    ```yaml
-    apiVersion: cert-manager.io/v1
-    kind: Certificate
-    metadata:
-      name: clickhouse-server
-      namespace: <namespace>
-    spec:
-      secretName: clickhouse-cert        # <-- the Secret the operator will read
-      duration: 8760h                    # 1 year
-      renewBefore: 720h                  # rotate 30 days early
-      issuerRef:
-        name: clickhouse-ca-issuer
-        kind: Issuer
-      dnsNames:
-        - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
-        - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
-        - "localhost"
-    ```
+```bash
+kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
+# ["ca.crt","tls.crt","tls.key"]
+```
 
-    <Note>
-      연산자는 클러스터 전반에서 사용하는(로드 밸런싱된) Service를 **생성하지 않습니다**. 연결에
-      사용할 안정적인 단일 endpoint가 필요하면, 클러스터의 파드를 선택하는 `클러스터 IP` Service를
-      직접 생성하고 해당 DNS 이름을 위의 `dnsNames`에 추가하십시오.
-    </Note>
+<div id="step-3-enable">
+  ## 단계 3 — 클러스터에서 TLS를 활성화
+</div>
 
-    cert-manager는 `tls.crt`, `tls.key`, `ca.crt`가 포함된 `clickhouse-cert` 시크릿을 생성하며,
-    만료 전에 이를 갱신합니다. 다음과 같이 존재 여부를 확인하십시오:
+클러스터가 시크릿을 참조하도록 설정합니다:
 
-    ```bash
-    kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
-    # ["ca.crt","tls.crt","tls.key"]
-    ```
-  </Step>
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: <cluster-name>
+  namespace: <namespace>
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true            # disable the insecure ports entirely
+      serverCertSecret:
+        name: clickhouse-cert
+```
 
-  <Step title="클러스터에서 TLS 사용 설정" id="step-3-enable">
-    클러스터가 시크릿을 참조하도록 설정합니다:
+<div id="what-the-operator-does">
+  ### 연산자의 동작
+</div>
 
-    ```yaml
-    apiVersion: clickhouse.com/v1alpha1
-    kind: ClickHouseCluster
-    metadata:
-      name: <cluster-name>
-      namespace: <namespace>
-    spec:
-      settings:
-        tls:
-          enabled: true
-          required: true            # disable the insecure ports entirely
-          serverCertSecret:
-            name: clickhouse-cert
-    ```
+`tls.enabled: true`로 설정하면 연산자는 다음을 수행합니다.
 
-    ### 연산자가 수행하는 작업
+* 모든 파드와 헤드리스 Service에 **보안 포트** `9440`
+  (네이티브 TLS) 및 `8443` (HTTPS)를 **엽니다**. 이 포트는 기존 포트에 추가됩니다.
+* **시크릿을** `/etc/clickhouse-server/tls/`에 마운트하고,
+  `verificationMode: relaxed`,
+  `disableProtocols: sslv2,sslv3`, `preferServerCiphers: true`가 포함된
+  ClickHouse `openSSL` 블록을 생성합니다. 이는 기본값이므로, 재정의하려면
+  [TLS 설정 사용자 지정](#custom-tls-settings)을 참조하십시오.
 
-    `tls.enabled: true`인 경우, 연산자는 다음을 수행합니다:
+추가로 `required: true`도 설정하면 연산자는 다음 작업도 수행합니다.
 
-    * 모든 파드와 헤드리스 Service에서 **보안 포트**를 엽니다: `9440`
-      (네이티브 TLS) 및 `8443` (HTTPS). 이 포트들은 기존 포트와 함께 추가됩니다.
-    * **시크릿을** `/etc/clickhouse-server/tls/`에 **마운트**하고,
-      `verificationMode: relaxed`,
-      `disableProtocols: sslv2,sslv3`, `preferServerCiphers: true`가 포함된
-      ClickHouse `openSSL` 블록을 생성합니다. 이는 기본값입니다. 이를 재정의하려면
-      [TLS 설정 사용자 지정](#custom-tls-settings)을 참조하십시오.
+* **비보안 포트** `9000` (네이티브) 및 `8123` (HTTP)를 **제거**합니다. 따라서 TLS
+  포트만 남으며, plaintext 클라이언트는 더 이상 연결할 수 없습니다.
+* 파드의 **활성 상태 프로브(liveness probe)**를 보안 네이티브 포트 `9440`으로 **전환**하므로, plaintext 리스너 없이도 상태
+  확인이 계속 작동합니다.
 
-    또한 `required: true`도 설정하면, 연산자는 추가로 다음을 수행합니다:
+<Note>
+  TLS 포트 `8443` 및 `9440`은 TLS가 비활성화된 경우에도 웹훅이 **항상**
+  예약하므로, 나중에 `tls.enabled`를 전환하더라도
+  `spec.additionalPorts` 항목과 충돌하지 않습니다. 자세한 내용은
+  [구성 → `additionalPorts`](/ko/products/kubernetes-operator/guides/configuration#additional-ports)를 참조하십시오.
+</Note>
 
-    * **비보안 포트** `9000` (네이티브) 및 `8123` (HTTP)를 제거합니다 — TLS
-      버전만 남게 되므로, 평문 클라이언트는 더 이상 연결할 수 없습니다.
-    * 파드의 **liveness probe를** 보안 네이티브 포트 `9440`로 전환하므로, 평문
-      리스너 없이도 상태 확인이 계속 동작합니다.
+<div id="step-4-connect">
+  ## 4단계 — TLS를 통해 연결
+</div>
 
-    <Note>
-      TLS 포트 `8443` 및 `9440`는 TLS가 꺼져 있는 경우에도 웹훅에 의해 **무조건**
-      예약되므로, 나중에 `tls.enabled`를 전환하더라도
-      `spec.additionalPorts` 항목과 충돌하지 않습니다. 자세한 내용은
-      [구성 → `additionalPorts`](/ko/products/kubernetes-operator/guides/configuration#additional-ports)를 참조하십시오.
-    </Note>
-  </Step>
+`required: true`로 설정하면 클라이언트는 보안 포트를 사용하고 CA를 신뢰해야 합니다. 헤드리스 Service(또는 직접 만든 경우 자체 `클러스터 IP`
+Service)를 통해 특정 레플리카 파드에 연결하십시오.
 
-  <Step title="TLS로 연결하기" id="step-4-connect">
-    `required: true`로 설정하면 클라이언트는 보안 포트를 사용하고 CA를 신뢰해야 합니다. 헤드리스 Service(또는 직접 생성한 `클러스터 IP`
-    Service)를 통해 특정 레플리카 파드의 주소를 지정하십시오.
+**네이티브 프로토콜** (`clickhouse-client`, port `9440`):
 
-    **네이티브 프로토콜** (`clickhouse-client`, 포트 `9440`):
+```bash
+clickhouse-client --secure \
+  --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
+  --port 9440 \
+  --ca-certificate /path/to/ca.crt \
+  --query "SELECT 1"
+```
 
-    ```bash
-    clickhouse-client --secure \
-      --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
-      --port 9440 \
-      --ca-certificate /path/to/ca.crt \
-      --query "SELECT 1"
-    ```
+**HTTPS** (포트 `8443`):
 
-    **HTTPS** (포트 `8443`):
+```bash
+curl --cacert /path/to/ca.crt \
+  "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
+```
 
-    ```bash
-    curl --cacert /path/to/ca.crt \
-      "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
-    ```
+로컬 테스트용으로 시크릿에서 `ca.crt`를 직접 가져오세요:
 
-    로컬 테스트를 위해 시크릿에서 `ca.crt`를 직접 가져오십시오:
-
-    ```bash
-    kubectl -n <namespace> get secret clickhouse-cert \
-      -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
-    ```
-  </Step>
-</Steps>
+```bash
+kubectl -n <namespace> get secret clickhouse-cert \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+```
 
 <div id="keeper-tls">
   ## Keeper 트래픽 암호화
@@ -294,7 +301,7 @@ spec:
 
 머지는 키별로 수행됩니다. 설정한 값만 대체되며, 생략한 생성 키
 (인증서 경로, CA 구성)는 유지됩니다. 사용 가능한 옵션은
-[`openSSL` 서버 설정](/ko/reference/settings/server-settings/settings/other#openssl)
+[`openSSL` server 설정](/ko/reference/settings/server-settings/settings#openssl)
 을 참조하고, `extraConfig`가 어떻게 머지되는지는
 [구성 → 내장 추가 구성](/ko/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
 을 참조하십시오.
@@ -332,4 +339,4 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
 * [구성 → TLS/SSL 구성](/ko/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — 필드 참조
 * [구성 → `additionalPorts`](/ko/products/kubernetes-operator/guides/configuration#additional-ports) — 예약 포트
 * [API 참조 → ClusterTLSSpec](/ko/products/kubernetes-operator/reference/api-reference#clustertlsspec)
-* [`openSSL` 서버 설정](/ko/reference/settings/server-settings/settings/other#openssl) — `extraConfig`를 통해 재정의할 수 있는 TLS 옵션
+* [`openSSL` 서버 설정](/ko/reference/settings/server-settings/settings#openssl) — `extraConfig`를 통해 재정의할 수 있는 TLS 옵션

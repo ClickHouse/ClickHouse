@@ -1,6 +1,5 @@
--- Tags: no-darwin, no-old-analyzer
+-- Tags: no-darwin
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
--- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- Distribution-column matching in `isDistributionSatisfiedBy` must be
 -- positional: the partition hash is computed over the key columns in order,
@@ -12,7 +11,6 @@ SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET enable_join_runtime_filters = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 -- Steer the optimizer toward shuffle aggregation for the subquery so that the

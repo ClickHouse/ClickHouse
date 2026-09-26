@@ -1,16 +1,22 @@
 #include <gtest/gtest.h>
 
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/Port.h>
+#include <Processors/Sources/SourceFromChunks.h>
+#include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypesNumber.h>
+
+#include <functional>
+#include <set>
+#include <utility>
 
 using namespace DB;
 
@@ -60,6 +66,9 @@ public:
 
     String getName() const override { return "DynamicSourceCoordinator"; }
 
+    /// Called once, from `prepare`, right before the cycle that retires the current source.
+    void setBeforeRetireHook(std::function<void()> hook) { before_retire_hook = std::move(hook); }
+
     Status prepare() override
     {
         auto & output = outputs.front();
@@ -69,7 +78,12 @@ public:
 
         auto & input = inputs.back();
         if (input.isFinished())
+        {
+            if (before_retire_hook)
+                std::exchange(before_retire_hook, {})();
+
             return Status::UpdatePipeline;
+        }
 
         if (!output.canPush())
             return Status::PortFull;
@@ -129,6 +143,7 @@ private:
     const SharedHeader header;
     ProcessorPtr current_source;
     std::vector<std::weak_ptr<IProcessor>> source_history;
+    std::function<void()> before_retire_hook;
 };
 
 class FinishingSource final : public IProcessor
@@ -207,6 +222,176 @@ private:
     ProcessorPtr source;
     bool source_added = false;
 };
+
+/// Processor with deferred finish: after its input or output closes it still needs one work() call before it reports Finished
+class DeferredFinishTransform final : public IProcessor
+{
+public:
+    explicit DeferredFinishTransform(SharedHeader header_)
+        : IProcessor({Block(*header_)}, {Block(*header_)})
+    {
+    }
+
+    String getName() const override { return "DeferredFinishTransform"; }
+
+    Status prepare() override
+    {
+        auto & input = inputs.front();
+        auto & output = outputs.front();
+
+        if (!draining)
+        {
+            if (output.isFinished() || input.isFinished())
+            {
+                draining = true;
+                return Status::Ready;
+            }
+
+            if (!output.canPush())
+                return Status::PortFull;
+
+            if (!input.hasData())
+            {
+                input.setNeeded();
+                return Status::NeedData;
+            }
+
+            output.push(input.pull(/*set_not_needed=*/true));
+            return Status::PortFull;
+        }
+
+        if (!drained)
+            return Status::Ready;
+
+        input.close();
+        output.finish();
+        return Status::Finished;
+    }
+
+    void work() override { drained = true; }
+
+private:
+    bool draining = false;
+    bool drained = false;
+};
+
+/// Closes its input and finishes its output on the first prepare.
+class EarlyClosingTransform final : public IProcessor
+{
+public:
+    explicit EarlyClosingTransform(SharedHeader header_)
+        : IProcessor({Block(*header_)}, {Block(*header_)})
+    {
+    }
+
+    String getName() const override { return "EarlyClosingTransform"; }
+
+    Status prepare() override
+    {
+        inputs.front().close();
+        outputs.front().finish();
+        return Status::Finished;
+    }
+};
+
+/// Cycles source -> deferred-finish (-> early closer for the first batch) sub-pipelines, retiring each batch via to_remove.
+class BatchCyclingCoordinator final : public IProcessor
+{
+public:
+    BatchCyclingCoordinator(SharedHeader header_, size_t total_batches_)
+        : IProcessor({}, {Block(*header_)})
+        , header(std::move(header_))
+        , total_batches(total_batches_)
+    {
+    }
+
+    String getName() const override { return "BatchCyclingCoordinator"; }
+
+    Status prepare() override
+    {
+        auto & output = outputs.front();
+
+        if (output.isFinished())
+            return Status::Finished;
+
+        if (inputs.empty() || inputs.back().isFinished())
+            return Status::UpdatePipeline;
+
+        if (!output.canPush())
+            return Status::PortFull;
+
+        auto & input = inputs.back();
+        if (!input.hasData())
+        {
+            input.setNeeded();
+            return Status::NeedData;
+        }
+
+        output.push(input.pull(/*set_not_needed=*/true));
+        return Status::PortFull;
+    }
+
+    PipelineUpdate updatePipeline() override
+    {
+        PipelineUpdate update;
+
+        if (!inputs.empty())
+        {
+            disconnect(inputs.back().getOutputPort(), inputs.back());
+            update.to_remove = std::move(current_batch);
+        }
+        else
+        {
+            inputs.emplace_back(*header, this);
+        }
+
+        if (batches_started == total_batches)
+        {
+            outputs.front().finish();
+            return update;
+        }
+
+        auto source = std::make_shared<SingleValueSource>(header, static_cast<UInt8>(batches_started));
+        auto laggard = std::make_shared<DeferredFinishTransform>(header);
+        connect(source->getOutputs().front(), laggard->getInputs().front());
+        current_batch = {source, laggard};
+
+        if (batches_started == 0)
+        {
+            auto closer = std::make_shared<EarlyClosingTransform>(header);
+            connect(laggard->getOutputs().front(), closer->getInputs().front());
+            current_batch.push_back(closer);
+        }
+
+        connect(current_batch.back()->getOutputs().front(), inputs.back());
+        inputs.back().reopen();
+        inputs.back().setNeeded();
+
+        update.to_add = current_batch;
+        batch_history.append_range(current_batch);
+        ++batches_started;
+
+        return update;
+    }
+
+    const std::vector<std::weak_ptr<IProcessor>> & batchHistory() const { return batch_history; }
+
+private:
+    const SharedHeader header;
+    const size_t total_batches;
+    size_t batches_started = 0;
+    Processors current_batch;
+    std::vector<std::weak_ptr<IProcessor>> batch_history;
+};
+
+Chunk makeSingleValueChunk(UInt8 value)
+{
+    auto column = ColumnUInt8::create();
+    column->insertValue(value);
+    Columns columns;
+    columns.emplace_back(std::move(column));
+    return Chunk(std::move(columns), 1);
+}
 
 }
 
@@ -369,4 +554,131 @@ TEST(Processors, UpdatePipelineFanInRemovalNoUseAfterFree)
     }
 
     SUCCEED();
+}
+
+TEST(Processors, UpdatePipelineDeferredRemovalOfUnfinishedProcessors)
+{
+    auto header = makeHeader();
+
+    auto coordinator = std::make_shared<BatchCyclingCoordinator>(header, /*total_batches=*/5);
+    Pipe pipe(coordinator);
+
+    QueryPipeline pipeline(std::move(pipe));
+    {
+        PullingPipelineExecutor executor(pipeline);
+
+        std::vector<UInt8> values;
+        Chunk chunk;
+        while (executor.pull(chunk))
+        {
+            ASSERT_EQ(chunk.getNumRows(), 1u);
+            const auto & col = assert_cast<const ColumnUInt8 &>(*chunk.getColumns().front());
+            values.push_back(col.getElement(0));
+        }
+
+        EXPECT_EQ(values, (std::vector<UInt8>{1, 2, 3, 4}));
+
+        for (const auto & weak : coordinator->batchHistory())
+            EXPECT_TRUE(weak.expired());
+    }
+
+    EXPECT_EQ(coordinator->getInputs().size(), 1u);
+}
+
+TEST(Processors, UpdatePipelineRemovalIsNotStrandedByCancellation)
+{
+    auto header = makeHeader();
+
+    auto coordinator = std::make_shared<DynamicSourceCoordinator>(header);
+    Pipe pipe(coordinator);
+
+    QueryPipeline pipeline(std::move(pipe));
+    {
+        PullingPipelineExecutor executor(pipeline);
+
+        /// Cancel from inside `prepare`, so that the `updatePipeline` retiring the first source is
+        /// the very one that observes the cancellation.
+        coordinator->setBeforeRetireHook([&] { executor.cancel(); });
+
+        Chunk chunk;
+        ASSERT_TRUE(executor.pull(chunk));
+        ASSERT_EQ(chunk.getNumRows(), 1u);
+
+        /// Drains whatever is left after the cancellation.
+        while (executor.pull(chunk))
+        {
+        }
+    }
+
+    ASSERT_EQ(coordinator->totalSourcesCreated(), 2u);
+
+    /// A source scheduled for removal must leave the pipeline even when the query is cancelled in
+    /// the middle of the update, otherwise it stays around until the whole pipeline is destroyed.
+    EXPECT_TRUE(coordinator->getSourceWeak(0).expired());
+}
+
+/// Reclaiming a retired processor sweeps `post_updated_output_ports` of *every* node under the graph
+/// write lock, so a processor that touches its ports outside `prepare` writes to that vector with no
+/// lock held. Scatter next to removal churn, on many threads, is that collision.
+TEST(Processors, UpdatePipelineRemovalWithConcurrentScatter)
+{
+    constexpr size_t total_batches = 400;
+    constexpr size_t scatter_outputs = 8;
+    constexpr size_t scattered_chunks = 4000;
+    constexpr size_t num_threads = 16;
+
+    auto header = makeHeader();
+
+    auto coordinator = std::make_shared<BatchCyclingCoordinator>(header, total_batches);
+
+    Chunks chunks;
+    chunks.reserve(scattered_chunks);
+    for (size_t i = 0; i < scattered_chunks; ++i)
+        chunks.push_back(makeSingleValueChunk(static_cast<UInt8>(i % 256)));
+
+    Pipe scatter_pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks)));
+    scatter_pipe.transform([&](const OutputPortRawPtrs & ports) -> Processors
+    {
+        auto scatter = ScatterByPartitionTransform::createRoundRobin(header, scatter_outputs, /*start_bucket=*/0);
+        connect(*ports.front(), scatter->getInputs().front());
+        return Processors{std::move(scatter)};
+    });
+
+    Pipes pipes;
+    pipes.emplace_back(coordinator);
+    pipes.emplace_back(std::move(scatter_pipe));
+
+    auto united = Pipe::unitePipes(std::move(pipes));
+    united.resize(1, /*strict=*/false, /*min_outstreams_per_resize_after_split=*/0);
+
+    QueryPipeline pipeline(std::move(united));
+    pipeline.setNumThreads(num_threads);
+
+    std::multiset<UInt8> pulled;
+    {
+        PullingAsyncPipelineExecutor executor(pipeline);
+
+        Chunk chunk;
+        while (executor.pull(chunk))
+        {
+            if (!chunk)
+                continue;
+            const auto & col = assert_cast<const ColumnUInt8 &>(*chunk.getColumns().front());
+            for (size_t i = 0; i < chunk.getNumRows(); ++i)
+                pulled.insert(col.getElement(i));
+        }
+
+        /// Removal still runs to completion alongside the scatter.
+        for (const auto & weak : coordinator->batchHistory())
+            EXPECT_TRUE(weak.expired());
+    }
+
+    std::multiset<UInt8> expected;
+    /// The coordinator's first batch is swallowed by its EarlyClosingTransform.
+    for (size_t i = 1; i < total_batches; ++i)
+        expected.insert(static_cast<UInt8>(i));
+    for (size_t i = 0; i < scattered_chunks; ++i)
+        expected.insert(static_cast<UInt8>(i % 256));
+
+    EXPECT_EQ(pulled, expected);
 }

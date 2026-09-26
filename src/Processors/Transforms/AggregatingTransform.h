@@ -74,11 +74,18 @@ struct ManyAggregatedData
     ManyAggregatedDataVariants variants;
     std::atomic<UInt32> num_finished = 0;
 
+    /// The number of producers that have to reach the finish barrier in
+    /// `AggregatingTransform::initGenerate`, fixed at construction time.
+    /// `variants.size()` cannot be used instead: the last finisher appends the adaptive
+    /// aggregation's early-drain routing table to `variants`, and reading the size of a vector
+    /// that is concurrently grown is a data race.
+    const size_t num_producers;
+
     /// Set when the adaptive aggregation is enabled for this aggregation (see
     /// `AdaptiveAggregationSession`); shared by all the participating transforms.
     AdaptiveAggregationSessionPtr adaptive_session;
 
-    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads)
+    explicit ManyAggregatedData(size_t num_threads = 0) : variants(num_threads), num_producers(num_threads)
     {
         for (auto & elem : variants)
             elem = std::make_shared<AggregatedDataVariants>();
@@ -108,7 +115,7 @@ using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 class AggregatingTransform final : public IProcessor
 {
 public:
-    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+    AggregatingTransform(SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_, size_t output_streams_ = 1);
 
     /// For Parallel aggregating.
     AggregatingTransform(
@@ -120,7 +127,8 @@ public:
         size_t temporary_data_merge_threads,
         bool should_produce_results_in_order_of_bucket_number_ = true,
         bool skip_merging_ = false,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr,
+        size_t output_streams_ = 1);
 
     ~AggregatingTransform() override;
 
@@ -187,6 +195,9 @@ private:
     std::list<TemporaryBlockStreamHolder> tmp_files;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
+    /// How many streams `AggregatingStep` spreads this transform's output over; 1 when it doesn't.
+    size_t output_streams = 1;
 
     void initGenerate();
 };

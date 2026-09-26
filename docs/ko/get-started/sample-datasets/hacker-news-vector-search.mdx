@@ -65,7 +65,7 @@ doc_type: 'guide'
     `Parquet` 파일의 데이터셋을 불러오려면 다음 SQL 문을 실행하십시오:
 
     ```sql
-    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet');
+    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet', NOSIGN);
     ```
 
     테이블에 2,874만 개의 행을 삽입하는 데는 몇 분 정도 걸립니다.
@@ -103,11 +103,11 @@ doc_type: 'guide'
   </Step>
 
   <Step title="검색 쿼리용 임베딩 생성" id="generating-embeddings-for-search-query">
-    [Sentence Transformers](https://www.sbert.net/)는 문장과 단락의 의미론적 의미를 파악하기 위한 임베딩(embedding) 모델을 로컬 환경에서 간편하게 사용할 수 있도록 제공합니다.
+    [Sentence Transformers](https://www.sbert.net/)는 문장과 단락의 의미를 포착하기 위한 임베딩 모델을 로컬 환경에서 손쉽게 사용할 수 있도록 제공합니다.
 
-    이 HackerNews 데이터셋에는 [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) 모델로 생성된 벡터 임베딩(vector embedding)이 포함되어 있습니다.
+    이 HackerNews 데이터셋에는 [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) 모델로 생성된 벡터 임베딩이 포함되어 있습니다.
 
-    아래에 예시 Python 스크립트가 제공됩니다. 이 스크립트는 `sentence_transformers` Python 패키지를 사용하여 프로그래밍 방식으로 임베딩 벡터를 생성하는 방법을 보여줍니다. 생성된 검색 임베딩 벡터는 `SELECT&#96; 쿼리에서 [`cosineDistance()&#96;](/reference/functions/regular-functions/distance-functions#cosineDistance) 함수의 인수로 전달됩니다.
+    아래에 예시 Python 스크립트가 제공됩니다. 이 스크립트는 `sentence_transformers` Python 패키지를 사용하여 프로그래밍 방식으로 임베딩 벡터를 생성하는 방법을 보여줍니다. 생성된 검색 임베딩 벡터는 `SELECT` 쿼리에서 [`cosineDistance()`](/ko/reference/functions/regular-functions/distance-functions#cosineDistance) 함수의 인수로 전달됩니다.
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -214,7 +214,7 @@ doc_type: 'guide'
 
     위의 예시에서는 ClickHouse를 사용한 시맨틱 검색(semantic search) 및 문서 검색 방법을 살펴보았습니다.
 
-    매우 간단하지만 높은 잠재력을 지닌 생성형 AI 예시 애플리케이션을 다음에서 소개합니다.
+    매우 간단하지만 잠재력이 큰 생성형 AI 예시 애플리케이션을 다음에서 소개합니다.
 
     애플리케이션은 다음 단계를 수행합니다:
 
@@ -224,7 +224,7 @@ doc_type: 'guide'
     4. `LangChain` 및 OpenAI `gpt-3.5-turbo` Chat API를 사용해 3단계에서 가져온 콘텐츠를 **요약**합니다.
        3단계에서 가져온 게시물/댓글은 Chat API에 *컨텍스트*로 전달되며, Generative AI의 핵심 연결 요소입니다.
 
-    요약 애플리케이션 실행 예시를 먼저 아래에 제시하고, 이어서 요약 애플리케이션의 코드를 설명합니다. 애플리케이션을 실행하려면 환경 변수 `OPENAI_API_KEY`에 OpenAI API Key를 설정해야 합니다. OpenAI API Key는 https://platform.openai.com 에서 등록 후 발급받을 수 있습니다.
+    요약 애플리케이션을 실행한 예시는 먼저 아래에 나와 있으며, 이어서 요약 애플리케이션의 코드가 있습니다. 애플리케이션을 실행하려면 환경 변수 `OPENAI_API_KEY`에 OpenAI API 키를 설정해야 합니다. OpenAI API 키는 https://platform.openai.com에서 등록한 후 발급받을 수 있습니다.
 
     이 애플리케이션은 고객 감성 분석, 기술 지원 자동화, 사용자 대화 마이닝, 법률 문서, 의료 기록, 회의 녹취록, 재무제표 등 다양한 엔터프라이즈 도메인에 적용할 수 있는 Generative AI 활용 사례를 보여줍니다.
 

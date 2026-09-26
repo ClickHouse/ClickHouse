@@ -31,6 +31,12 @@ ASTPtr ASTDeleteQuery::clone() const
         res->children.push_back(res->partition);
     }
 
+    if (partitions)
+    {
+        res->partitions = partitions->clone();
+        res->children.push_back(res->partitions);
+    }
+
     if (predicate)
     {
         res->predicate = predicate->clone();
@@ -62,7 +68,12 @@ void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     formatOnCluster(ostr, settings);
 
-    if (partition)
+    if (partitions)
+    {
+        ostr << " IN PARTITION ";
+        partitions->format(ostr, settings, state, frame);
+    }
+    else if (partition)
     {
         ostr << " IN PARTITION ";
         partition->format(ostr, settings, state, frame);
@@ -80,6 +91,9 @@ void ASTDeleteQuery::writeJSON(WriteBuffer & out) const
     w.writeChild("database", database);
     w.writeChild("table", table);
     w.writeChild("partition", partition);
+    /// The multi-partition `IN PARTITION p1, p2` form is carried separately from the single-partition
+    /// `partition` slot; without it the round-trip would silently widen the mutation to the whole table.
+    w.writeChild("partitions", partitions);
     w.writeChild("predicate", predicate);
     /// `DELETE` is parsed by `ParserDeleteQuery`, not `ParserQueryWithOutput`, so the only
     /// supported output-suffix clause is the query-local `SETTINGS`. Do not serialize the
@@ -108,6 +122,15 @@ void ASTDeleteQuery::readJSON(const Poco::JSON::Object & json)
     partition = r.readChildOfType<ASTPartition>("partition");
     if (partition)
         children.push_back(partition);
+    /// The multi-partition form; `ParserDeleteQuery` never fills both slots.
+    partitions = r.readPartitionListChild("partitions");
+    if (partitions)
+    {
+        if (partition)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'partition' and 'partitions' cannot be set at the same time during AST JSON deserialization");
+        children.push_back(partitions);
+    }
     predicate = r.readChild("predicate");
     if (!predicate)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing required 'predicate' in DeleteQuery JSON");

@@ -1,7 +1,7 @@
 --- CASE A: plan (enabled) ---
 Filter column: or(and(in(__table1.k, __set_Int32_UNIQ_ID), equals(__table2.x, 100_UInt8)), and(in(__table1.k, __set_Int32_UNIQ_ID), equals(__table2.x, 200_UInt8))) (removed)
-Filter column: or(in(__table1.k, __set_Int32_UNIQ_ID), in(__table1.k, __set_Int32_UNIQ_ID)) (removed)
-Filter column: or(equals(__table2.x, 100_UInt8), equals(__table2.x, 200_UInt8)) (removed)
+Prewhere filter column: or(in(__table1.k, __set_Int32_UNIQ_ID), in(__table1.k, __set_Int32_UNIQ_ID)) (removed)
+Prewhere filter column: or(equals(__table2.x, 100_UInt8), equals(__table2.x, 200_UInt8)) (removed)
 --- CASE A: plan (disabled) ---
 Filter column: or(and(in(__table1.k, __set_Int32_UNIQ_ID), equals(__table2.x, 100_UInt8)), and(in(__table1.k, __set_Int32_UNIQ_ID), equals(__table2.x, 200_UInt8))) (removed)
 --- CASE A: result (enabled) ---

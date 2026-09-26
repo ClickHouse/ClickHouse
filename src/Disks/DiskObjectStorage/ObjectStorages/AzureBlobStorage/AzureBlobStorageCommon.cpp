@@ -14,6 +14,8 @@
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <Common/formatReadable.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/re2.h>
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -26,6 +28,7 @@ namespace ProfileEvents
     extern const Event AzureGetProperties;
     extern const Event DiskAzureGetProperties;
     extern const Event AzureCreateContainer;
+    extern const Event AzureClients;
     extern const Event DiskAzureCreateContainer;
 
     extern const Event AzureGetRequestThrottlerCount;
@@ -54,7 +57,7 @@ namespace Setting
     extern const SettingsUInt64 azure_min_upload_part_size;
     extern const SettingsUInt64 azure_max_upload_part_size;
     extern const SettingsUInt64 azure_max_single_part_copy_size;
-    extern const SettingsUInt64 azure_max_blocks_in_multipart_upload;
+    extern const SettingsNonZeroUInt64 azure_max_blocks_in_multipart_upload;
     extern const SettingsUInt64 azure_max_unexpected_write_error_retries;
     extern const SettingsUInt64 azure_max_inflight_parts_for_one_file;
     extern const SettingsUInt64 azure_strict_upload_part_size;
@@ -90,6 +93,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 namespace AzureBlobStorage
@@ -318,10 +322,7 @@ static bool containerExists(const ContainerClient & client)
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound)
             return false;
 
-        /// Our HTTP client wraps transport-level failures (DNS, connection refused, etc.)
-        /// as InternalServerError. A transient network error should not prevent the server
-        /// from starting — assume the container exists and let actual I/O operations fail
-        /// with a clear error later if it doesn't.
+        /// A generic/unexpected server error shouldn't block startup — assume the container exists; real I/O fails later with a clear error.
         if (e.StatusCode == Azure::Core::Http::HttpStatusCode::InternalServerError)
         {
             LOG_WARNING(getLogger("AzureBlobStorageCommon"),
@@ -332,10 +333,19 @@ static bool containerExists(const ContainerClient & client)
 
         throw;
     }
+    catch (const Azure::Core::Http::TransportException & e)
+    {
+        /// Transport failure (DNS/connection/timeout) is retryable and shouldn't block startup — assume the container exists, like the 500 case above.
+        LOG_WARNING(getLogger("AzureBlobStorageCommon"),
+            "Transport error while checking container existence: {}. Assuming the container exists.", e.Message);
+        return true;
+    }
 }
 
 std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & params, bool readonly)
 {
+    ProfileEvents::increment(ProfileEvents::AzureClients);
+
     if (!params.endpoint.sas_auth.empty() || !params.endpoint.additional_params.empty())
         return params.createForContainer();
 
@@ -372,23 +382,36 @@ std::unique_ptr<ContainerClient> getContainerClient(const ConnectionParams & par
     }
 }
 
-AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+AuthConfig readAuthConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name"))
-    {
-        return std::make_shared<Azure::Storage::StorageSharedKeyCredential>(
-            config.getString(config_prefix + ".account_name"),
-            config.getString(config_prefix + ".account_key")
-        );
-    }
-
+    AuthConfig auth_config;
+    if (config.has(config_prefix + ".account_name"))
+        auth_config.account_name = config.getString(config_prefix + ".account_name");
+    if (config.has(config_prefix + ".account_key"))
+        auth_config.account_key = config.getString(config_prefix + ".account_key");
     if (config.has(config_prefix + ".connection_string"))
-        return ConnectionString{config.getString(config_prefix + ".connection_string")};
+        auth_config.connection_string = config.getString(config_prefix + ".connection_string");
+    auth_config.use_workload_identity = config.getBool(config_prefix + ".use_workload_identity", false);
+    return auth_config;
+}
 
-    if (config.getBool(config_prefix + ".use_workload_identity", false))
+AuthMethod getAuthMethod(const AuthConfig & auth_config)
+{
+    if (auth_config.account_key.has_value() && auth_config.account_name.has_value())
+        return std::make_shared<Azure::Storage::StorageSharedKeyCredential>(*auth_config.account_name, *auth_config.account_key);
+
+    if (auth_config.connection_string.has_value())
+        return ConnectionString{*auth_config.connection_string};
+
+    if (auth_config.use_workload_identity)
         return std::make_shared<Azure::Identity::WorkloadIdentityCredential>();
 
     return getManagedIdentityCredential();
+}
+
+AuthMethod getAuthMethod(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    return getAuthMethod(readAuthConfig(config, config_prefix));
 }
 
 BlobClientOptions getClientOptions(
@@ -602,6 +625,60 @@ Endpoint processEndpoint(const Poco::Util::AbstractConfiguration & config, const
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
 
     return {storage_url, account_name, account_key, container_name, prefix, /* sas_auth */"", /* additional_params */"", container_already_exists, endpoint_contains_account_name};
+}
+
+void RequestSettings::validateUploadSettings() const
+{
+    if (max_blocks_in_multipart_upload == 0)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_max_blocks_in_multipart_upload cannot be zero");
+
+    /// When strict_upload_part_size is set, a fixed-size allocation policy is used and the
+    /// exponential-growth settings below are irrelevant. The maximum part size, however, is a
+    /// contract of its own and must hold for the fixed size too.
+    if (strict_upload_part_size > max_upload_part_size)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_strict_upload_part_size ({}) can't be greater than setting azure_max_upload_part_size ({})",
+            ReadableSize(strict_upload_part_size), ReadableSize(max_upload_part_size));
+
+    if (min_upload_part_size == 0)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_min_upload_part_size ({}) cannot be zero",
+            ReadableSize(min_upload_part_size));
+    }
+
+    if (max_upload_part_size < min_upload_part_size)
+    {
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting azure_max_upload_part_size ({}) can't be less than setting azure_min_upload_part_size ({})",
+            ReadableSize(max_upload_part_size), ReadableSize(min_upload_part_size));
+    }
+
+    if (strict_upload_part_size == 0)
+    {
+        if (upload_part_size_multiply_factor == 0)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting azure_upload_part_size_multiply_factor cannot be zero");
+
+        if (upload_part_size_multiply_parts_count_threshold == 0)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting azure_upload_part_size_multiply_parts_count_threshold cannot be zero");
+
+        size_t maybe_overflow = 0;
+        if (common::mulOverflow(max_upload_part_size, upload_part_size_multiply_factor, maybe_overflow))
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting azure_upload_part_size_multiply_factor is too big ({}). "
+                "Multiplication to azure_max_upload_part_size ({}) will cause integer overflow",
+                upload_part_size_multiply_factor, ReadableSize(max_upload_part_size));
+    }
 }
 
 std::unique_ptr<RequestSettings> getRequestSettings(const Settings & query_settings)

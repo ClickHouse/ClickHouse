@@ -72,7 +72,7 @@ SeaweedFS هو مخزن موزّع مفتوح المصدر للملفات وال
 services:
   seaweedfs:
     image: chrislusf/seaweedfs:latest
-    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics
+    command: mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -tableBucket=analytics -admin.port=12646
     ports:
       - "8333:8333"   # S3 endpoint
       - "8181:8181"   # Iceberg REST catalog
@@ -101,7 +101,7 @@ networks:
     driver: bridge
 ```
 
-يشغّل الأمر `mini` حزمة SeaweedFS كاملةً ضمن حاوية واحدة. ينشئ الخيار `-tableBucket=analytics` مسبقًا bucket لـ S3 Tables باسم `analytics`، ويُستخدم هذا الـbucket باعتباره warehouse لـ Iceberg.
+يشغّل الأمر `mini` حزمة SeaweedFS كاملةً ضمن حاوية واحدة. ينشئ الخيار `-tableBucket=analytics` مسبقًا bucket لـ S3 Tables باسم `analytics`، ويُستخدم هذا الـbucket باعتباره warehouse لـ Iceberg. يُبقي `-admin.port=12646` منفذ gRPC للمسؤول، الذي يشتقه SeaweedFS منه، دون نطاق المنافذ المؤقتة في Linux، إذ قد تحجزه وصلة عند بدء التشغيل قبل ذلك لولا هذا الإعداد.
 
 **الخطوة 3:** شغّل الأمر التالي لبدء الخدمات:
 
