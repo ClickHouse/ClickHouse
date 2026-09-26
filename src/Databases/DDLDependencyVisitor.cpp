@@ -434,9 +434,10 @@ namespace
 
             try
             {
-                /// We're just searching for dependencies here, it's not safe to execute subqueries now.
                 /// Use copy of the global_context and set current database, because expressions can contain currentDatabase() function.
+                /// A scalar subquery in the argument is executed, so the copy must also be a query context.
                 ContextMutablePtr global_context_copy = Context::createCopy(global_context);
+                global_context_copy->makeQueryContext();
                 global_context_copy->setCurrentDatabase(current_database);
                 auto evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(arg, global_context_copy);
                 const auto * literal = evaluated->as<ASTLiteral>();
