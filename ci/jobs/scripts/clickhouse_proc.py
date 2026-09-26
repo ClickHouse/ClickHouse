@@ -52,12 +52,14 @@ class ClickHouseProc:
         is_db_replicated=False,
         is_shared_catalog=False,
         is_per_test_coverage=False,
+        is_llvm_coverage=False,
         ch_config_dir="/etc/clickhouse-server",
         ch_var_lib_dir="/var/lib/clickhouse",
     ):
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
         self.is_per_test_coverage = is_per_test_coverage
+        self.is_llvm_coverage = is_llvm_coverage
         self.ch_config_dir = ch_config_dir
         self.ch_var_lib_dir = ch_var_lib_dir
         self.run_path0 = f"{temp_dir}/run_r0"
@@ -319,6 +321,30 @@ class ClickHouseProc:
             Path(file_path).unlink(missing_ok=True)
             print(
                 f"Removed {file_path}; server default max_server_memory_usage_to_ram_ratio applies"
+            )
+
+    def install_build_type_configs(self):
+        """Re-decide the test configs that `install.sh` selects by probing the
+        installed binary's build flavour. Needed when the same installed config
+        tree is reused to launch a different build type (the bugfix-validation
+        loop swaps binaries without reinstalling configs): one left from the
+        previous build type makes the server reject its own settings."""
+        # `install.sh` shifts away its first two positionals, so the client config
+        # dir has to be passed as well or the flag is consumed in its place.
+        client_config_dir = Path(self.ch_config_dir).parent / "clickhouse-client"
+        # A server is started from each replica tree as well, so each tree needs its
+        # own decision. They hold a populated `config.d` only in `DBReplicated` runs,
+        # so probing for them selects exactly the installed ones.
+        config_dirs = [self.ch_config_dir] + [
+            d
+            for d in (self.ch_config_dir_replica_1, self.ch_config_dir_replica_2)
+            if Path(d, "config.d").is_dir()
+        ]
+        for config_dir in config_dirs:
+            Shell.run(
+                f"./tests/config/install.sh {config_dir} {client_config_dir} --build-type-configs-only",
+                verbose=True,
+                strict=True,
             )
 
     def create_log_export_config(self, config_dir=None):
@@ -587,7 +613,12 @@ class ClickHouseProc:
         )
 
     def prepare_stateful_data(
-        self, with_s3_storage, is_db_replicated, build_type=None, step_timeout=None
+        self,
+        with_s3_storage,
+        is_db_replicated,
+        build_type=None,
+        step_timeout=None,
+        stop_thread_fuzzer=False,
     ):
         """`step_timeout` bounds each statement, in seconds; None means unbounded."""
         self.stateful_setup_error = None
@@ -620,6 +651,10 @@ set -o pipefail
 trap 'rc=$?; echo "prepare_stateful_data: command [$BASH_COMMAND] at line $LINENO failed with exit $rc" >&2' ERR
 
 MAX_EXECUTION_TIME=1800
+
+if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
+    $PREP_TIMEOUT clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
+fi
 
 $PREP_TIMEOUT clickhouse-client --query "SHOW DATABASES"
 $PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE datasets"
@@ -658,10 +693,15 @@ $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits_parquet (Title S
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.hits"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
+
+if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
+    $PREP_TIMEOUT clickhouse-client --query "SYSTEM START THREAD FUZZER"
+fi
 """
         command = (
             f"PREP_TIMEOUT={shlex.quote(self.prep_timeout_prefix(step_timeout))}\n"
             f"MAX_INSERT_THREADS={max_insert_threads}\n"
+            f"STOP_THREAD_FUZZER={1 if stop_thread_fuzzer else 0}\n"
         ) + command
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
@@ -941,8 +981,7 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
             print("WARNING: Coordination logs not found")
             return []
 
-    @classmethod
-    def _get_jemalloc_profiles(cls):
+    def _get_jemalloc_profiles(self):
         profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
         if not profiles:
             return []
@@ -970,42 +1009,57 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
-        # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
-        # addresses in the profile, and on a coverage build a single jeprof run has taken over an
-        # hour, timing the whole job out here, long after every test had finished (the sibling
-        # shard of the same build symbolized six profiles in 13 minutes). The flamegraphs are an
-        # artifact of the job, not its result, so give them up rather than the job.
-        deadline = time.time() + cls.JEMALLOC_SYMBOLIZATION_BUDGET
+        if self.is_llvm_coverage:
+            # Rendering is skipped, not the archiving below, so the raw .heap
+            # profiles still ship and can be rendered offline.
+            print(
+                f"NOTE: skipping jeprof rendering of {len(latest_profiles)} jemalloc profile(s) on an LLVM-coverage build"
+            )
+        else:
+            # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
+            # addresses in the profile, and on a coverage build a single jeprof run has taken over an
+            # hour, timing the whole job out here, long after every test had finished (the sibling
+            # shard of the same build symbolized six profiles in 13 minutes). The flamegraphs are an
+            # artifact of the job, not its result, so give them up rather than the job.
+            deadline = time.time() + self.JEMALLOC_SYMBOLIZATION_BUDGET
 
-        chbinary = Shell.get_output("readlink -f $(which clickhouse)")
-        for pid, profile in latest_profiles.items():
-            budget = int(deadline - time.time())
-            if budget <= 0:
-                print(f"WARNING: Out of time to symbolize the profile of process {pid}")
-                continue
+            chbinary = Shell.get_output("readlink -f $(which clickhouse)")
+            for pid, profile in latest_profiles.items():
+                budget = int(deadline - time.time())
+                if budget <= 0:
+                    print(
+                        f"WARNING: Out of time to symbolize the profile of process {pid}"
+                    )
+                    continue
 
-            text_report = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt"
-            if not Shell.check(
-                f"timeout --verbose --signal=TERM --kill-after=60 {budget} jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {text_report} 2>/dev/null",
-                verbose=True,
-            ):
-                print(f"WARNING: Failed to symbolize {profile}, dropping {text_report}")
-                Path(text_report).unlink(missing_ok=True)
+                text_report = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt"
+                if not Shell.check(
+                    f"timeout --verbose --signal=TERM --kill-after=60 {budget} jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {text_report} 2>/dev/null",
+                    verbose=True,
+                ):
+                    print(
+                        f"WARNING: Failed to symbolize {profile}, dropping {text_report}"
+                    )
+                    Path(text_report).unlink(missing_ok=True)
 
-            budget = int(deadline - time.time())
-            if budget <= 0:
-                print(f"WARNING: Out of time to build the flamegraph of process {pid}")
-                continue
+                budget = int(deadline - time.time())
+                if budget <= 0:
+                    print(
+                        f"WARNING: Out of time to build the flamegraph of process {pid}"
+                    )
+                    continue
 
-            flamegraph = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg"
-            # The whole pipeline is under the timeout: killing jeprof alone would leave
-            # flamegraph.pl to write a truncated graph out of what it had received.
-            if not Shell.check(
-                f"timeout --verbose --signal=TERM --kill-after=60 {budget} bash -c 'jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {flamegraph}'",
-                verbose=True,
-            ):
-                print(f"WARNING: Failed to symbolize {profile}, dropping {flamegraph}")
-                Path(flamegraph).unlink(missing_ok=True)
+                flamegraph = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg"
+                # The whole pipeline is under the timeout: killing jeprof alone would leave
+                # flamegraph.pl to write a truncated graph out of what it had received.
+                if not Shell.check(
+                    f"timeout --verbose --signal=TERM --kill-after=60 {budget} bash -c 'jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {flamegraph}'",
+                    verbose=True,
+                ):
+                    print(
+                        f"WARNING: Failed to symbolize {profile}, dropping {flamegraph}"
+                    )
+                    Path(flamegraph).unlink(missing_ok=True)
 
         Shell.check(
             f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
@@ -1157,10 +1211,20 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
                 "caller id: None:DistribCache",
             )
         )
+        # The matches go through a file rather than a pipe into `grep -q .`: `grep -q` exits at
+        # its first line, so `tee` takes SIGPIPE and the tail is lost, and the appended
+        # lifecycle IS that tail.
+        no_such_key_matches = f"{temp_dir}/no_such_key_errors.txt"
         no_such_key_command = (
-            f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' "
+            f"cd {self.log_dir} && grep -a 'Code: 499.*The specified key does not exist' "
             f"clickhouse-server*.log | grep -v {no_such_key_ignores} "
-            "| head -n100 | tee /dev/stderr | grep -q ."
+            f"| head -n100 > {no_such_key_matches}; "
+            f"python3 {repo_dir}/ci/jobs/scripts/s3_key_lifecycle.py {no_such_key_matches} {self.log_dir} "
+            f">> {no_such_key_matches} "
+            f"|| echo '--- lifecycle collection FAILED, see the job log for the traceback ---' "
+            f">> {no_such_key_matches}; "
+            f"cat {no_such_key_matches} >&2; "
+            f"[ -f {no_such_key_matches} ] && ! [ -s {no_such_key_matches} ]"
         )
         results.append(
             Result.from_commands_run(
@@ -1488,6 +1552,12 @@ if __name__ == "__main__":
             if not Info().is_local_run:
                 # Disable log export for local runs - ideally this command wouldn't be triggered,
                 # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
+                # This command runs in a process of its own, so it holds none of the
+                # credentials `logs_export_config` fetched, and `setup_log_cluster.sh`
+                # creates no `_sender` table without them.
+                ch.log_export_host, ch.log_export_password = (
+                    log_export.get_credentials()
+                )
                 res = ch.start_log_exports(check_start_time=Utils.timestamp())
             else:
                 res = True

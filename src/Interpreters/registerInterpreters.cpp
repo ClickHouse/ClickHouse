@@ -3,10 +3,7 @@
 namespace DB
 {
 
-void registerInterpreterSelectQuery(InterpreterFactory & factory);
 void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory);
-void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory);
-void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory);
 void registerInterpreterInsertQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuery(InterpreterFactory & factory);
 void registerInterpreterDropQuery(InterpreterFactory & factory);
@@ -34,6 +31,7 @@ void registerInterpreterCheckQuery(InterpreterFactory & factory);
 void registerInterpreterKillQueryQuery(InterpreterFactory & factory);
 void registerInterpreterSystemQuery(InterpreterFactory & factory);
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory);
+void registerInterpreterCreateTokenQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRoleQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuotaQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory);
@@ -73,10 +71,7 @@ void registerInterpreters()
 {
     auto & factory = InterpreterFactory::instance();
 
-    registerInterpreterSelectQuery(factory);
     registerInterpreterSelectQueryAnalyzer(factory);
-    registerInterpreterSelectWithUnionQuery(factory);
-    registerInterpreterSelectIntersectExceptQuery(factory);
     registerInterpreterInsertQuery(factory);
     registerInterpreterCreateQuery(factory);
     registerInterpreterDropQuery(factory);
@@ -104,6 +99,7 @@ void registerInterpreters()
     registerInterpreterKillQueryQuery(factory);
     registerInterpreterSystemQuery(factory);
     registerInterpreterCreateUserQuery(factory);
+    registerInterpreterCreateTokenQuery(factory);
     registerInterpreterCreateRoleQuery(factory);
     registerInterpreterCreateQuotaQuery(factory);
     registerInterpreterCreateRowPolicyQuery(factory);

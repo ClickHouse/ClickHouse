@@ -1,8 +1,11 @@
+#include <ctime>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/Runtime/ExecutionThreadContext.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/IProcessor.h>
 #include <Processors/StepWallClock.h>
+#include <Processors/StepWallClockRegistry.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <base/types.h>
 #include <base/defines.h>
 #include <Common/MemorySpillScheduler.h>
 #include <Common/CurrentThread.h>
@@ -48,21 +51,21 @@ static bool checkCanAddAdditionalInfoToException(const DB::Exception & exception
            && exception.code() != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT;
 }
 
-static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_progress_callback)
+static void executeJob(IProcessor & processor, ReadProgressCallback * read_progress_callback)
 {
     try
     {
-        if (node->processor()->isSpillable() && CurrentThread::getGroup())
-            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(node->processor());
+        if (processor.isSpillable() && CurrentThread::getGroup())
+            CurrentThread::getGroup()->memory_spill_scheduler->checkAndSpill(&processor);
 
-        node->processor()->work();
+        processor.work();
 
         /// Update read progress only for source nodes.
-        bool is_source = node->back_edges.empty();
+        bool is_source = processor.getInputs().empty();
 
         if (is_source && read_progress_callback)
         {
-            if (auto read_progress = node->processor()->getReadProgress())
+            if (auto read_progress = processor.getReadProgress())
             {
                 if (read_progress->counters.total_rows_approx)
                     read_progress_callback->addTotalRowsApprox(read_progress->counters.total_rows_approx);
@@ -71,7 +74,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
                     read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
                 if (!read_progress_callback->onProgress(read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits))
-                    node->processor()->cancel();
+                    processor.cancel();
             }
         }
     }
@@ -79,7 +82,7 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
     {
         /// Copy exception before modifying it because multiple threads can rethrow the same exception
         if (checkCanAddAdditionalInfoToException(exception))
-            exception.addMessage("While executing " + node->processor()->getName());
+            exception.addMessage("While executing " + processor.getName());
         throw exception;
     }
 }
@@ -90,74 +93,95 @@ bool ExecutionThreadContext::executeTask()
 
     if (trace_processors)
     {
-        span = std::make_unique<OpenTelemetry::SpanHolder>(node->processor()->getUniqID());
+        span = std::make_unique<OpenTelemetry::SpanHolder>(processor->getUniqID());
         span->addAttribute("thread_number", thread_number);
     }
+
     std::optional<Stopwatch> execution_time_watch;
 
-    const size_t group = node->processor()->getQueryPlanStepGroup();
+    const size_t group = processor->getQueryPlanStepGroup();
+
+    /// Some processors are pipeline "plumbing" (resize, converting, output format, etc.)
+    /// and are not attributed to any query plan step, so there is no clock for them.
+    const auto * step = processor->getQueryPlanStep();
 
     StepWallClock * clock = nullptr;
-    if (step_to_wall_clock_registry)
+    if (step_to_wall_clock_registry && step)
     {
-        /// Some processors are pipeline "plumbing" (resize, converting, output format, etc.)
-        /// and are not attributed to any query plan step, so there is no clock for them.
-        if (const auto * step = node->processor()->getQueryPlanStep())
-        {
-            auto & cached_clock = node->cached_clock;
-            /// We will search in the registry only initially or when the group of the processor changed
-            if (!cached_clock.wall_clock_ptr || node->cached_clock.group != group)
-                cached_clock.wall_clock_ptr = step_to_wall_clock_registry->find(step, group);
+        auto & cached_clock = processor->query_plan_step_wall_clock_ptr;
+        /// We will search in the registry only initially or when the group of the processor changed
+        if (!cached_clock)
+            cached_clock = step_to_wall_clock_registry->find(step, group);
 
-            clock = cached_clock.wall_clock_ptr;
-            chassert(clock);
-            if (clock)
-                clock->onEnter();
-        }
+        clock = cached_clock;
+        chassert(clock);
+        if (clock)
+            clock->onEnter();
     }
 
 #ifndef NDEBUG
     execution_time_watch.emplace();
 #else
-    if (profile_processors || step_to_wall_clock_registry)
+    if (profile_processors || step_to_wall_clock_registry || collect_work_intervals)
         execution_time_watch.emplace();
 #endif
 
+    bool success = true;
     try
     {
-        executeJob(node, read_progress_callback);
-        ++node->num_executed_jobs;
+        executeJob(*processor, read_progress_callback);
+        ++processor->num_executed_jobs;
     }
     catch (...)
     {
-        node->exception = std::current_exception();
+        setException(std::current_exception());
+        success = false;
     }
 
-    if (profile_processors || step_to_wall_clock_registry)
+    UInt64 elapsed_ns = 0;
+
+    if (profile_processors || step_to_wall_clock_registry || collect_work_intervals)
     {
-        UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
-        node->processor()->elapsed_ns += elapsed_ns;
+        elapsed_ns = execution_time_watch->elapsedNanoseconds();
+        processor->elapsed_ns += elapsed_ns;
         if (trace_processors)
             span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }
 
     if (clock)
-    {
         clock->onLeave();
-    }
+
+    if (collect_work_intervals)
+        work_intervals.emplace_back(execution_time_watch->getStart(), elapsed_ns, step);
 
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();
     if (trace_processors)
         span->addAttribute("execution_time_ns", execution_time_watch->elapsed());
 #endif
-    return node->exception == nullptr;
+    return success;
+}
+
+void ExecutionThreadContext::setException(std::exception_ptr exception_)
+{
+    if (!exception)
+        exception = std::move(exception_);
+}
+
+std::exception_ptr ExecutionThreadContext::getException()
+{
+    return exception;
 }
 
 void ExecutionThreadContext::rethrowExceptionIfHas()
 {
     if (exception)
         std::rethrow_exception(exception);
+}
+
+WorkIntervals ExecutionThreadContext::takeWorkIntervals()
+{
+    return std::move(work_intervals);
 }
 
 }
