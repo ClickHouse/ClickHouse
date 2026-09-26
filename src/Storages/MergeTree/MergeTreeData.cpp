@@ -1657,6 +1657,9 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     for (const auto & name : names_with_declared_type)
         names_from_subcolumn.erase(name);
 
+    /// A physical column of the same name is carried next to the result, and a block allows equal names only with equal types.
+    std::erase_if(names_from_subcolumn, [&](const String & name) { return columns.hasPhysical(name); });
+
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
     auto actions_dag = ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActionsDAG(false);
     replaceMapKeysAndValuesWithSubcolumns(actions_dag, names_from_subcolumn, context);

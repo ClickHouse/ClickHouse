@@ -2,8 +2,9 @@
 
 -- A skip index over mapKeys(m) or mapValues(m) answers like a full scan when the map keys or values are
 -- LowCardinality: after INSERT, after a mutation that rewrites the part, when the sorting key or an index of
--- another type uses the same expression, and when the expression is nested in a larger one. Each probe compares
--- the indexed count with an unindexed one and shows the granules the index keeps.
+-- another type uses the same expression, when the expression is nested in a larger one, and when a table column
+-- has the name of the expression. Each probe compares the indexed count with an unindexed one and shows the
+-- granules the index keeps.
 
 DROP TABLE IF EXISTS t_lc;
 DROP TABLE IF EXISTS t_plain;
@@ -12,6 +13,7 @@ DROP TABLE IF EXISTS t_order;
 DROP TABLE IF EXISTS t_mixed;
 DROP TABLE IF EXISTS t_nested;
 DROP TABLE IF EXISTS t_text;
+DROP TABLE IF EXISTS t_named;
 CREATE TABLE t_lc (id UInt64, m Map(LowCardinality(String), LowCardinality(String)),
     INDEX ik mapKeys(m) TYPE bloom_filter GRANULARITY 1, INDEX iv mapValues(m) TYPE bloom_filter GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1000, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0;
@@ -126,6 +128,15 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_text WH
 Granules: 10/10
 Name: it
 Granules: 1/10
+-- A table column named like an index expression.
+CREATE TABLE t_named (id UInt64, m Map(LowCardinality(String), LowCardinality(String)), `mapKeys(m)` Array(String),
+    INDEX ik mapKeys(m) TYPE bloom_filter GRANULARITY 1, INDEX iv mapValues(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1000, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0;
+INSERT INTO t_named (id, m) SELECT id, m FROM t_lc SETTINGS max_block_size = 100000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
+SELECT (SELECT count() FROM t_named WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_named WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 0);
+1000	1000
+SELECT (SELECT count() FROM t_named WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_named WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 0);
+1000	1000
 DROP TABLE t_lc;
 DROP TABLE t_plain;
 DROP TABLE t_mut;
@@ -133,3 +144,4 @@ DROP TABLE t_order;
 DROP TABLE t_mixed;
 DROP TABLE t_nested;
 DROP TABLE t_text;
+DROP TABLE t_named;
