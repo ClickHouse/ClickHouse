@@ -5,6 +5,7 @@
            <values>
                <value>none</value>
                <value>bitpacking</value>
+               <value>pfor</value>
            </values>
         </substitution>
     </substitutions>

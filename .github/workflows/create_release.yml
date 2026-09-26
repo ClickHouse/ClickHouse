@@ -3,6 +3,7 @@
 name: CreateRelease
 concurrency:
   group: ${{ github.workflow }}
+  queue: max
 on:
   workflow_dispatch:
     inputs:
