@@ -169,6 +169,28 @@ public:
     /// insert single-stream when this probe reports true and that setting is disabled.
     static bool forwardedInsertHidesDependentView(const StoragePtr & storage, size_t depth = 0);
 
+    enum class DuplicateNonParallelSinkVerdict : uint8_t
+    {
+        NotHazardous,
+        Hazardous,
+        Undecided,
+    };
+
+    /// Whether adding a materialized view from `source` to `new_view_target` would make one
+    /// `INSERT INTO source` build two sinks for one storage that accepts a single `write()` per
+    /// `INSERT` (`IStorage::supportsParallelInsert() == false`).
+    /// The answer is one-sided: it errs towards `Hazardous`, never past a real one. `Undecided` means
+    /// a branch could not be resolved and no duplicate was proven, so the caller should proceed.
+    /// A `Buffer` or a `Distributed` ends a branch, since the write it forwards runs as an `INSERT` of
+    /// its own whose sinks are not modelled here; a topology mixing a forwarded and a direct branch
+    /// into one such storage is outside the answer.
+    /// It describes the catalog as of this call, where a view appears only once its `CREATE` has
+    /// executed, so two creations of the same view that are both still unregistered are each answered
+    /// as though the other did not exist. A caller that must not build such a pair twice has to hold a
+    /// reservation from here through its own dependency registration.
+    static DuplicateNonParallelSinkVerdict
+    insertWouldDuplicateNonParallelSink(const StorageID & source, const StorageID & new_view_target, ContextPtr context);
+
     /// Whether inserting into `storage` reaches a `Buffer` or a `Distributed`, whose final write runs in a
     /// context other than this query's, so this query's deduplication settings (`deduplicate_insert` /
     /// `insert_deduplicate` / `deduplicate_blocks_in_dependent_materialized_views`) never govern it.
