@@ -869,7 +869,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// fragile. hasOnlyRowsTTL already excludes WHERE-clause TTLs.
     ///
     /// A merge cancelled after selection has `need_remove_expired_values` cleared above and must
-    /// not drop rows, so it falls through to the normal pipeline, which builds no TTLTransform.
+    /// not drop rows, so it falls through to the normal pipeline, which applies no TTL.
     const bool can_short_circuit_ttl_drop =
         global_ctx->future_part->merge_type == MergeType::TTLDrop
         && global_ctx->metadata_snapshot->hasOnlyRowsTTL()
@@ -3119,12 +3119,13 @@ public:
         const MergeTreeData::MutableDataPartPtr & data_part_,
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
+        bool apply_ttl_,
         bool force_,
         bool ttl_delete_applied_by_merge_)
         : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
     {
         transform = std::make_shared<TTLTransform>(
-            context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_,
+            context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, apply_ttl_, force_,
             ttl_delete_applied_by_merge_);
 
         /// Build sets eagerly here rather than via addCreatingSetsStep.
@@ -3625,9 +3626,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         merge_parts_query_plan.addStep(std::move(deduplication_step));
     }
 
-    /// TTL step: still runs after the merge even in vertical TTL mode.
-    /// In vertical TTL mode, rows are already filtered by the merging algorithm,
-    /// so the TTL step only updates TTL info without removing any rows.
+    /// TTL step: still runs after the merge even in vertical TTL mode, where rows are already
+    /// filtered by the merging algorithm, so it only updates TTL info without removing rows;
+    /// without `need_remove_expired_values` it applies no TTL and only fills the expired columns.
     if (ctx->need_remove_expired_values || !global_ctx->merging_columns_expired_by_ttl.empty())
     {
         auto ttl_step = std::make_unique<TTLStep>(
@@ -3638,6 +3639,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             global_ctx->new_data_part,
             global_ctx->merging_columns_expired_by_ttl,
             global_ctx->time_of_merge,
+            ctx->need_remove_expired_values,
             ctx->force_ttl,
             global_ctx->vertical_ttl_delete);
 

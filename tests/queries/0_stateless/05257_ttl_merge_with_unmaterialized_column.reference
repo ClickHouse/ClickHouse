@@ -1,0 +1,30 @@
+rows_ttl_horizontal	20	Horizontal
+rows_ttl_horizontal_control	20	Horizontal
+table	1	10
+table	2	10
+projection	1	10
+projection	2	10
+rows_ttl_horizontal	10
+rows_ttl_horizontal_control	10
+table	1	5
+table	2	5
+projection	1	5
+projection	2	5
+rows_ttl_vertical	20	Vertical
+rows_ttl_vertical_control	20	Vertical
+rows_ttl_vertical	0
+rows_ttl_vertical_control	0
+move_ttl	20	Vertical
+move_ttl_control	20	Vertical
+recompression_ttl	20	Vertical
+recompression_ttl_control	20	Vertical
+column_ttl	20	Vertical
+column_ttl_control	20	Vertical
+column_ttl	20	0
+column_ttl_control	20	0
+column_ttl	20
+column_ttl_control	20
+column_ttl	15	5
+column_ttl_control	15	5
+group_by_ttl	20	Vertical
+group_by_ttl_control	20	Vertical
