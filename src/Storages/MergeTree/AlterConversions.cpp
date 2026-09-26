@@ -431,6 +431,7 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
             .perform_alter_conversions = perform_alter_conversions,
             .columns_overwritten_by_chain = perform_alter_conversions ? NameSet{} : columns_overwritten_by_chain,
             .mutation_version = actions.mutation_version,
+            .is_mutation_step = true,
         };
 
         steps.push_back(std::make_shared<PrewhereExprStep>(std::move(step)));
