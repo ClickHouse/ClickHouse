@@ -103,8 +103,11 @@ private:
     std::condition_variable mono_chunk_condvar;
     std::optional<ThreadFromGlobalPool> thread;
     std::atomic_bool finish{false};
+    /// An exception from `writingThread`, rethrown by the writing methods. Protected by `writing_mutex`.
+    std::exception_ptr background_exception;
     void writingThread();
     void stopThread();
+    void rethrowBackgroundExceptionIfAny();
 };
 
 }
