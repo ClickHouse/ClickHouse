@@ -129,7 +129,7 @@ class CIDBCluster:
         print("ERROR: Failed to do select query CIDB")
         return None
 
-    def do_insert_query(self, query, data, db_name="", retries=1, timeout=5):
+    def do_insert_query(self, query, data, db_name="", retries=1, timeout=5, settings=None):
         if not self.is_ready():
             print("ERROR: LogCluster not ready")
             return False
@@ -141,6 +141,7 @@ class CIDBCluster:
             "query": query,
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
+            **(settings or {}),
         }
         if db_name:
             params["database"] = db_name
