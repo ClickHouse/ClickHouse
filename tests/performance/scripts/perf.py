@@ -310,11 +310,12 @@ parser.add_argument(
 parser.add_argument(
     "--allow-settings-version-skew",
     action="store_true",
-    help="Allow dropping a setting from the connections whose server does not know it, "
-    "instead of failing. Pass this only for comparison runs where the servers are "
-    "intentionally different builds (e.g. master HEAD vs the pull request), so one side "
-    "may not know a setting the other one added. Settings rejected by every server remain "
-    "a hard error. Without this flag an unknown setting fails immediately, so a typo in "
+    help="Allow dropping a setting from the reference connection (the first --host/--port, "
+    "LEFT) when its server does not know it, instead of failing. Pass this only for "
+    "comparison runs where the reference server is master HEAD and the tested server is "
+    "the pull request the test XML comes from, so master may not know a setting the pull "
+    "request added. A setting unknown to the tested server remains a hard error, as does "
+    "a setting rejected by every server. Without this flag an unknown setting fails immediately, so a typo in "
     "the test XML cannot silently change what is benchmarked, and an ordinary run against "
     "same-version servers can never end up benchmarking different settings on LEFT and RIGHT.",
 )
@@ -847,16 +848,19 @@ for conn_index, c in enumerate(all_connections):
     # unknown setting will lead to failing precondition check, and we will skip
     # the test, which is wrong.
     #
-    # In a master-vs-PR comparison one of the two servers is master HEAD,
-    # which may not yet know about settings introduced by this PR. With
-    # `--allow-settings-version-skew` we drop only those specific unknown
-    # settings on that connection and retry, so a single new setting doesn't
-    # block the whole comparison. After every connection has been probed,
-    # settings that were dropped on ALL servers are reported as a hard error -
-    # that's the typo case. Without the flag an unknown setting is fatal: in a
-    # run whose servers are supposed to be interchangeable, silently dropping a
-    # setting on one side would benchmark different settings on LEFT and RIGHT
-    # and produce a bogus delta instead of failing fast.
+    # In a master-vs-PR comparison the reference server (connection #0, LEFT)
+    # is master HEAD, which may not yet know about settings introduced by the
+    # PR. With `--allow-settings-version-skew` we drop only those specific
+    # unknown settings on the reference connection and retry, so a single new
+    # setting doesn't block the whole comparison. The tested server (RIGHT) runs
+    # the build that the test XML comes from, so a setting it rejects means a
+    # broken test or a renamed setting, which is always a hard error. After
+    # every connection has been probed, settings that were dropped on ALL
+    # servers are reported as a hard error - that's the typo case. Without the
+    # flag an unknown setting is fatal on any server: in a run whose servers are
+    # supposed to be interchangeable, silently dropping a setting on one side
+    # would benchmark different settings on LEFT and RIGHT and produce a bogus
+    # delta instead of failing fast.
     dropped = set()
     while True:
         try:
@@ -876,6 +880,14 @@ for conn_index, c in enumerate(all_connections):
                     "--allow-settings-version-skew if the servers are intentionally "
                     "different builds and dropping the setting on the older side is "
                     "acceptable."
+                ) from e
+            if conn_index != 0:
+                raise RuntimeError(
+                    f"server #{conn_index} doesn't know setting '{unknown_setting}'. "
+                    "--allow-settings-version-skew tolerates unknown settings only on "
+                    "the reference server #0 (master); the tested server runs the "
+                    "build the test comes from, so it must know every setting the "
+                    "test uses."
                 ) from e
             print(
                 f"perf-warn\tserver #{conn_index} doesn't know setting "
