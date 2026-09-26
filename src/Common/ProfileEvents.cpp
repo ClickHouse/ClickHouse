@@ -132,6 +132,7 @@
     M(VectorSimilarityIndexCacheHits, "Number of times an index granule has been found in the vector index cache.", ValueType::Number) \
     M(VectorSimilarityIndexCacheMisses, "Number of times an index granule has not been found in the vector index cache and had to be read from disk.", ValueType::Number) \
     M(VectorSimilarityIndexCacheWeightLost, "Approximate number of bytes evicted from the vector index cache.", ValueType::Number) \
+    M(BloomFilterTextIndexRepeatedTokens, "Number of tokens that were not hashed while building `tokenbf_v1`, `ngrambf_v1` and `sparse_grams` indexes, because the same token had already been added to the index granule.", ValueType::Number) \
     M(TextIndexReadDictionaryBlocks, "Number of times a text index dictionary block has been read from disk.", ValueType::Number) \
     M(TextIndexTokensCacheHits, "Number of times a text index token info has been found in the cache.", ValueType::Number) \
     M(TextIndexTokensCacheMisses, "Number of times a text index token info has not been found in the cache.", ValueType::Number) \

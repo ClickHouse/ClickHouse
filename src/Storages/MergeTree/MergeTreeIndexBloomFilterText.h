@@ -6,6 +6,10 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenizer.h>
+#include <base/unaligned.h>
+
+#include <array>
+#include <cstring>
 
 
 namespace DB
@@ -36,6 +40,52 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
 
 using MergeTreeIndexGranuleBloomFilterTextPtr = std::shared_ptr<MergeTreeIndexGranuleBloomFilterText>;
 
+/// Short tokens already added to one bloom filter. Adding a token again sets the same bits, so a repeat can be skipped.
+/// A key holds a token of 1 to 7 bytes and its size, so a hit is exact.
+class BloomFilterAddedTokens
+{
+public:
+    static constexpr size_t max_token_size = 7;
+    static_assert(max_token_size < sizeof(UInt64));
+
+    /// Returns true if the token is already remembered, otherwise remembers it and returns false.
+    ALWAYS_INLINE bool checkAndRemember(const char * token, size_t size, const char * begin, const char * end)
+    {
+        chassert(size >= 1 && size <= max_token_size);
+
+        const auto token_address = reinterpret_cast<uintptr_t>(token);
+        const auto begin_address = reinterpret_cast<uintptr_t>(begin);
+        const auto end_address = reinterpret_cast<uintptr_t>(end);
+
+        UInt64 key = 0;
+        if (token_address >= begin_address && token_address <= end_address && end_address - token_address >= sizeof(UInt64))
+        {
+            key = unalignedLoadLittleEndian<UInt64>(token);
+        }
+        else
+        {
+            char buf[sizeof(UInt64)] = {};
+            memcpy(buf, token, size);
+            key = unalignedLoadLittleEndian<UInt64>(buf);
+        }
+
+        key &= (1ULL << (8 * size)) - 1;
+        key |= static_cast<UInt64>(size) << 56;
+
+        UInt64 & slot = slots[(key * 0x9E3779B97F4A7C15ULL) >> (64 - slots_degree)];
+        if (slot == key)
+            return true;
+
+        slot = key;
+        return false;
+    }
+
+private:
+    static constexpr size_t slots_degree = 12;
+    /// Zero is never a key, because a key holds the size of its non-empty token.
+    std::array<UInt64, 1ULL << slots_degree> slots{};
+};
+
 struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
 {
     explicit MergeTreeIndexAggregatorBloomFilterText(
@@ -51,6 +101,8 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
 
     void update(const Block & block, size_t * pos, size_t limit) override;
 
+    void addTokens(std::string_view document, size_t col);
+
     Names index_columns;
     String index_name;
     BloomFilterParameters params;
@@ -59,6 +111,20 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
     TokenizerPtr tokenizer;
 
     MergeTreeIndexGranuleBloomFilterTextPtr granule;
+
+    /// Tokens added to the bloom filters of the current granule, per index column.
+    std::vector<BloomFilterAddedTokens> added_tokens;
+
+    /// Whether to use `added_tokens`, per index column of the current granule.
+    struct RememberState
+    {
+        size_t tokens = 0;
+        bool enabled = true;
+        size_t lookups = 0;
+        size_t hits = 0;
+    };
+    std::vector<RememberState> remember_states;
+    size_t repeated_tokens = 0;
 };
 
 
