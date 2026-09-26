@@ -1,0 +1,8 @@
+-- at the stale step the series is absent for every kind of expression
+-- but the same expressions return the last real sample one step earlier
+[('test_case','stale')]	1970-01-01 00:01:40.000	3
+[('test_case','stale')]	1970-01-01 00:01:40.000	-2
+[]	1970-01-01 00:01:40.000	2
+[('test_case','stale')]	1970-01-01 00:01:40.000	1
+[('test_case','stale')]	1970-01-01 00:01:40.000	2
+[('__name__','stale_counter'),('test_case','stale')]	1970-01-01 00:01:40.000	2
