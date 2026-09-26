@@ -191,6 +191,13 @@ namespace
             hash.update(result.size());
             hash.update(result.data(), result.size());
         }
+        void operator() (const NumberLiteral & x) const
+        {
+            UInt8 type = Field::Types::Number;
+            hash.update(type);
+            hash.update(x.value.size());
+            hash.update(x.value.data(), x.value.size());
+        }
         void operator() (const bool & x) const
         {
             UInt8 type = Field::Types::Bool;
