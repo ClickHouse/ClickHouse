@@ -254,6 +254,13 @@ public:
 
     std::string getName() const override { return "HashJoin"; }
 
+    /// A `HashJoin` built with the parallel layout replaces the former `ConcurrentHashJoin`, which reported
+    /// itself as `parallel_hash`; keep reporting it that way.
+    std::string getAlgorithm() const override
+    {
+        return toString(supportParallelJoin() ? JoinAlgorithm::PARALLEL_HASH : JoinAlgorithm::HASH);
+    }
+
     const TableJoin & getTableJoin() const override { return *table_join; }
 
     bool isCloneSupported() const override

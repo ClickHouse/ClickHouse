@@ -5,6 +5,7 @@
 
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -90,6 +91,14 @@ bool SpillingHashJoin::supportParallelJoin() const
     return in_memory_hash_join->supportParallelJoin();
 }
 
+std::string SpillingHashJoin::getAlgorithm() const
+{
+    if (state.load(std::memory_order_acquire) == State::GRACE_HASH_JOIN)
+        return toString(JoinAlgorithm::GRACE_HASH);
+
+    return toString(in_memory_hash_join->supportParallelJoin() ? JoinAlgorithm::PARALLEL_HASH : JoinAlgorithm::HASH);
+}
+
 bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits)
 {
     /// Fast path: already switched to GraceHashJoin (no lock needed).
@@ -161,6 +170,8 @@ void SpillingHashJoin::switchToGraceHashJoin(size_t worker_id, bool spill_immedi
         /// Under the lock: a build thread that got in before the state flipped is still inside
         /// the in-memory join. Freeing here also drops the maps before the conversion peak.
         in_memory_hash_join->releaseJoinMaps();
+
+        QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
     }
 
     tryConvertChunks(worker_id);
