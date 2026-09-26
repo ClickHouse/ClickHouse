@@ -15,6 +15,8 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Storages/MergeTree/MergeHelperThreads.h>
 
 #include <QueryPipeline/QueryPipeline.h>
 
@@ -446,6 +448,11 @@ private:
         size_t column_elems_written{0};
         QueryPipeline column_parts_pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
+        /// The thread of `async_executor`. Declared before it, so it is released after the thread is joined.
+        MergeHelperThreads::SlotPtr read_thread_slot;
+        /// Reads and gathers the column in another thread, so it overlaps with writing.
+        /// Used with `vertical_merge_read_in_separate_thread` instead of `executor`.
+        std::unique_ptr<PullingAsyncPipelineExecutor> async_executor;
         BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
     };

@@ -515,6 +515,15 @@ Refreshable materialized views always receive the defaults, regardless of this s
 Changing this setting affects only views created afterwards; the stored definitions of existing views stay unchanged.
 </Note>
 )", 0)  \
+    DECLARE(UInt64, max_merge_helper_threads, 16, R"(
+The maximum number of threads that merges use in addition to their own threads. They are used by merges of tables
+with the MergeTree setting [vertical_merge_read_in_separate_thread](/reference/settings/merge-tree-settings/vertical#vertical_merge_read_in_separate_thread).
+When all threads are used, a merge does this work in its own thread.
+
+<Note>
+A value of `0` disables these threads.
+</Note>
+)", 0) \
     DECLARE(UInt64, max_build_vector_similarity_index_thread_pool_size, 16, R"(
 The maximum number of threads to use for building vector indexes.
 
