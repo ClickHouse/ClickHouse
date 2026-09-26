@@ -6,7 +6,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SQLSubquery.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 
-
 namespace DB::PrometheusQueryToSQL
 {
 
@@ -27,9 +26,11 @@ struct ConverterContext
     const ResultType result_type;
     const NodeEvaluationRangeGetter node_range_getter;
     SQLSubqueries subqueries;
+    NativeFragmentDescriptions native_fragments;
 
     ConverterContext(std::shared_ptr<const PrometheusQueryTree> promql_tree_,
-                     const PrometheusQueryEvaluationSettings & settings_);
+                     const PrometheusQueryEvaluationSettings & settings_,
+                     NativeFragmentDescriptions native_fragments_ = {});
 };
 
 }

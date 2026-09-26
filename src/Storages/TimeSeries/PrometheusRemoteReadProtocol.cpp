@@ -23,6 +23,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <optional>
 
 
@@ -75,19 +76,21 @@ namespace
     }
 
     /// The function builds a SELECT query for reading time series:
-    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS samples
+    /// SELECT timeSeriesGroupToTags(group) AS tags,
+    ///        timeSeriesGroupArray(<selector sample columns>) AS samples
     /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
     /// GROUP BY timeSeriesIdToGroup(id) AS group
     ASTPtr buildSelectQueryForReadingTimeSeries(
         const StorageID & time_series_storage_id,
         const google::protobuf::RepeatedPtrField<prometheus::LabelMatcher> & label_matchers,
         Int64 min_time_ms,
-        Int64 max_time_ms)
+        Int64 max_time_ms,
+        bool has_bucketed_samples)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         {
-            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS samples
+            /// Bucketed tables make the selector return `time_series`; older tables return `timestamp` and `value`.
             auto select_list_exp = make_intrusive<ASTExpressionList>();
 
             select_list_exp->children.push_back(
@@ -95,10 +98,19 @@ namespace
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Tags);
 
-            select_list_exp->children.push_back(makeASTFunction(
-                "timeSeriesGroupArray",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
+            if (has_bucketed_samples)
+            {
+                select_list_exp->children.push_back(makeASTFunction(
+                    "timeSeriesGroupArray",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)));
+            }
+            else
+            {
+                select_list_exp->children.push_back(makeASTFunction(
+                    "timeSeriesGroupArray",
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
+            }
 
             select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Samples);
 
@@ -228,7 +240,11 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     auto time_series_storage_id = time_series_storage->getStorageID();
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
-        time_series_storage_id, label_matcher, start_timestamp_ms, end_timestamp_ms);
+        time_series_storage_id,
+        label_matcher,
+        start_timestamp_ms,
+        end_timestamp_ms,
+        time_series_storage->getVersion() >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES);
 
     LOG_TRACE(log, "{}: Executing query {}",
               time_series_storage_id.getNameForLogs(), select_query->formatForLogging());

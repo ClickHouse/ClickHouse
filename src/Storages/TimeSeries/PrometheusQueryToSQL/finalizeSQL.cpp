@@ -10,6 +10,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -394,27 +395,58 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// SELECT timeSeriesGroupToTags(group) AS tags,
-                ///        CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
-                /// FROM <raw_data>
-                /// GROUP BY group
-                /// HAVING notEmpty(samples)
+                if (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+                {
+                    /// Step 1: Merge the bucket rows of each series into one array of samples.
+                    ///
+                    /// SELECT group, timeSeriesGroupArray(time_series) AS time_series
+                    /// FROM <raw_data>
+                    /// GROUP BY group
+                    context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(result.select_query), SQLSubqueryType::TABLE});
 
-                /// timeSeriesGroupToTags(group) AS tags
+                    SelectQueryBuilder builder;
+                    builder.from_table = context.subqueries.back().name;
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                    builder.select_list.push_back(
+                        makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries)));
+                    builder.select_list.back()->setAlias(ColumnNames::TimeSeries);
+                    builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+
+                    result.select_query = builder.getSelectQuery();
+                }
+
                 tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
                 tags->setAlias(ColumnNames::Tags);
 
-                /// CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
-                /// The column `value` of raw data can be Float32 (see the comment for StoreMethod::RAW_DATA),
-                /// so we cast the aggregated arrays, which is cheaper than casting the raw data before aggregation.
-                time_series = makeASTFunction(
-                    "CAST",
-                    makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTIdentifier>(ColumnNames::Value)),
-                    make_intrusive<ASTLiteral>(fmt::format("Array(Tuple({}, Float64))", context.result_timestamp_type->getName())));
-                time_series->setAlias(samples_outer_column_name);
+                if (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+                {
+                    /// Step 2: Convert the groups to tags and skip empty series. A separate step is needed because
+                    /// the input column and the merged array of step 1 have the same name `time_series`.
+                    time_series = makeASTFunction(
+                        "CAST",
+                        make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries),
+                        make_intrusive<ASTLiteral>(
+                            fmt::format("Array(Tuple({}, Float64))", context.result_timestamp_type->getName())));
+                    time_series->setAlias(samples_outer_column_name);
+                    where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
+                }
+                else
+                {
+                    /// Preserve the historical row-layout SQL aggregation for versions 0 through 6.
+                    /// The column `value` can be Float32, so cast the aggregated array instead of every input row.
+                    time_series = makeASTFunction(
+                        "CAST",
+                        makeASTFunction(
+                            "timeSeriesGroupArray",
+                            make_intrusive<ASTIdentifier>(ColumnNames::Timestamp),
+                            make_intrusive<ASTIdentifier>(ColumnNames::Value)),
+                        make_intrusive<ASTLiteral>(
+                            fmt::format("Array(Tuple({}, Float64))", context.result_timestamp_type->getName())));
+                    time_series->setAlias(samples_outer_column_name);
 
-                group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-                having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
+                    group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                    having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
+                }
 
                 break;
             }

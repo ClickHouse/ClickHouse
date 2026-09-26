@@ -1,10 +1,30 @@
--- default_table_engine = MergeTree generates plain inner engines
+-- version 5, default_table_engine = MergeTree generates plain inner engines
 metricfamilies	ReplacingMergeTree
 recentsamples	MergeTree
 samples	MergeTree
 tags	AggregatingMergeTree
--- default_table_engine = ReplicatedMergeTree generates replicated inner engines
+-- version 6, default_table_engine = MergeTree generates plain inner engines
+metricfamilies	ReplacingMergeTree
+recentsamples	MergeTree
+samples	MergeTree
+tags	AggregatingMergeTree
+-- version 7, default_table_engine = MergeTree generates bucketed samples engines
+metricfamilies	ReplacingMergeTree
+recentsamples	AggregatingMergeTree
+samples	AggregatingMergeTree
+tags	AggregatingMergeTree
+-- version 5, default_table_engine = ReplicatedMergeTree generates replicated inner engines
 metricfamilies	ReplicatedReplacingMergeTree
 recentsamples	ReplicatedMergeTree
 samples	ReplicatedMergeTree
+tags	ReplicatedAggregatingMergeTree
+-- version 6, default_table_engine = ReplicatedMergeTree generates replicated plain inner engines
+metricfamilies	ReplicatedReplacingMergeTree
+recentsamples	ReplicatedMergeTree
+samples	ReplicatedMergeTree
+tags	ReplicatedAggregatingMergeTree
+-- version 7, default_table_engine = ReplicatedMergeTree generates replicated bucketed samples engines
+metricfamilies	ReplicatedReplacingMergeTree
+recentsamples	ReplicatedAggregatingMergeTree
+samples	ReplicatedAggregatingMergeTree
 tags	ReplicatedAggregatingMergeTree

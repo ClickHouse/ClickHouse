@@ -135,6 +135,23 @@ public:
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
 
+    /// Returns true only when removing this step preserves all behavior except
+    /// producing one stream ordered by `result_description`. A replacement that
+    /// disables virtual-row production at the source may ignore that scheduling hint.
+    bool canReplaceWithOrderedConsumer(bool may_disable_virtual_rows = false) const
+    {
+        return type == Type::FinishSorting
+            && limit == 0
+            && partition_by_description.empty()
+            && scatter_partitions == 0
+            && !always_read_till_end
+            && (may_disable_virtual_rows || !apply_virtual_row_conversions)
+            && !is_sorting_for_merge_join
+            && !is_partial_top_n
+            && !threshold_tracker
+            && limit_by_columns.empty();
+    }
+
     void convertToPartitionedFinishSorting() { type = Type::PartitionedFinishSorting; }
 
     /// Switch to a full sort that scatters the input by the hash of the sort key into exactly

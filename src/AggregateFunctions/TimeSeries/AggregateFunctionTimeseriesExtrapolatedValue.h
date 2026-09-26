@@ -12,11 +12,18 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
+#include <AggregateFunctions/TimeSeries/ITimeSeriesRateToGridStreaming.h>
 
 #include <optional>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
+}
 
 /// `is_rate` divides the accumulated value by the window;
 /// `check_resets` counts resets and clamps extrapolation at zero.
@@ -53,6 +60,23 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
         ValueType last_value = 0;
         UInt64 count = 0;
         Float64 resets = 0;
+
+        void addSample(TimestampType timestamp, ValueType value)
+        {
+            if (count == 0)
+            {
+                first_timestamp = timestamp;
+                first_value = value;
+            }
+            else if constexpr (check_resets)
+            {
+                if (last_value > value)
+                    resets += static_cast<Float64>(last_value);
+            }
+            last_timestamp = timestamp;
+            last_value = value;
+            ++count;
+        }
 
         void merge(const Summary & added)
         {
@@ -116,19 +140,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
             {
-                if (summary.count == 0)
-                {
-                    summary.first_timestamp = timestamp;
-                    summary.first_value = value;
-                }
-                else if constexpr (check_resets)
-                {
-                    if (summary.last_value > value)
-                        summary.resets += static_cast<Float64>(summary.last_value);
-                }
-                summary.last_timestamp = timestamp;
-                summary.last_value = value;
-                ++summary.count;
+                summary.addSample(timestamp, value);
             });
             add(std::move(summary), bucket_end_timestamp);
         }
@@ -147,7 +159,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 
         std::optional<ResultType> getResult(GridScaleTimestampType grid_timestamp) const
         {
-            const Summary combined = sliding_sum.getCurrentSum();
+            const Summary & combined = sliding_sum.getCurrentSum();
 
             /// Need at least two samples to calculate the rate or delta.
             if (combined.count < 2)
@@ -233,15 +245,18 @@ template <typename TimestampType_, typename ValueType_, bool is_rate_, bool chec
 class AggregateFunctionTimeseriesExtrapolatedValue final :
     public AggregateFunctionTimeseriesBase<
         AggregateFunctionTimeseriesExtrapolatedValue<TimestampType_, ValueType_, is_rate_, check_resets_>,
-        AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, ValueType_, is_rate_, check_resets_>>
+        AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, ValueType_, is_rate_, check_resets_>>,
+    public ITimeSeriesRateToGridStreaming
 {
 public:
     using Traits = AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, ValueType_, is_rate_, check_resets_>;
 
     static constexpr bool is_rate = Traits::is_rate;
     static constexpr bool check_resets = Traits::check_resets;
+    using TimestampType = typename Traits::TimestampType;
     using GridScaleTimestampType = typename Traits::GridScaleTimestampType;
     using ValueType = typename Traits::ValueType;
+    using Summary = typename Traits::Summary;
     using Aggregator = typename Traits::Aggregator;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue, Traits>;
@@ -250,6 +265,87 @@ public:
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
         return Aggregator{Base::window, Base::grid_ticks_per_second, Base::column_to_grid_multiplier};
+    }
+
+    ITimeSeriesRateToGridStreaming::StatePtr createStreamingState() const override
+    {
+        return std::make_unique<StreamingState>();
+    }
+
+    void addRawSamples(
+        ITimeSeriesRateToGridStreaming::StreamingStateBase & state,
+        const IColumn & timestamp_column,
+        const IColumn & value_column,
+        size_t row_begin,
+        size_t row_end) const override
+    {
+        auto & streaming = checkedStreamingState(state);
+        const auto & timestamps = typeid_cast<const typename Base::TimestampColumnType &>(timestamp_column).getData();
+        const auto & values = typeid_cast<const typename Base::ValueColumnType &>(value_column).getData();
+        if (row_begin > row_end || row_end > timestamps.size() || row_end > values.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid raw sample range [{}, {}) for streaming rate", row_begin, row_end);
+
+        Base::addSamplesToBuckets(
+            streaming.pending_external_bucket,
+            timestamps.data(),
+            values.data(),
+            row_begin,
+            row_end);
+    }
+
+    void finishExternalBucket(ITimeSeriesRateToGridStreaming::StreamingStateBase & state) const override
+    {
+        auto & streaming = checkedStreamingState(state);
+        for (const auto & pending : streaming.pending_external_bucket.buckets)
+        {
+            Summary current_summary;
+            pending.getMapped().forEachSample([&current_summary](TimestampType timestamp, ValueType value)
+            {
+                current_summary.addSample(timestamp, value);
+            });
+
+            if (current_summary.count == 0)
+                continue;
+
+            auto & stored = streaming.summaries[pending.getKey()];
+            if (stored.count != 0 && stored.last_timestamp >= current_summary.first_timestamp)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Ordered raw PromQL rate buckets overlap at timestamps {} and {}; exact compaction is unavailable",
+                    static_cast<Int64>(stored.last_timestamp),
+                    static_cast<Int64>(current_summary.first_timestamp));
+            stored.merge(current_summary);
+        }
+        streaming.pending_external_bucket.buckets.clear();
+    }
+
+    void insertStreamingResultInto(const ITimeSeriesRateToGridStreaming::StreamingStateBase & state, IColumn & to) const override
+    {
+        const auto & streaming = checkedStreamingState(state);
+        Base::insertResultIntoFromBuckets(streaming.summaries, to);
+    }
+
+private:
+    struct StreamingState final : ITimeSeriesRateToGridStreaming::StreamingStateBase
+    {
+        typename Base::State pending_external_bucket;
+        TimeSeriesBucketsMap<Summary> summaries;
+    };
+
+    static StreamingState & checkedStreamingState(ITimeSeriesRateToGridStreaming::StreamingStateBase & state)
+    {
+        auto * streaming = dynamic_cast<StreamingState *>(&state);
+        if (!streaming)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected streaming state for timeSeriesRateToGrid");
+        return *streaming;
+    }
+
+    static const StreamingState & checkedStreamingState(const ITimeSeriesRateToGridStreaming::StreamingStateBase & state)
+    {
+        const auto * streaming = dynamic_cast<const StreamingState *>(&state);
+        if (!streaming)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected streaming state for timeSeriesRateToGrid");
+        return *streaming;
     }
 };
 

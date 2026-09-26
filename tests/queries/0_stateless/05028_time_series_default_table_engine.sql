@@ -13,10 +13,10 @@ SET allow_experimental_time_series_table = 1;
 
 DROP TABLE IF EXISTS ts_default_engine;
 
-SELECT '-- default_table_engine = MergeTree generates plain inner engines';
+SELECT '-- version 5, default_table_engine = MergeTree generates plain inner engines';
 
 SET default_table_engine = 'MergeTree';
-CREATE TABLE ts_default_engine ENGINE = TimeSeries;
+CREATE TABLE ts_default_engine ENGINE = TimeSeries SETTINGS version = 5;
 
 -- An inner table is named `.inner_id.<target>.<uuid>`, so `splitByChar('.', name)[3]` is the target kind.
 SELECT splitByChar('.', name)[3] AS target, engine FROM system.tables
@@ -24,10 +24,46 @@ WHERE database = currentDatabase() AND name LIKE '.inner\_id.%' ORDER BY target;
 
 DROP TABLE ts_default_engine;
 
-SELECT '-- default_table_engine = ReplicatedMergeTree generates replicated inner engines';
+SELECT '-- version 6, default_table_engine = MergeTree generates plain inner engines';
+
+CREATE TABLE ts_default_engine ENGINE = TimeSeries SETTINGS version = 6;
+
+SELECT splitByChar('.', name)[3] AS target, engine FROM system.tables
+WHERE database = currentDatabase() AND name LIKE '.inner\_id.%' ORDER BY target;
+
+DROP TABLE ts_default_engine;
+
+SELECT '-- version 7, default_table_engine = MergeTree generates bucketed samples engines';
+
+CREATE TABLE ts_default_engine ENGINE = TimeSeries SETTINGS version = 7;
+
+SELECT splitByChar('.', name)[3] AS target, engine FROM system.tables
+WHERE database = currentDatabase() AND name LIKE '.inner\_id.%' ORDER BY target;
+
+DROP TABLE ts_default_engine;
+
+SELECT '-- version 5, default_table_engine = ReplicatedMergeTree generates replicated inner engines';
 
 SET default_table_engine = 'ReplicatedMergeTree';
-CREATE TABLE ts_default_engine ENGINE = TimeSeries;
+CREATE TABLE ts_default_engine ENGINE = TimeSeries SETTINGS version = 5;
+
+SELECT splitByChar('.', name)[3] AS target, engine FROM system.tables
+WHERE database = currentDatabase() AND name LIKE '.inner\_id.%' ORDER BY target;
+
+DROP TABLE ts_default_engine SYNC;
+
+SELECT '-- version 6, default_table_engine = ReplicatedMergeTree generates replicated plain inner engines';
+
+CREATE TABLE ts_default_engine ENGINE = TimeSeries SETTINGS version = 6;
+
+SELECT splitByChar('.', name)[3] AS target, engine FROM system.tables
+WHERE database = currentDatabase() AND name LIKE '.inner\_id.%' ORDER BY target;
+
+DROP TABLE ts_default_engine SYNC;
+
+SELECT '-- version 7, default_table_engine = ReplicatedMergeTree generates replicated bucketed samples engines';
+
+CREATE TABLE ts_default_engine ENGINE = TimeSeries SETTINGS version = 7;
 
 SELECT splitByChar('.', name)[3] AS target, engine FROM system.tables
 WHERE database = currentDatabase() AND name LIKE '.inner\_id.%' ORDER BY target;

@@ -71,7 +71,10 @@ def send_test_data():
 def start_cluster():
     try:
         cluster.start()
-        node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+        node.query(
+            "CREATE TABLE prometheus ENGINE=TimeSeries "
+            "SETTINGS samples_index_granularity = 1"
+        )
         node.query(
             "CREATE TABLE prometheus_seconds "
             "(samples Array(Tuple(DateTime64(0), Float64))) ENGINE=TimeSeries"
@@ -156,6 +159,168 @@ def test_range_query_accepts_positive_step_for_equal_start_and_end():
         1,
     )
     assert result == '{"resultType": "matrix", "result": [{"metric": {"__name__": "post_body_metric", "job": "test"}, "values": [[1000, "1"]]}]}'
+
+
+def test_range_query_native_plan_routing():
+    query = "sum by (shape) (rate(foo[40s]))"
+    common_params = {"max_promql_native_output_groups": 100}
+
+    pipeline = node.query(
+        "EXPLAIN PIPELINE "
+        "SELECT * FROM prometheusQueryRange(prometheus, 'sum by (shape) (rate(foo[40s]))', 130, 150, 20) "
+        "SETTINGS enable_promql_native_plan = 1, max_threads = 16"
+    )
+    native_pipeline = pipeline[pipeline.index("PromQLRangeSumBy") :]
+    assert "ReadPoolInOrder" in native_pipeline
+    assert "algorithm: InOrder" in native_pipeline
+    assert "PartialSortingTransform" not in native_pipeline
+    assert "MergeSortingTransform" not in native_pipeline
+    assert "ReadPoolUnordered" not in native_pipeline
+
+    parallel_pipeline = node.query(
+        "EXPLAIN PIPELINE "
+        "SELECT * FROM prometheusQueryRange(prometheus, 'sum by (shape) (rate(foo[40s]))', 130, 150, 20) "
+        "SETTINGS enable_promql_native_plan = 1, enable_promql_native_parallel_processing = 1, max_threads = 16"
+    )
+    native_parallel_pipeline = parallel_pipeline[
+        parallel_pipeline.index("PromQLPartialGroupMerge") :
+    ]
+    assert "PromQLRangeSumBy" in native_parallel_pipeline
+    assert "ReadPoolInOrder" in native_parallel_pipeline
+    assert "algorithm: InOrder" in native_parallel_pipeline
+    assert "PartialSortingTransform" not in native_parallel_pipeline
+    assert "MergeSortingTransform" not in native_parallel_pipeline
+    assert "ReadPoolUnordered" not in native_parallel_pipeline
+
+    full_sort_pipeline = node.query(
+        "EXPLAIN PIPELINE "
+        "SELECT * FROM prometheusQueryRange(prometheus, 'sum by (shape) (rate(foo[40s]))', 130, 150, 20) "
+        "SETTINGS enable_promql_native_plan = 1, max_threads = 16, optimize_read_in_order = 0"
+    )
+    native_full_sort_pipeline = full_sort_pipeline[
+        full_sort_pipeline.index("PromQLRangeSumBy") :
+    ]
+    assert "PartialSortingTransform" in native_full_sort_pipeline
+    assert "MergeSortingTransform" in native_full_sort_pipeline
+
+    threshold_sql_pipeline = node.query(
+        "EXPLAIN PIPELINE "
+        "SELECT * FROM prometheusQueryRange(prometheus, 'sum by (shape) (rate(foo[40s]))', 130, 150, 20) "
+        "SETTINGS enable_promql_native_plan = 1, min_promql_native_query_range_points = 3, max_threads = 16"
+    )
+    assert "PromQLRangeSumBy" not in threshold_sql_pipeline
+
+    threshold_native_pipeline = node.query(
+        "EXPLAIN PIPELINE "
+        "SELECT * FROM prometheusQueryRange(prometheus, 'sum by (shape) (rate(foo[40s]))', 130, 150, 20) "
+        "SETTINGS enable_promql_native_plan = 1, min_promql_native_query_range_points = 2, max_threads = 16"
+    )
+    assert "PromQLRangeSumBy" in threshold_native_pipeline
+
+    sql_result = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        query,
+        130,
+        150,
+        20,
+        params={**common_params, "enable_promql_native_plan": 0},
+    )
+    native_result = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        query,
+        130,
+        150,
+        20,
+        params={**common_params, "enable_promql_native_plan": 1},
+    )
+    assert native_result == sql_result
+
+    parallel_result = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        query,
+        130,
+        150,
+        20,
+        params={
+            **common_params,
+            "enable_promql_native_plan": 1,
+            "enable_promql_native_parallel_processing": 1,
+            "max_threads": 16,
+        },
+    )
+    assert parallel_result == sql_result
+
+    fallback_result = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        query,
+        130,
+        150,
+        20,
+        params={
+            "enable_promql_native_plan": 1,
+            "lookback_delta": "5m",
+            "max_promql_native_output_groups": 1,
+        },
+    )
+    assert fallback_result == sql_result
+
+    threshold_fallback_result = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        query,
+        130,
+        150,
+        20,
+        params={
+            "enable_promql_native_plan": 1,
+            "min_promql_native_query_range_points": 3,
+            "max_promql_native_output_groups": 1,
+        },
+    )
+    assert threshold_fallback_result == sql_result
+
+    error = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        query,
+        130,
+        150,
+        20,
+        params={
+            "enable_promql_native_plan": 1,
+            "max_promql_native_output_groups": 1,
+        },
+        expect_error=True,
+    )
+    assert "PromQL native range sum exceeded its limit of 1 output groups" in error
+
+    parallel_error = execute_range_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query_range",
+        query,
+        130,
+        150,
+        20,
+        params={
+            "enable_promql_native_plan": 1,
+            "enable_promql_native_parallel_processing": 1,
+            "max_promql_native_output_groups": 1,
+            "max_threads": 16,
+        },
+        expect_error=True,
+    )
+    assert "exceeded its query-wide limit of 1 output groups" in parallel_error
 
 
 def test_query_lookback_delta():
@@ -391,6 +556,35 @@ def test_generated_sql_always_runs_with_materialized_cte():
             "SELECT Settings['enable_materialized_cte'] "
             f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
             "1\n",
+            retry_count=30,
+            sleep_time=1,
+        )
+
+
+def test_direct_promql_http_query_respects_block_size_cap():
+    for promql_block_size, request_block_size, expected_block_size in (
+        (8, 64, 8),
+        (64, 1, 1),
+        (0, 64, 64),
+    ):
+        query_id = f"promql-block-size-{uuid.uuid4()}"
+        url = (
+            f"http://{node.ip_address}:9093/api/v1/query"
+            f"?query=post_body_metric&time=1000"
+            f"&max_promql_query_block_size={promql_block_size}"
+            f"&max_block_size={request_block_size}"
+        )
+        response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
+        extract_data_from_http_api_response(response)  # raises unless a success envelope
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        # QueryFinish may be queued after the response is flushed, so retry through the
+        # query-log flush interval and verify the effective cap recorded for this request.
+        assert_eq_with_retry(
+            node,
+            "SELECT Settings['max_block_size'] "
+            f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+            f"{expected_block_size}\n",
             retry_count=30,
             sleep_time=1,
         )

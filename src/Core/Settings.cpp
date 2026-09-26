@@ -9521,6 +9521,50 @@ Specifies the database name used by the 'promql' dialect. Empty string means the
 Specifies the name of a TimeSeries table used by the 'promql' dialect.
 )", PRIVATE_PREVIEW) \
     \
+    DECLARE(Bool, enable_promql_native_plan, false, R"(
+Enables a native query plan for supported PromQL expressions instead of transpiling the complete expression to SQL. Unsupported expressions continue to use the SQL transpiler.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(Bool, enable_promql_native_parallel_processing, false, R"(
+Enables primary-key range sharding for supported native PromQL plans. The samples table must be ordered by `(id, bucket)` so that every physical series is processed by exactly one parallel stream.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(Bool, enable_promql_native_raw_samples, false, R"(
+Enables native PromQL `rate` fragments to read raw `samples` arrays and slice their nested timestamp/value columns directly in the native transform. Disabled preserves selector-side `timeSeriesSliceSortedArray` materialization.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(Bool, enable_promql_native_storage_fusion, false, R"(
+Enables the experimental storage-layer fusion for supported native PromQL two-rate fragments. Disabled keeps the existing ordered read, merge, and native transform pipeline unchanged.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, max_promql_native_parallel_lanes, 0, R"(
+Maximum number of primary-key ID range layers used by a native PromQL plan. Zero selects the number automatically from the read-stream budget, selected work, and the native plan shape. A positive value is an explicit hard cap that overrides a plan-specific automatic default. This setting does not change `max_threads`.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, max_promql_query_block_size, 0, R"(
+Maximum number of rows in one block produced inside the query plan generated for PromQL evaluation. Zero uses `max_block_size`; a positive value caps the generated SQL and native fragment plans without changing the caller's outer query plan.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, max_promql_native_output_groups, 1000000, R"(
+Maximum number of output label groups held in memory by a native PromQL aggregation step. Streaming native fragments below a SQL aggregation are bounded by the native series and vector-grid limits; the SQL aggregation continues to use the standard group-by and memory limits.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, max_promql_native_rate_series, 1000000, R"(
+Maximum number of physical series admitted into one native PromQL `rate` fragment. Zero disables native `rate` fragments.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, max_promql_native_vector_grid_cells, 200000000, R"(
+Maximum combined number of series-by-evaluation-point cells admitted across native PromQL fragments in one query. Zero disables multi-fragment native plans.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, max_promql_native_rate_samples_per_series, 1000000, R"(
+Maximum cumulative number of raw samples accepted for one physical series by a native PromQL `rate` fragment. Zero disables native `rate` fragments.
+)", PRIVATE_PREVIEW) \
+    \
+    DECLARE(UInt64, min_promql_native_query_range_points, 0, R"(
+Minimum number of evaluation points required to use a native plan for a PromQL range query. Smaller range queries use the SQL transpiler. Zero disables this threshold.
+)", PRIVATE_PREVIEW) \
+    \
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
 )", PRIVATE_PREVIEW, evaluation_time) \

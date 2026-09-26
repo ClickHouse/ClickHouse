@@ -18,7 +18,7 @@
     -->
 
     <create_query>
-        CREATE TABLE promql_pk_range_ts ENGINE = TimeSeries
+        CREATE TABLE promql_pk_range_ts ENGINE = TimeSeries SETTINGS version = 6
         SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 64
         TAGS INNER COLUMNS (id Tuple(UInt64, UUID))
     </create_query>

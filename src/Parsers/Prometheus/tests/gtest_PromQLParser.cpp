@@ -1,41 +1,44 @@
 #include <gtest/gtest.h>
 
+#include <Parsers/Prometheus/PrometheusQueryClassifier.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 
 #include <fmt/format.h>
 
+#include <tuple>
+
 using namespace DB;
 
 namespace
 {
-    String parse(std::string_view input)
-    {
-        PrometheusQueryTree query_tree{input};
-        return "\n" + query_tree.toString() + "\n" + query_tree.dumpTree();
-    }
+String parse(std::string_view input)
+{
+    PrometheusQueryTree query_tree{input};
+    return "\n" + query_tree.toString() + "\n" + query_tree.dumpTree();
+}
 
-    /// Parses a query consisting of a single string literal and returns its unescaped value.
-    String parseStringLiteral(std::string_view input)
-    {
-        PrometheusQueryTree query_tree{input};
-        return typeid_cast<const PrometheusQueryTree::StringLiteral &>(*query_tree.getRoot()).string;
-    }
+/// Parses a query consisting of a single string literal and returns its unescaped value.
+String parseStringLiteral(std::string_view input)
+{
+    PrometheusQueryTree query_tree{input};
+    return typeid_cast<const PrometheusQueryTree::StringLiteral &>(*query_tree.getRoot()).string;
+}
 
-    void expectRoundTrip(std::string_view input, std::string_view expected)
-    {
-        PrometheusQueryTree query_tree{input};
-        const auto serialized = query_tree.toString();
-        EXPECT_EQ(serialized, expected) << input;
+void expectRoundTrip(std::string_view input, std::string_view expected)
+{
+    PrometheusQueryTree query_tree{input};
+    const auto serialized = query_tree.toString();
+    EXPECT_EQ(serialized, expected) << input;
 
-        PrometheusQueryTree reparsed;
-        String error_message;
-        size_t error_pos = 0;
-        ASSERT_TRUE(reparsed.tryParse(serialized, 3, &error_message, &error_pos))
-            << input << ": " << error_message << " at position " << error_pos;
-        EXPECT_EQ(reparsed.getResultType(), query_tree.getResultType()) << input;
-        EXPECT_EQ(reparsed.dumpTree(), query_tree.dumpTree()) << input;
-    }
+    PrometheusQueryTree reparsed;
+    String error_message;
+    size_t error_pos = 0;
+    ASSERT_TRUE(reparsed.tryParse(serialized, 3, &error_message, &error_pos))
+        << input << ": " << error_message << " at position " << error_pos;
+    EXPECT_EQ(reparsed.getResultType(), query_tree.getResultType()) << input;
+    EXPECT_EQ(reparsed.dumpTree(), query_tree.dumpTree()) << input;
+}
 }
 
 
@@ -227,7 +230,7 @@ PrometheusQueryTree(INSTANT_VECTOR):
 
 TEST(PromQLParser, QuotedGroupingLabelsRoundTrip)
 {
-    for (const auto *const input : {
+    for (const auto * const input : {
              R"(sum by ("a\x00b") (up))",
              R"(sum by ("Inf") (up))",
              R"(sum by ("NaN") (up))",
@@ -246,8 +249,8 @@ TEST(PromQLParser, QuotedGroupingLabelsRoundTrip)
 
 TEST(PromQLParser, QuotedMetricNameRoundTrip)
 {
-    const auto *const input = R"(sum by ("service.name") ({__name__="http.server.duration"}))";
-    const auto *const expected = R"(sum by ("service.name") ({"http.server.duration"}))";
+    const auto * const input = R"(sum by ("service.name") ({__name__="http.server.duration"}))";
+    const auto * const expected = R"(sum by ("service.name") ({"http.server.duration"}))";
 
     PrometheusQueryTree query_tree{input};
     EXPECT_EQ(query_tree.toString(), expected);
@@ -259,7 +262,7 @@ TEST(PromQLParser, QuotedMetricNameRoundTrip)
 
 TEST(PromQLParser, InvalidQuotedGroupingLabels)
 {
-    for (const auto *const query : {R"(sum by ("") (up))", R"(sum by ("\xff") (up))"})
+    for (const auto * const query : {R"(sum by ("") (up))", R"(sum by ("\xff") (up))"})
     {
         PrometheusQueryTree query_tree;
         String error_message;
@@ -347,9 +350,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         __name__ EQ 'demo_memory_usage_bytes'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         {__name__="demo_memory_usage_bytes"}
-        )"), R"(
+        )"),
+        R"(
 demo_memory_usage_bytes
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -357,9 +362,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         __name__ EQ 'demo_memory_usage_bytes'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         demo_memory_usage_bytes{type="free"}
-        )"), R"(
+        )"),
+        R"(
 demo_memory_usage_bytes{type="free"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -368,9 +375,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         type EQ 'free'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         demo_memory_usage_bytes{type!="free"}
-        )"), R"(
+        )"),
+        R"(
 demo_memory_usage_bytes{type!="free"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -379,9 +388,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         type NE 'free'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         demo_memory_usage_bytes{instance=~"demo.promlabs.com:.*"}
-        )"), R"(
+        )"),
+        R"(
 demo_memory_usage_bytes{instance=~"demo.promlabs.com:.*"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -390,9 +401,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         instance RE 'demo.promlabs.com:.*'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         demo_memory_usage_bytes{instance=~"host"}
-        )"), R"(
+        )"),
+        R"(
 demo_memory_usage_bytes{instance=~"host"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -401,9 +414,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         instance RE 'host'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         demo_memory_usage_bytes{instance!~".*:10000"}
-        )"), R"(
+        )"),
+        R"(
 demo_memory_usage_bytes{instance!~".*:10000"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -412,9 +427,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         instance NRE '.*:10000'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         demo_memory_usage_bytes{type="free", instance!="demo.promlabs.com:10000"}
-        )"), R"(
+        )"),
+        R"(
 demo_memory_usage_bytes{type="free",instance!="demo.promlabs.com:10000"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -424,9 +441,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         instance NE 'demo.promlabs.com:10000'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         {type="free", instance!="demo.promlabs.com:10000"}
-        )"), R"(
+        )"),
+        R"(
 {type="free",instance!="demo.promlabs.com:10000"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -462,9 +481,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         end EQ 'y'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         {__name__=~".*"}
-        )"), R"(
+        )"),
+        R"(
 {__name__=~".*"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -1111,9 +1132,11 @@ PrometheusQueryTree(SCALAR):
     Function(time)
 )");
 
-    EXPECT_EQ(parse(R"s(
+    EXPECT_EQ(
+        parse(R"s(
         label_replace(demo_num_cpus, "job", "destination-value-$1", "instance", "demo.promlabs.com:(.*)")
-    )s"), R"s(
+    )s"),
+        R"s(
 label_replace(demo_num_cpus, "job", "destination-value-$1", "instance", "demo.promlabs.com:(.*)")
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -1126,9 +1149,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         StringLiteral('demo.promlabs.com:(.*)')
 )s");
 
-    EXPECT_EQ(parse(R"s(
+    EXPECT_EQ(
+        parse(R"s(
         label_join(demo_num_cpus, "new_label", "-", "instance", "job")
-    )s"), R"(
+    )s"),
+        R"(
 label_join(demo_num_cpus, "new_label", "-", "instance", "job")
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -1254,9 +1279,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
             __name__ EQ 'demo_memory_usage_bytes'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         histogram_quantile(0.9, {__name__=~"demo_api_request_duration_seconds_.+"})
-    )"), R"(
+    )"),
+        R"(
 histogram_quantile(0.9, {__name__=~"demo_api_request_duration_seconds_.+"})
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -1266,9 +1293,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
             __name__ RE 'demo_api_request_duration_seconds_.+'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         count_values("value", demo_api_request_duration_seconds_bucket)
-    )"), R"(
+    )"),
+        R"(
 count_values("value", demo_api_request_duration_seconds_bucket)
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -1321,7 +1350,6 @@ PrometheusQueryTree(INSTANT_VECTOR):
                     InstantSelector:
                         __name__ EQ 'demo_cpu_usage_seconds_total'
 )");
-
 }
 
 
@@ -1538,9 +1566,11 @@ PrometheusQueryTree(SCALAR):
         Scalar(171)
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         http_requests_total{job="prometheus",group="canary"}
-    )"), R"(
+    )"),
+        R"(
 http_requests_total{job="prometheus",group="canary"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -1550,9 +1580,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         group EQ 'canary'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         http_requests_total{environment=~"staging|testing|development",method!="GET"}
-    )"), R"(
+    )"),
+        R"(
 http_requests_total{environment=~"staging|testing|development",method!="GET"}
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -1562,9 +1594,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
         method NE 'GET'
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         http_requests_total{job="prometheus"}[5m]
-    )"), R"(
+    )"),
+        R"(
 http_requests_total{job="prometheus"}[300]
 
 PrometheusQueryTree(RANGE_VECTOR):
@@ -1618,9 +1652,11 @@ PrometheusQueryTree(INSTANT_VECTOR):
             __name__ EQ 'http_requests_total'
 )");
 
-    EXPECT_EQ(parse(R"PROMQL(
+    EXPECT_EQ(
+        parse(R"PROMQL(
         http_requests_total{job="@ start()", instance=~"@ end\\(\\)"} @ end()
-        )PROMQL"), R"PROMQL(
+        )PROMQL"),
+        R"PROMQL(
 http_requests_total{job="@ start()",instance=~"@ end\\(\\)"} @ end()
 
 PrometheusQueryTree(INSTANT_VECTOR):
@@ -1684,7 +1720,6 @@ PrometheusQueryTree(INSTANT_VECTOR):
             Function(vector):
                 Scalar(3)
 )");
-
 }
 
 
@@ -1709,6 +1744,225 @@ TEST(PromQLParser, TrailingCommasInGroupingLabelLists)
          })
     {
         EXPECT_ANY_THROW(PrometheusQueryTree{query}) << query;
+    }
+}
+
+
+TEST(PromQLClassifier, SupportedRangeAggregation)
+{
+    const auto classify = [](std::string_view query, bool is_query_range = true)
+    { return isSupportedPromQLRangeQuery(PrometheusQueryTree{query}, is_query_range); };
+
+    EXPECT_TRUE(classify("sum by (job, instance) (rate(http_requests_total{job=\"api\"}[5m]))"));
+    EXPECT_TRUE(classify("sum by (job) (rate({__name__=\"http_requests_total\",job=\"api\"}[5m]))"));
+
+    for (const auto * const query : {
+             "sum by (job) (rate({job=\"api\"}[5m]))",
+             R"(sum by (job) (rate({__name__=~"http_.+",job="api"}[5m])))",
+             "sum without (job) (rate(http_requests_total[5m]))",
+             "sum by (job) (rate(http_requests_total[5m] offset 1m))",
+             "sum by (job) (rate(http_requests_total[5m] @ 123))",
+             "sum by (job) (rate(http_requests_total[5m:1m]))",
+             "sum by (job) (rate(http_requests_total[5m])) + 1",
+             "sum by (job) (irate(http_requests_total[5m]))",
+             "avg by (job) (rate(http_requests_total[5m]))",
+             "sum (rate(http_requests_total[5m]))",
+             "sum by (job) (rate(http_requests_total[5m], 1))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+
+    EXPECT_FALSE(classify("sum by (job) (rate(http_requests_total[5m]))", false));
+}
+
+TEST(PromQLClassifier, ExtractsNativeRangeSumByInputs)
+{
+    PrometheusQueryTree query{"sum by (job, instance) (rate(http_requests_total{namespace=\"prod\"}[5m]))"};
+    const auto extracted = extractPromQLRangeSumByQuery(query, /*is_query_range=*/true);
+
+    ASSERT_TRUE(extracted.has_value());
+    EXPECT_EQ(extracted->labels_to_keep, (Strings{"job", "instance"}));
+    EXPECT_EQ(extracted->window.value, 300000);
+    ASSERT_EQ(extracted->matchers.size(), 2);
+    EXPECT_EQ(extracted->matchers[0].label_name, "__name__");
+    EXPECT_EQ(extracted->matchers[0].label_value, "http_requests_total");
+    EXPECT_EQ(extracted->matchers[0].matcher_type, PrometheusQueryTree::MatcherType::EQ);
+    EXPECT_EQ(extracted->matchers[1].label_name, "namespace");
+    EXPECT_EQ(extracted->matchers[1].label_value, "prod");
+    EXPECT_EQ(extracted->matchers[1].matcher_type, PrometheusQueryTree::MatcherType::EQ);
+}
+
+TEST(PromQLClassifier, ExtractsTwoNativeRateLeavesUnderSQLParent)
+{
+    PrometheusQueryTree query{
+        "ceil(sum by (namespace, pod) (rate(reads_total{job=\"cadvisor\",instance!=\"test\"}[5m]) + "
+        "rate(writes_total{instance!=\"test\",job=\"cadvisor\"}[5m])))"};
+    const auto extracted = extractPromQLTwoRangeRatesSumByQuery(query, /* is_query_range = */ true);
+
+    ASSERT_TRUE(extracted.has_value());
+    EXPECT_EQ(extracted->labels_to_keep, (Strings{"namespace", "pod"}));
+    ASSERT_NE(extracted->binary_node, nullptr);
+    EXPECT_EQ(extracted->binary_node->node_type, PrometheusQueryTree::NodeType::BinaryOperator);
+    EXPECT_EQ(extracted->rates[0].window.value, 300000);
+    EXPECT_EQ(extracted->rates[1].window.value, 300000);
+    ASSERT_NE(extracted->rates[0].node, nullptr);
+    ASSERT_NE(extracted->rates[1].node, nullptr);
+    EXPECT_EQ(extracted->rates[0].metric_name, "reads_total");
+    EXPECT_EQ(extracted->rates[1].metric_name, "writes_total");
+    ASSERT_EQ(extracted->rates[0].common_matchers.size(), 2);
+    ASSERT_EQ(extracted->rates[1].common_matchers.size(), 2);
+    EXPECT_EQ(extracted->rates[0].common_matchers[0].label_name, "instance");
+    EXPECT_EQ(extracted->rates[0].common_matchers[0].label_value, "test");
+    EXPECT_EQ(extracted->rates[0].common_matchers[0].matcher_type, PrometheusQueryTree::MatcherType::NE);
+    EXPECT_EQ(extracted->rates[0].common_matchers[1].label_name, "job");
+    EXPECT_EQ(extracted->rates[0].common_matchers[1].label_value, "cadvisor");
+    EXPECT_EQ(extracted->rates[0].common_matchers[1].matcher_type, PrometheusQueryTree::MatcherType::EQ);
+    for (size_t i = 0; i != extracted->rates[0].common_matchers.size(); ++i)
+    {
+        EXPECT_EQ(extracted->rates[0].common_matchers[i].label_name, extracted->rates[1].common_matchers[i].label_name);
+        EXPECT_EQ(extracted->rates[0].common_matchers[i].label_value, extracted->rates[1].common_matchers[i].label_value);
+        EXPECT_EQ(extracted->rates[0].common_matchers[i].matcher_type, extracted->rates[1].common_matchers[i].matcher_type);
+    }
+
+    const auto island = extractPromQLTwoRangeRatesQuery(extracted->binary_node, /* is_query_range = */ true);
+    ASSERT_TRUE(island.has_value());
+    EXPECT_EQ(island->binary_node, extracted->binary_node);
+    EXPECT_EQ(island->rates[0].metric_name, "reads_total");
+    EXPECT_EQ(island->rates[1].metric_name, "writes_total");
+    EXPECT_FALSE(extractPromQLTwoRangeRatesQuery(extracted->binary_node, /* is_query_range = */ false).has_value());
+}
+
+TEST(PromQLClassifier, RejectsTwoRateHybridOutsideQueryRangeOrOuterShape)
+{
+    const auto classify = [](std::string_view query, bool is_query_range = true)
+    { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, is_query_range).has_value(); };
+
+    for (const auto * const query : {
+             "sum by (job) (rate(reads_total[5m]) + rate(writes_total[5m]))",
+             "ceil(avg by (job) (rate(reads_total[5m]) + rate(writes_total[5m])))",
+             "ceil(sum without (job) (rate(reads_total[5m]) + rate(writes_total[5m])))",
+             "ceil(sum by (job) (irate(reads_total[5m]) + rate(writes_total[5m])))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+
+    EXPECT_FALSE(classify("ceil(sum by (job) (rate(reads_total[5m]) + rate(writes_total[5m])))", false));
+}
+
+TEST(PromQLClassifier, RejectsTwoRateHybridWithoutExactlyOneEqualityMetricMatcher)
+{
+    const auto classify = [](std::string_view query)
+    { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, true).has_value(); };
+
+    for (const auto * const query : {
+             R"(ceil(sum by (job) (rate({job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[5m]))))",
+             R"(ceil(sum by (job) (rate({__name__="reads_total",__name__="reads_total",job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[5m]))))",
+             R"(ceil(sum by (job) (rate({__name__=~"reads_.*",job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[5m]))))",
+             R"(ceil(sum by (job) (rate({__name__!="reads_total",job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[5m]))))",
+             R"(ceil(sum by (job) (rate({__name__="",job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[5m]))))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+}
+
+TEST(PromQLClassifier, RejectsTwoRateHybridWithSameMetricOrDifferentWindows)
+{
+    const auto classify = [](std::string_view query)
+    { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, true).has_value(); };
+
+    for (const auto * const query : {
+             R"(ceil(sum by (job) (rate(reads_total{job="cadvisor"}[5m]) + rate(reads_total{job="cadvisor"}[5m]))))",
+             R"(ceil(sum by (job) (rate(reads_total{job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[10m]))))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+}
+
+TEST(PromQLClassifier, RejectsTwoRateHybridWithDifferentCommonMatchers)
+{
+    const auto classify = [](std::string_view query)
+    { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, true).has_value(); };
+
+    for (const auto * const query : {
+             R"(ceil(sum by (job) (rate(reads_total{job="cadvisor"}[5m]) + rate(writes_total{job="other"}[5m]))))",
+             R"(ceil(sum by (job) (rate(reads_total{job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor",instance="one"}[5m]))))",
+             R"(ceil(sum by (job) (rate(reads_total{job="cadvisor",instance!="one"}[5m]) + rate(writes_total{job="cadvisor",instance="one"}[5m]))))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+}
+
+TEST(PromQLClassifier, RejectsTwoRateHybridWithBinaryOperatorsOrVectorMatching)
+{
+    const auto classify = [](std::string_view query)
+    { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, true).has_value(); };
+
+    for (const auto * const query : {
+             "ceil(sum by (job) (rate(reads_total[5m]) - rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) * rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) / rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) + on(job) rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) + ignoring(instance) rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) + on(job) group_left rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) + ignoring(job) group_right rate(writes_total[5m])))",
+             "ceil(sum by (job) (rate(reads_total[5m]) > bool rate(writes_total[5m])))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+}
+
+TEST(PromQLClassifier, SupportsOnlyBoundedConstantRangeTopK)
+{
+    const auto classify = [](std::string_view query, bool is_query_range = true)
+    { return isSupportedPromQLRangeQuery(PrometheusQueryTree{query}, is_query_range); };
+
+    EXPECT_TRUE(classify("topk(2, sum by (job) (rate(http_requests_total{namespace=\"prod\"}[5m])))"));
+    EXPECT_TRUE(classify("bottomk(0, sum by (job) (rate(http_requests_total[5m])))"));
+
+    for (const auto * const query : {
+             "topk(1 + 1, sum by (job) (rate(http_requests_total[5m])))",
+             "topk(-1, sum by (job) (rate(http_requests_total[5m])))",
+             "topk(1.5, sum by (job) (rate(http_requests_total[5m])))",
+             "topk(1025, sum by (job) (rate(http_requests_total[5m])))",
+             "topk by (job) (1, sum by (job) (rate(http_requests_total[5m])))",
+             "topk without (job) (1, sum by (job) (rate(http_requests_total[5m])))",
+             "topk(1, sum without (job) (rate(http_requests_total[5m])))",
+             "topk(1, sum by (job) (rate({job=\"api\"}[5m])))",
+             "topk(time() / 10 - 10, sum by (job) (rate(http_requests_total[5m])))",
+         })
+    {
+        EXPECT_FALSE(classify(query)) << query;
+    }
+
+    EXPECT_FALSE(classify("topk(1, sum by (job) (rate(http_requests_total[5m])))", false));
+}
+
+TEST(PromQLClassifier, ExtractsNativeRangeTopKByInputs)
+{
+    for (const auto & [query, expected_bottomk, expected_k] : std::initializer_list<std::tuple<std::string_view, bool, UInt64>>{
+             {"topk(3, sum by (job, instance) (rate(http_requests_total{namespace=\"prod\"}[5m])))", false, 3},
+             {"bottomk(1, sum by (job) (rate(http_requests_total{namespace=\"prod\"}[5m])))", true, 1},
+         })
+    {
+        PrometheusQueryTree query_tree{query};
+        const auto extracted = extractPromQLRangeTopKByQuery(query_tree, /*is_query_range=*/true);
+
+        ASSERT_TRUE(extracted.has_value());
+        EXPECT_EQ(extracted->k, expected_k);
+        EXPECT_EQ(extracted->bottomk, expected_bottomk);
+        EXPECT_EQ(extracted->range_sum.labels_to_keep, expected_k == 3 ? (Strings{"job", "instance"}) : (Strings{"job"}));
+        EXPECT_EQ(extracted->range_sum.window.value, 300000);
+        ASSERT_EQ(extracted->range_sum.matchers.size(), 2);
+        EXPECT_EQ(extracted->range_sum.matchers[0].label_name, "__name__");
+        EXPECT_EQ(extracted->range_sum.matchers[0].matcher_type, PrometheusQueryTree::MatcherType::EQ);
+        EXPECT_EQ(extracted->range_sum.matchers[1].label_name, "namespace");
+        EXPECT_EQ(extracted->range_sum.matchers[1].matcher_type, PrometheusQueryTree::MatcherType::EQ);
     }
 }
 
@@ -1760,9 +2014,11 @@ TEST(PromQLParser, InvalidStringQuoteEscapes)
              {R"(up{label="a\'b"})", 11},
              {R"(up{label='a\"b'})", 11},
              {R"("hello\
-world")", 6},
+world")",
+              6},
              {R"("hello\x
-world")", 6},
+world")",
+              6},
          })
     {
         PrometheusQueryTree query_tree;
@@ -1780,20 +2036,27 @@ TEST(PromQLParser, RejectLiteralLFInQuotedStrings)
 {
     for (const auto & [query, expected_error_pos] : std::initializer_list<std::pair<std::string_view, size_t>>{
              {R"("hello
-world")", 0},
+world")",
+              0},
              {R"('hello
-world')", 0},
+world')",
+              0},
              {R"("hello\\
-world")", 0},
+world")",
+              0},
              {"\"hello\r\nworld\"", 0},
              {R"("hello
-world\q")", 0},
+world\q")",
+              0},
              {R"(up{job="hello
-world"})", 7},
+world"})",
+              7},
              {R"("hello
-world" "x")", 0},
+world" "x")",
+              0},
              {R"("hello
-world" $)", 0},
+world" $)",
+              0},
          })
     {
         PrometheusQueryTree query_tree;
@@ -1805,8 +2068,10 @@ world" $)", 0},
         EXPECT_EQ(error_pos, expected_error_pos) << query;
     }
 
-    EXPECT_EQ(parseStringLiteral(R"(`hello
-world`)"), "hello\nworld");
+    EXPECT_EQ(
+        parseStringLiteral(R"(`hello
+world`)"),
+        "hello\nworld");
     EXPECT_EQ(parseStringLiteral(R"("hello\nworld")"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral(R"('hello\nworld')"), "hello\nworld");
     EXPECT_EQ(parseStringLiteral("\"hello\rworld\""), "hello\rworld");
@@ -1815,87 +2080,104 @@ world`)"), "hello\nworld");
 
 TEST(PromQLParser, ParseStringLiterals)
 {
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         "this is a string"
-        )"), R"(
+        )"),
+        R"(
 "this is a string"
 
 PrometheusQueryTree(STRING):
     StringLiteral('this is a string')
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         "\n"
-        )"), R"(
+        )"),
+        R"(
 "\n"
 
 PrometheusQueryTree(STRING):
     StringLiteral('\n')
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         "these are unescaped: \n \\ ' \" ` \t"
-        )"), R"(
+        )"),
+        R"(
 "these are unescaped: \n \\ ' \" ` \t"
 
 PrometheusQueryTree(STRING):
     StringLiteral('these are unescaped: \n \\ \' " ` \t')
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         'these are unescaped: \n \\ \' " ` \t'
-        )"), R"(
+        )"),
+        R"(
 "these are unescaped: \n \\ ' \" ` \t"
 
 PrometheusQueryTree(STRING):
     StringLiteral('these are unescaped: \n \\ \' " ` \t')
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         `these are not unescaped: \n \\ ' " \t`
-        )"), R"(
+        )"),
+        R"(
 "these are not unescaped: \\n \\\\ ' \" \\t"
 
 PrometheusQueryTree(STRING):
     StringLiteral('these are not unescaped: \\n \\\\ \' " \\t')
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         "日本語"
-        )"), R"(
+        )"),
+        R"(
 "日本語"
 
 PrometheusQueryTree(STRING):
     StringLiteral('日本語')
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         "\u65e5\u672c\u8a9e" 
-        )"), R"(
+        )"),
+        R"(
 "日本語"
 
 PrometheusQueryTree(STRING):
     StringLiteral('日本語')
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         "\U000065e5\U0000672c\U00008a9e" 
-        )"), R"(
+        )"),
+        R"(
 "日本語"
 
 PrometheusQueryTree(STRING):
     StringLiteral('日本語')
 )");
 
-    EXPECT_EQ(parse(R"(
+    EXPECT_EQ(
+        parse(R"(
         "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e"
-        )"), R"(
+        )"),
+        R"(
 "日本語"
 
 PrometheusQueryTree(STRING):
     StringLiteral('日本語')
 )");
-
 }
 
 

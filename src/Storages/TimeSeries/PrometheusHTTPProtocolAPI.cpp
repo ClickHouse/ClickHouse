@@ -13,6 +13,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/StorageTimeSeriesSelector.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -45,6 +46,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 
+#include <algorithm>
 #include <fmt/format.h>
 
 
@@ -59,7 +61,10 @@ namespace ErrorCodes
 
 namespace Setting
 {
+    extern const SettingsBool enable_promql_native_plan;
     extern const SettingsBool enable_materialized_cte;
+    extern const SettingsNonZeroUInt64 max_block_size;
+    extern const SettingsUInt64 max_promql_query_block_size;
 }
 
 namespace TimeSeriesSetting
@@ -120,6 +125,26 @@ ASTPtr makeSelectFromSubquery(ASTs select_list, ASTPtr subquery, bool distinct, 
     select_with_union_query->children.push_back(std::move(list_of_selects));
     select_with_union_query->list_of_selects = select_with_union_query->children.back();
     return select_with_union_query;
+}
+
+ASTPtr makePrometheusQueryRangeTableFunctionQuery(
+    const StorageID & storage_id,
+    const String & promql_query,
+    const String & start,
+    const String & end,
+    const String & step)
+{
+    PrometheusQueryToSQL::SelectQueryBuilder builder;
+    builder.select_list.push_back(make_intrusive<ASTAsterisk>());
+    builder.from_table_function = makeASTFunction(
+        "prometheusQueryRange",
+        make_intrusive<ASTLiteral>(storage_id.database_name),
+        make_intrusive<ASTLiteral>(storage_id.table_name),
+        make_intrusive<ASTLiteral>(promql_query),
+        make_intrusive<ASTLiteral>(start),
+        make_intrusive<ASTLiteral>(end),
+        make_intrusive<ASTLiteral>(step));
+    return builder.getSelectQuery();
 }
 
 /// Decodes a label name from the /api/v1/label/<name>/values URL path. Prometheus escapes label names
@@ -241,7 +266,27 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     }
 
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
-    auto sql_query = converter.getSQL();
+    ASTPtr sql_query;
+
+    /// The table-function path owns native-plan selection and the SQL fallback. Keep custom
+    /// lookback evaluation on the direct converter path until the table function can represent it.
+    const bool use_table_function = params.type == Type::Range
+        && params.lookback_delta_param.empty()
+        && evaluation_settings.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES
+        && getContext()->getSettingsRef()[Setting::enable_promql_native_plan];
+    if (use_table_function)
+    {
+        sql_query = makePrometheusQueryRangeTableFunctionQuery(
+            evaluation_settings.time_series_storage_id,
+            params.promql_query,
+            params.start_param,
+            params.end_param,
+            params.step_param);
+    }
+    else
+    {
+        sql_query = converter.getSQL();
+    }
 
     chassert(sql_query);
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
@@ -252,6 +297,20 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         query_context->setSetting("enable_materialized_cte", true);
 
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+
+    /// The table-function path applies this cap inside its generated plan. Apply it here only
+    /// for SQL generated directly by the converter, without overriding a stricter request limit.
+    if (!use_table_function)
+    {
+        const auto configured_promql_block_size = getContext()->getSettingsRef()[Setting::max_promql_query_block_size];
+        if (configured_promql_block_size.value)
+        {
+            const auto request_max_block_size = getContext()->getSettingsRef()[Setting::max_block_size].value;
+            query_context->setSetting(
+                "max_block_size",
+                Field(std::min(request_max_block_size, configured_promql_block_size.value)));
+        }
+    }
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 

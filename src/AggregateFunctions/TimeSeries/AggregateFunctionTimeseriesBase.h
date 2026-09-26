@@ -426,12 +426,29 @@ protected:
     /// no global sort in the dense case.
     void doInsertResultInto(AggregateDataPtr __restrict place, ResultWriter & writer) const
     {
+        doInsertResultIntoBuckets(data(place)->buckets, writer, place);
+    }
+
+    /// Renders a query-private map whose bucket value can differ from the aggregate state's serialized `Bucket`.
+    /// This lets an ordered executor feed already compacted summaries through the exact same grid/window logic.
+    template <typename BucketType>
+    void insertResultIntoFromBuckets(const TimeSeriesBucketsMap<BucketType> & buckets, IColumn & to) const
+    {
+        ResultWriter writer(to, grid_size);
+        doInsertResultIntoBuckets(buckets, writer, nullptr);
+    }
+
+    template <typename BucketType>
+    void doInsertResultIntoBuckets(
+        const TimeSeriesBucketsMap<BucketType> & buckets,
+        ResultWriter & writer,
+        ConstAggregateDataPtr place) const
+    {
         writer.addRow();
 
         if (!grid_size)
             return;
 
-        const auto & buckets = data(place)->buckets;
         auto aggregator = derived().createAggregator(getStackSizeForTwoStacks(buckets.size()));
 
         /// Visit the populated buckets in ascending index order, feeding each into the sliding window when its
@@ -457,7 +474,7 @@ protected:
         }
         else
         {
-            VectorWithMemoryTracking<std::pair<size_t, const Bucket *>> ordered_buckets;
+            VectorWithMemoryTracking<std::pair<size_t, const BucketType *>> ordered_buckets;
             ordered_buckets.reserve(buckets.size());
             for (const auto & entry : buckets)
                 ordered_buckets.emplace_back(entry.getKey(), &entry.getMapped());
@@ -474,6 +491,26 @@ protected:
                 writer.store(grid_index, derived().getGridPointResult(aggregator, place, grid_index));
             }
         }
+    }
+
+    /// Adds a batch to a query-private state through the same vectorized bucket classifier as the regular
+    /// aggregate path. Ordered executors can therefore defer per-bucket compaction without constructing a
+    /// serialized aggregate state.
+    void addSamplesToBuckets(
+        State & state,
+        const TimestampType * __restrict timestamps,
+        const ValueType * __restrict values,
+        size_t row_begin,
+        size_t row_end) const
+    {
+#if USE_MULTITARGET_CODE
+        if (isArchSupported(TargetArch::x86_64_v4))
+        {
+            addSamplesToBucketsImpl_x86_64_v4(&state, timestamps, values, row_begin, row_end);
+            return;
+        }
+#endif
+        addSamplesToBucketsImpl(&state, timestamps, values, row_begin, row_end);
     }
 
     /// Closed range `[start_time, end_time]` of timestamps with the scale of the input columns.
@@ -1247,16 +1284,7 @@ private:
             return;
         }
 
-        State * state = data(place);
-
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::x86_64_v4))
-        {
-            addSamplesToBucketsImpl_x86_64_v4(state, timestamps, values, row_begin, row_end);
-            return;
-        }
-#endif
-        addSamplesToBucketsImpl(state, timestamps, values, row_begin, row_end);
+        addSamplesToBuckets(*data(place), timestamps, values, row_begin, row_end);
     }
 
     void addMany(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, size_t start, size_t end) const

@@ -1,7 +1,6 @@
 -- The returned columns keep the types of the table
 id	Tuple(UInt64, LowCardinality(UUID))					
-timestamp	DateTime64(1, \'UTC\')					
-value	Float64					
+time_series	Array(Tuple(DateTime64(1, \'UTC\'), Float64))					
 -- [1000.5, 1002.5] selects the samples at 1001.5 and 1002 in DateTime64(1)
 1970-01-01 00:16:41.5	2
 1970-01-01 00:16:42.0	3
@@ -9,8 +8,7 @@ value	Float64
 1970-01-01 00:16:41.5	2
 -- Arguments with a smaller scale than the table are widened to the scale of the table
 id	Tuple(UInt64, LowCardinality(UUID))					
-timestamp	DateTime64(6, \'UTC\')					
-value	Float64					
+time_series	Array(Tuple(DateTime64(6, \'UTC\'), Float64))					
 1970-01-01 00:16:41.000001	2
 -- The time range lies between two consecutive timestamps of a DateTime64(1) table
 0

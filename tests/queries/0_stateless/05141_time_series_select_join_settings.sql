@@ -13,7 +13,7 @@ SET max_bytes_before_external_join = '1M';
 SET max_bytes_ratio_before_external_join = 0;
 
 DROP TABLE IF EXISTS ts_join_settings;
-CREATE TABLE ts_join_settings ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0
+CREATE TABLE ts_join_settings ENGINE = TimeSeries SETTINGS version = 6, recent_samples_ttl_seconds = 0
 TAGS INNER ENGINE = Memory;
 INSERT INTO ts_join_settings (metric_name, tags, samples, metric_family, type)
 VALUES ('m', {'n': 'a'}, [('2024-01-01 00:00:00', 1)], 'm', 'gauge');
@@ -32,7 +32,7 @@ FROM ts_join_settings FINAL;
 
 SET join_algorithm = 'full_sorting_merge';
 SELECT metric_name, tags['n'], arraySort(samples), metric_family, unit, help, type
-FROM ts_join_settings;
+FROM ts_join_settings FINAL;
 
 -- The legacy `ANY` semantics also return each series once with all its samples.
 SET join_algorithm = 'hash';
