@@ -216,7 +216,10 @@ public:
         if (!columns.get<1>().modify(it, std::forward<F>(f)))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot modify ColumnDescription for column {}: column name cannot be changed", column_name);
 
-        addSubcolumns(it->name, it->type);
+        invalidateGetCache();
+        /// Aliases don't have real subcolumns, they are derived from the expression.
+        if (it->default_desc.kind != ColumnDefaultKind::Alias)
+            addSubcolumns(it->name, it->type);
         modifyColumnOrder(column_name, after_column, first);
     }
 
