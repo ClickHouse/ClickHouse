@@ -585,7 +585,7 @@ private:
             size_t new_offset = col_width == 0 ? (*in_offsets)[i] : prev_offset + col_width;
 
             /// NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
-            while (col_width > 0 && in_vec[new_offset - 1] == 0 && new_offset > prev_offset)
+            while (col_width > 0 && new_offset > prev_offset && in_vec[new_offset - 1] == 0)
                 --new_offset;
 
             /// enforce char limit

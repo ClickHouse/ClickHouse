@@ -381,7 +381,7 @@ void updateImpl(const ColumnArray * column_array, const ColumnArray::Offsets & c
             if (auto query_status = query_context->getProcessListElementSafe())
                 query_status->throwIfKilled();
 
-        const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[row - 1]];
+        const typename Column::ValueType & value = column_array_data_float_data[column_array_offsets[static_cast<ssize_t>(row) - 1]];
 
         checkVectorIsSane(&value, dimensions, scalar_kind, ErrorCodes::INCORRECT_DATA, "indexed vector");
 

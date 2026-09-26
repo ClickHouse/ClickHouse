@@ -14,6 +14,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <base/arithmeticOverflow.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -209,6 +210,7 @@ public:
     }
 
     template <typename TimestampType>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr doExecute(const IColumn & start_timestamp_column, Int64 start_timestamp_multiplier,
                                const IColumn & end_timestamp_column, Int64 end_timestamp_multiplier,
                                const IColumn & step_column, Int64 step_multiplier, bool step_is_uint64,
@@ -330,7 +332,7 @@ public:
             size_t row_points = num_steps;
             if constexpr (with_values)
             {
-                values_base_offset = (*values_offsets)[i - 1];
+                values_base_offset = (*values_offsets)[static_cast<ssize_t>(i) - 1];
                 size_t num_values = (*values_offsets)[i] - values_base_offset;
                 if (num_values != num_steps)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of values ({}) doesn't match number of steps ({})", num_values, num_steps);

@@ -78,6 +78,7 @@
 #include <Common/DateLUT.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/SipHash.h>
 #include <Common/checkStackSize.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -753,7 +754,7 @@ Pipe ReadFromMergeTree::readFromPool(
     {
         size_t fixed_index_granularity = (*data_settings)[MergeTreeSetting::index_granularity];
         pool_settings.min_marks_for_concurrent_read
-            = (pool_settings.min_marks_for_concurrent_read * fixed_index_granularity + block_size.max_block_size_rows - 1)
+            = (common::mulIgnoreOverflow(pool_settings.min_marks_for_concurrent_read, fixed_index_granularity) + block_size.max_block_size_rows - 1)
             / block_size.max_block_size_rows * block_size.max_block_size_rows / fixed_index_granularity;
     }
 
@@ -2082,7 +2083,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                 {
                     ranges_to_get_from_part = part.ranges;
 
-                    need_marks -= marks_in_part;
+                    need_marks -= std::min(need_marks, marks_in_part);
                     info.sum_marks_in_parts.pop_back();
                 }
                 else

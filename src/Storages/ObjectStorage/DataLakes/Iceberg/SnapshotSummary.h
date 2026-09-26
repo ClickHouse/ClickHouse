@@ -12,6 +12,7 @@
 #include <Core/Field.h>
 #include <base/types.h>
 #include <Poco/JSON/Object.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB::Iceberg
 {
@@ -109,7 +110,7 @@ using SnapshotSummaryExtraFields = std::unordered_map<String, String>;
 class SnapshotSummary
 {
 public:
-    explicit SnapshotSummary(
+    explicit NO_SANITIZE_UNSIGNED_OVERFLOW SnapshotSummary(
         SnapshotSummaryUpdate update_,
         std::optional<SnapshotSummaryTotals> parent_totals = std::nullopt,
         SnapshotSummaryExtraFields extra_fields_ = {});

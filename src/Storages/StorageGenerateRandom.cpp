@@ -65,6 +65,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <base/arithmeticOverflow.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -191,7 +193,7 @@ T fuzzyRandomInteger(pcg64 & rng)
     {
         UInt64 low_mask = num_bits == 64 ? ~UInt64(0) : (UInt64(1) << num_bits) - 1;
         UInt64 u_number = static_cast<UInt64>(static_cast<std::make_unsigned_t<T>>(number));
-        UInt64 sign = -(u_number >> (sizeof(T) * 8 - 1));
+        UInt64 sign = common::negateIgnoreOverflow(u_number >> (sizeof(T) * 8 - 1));
         return static_cast<T>((u_number & low_mask) | (sign & ~low_mask));
     }
     else
@@ -1841,7 +1843,7 @@ Block prepareBlockToFill(const Block & block)
 
 }
 
-ColumnPtr fillColumnWithRandomData(
+ColumnPtr NO_SANITIZE_UNSIGNED_OVERFLOW fillColumnWithRandomData(
     DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, bool fuzzy)
 {
     GenerateRandomOptions options;

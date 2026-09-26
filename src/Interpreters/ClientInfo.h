@@ -11,6 +11,7 @@
 #include <Common/OpenTelemetryTracingContext.h>
 #include <DataTypes/IDataType_fwd.h>
 #include <Poco/Net/SocketAddress.h>
+#include <base/sanitizer_defs.h>
 
 /// On ppc64le, Poco's socket headers transitively include <termios.h>, which defines the CR1/CR2/CR3
 /// macros. They collide with parameter names in LLVM's ConstantRange.h in translation units that include
@@ -162,6 +163,7 @@ public:
     /// The element can be trusted only if you trust the corresponding proxy.
     /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
     String forwarded_for;
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     std::optional<Poco::Net::SocketAddress> getLastForwardedFor() const;
     String getLastForwardedForHost() const;
 

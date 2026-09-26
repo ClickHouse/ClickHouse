@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <base/sanitizer_defs.h>
 
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
@@ -550,6 +551,7 @@ void WindowTransform::advancePartitionEnd()
     chassert(!partition_ended && partition_end == blocksEnd());
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 MovedRow WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const
 {
     RowNumber moved_row_number = original_row_number;
@@ -589,9 +591,9 @@ MovedRow WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_nu
             chassert(offset <= 0);
 
             chassert(offset >= -INT64_MAX);
-            if (moved_row_number.row >= -static_cast<UInt64>(offset))
+            if (moved_row_number.row >= common::negateIgnoreOverflow(static_cast<UInt64>(offset)))
             {
-                moved_row_number.row -= -static_cast<UInt64>(offset);
+                moved_row_number.row -= common::negateIgnoreOverflow(static_cast<UInt64>(offset));
                 offset = 0;
                 break;
             }
@@ -633,6 +635,7 @@ MovedRow WindowTransform::moveRowNumber(const RowNumber & original_row_number, I
 }
 
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void WindowTransform::advanceFrameStartRowsOffset()
 {
     // Just recalculate it each time by walking blocks.
@@ -926,6 +929,7 @@ void WindowTransform::advanceFrameEndUnbounded()
     frame_ended = partition_ended;
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void WindowTransform::advanceFrameEndRowsOffset()
 {
     // Walk the specified offset from the current row. The "+1" is needed

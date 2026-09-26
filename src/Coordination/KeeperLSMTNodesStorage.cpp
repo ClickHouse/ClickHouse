@@ -115,7 +115,7 @@ bool KeeperLSMTNodesStorage::addCommittedNodeIfNotExists(std::string_view path, 
     node.path_hash = node_path.hash;
 
     if (out_digest)
-        *out_digest += node.getOrCalculateDigest();
+        addToDigest(*out_digest, node.getOrCalculateDigest());
 
     state.appendCommittedNode(node);
 
@@ -127,12 +127,12 @@ bool KeeperLSMTNodesStorage::addCommittedNodeIfNotExists(std::string_view path, 
         FullNode parent_node;
         parent_ref.readWithKnownPath(parent_node, parent_path);
         if (out_digest)
-            *out_digest -= parent_node.getOrCalculateDigest();
+            removeFromDigest(*out_digest, parent_node.getOrCalculateDigest());
         parent_node.action = NodeAction::Update;
         parent_node.stats.increaseNumChildren();
         parent_node.digest = 0;
         if (out_digest)
-            *out_digest += parent_node.getOrCalculateDigest();
+            addToDigest(*out_digest, parent_node.getOrCalculateDigest());
         state.appendCommittedNode(parent_node);
     }
     return true;
@@ -146,7 +146,7 @@ void KeeperLSMTNodesStorage::updateCommittedNode(std::string_view path, std::opt
     FullNode node;
     ref.readWithKnownPath(node, node_path);
     if (out_digest)
-        *out_digest -= node.getOrCalculateDigest();
+        removeFromDigest(*out_digest, node.getOrCalculateDigest());
     node.action = NodeAction::Update;
     if (new_stats)
         node.stats = **new_stats;
@@ -154,7 +154,7 @@ void KeeperLSMTNodesStorage::updateCommittedNode(std::string_view path, std::opt
         node.setData(*new_data);
     node.digest = 0;
     if (out_digest)
-        *out_digest += node.getOrCalculateDigest();
+        addToDigest(*out_digest, node.getOrCalculateDigest());
     state.appendCommittedNode(node);
 }
 
@@ -207,7 +207,7 @@ void KeeperLSMTNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader
             storage->nodeLoadedFromSnapshot(node.path.str(), node.stats);
 
         if (out_digest)
-            *out_digest += node.getOrCalculateDigest();
+            addToDigest(*out_digest, node.getOrCalculateDigest());
 
         state.appendCommittedNode(node);
     }
@@ -263,7 +263,10 @@ void KeeperLSMTNodesStorage::commitDelta(Delta & delta, uint64_t * digest)
     auto & op = std::get<LSMTDelta>(delta.operation);
     op.new_node.path.ptr = delta.path.data();
     if (digest)
-        *digest += op.new_node.getOrCalculateDigest() - op.old_digest;
+    {
+        addToDigest(*digest, op.new_node.getOrCalculateDigest());
+        removeFromDigest(*digest, op.old_digest);
+    }
     state.appendCommittedNode(op.new_node);
 }
 
@@ -366,7 +369,8 @@ void KeeperLSMTNodesStorage::prepareImpl(std::string_view path, UncommittedNodeR
     uint64_t old_digest = node.node.digest;
     node.node.path.ptr = path.data();
     node.node.digest = 0;
-    staging.digest.value += node.node.getOrCalculateDigest() - old_digest;
+    addToDigest(staging.digest.value, node.node.getOrCalculateDigest());
+    removeFromDigest(staging.digest.value, old_digest);
     NodeRef new_ref = state.appendUncommittedNode(node.node, staging.zxid);
     staging.deltas.emplace_back(std::string{path}, staging.zxid, LSMTDelta {new_ref, node.node, node.ref, old_digest, old_acl_id, ephemeral_owner, has_ttl, is_container});
 }

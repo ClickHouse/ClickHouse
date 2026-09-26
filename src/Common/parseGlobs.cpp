@@ -486,8 +486,9 @@ std::vector<std::string> expandSelectionGlob(const std::string & path)
         result.push_back(std::move(expanded));
 
         /// The last glob changes fastest, so that the paths are generated in the order of the pattern.
-        for (size_t i = globs.size(); i-- > 0;)
+        for (size_t pos = globs.size(); pos > 0; --pos)
         {
+            const size_t i = pos - 1;
             if (++alternative_indices[i] < globs[i].alternatives.size())
                 break;
             alternative_indices[i] = 0;

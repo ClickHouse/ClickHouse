@@ -220,7 +220,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
             for (size_t i = offset_start + 1; i < offset_end; ++i)
             {
-                size_t current_diff = src_offsets[i] - src_offsets[i - 1];
+                size_t current_diff = src_offsets[i] - src_offsets[static_cast<ssize_t>(i) - 1];
                 insertManyDefaults(current_diff - 1);
                 offsets_data.push_back(_size);
                 ++_size;
@@ -228,7 +228,7 @@ void ColumnSparse::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
             /// 'end' <= 'src_offsets[offsets_end]', but end is excluded, so index is 'offsets_end' - 1.
             /// Since 'end' is excluded, need to subtract one more row from result.
-            insertManyDefaults(end - src_offsets[offset_end - 1] - 1);
+            insertManyDefaults(end - src_offsets[static_cast<ssize_t>(offset_end) - 1] - 1);
             values->insertRangeFrom(src_values, offset_start + 1, offset_end - offset_start);
         }
         else
@@ -775,7 +775,7 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
         {
             if (!offset_it.isDefault())
             {
-                size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
+                size_t replicate_size = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
                 total_offsets_size += replicate_size;
             }
         }
@@ -787,8 +787,8 @@ ColumnPtr ColumnSparse::replicate(const Offsets & replicate_offsets) const
     {
         if (!offset_it.isDefault())
         {
-            size_t replicate_size = replicate_offsets[i] - replicate_offsets[i - 1];
-            for (size_t row = replicate_offsets[i - 1]; row < replicate_offsets[i]; ++row)
+            size_t replicate_size = replicate_offsets[i] - replicate_offsets[static_cast<ssize_t>(i) - 1];
+            for (size_t row = replicate_offsets[static_cast<ssize_t>(i) - 1]; row < replicate_offsets[i]; ++row)
             {
                 res_offsets_data.push_back(row);
             }

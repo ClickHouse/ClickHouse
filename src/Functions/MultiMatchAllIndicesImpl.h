@@ -204,7 +204,7 @@ struct MultiMatchAllIndicesImpl
 
             if (needles.empty())
             {
-                offsets[i] = (i == 0) ? 0 : offsets[i-1];
+                offsets[i] = (i == 0) ? 0 : offsets[static_cast<ssize_t>(i) - 1];
                 prev_haystack_offset = haystack_offsets[i];
                 prev_needles_offset = needles_offsets[i];
                 continue;

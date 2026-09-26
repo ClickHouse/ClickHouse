@@ -152,7 +152,7 @@ static std::optional<UInt64> countMatchedLeftRows(const AddedColumns & added_col
         const auto & offsets = added_columns.offsets_to_replicate;
         UInt64 matched = 0;
         for (size_t i = 0; i < probed_rows; ++i)
-            matched += offsets[i] > offsets[i - 1];
+            matched += offsets[i] > offsets[static_cast<ssize_t>(i) - 1];
         return matched;
     }
     else if constexpr (source == LeftMatchedSource::DefaultRowMarkers)

@@ -17,6 +17,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <base/find_symbols.h>
+#include <base/sanitizer_defs.h>
 
 #include <type_traits>
 
@@ -162,6 +163,7 @@ public:
     }
 
     template <typename TransformX, typename TransformY, typename T1, typename T2>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     Int64 calculate(const TransformX & transform_x, const TransformY & transform_y, T1 x, T2 y, const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y) const
     {
         auto res = static_cast<Int64>(

@@ -23,6 +23,7 @@
 #include <Common/WKB.h>
 #include <Common/config_version.h>
 #include <base/arithmeticOverflow.h>
+#include <base/sanitizer_defs.h>
 #include <Common/formatReadable.h>
 #include <Common/HashTable/HashSet.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -856,6 +857,7 @@ void writePage(const parq::PageHeader & header, const PODArray<char> & compresse
     addToEncodingStats(s, header);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void makeBloomFilter(const HashSet<UInt64, TrivialHash> & hashes, ColumnChunkIndexes & indexes, const WriteOptions & options)
 {
     /// Format documentation: https://parquet.apache.org/docs/file-format/bloomfilter/

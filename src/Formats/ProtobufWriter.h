@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include <base/sanitizer_defs.h>
 
 #if USE_PROTOBUF
 #   include <Core/Types.h>
@@ -23,6 +24,7 @@ public:
     void endMessage(bool with_length_delimiter);
 
     void startNestedMessage();
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void endNestedMessage(int field_number, bool is_group, bool skip_if_empty);
 
     void writeInt(int field_number, Int64 value);

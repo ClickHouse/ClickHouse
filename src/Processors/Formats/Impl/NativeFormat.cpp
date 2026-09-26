@@ -468,7 +468,7 @@ With `LowCardinality(Nullable(String))`, index 0 is `NULL`:
 
 Unlike [RowBinary](/reference/formats/RowBinary/RowBinary#array) where each array is prefixed with a LEB128 element count, the Native format encodes arrays as two columnar sub-streams:
 
-- N cumulative `UInt64` offsets (little-endian, 8 bytes each). Row `i` has `offset[i] - offset[i-1]` elements, with `offset[-1]` implicitly 0.
+- N cumulative `UInt64` offsets (little-endian, 8 bytes each). Row `i` has `offset[i] - offset[static_cast<ssize_t>(i) - 1]` elements, with `offset[-1]` implicitly 0.
 - All nested elements across all rows, bulk-serialized contiguously.
 
 For example, `Array(UInt32)` with 3 rows `[[0, 10], [1, 11], [2, 12]]`:

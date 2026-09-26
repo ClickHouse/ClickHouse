@@ -207,8 +207,9 @@ private:
 
             res_data.push_back(static_cast<UInt8>('0' + digits_len % 10)); // Encode 'length(to_string(digits))' as a single digit
 
-            while (digits_len-- > 0)
+            while (digits_len > 0)
             {
+                --digits_len;
                 res_data.push_back(static_cast<UInt8>('0' + (digits / digits_power10) % 10));
                 digits_power10 /= 10;
             }

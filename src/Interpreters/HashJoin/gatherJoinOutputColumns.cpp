@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -227,7 +228,9 @@ const GatherRanges & rangesOf(const RefWordSelection & selection, EmitScratch & 
 
 /// Rebase a range's source offsets onto a destination ending at `cursor`; returns the run of the
 /// nested plane the range covers.
-GatherRange rebaseOffsets(const UInt64 * offsets, const GatherRange & range, UInt64 *& out_offsets, UInt64 cursor)
+/// `cursor - base` is a signed shift carried in unsigned, and adding it back to each offset
+/// undoes the wrap, so the result is correct modulo 2^64 whenever it is in range.
+GatherRange NO_SANITIZE_UNSIGNED_OVERFLOW rebaseOffsets(const UInt64 * offsets, const GatherRange & range, UInt64 *& out_offsets, UInt64 cursor)
 {
     const UInt64 base = offsets[static_cast<ssize_t>(range.begin) - 1];
     const UInt64 rebase = cursor - base;

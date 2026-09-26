@@ -2,6 +2,7 @@
 
 #include <IO/VarInt.h>
 #include <base/sort.h>
+#include <base/sanitizer_defs.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaUtils.h>
 #include <Common/ArenaWithFreeLists.h>
@@ -208,6 +209,7 @@ public:
      * Parallel Space Saving reduction and combine step from:
      *  https://arxiv.org/pdf/1401.0702.pdf
      */
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void merge(const Self & rhs)
     {
         if (rhs.empty())

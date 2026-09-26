@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <base/arithmeticOverflow.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -60,6 +61,7 @@ Block FillingTransform::transformHeader(Block header, const SortDescription & so
 
 /// Multiply through UInt64 so the result wraps by construction (FillingRow::doLongJump relies on
 /// well-defined wraparound to detect the overflowed jump). A signed Int64 multiply is UB on overflow.
+NO_SANITIZE_UNSIGNED_OVERFLOW
 static Int64 mulStepWrapping(Int64 step, Int64 jumps_count)
 {
     return static_cast<Int64>(static_cast<UInt64>(step) * static_cast<UInt64>(jumps_count));

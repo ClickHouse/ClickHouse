@@ -250,7 +250,7 @@ bool KeeperMemNodesStorage::addCommittedNodeIfNotExists(std::string_view path, c
     node.stats = stats;
     node.setData(data);
     if (out_digest)
-        *out_digest += node.getDigest(path);
+        addToDigest(*out_digest, node.getDigest(path));
     auto [map_key, _] = container.insert(std::string{path}, std::move(node));
     /// Take child path from key owned by map.
     auto child_name = Coordination::getBaseNodeName(map_key->getKey());
@@ -267,13 +267,13 @@ bool KeeperMemNodesStorage::addCommittedNodeIfNotExists(std::string_view path, c
                 if (update_parent_num_children)
                 {
                     if (out_digest)
-                        *out_digest -= parent_node.getDigest(parent_path);
+                        removeFromDigest(*out_digest, parent_node.getDigest(parent_path));
 
                     parent_node.stats.increaseNumChildren();
                     parent_node.invalidateDigestCache();
 
                     if (out_digest)
-                        *out_digest += parent_node.getDigest(parent_path);
+                        addToDigest(*out_digest, parent_node.getDigest(parent_path));
                 }
             }
         );
@@ -289,7 +289,7 @@ void KeeperMemNodesStorage::updateCommittedNode(std::string_view path, std::opti
         [&](Node & node)
         {
             if (out_digest)
-                *out_digest -= node.getDigest(path);
+                removeFromDigest(*out_digest, node.getDigest(path));
 
             if (new_stats)
                 node.stats = **new_stats;
@@ -298,7 +298,7 @@ void KeeperMemNodesStorage::updateCommittedNode(std::string_view path, std::opti
             node.invalidateDigestCache();
 
             if (out_digest)
-                *out_digest += node.getDigest(path);
+                addToDigest(*out_digest, node.getDigest(path));
         });
 }
 
@@ -348,7 +348,7 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
             storage->nodeLoadedFromSnapshot(path, node.stats);
 
         if (out_digest)
-            *out_digest += node.getDigest(path);
+            addToDigest(*out_digest, node.getDigest(path));
 
         container.insertOrReplace(std::move(path_data), path_size, std::move(node));
     }
@@ -487,7 +487,7 @@ void KeeperMemNodesStorage::commitDelta(Delta & delta, uint64_t * digest)
                 }
 
                 if (digest)
-                    *digest -= node_it->value.getDigest(path);
+                    removeFromDigest(*digest, node_it->value.getDigest(path));
 
                 auto updated_node = container.updateValue(path, [&](auto & node)
                 {
@@ -500,7 +500,7 @@ void KeeperMemNodesStorage::commitDelta(Delta & delta, uint64_t * digest)
                 });
 
                 if (digest)
-                    *digest += updated_node->value.getDigest(path);
+                    addToDigest(*digest, updated_node->value.getDigest(path));
 
                 return Coordination::Error::ZOK;
             }
@@ -620,7 +620,7 @@ void KeeperMemNodesStorage::updateNodesDigest(uint64_t & current_digest, uint64_
         if (uncommitted_node.node)
         {
             uncommitted_node.node->invalidateDigestCache();
-            current_digest += uncommitted_node.node->getDigest(path);
+            addToDigest(current_digest, uncommitted_node.node->getDigest(path));
         }
     }
 }
@@ -744,7 +744,7 @@ void KeeperMemNodesStorage::prepareWriteCommon(std::string_view path, Uncommitte
     /// at the end of transaction, we add new node digests in updateNodesDigest
     if (node_was_not_yet_in_zxid && staging.digest.version != KeeperDigestVersion::NO_DIGEST &&
         node_it->second.node)
-        staging.digest.value -= node_it->second.node->getDigest(path);
+        removeFromDigest(staging.digest.value, node_it->second.node->getDigest(path));
 
     node_it->second.applied_zxids.push_back(staging.zxid);
 }
@@ -847,7 +847,7 @@ bool KeeperMemNodesStorage::createNode(
     );
 
     if (digest)
-        *digest += map_key->getMapped()->value.getDigest(map_key->getKey());
+        addToDigest(*digest, map_key->getMapped()->value.getDigest(map_key->getKey()));
 
     return true;
 };
@@ -861,7 +861,7 @@ bool KeeperMemNodesStorage::removeNode(const std::string & path, int32_t version
     chassert(version == node_it->value.stats.version);
 
     if (digest)
-        *digest -= node_it->value.getDigest(path);
+        removeFromDigest(*digest, node_it->value.getDigest(path));
 
     container.updateValue(
         Coordination::parentNodePath(path),

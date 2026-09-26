@@ -31,6 +31,7 @@
 #include <vector>
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -335,6 +336,7 @@ private:
             END, // End of sequence
         };
         // Execute one opcode
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         StepResult step(std::string_view & program);
 
         struct FileName

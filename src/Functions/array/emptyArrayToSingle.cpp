@@ -248,7 +248,7 @@ namespace
                     src_array_prev_offset = src_array_offsets[i];
 
                     if (src_array_prev_offset)
-                        src_string_prev_offset = src_string_offsets[src_array_prev_offset - 1];
+                        src_string_prev_offset = src_string_offsets[static_cast<ssize_t>(src_array_prev_offset) - 1];
                 }
 
                 return true;

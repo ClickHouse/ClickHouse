@@ -211,7 +211,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
             const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
             const IColumn & nested_column = column_array.getData();
             const ColumnArray::Offsets & offsets = column_array.getOffsets();
-            size_t offset = offsets[row_num - 1];
+            size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
             size_t array_size = offsets[row_num] - offset;
 
             String current_path = path + "." + name;
@@ -257,7 +257,7 @@ size_t BSONEachRowRowOutputFormat::countBSONFieldSize(const IColumn & column, co
             const auto & key_column = key_value_columns[0];
             const auto & value_column = key_value_columns[1];
             const auto & offsets = nested_column.getOffsets();
-            size_t offset = offsets[row_num - 1];
+            size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
             size_t map_size = offsets[row_num] - offset;
 
             WriteBufferFromOwnString buf;
@@ -442,7 +442,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             const ColumnArray & column_array = assert_cast<const ColumnArray &>(column);
             const IColumn & nested_column = column_array.getData();
             const ColumnArray::Offsets & offsets = column_array.getOffsets();
-            size_t offset = offsets[row_num - 1];
+            size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
             size_t array_size = offsets[row_num] - offset;
 
             writeBSONTypeAndKeyName(BSONType::ARRAY, name, out);
@@ -490,7 +490,7 @@ void BSONEachRowRowOutputFormat::serializeField(const IColumn & column, const Da
             const auto & key_column = key_value_columns[0];
             const auto & value_column = key_value_columns[1];
             const auto & offsets = nested_column.getOffsets();
-            size_t offset = offsets[row_num - 1];
+            size_t offset = offsets[static_cast<ssize_t>(row_num) - 1];
             size_t map_size = offsets[row_num] - offset;
 
             writeBSONTypeAndKeyName(BSONType::DOCUMENT, name, out);

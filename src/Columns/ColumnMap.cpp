@@ -74,8 +74,8 @@ Field ColumnMap::operator[](size_t n) const
 void ColumnMap::get(size_t n, Field & res) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
-    size_t offset = offsets[n - 1];
-    size_t size = offsets[n] - offsets[n - 1];
+    size_t offset = offsets[static_cast<ssize_t>(n) - 1];
+    size_t size = offsets[n] - offsets[static_cast<ssize_t>(n) - 1];
 
     res = Map();
     auto & map = res.safeGet<Map>();
@@ -88,8 +88,8 @@ void ColumnMap::get(size_t n, Field & res) const
 void ColumnMap::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const Options & options) const
 {
     const auto & offsets = getNestedColumn().getOffsets();
-    size_t offset = offsets[n - 1];
-    size_t size = offsets[n] - offsets[n - 1];
+    size_t offset = offsets[static_cast<ssize_t>(n) - 1];
+    size_t size = offsets[n] - offsets[static_cast<ssize_t>(n) - 1];
 
     if (options.notFull(name_buf))
         name_buf << "[";

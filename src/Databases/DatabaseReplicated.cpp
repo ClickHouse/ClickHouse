@@ -66,6 +66,7 @@
 #include <Common/scope_guard_safe.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/thread_local_rng.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -1077,7 +1078,7 @@ LoadTaskPtr DatabaseReplicated::startupDatabaseAsync(AsyncLoader & async_loader,
             {
                 std::lock_guard lock{mutex};
                 for (const auto & table : tables)
-                    digest += getMetadataHash(table.first);
+                    digest = common::addIgnoreOverflow(digest, getMetadataHash(table.first));
                 LOG_DEBUG(log, "Calculated metadata digest of {} tables: {}", tables.size(), digest);
             }
 
@@ -1419,6 +1420,7 @@ void DatabaseReplicated::assertDigestInTransactionOrInline(const ContextPtr & lo
 #endif
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) const
 {
     LOG_TEST(log, "Current in-memory metadata digest: {}", tables_metadata_digest);
@@ -1820,7 +1822,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
 
             std::lock_guard lock{metadata_mutex};
             UInt64 new_digest = tables_metadata_digest;
-            new_digest -= getMetadataHash(table_name);
+            new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_name));
 
             DatabaseAtomic::dropTableImpl(make_query_context(), table_name, /* sync */ true);
 
@@ -2596,6 +2598,7 @@ void DatabaseReplicated::shutdown()
         std::rethrow_exception(first_error);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::dropTable");
@@ -2633,6 +2636,7 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
     assertDigest(local_context);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
                                      const String & to_table_name, bool exchange, bool dictionary)
 {
@@ -2709,6 +2713,7 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     assertDigest(local_context);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                        const String & table_metadata_tmp_path, const String & table_metadata_path,
                        ContextPtr query_context)
@@ -2760,8 +2765,8 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
 
     std::lock_guard lock{metadata_mutex};
     UInt64 new_digest = tables_metadata_digest;
-    new_digest -= getMetadataHash(table_id.table_name);
-    new_digest += DB::getMetadataHash(table_id.table_name, statement);
+    new_digest = common::subIgnoreOverflow(new_digest, getMetadataHash(table_id.table_name));
+    new_digest = common::addIgnoreOverflow(new_digest, DB::getMetadataHash(table_id.table_name, statement));
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 

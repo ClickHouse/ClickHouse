@@ -58,7 +58,6 @@ void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
 
     try
     {
-        size_t out_offset = out->offset();
         bool ended = false;
         do
         {
@@ -67,6 +66,7 @@ void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
             output.dst = reinterpret_cast<unsigned char *>(out->buffer().begin());
             output.size = out->buffer().size();
             output.pos = out->offset();
+            const size_t out_pos_before = output.pos;
 
             size_t compression_result = ZSTD_compressStream2(cctx.get(), &output, &input, mode);
             if (ZSTD_isError(compression_result))
@@ -76,14 +76,13 @@ void ZstdDeflatingWriteBuffer::flush(ZSTD_EndDirective mode)
                                 ZSTD_getErrorName(compression_result), ZSTD_VERSION_STRING);
 
             out->position() = out->buffer().begin() + output.pos;
+            total_out += output.pos - out_pos_before;
 
             bool everything_was_compressed = (input.pos == input.size);
             bool everything_was_flushed = compression_result == 0;
 
             ended = everything_was_compressed && everything_was_flushed;
         } while (!ended);
-
-        total_out += out->offset() - out_offset;
     }
     catch (...)
     {

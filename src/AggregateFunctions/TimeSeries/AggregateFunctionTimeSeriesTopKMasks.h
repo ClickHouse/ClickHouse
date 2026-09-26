@@ -118,7 +118,7 @@ public:
 
         const auto & values_column = assert_cast<const ColumnArray &>(*columns[values_argument_index]);
         const auto & values_offsets = values_column.getOffsets();
-        const size_t values_begin = values_offsets[row_num - 1];
+        const size_t values_begin = values_offsets[static_cast<ssize_t>(row_num) - 1];
         const size_t num_steps = values_offsets[row_num] - values_begin;
 
         const IColumn * values_nested = &values_column.getData();
@@ -352,7 +352,7 @@ private:
 
         const auto & k_column = assert_cast<const ColumnArray &>(*columns[0]);
         const auto & k_offsets = k_column.getOffsets();
-        return k_column.getData().getUInt(k_offsets[row_num - 1] + step);
+        return k_column.getData().getUInt(k_offsets[static_cast<ssize_t>(row_num) - 1] + step);
     }
 
     /// Returns the size of the `k` array at row `row_num` if `k` is given as an array, otherwise the fallback.
@@ -361,7 +361,7 @@ private:
         if (!k_is_per_step)
             return fallback;
         const auto & k_offsets = assert_cast<const ColumnArray &>(*columns[0]).getOffsets();
-        return k_offsets[row_num] - k_offsets[row_num - 1];
+        return k_offsets[row_num] - k_offsets[static_cast<ssize_t>(row_num) - 1];
     }
 
     /// Initializes the state from the first added row: the number of time steps and the per-step capacities.

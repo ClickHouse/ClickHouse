@@ -6,6 +6,7 @@
 #include <Common/PODArray.h>
 #include <base/defines.h>
 #include <base/sort.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -265,7 +266,7 @@ namespace detail
         {
             return static_cast<UInt16>(
                 (i * BIG_PRECISION) + SMALL_THRESHOLD
-                + (intHash32<0>(i) % BIG_PRECISION - (BIG_PRECISION / 2)));    /// A small randomization so that it is not noticeable that all the values are even.
+                + common::subIgnoreOverflow(intHash32<0>(i) % BIG_PRECISION, BIG_PRECISION / 2));    /// A small randomization so that it is not noticeable that all the values are even.
         }
 
         /// Lets you scroll through the histogram values, skipping zeros.
@@ -320,7 +321,7 @@ namespace detail
 
         void insertWeighted(UInt64 x, size_t weight) noexcept
         {
-            count += weight;
+            count = common::addIgnoreOverflow(count, weight);
 
             if (x < SMALL_THRESHOLD)
                 count_small[x] += weight;

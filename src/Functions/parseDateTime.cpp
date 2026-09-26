@@ -25,6 +25,7 @@
 #include <boost/algorithm/string/case_conv.hpp>
 
 #include <expected>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -560,6 +561,7 @@ namespace
         }
 
         [[nodiscard]]
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         Int64OrError buildDateTime(const DateLUTImpl & time_zone)
         {
             if (is_hour_of_half_day && !is_am)

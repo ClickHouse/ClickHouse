@@ -881,8 +881,8 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         /// Calculate statistics for paths in shared data.
         const auto [shared_data_paths, _] = column_object.getSharedDataPathsAndValues();
         const auto & shared_data_offsets = column_object.getSharedDataOffsets();
-        size_t start = shared_data_offsets[offset - 1];
-        size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[offset + limit - 1];
+        size_t start = shared_data_offsets[static_cast<ssize_t>(offset) - 1];
+        size_t end = limit == 0 || offset + limit > shared_data_offsets.size() ? shared_data_paths->size() : shared_data_offsets[static_cast<ssize_t>(offset + limit) - 1];
         for (size_t i = start; i != end; ++i)
         {
             auto path = shared_data_paths->getDataAt(i);

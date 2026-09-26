@@ -96,7 +96,7 @@ ColumnPtr FunctionValidateNestedArraySizes::executeImpl(
             {
                 current_column = checkAndGetColumn<ColumnArray>(current_arg.column.get());
                 const auto & offsets = current_column->getOffsets();
-                length = offsets[i] - offsets[i - 1];
+                length = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
             }
 
             if (args_idx == 1)

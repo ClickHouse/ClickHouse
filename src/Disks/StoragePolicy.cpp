@@ -257,12 +257,12 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
     {
         auto volume_unreserved_space = volume->getMaxUnreservedFreeSpace();
         if (!volume_unreserved_space)
-            return -1ULL; /// There is at least one unlimited disk.
+            return std::numeric_limits<UInt64>::max(); /// There is at least one unlimited disk.
 
         if (!res || *volume_unreserved_space > *res)
             res = volume_unreserved_space;
     }
-    return res.value_or(-1ULL);
+    return res.value_or(std::numeric_limits<UInt64>::max());
 }
 
 

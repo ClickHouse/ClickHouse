@@ -73,8 +73,8 @@ struct LowerUpperUTF8Impl
             if (first_row == last_row)
                 return;
 
-            const size_t src_begin_offset = first_row == 0 ? 0 : offsets[first_row - 1];
-            const size_t src_end_offset = offsets[last_row - 1];
+            const size_t src_begin_offset = first_row == 0 ? 0 : offsets[static_cast<ssize_t>(first_row) - 1];
+            const size_t src_end_offset = offsets[static_cast<ssize_t>(last_row) - 1];
             const size_t src_size = src_end_offset - src_begin_offset;
 
             if (curr_offset > res_data.size() || src_size > res_data.size() - curr_offset)
@@ -94,7 +94,7 @@ struct LowerUpperUTF8Impl
         size_t ascii_run_start = 0;
         for (size_t row_i = 0; row_i < input_rows_count; ++row_i)
         {
-            const size_t src_begin_offset = row_i == 0 ? 0 : offsets[row_i - 1];
+            const size_t src_begin_offset = row_i == 0 ? 0 : offsets[static_cast<ssize_t>(row_i) - 1];
             const size_t src_end_offset = offsets[row_i];
             const size_t src_size = src_end_offset - src_begin_offset;
             if (isAllASCIIWithEarlyExit(data.data() + src_begin_offset, src_size))

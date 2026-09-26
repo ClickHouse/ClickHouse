@@ -367,8 +367,9 @@ TEST_F(UniqueKeyProbeTest, FindRowIndexBatchExceedsMultiGetBatchLimit)
     expected.reserve(2 * N + 2);
     storage.push_back(encodeKey(2000)); /// above max, misses
     expected.push_back(std::nullopt);
-    for (UInt64 i = N; i-- > 0;)
+    for (UInt64 pos = N; pos > 0; --pos)
     {
+        const UInt64 i = pos - 1;
         storage.push_back(encodeKey(100 + i * 10 + 5));
         expected.push_back(std::nullopt);
         storage.push_back(encodeKey(100 + i * 10));

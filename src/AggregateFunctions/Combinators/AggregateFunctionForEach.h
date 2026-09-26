@@ -265,7 +265,7 @@ public:
         const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
         const IColumn::Offsets & offsets = first_array_column.getOffsets();
 
-        size_t begin = offsets[row_num - 1];
+        size_t begin = offsets[static_cast<ssize_t>(row_num) - 1];
         size_t end = offsets[row_num];
 
         /// Sanity check. NOTE We can implement specialization for a case with single argument, if the check will hurt performance.
@@ -274,7 +274,7 @@ public:
             const ColumnArray & ith_column = assert_cast<const ColumnArray &>(*columns[i]);
             const IColumn::Offsets & ith_offsets = ith_column.getOffsets();
 
-            if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[row_num - 1] != begin))
+            if (ith_offsets[row_num] != end || (row_num != 0 && ith_offsets[static_cast<ssize_t>(row_num) - 1] != begin))
                 throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Arrays passed to {} aggregate function have different sizes", getName());
         }
 
@@ -384,8 +384,8 @@ public:
                 {
                     arr_to.getOffsets().resize_assume_reserved(offsets_before);
                     const char * nested_state = data(place).array_of_aggregate_datas;
-                    for (size_t i = transferred; i-- > 0;)
-                        nested_func->rollbackInsertResult(nested_state + i * nested_size_of_data, arr_to.getData());
+                    for (size_t i = transferred; i > 0; --i)
+                        nested_func->rollbackInsertResult(nested_state + (i - 1) * nested_size_of_data, arr_to.getData());
                     throw;
                 }
 
@@ -415,8 +415,8 @@ public:
 
         offsets_to.resize_assume_reserved(offsets_to.size() - 1);
         const char * nested_state = state.array_of_aggregate_datas;
-        for (size_t i = state.dynamic_array_size; i-- > 0;)
-            nested_func->rollbackInsertResult(nested_state + i * nested_size_of_data, arr_to.getData());
+        for (size_t i = state.dynamic_array_size; i > 0; --i)
+            nested_func->rollbackInsertResult(nested_state + (i - 1) * nested_size_of_data, arr_to.getData());
     }
 
     bool allocatesMemoryInArena() const override

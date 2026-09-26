@@ -627,7 +627,13 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
                 }
             }
 
-            need_marks -= marks_to_get_from_part;
+            /// The loop above may take more than the remaining budget: it deliberately adds the
+            /// tail of a range shorter than one prefetch step after `num_marks_to_get` reaches
+            /// zero. `need_marks` is signed and is meant to go negative when that happens, which it
+            /// did by having both operands promoted to `size_t`, wrapping there, and converting the
+            /// wrapped difference back. Subtracting as `int64_t` reaches the same value without the
+            /// unsigned detour.
+            need_marks -= static_cast<int64_t>(marks_to_get_from_part);
             sum_marks -= marks_to_get_from_part;
             part_stat.sum_marks -= marks_to_get_from_part;
 

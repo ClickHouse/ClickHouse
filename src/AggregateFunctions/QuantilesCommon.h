@@ -12,6 +12,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/iota.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -119,7 +120,7 @@ size_t bitLength(const U & x)
 
 /// |min()| is not representable in the signed type itself.
 template <typename T>
-make_unsigned_t<T> magnitude(T x)
+make_unsigned_t<T> NO_SANITIZE_UNSIGNED_OVERFLOW magnitude(T x)
 {
     using U = make_unsigned_t<T>;
     if constexpr (is_signed_v<T>)

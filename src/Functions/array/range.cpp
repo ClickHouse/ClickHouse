@@ -15,6 +15,9 @@
 #include <Interpreters/Context.h>
 #include <numeric>
 #include <vector>
+#include <base/sanitizer_defs.h>
+
+#include <limits>
 
 
 namespace DB
@@ -100,13 +103,13 @@ private:
                         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                                         "A call to function {} overflows, only support positive values when only end is provided", getName());
 
-                    const auto sum = lhs + rhs;
-                    if (sum < lhs)
+                    const auto rhs_unsigned = static_cast<size_t>(rhs);
+                    if (rhs_unsigned > std::numeric_limits<size_t>::max() - lhs)
                         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                                         "A call to function {} overflows, investigate the values "
                                         "of arguments you are passing", getName());
 
-                    return sum;
+                    return lhs + rhs_unsigned;
                 });
 
             if (total_values > max_elements)
@@ -212,6 +215,7 @@ private:
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeConstStep(
         const IColumn * start_arg, const IColumn * end_arg, const T step, const size_t input_rows_count) const
     {
@@ -338,6 +342,7 @@ private:
     }
 
     template <typename T>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     ColumnPtr executeGeneric(
         const IColumn * start_col, const IColumn * end_col, const IColumn * step_col, const size_t input_rows_count) const
     {

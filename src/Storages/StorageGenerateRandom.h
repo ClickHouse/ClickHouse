@@ -4,6 +4,7 @@
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <base/types.h>
 #include <pcg_random.hpp>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -27,7 +28,7 @@ struct GenerateRandomOptions
     UInt32 nullThreshold() const;
 };
 
-ColumnPtr fillColumnWithRandomData(
+ColumnPtr NO_SANITIZE_UNSIGNED_OVERFLOW fillColumnWithRandomData(
     DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, bool fuzzy = false);
 
 /* Generates random data for given schema.
