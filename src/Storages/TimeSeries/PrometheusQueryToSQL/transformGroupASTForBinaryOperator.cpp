@@ -60,6 +60,13 @@ ASTPtr transformGroupASTForBinaryOperator(
             if (!metric_name_dropped && !std::binary_search(tags_to_keep.begin(), tags_to_keep.end(), kMetricName))
                 metric_name_dropped = true;
 
+            if (!drop_metric_name && std::binary_search(tags_to_keep.begin(), tags_to_keep.end(), kMetricName))
+            {
+                auto marker = std::lower_bound(tags_to_keep.begin(), tags_to_keep.end(), kDroppedMetricNameMarker);
+                if (marker == tags_to_keep.end() || *marker != kDroppedMetricNameMarker)
+                    tags_to_keep.insert(marker, kDroppedMetricNameMarker);
+            }
+
             return makeASTFunction(
                 "timeSeriesRemoveAllTagsExcept",
                 std::move(group),
