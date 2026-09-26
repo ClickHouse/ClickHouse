@@ -1,0 +1,4 @@
+swap_false	1	1
+swap_true	2	2
+result_swap_false	10	999	990
+result_swap_true	10	999	990

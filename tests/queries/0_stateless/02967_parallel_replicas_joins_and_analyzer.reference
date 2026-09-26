@@ -355,8 +355,7 @@ Expression
                               ReadFromMergeTree
                         Expression
                           Expression
-                            Expression
-                              ReadFromMergeTree
+                            ReadFromMemoryStorage
       Expression
         ReadFromRemoteParallelReplicas
 --
@@ -407,10 +406,6 @@ Expression
                               Expression
                                 Expression
                                   ReadFromMergeTree
-                              CreatingSet
-                                Expression
-                                  Filter
-                                    ReadFromSystemNumbers
                         Expression
                           Expression
                             ReadFromMemoryStorage
@@ -466,10 +461,6 @@ Expression
                         Expression
                           Expression
                             ReadFromMergeTree
-                        CreatingSet
-                          Expression
-                            Filter
-                              ReadFromSystemNumbers
                   Expression
                     Union
                       Expression
@@ -894,10 +885,6 @@ Expression
                               Expression
                                 Expression
                                   ReadFromMergeTree
-                              CreatingSet
-                                Expression
-                                  Filter
-                                    ReadFromSystemNumbers
                         Expression
                           Expression
                             Expression
@@ -955,10 +942,6 @@ Expression
                         Expression
                           Expression
                             ReadFromMergeTree
-                        CreatingSet
-                          Expression
-                            Filter
-                              ReadFromSystemNumbers
                   Expression
                     Union
                       Expression

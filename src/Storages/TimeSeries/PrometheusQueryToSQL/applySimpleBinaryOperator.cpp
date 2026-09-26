@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleBinaryOperator.h>
 
+#include <Common/Exception.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -8,8 +9,14 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTWithOnIgnoring.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 #include <algorithm>
+
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+}
 
 
 namespace DB::PrometheusQueryToSQL
@@ -17,10 +24,24 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    void checkVectorMatching(
+        const PrometheusQueryTree::BinaryOperator * operator_node,
+        const SQLQueryPiece & left_argument,
+        const SQLQueryPiece & right_argument)
+    {
+        if (!operator_node->labels.empty()
+            && ((left_argument.type != ResultType::INSTANT_VECTOR) || (right_argument.type != ResultType::INSTANT_VECTOR)))
+        {
+            throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
+                            "Binary operator '{}' with vector matching expects two arguments of type {}, got {} and {}",
+                            operator_node->operator_name, ResultType::INSTANT_VECTOR, left_argument.type, right_argument.type);
+        }
+    }
+
     /// Applies a simple binary operator to operands if at least one of them is scalar.
     /// Other operand can be either scalar or instant vector.
     SQLQueryPiece applyOperatorToScalarsOrVectorAndScalar(
-        const PQT::BinaryOperator * operator_node,
+        const PrometheusQueryTree::BinaryOperator * operator_node,
         SQLQueryPiece && left_argument,
         SQLQueryPiece && right_argument,
         ConverterContext & context,
@@ -43,7 +64,7 @@ namespace
 
     /// Applies a simple operator if both operands are instant vectors.
     SQLQueryPiece applyOperatorToVectors(
-        const PQT::BinaryOperator * operator_node,
+        const PrometheusQueryTree::BinaryOperator * operator_node,
         SQLQueryPiece && left_argument,
         SQLQueryPiece && right_argument,
         ConverterContext & context,
@@ -100,8 +121,8 @@ namespace
 
             /// The join_group is always computed with `drop_metric_name=true` because the two sides typically
             /// have different metric names (e.g., `foo` and `bar`), so keeping `__name__` in the join key
-            /// would prevent any matches. The exception is `on(__name__, ...)`, handled inside transformGroupASTWithOnIgnoring.
-            ASTPtr join_group = transformGroupASTWithOnIgnoring(
+            /// would prevent any matches. The exception is `on(__name__, ...)`, handled inside transformGroupASTForBinaryOperator.
+            ASTPtr join_group = transformGroupASTForBinaryOperator(
                 operator_node,
                 make_intrusive<ASTIdentifier>(ColumnNames::Group),
                 /* drop_metric_name = */ true,
@@ -213,7 +234,7 @@ namespace
                 else
                 {
                     metric_name_dropped_from_result = left_argument.metric_name_dropped;
-                    new_group = transformGroupASTWithOnIgnoring(
+                    new_group = transformGroupASTForBinaryOperator(
                         operator_node,
                         make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::OriginalGroup}),
                         drop_metric_name,
@@ -370,7 +391,7 @@ namespace
 
 
 SQLQueryPiece applySimpleBinaryOperator(
-    const PQT::BinaryOperator * operator_node,
+    const PrometheusQueryTree::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
     SQLQueryPiece && right_argument,
     ConverterContext & context,
@@ -378,6 +399,8 @@ SQLQueryPiece applySimpleBinaryOperator(
     bool drop_metric_name,
     bool allow_grouping_modifier_copy_metric_name)
 {
+    checkVectorMatching(operator_node, left_argument, right_argument);
+
     if ((left_argument.type == ResultType::SCALAR) || (right_argument.type == ResultType::SCALAR))
     {
         /// At least one operand is scalar.

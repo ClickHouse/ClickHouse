@@ -1,0 +1,73 @@
+---
+slug: '/examples/aggregate-function-combinators/avgMap'
+title: 'avgMap'
+description: 'avgMap 组合器使用示例'
+keywords: ['avg', 'map', '组合器', '示例', 'avgMap']
+sidebarTitle: 'avgMap'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 说明
+</div>
+
+[`Map`](/zh/reference/functions/aggregate-functions/combinators#-map) 组合器可应用于 [`avg`](/zh/reference/functions/aggregate-functions/avg)
+函数，使用 `avgMap`
+聚合组合器函数按每个键计算 Map 中各值的算术平均值。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+在本示例中，我们将创建一个表，用于存储不同时间段的状态码及其计数，
+其中每一行都包含一个从状态码映射到对应计数的 Map。我们将使用
+`avgMap` 计算每个时间段内各状态码的平均计数。
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    avgMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+`avgMap` 函数会计算每个时间段内各状态代码的平均计数。例如：
+
+* 在时间段 &#39;2000-01-01 00:00:00&#39; 中：
+  * 状态 &#39;a&#39;：15
+  * 状态 &#39;b&#39;：25
+  * 状态 &#39;c&#39;：(35 + 45) / 2 = 40
+  * 状态 &#39;d&#39;：55
+  * 状态 &#39;e&#39;：65
+* 在时间段 &#39;2000-01-01 00:01:00&#39; 中：
+  * 状态 &#39;d&#39;：75
+  * 状态 &#39;e&#39;：85
+  * 状态 &#39;f&#39;：(95 + 105) / 2 = 100
+  * 状态 &#39;g&#39;：(115 + 125) / 2 = 120
+
+```response title="Response"
+   ┌────────────timeslot─┬─avgMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':100,'g':120}      │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':40,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [`avg`](/zh/reference/functions/aggregate-functions/avg)
+* [`Map 组合器`](/zh/reference/functions/aggregate-functions/combinators#-map)

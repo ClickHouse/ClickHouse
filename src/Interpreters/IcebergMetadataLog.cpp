@@ -14,6 +14,9 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrnoException.h>
+#include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -53,6 +56,9 @@ ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
         {"ManifestFileEntry", static_cast<Int8>(IcebergMetadataLogLevel::ManifestFileEntry)}});
 
     return ColumnsDescription{
+        {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
+        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
+        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Date of the entry."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Event time."},
         {"query_id", std::make_shared<DataTypeString>(), "Query id."},
@@ -67,6 +73,9 @@ ColumnsDescription IcebergMetadataLogElement::getColumnsDescription()
 void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_index = 0;
+    columns[column_index++]->insert(getFQDNOrHostName());
+    columns[column_index++]->insert(VERSION_STRING);
+    columns[column_index++]->insert(SYSTEM_PROCESSOR);
     columns[column_index++]->insert(DateLUT::instance().toDayNum(current_time).toUnderType());
     columns[column_index++]->insert(current_time);
     columns[column_index++]->insert(query_id);
@@ -78,7 +87,12 @@ void IcebergMetadataLogElement::appendToBlock(MutableColumns & columns) const
     columns[column_index++]->insert(pruning_status ? *pruning_status : iceberg_pruning_status_datatype_nullable->getDefault());
 }
 
-void insertRowToLogTable(
+IcebergMetadataLogLevel getIcebergMetadataLogLevel(const ContextPtr & local_context)
+{
+    return local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
+}
+
+void insertRowToLogTableImpl(
     const ContextPtr & local_context,
     String row,
     IcebergMetadataLogLevel row_log_level,
@@ -87,9 +101,6 @@ void insertRowToLogTable(
     std::optional<UInt64> row_in_file,
     std::optional<Iceberg::PruningReturnStatus> pruning_status)
 {
-    IcebergMetadataLogLevel set_log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
-    if (set_log_level < row_log_level)
-        return;
     timespec spec{};
     if (clock_gettime(CLOCK_REALTIME, &spec))
         throw ErrnoException(ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
@@ -101,8 +112,9 @@ void insertRowToLogTable(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg metadata log table is not configured");
     }
 
-    iceberg_metadata_log->add(
-        DB::IcebergMetadataLogElement{
+    iceberg_metadata_log->add([&](DB::IcebergMetadataLogElement & element)
+    {
+        element = DB::IcebergMetadataLogElement{
             .current_time = spec.tv_sec,
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
@@ -110,6 +122,7 @@ void insertRowToLogTable(
             .file_path = file_path.serialize(),
             .metadata_content = row,
             .row_in_file = row_in_file,
-            .pruning_status = pruning_status});
+            .pruning_status = pruning_status};
+    });
 }
 }

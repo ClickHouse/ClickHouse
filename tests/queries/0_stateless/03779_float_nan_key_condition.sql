@@ -2,6 +2,7 @@
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
 -- add_minmax_index_for_numeric_columns=0: Changes the plan
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_negate_nan_ne_float;
 

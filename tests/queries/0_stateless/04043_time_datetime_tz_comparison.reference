@@ -13,7 +13,7 @@ Time64 to DateTime64 CAST with scale change
 1970-01-01 00:00:00.000
 1970-01-01 23:59:59.999
 Supertype preserves DateTime timezone when mixed with Time
-DateTime(\'Europe/Moscow\')
+DateTime64(0, \'Europe/Moscow\')
 DateTime64(3, \'Europe/Moscow\')
 accurateCast Time64 to DateTime64
 1970-01-01 14:45:40.123000
