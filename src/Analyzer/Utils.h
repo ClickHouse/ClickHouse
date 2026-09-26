@@ -7,6 +7,7 @@
 
 #include <Core/Field.h>
 #include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
 
 #include <Columns/IColumn_fwd.h>
 
@@ -199,6 +200,9 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 /// Arguments and parameters are taken from the node.
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name);
 
+/// Returns the types the arguments of a window function must be cast to before it is resolved.
+DataTypes bindWindowFunctionArgumentTypes(const String & function_name, DataTypes argument_types);
+
 /// Returns single source of expression node.
 /// First element of pair is source node, can be nullptr if there are no sources or multiple sources.
 /// Second element of pair is true if there is at most one source, false if there are multiple sources.
@@ -264,15 +268,19 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 /// text; valid only where the literal's declared type is re-applied to it.
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool date_time_as_numbers);
 
-/// True if a value of this type may contain a decimal-backed leaf (Decimal/Time64, or a Dynamic that
-/// can hold one) that needs the exact serialization provided by columnConstantToExactLiteralAST.
-bool typeMayContainDecimal(const IDataType & type);
+/// True if a value of this type needs the exact serialization provided by `columnConstantToExactLiteralAST`:
+/// it may contain a decimal-backed leaf (`Decimal`/`Time64`, or a `Dynamic` that can hold one), or a
+/// `Variant`, whose literal does not keep the active member type.
+bool typeNeedsExactLiteralSerialization(const IDataType & type);
 
 /// Build a literal AST for a constant column value, serializing decimal-backed leaves (Decimal,
 /// DateTime64, Time64, including those nested in Array/Tuple/Map/Variant/Dynamic) exactly so they
 /// round-trip across distributed / serialized-plan boundaries without going through Float64 or the
-/// DateTime text-parsing heuristics. Decimal-free values use the same representation as
-/// getFieldFromColumnForASTLiteral. `date_time_as_numbers` is forwarded to it.
+/// `DateTime` text-parsing heuristics. Values with none of those types and no `Variant` use the same
+/// representation as `getFieldFromColumnForASTLiteral`. `date_time_as_numbers` is forwarded to it.
+/// The active member of a `Variant` reached through `Nullable`/`Array`/`Tuple`/`Map`/`Variant`/`Dynamic` is
+/// named by its own type; under any other wrapper, and below an `Object` whose JSON text carries no
+/// discriminator, it is not.
 ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers);
 
 /// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a

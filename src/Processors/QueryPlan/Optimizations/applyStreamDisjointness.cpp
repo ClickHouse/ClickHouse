@@ -108,7 +108,7 @@ static StreamDisjointnessProperty applyStreamDisjointness(
         /// `max_rows_in_distinct` / `max_bytes_in_distinct` are enforced by the single final transform
         /// that sees the whole merged input. Skipping the merge would turn them into independent
         /// per-stream limits, so in that case we keep the merge and the limits stay global.
-        const auto & size_limits = distinct->getSetSizeLimits();
+        const auto & size_limits = distinct->getSettings().set_size_limits;
         const bool has_size_limits = size_limits.max_rows != 0 || size_limits.max_bytes != 0;
 
         if (settings.distinct_partitions_independently && !has_size_limits
