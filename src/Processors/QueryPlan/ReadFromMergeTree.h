@@ -102,6 +102,11 @@ struct TopKFilterInfo
     /// query condition cache key so that QCC entries written under a TopK plan are partitioned
     /// by the TopK parameters and don't bleed across plans with different LIMIT, sort key, etc.
     UInt64 condition_hash = 0;
+
+    /// Set while the dynamic `__topKFilter` prewhere condition is still to be installed. It belongs
+    /// here, not in `ReadFromMergeTree`, because a plan is cloned between the pass that sets it and
+    /// the pass that installs, and the copies rebuild this struct field by field.
+    bool dynamic_filter_pending = false;
 };
 
 struct LazyMaterializingRows;
@@ -568,6 +573,16 @@ public:
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
 
+    bool hasPendingTopKDynamicFilter() const
+    {
+        return top_k_filter_info.has_value() && top_k_filter_info->dynamic_filter_pending;
+    }
+    void clearPendingTopKDynamicFilter()
+    {
+        if (top_k_filter_info.has_value())
+            top_k_filter_info->dynamic_filter_pending = false;
+    }
+
     /// Carries the TopK stamp and the query condition cache gate over from a read step that this
     /// step replaces (e.g. the projection read built by `optimizeUseNormalProjections`; `clone` and
     /// `createLocalParallelReplicasReadingStep` do the same for the steps they rebuild internally).
@@ -579,6 +594,14 @@ public:
         top_k_filter_info = replaced_step.top_k_filter_info;
         allow_query_condition_cache = replaced_step.allow_query_condition_cache;
     }
+
+    /// Carries the join runtime filter descriptors for the second-pass index analysis over from a read
+    /// step that this step replaces (the projection read built by `optimizeUseNormalProjections`).
+    /// `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so the descriptors
+    /// are attached to the base-table read and would be lost otherwise. Every descriptor is registered
+    /// anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the key column
+    /// is prunable through this step's own metadata (the projection's primary key or skip indexes).
+    void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
 
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
@@ -659,9 +682,12 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
-    /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
-    /// only the optimization is lost); propagating it there is a follow-up.
+    /// optimization. Carried over to a projection read by copyJoinRuntimeFilterIndexAnalysisDescriptors,
+    /// but not by clone()/serialize()/deserialize(), so the pruning is intentionally skipped when the step
+    /// is rebuilt for distributed or parallel-replicas reads (results stay correct, only the optimization
+    /// is lost); propagating it there is a follow-up. This is part of the setting's documented contract
+    /// (see its description in `Settings.cpp`) and is pinned by
+    /// `05153_join_runtime_filters_index_analysis_distributed_noop`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
