@@ -8,17 +8,13 @@ title: 'Restrições nas configurações'
 doc_type: 'reference'
 ---
 
-<div id="overview">
-  ## Visão geral
-</div>
+## Visão geral {#overview}
 
 No ClickHouse, &quot;restrições&quot; em configurações se referem a limitações e regras
 que podem ser atribuídas às configurações. Essas restrições podem ser aplicadas para manter
 a estabilidade, a segurança e a previsibilidade do comportamento do seu banco de dados.
 
-<div id="defining-constraints">
-  ## Definindo restrições
-</div>
+## Definindo restrições {#defining-constraints}
 
 Restrições nas configurações podem ser definidas na seção `profiles` do arquivo de configuração `user.xml`.
 Elas impedem que os usuários alterem algumas configurações usando a
@@ -64,9 +60,7 @@ As restrições são definidas da seguinte forma:
 Se o usuário tentar violar as restrições, uma exceção será lançada e a
 configuração permanecerá inalterada.
 
-<div id="types-of-constraints">
-  ## Tipos de restrições
-</div>
+## Tipos de restrições {#types-of-constraints}
 
 Há alguns tipos de restrições compatíveis com o ClickHouse:
 
@@ -100,9 +94,20 @@ caso contrário, não é permitido alterar configurações no modo `readonly=1`.
   ```
 </Note>
 
-<div id="multiple-constraint-profiles">
-  ## Vários perfis de restrição
-</div>
+### Não torne `readonly` alterável em modo somente leitura {#readonly-changeable-in-readonly}
+
+<Warning>
+  Mantenha `readonly` fora da lista `changeable_in_readonly` em todos os perfis, inclusive naqueles que você não atribui a ninguém: qualquer sessão pode selecionar um perfil pelo nome.
+</Warning>
+
+Não marque o próprio `readonly` como `changeable_in_readonly`. Se fizer isso, uma sessão que inicia com `readonly = 1` poderá executar `SET readonly = 0` e voltar a executar as consultas de escrita que seus privilégios já permitem, a menos que a mesma restrição também proíba `0`.
+
+Isso vale para todos os perfis que você define, e não apenas para os que você atribui:
+
+* `SET profile` não passa por verificação de acesso, portanto qualquer sessão pode selecionar qualquer perfil pelo nome. Um perfil continua acessível mesmo quando você não o atribui a ninguém, embora o que ele altera ainda seja verificado em relação às restrições já ativas nessa sessão.
+* Via HTTP, requisições `GET` são forçadas a `readonly = 2` apenas quando o valor efetivo seria `0`. Portanto, um perfil que define `readonly = 1` mas também permite alterar `readonly` em modo somente leitura anula essa proteção, pois uma requisição `GET` pode mudá-lo para `0` e gravar dados.
+
+## Vários perfis de restrição {#multiple-constraint-profiles}
 
 Se houver vários perfis ativos para um usuário, as restrições serão mescladas.
 O processo de merge depende de `settings_constraints_replace_previous`:
@@ -114,22 +119,16 @@ O processo de merge depende de `settings_constraints_replace_previous`:
   cada tipo de restrição não definido seja herdado do perfil anterior, e cada
   tipo de restrição definido seja substituído pelo valor do novo perfil.
 
-<div id="read-only">
-  ## Modo somente leitura
-</div>
+## Modo somente leitura {#read-only}
 
-O modo somente leitura é habilitado pela configuração `readonly`, que não deve ser confundida
-com o tipo de restrição `readonly`:
+O modo somente leitura é habilitado pela configuração `readonly`, que não deve ser confundida com o tipo de
+CONSTRAINT `readonly`. Quando `readonly = 1`, uma configuração que normalmente seria recusada ainda pode ser alterada se
+uma CONSTRAINT `changeable_in_readonly` permitir. Para saber o que significam os valores dessa configuração, consulte a
+[referência de configurações](/pt-BR/reference/settings/session-settings/other#readonly); para saber quais classes de consulta
+cada valor permite e como a interface HTTP a define, consulte
+[permissões para consultas](/pt-BR/concepts/features/configuration/settings/permissions-for-queries#readonly).
 
-* `readonly=0`: Sem restrições de somente leitura.
-* `readonly=1`: Apenas consultas de leitura são permitidas, e as configurações não podem ser alteradas
-  a menos que `changeable_in_readonly` esteja definido.
-* `readonly=2`: Apenas consultas de leitura são permitidas, mas as configurações podem ser alteradas,
-  exceto a própria configuração `readonly`.
-
-<div id="example-read-only">
-  ### Exemplo
-</div>
+### Exemplo {#example-read-only}
 
 Faça com que `users.xml` inclua as seguintes linhas:
 
@@ -172,9 +171,7 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
   até que sejam explicitamente substituídas para esses usuários.
 </Note>
 
-<div id="constraints-on-merge-tree-settings">
-  ## Restrições para configurações do MergeTree
-</div>
+## Restrições para configurações do MergeTree {#constraints-on-merge-tree-settings}
 
 É possível definir restrições para [configurações do MergeTree](/pt-BR/reference/settings/merge-tree-settings).
 Essas restrições são aplicadas quando uma tabela com a engine MergeTree é criada
@@ -183,9 +180,7 @@ ou quando suas configurações de armazenamento são alteradas.
 O nome da configuração do MergeTree deve ser precedido pelo prefixo `merge_tree_` quando
 for referenciado na seção `<constraints>`.
 
-<div id="example-read-only">
-  ### Exemplo
-</div>
+### Exemplo {#example-mergetree}
 
 Você pode proibir a criação de novas tabelas com `storage_policy` especificada explicitamente
 

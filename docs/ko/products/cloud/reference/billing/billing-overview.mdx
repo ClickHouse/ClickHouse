@@ -11,18 +11,14 @@ keywords: ['ClickHouse Cloud', '요금', '청구', '클라우드 비용', '컴�
 ClickHouse Cloud는 컴퓨트, 스토리지, [데이터 전송](/ko/products/cloud/reference/billing/network-data-transfer)(인터넷 송신 및 리전 간 전송), 그리고 [ClickPipes](/ko/integrations/clickpipes/home) 사용량을 기준으로 청구됩니다.
 청구 금액에 영향을 미치는 요소와 비용을 관리하는 방법을 알아보려면 계속 읽어보십시오.
 
-<div id="amazon-web-services-aws-example">
-  ## Amazon Web Services (AWS) 예시
-</div>
+## Amazon Web Services (AWS) 예시 {#amazon-web-services-aws-example}
 
 <Note>
   * 가격은 AWS us-east-1 기준 요금을 반영합니다.
   * 해당 데이터 전송 요금은 [여기](/ko/products/cloud/reference/billing/network-data-transfer)에서 확인하세요.
 </Note>
 
-<div id="basic-from-6652-per-month">
-  ### Basic: 월 $66.52부터
-</div>
+### Basic: 월 $66.52부터 {#basic-from-6652-per-month}
 
 권장 대상: 엄격한 안정성 보장이 필요하지 않고 데이터 규모가 작은 부서 단위 사용 사례
 
@@ -85,9 +81,7 @@ ClickHouse Cloud는 컴퓨트, 스토리지, [데이터 전송](/ko/products/clo
   </tbody>
 </table>
 
-<div id="scale-always-on-auto-scaling-from-49938-per-month">
-  ### Scale (상시 실행, 자동 스케일링): 월 $499.38부터
-</div>
+### Scale (상시 실행, 자동 스케일링): 월 $499.38부터 {#scale-always-on-auto-scaling-from-49938-per-month}
 
 가장 적합한 용도: 더 높은 SLA(레플리카 2개 이상의 서비스), 확장성, 고급 보안이 필요한 워크로드.
 
@@ -149,9 +143,7 @@ ClickHouse Cloud는 컴퓨트, 스토리지, [데이터 전송](/ko/products/clo
   </tbody>
 </table>
 
-<div id="enterprise-starting-prices-vary">
-  ### Enterprise: 시작 가격은 달라질 수 있습니다
-</div>
+### Enterprise: 시작 가격은 달라질 수 있습니다 {#enterprise-starting-prices-vary}
 
 적합한 대상: 엄격한 보안 및 컴플라이언스 요구 사항이 있는 대규모 미션 크리티컬 배포 환경
 
@@ -210,13 +202,9 @@ ClickHouse Cloud는 컴퓨트, 스토리지, [데이터 전송](/ko/products/clo
   </tbody>
 </table>
 
-<div id="faqs">
-  ## 자주 묻는 질문
-</div>
+## 자주 묻는 질문 {#faqs}
 
-<div id="what-is-chc">
-  ### ClickHouse Credit(CHC)란 무엇입니까?
-</div>
+### ClickHouse Credit(CHC)란 무엇입니까? {#what-is-chc}
 
 ClickHouse Credit는 고객의 ClickHouse Cloud 사용량에 충당되는 크레딧 단위이며, 1 미국 달러(USD)에 해당하고 ClickHouse가 해당 시점에 게시한 최신 가격표를 기준으로 적용됩니다.
 
@@ -224,37 +212,27 @@ ClickHouse Credit는 고객의 ClickHouse Cloud 사용량에 충당되는 크레
   Stripe를 통해 청구되는 경우 Stripe 인보이스에는 1 CHC가 $0.01 USD로 표시됩니다. 이는 1 CHC = $1 USD인 당사의 표준 SKU에 대해 Stripe가 소수 단위 수량을 청구할 수 없기 때문에, Stripe에서 정확하게 청구할 수 있도록 하기 위한 것입니다.
 </Note>
 
-<div id="find-legacy-pricing">
-  ### 이전 요금 정보는 어디에서 확인할 수 있습니까?
-</div>
+### 이전 요금 정보는 어디에서 확인할 수 있습니까? {#find-legacy-pricing}
 
 이전 요금 정보는 [여기](https://clickhouse.com/pricing?legacy=true)에서 확인할 수 있습니다.
 
-<div id="how-is-compute-metered">
-  ### 컴퓨트는 어떻게 과금되나요?
-</div>
+### 컴퓨트는 어떻게 과금되나요? {#how-is-compute-metered}
 
 ClickHouse Cloud는 컴퓨트 사용량을 8G RAM 단위로, 분 단위 기준으로 과금합니다.
 컴퓨트 비용은 티어, 리전, 클라우드 서비스 제공업체에 따라 달라집니다.
 
-<div id="how-is-storage-on-disk-calculated">
-  ### 디스크 스토리지는 어떻게 계산됩니까?
-</div>
+### 디스크 스토리지는 어떻게 계산됩니까? {#how-is-storage-on-disk-calculated}
 
 ClickHouse Cloud는 클라우드 객체 스토리지를 사용하며, 사용량은 ClickHouse 테이블에 저장된 데이터의 압축된 크기를 기준으로 산정됩니다.
 스토리지 비용은 모든 티어에서 동일하며, 리전 및 클라우드 서비스 제공업체에 따라 달라집니다.
 
-<div id="do-backups-count-toward-total-storage">
-  ### 백업은 총 저장소 사용량에 포함됩니까?
-</div>
+### 백업은 총 저장소 사용량에 포함됩니까? {#do-backups-count-toward-total-storage}
 
 저장소와 백업은 모두 저장소 비용 산정에 포함되며, 각각 별도로 청구됩니다.
 모든 서비스는 기본적으로 1개의 백업이 설정되며, 하루 동안 보관됩니다.
 추가 백업이 필요한 사용자는 Cloud Console의 설정 탭에서 추가 [백업](/ko/products/cloud/guides/backups/review-and-restore-backups)을 구성할 수 있습니다.
 
-<div id="how-do-i-estimate-compression">
-  ### 압축률은 어떻게 추정하나요?
-</div>
+### 압축률은 어떻게 추정하나요? {#how-do-i-estimate-compression}
 
 압축률은 데이터셋마다 달라질 수 있습니다.
 얼마나 달라지는지는 기본적으로 데이터 자체가 얼마나 잘 압축되는지(높은 카디널리티 필드와 낮은 카디널리티 필드의 개수),
@@ -271,16 +249,12 @@ FROM system.tables
 WHERE name = <your table name>
 ```
 
-<div id="what-tools-does-clickhouse-offer-to-estimate-the-cost-of-running-a-service-in-the-cloud-if-i-have-a-self-managed-deployment">
-  ### 자가 관리형 배포를 사용 중인 경우, 클라우드에서 서비스 운영 비용을 추정할 수 있도록 ClickHouse는 어떤 도구를 제공하나요?
-</div>
+### 자가 관리형 배포를 사용 중인 경우, 클라우드에서 서비스 운영 비용을 추정할 수 있도록 ClickHouse는 어떤 도구를 제공하나요? {#what-tools-does-clickhouse-offer-to-estimate-the-cost-of-running-a-service-in-the-cloud-if-i-have-a-self-managed-deployment}
 
 ClickHouse 쿼리 로그에는 ClickHouse Cloud에서 워크로드를 실행하는 비용을 추정하는 데 활용할 수 있는 [주요 메트릭](/ko/reference/system-tables/query_log)이 기록됩니다.
 자가 관리형 ClickHouse에서 ClickHouse Cloud로 마이그레이션하려면 [`remoteSecure`](/ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) 또는 [`BACKUP` 및 `RESTORE`](/ko/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore)를 사용하십시오. 추가 질문이 있으면 [ClickHouse 지원팀](https://console.clickhouse.cloud/support)에 문의하십시오.
 
-<div id="what-billing-options-are-available-for-clickhouse-cloud">
-  ### ClickHouse Cloud에서 사용할 수 있는 청구 옵션은 무엇입니까?
-</div>
+### ClickHouse Cloud에서 사용할 수 있는 청구 옵션은 무엇입니까? {#what-billing-options-are-available-for-clickhouse-cloud}
 
 ClickHouse Cloud는 다음과 같은 청구 옵션을 지원합니다:
 
@@ -292,33 +266,25 @@ ClickHouse Cloud는 다음과 같은 청구 옵션을 지원합니다:
   PAYG용 ClickHouse Cloud 크레딧은 $0.01 단위로 인보이스가 발행되므로, 사용량에 따라 ClickHouse 크레딧을 소수 단위로 청구할 수 있습니다. 이는 미리 전체 $1 단위로 구매하는 약정형 ClickHouse 크레딧과 다릅니다.
 </Note>
 
-<div id="can-i-delete-my-credit-card">
-  ### 신용카드를 삭제할 수 있나요?
-</div>
+### 신용카드를 삭제할 수 있나요? {#can-i-delete-my-credit-card}
 
 청구 UI에서는 신용카드를 삭제할 수 없지만, 언제든지 업데이트할 수 있습니다. 이렇게 하면 조직에 항상 유효한 결제 수단이 설정되도록 할 수 있습니다. 신용카드를 삭제해야 하는 경우, [ClickHouse 지원팀](https://console.clickhouse.cloud/support)로 문의하십시오.
 
-<div id="where-can-i-see-my-refunds">
-  ### 환불 내역은 어디에서 확인할 수 있나요?
-</div>
+### 환불 내역은 어디에서 확인할 수 있나요? {#where-can-i-see-my-refunds}
 
 ClickHouse Cloud 콘솔에서 Organization &gt; Billing으로 이동하세요. Refunds 섹션은 Invoices와 Credits 아래에 있습니다. 확인하려면 Organization Admin 또는 Billing Admin 권한이 있어야 합니다.
 
-<div id="how-long-does-it-take-for-a-refund-to-appear">
-  ### 환불이 반영되기까지 얼마나 걸리나요?
-</div>
+### 환불이 반영되기까지 얼마나 걸리나요? {#how-long-does-it-take-for-a-refund-to-appear}
 
 환불은 당사에서 처리되는 즉시 반영됩니다. 신용카드 환불의 경우 은행에 따라 카드 명세서에 반영되기까지 추가로 시간이 걸릴 수 있습니다.
 
-<div id="how-long-is-the-billing-cycle">
-  ### 청구 주기는 얼마나 되나요?
-</div>
+### 청구 주기는 얼마나 되나요? {#how-long-is-the-billing-cycle}
 
-청구는 월 단위로 이루어지며, 시작일은 ClickHouse Cloud 조직이 생성된 날짜를 기준으로 합니다.
+청구는 월 단위 주기를 따릅니다. 신규 조직의 청구 주기는 항상 매월 1일에 시작됩니다.
+기존 조직은 매월 다른 날짜에 시작하는 청구 주기를 그대로 유지할 수 있습니다.
+청구 주기를 변경하려면 [ClickHouse Cloud 지원팀](https://console.clickhouse.cloud/support)에 문의하십시오.
 
-<div id="committed-credits-consumed-first-with-active-payg-subscription">
-  ### 활성화된 PAYG marketplace subscription이 있는 상태에서 약정 계약을 체결하면, 약정 크레딧이 먼저 소진됩니까?
-</div>
+### 활성화된 PAYG marketplace subscription이 있는 상태에서 약정 계약을 체결하면, 약정 크레딧이 먼저 소진됩니까? {#committed-credits-consumed-first-with-active-payg-subscription}
 
 예. 사용량은 다음 결제 수단 순서대로 차감됩니다:
 
@@ -326,42 +292,30 @@ ClickHouse Cloud 콘솔에서 Organization &gt; Billing으로 이동하세요. R
 * marketplace subscription (PAYG)
 * 신용카드
 
-<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-scale-and-enterprise-services">
-  ### ClickHouse Cloud는 Scale 및 Enterprise 서비스의 비용 관리를 위해 어떤 제어 기능을 제공합니까?
-</div>
+### ClickHouse Cloud는 Scale 및 Enterprise 서비스의 비용 관리를 위해 어떤 제어 기능을 제공합니까? {#what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-scale-and-enterprise-services}
 
 * Trial 및 Annual Commit 고객은 사용량이 `50%`, `75%`, `90%`와 같은 특정 임계값에 도달하면 자동으로 이메일 알림을 받습니다. 이를 통해 사용량을 선제적으로 관리할 수 있습니다.
 * ClickHouse Cloud에서는 분석 워크로드의 주요 비용 요인인 컴퓨트에 대해 [고급 스케일링 제어](/ko/products/cloud/features/autoscaling/overview)를 통해 최대 자동 스케일링 한도를 설정할 수 있습니다.
 * [고급 스케일링 제어](/ko/products/cloud/features/autoscaling/overview)를 사용하면 메모리 한도를 설정할 수 있으며, 비활성 상태에서의 일시 중지/유휴 상태 전환 동작을 제어하는 옵션도 제공합니다.
 
-<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-basic-services">
-  ### Basic 서비스의 비용 관리를 위해 ClickHouse Cloud는 어떤 제어 기능을 제공합니까?
-</div>
+### Basic 서비스의 비용 관리를 위해 ClickHouse Cloud는 어떤 제어 기능을 제공합니까? {#what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-basic-services}
 
 * [고급 스케일링 제어](/ko/products/cloud/features/autoscaling/overview)를 사용하면 비활성 기간 중 일시 중지/유휴 상태 전환 동작을 제어할 수 있습니다. Basic 서비스에서는 메모리 할당량 조정이 지원되지 않습니다.
 * 기본 설정에서는 일정 시간 동안 활동이 없으면 서비스가 일시 중지됩니다.
 
-<div id="if-i-have-multiple-services-do-i-get-an-invoice-per-service-or-a-consolidated-invoice">
-  ### 여러 service가 있는 경우, service별로 인보이스가 발행됩니까, 아니면 통합 인보이스가 발행됩니까?
-</div>
+### 여러 service가 있는 경우, service별로 인보이스가 발행됩니까, 아니면 통합 인보이스가 발행됩니까? {#if-i-have-multiple-services-do-i-get-an-invoice-per-service-or-a-consolidated-invoice}
 
 특정 조직의 모든 service에 대해 청구 기간별로 하나의 통합 인보이스가 발행됩니다.
 
-<div id="if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged">
-  ### 체험 기간과 크레딧이 만료되기 전에 신용카드를 추가하고 업그레이드하면 요금이 청구되나요?
-</div>
+### 체험 기간과 크레딧이 만료되기 전에 신용카드를 추가하고 업그레이드하면 요금이 청구되나요? {#if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged}
 
 사용자가 체험 기간 동안 신용카드를 추가하면 체험 크레딧이 모두 소진되거나 만료되는 시점 중 먼저 도래하는 시점까지 체험 크레딧이 계속 차감됩니다. 결제 수단을 추가한 후에도 체험 크레딧은 30일 체험 기간이 끝나는 시점에 만료됩니다. 체험 크레딧이 모두 소진되거나 만료되면 등록된 신용카드로 요금이 청구됩니다. 체험 크레딧 만료일은 ClickHouse Cloud 콘솔의 청구 페이지에서 확인할 수 있습니다.
 
-<div id="how-can-i-keep-track-of-my-spending">
-  ### 지출 내역은 어떻게 확인할 수 있습니까?
-</div>
+### 지출 내역은 어떻게 확인할 수 있습니까? {#how-can-i-keep-track-of-my-spending}
 
 ClickHouse Cloud 콘솔은 서비스별 사용량을 자세히 보여주는 사용량 표시를 제공합니다. 이 내역은 사용량 차원별로 구성되어 있어 각 계량 단위에 따른 비용을 파악하는 데 도움이 됩니다.
 
-<div id="how-do-i-access-my-invoice-for-my-subscription-to-the-clickhouse-cloud-service">
-  ### ClickHouse Cloud 서비스 구독의 인보이스는 어떻게 확인합니까?
-</div>
+### ClickHouse Cloud 서비스 구독의 인보이스는 어떻게 확인합니까? {#how-do-i-access-my-invoice-for-my-subscription-to-the-clickhouse-cloud-service}
 
 신용카드를 사용하는 직접 구독의 경우:
 
@@ -371,39 +325,30 @@ ClickHouse Cloud 콘솔은 서비스별 사용량을 자세히 보여주는 사�
 
 모든 마켓플레이스 구독의 청구 및 인보이스 발행은 해당 마켓플레이스에서 처리합니다. 인보이스는 각 클라우드 제공업체의 마켓플레이스에서 직접 확인할 수 있습니다.
 
-<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
-  ### 사용 내역서의 날짜가 AWS Marketplace 인보이스와 일치하지 않는 이유는 무엇인가요?
-</div>
+### 사용 내역서의 날짜가 AWS Marketplace 인보이스와 일치하지 않는 이유는 무엇인가요? {#why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice}
 
 AWS Marketplace 청구는 역월 기준 청구 주기를 따릅니다.
 예를 들어, 2024-12-01부터 2025-01-01까지의 사용량에 대해서는
 2025년 1월 3일부터 1월 5일 사이에 인보이스가 생성됩니다.
 
-ClickHouse Cloud 사용 내역서는 이와 다른 청구 주기를 따르며, 사용량은
-가입한 날부터 시작해 30일 동안 집계되고 보고됩니다.
+일부 기존 조직의 ClickHouse Cloud 사용 내역서는 매월 1일이 아닌 다른 날에 시작하는 청구 주기를 따릅니다. 신규 조직은 매월 1일에 시작하는 월별 청구 주기를 따릅니다.
 
 이 날짜가 서로 같지 않으면 사용량 날짜와 인보이스 날짜는 다를 수 있습니다. 사용 내역서는 특정 서비스의 일별 사용량을 추적하므로, 비용의 상세 내역을 확인하는 데 활용할 수 있습니다.
 
-<div id="are-there-any-restrictions-around-the-usage-of-prepaid-credits">
-  ### 선불 크레딧 사용에 제한이 있습니까?
-</div>
+### 선불 크레딧 사용에 제한이 있습니까? {#are-there-any-restrictions-around-the-usage-of-prepaid-credits}
 
 ClickHouse Cloud 선불 크레딧(ClickHouse에서 직접 구매했거나 클라우드 제공업체의 마켓플레이스를 통해 구매한 경우 모두 해당)은
 계약 기간에 대해서만 사용할 수 있습니다.
 즉, 계약 수락일 또는 그 이후의 시점부터 적용할 수 있으며, 그 이전 기간에는 적용할 수 없습니다.
 선불 크레딧으로 충당되지 않는 초과 사용분은 신용카드 결제 또는 마켓플레이스 월별 청구로 결제해야 합니다.
 
-<div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
-  ### 클라우드 제공업체 마켓플레이스를 통해 청구되든 ClickHouse에 직접 결제하든 ClickHouse Cloud 가격에 차이가 있습니까?
-</div>
+### 클라우드 제공업체 마켓플레이스를 통해 청구되든 ClickHouse에 직접 결제하든 ClickHouse Cloud 가격에 차이가 있습니까? {#is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse}
 
 클라우드 제공업체 마켓플레이스를 통한 청구와 ClickHouse에 직접 가입하는 경우 간에는 가격 차이가 없습니다.
 어느 경우든 ClickHouse Cloud 사용량은 ClickHouse Cloud 크레딧(CHC) 기준으로 추적되며,
 동일한 방식으로 계량되고 그에 따라 청구됩니다.
 
-<div id="how-is-compute-compute-separation-billed">
-  ### 컴퓨트-컴퓨트 분리는 어떻게 과금되나요?
-</div>
+### 컴퓨트-컴퓨트 분리는 어떻게 과금되나요? {#how-is-compute-compute-separation-billed}
 
 기존 서비스에 추가로 새 서비스를 생성할 때,
 이 새 서비스가 기존 서비스와 동일한 데이터를 공유할지 선택할 수 있습니다.
@@ -487,8 +432,6 @@ ClickHouse Cloud 선불 크레딧(ClickHouse에서 직접 구매했거나 클라
 웨어하우스가 없다면 데이터 엔지니어가 쿼리에 필요로 하는 만큼의 메모리에 대해 비용을 지불해야 합니다.
 하지만 두 서비스를 하나의 웨어하우스로 묶고 그중 하나에 유휴 상태 전환을 설정하면 비용을 절감할 수 있습니다.
 
-<div id="clickpipes-pricing">
-  ## ClickPipes 요금
-</div>
+## ClickPipes 요금 {#clickpipes-pricing}
 
 ClickPipes 청구에 관한 정보는 별도의 [&quot;ClickPipes&quot; 섹션](/ko/products/cloud/reference/billing/clickpipes/index)을 참조하십시오.

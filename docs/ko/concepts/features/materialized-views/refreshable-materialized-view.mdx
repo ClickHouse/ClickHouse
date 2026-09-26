@@ -21,7 +21,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </Frame>
 
 <div id="when-should-refreshable-materialized-views-be-used">
-  ## 갱신 가능 구체화 뷰는 언제 사용해야 하나요?
+  ## 갱신 가능 구체화 뷰는 언제 사용해야 하나요? {#when-should-refreshable-materialized-views-be-used}
 </div>
 
 ClickHouse의 증분형 materialized view는 매우 강력하며, 특히 단일 테이블에 대해 집계를 수행해야 하는 경우 갱신 가능 구체화 뷰 방식보다 일반적으로 훨씬 뛰어난 확장성을 제공합니다. 데이터가 삽입될 때마다 각 block에 대해서만 집계를 계산하고, 최종 테이블에서 이러한 증분 상태를 병합하므로 쿼리는 전체 데이터가 아닌 일부 데이터에 대해서만 실행됩니다. 이 방식은 잠재적으로 페타바이트 규모의 데이터까지 확장될 수 있으며, 보통 더 선호됩니다.
@@ -30,9 +30,7 @@ ClickHouse의 증분형 materialized view는 매우 강력하며, 특히 단일 
 
 > 갱신 가능 구체화 뷰는 비정규화와 같은 작업을 수행하는 배치 프로세스를 실행할 수 있습니다. 또한 갱신 가능 구체화 뷰 간에 종속성을 설정할 수 있으므로, 한 뷰가 다른 뷰의 결과에 의존하고 해당 뷰가 완료된 후에만 실행되도록 구성할 수 있습니다. 이를 통해 예약된 워크플로나 [dbt](https://www.getdbt.com/) job과 같은 단순한 DAG를 대체할 수 있습니다. 갱신 가능 구체화 뷰 간 종속성을 설정하는 방법에 대한 자세한 내용은 [CREATE VIEW](/ko/reference/statements/create/view#refresh-dependencies)의 `Dependencies` 섹션을 참조하십시오.
 
-<div id="how-do-you-refresh-a-refreshable-materialized-view">
-  ## 갱신 가능 구체화 뷰를 어떻게 갱신합니까?
-</div>
+## 갱신 가능 구체화 뷰를 어떻게 갱신합니까? {#how-do-you-refresh-a-refreshable-materialized-view}
 
 갱신 가능 구체화 뷰는 생성할 때 정의한 인터벌에 따라 자동으로 갱신됩니다.
 예를 들어, 다음 materialized view는 1분마다 갱신됩니다.
@@ -52,8 +50,12 @@ SYSTEM REFRESH VIEW table_name_mv;
 뷰 실행을 취소하거나 중지 또는 시작할 수도 있습니다.
 자세한 내용은 [갱신 가능 구체화 뷰 관리](/ko/reference/statements/system#managing-refreshable-materialized-views) 문서를 참조하십시오.
 
+<Warning>
+  ClickHouse Keeper를 통해 갱신이 조정되지 않는 갱신 가능 구체화 뷰는 마지막 갱신 시점을 기억하지 못합니다. 따라서 서버를 재시작하면 모든 뷰가 한꺼번에 갱신될 수 있습니다. 영향을 받는 뷰와 뷰를 하나씩 다시 시작하는 방법은 [서버 재시작 시 갱신 가능 구체화 뷰는 어떻게 됩니까?](/ko/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) 문서를 참조하십시오.
+</Warning>
+
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## 갱신 가능 구체화 뷰가 마지막으로 갱신된 시점은 언제입니까?
+  ## 갱신 가능 구체화 뷰가 마지막으로 갱신된 시점은 언제입니까? {#when-was-a-refreshable-materialized-view-last-refreshed}
 </div>
 
 갱신 가능 구체화 뷰가 마지막으로 언제 갱신되었는지 확인하려면 아래와 같이 [`system.view_refreshes`](/ko/reference/system-tables/view_refreshes) 시스템 테이블(system table)을 쿼리하면 됩니다:
@@ -72,7 +74,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## 갱신 주기는 어떻게 변경하나요?
+  ## 갱신 주기는 어떻게 변경하나요? {#how-can-i-change-the-refresh-rate}
 </div>
 
 갱신 가능 구체화 뷰의 갱신 주기를 변경하려면 [`ALTER TABLE...MODIFY REFRESH`](/ko/reference/statements/alter/view#alter-table--modify-refresh-statement) 구문을 사용하십시오.
@@ -91,7 +93,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## 새 행을 추가할 때 `APPEND` 사용하기
+  ## 새 행을 추가할 때 `APPEND` 사용하기 {#using-append-to-add-new-rows}
 </div>
 
 `APPEND` 기능을 사용하면 전체 뷰를 교체하지 않고 테이블 끝에 새 행을 추가할 수 있습니다.
@@ -197,13 +199,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## 예시
+  ## 예시 {#examples}
 </div>
 
 이제 몇 가지 예시 데이터셋을 사용해 갱신 가능 구체화 뷰를 사용하는 방법을 살펴보겠습니다.
 
 <div id="stack-overflow">
-  ### Stack Overflow
+  ### Stack Overflow {#stack-overflow}
 </div>
 
 [데이터 비정규화 가이드](/ko/guides/clickhouse/data-modelling/denormalization)에서는 Stack Overflow 데이터셋을 사용해 데이터를 비정규화하는 다양한 기법을 소개합니다. 데이터는 다음 테이블에 채워 넣습니다: `votes`, `users`, `badges`, `posts`, `postlinks`.
@@ -255,7 +257,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb
+  ### IMDb {#imdb}
 </div>
 
 [dbt 및 ClickHouse 통합 가이드](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index)에서는 `actors`, `directors`, `genres`, `movie_directors`, `movies`, `roles` 테이블로 IMDb 데이터셋을 구성했습니다.

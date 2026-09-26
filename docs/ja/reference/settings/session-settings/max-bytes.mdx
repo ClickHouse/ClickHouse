@@ -13,9 +13,21 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="max_bytes_before_external_group_by">
-  ## max_bytes_before_external_group_by
-</div>
+## max_bytes_before_external_distinct {#max_bytes_before_external_distinct}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "メモリ使用量が指定したバイト単位のしきい値を超えた場合に、`DISTINCT` をディスクにスピルできるようにする新しい設定。`0` の場合は、`max_bytes_ratio_before_external_distinct` のみが適用されます。"}]}]} />
+
+`DISTINCT` データをディスクにスピルするための、クエリメモリのバイト単位のしきい値です。実際のメモリ使用量は
+このしきい値を超える場合があります。
+
+`0` を指定すると、このしきい値は無効になります。`max_bytes_ratio_before_external_distinct` でも
+しきい値が指定されている場合は、小さい方が使用されます。スピルを無効にするには、両方の設定を `0` に設定してください。
+
+[外部メモリでの DISTINCT](/ja/reference/statements/select/distinct#distinct-in-external-memory) を参照してください。
+
+## max_bytes_before_external_group_by {#max_bytes_before_external_group_by}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -36,19 +48,15 @@ Cloud でのデフォルト値: レプリカあたりのメモリ量の半分。
   推奨値は、利用可能なシステムメモリの半分です。
 </Note>
 
-<div id="max_bytes_before_external_join">
-  ## max_bytes_before_external_join
-</div>
+## max_bytes_before_external_join {#max_bytes_before_external_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "ハッシュ結合のディスクへの自動スピルを制御する新しい設定です。0 以外の値を指定するとスピルが有効になり、バイト単位のしきい値が設定されます。"}]}]} />
 
-0 以外の値に設定し、`join_algorithm` が `hash`、`parallel_hash`、`default`、または `auto` の場合、右側のデータがこのバイト数を超えると、ディスクへのスピルを有効にするためにハッシュ結合は自動的に Grace Hash Join に変換されます。`0` (デフォルト) に設定すると、この絶対バイトしきい値は無効になりますが、`max_bytes_ratio_before_external_join` (デフォルトは `0.5`) によって自動スピルが引き続き発生する可能性があります。自動スピルを完全に無効にするには、両方を `0` に設定してください。これにより、JOIN 最適化による順序どおりの読み取りは行えなくなります。
+0 以外の値に設定すると、右側のデータがこのバイト数を超えると、ディスクへのスピルを有効にするためにハッシュ結合は自動的に Grace Hash Join に変換されます。`max_bytes_ratio_before_external_join` と合わせて、これはハッシュベースのすべての `join_algorithm` に対するしきい値ベースのスピルのトリガーであり、`grace_hash` も含まれます。`grace_hash` では、この 2 つのいずれかが 0 以外である必要があります。0 以外のしきい値によって結合がスピル可能になると、`enable_adaptive_memory_spill_scheduler` により、しきい値に達する前でもメモリ逼迫時に強制的にスピルさせることができます。両方の設定が `0` の場合、結合はスピルしないため、スケジューラーがトリガーする対象がありません。例外は `legacy_join_size_limits_trigger_spilling` です。これを有効にすると、単独の `grace_hash` は両方を無視し、代わりに `max_rows_in_join` / `max_bytes_in_join` に基づいてスピルします。`0` (デフォルト) に設定すると、この絶対バイトしきい値は無効になりますが、`max_bytes_ratio_before_external_join` (デフォルトは `0.5`) によって自動スピルが引き続き発生する可能性があります。自動スピルを完全に無効にするには、両方を `0` に設定してください。これにより、JOIN 最適化による順序どおりの読み取りは行えなくなります。
 
-<div id="max_bytes_before_external_sort">
-  ## max_bytes_before_external_sort
-</div>
+## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -63,17 +71,13 @@ Cloud でのデフォルト値: レプリカあたりのメモリ量の半分。
   推奨値は、使用可能なシステムメモリの半分です
 * `0` — 外部メモリでの `ORDER BY` は無効です。
 
-<div id="max_bytes_before_remerge_sort">
-  ## max_bytes_before_remerge_sort
-</div>
+## max_bytes_before_remerge_sort {#max_bytes_before_remerge_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 ORDER BY と LIMIT を使用する場合、メモリ使用量が指定したしきい値を超えると、最終マージの前にブロックの追加マージを行い、上位 LIMIT 行のみを保持します。
 
-<div id="max_bytes_for_lazy_final">
-  ## max_bytes_for_lazy_final
-</div>
+## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
 <SettingsInfoBlock type="UInt64" default_value="256000000" />
 
@@ -81,17 +85,13 @@ ORDER BY と LIMIT を使用する場合、メモリ使用量が指定したし�
 
 遅延 FINAL 最適化で使用される Set の最大バイト数です。これを超えると、通常の FINAL にフォールバックします。
 
-<div id="max_bytes_in_distinct">
-  ## max_bytes_in_distinct
-</div>
+## max_bytes_in_distinct {#max_bytes_in_distinct}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 DISTINCT の使用時にハッシュテーブルが使用する、メモリ内の状態の最大バイト数 (非圧縮バイト数) 。
 
-<div id="max_bytes_in_join">
-  ## max_bytes_in_join
-</div>
+## max_bytes_in_join {#max_bytes_in_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -102,27 +102,51 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 操作と [Join テーブルエンジン](/ja/reference/engines/table-engines/special/join) に適用されます。
 
 1 つのクエリに複数の join が含まれる場合、ClickHouse は各
-中間結果に対してこの設定をチェックします。上限に達した場合の動作は、
-選択した [`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) によって異なります。アルゴリズムごとの動作 (spill、再パーティション化、切り替え、または
-[`join_overflow_mode`](/ja/reference/settings/session-settings/join#join_overflow_mode) に応じた throw/break) については、
-その設定を参照してください。
+中間結果に対してこの設定をチェックします。これはハッシュベースのすべての `join_algorithm` に対するハードな上限であり、上限に
+達するとクエリは
+[`join_overflow_mode`](/ja/reference/settings/session-settings/join#join_overflow_mode) に従って例外をスローするか処理を中断します。
+この設定によって join がディスクへスピルすることはありません。その判断は
+[`max_bytes_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
+および
+[`max_bytes_ratio_before_external_join`](/ja/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)
+に委ねられています。
+これはトリガーではなく上限であるため、スピルのしきい値以下に設定すると、
+通常は join がスピルする前にクエリが失敗します。ただし、join がスピル可能であり
+`enable_adaptive_memory_spill_scheduler` が先にスピルを強制する場合や、
+`legacy_join_size_limits_trigger_spilling` によって、すでにディスク上で実行されている join のパーツに対して
+この上限が再びスピルのトリガーとして機能する場合を除きます。
+
+この上限はハッシュテーブルが保持している内容をカウントするため、スピルした join では
+右側を読み取っている最中ではなく各バケットがロードされる時点で上限に達します。つまり、
+インメモリのハッシュ結合よりも多くの右側のデータを読み取ってから停止する可能性があります。
 
 設定可能な値:
 
 * 正の整数。
 * 0 — メモリ制御は無効です。
 
-<div id="max_bytes_in_set">
-  ## max_bytes_in_set
-</div>
+## max_bytes_in_set {#max_bytes_in_set}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 サブクエリから作成された IN 句内のSetで使用される、非圧縮データの最大バイト数。
 
-<div id="max_bytes_ratio_before_external_group_by">
-  ## max_bytes_ratio_before_external_group_by
-</div>
+## max_bytes_ratio_before_external_distinct {#max_bytes_ratio_before_external_distinct}
+
+<SettingsInfoBlock type="Double" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "利用可能なメモリの指定した比率を超えた場合に、`DISTINCT` の中間データをディスクにスピルできるようにする新しい設定。`0` の場合は、`max_bytes_before_external_distinct` のみが適用されます。"}]}]} />
+
+実行開始時に外部 `DISTINCT` のしきい値を計算するために使用する、利用可能なサーバーまたはユーザーのメモリの割合です。
+たとえば、`0.5` は利用可能なメモリの半分を使用します。
+
+値は `0` 以上かつ `1` 未満である必要があります。`0` を指定すると、このしきい値は無効になります。適用可能な
+サーバーまたはユーザーのメモリ制限がない場合、この比率は効果を持ちません。
+
+`max_memory_usage` はこの計算に影響しません。その制限に対するスピルを設定するには、
+追加のメモリ使用量の余地を残して `max_bytes_before_external_distinct` を使用します。
+
+## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -135,9 +159,7 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 (server/user/merges に割り当てられたメモリ) の 60% まで使用でき、
 それ以降は外部集約を使用し始めます。
 
-<div id="max_bytes_ratio_before_external_join">
-  ## max_bytes_ratio_before_external_join
-</div>
+## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -149,11 +171,9 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 
 `max_bytes_before_external_join` と `max_bytes_ratio_before_external_join` の両方が設定されている場合は、結果として小さい方のしきい値が使用されます。比率が `0` の場合は、絶対値の設定のみが適用されます。
 
-`join_algorithm` が `hash`、`parallel_hash`、`default`、`auto` のいずれかで、かつ一時データパスが設定されている場合にのみ効果があります。
+一時データパスが設定されていれば、`grace_hash` を含むすべてのハッシュベースの `join_algorithm` に対して効果があります。
 
-<div id="max_bytes_ratio_before_external_sort">
-  ## max_bytes_ratio_before_external_sort
-</div>
+## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -165,18 +185,14 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 
 なお、`max_bytes_before_external_sort` は引き続き適用されるため、ディスクへのスピルが行われるのは、ソート対象のブロックが `max_bytes_before_external_sort` より大きい場合だけです。
 
-<div id="max_bytes_to_read">
-  ## max_bytes_to_read
-</div>
+## max_bytes_to_read {#max_bytes_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 クエリの実行時に、テーブルから読み取れる最大バイト数 (非圧縮データ) です。
 この制限は、処理されるデータの各 chunk ごとにチェックされ、最も深いテーブル式にのみ適用されます。リモートサーバーから読み取る場合は、リモートサーバー上でのみチェックされます。
 
-<div id="max_bytes_to_read_leaf">
-  ## max_bytes_to_read_leaf
-</div>
+## max_bytes_to_read_leaf {#max_bytes_to_read_leaf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -199,9 +215,7 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
   この設定は、`prefer_localhost_replica=1` と併用すると不安定です。
 </Note>
 
-<div id="max_bytes_to_sort">
-  ## max_bytes_to_sort
-</div>
+## max_bytes_to_sort {#max_bytes_to_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -209,9 +223,7 @@ DISTINCT の使用時にハッシュテーブルが使用する、メモリ内�
 非圧縮バイト数を処理する必要がある場合の動作は、`sort_overflow_mode` によって
 決まります。既定では `throw` に設定されています。
 
-<div id="max_bytes_to_transfer">
-  ## max_bytes_to_transfer
-</div>
+## max_bytes_to_transfer {#max_bytes_to_transfer}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

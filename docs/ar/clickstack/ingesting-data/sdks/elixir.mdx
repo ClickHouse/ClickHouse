@@ -6,25 +6,15 @@ doc_type: 'guide'
 keywords: ['Elixir ClickStack SDK', 'المراقبة في Elixir', 'HyperDX Elixir', 'SDK للسجلات في Elixir', 'تكامل ClickStack مع Elixir']
 ---
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ السجلات</td>
-      <td className="pe-2">✖️ المقاييس</td>
-      <td className="pe-2">✖️ التتبعات</td>
-    </tr>
-  </tbody>
-</table>
+import { ClickStackIntegrates } from '/snippets/ar/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+<ClickStackIntegrates signals={['logs']} />
 
 *🚧 دعم مقاييس OpenTelemetry وinstrumentation للتتبّع قادم قريبًا!*
 
-<div id="getting-started">
-  ## البدء
-</div>
+## البدء {#getting-started}
 
-<div id="install-hyperdx-logger-backend-package">
-  ### ثبّت حزمة backend الخاصة بـ logger في ClickStack
-</div>
+### ثبّت حزمة backend الخاصة بـ logger في ClickStack {#install-hyperdx-logger-backend-package}
 
 يمكن تثبيت الحزمة بإضافة `hyperdx` إلى قائمة dependencies في
 `mix.exs`:
@@ -37,9 +27,7 @@ def deps do
 end
 ```
 
-<div id="configure-logger">
-  ### إعداد logger
-</div>
+### إعداد logger {#configure-logger}
 
 أضف ما يلي إلى ملف `config.exs`:
 
@@ -51,9 +39,7 @@ config :logger,
   backends: [:console, {Hyperdx.Backend, :hyperdx}]
 ```
 
-<div id="configure-environment-variables">
-  ### ضبط متغيرات البيئة
-</div>
+### ضبط متغيرات البيئة {#configure-environment-variables}
 
 بعد ذلك، ستحتاج إلى ضبط متغيرات البيئة التالية في
 الصدفة لإرسال بيانات القياس عن بُعد إلى ClickStack عبر مجمّع OpenTelemetry:
@@ -61,14 +47,14 @@ config :logger,
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
     export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
     ```
   </Tab>
 </Tabs>

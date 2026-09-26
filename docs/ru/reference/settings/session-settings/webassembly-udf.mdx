@@ -14,9 +14,25 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="webassembly_udf_max_fuel">
-  ## webassembly_udf_max_fuel
-</div>
+## webassembly_udf_input_split_memory_ratio {#webassembly_udf_input_split_memory_ratio}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "Новая настройка, определяющая, какую долю линейной памяти экземпляра WebAssembly UDF может занимать сериализованный вход одного вызова; она также включает динамическое разбиение этого входа по его сериализованному размеру. `compatibility` ниже 26.9 устанавливает её в 0 и восстанавливает прежнее поведение, при котором `webassembly_udf_max_input_block_size = 0` означало один вызов на блок конвейера."}]}]} />
+
+Доля линейной памяти экземпляра WebAssembly UDF, которую может занимать сериализованный вход одного вызова. Должна быть не менее 0 и не более 1; при значении по умолчанию вторая половина остаётся guest-коду под его собственный working set помимо входного buffer.
+
+Именно запас ниже 1 делает батчинг безопасным: собственные данные guest-кода, его stack и allocator используют ту же память и не видны host-окружению. Значение ratio, близкое к 1, не оставляет им ничего, поэтому вызов, размер которого подобран по этому значению, всё равно может завершиться ошибкой в allocator guest-кода.
+
+Настройка читается только для `ABI BUFFERED_V1` и определяет размер вызовов лишь при `webassembly_udf_max_input_block_size`, равном 0: ненулевой размер блока вместо этого ограничивает число строк на вызов.
+
+Батч никогда не уменьшается меньше одной строки, поэтому строка, сериализованный размер которой сам превышает бюджет, передаётся отдельно, а строка, слишком большая для линейной памяти модуля, приводит к ошибке в allocator guest-кода.
+
+Установите 0, чтобы не разбивать вход: весь блок конвейера передаётся одним вызовом.
+
+## webassembly_udf_max_fuel {#webassembly_udf_max_fuel}
 
 <ExperimentalBadge />
 
@@ -26,9 +42,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Ограничение fuel на одно выполнение экземпляра WebAssembly UDF. Каждая инструкция WebAssembly потребляет некоторое количество fuel. Перед передачей в среду выполнения значение умножается на 1024, поэтому `webassembly_udf_max_fuel = 1` соответствует примерно 1024 единицам fuel. Установите 0, чтобы снять ограничение. Применяется только к функциям, у которых для настройки `webassembly_udf_enable_fuel` задано значение true; это значение используется по умолчанию.
 
-<div id="webassembly_udf_max_input_block_size">
-  ## webassembly_udf_max_input_block_size
-</div>
+## webassembly_udf_max_input_block_size {#webassembly_udf_max_input_block_size}
 
 <ExperimentalBadge />
 
@@ -36,11 +50,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Новая настройка для ограничения размера входного блока для WebAssembly UDF."}]}]} />
 
-Максимальное число строк, передаваемых в WebAssembly UDF в одном блоке. Значение 0 позволяет обрабатывать все строки сразу.
+Максимальное число строк, передаваемых в WebAssembly UDF за один вызов. Ненулевое значение ограничивает число строк на вызов и действует для любого ABI.
 
-<div id="webassembly_udf_max_instances">
-  ## webassembly_udf_max_instances
-</div>
+Значение 0 означает, что размер вызовов определяется по их сериализованным входным данным. Это касается только `ABI BUFFERED_V1` — единственного ABI, который сериализует входной блок целиком в память guest: его блоки разбиваются так, чтобы входные данные вызова не превышали долю `webassembly_udf_input_split_memory_ratio` от линейной памяти модуля. `ROW_DIRECT` передаёт аргументы как значения WebAssembly, а `ASSEMBLYSCRIPT` создаёт по одному объекту на строку, поэтому ни у того, ни у другого нет сериализованных входных данных, по которым можно было бы определить размер вызова, и при значении 0 блок конвейера остаётся целым.
+
+## webassembly_udf_max_instances {#webassembly_udf_max_instances}
 
 <ExperimentalBadge />
 
@@ -50,9 +64,7 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Максимальное число экземпляров WebAssembly UDF, которые могут выполняться параллельно для каждой функции.
 
-<div id="webassembly_udf_max_memory">
-  ## webassembly_udf_max_memory
-</div>
+## webassembly_udf_max_memory {#webassembly_udf_max_memory}
 
 <ExperimentalBadge />
 

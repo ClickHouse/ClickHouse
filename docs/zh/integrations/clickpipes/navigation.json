@@ -4,7 +4,7 @@
   "pages": [
     "zh/integrations/clickpipes/home",
     {
-      "group": "ClickPipes for Streaming",
+      "group": "流式数据接入 ClickPipes",
       "pages": [
         {
           "group": "Kafka",
@@ -19,7 +19,7 @@
           ]
         },
         {
-          "group": "Amazon Kinesis",
+          "group": "亚马逊 Kinesis",
           "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
           "pages": [
             "zh/integrations/clickpipes/kinesis/overview",
@@ -37,10 +37,10 @@
       ]
     },
     {
-      "group": "ClickPipes for Object Storage",
+      "group": "对象存储接入 ClickPipes",
       "pages": [
         {
-          "group": "Amazon S3",
+          "group": "亚马逊 S3",
           "icon": "/images/integrations/logos/amazon_s3_logo.svg",
           "pages": [
             "zh/integrations/clickpipes/object-storage/amazon-s3/overview",
@@ -58,7 +58,7 @@
           ]
         },
         {
-          "group": "Azure Blob Storage",
+          "group": "Azure Blob 存储",
           "icon": "/images/integrations/logos/azureblobstorage.svg",
           "pages": [
             "zh/integrations/clickpipes/object-storage/azure-blob-storage/overview",
@@ -87,7 +87,7 @@
             "zh/integrations/clickpipes/postgres/lifecycle",
             "zh/integrations/clickpipes/postgres/auth",
             {
-              "group": "Operations",
+              "group": "操作",
               "pages": [
                 "zh/integrations/clickpipes/postgres/add-table",
                 "zh/integrations/clickpipes/postgres/pause-and-resume",
@@ -99,8 +99,9 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "数据源",
               "pages": [
+                "zh/integrations/clickpipes/postgres/source/managed-postgres",
                 "zh/integrations/clickpipes/postgres/source/alloydb",
                 "zh/integrations/clickpipes/postgres/source/rds",
                 "zh/integrations/clickpipes/postgres/source/aurora",
@@ -127,7 +128,7 @@
             "zh/integrations/clickpipes/mysql/schema-changes",
             "zh/integrations/clickpipes/mysql/lifecycle",
             {
-              "group": "Operations",
+              "group": "操作",
               "pages": [
                 "zh/integrations/clickpipes/mysql/add-table",
                 "zh/integrations/clickpipes/mysql/pause-and-resume",
@@ -139,7 +140,7 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "数据源",
               "pages": [
                 "zh/integrations/clickpipes/mysql/source/rds",
                 "zh/integrations/clickpipes/mysql/source/aurora",
@@ -162,7 +163,7 @@
             "zh/integrations/clickpipes/mongodb/lifecycle",
             "zh/integrations/clickpipes/mongodb/faq",
             {
-              "group": "Operations",
+              "group": "操作",
               "pages": [
                 "zh/integrations/clickpipes/mongodb/add-table",
                 "zh/integrations/clickpipes/mongodb/remove-table",
@@ -174,7 +175,7 @@
               ]
             },
             {
-              "group": "Source",
+              "group": "数据源",
               "pages": [
                 "zh/integrations/clickpipes/mongodb/source/atlas",
                 "zh/integrations/clickpipes/mongodb/source/generic",
@@ -194,7 +195,7 @@
       ]
     },
     {
-      "group": "Programmatic access",
+      "group": "程序化访问",
       "icon": "code",
       "pages": [
         "zh/integrations/clickpipes/programmatic-access/openapi",
@@ -202,7 +203,7 @@
       ]
     },
     {
-      "group": "Networking",
+      "group": "网络",
       "icon": "network-wired",
       "pages": [
         "zh/integrations/clickpipes/networking/index",

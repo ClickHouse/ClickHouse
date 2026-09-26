@@ -39,9 +39,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-<div id="usage-remarks">
-  ## 사용 시 유의사항
-</div>
+## 사용 시 유의사항 {#usage-remarks}
 
 `인터벌` 타입 값은 [Date](/ko/reference/data-types/date) 및 [DateTime](/ko/reference/data-types/datetime) 타입 값과 함께 산술 연산에 사용할 수 있습니다. 예를 들어, 현재 시간에 4일을 더할 수 있습니다:
 
@@ -89,9 +87,33 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
-<div id="mixed-type-intervals">
-  ## 혼합형 인터벌
-</div>
+## 집계 {#aggregation}
+
+`Interval` 컬럼에 `sum`, `avg`, `min`, `max`, `any`를 적용하면 동일한 타입의 인터벌이 반환됩니다.
+`sum`은 단위 수를 합산하고, `avg`는 단위 수의 평균을 구한 뒤 결과를 정수 단위로
+반올림합니다:
+
+```sql
+SELECT
+    sum(duration) AS total_duration,
+    avg(duration) AS avg_duration,
+    toTypeName(total_duration)
+FROM VALUES('duration IntervalMillisecond',
+    toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
+```
+
+```text
+┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
+│            600 │          200 │ IntervalMillisecond        │
+└────────────────┴──────────────┴────────────────────────────┘
+```
+
+서로 다른 단위의 값은 집계되기 전에 공통 단위로 변환됩니다. 따라서
+1분과 1초를 합하면 61초가 됩니다. `Month`, `Quarter`, `Year`는 더 작은 단위와
+공통 단위가 없으므로(한 달의 일수는 고정되어 있지 않음) 더 작은 단위와는
+전혀 혼합할 수 없습니다.
+
+## 혼합형 인터벌 {#mixed-type-intervals}
 
 혼합형 인터벌(예: 여러 시간과 여러 분으로 이루어진 인터벌)은 `INTERVAL 'value' <from_kind> TO <to_kind>` 구문을 사용해 만들 수 있습니다.
 결과는 2개 이상의 인터벌로 구성된 튜플입니다.
@@ -134,9 +156,9 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 └────────────────────────────────────────────┘
 ```
 
-<div id="see-also">
-  ## 관련 항목
-</div>
+## 관련 항목 {#see-also}
 
 * [INTERVAL](/ko/reference/operators/index#interval) 연산자
 * [toInterval](/ko/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 변환 함수
+* [avg](/ko/reference/functions/aggregate-functions/avg) 집계 함수
+* [sum](/ko/reference/functions/aggregate-functions/sum) 집계 함수

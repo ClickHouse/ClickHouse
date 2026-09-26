@@ -9,17 +9,13 @@ doc_type: 'guide'
 
 يُعد [OpenTelemetry](https://opentelemetry.io/) معيارًا مفتوحًا لتجميع التتبعات والمقاييس من التطبيقات الموزعة. ويدعم ClickHouse ‏OpenTelemetry إلى حدٍّ ما.
 
-<div id="supplying-trace-context-to-clickhouse">
-  ## تزويد ClickHouse بسياق التتبع
-</div>
+## تزويد ClickHouse بسياق التتبع {#supplying-trace-context-to-clickhouse}
 
 يقبل ClickHouse ترويسات HTTP الخاصة بسياق التتبع، كما هو موضح في [توصية W3C](https://www.w3.org/TR/trace-context/). كما يقبل سياق التتبع عبر البروتوكول الأصلي المستخدم للتواصل بين خوادم ClickHouse أو بين العميل والخادم. ولأغراض الاختبار اليدوي، يمكن تمرير ترويسات سياق التتبع المتوافقة مع توصية Trace Context إلى `clickhouse-client` باستخدام الخيارين `--opentelemetry-traceparent` و`--opentelemetry-tracestate`.
 
 إذا لم يتم تمرير سياق تتبع أصل، أو كان سياق التتبع الممرَّر غير متوافق مع معيار W3C المذكور أعلاه، يمكن لـ ClickHouse بدء تتبّع جديد باحتمال يتحكم فيه إعداد [opentelemetry&#95;start&#95;trace&#95;probability](/ar/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
 
-<div id="propagating-the-trace-context">
-  ## نشر سياق التتبع
-</div>
+## نشر سياق التتبع {#propagating-the-trace-context}
 
 يُنقَل سياق التتبع إلى الخدمات اللاحقة في الحالات التالية:
 
@@ -27,15 +23,27 @@ doc_type: 'guide'
 
 * دالة الجدول [url](/ar/reference/functions/table-functions/url). تُرسَل معلومات سياق التتبع ضمن ترويسة HTTP.
 
-<div id="tracing-clickhouse-keeper-requests">
-  ## تتبّع طلبات ClickHouse Keeper
-</div>
+## span الاستعلامات الموزَّعة {#spans-of-distributed-queries}
+
+في استعلام `SELECT` موزَّع، يُغطّى كل قراءة من قطاع (shard) بعيد بمقطع `RemoteQueryExecutor::execute`. وتحمل هذه المقاطع سمات تُعرِّف جزء الاستعلام:
+
+* `clickhouse.cluster` و`clickhouse.shard_num` — العنقود والقطاع الذي يقرأ منه المنفِّذ؛
+* `clickhouse.query_id` و`clickhouse.initial_query_id` — معرِّفات الاستعلام من منظور المُبادِر؛
+* `clickhouse.target_host` — عناوين الاتصالات المُنشأة.
+
+ويدل `status_code` لهذا المقطع على كيفية انتهاء الجزء:
+
+* `OK` — سلَّم القطاع نتيجته كاملة.
+* `ERROR` — أخفق الجزء: إمّا أن القطاع أعاد استثناءً، أو أخفق المُبادِر في قراءة البيانات، أو أخفق إلغاء عمل القطاع.
+* `UNSET` — لا نجاح ولا إخفاق. وتحمل هذه المقاطع سمة تُوفِّر سياقًا إضافيًا.
+
+أما استعلامات `INSERT` إلى جدول `Distributed` فتُنتج مقاطع مماثلة في `DistributedSink` بمفاتيح السمات ذاتها `clickhouse.cluster` و`clickhouse.shard_num`.
+
+## تتبّع طلبات ClickHouse Keeper {#tracing-clickhouse-keeper-requests}
 
 يدعم ClickHouse تتبّع OpenTelemetry لطلبات [ClickHouse Keeper](/ar/guides/oss/deployment-and-scaling/keeper/index) (خدمة تنسيق متوافقة مع ZooKeeper). تتيح هذه الميزة رؤية تفصيلية لدورة حياة عمليات Keeper، بدءًا من إرسال الطلب من العميل وصولًا إلى معالجته على جهة الخادم.
 
-<div id="enabling-keeper-tracing">
-  ### تمكين تتبّع طلبات Keeper
-</div>
+### تمكين تتبّع طلبات Keeper {#enabling-keeper-tracing}
 
 لتمكين التتبّع لطلبات Keeper، اضبط الإعدادات التالية في إعدادات عميل ZooKeeper/Keeper:
 
@@ -52,11 +60,9 @@ doc_type: 'guide'
 </clickhouse>
 ```
 
-<div id="keeper-span-types">
-  ### أنواع Span في Keeper
-</div>
+### أنواع Span في Keeper {#keeper-span-types}
 
-عند تمكين التتبّع، ينشئ ClickHouse وحدات span لكلٍّ من عمليات Keeper من جهة العميل ومن جهة الخادم:
+عند تمكين التتبّع، ينشئ ClickHouse وحدات span لكلٍّ من عمليات Keeper من جهة العميل ومن جهة الخادم:
 
 **وحدات span من جهة العميل:**
 
@@ -75,20 +81,16 @@ doc_type: 'guide'
 * `keeper.dispatcher.requests_queue` — انتظار الطلبات في طابور dispatcher
 * `keeper.write.pre_commit` — المعالجة التمهيدية لطلبات الكتابة قبل Raft commit
 * `keeper.write.commit` — معالجة طلبات الكتابة بعد Raft commit
-* `keeper.read.wait_for_write` — طلبات القراءة التي تنتظر عمليات الكتابة التابعة
+* `keeper.read.wait_for_write` — طلبات القراءة المنتظرة في قائمة الانتظار خلف دفعة طلبات قيد الإرسال
 * `keeper.read.process` — معالجة طلبات القراءة
 * `keeper.dispatcher.responses_queue` — انتظار الاستجابات في طابور dispatcher
 * `keeper.send_response` — إرسال الاستجابة إلى العميل
 
-<div id="sampling-and-performance">
-  ### أخذ العينات والأداء
-</div>
+### أخذ العينات والأداء {#sampling-and-performance}
 
 للحدّ من الأعباء الإضافية الناتجة عن التتبّع، يستخدم Keeper أخذ العينات الديناميكي. ويُضبط معدل أخذ العينات تلقائيًا بين 1/10,000 و1/10 بناءً على حجم الطلب. كما تُسجَّل مدد جميع الطلبات (التي خضعت لأخذ العينات والتي لم تخضع لها) في مقاييس المُدرَّج التكراري لمراقبة الأداء.
 
-<div id="tracing-the-clickhouse-itself">
-  ## تتبّع ClickHouse ذاته
-</div>
+## تتبّع ClickHouse ذاته {#tracing-the-clickhouse-itself}
 
 ينشئ ClickHouse `trace spans` لكل استعلام، وكذلك لبعض مراحل تنفيذ الاستعلام، مثل تخطيط الاستعلام أو الاستعلامات الموزعة.
 
@@ -98,15 +100,11 @@ doc_type: 'guide'
 
 تُحفَظ العلامات أو السمات في مصفوفتين متوازيتين تحتويان على المفاتيح والقيم. استخدم [ARRAY JOIN](/ar/reference/statements/select/array-join) للعمل معها.
 
-<div id="log-query-settings">
-  ## إعدادات سجل الاستعلام
-</div>
+## إعدادات سجل الاستعلام {#log-query-settings}
 
 يتيح الإعداد [log&#95;query&#95;settings](/ar/reference/settings/session-settings/log-query#log_query_settings) تسجيل التغييرات التي تطرأ على إعدادات الاستعلام أثناء تنفيذه. عند تمكينه، تُسجَّل أي تعديلات تُجرى على إعدادات الاستعلام في سجل الـ span ضمن OpenTelemetry. وتُعد هذه الميزة مفيدة بشكل خاص في بيئات production لتتبّع تغييرات الإعدادات التي قد تؤثر في أداء الاستعلام.
 
-<div id="integration-with-monitoring-systems">
-  ## التكامل مع أنظمة المراقبة
-</div>
+## التكامل مع أنظمة المراقبة {#integration-with-monitoring-systems}
 
 حاليًا، لا توجد أداة جاهزة يمكنها تصدير بيانات التتبّع من ClickHouse إلى نظام مراقبة.
 
@@ -133,8 +131,6 @@ FROM system.opentelemetry_span_log
 
 في حال حدوث أي أخطاء، سيُفقد دون أي إشعار الجزء من بيانات السجل الذي وقع فيه الخطأ. تحقّق من سجل الخادم بحثًا عن رسائل الخطأ إذا لم تصل البيانات.
 
-<div id="related-content">
-  ## محتوى ذي صلة
-</div>
+## محتوى ذي صلة {#related-content}
 
 * مدونة: [Building an Observability Solution with ClickHouse - الجزء 2 - التتبعات](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

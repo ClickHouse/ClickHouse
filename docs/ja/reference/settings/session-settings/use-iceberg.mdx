@@ -13,9 +13,15 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="use_iceberg_metadata_files_cache">
-  ## use_iceberg_metadata_files_cache
-</div>
+## use_iceberg_manifest_list_partition_pruning {#use_iceberg_manifest_list_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "マニフェストリストのパーティションサマリーがクエリフィルターと一致し得ない Iceberg マニフェストファイルを、読み取らずにスキップする新しい設定。"}]}]} />
+
+マニフェストリスト内のパーティションサマリーがクエリフィルターと一致し得ない Iceberg マニフェストファイル全体を、読み取らずにスキップします。[use&#95;iceberg&#95;partition&#95;pruning](/ja/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning) を有効にする必要があります。また、マニフェストファイルに含まれる異なるパーティション値が少ない場合にのみ効果があります。これは、パーティションカラムでクラスター化された `rewriteManifests` によって生成される状態です。
+
+## use_iceberg_metadata_files_cache {#use_iceberg_metadata_files_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -28,9 +34,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 * 0 - 無効
 * 1 - 有効
 
-<div id="use_iceberg_partition_pruning">
-  ## use_iceberg_partition_pruning
-</div>
+## use_iceberg_partition_pruning {#use_iceberg_partition_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

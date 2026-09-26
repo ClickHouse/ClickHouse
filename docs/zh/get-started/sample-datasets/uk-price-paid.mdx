@@ -1,203 +1,191 @@
 ---
-description: '了解如何利用 投影 提升常用查询的性能，所用的是英国房产价格数据集，其中包含英格兰和威尔士房地产成交价格的数据'
+description: '通过英国房产价格数据探索 ClickHouse'
 sidebarTitle: '英国房产价格'
-slug: /getting-started/example-datasets/uk-price-paid
-title: '英国房产价格数据集'
+title: '基于英国房产价格数据的分析查询'
 doc_type: 'guide'
-keywords: ['示例数据集', '英国房产', '样本数据', '房地产', '快速开始']
+keywords: ['example dataset', 'uk property', 'sample data', 'real estate', 'getting started']
 ---
 
-import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.jsx";
+在本教程中，您将使用 <Tooltip headline="英国房产价格数据集" tip="包含 HM Land Registry 数据 © Crown copyright and database right 2021。本数据依据 Open Government Licence v3.0 授权使用。" cta="访问数据源" href="https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads">英国房产价格数据集</Tooltip>来探索 ClickHouse。该数据集收录了自 1995 年以来英格兰和威尔士的房地产成交价格数据。
 
-这些数据包含英格兰和威尔士房地产的成交价格。该数据自 1995 年起即可获取，未压缩大小约为 4 GiB (在 ClickHouse 中仅占约 278 MiB) 。
+## 前置条件 {#prerequisites}
 
-* 来源：https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
-* 字段说明：https://www.gov.uk/guidance/about-the-price-paid-data
-* 包含 HM Land Registry 数据 © Crown copyright and database right 2021。该数据依据 Open Government Licence v3.0 许可。
+完成本教程，您需要准备：
 
-<div id="create-table">
-  ## 创建表
-</div>
+* 一个 [ClickHouse Cloud 账户](https://clickhouse.cloud/signUp?loc=docs-sample-datasets-uk-property-price) (注册即可获得 300 美元免费额度)
+* [一个 ClickHouse Cloud 服务](/zh/get-started/setup/cloud#1-create-a-clickhouse-service)
 
-```sql
-CREATE DATABASE uk;
+<Steps titleSize="h2">
+  <Step title="创建表">
+    1. 从左侧菜单中选择 **SQL 控制台**
+    2. 点击主页图标旁边的 **+** 选项卡，新建一个查询
+    3. 在 SQL 编辑器中输入以下查询，然后点击 **运行**：
 
-CREATE TABLE uk.uk_price_paid
-(
-    price UInt32,
-    date Date,
-    postcode1 LowCardinality(String),
-    postcode2 LowCardinality(String),
-    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
-    is_new UInt8,
-    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
-    addr1 String,
-    addr2 String,
-    street LowCardinality(String),
-    locality LowCardinality(String),
-    town LowCardinality(String),
-    district LowCardinality(String),
-    county LowCardinality(String)
-)
-ENGINE = MergeTree
-ORDER BY (postcode1, postcode2, addr1, addr2);
-```
+    ```sql
+    CREATE DATABASE uk;
 
-<div id="preprocess-import-data">
-  ## 预处理并插入数据
-</div>
+    CREATE TABLE uk.uk_price_paid
+    (
+      price UInt32,
+      date Date,
+      postcode1 LowCardinality(String),
+      postcode2 LowCardinality(String),
+      type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+      is_new UInt8,
+      duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+      addr1 String,
+      addr2 String,
+      street LowCardinality(String),
+      locality LowCardinality(String),
+      town LowCardinality(String),
+      district LowCardinality(String),
+      county LowCardinality(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY (postcode1, postcode2, addr1, addr2);
+    ```
 
-我们将使用 `url` 函数将数据流式导入 ClickHouse。首先需要对部分传入的数据进行预处理，包括：
+    <Tip>
+      请注意 `ORDER BY (postcode1, postcode2, addr1, addr2)`，它决定了 ClickHouse 在磁盘上对数据的排序方式。在 ClickHouse 中，选择与访问模式相匹配的主键对查询性能和存储效率至关重要。
+      更多详情请参阅 [&quot;选择主键&quot;](/zh/concepts/best-practices/choosing-a-primary-key)。
+    </Tip>
 
-* 将 `postcode` 拆分为两个不同的列——`postcode1` 和 `postcode2`，这样更利于存储和查询
-* 将 `time` 字段转换为日期，因为它只包含 00:00 时间
-* 忽略 [UUid](/zh/reference/data-types/uuid) 字段，因为分析时不需要它
-* 使用 [transform](/zh/reference/functions/regular-functions/other-functions#transform) 函数将 `type` 和 `duration` 转换为更易读的 `Enum` 字段
-* 将 `is_new` 字段从单字符字符串 (`Y`/`N`) 转换为取值为 0 或 1 的 [UInt8](/zh/reference/data-types/int-uint) 字段
-* 删除最后两列，因为它们的值都相同 (均为 0)
+    有关各字段的说明，请参阅 [https://www.gov.uk](https://www.gov.uk/guidance/about-the-price-paid-data)。
+  </Step>
 
-`url` 函数会将数据从 Web 服务器流式导入你的 ClickHouse 表。以下命令会向 `uk_price_paid` 表插入 500 万行：
+  <Step title="预处理并插入数据" id="preprocess-import-data">
+    你可以使用 `url` 函数将数据流式写入 ClickHouse。在此之前，需要先对数据做一些预处理。
+    下面的查询会向 `uk_price_paid` 表中插入超过 2500 万行数据，并执行以下预处理步骤：
 
-```sql
-INSERT INTO uk.uk_price_paid
-SELECT
-    toUInt32(price_string) AS price,
-    parseDateTimeBestEffortUS(time) AS date,
-    splitByChar(' ', postcode)[1] AS postcode1,
-    splitByChar(' ', postcode)[2] AS postcode2,
-    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
-    b = 'Y' AS is_new,
-    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
-    addr1,
-    addr2,
-    street,
-    locality,
-    town,
-    district,
-    county
-FROM url(
-    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
-    'CSV',
-    'uuid_string String,
-    price_string String,
-    time String,
-    postcode String,
-    a String,
-    b String,
-    c String,
-    addr1 String,
-    addr2 String,
-    street String,
-    locality String,
-    town String,
-    district String,
-    county String,
-    d String,
-    e String'
-) SETTINGS max_http_get_redirects=10;
-```
+    * 将 `postcode` 拆分为 `postcode1` 和 `postcode2` 两列，更有利于存储和查询
+    * 将 `time` 字段转换为日期类型，因为其中的时间部分均为 `00:00`
+    * 忽略 [UUID](/zh/reference/data-types/uuid) 字段，因为分析时用不到它
+    * 使用 [transform](/zh/reference/functions/regular-functions/other-functions#transform) 函数将 `type` 和 `duration` 转换为可读性更好的 `Enum` 字段
+    * 将 `is_new` 字段从单字符字符串 (`Y`/`N`) 转换为取值为 0 或 1 的 [UInt8](/zh/reference/data-types/int-uint) 字段
+    * 删除最后两列，因为这两列的值全部相同 (均为 0)
 
-等待数据完成插入——根据网络速度，这可能需要一到两分钟。
+    ```sql
+    INSERT INTO uk.uk_price_paid
+    SELECT
+      toUInt32(price_string) AS price,
+      parseDateTimeBestEffortUS(time) AS date,
+      splitByChar(' ', postcode)[1] AS postcode1,
+      splitByChar(' ', postcode)[2] AS postcode2,
+      transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+      b = 'Y' AS is_new,
+      transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+      addr1,
+      addr2,
+      street,
+      locality,
+      town,
+      district,
+      county
+    FROM url(
+      'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+      'CSV',
+      'uuid_string String,
+      price_string String,
+      time String,
+      postcode String,
+      a String,
+      b String,
+      c String,
+      addr1 String,
+      addr2 String,
+      street String,
+      locality String,
+      town String,
+      district String,
+      county String,
+      d String,
+      e String'
+    ) SETTINGS max_http_get_redirects=10;
+    ```
 
-<div id="validate-data">
-  ## 验证数据
-</div>
+    等待数据插入完成，视网络速度而定，大约需要一到两分钟。
+  </Step>
 
-我们可以通过查看插入了多少行来确认是否成功：
+  <Step title="验证数据" id="validate-data">
+    下面查看插入了多少行，以验证操作是否成功：
 
-<RunnableCode>
-  ```sql
-  SELECT count()
-  FROM uk.uk_price_paid
-  ```
-</RunnableCode>
+    ```sql
+    SELECT count()
+    FROM uk.uk_price_paid
+    ```
 
-执行此查询时，该数据集有 27,450,499 行。再来看看 ClickHouse 中这张表占用了多少存储空间：
+    运行此查询时，该数据集共有 27,450,499 行。下面来看一下该表在 ClickHouse 中的存储大小：
 
-<RunnableCode>
-  ```sql
-  SELECT formatReadableSize(total_bytes)
-  FROM system.tables
-  WHERE name = 'uk_price_paid'
-  ```
-</RunnableCode>
+    ```sql
+    SELECT formatReadableSize(total_bytes)
+    FROM system.tables
+    WHERE name = 'uk_price_paid'
+    ```
 
-可以看到，这张表的大小仅为 221.43 MiB！
+    请注意，该表的大小仅为 221.43 MiB，而原始数据集未压缩时约为 4 GiB。
+    ClickHouse 开箱即用，即可提供出色的数据压缩效果；如有需要，你还可以[针对每一列进一步调优压缩](/zh/reference/statements/create/table#column_compression_codec)。
+  </Step>
 
-<div id="run-queries">
-  ## 执行一些查询
-</div>
+  <Step title="执行几条查询" id="run-queries">
+    数据加载完成后，可以运行以下查询，直观感受分析型查询返回结果的速度。
+    下面的查询会基于全部数据计算每年的平均价格：
 
-执行一些查询来分析数据：
+    ```sql
+    SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 1000000, 80
+    )
+    FROM uk.uk_price_paid
+    GROUP BY year
+    ORDER BY year
+    ```
 
-<div id="average-price">
-  ### 查询 1：每年的平均价格
-</div>
+    以下查询通过应用过滤器，计算伦敦每年的平均价格：
 
-<RunnableCode>
-  ```sql
-  SELECT
-     toYear(date) AS year,
-     round(avg(price)) AS price,
-     bar(price, 0, 1000000, 80
-  )
-  FROM uk.uk_price_paid
-  GROUP BY year
-  ORDER BY year
-  ```
-</RunnableCode>
+    ```sql
+    SELECT
+      toYear(date) AS year,
+      round(avg(price)) AS price,
+      bar(price, 0, 2000000, 100
+    )
+    FROM uk.uk_price_paid
+    WHERE town = 'LONDON'
+    GROUP BY year
+    ORDER BY year
+    ```
 
-<div id="average-price-london">
-  ### 查询 2：伦敦每年的平均房价
-</div>
+    看起来 2020 年的房价出了些状况！不过这大概也不足为奇……
 
-<RunnableCode>
-  ```sql
-  SELECT
-     toYear(date) AS year,
-     round(avg(price)) AS price,
-     bar(price, 0, 2000000, 100
-  )
-  FROM uk.uk_price_paid
-  WHERE town = 'LONDON'
-  GROUP BY year
-  ORDER BY year
-  ```
-</RunnableCode>
+    下面的查询可找出房价最高的社区：
 
-2020 年的房价似乎发生了一些变化！不过这大概也不让人意外……
-
-<div id="most-expensive-neighborhoods">
-  ### 查询 3. 房价最高的街区
-</div>
-
-<RunnableCode>
-  ```sql
-  SELECT
+    ```sql
+    SELECT
       town,
       district,
       count() AS c,
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
-  FROM uk.uk_price_paid
-  WHERE date >= '2020-01-01'
-  GROUP BY
+    FROM uk.uk_price_paid
+    WHERE date >= '2020-01-01'
+    GROUP BY
       town,
       district
-  HAVING c >= 100
-  ORDER BY price DESC
-  LIMIT 100
-  ```
-</RunnableCode>
+    HAVING c >= 100
+    ORDER BY price DESC
+    LIMIT 100
+    ```
+  </Step>
+</Steps>
 
-<div id="speeding-up-queries-with-projections">
-  ## 使用投影加速查询
-</div>
+## 后续步骤 {#next-steps}
 
-我们可以用投影来加速这些查询。有关此数据集的示例，请参阅[&quot;投影&quot;](/zh/concepts/features/projections/projections)。
+在本教程中，您创建了一张表，对英国房产价格数据进行了预处理并将其加载到 ClickHouse 中，然后
+对这些数据运行了一些分析查询。
 
-<div id="playground">
-  ### 在 Playground 中试用
-</div>
+接下来，您可以：
 
-该数据集也可在[在线 Playground](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX)中使用。
+* 了解如何使用投影加速这些查询。有关使用同一数据集的示例，请参阅[&quot;投影&quot;](/zh/concepts/features/projections/projections)。
+* 深入了解 ClickHouse [核心概念](/zh/concepts/core-concepts)
+* 探索 ClickHouse [最佳实践](/zh/concepts/best-practices)
+* 探索其他[示例数据集](/zh/get-started/sample-datasets)

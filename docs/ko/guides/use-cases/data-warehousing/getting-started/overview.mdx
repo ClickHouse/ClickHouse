@@ -134,10 +134,16 @@ ClickHouse는 오픈 테이블 포맷을 읽는 3가지 방법을 제공합니�
     ```
 
     쿼리 구문은 완전히 동일하며 `FROM` 절만 변경됩니다. 데이터 소스와 관계없이 모든 ClickHouse SQL 함수, 조인, 집계는 동일하게 작동합니다.
+
+    <Note>
+      **적격 쿼리에 컴퓨트 추가**
+
+      On-Demand Compute는 지원되는 Apache Iceberg 및 Delta Lake 데이터를 대상으로 하는 적격 `SELECT` 쿼리에 대해 비공개 프리뷰로 제공됩니다. 서비스 크기를 조정하지 않고도 기존 서비스와 엔드포인트를 통해 추가 ClickHouse 워커를 일시적으로 할당합니다. 적격 조건과 제한 사항은 [On-Demand Compute 문서](/ko/products/cloud/features/infrastructure/on-demand-compute)를 참조하십시오.
+    </Note>
   </Step>
 
   <Step title="ClickHouse에 일부 데이터 로드하기" id="load-data">
-    Iceberg를 직접 쿨리하는 것은 편리하지만, 성능은 네트워크 처리량과 파일 레이아웃에 따라 제한됩니다. 분석 워크로드의 경우 데이터를 네이티브 MergeTree 테이블로 로드하십시오.
+    Iceberg를 직접 쿼리하는 것은 편리하지만, 성능은 네트워크 처리량과 파일 레이아웃에 따라 제한됩니다. 분석 워크로드의 경우 데이터를 네이티브 MergeTree 테이블로 로드하십시오.
 
     먼저, 기준 성능을 파악하기 위해 Iceberg 테이블에 필터링된 쿼리를 실행합니다:
 
@@ -231,9 +237,7 @@ ClickHouse는 오픈 테이블 포맷을 읽는 3가지 방법을 제공합니�
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## 다음 단계
-</div>
+## 다음 단계 {#next-steps}
 
 이제 전체 워크플로를 살펴보았으므로, 각 영역을 더 자세히 확인해 보십시오:
 

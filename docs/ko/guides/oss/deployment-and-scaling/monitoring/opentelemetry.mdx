@@ -8,17 +8,13 @@ doc_type: 'guide'
 
 [OpenTelemetry](https://opentelemetry.io/)는 분산 애플리케이션의 트레이스와 메트릭을 수집하기 위한 개방형 표준입니다. ClickHouse는 OpenTelemetry를 일부 지원합니다.
 
-<div id="supplying-trace-context-to-clickhouse">
-  ## ClickHouse에 추적 컨텍스트 제공하기
-</div>
+## ClickHouse에 추적 컨텍스트 제공하기 {#supplying-trace-context-to-clickhouse}
 
 ClickHouse는 [W3C 권고안](https://www.w3.org/TR/trace-context/)에 설명된 추적 컨텍스트 HTTP 헤더를 허용합니다. 또한 ClickHouse 서버 간 또는 클라이언트와 서버 간 통신에 사용되는 네이티브 프로토콜을 통한 추적 컨텍스트도 허용합니다. 수동으로 테스트할 때는 Trace Context 권고안을 준수하는 추적 컨텍스트 헤더를 `--opentelemetry-traceparent` 및 `--opentelemetry-tracestate` 플래그를 사용해 `clickhouse-client`에 전달할 수 있습니다.
 
 부모 추적 컨텍스트가 제공되지 않거나 제공된 추적 컨텍스트가 위의 W3C 표준을 준수하지 않으면, ClickHouse는 [opentelemetry&#95;start&#95;trace&#95;probability](/ko/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) 설정으로 제어되는 확률에 따라 새 트레이스를 시작할 수 있습니다.
 
-<div id="propagating-the-trace-context">
-  ## 추적 컨텍스트 전파
-</div>
+## 추적 컨텍스트 전파 {#propagating-the-trace-context}
 
 추적 컨텍스트는 다음과 같은 경우 다운스트림 서비스로 전파됩니다.
 
@@ -26,15 +22,27 @@ ClickHouse는 [W3C 권고안](https://www.w3.org/TR/trace-context/)에 설명된
 
 * [url](/ko/reference/functions/table-functions/url) 테이블 함수. 추적 컨텍스트 정보는 HTTP 헤더에 담겨 전송됩니다.
 
-<div id="tracing-clickhouse-keeper-requests">
-  ## ClickHouse Keeper 요청 추적
-</div>
+## 분산 쿼리의 스팬 {#spans-of-distributed-queries}
+
+분산 `SELECT`에서는 원격 세그먼트로부터 수행되는 모든 읽기가 `RemoteQueryExecutor::execute` 스팬으로 기록됩니다. 이러한 스팬에는 해당 쿼리 프래그먼트(query fragment)를 식별하는 속성이 포함됩니다.
+
+* `clickhouse.cluster` 및 `clickhouse.shard_num` — 실행기가 읽어오는 클러스터와 세그먼트
+* `clickhouse.query_id` 및 `clickhouse.initial_query_id` — 이니시에이터(initiator) 관점에서의 쿼리 ID
+* `clickhouse.target_host` — 수립된 연결의 주소
+
+이러한 스팬의 `status_code`는 해당 프래그먼트가 어떻게 종료되었는지를 나타냅니다.
+
+* `OK` — 세그먼트가 전체 결과를 반환했습니다.
+* `ERROR` — 프래그먼트가 실패했습니다. 세그먼트가 예외(exception)를 반환했거나, 이니시에이터가 데이터를 읽지 못했거나, 세그먼트 취소에 실패한 경우입니다.
+* `UNSET` — 성공도 실패도 아닙니다. 이러한 스팬에는 추가적인 맥락을 제공하는 속성이 포함됩니다.
+
+Distributed 테이블에 대한 `INSERT` 쿼리는 `DistributedSink`에서 동일한 `clickhouse.cluster` 및 `clickhouse.shard_num` 속성 키를 갖는 유사한 스팬을 생성합니다.
+
+## ClickHouse Keeper 요청 추적 {#tracing-clickhouse-keeper-requests}
 
 ClickHouse는 [ClickHouse Keeper](/ko/guides/oss/deployment-and-scaling/keeper/index) 요청(ZooKeeper와 호환되는 조정 서비스)에 대한 OpenTelemetry 추적을 지원합니다. 이 기능을 사용하면 클라이언트가 요청을 제출하는 시점부터 서버 측에서 처리되는 과정까지 Keeper 작업의 전체 수명 주기를 세부적으로 파악할 수 있습니다.
 
-<div id="enabling-keeper-tracing">
-  ### Keeper 추적 활성화
-</div>
+### Keeper 추적 활성화 {#enabling-keeper-tracing}
 
 Keeper 요청에 대한 추적을 활성화하려면 ZooKeeper/Keeper 클라이언트 구성에서 다음 설정을 지정하십시오:
 
@@ -51,9 +59,7 @@ Keeper 요청에 대한 추적을 활성화하려면 ZooKeeper/Keeper 클라이�
 </clickhouse>
 ```
 
-<div id="keeper-span-types">
-  ### Keeper 스팬 타입
-</div>
+### Keeper 스팬 타입 {#keeper-span-types}
 
 추적이 활성화되면 ClickHouse는 클라이언트 측과 서버 측 Keeper 작업 모두에 대해 스팬을 생성합니다.
 
@@ -74,20 +80,16 @@ Keeper 요청에 대한 추적을 활성화하려면 ZooKeeper/Keeper 클라이�
 * `keeper.dispatcher.requests_queue` — dispatcher에서 요청이 큐에 대기하는 시간
 * `keeper.write.pre_commit` — Raft commit 전 쓰기 요청 전처리
 * `keeper.write.commit` — Raft commit 후 쓰기 요청 처리
-* `keeper.read.wait_for_write` — 종속된 쓰기 작업을 기다리는 읽기 요청
+* `keeper.read.wait_for_write` — 진행 중인 요청 배치 뒤에서 대기하는 읽기 요청
 * `keeper.read.process` — 읽기 요청 처리
 * `keeper.dispatcher.responses_queue` — dispatcher에서 응답이 큐에 대기하는 시간
 * `keeper.send_response` — 클라이언트에 응답 전송
 
-<div id="sampling-and-performance">
-  ### 샘플링 및 성능
-</div>
+### 샘플링 및 성능 {#sampling-and-performance}
 
 추적 오버헤드를 관리하기 위해 Keeper는 동적 샘플링을 사용합니다. 샘플링 비율은 요청 크기에 따라 1/10,000에서 1/10 사이로 자동 조정됩니다. 샘플링된 요청과 샘플링되지 않은 요청을 포함한 모든 요청의 소요 시간은 성능 모니터링을 위해 히스토그램 메트릭에 기록됩니다.
 
-<div id="tracing-the-clickhouse-itself">
-  ## ClickHouse 자체 추적
-</div>
+## ClickHouse 자체 추적 {#tracing-the-clickhouse-itself}
 
 ClickHouse는 각 쿼리와 쿼리 계획, 분산 쿼리 같은 일부 쿼리 실행 단계에 대해 `trace spans`를 생성합니다.
 
@@ -97,15 +99,11 @@ ClickHouse는 각 쿼리와 쿼리 계획, 분산 쿼리 같은 일부 쿼리 �
 
 태그 또는 속성은 키와 값을 담는 2개의 병렬 배열로 저장됩니다. 이를 다루려면 [ARRAY JOIN](/ko/reference/statements/select/array-join)을 사용하십시오.
 
-<div id="log-query-settings">
-  ## 쿼리 설정 로그
-</div>
+## 쿼리 설정 로그 {#log-query-settings}
 
 [log&#95;query&#95;settings](/ko/reference/settings/session-settings/log-query#log_query_settings) 설정을 사용하면 쿼리 실행 중 쿼리 설정 변경 사항을 기록할 수 있습니다. 이 설정을 활성화하면 쿼리 설정에 가해진 모든 변경 사항이 OpenTelemetry 스팬 로그에 기록됩니다. 이 기능은 특히 프로덕션 환경에서 쿼리 성능에 영향을 줄 수 있는 구성 변경을 추적하는 데 유용합니다.
 
-<div id="integration-with-monitoring-systems">
-  ## 모니터링 시스템과의 통합
-</div>
+## 모니터링 시스템과의 통합 {#integration-with-monitoring-systems}
 
 현재 ClickHouse에서 모니터링 시스템으로 추적 데이터를 내보내는 즉시 사용 가능한 도구는 없습니다.
 
@@ -132,8 +130,6 @@ FROM system.opentelemetry_span_log
 
 오류가 발생하면 해당 오류가 발생한 로그 데이터의 일부는 별도의 알림 없이 유실됩니다. 데이터가 도착하지 않으면 서버 로그에서 오류 메시지를 확인하십시오.
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse로 관측성 솔루션 구축하기 - 2부 - 트레이스](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

@@ -37,6 +37,8 @@ Los Kafka ClickPipes pueden implementarse y gestionarse manualmente desde la UI 
 
   <Step title="Configurar un registro de esquemas (opcional)" id="4-configure-your-schema-registry">
     Se requiere un esquema válido para los temas de Avro y Protobuf. Consulta [Registros de esquemas](/es/integrations/clickpipes/kafka/schema-registries) para obtener más detalles sobre cómo configurar un registro de esquemas.
+
+    Para Protobuf, puedes dejar **Schema registry** en `disabled` y [subir un esquema al seleccionar tu topic](#7-select-your-topic).
   </Step>
 
   <Step title="Configura un Reverse Private Endpoint (opcional)" id="5-configure-reverse-private-endpoint">
@@ -64,7 +66,9 @@ Los Kafka ClickPipes pueden implementarse y gestionarse manualmente desde la UI 
   </Step>
 
   <Step title="Selecciona tu topic" id="7-select-your-topic">
-    Selecciona tu topic y la UI mostrará un documento de ejemplo del topic.
+    Selecciona tu topic. Si no usas un registro de esquemas, selecciona tu formato de datos en **Schema format**. Para `Protobuf`, sube un archivo `.proto` o un `FileDescriptorSet` serializado (máximo 768 KiB).
+
+    La UI mostrará entonces un documento de ejemplo del topic.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="Selecciona tu topic" size="md" />
   </Step>

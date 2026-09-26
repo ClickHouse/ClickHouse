@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 Las funciones de tabla son métodos para crear tablas.
 
-<div id="usage">
-  ## Uso
-</div>
+## Uso {#usage}
 
 Las funciones de tabla se pueden usar en la cláusula [`FROM`](/es/reference/statements/select/from)
 de una consulta `SELECT`. Por ejemplo, puede usar `SELECT` para leer datos de un archivo en su máquina local
@@ -88,5 +86,7 @@ cat numbers.csv
 ```
 
 <Note>
-  No puedes usar funciones de tabla si la opción [allow&#95;ddl](/es/reference/settings/session-settings/allow#allow_ddl) está deshabilitada.
+  La mayoría de las funciones de tabla necesitan el privilegio `CREATE TEMPORARY TABLE` para ejecutarse, por lo que se rechaza cualquier `SELECT` o `INSERT`
+  que ejecute una de ellas cuando
+  [`readonly`](/es/concepts/features/configuration/settings/permissions-for-queries#readonly) está establecido en 1.
 </Note>
