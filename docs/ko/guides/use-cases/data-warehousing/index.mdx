@@ -16,7 +16,7 @@ ClickHouse는 [Apache Iceberg](/ko/reference/engines/table-engines/integrations/
   ### 기존 데이터를 원본 위치에서 쿼리하기
 </div>
 
-ClickHouse는 데이터를 복제하지 않고도 객체 스토리지에 있는 오픈 테이블 포맷을 직접 쿼리할 수 있습니다. Iceberg, Delta Lake, Hudi 또는 Paimon을 표준으로 사용하는 조직은 ClickHouse가 기존 테이블을 가리키도록 설정한 뒤 즉시 SQL 방언, 분석 함수, 효율적인 네이티브 Parquet 리더를 활용할 수 있습니다. 동시에 [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local) 및 [chDB](/ko/chdb/index)와 같은 도구를 사용하면 원격 스토리지의 70개 이상의 파일 포맷에 걸쳐 탐색적이고 애드혹 분석을 수행할 수 있으므로, 별도의 인프라 설정 없이 데이터 레이크 데이터셋을 대화형으로 탐색할 수 있습니다.
+ClickHouse는 데이터를 복제하지 않고도 객체 스토리지에 있는 오픈 테이블 포맷을 직접 쿼리할 수 있습니다. Iceberg, Delta Lake, Hudi 또는 Paimon을 표준으로 사용하는 조직은 ClickHouse가 기존 테이블을 가리키도록 설정한 뒤 즉시 SQL 방언, 분석 함수, 효율적인 네이티브 Parquet 리더를 활용할 수 있습니다. 동시에 [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local) 및 [chDB](/chdb/index)와 같은 도구를 사용하면 원격 스토리지의 70개 이상의 파일 포맷에 걸쳐 탐색적이고 애드혹 분석을 수행할 수 있으므로, 별도의 인프라 설정 없이 데이터 레이크 데이터셋을 대화형으로 탐색할 수 있습니다.
 
 이 작업은 [테이블 함수와 테이블 엔진](/ko/guides/use-cases/data-warehousing/getting-started/querying-directly)을 사용하는 직접 읽기 방식이나 [데이터 카탈로그에 연결](/ko/guides/use-cases/data-warehousing/getting-started/connecting-catalogs)하는 방식으로 수행할 수 있습니다.
 
