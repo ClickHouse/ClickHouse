@@ -96,11 +96,8 @@ void GroupConcatImpl<has_limit>::add(
 
     if (isFixedString(type))
     {
-        /// Trailing zero bytes are cut, matching `CAST(FixedString AS String)`.
-        std::string_view ref = assert_cast<const ColumnFixedString &>(*columns[0]).getDataAt(row_num);
-        while (!ref.empty() && ref.back() == 0)
-            ref.remove_suffix(1);
-        cur_data.insertString(ref, arena);
+        /// All bytes are kept, including the trailing zero padding, matching `CAST(FixedString AS String)`.
+        cur_data.insertString(assert_cast<const ColumnFixedString &>(*columns[0]).getDataAt(row_num), arena);
     }
     else
         cur_data.insert(columns[0], serialization, row_num, arena);
