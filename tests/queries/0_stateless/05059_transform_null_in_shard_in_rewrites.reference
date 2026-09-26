@@ -70,8 +70,8 @@ where form dictGet	0
 prewhere form indexHint	1
 subquery arm indexHint	1
 lowcardinality subquery arm indexHint	1
-lowcardinality const arm keeps its type	1
-lowcardinality subquery arm keeps its type	1
+lowcardinality const arm keeps its type	1	1
+lowcardinality subquery arm keeps its type	1	1
 subquery arm dictGet	0
 projection form indexHint	0
 projection form nullIn	1
@@ -98,6 +98,16 @@ correlated key value	3
 correlated key value, setting off	3
 correlated key value, rewrite off	3
 correlated key not hinted	0
+rand key not rewritten	0
+rand key twin rewritten	3
+rand key subquery arm not rewritten	0
+rand key subquery arm twin rewritten	3
+sleep key not rewritten	0
+sleep key subquery arm not rewritten	0
+stateful key not rewritten	0
+stateful key subquery arm not rewritten	0
+rand in lambda key not rewritten	0
+rand in lambda key twin rewritten	3
 int64 key value	100	3
 int64 key value, rewrite off	100	3
 int64 key not rewritten	0

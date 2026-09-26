@@ -219,15 +219,14 @@ SELECT 'where form dictGet', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SEL
 SELECT 'prewhere form indexHint', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 PREWHERE dictGet('d_112032', 'a', nid) = 'x') WHERE explain ILIKE '%function_name: indexHint%';
 SELECT 'subquery arm indexHint', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) LIKE 'x%') WHERE explain ILIKE '%function_name: indexHint%';
 SELECT 'lowcardinality subquery arm indexHint', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t3_120650 WHERE dictGet('d_112032', 'a', lc) LIKE 'x%') WHERE explain ILIKE '%function_name: indexHint%';
--- Both arms restore the comparison's own result type, and a `LowCardinality(Nullable)` key is the carrier
--- that needs a `_CAST` for it. Counting that cast against the plain `Nullable` key's count of the same
--- query keeps a cast either tree would have anyway out of the comparison.
+-- Both arms restore the comparison's own result type, `LowCardinality(Nullable(UInt8))` for a
+-- `LowCardinality(Nullable)` key, so the tree names that type as often as with the rewrite off.
 SELECT 'lowcardinality const arm keeps its type',
-  (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', lc) = 'x') FROM t2_120650) WHERE explain ILIKE '%function_name: _CAST%')
-  > (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', nid) = 'x') FROM t2_120650) WHERE explain ILIKE '%function_name: _CAST%');
+  (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', lc) = 'x') FROM t2_120650) WHERE explain ILIKE '%result_type: LowCardinality(Nullable(UInt8))%'),
+  (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', lc) = 'x') FROM t2_120650 SETTINGS optimize_inverse_dictionary_lookup = 0) WHERE explain ILIKE '%result_type: LowCardinality(Nullable(UInt8))%');
 SELECT 'lowcardinality subquery arm keeps its type',
-  (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', lc) LIKE 'x%') FROM t2_120650) WHERE explain ILIKE '%function_name: _CAST%')
-  > (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', nid) LIKE 'x%') FROM t2_120650) WHERE explain ILIKE '%function_name: _CAST%');
+  (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', lc) LIKE 'x%') FROM t2_120650) WHERE explain ILIKE '%result_type: LowCardinality(Nullable(UInt8))%'),
+  (SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', lc) LIKE 'x%') FROM t2_120650 SETTINGS optimize_inverse_dictionary_lookup = 0) WHERE explain ILIKE '%result_type: LowCardinality(Nullable(UInt8))%');
 SELECT 'subquery arm dictGet', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', nid) LIKE 'x%') WHERE explain ILIKE '%function_name: dictGet%';
 SELECT 'projection form indexHint', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', nid) = 'x') FROM t2_120650) WHERE explain ILIKE '%function_name: indexHint%';
 SELECT 'projection form nullIn', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count(dictGet('d_112032', 'a', nid) = 'x') FROM t2_120650) WHERE explain ILIKE '%function_name: nullIn%';
@@ -281,6 +280,20 @@ SELECT 'correlated key value', count() FROM t2_120650 WHERE dictGet('d_112032', 
 SELECT 'correlated key value, setting off', count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x' SETTINGS transform_null_in = 0;
 SELECT 'correlated key value, rewrite off', count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x' SETTINGS optimize_inverse_dictionary_lookup = 0;
 SELECT 'correlated key not hinted', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', (SELECT nid FROM system.one)) = 'x') WHERE explain ILIKE '%function_name: indexHint%';
+
+-- Index analysis evaluates a hint once more, so a key whose value or cost depends on how often it is evaluated keeps
+-- its comparison: a non-deterministic function, also inside a lambda, `sleepEachRow`, or the stateful
+-- `timeSeriesStoreTags`. The twins, without one, are rewritten.
+SELECT 'rand key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', if(rand() % 2, nid, NULL)) = 'x') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+SELECT 'rand key twin rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', if(bfc % 2 = 1, nid, NULL)) = 'x') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+SELECT 'rand key subquery arm not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', if(rand() % 2, nid, NULL)) LIKE 'x%') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+SELECT 'rand key subquery arm twin rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', if(bfc % 2 = 1, nid, NULL)) LIKE 'x%') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+SELECT 'sleep key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', if(sleepEachRow(0) = 0, nid, NULL)) = 'x') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+SELECT 'sleep key subquery arm not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', if(sleepEachRow(0) = 0, nid, NULL)) LIKE 'x%') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+SELECT 'stateful key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', timeSeriesStoreTags(nid, [('k', 'v')])) = 'x') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+SELECT 'stateful key subquery arm not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', timeSeriesStoreTags(nid, [('k', 'v')])) LIKE 'x%') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+SELECT 'rand in lambda key not rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', toNullable(arrayMax(arrayMap(x -> x + rand() % 2, [assumeNotNull(nid)])))) = 'x') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
+SELECT 'rand in lambda key twin rewritten', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t2_120650 WHERE dictGet('d_112032', 'a', toNullable(arrayMax(arrayMap(x -> x + 1, [assumeNotNull(nid)])))) = 'x') WHERE explain ILIKE '%function_name: nullIn%' OR explain ILIKE '%function_name: indexHint%';
 
 -- A key expression that needs a conversion keeps its comparison: `dictGet` casts it to the key type
 -- with `castColumnAccurate`, while both rewrite arms would compare it against bare key values in a

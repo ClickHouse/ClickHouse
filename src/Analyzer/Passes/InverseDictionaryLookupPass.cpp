@@ -267,8 +267,24 @@ bool canReplaceWithDictGetKeys(
     return supertype && supertype->equals(*stripped_attr_type);
 }
 
-/// The planner builds an `indexHint` argument in its own actions DAG, which rejects a correlated subquery,
-/// and `dictGet` converts the key to the key column type, while the key set comparison does not.
+bool isSensitiveToEvaluationCount(const QueryTreeNodePtr & node)
+{
+    if (const auto * function_node = node->as<FunctionNode>(); function_node && function_node->isOrdinaryFunction())
+    {
+        const auto function = function_node->getFunctionOrThrow();
+        if (!function->isDeterministicInScopeOfQuery() || function->isStateful() || function->hasObservableSideEffects())
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+        if (child && isSensitiveToEvaluationCount(child))
+            return true;
+
+    return false;
+}
+
+/// The planner builds an `indexHint` argument in its own actions DAG, which rejects a correlated subquery and evaluates
+/// the key once more, and `dictGet` converts the key to the key column type, while the key set comparison does not.
 bool canRestoreNullForKey(const QueryTreeNodePtr & key_expr_node, bool is_simple_key, const NamesAndTypes & key_cols)
 {
     if (!is_simple_key)
@@ -277,7 +293,7 @@ bool canRestoreNullForKey(const QueryTreeNodePtr & key_expr_node, bool is_simple
     chassert(key_cols.size() == 1);
     const DataTypePtr key_type = key_expr_node->getResultType();
     return isNullableOrLowCardinalityNullable(key_type) && !key_type->hasDynamicStructure()
-        && !containsCorrelatedSubquery(key_expr_node)
+        && !containsCorrelatedSubquery(key_expr_node) && !isSensitiveToEvaluationCount(key_expr_node)
         && removeLowCardinalityAndNullable(key_type)->equals(*key_cols.front().type);
 }
 
@@ -533,7 +549,8 @@ public:
                 /// `transform_null_in` renames the `in` family during resolution, which every pass runs after.
                 const DataTypePtr key_type = dictget_function_info.key_expr_node->getResultType();
                 const auto in_function_name = getInFunctionNameForPassCreatedNode("in", key_type, getContext());
-                if (!in_function_name && !canRestoreNullForKey(dictget_function_info.key_expr_node, dict_structure.id.has_value(), key_cols))
+                if (!in_function_name
+                    && !canRestoreNullForKey(dictget_function_info.key_expr_node, dict_structure.id.has_value(), key_cols))
                     return;
 
                 /// The null-aware name is a fixed point of the renaming, so a shard re-analyzing the shipped AST leaves it alone.
