@@ -22,17 +22,48 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 Whether to delete all iceberg files on drop or not.
 
+## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "New setting for the previously hardcoded capacity of the queue between the Iceberg data manifest decode tasks and the query."}]}]}/>
+
+Capacity of the queue between the Iceberg data manifest decode tasks and the query, in data file entries.
+
+The decode tasks pause once the queue is full and the query is not consuming, so this also bounds the read-ahead.
+
+Must be greater than zero.
+
+## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+
+**Aliases**: `iceberg_delete_manifest_decode_concurrency`
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."}]}]}/>
+
+Maximum number of Iceberg manifest files decoded concurrently while reading a table.
+
+Delete manifests are all decoded before any data file is read; data manifests are decoded while the list of data files for the query is produced, and new ones are decoded only as the query consumes already decoded entries. Decoding several manifests at a time overlaps the object storage round-trips and the per-entry pruning work.
+
+Higher values raise peak memory when the Iceberg metadata files cache is disabled or full, since each in-flight manifest then holds its own decoded contents.
+
+Must be greater than zero; `1` decodes the manifests one at a time.
+
 ## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 
 <ExperimentalBadge/>
 
-<SettingsInfoBlock type="UInt64" default_value="30" />
+<SettingsInfoBlock type="UInt64" default_value="100" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "30"},{"label": "New setting to control manifest compaction for Iceberg tables."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "Aligned with the documented default of the Iceberg table property `commit.manifest.min-count-to-merge` (100), see https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "30"},{"label": "New setting to control manifest compaction for Iceberg tables."}]}]}/>
 
 Minimum number of manifest files required to trigger manifest-only compaction via OPTIMIZE TABLE ... MANIFEST.
 If the current number of manifest files is less than or equal to this threshold, compaction is skipped.
 Requires allow_experimental_iceberg_compaction to be enabled.
+
+The default mirrors the documented default of the Iceberg table property `commit.manifest.min-count-to-merge` (100),
+see https://iceberg.apache.org/docs/1.5.2/configuration/.
 
 ## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
@@ -67,5 +98,15 @@ Query Iceberg table using the specific snapshot id.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "New setting."}]}]}/>
 
 Query Iceberg table using the snapshot that was current at a specific timestamp.
+
+## iceberg_tolerate_conflicting_manifest_schemas {#iceberg_tolerate_conflicting_manifest_schemas}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema and log a warning instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."}]}]}/>
+
+If enabled and the `schema` key of an Iceberg manifest file header carries a schema that differs from the schema already registered for the same schema-id from metadata.json, the metadata.json schema is used and the manifest header copy is ignored with a warning. If disabled, such a conflict fails the query with an ICEBERG_SPECIFICATION_VIOLATION error.
+
+The manifest header schema is only a copy of the table schema at the time the manifest was written, and some writers (e.g. AWS S3 Tables maintenance jobs) have been observed storing degraded copies there. Other query engines resolve schemas from metadata.json and ignore divergent header copies, so the default follows them. A conflict between two metadata.json schema definitions still always fails the query.
 
 {/*AUTOGENERATED_END*/}

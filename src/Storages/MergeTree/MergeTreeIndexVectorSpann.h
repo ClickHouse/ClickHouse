@@ -154,7 +154,11 @@ public:
         const std::optional<VectorSearchParameters> & parameters) const override;
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
+    using IMergeTreeIndex::getPhysicalFormat;
+    MergeTreeIndexFormat getPhysicalFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const IDataPartStorage & storage,
+        const std::string & relative_path_prefix) const override;
 
     bool isVectorSimilarityIndex() const override { return true; }
 

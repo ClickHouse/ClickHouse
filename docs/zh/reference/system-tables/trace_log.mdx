@@ -16,10 +16,11 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 包含由[采样查询分析器](/zh/concepts/features/performance/troubleshoot/sampling-query-profiler)收集的堆栈跟踪。
 
-当服务器配置中的 [trace&#95;log](/zh/reference/settings/server-settings/settings#trace_log) 部分启用时，ClickHouse 会创建此表。另请参见以下设置：[query&#95;profiler&#95;real&#95;time&#95;period&#95;ns](/zh/reference/settings/session-settings#query_profiler_real_time_period_ns)、[query&#95;profiler&#95;cpu&#95;time&#95;period&#95;ns](/zh/reference/settings/session-settings#query_profiler_cpu_time_period_ns)、[memory&#95;profiler&#95;step](/zh/reference/settings/session-settings#memory_profiler_step)、
-[memory&#95;profiler&#95;sample&#95;probability](/zh/reference/settings/session-settings#memory_profiler_sample_probability)、[trace&#95;profile&#95;events](/zh/reference/settings/session-settings#trace_profile_events)。
+当服务器配置中的 [trace&#95;log](/zh/reference/settings/server-settings/settings/other#trace_log) 部分启用时，ClickHouse 会创建此表。另请参见以下设置：[query&#95;profiler&#95;real&#95;time&#95;period&#95;ns](/zh/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns)、[query&#95;profiler&#95;cpu&#95;time&#95;period&#95;ns](/zh/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns)、[memory&#95;profiler&#95;step](/zh/reference/settings/session-settings/memory-profiler#memory_profiler_step)、
+[memory&#95;profiler&#95;sample&#95;probability](/zh/reference/settings/session-settings/memory-profiler#memory_profiler_sample_probability)、[trace&#95;profile&#95;events](/zh/reference/settings/session-settings/trace-profile-events#trace_profile_events)。
 
-要分析日志，请使用 `addressToLine`、`addressToLineWithInlines`、`addressToSymbol` 和 `demangle` 这些内部信息函数。
+启用符号化时 (默认启用) ，反修饰后的函数名称和源代码位置已分别在 `symbols` 和 `lines` 列中提供，因此可以直接分析日志，无需使用内部信息函数。`symbolize` 设置适用于分析器收集的 trace 类型；`Instrumentation` trace 类型的行无论该设置如何都会进行符号化。符号化支持 ELF 平台 (如 Linux) 和 macOS；在 FreeBSD 上，`symbols` 和 `lines` 列始终为空。`symbols` 中的函数名称来自二进制文件的符号表，默认可用；而 `lines` 中的源代码位置会尽力提供：它们需要调试信息 (macOS 上为 `.dSYM` 包) ，并且在 ELF 平台上，仅解析主 ClickHouse 二进制文件内的帧；未解析帧的 `lines` 条目为空。
+如果禁用了符号化，或者希望动态解析 `trace` 列中的原始地址 (例如展开内联帧) ，请使用 `addressToLine`、`addressToLineWithInlines`、`addressToSymbol` 和 `demangle` 内部信息函数。这些函数支持与符号化相同的平台 (如 Linux 等 ELF 平台以及 macOS) ；在 FreeBSD 上它们同样未被编译，因此必须在服务器外部解析 `trace` 中的地址。
 
 <div id="columns">
   ## 列
@@ -38,15 +39,15 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `thread_id` ([UInt64](/zh/reference/data-types/int-uint)) — 线程标识符。
 * `thread_name` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 线程名。
 * `query_id` ([String](/zh/reference/data-types/string)) — 查询标识符，可用于从 query&#95;log 系统表中获取正在运行查询的详细信息。
-* `trace` ([Array(UInt64)](/zh/reference/data-types/array)) — 采样时的堆栈跟踪。每个元素都是 ClickHouse server 进程中的一个虚拟内存地址。
+* `trace` ([Array(UInt64)](/zh/reference/data-types/array)) — 采样时的堆栈跟踪。对于由 Profiler 收集的 trace 类型，在 FreeBSD 以外的 ELF 平台上，主 ClickHouse binary 内的地址会存储为物理文件偏移量，其他地址则是 ClickHouse server 进程中的虚拟内存地址。Instrumentation trace 行是例外：它们存储原始虚拟内存地址。
 * `size` ([Int64](/zh/reference/data-types/int-uint)) — 对于 Memory、MemorySample、MemoryAllocatedWithoutCheck 或 MemoryPeak 这几种 trace 类型，表示已分配的内存量；对于其他 trace 类型，则为 0。
 * `ptr` ([UInt64](/zh/reference/data-types/int-uint)) — 已分配 chunk 的内存地址。
 * `memory_context` ([Enum8(&#39;Unknown&#39; = -1, &#39;Global&#39; = 0, &#39;User&#39; = 1, &#39;Process&#39; = 2, &#39;Thread&#39; = 3, &#39;Max&#39; = 4)](/zh/reference/data-types/enum)) — Memory Tracker 的上下文 (仅适用于 Memory/MemoryPeak) ：`Unknown` 表示此 trace&#95;type 未定义上下文。`Global` 表示服务器上下文。`User` 表示用户/合并上下文。`Process` 表示进程 (即查询) 上下文。`Thread` 表示线程 (特定进程的线程) 上下文。`Max` 是一个特殊值，表示 memory tracker 未被阻塞 (仅针对 `blocked&#95;context` 列) 。
 * `memory_blocked_context` ([Enum8(&#39;Unknown&#39; = -1, &#39;Global&#39; = 0, &#39;User&#39; = 1, &#39;Process&#39; = 2, &#39;Thread&#39; = 3, &#39;Max&#39; = 4)](/zh/reference/data-types/enum)) — memory tracker 被阻塞时对应的上下文 (仅供 ClickHouse 开发者使用) ：`Unknown` 表示该 `trace&#95;type` 未定义上下文。`Global` 表示服务器上下文。`User` 表示用户/merge 上下文。`Process` 表示进程 (即查询) 上下文。`Thread` 表示线程 (特定进程的线程) 上下文。`Max` 是一个特殊值，表示 memory tracker 未被阻塞 (针对 `blocked&#95;context` 列) 。
 * `event` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 对于 trace 类型，ProfileEvent 是已更新的 profile 事件名称；对于其他 trace 类型，则为空字符串。
 * `increment` ([Int64](/zh/reference/data-types/int-uint)) — 当 trace 类型为 ProfileEvent 时，表示该 profile event 的增量；其他 trace 类型则为 0。
-* `symbols` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 如果启用了符号化，则包含与 `trace` 对应的已解修饰符号名称。可在服务器配置文件中 `trace_log` 下的 `symbolize` 设置里启用或禁用符号化。
-* `lines` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 如果启用了符号化，则包含带行号的文件名字符串，并与 `trace` 相对应。
+* `symbols` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 如果启用了符号化，则包含与 `trace` 对应的已解修饰符号名称。可在服务器配置文件中 `trace_log` 下的 `symbolize` 设置里启用或禁用符号化。该设置适用于 profiler 收集的 trace 类型，而 `Instrumentation` trace 类型的行无论是否启用此设置都会进行符号化。ELF 平台 (如 Linux) 和 macOS 支持符号化；在 FreeBSD 上，此列始终为空。
+* `lines` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 如果启用了符号化，则包含带行号的文件名字符串，并与 `trace` 相对应。`symbolize` 设置适用于 profiler 收集的 trace 类型，而 `Instrumentation` trace 类型的行无论是否启用此设置都会进行符号化。ELF 平台 (如 Linux) 和 macOS 支持符号化；在 FreeBSD 上，此列始终为空。源代码位置会尽力解析：这需要调试信息 (macOS 上为 `.dSYM` 支持包)，且在 ELF 平台上仅会解析主 ClickHouse 二进制文件内的帧；无法解析的帧对应的条目为空。
 * `function_id` ([Nullable(Int32)](/zh/reference/data-types/nullable)) — 对于 trace 类型的 Instrumentation，表示在 elf-binary 的 xray&#95;instr&#95;map 节中分配给该函数的 ID。
 * `function_name` ([Nullable(String)](/zh/reference/data-types/nullable)) — 对于 trace 类型的 Instrumentation，表示被插桩函数的名称。
 * `handler` ([Nullable(String)](/zh/reference/data-types/nullable)) — 对于 trace 类型的 Instrumentation，表示已插桩函数的处理器。
@@ -55,11 +56,11 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 **别名：**
 
-* `build_id` — `'E2EEB60ED9503BFFA825B628D480CCDC40B2D416'` 的别名。
+* `build_id` — 正在运行的 ClickHouse 服务器二进制文件的构建 ID 的别名。
 
 {/*AUTOGENERATED_END*/}
 
-可以在服务器的配置文件中，通过 `trace_log` 下的 `symbolize` 启用或禁用符号化。
+可在 服务器&#39;s configuration file 的 `trace_log` 部分通过 `symbolize` 设置启用或禁用符号化功能。该功能默认启用。此设置适用于分析器收集的 trace 类型；对于 trace 类型为 `Instrumentation` 的行，无论此设置为何值，都会进行符号化。
 
 <div id="example">
   ## 示例
@@ -80,7 +81,7 @@ timestamp_ns:            1762862039128333000
 revision:                54504
 trace_type:              Instrumentation
 cpu_id:                  19
-thread_id:               3166432 -- 317万
+thread_id:               3166432 -- 3.17 million
 query_id:                ef462508-e189-4ea2-b231-4489506728e8
 trace:                   [350594916,447733712,447742095,447727324,447726659,221642873,450882315,451852359,451905441,451885554,512404306,512509092,612861767,612863269,612466367,612455825,137631896259267,137631896856768]
 size:                    0
@@ -90,7 +91,7 @@ memory_blocked_context:  Unknown
 event:
 increment:               0
 symbols:                 ['StackTrace::StackTrace()','DB::InstrumentationManager::createTraceLogElement(DB::InstrumentationManager::InstrumentedPointInfo const&, XRayEntryType, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>) const','DB::InstrumentationManager::profile(XRayEntryType, DB::InstrumentationManager::InstrumentedPointInfo const&)','DB::InstrumentationManager::dispatchHandlerImpl(int, XRayEntryType)','DB::InstrumentationManager::dispatchHandler(int, XRayEntryType)','__xray_FunctionEntry','DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)','DB::logQueryStart(std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>> const&, std::__1::shared_ptr<DB::Context> const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, unsigned long, std::__1::shared_ptr<DB::IAST> const&, DB::QueryPipeline const&, DB::IInterpreter const*, bool, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, bool)','DB::executeQueryImpl(char const*, char const*, std::__1::shared_ptr<DB::Context>, DB::QueryFlags, DB::QueryProcessingStage::Enum, std::__1::unique_ptr<DB::ReadBuffer, std::__1::default_delete<DB::ReadBuffer>>&, std::__1::shared_ptr<DB::IAST>&, std::__1::shared_ptr<DB::ImplicitTransactionControlExecutor>, std::__1::function<void ()>)','DB::executeQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::shared_ptr<DB::Context>, DB::QueryFlags, DB::QueryProcessingStage::Enum)','DB::TCPHandler::runImpl()','DB::TCPHandler::run()','Poco::Net::TCPServerConnection::start()','Poco::Net::TCPServerDispatcher::run()','Poco::PooledThread::run()','Poco::ThreadImpl::runnableEntry(void*)','start_thread','__clone3']
-lines:                   ['./build/../src/Common/StackTrace.cpp:395','./src/Common/StackTrace.h:62','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:738','./build/./src/Interpreters/InstrumentationManager.cpp:257','./build/./src/Interpreters/InstrumentationManager.cpp:225','/home/ubuntu/ClickHouse/ClickHouse/build/programs/clickhouse','./build/./src/Interpreters/QueryMetricLog.cpp:0','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:667','./build/./src/Interpreters/executeQuery.cpp:0','./build/./src/Interpreters/executeQuery.cpp:0','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:744','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:583','./build/../base/poco/Net/src/TCPServerConnection.cpp:54','../contrib/llvm-project/libcxx/include/__memory/unique_ptr.h:80','./build/../base/poco/Foundation/src/ThreadPool.cpp:219','../base/poco/Foundation/include/Poco/AutoPtr.h:77','/home/ubuntu/ClickHouse/ClickHouse/build/programs/clickhouse','/home/ubuntu/ClickHouse/ClickHouse/build/programs/clickhouse']
+lines:                   ['./build/../src/Common/StackTrace.cpp:395','./src/Common/StackTrace.h:62','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:738','./build/./src/Interpreters/InstrumentationManager.cpp:257','./build/./src/Interpreters/InstrumentationManager.cpp:225','','./build/./src/Interpreters/QueryMetricLog.cpp:0','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:667','./build/./src/Interpreters/executeQuery.cpp:0','./build/./src/Interpreters/executeQuery.cpp:0','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:744','./contrib/llvm-project/libcxx/include/__memory/shared_ptr.h:583','./build/../base/poco/Net/src/TCPServerConnection.cpp:54','../contrib/llvm-project/libcxx/include/__memory/unique_ptr.h:80','./build/../base/poco/Foundation/src/ThreadPool.cpp:219','../base/poco/Foundation/include/Poco/AutoPtr.h:77','','']
 function_id:             231255
 function_name:           DB::QueryMetricLog::startQuery(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, std::__1::chrono::time_point<std::__1::chrono::system_clock, std::__1::chrono::duration<long long, std::__1::ratio<1l, 1000000l>>>, unsigned long)
 handler:                 profile

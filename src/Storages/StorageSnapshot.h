@@ -1,10 +1,10 @@
 #pragma once
+#include <Storages/IStorage_fwd.h>
 #include <Storages/VirtualColumnsDescription.h>
 
 namespace DB
 {
 
-class IStorage;
 class ICompressionCodec;
 
 using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
@@ -40,6 +40,11 @@ struct StorageSnapshot
     std::shared_ptr<StorageSnapshot> clone(DataPtr data_) const;
     std::shared_ptr<StorageSnapshot> clone(StorageMetadataPtr metadata_, DataPtr data_) const;
 
+    /// Returns an equivalent snapshot that additionally owns `holder`, whose referent must be `storage`.
+    /// Ownership is what keeps that storage alive: DatabaseCatalog::getTablesToDrop treats a dropped
+    /// table as unused as soon as its only remaining shared_ptr is the catalog's own.
+    std::shared_ptr<StorageSnapshot> withStorageHolder(ConstStoragePtr holder) const;
+
     /// Get columns description
     ColumnsDescription getAllColumnsDescription() const;
 
@@ -65,6 +70,11 @@ struct StorageSnapshot
     /// Get default expression for a column.
     /// Takes into account physical and virtual columns.
     std::optional<ColumnDefault> getDefault(const String & column_name) const;
+
+private:
+    /// Empty on almost every snapshot: one that is consumed inside the scope of an owning
+    /// StoragePtr must not delay the drop of its table.
+    ConstStoragePtr storage_holder;
 };
 
 using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;

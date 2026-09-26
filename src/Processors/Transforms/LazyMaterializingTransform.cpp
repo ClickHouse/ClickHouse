@@ -29,7 +29,7 @@ Block LazyMaterializingTransform::transformHeader(const Block & main_header, con
     return Block(std::move(columns));
 }
 
-LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+LazyMaterializingTransform::LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, ILazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
     : IProcessor(
         InputPorts({main_header, lazy_header}),
         OutputPorts({OutputPort(std::make_shared<Block>(transformHeader(*main_header, *lazy_header)))}))

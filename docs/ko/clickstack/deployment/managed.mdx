@@ -133,7 +133,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
 
         <Tabs>
           <Tab title="OpenTelemetry">
-            OpenTelemetry 데이터를 Managed ClickStack로 보내려면 OpenTelemetry Collector를 사용하는 것이 권장됩니다. collector는 게이트웨이 역할을 하며 애플리케이션(및 다른 collector)에서 OpenTelemetry 데이터를 받아 ClickHouse Cloud로 전달합니다.
+            Managed ClickStack로 OpenTelemetry 데이터를 보내려면 OpenTelemetry Collector를 사용하는 것이 권장됩니다. collector는 게이트웨이 역할을 하며 애플리케이션(및 다른 collector)에서 OpenTelemetry 데이터를 받아 ClickHouse Cloud로 전달합니다.
 
             아직 실행 중인 collector가 없다면 아래 단계에 따라 시작하세요. 기존 collector가 있다면 구성 예시도 제공됩니다.
 
@@ -209,7 +209,7 @@ import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
             CREATE DATABASE IF NOT EXISTS logs
             ```
 
-            그런 다음 로그 데이터 구조와 일치하는 스키마의 테이블을 생성합니다. 아래 예시에서는 전형적인 Nginx 액세스 로그 포맷을 가정합니다.
+            그런 다음 로그 데이터 구조와 일치하는 스키마의 테이블을 생성합니다. 아래 예시에서는 전형적인 Nginx 액세스 로그 포맷을 가정합니다:
 
             ```sql
             CREATE TABLE logs.nginx_logs

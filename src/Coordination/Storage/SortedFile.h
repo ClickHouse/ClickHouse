@@ -3,11 +3,20 @@
 #include <Coordination/Storage/Common.h>
 #include <Coordination/KeeperCommon.h>
 #include <Common/Arena.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <Interpreters/BloomFilter.h>
 
+#include <deque>
+#include <mutex>
 #include <vector>
 
 namespace Coordination::Storage
 {
+
+struct StorageState;
+
+struct FileDeleteQueue;
+using FileDeleteQueuePtr = std::shared_ptr<FileDeleteQueue>;
 
 /// Immutable file containing sequence of nodes/tombstones sorted by NodePath (depth and path).
 /// Paths don't repeat. File always contains at least 1 block.
@@ -24,11 +33,26 @@ struct SortedFile
         ///  allowed block sizes).)
         NodePath max_path;
 
+        uint32_t block_size = 0;
+
+        /// Information about a group of consecutive blocks that are compressed and read together.
+        size_t group_offset_in_file = 0;
+        size_t group_compressed_size = 0;
+        size_t offset_in_group = 0;
+
         /// If in block cache or in pinned_blocks.
         mutable BlockWeakPtrWithSpinlock data;
     };
 
     String file_path;
+
+    /// If true, destructor will enqueue this file to `file_deleter` to be deleted.
+    bool delete_when_destroyed = false;
+    FileDeleteQueuePtr file_deleter;
+
+    /// The file opened for reading. All block loads use positioned reads (readBigAt) on this
+    /// buffer, which is thread safe. Null in memory-only mode.
+    std::unique_ptr<DB::ReadBufferFromFileBase> read_buffer;
 
     uint32_t serialization_version = 0;
     /// Forward compatibility: the file can be read by readers this old and newer.
@@ -36,8 +60,9 @@ struct SortedFile
     uint32_t min_compatible_version = 0;
     DB::KeeperDigestVersion digest_version = DB::KeeperDigestVersion::NO_DIGEST;
 
-    size_t total_block_size = 0;
-    size_t file_size = 0;
+    size_t total_block_size = 0; // uncompressed
+    size_t file_size = 0; // compressed
+    size_t num_entries = 0; // number of nodes/tombstones
 
     /// Number of Create-d nodes minus number of Remove-d nodes.
     int64_t node_count_delta = 0;
@@ -55,23 +80,24 @@ struct SortedFile
     /// and are instead owned by this array to always stay in memory.
     std::vector<BlockPtr> pinned_blocks;
 
-    /// TODO: In file, blocks would be grouped, each group compressed (zstd?) and read together.
-    ///       Because we probably want smaller blocks for BlockData's delta compression than for
-    ///       file IO, at least on S3.
-    ///       Another std::vector here would list block groups and their offsets in file.
-    ///       When reading a group of blocks, put them all in BlockCache; if already in cache, leave
-    ///       it and point `data` to the old copy, to avoid invalidating BlockWeakRef-s in
-    ///       NodeRefCache unnecessarily.
+    /// Nodes that have children added or removed in this file.
+    /// Used for early-out in `listChildrenNames` calls.
+    std::optional<DB::BloomFilter> parent_paths_filter;
 
-    /// TODO: Bloom filter of nodes with at least one child.
     /// TODO: Consider storing children index.
+
+    /// If delete_when_destroyed, enqueues the file to file_deleter.
+    ~SortedFile();
 
     /// Gets from cache or reads from file. Thread safe.
     BlockPtr getOrLoadBlock(uint32_t block_idx, BlockCache * block_cache) const;
 
     /// See SortedRun for explanation of these methods.
     BlockPtr getBlockCoveringPath(NodePath path, BlockCache * block_cache) const;
-    void listChildrenNames(NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const;
+    void listChildrenNames(NodePath range_start, NodePath range_end, UInt128 parent_path_hash, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const;
+
+    /// Assigns `read_buffer`. Must be called before first call to any of the read methods above.
+    void prepareReadBuffer(StorageState * storage);
 
     /// Hint to the block cache that this file's blocks are no longer needed, e.g. the file was
     /// removed from the visible set and is pending deletion from disk.
@@ -83,8 +109,16 @@ struct SortedFile
 private:
     static uint32_t generateFileId();
 
-    BlockPtr loadBlock(uint32_t block_idx) const;
+    std::vector<BlockPtr> loadBlockGroup(uint32_t start_block_idx) const;
 };
 using SortedFilePtr = std::shared_ptr<SortedFile>;
+
+struct FileDeleteQueue
+{
+    std::mutex mutex;
+    std::deque<std::string> paths;
+
+    void enqueueFileToRemove(std::string path);
+};
 
 }

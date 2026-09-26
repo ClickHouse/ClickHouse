@@ -37,6 +37,7 @@ PRIMARY KEY(primary_key_name);
 
   `PRIMARY KEY` ne prend en charge qu’une seule colonne. La clé primaire sera sérialisée au format binaire comme clé Redis.
   Les colonnes autres que la clé primaire seront sérialisées au format binaire comme valeur Redis, dans l’ordre correspondant.
+  Les parcours complets avec `SELECT * FROM redis_table` peuvent échouer avec des erreurs de désérialisation binaire si la base de données Redis sélectionnée contient des clés ou des valeurs qui n’ont pas été écrites par ClickHouse.
 </Info>
 
 Les arguments peuvent également être transmis à l’aide de [collections nommées](/fr/concepts/features/configuration/server-config/named-collections). Dans ce cas, `host` et `port` doivent être spécifiés séparément. Cette approche est recommandée pour l’environnement de production. À l’heure actuelle, tous les paramètres transmis à Redis via des collections nommées sont obligatoires.

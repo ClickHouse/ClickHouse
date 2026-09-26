@@ -11,7 +11,6 @@ EXPLAIN QUERY TREE SELECT d.String FROM test_dynamic SETTINGS enable_analyzer = 
 SYSTEM CLEAR MARK CACHE;
 SELECT d.String FROM test_dynamic SETTINGS enable_analyzer = 1;
 SYSTEM CLEAR MARK CACHE;
-SELECT d.String FROM test_dynamic SETTINGS enable_analyzer = 0;
 SYSTEM FLUSH LOGS query_log;
 SELECT
     ProfileEvents['FileOpen']

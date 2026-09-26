@@ -32,7 +32,7 @@ doc_type: 'مرجع'
 * يكون عادةً مُمكّنًا افتراضيًا عند استخدام VPC بإدارة العميل.
 * يكون معطّلًا افتراضيًا عند استخدام VPC مخصص بإدارة ClickHouse.
 
-يمكنك العمل مع **ClickHouse Cloud Support** لتحديد نقاط النهاية المُمكّنة بما يتوافق مع متطلباتك.
+يمكنك تمكين موازن التحميل الخاص لبنية BYOC التحتية لديك مباشرةً في ClickHouse Cloud console. ولإجراء تعديلات أخرى على نقاط النهاية (مثل إزالة موازن التحميل العام)، تواصل مع **ClickHouse Cloud Support**.
 
 <div id="private-load-balancer-security-group">
   ### مجموعة الأمان لموازن التحميل الخاص على AWS
@@ -53,10 +53,10 @@ doc_type: 'مرجع'
 </Note>
 
 <div id="privatelink-or-private-service-connect">
-  ## PrivateLink أو Private Service Connect
+  ## PrivateLink أو Private Service Connect أو Private Link
 </div>
 
-لتحقيق أقصى درجات عزل الشبكة والأمان، يمكن لعمليات النشر بنموذج BYOC استخدام **AWS PrivateLink** أو **GCP Private Service Connect**. تتيح هذه الخيارات لتطبيقاتك الاتصال بخدمات ClickHouse Cloud عبر اتصال خاص، من دون الحاجة إلى VPC peering أو تعريض نقاط النهاية للإنترنت العام.
+لتحقيق أقصى درجات عزل الشبكة والأمان، يمكن لعمليات النشر بنموذج BYOC استخدام **AWS PrivateLink** أو **GCP Private Service Connect** أو **Azure Private Link**. تتيح هذه الخيارات لتطبيقاتك الاتصال بخدمات ClickHouse Cloud عبر اتصال خاص، من دون الحاجة إلى VPC/VNet peering أو تعريض نقاط النهاية للإنترنت العام.
 
 للحصول على تعليمات إعداد خطوة بخطوة، راجع [دليل إعداد الشبكات الخاصة](/ar/products/bring-your-own-cloud/onboarding/network).
 

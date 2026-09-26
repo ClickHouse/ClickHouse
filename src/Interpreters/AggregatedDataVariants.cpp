@@ -56,6 +56,10 @@ auto constructWithReserveIfPossible(size_t size_hint)
 
 void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
 {
+    /// `init` also reinitializes a table after an external-aggregation flush, so preserve
+    /// whether the heap rejected anything before the old method is replaced.
+    top_k_heap_ever_rejected = topKHeapEverRejected();
+
     switch (type_)
     {
         case Type::EMPTY:
@@ -91,6 +95,70 @@ size_t AggregatedDataVariants::size() const
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
+}
+
+bool AggregatedDataVariants::topKHeapEverRejected() const
+{
+    if (top_k_heap_ever_rejected)
+        return true;
+
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            return false;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            return (NAME)->top_k_heap.everRejected();
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+}
+
+void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
+{
+    chassert(!aggregator);
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            break;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            (NAME).reset(); \
+            break;
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+    without_key = nullptr;
+    aggregates_pools.clear();
+    aggregates_pool = nullptr;
+    aggregator = nullptr;
+    type = Type::EMPTY;
+}
+
+size_t AggregatedDataVariants::allocatedBytes() const
+{
+    size_t res = 0;
+    for (const auto & pool : aggregates_pools)
+        res += pool->allocatedBytes();
+
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            break;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            res += (NAME)->data.getBufferSizeInBytes(); \
+            break;
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+    return res;
 }
 
 size_t AggregatedDataVariants::sizeWithoutOverflowRow() const
@@ -146,7 +214,12 @@ bool AggregatedDataVariants::isTwoLevel() const
 
 bool AggregatedDataVariants::isConvertibleToTwoLevel() const
 {
-    switch (type)
+    return isConvertibleToTwoLevel(type);
+}
+
+bool AggregatedDataVariants::isConvertibleToTwoLevel(Type type_)
+{
+    switch (type_)
     {
     #define M(NAME) \
         case Type::NAME: \
@@ -172,6 +245,7 @@ void AggregatedDataVariants::convertToTwoLevel()
 #define M(NAME) \
         case Type::NAME: \
             NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*(NAME)); \
+            (NAME ## _two_level)->top_k_heap = std::move((NAME)->top_k_heap); \
             (NAME).reset(); \
             type = Type::NAME ## _two_level; \
             break;

@@ -815,13 +815,11 @@ MergeTreeIndexSubstreams MergeTreeIndexVectorSpann::getSubstreams() const
     };
 }
 
-MergeTreeIndexFormat MergeTreeIndexVectorSpann::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+/// The invalidated-system-column and type-compatibility checks are applied by `IMergeTreeIndex::getDeserializedFormat`.
+MergeTreeIndexFormat MergeTreeIndexVectorSpann::getPhysicalFormat(
+    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
 {
-    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
-        if (part.isSystemColumnInvalidated(column))
-            return {0, {}};
-
-    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", &storage))
         return {1, getSubstreams()};
     return {0, {}};
 }
