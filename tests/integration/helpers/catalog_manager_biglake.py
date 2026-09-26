@@ -758,7 +758,7 @@ class BigLakeCatalogManager(CatalogManager):
         node.query(
             f"""
 DROP DATABASE IF EXISTS {database_name};
-SET allow_experimental_database_iceberg=1;
+SET allow_database_iceberg=1;
 CREATE DATABASE {database_name} ENGINE = DataLakeCatalog('{BIGLAKE_CATALOG_URL}')
 SETTINGS
     catalog_type='biglake',
