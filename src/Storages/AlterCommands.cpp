@@ -149,6 +149,38 @@ void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChange
     }
 }
 
+/// Rebuilds the implicit minmax indices from the `SETTINGS` clause. A setting dropped from it falls
+/// back to `settings_defaults`, the engine's config defaults. Engines without implicit indices pass none.
+void refreshSettingsDerivedMetadata(
+    StorageInMemoryMetadata & metadata, const MergeTreeSettings * settings_defaults, ContextPtr context)
+{
+    if (!settings_defaults)
+        return;
+
+    MergeTreeSettings effective_settings = *settings_defaults;
+    for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
+    {
+        if (MergeTreeSettings::hasBuiltin(change.name))
+            effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
+    }
+
+    metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
+    metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
+    metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
+    metadata.add_minmax_index_for_block_number_column
+        = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
+    metadata.add_minmax_index_for_block_offset_column
+        = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
+
+    for (const auto & column : metadata.columns)
+    {
+        metadata.dropImplicitIndicesForColumn(column.name);
+        metadata.addImplicitIndicesForColumn(column, context);
+    }
+    metadata.dropImplicitIndicesForVirtualColumns();
+    metadata.addImplicitIndicesForVirtualColumns(context);
+}
+
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
 {
     if (property.empty())
@@ -323,7 +355,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.codec = ast_col_decl.getCodec();
 
         if (ast_col_decl.getSettings())
-            command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
+            parseSettingsChangesAndResets(
+                ast_col_decl.getSettings()->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
 
         if (ast_col_decl.getStatisticsDesc())
             command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
@@ -331,7 +364,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
         if (command_ast->settings_changes)
         {
-            command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+            parseSettingsChangesAndResets(
+                command_ast->settings_changes->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
             command.append_column_setting = true;
         }
 
@@ -609,7 +643,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_DATABASE_SETTING;
-        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        const auto & set_query = command_ast->settings_changes->as<ASTSetQuery &>();
+        /// Databases have no `RESET SETTING`: an engine applies only the changes, so the reset would be
+        /// silently dropped and would also skip the engine checks on the setting it removes.
+        if (!set_query.default_settings.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot reset setting {}: ALTER DATABASE does not support resetting a setting to DEFAULT",
+                backQuote(set_query.default_settings.front()));
+        command.settings_changes = set_query.changes;
         return command;
     }
     if (command_ast->type == ASTAlterCommand::RESET_SETTING)
@@ -717,12 +759,50 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
 }
 
 
+std::optional<AlterCommand> AlterCommand::extractSettingsResets()
+{
+    if (type != MODIFY_SETTING || settings_resets.empty())
+        return {};
+
+    if (settings_changes.empty())
+    {
+        type = RESET_SETTING;
+        return {};
+    }
+
+    AlterCommand reset_command;
+    reset_command.ast = ast;
+    reset_command.type = RESET_SETTING;
+    reset_command.settings_resets = std::move(settings_resets);
+    settings_resets.clear();
+    return reset_command;
+}
+
+
 void AlterCommand::apply(
-    StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const ColumnsDescription * columns_before_alter) const
+    StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool share_nested_offsets,
+    const ColumnsDescription * columns_before_alter,
+    const MergeTreeSettings * settings_defaults) const
 {
     /// Helper function for column existence check with IF EXISTS
     auto should_skip_column_operation = [&]() -> bool {
         return if_exists && !metadata.columns.has(column_name);
+    };
+
+    /// validate() screens these column names too, but against a model that tracks only ADD/DROP/MODIFY/RENAME
+    /// COLUMN - not MODIFY QUERY, which replaces a materialized view's columns with its new query's output.
+    auto skip_absent_column_or_fail = [&](std::string_view action) -> bool
+    {
+        if (should_skip_column_operation())
+            return true;
+        if (metadata.columns.has(column_name))
+            return false;
+
+        auto message = PreformattedMessage::create("Wrong column name. Cannot find column {} to {}", backQuote(column_name), action);
+        metadata.columns.appendHintsMessage(message.text, column_name);
+        throw Exception(std::move(message), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
     };
 
     if (type == ADD_COLUMN)
@@ -786,7 +866,7 @@ void AlterCommand::apply(
     }
     else if (type == MODIFY_COLUMN)
     {
-        if (should_skip_column_operation())
+        if (skip_absent_column_or_fail("modify"))
             return;
         metadata.columns.modify(column_name, after_column, first, [&](ColumnDescription & column)
         {
@@ -905,7 +985,7 @@ void AlterCommand::apply(
     }
     else if (type == COMMENT_COLUMN)
     {
-        if (should_skip_column_operation())
+        if (skip_absent_column_or_fail("comment"))
             return;
 
         metadata.columns.modify(column_name,
@@ -1230,32 +1310,7 @@ void AlterCommand::apply(
                 std::remove_if(it + 1, settings_from_storage.end(), same_setting), settings_from_storage.end());
         }
 
-        MergeTreeSettings effective_settings;
-        bool any_mt_setting = false;
-        for (const auto & change : settings_from_storage)
-        {
-            if (MergeTreeSettings::hasBuiltin(change.name))
-            {
-                effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
-                any_mt_setting = true;
-            }
-        }
-        if (any_mt_setting)
-        {
-            metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
-            metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
-            metadata.add_minmax_index_for_temporal_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_temporal_columns];
-            metadata.add_minmax_index_for_block_number_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_number_column] && effective_settings[MergeTreeSetting::enable_block_number_column];
-            metadata.add_minmax_index_for_block_offset_column = effective_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column] && effective_settings[MergeTreeSetting::enable_block_offset_column];
-
-            for (const auto & column : metadata.columns)
-            {
-                metadata.dropImplicitIndicesForColumn(column.name);
-                metadata.addImplicitIndicesForColumn(column, context);
-            }
-            metadata.dropImplicitIndicesForVirtualColumns();
-            metadata.addImplicitIndicesForVirtualColumns(context);
-        }
+        refreshSettingsDerivedMetadata(metadata, settings_defaults, context);
     }
     else if (type == RESET_SETTING)
     {
@@ -1263,6 +1318,7 @@ void AlterCommand::apply(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
         resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
+        refreshSettingsDerivedMetadata(metadata, settings_defaults, context);
     }
     else if (type == RENAME_COLUMN)
     {
@@ -1760,7 +1816,11 @@ bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & met
     return false;
 }
 
-void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
+void AlterCommands::apply(
+    StorageInMemoryMetadata & metadata,
+    ContextPtr context,
+    bool share_nested_offsets,
+    const MergeTreeSettings * settings_defaults) const
 {
     if (!prepared)
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Alter commands is not prepared. Cannot apply. It's a bug");
@@ -1768,8 +1828,10 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     auto metadata_copy = metadata;
 
     for (const AlterCommand & command : *this)
+    {
         if (!command.ignore)
-            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns);
+            command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, settings_defaults);
+    }
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);

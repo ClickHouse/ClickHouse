@@ -1,0 +1,3 @@
+run	a_follower_did_the_reading	every_follower_pruned_the_broadcast_read
+05099_plan_based_no_prewhere	1	1
+05099_plan_based_prewhere	1	1
