@@ -49,6 +49,7 @@ extern const Event AutoParallelReplicasCostModelEvaluated;
 extern const Event AutoParallelReplicasApplied;
 extern const Event AutoParallelReplicasSkippedEarly;
 extern const Event AutoParallelReplicasRejectedByThreshold;
+extern const Event AutoParallelReplicasRejectedByCostModel;
 extern const Event AutoParallelReplicasBytesPerReplica;
 }
 
@@ -992,6 +993,14 @@ void considerEnablingParallelReplicas(
                 /// there did not get the optimization applied to it.
                 ProfileEvents::increment(ProfileEvents::AutoParallelReplicasApplied);
                 return;
+            }
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::AutoParallelReplicasRejectedByCostModel);
+                LOG_TRACE(
+                    getLogger("AutoParallelReplicas"),
+                    "The cost model does not favour parallel replicas for hash {}. Not enabling parallel replicas reading",
+                    single_replica_plan_node_hash);
             }
         }
     }
