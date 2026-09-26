@@ -102,13 +102,13 @@ CDC（変更データキャプチャ）ClickPipes では、コンピュートは
 <Accordion title="既存の月額 ClickHouse Cloud 利用額に対して、CDC ClickPipes による追加コストはどの程度見込まれますか？">
   コストへの影響は、ユースケース、データ量、組織ティアによって大きく異なります。ほとんどのお客様では、基準となる月額 ClickHouse Cloud 利用額に対して **5～25%** 増加しますが、利用額の少ないサービスではこれを超える場合があります。CDC ClickPipes のコストは効率的にスケールします。同じサービス内のすべての CDC ClickPipes でコンピュートが共有されるため、新しい ClickPipes を追加しても、取り込みデータ量に応じたわずかな追加コストしか発生しません。
 
-  `Billing Status` で **free** と表示される CDC ClickPipes コネクタについては、ClickPipes UI のデータ量メトリクス (**Metrics** &gt; **CDC bytes** および **Initial load bytes**) と ClickHouse Cloud の [Prometheus 互換エンドポイント](/integrations/clickpipes/monitoring)を基に、将来のコストを見積もることができます。
+  `Billing Status` で **free** と表示される CDC ClickPipes コネクタについては、ClickPipes UI のデータ量メトリクス (**Metrics** &gt; **CDC bytes** および **Initial load bytes**) と ClickHouse Cloud の [Prometheus 互換エンドポイント](/ja/integrations/clickpipes/monitoring)を基に、将来のコストを見積もることができます。
 </Accordion>
 
 <Accordion title="ClickHouse Cloud の請求書では、CDC ClickPipes のコストをどこで確認できますか？">
   CDC ClickPipes のコストは、ClickHouse Cloud の請求書で `Entity Type` が `clickpipe` の個別明細として表示され、料金ディメンション (`ClickPipe Data Transfer ($)`、`ClickPipe Compute ($)`、`ClickPipe Initial Load and Resyncs ($)`) 別に分類されます。
 
-  請求の照合には、ClickPipes UI (**Metrics** &gt; **CDC bytes** および **Initial load bytes**) でリアルタイムのデータ量メトリクスを監視するか、ClickHouse Cloud の [Prometheus 互換エンドポイント](/integrations/clickpipes/monitoring)を使用して、これらのメトリクスを既存の監視スタックに取り込むことができます。
+  請求の照合には、ClickPipes UI (**Metrics** &gt; **CDC bytes** および **Initial load bytes**) でリアルタイムのデータ量メトリクスを監視するか、ClickHouse Cloud の [Prometheus 互換エンドポイント](/ja/integrations/clickpipes/monitoring)を使用して、これらのメトリクスを既存の監視スタックに取り込むことができます。
 </Accordion>
 
 <Accordion title="CDC ClickPipes は ClickHouse Cloud サービスがアイドル状態になるのを防ぎますか？">

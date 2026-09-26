@@ -101,13 +101,13 @@ $$\$30 \text{ (CDC)} + \$146 \text{ (الحوسبة)} = \$176 \text{ شهريً�
 <Accordion title="ما التكلفة الإضافية المتوقعة لـ CDC ClickPipes ضمن إنفاقي الشهري الحالي على ClickHouse Cloud؟">
   يتفاوت تأثير التكلفة بدرجة كبيرة بحسب حالة الاستخدام ووحدة تخزين البيانات ومستوى المؤسسة. يلاحظ معظم العملاء زيادة بنسبة **5–25%** مقارنةً بإنفاقهم الشهري الأساسي على ClickHouse Cloud، إلا أن الخدمات ذات الإنفاق الأقل قد تتجاوز هذه النسبة. ومن المهم ملاحظة أن تكلفة CDC ClickPipes تتوسع بكفاءة عالية جدًا: إذ تكون موارد الحوسبة مشتركة بين جميع CDC ClickPipes ضمن الخدمة نفسها، لذلك لا تؤدي إضافة ClickPipes جديدة إلا إلى تكلفة هامشية تعتمد على وحدة تخزين البيانات المُستوعبة.
 
-  بالنسبة إلى موصلات CDC ClickPipes المُعلَّمة بأنها **مجانية** ضمن `حالة الفوترة`، يمكنك تقدير التكاليف المستقبلية استنادًا إلى مقاييس وحدة تخزين البيانات المتوفرة في واجهة ClickPipes (**Metrics** &gt; **CDC bytes** و**Initial load bytes**) وعبر [نقطة النهاية المتوافقة مع Prometheus](/integrations/clickpipes/monitoring) في ClickHouse Cloud.
+  بالنسبة إلى موصلات CDC ClickPipes المُعلَّمة بأنها **مجانية** ضمن `حالة الفوترة`، يمكنك تقدير التكاليف المستقبلية استنادًا إلى مقاييس وحدة تخزين البيانات المتوفرة في واجهة ClickPipes (**Metrics** &gt; **CDC bytes** و**Initial load bytes**) وعبر [نقطة النهاية المتوافقة مع Prometheus](/ar/integrations/clickpipes/monitoring) في ClickHouse Cloud.
 </Accordion>
 
 <Accordion title="أين يمكنني الاطلاع على تكاليف CDC ClickPipes في فاتورة ClickHouse Cloud؟">
   تُدرج تكاليف CDC ClickPipes كبنود منفصلة في فاتورة ClickHouse Cloud، حيث تكون قيمة `Entity Type` هي `clickpipe`، ومقسّمة حسب بُعد التسعير (`ClickPipe Data Transfer ($)`، `ClickPipe Compute ($)`، `ClickPipe Initial Load and Resyncs ($)`).
 
-  لمطابقة الفوترة، يمكنك مراقبة مقاييس وحدة تخزين البيانات في الوقت الفعلي من واجهة ClickPipes (**Metrics** &gt; **CDC bytes** و**Initial load bytes**)، أو إدخال هذه المقاييس إلى حزمة المراقبة الحالية لديك باستخدام [نقطة النهاية المتوافقة مع Prometheus](/integrations/clickpipes/monitoring) في ClickHouse Cloud.
+  لمطابقة الفوترة، يمكنك مراقبة مقاييس وحدة تخزين البيانات في الوقت الفعلي من واجهة ClickPipes (**Metrics** &gt; **CDC bytes** و**Initial load bytes**)، أو إدخال هذه المقاييس إلى حزمة المراقبة الحالية لديك باستخدام [نقطة النهاية المتوافقة مع Prometheus](/ar/integrations/clickpipes/monitoring) في ClickHouse Cloud.
 </Accordion>
 
 <Accordion title="هل تمنع CDC ClickPipes خدمة ClickHouse Cloud من الدخول في حالة الخمول؟">

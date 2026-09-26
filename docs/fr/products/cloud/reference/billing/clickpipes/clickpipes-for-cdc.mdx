@@ -101,13 +101,13 @@ La tarification des connecteurs CDC pour l’entreposage de données est en cour
 <Accordion title="À quel surcoût dois-je m'attendre avec les ClickPipes CDC dans mes dépenses mensuelles ClickHouse Cloud actuelles ?">
   L&#39;incidence sur les coûts varie considérablement selon votre cas d&#39;utilisation, votre volume de données et le niveau de votre organisation. La plupart des clients constatent une augmentation de **5 à 25 %** par rapport à leurs dépenses mensuelles ClickHouse Cloud de référence, bien que ce pourcentage puisse être plus élevé pour les services dont les dépenses sont faibles. Il est important de noter que le coût des ClickPipes CDC évolue très efficacement : la capacité de calcul est partagée entre tous les ClickPipes CDC d&#39;un même service. L&#39;ajout de nouveaux ClickPipes n&#39;entraîne donc qu&#39;un coût marginal, en fonction du volume de données ingérées.
 
-  Pour les connecteurs ClickPipes CDC indiqués comme **gratuits** dans `Billing Status`, vous pouvez estimer les coûts futurs à partir des métriques de volume de données disponibles dans l&#39;interface utilisateur de ClickPipes (**Metrics** &gt; **CDC bytes** et **Initial load bytes**) et via l&#39;[endpoint compatible avec Prometheus](/integrations/clickpipes/monitoring) de ClickHouse Cloud.
+  Pour les connecteurs ClickPipes CDC indiqués comme **gratuits** dans `Billing Status`, vous pouvez estimer les coûts futurs à partir des métriques de volume de données disponibles dans l&#39;interface utilisateur de ClickPipes (**Metrics** &gt; **CDC bytes** et **Initial load bytes**) et via l&#39;[endpoint compatible avec Prometheus](/fr/integrations/clickpipes/monitoring) de ClickHouse Cloud.
 </Accordion>
 
 <Accordion title="Où puis-je consulter les coûts des ClickPipes CDC sur ma facture ClickHouse Cloud ?">
   Les coûts des ClickPipes CDC figurent sous forme de lignes distinctes sur votre facture ClickHouse Cloud, avec `clickpipe` comme `Entity Type`, ventilées par dimension tarifaire (`ClickPipe Data Transfer ($)`, `ClickPipe Compute ($)`, `ClickPipe Initial Load and Resyncs ($)`).
 
-  Pour le rapprochement de la facturation, vous pouvez surveiller les métriques de volume de données en temps réel dans l&#39;interface utilisateur de ClickPipes (**Metrics** &gt; **CDC bytes** et **Initial load bytes**) ou intégrer ces métriques à votre stack de monitoring existante à l&#39;aide de l&#39;[endpoint compatible avec Prometheus](/integrations/clickpipes/monitoring) de ClickHouse Cloud.
+  Pour le rapprochement de la facturation, vous pouvez surveiller les métriques de volume de données en temps réel dans l&#39;interface utilisateur de ClickPipes (**Metrics** &gt; **CDC bytes** et **Initial load bytes**) ou intégrer ces métriques à votre stack de monitoring existante à l&#39;aide de l&#39;[endpoint compatible avec Prometheus](/fr/integrations/clickpipes/monitoring) de ClickHouse Cloud.
 </Accordion>
 
 <Accordion title="Les ClickPipes CDC empêchent-ils mon service ClickHouse Cloud de se mettre en veille ?">
