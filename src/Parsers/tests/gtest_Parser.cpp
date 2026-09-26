@@ -296,8 +296,8 @@ TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
 
 TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
 {
-    /// A `nats_url` override can carry the credentials in its userinfo. Only the password is hidden,
-    /// keeping the rest of the url visible, the same way the `SETTINGS` clause form is masked.
+    /// A `nats_url` override carrying an '@' is hidden whole, the same way the `SETTINGS` clause form
+    /// is masked: libnats reads a credential that no URI masker can bound.
     const String query =
         "CREATE TABLE test_nats (key UInt64) "
         "ENGINE = NATS(nats1, nats_url = 'nats://plain_user:plain_password@example.com:4222')";
@@ -308,7 +308,8 @@ TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
     const String masked = ast->formatForLogging();
 
     EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_NE(masked.find("nats://plain_user:[HIDDEN]@example.com:4222"), String::npos);
+    EXPECT_EQ(masked.find("plain_user"), String::npos);
+    EXPECT_NE(masked.find("nats_url = '[HIDDEN]'"), String::npos);
 }
 
 TEST(ParserCreateQuery, MaskNATSTableEngineServerListPassword)
@@ -377,6 +378,158 @@ TEST(ParserCreateQuery, MaskNATSTableEnginePositionalArguments)
     /// The collection name is the one legitimate positional argument and stays visible.
     EXPECT_NE(masked.find("nats1"), String::npos);
     EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskXDBCTableEnginePositionalAfterCollection)
+{
+    /// After a collection name every XDBC argument must be a named override, but the statement is
+    /// formatted for logging before validation rejects a positional one, and that positional can be
+    /// the connection string itself. The engine spelling takes more positional arguments than the
+    /// table function does, so it is asserted separately.
+    const String query =
+        "CREATE TABLE test_jdbc (key UInt64) "
+        "ENGINE = JDBC(jdbc1, 'DSN=mydb;Uid=user;Pwd=plain_password', 'mydb', 'mytable')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("Uid=user"), String::npos);
+    /// The collection name is the one legitimate positional argument and stays visible.
+    EXPECT_NE(masked.find("jdbc1"), String::npos);
+    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
+
+    /// A named override of the same connection string keeps its key visible, as before.
+    const String named_query =
+        "CREATE TABLE test_jdbc (key UInt64) "
+        "ENGINE = JDBC(jdbc1, datasource = 'DSN=mydb;Uid=user;Pwd=plain_named_password', "
+        "external_database = 'mydb', external_table = 'mytable')";
+
+    DB::ASTPtr named_ast = DB::parseQuery(parser, named_query, 0, 0, 0);
+    const String named_masked = named_ast->formatForLogging();
+
+    EXPECT_EQ(named_masked.find("plain_named_password"), String::npos);
+    EXPECT_NE(named_masked.find("datasource = '[HIDDEN]'"), String::npos);
+    /// The non-secret named arguments stay visible: the positional scan must not widen to them.
+    EXPECT_NE(named_masked.find("external_table = 'mytable'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskXDBCNamedArgumentsWithoutCollection)
+{
+    /// A named argument at index 0 is not a collection name, so this call is not the positional form:
+    /// the connection string can be under either alias at any index, and the statement is formatted
+    /// for logging before validation rejects it.
+    const String query =
+        "CREATE TABLE test_jdbc (key UInt64) ENGINE = JDBC(external_database = 'mydb', "
+        "datasource = 'DSN=mydb;Uid=user;Pwd=plain_password')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("Uid=user"), String::npos);
+    EXPECT_NE(masked.find("datasource = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskRabbitMQTableEngineCredentials)
+{
+    /// `RabbitMQ` also takes its settings as overrides of a named collection, so the same credentials
+    /// reach `SHOW CREATE TABLE` through the engine arguments and through the `SETTINGS` clause.
+    const String query =
+        "CREATE TABLE test_rabbitmq (key UInt64) ENGINE = RabbitMQ(rabbitmq1, "
+        "rabbitmq_password = 'plain_password', "
+        "rabbitmq_address = 'amqp://plain_user:plain_address_password@example.com:5672/vhost')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_address_password"), String::npos);
+    EXPECT_EQ(masked.find("plain_user"), String::npos);
+    /// The keys of the named overrides are not secrets and stay visible, as does the collection name.
+    EXPECT_NE(masked.find("rabbitmq1"), String::npos);
+    EXPECT_NE(masked.find("rabbitmq_password = '[HIDDEN]'"), String::npos);
+    EXPECT_NE(masked.find("rabbitmq_address = '[HIDDEN]'"), String::npos);
+
+    /// An address with no '@' carries no credential and stays fully visible.
+    const String control_query =
+        "CREATE TABLE test_rabbitmq (key UInt64) "
+        "ENGINE = RabbitMQ(rabbitmq1, rabbitmq_address = 'amqp://example.com:5672/vhost')";
+
+    DB::ASTPtr control_ast = DB::parseQuery(parser, control_query, 0, 0, 0);
+    EXPECT_NE(control_ast->formatForLogging().find("amqp://example.com:5672/vhost"), String::npos);
+
+    /// The `SETTINGS` clause form is masked by `RabbitMQ::SETTINGS_TO_HIDE` and must agree.
+    const String settings_query =
+        "CREATE TABLE test_rabbitmq_settings (key UInt64) ENGINE = RabbitMQ "
+        "SETTINGS rabbitmq_password = 'plain_settings_password'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
+    EXPECT_NE(settings_masked.find("rabbitmq_password = '[HIDDEN]'"), String::npos);
+}
+
+TEST(ParserCreateQuery, MaskKafkaTableEngineCredentials)
+{
+    /// `Kafka` reads named overrides of a collection too, so `kafka_sasl_password` needs masking in the
+    /// engine arguments and not only in the `SETTINGS` clause.
+    const String query =
+        "CREATE TABLE test_kafka (key UInt64) ENGINE = Kafka(kafka1, kafka_sasl_password = 'plain_password')";
+
+    DB::ParserCreateQuery parser;
+    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
+
+    const String masked = ast->formatForLogging();
+
+    EXPECT_EQ(masked.find("plain_password"), String::npos);
+    EXPECT_NE(masked.find("kafka1"), String::npos);
+    EXPECT_NE(masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
+
+    /// Unlike `NATS` and `RabbitMQ`, `Kafka` accepts a legacy positional form whose arguments are all
+    /// non-secret, so a positional argument must stay visible rather than fail closed.
+    const String positional_query =
+        "CREATE TABLE test_kafka (key UInt64) "
+        "ENGINE = Kafka('broker:9092', 'topic', 'group', 'JSONEachRow')";
+
+    DB::ASTPtr positional_ast = DB::parseQuery(parser, positional_query, 0, 0, 0);
+    const String positional_masked = positional_ast->formatForLogging();
+
+    EXPECT_NE(positional_masked.find("broker:9092"), String::npos);
+    EXPECT_NE(positional_masked.find("group"), String::npos);
+    EXPECT_EQ(positional_masked.find("[HIDDEN]"), String::npos);
+
+    /// The legacy positional form makes the collection name optional, so a named argument can be the
+    /// first one, and the statement is formatted for logging before it is rejected.
+    const String first_arg_query =
+        "CREATE TABLE test_kafka (key UInt64) "
+        "ENGINE = Kafka(kafka_sasl_password = 'plain_first_password', 'clickhouse')";
+
+    DB::ASTPtr first_arg_ast = DB::parseQuery(parser, first_arg_query, 0, 0, 0);
+    const String first_arg_masked = first_arg_ast->formatForLogging();
+
+    EXPECT_EQ(first_arg_masked.find("plain_first_password"), String::npos);
+    EXPECT_NE(first_arg_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
+    /// The positional argument beside it is not a secret and stays visible.
+    EXPECT_NE(first_arg_masked.find("'clickhouse'"), String::npos);
+
+    /// The `SETTINGS` clause form is masked by `Kafka::SETTINGS_TO_HIDE` and must agree.
+    const String settings_query =
+        "CREATE TABLE test_kafka_settings (key UInt64) ENGINE = Kafka "
+        "SETTINGS kafka_sasl_password = 'plain_settings_password'";
+
+    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
+    const String settings_masked = settings_ast->formatForLogging();
+
+    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
+    EXPECT_NE(settings_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
 }
 
 TEST_P(ParserTest, parseQuery)
