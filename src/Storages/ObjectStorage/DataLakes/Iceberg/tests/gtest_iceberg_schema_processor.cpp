@@ -512,3 +512,82 @@ TEST(IcebergSchemaProcessor, GetSimpleTypeDecimalSignOnlyScaleThrows)
 {
     EXPECT_THROW(IcebergSchemaProcessor::getSimpleType("decimal(20,+)"), DB::Exception);
 }
+
+/// A ClickHouse identifier resolves a flattened name to one column or subcolumn, so a name that two
+/// of them share denotes neither. Here a top-level field literally named `s.c` and the `c` element of
+/// the struct `s` both flatten to `s.c`, while the sibling element `s.d` stays unambiguous.
+TEST(IcebergSchemaProcessor, FlatNameSharedByTopLevelFieldAndStructElement)
+{
+    auto schema = parseSchema(R"json({"schema-id":0,"fields":[
+        {"id":1,"name":"id","required":false,"type":"long"},
+        {"id":2,"name":"s","required":false,"type":{"type":"struct","fields":[
+            {"id":3,"name":"c","required":false,"type":"string"},
+            {"id":4,"name":"d","required":false,"type":"long"}]}},
+        {"id":5,"name":"s.c","required":false,"type":"string"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(schema);
+
+    EXPECT_FALSE(processor.flatNameIdentifiesOneColumn(0, "s.c"));
+    EXPECT_TRUE(processor.flatNameIdentifiesOneColumn(0, "s.d"));
+    EXPECT_TRUE(processor.flatNameIdentifiesOneColumn(0, "s"));
+    EXPECT_TRUE(processor.flatNameIdentifiesOneColumn(0, "id"));
+}
+
+/// Subcolumn flattening reaches through an array of structs, so the `b` element of the `s.a` element
+/// struct occupies the flattened name `s.a.b` beside the sibling element literally named `a.b`. Their
+/// Iceberg full names differ (`s.a.element.b` and `s.a.b`), so field bookkeeping does not see the clash.
+TEST(IcebergSchemaProcessor, FlatNameSharedByArrayDescendantAndStructElement)
+{
+    auto schema = parseSchema(R"json({"schema-id":0,"fields":[
+        {"id":1,"name":"id","required":false,"type":"long"},
+        {"id":2,"name":"s","required":false,"type":{"type":"struct","fields":[
+            {"id":3,"name":"a","required":false,"type":{"type":"list","element-id":4,"element-required":false,
+                "element":{"type":"struct","fields":[{"id":5,"name":"b","required":false,"type":"long"}]}}},
+            {"id":6,"name":"a.b","required":false,"type":"long"}]}}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(schema);
+
+    EXPECT_FALSE(processor.flatNameIdentifiesOneColumn(0, "s.a.b"));
+    EXPECT_TRUE(processor.flatNameIdentifiesOneColumn(0, "s.a"));
+}
+
+/// A name no column or subcolumn of the schema flattens to is not identified either, so an absent
+/// name is declined rather than read as unambiguous.
+TEST(IcebergSchemaProcessor, FlatNameAbsentFromSchemaIsNotIdentified)
+{
+    auto schema = parseSchema(R"json({"schema-id":0,"fields":[
+        {"id":1,"name":"id","required":false,"type":"long"},
+        {"id":2,"name":"s","required":false,"type":{"type":"struct","fields":[
+            {"id":3,"name":"c","required":false,"type":"string"}]}}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(schema);
+
+    EXPECT_TRUE(processor.flatNameIdentifiesOneColumn(0, "s.c"));
+    EXPECT_FALSE(processor.flatNameIdentifiesOneColumn(0, "no.such.name"));
+}
+
+/// The census counts names rather than marking them, and the paths outlive nothing, so both have to
+/// go when a metadata.json copy replaces a schema that came from a manifest header: a retained count
+/// reads as a second column sharing the name, and a retained path describes a field that is gone.
+TEST(IcebergSchemaProcessor, ReplacingManifestSchemaDropsFlatNamesAndPaths)
+{
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[
+        {"id":1,"name":"s","required":false,"type":{"type":"struct","fields":[
+            {"id":2,"name":"c","required":false,"type":"string"},
+            {"id":3,"name":"dropped","required":false,"type":"long"}]}}]})json");
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[
+        {"id":1,"name":"s","required":false,"type":{"type":"struct","fields":[
+            {"id":2,"name":"c","required":false,"type":"string"}]}}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(
+        from_manifest, IcebergSchemaProcessor::SchemaSource::ManifestFile, /*tolerate_conflicting_manifest_schemas=*/true);
+    ASSERT_TRUE(processor.flatNameIdentifiesOneColumn(0, "s.c"));
+    ASSERT_EQ(processor.getFieldPath(0, 3), (DB::Names{"s", "dropped"}));
+
+    processor.addIcebergTableSchema(from_metadata);
+
+    EXPECT_TRUE(processor.flatNameIdentifiesOneColumn(0, "s.c"));
+    EXPECT_EQ(processor.getFieldPath(0, 2), (DB::Names{"s", "c"}));
+    EXPECT_FALSE(processor.tryGetFieldCharacteristics(0, 3).has_value());
+    EXPECT_THROW(processor.getFieldPath(0, 3), DB::Exception);
+}
