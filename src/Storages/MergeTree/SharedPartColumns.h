@@ -116,8 +116,6 @@ public:
     SharedPartColumns(
         NamesAndTypesList columns_,
         std::shared_ptr<const ColumnsDescription> columns_description_,
-        std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_,
-        bool collect_nested_,
         String interning_key_);
 
     /// What makes two column lists interchangeable for a data part, and therefore the interning key of a
@@ -131,13 +129,6 @@ public:
     const NamesAndTypesList columns;
     const NameToNumber column_name_to_position;
     const std::shared_ptr<const ColumnsDescription> columns_description;
-    /// Aliases `columns_description` when `Nested::collect` produces no distinct list
-    /// (or when the `share_nested_offsets` setting is disabled).
-    const std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
-    /// The `share_nested_offsets` value the bundle was built with, which shapes
-    /// `columns_description_with_collected_nested`. Read-only, but part of the interning key anyway so
-    /// that a bundle can never be shared across two values of it.
-    const bool collect_nested;
     /// Stored so that the release lookup rebuilds the key the bundle was interned under.
     const String interning_key;
 

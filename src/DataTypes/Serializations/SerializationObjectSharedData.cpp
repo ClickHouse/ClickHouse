@@ -1034,7 +1034,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObjectSharedData::des
 {
     settings.path.push_back(Substream::ObjectSharedDataStructure);
     DeserializeBinaryBulkStatePtr state = nullptr;
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings))
     {
         state = cached_state;
     }
@@ -1042,7 +1042,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObjectSharedData::des
     {
         state = std::make_shared<DeserializeBinaryBulkStateObjectSharedDataStructure>();
         /// Add state to cache so all columns/subcolumns that read from this stream will share the same state.
-        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+        addToSubstreamsDeserializeStatesCache(cache, settings, state);
     }
 
     settings.path.pop_back();
@@ -1058,7 +1058,7 @@ std::shared_ptr<SerializationObjectSharedData::ChunkStructures> SerializationObj
     /// First check if we already deserialized data from structure steam and have it in the cache.
     auto structure_path = settings.path;
     structure_path.push_back(Substream::ObjectSharedDataStructure);
-    if (const auto * cached_structure = getElementFromSubstreamsCache(cache, structure_path))
+    if (const auto * cached_structure = getElementFromSubstreamsCache(cache, settings, structure_path))
     {
         return assert_cast<const SubstreamsCacheStructureElement *>(cached_structure)->chunk_structures;
     }
@@ -1165,7 +1165,7 @@ std::shared_ptr<SerializationObjectSharedData::ChunkStructures> SerializationObj
     }
 
     /// Add deserialized data into cache.
-    addElementToSubstreamsCache(cache, structure_path, std::make_unique<SubstreamsCacheStructureElement>(result));
+    addElementToSubstreamsCache(cache, settings, structure_path, std::make_unique<SubstreamsCacheStructureElement>(result));
     return result;
 }
 
@@ -1178,7 +1178,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosChunks> SerializationOb
     auto paths_infos_path = settings.path;
     paths_infos_path.push_back(Substream::ObjectSharedDataPathsInfos);
     /// First check if we already deserialized paths infos and have it in cache.
-    if (auto * cached_paths_infos = getElementFromSubstreamsCache(cache, paths_infos_path))
+    if (auto * cached_paths_infos = getElementFromSubstreamsCache(cache, settings, paths_infos_path))
         return assert_cast<SubstreamsCachePathsInfosElement *>(cached_paths_infos)->paths_infos_chunks;
 
     /// Deserialize paths infos chunk by chunk.
@@ -1323,7 +1323,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosChunks> SerializationOb
         }
     }
 
-    addElementToSubstreamsCache(cache, paths_infos_path, std::make_unique<SubstreamsCachePathsInfosElement>(paths_infos_chunks));
+    addElementToSubstreamsCache(cache, settings, paths_infos_path, std::make_unique<SubstreamsCachePathsInfosElement>(paths_infos_chunks));
     return paths_infos_chunks;
 }
 
@@ -1338,7 +1338,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
 {
     settings.path.push_back(Substream::ObjectSharedDataData);
     /// First check if we already deserialized paths data and have it in cache.
-    if (auto * cached_paths_data = getElementFromSubstreamsCache(cache, settings.path))
+    if (auto * cached_paths_data = getElementFromSubstreamsCache(cache, settings))
     {
         settings.path.pop_back();
         return assert_cast<SubstreamsCachePathsDataElement *>(cached_paths_data)->paths_data_chunks;
@@ -1460,7 +1460,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataChunks> SerializationObj
         }
     }
 
-    addElementToSubstreamsCache(cache, settings.path, std::make_unique<SubstreamsCachePathsDataElement>(paths_data_chunks));
+    addElementToSubstreamsCache(cache, settings, std::make_unique<SubstreamsCachePathsDataElement>(paths_data_chunks));
     settings.path.pop_back();
 
     return paths_data_chunks;
@@ -1484,7 +1484,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
         /// Deserialize the shared data map and cache it for path subcolumn reads (SerializationObjectSharedDataPath).
         size_t prev_size = column.size();
         serialization_map->deserializeBinaryBulkWithMultipleStreams(column, limit, settings, shared_data_state->map_state, cache);
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings, column.getPtr(), column.size() - prev_size);
     }
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
@@ -1497,7 +1497,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             auto mutable_bucket_column = column.cloneEmpty();
             serialization_map->deserializeBinaryBulkWithMultipleStreams(*mutable_bucket_column, limit, settings, shared_data_state->bucket_map_states[bucket], cache);
             shared_data_buckets[bucket] = std::move(mutable_bucket_column);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, shared_data_buckets[bucket], shared_data_buckets[bucket]->size());
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings, shared_data_buckets[bucket], shared_data_buckets[bucket]->size());
             settings.path.pop_back();
         }
 
@@ -1813,7 +1813,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             settings.path.pop_back();
         }
 
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings, column.getPtr(), column.size() - prev_size);
     }
     else
     {

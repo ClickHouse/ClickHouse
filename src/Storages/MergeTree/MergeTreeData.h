@@ -1693,12 +1693,10 @@ protected:
     }
 
 private:
-    /// `SharedPartColumns::describeColumns` of the stored columns, plus the `share_nested_offsets` value
-    /// the bundle was built with (readers compare its descriptions against the live setting).
+    /// `SharedPartColumns::describeColumns` of the stored columns.
     struct SharedPartColumnsCacheKey
     {
         std::reference_wrapper<const String> interning_key;
-        bool collect_nested;
     };
     struct SharedPartColumnsCacheKeyHash
     {
@@ -1708,7 +1706,7 @@ private:
     {
         bool operator()(const SharedPartColumnsCacheKey & lhs, const SharedPartColumnsCacheKey & rhs) const
         {
-            return lhs.collect_nested == rhs.collect_nested && lhs.interning_key.get() == rhs.interning_key.get();
+            return lhs.interning_key.get() == rhs.interning_key.get();
         }
     };
     mutable AggregatedMetrics::GlobalSum shared_part_columns_metric_handle;

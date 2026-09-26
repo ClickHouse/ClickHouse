@@ -1,0 +1,11 @@
+values round trip
+[[(['ab',NULL])]]	{"a_long_json_path_name_here":[1,null]}
+[[(['ab',NULL])]]	{"a_long_json_path_name_here":[1,null]}
+subcolumns round trip
+1	[[['ab',NULL]]]
+1	[[['ab',NULL]]]
+[1,NULL]
+[1,NULL]
+names over the limit, then any hashed name
+0	0
+0	1

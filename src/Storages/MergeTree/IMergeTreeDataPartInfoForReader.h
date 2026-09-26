@@ -75,8 +75,6 @@ public:
 
     virtual const ColumnsDescription & getColumnsDescription() const = 0;
 
-    virtual const ColumnsDescription & getColumnsDescriptionWithCollectedNested() const = 0;
-
     virtual const ColumnsSubstreams & getColumnsSubstreams() const = 0;
 
     virtual std::optional<size_t> getColumnPosition(const String & column_name) const = 0;
@@ -127,6 +125,8 @@ public:
     virtual SerializationPtr getSerialization(const NameAndTypePair & column) const = 0;
 
     virtual const SerializationInfoByName & getSerializationInfos() const = 0;
+
+    ISerialization::StreamFileNameSettings getStreamFileNameSettings() const;
 
     virtual String getTableName() const = 0;
 

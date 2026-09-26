@@ -1,0 +1,18 @@
+array sizes against a tuple element named size0
+[(7,'ab'),(8,'cde')]	2
+tuple element named a.b beside a nested a.b
+((1),2)
+2	1
+2
+json path named object_structure
+5
+json path named null inside Nullable
+{"null":5}
+\N
+subcolumns extracted from Nullable
+(1)	1
+{'k':2}	1	['k']	[2]
+[1]
+sparse
+2	1	2
+[1,2]	ab

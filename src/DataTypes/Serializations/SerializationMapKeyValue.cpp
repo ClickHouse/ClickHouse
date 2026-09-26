@@ -156,7 +156,7 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
     }
 
     /// Reuse the nested Map column from the cache if SerializationMap or another key-value subcolumn already read this range.
-    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings))
     {
         std::tie(nested_column, num_read_rows) = *cached_column_with_num_read_rows;
     }
@@ -167,7 +167,7 @@ void SerializationMapKeyValue::deserializeBinaryBulkWithMultipleStreams(
         map_nested_serialization->deserializeBinaryBulkWithMultipleStreams(*mutable_nested_column, limit, settings, map_key_value_state->nested_state, cache);
         num_read_rows = mutable_nested_column->size();
         nested_column = std::move(mutable_nested_column);
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, nested_column, num_read_rows);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings, nested_column, num_read_rows);
     }
 
     /// Extract the value for the requested key from the deserialized Map data.

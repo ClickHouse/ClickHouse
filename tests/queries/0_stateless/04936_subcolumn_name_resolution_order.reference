@@ -1,0 +1,47 @@
+--- user-named element wins over array sizes ---
+memory	Array(UInt64)	[]
+memory	Array(UInt64)	[100,200]
+memory	Array(UInt64)	[300]
+wide	Array(UInt64)	[]
+wide	Array(UInt64)	[100,200]
+wide	Array(UInt64)	[300]
+compact	Array(UInt64)	[]
+compact	Array(UInt64)	[100,200]
+compact	Array(UInt64)	[300]
+length	0
+length	1
+length	2
+length no rewrite	0
+length no rewrite	1
+length no rewrite	2
+c	Array(Tuple(\n    size0 UInt64))						0
+c.size0	Array(UInt64)						1
+--- the shadowed element and its own subcolumns are consistent ---
+['abc']	[3]
+--- JSON path wins over an automatic name in the same namespace ---
+Array(Dynamic)	[7]
+Array(Array(Dynamic))	Array(Array(Dynamic))
+Array(Dynamic)	[9]
+1	1
+1	0	1
+arr	Array(JSON)						0
+arr2	Array(Array(JSON))						0
+tup	Tuple(\n    x Array(JSON))						0
+tup.x	Array(JSON)						1
+--- a declared path keeps its automatic subcolumns ---
+UInt64	2
+UInt64	3
+UInt8	1
+2	0	1
+2	5
+--- types with no claimant are unaffected ---
+UInt64	1
+UInt64	2
+UInt64	2	Array(UInt64)	[1,1]
+1	2	2
+Dynamic	1
+--- shared Nested offsets ---
+Array(Dynamic)	[1,2]
+UInt64	2
+2	2
+['{"size0":1}','{"size0":2}']	[10,20]

@@ -88,7 +88,6 @@ void SerializationObjectDistinctPaths::enumerateStreams(
     if (!data.deserialize_state)
         return;
 
-    settings.path.push_back(Substream::ObjectData);
     settings.path.push_back(Substream::ObjectSharedData);
 
     const auto * deserialize_state = checkAndGetState<DeserializeBinaryBulkStateObjectDistinctPaths>(data.deserialize_state);
@@ -140,7 +139,6 @@ void SerializationObjectDistinctPaths::enumerateStreams(
     }
 
     settings.path.pop_back();
-    settings.path.pop_back();
 }
 
 void SerializationObjectDistinctPaths::serializeBinaryBulkStatePrefix(
@@ -174,7 +172,6 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkStatePrefix(
     if (!object_distinct_paths_state->object_structure_state)
         return;
 
-    settings.path.push_back(Substream::ObjectData);
     settings.path.push_back(Substream::ObjectSharedData);
 
     const auto * object_structure_state = checkAndGetState<SerializationObject::DeserializeBinaryBulkStateObjectStructure>(object_distinct_paths_state->object_structure_state);
@@ -216,7 +213,6 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkStatePrefix(
     }
 
     settings.path.pop_back();
-    settings.path.pop_back();
     state = std::move(object_distinct_paths_state);
 }
 
@@ -247,7 +243,6 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
     }
 
     size_t num_new_rows = 0;
-    settings.path.push_back(Substream::ObjectData);
     settings.path.push_back(Substream::ObjectSharedData);
     switch (object_structure_state->shared_data_serialization_version.value)
     {
@@ -316,7 +311,6 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
     array_column.getOffsets().push_back(paths_column.size());
     array_column.insertManyDefaults(num_new_rows - 1);
 
-    settings.path.pop_back();
     settings.path.pop_back();
 }
 

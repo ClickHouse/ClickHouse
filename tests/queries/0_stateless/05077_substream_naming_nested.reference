@@ -1,0 +1,29 @@
+flattened, one column at a time
+[1,2]
+[1,2]
+[3,4]
+[3,4]
+flattened, both columns together
+[1,2]	[3,4]
+[1,2]	[3,4]
+flattened, offsets subcolumn
+2	2
+2	2
+flattened layout
+['n%2Eb','n%2Ec','n.size0']
+['n%2Eb.arr_elems','n%2Ec.arr_elems','n.size']
+unflattened
+[1,2]	[3,4]
+[1,2]	[3,4]
+deep elements
+[[1,2],[3]]	[(4),(5)]	['ab',NULL]
+2	[2,1]
+[4,5]
+[0,1]
+missing column of a group
+[1,2,3]	[0,0,0]
+1
+independent offsets
+[1,2]	[3,4,5]
+2	3
+['n%2Eb.arr_elems','n%2Eb.size','n%2Ec.arr_elems','n%2Ec.size']

@@ -22,7 +22,7 @@ TEST(SharedPartColumns, NonPoolableSerializationsAreNotShared)
     };
 
     auto description = std::make_shared<const ColumnsDescription>(columns);
-    SharedPartColumns bundle(columns, description, description, false, SharedPartColumns::describeColumns(columns));
+    SharedPartColumns bundle(columns, description, SharedPartColumns::describeColumns(columns));
 
     SerializationInfoByName infos{SerializationInfoSettings{}};
     auto first = bundle.getSerializations(infos);

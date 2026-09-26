@@ -69,7 +69,7 @@ void SerializationStringSize::deserializeBinaryBulkStatePrefix(
     if (version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
     {
         settings.path.push_back(Substream::Regular);
-        if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+        if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings))
         {
             state = cached_state;
         }
@@ -88,7 +88,7 @@ void SerializationStringSize::deserializeBinaryBulkStatePrefix(
             if (!cache)
                 string_state->need_string_data = true;
             state = string_state;
-            addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+            addToSubstreamsDeserializeStatesCache(cache, settings, state);
         }
         settings.path.pop_back();
     }
@@ -121,7 +121,7 @@ void SerializationStringSize::deserializeWithStringData(
     size_t num_read_rows = 0;
     ColumnPtr string_column;
 
-    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings))
     {
         std::tie(string_column, num_read_rows) = *cached_column_with_num_read_rows;
     }
@@ -136,7 +136,7 @@ void SerializationStringSize::deserializeWithStringData(
         num_read_rows = mutable_string_column->size();
         string_column = std::move(mutable_string_column);
         /// Put the full String column into the cache so that a sibling read of the actual String column reuses it.
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, string_column, num_read_rows);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings, string_column, num_read_rows);
 
         if (settings.update_avg_value_size_hint_callback)
             settings.update_avg_value_size_hint_callback(settings.path, *string_column);
@@ -180,7 +180,7 @@ void SerializationStringSize::deserializeWithoutStringData(
         }
         mutable_column_data.resize(prev_size + num_read_rows);
 
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings, column.getPtr(), num_read_rows);
     }
 }
 
@@ -205,7 +205,7 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
         if (cache)
         {
             size_t num_read_rows = column.size() - prev_size;
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings, column.getPtr(), num_read_rows);
         }
     }
 
