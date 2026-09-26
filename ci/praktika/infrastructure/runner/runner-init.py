@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import sys
 import time
 import shutil
@@ -40,7 +41,7 @@ class RunnerConfig:
     """Configuration and runtime state for the GitHub Actions runner."""
 
     # Constants
-    version: int = 76
+    version: int = 77
     init_environment: str = Environment.TEST
     verbose = False
     script_path = os.path.abspath(__file__)
@@ -220,6 +221,10 @@ class Runner:
             config.max_jobs = 1_000_000
             config.keep_workspace = True
 
+        if config.init_environment == Environment.MACOS:
+            # Drop swap files and other accumulated state; the random offset staggers reboots across the fleet.
+            config.max_life = 3600 * 24 * 3 + 900 * random.randint(0, 24)
+
         log(f"max jobs: {config.max_jobs}")
         log(f"max chill: {config.max_chill}")
         log(f"labels: {self.labels}")
@@ -238,11 +243,8 @@ class Runner:
             self.collect_logs("configure")
             raise Exception(f"Too many errors ({self.total_errors})")
 
-        # macOS runners run continuously without lifetime limits, so they exit
-        # to pick up a newer init script instead of ageing out like Linux.
         if config.init_environment == Environment.MACOS:
             self._exit_if_init_script_upgraded()
-            return
 
         runner_age = int(time.time()) - self.runner_start_time
         if config.max_life < runner_age:
@@ -345,6 +347,8 @@ class Runner:
     def run(self) -> None:
         """Main runner loop."""
         if config.init_environment == Environment.MACOS:
+            # runner-init starts once per boot; unified logs and `uuidtext` otherwise grow to several GB.
+            run_bash("log erase --all", sudo=True)
             Runner.configure_darwin()
         else:
             Runner.configure_linux()
@@ -595,6 +599,21 @@ launchctl disable system/com.apple.bluetoothd || true
 mdutil -a -i off || true
 rm -rf /.Spotlight-V100 || true
 
+# No backup destination exists, but enabled Time Machine can still take local APFS snapshots.
+tmutil disable || true
+
+# Photos analysis, Siri, iCloud and location services have no use on a runner.
+RUNNER_UID=$(id -u "$SUDO_USER")
+for agent in photoanalysisd mediaanalysisd Siri.agent assistantd cloudd bird cloudphotod; do
+    launchctl disable "gui/$RUNNER_UID/com.apple.$agent" || true
+done
+launchctl disable system/com.apple.locationd || true
+
+# Stop persisting file-change history; CI churn grows `/.fseventsd` to several GB. Takes effect after reboot.
+rm -rf /System/Volumes/Data/.fseventsd || true
+mkdir -p /System/Volumes/Data/.fseventsd
+touch /System/Volumes/Data/.fseventsd/no_log
+
 # CloudWatch agent
 case $(uname -m) in
     x86_64) CLOUDWATCH_ARCH=amd64 ;;
@@ -653,6 +672,7 @@ brew install \
     bash \
     coreutils \
     llvm
+brew cleanup --prune=all -s
 
 # Python packages used by jobs. `boto3` is bootstrapped in `user_data_macos.txt`
 # because runner-init itself imports it; the rest are version-gated here.

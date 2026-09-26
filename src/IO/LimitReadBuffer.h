@@ -19,14 +19,10 @@ public:
     {
         size_t read_no_less = 0;
         size_t read_no_more = std::numeric_limits<size_t>::max();
+        /// Throw instead of reporting EOF when the nested buffer still has data at the limit. Do not set
+        /// it when the nested buffer carries an unrelated message after this one, such as the next
+        /// keep-alive request: those bytes are not part of what the limit counts.
         bool expect_eof = false;
-        /// Fail closed at the cap: when set, reaching `read_no_more` is treated as a limit
-        /// violation (an exception is thrown) if the underlying buffer still has data, instead of
-        /// silently reporting EOF. Without this, content that ends exactly on the limit boundary
-        /// followed by more data would be truncated silently rather than rejected. Default off,
-        /// because some callers (e.g. a `Content-Length`-bounded HTTP body before a pipelined next
-        /// request) intentionally rely on reporting EOF at the cap.
-        bool throw_if_exceeded = false;
         std::string excetion_hint = {};
     };
 
