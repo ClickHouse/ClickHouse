@@ -20,3 +20,15 @@ IN subquery in force mode without cluster engines, mode 2: ReadFromURL
 JOIN USING a nested alias, mode 0: ReadFromURL
 JOIN USING a nested alias, mode 1: ReadFromURL
 JOIN USING a nested alias, mode 2: ReadFromURL
+subquery, multiple_tables 1, mode 0: ReadFromCluster
+cte, multiple_tables 1, mode 0: ReadFromCluster
+subquery, multiple_tables 1, mode 1: ReadFromCluster
+cte, multiple_tables 1, mode 1: ReadFromCluster
+subquery, multiple_tables 1, mode 2: ReadFromCluster
+cte, multiple_tables 1, mode 2: ReadFromCluster
+subquery, multiple_tables 0, mode 0: ReadFromCluster
+cte, multiple_tables 0, mode 0: ReadFromCluster
+subquery, multiple_tables 0, mode 1: ReadFromCluster
+cte, multiple_tables 0, mode 1: ReadFromCluster
+subquery, multiple_tables 0, mode 2: ReadFromCluster
+cte, multiple_tables 0, mode 2: ReadFromCluster

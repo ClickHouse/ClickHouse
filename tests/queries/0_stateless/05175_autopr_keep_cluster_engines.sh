@@ -78,3 +78,15 @@ for mode in 0 1 2; do
         enable_parallel_replicas = 1, automatic_parallel_replicas_mode = $mode,
         analyzer_compatibility_join_using_top_level_identifier = 1" 2>&1 | grep -oE -m1 'ReadFrom(URL|Cluster)|Code: [0-9]+')"
 done
+
+# The same for a cluster engine read in a subquery or a CTE, including with `parallel_replicas_for_queries_with_multiple_tables = 0`.
+for multiple_tables in 1 0; do
+    for mode in 0 1 2; do
+        for shape in subquery cte; do
+            if [ "$shape" = subquery ]; then WRAPPED="SELECT * FROM ($QUERY)"; else WRAPPED="WITH c AS ($QUERY) SELECT * FROM c"; fi
+            echo "$shape, multiple_tables $multiple_tables, mode $mode: $(read_step "EXPLAIN $WRAPPED SETTINGS $SETTINGS,
+                enable_parallel_replicas = 1, automatic_parallel_replicas_mode = $mode,
+                parallel_replicas_for_queries_with_multiple_tables = $multiple_tables")"
+        done
+    done
+done

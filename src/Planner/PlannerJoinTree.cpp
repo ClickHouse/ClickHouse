@@ -125,6 +125,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool optimize_trivial_view_pushdown_to_distributed;
     extern const SettingsUInt64 distributed_group_by_no_merge;
     extern const SettingsDistributedProductMode distributed_product_mode;
@@ -2896,7 +2897,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             /// with parallel replicas. Propagate only the parallel replicas switch (not the whole context,
             /// which would clobber the subquery's own settings and bound resources) to the subquery.
             if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
-                && !query_context->isParallelReplicasEnabled())
+                && !settings[Setting::allow_experimental_parallel_reading_from_replicas])
             {
                 disableParallelReplicasForSubqueries(table_expression);
             }
