@@ -1617,6 +1617,10 @@ void replaceMapKeysAndValuesWithSubcolumns(ActionsDAG & dag, const NameSet & nam
             || !isMap(map->result_type))
             continue;
 
+        /// bloom_filter refuses an array of Nullable, but not the subcolumn's array of LowCardinality(Nullable).
+        if (hasNullable(output->result_type))
+            continue;
+
         String subcolumn = function_name == "mapKeys" ? "keys" : "values";
         auto subcolumn_type = std::make_shared<DataTypeString>();
         const auto & subcolumn_name = dag.addColumn(subcolumn_type->createColumnConst(0, subcolumn), subcolumn_type, subcolumn);
