@@ -178,6 +178,19 @@ def send_test_data():
         ]
     )
 
+    # Large values with a tiny spread for stddev_over_time / stdvar_over_time: the population variance is exactly 0.25.
+    send_data(
+        [
+            (
+                {"__name__": "large_magnitude"},
+                {
+                    100: 540000000,
+                    110: 540000001,
+                },
+            )
+        ]
+    )
+
     send_data(
         [
             (
@@ -1519,6 +1532,91 @@ def test_function_over_time():
             [
                 "[]",
                 "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',10),('1970-01-01 00:02:30.000',8),('1970-01-01 00:03:30.000',12)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+
+    # stddev_over_time / stdvar_over_time (population standard deviation/variance).
+    # `eps=1e-9` accounts for our Welford/Chan two-stacks/recompute merge order differing from Prometheus'
+    # own single-pass Welford algorithm in the last couple of float digits.
+    do_query_test(
+        "stddev_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.9428090415820634"], [150, "1.299038105676658"], [165, "0.5"], [180, "0"], [195, "0"], [210, "1.4142135623730951"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.9428090415820634),('1970-01-01 00:02:30.000',1.299038105676658),('1970-01-01 00:02:45.000',0.5),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1.4142135623730951)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # Prometheus itself rounds the value at the `150` grid point differently on amd64 (`1.6875000000000002`) and
+    # arm64 (`1.6875`), which the same `eps` covers.
+    do_query_test(
+        "stdvar_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [135, "0.888888888888889"], [150, "1.6875000000000002"], [165, "0.25"], [180, "0"], [195, "0"], [210, "2"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.8888888888888888),('1970-01-01 00:02:30.000',1.6875),('1970-01-01 00:02:45.000',0.25),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',2)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # The staleness window (5s) is narrower than the step between samples (10s), so at most one sample falls in a
+    # window and the result must be exactly 0 wherever a sample lands.
+    do_query_test(
+        "stddev_over_time(test[5s])[120s:10s]",
+        230,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [130, "0"], [140, "0"], [190, "0"], [200, "0"], [210, "0"], [220, "0"], [230, "0"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:10.000',0),('1970-01-01 00:02:20.000',0),('1970-01-01 00:03:10.000',0),('1970-01-01 00:03:20.000',0),('1970-01-01 00:03:30.000',0),('1970-01-01 00:03:40.000',0),('1970-01-01 00:03:50.000',0)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "stdvar_over_time(test[5s])[120s:10s]",
+        230,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "0"], [130, "0"], [140, "0"], [190, "0"], [200, "0"], [210, "0"], [220, "0"], [230, "0"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:10.000',0),('1970-01-01 00:02:20.000',0),('1970-01-01 00:03:10.000',0),('1970-01-01 00:03:20.000',0),('1970-01-01 00:03:30.000',0),('1970-01-01 00:03:40.000',0),('1970-01-01 00:03:50.000',0)]",
+            ]
+        ],
+    )
+
+    # Large values with a tiny spread: the population variance/stddev of {540000000, 540000001} is exactly 0.25/0.5.
+    do_query_test(
+        "stddev_over_time(large_magnitude[20s])[20s:10s]",
+        110,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[100, "0"], [110, "0.5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:40.000',0),('1970-01-01 00:01:50.000',0.5)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    do_query_test(
+        "stdvar_over_time(large_magnitude[20s])[20s:10s]",
+        110,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[100, "0"], [110, "0.25"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:40.000',0),('1970-01-01 00:01:50.000',0.25)]",
             ]
         ],
         eps=1e-9,
