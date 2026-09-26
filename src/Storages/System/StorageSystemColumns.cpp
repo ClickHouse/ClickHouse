@@ -2,6 +2,7 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageAlias.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
@@ -146,9 +147,11 @@ protected:
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
             SerializationInfoByName serialization_hints{{}};
+            StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
+            const auto * alias = storage->as<StorageAlias>();
+            NameSet chain_granted;
 
             {
-                StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
                 TableLockHolder table_lock = storage->tryLockForShare(query_id, Poco::Timespan(lock_acquire_timeout.count() * 1000));
 
                 if (table_lock == nullptr)
@@ -160,8 +163,31 @@ protected:
                 const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
                 columns = metadata_snapshot->getColumns();
 
+                if (alias)
+                {
+                    Names all_columns;
+                    all_columns.reserve(columns.size());
+                    for (const auto & column : columns)
+                        all_columns.push_back(column.name);
+                    chain_granted = alias->filterColumnsGrantedThroughChain(context, AccessType::SHOW_COLUMNS, all_columns);
+                }
+
+                const bool needs_column_metadata = columns_mask[7] || columns_mask[8] || columns_mask[9] || columns_mask[21];
+                bool can_expose_any_column_metadata = !needs_column_metadata;
+                if (needs_column_metadata)
+                {
+                    for (const auto & column : columns)
+                    {
+                        if (!alias || chain_granted.contains(column.name))
+                        {
+                            can_expose_any_column_metadata = true;
+                            break;
+                        }
+                    }
+                }
+
                 /// Certain information about a table - should be calculated only when the corresponding columns are queried.
-                if (columns_mask[7] || columns_mask[8] || columns_mask[9])
+                if (can_expose_any_column_metadata && (columns_mask[7] || columns_mask[8] || columns_mask[9]))
                 {
                     if (auto sizes = storage->tryGetColumnSizes())
                         column_sizes = std::move(*sizes);
@@ -176,7 +202,7 @@ protected:
                 if (columns_mask[14])
                     cols_required_for_sampling = metadata_snapshot->getColumnsRequiredForSampling();
 
-                if (columns_mask[21])
+                if (can_expose_any_column_metadata && columns_mask[21])
                 {
                     if (auto hints = storage->tryGetSerializationHints())
                         serialization_hints = std::move(*hints);
@@ -194,6 +220,9 @@ protected:
             {
                 ++position;
                 if (need_to_check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
+                    continue;
+
+                if (alias && !chain_granted.contains(column.name))
                     continue;
 
                 size_t src_index = 0;

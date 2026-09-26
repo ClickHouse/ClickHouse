@@ -1,13 +1,9 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- Regression test: shuffle-join key types differ on left and right side.
 -- Without casting to a common supertype, the scatter step on each side uses different
 -- hashing because of different physical types, so matching rows are routed to different
 -- buckets and the join silently drops them.
 
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET explain_query_plan_default = 'legacy';
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SET max_rows_to_group_by = 0;
