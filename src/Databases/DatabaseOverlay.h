@@ -34,6 +34,8 @@ public:
     void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
+    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void renameTable(
         ContextPtr current_context,

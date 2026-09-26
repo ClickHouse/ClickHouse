@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
@@ -35,6 +36,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -84,6 +86,12 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
             "make_distributed_plan with enable_cascades_optimizer cannot determine how many nodes will "
             "run the query. Configure a stateless worker cluster, or set `distributed_plan_workers_num` "
             "(also required for `distributed_plan_execute_locally` without a configured cluster).");
+    /// The count sizes the read buckets and the exchange fan-out, so the read-bucket ceiling bounds it
+    /// too: above it a plan would scatter to more destinations than a bucketed read may have.
+    if (context.cluster_node_count > ReadFromMergeTree::max_distributed_read_buckets)
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "make_distributed_plan with enable_cascades_optimizer cannot plan for {} nodes, the maximum "
+            "is {}.", context.cluster_node_count, ReadFromMergeTree::max_distributed_read_buckets);
 
     /// If the cost-config override is set but invalid, let the error propagate instead of silently
     /// using the defaults, so a query that set it does not get a different cost model than it asked for.
@@ -93,6 +101,7 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_plan_execute_locally = optimization_settings.distributed_plan_execute_locally;
     context.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
     context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
+    context.cascades_aggregation_pushdown = optimization_settings.cascades_aggregation_pushdown;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
     return context;
@@ -112,6 +121,12 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     addRule(createDefaultImplementation());
     addRule(createDistributionPassthrough());
     addRule(createTwoStageAggregationTransformation());
+    /// Registered conditionally: the rule can never apply when the setting is off,
+    /// and the optimizer is built per query, so the gate belongs here.
+    /// `distributed_plan_force_shuffle_aggregation` does not disable the whole rule: it forbids
+    /// only the partial + merge split (variant A), which the rule skips itself.
+    if (memo.getContext().cascades_aggregation_pushdown)
+        addRule(createAggregationPushdown());
     addRule(createAggregationImplementation());
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());

@@ -81,6 +81,11 @@ private:
     {
         size_t base_rows = 0;
 
+        /// Follows the declared return type, not the arguments: some cast paths make every
+        /// argument `Nullable` even when the declaration is not, and an intersection that has a
+        /// not `Nullable` argument cannot contain `NULL`.
+        bool nullable_result = false;
+
         struct UnpackedArray
         {
             bool is_const = false;
@@ -387,16 +392,22 @@ FunctionArrayIntersect::UnpackedArrays FunctionArrayIntersect::prepareArrays(
             {
                 arg.null_map = &column_nullable->getNullMapData();
                 arg.nested_column = &column_nullable->getNestedColumn();
-
-                if (initial_column->isNullable())
-                    initial_column = &typeid_cast<const ColumnNullable &>(*initial_column).getNestedColumn();
             }
+
+            /// The cast column can be not `Nullable` while this one is: a `Dynamic` common element type
+            /// cannot be, and the comparison below declares both element types without `Nullable`.
+            if (initial_column->isNullable())
+                initial_column = &typeid_cast<const ColumnNullable &>(*initial_column).getNestedColumn();
 
             /// In case the column was cast, we need to create an overflow mask for integer types.
             if (arg.nested_column != initial_column)
             {
-                const auto & nested_init_type = typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType();
-                const auto & nested_cast_type = typeid_cast<const DataTypeArray &>(*removeNullable(columns[i].type)).getNestedType();
+                /// The nested columns above are already unwrapped out of `ColumnNullable`, and `WhichDataType`
+                /// reports `Nullable` for `Nullable(T)`: both uses below need the element type without it.
+                const auto nested_init_type
+                    = removeNullable(typeid_cast<const DataTypeArray &>(*removeNullable(initial_columns[i].type)).getNestedType());
+                const auto nested_cast_type
+                    = removeNullable(typeid_cast<const DataTypeArray &>(*removeNullable(columns[i].type)).getNestedType());
 
                 if (isInteger(nested_init_type)
                     || isDate(nested_init_type)
@@ -467,6 +478,7 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
     auto cast_columns = castColumns(arguments, result_type, return_type_with_nulls);
 
     UnpackedArrays arrays = prepareArrays(cast_columns.cast, cast_columns.initial);
+    arrays.nullable_result = nested_return_type->isNullable();
 
     ColumnPtr result_column;
     auto not_nullable_nested_return_type = removeNullable(nested_return_type);
@@ -579,7 +591,6 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
     auto args = arrays.args.size();
     auto rows = arrays.base_rows;
 
-    bool all_nullable = true;
     bool has_nullable = false;
 
     VectorWithMemoryTracking<const ColumnType *> columns;
@@ -594,9 +605,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         if (!columns.back())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected array type for function arrayIntersect");
 
-        if (!arg.null_map)
-            all_nullable = false;
-        else
+        if (arg.null_map)
             has_nullable = true;
     }
 
@@ -669,7 +678,6 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 arena.emplace();
         }
 
-        bool all_has_nullable = all_nullable;
         bool current_has_nullable = false;
         size_t null_count = 0;
 
@@ -756,9 +764,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                 if (arg.is_const)
                     prev_off[arg_num] = 0;
             }
-            if (!current_has_nullable)
-                all_has_nullable = false;
-            else
+            if (current_has_nullable)
                 null_count++;
 
         }
@@ -805,27 +811,41 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         }
         else if (mode == ArraySetMode::Intersect)
         {
-            use_null_map = all_nullable;
+            use_null_map = arrays.nullable_result;
+
+            /// `NULL` is in the intersection only when every argument has one in this row, which the pass
+            /// over the arguments above counted. Deciding it here from `arrays.nullable_result` - which only
+            /// says that the result can hold `NULL` at all - put a `NULL` of the first argument into the
+            /// result even when another argument had none, so the intersection contained an element absent
+            /// from some argument, and swapping the arguments of this commutative function changed the result.
+            const bool null_is_in_intersection = arrays.nullable_result && null_count == args;
 
             for (auto i : collections::range(prev_off[0], off))
             {
-                all_has_nullable = all_nullable;
                 typename Map::LookupResult pair = nullptr;
 
                 if (arg.null_map && (*arg.null_map)[i])
                 {
-                    current_has_nullable = true;
-                    if (all_has_nullable && !null_added)
+                    if (null_is_in_intersection && !null_added)
                     {
                         ++result_offset;
                         result_data.insertDefault();
                         null_map.push_back(true);
                         null_added = true;
                     }
-                    if (null_added)
-                        continue;
+                    /// A `NULL` element contributes only the `NULL`: the value under it is not a member of
+                    /// the array (the pass over the arguments does not put it into the map either).
+                    continue;
                 }
-                else if constexpr (is_numeric_column)
+
+                /// An element whose value did not fit the type of the result is not in the intersection -
+                /// the pass over the arguments above skipped it too. Its value truncated to the type of the
+                /// result can coincide with a value that is really there, so looking it up here would emit
+                /// that value in the place of the overflowed element and suppress its real occurrence.
+                if (arg.overflow_mask && (*arg.overflow_mask)[i] != 0)
+                    continue;
+
+                if constexpr (is_numeric_column)
                     pair = map.find(columns[0]->getElement(i));
                 else if constexpr (std::is_same_v<ColumnType, ColumnString> || std::is_same_v<ColumnType, ColumnFixedString>)
                     pair = map.find(columns[0]->getDataAt(i));
@@ -837,9 +857,6 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
                     pair = map.find(key);
                     arena->rollback(key.size());
                 }
-
-                if (!current_has_nullable)
-                    all_has_nullable = false;
 
                 // Add the value if all arrays have the value for intersect
                 // or if there was at least one occurrence in all of the arrays for union
@@ -855,7 +872,7 @@ ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, Mutable
         result_offsets.getElement(row) = result_offset;
     }
     ColumnPtr result_column = std::move(result_data_ptr);
-    if (all_nullable)
+    if (arrays.nullable_result)
         result_column = ColumnNullable::create(result_column, std::move(null_map_column));
     return ColumnArray::create(result_column, std::move(result_offsets_ptr));
 
@@ -929,11 +946,11 @@ arrayUnion([1, 3, NULL], [2, 3, NULL]) as null_example
 
     FunctionDocumentation::Description symdiff_description = R"(Takes multiple arrays and returns an array with elements that are not present in all source arrays. The result contains only unique values.
 
-:::note
+<Note>
 The symmetric difference of _more than two sets_ is [mathematically defined](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference)
 as the set of all input elements which occur in an odd number of input sets.
 In contrast, function `arraySymmetricDifference` simply returns the set of input elements which do not occur in all input sets.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax symdiff_syntax = "arraySymmetricDifference(arr1, arr2, ... , arrN)";
     FunctionDocumentation::Arguments symdiff_argument = {{"arrN", "N arrays from which to make the new array. [`Array(T)`](/reference/data-types/array)."}};

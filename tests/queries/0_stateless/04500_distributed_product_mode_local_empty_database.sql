@@ -10,9 +10,6 @@ CREATE TABLE smaller_table (key String) ENGINE = Memory;
 CREATE TABLE dist_larger (key String) ENGINE = Distributed('test_cluster_two_shards_different_databases', '', 'larger_table');
 CREATE TABLE dist_smaller (key String) ENGINE = Distributed('test_cluster_two_shards_different_databases', '', 'smaller_table');
 
-EXPLAIN AST optimize = 1
-SELECT count() FROM dist_larger AS lt INNER JOIN dist_smaller AS rt ON lt.key = rt.key
-SETTINGS distributed_product_mode = 'local', enable_analyzer = 0;
 
 DROP TABLE dist_larger;
 DROP TABLE dist_smaller;

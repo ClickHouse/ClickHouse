@@ -28,13 +28,12 @@ public:
     RuleMultOp = 4, RuleAddOp = 5, RuleCompareOp = 6, RuleAndUnlessOp = 7, 
     RuleOrOp = 8, RuleSubqueryOp = 9, RuleOffsetOp = 10, RuleVector = 11, 
     RuleParens = 12, RuleTimestamp = 13, RuleDuration = 14, RuleOffsetValue = 15, 
-    RuleInstantSelector = 16, RuleLabelMatcher = 17, RuleSelectorIdentifier = 18, 
-    RuleLabelMatcherOperator = 19, RuleLabelMatcherList = 20, RuleRangeSelector = 21, 
-    RuleSelectorWithOffset = 22, RuleFunction_ = 23, RuleParameter = 24, 
-    RuleParameterList = 25, RuleAggregation = 26, RuleBy = 27, RuleWithout = 28, 
-    RuleGrouping = 29, RuleOn_ = 30, RuleIgnoring = 31, RuleGroupLeft = 32, 
-    RuleGroupRight = 33, RuleLabelName = 34, RuleLabelNameList = 35, RuleMetricName = 36, 
-    RuleKeyword = 37, RuleLiteral = 38
+    RuleInstantSelector = 16, RuleLabelMatcher = 17, RuleLabelMatcherOperator = 18, 
+    RuleLabelMatcherList = 19, RuleRangeSelector = 20, RuleSelectorWithOffset = 21, 
+    RuleFunction_ = 22, RuleParameter = 23, RuleParameterList = 24, RuleAggregation = 25, 
+    RuleBy = 26, RuleWithout = 27, RuleGrouping = 28, RuleOn_ = 29, RuleIgnoring = 30, 
+    RuleGroupLeft = 31, RuleGroupRight = 32, RuleLabelName = 33, RuleLabelNameList = 34, 
+    RuleMetricName = 35, RuleKeyword = 36, RuleLiteral = 37
   };
 
   explicit PromQLParser(antlr4::TokenStream *input);
@@ -72,7 +71,6 @@ public:
   class OffsetValueContext;
   class InstantSelectorContext;
   class LabelMatcherContext;
-  class SelectorIdentifierContext;
   class LabelMatcherOperatorContext;
   class LabelMatcherListContext;
   class RangeSelectorContext;
@@ -403,7 +401,7 @@ public:
   public:
     LabelMatcherContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    SelectorIdentifierContext *selectorIdentifier();
+    LabelNameContext *labelName();
     LabelMatcherOperatorContext *labelMatcherOperator();
     antlr4::tree::TerminalNode *STRING();
 
@@ -415,22 +413,6 @@ public:
   };
 
   LabelMatcherContext* labelMatcher();
-
-  class  SelectorIdentifierContext : public antlr4::ParserRuleContext {
-  public:
-    SelectorIdentifierContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    LabelNameContext *labelName();
-    antlr4::tree::TerminalNode *STRING();
-
-    virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
-    virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
-
-    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
-   
-  };
-
-  SelectorIdentifierContext* selectorIdentifier();
 
   class  LabelMatcherOperatorContext : public antlr4::ParserRuleContext {
   public:
@@ -697,6 +679,7 @@ public:
     KeywordContext *keyword();
     antlr4::tree::TerminalNode *METRIC_NAME();
     antlr4::tree::TerminalNode *LABEL_NAME();
+    antlr4::tree::TerminalNode *STRING();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;

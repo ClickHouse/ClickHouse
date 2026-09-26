@@ -112,7 +112,7 @@ s3 等表函数支持通过 glob 模式指定一组待加载的文件名。当�
 Go to ①. 
 ```
 
-此类并行插入线程的数量可通过 [`max_insert_threads`](/zh/reference/settings/session-settings/max-insert#max_insert_threads) 设置进行配置。对于开源 ClickHouse，默认值为 `1`；对于 [ClickHouse Cloud](https://clickhouse.com/cloud)，默认值为 4。
+此类并行插入线程的数量可通过 [`max_insert_threads`](/zh/reference/settings/session-settings/max-insert#max_insert_threads) 设置进行配置。自 26.8 起，对于开源 ClickHouse，默认值为 `0` (自动：CPU 核心数量，在内存压力下会降低) 。对于 [ClickHouse Cloud](https://clickhouse.com/cloud)，内存为 8 GiB 的节点默认值为 `1`，16 GiB 的节点为 `2`，更大的节点为 `4`。
 
 当文件数量很多时，多个插入线程并行处理的效果很好。它可以充分利用可用的 CPU 核心和网络带宽 (用于并行下载文件) 。在只有少量大文件需要加载到表中的场景下，ClickHouse 会自动实现较高的数据处理并行度，并通过为每个插入线程额外派生读取线程，并行读取 (下载) 大文件中更多不同区间的数据，从而优化网络带宽利用率。
 
@@ -169,11 +169,11 @@ ClickHouse 可以使用 `s3` 函数和 `S3` 引擎，读取存储在 S3 存储�
 在不进行任何调优的情况下，我们将展示把该数据集插入 MergeTree 表引擎的性能，以及执行查询来统计提问最多用户的性能。这两项操作都刻意要求对数据进行全表扫描。
 
 ```sql
--- 用户名排行
+-- Top usernames
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -190,13 +190,13 @@ LIMIT 5
 └──────────────────┴───────────┘
 
 5 rows in set. Elapsed: 3.013 sec. Processed 59.82 million rows, 24.03 GB (19.86 million rows/s., 7.98 GB/s.)
-峰值内存占用: 603.64 MiB.
+Peak memory usage: 603.64 MiB.
 ```
 
 ```sql
--- 加载到 posts 表
+-- Load into posts table
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -228,7 +228,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -276,14 +276,14 @@ Peak memory usage: 639.99 MiB.
 * [配置的插入块大小](#insert-block-size)越大，ClickHouse 需要创建的 parts 就越少，所需的[磁盘文件 I/O](https://en.wikipedia.org/wiki/Category:Disk_file_systems)和[后台合并](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges)也就越少。
 * [并行插入线程数](#insert-parallelism)配置得越高，数据处理速度就越快。
 
-这两个性能因素之间存在相互制约的权衡关系 (此外，还需要与后台 part 合并进行权衡) 。ClickHouse server 可用的主内存是有限的。更大的块会占用更多主内存，从而限制我们能够使用的并行插入线程数量。反过来，并行插入线程数越多，所需的主内存也越多，因为插入线程的数量决定了内存中同时创建的插入块数量。这又会限制插入块可能达到的大小。此外，插入线程与后台合并线程之间还可能发生资源争用。配置较多的插入线程会 (1) 创建更多需要合并的 parts，并且 (2) 挤占原本可供后台合并线程使用的 CPU 核心和内存空间。
+这两个性能因素之间存在相互制约的权衡关系 (此外，还需要与后台 part 合并进行权衡) 。ClickHouse 服务器可用的主内存是有限的。更大的块会占用更多主内存，从而限制我们能够使用的并行插入线程数量。反过来，并行插入线程数越多，所需的主内存也越多，因为插入线程的数量决定了内存中同时创建的插入块数量。这又会限制插入块可能达到的大小。此外，插入线程与后台合并线程之间还可能发生资源争用。配置较多的插入线程会 (1) 创建更多需要合并的 parts，并且 (2) 挤占原本可供后台合并线程使用的 CPU 核心和内存空间。
 
 如需详细了解这些参数如何影响性能和资源，我们建议[阅读这篇博客文章](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2)。正如文中所述，调优通常需要在这两个参数之间谨慎权衡。由于这种穷尽式测试往往并不现实，因此总结来说，我们建议：
 
 ```bash
-• max_insert_threads: 选择约一半的可用 CPU 核心用于插入线程（以便为后台合并保留足够的专用核心）
+• max_insert_threads: choose ~ half of the available CPU cores for insert threads (to leave enough dedicated cores for background merges)
 
-• peak_memory_usage_in_bytes: 选择预期的峰值内存占用；可以是全部可用 RAM（若为独立摄取场景），或一半及以下（以便为其他并发任务留出空间）
+• peak_memory_usage_in_bytes: choose an intended peak memory usage; either all available RAM (if it is an isolated ingest) or half or less (to leave room for other concurrent tasks)
 
 Then:
 min_insert_block_size_bytes = peak_memory_usage_in_bytes / (~3 * max_insert_threads)
@@ -299,14 +299,14 @@ min_insert_block_size_bytes = peak_memory_usage_in_bytes / (~3 * max_insert_thre
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
 0 rows in set. Elapsed: 128.566 sec. Processed 59.82 million rows, 24.03 GB (465.28 thousand rows/s., 186.92 MB/s.)
 ```
 
-如图所示，调整这些设置后，insert 性能提升了 `33%` 以上。至于能否进一步提升单节点性能，就留给读者自行探索了。
+如图所示，调整这些设置后，插入性能提升了 `33%` 以上。至于能否进一步提升单节点性能，就留给读者自行探索了。
 
 <div id="scaling-with-resources-and-nodes">
   ## 通过资源和节点扩缩容
@@ -322,7 +322,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=8, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -333,7 +333,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -369,7 +369,7 @@ SETTINGS max_threads = 92
 SELECT
     OwnerDisplayName,
     count() AS num_posts
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 WHERE OwnerDisplayName NOT IN ('', 'anon')
 GROUP BY OwnerDisplayName
 ORDER BY num_posts DESC
@@ -394,7 +394,7 @@ Peak memory usage: 176.74 MiB.
 
 ```sql
 INSERT INTO posts SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet') SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN) SETTINGS min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
 ```response
@@ -408,7 +408,7 @@ FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws
 ```sql
 INSERT INTO posts
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows=0, max_insert_threads=4, min_insert_block_size_bytes=2863311530
 ```
 
@@ -427,7 +427,7 @@ Peak memory usage: 11.75 GiB.
   ### 禁用去重
 </div>
 
-写入操作有时会因超时等错误而失败。写入失败时，数据可能已经成功写入，也可能尚未成功写入。为使客户端能够安全地重试写入，默认情况下，在 ClickHouse Cloud 等分布式部署中，ClickHouse 会尝试判断数据是否已经成功写入。如果写入的数据被标记为重复，ClickHouse 就不会再将其写入目标表。不过，用户仍会收到成功的操作状态，就像数据已正常写入一样。
+插入操作有时会因超时等错误而失败。插入失败时，数据可能已经成功写入，也可能尚未成功写入。为使客户端能够安全地重试插入，默认情况下，在 ClickHouse Cloud 等分布式部署中，ClickHouse 会尝试判断数据是否已经成功写入。如果写入的数据被标记为重复，ClickHouse 就不会再将其写入目标表。不过，用户仍会收到成功的操作状态，就像数据已正常写入一样。
 
 这种行为会带来额外的写入开销，因此在从客户端加载数据或按批次加载时是合理的；但在从对象存储执行 `INSERT INTO SELECT` 时，则可能没有必要。通过在写入时禁用此功能，我们可以像下文所示那样提升性能：
 
@@ -435,13 +435,13 @@ Peak memory usage: 11.75 GiB.
 INSERT INTO posts
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0
 ```
 
 ```response
 0 rows in set. Elapsed: 52.992 sec. Processed 59.82 million rows, 24.03 GB (1.13 million rows/s., 453.50 MB/s.)
-峰值内存占用: 26.57 GiB.
+Peak memory usage: 26.57 GiB.
 ```
 
 <div id="optimize-on-insert">
@@ -454,7 +454,7 @@ SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0,
 
 ```sql
 SELECT *
-FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet', NOSIGN)
 SETTINGS parallel_distributed_insert_select = 2, min_insert_block_size_rows = 0, max_insert_threads = 4, min_insert_block_size_bytes = 2863311530, insert_deduplicate = 0, optimize_on_insert = 0
 ```
 

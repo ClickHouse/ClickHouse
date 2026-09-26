@@ -39,6 +39,10 @@ struct HTTPHandlerConnectionConfig
 {
     std::optional<AlwaysAllowCredentials> credentials;
 
+    /// If set, overrides the `default_session_user` server setting for requests
+    /// without credentials (composable protocols allow a per-endpoint default user).
+    std::optional<String> default_session_user;
+
     /// TODO:
     /// String quota;
     /// String default_database;

@@ -14,7 +14,6 @@
 #include "config.h"
 
 #if USE_SSL
-#    include <openssl/err.h>
 #    include <boost/algorithm/hex.hpp>
 #    include <openssl/evp.h>
 #endif
@@ -476,7 +475,11 @@ String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method,
 
 CompressionCodecEncrypted::CompressionCodecEncrypted(EncryptionMethod Method): encryption_method(Method)
 {
-    setCodecDescription(getMethodName(encryption_method));
+}
+
+ASTPtr CompressionCodecEncrypted::getCodecDescription() const
+{
+    return makeCodecDescription(getMethodName(encryption_method));
 }
 
 uint8_t CompressionCodecEncrypted::getMethodByte() const
@@ -486,7 +489,7 @@ uint8_t CompressionCodecEncrypted::getMethodByte() const
 
 void CompressionCodecEncrypted::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
 }
 
 UInt32 CompressionCodecEncrypted::getMaxCompressedDataSize(UInt32 uncompressed_size) const

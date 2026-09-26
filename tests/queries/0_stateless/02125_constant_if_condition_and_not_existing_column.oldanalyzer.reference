@@ -1,9 +1,0 @@
-42
-42
-42
-42
-42
-42
-42
-42
-SELECT\n    x,\n    concat(x, \'_\')\nFROM test
