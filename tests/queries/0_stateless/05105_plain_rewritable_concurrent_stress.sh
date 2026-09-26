@@ -36,14 +36,19 @@ function workload()
         OPTIMIZE TABLE ${table} FINAL;
         ALTER TABLE ${table} MOVE PARTITION tuple() TO TABLE ${table}_moved;
         OPTIMIZE TABLE ${table}_moved FINAL;
-        "
+        " || return 1
     done
 }
 
+# A bare `wait` always succeeds, so wait for every worker by its PID to notice a failed one.
+pids=()
 for i in $(seq 1 ${TABLES}); do
     workload "t_${i}" &
+    pids+=($!)
 done
-wait
+for pid in "${pids[@]}"; do
+    wait "${pid}" || echo "A workload failed"
+done
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM DROP DISK METADATA CACHE ${DISK}"
 
