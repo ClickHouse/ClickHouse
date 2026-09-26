@@ -1,0 +1,24 @@
+--- 1 control: plain identifiers, engine table-name form
+7
+8
+--- 2 table and column names contain a double quote, engine table-name form
+42
+43
+--- 3 only the column name contains a double quote
+55
+--- 4 table name contains a backslash
+77
+--- 5 query(...) form, only the generated wrapper column list is quoted by ClickHouse
+42
+43
+--- 6 (SELECT ...) engine argument aliased to a plain name, only the inner text is reserialized
+42
+43
+--- 7 sqlite() table function with a (SELECT ...) argument
+42
+43
+--- 8 WHERE predicate pushed down on a double-quoted column
+43
+--- 9 negative control: query(...) with a plain alias, ClickHouse quotes nothing odd
+42
+43

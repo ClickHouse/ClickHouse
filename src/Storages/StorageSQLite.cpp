@@ -135,14 +135,17 @@ Pipe StorageSQLite::read(
         /// The user-provided query is passed to SQLite as is; no outer predicate is pushed down into it, so
         /// reject any outer filter under external_table_strict_query.
         rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, context_);
-        query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::DoubleQuotes);
+        /// SQLite reads a quoted identifier by the same SQL-standard rule as PostgreSQL: an embedded `"` is
+        /// escaped by doubling it, and a backslash is a literal byte.
+        query = buildQueryForExternalDatabaseSubquery(
+            remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::DoubleQuotesPostgreSQL);
     }
     else
         query = transformQueryForExternalDatabase(
             query_info,
             column_names,
             storage_snapshot->metadata->getColumns().getOrdinary(),
-            IdentifierQuotingStyle::DoubleQuotes,
+            IdentifierQuotingStyle::DoubleQuotesPostgreSQL,
             LiteralEscapingStyle::SQLite,
             "",
             remote_table_or_query.getTableName(),
@@ -245,7 +248,7 @@ void registerStorageSQLite(StorageFactory & factory)
 
         /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::SQLite);
+            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotesPostgreSQL, LiteralEscapingStyle::SQLite);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 1 && maybe_query)
