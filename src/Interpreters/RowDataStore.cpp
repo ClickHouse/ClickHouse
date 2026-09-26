@@ -26,6 +26,8 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
+static constexpr UInt64 BYTES_IN_CACHE_LINE = 64;
+
 namespace
 {
 
@@ -156,9 +158,18 @@ RowDataStore::RowLayoutPtr RowDataStore::computeLayout(const Columns & columns, 
     return std::make_shared<const RowLayout>(std::move(layout));
 }
 
+size_t RowDataStore::cacheMissReduction(const RowLayout & layout)
+{
+    size_t columnar_cache_lines = 0;
+    for (const auto & field : layout)
+        columnar_cache_lines += field.is_nullable ? 2 : 1;
+    const size_t row_store_cache_lines = (rowLengthOf(layout) + BYTES_IN_CACHE_LINE - 1) / BYTES_IN_CACHE_LINE;
+    return columnar_cache_lines - row_store_cache_lines;
+}
+
 RowDataStore::RowDataStore(RowLayoutPtr layout_)
     : layout(std::move(layout_))
-    , row_length(layout->empty() ? 0 : layout->back().offset + layout->back().size)
+    , row_length(rowLengthOf(*layout))
 {
 }
 
@@ -195,7 +206,7 @@ void RowDataStore::gatherRows(const Columns & columns, size_t start, size_t leng
     chars.resize_exact(data_size + length * row_length);
     char * dst = chars.data() + data_size;
 
-    const size_t batch_size = getBatchSize().value_or(length);
+    const size_t batch_size = rowStoreBatchSize(row_length);
     for (size_t batch_start = 0; batch_start < length; batch_start += batch_size)
     {
         const size_t remaining_batch_size = std::min(batch_size, length - batch_start);
@@ -208,7 +219,7 @@ MutableColumns RowDataStore::scatterRows(size_t start, size_t length) const
     RowStorePointers row_store_ptrs;
     row_store_ptrs.base_ptr = getRowAt(start);
     row_store_ptrs.row_length = row_length;
-    return doScatterRows(*layout, getBatchSize(), row_store_ptrs, length);
+    return doScatterRows(*layout, rowStoreBatchSize(row_length), row_store_ptrs, length);
 }
 
 MutableColumns RowDataStore::scatterRows(const PaddedPODArray<UInt64> & row_nums) const
@@ -217,7 +228,7 @@ MutableColumns RowDataStore::scatterRows(const PaddedPODArray<UInt64> & row_nums
     row_store_ptrs.ptrs.reserve(row_nums.size());
     for (auto row : row_nums)
         row_store_ptrs.ptrs.push_back(getRowAt(row));
-    return doScatterRows(*layout, getBatchSize(), row_store_ptrs, row_nums.size());
+    return doScatterRows(*layout, rowStoreBatchSize(row_length), row_store_ptrs, row_nums.size());
 }
 
 const RowDataStore::FieldLayout & RowDataStore::getFieldLayout(size_t input_col_index) const
@@ -228,13 +239,11 @@ const RowDataStore::FieldLayout & RowDataStore::getFieldLayout(size_t input_col_
 static constexpr UInt64 MIN_BYTES_IN_BATCH = 32 * 1024;
 static constexpr UInt64 MAX_BYTES_IN_BATCH = 512 * 1024;
 
-std::optional<size_t> RowDataStore::getBatchSize() const
+size_t rowStoreBatchSize(size_t row_length)
 {
-    if (row_length == 0)
-        return std::nullopt;
-
+    chassert(row_length != 0);
     const size_t batch_bytes = std::clamp<size_t>(getL2CacheSize() / 4, MIN_BYTES_IN_BATCH, MAX_BYTES_IN_BATCH);
-    return std::max<size_t>(1, batch_bytes / row_length);
+    return std::max<size_t>(1, batch_bytes / std::max<size_t>(row_length, BYTES_IN_CACHE_LINE));
 }
 
 bool isRowStorageUseful(const ColumnPtr & column)
