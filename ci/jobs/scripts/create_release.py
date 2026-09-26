@@ -60,7 +60,7 @@ from ci.praktika.git import Git
 from ci.praktika.utils import Shell
 
 # S3Helper requires boto3 (installed on release machines); ssh has no external deps.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../tests/ci"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../tools"))
 from s3_helper import S3Helper  # noqa: E402
 from ssh import SSHAgent  # noqa: E402
 
@@ -237,7 +237,12 @@ class ReleaseInfo:
         return self
 
     def prepare(
-        self, commit_ref: str, release_type: str, dry_run: bool = False
+        self,
+        commit_ref: str,
+        release_type: str,
+        dry_run: bool = False,
+        skip_repo: bool = False,
+        skip_docker: bool = False,
     ) -> "ReleaseInfo":
         assert release_type in ("patch", "new")
         # `commit_ref` (the workflow `ref` input) is interpolated into git
@@ -352,10 +357,19 @@ class ReleaseInfo:
                     f"release tag [{released.split()[0]}]: either the ref targets a commit with a "
                     f"superseded release, or there is a bug in the release/versioning logic"
                 )
+        # skip-repo/skip-docker only re-publish an existing release, so reject them against a ref that resolves to a new (untagged) release.
+        assert self.is_tag_pushed or not (skip_repo or skip_docker), (
+            "skip-repo/skip-docker re-publish an existing release and must be "
+            "run against its release tag (recovery); the given ref resolves to "
+            "a new release. Pass the release tag as the ref."
+        )
         self.release_type = release_type
         return self
 
     def push_release_tag(self, dry_run: bool) -> None:
+        # A recovery finds the tag already published — nothing to do.
+        if self.is_tag_pushed:
+            return
         print(
             f"Create and push release tag [{self.release_tag}], commit [{self.commit_sha}]"
         )
@@ -383,6 +397,9 @@ class ReleaseInfo:
             print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
+        # A recovery/rerun of an already-tagged release re-runs nothing here.
+        if self.is_tag_pushed:
+            return
         version = CHVersion.get_current_version()
         new_release_branch = self.release_branch
         version_after_release = copy(version)
@@ -421,6 +438,13 @@ class ReleaseInfo:
         )
 
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
+        # A superseded (late) recovery must not rewrite the branch version backwards.
+        if self.release_type == "patch" and self.is_bump_landed:
+            print(
+                f"Branch {self.release_branch} already advanced past this release "
+                f"(late recovery) — skipping version bump"
+            )
+            return
         with checkout(self.commit_sha):
             version = CHVersion.get_current_version()
             if self.release_type == "patch":
@@ -639,8 +663,7 @@ class PackageDownloader:
         self.with_signed_macos = with_signed_macos
         self.package_names = list(self.PACKAGES)
         self.release = release
-        self.s3_release_prefix = release_packages.s3_release_prefix(release)
-        self.commit_sha = commit_sha
+        self.s3_commit_prefix = release_packages.s3_commit_prefix(release, commit_sha)
         self.version = version
         self.s3 = S3Helper()
         self.deb_package_files = []
@@ -730,8 +753,7 @@ class PackageDownloader:
             local_path = self.LOCAL_DIR + "/" + package_file
             print(f"Downloading: [{package_file}]")
             s3_path = "/".join([
-                self.s3_release_prefix,
-                self.commit_sha,
+                self.s3_commit_prefix,
                 self.file_to_job_name[package_file],
                 package_file,
             ])
@@ -750,8 +772,7 @@ class PackageDownloader:
             # be skipped — always re-download to overwrite it.
             print(f"Downloading: [{job_name}] binary to [{macos_binary}]")
             s3_path = "/".join([
-                self.s3_release_prefix,
-                self.commit_sha,
+                self.s3_commit_prefix,
                 job_name,
                 "clickhouse",
             ])
@@ -765,8 +786,7 @@ class PackageDownloader:
             local_path = self.LOCAL_DIR + "/" + macos_zip
             print(f"Downloading: [{job_name}] signed zip to [{macos_zip}]")
             s3_path = "/".join([
-                self.s3_release_prefix,
-                self.commit_sha,
+                self.s3_commit_prefix,
                 job_name,
                 release_packages.MACOS_SIGNED_S3_OBJECT,
             ])
@@ -848,19 +868,14 @@ def parse_args() -> argparse.Namespace:
         help="Initial step to prepare info like release branch, release tag, etc.",
     )
     parser.add_argument(
-        "--push-release-tag",
+        "--skip-repo",
         action="store_true",
-        help="Creates and pushes git tag",
+        help="Recovery run that only re-exports repo packages for an already-created release",
     )
     parser.add_argument(
-        "--push-new-release-branch",
+        "--skip-docker",
         action="store_true",
-        help="Creates and pushes new release branch and corresponding service gh tags for backports",
-    )
-    parser.add_argument(
-        "--create-bump-version-pr",
-        action="store_true",
-        help="Updates version, contributors list and creates PR",
+        help="Recovery run that only rebuilds docker images for an already-created release",
     )
     parser.add_argument(
         "--download-packages",
@@ -915,6 +930,8 @@ if __name__ == "__main__":
                 commit_ref=args.ref,
                 release_type=args.release_type,
                 dry_run=args.dry_run,
+                skip_repo=args.skip_repo,
+                skip_docker=args.skip_docker,
             )
 
     if args.download_packages:
@@ -927,24 +944,6 @@ if __name__ == "__main__":
                 version=release_info.version,
             )
             p.run()
-
-    if args.push_release_tag:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_RELEASE_TAG
-        ) as release_info:
-            release_info.push_release_tag(dry_run=args.dry_run)
-
-    if args.push_new_release_branch:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.PUSH_NEW_RELEASE_BRANCH
-        ) as release_info:
-            release_info.push_new_release_branch(dry_run=args.dry_run)
-
-    if args.create_bump_version_pr:
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.BUMP_VERSION
-        ) as release_info:
-            release_info.update_version_and_contributors_list(dry_run=args.dry_run)
 
     if args.create_gh_release:
         with ReleaseContextManager(
