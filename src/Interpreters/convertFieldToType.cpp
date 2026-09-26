@@ -619,7 +619,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertNumericType<UInt16>(src, type, strict, convert_inexact_floats);
         }
 
-        if (which_type.isDateTime() && src.getType() == Field::Types::UInt64)
+        if (which_type.isDateTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
             /// `DateTime` stores `UInt32` under the hood, so `UInt64` is the canonical `Field` type,
             /// but only a value that fits `UInt32` is representable: range-check it, or the column
