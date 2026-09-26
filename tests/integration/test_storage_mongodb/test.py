@@ -86,7 +86,7 @@ def test_simple_select(started_cluster):
     assert node.query(system_warnings_query) == "0\n"
 
     metadata_path = node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='default' AND table='simple_mongo_table'"
+        "SELECT metadata_path FROM system.tables WHERE database='default' AND table='simple_mongo_table'"
     ).strip()
     node.stop_clickhouse()
     replace_text_in_metadata(
@@ -289,51 +289,51 @@ def test_arrays(started_cluster):
         )
 
     assert (
-        node.query(f"SELECT arr_date FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_date FROM arrays_mongo_table WHERE key = 42")
         == "['2002-10-27','2024-01-08']\n"
     )
     assert (
-        node.query(f"SELECT arr_date32 FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_date32 FROM arrays_mongo_table WHERE key = 42")
         == "['2002-10-27','2024-01-08']\n"
     )
     assert (
-        node.query(f"SELECT arr_datetime FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_datetime FROM arrays_mongo_table WHERE key = 42")
         == "['2023-03-31 06:03:12','1999-02-28 12:46:34']\n"
     )
     assert (
-        node.query(f"SELECT arr_datetime64 FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_datetime64 FROM arrays_mongo_table WHERE key = 42")
         == "['2023-03-31 06:03:12.000','1999-02-28 12:46:34.000']\n"
     )
     assert (
-        node.query(f"SELECT arr_string FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_string FROM arrays_mongo_table WHERE key = 42")
         == "['43','44','45']\n"
     )
     assert (
-        node.query(f"SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_uuid FROM arrays_mongo_table WHERE key = 42")
         == "['f0e77736-91d1-48ce-8f01-15123ca1c7ed','93376a07-c044-4281-a76e-ad27cf6973c5']\n"
     )
     assert (
-        node.query(f"SELECT arr_arr_bool FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_arr_bool FROM arrays_mongo_table WHERE key = 42")
         == "[[true,false,true],[true],[false],[false]]\n"
     )
     assert (
         node.query(
-            f"SELECT arr_arr_bool_nullable FROM arrays_mongo_table WHERE key = 42"
+            "SELECT arr_arr_bool_nullable FROM arrays_mongo_table WHERE key = 42"
         )
         == "[[true,false,true],[true,NULL],[NULL],[false]]\n"
     )
     assert (
-        node.query(f"SELECT arr_empty FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+        node.query("SELECT arr_empty FROM arrays_mongo_table WHERE key = 42") == "[]\n"
     )
     assert (
-        node.query(f"SELECT arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
+        node.query("SELECT arr_null FROM arrays_mongo_table WHERE key = 42") == "[]\n"
     )
     assert (
-        node.query(f"SELECT arr_arr_null FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_arr_null FROM arrays_mongo_table WHERE key = 42")
         == "[]\n"
     )
     assert (
-        node.query(f"SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42")
+        node.query("SELECT arr_nullable FROM arrays_mongo_table WHERE key = 42")
         == "[]\n"
     )
 
@@ -1046,7 +1046,7 @@ def test_oid(started_cluster):
         """
     )
 
-    assert node.query(f"SELECT COUNT() FROM oid_table") == "3\n"
+    assert node.query("SELECT COUNT() FROM oid_table") == "3\n"
 
     assert node.query(f"SELECT _id FROM oid_table WHERE _id = '{str(ids[0])}'") == f"{str(ids[0])}\n"
     assert node.query(f"SELECT key FROM oid_table WHERE _id = '{str(ids[0])}'") == "oid1\n"
@@ -1056,21 +1056,21 @@ def test_oid(started_cluster):
     assert node.query(f"SELECT key FROM oid_table WHERE _id not in ['{ids[0]}', '{ids[1]}'] ORDER BY key") == "oid3\n"
 
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE _id = 'not-oid'")
+        node.query("SELECT * FROM oid_table WHERE _id = 'not-oid'")
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE _id != 'not-oid'")
+        node.query("SELECT * FROM oid_table WHERE _id != 'not-oid'")
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE _id = 1234567")
+        node.query("SELECT * FROM oid_table WHERE _id = 1234567")
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE _id != 1234567")
+        node.query("SELECT * FROM oid_table WHERE _id != 1234567")
     with pytest.raises(QueryRuntimeException):
         node.query(f"SELECT key FROM oid_table WHERE _id in ['{ids[0]}', 'not-oid']")
     with pytest.raises(QueryRuntimeException):
         node.query(f"SELECT key FROM oid_table WHERE _id not in ['{ids[0]}', 'not-oid']")
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT key FROM oid_table WHERE _id in ['nope', 'not-oid']")
+        node.query("SELECT key FROM oid_table WHERE _id in ['nope', 'not-oid']")
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT key FROM oid_table WHERE _id not in ['nope', 'not-oid']")
+        node.query("SELECT key FROM oid_table WHERE _id not in ['nope', 'not-oid']")
 
     node.query(
         """
@@ -1081,7 +1081,7 @@ def test_oid(started_cluster):
         """
     )
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE key = 'not-oid'")
+        node.query("SELECT * FROM oid_table WHERE key = 'not-oid'")
 
     node.query(
         """
@@ -1092,7 +1092,7 @@ def test_oid(started_cluster):
         """
     )
     with pytest.raises(QueryRuntimeException):
-        node.query(f"SELECT * FROM oid_table WHERE key = 'not-oid'")
+        node.query("SELECT * FROM oid_table WHERE key = 'not-oid'")
 
     node.query("DROP TABLE oid_table")
     oid_mongo_table.drop()
@@ -1133,7 +1133,7 @@ def test_uuid(started_cluster):
         """
     )
 
-    assert node.query(f"SELECT kUUID FROM uuid_table WHERE isValid = 2") == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
+    assert node.query("SELECT kUUID FROM uuid_table WHERE isValid = 2") == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM uuid_table WHERE isValid = 0")
@@ -1165,16 +1165,16 @@ def test_no_fail_on_unsupported_clauses(started_cluster):
     )
 
     node.query(
-        f"SELECT * FROM unsupported_clauses WHERE a > rand() SETTINGS mongodb_throw_on_unsupported_query = 0"
+        "SELECT * FROM unsupported_clauses WHERE a > rand() SETTINGS mongodb_throw_on_unsupported_query = 0"
     )
     node.query(
-        f"SELECT * FROM unsupported_clauses WHERE a / 1000 > 0 SETTINGS mongodb_throw_on_unsupported_query = 0"
+        "SELECT * FROM unsupported_clauses WHERE a / 1000 > 0 SETTINGS mongodb_throw_on_unsupported_query = 0"
     )
     node.query(
-        f"SELECT * FROM unsupported_clauses WHERE toFloat64(a) < 6.66 > rand() SETTINGS mongodb_throw_on_unsupported_query = 0"
+        "SELECT * FROM unsupported_clauses WHERE toFloat64(a) < 6.66 > rand() SETTINGS mongodb_throw_on_unsupported_query = 0"
     )
     node.query(
-        f"SELECT * FROM unsupported_clauses ORDER BY a, b LIMIT 2 BY a SETTINGS mongodb_throw_on_unsupported_query = 0"
+        "SELECT * FROM unsupported_clauses ORDER BY a, b LIMIT 2 BY a SETTINGS mongodb_throw_on_unsupported_query = 0"
     )
 
     node.query("DROP TABLE unsupported_clauses")
@@ -1321,8 +1321,8 @@ def test_json_serialization(started_cluster):
         """
     )
 
-    assert node.query(f"SELECT COUNT() FROM json_serialization_table") == "1\n"
-    assert (node.query(f"SELECT dataset FROM json_serialization_table")[:-1]
+    assert node.query("SELECT COUNT() FROM json_serialization_table") == "1\n"
+    assert (node.query("SELECT dataset FROM json_serialization_table")[:-1]
             == json.dumps(create_dataset(False, 10), separators=(',', ':')))
 
     node.query("DROP TABLE json_serialization_table")
@@ -1466,9 +1466,9 @@ def test_numbers_parsing(started_cluster):
         query = f"SELECT {case['type']}_ FROM numbers_parsing_table WHERE caseNum = {num}"
         if case['ok']:
             if case['value'] in ["0.0"]:
-                assert node.query(query) == f"0\n"
+                assert node.query(query) == "0\n"
             elif case['value'] in ["-0.0"]:
-                assert node.query(query) == f"-0\n"
+                assert node.query(query) == "-0\n"
             else:
                 assert node.query(query) == f"{case['value']}\n"
         else:

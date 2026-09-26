@@ -1,9 +1,14 @@
 #pragma once
 
-#include <atomic>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
+
+#include <base/types.h>
+
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+
+#include <Common/AggregatedMetrics.h>
+#include <Common/DynamicDelay.h>
+#include <Common/Logger_fwd.h>
 
 namespace DB
 {
@@ -11,26 +16,26 @@ class DiskLocal;
 
 class DiskLocalCheckThread : WithContext
 {
-public:
-    friend class DiskLocal;
+    void run();
 
-    DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context_, UInt64 local_disk_check_period_ms);
+public:
+    DiskLocalCheckThread(DiskLocal * disk_, ContextPtr context_, int64_t local_disk_check_period_ms);
+    ~DiskLocalCheckThread();
 
     void startup();
-
     void shutdown();
 
 private:
-    bool check();
-    void run();
-
     DiskLocal * disk;
-    size_t check_period_ms;
-    LoggerPtr log;
-    std::atomic<bool> need_stop{false};
+    /// Unique per thread: one disk can have two DiskLocal objects, which must not probe one file.
+    const String check_file_path;
+    DynamicDelay check_period;
+    const LoggerPtr log;
 
     BackgroundSchedulePoolTaskHolder task;
-    size_t retry{};
+
+    AggregatedMetrics::GlobalSum is_readonly;
+    AggregatedMetrics::GlobalSum is_broken;
 };
 
 }

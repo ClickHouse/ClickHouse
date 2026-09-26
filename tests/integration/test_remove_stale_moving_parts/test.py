@@ -104,4 +104,4 @@ def test_remove_stale_moving_parts_without_zookeeper(started_cluster):
     cluster.wait_zookeeper_nodes_to_start(["zoo1", "zoo2", "zoo3"])
     q(ch1, "SYSTEM START MOVES")
 
-    q(ch1, f"DROP TABLE test_remove")
+    q(ch1, "DROP TABLE test_remove")

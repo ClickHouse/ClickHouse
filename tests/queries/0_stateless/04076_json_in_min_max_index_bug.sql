@@ -1,9 +1,10 @@
 -- Tags: no-parallel-replicas
 -- Tag no-parallel-replicas: output of explain is different
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_json_minmax_idx;
 
-CREATE TABLE t_json_minmax_idx (id UInt32, j JSON, INDEX idx_j j TYPE minmax GRANULARITY 1) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=1;
+CREATE TABLE t_json_minmax_idx (id UInt32, j JSON, INDEX idx_j j TYPE minmax GRANULARITY 1) ENGINE = MergeTree() ORDER BY id SETTINGS index_granularity=1, allow_minmax_index_for_json=1;
 
 INSERT INTO t_json_minmax_idx VALUES (1, '{"a":"1"}'), (2, '{"a":"2"}'), (3, '{"a":"3"}');
 

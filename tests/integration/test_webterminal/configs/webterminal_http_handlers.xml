@@ -1,5 +1,5 @@
 <clickhouse>
-    <allow_experimental_webterminal>true</allow_experimental_webterminal>
+    <enable_webterminal>true</enable_webterminal>
 
     <!-- Explicit `http_handlers` block (no `defaults`). This exercises the
          config-mode routing for both `webterminal` and the JS asset handler,

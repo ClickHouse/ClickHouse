@@ -40,6 +40,7 @@ public:
         UInt32 shard_count_,
         std::shared_ptr<const StorageLimitsList> storage_limits_,
         const String & cluster_name_,
+        const String & shard_scope_identity_,
         UnavailableShardTrackerPtr unavailable_shard_tracker_ = nullptr);
 
     String getName() const override { return "ReadFromRemote"; }
@@ -66,7 +67,10 @@ private:
     std::shared_ptr<const StorageLimitsList> storage_limits;
     LoggerPtr log;
     UInt32 shard_count;
+    /// A resolvable cluster name, also assigned to `cluster_for_parallel_replicas`.
     const String cluster_name;
+    /// Identifies the shard numbering the shipped `_shard_num` belongs to; not necessarily a cluster name.
+    const String shard_scope_identity;
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     std::optional<GetPriorityForLoadBalancing> priority_func_factory;
 
@@ -121,6 +125,12 @@ public:
 
     StorageID getStorageID() const { return storage_id; }
     ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
+
+    /// The connection pools (sized to the coordinator's replica count) and the local replica's index
+    /// within them. Captured before this step is dropped from the local INSERT SELECT plan so the
+    /// remote-pool pass can reuse the exact same replica set the coordinator was created with.
+    const std::vector<ConnectionPoolPtr> & getPools() const { return pools_to_use; }
+    std::optional<size_t> getExcludePoolIndex() const { return exclude_pool_index; }
 
 private:
     Pipes addPipes(ASTPtr ast, const SharedHeader & out_header);

@@ -32,6 +32,9 @@ public:
 
     QueryPlan::Node * getSubplanReferenceRoot() const { return subplan_root; }
 
+    /// Used to redirect the reference to the corresponding cloned node when a subplan is cloned.
+    void setSubplanReferenceRoot(QueryPlan::Node * subplan_root_) { subplan_root = subplan_root_; }
+
     const ColumnIdentifiers & getColumnsToUse() const { return columns_to_use; }
 
     ColumnIdentifiers extractColumnsToUse() { return std::move(columns_to_use); }

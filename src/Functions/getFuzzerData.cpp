@@ -2,6 +2,7 @@
 
 #if USE_FUZZING_MODE
 
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeString.h>

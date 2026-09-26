@@ -1,0 +1,118 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-15
+title: 'デモデイズ - 2026-08-15'
+sidebarTitle: '2026-08-15'
+description: '2026-08-15 の ClickStack デモデイズ'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="dashboard-variables">
+  ## ダッシュボード変数
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/gY2Kej-EYx4" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+今週の主な変更点はダッシュボード変数です。ダッシュボードで既に使用されているフィルターモデルを拡張したもので、既存・新規を問わず、任意のフィルターを変数として利用できます。
+
+変数にはデフォルトでフィルターの表示名が使用されます。表示名に特殊文字が含まれる場合や、2 つのフィルターの表示名が同じ場合は、カスタム変数名を割り当てることができます。後からフィルター名を変更しても、カスタム名は変わりません。設定ページには参照時に必要な名前が表示され、変数を有効にするとフィルターのツールチップにも表示されます。
+
+Raw SQL チャートでは、変数を複数の方法で使用できます。`$__filter($var)` は、1 つの変数の現在の選択内容を展開します。これは、すべてのフィルターを展開する既存の `$__filters` マクロに対する単一変数版です。
+
+特に注目すべき追加機能は `$__conditionalAll(condition, $var)` です。第 1 引数は条件、第 2 引数は変数です。変数に選択内容がある場合は、その条件がクエリに含まれます。選択内容がない場合は、式全体が `1 = 1` となり、フィルタリングに影響しません。
+
+これにより、ログソース間のマッピングが可能になります。ダッシュボードではトレースのステータスコードを `error` または `info` にマッピングできるため、ログテーブルに対して定義した重大度フィルターでトレーステーブルをフィルタリングできます。ダッシュボードレベルで `error` を選択すると、トレースクエリはエラーステータスでフィルタリングされます。
+
+オートコンプリートでは、利用可能なすべての変数と対応するフォーマットが候補として表示されます。Brandon の提案により、現在は現在の選択内容に基づく実際の展開結果もインラインで表示されます。マクロの候補にも展開結果が含まれ、新しいドキュメントセクションでは各マクロの動作を説明しています。検証により、存在しない変数への参照や誤った引数で呼び出されたマクロを検出できます。
+
+ビルダーチャートでは、SQL と Lucene の入力にまたがる、ほとんどの編集可能なフィールドで同じ変数置換を使用できます。変数は `WHERE`、`GROUP BY`、`HAVING`、`ORDER BY` で使用でき、同じオートコンプリートと検証が提供されます。Lucene フィールドは変数をサポートしますが、マクロはサポートしません。SQL ビルダーフィールドでは、生の SQL で利用できる完全なセットではなく、変数関連のマクロのみを利用できます。
+
+アラートには 1 つの厳格なルールがあります。すべての変数は空の値として評価されます。アラートクエリが変数を参照している場合、保存前にエディターで警告が表示されます。プレビューと生成された SQL には、アラート詳細ページを含めて空の展開結果が表示され、アラートタスクの実行時にもこれらの空の値が適用されます。
+
+変数設定は引き続き `NEXT_PUBLIC_ENABLE_DASHBOARD_VARIABLES` の背後にあります。変数が設定されていない場合、ダッシュボードの動作は変わりません。
+
+**関連 PR:** [#2836](https://github.com/hyperdxio/hyperdx/pull/2836) フィルター変数の設定を追加、[#2873](https://github.com/hyperdxio/hyperdx/pull/2873) Raw SQL チャートで変数を置換、[#2874](https://github.com/hyperdxio/hyperdx/pull/2874) SQL ダッシュボード変数のオートコンプリートと検証、[#2901](https://github.com/hyperdxio/hyperdx/pull/2901) チャートビルダータイルでダッシュボード変数をサポート、[#2910](https://github.com/hyperdxio/hyperdx/pull/2910) アラートクエリで変数を空として展開、[#2923](https://github.com/hyperdxio/hyperdx/pull/2923) 依存変数の値クエリをサポート、[#2937](https://github.com/hyperdxio/hyperdx/pull/2937) ネストしたマクロとマクロ内の変数参照をサポート、[#2944](https://github.com/hyperdxio/hyperdx/pull/2944) 外部 API にダッシュボード変数を追加
+
+<div id="alert-detail-page-with-evaluation-history">
+  ## 評価履歴付きアラート詳細ページ
+</div>
+
+*[@wrn14897](https://github.com/wrn14897) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Y0entaRF-R8" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで、アラートで確認できたのは履歴ストリップ程度でした。アラートが実際にどのように動作しているかを把握したい場合でも、詳しく確認できる情報はほとんどありませんでした。
+
+新しい詳細ページでは、すべての評価を確認できます。グループ化されたアラートでは、どのグループが発火したか、しきい値を超えた値が何かを個別に確認できます。各エントリには ClickHouse クエリの実行時間も含まれ、アラートの設定もあわせて確認できます。
+
+バックフィルされたバケットのカラムについては、補足が必要です。評価が実行されなかった場合、次回の実行時に不足しているバケットを処理してギャップを補完します。そのため、バックフィルされたバケットがある場合は、アラートの実行がスケジュールより遅れていることを意味します。ClickHouse クエリが遅い場合も、後続の評価が気付かれないまま遅延するのではなく、明確な痕跡が残るようになりました。
+
+チャートマーカーは評価対象バケットの開始位置に揃えられるため、アラートがいつ発火し、いつ OK に戻ったかを簡単に確認できます。
+
+詳細ページから直接アラートを編集または削除することもできます。保存済み検索モーダルやダッシュボードタイルエディタに戻る必要はありません。このページにさらに多くのアラート設定を表示することについては、引き続き検討しています。
+
+このページは引き続き `NEXT_PUBLIC_ENABLE_ALERT_DETAILS` の背後にあります。
+
+**関連 PR:** [#2833](https://github.com/hyperdxio/hyperdx/pull/2833) アラート評価の読み取りモデルと `GET /alerts/:id/evaluations`、[#2834](https://github.com/hyperdxio/hyperdx/pull/2834) AlertHistory におけるアラート評価エラーと分析情報の永続化、[#2835](https://github.com/hyperdxio/hyperdx/pull/2835) 評価履歴付きアラート詳細ページ、[#2928](https://github.com/hyperdxio/hyperdx/pull/2928) アラートチャートマーカーを評価対象バケットの開始位置に合わせる、[#2931](https://github.com/hyperdxio/hyperdx/pull/2931) アラート詳細ページからのアラート編集および削除を許可
+
+<div id="investigating-alerts-and-mcp-tool-annotations">
+  ## アラートの調査と MCP ツールアノテーション
+</div>
+
+*[@brandon-pereira](https://github.com/brandon-pereira) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/942yeJitK4Q" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+発報したアラートに Investigate ボタンが追加されました。このボタンをクリックすると、アラートページまたはアラート詳細ページからノートブックでの調査を開始できます。
+
+最終的には、アラートの発報時にこれらの調査を自動的に開始することを目指しています。このボタンは有用な中間段階であり、最終形ではありません。
+
+ClickStack MCPサーバーのすべてのツールに、アノテーションヒントも追加されました。以前は、あるツールが読み取り専用であるのか、別のツールがデータを変更または削除するのかを、サーバーは示していませんでした。
+
+`readOnlyHint` と `destructiveHint` を追加することで、クライアントはこれらのツールを異なる方法で扱うための十分な情報を得られます。読み取り操作は中断なく実行できる一方、破壊的な操作は明示的な承認を待機できます。アラートの削除がその代表例です。削除前には確認を求めるべきです。
+
+最後の変更は、そもそもエージェントがどのツールを選択するかに影響します。明確な選択ポリシーがないままツールセットが拡大したため、`clickstack_sql` の使用が増加していました。ビルダーツールのほうが適している場合でも、エージェントは生の SQL を使用していました。
+
+これはクエリの正確性だけに関わる問題ではありません。生の SQL では静的な結果タイルが作成されます。`clickstack_table`、`clickstack_timeseries`、`clickstack_search` などのビルダーツールは、クリックして詳細を確認したり、ピボットしたりできるタイルを生成します。
+
+MCP は現在、まずこれらのビルダーツールを使用するようエージェントを誘導し、これらでは表現できないクエリにのみ生の SQL を使用します。この変更後、評価スコアは大幅に改善しました。
+
+**関連 PR:** [#2838](https://github.com/hyperdxio/hyperdx/pull/2838) すべてのツールに MCP ツールアノテーション (`readOnlyHint` など) を追加、[#2840](https://github.com/hyperdxio/hyperdx/pull/2840) エージェントを生の SQL ではなくビルダークエリツールへ誘導、[#2870](https://github.com/hyperdxio/hyperdx/pull/2870) ダッシュボードエージェントをシリーズごとのタイルフィルターへ誘導。Investigate ボタン自体にはリンク可能な公開 PR はありません。
+
+<div id="multi-series-metric-charts-in-a-single-query">
+  ## 単一クエリでの複数シリーズのメトリクスチャート
+</div>
+
+*[@wrn14897](https://github.com/wrn14897) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/jJKgFrMfGjU" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで、1 つのチャートに複数のメトリクスを表示するには、シリーズごとに ClickHouse クエリを 1 つ実行し、結果セットを Node またはブラウザでマージする必要がありました。N シリーズのチャートでは、N 個のクエリが生成されていました。
+
+現在、複数シリーズのチャートは単一の SQL クエリにコンパイルされます。各シリーズは CTE となり、最後に ClickHouse がそれらをマージします。比率も同様です。両方のシリーズが 1 つのクエリで生成され、最終プロジェクションで比率が計算されます。
+
+クエリ数の削減が直接的なメリットです。このクエリ形状は、メトリクス数式の基盤にもなります。数式を最終的な `SELECT` で表現するには、すべてのシリーズが 1 つのリレーション内でカラムとして利用できる必要があります。現在コンパイラが生成するものは、まさにこれに該当しており、数式機能の実装もすでに後に続いています。
+
+この変更により、1 件のリグレッションが判明しました。浮動小数点数と整数を返す集計を混在させた場合、複数シリーズのタイルをレンダリングできませんでした。`Float64` を返すヒストグラムの `quantile` と、`Int64` を返すヒストグラムの `count` を組み合わせるだけで発生していました。
+
+合成された `UNION ALL` とピボットでは、すべてのシリーズが同じカラムを通るため、ClickHouse が型を `Variant(Float64, Int64)` に拡張していました。この問題は修正されました。
+
+**関連 PR:** [#2858](https://github.com/hyperdxio/hyperdx/pull/2858) 複数シリーズのメトリクスマージにおける整数テストカバレッジの拡充、[#2859](https://github.com/hyperdxio/hyperdx/pull/2859) 複数シリーズのメトリクスマージ計算を ClickHouse に移行、[#2907](https://github.com/hyperdxio/hyperdx/pull/2907) 複数シリーズのメトリクスタイルに対する alert-task カバレッジ、[#2916](https://github.com/hyperdxio/hyperdx/pull/2916) 浮動小数点数と整数の集計を混在させた複数シリーズのメトリクスチャートを修正、[#2872](https://github.com/hyperdxio/hyperdx/pull/2872) 数式エクスプレッションモデル、[#2908](https://github.com/hyperdxio/hyperdx/pull/2908) 合成メトリクスクエリで数式をレンダリング、[#2909](https://github.com/hyperdxio/hyperdx/pull/2909) メトリクス数式用チャートエディター UI
+
+<div id="lucene-autocomplete-and-password-requirement-fixes">
+  ## Lucene のオートコンプリートとパスワード要件の修正
+</div>
+
+*[@pulpdrew](https://github.com/pulpdrew) によるデモ*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8MODmM5RT6Q" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ダッシュボード変数のテスト中に、別のリグレッションが見つかりました。Lucene のオートコンプリートが、ほぼすべての場所でいつの間にか機能しなくなっていました。引き続き機能していたのは Search ページだけでした。
+
+もう一つの変更は、招待されたユーザーがパスワードを設定する Join Team ページに関するものです。バックエンドでは要件が適用されていたにもかかわらず、ページにはパスワード要件が表示されていませんでした。無効な値を入力すると、一般的な「Password is invalid」というメッセージが表示されるだけで、ユーザーはポリシーを推測するしかありませんでした。
+
+これらの要件が表示されるようになりました。要件を表示する共有コンポーネントを確認したところ、バックエンドとの間にさらに 2 つの不一致が見つかりました。対象となる特殊文字とパスワードの最大長です。どちらも修正されました。
+
+**関連 PR:** [#2902](https://github.com/hyperdxio/hyperdx/pull/2902) Lucene のオートコンプリートを復元、[#2904](https://github.com/hyperdxio/hyperdx/pull/2904) Join Team ページにパスワード要件を表示

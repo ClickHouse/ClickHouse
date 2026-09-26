@@ -1,0 +1,38 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: 'Présentation'
+title: 'Optimisation des requêtes'
+description: 'Découvrez comment diagnostiquer les requêtes ClickHouse lentes, isoler les goulots d’étranglement et sélectionner des optimisations ciblées'
+doc_type: 'guide'
+keywords: ['optimisation des requêtes', 'performances', 'bonnes pratiques', 'réglage des requêtes', 'efficacité', 'journal des requêtes', 'EXPLAIN']
+---
+
+Ces guides proposent un workflow pour analyser et améliorer les requêtes lentes dans ClickHouse. Identifiez une requête lente récurrente, isolez son goulot d’étranglement, choisissez une optimisation ciblée et comparez le résultat à une référence reproductible.
+
+<div id="choose-where-to-start">
+  ## Choisissez votre point de départ
+</div>
+
+Les trois premiers guides constituent un workflow de bout en bout, mais vous pouvez aussi commencer à l’étape qui correspond à ce que vous savez déjà.
+
+<CardGroup cols={1}>
+  <Card title="Diagnostiquer les requêtes lentes" icon="magnifying-glass" href="/fr/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">
+    Commencez ici si vous devez identifier un schéma récurrent de requêtes lentes. Utilisez l’historique des requêtes local ou à l’échelle du cluster pour choisir une exécution représentative, examiner son utilisation des ressources et formuler une première hypothèse.
+  </Card>
+
+  <Card title="Isoler les goulots d’étranglement des requêtes" icon="layer-group" href="/fr/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
+    Commencez ici si vous avez une requête lente, mais ne savez pas encore quelles opérations en déterminent les performances. Comparez des versions progressivement plus simples de la requête dans des conditions contrôlées.
+  </Card>
+
+  <Card title="Choisir une approche d’optimisation" icon="sliders" href="/fr/guides/clickhouse/performance-and-monitoring/optimization-approaches">
+    Commencez ici si vous avez identifié le goulot d’étranglement et devez choisir une modification ciblée. Comparez les approches permettant de réduire les données lues, d’aligner l’organisation des données sur vos requêtes ou de précalculer des traitements répétitifs.
+  </Card>
+</CardGroup>
+
+<div id="example">
+  ## Exemple
+</div>
+
+<Card title="Exemple d'optimisation détaillé" icon="flask" href="/fr/guides/clickhouse/performance-and-monitoring/query-optimization-example">
+  Commencez par exécuter des requêtes sur le jeu de données des taxis de NYC, puis modifiez le schéma et la clé de tri, en mesurant chaque étape par rapport à la même référence.
+</Card>

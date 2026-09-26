@@ -1,0 +1,29 @@
+---
+description: 'Documentation for Index'
+sidebar: 'sqlreference'
+slug: /sql-reference/functions
+title: 'Functions Overview'
+doc_type: 'landing-page'
+mode: wide
+---
+
+<CardGroup cols={2}>
+  <Card title="Regular Functions" icon="function" href="/reference/functions/regular-functions/overview">
+    Functions whose result for each row is independent of all other rows.
+  </Card>
+  <Card title="Aggregate Functions" icon="calculator" href="/reference/functions/aggregate-functions/index">
+    Functions that accumulate a set of values across rows.
+  </Card>
+  <Card title="Table Functions" icon="table" href="/reference/functions/table-functions/index">
+    Methods for constructing tables.
+  </Card>
+  <Card title="Window Functions" icon="chart-column" href="/reference/functions/window-functions/index">
+    Functions which let you perform calculations across a set of rows that are related to the current row.
+  </Card>
+  <Card title="User Defined Functions" icon="code" href="/reference/functions/regular-functions/udf">
+    Custom executable functions defined by the user.
+  </Card>
+  <Card title="WebAssembly UDF" icon="cube" href="/reference/functions/regular-functions/wasm_udf">
+    User-defined functions implemented with WebAssembly.
+  </Card>
+</CardGroup>

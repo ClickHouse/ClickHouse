@@ -4,6 +4,7 @@
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
@@ -85,9 +86,9 @@ struct MergeTreeReadTaskColumns
     /// Column names to read during WHERE
     NamesAndTypesList columns;
     /// Column names to read during each PREWHERE step
-    std::vector<NamesAndTypesList> pre_columns;
+    NamesAndTypesLists pre_columns;
     /// Column names to read from patch parts.
-    std::vector<NamesAndTypesList> patch_columns;
+    NamesAndTypesLists patch_columns;
 
     String dump() const;
     Names getAllColumnNames() const;
@@ -96,20 +97,25 @@ struct MergeTreeReadTaskColumns
 
 struct MergeTreeReadTaskInfo
 {
-    /// Data part which should be read while performing this task
-    DataPartPtr data_part;
-    /// Parent part of the projection part
+    /// Part (owned or borrowed) to read while performing this task.
+    /// Owned parts wrap a concrete IMergeTreeDataPart (LoadedMergeTreeDataPartInfoForReader);
+    /// stateless-worker parts use BorrowedMergeTreeDataPartInfoForReader.
+    MergeTreeDataPartInfoForReaderPtr data_part_info;
+    /// Parent part of the projection part (projections are coordinator-only)
     DataPartPtr parent_part;
     /// For `part_index` virtual column
-    size_t part_index_in_query;
+    size_t part_index_in_query{};
     /// For `part_starting_offset` virtual column
-    size_t part_starting_offset_in_query;
+    size_t part_starting_offset_in_query{};
     /// Alter converversionss that should be applied on-fly for part.
     AlterConversionsPtr alter_conversions;
     /// `_part_offset` mapping used to merge projections with `_part_offset`.
     MergedPartOffsetsPtr merged_part_offsets;
     /// Prewhere steps that should be applied to execute on-fly mutations for part.
     PrewhereExprSteps mutation_steps;
+    /// Whether `mutation_steps` holds steps for on-fly mutations, as opposed to only the step that
+    /// applies an already materialized lightweight-delete mask.
+    bool has_on_fly_mutation_steps = false;
     /// Patches that should be applied for part.
     PatchPartsForReader patch_parts;
     /// Column names to read during PREWHERE and WHERE
@@ -154,7 +160,7 @@ public:
         MergeTreePatchReaders patches;
         MergeTreeReaderPtr prepared_index;
 
-        void updateAllMarkRanges(const MarkRanges & ranges);
+        void updateAllMarkRanges(const MarkRanges & ranges, const std::vector<MarkRanges> & patches_ranges);
     };
 
     struct BlockSizeParams
@@ -170,6 +176,11 @@ public:
     {
         Block block;
         MarkRanges read_mark_ranges;
+        /// Per-granule unmatched marks: marks where all rows were filtered out by PREWHERE.
+        /// Populated only when use_query_condition_cache is enabled.
+        /// Superset of what addPrewhereUnmatchedMarks recorded with the old coarse approach,
+        /// because it captures individual filtered-out granules even in partially-passing batches.
+        MarkRanges unmatched_mark_ranges;
         size_t row_count = 0;
         size_t num_read_rows = 0;
         size_t num_read_bytes = 0;
@@ -188,7 +199,8 @@ public:
         const PrewhereExprInfo & prewhere_actions,
         MergeTreeIndexBuildContextPtr index_build_context,
         LazyMaterializingRowsPtr lazy_materializing_rows,
-        const ReadStepsPerformanceCounters & read_steps_performance_counters);
+        const ReadStepsPerformanceCounters & read_steps_performance_counters,
+        bool collect_predicate_statistics);
 
     void initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows);
 
@@ -201,6 +213,19 @@ public:
 
     void addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges_);
     const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
+
+    /// Returns true if a reader earlier in the chain than PREWHERE can skip whole marks based on
+    /// secondary indexes (skip-index or projection-index). When true, marks that appear in
+    /// `read_mark_ranges` with `row_count == 0` may have been filtered before PREWHERE evaluated
+    /// them, so they must not be attributed to the PREWHERE predicate in the QueryConditionCache.
+    /// See Issue #104781.
+    bool readersChainCanSkipMarksBeforePrewhere() const;
+
+    /// Returns true if on-fly mutations or patch parts are applied earlier in the readers chain
+    /// than PREWHERE (and therefore than the downstream WHERE filter too). When true, a mark may be
+    /// fully filtered by the mutation rather than by the predicate, so it must not be attributed to
+    /// the PREWHERE or WHERE predicate in the QueryConditionCache.
+    bool appliesMutationsBeforePrewhere() const;
 
     Readers releaseReaders() { return std::move(readers); }
 
@@ -215,11 +240,15 @@ public:
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,
         const PrewhereExprInfo & prewhere_actions,
-        const ReadStepsPerformanceCounters & read_steps_performance_counters);
+        const ReadStepsPerformanceCounters & read_steps_performance_counters,
+        bool collect_predicate_statistics);
 
 private:
-    using DataflowCacheUpdateCallback
-        = std::function<void(const ColumnsWithTypeAndName & columns, size_t read_bytes, std::optional<bool> & should_continue_sampling)>;
+    using DataflowCacheUpdateCallback = std::function<void(
+        const ColumnsWithTypeAndName & columns,
+        const NameSet & partially_read_columns,
+        size_t read_bytes,
+        std::optional<bool> & should_continue_sampling)>;
 
     UInt64 estimateNumRows() const;
 

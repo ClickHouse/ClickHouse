@@ -1,5 +1,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -72,6 +73,11 @@ bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet 
     }
     else
     {
+        /// The extracted predicate runs in addition to the filter above the JOIN, so a per-row draw such as
+        /// `rand` happens twice and only a row passing both survives; a lambda body is a separate DAG.
+        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); }))
+            return false;
+
         for (const auto * child : node.children)
         {
             if (!onlyDependsOnAvailableColumns(*child, available_columns))
@@ -171,6 +177,10 @@ const ActionsDAG::Node * buildPredicateFromTemplate(ActionsDAG & full_dag, const
 std::optional<ActionsDAG> tryToExtractPartialPredicate(
     const ActionsDAG & original_dag,
     const std::string & filter_name,
+    const Names & available_columns);
+std::optional<ActionsDAG> tryToExtractPartialPredicate(
+    const ActionsDAG & original_dag,
+    const std::string & filter_name,
     const Names & available_columns)
 {
     if (!original_dag.tryFindInOutputs(filter_name))
@@ -206,6 +216,7 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
     return full_dag;
 }
 
+void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag)
 {
     auto & new_filter_node = nodes.emplace_back();

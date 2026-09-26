@@ -13,7 +13,7 @@ void test_find_first_not(const std::string & haystack, std::size_t expected_pos)
     ASSERT_EQ(begin + expected_pos, find_first_not_symbols<symbols...>(begin, end));
 }
 
-void test_find_first_not(const std::string & haystack, const std::string & symbols, const std::size_t expected_pos)
+static void test_find_first_not(const std::string & haystack, const std::string & symbols, const std::size_t expected_pos)
 {
     const char * begin = haystack.data();
 
@@ -137,16 +137,10 @@ TEST(FindSymbols, RunTimeNeedle)
         test_haystack(short_haystack, unfindable_short_needle);
     }
 
+    // SearchSymbols rejects needles longer than SearchSymbols::BUFFER_SIZE on every platform,
+    // not only where the SSE4.2 path is compiled in.
     const std::string excessively_long_needle = "ABCDEFIJKLMNOPQRSTUVWXYZacfghijkmnpqstuvxz";
-#if defined (__SSE4_2__)
-    // Only x86 & SSE4.2: Assert big haystack is not accepted and exception is thrown
-    ASSERT_ANY_THROW(find_first_symbols(long_haystack, SearchSymbols(excessively_long_needle)));
-#else
-    // On other platforms, this should work fine:
-    const char * long_haystack_cstr = long_haystack.c_str();
-    const char * res = find_first_symbols(long_haystack_cstr, SearchSymbols(excessively_long_needle));
-    ASSERT_NE(res, nullptr);
-#endif
+    ASSERT_ANY_THROW(SearchSymbols{excessively_long_needle});
 }
 
 TEST(FindNotSymbols, AllSymbolsPresent)

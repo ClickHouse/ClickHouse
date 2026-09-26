@@ -1,0 +1,13 @@
+---
+title: 'هل يتضمن ClickHouse مُحسِّنًا قائمًا على التكلفة'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/cost-based
+description: 'يتضمن ClickHouse بعض آليات التحسين القائمة على التكلفة'
+doc_type: 'مرجع'
+keywords: ['CBE', 'optimizer']
+---
+
+يتضمن ClickHouse بعض آليات التحسين القائمة على التكلفة بشكل محدود، مثل: تحديد ترتيب قراءة الأعمدة بناءً على تكلفة قراءة نطاقات البيانات المضغوطة من القرص.
+
+ويُجري ClickHouse أيضًا إعادة ترتيب JOIN استنادًا إلى إحصاءات الأعمدة، لكن هذا (اعتبارًا من 2025) لا يزال بعيدًا جدًا عن مستوى CBE في Postgres وOracle وMS SQL Server.

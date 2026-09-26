@@ -1,0 +1,80 @@
+FLAT()
+0
+1
+1
+1
+1
+0
+equivalence	1
+HASHED()
+0
+1
+1
+1
+1
+0
+equivalence	1
+HASHED_ARRAY()
+0
+1
+1
+1
+1
+0
+equivalence	1
+CACHE(SIZE_IN_CELLS 10)
+0
+1
+1
+1
+1
+0
+equivalence	1
+DIRECT()
+0
+1
+1
+1
+1
+0
+equivalence	1
+Nullable FLAT()
+0
+0
+0
+3
+0
+0
+equivalence	1
+Nullable HASHED()
+0
+0
+0
+3
+0
+0
+equivalence	1
+Nullable HASHED_ARRAY()
+0
+0
+0
+3
+0
+0
+equivalence	1
+Nullable CACHE(SIZE_IN_CELLS 10)
+0
+0
+0
+3
+0
+0
+equivalence	1
+Nullable DIRECT()
+0
+0
+0
+3
+0
+0
+equivalence	1

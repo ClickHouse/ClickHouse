@@ -34,7 +34,7 @@ bool BoundedReadBuffer::nextImpl()
     if (read_until_position && file_offset_of_buffer_end == *read_until_position)
         return false;
 
-    bool result;
+    bool result = false;
     {
         SwapHelper swap(*this, *impl);
         result = impl->next();

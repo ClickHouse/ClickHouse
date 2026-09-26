@@ -1,0 +1,7 @@
+--- two CTE refs of input() in clickhouse-local: rejected
+INVALID_USAGE_OF_INPUT
+--- single CTE ref of input() in clickhouse-local: allowed
+--- direct input() without CTE in clickhouse-local: allowed
+--- final rows
+2	single
+3	direct

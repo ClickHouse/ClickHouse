@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 SELECT 0.1::Decimal(38, 38) AS c;
 EXPLAIN SYNTAX SELECT 0.1::Decimal(38, 38) AS c;
 

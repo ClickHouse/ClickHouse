@@ -1,0 +1,232 @@
+---
+position: 1
+slug: /clickhouse-operator/guides/introduction
+title: ClickHouse Operator 소개
+keywords: ['kubernetes']
+description: '이 문서에서는 ClickHouse Operator의 핵심 개념과 사용 패턴을 개괄적으로 설명합니다.'
+doc_type: 'guide'
+---
+
+이 문서에서는 ClickHouse Operator의 핵심 개념과 사용 패턴을 개괄적으로 설명합니다.
+
+<div id="what-is-the-clickhouse-operator">
+  ## ClickHouse Operator란 무엇입니까
+</div>
+
+ClickHouse Operator는 Kubernetes에서 ClickHouse 클러스터의 배포와 관리를 자동화하는 Kubernetes 연산자입니다. 연산자 패턴을 기반으로 구축되었으며, ClickHouse 클러스터와 그 종속 리소스를 나타내는 사용자 지정 리소스를 통해 Kubernetes API를 확장합니다.
+
+연산자는 다음을 처리합니다:
+
+* 클러스터 수명 주기 관리(생성, 업데이트, 스케일링, 삭제)
+* ClickHouse Keeper 클러스터 조정
+* 자동 구성 생성
+* 데이터베이스 스키마 동기화
+* 롤링 업데이트 및 업그레이드
+* 스토리지 프로비저닝
+
+<div id="custom-resources">
+  ## 사용자 지정 리소스
+</div>
+
+연산자는 두 가지 주요 사용자 정의 리소스 정의(CRD)를 제공합니다:
+
+<div id="clickhousecluster">
+  ### ClickHouseCluster
+</div>
+
+구성 가능한 레플리카와 세그먼트를 갖춘 ClickHouse 데이터베이스 클러스터를 나타냅니다.
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample-cluster
+spec:
+  replicas: 3
+  shards: 2
+  keeperClusterRef:
+    name: sample-keeper
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+<div id="keepercluster">
+  ### KeeperCluster
+</div>
+
+분산 조정을 위한 ClickHouse Keeper 클러스터(ZooKeeper 대체)를 나타냅니다.
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample-keeper
+spec:
+  replicas: 3
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+```
+
+<div id="coordination">
+  ## 코디네이션
+</div>
+
+<div id="clickhouse-keeper-is-required">
+  ### ClickHouse Keeper가 필요합니다
+</div>
+
+모든 ClickHouseCluster에는 분산 조정을 위해 ClickHouse Keeper 클러스터가 필요합니다.
+ClickHouseCluster 사양(spec)에서는 `keeperClusterRef`를 사용해 Keeper 클러스터를 참조해야 합니다. 기본적으로 연산자는 ClickHouseCluster 네임스페이스를 확인하지만, `keeperClusterRef.namespace`를 설정해 다른 감시 중인 네임스페이스의 KeeperCluster를 가리키도록 할 수도 있습니다.
+
+<div id="one-to-one-keeper-relationship">
+  ### 일대일 Keeper 관계
+</div>
+
+각 ClickHouseCluster에는 전용 KeeperCluster가 있어야 합니다. 여러 ClickHouseCluster가 하나의 KeeperCluster를 공유할 수 없습니다.
+
+**이유는 무엇일까요?** 연산자는 각 ClickHouseCluster가 해당 Keeper에 접근할 수 있도록 고유한 인증 키를 자동으로 생성합니다. 이 키는 시크릿에 저장되며, 공유할 수 없습니다.
+
+**영향**:
+
+* 여러 ClickHouseCluster가 동일한 KeeperCluster를 참조할 수 없습니다
+* ClickHouseCluster를 다시 생성할 때는 해당 KeeperCluster도 다시 생성해야 합니다
+
+<Note>
+  ClickHouseCluster 또는 KeeperCluster 리소스를 삭제해도 Persistent Volume은 자동으로 삭제되지 않습니다.
+</Note>
+
+클러스터를 다시 생성할 때는 다음과 같이 하십시오:
+
+1. ClickHouseCluster 리소스를 삭제합니다
+2. KeeperCluster 리소스를 삭제합니다
+3. 모든 파드가 종료될 때까지 기다립니다
+4. 완전히 새로 시작하려면 필요에 따라 PersistentVolumeClaim도 삭제합니다
+5. KeeperCluster와 ClickHouseCluster를 함께 다시 생성합니다
+
+인증 오류를 방지하려면 Persistent Volume을 수동으로 삭제하거나, 새 스토리지를 사용해 두 클러스터를 함께 다시 생성하십시오.
+
+<div id="schema-replication">
+  ## 스키마 복제
+</div>
+
+ClickHouse Operator는 클러스터의 모든 레플리카에 데이터베이스 정의를 자동으로 복제합니다.
+
+<div id="what-gets-replicated">
+  ### 복제되는 항목
+</div>
+
+연산자는 다음을 동기화합니다:
+
+* [Replicated](/ko/reference/engines/database-engines/replicated) 데이터베이스 정의
+* 통합 데이터베이스 엔진(PostgreSQL, MySQL 등)
+
+연산자는 다음을 **동기화하지 않습니다**:
+
+* 비복제 데이터베이스(Atomic, Ordinary 등)
+* 비복제 데이터베이스의 로컬 테이블
+* 테이블 데이터(ClickHouse 복제에서 처리됨)
+
+<div id="recommended-use-replicated-database-engine">
+  ### 권장: Replicated 데이터베이스 엔진 사용
+</div>
+
+<Tip>
+  **모범 사례**
+
+  프로덕션 배포에서는 항상 [Replicated](/ko/reference/engines/database-engines/replicated) 데이터베이스 엔진을 사용하십시오.
+</Tip>
+
+이점:
+
+* 모든 노드에 걸쳐 스키마가 자동으로 복제됨
+* 테이블 관리 간소화
+* 연산자가 새 레플리카와 동기화할 수 있음
+* 클러스터 전체에서 일관된 스키마 유지
+
+분산 DDL로 데이터베이스를 생성하십시오:
+
+```sql
+CREATE DATABASE my_database ON CLUSTER 'default' ENGINE = Replicated;
+```
+
+<div id="avoid-non-replicated-engines">
+  ### non-Replicated 엔진 사용은 피하십시오
+</div>
+
+non-Replicated 데이터베이스 엔진(Atomic, Lazy, SQLite, Ordinary)은 스키마를 수동으로 관리해야 합니다:
+
+* 각 레플리카에서 테이블을 개별적으로 생성해야 합니다
+* 노드 간에 스키마 불일치가 발생할 수 있습니다
+* 연산자는 새 레플리카를 자동으로 동기화할 수 없습니다
+
+<div id="disable-schema-replication">
+  ### 스키마 복제 비활성화
+</div>
+
+자동 스키마 복제를 비활성화하려면 ClickHouseCluster 리소스의 `spec.settings.enableDatabaseSync` 값을 `false`로 설정하십시오.
+
+<div id="storage-management">
+  ## 스토리지 관리
+</div>
+
+연산자는 Kubernetes PersistentVolumeClaims(PVC)를 통해 스토리지를 관리합니다.
+
+<div id="data-volume-configuration">
+  ### 데이터 볼륨 구성
+</div>
+
+`dataVolumeClaimSpec`에서 필요한 스토리지를 지정합니다:
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 500Gi
+```
+
+<div id="storage-lifecycle">
+  ### 스토리지 수명 주기
+</div>
+
+* **생성**: 클러스터가 생성될 때 PVC도 자동으로 생성됩니다
+* **확장**: StorageClass에서 볼륨 확장을 허용하면 지원됩니다
+* **보존**: 클러스터를 삭제해도 PVC는 자동으로 삭제되지 **않습니다**
+* **재사용**: 동일한 이름으로 클러스터를 다시 생성하면 기존 PVC를 재사용할 수 있습니다
+
+스토리지를 완전히 제거하려면:
+
+```bash
+# Delete cluster
+kubectl delete clickhousecluster my-cluster
+
+# Wait for pods to terminate
+kubectl wait --for=delete pod -l app.kubernetes.io/instance=my-cluster-clickhouse
+
+# Delete PVCs
+kubectl delete pvc -l app.kubernetes.io/instance=my-cluster-clickhouse
+```
+
+<div id="default-configuration-highlights">
+  ## 기본 구성 주요 사항
+</div>
+
+* **사전 구성된 클러스터:** 모든 ClickHouse 노드를 포함하는 `default`라는 이름의 클러스터입니다.
+* **기본 매크로:** 유용한 몇 가지 매크로가 미리 정의되어 있습니다.
+  * `{cluster}`: 클러스터 이름 (`default`)
+  * `{shard}`: 세그먼트 번호
+  * `{replica}`: 레플리카 번호
+* **RBAC 엔터티용 복제된 스토리지**
+* **사용자 정의 함수(UDF)용 복제된 스토리지**
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* [구성 가이드](/ko/products/kubernetes-operator/guides/configuration) - 자세한 구성 옵션
+* [API 참조](/ko/products/kubernetes-operator/reference/api-reference) - 전체 API 문서

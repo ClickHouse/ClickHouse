@@ -64,10 +64,7 @@ RabbitMQSettings::RabbitMQSettings(const RabbitMQSettings & settings) : impl(std
 {
 }
 
-RabbitMQSettings::RabbitMQSettings(RabbitMQSettings && settings) noexcept
-    : impl(std::make_unique<RabbitMQSettingsImpl>(std::move(*settings.impl)))
-{
-}
+RabbitMQSettings::RabbitMQSettings(RabbitMQSettings && settings) noexcept = default;
 
 RabbitMQSettings::~RabbitMQSettings() = default;
 

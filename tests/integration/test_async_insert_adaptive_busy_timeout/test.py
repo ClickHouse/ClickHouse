@@ -1,6 +1,5 @@
 import random
 from itertools import repeat
-from math import floor
 from multiprocessing import get_context
 
 import pytest

@@ -1,0 +1,21 @@
+INNER	1000
+INNER steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+LEFT	2000
+LEFT steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+RIGHT	2000
+RIGHT steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+LEFT SEMI	1000
+LEFT SEMI steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+LEFT ANTI	1000
+LEFT ANTI steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+RIGHT SEMI	1000
+RIGHT SEMI steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+RIGHT ANTI	1000
+RIGHT ANTI steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+RIGHT enable_join_runtime_filters=0 steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+RIGHT enable_join_runtime_filters=1 steps:	Union Aggregating Join ReadFromMergeTree ReadFromMergeTree ReadFromParallelReplicas
+FULL parallel_replicas_local_plan=1	3000
+FULL parallel_replicas_local_plan=0	3000
+FULL steps:	Aggregating Join ReadFromMergeTree ReadFromMergeTree
+CROSS	4000000
+CROSS steps:	Aggregating Join ReadFromMergeTree ReadFromMergeTree

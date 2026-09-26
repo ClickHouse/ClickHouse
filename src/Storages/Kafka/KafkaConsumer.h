@@ -54,6 +54,14 @@ public:
     // it causes rebalance (and is an expensive way of exception handling)
     void markDirty();
 
+    /// Abort an in-flight batch while staying in the consumer group, rewinding to the block start so the
+    /// whole block is redelivered even if `kafka_commit_every_batch` committed part of it mid-block.
+    void rewindToLastCommitted();
+
+    /// Called once the in-flight block has reached its durable boundary (committed after the insert), so
+    /// the next block tracks a fresh start. See `block_start_offsets`.
+    void cleanBlockStartOffsets() { block_start_offsets.clear(); }
+
     auto pollTimeout() const { return poll_timeout; }
 
     bool hasMorePolledMessages() const
@@ -146,6 +154,9 @@ private:
     std::optional<cppkafka::TopicPartitionList> assignment;
     const Names topics;
 
+    /// Offset of the first message of the current, not-yet-durably-committed block
+    cppkafka::TopicPartitionList block_start_offsets;
+
     /// system.kafka_consumers data is retrieved asynchronously
     ///  so we have to protect exceptions_buffer
     mutable std::mutex exception_mutex;
@@ -168,6 +179,7 @@ private:
     void cleanAssignment();
     void resetIfStopped();
     ReadBufferPtr getNextMessage();
+    void trackCurrentBlockStart(const cppkafka::Message & message);
 };
 
 }

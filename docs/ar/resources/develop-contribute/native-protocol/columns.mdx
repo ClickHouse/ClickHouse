@@ -1,0 +1,46 @@
+---
+slug: /native-protocol/columns
+title: 'أنواع أعمدة البروتوكول الأصلي'
+description: 'أنواع الأعمدة في البروتوكول الأصلي'
+keywords: ['أعمدة البروتوكول الأصلي', 'أنواع الأعمدة', 'أنواع البيانات', 'أنواع بيانات البروتوكول', 'الترميز الثنائي']
+doc_type: 'مرجع'
+---
+
+راجع [أنواع البيانات](/ar/reference/data-types/index) للاطلاع على المرجع العام.
+
+<Tip>
+  ترميز الأنواع الرقمية مطابق لتخطيط الذاكرة في المعالجات ذات ترتيب البايت little endian مثل AMD64 أو ARM64، ما يتيح ترميزًا وفك ترميز بكفاءة عالية جدًا.
+</Tip>
+
+| النوع                                                                | الترميز                                                                                                                                 |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **الأعداد الصحيحة** ([Int/UInt](/ar/reference/data-types/int-uint))     | 8 أو 16 أو 32 أو 64 أو 128 أو 256 بت بترتيب little endian                                                                               |
+| **الأعداد العائمة** ([Float32/Float64](/ar/reference/data-types/float)) | التمثيل الثنائي IEEE 754                                                                                                                |
+| [String](/ar/reference/data-types/string)                               | مصفوفة من السلاسل النصية بصيغة (len, value)                                                                                             |
+| [FixedString(N)](/ar/reference/data-types/fixedstring)                  | مصفوفة من متتاليات بطول N بايت                                                                                                          |
+| [IPv4](/ar/reference/data-types/ipv4)                                   | اسم مستعار لـ `UInt32`، ويُمثَّل على أنه UInt32                                                                                         |
+| [IPv6](/ar/reference/data-types/ipv6)                                   | اسم مستعار لـ `FixedString(16)`، ويُمثَّل بصيغة ثنائية                                                                                  |
+| [Tuple](/ar/reference/data-types/tuple)                                 | مصفوفة من الأعمدة المُرمَّزة بشكل متصل. مثال: `Tuple(String, UInt8)` = عمودان متصلان                                                    |
+| [Map](/ar/reference/data-types/map)                                     | `Map(K, V)` = ثلاثة أعمدة: `Offsets ColUInt64, Keys K, Values V`. عدد الصفوف في Keys/Values = آخر قيمة في Offsets                       |
+| [Array](/ar/reference/data-types/array)                                 | `Array(T)` = عمودان: `Offsets ColUInt64, Data T`. عدد الصفوف في Data = آخر قيمة في Offsets                                              |
+| [Nullable](/ar/reference/data-types/nullable)                           | `Nullable(T)` = عمودان: `Nulls ColUInt8, Values T` مع عدد الصفوف نفسه. تمثل Nulls قناعًا: 1=null، 0=value                               |
+| [UUID](/ar/reference/data-types/uuid)                                   | اسم مستعار لـ `FixedString(16)`، ويُمثَّل بصيغة ثنائية                                                                                  |
+| [Enum](/ar/reference/data-types/enum)                                   | اسم مستعار لـ `Int8` أو `Int16`، حيث يُربط كل عدد صحيح بقيمة String                                                                     |
+| [LowCardinality](/ar/reference/data-types/lowcardinality)               | `LowCardinality(T)` = عمودان: `Index T, Keys K` حيث إن K هو UInt8/16/32/64. يحتوي Index على قيم فريدة، وتحتوي Keys على فهارس داخل Index |
+| [Bool](/ar/reference/data-types/boolean)                                | اسم مستعار لـ `UInt8`: 0=false، 1=true                                                                                                  |
+
+**مثال: ترميز Nullable**
+
+```text
+To encode [null, "", "hello", null, "world"]:
+  Values: ["", "", "hello", "", "world"] (len: 5)
+  Nulls:  [ 1,  0,       0,  1,       0] (len: 5)
+```
+
+**مثال: ترميز LowCardinality**
+
+```text
+To encode ["Eko", "Eko", "Amadela", "Amadela", "Amadela", "Amadela"]:
+  Index: ["Eko", "Amadela"] (String)
+  Keys:  [0, 0, 1, 1, 1, 1] (UInt8)
+```

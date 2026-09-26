@@ -54,6 +54,8 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
     Names index_columns;
     String index_name;
     BloomFilterParameters params;
+
+    std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
 
     MergeTreeIndexGranuleBloomFilterTextPtr granule;
@@ -68,7 +70,8 @@ public:
             ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
-            TokenizerPtr token_extactor_);
+            TokenizerPtr token_extactor_,
+            NameSet columns_shadowing_map_subcolumns_);
 
     ~MergeTreeConditionBloomFilterText() override = default;
 
@@ -147,7 +150,11 @@ private:
     Names index_columns;
     DataTypes index_data_types;
     BloomFilterParameters params;
+
+    std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
+    NameSet columns_shadowing_map_subcolumns;
+
     RPN rpn;
 };
 
@@ -155,10 +162,11 @@ class MergeTreeIndexBloomFilterText final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexBloomFilterText(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         const BloomFilterParameters & params_,
         std::unique_ptr<ITokenizer> && tokenizer_)
-        : IMergeTreeIndex(index_)
+        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
         , params(params_)
         , tokenizer(std::move(tokenizer_)) {}
 

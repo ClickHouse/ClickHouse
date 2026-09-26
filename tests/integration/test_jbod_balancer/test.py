@@ -1,15 +1,9 @@
-import json
-import random
-import re
-import string
-import threading
-import time
 from multiprocessing.dummy import Pool
 
 import pytest
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, assert_eq_with_retry
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -133,9 +127,9 @@ def test_jbod_balanced_merge(start_cluster):
         check_balance(node1, "tbl")
 
     finally:
-        node1.query(f"DROP TABLE IF EXISTS tbl SYNC")
-        node1.query(f"DROP TABLE IF EXISTS tmp1 SYNC")
-        node1.query(f"DROP TABLE IF EXISTS tmp2 SYNC")
+        node1.query("DROP TABLE IF EXISTS tbl SYNC")
+        node1.query("DROP TABLE IF EXISTS tmp1 SYNC")
+        node1.query("DROP TABLE IF EXISTS tmp2 SYNC")
 
 
 def test_replicated_balanced_merge_fetch(start_cluster):

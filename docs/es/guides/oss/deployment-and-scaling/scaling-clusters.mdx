@@ -1,0 +1,18 @@
+---
+slug: /guides/sre/scaling-clusters
+sidebarTitle: 'Reequilibrado de segmentos'
+description: 'ClickHouse no admite el reequilibrado automático de segmentos, por lo que ofrecemos algunas prácticas recomendadas para reequilibrarlos.'
+title: 'Reequilibrado de datos'
+doc_type: 'guide'
+keywords: ['escalado', 'clústeres', 'escalado horizontal', 'planificación de capacidad', 'rendimiento']
+---
+
+ClickHouse no admite el reequilibrado automático de segmentos. Sin embargo, hay varias formas de reequilibrar segmentos, en este orden de preferencia:
+
+1. Ajuste el segmento de la [tabla distribuida](/es/reference/engines/table-engines/special/distributed), de modo que las escrituras se dirijan preferentemente al nuevo segmento. Esto puede provocar desequilibrios de carga y puntos calientes en el clúster, pero puede ser viable en la mayoría de los escenarios en los que el throughput de escritura no es extremadamente alto. No requiere que el usuario cambie su destino de escritura; es decir, puede seguir siendo la tabla distribuida. Esto no ayuda a reequilibrar los datos existentes.
+
+2. Como alternativa a (1), modifique el clúster existente y escriba exclusivamente en el nuevo segmento hasta que el clúster quede equilibrado, ponderando manualmente las escrituras. Esto tiene las mismas limitaciones que (1).
+
+3. Si necesita reequilibrar datos existentes y ha particionado sus datos, considere desvincular particiones y reubicarlas manualmente en otro nodo antes de volver a adjuntarlas al nuevo segmento. Este método es más manual que las técnicas posteriores, pero puede ser más rápido y requerir menos recursos. Como es una operación manual, debe planificarse teniendo en cuenta el reequilibrado de los datos.
+
+4. Exporte los datos del clúster de origen al nuevo clúster mediante un [INSERT FROM SELECT](/es/reference/statements/insert-into#inserting-the-results-of-select). Esto no ofrecerá buen rendimiento en conjuntos de datos muy grandes y puede generar una E/S significativa en el clúster de origen, además de consumir recursos de red considerables. Esto representa un último recurso.

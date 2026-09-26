@@ -47,7 +47,7 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
     const char * token_begin = pos;
     ParserState state = Delimiter;
     delimiters.emplace_back();
-    char * col_idx_end;
+    char * col_idx_end = nullptr;
     std::optional<size_t> column_idx;
     for (; *pos; ++pos)
     {

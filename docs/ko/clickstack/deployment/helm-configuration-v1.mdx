@@ -1,0 +1,358 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-configuration-v1
+title: 'Helm 구성 (v1.x)'
+description: 'v1.x ClickStack Helm 배포를 위한 API Key, 시크릿, 인그레스 구성'
+doc_type: 'guide'
+keywords: ['ClickStack 구성', 'Helm 시크릿', 'API Key 설정', '인그레스 구성', 'TLS 설정']
+---
+
+<Warning>
+  **지원 중단 — v1.x 차트**
+
+  이 페이지에서는 유지보수 모드인 **v1.x** 인라인 템플릿 Helm 차트의 구성을 설명합니다. v2.x 차트는 [Helm 구성](/ko/clickstack/deployment/helm-configuration)을 참조하십시오. 마이그레이션 방법은 [업그레이드 가이드](/ko/clickstack/deployment/helm-upgrade)를 참조하십시오.
+</Warning>
+
+이 가이드에서는 ClickStack Helm 배포에 사용할 수 있는 구성 옵션을 설명합니다. 기본 설치 방법은 [기본 Helm 배포 가이드](/ko/clickstack/deployment/helm-v1)를 참조하십시오.
+
+<div id="api-key-setup">
+  ## API Key 설정
+</div>
+
+ClickStack을 성공적으로 배포한 후 텔레메트리 데이터 수집을 활성화하려면 API Key를 구성하십시오:
+
+1. 구성된 인그레스 또는 서비스 엔드포인트를 통해 **HyperDX 인스턴스에 접속합니다**
+2. **HyperDX 대시보드에 로그인**한 다음 Team settings로 이동하여 API Key를 생성하거나 확인합니다
+3. 다음 방법 중 하나를 사용하여 **API Key로 배포를 업데이트합니다**:
+
+<div id="api-key-values-file">
+  ### 방법 1: values 파일을 사용해 Helm upgrade로 업데이트
+</div>
+
+`values.yaml`에 API Key를 추가하세요:
+
+```yaml
+hyperdx:
+  apiKey: "your-api-key-here"
+```
+
+이어서 배포를 업그레이드하세요:
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="api-key-set-flag">
+  ### 방법 2: --set 플래그를 사용해 Helm upgrade로 업데이트
+</div>
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack --set hyperdx.apiKey="your-api-key-here"
+```
+
+<div id="restart-pods">
+  ### 변경 사항을 적용하려면 파드를 다시 시작하세요
+</div>
+
+API Key를 업데이트한 후 새 구성이 반영되도록 파드를 다시 시작하세요:
+
+```shell
+kubectl rollout restart deployment my-clickstack-clickstack-app my-clickstack-clickstack-otel-collector
+```
+
+<Note>
+  이 차트는 API Key가 포함된 Kubernetes 시크릿(`<release-name>-app-secrets`)을 자동으로 생성합니다. 외부 시크릿을 사용하려는 경우가 아니라면 추가 시크릿 구성은 필요하지 않습니다.
+</Note>
+
+<div id="secret-management">
+  ## 시크릿 관리
+</div>
+
+API Key 또는 데이터베이스 자격 증명과 같은 민감한 데이터를 안전하게 관리하려면 Kubernetes 시크릿을 사용하십시오.
+
+<div id="using-pre-configured-secrets">
+  ### 사전 구성된 시크릿 사용
+</div>
+
+Helm 차트에는 [`charts/clickstack/templates/secrets.yaml`](https://github.com/hyperdxio/helm-charts/blob/main/charts/clickstack/templates/secrets.yaml)에 있는 기본 시크릿 템플릿이 포함되어 있습니다. 이 파일은 시크릿 관리를 위한 기본 구조를 제공합니다.
+
+시크릿을 수동으로 적용해야 하면, 제공된 `secrets.yaml` 템플릿을 수정하여 적용하십시오:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hyperdx-secret
+  annotations:
+    "helm.sh/resource-policy": keep
+type: Opaque
+data:
+  API_KEY: <base64-encoded-api-key>
+```
+
+클러스터에 시크릿을 적용하세요:
+
+```shell
+kubectl apply -f secrets.yaml
+```
+
+<div id="creating-a-custom-secret">
+  ### 사용자 지정 시크릿 만들기
+</div>
+
+사용자 지정 Kubernetes 시크릿을 수동으로 만드십시오:
+
+```shell
+kubectl create secret generic hyperdx-secret \
+  --from-literal=API_KEY=my-secret-api-key
+```
+
+<div id="referencing-a-secret">
+  ### values.yaml에서 시크릿을 참조하기
+</div>
+
+```yaml
+hyperdx:
+  apiKey:
+    valueFrom:
+      secretKeyRef:
+        name: hyperdx-secret
+        key: API_KEY
+```
+
+<div id="ingress-setup">
+  ## 인그레스 설정
+</div>
+
+도메인 이름으로 HyperDX UI와 API를 노출하려면 `values.yaml`에서 인그레스를 활성화하세요.
+
+<div id="general-ingress-configuration">
+  ### 일반적인 인그레스 구성
+</div>
+
+```yaml
+hyperdx:
+  frontendUrl: "https://hyperdx.yourdomain.com"  # 인그레스 호스트와 일치해야 합니다
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+```
+
+<Info>
+  **중요한 구성 참고 사항**
+
+  `hyperdx.frontendUrl`은 인그레스 호스트와 일치해야 하며 프로토콜(예: `https://hyperdx.yourdomain.com`)도 포함해야 합니다. 이렇게 해야 생성되는 모든 링크, 쿠키, 리디렉션이 올바르게 작동합니다.
+</Info>
+
+<div id="enabling-tls">
+  ### TLS (HTTPS) 활성화
+</div>
+
+배포를 HTTPS로 안전하게 보호하려면:
+
+**1. 인증서와 개인 키로 TLS 시크릿을 생성하세요:**
+
+```shell
+kubectl create secret tls hyperdx-tls \
+  --cert=path/to/tls.crt \
+  --key=path/to/tls.key
+```
+
+**2. 인그레스 구성에서 TLS를 활성화하세요:**
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+      tlsSecretName: "hyperdx-tls"
+```
+
+<div id="example-ingress-configuration">
+  ### 예시 인그레스 구성
+</div>
+
+참고로, 생성된 인그레스 리소스는 다음과 같습니다:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hyperdx-app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hyperdx.yourdomain.com
+      http:
+        paths:
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: my-clickstack-clickstack-app
+                port:
+                  number: 3000
+  tls:
+    - hosts:
+        - hyperdx.yourdomain.com
+      secretName: hyperdx-tls
+```
+
+<div id="common-ingress-pitfalls">
+  ### 인그레스 구성 시 자주 발생하는 문제
+</div>
+
+**경로 및 재작성 구성:**
+
+* Next.js 및 기타 SPA에서는 항상 위에 나온 것처럼 정규식 경로와 재작성 어노테이션을 사용하세요
+* 재작성 없이 `path: /`만 사용하지 마세요. 정적 자산이 정상적으로 제공되지 않을 수 있습니다
+
+**`frontendUrl`과 `ingress.host` 불일치:**
+
+* 이 둘이 일치하지 않으면 쿠키, 리디렉션, 자산 로딩에 문제가 발생할 수 있습니다
+
+**TLS 구성 오류:**
+
+* TLS 시크릿이 유효하며 인그레스에서 올바르게 참조되고 있는지 확인하세요
+* TLS가 활성화된 상태에서 HTTP로 앱에 접근하면 브라우저가 안전하지 않은 콘텐츠를 차단할 수 있습니다
+
+**인그레스 컨트롤러 버전:**
+
+* 일부 기능(예: 정규식 경로 및 재작성)에는 최신 버전의 nginx ingress controller가 필요합니다
+* 다음 명령으로 버전을 확인하세요:
+
+```shell
+kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
+```
+
+<div id="otel-collector-ingress">
+  ## OTel collector 인그레스
+</div>
+
+인그레스를 통해 OTel collector 엔드포인트(트레이스, 메트릭, 로그)를 노출해야 한다면 `additionalIngresses` 구성을 사용하십시오. 이 구성은 클러스터 외부에서 텔레메트리 데이터를 전송하거나 collector에 사용자 지정 도메인을 연결할 때 유용합니다.
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    additionalIngresses:
+      - name: otel-collector
+        annotations:
+          nginx.ingress.kubernetes.io/ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/use-regex: "true"
+        ingressClassName: nginx
+        hosts:
+          - host: collector.yourdomain.com
+            paths:
+              - path: /v1/(traces|metrics|logs)
+                pathType: Prefix
+                port: 4318
+                name: otel-collector
+        tls:
+          - hosts:
+              - collector.yourdomain.com
+            secretName: collector-tls
+```
+
+* 이렇게 하면 OTel collector 엔드포인트용 별도의 인그레스 리소스가 생성됩니다
+* 다른 도메인을 사용하고, 특정 TLS 설정을 구성하며, 사용자 지정 어노테이션을 적용할 수 있습니다
+* 정규식 경로 규칙을 사용하면 모든 OTLP 신호(트레이스, 메트릭, 로그)를 단일 규칙으로 라우팅할 수 있습니다
+
+<Note>
+  OTel collector를 외부에 노출할 필요가 없다면 이 구성은 건너뛰어도 됩니다. 대부분의 경우 일반적인 인그레스 설정으로 충분합니다.
+</Note>
+
+<div id="troubleshooting-ingress">
+  ## 인그레스 문제 해결
+</div>
+
+**인그레스 리소스 확인:**
+
+```shell
+kubectl get ingress -A
+kubectl describe ingress <ingress-name>
+```
+
+**인그레스 컨트롤러의 로그를 확인하세요:**
+
+```shell
+kubectl logs -l app.kubernetes.io/name=ingress-nginx -n ingress-nginx
+```
+
+**테스트용 에셋 URL:**
+
+정적 에셋이 HTML이 아니라 JS로 제공되는지 `curl`로 확인합니다:
+
+```shell
+curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
+# Content-Type: application/javascript 가 반환되어야 합니다
+```
+
+**브라우저 DevTools:**
+
+* 404 응답이 있는지, 또는 JS 대신 HTML을 반환하는 정적 파일이 있는지 Network 탭에서 확인하세요
+* 콘솔에서 `Unexpected token <` 같은 오류를 찾으세요(JS 대신 HTML이 반환되었음을 의미합니다)
+
+**경로 재작성 확인:**
+
+* 인그레스가 정적 파일 경로를 제거하거나 잘못 재작성하지 않는지 확인하세요
+
+**브라우저 및 CDN 캐시 지우기:**
+
+* 변경 후에는 오래된 정적 파일이 남지 않도록 브라우저 캐시와 CDN/프록시 캐시를 지우세요
+
+<div id="customizing-values">
+  ## 값 사용자 지정하기
+</div>
+
+`--set` 플래그를 사용하여 설정을 사용자 지정할 수 있습니다:
+
+```shell
+helm install my-clickstack clickstack/clickstack --set key=value
+```
+
+또는 사용자 지정 `values.yaml` 파일을 생성합니다. 기본값을 확인하려면:
+
+```shell
+helm show values clickstack/clickstack > values.yaml
+```
+
+구성 예시:
+
+```yaml
+replicaCount: 2
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+hyperdx:
+  ingress:
+    enabled: true
+    host: hyperdx.example.com
+```
+
+사용자 지정 값을 적용하세요:
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* [배포 옵션 (v1.x)](/ko/clickstack/deployment/helm-deployment-options-v1) - 외부 시스템 및 최소 배포
+* [Cloud 배포 (v1.x)](/ko/clickstack/deployment/helm-cloud-v1) - GKE, EKS 및 AKS 구성
+* [Helm 메인 가이드 (v1.x)](/ko/clickstack/deployment/helm-v1) - 기본 설치
+* [Helm 구성 (v2.x)](/ko/clickstack/deployment/helm-configuration) - v2.x 구성 가이드
+* [업그레이드 가이드](/ko/clickstack/deployment/helm-upgrade) - v1.x에서 v2.x로 마이그레이션

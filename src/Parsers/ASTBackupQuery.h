@@ -3,6 +3,7 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -61,7 +62,7 @@ public:
 
     struct Element
     {
-        ElementType type;
+        ElementType type{};
         String table_name;
         String database_name;
         String new_table_name; /// usually the same as `table_name`, can be different in case of using AS <new_name>
@@ -98,6 +99,8 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & fs, FormatState &, FormatStateStacked) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override;
     QueryKind getQueryKind() const override;
 

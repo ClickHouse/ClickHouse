@@ -40,9 +40,7 @@ HiveSettings::HiveSettings(const HiveSettings & settings) : impl(std::make_uniqu
 {
 }
 
-HiveSettings::HiveSettings(HiveSettings && settings) noexcept : impl(std::make_unique<HiveSettingsImpl>(std::move(*settings.impl)))
-{
-}
+HiveSettings::HiveSettings(HiveSettings && settings) noexcept = default;
 
 HiveSettings::~HiveSettings() = default;
 

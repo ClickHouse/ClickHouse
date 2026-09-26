@@ -1,0 +1,66 @@
+---
+title: "Contrôler la synchronisation d’un ClickPipe MongoDB"
+description: "Documentation sur la gestion de la synchronisation d’un ClickPipe MongoDB"
+slug: /integrations/clickpipes/mongodb/sync_control
+sidebarTitle: "Gestion des synchronisations"
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Ce document décrit comment contrôler la synchronisation d’un ClickPipe MongoDB lorsque celui-ci est en **mode CDC (Running)**.
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+Les ClickPipes pour bases de données reposent sur une architecture composée de deux processus parallèles : l’extraction depuis la base de données source et l’écriture dans la base de données cible. Le processus d’extraction est piloté par une configuration de synchronisation qui définit la fréquence de récupération des données et la quantité de données à récupérer à chaque fois. Par « à chaque fois », nous entendons un lot, puisque le ClickPipe récupère et écrit les données par lots.
+
+Il existe deux principaux moyens de contrôler la synchronisation d’un ClickPipe MongoDB. Le ClickPipe commence à écrire les données dès que l’un des paramètres ci-dessous entre en jeu.
+
+<div id="interval">
+  ### Intervalle de synchronisation
+</div>
+
+L’intervalle de synchronisation du pipe correspond à la durée (en secondes) pendant laquelle le ClickPipe récupère les enregistrements de la base de données source. Le temps nécessaire pour envoyer les données récupérées vers ClickHouse n’est pas inclus dans cet intervalle.
+
+La valeur par défaut est de **1 minute**.
+L’intervalle de synchronisation peut être défini sur n’importe quel entier positif, mais il est recommandé de le conserver au-dessus de 10 secondes.
+
+<div id="batch-size">
+  ### Taille du lot d’extraction
+</div>
+
+La taille du lot d’extraction correspond au nombre d’enregistrements que le ClickPipe extrait de la base de données source en un seul lot. Les enregistrements incluent les insertions, les mises à jour et les suppressions effectuées sur les collections faisant partie du pipeline.
+
+La valeur par défaut est de **100 000** enregistrements.
+Une valeur maximale sûre est de 10 millions.
+
+<div id="configuring">
+  ### Configuration des paramètres de synchronisation
+</div>
+
+Vous pouvez définir l’intervalle de synchronisation et la taille du lot d’extraction lorsque vous créez un ClickPipe ou modifiez un ClickPipe existant.
+Lors de la création d’un ClickPipe, ces paramètres s’affichent à la deuxième étape de l’assistant de création, comme illustré ci-dessous :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="Créer les paramètres de synchronisation" size="md" />
+
+Lorsque vous modifiez un ClickPipe existant, accédez à l’onglet **Paramètres** du pipe, mettez le pipe en pause, puis cliquez sur **Configurer** ici :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="Modifier le bouton de synchronisation" size="md" />
+
+Cela ouvrira un volet contenant les paramètres de synchronisation, dans lequel vous pourrez modifier l’intervalle de synchronisation et la taille du lot d’extraction :
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="Modifier les paramètres de synchronisation" size="md" />
+
+<div id="monitoring">
+  ### Suivi du comportement du contrôle de synchronisation
+</div>
+
+Vous pouvez voir la durée de chaque lot dans la table **CDC Syncs** de l’onglet **Metrics** du ClickPipe. Notez que la durée indiquée ici inclut le temps d’envoi et que, s’il n’y a aucune ligne entrante, le ClickPipe attend ; ce temps d’attente est également inclus dans la durée.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="table CDC Syncs" size="md" />

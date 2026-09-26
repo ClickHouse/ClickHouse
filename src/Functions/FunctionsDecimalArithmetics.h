@@ -44,7 +44,7 @@ struct DecimalOpHelpers
 
         VectorWithMemoryTracking<UInt8> result(len1 + len2, 0);
         UInt16 i_n1 = 0;
-        UInt16 i_n2;
+        UInt16 i_n2 = 0;
 
         for (Int32 i = len1 - 1; i >= 0; --i)
         {
@@ -93,7 +93,7 @@ struct DecimalOpHelpers
         UInt16 idx = 0;
         Int256 temp = 0;
 
-        while (temp < divisor && max_index > idx)
+        while (temp < divisor && max_index >= idx)
         {
             temp = temp * 10 + number[idx];
             ++idx;

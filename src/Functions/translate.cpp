@@ -110,7 +110,7 @@ struct TranslateImpl
         if (map_from.size() != map_to.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
 
-        std::array<UInt8, 128> map;
+        std::array<UInt8, 128> map{};
         fillMapWithValues(map, map_from, map_to);
 
         res_data.resize(data.size());
@@ -237,7 +237,7 @@ struct TranslateUTF8Impl
                     }
 
                     size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], reinterpret_cast<char *>(dst), 4);
-                    assert(0 < dst_len && dst_len <= 4);
+                    chassert(0 < dst_len && dst_len <= 4);
 
                     src += 1;
                     dst += dst_len;
@@ -246,7 +246,7 @@ struct TranslateUTF8Impl
                 }
 
                 size_t src_len = UTF8::seqLength(*src);
-                assert(0 < src_len && src_len <= 4);
+                chassert(0 < src_len && src_len <= 4);
 
                 if (src + src_len <= src_end)
                 {
@@ -262,7 +262,7 @@ struct TranslateUTF8Impl
                                 continue;
 
                             size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), reinterpret_cast<char *>(dst), 4);
-                            assert(0 < dst_len && dst_len <= 4);
+                            chassert(0 < dst_len && dst_len <= 4);
 
                             dst += dst_len;
                             data_size += dst_len;
@@ -352,8 +352,8 @@ public:
         String map_from = c1_const->getValue<String>();
         String map_to = c2_const->getValue<String>();
 
-        size_t map_from_size;
-        size_t map_to_size;
+        size_t map_from_size = 0;
+        size_t map_to_size = 0;
         if constexpr (std::is_same_v<Impl, TranslateUTF8Impl>)
         {
             map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());

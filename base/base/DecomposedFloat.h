@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
+#include <base/defines.h>
 #include <base/extended_types.h>
 
 
@@ -82,7 +83,7 @@ struct DecomposedFloat
 
     uint16_t exponent() const
     {
-        return (x_uint >> (Traits::mantissa_bits)) & ((1ull << Traits::exponent_bits) - 1);
+        return (x_uint >> Traits::mantissa_bits) & ((1ull << Traits::exponent_bits) - 1);
     }
 
     int16_t normalizedExponent() const
@@ -151,7 +152,7 @@ struct DecomposedFloat
         {
             if (rhs == std::numeric_limits<Int>::lowest())
             {
-                assert(isNegative());
+                chassert(isNegative());
 
                 if (normalizedExponent() < static_cast<int16_t>(8 * sizeof(Int) - is_signed_v<Int>))
                     return 1;

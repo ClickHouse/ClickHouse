@@ -8,6 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Examples/clickhouse_examples.h>
 
 int mainEntryExampleODirectAndDirtyPages(int, char **)
 {

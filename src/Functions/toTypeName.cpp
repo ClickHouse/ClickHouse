@@ -2,6 +2,7 @@
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 

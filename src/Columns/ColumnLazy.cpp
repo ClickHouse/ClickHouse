@@ -5,7 +5,6 @@
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/WeakHash.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 
@@ -157,19 +156,14 @@ void ColumnLazy::deserializeAndInsertFromArena(ReadBuffer &, const IColumn::Seri
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method deserializeAndInsertFromArena is not supported for {}", getName());
 }
 
-void ColumnLazy::skipSerializedInArena(ReadBuffer &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
-}
-
 void ColumnLazy::updateHashWithValue(size_t, SipHash &) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updateHashWithValue is not supported for {}", getName());
 }
 
-WeakHash32 ColumnLazy::getWeakHash32() const
+void ColumnLazy::computeHashInto(size_t, size_t, UInt32 *, bool) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getWeakHash32 is not supported for {}", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method computeHashInto is not supported for {}", getName());
 }
 
 void ColumnLazy::updateHashFast(SipHash &) const
@@ -287,6 +281,11 @@ int ColumnLazy::doCompareAt(size_t, size_t, const IColumn &, int) const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method doCompareAt is not supported for {}", getName());
 }
 #endif
+
+Int64 ColumnLazy::compareTrackAt(size_t, size_t, const IColumn &, int) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compareTrackAt is not supported for {}", getName());
+}
 
 void ColumnLazy::compareColumn(const IColumn &, size_t,
                                PaddedPODArray<UInt64> *, PaddedPODArray<Int8> &,
@@ -417,6 +416,11 @@ double ColumnLazy::getRatioOfDefaultRows(double) const
 UInt64 ColumnLazy::getNumberOfDefaultRows() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getNumberOfDefaultRows is not supported for {}", getName());
+}
+
+bool ColumnLazy::hasOnlyTypeDefaults() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasOnlyTypeDefaults is not supported for {}", getName());
 }
 
 void ColumnLazy::getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const

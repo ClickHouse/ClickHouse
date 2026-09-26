@@ -1,0 +1,43 @@
+// The official Mapbox Vector Tile 2.1 wire schema, verbatim from the specification:
+// https://github.com/mapbox/vector-tile-spec/blob/master/2.1/vector_tile.proto
+// Used to decode the bytes produced by MVTEncode and assert they conform to the standard.
+syntax = "proto2";
+
+package vector_tile;
+
+message Tile {
+    enum GeomType {
+        UNKNOWN = 0;
+        POINT = 1;
+        LINESTRING = 2;
+        POLYGON = 3;
+    }
+
+    message Value {
+        optional string string_value = 1;
+        optional float float_value = 2;
+        optional double double_value = 3;
+        optional int64 int_value = 4;
+        optional uint64 uint_value = 5;
+        optional sint64 sint_value = 6;
+        optional bool bool_value = 7;
+    }
+
+    message Feature {
+        optional uint64 id = 1 [ default = 0 ];
+        repeated uint32 tags = 2 [ packed = true ];
+        optional GeomType type = 3 [ default = UNKNOWN ];
+        repeated uint32 geometry = 4 [ packed = true ];
+    }
+
+    message Layer {
+        required uint32 version = 15 [ default = 1 ];
+        required string name = 1;
+        repeated Feature features = 2;
+        repeated string keys = 3;
+        repeated Value values = 4;
+        optional uint32 extent = 5 [ default = 4096 ];
+    }
+
+    repeated Layer layers = 3;
+}

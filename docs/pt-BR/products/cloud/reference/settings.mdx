@@ -1,0 +1,18 @@
+---
+sidebarTitle: 'Configurando configurações'
+slug: /manage/settings
+title: 'Configurando configurações'
+description: 'Como configurar as configurações do seu serviço ClickHouse Cloud para um usuário ou uma função específica'
+keywords: ['ClickHouse Cloud', 'configuração de configurações', 'configurações da cloud', 'configurações de usuário', 'configurações de função']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Para especificar configurações para seu serviço do ClickHouse Cloud para um [usuário](/pt-BR/concepts/features/security/access-rights#user-account-management) ou [função](/pt-BR/concepts/features/security/access-rights#role-management) específico, você deve usar [Perfis de configurações gerenciados por SQL](/pt-BR/concepts/features/security/access-rights#settings-profiles-management). Aplicar Perfis de configurações garante que as configurações definidas por você sejam mantidas, mesmo quando seus serviços são interrompidos, ficam inativos e são atualizados. Para saber mais sobre Perfis de configurações, consulte [esta página](/pt-BR/concepts/features/configuration/settings/settings-profiles).
+
+Observe que Perfis de configurações baseados em XML e [arquivos de configuração](/pt-BR/concepts/features/configuration/server-config/configuration-files) ainda não são compatíveis com o ClickHouse Cloud.
+
+Para saber mais sobre as configurações que você pode especificar para seu serviço do ClickHouse Cloud, consulte todas as configurações possíveis por categoria em [nossa documentação](/pt-BR/reference/settings/index).
+
+<Image img="/images/cloud/manage/cloud-settings-sidebar.webp" size="sm" alt="Barra lateral das configurações do Cloud" border />

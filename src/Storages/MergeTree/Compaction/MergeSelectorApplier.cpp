@@ -22,6 +22,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_selector_window_size;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
+    extern const MergeTreeSettingsUInt64 min_partition_age_to_force_merge_seconds;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
@@ -92,7 +93,20 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
     }
 
-    /// Recompression - 3 priority
+    /// Delete columns - 3 priority
+    ///
+    /// `ttl_only_drop_parts` trades the merges that delete expired rows for dropping whole parts once
+    /// every row in them has expired. A column TTL has no such alternative - the only way to clear an
+    /// expired column is to rewrite the part - so this selector runs regardless of that setting.
+    if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyColumnTTL())
+    {
+        TTLColumnDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
+
+        if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
+            return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);
+    }
+
+    /// Recompression - 4 priority
     if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyRecompressionTTL())
     {
         TTLRecompressMergeSelector recompress_ttl_selector(ctx.next_recompress_times, ctx.current_time);
@@ -111,7 +125,7 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
     simple_merge_settings.window_size = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_window_size];
     simple_merge_settings.max_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::max_parts_to_merge_at_once];
     simple_merge_settings.enable_heuristic_to_remove_small_parts_at_right = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_enable_heuristic_to_remove_small_parts_at_right];
-    simple_merge_settings.base = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_base];
+    simple_merge_settings.base = static_cast<double>(ctx.merge_tree_settings[MergeTreeSetting::merge_selector_base]);
     simple_merge_settings.min_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::min_parts_to_merge_at_once];
 
     simple_merge_settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once];
@@ -121,6 +135,8 @@ SimpleMergeSelector::Settings fillSimpleSettings(const ChooseContext & ctx)
 
     if (!ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_on_partition_only])
         simple_merge_settings.min_age_to_force_merge = ctx.merge_tree_settings[MergeTreeSetting::min_age_to_force_merge_seconds];
+
+    simple_merge_settings.min_partition_age_to_force_merge = ctx.merge_tree_settings[MergeTreeSetting::min_partition_age_to_force_merge_seconds];
 
     if (ctx.aggressive)
         simple_merge_settings.base = 1;

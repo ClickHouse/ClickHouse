@@ -40,7 +40,7 @@ size_t MergeTreeIndexGranularityConstant::getMarkRows(size_t mark_index) const
 
 MarkRange MergeTreeIndexGranularityConstant::getMarkRangeForRowOffset(size_t row_offset) const
 {
-    size_t mark_index;
+    size_t mark_index = 0;
     if (row_offset < constant_granularity * (num_marks_without_final - 1))
         mark_index = row_offset / constant_granularity;
     else

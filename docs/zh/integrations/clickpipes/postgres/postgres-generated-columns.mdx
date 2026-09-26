@@ -1,0 +1,42 @@
+---
+title: 'Postgres 生成列：注意事项与最佳实践'
+slug: /integrations/clickpipes/postgres/generated_columns
+description: '本页介绍在对包含 PostgreSQL 生成列的表进行复制时需要注意的重要事项'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'CDC', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+在对包含 PostgreSQL 生成列的表进行复制时，有一些重要事项需要特别注意。这些常见陷阱可能会影响复制过程以及目标端系统中的数据一致性。
+
+<div id="the-problem-with-generated-columns">
+  ## 生成列的问题
+</div>
+
+1. **不会通过 `pgoutput` 发布：** 生成列不会通过 `pgoutput` 逻辑复制插件发布。这意味着，当你将数据从 PostgreSQL 复制到其他系统时，生成列的值不会包含在复制流中。
+
+2. **主键相关问题：** 如果生成列是主键的一部分，可能会在目标端引发去重问题。由于生成列的值不会被复制，目标端系统将缺少正确识别和去重行所需的信息。
+
+3. **schema 变更相关问题**：如果你向一个已经在进行复制的表中添加生成列，新列不会在目标端填充——因为 Postgres 不会为这个新列提供 RelationMessage。之后，如果你再向同一个表添加一个新的非生成列，ClickPipe 在尝试协调 schema 时，将无法在目标端找到这个生成列，从而导致复制过程失败。
+
+<div id="best-practices">
+  ## 最佳实践
+</div>
+
+为规避这些限制，建议采用以下最佳实践：
+
+1. **在目标端重建生成列：** 建议不要依赖复制过程来处理生成列，而是使用 dbt (data build tool) 或其他数据转换机制在目标端重建这些列。
+
+2. **避免在主键中使用生成列：** 在设计需要复制的表时，最好避免将生成列作为主键的一部分。
+
+<div id="upcoming-improvements-to-ui">
+  ## UI 的后续改进
+</div>
+
+在后续版本中，我们计划添加一个 UI，帮助你完成以下操作：
+
+1. **识别包含生成列的表：** UI 将提供一项功能，用于识别包含生成列的表，帮助你了解哪些表会受此问题影响。
+
+2. **文档和最佳实践：** UI 将纳入在复制表中使用生成列的最佳实践，包括如何避免常见问题的指导。

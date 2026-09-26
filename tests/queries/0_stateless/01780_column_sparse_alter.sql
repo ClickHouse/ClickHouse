@@ -1,3 +1,4 @@
+-- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
 
 SET mutations_sync = 2;
 
@@ -5,7 +6,7 @@ DROP TABLE IF EXISTS t_sparse_alter;
 
 CREATE TABLE t_sparse_alter (id UInt64, u UInt64, s String)
 ENGINE = MergeTree ORDER BY id
-SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5;
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, enable_block_number_column = 0, enable_block_offset_column = 0;
 INSERT INTO t_sparse_alter SELECT
     number,
     if (number % 11 = 0, number, 0),

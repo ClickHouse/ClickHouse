@@ -1,0 +1,8 @@
+<clickhouse>
+    <!-- Keep one idle worker in every configurable static thread pool, so they retain a
+         worker parked on the global thread pool after use. -->
+    <max_io_thread_pool_free_size>1</max_io_thread_pool_free_size>
+    <max_backups_io_thread_pool_free_size>1</max_backups_io_thread_pool_free_size>
+    <max_format_parsing_thread_pool_free_size>1</max_format_parsing_thread_pool_free_size>
+    <max_prefixes_deserialization_thread_pool_free_size>1</max_prefixes_deserialization_thread_pool_free_size>
+</clickhouse>

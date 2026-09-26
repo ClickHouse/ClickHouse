@@ -59,11 +59,16 @@ public:
 
     void serializeTextMarkdown(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
+    /// Hive has no Enum type, so the HiveText output format does not support it (throws NOT_IMPLEMENTED).
+    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+
     FieldType readValue(ReadBuffer & istr) const
     {
         FieldType x;
         readText(x, istr);
-        return ref_enum_values.findByValue(x)->first;
+        /// Validate that value exists (throws if not found)
+        ref_enum_values.getNameForValue(x);
+        return x;
     }
 
     bool tryReadValue(ReadBuffer & istr, FieldType & x) const

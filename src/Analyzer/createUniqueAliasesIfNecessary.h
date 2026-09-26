@@ -3,11 +3,11 @@
 #include <memory>
 #include <Interpreters/Context_fwd.h>
 
-class IQueryTreeNode;
-using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
-
 namespace DB
 {
+
+class IQueryTreeNode;
+using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
 void createUniqueAliasesIfNecessary(QueryTreeNodePtr & node, const ContextPtr & context);
 

@@ -38,6 +38,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -141,7 +145,7 @@ This function calculates the minimum number of grid cells between the start and 
             "SELECT h3Distance(590080540275638271, 590103561300344831) AS distance",
             R"(
 ┌─distance─┐
-│        7 │
+│        6 │
 └──────────┘
             )"
         }

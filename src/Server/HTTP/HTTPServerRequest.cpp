@@ -93,7 +93,9 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     else if (hasContentLength())
     {
         size_t content_length = getContentLength();
-        stream = std::make_shared<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length, .expect_eof = true});
+        /// No `expect_eof`: `Content-Length` already defines where the body ends, and with keep-alive
+        /// the socket legitimately holds the bytes of the next request.
+        stream = std::make_shared<LimitReadBuffer>(std::move(in), LimitReadBuffer::Settings{.read_no_less = content_length, .read_no_more = content_length});
         stream_is_bounded = true;
     }
     else if (getMethod() != HTTPRequest::HTTP_GET && getMethod() != HTTPRequest::HTTP_HEAD && getMethod() != HTTPRequest::HTTP_DELETE)
@@ -113,21 +115,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
 bool HTTPServerRequest::checkPeerConnected() const
 {
-    try
-    {
-        char b;
-        if (!socket->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
-            return false;
-    }
-    catch (Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-    catch (const std::exception &)
-    {
-        return false;
-    }
-
-    return true;
+    return socket->connectionOpen();
 }
 
 #if USE_SSL
@@ -158,7 +146,7 @@ X509Certificate HTTPServerRequest::peerCertificate() const
 
 void HTTPServerRequest::readRequest(ReadBuffer & in)
 {
-    char ch;
+    char ch = 0;
     std::string method;
     std::string uri;
     std::string version;
@@ -217,7 +205,7 @@ std::string HTTPServerRequest::toStringForLogging() const
         getMethod(),
         clientAddress().toString(),
         get("User-Agent", "(none)"),
-        (hasContentLength() ? fmt::format(", Length: {}", getContentLength()) : ("")),
+        (hasContentLength() ? fmt::format(", Length: {}", getContentLength()) : ""),
         getContentType(),
         getTransferEncoding(),
         get("X-Forwarded-For", "(none)"));

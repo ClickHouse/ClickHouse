@@ -1,0 +1,28 @@
+wide_count	91
+wide_secondary_bytes_positive	1
+wide_in_range_filters	1
+wide_out_of_range_count	0
+wide_out_of_range_drops_all	1
+1
+compact_part_type	Compact
+compact_count	91
+compact_secondary_bytes_positive	1
+compact_in_range_filters	1
+compact_out_of_range_count	0
+compact_out_of_range_drops_all	1
+1
+merge_wide_active_parts_before	2
+merge_wide_combined_count	148
+merge_wide_active_parts_after	1
+merge_wide_count_after	148
+merge_wide_secondary_bytes_positive	1
+merge_wide_index_filters_after	1
+1
+merge_compact_active_parts_before	2
+merge_compact_combined_count	148
+merge_compact_part_type_after	Compact
+merge_compact_active_parts_after	1
+merge_compact_count_after	148
+merge_compact_secondary_bytes_positive	1
+merge_compact_index_filters_after	1
+1

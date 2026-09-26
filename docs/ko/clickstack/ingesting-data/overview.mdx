@@ -1,0 +1,43 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/overview
+title: 'ClickStack에 데이터 수집하기'
+sidebarTitle: '개요'
+description: 'ClickStack에 데이터를 수집하는 방법 개요'
+doc_type: 'guide'
+keywords: ['ClickStack', '관측성', '로그', '모니터링', '플랫폼']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+모든 데이터는 **OpenTelemetry (OTel) collector**를 통해 ClickStack Open Source 또는 Managed ClickStack으로 수집됩니다. 이는 로그, 메트릭, 트레이스, 세션 데이터의 주요 진입점 역할을 합니다.
+
+아키텍처 간 핵심 차이는 각 구성 요소가 호스팅되는 위치입니다. 두 경우 모두 애플리케이션에서 텔레메트리 데이터를 수신하기 위해 OpenTelemetry Collector를 실행합니다. ClickStack Open Source에서는 ClickHouse와 ClickStack UI(HyperDX)도 직접 호스팅하고 관리합니다. Managed ClickStack에서는 ClickHouse와 HyperDX UI가 ClickHouse Cloud에서 호스팅 및 관리되며, 인증 통합과 운영 관리도 함께 제공됩니다.
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp" alt="흐름이 포함된 관리형 아키텍처" size="md" />
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp" alt="흐름이 포함된 단순 아키텍처" size="md" />
+  </Tab>
+</Tabs>
+
+두 배포 모델 모두에서 collector는 2개의 OTLP 엔드포인트를 노출합니다:
+
+* **HTTP** - 포트 `4318`
+* **gRPC** - 포트 `4317`
+
+데이터는 [언어 SDK](/ko/clickstack/ingesting-data/sdks/index)에서 직접 전송하거나, OTel과 호환되는 데이터 수집 agent(예: 인프라 메트릭과 로그를 수집하는 다른 OTel collector)에서 이 엔드포인트로 전송할 수 있습니다.
+
+보다 구체적으로 설명하면 다음과 같습니다.
+
+* [**언어 SDK**](/ko/clickstack/ingesting-data/sdks/index)는 애플리케이션 내부에서 텔레메트리를 수집하며, 특히 **트레이스**와 **로그**를 수집해 OTLP 엔드포인트를 통해 이 데이터를 OpenTelemetry collector로 내보냅니다. 그러면 OpenTelemetry collector가 ClickHouse로의 수집을 처리합니다. ClickStack에서 사용할 수 있는 언어 SDK에 대한 자세한 내용은 [SDKs](/ko/clickstack/ingesting-data/sdks/index)를 참조하십시오.
+
+* **데이터 수집 agent**는 서버, Kubernetes 노드 또는 애플리케이션과 함께 실행되는 엣지에 배포되는 agent입니다. 이들은 인프라 텔레메트리(예: 로그, 메트릭)를 수집하거나 SDK로 계측된 애플리케이션에서 직접 이벤트를 수신합니다. 이 경우 agent는 애플리케이션과 동일한 호스트에서 실행되며, 흔히 사이드카 또는 데몬셋으로 배포됩니다. 이러한 agent는 데이터를 중앙 ClickStack OTel collector로 전달하며, 이 collector는 [gateway](/ko/clickstack/ingesting-data/collector#collector-roles) 역할을 하고 일반적으로 클러스터, 데이터 센터 또는 리전마다 한 번씩 배포됩니다. 이 [gateway](/ko/clickstack/ingesting-data/collector#collector-roles)는 agent 또는 애플리케이션에서 OTLP 이벤트를 수신하고 ClickHouse로의 수집을 처리합니다. 자세한 내용은 [OTel collector](/ko/clickstack/ingesting-data/collector)를 참조하십시오. 이러한 agent는 OTel collector의 다른 인스턴스일 수도 있고, [Fluentd](https://www.fluentd.org/) 또는 [Vector](https://vector.dev/)와 같은 대체 기술일 수도 있습니다.
+
+<Info>
+  **OpenTelemetry 호환성**
+
+  ClickStack은 자체 언어 SDK와 향상된 텔레메트리 및 기능을 제공하는 맞춤형 OpenTelemetry를 제공하지만, 기존 OpenTelemetry SDK와 agent도 문제없이 함께 사용할 수 있습니다.
+</Info>

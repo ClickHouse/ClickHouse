@@ -1,4 +1,5 @@
 #include <Functions/array/arrayIndex.h>
+#include <Functions/array/has.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
 

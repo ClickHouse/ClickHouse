@@ -1,0 +1,9 @@
+before:	4
+after parens:	4	[1,2,3,4]	['a','b','c','d']
+after bare:	4	[1,2,3,4]	['a','b','c','d']
+after deleted mask:	4	[1,2,3,4]	['a','b','c','d']
+after stats all:	4	[1,2,3,4]	['a','b','c','d']
+after mat index:	4	[1,2,3,4]	['a','b','c','d']
+after mat proj:	4	[1,2,3,4]	['a','b','c','d']
+after rewrite parts:	4	[1,2,3,4]	['a','b','c','d']
+after mixed:	4	[1,2,3,4]	['A','b','c','d']

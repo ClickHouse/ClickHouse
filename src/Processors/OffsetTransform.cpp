@@ -173,7 +173,7 @@ void OffsetTransform::splitChunk(PortsData & data) const
     /// <---------------> offset
     ///             <---> start
 
-    assert(offset < rows_read);
+    chassert(offset < rows_read);
 
     if (offset + num_rows > rows_read)
         start = offset + num_rows - rows_read;
@@ -191,4 +191,3 @@ void OffsetTransform::splitChunk(PortsData & data) const
 }
 
 }
-

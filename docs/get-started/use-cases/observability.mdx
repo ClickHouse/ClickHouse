@@ -1,0 +1,40 @@
+---
+slug: /cloud/get-started/cloud/use-cases/observability
+title: 'Observability'
+description: 'Use ClickHouse Cloud for observability, monitoring, logging, and system performance analysis in distributed applications'
+keywords: ['use cases', 'observability']
+sidebarTitle: 'Observability'
+doc_type: 'guide'
+---
+
+import { PrimaryButton } from "/snippets/components/PrimaryButton/PrimaryButton.jsx";
+
+## ClickHouse for observability {#clickstack}
+Early adopters of ClickHouse recognized something fundamental: observability is a data problem.
+The database you choose defines the cost, scale, and capabilities of your observability platform - which is why selecting the right database for time-series data is often the most important architectural decision when building in-house or starting an observability company.
+
+This is exactly why ClickHouse has been at the core of observability stacks for years.
+From industry giants like Netflix and eBay to observability startups like Sentry and Dash0, ClickHouse powers logs, metrics, and traces at a massive scale.
+Its column-oriented storage, aggressive compression, and vectorized execution engine dramatically reduce costs and deliver the sub-second queries engineers need to debug live systems without waiting on slow tooling.
+
+## ClickStack {#clickstack}
+At the core of ClickHouse for the observability use-case is ClickStack, an innovative observability platform that revolutionizes how you handle logs, traces, and metrics by storing them all in a single ClickHouse database.
+This unified approach makes it incredibly easy to correlate signals across your entire infrastructure and applications.
+
+ClickStack is built around three core components that work seamlessly together:
+
+<Tabs>
+  <Tab title="OpenTelemetry" icon="/images/integrations/logos/logo_otel.webp">
+    > The ClickStack distribution of the OpenTelemetry collector serves as your data ingestion gateway. OpenTelemetry has become the industry standard for observability data, making this collector the natural choice for handling your telemetry streams.
+  </Tab>
+  <Tab title="ClickHouse" icon="/images/icons/icon-clickhouse-tab.svg">
+    > ClickHouse is explicitly chosen for its exceptional performance with high-cardinality data and lightning-fast aggregations that observability workloads demand.
+  </Tab>
+  <Tab title="HyperDX" icon="/images/hyperdx-logo.webp">
+    > HyperDX provides an intuitive user interface that brings all your data together with powerful querying capabilities and correlation features.
+  </Tab>
+</Tabs>
+
+What makes ClickStack particularly compelling is its flexibility. While it's OpenTelemetry native and works best with the OpenTelemetry ecosystem, it's not exclusively tied to it. You can ingest data from various sources, including S3, Kafka, and other agents, giving you the freedom to work with your existing infrastructure.
+
+<PrimaryButton label="Read the ClickStack docs" href="/clickstack" />

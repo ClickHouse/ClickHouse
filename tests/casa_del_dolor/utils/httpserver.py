@@ -27,8 +27,8 @@ class BackgroundWorker:
     def _handle_result(self, future):
         """Handle task completion or errors"""
         try:
-            result = future.result()  # This will raise if the task failed
-            self.logger.debug(f"Async task completed successfully")
+            future.result()  # This will raise if the task failed
+            self.logger.debug("Async task completed successfully")
         except Exception as e:
             self.logger.exception(f"Async task failed: {e}")
 

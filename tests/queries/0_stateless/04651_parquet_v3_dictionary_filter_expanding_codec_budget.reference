@@ -1,0 +1,10 @@
+the crafted file reads back exactly like the original
+1
+generous memory budget: the dictionary filter prunes the row group, 0 rows are read
+{"result":[{"count()":0}],"rows_read":0}
+moderate memory budget: the ~16 MB padded frame is charged once, by the prefetch, and the ~2.9 MB decoded dictionary fits on top of it, so pruning must still happen; charging the frame a second time demanded ~32 MB more and fell back to a full scan
+{"result":[{"count()":0}],"rows_read":0}
+extreme memory budget (1 byte): pruning is skipped, result is still correct
+{"result":[{"count()":0}],"rows_read":120000}
+results are identical regardless of the memory budget for a value that is present
+OK

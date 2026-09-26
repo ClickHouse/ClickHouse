@@ -1,0 +1,102 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-22
+title: '演示日 - 2026-05-22'
+sidebarTitle: '2026-05-22'
+description: 'ClickStack 2026-05-22 演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="clickcannon-data-generation-update">
+  ## ClickCannon 数据生成更新
+</div>
+
+*演示：[@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zljd07_4uF4" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+[ClickCannon](https://github.com/clickhouse/clickcannon) 是我们内部用于容量评估的工具：它会在生成大量 OpenTelemetry 数据的同时发起并发查询，用于估算客户在特定摄取和查询工作负载下所需的资源。我们在 OpenHouse 上正式对外发布了它，Spencer 也介绍了它的最新迭代版本。
+
+现在，你不必再预先在磁盘上配置数据，而是可以直接以内联方式配置生成器。启用它后，设置线程数、每个块的行数、每秒总行数，以及一些内存约束即可。这样就无需先在磁盘上准备 2 TB 的测试数据了，而这也正是该工具此前难以共享的原因。
+
+我们将引导更多用户使用 ClickCannon 进行自己的容量评估。代码仓库地址为 [https://github.com/clickhouse/clickcannon](https://github.com/clickhouse/clickcannon)。
+
+<div id="date-input-for-full-screen-tiles-and-source-scoped-filters">
+  ## 全屏卡片的日期输入和按数据源限定范围的过滤器
+</div>
+
+*由 [@pulpdrew](https://github.com/pulpdrew) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Mop1EYtGwKc" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+两项相关的 仪表盘 改进一同推出。现在，将单个卡片切换为全屏时，你会看到一个专用的时间选择器和粒度选择器，它们独立于 仪表盘 自身的时间范围。这意味着你可以针对某个特定指标 (例如 ClickHouse cluster 仪表盘 中的某个图表) 放大查看更长时间范围的历史数据，而无需让 仪表盘 上的其他卡片全部刷新。现在，浏览器标签页标题中也会显示 仪表盘 名称。
+
+第二项改进是 仪表盘 过滤器的数据源范围限定。过滤器现在可以限制为仅传递到使用特定数据源的卡片，而不是全局应用到所有卡片。在同时组合日志和链路追踪等多种数据源的 仪表盘 上，你可以避免过滤器“泄漏”到不适用的卡片中。
+
+**相关 PR：** [#2302](https://github.com/hyperdxio/hyperdx/pull/2302) feat: 次要 仪表盘 改进, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: 为 仪表盘 过滤器添加数据源范围限定
+
+<div id="text-index-recognised-on-lower-body">
+  ## 可识别定义在 lower(Body) 上的文本索引
+</div>
+
+*演示者：[@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/l0GpNBP859o" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+这是一个虽小但切实修复了正确性问题的改动，涉及不区分大小写的搜索。如果你的数据源在 `lower(Body)` 上定义了文本索引，且没有 `preprocessor` 参数，此前查询规划器会生成一个 `hasAllTokens(Body, ...)` 条件。由于该表达式与索引表达式不匹配，因此无法使用文本索引，查询就会退回到扫描。
+
+现在生成的查询为 `hasAllTokens(lower(Body), ...)`，这与索引表达式相匹配。对于以这种方式配置的数据源，不区分大小写的搜索现在能够正确地由文本索引加速。
+
+**相关 PR：** [#2326](https://github.com/hyperdxio/hyperdx/pull/2326) feat: 支持在没有 preprocessor 的情况下对 lower(Body) 使用文本索引
+
+<div id="simpler-event-deltas-experience">
+  ## 更简洁的 Event Deltas 体验
+</div>
+
+*由 [@alex-fedotyev](https://github.com/alex-fedotyev) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BrIHHFz_Aw8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Event Deltas 过去需要多一步操作：你必须先点击按钮进入比较模式，然后才能在热力图上拖拽选择区域。现在这一步已经省掉了：页面加载后会立即显示属性分布条；一旦你在热力图上拖出一个区域，这些分布条就会切换为“所选区域 vs 背景”的比较模式。点击所选区域之外的地方后，视图会恢复为全部 spans 视图。
+
+这项改动最初在几周前就已进入 OSS，但其中有一部分没有包含在托管 ClickStack 中。现在这个缺口已经补齐，因此两个版本的简化流程已保持一致。
+
+**相关 PR：** [#1899](https://github.com/hyperdxio/hyperdx/pull/1899) feat: 始终开启的属性分布模式
+
+<div id="dashboard-table-of-contents-and-bulk-collapse">
+  ## 仪表盘目录和批量折叠
+</div>
+
+*演示者：[@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Pojo5zf_hrE" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+当仪表盘中的区块不再只有寥寥几个时 (这正是我们想要的，因为区块是组织大型仪表盘的方式) ，导航起来就会变得很麻烦。Tom 添加了一个位于右侧边栏的目录，列出所有区块，并支持在它们之间直接跳转。现在还提供了一个批量折叠/展开控件，可以一次性隐藏所有区块的内容，这样你就能快速查看长仪表盘的整体结构，而不必把全部内容都滚动一遍。
+
+虽然仍处于草稿阶段，但对于我们随 ClickHouse 集群和 Kubernetes 视图提供的多区块仪表盘来说，已经很实用了。
+
+**相关 PR：** [#2350](https://github.com/hyperdxio/hyperdx/pull/2350) feat(dashboard): 添加带批量折叠/展开功能的右侧目录
+
+<div id="column-resize-persisted-across-sessions">
+  ## 列宽调整可跨会话保留
+</div>
+
+*演示：[@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7l-Rz1tFlq8" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+昨天有用户反馈：在结果表中调整列宽后，这个设置应该保留下来。现在已经支持了。调整后的列宽会按表 ID 分别存储在本地存储中，因此不同的表会保留各自独立的列布局。即使关闭浏览器、过一段时间再回来，这些列仍会保持为你离开时的样子。向表中添加或移除某一列，也不会重置其他列的宽度。
+
+**相关 PR：** [#2327](https://github.com/hyperdxio/hyperdx/pull/2327) 修复：在搜索结果表中持久化列宽

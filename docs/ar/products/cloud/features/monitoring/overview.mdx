@@ -1,0 +1,41 @@
+---
+title: 'مراقبة نشر ClickHouse Cloud الخاص بك'
+slug: /cloud/monitoring
+description: 'نظرة عامة على إمكانات المراقبة وobservability في ClickHouse Cloud'
+keywords: ['السحابة', 'المراقبة', 'observability', 'المقاييس']
+sidebarTitle: 'نظرة عامة'
+doc_type: 'guide'
+---
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+يوفّر هذا الدليل لفرق المؤسسات معلومات حول إمكانات المراقبة وobservability لعمليات النشر الإنتاجية في ClickHouse Cloud. كثيرًا ما يسأل عملاء المؤسسات عن ميزات المراقبة الجاهزة، والتكامل مع حِزم observability الحالية لديهم، بما في ذلك أدوات مثل Datadog وAWS CloudWatch، وكيف تقارن إمكانات المراقبة في ClickHouse بعمليات النشر ذاتية الاستضافة.
+
+يمكن للمستخدمين استخدام الطرق التالية لمراقبة عملية نشر ClickHouse الخاصة بهم:
+
+| القسم                                                                                  | الوصف                                                                                      | هل يوقظ الخدمات الخاملة؟ | الإعداد المطلوب               |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------ | ----------------------------- |
+| [لوحات معلومات Cloud Console](/ar/products/cloud/features/monitoring/cloud-console)       | مراقبة يومية باستخدام لوحات معلومات مدمجة لصحة الخدمة، واستخدام الموارد، وأداء الاستعلامات | لا                       | None                          |
+| [الإشعارات](/ar/products/cloud/features/monitoring/notifications)                         | تنبيهات لأحداث scaling، والأخطاء، وعمليات mutations، والفوترة                              | لا                       | None (قابل للتخصيص)           |
+| [نقطة نهاية Prometheus](/ar/products/cloud/features/monitoring/prometheus)                  | تصدير المقاييس إلى Grafana أو Datadog أو غيرها من الأدوات المتوافقة مع Prometheus          | لا                       | API key + config أداة scraper |
+| [استعلامات جداول النظام](/ar/products/cloud/features/monitoring/system-tables)            | debugging متعمّق وتحليل مخصص عبر استعلامات SQL مباشرة على جداول `system`                   | نعم                      | استعلامات SQL                 |
+| [تكاملات المجتمع والشركاء](/ar/products/cloud/features/monitoring/integrations)           | تكامل Datadog agent، وأدوات المراقبة المجتمعية، وBilling &amp; Usage API                   | يختلف                    | خاص بكل أداة                  |
+| [مرجع لوحة المعلومات المتقدمة](/ar/products/cloud/features/monitoring/advanced-dashboard) | مرجع تفصيلي لكل تصور في لوحة المعلومات المتقدمة، بما في ذلك أمثلة Troubleshooting          | لا                       | None                          |
+
+<div id="quick-start">
+  ## البدء السريع
+</div>
+
+افتح ClickHouse Cloud console وانتقل إلى علامة التبويب **Monitoring**. تعرض هذه [المدونة](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse) أبرز الأمور الشائعة التي ينبغي الانتباه إليها عند البدء.
+
+بالنسبة إلى معظم المستخدمين، توفّر [لوحات معلومات Cloud Console](/ar/products/cloud/features/monitoring/cloud-console) كل ما يلزم لمراقبة صحة الخدمة، واستخدام الموارد، وأداء الاستعلامات، من دون أي تهيئة. وإذا كنت بحاجة إلى التكامل مع حزمة مراقبة خارجية، فابدأ باستخدام [نقطة نهاية المقاييس المتوافقة مع Prometheus](/ar/products/cloud/features/monitoring/prometheus).
+
+<div id="system-impact">
+  ## اعتبارات تأثير النظام
+</div>
+
+تستخدم الأساليب المذكورة أعلاه مزيجًا من الاعتماد على نقاط نهاية Prometheus، أو الإدارة عبر ClickHouse Cloud، أو [الاستعلام عن جداول النظام](/ar/products/cloud/features/monitoring/system-tables) مباشرةً. ويعتمد الخيار الأخير على الاستعلام من خدمة ClickHouse الإنتاجية، مما يضيف عبئًا من الاستعلامات إلى النظام الخاضع للمراقبة ويمنع مثيلات ClickHouse Cloud من [الدخول في وضع الخمول](/ar/products/cloud/features/autoscaling/overview)، وهو ما قد يؤثر في التكاليف. بالإضافة إلى ذلك، إذا تعطل نظام الإنتاج، فقد تتأثر المراقبة أيضًا لأن النظامين مترابطان.
+
+يُعد الاستعلام عن جداول النظام مباشرةً مناسبًا للفحص الداخلي المتعمق واستكشاف الأخطاء وإصلاحها، لكنه أقل ملاءمة للمراقبة الإنتاجية في الوقت الفعلي. تستخدم كلٌّ من [لوحات معلومات Cloud Console](/ar/products/cloud/features/monitoring/cloud-console) و[نقطة نهاية Prometheus](/ar/products/cloud/features/monitoring/prometheus) مقاييس جُمعت مسبقًا ولا تُوقظ الخدمات الخاملة، مما يجعلها أنسب للمراقبة المستمرة في بيئة الإنتاج. ضع هذه المفاضلات في الحسبان بين إمكانات التحليل التفصيلي للنظام والكلفة التشغيلية الإضافية.

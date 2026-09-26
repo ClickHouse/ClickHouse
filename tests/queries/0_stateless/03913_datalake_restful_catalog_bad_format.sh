@@ -9,13 +9,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# Verify that creating a database with incorrect credentials in auth_header succeeds, and that
-# querying system.tables on such a database does not cause an exception (the error is caught lazily).
+# Verify that creating a database with an unreachable catalog endpoint fails immediately
+# (eager catalog initialization in the `DatabaseDataLake` constructor) and that no database
+# is left behind. Regression coverage for the eager-vs-lazy contract introduced together
+# with the race fix in `RestCatalog`.
 NEW_DB_NAME="${CLICKHOUSE_DATABASE}_03913_DATALAKE"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${NEW_DB_NAME};"
 $CLICKHOUSE_CLIENT -q "
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 CREATE DATABASE ${NEW_DB_NAME}
 ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
 SETTINGS
@@ -23,12 +25,9 @@ SETTINGS
     auth_header = 'Authorization: Wrong header',
     storage_endpoint = 'http://minio:9000/lakehouse',
     warehouse = 'demo';
-"
+" > /dev/null 2>&1 && echo "CREATE DATABASE unexpectedly succeeded" || echo "CREATE failed"
 
-$CLICKHOUSE_CLIENT -q "
-SELECT database || '.' || name FROM system.tables WHERE database = '${NEW_DB_NAME}' AND engine = 'MergeTree'
-SETTINGS show_data_lake_catalogs_in_system_tables = 1;
-"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM system.databases WHERE name = '${NEW_DB_NAME}';"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${NEW_DB_NAME};"
 
@@ -38,7 +37,7 @@ NEW_DB_FORBIDDEN="${CLICKHOUSE_DATABASE}_03913_FORBIDDEN"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${NEW_DB_FORBIDDEN};"
 $CLICKHOUSE_CLIENT -q "
-SET allow_experimental_database_iceberg = 1;
+SET allow_database_iceberg = 1;
 CREATE DATABASE ${NEW_DB_FORBIDDEN}
 ENGINE = DataLakeCatalog('http://localhost:8181/v1')
 SETTINGS

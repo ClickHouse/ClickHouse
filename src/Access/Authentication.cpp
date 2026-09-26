@@ -110,10 +110,19 @@ namespace
         const ScramSHA256Credentials * scram_sha256_credentials,
         const AuthenticationData & authentication_method)
     {
+        /// Only the `scram_sha256_password` method stores the salted password which the client proof
+        /// is verified against. Other methods (e.g. `ssh_key`) must not be checked against a SCRAM
+        /// client proof: their password hash is empty, and using it as an HMAC key would throw,
+        /// aborting the whole authentication instead of letting the next method of the user be tried.
+        if (authentication_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
+            return false;
+
         const auto & client_proof = scram_sha256_credentials->getClientProof();
         const auto & auth_message = scram_sha256_credentials->getAuthMessage();
-        const auto & salt = authentication_method.getSalt();
         const auto & password = authentication_method.getPasswordHashBinary();
+        if (password.empty())
+            return false;
+
         auto computed_client_proof = computeScramSHA256ClientProof(password, auth_message);
 
         if (computed_client_proof.size() != client_proof.size())
@@ -149,19 +158,29 @@ namespace
     }
 
     /// pAssw0rd+123456
+    /// For a NO_PASSWORD method the credential may also consist of the one-time password alone.
     std::pair<std::string_view, std::string_view>
-    splitOneTimePasswordAndPassword(std::string_view password_with_otp, const std::optional<OneTimePasswordSecret> & otp_secret)
+    splitOneTimePasswordAndPassword(std::string_view password_with_otp, const AuthenticationData & authentication_method)
     {
+        const auto & otp_secret = authentication_method.getOneTimePassword();
         if (!otp_secret)
             return {password_with_otp, ""};
+
+        auto whole_credential_is_otp = [&]() -> std::pair<std::string_view, std::string_view>
+        {
+            if (authentication_method.getType() == AuthenticationType::NO_PASSWORD)
+                return {"", password_with_otp};
+            return {password_with_otp, ""};
+        };
+
         auto num_digits = otp_secret->params.num_digits;
         if (password_with_otp.size() <= static_cast<size_t>(num_digits))
-            return {password_with_otp, ""};
+            return whole_credential_is_otp();
         size_t separator_pos = password_with_otp.size() - num_digits - 1;
         if (password_with_otp[separator_pos] != '+')
-            return {password_with_otp, ""};
+            return whole_credential_is_otp();
         if (!std::ranges::all_of(password_with_otp.substr(separator_pos + 1), [](char c) { return std::isdigit(c); }))
-            return {password_with_otp, ""};
+            return whole_credential_is_otp();
         return {password_with_otp.substr(0, separator_pos), password_with_otp.substr(separator_pos + 1)};
     }
 
@@ -174,19 +193,12 @@ namespace
     {
         const auto & provided_password = basic_credentials->getPassword();
         const auto & otp_secret = authentication_method.getOneTimePassword();
-        auto [password, one_time_password] = splitOneTimePasswordAndPassword(provided_password, otp_secret);
+        auto [password, one_time_password] = splitOneTimePasswordAndPassword(provided_password, authentication_method);
         Authentication::CredentialsCheckResult on_success = Authentication::CredentialsCheckResult::Success;
         if (otp_secret)
         {
-            if (authentication_method.getType() == AuthenticationType::NO_PASSWORD)
-            {
-                if (one_time_password.empty())
-                {
-                    one_time_password = password;
-                    password = "";
-                }
-            }
-
+            /// Only a pure check here: the code is marked as used by `consumeOneTimePassword` after
+            /// the whole authentication succeeds, so a failed attempt cannot burn a valid code.
             if (one_time_password.empty())
                 on_success = Authentication::CredentialsCheckResult::NeedSecondFactor;
             else if (!checkOneTimePassword(one_time_password, *otp_secret))
@@ -273,21 +285,45 @@ namespace
                 if (ssl_certificate_credentials->getSSLCertificateSubjects().at(type).contains(subject))
                     return true;
 
-                // Wildcard support (1 only)
+                // Wildcard support (single '*' only): a '*' must match exactly one component.
+                // Certificate SAN subjects are stored with a type prefix ("DNS:" or "URI:"), so a
+                // wildcard SAN pattern must carry one of those prefixes to align with a candidate.
+                // An unprefixed SAN wildcard (e.g. a bare "*" or "*.corp.example.com") would let '*'
+                // absorb the candidate's type prefix and span DNS labels, so it matches nothing.
+                // A DNS label (a CN or a "DNS:" SAN) is one non-empty label with no '.' and no '/'.
+                // A "URI:" SAN keeps the original rule: only '/' is forbidden in the matched span,
+                // identical to the original slash-count guard, so "URI:" matching is never widened.
                 if (subject.contains('*'))
                 {
-                    auto prefix = std::string_view(subject).substr(0, subject.find('*'));
-                    auto suffix = std::string_view(subject).substr(subject.find('*') + 1);
-                    auto slashes = std::count(subject.begin(), subject.end(), '/');
+                    if (type == X509Certificate::Subjects::Type::SAN
+                        && !subject.starts_with("DNS:") && !subject.starts_with("URI:"))
+                        continue;
+
+                    const auto star = subject.find('*');
+                    const auto prefix = std::string_view(subject).substr(0, star);
+                    const auto suffix = std::string_view(subject).substr(star + 1);
+                    const bool is_dns_label = (type == X509Certificate::Subjects::Type::CN)
+                        || (type == X509Certificate::Subjects::Type::SAN && subject.starts_with("DNS:"));
 
                     for (const auto & certificate_subject : ssl_certificate_credentials->getSSLCertificateSubjects().at(type))
                     {
-                        bool matches_wildcard = certificate_subject.starts_with(prefix) && certificate_subject.ends_with(suffix);
+                        // Checked before the substr below so its length cannot underflow when prefix and suffix overlap.
+                        if (certificate_subject.size() < prefix.size() + suffix.size())
+                            continue;
+                        if (!certificate_subject.starts_with(prefix) || !certificate_subject.ends_with(suffix))
+                            continue;
 
-                        // '*' must not represent a '/' in URI, so check if the number of '/' are equal
-                        bool matches_slashes = slashes == count(certificate_subject.begin(), certificate_subject.end(), '/');
-
-                        if (matches_wildcard && matches_slashes)
+                        const auto matched = std::string_view(certificate_subject).substr(
+                            prefix.size(), certificate_subject.size() - prefix.size() - suffix.size());
+                        // A single '*' matches exactly one component. A DNS label (a CN or "DNS:" SAN) is one
+                        // non-empty label: the span must be non-empty and contain no '.' and no '/' (a '/' is
+                        // not part of a hostname and the original slash-count guard forbade it). A "URI:" SAN
+                        // keeps the original rule: only '/' is forbidden, so empty path segments stay allowed
+                        // and "URI:" matching is not widened.
+                        const bool span_is_single_component = is_dns_label
+                            ? (!matched.empty() && !matched.contains('.') && !matched.contains('/'))
+                            : !matched.contains('/');
+                        if (span_is_single_component)
                             return true;
                     }
                 }
@@ -381,6 +417,24 @@ Authentication::CredentialsCheckResult Authentication::areCredentialsValid(
         return CredentialsCheckResult::Success;
 
     return CredentialsCheckResult::Fail;
+}
+
+bool Authentication::consumeOneTimePassword(const Credentials & credentials, const AuthenticationData & authentication_method)
+{
+    const auto & otp_secret = authentication_method.getOneTimePassword();
+    if (!otp_secret)
+        return true;
+
+    /// One-time passwords are checked only for basic credentials, see `checkBasicAuthentication`.
+    const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials);
+    if (!basic_credentials)
+        return true;
+
+    auto [password, one_time_password] = splitOneTimePasswordAndPassword(basic_credentials->getPassword(), authentication_method);
+    if (one_time_password.empty())
+        return true;
+
+    return checkAndConsumeOneTimePassword(one_time_password, *otp_secret);
 }
 
 }

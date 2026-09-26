@@ -1,8 +1,9 @@
 #include <Columns/ColumnIndex.h>
 #include <Common/Exception.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/NumberTraits.h>
 #include <base/demangle.h>
-#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 
 namespace DB
 {
@@ -11,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 
@@ -149,14 +151,16 @@ void ColumnIndex::expandType()
 
 size_t ColumnIndex::getMaxIndexForCurrentType() const
 {
-    size_t value = 0;
-    callForType([&](auto type) { value = std::numeric_limits<decltype(type)>::max(); }, size_of_type);
-    return value;
+    chassert(size_of_type == 1 || size_of_type == 2 || size_of_type == 4 || size_of_type == 8);
+    /// Shifting by 64 is undefined, and this is called per inserted value, so no `callForType` here.
+    if (size_of_type == sizeof(UInt64))
+        return std::numeric_limits<UInt64>::max();
+    return (1ULL << (8 * size_of_type)) - 1;
 }
 
 size_t ColumnIndex::getIndexAt(size_t row) const
 {
-    size_t index;
+    size_t index = 0;
     auto get_index = [&](auto type)
     {
         using CurIndexType = decltype(type);
@@ -167,6 +171,29 @@ size_t ColumnIndex::getIndexAt(size_t row) const
     return index;
 }
 
+void ColumnIndex::setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value, size_t offset)
+{
+    if (offset + mask.size() != size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Mask of size {} at offset {} does not match ColumnIndex of size {}",
+            mask.size(), offset, size());
+    chassert(value <= getMaxIndexForCurrentType());
+
+    auto set_value = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
+    {
+        auto & data = getIndexesData<CurIndexType>();
+        const auto typed_value = static_cast<CurIndexType>(value);
+        for (size_t row = 0, rows = mask.size(); row < rows; ++row)
+        {
+            if (!mask[row])
+                data[offset + row] = typed_value;
+        }
+    };
+
+    callForType(std::move(set_value), size_of_type);
+}
+
 
 void ColumnIndex::insertIndex(size_t index)
 {
@@ -175,12 +202,16 @@ void ColumnIndex::insertIndex(size_t index)
 
     auto insert = [&]<typename CurIndexType>(CurIndexType /*type_value*/)
     {
-        getIndexesData<CurIndexType>().push_back(static_cast<CurIndexType>(index));
+        /// `size_of_type` tracks the type of `indexes` and `expandType` keeps the two in sync, so
+        /// this is `static_cast` in release. `getIndexesData` would run a `typeid_cast` instead, and
+        /// this is the per-value path.
+        assert_cast<ColumnVector<CurIndexType> *>(indexes.get())->getData().push_back(static_cast<CurIndexType>(index));
     };
 
     callForType(std::move(insert), size_of_type);
 
-    checkSizeOfType();
+    /// Same invariant, so re-deriving it from `indexes` is a debug-only check here.
+    chassert(size_of_type == getSizeOfIndexType(*indexes, size_of_type));
 }
 
 void ColumnIndex::insertManyIndexes(size_t index, size_t length)
@@ -216,6 +247,16 @@ void ColumnIndex::insertIndexesRange(const IColumn & column, size_t offset, size
             indexes->insertRangeFrom(column, offset, limit);
         else
         {
+            const size_t column_size = column_ptr->size();
+            if (offset > column_size || limit > column_size - offset)
+                throw Exception(
+                    ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                    "Parameters offset = {}, limit = {} are out of bound in ColumnIndex::insertIndexesRange method "
+                    "(column.size() = {})",
+                    offset,
+                    limit,
+                    column_size);
+
             auto copy = [&](auto cur_type)
             {
                 using CurIndexType = decltype(cur_type);
@@ -493,24 +534,25 @@ bool ColumnIndex::containsDefault() const
     return contains;
 }
 
-WeakHash32 ColumnIndex::getWeakHash(const WeakHash32 & dict_hash) const
+void ColumnIndex::computeHashInto(
+    const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    WeakHash32 hash(indexes->size());
-    auto & hash_data = hash.getData();
-    const auto & dict_hash_data = dict_hash.getData();
+    const UInt32 * dict_hash_data = dict_hash.data();
 
-    auto update_weak_hash = [&](auto x)
+    auto gather = [&](auto x)
     {
         using CurIndexType = decltype(x);
-        auto & data = getIndexesData<CurIndexType>();
-        auto size = data.size();
+        const auto & data = getIndexesData<CurIndexType>();
 
-        for (size_t i = 0; i < size; ++i)
-            hash_data[i] = dict_hash_data[data[i]];
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            const UInt32 value = dict_hash_data[data[i]];
+            UInt32 & out = hash_out[i - row_begin];
+            out = initial ? value : combineWeakHash32(value, out);
+        }
     };
 
-    callForType(std::move(update_weak_hash), size_of_type);
-    return hash;
+    callForType(std::move(gather), size_of_type);
 }
 
 void ColumnIndex::collectSerializedValueSizes(

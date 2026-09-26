@@ -1,0 +1,58 @@
+---
+description: '`ExternalDistributed` 引擎允许对存储在远程 MySQL 或 PostgreSQL 服务器上的数据执行 `SELECT` 查询。它接受 [MySQL](/reference/engines/table-engines/integrations/mysql) 或 [PostgreSQL](/reference/engines/table-engines/integrations/postgresql) 引擎作为参数，因此支持分片。'
+sidebarTitle: 'ExternalDistributed'
+slug: /engines/table-engines/integrations/ExternalDistributed
+title: 'ExternalDistributed 表引擎'
+doc_type: 'reference'
+---
+
+`ExternalDistributed` 引擎允许对存储在远程 MySQL 或 PostgreSQL 服务器上的数据执行 `SELECT` 查询。它接受 [MySQL](/zh/reference/engines/table-engines/integrations/mysql) 或 [PostgreSQL](/zh/reference/engines/table-engines/integrations/postgresql) 引擎作为参数，因此支持分片。
+
+<div id="creating-a-table">
+  ## 创建表
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    ...
+) ENGINE = ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password');
+```
+
+请参阅 [CREATE TABLE](/zh/reference/statements/create/table) 查询的详细说明。
+
+表的结构可以与原始表不同：
+
+* 列名应与原始表中的列名一致，但也可以只使用其中部分列，且顺序可以任意。
+* 列类型可以不同于原始表中的列类型。ClickHouse 会尝试将值[转换](/zh/reference/functions/regular-functions/type-conversion-functions#CAST)为 ClickHouse 数据类型。
+
+**引擎参数**
+
+* `engine` — 表引擎 `MySQL` 或 `PostgreSQL`。
+* `host:port` — MySQL 或 PostgreSQL 服务器地址。
+* `database` — 远程数据库名称。
+* `table` — 远程表名称。
+* `user` — 用户名。
+* `password` — 用户密码。
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+支持多个副本，副本之间必须用 `|` 分隔，分片之间必须用 `,` 分隔。例如：
+
+```sql
+CREATE TABLE test_shards (id UInt32, name String, age UInt32, money UInt32) ENGINE = ExternalDistributed('MySQL', `mysql{1|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
+
+指定副本时，读取时会为每个分片选择一个可用副本。如果连接失败，则会改选下一个副本，依此类推，直到试遍所有副本。如果所有副本的连接尝试都失败，则会按相同方式再次重试多次。
+
+你可以指定任意数量的分片，并为每个分片指定任意数量的副本。
+
+**另请参见**
+
+* [MySQL 表引擎](/zh/reference/engines/table-engines/integrations/mysql)
+* [PostgreSQL 表引擎](/zh/reference/engines/table-engines/integrations/postgresql)
+* [Distributed 表引擎](/zh/reference/engines/table-engines/special/distributed)

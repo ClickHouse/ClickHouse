@@ -7,6 +7,7 @@
 #include <Processors/Port.h>
 
 #include <deque>
+#include <optional>
 
 /// See https://stackoverflow.com/questions/72533435/error-zero-as-null-pointer-constant-while-comparing-template-class-using-spaces
 #pragma clang diagnostic push
@@ -26,7 +27,6 @@ struct WindowTransformBlock
 {
     Columns original_input_columns;
     Columns input_columns;
-    Columns cast_columns;
     MutableColumns output_columns;
 
     size_t rows = 0;
@@ -38,6 +38,12 @@ struct RowNumber
     UInt64 row = 0;
 
     auto operator <=>(const RowNumber &) const = default;
+};
+
+struct MovedRow
+{
+    RowNumber row;
+    Int64 offset_left = 0;
 };
 
 
@@ -68,6 +74,10 @@ public:
 
     ~WindowTransform() override;
 
+    void resolveColumnIndices(const std::vector<WindowFunctionDescription> & functions);
+    void initWorkspaces(const std::vector<WindowFunctionDescription> & functions);
+    void setupRangeOffsetComparison();
+
     String getName() const override
     {
         return "WindowTransform";
@@ -75,14 +85,14 @@ public:
 
     static Block transformHeader(Block header, const ExpressionActionsPtr & expression);
 
-    /* (former) Implementation of ISimpleTransform.
-     */
-    void appendChunk(Chunk & chunk) /*override*/;
-
     /* Implementation of IProcessor;
      */
     Status prepare() override;
     void work() override;
+    void addInputBlock(Chunk chunk);
+    void computeReadyRows();
+    void startNextPartition();
+    void releaseUnusedBlocks();
 
     /* Implementation details.
      */
@@ -99,6 +109,21 @@ public:
     void advanceFrameEndUnbounded();
     void advanceFrameEnd();
     void advanceFrameEndRangeOffset();
+    void advanceFrameStartGroupsOffset();
+    void advanceFrameEndGroupsOffset();
+
+    // Returns the exclusive end of the peer group containing `start` -- the first row of the next
+    // peer group, or `partition_end` if the group is the last one in the partition.
+    //
+    // `scan_frontier` makes the scan resumable when the group's end cannot be determined yet: it is the
+    // last row already proven to be a peer of `start`, so a retry after more input arrives continues
+    // from there instead of rescanning the group from its first row (which would make a peer group
+    // spanning many blocks quadratic).
+    RowNumber findPeerGroupEnd(const RowNumber & start, RowNumber & scan_frontier, bool & need_more_data) const;
+
+    // Advances `pointer` forward, peer group by peer group, until it reaches the first row of the
+    // `target_group`-th peer group (1-based) or the partition end.
+    bool advanceGroupBoundary(RowNumber & pointer, UInt64 & group_counter, RowNumber & scan_frontier, Int64 target_group) const;
 
     void updateAggregationState();
     void writeOutCurrentRow();
@@ -131,11 +156,11 @@ public:
 
     void advanceRowNumber(RowNumber & x) const
     {
-        assert(x.block >= first_block_number);
-        assert(x.block - first_block_number < blocks.size());
+        chassert(x.block >= first_block_number);
+        chassert(x.block - first_block_number < blocks.size());
 
         const auto block_rows = blockAt(x).rows;
-        assert(x.row < block_rows);
+        chassert(x.row < block_rows);
 
         ++x.row;
         if (x.row < block_rows)
@@ -166,15 +191,15 @@ public:
         }
 
         --x.block;
-        assert(x.block >= first_block_number);
-        assert(x.block < first_block_number + blocks.size());
-        assert(blockAt(x).rows > 0);
+        chassert(x.block >= first_block_number);
+        chassert(x.block < first_block_number + blocks.size());
+        chassert(blockAt(x).rows > 0);
         x.row = blockAt(x).rows - 1;
 
 #ifndef NDEBUG
         auto advanced_retreated_x = x;
         advanceRowNumber(advanced_retreated_x);
-        assert(advanced_retreated_x == original_x);
+        chassert(advanced_retreated_x == original_x);
 #endif
     }
     RowNumber prevRowNumber(const RowNumber & x) const
@@ -184,16 +209,16 @@ public:
         return result;
     }
 
-    auto moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
+    MovedRow moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
+    MovedRow moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
 
     void assertValid(const RowNumber & x) const
     {
-        assert(x.block >= first_block_number);
+        chassert(x.block >= first_block_number);
         if (x.block == first_block_number + blocks.size())
-            assert(x.row == 0);
+            chassert(x.row == 0);
         else
-            assert(x.row < blockRowsNumber(x));
+            chassert(x.row < blockRowsNumber(x));
     }
     RowNumber blocksEnd() const
     {
@@ -204,17 +229,11 @@ public:
         return RowNumber{first_block_number, 0};
     }
 
-    /* Data (formerly) inherited from ISimpleTransform, needed for the
-     * implementation of the IProcessor interface.
-     */
+    /// Runtime data.
     InputPort & input;
     OutputPort & output;
-
-    bool has_input = false;
+    std::optional<Chunk> pending_input;
     bool input_is_finished = false;
-    Port::Data input_data;
-    bool has_output = false;
-    Port::Data output_data;
 
     /* Data for window transform itself.
      */
@@ -227,11 +246,18 @@ public:
     // Indices of the ORDER BY columns in block;
     std::vector<size_t> order_by_indices;
 
+    // Which input columns we actually read while computing the window functions: the PARTITION BY
+    // and ORDER BY keys and the function arguments.
+    std::vector<UInt8> should_materialize;
+
     // Per-window-function scratch spaces.
     std::vector<WindowFunctionWorkspace> workspaces;
 
-    // FIXME Reset it when the partition changes. We only save the temporary
-    // states in it (probably?).
+    // One arena shared by the aggregate function states of the current partition.
+    // Results never live in it: plain functions write values into the output
+    // column, and -State results are merged into the ColumnAggregateFunction's
+    // own arena. It is replaced when the partition changes, right after the
+    // states are destroyed, so it does not grow across partitions.
     std::unique_ptr<Arena> arena;
 
     // A sliding window of blocks we currently need. We add the input blocks as
@@ -242,9 +268,6 @@ public:
     UInt64 first_block_number = 0;
     // The next block we are going to pass to the consumer.
     UInt64 next_output_block_number = 0;
-    // The first row for which we still haven't calculated the window functions.
-    // Used to determine which resulting blocks we can pass to the consumer.
-    RowNumber first_not_ready_row;
 
     // Boundaries of the current partition.
     // partition_start doesn't point to a valid block, because we want to drop
@@ -268,6 +291,19 @@ public:
     UInt64 current_row_number = 1;
     UInt64 peer_group_start_row_number = 1;
     UInt64 peer_group_number = 1;
+
+    // Peer group index (1-based) of the row that frame_start / frame_end currently point to. Used
+    // by GROUPS offset frames to count peer groups while advancing the boundaries. Reset together
+    // with the frame boundaries when a new partition starts.
+    UInt64 frame_start_group_number = 1;
+    UInt64 frame_end_group_number = 1;
+
+    // Resume positions for the peer-group scans of the corresponding boundaries (see
+    // `findPeerGroupEnd`). Unlike the RANGE offset frames, which resume by advancing the boundary
+    // itself, the scan progress must be kept separately: a GROUPS boundary always points at the first
+    // row of a peer group.
+    RowNumber frame_start_group_scan_frontier;
+    RowNumber frame_end_group_scan_frontier;
 
     // The frame is [frame_start, frame_end) if frame_ended && frame_started,
     // and unknown otherwise. Note that when we move to the next row, both the

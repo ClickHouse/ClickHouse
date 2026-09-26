@@ -1,0 +1,30 @@
+---
+date: 2023-03-01
+title: "在客户端捕获查询相关的服务器日志"
+description: "了解如何使用 `send_logs_level` 客户端设置在客户端侧捕获服务器日志，即使日志设置不同也同样适用。"
+tags: ['服务器管理']
+keywords: ['服务器日志']
+---
+
+<div id="learn-how-to-capture-server-logs-of-queries-at-the-client">
+  ## 了解如何在客户端捕获查询的服务器日志
+</div>
+
+客户端可通过设置 `send_logs_level` 客户端参数来查看服务器日志，甚至可以指定与服务器端配置的日志级别不同的级别。
+
+例如，假设客户端运行：
+
+```sql
+SET send_logs_level = 'trace';
+```
+
+即使服务器的日志级别设为 info，客户端也会收到跟踪日志。
+
+一个很实用的场景是使用 `send_logs_level` 监控向 `Distributed` 表插入行的过程：
+
+* 在 `clickhouse-client` 中使用 `SET send_logs_level = 'trace';` 启用日志
+* 运行你的 `INSERT` 查询
+* 默认情况下，向分布式表的插入是异步的。数据会先写入磁盘上的本地缓冲区，然后在后台发送到远程服务器。
+* 参与查询处理的所有节点都会发送日志 (分布式链路追踪)
+
+要检查分布式插入的状态，请查看 [`system.distribution_queue` 表](/zh/reference/system-tables/distribution_queue)。该表包含有关队列中等待发送到各分片的本地文件的信息。这些本地文件包含以异步模式向 `Distributed` 表插入新数据时创建的新 parts。

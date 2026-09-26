@@ -1,0 +1,95 @@
+---
+title: ClickHouse MySQL オンプレミス セットアップ
+---
+
+MySQL インターフェイスを有効にした ClickHouse server の設定方法については、[公式ドキュメント](/ja/concepts/features/interfaces/mysql)を参照してください。
+
+サーバーの `config.xml` にエントリを追加する以外に
+
+```xml
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
+```
+
+また、MySQL インターフェイスを使用するユーザーには、
+[ダブル SHA1 パスワード暗号化](/ja/concepts/features/configuration/settings/settings-users#user-namepassword)
+の使用が*必須*です。
+
+シェルからダブル SHA1 で暗号化されたランダムなパスワードを生成するには:
+
+```shell
+PASSWORD=$(base64 < /dev/urandom | head -c16); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+```
+
+出力は以下のようになります。
+
+```
+LZOQYnqQN4L/T6L0
+fbc958cc745a82188a51f30de69eebfc67c40ee4
+```
+
+1行目は生成されたパスワードで、2行目はClickHouseの設定に使用できるハッシュです。
+
+以下は、生成されたハッシュを使用する `mysql_user` の設定例です。
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<users>
+    <mysql_user>
+        <password_double_sha1_hex>fbc958cc745a82188a51f30de69eebfc67c40ee4</password_double_sha1_hex>
+        <networks>
+            <ip>::/0</ip>
+        </networks>
+        <profile>default</profile>
+        <quota>default</quota>
+    </mysql_user>
+</users>
+```
+
+`password_double_sha1_hex` エントリを、自分で生成したダブル SHA1 ハッシュに置き換えてください。
+
+さらに、`SHOW [FULL] COLUMNS` クエリの結果に ClickHouse の型ではなくネイティブな MySQL 型を表示するため、`use_mysql_types_in_show_columns` を使用することを推奨します。
+これにより、MySQL コネクタを使用する際に、BI ツールがデータベースのスキーマを適切に解析できるようになります。
+
+例:
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<profiles>
+    <default>
+        <use_mysql_types_in_show_columns>1</use_mysql_types_in_show_columns>
+    </default>
+</profiles>
+```
+
+または、デフォルトではなく別のプロファイルに割り当てます。
+
+`mysql` バイナリが利用できる場合は、コマンドラインから接続をテストできます。
+上記のサンプルのユーザー名 (`mysql_user`) とパスワード (`LZOQYnqQN4L/T6L0`) を使用すると、コマンドラインは次のようになります。
+
+```bash
+mysql --protocol tcp -h localhost -u mysql_user -P 9004 --password=LZOQYnqQN4L/T6L0
+```
+
+```
+mysql> show databases;
++--------------------+
+| name               |
++--------------------+
+| INFORMATION_SCHEMA |
+| default            |
+| information_schema |
+| system             |
++--------------------+
+4 rows in set (0.00 sec)
+Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
+```
+
+最後に、ClickHouse Server が指定した IP アドレスで待ち受けるよう設定します。たとえば、`config.xml` で全アドレスを待ち受けるには、以下のコメントアウトを解除します。
+
+```bash
+<listen_host>::</listen_host> 
+```

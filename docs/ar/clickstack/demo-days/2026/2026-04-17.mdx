@@ -1,0 +1,104 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/04/2026-04-17
+title: 'Demo days - 2026-04-17'
+sidebarTitle: '2026-04-17'
+description: 'ClickStack Demo days بتاريخ 2026-04-17'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="summarize-logs-and-traces">
+  ## تلخيص السجلات والتتبعات
+</div>
+
+*عرض توضيحي بواسطة [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/TWsFyWt-tD8" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يتضمن HyperDX الآن ميزة تلخيص بالذكاء الاصطناعي تعمل عبر السجلات والتتبعات والأنماط. ويكثّف زر التلخيص الجديد بيانات القياس عن بُعد في ملخص واضح وسهل القراءة، مما يتيح لك فهم ما حدث بسرعة عبر مجموعة من الأحداث من دون الحاجة إلى قراءتها يدويًا واحدًا تلو الآخر.
+
+صُممت المعمارية للتكامل مع واجهات برمجة تطبيقات Anthropic (أو ما يشابهها)، كما أنها مبنية لدعم محادثات المتابعة، بحيث يمكن للمستخدمين مواصلة طرح الأسئلة بعد الملخص الأولي.
+
+**طلبات السحب ذات الصلة:** [#2108](https://github.com/hyperdxio/hyperdx/pull/2108) ميزة: تلخيص بالذكاء الاصطناعي مع موضوعات قابلة للتوسعة، وسياق التتبع، وتعزيز الأمان، [#2100](https://github.com/hyperdxio/hyperdx/pull/2100) تنفيذ معالجات استدعاء فعلية لتلخيص الذكاء الاصطناعي مع وضع نبرة ذكي
+
+<div id="event-deltas-heatmap-into-chart-builder">
+  ## خريطة Event deltas الحرارية في أداة إنشاء المخططات
+</div>
+
+*عرض توضيحي بواسطة [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BLVhIQjocwE" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يجري نقل تصور خريطة Event Deltas الحرارية إلى أداة إنشاء المخططات الرئيسية، ما يتيحها كنوع مخطط قياسي إلى جانب تصورات HyperDX الأخرى. في السابق، كانت متاحة فقط ضمن عرضها المخصص؛ أما الآن فأصبحت تعمل داخل Chart Explorer إلى جانب بقية أنواع المخططات.
+
+عند اكتمال ذلك، سيتمكن المستخدمون من إضافة خريطة Event Deltas الحرارية مباشرةً إلى بلاطات لوحة المعلومات، حيث ستدعم تصفية الحقول نفسها وعناصر التحكم نفسها في النطاق الزمني التي تتوقعها من أي مخطط آخر. ولا يزال العمل عليها جاريًا حاليًا.
+
+**طلبات السحب ذات الصلة:** [#2107](https://github.com/hyperdxio/hyperdx/pull/2107) feat: Wire heatmap chart into dashboard editor and tile rendering, [#2102](https://github.com/hyperdxio/hyperdx/pull/2102) Implement reusable Heatmap chart with Event Deltas support
+
+<div id="benchmarking-for-schema-improvements">
+  ## اختبارات الأداء لتحسينات المخطّط
+</div>
+
+*عرض توضيحي من [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/_B7TmIiXZyM" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يستعرض Aaron نتائج اختبارات الأداء لمخطط سجلات OpenTelemetry الافتراضي المحدَّث في HyperDX. ويتمثل التغيير الرئيسي في حذف العمود القديم `timestamp_time` (وهو Unix timestamp‏ بطول 32 بت وبدقة على مستوى الثانية) والاكتفاء بالاعتماد على `timestamp`، الذي يوفّر دقة النانوثانية ويزيل عمودًا واحدًا من المخطّط. وعبر مجموعة واسعة من اختبارات أداء الاستعلامات، يقدّم المخطّط المحدَّث أداءً يماثل المخطّط القديم أو يتفوّق عليه في معظم الحالات.
+
+يتضمن المخطّط النهائي أيضًا تحسينات في ترتيب القراءة تُظهر مكاسب واضحة في الاستعلامات الانتقائية. وكان البحث عن قيمة نادرة نسبيًا في Map أسرع بنحو الضعف مقارنة بخط الأساس، كما أظهرت عمليات lookup للقيم عالية التكرار تحسنًا أكبر. ويكون عبء insert أعلى بشكل هامشي (بسبب زيادة عدد الأعمدة المطلوب الحفاظ عليها)، لكن أداء الاستعلامات على العموم مماثل أو أفضل، ما يجعل هذه ترقية مباشرة.
+
+**طلبات السحب ذات الصلة:** [#2125](https://github.com/hyperdxio/hyperdx/pull/2125) feat: optimized default otel-logs schema
+
+<div id="improvements-to-autocomplete">
+  ## تحسينات على الإكمال التلقائي
+</div>
+
+*عرض توضيحي من [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/8zDZx49uYQo" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يشهد الإكمال التلقائي في HyperDX إعادة تصميم كبيرة لدعم عدد أكبر بكثير من القيم المميزة وتسريع تحميل القيم. ويعتمد التنفيذ الجديد على جداول rollup (من نوع `AggregatingMergeTrees` تُجري تجميعًا مسبقًا لأزواج المفتاح-القيمة ضمن فترات زمنية مدتها 15 دقيقة)، لذا فبدلًا من الاستعلام عن البيانات الخام عند كل ضغطة مفتاح، يقرأ النظام من مجموعة بيانات أصغر بكثير ومحسوبة مسبقًا. وفي عرض توضيحي مباشر على مثيل staging يحتوي على 230 مليون صف، حمّل الإكمال التلقائي القيم بسرعة للحقول عالية التعددية مثل `hostname` ومن دون أي تأخر ملحوظ.
+
+يدعم النظام كلًا من rollup للمفاتيح فقط (يعيد جميع المفاتيح ولكن من دون القيم المرتبطة بها، لتقليل العبء في حالات التعددية المنخفضة) وrollup كاملًا للمفتاح-القيمة. وإذا كان المتاح هو rollup للمفاتيح فقط، فإن النظام يعود إلى استراتيجية fetch-values الحالية في خطوة البحث عن القيمة. وإذا لم يكتشف أي جدول rollup على الإطلاق، فإنه يعود بسلاسة إلى السلوك الحالي. ويشير Aaron أيضًا إلى أن واجهة مستخدم مستقبلية لقائمة سماح للتحكم في المفاتيح التي تحصل على rollup للقيم ستكون إضافة مفيدة للعملاء الذين لديهم بيانات عالية التعددية بشكل خاص.
+
+**طلبات السحب ذات الصلة:** [#2128](https://github.com/hyperdxio/hyperdx/pull/2128) feat: fast and full autocomplete, [#2127](https://github.com/hyperdxio/hyperdx/pull/2127) feat: better autocomplete
+
+<div id="improvements-to-alerting-with-sql">
+  ## تحسينات على التنبيهات باستخدام SQL
+</div>
+
+*عرض توضيحي من [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BOk-LC0y2no" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+استنادًا إلى إضافة الأسبوع الماضي للتنبيهات في مخططات Raw SQL الخطية ومخططات الأعمدة، يدعم HyperDX الآن أيضًا التنبيهات في مخططات Raw SQL الرقمية. لم تعد معلمة تصفية الوقت مطلوبة عند إعداد تنبيه: يظهر تحذير عند عدم تضمينها، لكن الاستعلامات التي لا تتضمن أي بُعد زمني أصبحت الآن صالحة بالكامل. وهذا يسهّل إعداد التنبيهات لقيم الإعداد أو مقاييس النظام التي لا تتغير بمرور الوقت، مثل التحقق من أن عدد عقد عنقود ClickHouse يساوي القيمة المتوقعة.
+
+أُضيفت أيضًا عدة أنواع جديدة من العتبات: لا يساوي، أعلى من، بحد أقصى، بين، وخارج النطاق. ويمنح هذا الفرق مرونة أكبر بكثير في التعبير عن شروط التنبيه بما يتجاوز المقارنات البسيطة من نوع &quot;أكبر من&quot;. وأخيرًا، أصبح سجل التنبيه يظهر الآن مباشرةً في محرر البلاطة، بحيث يمكن للمستخدمين، عندما يرتبط تنبيه نشط ببلاطة معيّنة في لوحة المعلومات، رؤية السجل الكامل، وفهم ما الذي أدّى إلى تشغيله، وتأكيد التنبيه أو كتمه دون مغادرة لوحة المعلومات.
+
+**طلبات السحب ذات الصلة:** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: Implement alerting for Raw SQL-based dashboard tiles, [#2114](https://github.com/hyperdxio/hyperdx/pull/2114) feat: Support alerts on Raw SQL Number Charts, [#2122](https://github.com/hyperdxio/hyperdx/pull/2122) feat: Add additional alert threshold types, [#2130](https://github.com/hyperdxio/hyperdx/pull/2130) feat: Add between and not-between alert thresholds, [#2123](https://github.com/hyperdxio/hyperdx/pull/2123) feat: Add alert history + ack to alert editor
+
+<div id="errors-during-alert-execution">
+  ## أخطاء أثناء تنفيذ التنبيه
+</div>
+
+*عرض توضيحي بواسطة [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/b3G8kFiQiUg" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+عندما يفشل تنفيذ تنبيه، يعرض HyperDX الآن هذا الخطأ مباشرةً في واجهة المستخدم بدلًا من تجاهله بصمت. في السابق، ربما كان المستخدمون يلاحظون فجوات في سجل التنبيهات من دون أي تفسير: لا توجد رسالة خطأ ولا وسيلة لمعرفة ما الذي حدث. الآن، تظهر أيقونات خطأ مميزة بجوار أنواع الإخفاق المختلفة، بما في ذلك الاستعلامات غير الصالحة، وإخفاقات تسليم webhook، وإعدادات webhook المفقودة أو المُعدّة بشكل غير صحيح.
+
+يؤدي النقر على أيقونة الخطأ إلى عرض التفاصيل الدقيقة اللازمة لتشخيص المشكلة وحلها، بحيث يتمكن المستخدمون من إصلاح التنبيهات المُعدّة بشكل غير صحيح من دون التنقيب في سجلات الخادم أو تقديم طلب دعم. الهدف هو جعل التعامل مع إخفاقات التنبيه ذاتي الخدمة: انظر إلى الخطأ، وافهمه، ثم أصلحه.
+
+**طلبات السحب ذات الصلة:** [#2132](https://github.com/hyperdxio/hyperdx/pull/2132) feat: عرض أخطاء تنفيذ التنبيه في واجهة المستخدم، [#2136](https://github.com/hyperdxio/hyperdx/pull/2136) fix: إخفاء أخطاء التنبيه التي قد تتضمن معلومات حساسة

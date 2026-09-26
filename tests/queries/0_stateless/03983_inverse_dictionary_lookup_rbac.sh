@@ -60,6 +60,14 @@ ${CLICKHOUSE_CLIENT} --user="${user}" -nm --query "
     SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 1;
 "
 
+# Regression check for non-equals path: this does not use dictGetKeys fast-path.
+${CLICKHOUSE_CLIENT} --user="${user}" -nm --query "
+    SELECT count()
+    FROM ${db_name}.${table_name}
+    WHERE dictGet('${db_name}.${dict_name}', 'name', value_id) != 'abc'
+    SETTINGS enable_analyzer = 1, optimize_inverse_dictionary_lookup = 1;
+"
+
 ${CLICKHOUSE_CLIENT} -nm --query "
     DROP USER IF EXISTS ${user};
     DROP TABLE IF EXISTS ${table_name} SYNC;

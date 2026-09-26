@@ -54,7 +54,7 @@ class InterruptListener
 {
 private:
     bool active;
-    sigset_t sig_set;
+    sigset_t sig_set{};
 
 public:
     InterruptListener() : active(false)

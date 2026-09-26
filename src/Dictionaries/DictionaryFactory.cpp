@@ -17,14 +17,21 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-void DictionaryFactory::registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex, bool has_layout_complex)
+void DictionaryFactory::registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex, bool has_layout_complex, Documentation documentation)
 {
     auto it = registered_layouts.find(layout_type);
     if (it != registered_layouts.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionaryFactory: the layout name '{}' is not unique", layout_type);
 
-    RegisteredLayout layout { .layout_create_function = create_layout, .is_layout_complex = is_layout_complex, .has_layout_complex = has_layout_complex };
+    RegisteredLayout layout { .layout_create_function = create_layout, .is_layout_complex = is_layout_complex, .has_layout_complex = has_layout_complex, .documentation = std::move(documentation) };
     registered_layouts.emplace(layout_type, std::move(layout));
+}
+
+Documentation DictionaryFactory::getDocumentation(const std::string & layout_type) const
+{
+    if (auto it = registered_layouts.find(layout_type); it != registered_layouts.end())
+        return it->second.documentation;
+    return {};
 }
 
 std::vector<String> DictionaryFactory::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS

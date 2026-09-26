@@ -1,6 +1,7 @@
 #include <Common/COW.h>
 #include <iostream>
 #include <base/defines.h>
+#include <Examples/clickhouse_examples.h>
 
 namespace
 {

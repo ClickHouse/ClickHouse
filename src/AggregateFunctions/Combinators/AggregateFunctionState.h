@@ -3,12 +3,23 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 
 
 namespace DB
 {
 struct Settings;
+
+namespace ErrorCodes
+{
+extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+extern const char aggregate_function_state_transfer_throw[];
+}
 
 
 /** Not an aggregate function, but an adapter of aggregate functions,
@@ -109,7 +120,7 @@ public:
         nested_func->add(place, columns, row_num, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
     }
@@ -122,7 +133,7 @@ public:
         nested_func->parallelizeMergePrepare(places, thread_pool, is_cancelled);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled, Arena * arena) const override
     {
         nested_func->merge(place, rhs, thread_pool, is_cancelled, arena);
     }
@@ -144,12 +155,30 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        assert_cast<ColumnAggregateFunction &>(to).getData().push_back(place);
+        auto & column = assert_cast<ColumnAggregateFunction &>(to);
+
+        /// Only once the column holds an aliased state, which is the partial transfer to undo.
+        if (unlikely(!column.empty()))
+        {
+            fiu_do_on(FailPoints::aggregate_function_state_transfer_throw,
+            {
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected failure in AggregateFunctionState::insertResultInto");
+            });
+        }
+
+        column.getData().push_back(place);
     }
 
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         assert_cast<ColumnAggregateFunction &>(to).insertFrom(place);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict, IColumn & to) const noexcept override
+    {
+        /// insertResultInto aliased a state that `place` still owns, so the row must go without the
+        /// destroy that ColumnAggregateFunction::popBack performs.
+        assert_cast<ColumnAggregateFunction &>(to).popBackWithoutDestroy(1);
     }
 
     /// Aggregate function or aggregate function state.

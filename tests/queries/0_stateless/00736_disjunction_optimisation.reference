@@ -132,24 +132,24 @@ QUERY id: 0
       FUNCTION id: 4, function_name: in, function_type: ordinary, result_type: UInt8
         ARGUMENTS
           LIST id: 5, nodes: 2
-            COLUMN id: 6, column_name: k, result_type: UInt64, source_id: 3
-            CONSTANT id: 7, constant_value: Tuple_(UInt64_1, UInt64_2, UInt64_3), constant_value_type: Tuple(UInt8, UInt8, UInt8)
-      COLUMN id: 8, column_name: s, result_type: UInt64, source_id: 3
-      FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+            COLUMN id: 2, column_name: k, result_type: UInt64, source_id: 3
+            CONSTANT id: 6, constant_value: Tuple_(UInt64_1, UInt64_2, UInt64_3), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+      COLUMN id: 7, column_name: s, result_type: UInt64, source_id: 3
+      FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
         ARGUMENTS
-          LIST id: 10, nodes: 2
-            COLUMN id: 11, column_name: s, result_type: UInt64, source_id: 3
-            CONSTANT id: 12, constant_value: UInt64_21, constant_value_type: UInt8
-      FUNCTION id: 13, function_name: in, function_type: ordinary, result_type: UInt8
+          LIST id: 9, nodes: 2
+            COLUMN id: 7, column_name: s, result_type: UInt64, source_id: 3
+            CONSTANT id: 10, constant_value: UInt64_21, constant_value_type: UInt8
+      FUNCTION id: 11, function_name: in, function_type: ordinary, result_type: UInt8
         ARGUMENTS
-          LIST id: 14, nodes: 2
-            COLUMN id: 15, column_name: s, result_type: UInt64, source_id: 3
-            CONSTANT id: 16, constant_value: Tuple_(UInt64_21, UInt64_22), constant_value_type: Tuple(UInt8, UInt8)
-      FUNCTION id: 17, function_name: in, function_type: ordinary, result_type: UInt8
+          LIST id: 12, nodes: 2
+            COLUMN id: 7, column_name: s, result_type: UInt64, source_id: 3
+            CONSTANT id: 13, constant_value: Tuple_(UInt64_21, UInt64_22), constant_value_type: Tuple(UInt8, UInt8)
+      FUNCTION id: 14, function_name: in, function_type: ordinary, result_type: UInt8
         ARGUMENTS
-          LIST id: 18, nodes: 2
-            COLUMN id: 19, column_name: s, result_type: UInt64, source_id: 3
-            CONSTANT id: 20, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+          LIST id: 15, nodes: 2
+            COLUMN id: 7, column_name: s, result_type: UInt64, source_id: 3
+            CONSTANT id: 16, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.bug
   SETTINGS enable_analyzer=1
@@ -181,8 +181,8 @@ QUERY id: 0
       FUNCTION id: 4, function_name: in, function_type: ordinary, result_type: UInt8
         ARGUMENTS
           LIST id: 5, nodes: 2
-            COLUMN id: 6, column_name: s, result_type: UInt64, source_id: 3
-            CONSTANT id: 7, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+            COLUMN id: 2, column_name: s, result_type: UInt64, source_id: 3
+            CONSTANT id: 6, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.bug
   SETTINGS enable_analyzer=1
@@ -320,32 +320,32 @@ QUERY id: 0
       FUNCTION id: 4, function_name: in, function_type: ordinary, result_type: UInt8
         ARGUMENTS
           LIST id: 5, nodes: 2
-            COLUMN id: 6, column_name: k, result_type: UInt64, source_id: 3
-            CONSTANT id: 7, constant_value: Tuple_(UInt64_1, UInt64_2, UInt64_3), constant_value_type: Tuple(UInt8, UInt8, UInt8)
-      COLUMN id: 8, column_name: s, result_type: UInt64, source_id: 3
-      FUNCTION id: 9, function_name: equals, function_type: ordinary, result_type: UInt8
+            COLUMN id: 2, column_name: k, result_type: UInt64, source_id: 3
+            CONSTANT id: 6, constant_value: Tuple_(UInt64_1, UInt64_2, UInt64_3), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+      COLUMN id: 7, column_name: s, result_type: UInt64, source_id: 3
+      FUNCTION id: 8, function_name: equals, function_type: ordinary, result_type: UInt8
         ARGUMENTS
-          LIST id: 10, nodes: 2
-            COLUMN id: 11, column_name: s, result_type: UInt64, source_id: 3
-            CONSTANT id: 12, constant_value: UInt64_21, constant_value_type: UInt8
-      FUNCTION id: 13, function_name: or, function_type: ordinary, result_type: UInt8
+          LIST id: 9, nodes: 2
+            COLUMN id: 7, column_name: s, result_type: UInt64, source_id: 3
+            CONSTANT id: 10, constant_value: UInt64_21, constant_value_type: UInt8
+      FUNCTION id: 11, function_name: or, function_type: ordinary, result_type: UInt8
         ARGUMENTS
-          LIST id: 14, nodes: 2
-            FUNCTION id: 15, function_name: equals, function_type: ordinary, result_type: UInt8
+          LIST id: 12, nodes: 2
+            FUNCTION id: 13, function_name: equals, function_type: ordinary, result_type: UInt8
               ARGUMENTS
-                LIST id: 16, nodes: 2
-                  COLUMN id: 17, column_name: s, result_type: UInt64, source_id: 3
-                  CONSTANT id: 18, constant_value: UInt64_21, constant_value_type: UInt8
-            FUNCTION id: 19, function_name: equals, function_type: ordinary, result_type: UInt8
+                LIST id: 14, nodes: 2
+                  COLUMN id: 7, column_name: s, result_type: UInt64, source_id: 3
+                  CONSTANT id: 15, constant_value: UInt64_21, constant_value_type: UInt8
+            FUNCTION id: 16, function_name: equals, function_type: ordinary, result_type: UInt8
               ARGUMENTS
-                LIST id: 20, nodes: 2
-                  COLUMN id: 21, column_name: s, result_type: UInt64, source_id: 3
-                  CONSTANT id: 22, constant_value: UInt64_22, constant_value_type: UInt8
-      FUNCTION id: 23, function_name: in, function_type: ordinary, result_type: UInt8
+                LIST id: 17, nodes: 2
+                  COLUMN id: 7, column_name: s, result_type: UInt64, source_id: 3
+                  CONSTANT id: 18, constant_value: UInt64_22, constant_value_type: UInt8
+      FUNCTION id: 19, function_name: in, function_type: ordinary, result_type: UInt8
         ARGUMENTS
-          LIST id: 24, nodes: 2
-            COLUMN id: 25, column_name: s, result_type: UInt64, source_id: 3
-            CONSTANT id: 26, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+          LIST id: 20, nodes: 2
+            COLUMN id: 7, column_name: s, result_type: UInt64, source_id: 3
+            CONSTANT id: 21, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.bug
   SETTINGS enable_analyzer=1
@@ -377,8 +377,8 @@ QUERY id: 0
       FUNCTION id: 4, function_name: in, function_type: ordinary, result_type: UInt8
         ARGUMENTS
           LIST id: 5, nodes: 2
-            COLUMN id: 6, column_name: s, result_type: UInt64, source_id: 3
-            CONSTANT id: 7, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+            COLUMN id: 2, column_name: s, result_type: UInt64, source_id: 3
+            CONSTANT id: 6, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.bug
   SETTINGS enable_analyzer=1
@@ -410,8 +410,8 @@ QUERY id: 0
       FUNCTION id: 4, function_name: in, function_type: ordinary, result_type: UInt8
         ARGUMENTS
           LIST id: 5, nodes: 2
-            COLUMN id: 6, column_name: s, result_type: UInt64, source_id: 3
-            CONSTANT id: 7, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
+            COLUMN id: 2, column_name: s, result_type: UInt64, source_id: 3
+            CONSTANT id: 6, constant_value: Tuple_(UInt64_21, UInt64_22, UInt64_23), constant_value_type: Tuple(UInt8, UInt8, UInt8)
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.bug
   SETTINGS enable_analyzer=1

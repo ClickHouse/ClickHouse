@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -75,7 +76,7 @@ Same as function [`currentDatabase`](#currentDatabase) but
 Function `currentSchemas` only exists for compatibility with PostgreSQL.
 Please use `currentDatabase` instead.
 
-Also see the [`SET` statement](/sql-reference/statements/use).
+Also see the [`SET` statement](/reference/statements/use).
     )";
     FunctionDocumentation::Syntax syntax = "currentSchemas(bool)";
     FunctionDocumentation::Arguments arguments = {

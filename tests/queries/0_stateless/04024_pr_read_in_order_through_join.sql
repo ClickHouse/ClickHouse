@@ -3,6 +3,7 @@
 -- (due to differences in plan construction), leading to "Replica decided to read in Default
 -- mode, not in WithOrder" LOGICAL_ERROR.
 -- https://github.com/ClickHouse/ClickHouse/issues/94076
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS payloads;
@@ -19,6 +20,7 @@ SET query_plan_read_in_order_through_join = 1;
 SET optimize_aggregation_in_order = 1;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable spilling as it doesn't support read-in-order optimization
 SET enable_parallel_replicas = 0;
+SET query_plan_join_swap_table = false;
 
 -- Without parallel replicas: read_in_order_through_join should apply (InOrder for events table).
 -- We sort the ReadType strings so the test is robust to plan reordering: `query_plan_top_k_through_join`
@@ -88,6 +90,8 @@ SELECT DISTINCT events.Time
 FROM events LEFT JOIN payloads ON events.Id = payloads.Id
 ORDER BY events.Time LIMIT 3
 FORMAT Null;
+
+SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 DROP TABLE events;
 DROP TABLE payloads;

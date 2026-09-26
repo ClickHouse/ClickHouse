@@ -220,7 +220,7 @@ bool CPUSlotsAllocation::isRequesting() const
     std::unique_lock lock{schedule_mutex};
     if (allocated < total_slots && getCurrentQueue(lock))
         // Caller should make sure that request will not be dequeued by the scheduler thread. Otherwise, it will be a race condition.
-        return current_request->is_linked();
+        return current_request->enqueued_hook.is_linked();
     else
         return false;
 }

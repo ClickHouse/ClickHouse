@@ -385,11 +385,11 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
 
         if (size < 0)
         {
-            Int64 abs_size;
+            Int64 abs_size = 0;
             if (common::subOverflow(Int64(0), size, abs_size))
                 throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "Overflow in length argument of substring-like function: {}", size);
-            Int64 adjustment;
+            Int64 adjustment = 0;
             if (offset > 0)
             {
                 adjustment = static_cast<Int64>(src.getElementSize()) - (offset - 1);
@@ -400,7 +400,7 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
                     throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                         "Overflow in offset argument of substring-like function: {}", offset);
             }
-            Int64 new_size;
+            Int64 new_size = 0;
             if (common::addOverflow(size, adjustment, new_size))
                 throw Exception(DB::ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "Overflow when computing slice size in substring-like function: size={}, adjustment={}", size, adjustment);
@@ -649,38 +649,23 @@ bool sliceHas(const NumericArraySlice<T> & /*first*/, const GenericArraySlice & 
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const FirstArraySlice & first, NullableSlice<SecondArraySlice> & second)
+bool sliceHas(const FirstArraySlice & first, const NullableSlice<SecondArraySlice> & second)
 {
-    auto impl = sliceHasImpl<
-        search_type,
-        FirstArraySlice,
-        SecondArraySlice,
-        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
-        insliceEqualElements<SecondArraySlice>>;
+    auto impl = sliceHasImpl<search_type, FirstArraySlice, SecondArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, nullptr, second.null_map);
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const NullableSlice<FirstArraySlice> & first, SecondArraySlice & second)
+bool sliceHas(const NullableSlice<FirstArraySlice> & first, const SecondArraySlice & second)
 {
-    auto impl = sliceHasImpl<
-        search_type,
-        FirstArraySlice,
-        SecondArraySlice,
-        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
-        insliceEqualElements<SecondArraySlice>>;
+    auto impl = sliceHasImpl<search_type, FirstArraySlice, SecondArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, first.null_map, nullptr);
 }
 
 template <ArraySearchType search_type, typename FirstArraySlice, typename SecondArraySlice>
-bool sliceHas(const NullableSlice<FirstArraySlice> & first, NullableSlice<SecondArraySlice> & second)
+bool sliceHas(const NullableSlice<FirstArraySlice> & first, const NullableSlice<SecondArraySlice> & second)
 {
-    auto impl = sliceHasImpl<
-        search_type,
-        FirstArraySlice,
-        SecondArraySlice,
-        sliceEqualElements<FirstArraySlice, SecondArraySlice>,
-        insliceEqualElements<SecondArraySlice>>;
+    auto impl = sliceHasImpl<search_type, FirstArraySlice, SecondArraySlice, sliceEqualElements, insliceEqualElements>;
     return impl(first, second, first.null_map, second.null_map);
 }
 

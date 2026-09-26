@@ -120,7 +120,7 @@ void IAggregateFunction::mergeStateFromDifferentVariant(
         toString(rhs.getStateVariant()));
 }
 
-void IAggregateFunction::merge(
+void IAggregateFunction::mergeImpl(
     AggregateDataPtr __restrict /*place*/,
     ConstAggregateDataPtr /*rhs*/,
     ThreadPool & /*thread_pool*/,

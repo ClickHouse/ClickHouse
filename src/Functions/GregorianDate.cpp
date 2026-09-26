@@ -82,7 +82,7 @@ namespace
 
     inline char readDigit(ReadBuffer & in)
     {
-        char c;
+        char c = 0;
         if (!in.read(c))
             throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Cannot parse input: expected a digit at the end of stream");
         if (c < '0' || c > '9')

@@ -1,0 +1,126 @@
+---
+title: MacOS
+---
+
+import Recommendations from '/snippets/pt-BR/recommendations.mdx';
+
+<div id="install-clickhouse-using-homebrew">
+  # Instale o ClickHouse usando o Homebrew
+</div>
+
+<Warning>
+  Installation using the Homebrew Formulae has now been deprecated and will be disabled on 2026-09-01.
+  We recommend using the [quick install](/pt-BR/get-started/setup/self-managed/quick-install) method which works on any platform instead.
+</Warning>
+
+<Steps>
+  <Step title="Review recommendations" id="review-recommendations">
+    <Recommendations />
+  </Step>
+
+  <Step title="Install using the community Homebrew formula" id="install-using-community-homebrew-formula">
+    Para instalar o ClickHouse no macOS usando [Homebrew](https://brew.sh/), você pode usar
+    a ClickHouse community [homebrew formula](https://formulae.brew.sh/cask/clickhouse).
+
+    ```bash
+    brew install --cask clickhouse
+    ```
+  </Step>
+
+  <Step title="Fix the developer verification error in macOS" id="fix-developer-verification-error-macos">
+    Se você instalar o ClickHouse usando `brew`, você pode encontrar um erro do macOS.
+    Por padrão, o macOS não executa aplicativos ou ferramentas criados por um desenvolvedor que não pode ser verificado.
+
+    When attempting to run any `clickhouse` command, you may see this error:
+
+    <div className="ch-image-sm">
+      <Frame>
+        <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" alt="macOS developer verification error dialog" />
+      </Frame>
+    </div>
+
+    Para contornar esse erro de verificação, você precisa remover o app da quarentena do macOS seja encontrando a configuração apropriada na janela de System Settings, usando o terminal, ou reinstalando o ClickHouse.
+
+    ### System settings process
+
+    A maneira mais fácil de remover o executável `clickhouse` da quarentena é:
+
+    1. Open **System settings**.
+
+    2. Navigate to **Privacy &amp; Security**:
+
+       <div className="ch-image-md">
+         <Frame>
+           <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" alt="macOS Privacy & Security settings default view" />
+         </Frame>
+       </div>
+
+    3. Scroll to the bottom of the window to find a message saying &#95;&quot;clickhouse-macos-aarch64&quot; was blocked from use because it isn&#39;t from an identified developer&quot;.
+
+    4. Click **Allow Anyway**.
+
+       <div className="ch-image-md">
+         <Frame>
+           <img src="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" alt="macOS Privacy & Security settings showing Allow Anyway button" />
+         </Frame>
+       </div>
+
+    5. Enter your macOS user password.
+
+    You should now be able to run `clickhouse` commands in your terminal.
+
+    ### Terminal process
+
+    Sometimes pressing the `Allow Anyway` button doesn&#39;t fix this issue, in which case you can also perform this process using the command-line.
+    Or you might just prefer using the command line!
+
+    First find out where Homebrew installed the `clickhouse` executable:
+
+    ```shell
+    which clickhouse
+    ```
+
+    This should output something like:
+
+    ```shell
+    /opt/homebrew/bin/clickhouse
+    ```
+
+    Remove `clickhouse` from the quarantine bin by running `xattr -d com.apple.quarantine` followed by the path from the previous command:
+
+    ```shell
+    xattr -d com.apple.quarantine /opt/homebrew/bin/clickhouse
+    ```
+
+    You should now be able to run the `clickhouse` executable:
+
+    ```shell
+    clickhouse
+    ```
+
+    This should output something like:
+
+    ```bash
+    Use one of the following commands:
+    clickhouse local [args]
+    clickhouse client [args]
+    clickhouse benchmark [args]
+    ```
+  </Step>
+
+  <Step title="Fix the issue by reinstalling ClickHouse" id="fix-issue">
+    Brew has a command-line option which avoids quarantining installed binaries in the first place.
+
+    First, uninstall ClickHouse:
+
+    ```shell
+    brew uninstall clickhouse
+    ```
+
+    Now reinstall ClickHouse with `--no-quarantine`:
+
+    ```shell
+    brew install --no-quarantine clickhouse
+    ```
+  </Step>
+</Steps>

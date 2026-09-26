@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/SimpleMergeSelector.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
+#include <Storages/MergeTree/Compaction/PartitionStatistics.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -10,6 +11,7 @@
 #include <iomanip>
 #include <iostream>
 #include <ostream>
+#include <Examples/clickhouse_examples.h>
 
 /** This program tests merge-selecting algorithm.
  * Usage:
@@ -26,7 +28,10 @@ int mainEntryExampleMergeSelector2(int, char **)
     PartsRanges ranges(1);
     PartsRange & parts = ranges.back();
 
+    PartitionsStatistics statistics;
+
     SimpleMergeSelector::Settings settings;
+    settings.partitions_stats = &statistics;
     SimpleMergeSelector selector(settings);
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
@@ -36,8 +41,8 @@ int mainEntryExampleMergeSelector2(int, char **)
 
     while (!in.eof())
     {
-        size_t size;
-        time_t age;
+        size_t size = {};
+        time_t age = {};
         std::string name;
 
         in >> name >> "\t" >> size >> "\t" >> age >> "\n";
@@ -65,6 +70,15 @@ int mainEntryExampleMergeSelector2(int, char **)
 
     while (parts.size() > 1)
     {
+        statistics.clear();
+        for (const auto & part : parts)
+        {
+            PartitionStatistics & partition_stats = statistics[part.info.getPartitionId()];
+            partition_stats.min_age = std::min(partition_stats.min_age, part.age);
+            ++partition_stats.part_count;
+            partition_stats.total_size += part.size;
+        }
+
         PartsRanges selected_ranges = selector.select(ranges, constraints, nullptr);
 
         if (selected_ranges.empty())

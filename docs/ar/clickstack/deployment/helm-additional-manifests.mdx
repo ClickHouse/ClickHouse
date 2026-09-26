@@ -1,0 +1,312 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-additional-manifests
+title: 'ملفات البيان الإضافية في Helm'
+description: 'نشر كائنات Kubernetes مخصصة إلى جانب مخطط Helm الخاص بـ ClickStack باستخدام additionalManifests'
+doc_type: 'guide'
+keywords: ['ملفات البيان الإضافية في ClickStack', 'الموارد المخصصة في Helm', 'NetworkPolicy', 'HPA', 'ALB Ingress', 'Kubernetes']
+---
+
+<Info>
+  **إصدار المخطط 2.x فقط**
+
+  تتوفر ميزة `additionalManifests` فقط في مخطط Helm المبني على `subchart` بإصدار **v2.x**.
+</Info>
+
+تتيح لك القيمة `additionalManifests` نشر أي كائنات Kubernetes إلى جانب مخطط ClickStack. استخدمها مع الموارد التي لا يوفّر لها المخطط قوالب بشكل مضمّن، مثل `NetworkPolicy` و`HorizontalPodAutoscaler` و`ServiceAccount` و`PodMonitor` وكائنات `Ingress` المخصصة أو أي كائن آخر من كائنات واجهة برمجة تطبيقات Kubernetes.
+
+<div id="how-it-works">
+  ## كيف يعمل
+</div>
+
+كل عنصر في `additionalManifests` هو تعريف كامل لمورد في Kubernetes. ويقوم المخطط بما يلي:
+
+1. المرور على كل عنصر في القائمة
+2. تحويل العنصر إلى YAML (`toYaml`)
+3. تقييم تعبيرات القوالب في ملف YAML الناتج باستخدام Helm `tpl`
+
+يمكن أن تشير تعبيرات القوالب إلى:
+
+* `.Release.Name`, `.Release.Namespace`
+* `include "clickstack.fullname" .` ودوال المساعدة الأخرى الخاصة بالمخطط
+* `.Values.*`
+
+```yaml
+additionalManifests:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-custom'
+    data:
+      release: '{{ .Release.Name }}'
+```
+
+<div id="values-file-constraints">
+  ## قيود ملف values
+</div>
+
+يُضبط `additionalManifests` في ملف values، وتُحلَّل ملفات values بصيغة YAML قبل تشغيل `tpl`.
+
+* يجب أن يكون أي `{{ ... }}` في ملف values داخل سلسلة نصية محاطة بعلامتَي اقتباس
+* لا تُعد كتل القوالب البنيوية صالحة في YAML الخاص بملفات values (على سبيل المثال، `{{- include ... | nindent ... }}` بمفردها)
+* بالنسبة إلى الحقول غير النصية (على سبيل المثال، أرقام المنافذ)، استخدم قيَمًا حرفية أو منافذ مُسمّاة
+* إذا كنت بحاجة إلى قوالب بنيوية، فاستخدم قالب wrapper chart بدلًا من ملف values خام
+
+```yaml
+# Valid in values.yaml
+name: '{{ include "clickstack.fullname" . }}-app'
+
+# Invalid in values.yaml (unquoted template expression)
+name: {{ include "clickstack.fullname" . }}-app
+
+# Invalid in values.yaml (structural template block)
+labels:
+  {{- include "clickstack.labels" . | nindent 2 }}
+```
+
+<div id="available-chart-helpers">
+  ## دوال المساعدة المتاحة لـ المخطط
+</div>
+
+تُعرَّف دوال المساعدة هذه في `templates/_helpers.tpl`:
+
+| المساعدة                         | الوصف                            | الاستخدام في ملف values                        |
+| -------------------------------- | -------------------------------- | ---------------------------------------------- |
+| `clickstack.name`                | اسم المخطط (مقتطع إلى 63 حرفًا)  | آمن في القيم scalar الموضوعة بين علامتي اقتباس |
+| `clickstack.fullname`            | اسم مؤهل بـ Release              | آمن في القيم scalar الموضوعة بين علامتي اقتباس |
+| `clickstack.chart`               | اسم المخطط + الإصدار             | آمن في القيم scalar الموضوعة بين علامتي اقتباس |
+| `clickstack.selectorLabels`      | كتلة labels الخاصة بـ selector   | لقوالب wrapper مخطط فقط                        |
+| `clickstack.labels`              | كتلة labels القياسية             | لقوالب wrapper مخطط فقط                        |
+| `clickstack.mongodb.fullname`    | اسم MongoDB CR                   | آمن في القيم scalar الموضوعة بين علامتي اقتباس |
+| `clickstack.clickhouse.fullname` | اسم ClickHouse CR                | آمن في القيم scalar الموضوعة بين علامتي اقتباس |
+| `clickstack.otel.fullname`       | اسم OTel collector               | آمن في القيم scalar الموضوعة بين علامتي اقتباس |
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="serviceaccount">
+  ### ServiceAccount
+</div>
+
+```yaml
+additionalManifests:
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}'
+      namespace: '{{ .Release.Namespace }}'
+      labels:
+        app.kubernetes.io/name: '{{ include "clickstack.name" . }}'
+        app.kubernetes.io/instance: '{{ .Release.Name }}'
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::123456789:role/my-role"
+```
+
+<div id="networkpolicy">
+  ### NetworkPolicy
+</div>
+
+قيّد حركة المرور الواردة إلى جرابات HyperDX:
+
+```yaml
+additionalManifests:
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-allow-ingress'
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: '{{ include "clickstack.name" . }}'
+          app.kubernetes.io/instance: '{{ .Release.Name }}'
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: ingress-nginx
+          ports:
+            - protocol: TCP
+              port: 3000
+            - protocol: TCP
+              port: 8000
+```
+
+<div id="horizontalpodautoscaler">
+  ### HorizontalPodAutoscaler
+</div>
+
+```yaml
+additionalManifests:
+  - apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-hpa'
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: '{{ include "clickstack.fullname" . }}-app'
+      minReplicas: 2
+      maxReplicas: 10
+      metrics:
+        - type: Resource
+          resource:
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 75
+```
+
+<div id="podmonitor">
+  ### PodMonitor (Prometheus Operator)
+</div>
+
+```yaml
+additionalManifests:
+  - apiVersion: monitoring.coreos.com/v1
+    kind: PodMonitor
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}'
+      labels:
+        release: prometheus
+    spec:
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: '{{ include "clickstack.name" . }}'
+          app.kubernetes.io/instance: '{{ .Release.Name }}'
+      podMetricsEndpoints:
+        - port: app
+          interval: 30s
+```
+
+<div id="aws-alb-ingress">
+  ### AWS ALB Ingress
+</div>
+
+عند استخدام [AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/)، عطِّل Ingress المدمج لـ nginx في المخطط وعرِّف Ingress مخصصًا لـ ALB:
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: false
+
+additionalManifests:
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-alb'
+      annotations:
+        alb.ingress.kubernetes.io/scheme: internet-facing
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:123456789:certificate/abc-123"
+        alb.ingress.kubernetes.io/listen-ports: '[{\"HTTPS\":443}]'
+        alb.ingress.kubernetes.io/ssl-redirect: "443"
+        alb.ingress.kubernetes.io/group.name: clickstack
+        alb.ingress.kubernetes.io/healthcheck-path: /api/health
+    spec:
+      ingressClassName: alb
+      rules:
+        - host: clickstack.example.com
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: '{{ include "clickstack.fullname" . }}-app'
+                    port:
+                      name: app
+```
+
+للاطلاع على مثال كامل لإعداد ALB، بما في ذلك Ingress الداخلي لـ OTel collector وHPA، راجع [قيم المثال الخاصة بـ ALB](https://github.com/ClickHouse/ClickStack-helm-charts/tree/main/examples/alb-ingress).
+
+<div id="targetgroupbinding">
+  ### TargetGroupBinding
+</div>
+
+في سيناريوهات ALB التي تتطلب موارد `TargetGroupBinding` مُعرَّفة صراحةً:
+
+```yaml
+additionalManifests:
+  - apiVersion: elbv2.k8s.aws/v1beta1
+    kind: TargetGroupBinding
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-tgb'
+    spec:
+      serviceRef:
+        name: '{{ include "clickstack.fullname" . }}-app'
+        port: app
+      targetGroupARN: "arn:aws:elasticloadbalancing:us-east-1:123456789:targetgroup/my-tg/abc123"
+      targetType: ip
+```
+
+<div id="advanced-wrapper-chart-templates">
+  ## متقدم: قوالب wrapper مخطط
+</div>
+
+إذا كنت بحاجة إلى دوال مساعدة هيكلية مثل `include "clickstack.labels" . | nindent 4`، فقم بتصييرها من قالب wrapper مخطط (`templates/*.yaml`) بدلًا من وضع هذه الكتل مباشرةً في ملفات values.
+
+مثال على مقتطف من قالب wrapper مخطط:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clickstack.fullname" . }}-extra
+  labels:
+    {{- include "clickstack.labels" . | nindent 4 }}
+data:
+  appPort: "{{ .Values.hyperdx.ports.app }}"
+```
+
+<div id="tips">
+  ## نصائح
+</div>
+
+<div id="helm-hooks">
+  ### خطافات Helm
+</div>
+
+يُعرَض كل إدخال في `additionalManifests` كمستند YAML منفصل. يمكنك إضافة التعليقات التوضيحية لخطافات Helm للتحكم في ترتيب التثبيت/الترقية:
+
+```yaml
+additionalManifests:
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: post-install-job
+      annotations:
+        helm.sh/hook: post-install
+        helm.sh/hook-delete-policy: hook-succeeded
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: migrate
+              image: my-migration-image:latest
+              command: ["./migrate.sh"]
+```
+
+<div id="crd-ordering">
+  ### ترتيب CRD
+</div>
+
+إذا كانت ملفات البيان الإضافية لديك تتضمن موارد مخصصة (مثل `PodMonitor`)، فيجب أن تكون تعريفات الموارد المخصصة (CRDs) موجودة بالفعل في العنقود قبل التثبيت/الترقية.
+
+<div id="combining-multiple-resources">
+  ### دمج موارد متعددة
+</div>
+
+`additionalManifests` عبارة عن قائمة. تُعرَض العناصر وفق ترتيبها في القائمة، ويصبح كل عنصر مستند YAML مستقلًا.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* [دليل Helm الرئيسي](/ar/clickstack/deployment/helm) - التثبيت الأساسي
+* [دليل التهيئة](/ar/clickstack/deployment/helm-configuration) - مفاتيح API والأسرار وIngress
+* [عمليات النشر على Cloud](/ar/clickstack/deployment/helm-cloud) - إعدادات GKE وEKS وAKS
+* [مستودع مخططات Helm لـ ClickStack](https://github.com/ClickHouse/ClickStack-helm-charts) - الشيفرة المصدرية للمخططات ومرجع values
