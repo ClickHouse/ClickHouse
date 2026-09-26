@@ -1,0 +1,33 @@
+50 values	55	1
+300 values	310	1
+a3	600	900300
+a3	600	900300
+b49	60	91440
+b49	60	91440
+w3	430	645000
+w3	430	645000
+v299	10	16490
+v299	10	16490
+v300	0	0
+v300	0	0
+v17 w3	10	13670
+v17 w3	10	13670
+w3 w3	0	0
+w3 w3	0	0
+Nullable	17	1
+Nullable(FixedString)	2	1
+m	624	312350
+m	624	312350
+Array	14	1
+e3	215	107920
+e3	215	107920
+IN	23	1
+NOT IN	2	1
+upper	25	1
+keyValuePairs	13	1
+mapKeys	5	1
+ngrams	32	1
+preprocessor	4	1
+threshold	18	1
+build	1	1	1
+segments	1	1
