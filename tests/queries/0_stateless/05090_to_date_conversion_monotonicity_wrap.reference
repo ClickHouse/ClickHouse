@@ -1,0 +1,36 @@
+1
+1
+2
+2
+0
+0
+3
+3
+2
+2
+the index is still used when the whole range converts without wrapping
+40
+40
+40
+1
+40
+40
+the instant that wraps depends on the time zone
+2
+2
+3
+3
+2
+2
+3
+3
+a Date argument wraps too: Date reaches 2149-06-06, DateTime ends in 2106-02-07
+1
+1
+3
+3
+the wider results are unaffected
+2
+2
+3
+3
