@@ -15,7 +15,8 @@ struct ClusterFunctionReadTaskResponse
 {
     ClusterFunctionReadTaskResponse() = default;
     explicit ClusterFunctionReadTaskResponse(const std::string & path_);
-    explicit ClusterFunctionReadTaskResponse(ObjectInfoPtr object, const ContextPtr & context);
+    explicit ClusterFunctionReadTaskResponse(
+        ObjectInfoPtr object, const ContextPtr & context, bool read_is_generation_pinned_ = false);
 
     /// Data path (object path, in case of object storage).
     String path;
@@ -25,6 +26,14 @@ struct ClusterFunctionReadTaskResponse
     DataLakeObjectMetadata data_lake_metadata;
     /// Iceberg object metadata
     std::optional<Iceberg::IcebergObjectSerializableInfo> iceberg_info;
+
+    /// Whether every worker that reads this file necessarily reads the same, immutable generation
+    /// of it - true for a data-lake snapshot, whose listed files are pinned by immutable metadata
+    /// and are replaced by writing new files under new paths, never in place. Initiator-side only,
+    /// never serialized: it says nothing about the payload, only whether the concurrent-overwrite
+    /// guard carried by `file_bucket_info` has anything to detect. When it does not, a bucketed
+    /// task may be sent to a worker too old to carry that guard (see `serialize`).
+    bool read_is_generation_pinned = false;
 
     /// Convert received response into ObjectInfo.
     ObjectInfoPtr getObjectInfo() const;
