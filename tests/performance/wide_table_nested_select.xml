@@ -505,6 +505,7 @@
         )
         ENGINE = MergeTree
         ORDER BY tuple()
+        SETTINGS optimize_row_order_if_no_order_by = 0
     </create_query>
     <drop_query>DROP TABLE IF EXISTS wide_table_nested_select</drop_query>
 

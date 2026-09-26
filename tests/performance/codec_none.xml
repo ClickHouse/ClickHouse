@@ -1,5 +1,5 @@
 <test>
-    <create_query>CREATE TABLE hits_none (Title String CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE hits_none (Title String CODEC(NONE)) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
     <fill_query>INSERT INTO hits_none SELECT Title FROM test.hits</fill_query>
     <fill_query>OPTIMIZE TABLE hits_none FINAL</fill_query>
 
