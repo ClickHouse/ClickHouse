@@ -152,3 +152,65 @@ def test_untouched_part_clone_does_not_pin_invalidated_system_columns(started_cl
     wait_blobs_synchronization(cluster.minio_client, objects_before)
 
     node1.query("DROP TABLE warming_up SYNC")
+
+
+def test_untouched_part_clone_does_not_pin_copied_projection_files(started_cluster):
+    """
+    The untouched-part mutation copies `checksums.txt` instead of hardlinking it (so the source
+    and the child do not share a zero-copy lock path), and the clone applies that request by the
+    bare file name inside projection directories too. The projection's `checksums.txt` must
+    therefore not be recorded as hardlinked from the source, or its blob is leaked.
+    """
+    node1 = cluster.instances["node1"]
+    zk_path = "/clickhouse/tables/zc_proj"
+
+    node1.query(
+        "CREATE TABLE warming_up_proj (id Int8) ENGINE = MergeTree ORDER BY id "
+        "SETTINGS storage_policy = 's3'"
+    )
+    node1.query("INSERT INTO warming_up_proj VALUES (1)")
+    objects_before = list_blobs(cluster.minio_client)
+
+    node1.query(f"""
+        CREATE TABLE zc_proj (p UInt8, x UInt64, y UInt64, PROJECTION prj (SELECT x, y ORDER BY y))
+        ENGINE = ReplicatedMergeTree('{zk_path}', '1')
+        PARTITION BY p ORDER BY x
+        SETTINGS
+            storage_policy = 's3',
+            allow_remote_fs_zero_copy_replication = 1,
+            min_bytes_for_full_part_storage = 0,
+            old_parts_lifetime = 3000
+        """)
+    node1.query("INSERT INTO zc_proj VALUES (1, 1, 0), (1, 2, 0)")
+
+    node1.query(
+        "ALTER TABLE zc_proj UPDATE y = y + 1 WHERE y = 12345",
+        settings={"mutations_sync": 2},
+    )
+    assert (
+        node1.query(
+            "SELECT count() FROM system.parts WHERE database = currentDatabase() "
+            "AND table = 'zc_proj' AND active AND endsWith(name, '_1')"
+        ).strip()
+        == "1"
+    ), "the mutation did not produce a mutated part"
+
+    shared_id = _shared_id(node1, zk_path)
+    assert shared_id, "table_shared_id of zc_proj not found in ZooKeeper"
+
+    lists = _hardlink_lists(node1, shared_id)
+    # The list is newline-separated, and TSV output escapes the newline.
+    recorded = [f for _, value in lists for f in value.replace("\\n", "\n").split()]
+    # The projection files were recorded at all, so the check below is not vacuous.
+    assert any(
+        f.startswith("prj.proj/") for f in recorded
+    ), f"no projection file was recorded as hardlinked: {lists}"
+    for copied in ("checksums.txt", "prj.proj/checksums.txt"):
+        assert (
+            copied not in recorded
+        ), f"{copied} is recorded as hardlinked, but the clone copies it: {lists}"
+
+    node1.query("DROP TABLE zc_proj SYNC")
+    wait_blobs_synchronization(cluster.minio_client, objects_before)
+
+    node1.query("DROP TABLE warming_up_proj SYNC")

@@ -12510,7 +12510,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
             for (auto it = projection_storage.iterate(); it->isValid(); it->next())
             {
                 auto file_name_with_projection_prefix = fs::path(projection_storage.getPartDirectory()) / it->name();
-                if (!params.files_to_copy_instead_of_hardlinks.contains(file_name_with_projection_prefix)
+                /// Match on the bare file name: that is how the clone itself decides copy-vs-hardlink inside
+                /// a projection (`BackupImpl` recursing into the projection directory, and the packed
+                /// projection `freeze` receiving the same `params`). Matching on the prefixed name would record
+                /// e.g. `p.proj/checksums.txt` as hardlinked although the untouched-part mutation copied it,
+                /// so zero-copy would keep the source blob alive for a child that does not reference it.
+                if (!params.files_to_copy_instead_of_hardlinks.contains(it->name())
                     && it->name() != IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME_DEPRECATED
                     && it->name() != VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
                 {
