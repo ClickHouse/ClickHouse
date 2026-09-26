@@ -2771,6 +2771,12 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     if (!extractDeterministicFunctionsDagFromKey(expr_name, info, out_key_column_num, out_key_column_type, dag))
         return false;
 
+    /// A `FixedString(N)` constant is compared zero-padded, so against a `String` input of the transform it
+    /// matches the family `value` + trailing '\0'*, while the cast below keeps all N bytes and gives one of
+    /// them. The transformed point would prune matching granules, so decline, as for a key without a transform.
+    if (isFixedString(removeLowCardinalityAndNullable(out_type)) && isString(removeLowCardinalityAndNullable(dag.input_type)))
+        return false;
+
     /// Convert a text constant here, the way the comparison does, so no cast below parses it in another zone.
     Field const_value = out_value;
     DataTypePtr const_value_type = out_type;
@@ -4989,6 +4995,27 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                         DataTypePtr common_type = tryGetLeastSupertype(DataTypes{key_expr_type_not_null, const_type});
                         if (!common_type)
                             return false;
+
+                        /// A `FixedString` key is compared with a value of another string-like type, such as
+                        /// an `Enum`, zero-padded, while the cast of the key to `String` keeps its padding.
+                        /// A range over the cast key would prune matching granules. For equality, the value
+                        /// padded to the key width is the one key value that can match, so use it instead.
+                        if (isFixedString(key_expr_type_not_null) && isString(common_type))
+                        {
+                            if (func_name != "equals" && func_name != "notEquals")
+                                return false;
+
+                            Field as_string = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                            if (as_string.isNull()
+                                || as_string.safeGet<String>().size() > assert_cast<const DataTypeFixedString &>(*key_expr_type_not_null).getN())
+                                return false;
+
+                            const_value = convertFieldToType(as_string, *key_expr_type_not_null);
+                            if (const_value.isNull())
+                                return false;
+                            common_type = key_expr_type_not_null;
+                            const_type = key_expr_type_not_null;
+                        }
 
                         if (!const_type->equals(*common_type))
                         {

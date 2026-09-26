@@ -779,35 +779,23 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 /// `hasAny`/`hasAll`, and `has`/`indexOf` over a `FixedString` element, cast both sides to the least
 /// supertype (hasAllAny.h, arrayIndex.h `executeGeneric`), and `has`/`indexOf` over a `LowCardinality`
 /// element cast the constant straight to the dictionary type (LowCardinalityExecutionHelpers.h
-/// `dictionaryIndexForConstant`). A CAST of `FixedString` to `String` strips the trailing zero
-/// padding, while `convertFieldToType` keeps it, so the index hashed a value the function never
-/// compares and wrongly pruned granules.
+/// `dictionaryIndexForConstant`). These casts run without a query context, so a CAST of `FixedString`
+/// to `String` keeps every byte of the value, including its trailing zero padding.
 ///
-/// Replicate that coercion at the `Field` level: strip the padding of a `FixedString` constant, then
-/// re-pad it to the width of the element type, which is the stored form of every element the function
-/// can match. Returns a null `Field` (the `convertFieldToType` convention) when no stored element can
-/// match, or when the runtime CAST would throw `TOO_LARGE_STRING_SIZE`; the caller must then decline
-/// the index, so that the error stays reachable instead of turning into silently pruned granules.
-static Field coerceStringFieldLikeSearchFunction(
-    const Field & field, const DataTypePtr & value_type, const DataTypePtr & actual_type, bool cast_to_supertype)
+/// Replicate that coercion at the `Field` level: pad the constant to the width of a `FixedString`
+/// element type, which is the stored form of every element the function can match. Returns a null
+/// `Field` (the `convertFieldToType` convention) when the constant is wider than the element, where
+/// either no stored element can match or the runtime CAST would throw `TOO_LARGE_STRING_SIZE`; the
+/// caller must then decline the index, so that the error stays reachable instead of turning into
+/// silently pruned granules.
+static Field coerceStringFieldLikeSearchFunction(const Field & field, const DataTypePtr & actual_type)
 {
     if (field.isNull())
         return {};
 
     String value = field.safeGet<String>();
-    const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get());
 
-    if (isFixedString(removeLowCardinalityAndNullable(value_type)))
-    {
-        /// The direct cast to a dictionary type rejects a `FixedString` constant wider than the
-        /// element up front, by width alone, while the supertype cast strips the padding first.
-        if (!cast_to_supertype && fixed_string_type && value.size() > fixed_string_type->getN())
-            return {};
-
-        value.resize(value.find_last_not_of('\0') + 1);
-    }
-
-    if (fixed_string_type)
+    if (const auto * fixed_string_type = typeid_cast<const DataTypeFixedString *>(actual_type.get()))
     {
         if (value.size() > fixed_string_type->getN())
             return {};
@@ -839,7 +827,7 @@ static Field convertConstantForArrayIndexFunction(
     if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
         return convertFieldToType(value_field, *actual_type, value_type.get());
 
-    return coerceStringFieldLikeSearchFunction(value_field, value_type, actual_type, /*cast_to_supertype=*/ !nested_type->lowCardinality());
+    return coerceStringFieldLikeSearchFunction(value_field, actual_type);
 }
 
 static ColumnPtr createColumnFromConstantArray(
@@ -878,7 +866,7 @@ static ColumnPtr createColumnFromConstantArray(
         }
 
         Field converted = coerce
-            ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
+            ? coerceStringFieldLikeSearchFunction(f, actual_type)
             : convertFieldToType(f, *actual_type, element_type.get());
         if (converted.isNull())
             return nullptr;

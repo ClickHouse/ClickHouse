@@ -775,7 +775,7 @@ namespace
                     /// Cast through the proper cast pipeline (like `from_column` and `to_column`
                     /// above) so source-type-aware conversions kick in: `Date`/`Date32` to
                     /// `DateTime`/`DateTime64` multiplies days by seconds-per-day, `Enum` to
-                    /// `String` resolves the value name, `FixedString` trims trailing NULs.
+                    /// `String` resolves the value name.
                     /// Going through `convertFieldToType` here loses the source type and
                     /// silently falls back to raw numeric conversions, producing wrong values.
                     ColumnPtr cast_column = castColumn(arguments[3], result_type);
