@@ -20,6 +20,8 @@ struct ExpireSnapshotsResult
     Int64 deleted_manifest_files_count = 0;
     Int64 deleted_manifest_lists_count = 0;
     Int64 deleted_statistics_files_count = 0;
+    /// The committed metadata no longer references these files, so subsequent expiration will not retry them.
+    Int64 failed_deletions_count = 0;
     bool dry_run = false;
 };
 

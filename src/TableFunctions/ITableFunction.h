@@ -159,8 +159,6 @@ private:
     /// privileges as if it was S3.
     virtual const char * getNonClusteredStorageEngineName() const;
 
-protected:
-    String getFunctionURINormalized() const;
 };
 
 /// Properties of table function that are independent of argument types and parameters.

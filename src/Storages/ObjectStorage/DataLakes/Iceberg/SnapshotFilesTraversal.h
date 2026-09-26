@@ -5,6 +5,8 @@
 #if USE_AVRO
 
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include <Common/Logger_fwd.h>
 #include <Core/Types.h>
@@ -16,6 +18,8 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 namespace DB::Iceberg
 {
@@ -36,7 +40,8 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id);
+    Int32 current_schema_id,
+    ExternalStorageCache & external_storages);
 
 struct ReachableFilesResult
 {
@@ -45,24 +50,23 @@ struct ReachableFilesResult
     /// Resolved storage path of the metadata file the traversal was rooted at. Two distinct
     /// files can share a version number, so identity of the root is this path, not the number.
     String metadata_path;
+    std::vector<std::pair<ObjectStoragePtr, String>> external_files;
 };
 
-/// Collect all files reachable through the metadata graph.
-///
-/// Traverses: metadata JSON files (from metadata-log), manifest lists (from snapshots),
-/// manifest files (from manifest lists), data/delete files (from manifest files),
-/// and statistics files. All returned paths are resolved storage paths.
-/// The root path identifies the state traversed; the version number alongside it is diagnostic.
-/// The root is the catalog's committed pointer when `catalog` is set, otherwise the most recent
-/// metadata file in storage under the configured selection policy.
+/// Use the latest head for `remove_orphan_files`, but the configured head for `drop`.
+/// `scan_metadata_log_history` adds surviving external references without making expired in-table files reachable.
+/// The returned root identifies the traversed state for TOCTOU checks.
 ReachableFilesResult collectReachableFiles(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     const DataLakeStorageSettings & data_lake_settings,
     ContextPtr context,
     LoggerPtr log,
-    const std::shared_ptr<DataLake::ICatalog> & catalog = nullptr,
-    const String & table_identifier = {});
+    ExternalStorageCache & external_storages,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_identifier,
+    bool scan_metadata_log_history,
+    bool ignore_explicit_metadata_file_path);
 
 }
 

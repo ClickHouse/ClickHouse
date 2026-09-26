@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+using DB::maskCredentialsInURI;
 using DB::maskSensitiveQueryParametersInURI;
 
 TEST(MaskSensitiveQueryParameters, NoQueryString)
@@ -86,4 +87,21 @@ TEST(MaskSensitiveQueryParameters, EmptyAndValuelessParameters)
 TEST(MaskSensitiveQueryParameters, EmptyQueryString)
 {
     EXPECT_EQ(maskSensitiveQueryParametersInURI("/?"), "/?");
+}
+
+TEST(MaskCredentialsInURI, ObjectPathsUnchanged)
+{
+    EXPECT_EQ(maskCredentialsInURI(""), "");
+    EXPECT_EQ(maskCredentialsInURI("s3://bucket/t/data/x.parquet"), "s3://bucket/t/data/x.parquet");
+    EXPECT_EQ(maskCredentialsInURI("/table/data/x.parquet"), "/table/data/x.parquet");
+}
+
+TEST(MaskCredentialsInURI, PasswordAndQueryParameters)
+{
+    for (const auto & prefix : {"", "7:"})
+    {
+        EXPECT_EQ(
+            maskCredentialsInURI(std::string(prefix) + "s3://alice:hunter2@minio:9000/bucket/f.parquet?X-Amz-Signature=abc"),
+            std::string(prefix) + "s3://alice:[HIDDEN]@minio:9000/bucket/f.parquet?X-Amz-Signature=[HIDDEN]");
+    }
 }
