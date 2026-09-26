@@ -64,11 +64,10 @@ struct ArrayFirstLastImpl
             if (column_filter_const->getValue<UInt8>())
             {
                 const auto & offsets = array.getOffsets();
+                size_t offsets_size = offsets.size();
                 const auto & data = array.getData();
                 auto out = data.cloneEmpty();
-                out->reserve(data.size());
-
-                size_t offsets_size = offsets.size();
+                out->reserve(offsets_size);
 
                 ColumnUInt8::MutablePtr col_null_map_to;
                 ColumnUInt8::Container * vec_null_map_to = nullptr;
@@ -120,11 +119,10 @@ struct ArrayFirstLastImpl
 
         const auto & filter = column_filter->getData();
         const auto & offsets = array.getOffsets();
+        size_t offsets_size = offsets.size();
         const auto & data = array.getData();
         auto out = data.cloneEmpty();
-        out->reserve(data.size());
-
-        size_t offsets_size = offsets.size();
+        out->reserve(offsets_size);
 
         ColumnUInt8::MutablePtr col_null_map_to;
         ColumnUInt8::Container * vec_null_map_to = nullptr;
@@ -298,4 +296,3 @@ Returns the last element in the source array for which a lambda `func(x [, y1, y
 }
 
 }
-

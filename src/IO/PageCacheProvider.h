@@ -56,20 +56,18 @@ public:
         ByteRange block_range);
 
     ByteRange range() const override { return range_member; }
-    IntervalSet committed() const override
+    size_t committed() const override
     {
         std::lock_guard lock(committed_mutex);
-        IntervalSet c;
-        if (cell)
-            c.add(range_member);
-        return c;
+        /// Whole-segment: the block is either empty or fully committed.
+        return cell ? range_member.end() : range_member.offset;
     }
-    size_t write(ChainedBuffers data, const Claim & claim) override;
+    bool fillsWholeSegment() const override { return true; }
+    size_t write(ChainedBuffers data, const FillRole & role) override;
     ChainedBuffers read(ByteRange sub) override;
-    /// Re-probe the cache: the block may have been populated by a concurrent query since `resolve`. If
-    /// so, adopt its cell and report the whole block as `available` (already committed, served from
-    /// cache) with no claim; otherwise hold the claim to fill it.
-    Lead claimLeadRole(ByteRange range) override;
+    /// Re-probe the cache: if the block was cached by a concurrent query since `resolve`, adopt its cell
+    /// (`committed()` then reports it) and hold no role; otherwise hold the role to fill it.
+    FillRole takeFillRole() override;
 
 private:
     PageCachePtr cache;
@@ -108,7 +106,6 @@ public:
 
     String name() const override { return "PageCache"; }
     CacheTier tier() const override { return CacheTier::PageCache; }
-    bool populatesOnMiss() const override { return !bypass_if_missing; }
 
     /// A page-cache block is written whole (first-writer-wins, no later
     /// completion); the probe reports one miss range per block.

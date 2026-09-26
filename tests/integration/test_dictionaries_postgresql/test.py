@@ -335,6 +335,55 @@ def test_postgres_dict_complex_key_with_single_quote(started_cluster):
     cursor.execute("DROP TABLE test_single_quote;")
 
 
+def test_postgres_dict_attribute_with_double_quote(started_cluster):
+    """An attribute name containing a '"' must reach PostgreSQL as one identifier.
+
+    PostgreSQL escapes a '"' inside a quoted identifier by doubling it and gives '\\' no meaning
+    there, so emitting the name as "v\\"al" ends the identifier at that quote and the rest is
+    parsed as SQL. The loader sends its query as COPY (<query>) TO STDOUT, i.e. over the
+    simple-query protocol, where a ';' in the remainder would start another statement.
+    """
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        database=True,
+        port=started_cluster.postgres_port,
+    )
+    cursor = conn.cursor()
+
+    cursor.execute(
+        'CREATE TABLE IF NOT EXISTS test_quoted_attribute (key Text PRIMARY KEY, "v""al" Text);'
+    )
+    cursor.execute("INSERT INTO test_quoted_attribute VALUES ('k', 'found it');")
+
+    query = node1.query
+    query(
+        f"""
+    CREATE DICTIONARY test_dict_quoted_attribute
+    (
+        key String,
+        `v"al` String DEFAULT ''
+    )
+    PRIMARY KEY key
+    LAYOUT(COMPLEX_KEY_DIRECT())
+    SOURCE(PostgreSQL(
+        DB 'postgres_database'
+        HOST '{started_cluster.postgres_ip}'
+        PORT {started_cluster.postgres_port}
+        USER 'postgres'
+        PASSWORD '{pg_pass}'
+        TABLE 'test_quoted_attribute'))
+    """
+    )
+
+    result = query(
+        """SELECT dictGet('test_dict_quoted_attribute', 'v"al', tuple('k'))"""
+    )
+    assert result == "found it\n", f"Unexpected result: {result!r}"
+
+    query("DROP DICTIONARY test_dict_quoted_attribute;")
+    cursor.execute("DROP TABLE test_quoted_attribute;")
+
+
 def test_invalidate_query(started_cluster):
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,

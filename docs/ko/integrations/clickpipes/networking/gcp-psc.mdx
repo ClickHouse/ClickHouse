@@ -1,40 +1,41 @@
 ---
-sidebarTitle: 'GCP Private Service Connect'
-description: 'Private Service Connect(PSC)를 사용하여 ClickPipes와 GCP에서 호스팅되는 데이터 소스 간의 보안 연결을 설정합니다.'
-slug: /integrations/clickpipes/networking/gcp-psc
-title: 'ClickPipes용 GCP Private Service Connect'
-doc_type: 'guide'
-keywords: ['gcp psc', 'private service connect', 'ClickPipes security', 'reverse private endpoint', 'private connectivity']
+title: "ClickPipes용 GCP Private Service Connect"
+sidebarTitle: "GCP Private Service Connect"
+icon: "/images/icons/cloud-providers/google-cloud-color.svg"
+description: "Private Service Connect(PSC)를 사용하여 ClickPipes와 GCP에서 호스팅되는 데이터 소스 간의 보안 연결을 설정합니다."
+slug: "/integrations/clickpipes/networking/gcp-psc"
+doc_type: "guide"
+keywords: ["gcp psc", "private service connect", "ClickPipes security", "reverse private endpoint", "private connectivity"]
 integration:
-   - support_level: 'core'
-   - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect)를 사용하여 ClickPipes와 GCP에서 호스팅되는 데이터 소스 간에 보안 연결을 설정할 수 있습니다. ClickPipes는 자체 VPC에 **역방향 프라이빗 엔드포인트(RPE)**를 생성하고 데이터 소스용으로 게시된 endpoint service를 가리키도록 구성하므로, 트래픽이 공용 인터넷에 노출되지 않습니다.
+GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect)를 사용하여 ClickPipes와 GCP에서 호스팅되는 데이터 소스 간에 보안 연결을 설정할 수 있습니다. ClickPipes는 자체 VPC에 **역방향 Private Endpoint(RPE)**를 생성하고 데이터 소스용으로 게시된 endpoint service를 가리키도록 구성하므로, 트래픽이 공용 인터넷에 노출되지 않습니다.
 
-<Note>
-  GCP PSC 연결은 ClickPipes 서비스가 GCP에 배포된 경우에만 사용할 수 있습니다. 시작하기 전에 [ClickPipes가 호스팅되는 GCP 리전 목록](/ko/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)을 확인하십시오.
-</Note>
+<Check>
+  ClickPipes는 [글로벌 액세스](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access)를 통해 **cross-region** PSC 연결을 지원합니다. ClickPipes 인프라가 실행되는 리전과 다른 리전에 있는 엔드포인트에는 글로벌 액세스가 필요합니다. 자세한 내용은 [ClickPipes GCP 리전 문서](/ko/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)를 확인하십시오.
+</Check>
 
 <div id="supported-patterns">
   ## 지원되는 패턴
 </div>
 
-| 패턴              | 적용되는 경우                                                                               | 서비스 어태치먼트                     |
-| --------------- | ------------------------------------------------------------------------------------- | ----------------------------- |
-| **네이티브 PSC**    | AlloyDB처럼 PSC 서비스 어태치먼트를 자동으로 게시하는 관리형 서비스                                            | 인스턴스에서 PSC를 활성화하면 자동으로 생성됩니다. |
-| **프로듀서 소유 PSC** | Compute Engine의 Postgres 또는 private IP로만 연결할 수 있는 관리형 서비스처럼 서비스 어태치먼트를 게시하지 않는 데이터 소스 | 사용자가 생성하고 관리합니다.              |
+| 패턴              | 적용되는 경우                                                                                                     | 서비스 어태치먼트                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| **네이티브 PSC**    | Google Cloud SQL, AlloyDB, Google Cloud Managed Service for Apache Kafka 등 PSC 서비스 어태치먼트를 자동으로 게시하는 관리형 서비스 | 인스턴스에서 PSC를 활성화하면 자동으로 생성됩니다. |
+| **프로듀서 소유 PSC** | Compute Engine의 Postgres 또는 private IP로만 연결할 수 있는 관리형 서비스처럼 서비스 어태치먼트를 게시하지 않는 데이터 소스                       | 사용자가 생성하고 관리합니다.              |
 
 <div id="prerequisites">
   ## 사전 요구 사항
 </div>
 
-* [ClickPipes가 호스팅되는 리전](/ko/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)의 GCP에서 호스팅되는 ClickHouse Cloud 서비스.
+* GCP에서 호스팅되는 ClickHouse Cloud 서비스. ClickPipes는 [몇 가지 예외](/ko/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips)를 제외하고 ClickHouse Cloud 서비스와 동일한 리전에서 실행됩니다.
 * 소스에서 PSC를 활성화하고 PSC 서비스 어태치먼트를 관리할 수 있는 IAM 권한(`roles/compute.networkAdmin`).
-* 서비스 어태치먼트에 연결하도록 허용된 **ClickPipes 소비자 프로젝트**. 프로덕션 환경의 ClickPipes 소비자 프로젝트는 `clickpipes-production`입니다.
-* 서비스를 소유한 조직의 ClickHouse Cloud API Key/시크릿(Terraform 또는 API를 통해 프로비저닝하는 경우에만 필요).
+* 서비스 어태치먼트에 연결하도록 허용된 **ClickPipes 소비자 프로젝트**(`clickpipes-production`).
+* ClickPipes를 프로그래밍 방식으로 프로비저닝하는 경우: 서비스를 소유한 조직의 ClickHouse Cloud API Key.
 
 <div id="create-rpe">
   ## 역방향 프라이빗 엔드포인트 생성하기
@@ -42,10 +43,8 @@ GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-se
 
 RPE를 생성하려면 데이터 소스에 대한 다음 정보가 필요합니다.
 
-* **서비스 어태치먼트 URI**: `projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>`. 데이터 소스 앞에 게시된
-  PSC 엔드포인트입니다.
-* **Private DNS 이름**: 파이프가 연결할 호스트명입니다. PSC 엔드포인트에는 DNS 이름이 연결되지 않은 고정 내부 IP가
-  할당되므로, ClickPipes가 이 호스트명을 해당 IP로 확인합니다.
+* **서비스 어태치먼트 URI**: `projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>`, 데이터 소스 앞에 게시된 PSC 엔드포인트입니다.
+* **Private DNS 이름**: 파이프가 연결할 호스트명입니다. PSC 엔드포인트에는 DNS 이름이 연결되지 않은 고정 내부 IP가 할당되므로, ClickPipes가 이 호스트명을 해당 IP로 확인합니다.
 
 <Tabs>
   <Tab title="ClickPipes UI">
@@ -99,19 +98,19 @@ RPE를 생성하려면 데이터 소스에 대한 다음 정보가 필요합니�
   ### 사용자 지정 Private DNS 이름
 </div>
 
-GCP PSC는 DNS를 전파하지 않으므로 사용자 지정 Private DNS 매핑은 모든 GCP PSC 엔드포인트에 필수입니다. 이 방식으로 소스의 Private DNS 이름을 항상 제공하며, ClickPipes는 이를 엔드포인트의 고정 내부 IP로 확인합니다.
+GCP PSC는 DNS를 전파하지 않으므로 ClickPipes가 이를 엔드포인트의 고정 내부 IP로 확인할 수 있도록 모든 GCP PSC 엔드포인트에 사용자 지정 Private DNS 매핑이 필요합니다.
 
-표준 ClickPipes [사용자 지정 Private DNS 명명 규칙](/ko/integrations/clickpipes/networking/aws-privatelink#custom-private-dns)이 적용됩니다. 와일드카드 지원, 서비스의 역방향 프라이빗 엔드포인트 전체에서의 고유성, 예약된 접미사 제한은 모든 provider에서 동일하게 적용됩니다. 와일드카드는 특히 GCP에서 유용합니다. 예를 들어 `*.<cluster>.<region>.managedkafka.<project>.cloud.goog`와 같은 단일 매핑으로 관리형 Kafka 클러스터의 모든 broker를 처리할 수 있습니다.
+표준 ClickPipes [사용자 지정 Private DNS 명명 규칙](/ko/integrations/clickpipes/networking/aws-privatelink#custom-private-dns)이 적용됩니다. 와일드카드 지원, 서비스의 역방향 프라이빗 엔드포인트 전체에서의 고유성, 예약된 접미사 제한은 모든 provider에서 동일하게 적용됩니다. 와일드카드는 특히 유용합니다. 예를 들어 `*.<cluster>.<region>.managedkafka.<project>.cloud.goog`와 같은 단일 매핑으로 관리형 Kafka 클러스터의 모든 broker를 처리할 수 있습니다.
 
 GCP PSC에서는 매핑의 `privateDnsName`만 사용됩니다. PSC 엔드포인트는 연결할 DNS 이름 없이 고정 IP를 노출하므로 `internalDNSName` 필드는 지원되지 않습니다. 매핑은 항상 해당 IP로 확인됩니다.
 
 <div id="producer-owned">
-  ## producer 소유 연결 승인
+  ## 프로듀서 소유 연결 승인
 </div>
 
-프로듀서 소유 PSC에서는 연결이 자동으로 승인되도록 서비스 어태치먼트의 자동 승인 목록에 ClickPipes 소비자 프로젝트를 추가하십시오. 이를 생략하면 수동으로 승인할 때까지 RPE가 `PendingAcceptance` 상태로 유지됩니다.
+프로듀서 소유 PSC에서는 연결이 자동으로 수락되도록 ClickPipes 소비자 프로젝트(`clickpipes-production`)를 서비스 어태치먼트의 자동 수락 목록에 추가하십시오. 이 작업을 건너뛰면 수동으로 승인할 때까지 RPE가 `PendingAcceptance` 상태로 남아 있습니다.
 
-연결을 승인하려면 서비스 어태치먼트의 consumer 승인 목록에 endpoint의 숫자 ID 기반 URI(`projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID>`)를 추가해야 합니다. 이 값은 서비스 어태치먼트의 pending 연결에 있는 `endpointWithId`입니다. 다음 명령으로 이를 확인하십시오:
+연결을 수락하려면 서비스 어태치먼트의 소비자 수락 목록에 엔드포인트의 숫자 ID 기반 URI(`projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID>`)를 추가해야 합니다. 서비스 어태치먼트에서 대기 중인 연결의 `endpointWithId` 값을 가져오려면 다음을 실행하십시오.
 
 ```bash
 gcloud beta compute service-attachments describe <SERVICE_ATTACHMENT_NAME> \
@@ -119,7 +118,11 @@ gcloud beta compute service-attachments describe <SERVICE_ATTACHMENT_NAME> \
   --format='json(connectedEndpoints)'
 ```
 
-`status`가 `PENDING`인 항목에서 `endpointWithId`를 가져와 `https://www.googleapis.com/compute/beta/` 접두사를 제거한 다음, 결과를 `--consumer-accept-list`에 전달하십시오:
+`status`가 `PENDING`인 항목의 `endpointWithId`에서 `https://www.googleapis.com/compute/beta/` 접두사를 제거하고, 결과를 `--consumer-accept-list`에 전달합니다:
+
+<Danger>
+  `--consumer-accept-list`는 새 소비자 프로젝트를 추가하는 대신 허용 목록 전체를 덮어씁니다. 서비스 어태치먼트가 이미 다른 프로젝트나 엔드포인트를 허용하는 경우, 모두 같은 명령에 전달해야 합니다. 그렇지 않으면 누락한 항목의 액세스 권한이 사라집니다.
+</Danger>
 
 ```bash
 gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
@@ -129,9 +132,7 @@ gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
 ```
 
 <Warning>
-  여기서 ClickPipes API/Terraform 응답의 `endpoint_id`를 사용하지 마십시오. 이 값은 전달 규칙의 *이름*이며 GCP에서 요구하는 숫자 ID가 아니므로 허용 목록과 일치하지 않습니다. 반드시 서비스 어태치먼트의 pending `endpointWithId`에서 숫자 ID를 가져오십시오.
-
-  또한 `--consumer-accept-list`는 허용 목록에 항목을 추가하지 않고 기존 목록을 덮어씁니다. 서비스 어태치먼트가 이미 다른 프로젝트나 엔드포인트를 허용하고 있다면, 모두 같은 명령에 지정해야 합니다. 그렇지 않으면 지정하지 않은 항목은 액세스 권한을 잃습니다.
+  여기에서는 ClickPipes API/Terraform 응답의 `endpoint_id`를 사용하지 마십시오. 이 값은 GCP에서 요구하는 숫자 ID가 아니라 전달 규칙의 *이름*이므로 허용 목록과 일치하지 않습니다. 반드시 서비스 어태치먼트의 pending 상태인 `endpointWithId`에서 숫자 ID를 가져오십시오.
 </Warning>
 
 <div id="managing-rpes">
@@ -140,25 +141,18 @@ gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
 
 ClickHouse Cloud 서비스 설정에서 기존 역방향 프라이빗 엔드포인트를 관리할 수 있습니다.
 
-1. 사이드바에서 `Settings` 버튼을 찾아 클릭하세요.
+1. ClickHouse Cloud 콘솔 사이드바에서 `Settings`로 이동합니다.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="ClickHouse Cloud 설정" size="lg" border />
+`ClickPipe reverse private endpoints` 아래에서 `Reverse private endpoints`를 클릭합니다.
 
-2. `ClickPipe reverse private endpoints` 섹션에서 `Reverse private endpoints`를 클릭하세요.
+플라이아웃에 역방향 프라이빗 엔드포인트의 상세 정보가 표시됩니다. 여기에서 RPE를 삭제할 수 있습니다. 엔드포인트의 `×`를 클릭하고 삭제를 확인하십시오. 삭제는 **영구적**이며 현재 해당 엔드포인트를 사용하는 모든 ClickPipe가 작동하지 않게 됩니다.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="ClickHouse Cloud 설정" size="md" border />
+엔드포인트의 사용자 지정 Private DNS 매핑을 변경하려면 [Cloud API](/ko/integrations/clickpipes/programmatic-access/openapi) 또는 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)을 사용하십시오. 업데이트하면 매핑이 추가되는 것이 아니라 전체 매핑 목록이 대체됩니다.
 
-   플라이아웃에 역방향 프라이빗 엔드포인트의 상세 정보가 표시됩니다.
-
-   이 화면은 삭제를 제외하면 읽기 전용입니다. endpoint의 `×`를 클릭한 후 확인하면 삭제할 수 있습니다. 삭제는 영구적이며 해당 endpoint를 현재 사용 중인 모든 ClickPipe가 중단됩니다.
-
-   endpoint의 사용자 지정 Private DNS 매핑을 변경하려면 API 또는 Terraform을 사용하세요. 업데이트하면 매핑을 추가하는 대신 전체 매핑 목록이 대체됩니다.
-
-endpoint에 `Rejected` 또는 `Failed`가 표시되면 status 아래의 메시지를 확인하세요. producer가 거부한 connection인지, 종료되었거나 조치가 필요한 connection인지를 구분할 수 있습니다. 두 상태 모두 일반적으로 서비스 어태치먼트의 허용 목록에 ClickPipes consumer 프로젝트가 포함되지 않았음을 의미합니다. GCP가 endpoint에 대해 보고하는 status를 확인하려면 서비스 어태치먼트의 `connectedEndpoints`를 확인하세요.
+엔드포인트에 `Rejected` 또는 `Failed`가 표시되면 상태 아래의 메시지를 확인하십시오. 이 메시지는 프로듀서가 거부한 연결인지, 종료되었거나 조치가 필요한 연결인지를 구분해 줍니다. 두 상태 모두 일반적으로 서비스 어태치먼트의 허용 목록에 ClickPipes 소비자 프로젝트가 포함되지 않았음을 의미합니다. GCP가 엔드포인트에 대해 보고하는 상태를 확인하려면 서비스 어태치먼트의 `connectedEndpoints`를 설명하십시오.
 
 <div id="limitations">
-  ## 제한 사항
+  ## 알려진 제한 사항
 </div>
 
-* RPE endpoint와 서비스 어태치먼트는 **동일한 GCP 리전**에 있어야 합니다. [global access](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access)를 통한 리전 간 PSC는 아직 지원되지 않습니다. 소스가 다른 리전에 있는 경우 [SSH Tunneling](/ko/integrations/clickpipes/networking/index#ssh-tunneling)을 사용하십시오.
 * PSC 서비스 어태치먼트는 한 번에 하나의 ClickHouse Cloud 서비스에서만 클레임할 수 있으며, 여러 서비스에서 재사용할 수 없습니다. 서비스 어태치먼트를 다른 서비스로 이전하려면 [ClickHouse 지원팀에 문의](https://clickhouse.com/support/program)하여 기존 클레임을 해제하십시오.

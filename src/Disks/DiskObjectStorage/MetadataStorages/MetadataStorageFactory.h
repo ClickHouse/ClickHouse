@@ -17,7 +17,8 @@ public:
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages)>;
+        const ObjectStorageRouterPtr & object_storages,
+        bool run_local_paths_check)>;
 
     static MetadataStorageFactory & instance();
 
@@ -29,7 +30,8 @@ public:
         const std::string & config_prefix,
         const ClusterConfigurationPtr & cluster,
         const ObjectStorageRouterPtr & object_storages,
-        const std::string & compatibility_type_hint) const;
+        const std::string & compatibility_type_hint,
+        bool run_local_paths_check) const;
 
     static std::string getMetadataType(
         const Poco::Util::AbstractConfiguration & config,

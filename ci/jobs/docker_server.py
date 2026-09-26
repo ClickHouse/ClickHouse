@@ -3,14 +3,13 @@ import atexit
 import json
 import logging
 import os
-import shlex
 import tempfile
-import traceback
 from pathlib import Path
 from typing import Dict, List
 
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.clickhouse_version import CHVersion
+from ci.jobs.scripts.docker_server.docker_library import test_docker_library
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -20,7 +19,6 @@ ARCH = ("amd64", "arm64")
 
 temp_path = Path(f"{Utils.cwd()}/ci/tmp")
 
-GITHUB_SERVER_URL = os.getenv("GITHUB_SERVER_URL", "https://github.com")
 with tempfile.NamedTemporaryFile("w", delete=False) as f:
     GIT_KNOWN_HOSTS_FILE = f.name
     GIT_PREFIX = (  # All commits to remote are done as robot-clickhouse
@@ -46,62 +44,6 @@ class DockerImageData:
         self.name = name
         assert not path.startswith("/")
         self.path = path
-
-
-def is_distroless_image(docker_image: str) -> bool:
-    _, tag = docker_image.rsplit(":", 1)
-    return "distroless" in tag.split("-")
-
-
-def get_official_images_variant(docker_image: str) -> str:
-    # The official-images test runner derives its lookup variant from the final
-    # tag suffix. For example, head-distroless-amd64 is looked up as repo:amd64.
-    _, tag = docker_image.rsplit(":", 1)
-    return tag.rsplit("-", 1)[-1]
-
-
-def write_distroless_docker_library_config(docker_image: str, config_dir: Path) -> Path:
-    """Map arch-suffixed distroless tags to the distroless-safe config tests."""
-    # Generate a short config fragment for local arch-suffixed distroless CI tags.
-    # The runner derives tags like head-distroless-amd64 as repo:amd64; map that
-    # derived key to the distroless-safe tests because this helper is only used
-    # for images already identified as distroless.
-    repo, _ = docker_image.rsplit(":", 1)
-    variant = get_official_images_variant(docker_image)
-    image_variant = shlex.quote(f"{repo}:{variant}")
-    tests_var = (
-        "keeperDistrolessSafeTests"
-        if "clickhouse-keeper" in repo
-        else "clickhouseDistrolessSafeTests"
-    )
-
-    generated_config = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            "w",
-            prefix="docker-library-distroless-",
-            suffix=".sh",
-            dir=config_dir,
-            delete=False,
-            encoding="utf-8",
-        ) as f:
-            generated_config = Path(f.name)
-            f.write(
-                "#!/usr/bin/env bash\n"
-                "\n"
-                "explicitTests+=(\n"
-                f"\t[{image_variant}]=1\n"
-                ")\n"
-                "\n"
-                "imageTests+=(\n"
-                f"\t[{image_variant}]=\"${{{tests_var}}}\"\n"
-                ")\n"
-            )
-            return generated_config
-    except Exception:
-        if generated_config:
-            generated_config.unlink(missing_ok=True)
-        raise
 
 
 class DelOS(argparse.Action):
@@ -249,7 +191,9 @@ BUILDX_RETRIES = 2
 BUILDX_RETRY_ERRORS = [
     # Docker registry (docker.io / registry-1.docker.io)
     "failed to do request",
-    "unexpected status from HEAD request",
+    # One containerd error, formatted `unexpected status from <method> request to <url>:
+    # <status>`, so the method is an interpolated field and not part of the failure.
+    "unexpected status from ",
     "500 Internal Server Error",
     "502 Bad Gateway",
     "503 Service Unavailable",
@@ -283,6 +227,32 @@ APT_MIRROR_ERRORS = [
     # `apt-get update` could not refresh the package lists
     "Some index files failed to download",
 ]
+
+# `apt-get update` does not fail when a mirror withholds a suite's `InRelease`: it
+# warns (`W: Failed to fetch ... 503`, then `W: Some index files failed to download`),
+# carries on with whatever suites it did get and exits 0. So the `RUN` chain reaches
+# `apt-get install`, which dies resolving the packages against a partial index, and it
+# is that resolution error - naming no mirror, no URL and no `Failed to fetch` - that
+# buildx fences. `APT_MIRROR_ERRORS` matches none of it, which is why not one of the
+# 26 arm64 image builds that reded across the fleet inside the 00:00 UTC hour of
+# 2026-09-05 rebuilt against Canonical.
+#
+# Which of the three shapes apt reports depends only on what the missing suites were
+# providing, so all three have to be here: `wget` and `tzdata` came out as `Unable to
+# locate package`, `busybox`, `ca-certificates` and `locales` as `has no installation
+# candidate` because the pristine base image's `/var/lib/dpkg/status` still names them,
+# and a `wget` whose `libpsl5` had gone as `held broken packages`.
+APT_RESOLUTION_ERRORS = [
+    "Unable to locate package",
+    "has no installation candidate",
+    "Unable to correct problems, you have held broken packages",
+]
+# On its own a resolution error is also what a misspelled package name in one of these
+# Dockerfiles produces, and that must keep failing on the first attempt. What separates
+# the two is the `apt-get update` in the very same step: against a healthy mirror it
+# refreshes every suite silently, so this warning is the mirror's own signature and not
+# an inference from the base image's contents.
+APT_INDEX_WARNING = "Some index files failed to download"
 
 
 # `--progress=plain` prints the whole build, so a signature found anywhere in the
@@ -355,6 +325,45 @@ def is_apt_mirror_failure(info: str) -> bool:
         and APT_ERROR_SEVERITY in line
         and any(error in line for error in APT_MIRROR_ERRORS)
         for line in terminal_build_failure(info).splitlines()
+    )
+
+
+def terminal_step_prefix(info: str) -> str:
+    """`--progress=plain` line prefix (`#8 `) of the step the build stopped on.
+
+    buildx tags every output line with the step it came from and announces the failure
+    as `#8 ERROR: process ... did not complete successfully`, which is the only place
+    the fenced block's step number is stated. Empty when that line is absent, so
+    callers fail closed.
+    """
+    prefix = ""
+    for line in info.splitlines():
+        if line.startswith("#") and line.partition(" ")[2].startswith(
+            BUILDX_ERROR_PREFIX
+        ):
+            prefix = line.partition(" ")[0] + " "
+    return prefix
+
+
+def is_apt_index_failure(info: str) -> bool:
+    """Did the step that stopped the build resolve packages against a partial index?
+
+    Both halves have to come from that one step: apt's `E:` resolution error inside the
+    terminal fenced block, and the warning that the step's own index refresh came back
+    incomplete, which apt prints far enough above the fence that only the step's
+    `#N ` prefix ties the two together.
+    """
+    if not any(
+        not line.startswith(BUILDX_STEP_HEADER_PREFIX)
+        and APT_ERROR_SEVERITY in line
+        and any(error in line for error in APT_RESOLUTION_ERRORS)
+        for line in terminal_build_failure(info).splitlines()
+    ):
+        return False
+    prefix = terminal_step_prefix(info)
+    return bool(prefix) and any(
+        line.startswith(prefix) and APT_INDEX_WARNING in line
+        for line in info.splitlines()
     )
 
 
@@ -432,7 +441,11 @@ def should_try_next_mirror(info: str) -> bool:
     has to reach the next mirror too - it is only reached once the build is failing
     anyway, and `buildx_timeout` keeps the extra attempt inside the job's own cap.
     """
-    return is_apt_mirror_failure(info) or is_buildx_timeout(info)
+    return (
+        is_apt_mirror_failure(info)
+        or is_apt_index_failure(info)
+        or is_buildx_timeout(info)
+    )
 
 
 def buildx_args(
@@ -628,63 +641,6 @@ def build_and_push_image(
             f"{image.name}:{tag}-$arch",
         )
     return result
-
-
-def test_docker_library(test_results) -> None:
-    """we test our images vs the official docker library repository to track integrity"""
-    arch = "amd64" if Utils.is_amd() else "arm64"
-    check_images = [tr.name for tr in test_results if tr.name.endswith(f"-{arch}")]
-    if not check_images:
-        return
-    test_name = "docker library image test"
-    try:
-        repo = "docker-library/official-images"
-        logging.info("Cloning %s repository to run tests for 'clickhouse' image", repo)
-        repo_path = temp_path / repo
-        config_override = (
-            Path(Utils.cwd()) / "ci/jobs/scripts/docker_server/config.sh"
-        ).absolute()
-        if not Shell.check(
-            f"git clone --depth 1 {GITHUB_SERVER_URL}/{repo} {repo_path}",
-            verbose=True,
-            retries=3,
-        ):
-            raise RuntimeError(f"Failed to clone {repo}")
-        run_sh = (repo_path / "test/run.sh").absolute()
-        for image in check_images:
-            generated_config = None
-            try:
-                configs = [repo_path / "test/config.sh", config_override]
-                if is_distroless_image(image):
-                    generated_config = write_distroless_docker_library_config(
-                        image, config_override.parent
-                    )
-                    configs.append(generated_config)
-                config_args = " ".join(
-                    f"-c {shlex.quote(config.as_posix())}" for config in configs
-                )
-                cmd = (
-                    f"{shlex.quote(run_sh.as_posix())} "
-                    f"{shlex.quote(image)} {config_args}"
-                )
-                test_results.append(
-                    Result.from_commands_run(
-                        name=f"{test_name} ({image})", command=cmd
-                    )
-                )
-            finally:
-                if generated_config:
-                    generated_config.unlink(missing_ok=True)
-
-    except Exception as e:
-        logging.error("Failed while testing the docker library image: %s", e)
-        test_results.append(
-            Result(
-                name=test_name,
-                status=Result.Status.FAIL,
-                info=f"Exception while testing docker library: {traceback.format_exc()}",
-            )
-        )
 
 
 def check_server_readme(image_path: str) -> Result:

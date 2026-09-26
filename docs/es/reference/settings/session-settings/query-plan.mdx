@@ -14,6 +14,22 @@ import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/Exp
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="query_plan_aggregation_bucket_top_k">
+  ## query_plan_aggregation_bucket_top_k
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración para activar o desactivar la optimización del plan que materializa únicamente los n mejores grupos de cada bucket de dos niveles cuando una agregación final alimenta ORDER BY con sus resultados y LIMIT n, y la selección por bucket puede demostrarse exacta."}]}]} />
+
+Activa o desactiva una optimización a nivel de plan de consulta que, cuando una agregación final alimenta `ORDER BY` con los resultados de la agregación y `LIMIT n`, y el plan demuestra que la selección por bucket es exacta, materializa únicamente los n mejores grupos de cada bucket de dos niveles en ese orden durante la conversión final de la agregación. El resultado es exacto: un grupo que no está entre los n mejores de su propio bucket tiene al menos n grupos por delante a nivel global, por lo que no puede estar entre los n mejores globales.
+Solo tiene efecto si la configuración [query&#95;plan&#95;enable&#95;optimizations](/es/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) es 1.
+
+Valores posibles:
+
+* 0 - Deshabilitar
+* 1 - Habilitar
+
 <div id="query_plan_aggregation_in_order">
   ## query_plan_aggregation_in_order
 </div>
@@ -145,6 +161,21 @@ Valores posibles:
 * 0 - Desactivar
 * 1 - Activar
 
+<div id="query_plan_fuse_filter_into_array_join">
+  ## query_plan_fuse_filter_into_array_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva optimización que integra un filtro en columnas con ARRAY JOIN en el paso ARRAY JOIN, activada de forma predeterminada."}]}]} />
+
+Activa o desactiva una optimización a nivel del plan de consulta que integra un filtro en columnas de elementos con `ARRAY JOIN` en el paso `ARRAY JOIN`. Filtra los arrays en el espacio de los elementos antes de expandirlos, de modo que los elementos descartados por el filtro nunca se expanden ni se replican.
+Solo tiene efecto si la configuración [query&#95;plan&#95;enable&#95;optimizations](/es/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) está establecida en 1.
+
+<Note>
+  Esta es una configuración de nivel experto que solo deben usar los desarrolladores para depuración. La configuración puede cambiar en el futuro de forma incompatible con versiones anteriores o eliminarse.
+</Note>
+
 <div id="query_plan_join_shard_by_pk_ranges">
   ## query_plan_join_shard_by_pk_ranges
 </div>
@@ -234,6 +265,8 @@ Controla el valor máximo del límite que permite usar el plan de consulta para 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1000"},{"label": "Nueva configuración."}]}]} />
 
 Controla el valor máximo del límite que permite evaluar el plan de consulta para la optimización TopK mediante el índice de omisión minmax y el filtrado dinámico por umbral. Si es cero, no hay límite.
+
+Esta configuración también controla el comportamiento de [enable&#95;group&#95;by&#95;top&#95;k&#95;optimization](/es/reference/settings/session-settings/enable#enable_group_by_top_k_optimization).
 
 <div id="query_plan_max_optimizations_to_apply">
   ## query_plan_max_optimizations_to_apply
@@ -418,13 +451,23 @@ Optimiza la lectura con FINAL en ReplacingMergeTree creando un conjunto de clave
 
 Usar el plan de consulta para la optimización de materialización diferida.
 
+<div id="query_plan_optimize_lazy_materialization_for_file">
+  ## query_plan_optimize_lazy_materialization_for_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para usar la materialización diferida en consultas `ORDER BY ... LIMIT n` que leen archivos Parquet locales mediante la función de tabla `file` y el motor de tabla `File`."}]}]} />
+
+Utiliza la optimización de materialización diferida para leer archivos Parquet locales mediante la función de tabla `file` y el motor de tabla `File`: en las consultas `ORDER BY ... LIMIT n`, las columnas que no se necesitan para la ordenación ni el filtrado se leen únicamente para las `n` filas que permanecen tras aplicar `LIMIT`. Solo surte efecto si `query_plan_optimize_lazy_materialization` está habilitada.
+
 <div id="query_plan_optimize_lazy_materialization_for_object_storage">
   ## query_plan_optimize_lazy_materialization_for_object_storage
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para usar la materialización diferida en consultas `ORDER BY ... LIMIT n` que leen archivos Parquet desde el almacenamiento de objetos (incluidas las tablas Iceberg)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración para usar la materialización diferida en consultas `ORDER BY ... LIMIT n` que leen archivos Parquet desde el almacenamiento de objetos (incluidas las tablas Iceberg)."}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para usar la materialización diferida en consultas `ORDER BY ... LIMIT n` que leen archivos Parquet desde el almacenamiento de objetos (incluidas las tablas Iceberg)."}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "1"},{"label": "Nueva configuración para usar la materialización diferida en consultas `ORDER BY ... LIMIT n` que leen archivos Parquet desde el almacenamiento de objetos (incluidas las tablas Iceberg)."}]}]} />
 
 Utiliza la optimización de materialización diferida al leer archivos Parquet desde el almacenamiento de objetos (incluidas las tablas Iceberg): en las consultas `ORDER BY ... LIMIT n`, las columnas que no son necesarias para ordenar ni filtrar solo se leen para las `n` filas que permanecen tras aplicar `LIMIT`. Solo tiene efecto si `query_plan_optimize_lazy_materialization` está habilitada.
 
@@ -452,6 +495,26 @@ Solo tiene efecto si la configuración [query&#95;plan&#95;enable&#95;optimizati
 </Note>
 
 Posibles valores:
+
+* 0 - Deshabilitar
+* 1 - Habilitar
+
+<div id="query_plan_push_down_volume_reducing_functions">
+  ## query_plan_push_down_volume_reducing_functions
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración para hacer pushdown de las funciones que reducen el volumen (`length`, `lengthUTF8`, `empty`, `notEmpty`) por debajo de los pasos `Sorting` y `Filter`, de modo que la columna de argumento ancha se reemplaza por el resultado de tamaño fijo. previous_value=false, por lo que `compatibility` con versiones anteriores a la 26.8 restaura el comportamiento previo (sin hacer pushdown)."}]}]} />
+
+Activa o desactiva una optimización a nivel del plan de consulta que desplaza las funciones que reducen el volumen (`length`, `lengthUTF8`, `empty`, `notEmpty`)
+hacia abajo en el plan de ejecución, por debajo de los pasos `Sorting` y `Filter`. El resultado de tamaño fijo reemplaza el
+argumento ancho de tipo `String` / `FixedString`, por lo que ya no se transporta a través de esos pasos.
+La transformación solo se aplica cuando la columna del argumento no se necesita por encima del paso por debajo del cual se desplaza.
+
+Solo tiene efecto si la configuración [query&#95;plan&#95;enable&#95;optimizations](/es/reference/settings/session-settings/query-plan#query_plan_enable_optimizations) es 1.
+
+Valores posibles:
 
 * 0 - Deshabilitar
 * 1 - Habilitar
@@ -500,22 +563,6 @@ Valores posibles:
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "1"},{"label": "Nueva configuración"}]}]} />
 
 Mantiene la lectura en orden de la tabla izquierda en las operaciones JOIN, lo que puede aprovecharse en pasos posteriores.
-
-<div id="query_plan_read_in_order_through_spilling_join">
-  ## query_plan_read_in_order_through_spilling_join
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nueva configuración que permite propagar la lectura en orden a través de un hash join con un umbral de volcado automático, manteniendo esa unión en memoria para preservar el orden prometido. previous_value=false permite que `compatibility` con versiones anteriores a la 26.8 restaure el comportamiento conservador preexistente, en el que dicha unión nunca se usa para leer en orden, pero siempre puede realizar un volcado."}]}]} />
-
-Permite que [`query_plan_read_in_order_through_join`](/es/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) también se aplique a una unión hash que tenga configurado un umbral de volcado automático a disco mediante [`max_bytes_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) o [`max_bytes_ratio_before_external_join`](/es/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
-
-Esta unión solo puede garantizar la preservación del orden de la tabla izquierda si nunca realiza un volcado, ya que el volcado dispersa las filas en buckets según el hash. Cuando se aplica la optimización, la unión se mantiene en memoria y el umbral de volcado deja de activarse: la tabla del lado derecho queda limitada por el rastreador de memoria, como si no se hubiera configurado ningún volcado automático.
-
-Establézcalo en `0` para mantener el comportamiento conservador de no propagar nunca la lectura en orden a través de una unión que pueda realizar un volcado. Las consultas que dependen del volcado para mantenerse dentro del límite de memoria y que, de otro modo, pasarían a ser aptas para la optimización, seguirán funcionando como antes.
-
-La optimización independiente `ORDER BY ... LIMIT` a través de `JOIN`, que inserta un `Sort` y un `Limit` en el lado preservado de la unión, nunca depende de que la unión preserve el orden y sigue estando disponible para uniones que pueden realizar volcado, independientemente de esta configuración. Sin embargo, cede el paso a la lectura en orden cuando esta es posible; por tanto, con esta configuración habilitada, un `ORDER BY ... LIMIT` sobre una unión que puede realizar volcado, cuyo lado preservado pueda transmitir filas en el orden solicitado, obtiene el plan de lectura en orden en lugar de un `Sort` y un `Limit` insertados. Esta transición mantiene sus condiciones preexistentes, en particular que [`query_plan_join_swap_table`](/es/reference/settings/session-settings/query-plan#query_plan_join_swap_table) se establezca explícitamente en `false`: con el valor predeterminado `auto`, una optimización posterior puede intercambiar los lados de la unión e invalidar el plan de lectura en orden, por lo que la transición nunca se confirma y dichas consultas conservan el `Sort` y el `Limit` insertados.
 
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct

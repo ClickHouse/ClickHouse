@@ -791,12 +791,18 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                 if (combined_valid_until != matched_authentication_method->getValidUntil())
                     auth_result.authentication_data.setValidUntil(combined_valid_until);
 
+                /// The code is marked as used only here, after the whole authentication succeeded:
+                /// the credential checks above (including the probes of other methods) are pure,
+                /// so a failed attempt cannot consume a valid code.
+                if (!Authentication::consumeOneTimePassword(credentials, *matched_authentication_method))
+                    throw Exception(ErrorCodes::WRONG_PASSWORD, "The one-time password has already been used");
+
                 return auth_result;
             }
 
             if (skipped_not_allowed_authentication_methods)
             {
-                LOG_INFO(getLogger(), "Skipped the check for not allowed authentication methods,"
+                LOG_INFO(getLogger(), "Skipped the check for not allowed authentication methods, "
                               "check allow_no_password and allow_plaintext_password settings in the server configuration");
             }
 

@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "サーバー設定",
+  "group": "Server Settings",
   "pages": [
     "ja/reference/settings/server-settings/settings",
     "ja/reference/settings/server-settings/settings/access-control",
