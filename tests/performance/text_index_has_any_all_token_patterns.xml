@@ -50,5 +50,9 @@
   <query>SELECT count() FROM tab WHERE hasAnyTokenRegexp(message, '^[a-c][a-z]+ed$')</query>
   <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^[a-c][a-z]+ed$'), tokens(message))</query>
 
+  <!-- An unanchored pattern with no literal of three characters runs re2 on every token, from several threads. -->
+  <query>SELECT count() FROM tab WHERE hasAnyTokenLike(message, '%ed')</query>
+  <query>SELECT count() FROM tab WHERE hasAnyTokenLike(message, '%ed') SETTINGS use_skip_indexes = 0</query>
+
   <drop_query>DROP TABLE IF EXISTS tab</drop_query>
 </test>

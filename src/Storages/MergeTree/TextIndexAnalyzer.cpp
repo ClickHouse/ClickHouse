@@ -22,6 +22,23 @@ namespace ErrorCodes
 }
 
 
+namespace
+{
+
+/// Compiles the same re2 pattern again, with the options of the original.
+OptimizedRegularExpression compileCopy(const OptimizedRegularExpression & pattern)
+{
+    const auto & re2 = *pattern.getRE2();
+    int options = OptimizedRegularExpression::RE_NO_CAPTURE;
+    if (!re2.options().case_sensitive())
+        options |= OptimizedRegularExpression::RE_CASELESS;
+    if (re2.options().dot_nl())
+        options |= OptimizedRegularExpression::RE_DOT_NL;
+    return {re2.pattern(), options};
+}
+
+}
+
 TextIndexAnalyzer::ReadableRows::ReadableRows(std::vector<RowsRange> ranges_)
     : ranges(std::move(ranges_))
 {
@@ -175,9 +192,10 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
 
         for (const auto & pattern : query->getPatterns())
         {
-            queries_by_pattern[&pattern].insert(hash);
+            const auto * own_pattern = pattern.getRE2() ? &own_patterns.emplace_back(compileCopy(pattern)) : &pattern;
+            queries_by_pattern[own_pattern].insert(hash);
             if (MergeTreeIndexConditionText::isPerTokenPatternFunction(query->getFunctionName()))
-                per_token_patterns.insert(&pattern);
+                per_token_patterns.insert(own_pattern);
         }
     }
 }

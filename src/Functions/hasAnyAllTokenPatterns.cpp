@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FunctionDocumentation.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -146,28 +147,34 @@ public:
             shared_tokenizer = TokenizerFactory::instance().get(tokenizer_name);
 
             /// A String is one pattern, it is not split into tokens.
-            const Field patterns = (*arguments[1].column)[0];
-            if (patterns.getType() == Field::Types::String)
+            const Field patterns_field = (*arguments[1].column)[0];
+            if (patterns_field.getType() == Field::Types::String)
             {
-                matchers.emplace_back(patterns.safeGet<String>());
+                patterns.push_back(patterns_field.safeGet<String>());
             }
             else
             {
-                for (const auto & pattern : patterns.safeGet<Array>())
-                    matchers.emplace_back(pattern.safeGet<String>());
+                for (const auto & pattern : patterns_field.safeGet<Array>())
+                    patterns.push_back(pattern.safeGet<String>());
             }
         });
 
         auto col_res = ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
-        if (matchers.empty())
+        if (patterns.empty())
             return col_res;
+
+        /// Each call compiles its own matchers, because threads that share one re2 object contend on its cache.
+        VectorWithMemoryTracking<typename Traits::Matcher> matchers;
+        matchers.reserve(patterns.size());
+        for (const auto & pattern : patterns)
+            matchers.emplace_back(pattern);
 
         /// A stateful tokenizer is not thread-safe, so each call gets its own copy.
         const auto cloned_tokenizer = shared_tokenizer->isStateful() ? shared_tokenizer->clone() : nullptr;
         const ITokenizer & tokenizer = cloned_tokenizer ? *cloned_tokenizer : *shared_tokenizer;
 
         /// For `match_all`: the patterns already matched by a token of the current row.
-        std::vector<UInt8> matched(matchers.size());
+        VectorWithMemoryTracking<UInt8> matched(matchers.size());
         size_t num_matched = 0;
 
         auto start_row = [&]
@@ -253,7 +260,7 @@ private:
 
     mutable std::once_flag init_flag;
     mutable std::unique_ptr<ITokenizer> shared_tokenizer;
-    mutable std::vector<typename Traits::Matcher> matchers;
+    mutable VectorWithMemoryTracking<String> patterns;
 };
 
 constexpr auto text_index_note = R"(
