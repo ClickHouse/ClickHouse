@@ -34,6 +34,8 @@ struct DatabaseMetadataDiskSettings
     /// Apply and type-check a set of changes (used by `ALTER DATABASE ... MODIFY SETTING`).
     void applyChanges(const SettingsChanges & changes);
 
+    static bool hasBuiltin(std::string_view name);
+
 private:
     std::unique_ptr<DatabaseMetadataDiskSettingsImpl> impl;
 };

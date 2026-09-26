@@ -84,4 +84,9 @@ void DatabaseMetadataDiskSettings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
 }
+
+bool DatabaseMetadataDiskSettings::hasBuiltin(std::string_view name)
+{
+    return DatabaseMetadataDiskSettingsImpl::hasBuiltin(name);
+}
 }
