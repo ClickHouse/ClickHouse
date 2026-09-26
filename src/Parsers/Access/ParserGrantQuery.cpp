@@ -546,6 +546,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM VIRTUAL PARTS UPDATE`
     - `SYSTEM WAIT LOADING PARTS`
   - [`TABLE ENGINE`](#table-engine)
+  - [`FUNCTION`](#function)
   - [`TRUNCATE`](#truncate)
   - `UNDROP TABLE`
 - [`NONE`](#none)
@@ -1008,6 +1009,55 @@ Some table engines with external sources may require `READ`/`WRITE` permissions 
 For example, for the AzureBlobStorage table engine, following grant may be required.
 
 - `GRANT READ, WRITE ON AZURE TO john`
+
+### FUNCTION {#function}
+
+Allows executing a specified SQL function. Applies to ordinary functions and user-defined functions
+(SQL, executable, and WebAssembly) listed in the
+[`functions_requiring_grant`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)
+server setting. By default the list is empty and any user can call any function.
+
+Aggregate functions, window functions and table functions are out of scope: they are resolved through
+other factories that this privilege does not cover. Listing an aggregate name is rejected when the
+configuration is loaded, so it never looks protected while it is not.
+
+The check runs when a call is resolved to that function, not when the name is merely looked up, so
+`system.functions` and `SHOW FUNCTIONS` keep working for users without the grant, and an alias that
+shadows a protected name (`WITH x -> x + 1 AS hex SELECT arrayMap(hex, [1])`) is unaffected. A SQL
+user-defined function that calls a listed function also requires a grant for that inner function.
+
+Names are matched after resolving aliases, so listing `hex` covers `HEX`, and listing either
+`isValidASCII` or its `isASCII` alias covers both spellings. The name in `GRANT FUNCTION ON <name>`
+is resolved the same way and stored as the registered name: `GRANT FUNCTION ON HEX` grants `hex`,
+`GRANT FUNCTION ON isASCII` grants `isValidASCII`, and `SHOW GRANTS` shows the registered name.
+
+The setting is read when the server starts. Like the other `access_control_improvements` settings,
+it is not re-read by `SYSTEM RELOAD CONFIG`, so changing the list requires a restart.
+
+Aliases: `EXECUTE FUNCTION`, `USE FUNCTION`.
+
+**Examples**
+
+- `GRANT FUNCTION ON decrypt TO john`
+- `GRANT FUNCTION ON * TO john`
+- `REVOKE FUNCTION ON decrypt FROM john`
+
+<Note>
+By default, for backward compatibility, calling a function does not require a grant.
+To restrict selected functions, list their names (as in `system.functions`) in
+`access_control_improvements.functions_requiring_grant` in config.xml:
+
+```xml
+<functions_requiring_grant>
+    <function>decrypt</function>
+    <function>tryDecrypt</function>
+    <function>aes_decrypt_mysql</function>
+</functions_requiring_grant>
+```
+
+After that, `decrypt` requires `GRANT FUNCTION ON decrypt`. Users with `GRANT ALL` keep access because `ALL` includes `FUNCTION ON *`.
+Functions not listed in the setting stay unrestricted.
+</Note>
 
 ### ALL {#all}
 

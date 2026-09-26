@@ -74,6 +74,7 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "You can't specify grantees in query using config file");
 
         query.access_rights_elements.throwIfFilterIsNotCompilable();
+        AccessControl::canonicalizeFunctionNames(query.access_rights_elements);
 
         for (auto & element : query.access_rights_elements)
         {

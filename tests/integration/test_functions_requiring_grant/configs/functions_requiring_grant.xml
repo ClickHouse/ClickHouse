@@ -1,0 +1,15 @@
+<clickhouse>
+    <access_control_improvements>
+        <functions_requiring_grant>
+            <!-- Upper case on purpose: a case-insensitive function listed in another case must still be protected. -->
+            <function>HEX</function>
+            <function>decrypt</function>
+            <function>listed_udf</function>
+            <function>isValidASCII</function>
+            <function>FQDN</function>
+            <!-- A case-insensitive alias of `lower`, also in another case. -->
+            <function>LCASE</function>
+            <function>listed_executable_udf</function>
+        </functions_requiring_grant>
+    </access_control_improvements>
+</clickhouse>
