@@ -1,0 +1,4 @@
+Content-Encoding: gzip
+framed idle query uses no native data packets	1	1	1
+compressed framed idle query uses no native data packets	1	1	1
+compressed framed result uses no native data packets	1	1	1

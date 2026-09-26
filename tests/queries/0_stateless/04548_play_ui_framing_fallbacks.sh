@@ -272,6 +272,10 @@ echo "$page" | grep -q -F 'setViewState(view, logsAvailable, metricsAvailable)' 
 # state so a reopened tab's meter continues from its live values instead of restarting near zero.
 echo "$page" | grep -q -F 'accumulateResourceEvents(tab.resources, events);' && echo 'background meter batches accumulate: OK'
 echo "$page" | grep -q -F 'progressEl.adoptResourceState(tab.resources);' && echo 'meter state re-adopted on tab open: OK'
+# Only decoded result payloads feed the browser-side network leg; both live and replay keep them.
+echo "$page" | grep -q -F 'if (options.payloadMeter) options.payloadMeter(payload_bytes.length);' && echo 'result payload bytes feed the IO meter: OK'
+echo "$page" | grep -q -F 'payloadMeter: (bytes) => { tab.resources.io_bytes += bytes; },' && echo 'live result payload bytes accumulate: OK'
+echo "$page" | grep -q -F 'payloadMeter: tab ? (bytes) => { tab.resources.io_bytes += bytes; } : undefined,' && echo 'replayed result payload bytes accumulate: OK'
 # An NDJSON stream cut off in the middle of its terminal exception line is a truncation, not a real
 # exception: the reader reports `saw_exception` only once the exception line reached its newline
 # (`exception_done`), so the partial JSON line is never persisted or replayed as the failure carrier.
