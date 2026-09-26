@@ -3061,6 +3061,7 @@ class TestCase:
         self.suite = suite
         self.case: str = case  # case file name
         self.args: Namespace = args
+        self.is_concurrent: bool = is_concurrent
         self.tags: Set[str] = suite.all_tags[case]
         self.random_settings_limits = (
             suite.all_random_settings_limits[case]
@@ -3163,11 +3164,17 @@ class TestCase:
         """Wall-clock budget for one run of this test.
 
         `long` tests of a flaky check get a multiple of `--timeout`, for the reason spelled out
-        at `FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER`. Everything else keeps `--timeout` as is,
-        so the ordinary jobs - where the workers run different tests and nothing inflates a
-        single test's wall clock - are unaffected.
+        at `FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER`, but only where copies of the same test
+        can actually run at once: in the parallel worker pool without `--no-self-parallel`.
+        The sequential runner and the targeted check (`--no-self-parallel`) never contend a test
+        with itself, and neither do the ordinary jobs, so they keep `--timeout` as is.
         """
-        if args.flaky_check and "long" in self.tags:
+        if (
+            args.flaky_check
+            and not args.no_self_parallel
+            and self.is_concurrent
+            and "long" in self.tags
+        ):
             return args.timeout * FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER
         return args.timeout
 

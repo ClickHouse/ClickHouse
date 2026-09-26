@@ -205,13 +205,15 @@ def run_tests(
     # fires only for a genuinely frozen process and never pre-empts the graceful
     # `GLOBAL_TIME_LIMIT_EXIT_CODE` stop (which would be reported as "Server died").
     #
-    # In a flaky check a `long` test gets `FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER`
-    # times `--timeout`, so its alarm window - and with it the margin the graceful
-    # stop needs - grows by the same factor. Derived rather than written out, so the
-    # two cannot drift apart; for a job that is not a flaky check this is the same
-    # 900s the margin has always been.
+    # In a flaky check without `--no-self-parallel` (so not the targeted check) a
+    # `long` test run by the parallel workers gets
+    # `FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER` times `--timeout`, so its alarm
+    # window - and with it the margin the graceful stop needs - grows by the same
+    # factor. Derived rather than written out, so the two cannot drift apart; for
+    # every other job, the targeted check included, this is the same 900s the
+    # margin has always been.
     per_test_timeout = CLICKHOUSE_TEST_DEFAULT_TIMEOUT
-    if "--flaky-check" in extra_args:
+    if "--flaky-check" in extra_args and "--no-self-parallel" not in extra_args:
         per_test_timeout *= FLAKY_CHECK_LONG_TEST_TIMEOUT_MULTIPLIER
     outer_timeout = (
         global_time_limit + int(per_test_timeout * 1.1) + 60 + WIND_DOWN_MARGIN_SECONDS
