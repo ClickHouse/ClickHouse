@@ -38,7 +38,8 @@ String transformQueryForExternalDatabase(
     const String & database,
     const String & table,
     ContextPtr context,
-    std::optional<size_t> limit = {});
+    std::optional<size_t> limit = {},
+    bool allow_limit_push_down = true);
 
 /** When the data source of an external database integration is a user-provided query (passed to the external
   * database as is), the query is not rewritten by `transformQueryForExternalDatabase` and no outer predicate can
