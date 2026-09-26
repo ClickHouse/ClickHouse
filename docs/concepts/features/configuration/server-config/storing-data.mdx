@@ -478,6 +478,8 @@ enabling it:
   older servers until the first operation that creates a hard link - a mutation,
   an `ALTER`, a `FREEZE` or a backup. Turning the setting off again does not
   convert the existing directories back.
+- The setting is read only when the disk is created: a change takes effect after
+  a restart of the server, `SYSTEM RELOAD CONFIG` does not apply it.
 - An object whose last link is removed is deleted in two steps: the metadata of
   the directory is rewritten first, and the object is deleted after that. If the
   server is killed in between, the object is left in the bucket and is not

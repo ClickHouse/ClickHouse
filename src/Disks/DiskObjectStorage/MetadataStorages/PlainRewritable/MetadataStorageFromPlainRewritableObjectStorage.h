@@ -108,6 +108,9 @@ private:
     const std::string storage_path_full;
     /// Real hard links require the explicit form of `prefix.path`, which older servers cannot read,
     /// so they are enabled by the `enable_hard_links` setting of the disk. See the comment above.
+    /// The setting is startup-only (`applyNewSettings` is not overridden): `DiskObjectStorage::applyNewSettings` passes the
+    /// config prefix of the outer disk, which is not the prefix of this one when the disk is wrapped with a cache, so a reload
+    /// would read the setting from the wrong place. Changing it requires a restart, as a downgrade does anyway.
     const bool hard_links_enabled;
 
     std::mutex metadata_mutex;
