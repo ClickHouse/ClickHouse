@@ -5,6 +5,7 @@ import shlex
 import subprocess
 import tempfile
 import time
+import traceback
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -20,6 +21,7 @@ from ci.jobs.scripts.integration_tests_configs import (
     get_optimal_test_batch,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.praktika.cidb import CIDBTimeoutError
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
@@ -950,6 +952,29 @@ def report_rabbitmq_recreations(result: Result) -> int:
     return count
 
 
+def owning_test_modules(changed_files: List[str]) -> List[str]:
+    """Test modules of the integration test packages whose supporting files (configs,
+    data, package-local helpers) changed, e.g. `test_x/configs/config.xml` -> `test_x/test*.py`.
+    Changed test modules themselves are found by `Targeting.is_integration_test_file`."""
+    modules = []
+    for file in changed_files:
+        file = file.removeprefix("./")
+        parts = file.split("/")
+        if (
+            len(parts) < 4
+            or parts[:2] != ["tests", "integration"]
+            or not parts[2].startswith("test_")
+            or parts[2].startswith("test_e2e_")
+            or Targeting.is_integration_test_file(file)
+        ):
+            continue
+        package = Path("tests/integration") / parts[2]
+        modules.extend(
+            str(p.relative_to("tests/integration")) for p in sorted(package.glob("test*.py"))
+        )
+    return list(dict.fromkeys(modules))
+
+
 def quote_tests(tests: List[str]) -> str:
     """Join test node IDs into a shell-safe, space-separated string.
 
@@ -1789,11 +1814,32 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if is_targeted_check:
         assert not args.test, "--test not supposed to be used for targeted check ???"
         targeter = Targeting(info=info)
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
+        try:
+            tests, results_with_info = targeter.get_all_relevant_tests_with_info()
+        except CIDBTimeoutError as ex:
+            # CIDB is overloaded (typically while the coverage export inserts).
+            # Skip rather than fail, as the stateless targeted jobs do: an ERROR here
+            # would skip every job that waits for the core blocking jobs. Not cached,
+            # so a rerun or the next commit selects again.
+            message = f"Targeted tests were not run: test selection timed out in CIDB: {ex}"
+            print(f"WARNING: {message}")
+            info.add_workflow_warning(message)
+            skipped = Result.create_from(
+                status=Result.Status.SKIPPED,
+                info=f"{message}\n{traceback.format_exc()}",
+            )
+            skipped.set_comment("CIDB timeout in test selection, rerun to test")
+            skipped.complete_job(do_not_cache=True)
         # no subtask level for integration tests - cannot add this info to the report now
         # results.append(results_with_info)
-        # The changed test modules run in every configuration, not only in the flaky check.
-        tests = changed_test_modules + tests
+        # The changed test modules run in every configuration, not only in the flaky
+        # check, and so do the modules of packages whose supporting files changed: the
+        # coverage selector sees only source files.
+        tests = (
+            changed_test_modules
+            + owning_test_modules(info.get_changed_files() or [])
+            + tests
+        )
         if not tests:
             # early exit
             Result.create_from(

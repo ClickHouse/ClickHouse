@@ -210,8 +210,12 @@ workflow = Workflow.Config(
         ],
         JobConfigs.llvm_coverage_job,
         # Waits for the integration jobs of this workflow, which upload the compliance results.
+        # The LLVM coverage run is the only one that always runs the compliance suite.
         JobConfigs.promql_compliance_job.set_run_after(
-            INTEGRATION_TARGETED_JOBS, reset=True
+            INTEGRATION_TARGETED_JOBS
+            + JobConfigs.integration_test_llvm_coverage_jobs
+            + JobConfigs.integration_test_excluded_from_llvm_job,
+            reset=True,
         ),
         # TODO: stabilize and remove set_allow_failure
         JobConfigs.build_profile_diff_job.set_allow_failure(),
