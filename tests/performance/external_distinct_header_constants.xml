@@ -1,0 +1,27 @@
+<test>
+    <!-- Header constants need one value even when the input contains many rows. The small absolute
+         threshold forces spilling independently of machine memory; the large threshold exercises
+         external hashing without spilling. Zero also covers ordinary `DISTINCT` filtering. -->
+    <settings>
+        <max_threads>16</max_threads>
+        <max_block_size>8192</max_block_size>
+        <max_memory_usage>4294967296</max_memory_usage>
+        <max_bytes_ratio_before_external_distinct>0</max_bytes_ratio_before_external_distinct>
+        <optimize_distinct_in_order>0</optimize_distinct_in_order>
+    </settings>
+    <substitutions>
+        <substitution>
+            <name>threshold</name>
+            <values>
+                <value>0</value>
+                <value>16777216</value>
+                <value>1099511627776</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT DISTINCT number % 262144 AS k, repeat('x', 4096) AS payload FROM numbers_mt(2097152) SETTINGS max_bytes_before_external_distinct = {threshold} FORMAT Null</query>
+    <query>SELECT DISTINCT number % 262144 AS k, range(512) AS payload FROM numbers_mt(2097152) SETTINGS max_bytes_before_external_distinct = {threshold} FORMAT Null</query>
+    <!-- The key-only case measures the cost of input preparation without header constants. -->
+    <query>SELECT DISTINCT number % 262144 AS k FROM numbers_mt(2097152) SETTINGS max_bytes_before_external_distinct = {threshold} FORMAT Null</query>
+</test>
