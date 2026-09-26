@@ -175,6 +175,15 @@ void ReadManager::finishRowGroupStage(size_t row_group_idx, ReadStage stage, Mem
                             .row_group_idx = row_group_idx, .column_idx = i});
                 break;
             case ReadStage::OffsetIndex: // (first of the per-row-subgroup stages)
+                /// TopN dynamic filtering: this is the last point before column data is read, and
+                /// the latest threshold published by the sorting transforms so far applies. Skipped
+                /// this way, the row group follows the same path as one whose rows were all
+                /// filtered out (empty subgroups below).
+                if (reader.topKShouldSkipRowGroup(row_group))
+                {
+                    stage = ReadStage::Deliver;
+                    break;
+                }
                 reader.intersectColumnIndexResultsAndInitSubgroups(row_group);
                 if (!row_group.subgroups.empty())
                 {
