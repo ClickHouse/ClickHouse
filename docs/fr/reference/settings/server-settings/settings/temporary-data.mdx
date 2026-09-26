@@ -16,6 +16,8 @@ Ces paramètres configurent le serveur ClickHouse et sont générés automatique
   ## temporary_data_in_cache
 </div>
 
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
+
 Avec cette option, les données temporaires seront stockées dans le cache du disque concerné.
 Dans cette section, vous devez indiquer le nom du disque de type `cache`.
 Dans ce cas, le cache et les données temporaires partageront le même espace, et le cache du disque pourra être évincé pour libérer de l’espace au profit des données temporaires.

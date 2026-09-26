@@ -10,6 +10,8 @@
 namespace Silk
 {
 
+class FiberStreamSocketImpl;
+
 class SecureFiberStreamSocketImpl final : public Poco::Net::SecureStreamSocketImpl
 {
 public:
@@ -17,6 +19,9 @@ public:
 
     bool pollImpl(Poco::Timespan & timeout, int mode) override;
     bool supportsExternalPolling() const override { return false; }
+
+private:
+    SecureFiberStreamSocketImpl(FiberStreamSocketImpl * underlying_, Poco::Net::Context::Ptr context);
 };
 
 }

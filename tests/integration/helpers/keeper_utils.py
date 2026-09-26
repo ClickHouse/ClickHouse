@@ -303,10 +303,12 @@ def get_keeper_socket(cluster, nodename, port=9181, timeout_sec=60):
 
 
 def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None, timeout_sec=60):
+    # `node` may be an instance or a bare container name.
+    nodename = getattr(node, "name", node)
     client = None
-    logging.debug("Sending %s to %s:%d", cmd, node, port)
+    logging.debug("Sending %s to %s:%d", cmd, nodename, port)
     try:
-        client = get_keeper_socket(cluster, node.name, port, timeout_sec)
+        client = get_keeper_socket(cluster, nodename, port, timeout_sec)
         if argument is not None:
             client.send(
                 cmd.encode() + struct.pack(">L", len(argument)) + argument.encode()
