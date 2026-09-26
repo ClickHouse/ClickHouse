@@ -389,7 +389,6 @@ try
     if (has_complete)
     {
         setResponseDefaultHeaders(response);
-        response.setContentType("application/json");
 
         std::ostringstream stream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         KeeperClientBase client(stream, stream);
@@ -398,6 +397,8 @@ try
 
         if (!validateAndAssignCwd(client, cwd, response))
             return;
+
+        response.setContentType("application/json");
 
         const auto completion = client.completeQueryPrefix(complete_prefix);
 

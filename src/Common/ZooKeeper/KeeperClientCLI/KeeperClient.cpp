@@ -324,14 +324,7 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
     else
         parent_path = getAbsolutePath(unescaped_parent);
 
-    Strings children;
-    try
-    {
-        children = zookeeper->getChildren(parent_path);
-    }
-    catch (Coordination::Exception &) // NOLINT(bugprone-empty-catch) Ok: completion is best-effort if the parent path is missing.
-    {
-    }
+    Strings children = zookeeper->getChildren(parent_path);
 
     struct CompletionCandidate
     {
@@ -396,17 +389,11 @@ KeeperCompletionResult KeeperClientBase::completeQueryPrefix(const String & pref
         for (const auto & candidate : candidates)
             paths_to_check.push_back(candidate.full_path);
 
-        try
+        auto responses = zookeeper->exists(paths_to_check);
+        for (size_t i = 0; i < candidates.size(); ++i)
         {
-            auto responses = zookeeper->exists(paths_to_check);
-            for (size_t i = 0; i < candidates.size(); ++i)
-            {
-                if (responses[i].error == Coordination::Error::ZOK)
-                    has_children[i] = responses[i].stat.numChildren > 0;
-            }
-        }
-        catch (Coordination::Exception &) // NOLINT(bugprone-empty-catch) Ok: treat exists() failure as unknown child counts.
-        {
+            if (responses[i].error == Coordination::Error::ZOK)
+                has_children[i] = responses[i].stat.numChildren > 0;
         }
     }
 
