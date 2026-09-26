@@ -648,7 +648,7 @@ void DataPartStorageOnDiskPacked::copyInvalidatedSystemColumnsFile(
     DataPartStorageOnDiskPacked & dest_storage, const ReadSettings & read_settings, const WriteSettings & write_settings) const
 {
     auto src_disk = volume->getDisk();
-    const String src_path = fs::path(getRelativePath()) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME;
+    const String src_path = pathToGenericString(fs::path(getRelativePath()) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME);
     if (!src_disk->existsFile(src_path))
         return;
 
