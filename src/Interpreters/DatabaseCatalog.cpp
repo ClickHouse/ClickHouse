@@ -622,8 +622,12 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
 bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 {
-    static const char * information_schema_views[] = {"schemata", "tables", "views", "columns"};
-    static const char * information_schema_views_uppercase[] = {"SCHEMATA", "TABLES", "VIEWS", "COLUMNS"};
+    static const char * information_schema_views[] = {
+        "schemata", "tables", "views", "columns", "key_column_usage", "referential_constraints", "statistics",
+        "engines", "character_sets", "collations", "user_privileges", "schema_privileges", "table_privileges", "column_privileges"};
+    static const char * information_schema_views_uppercase[] = {
+        "SCHEMATA", "TABLES", "VIEWS", "COLUMNS", "KEY_COLUMN_USAGE", "REFERENTIAL_CONSTRAINTS", "STATISTICS",
+        "ENGINES", "CHARACTER_SETS", "COLLATIONS", "USER_PRIVILEGES", "SCHEMA_PRIVILEGES", "TABLE_PRIVILEGES", "COLUMN_PRIVILEGES"};
 
     auto check_database_and_table_name = [&](const String & database_name, const String & table_name)
     {
@@ -632,15 +636,14 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
             auto storage = getSystemDatabase()->tryGetTable(table_name, getContext());
             return storage && storage->isSystemStorage();
         }
-        if (database_name == INFORMATION_SCHEMA)
+        /// Each view is attached under both its lowercase and its UPPERCASE name in both databases
+        /// (see attachInformationSchema), so both spellings are predefined in both databases.
+        if (database_name == INFORMATION_SCHEMA || database_name == INFORMATION_SCHEMA_UPPERCASE)
         {
             return std::find(std::begin(information_schema_views), std::end(information_schema_views), table_name)
-                != std::end(information_schema_views);
-        }
-        if (database_name == INFORMATION_SCHEMA_UPPERCASE)
-        {
-            return std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
-                != std::end(information_schema_views_uppercase);
+                    != std::end(information_schema_views)
+                || std::find(std::begin(information_schema_views_uppercase), std::end(information_schema_views_uppercase), table_name)
+                    != std::end(information_schema_views_uppercase);
         }
         return false;
     };

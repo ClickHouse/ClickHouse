@@ -488,7 +488,11 @@ ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/referential_const
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/statistics.sql;\
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/engines.sql;\
 ${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/character_sets.sql;\
-${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/collations.sql")
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/collations.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/user_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/schema_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/table_privileges.sql;\
+${CMAKE_CURRENT_SOURCE_DIR}/Storages/System/information_schema/column_privileges.sql")
 
 if (ENABLE_SSL)
     add_object_library(clickhouse_server_acme Server/ACME)
