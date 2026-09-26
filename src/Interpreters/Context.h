@@ -2085,6 +2085,9 @@ public:
     /// only decides for `MergeTree` reads, so a cluster engine (`s3`, `url`, a table of a data lake catalog, ...)
     /// uses parallel replicas whenever they are enabled.
     bool canUseTaskBasedParallelReplicasForClusterEngines() const;
+    /// Whether a cluster engine may be replaced by its `*Cluster` variant, which ships the query text to the replicas.
+    /// Implies `canUseTaskBasedParallelReplicasForClusterEngines`.
+    bool canReplaceClusterEngineWithClusterVariant() const;
     bool canUseParallelReplicasOnInitiator() const;
     bool canUseParallelReplicasOnFollower() const;
     bool canUseParallelReplicasCustomKey() const;

@@ -2707,7 +2707,11 @@ void Planner::buildPlanForQueryNode()
     /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
     /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
     /// the combination works there and the check is skipped.
-    if (query_context->canUseParallelReplicasOnInitiator()
+    /// Checked with the cluster-engine predicate so that it does not depend on `automatic_parallel_replicas_mode`.
+    /// Cluster engines themselves are not replaced by their `*Cluster` variant with `additional_table_filters`,
+    /// see `canReplaceClusterEngineWithClusterVariant`.
+    if (query_context->canUseTaskBasedParallelReplicasForClusterEngines()
+        && !query_context->getClientInfo().collaborate_with_initiator
         && !settings[Setting::serialize_query_plan]
         && !settings[Setting::additional_table_filters].value.empty())
     {

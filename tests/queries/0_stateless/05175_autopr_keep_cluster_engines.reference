@@ -5,3 +5,12 @@ automatic mode only: ReadFromURL
 IN subquery in force mode, mode 0: SUPPORT_IS_DISABLED
 IN subquery in force mode, mode 1: SUPPORT_IS_DISABLED
 IN subquery in force mode, mode 2: SUPPORT_IS_DISABLED
+additional_table_filters, serialize_query_plan 0, mode 0: ReadFromURL 5
+additional_table_filters, serialize_query_plan 0, mode 1: ReadFromURL 5
+additional_table_filters, serialize_query_plan 0, mode 2: ReadFromURL 5
+additional_table_filters, serialize_query_plan 1, mode 0: ReadFromURL 5
+additional_table_filters, serialize_query_plan 1, mode 1: ReadFromURL 5
+additional_table_filters, serialize_query_plan 1, mode 2: ReadFromURL 5
+additional_table_filters in force mode, mode 0: SUPPORT_IS_DISABLED
+additional_table_filters in force mode, mode 1: SUPPORT_IS_DISABLED
+additional_table_filters in force mode, mode 2: SUPPORT_IS_DISABLED

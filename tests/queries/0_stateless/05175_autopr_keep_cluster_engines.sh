@@ -37,3 +37,24 @@ for mode in 0 1 2; do
         enable_parallel_replicas = 2, automatic_parallel_replicas_mode = $mode, parallel_replicas_allow_in_with_subquery = 0" 2>&1 \
         | grep -o -m1 'SUPPORT_IS_DISABLED')"
 done
+
+# A replica would not apply `additional_table_filters` to the query shipped by a cluster engine (the table expression
+# is renamed there), so a cluster engine is not replaced by its `*Cluster` variant with them, in any mode and whether
+# or not the plan is serialized. The read goes to this server: `sum(n)` over `n > 1` of 0..3 is 5.
+FILTERED_QUERY="SELECT sum(n) FROM url('http://127.0.0.1:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+number+AS+n+FROM+numbers(4)', TSV, 'n UInt64') AS t"
+for serialize in 0 1; do
+    for mode in 0 1 2; do
+        FILTER_SETTINGS="$SETTINGS, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = $mode,
+            serialize_query_plan = $serialize, additional_table_filters = {'t': 'n > 1'}"
+        echo "additional_table_filters, serialize_query_plan $serialize, mode $mode:" \
+            "$(read_step "EXPLAIN $FILTERED_QUERY SETTINGS $FILTER_SETTINGS")" \
+            "$($CLICKHOUSE_CLIENT -q "$FILTERED_QUERY SETTINGS $FILTER_SETTINGS")"
+    done
+done
+
+# In force mode without `serialize_query_plan` the combination is rejected, as for `MergeTree`, in every mode.
+for mode in 0 1 2; do
+    echo "additional_table_filters in force mode, mode $mode: $($CLICKHOUSE_CLIENT -q "EXPLAIN $FILTERED_QUERY SETTINGS $SETTINGS,
+        enable_parallel_replicas = 2, automatic_parallel_replicas_mode = $mode, serialize_query_plan = 0,
+        additional_table_filters = {'t': 'n > 1'}" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED')"
+done

@@ -304,6 +304,7 @@ ContextPtr ContextData::global_context_instance;
 ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
@@ -9116,6 +9117,15 @@ bool Context::canUseTaskBasedParallelReplicasForClusterEngines() const
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && (settings_ref[Setting::max_parallel_replicas] > 1
             || !settings_ref[Setting::parallel_replicas_prefer_local_replica]);
+}
+
+bool Context::canReplaceClusterEngineWithClusterVariant() const
+{
+    /// A replica matches `additional_table_filters` by the table name or alias in the query it receives, and the shipped
+    /// query renames the table expression (`__table1`), so the replica would silently read unfiltered data.
+    /// `serialize_query_plan` does not help here: cluster engines ship the query text, not the plan.
+    return canUseTaskBasedParallelReplicasForClusterEngines()
+        && getSettingsRef()[Setting::additional_table_filters].value.empty();
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const
