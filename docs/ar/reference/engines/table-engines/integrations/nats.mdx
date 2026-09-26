@@ -43,9 +43,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_username = 'user',]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
-    [nats_credential_file = '/var/nats_credentials',]
+    [nats_credentials = '-----BEGIN NATS USER JWT----- ...',]
     [nats_startup_connect_tries = 5,]
     [nats_max_rows_per_message = 1,]
+    [nats_commit_on_select = false,]
     [nats_handle_error_mode = 'default']
 ```
 
@@ -65,29 +66,32 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_max_reconnect` – مهمل وليس له أي تأثير، إذ تتم إعادة الاتصال بشكل دائم مع مهلة `nats&#95;reconnect&#95;wait`.
 * `nats_reconnect_wait` – مقدار الوقت بالمللي ثانية للانتظار بين كل محاولة إعادة اتصال. القيمة الافتراضية: `2000`.
 * `nats_server_list` - قائمة الخوادم الخاصة بالاتصال. يمكن تحديدها للاتصال بعنقود NATS.
-* `nats_skip_broken_messages` - مدى تحمّل محلل رسائل NATS للرسائل غير المتوافقة مع `schema` لكل `block`. القيمة الافتراضية: `0`. إذا كان `nats_skip_broken_messages = N` فسيتخطى الـ engine عدد *N* من رسائل NATS التي يتعذر تحليلها (الرسالة الواحدة تعادل صفًا واحدًا من البيانات).
-* `nats_max_block_size` - عدد الـ `row` التي تجمعها عملية أو عمليات `poll` لتفريغ البيانات من NATS. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#max_insert_block_size).
-* `nats_flush_interval_ms` - مهلة تفريغ البيانات المقروءة من NATS. القيمة الافتراضية: [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings#stream_flush_interval_ms).
-* `nats_username` - اسم مستخدم NATS.
-* `nats_password` - كلمة مرور NATS.
-* `nats_token` - رمز مصادقة NATS.
-* `nats_credential_file` - مسار ملف بيانات اعتماد NATS.
+* `nats_skip_broken_messages` - مدى تحمّل محلل رسائل NATS للرسائل غير المتوافقة مع `schema` لكل `block`. القيمة الافتراضية: `0`. إذا كان `nats_skip_broken_messages = N` فسيتخطى المحرك عدد *N* من رسائل NATS التي يتعذر تحليلها (الرسالة الواحدة تعادل صفًا واحدًا من البيانات).
+* `nats_max_block_size` - عدد الـ `row` التي تجمعها عملية أو عمليات `poll` لتفريغ البيانات من NATS. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `nats_flush_interval_ms` - مهلة تفريغ البيانات المقروءة من NATS. القيمة الافتراضية: [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings/stream#stream_flush_interval_ms).
+* `nats_wait_for_flush_interval` - إذا كانت القيمة `true`، فستبقى دورة البث في الخلفية مفتوحة طوال فترة التفريغ (`nats_flush_interval_ms`، أو `stream_flush_interval_ms` بخلاف ذلك) بدلًا من الانتهاء بمجرد تفريغ queue المستهلك، مما يتيح تراكم المزيد من الرسائل في `block` واحد مقابل زمن استيعاب إضافي يصل إلى فترة تفريغ واحدة. القيمة الافتراضية: `false` (سلوك تفريغ فوري منخفض الكمون).
+* `nats_username` - اسم مستخدم NATS. عند تخزينه في مجموعة مسماة معرّفة في ملف إعدادات الخادم، لا يمكن لـ query تجاوز `nats_url` أو `nats_server_list` الخاصين بالمجموعة.
+* `nats_password` - كلمة مرور NATS. عند تخزينها في مجموعة مسماة معرّفة في ملف إعدادات الخادم، لا يمكن لـ query تجاوز `nats_url` أو `nats_server_list` الخاصين بالمجموعة.
+* `nats_token` - رمز مصادقة NATS. عند تخزينه في مجموعة مسماة معرّفة في ملف إعدادات الخادم، لا يمكن لـ query تجاوز `nats_url` أو `nats_server_list` الخاصين بالمجموعة.
+* `nats_credential_file` - مسار ملف بيانات اعتماد NATS. لا يُقبل إلا من مجموعة مسماة معرّفة في ملف إعدادات الخادم لا يتم تجاوز `nats_url` و`nats_server_list` الخاصين بها بواسطة query، لأن الخادم يفتح المسار بصلاحياته الخاصة. في query، مرّر محتويات الملف في `nats_credentials` بدلًا من ذلك.
+* `nats_credentials` - محتوى بيانات اعتماد NATS (نفس الحمولة الموجودة في ملف `.creds` الذي يتضمن JWT المستخدم والبذرة). نظرًا إلى أنه الصيغة الوحيدة التي يمكن لـ query استخدامها، فإنه يستبدل `nats_credential_file` الموروث من مجموعة مسماة بدلًا من التعارض معه، ما لم يقفل المشغّل ذلك المسار باستخدام `<nats_credential_file overridable="false">`. لا يمكن تعيين سلسلة فارغة له لإزالة بيانات الاعتماد التي تحملها مجموعة مسماة.
 * `nats_startup_connect_tries` - عدد محاولات الاتصال عند بدء التشغيل. القيمة الافتراضية: `5`.
 * `nats_max_rows_per_message` — الحد الأقصى لعدد `rows` المكتوبة في رسالة NATS واحدة للتنسيقات المعتمدة على الصفوف. (القيمة الافتراضية: `1`).
-* `nats_handle_error_mode` — كيفية التعامل مع الأخطاء في NATS engine. القيم الممكنة: default (سيتم طرح الاستثناء إذا فشل تحليل رسالة)، stream (ستُحفَظ رسالة الاستثناء والرسالة الخام في `أعمدة افتراضية` `_error` و `_raw_message`).
+* `nats_commit_on_select` - ثبّت الرسائل عند تنفيذ query. ينطبق على JetStream فقط؛ إذ لا يحتوي NATS core على إقرارات. القيمة الافتراضية: `0`.
+* `nats_handle_error_mode` — كيفية التعامل مع الأخطاء في محرك NATS. القيم الممكنة: default (سيتم طرح الاستثناء إذا فشل تحليل رسالة)، stream (ستُحفَظ رسالة الاستثناء والرسالة الخام في `أعمدة افتراضية` `_error` و `_raw_message`).
 
 اتصال SSL:
 
-لإجراء connection آمن، استخدم `nats_secure = 1`.
-يُتحكَّم في certificate verification بواسطة متغير البيئة `CLICKHOUSE_NATS_TLS_SECURE`;
-إذا كانت الشهادة منتهية الصلاحية، أو موقَّعة ذاتيًا، أو مفقودة، أو غير صالحة لأي سبب آخر، فعطّل التحقق بتعيين `CLICKHOUSE_NATS_TLS_SECURE=0`.
+لإجراء اتصال آمن استخدم `nats_secure = 1`.
+يتم التحكم في التحقق من الشهادة عبر متغير البيئة `CLICKHOUSE_NATS_TLS_SECURE`.
+إذا كانت الشهادة منتهية الصلاحية، أو موقعة ذاتيًا، أو مفقودة، أو غير صالحة لأي سبب آخر، فقم بتعطيل التحقق بتعيين `CLICKHOUSE_NATS_TLS_SECURE=0`.
 
-الكتابة إلى جدول NATS:
+الكتابة في جدول NATS:
 
-إذا كان الجدول يقرأ من subject واحد فقط، فسيؤدي أي insert إلى النشر إلى subject نفسه.
-أما إذا كان الجدول يقرأ من عدة subject، فنحتاج إلى تحديد subject الذي نريد النشر إليه.
-لذلك، عند الإدراج في جدول يقرأ من عدة subject، يلزم تعيين `stream_like_engine_insert_queue`.
-يمكنك اختيار أحد الـ subject التي يقرأ منها الجدول ونشر بياناتك إليها. على سبيل المثال:
+إذا كان الجدول يقرأ فقط من subject واحد، فسيُنشَر أي إدراج إلى نفس subject.
+ومع ذلك، إذا كان الجدول يقرأ من عدة subject، فسنحتاج إلى تحديد الـ subject الذي نرغب في النشر إليه.
+لذلك، عند الإدراج في جدول يقرأ من عدة subject، يلزم ضبط `stream_like_engine_insert_queue`.
+يمكنك اختيار أحد الـ subject التي يقرأ منها الجدول ونشر بياناتك هناك. على سبيل المثال:
 
 ```sql
 CREATE TABLE queue (
@@ -103,7 +107,7 @@ SETTINGS stream_like_engine_insert_queue = 'subject2'
 VALUES (1, 1);
 ```
 
-يمكن أيضًا إضافة إعدادات format مع الإعدادات المتعلقة بـ nats.
+يمكن أيضًا إضافة إعدادات التنسيق إلى جانب الإعدادات المتعلقة بـ NATS.
 
 مثال:
 
@@ -119,8 +123,8 @@ CREATE TABLE queue (
              date_time_input_format = 'best_effort';
 ```
 
-يمكن إضافة إعدادات خادم NATS باستخدام ملف إعداد ClickHouse.
-وبشكل أكثر تحديدًا، يمكنك إضافة كلمة المرور الخاصة بك لمحرك NATS:
+يمكن إضافة إعدادات خادم NATS باستخدام ملف إعدادات ClickHouse.
+وبشكل أكثر تحديدًا، يمكنك إضافة كلمة مرور NATS لمحرك NATS:
 
 ```xml
 <nats>
@@ -194,7 +198,7 @@ ATTACH TABLE consumer;
 ويعتمد عدد الصفوف في رسالة NATS الواحدة على ما إذا كان التنسيق يعتمد على الصفوف أم على الكتل:
 
 * بالنسبة إلى التنسيقات المعتمدة على الصفوف، يمكن التحكم في عدد الصفوف في رسالة NATS الواحدة عبر ضبط `nats_max_rows_per_message`.
-* أما بالنسبة إلى التنسيقات المعتمدة على الكتل، فلا يمكن تقسيم الكتلة إلى أجزاء أصغر، لكن يمكن التحكم في عدد الصفوف في الكتلة الواحدة من خلال الإعداد العام [max&#95;block&#95;size](/ar/reference/settings/session-settings#max_block_size).
+* أما بالنسبة إلى التنسيقات المعتمدة على الكتل، فلا يمكن تقسيم الكتلة إلى أجزاء أصغر، لكن يمكن التحكم في عدد الصفوف في الكتلة الواحدة من خلال الإعداد العام [max&#95;block&#95;size](/ar/reference/settings/session-settings/max#max_block_size).
 
 <div id="using-jetstream">
   ## استخدام JetStream
@@ -237,7 +241,7 @@ ATTACH TABLE consumer;
                 Direct Get: true
          Allows Msg Delete: true
               Allows Purge: true
-    Allows Per-Message TTL: false
+  Allows Per-Message TTL: false
             Allows Rollups: false
 
   Limits:
@@ -288,7 +292,7 @@ ATTACH TABLE consumer;
 
   State:
 
-    Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
+  Last Delivered Message: Consumer sequence: 0 Stream sequence: 0
       Acknowledgment Floor: Consumer sequence: 0 Stream sequence: 0
           Outstanding Acks: 0 out of maximum 1,000
       Redelivered Messages: 0
@@ -297,7 +301,7 @@ ATTACH TABLE consumer;
   ```
 </Accordion>
 
-بعد إنشاء stream وdurable pull مستهلك، يمكننا إنشاء table باستخدام محرك NATS. وللقيام بذلك، يجب تهيئة: nats&#95;stream وnats&#95;consumer&#95;name وnats&#95;subjects:
+بعد إنشاء stream وdurable pull مستهلك، يمكننا إنشاء جدول باستخدام محرك NATS. وللقيام بذلك، يجب تهيئة: nats&#95;stream وnats&#95;consumer&#95;name وnats&#95;subjects:
 
 ```SQL
 CREATE TABLE nats_jet_stream (
@@ -310,5 +314,7 @@ CREATE TABLE nats_jet_stream (
               nats_subjects = 'stream_subject',
               nats_format = 'JSONEachRow';
 ```
+
+توفر جداول JetStream تسليمًا مرة واحدة على الأقل: لا يتم الإقرار بالرسالة إلا بعد إدراجها في العروض المادية التابعة، لذا تظل الرسالة التي يفشل إدراجها أو ينقطع إدراجها من دون إقرار، وتُعاد تسليمها. لا يوفر Core NATS (من دون JetStream) إقرارًا أو إعادة تشغيل، لذا فهو يضمن التسليم مرة واحدة على الأكثر، وتُفقد الرسالة التي ينقطع تسليمها.
 
 {/*AUTOGENERATED_END*/}

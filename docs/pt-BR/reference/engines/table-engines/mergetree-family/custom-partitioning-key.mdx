@@ -40,7 +40,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 
 Neste exemplo, definimos o particionamento pelos tipos de evento que ocorreram durante a semana atual.
 
-Por padrão, não há suporte para chave de partição de ponto flutuante. Para usá-la, habilite a configuração [allow&#95;floating&#95;point&#95;partition&#95;key](/pt-BR/reference/settings/merge-tree-settings#allow_floating_point_partition_key).
+Por padrão, não há suporte para chave de partição de ponto flutuante. Para usá-la, habilite a configuração [allow&#95;floating&#95;point&#95;partition&#95;key](/pt-BR/reference/settings/merge-tree-settings/allow#allow_floating_point_partition_key).
 
 Ao inserir novos dados em uma tabela, esses dados são armazenados como uma parte separada (fragmento), ordenada pela chave primária. Em 10 a 15 minutos após a inserção, as partes da mesma partição são mescladas em uma única parte.
 

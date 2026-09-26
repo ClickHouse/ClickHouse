@@ -136,15 +136,15 @@ LIMIT 10
   #### FINAL 设置
 </div>
 
-你无需在查询中为每个表名都添加 FINAL 修饰符，而是可以使用 [FINAL 设置](/zh/reference/settings/session-settings#final)，将其自动应用到查询中的所有表。
+你无需在查询中为每个表名都添加 FINAL 修饰符，而是可以使用 [FINAL 设置](/zh/reference/settings/session-settings/other#final)，将其自动应用到查询中的所有表。
 
 此设置既可按查询应用，也可应用于整个会话。
 
 ```sql
--- 按查询设置 FINAL
+-- Per query FINAL setting
 SELECT count(*) FROM posts SETTINGS FINAL = 1;
 
--- 为会话设置 FINAL
+-- Set FINAL for the session
 SET final = 1;
 SELECT count(*) FROM posts; 
 ```

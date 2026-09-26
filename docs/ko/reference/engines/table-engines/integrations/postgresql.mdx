@@ -15,7 +15,7 @@ PostgreSQL 엔진을 사용하면 원격 PostgreSQL 서버에 저장된 데이�
 </Note>
 
 <Tip>
-  [Managed Postgres](/ko/products/managed-postgres/overview) 서비스를 확인해 보십시오. 컴퓨트와 물리적으로 같은 위치에 배치된 NVMe 스토리지를 기반으로 하므로, EBS와 같은 네트워크 연결 스토리지를 사용하는 대안과 비교했을 때 디스크 입출력에 병목이 있는 워크로드에서 최대 10배 더 빠른 성능을 제공합니다. 또한 ClickPipes의 Postgres CDC 커넥터를 사용해 Postgres 데이터를 ClickHouse로 복제할 수 있습니다.
+  [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview) 서비스를 확인해 보십시오. 컴퓨트와 물리적으로 같은 위치에 배치된 NVMe 스토리지를 기반으로 하므로, EBS와 같은 네트워크 연결 스토리지를 사용하는 대안과 비교했을 때 디스크 입출력에 병목이 있는 워크로드에서 최대 10배 더 빠른 성능을 제공합니다. 또한 ClickPipes의 Postgres CDC 커넥터를 사용해 Postgres 데이터를 ClickHouse로 복제할 수 있습니다.
 </Tip>
 
 <div id="creating-a-table">
@@ -44,7 +44,7 @@ SETTINGS
 
 * 컬럼 이름은 원본 PostgreSQL 테이블의 컬럼 이름과 같아야 하지만, 그중 일부만 사용하거나 순서를 임의로 지정할 수 있습니다.
 * 컬럼 타입은 원본 PostgreSQL 테이블의 타입과 달라도 됩니다. ClickHouse는 값을 ClickHouse 데이터 타입으로 [cast](/ko/reference/engines/database-engines/postgresql#data_types-support)하려고 시도합니다.
-* [external&#95;table&#95;functions&#95;use&#95;nulls](/ko/reference/settings/session-settings#external_table_functions_use_nulls) 설정은 널 허용 컬럼을 처리하는 방식을 정의합니다. 기본값은 1입니다. 값이 0이면 테이블 함수는 널 허용 컬럼을 생성하지 않고 null 대신 기본값을 삽입합니다. 이는 배열 내부의 NULL 값에도 적용됩니다.
+* [external&#95;table&#95;functions&#95;use&#95;nulls](/ko/reference/settings/session-settings/external-table#external_table_functions_use_nulls) 설정은 널 허용 컬럼을 처리하는 방식을 정의합니다. 기본값은 1입니다. 값이 0이면 테이블 함수는 널 허용 컬럼을 생성하지 않고 null 대신 기본값을 삽입합니다. 이는 배열 내부의 NULL 값에도 적용됩니다.
 
 **엔진 매개변수**
 
@@ -74,6 +74,40 @@ SETTINGS
 
 ```sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
+```
+
+<div id="tls-ssl">
+  ### TLS/SSL
+</div>
+
+TLS/SSL 매개변수는 `libpq`로 전달되며, 명명된 컬렉션 키 또는 후행 키-값 인수로 설정할 수 있습니다. `sslmode`(`disable`, `allow`, `prefer`, `require`, `verify-ca` 또는 `verify-full`)와 인증서 및 키는 다음 두 가지 형식 중 하나로 지정할 수 있습니다. 설정하지 않으면 `libpq` 기본값(`sslmode=prefer`)이 적용됩니다.
+
+* `sslrootcert`(CA 인증서 또는 특수 값 `system`), `sslcert`(클라이언트 인증서), `sslkey`(클라이언트 private key)는 서버 로컬 파일의 경로입니다. 서버 구성 파일에 정의된 명명된 컬렉션에서만 지정할 수 있으며, 쿼리에서 재정의할 수 없습니다. 서버가 자체 권한으로 파일을 열기 때문입니다.
+* `sslrootcert_pem`, `sslcert_pem`, `sslkey_pem`은 경로 대신 해당 파일의 리터럴 내용을 받습니다. 쿼리, SQL로 생성한 명명된 컬렉션 또는 명명된 컬렉션 재정의 등 어디에서나 지정할 수 있으며, 비밀번호와 마찬가지로 logs 및 `SHOW` 쿼리에서 마스킹됩니다.
+
+예를 들어, 암호화된 연결을 요구하고 server certificate를 확인하려면 다음과 같이 합니다.
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
+설정 파일 없이 인증서 내용을 쿼리에 전달하는 방법은 다음과 같습니다:
+
+```sql
+CREATE TABLE postgres_table (id UInt64, value String)
+ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
+                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
 ```
 
 <div id="settings">
@@ -146,7 +180,7 @@ PostgreSQL 측의 `SELECT` 쿼리는 각 `SELECT` 쿼리 후 커밋되는 읽기
 모든 조인, 집계, 정렬, `IN [ array ]` 조건, 그리고 `LIMIT` 샘플링 제약은 PostgreSQL에 대한 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
 
 <div id="passing-a-query">
-  ## 테이블 이름 대신 쿼리 전달하기
+  ## 테이블 이름 대신 쿌리 전달하기
 </div>
 
 테이블 이름 대신 `table` 인수로 PostgreSQL에 있는 그대로 전달되는 `SELECT` 쿼리를 사용할 수 있습니다. 테이블의 구조는 쿼리 결과에서 자동으로 추론됩니다. 쿼리는 서브쿼리로 작성하거나 `query` 함수로 감싸서 작성할 수 있습니다:
@@ -161,7 +195,7 @@ CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELEC
 <Note>
   서브쿼리 형식 `(SELECT ...)`은 ClickHouse에서 파싱된 다음 서버로 전송되기 전에 PostgreSQL 방언(PostgreSQL 식별자 인용 및 문자열 리터럴 이스케이프)으로 다시 직렬화됩니다. 따라서 유효한 ClickHouse SQL이어야 합니다. ClickHouse가 파싱하지 않는 PostgreSQL 전용 구문을 전달하려면 `query('...')` 형식을 사용하십시오. 이 형식의 텍스트는 PostgreSQL로 그대로 전송됩니다.
 
-  전달된 쿼리에는 이를 둘러싼 ClickHouse 쿼리의 외부 `WHERE`, `LIMIT`, 집계 등이 **푸시다운되지 않으며**, 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. PostgreSQL에서 읽는 데이터를 제한하려면 필터를 전달된 쿼리 내부에 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings#external_table_strict_query)을 사용하면 푸시다운할 수 없는 외부 필터는 로컬에서 적용되는 대신 예외와 함께 거부됩니다.
+  전달된 쿼리에는 이를 둘러싼 ClickHouse 쿼리의 외부 `WHERE`, `LIMIT`, 집계 등이 **푸시다운되지 않으며**, 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. PostgreSQL에서 읽는 데이터를 제한하려면 필터를 전달된 쿼리 내부에 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings/external-table#external_table_strict_query)을 사용하면 푸시다운할 수 없는 외부 필터는 로컬에서 적용되는 대신 예외와 함께 거부됩니다.
 </Note>
 
 PostgreSQL 측의 `INSERT` 쿼리는 각 `INSERT` 문 후 자동 커밋되는 PostgreSQL 트랜잭션 내에서 `COPY \"table_name\" (field1, field2, ... fieldN) FROM STDIN` 형태로 실행됩니다.

@@ -52,7 +52,7 @@ SELECT [1, 2] AS x, toTypeName(x)
   ## Работа с типами данных
 </div>
 
-При создании массива на лету ClickHouse автоматически определяет тип аргумента как наиболее узкий тип данных, в который помещаются все перечисленные аргументы. Если среди значений есть [Nullable](/ru/reference/data-types/nullable) или литеральные значения [NULL](/ru/reference/settings/formats#input_format_null_as_default), тип элементов массива также становится [Nullable](/ru/reference/data-types/nullable).
+При создании массива на лету ClickHouse автоматически определяет тип аргумента как наиболее узкий тип данных, в который помещаются все перечисленные аргументы. Если среди значений есть [Nullable](/ru/reference/data-types/nullable) или литеральные значения [NULL](/ru/reference/settings/formats/input-format#input_format_null_as_default), тип элементов массива также становится [Nullable](/ru/reference/data-types/nullable).
 
 Если ClickHouse не может определить тип данных, возникает исключение. Например, это происходит при попытке создать массив, одновременно содержащий строки и числа (`SELECT array(1, 'a')`).
 

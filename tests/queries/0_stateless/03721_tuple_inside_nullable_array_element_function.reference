@@ -1,6 +1,6 @@
 -- { echoOn }
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 SELECT toTypeName(arrayElementOrNull([(1, 'a'), (2, 'b')], 1));
 Nullable(Tuple(UInt8, String))
 SELECT toTypeName(arrayElementOrNull(CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))), 1));
@@ -881,7 +881,7 @@ FROM
 -1	\N	Nullable(Tuple(Int64, String))
 -2	(1,'a')	Nullable(Tuple(Int64, String))
 \N	\N	Nullable(Tuple(Int64, String))
-SET allow_experimental_nullable_tuple_type = 0;
+SET enable_nullable_tuple_type = 0;
 SELECT toTypeName(arrayElementOrNull([(1, 'a'), (2, 'b')], 1));
 Nullable(Tuple(UInt8, String))
 SELECT toTypeName(arrayElementOrNull(CAST([(1, 'a'), NULL] AS Array(Nullable(Tuple(Int64, String)))), 1)); -- { serverError ILLEGAL_COLUMN }

@@ -1,0 +1,17 @@
+the array survives CLEAR COLUMN of the marker column with a dependent skip index
+[10,20,30]
+[40]
+4
+all_1_1_0_3	1	
+[10,20,30]	4
+[40]	2
+the array survives CLEAR COLUMN of the marker column with a dependent MATERIALIZED column
+[10,20,30]	1
+[40]	1
+4
+all_1_1_0_3	1	
+the array survives CLEAR COLUMN of the marker column without dependencies
+[10,20,30]
+[40]
+4
+all_1_1_0_2	1	

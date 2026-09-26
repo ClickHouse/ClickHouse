@@ -279,7 +279,12 @@ off_t AsynchronousReadBufferFromFileDescriptor::seek(off_t offset, int whence)
                         "Logical error in AsynchronousReadBufferFromFileDescriptor, bytes_to_ignore ({}"
                         ") >= internal_buffer.size() ({})", bytes_to_ignore, internal_buffer.size());
 
-    return seek_pos;
+    /// Return the position we are actually at, not `seek_pos`. With O_DIRECT (`required_alignment > 1`)
+    /// `seek_pos` is `new_pos` rounded down to the alignment, and the difference is accounted for by
+    /// `bytes_to_ignore` (which `getPosition` includes), so the buffer is positioned at `new_pos`.
+    /// Returning `seek_pos` would break callers that take the returned value as the new position
+    /// (see `ReadBufferFromEncryptedFile`).
+    return static_cast<off_t>(new_pos);
 }
 
 

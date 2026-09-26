@@ -303,7 +303,7 @@ FROM
 
 집계 함수의 동작을 변경합니다.
 
-이 조합자는 집계 함수의 결과를 [널 허용(Nullable)](/ko/reference/data-types/nullable) 데이터 타입으로 변환합니다. 집계 함수가 계산할 값이 없으면 [NULL](/ko/reference/settings/formats#input_format_null_as_default)을 반환합니다.
+이 조합자는 집계 함수의 결과를 [널 허용(Nullable)](/ko/reference/data-types/nullable) 데이터 타입으로 변환합니다. 집계 함수가 계산할 값이 없으면 [NULL](/ko/reference/settings/formats/input-format#input_format_null_as_default)을 반환합니다.
 
 `-OrNull`은 다른 조합자와 함께 사용할 수 있습니다.
 
@@ -338,7 +338,7 @@ SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE n
 └───────────────────┴───────────────────────────────┘
 ```
 
-또한 `-OrNull`은 다른 combinator와 함께 사용할 수도 있습니다. 집계 함수가 빈 입력을 받지 못할 때 유용합니다.
+또한 `-OrNull`은 다른 조합자와 함께 사용할 수도 있습니다. 집계 함수가 빈 입력을 받지 못할 때 유용합니다.
 
 ```sql title="Query"
 SELECT avgOrNullIf(x, x > 10)

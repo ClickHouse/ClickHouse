@@ -34,7 +34,7 @@ node2 = cluster.add_instance(
 nodes = [node, node2]
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()
@@ -457,6 +457,16 @@ def fn3_setup_tables():
         "CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = ReplicatedMergeTree ORDER BY tuple()"
     )
 
+    yield
+
+    # A leaked test_rmv keeps retrying every 2 seconds, and each failed attempt creates and drops
+    # a temp table, so later tests cannot enqueue their own DDL (Code 529). Stop the refresher on
+    # both replicas before the DROP, which is itself replicated DDL. SYSTEM STOP VIEW is a local
+    # no-op when the view does not exist, so it needs no guard.
+    for n in nodes:
+        n.query("SYSTEM STOP VIEW test_rmv")
+    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default SYNC")
+
 
 def test_query_fail(fn3_setup_tables):
     if node.is_built_with_sanitizer():
@@ -520,6 +530,45 @@ def test_query_retry(fn3_setup_tables):
 
 
 def _drop_circular_objects():
+    # Quiesce the refresh cycle before touching the schema. While the cycle runs, every
+    # non-APPEND refresh of current_batch_v enqueues replicated-DDL entries into the
+    # Replicated database's log (create + exchange + drop of the swap table), and under CI
+    # load a replica can fall more than max_replication_lag_to_enqueue entries behind, after
+    # which any DDL on it fails with "Cannot enqueue query on this replica, because it has
+    # replication lag of N queries" (NOT_A_LEADER).
+    #
+    # The stop must survive a lagging replica catching up. SYSTEM STOP VIEW only installs a
+    # local action lock on a replica where the view is already attached, so a replica that has
+    # not replayed the CREATE yet would attach the view during the SYNC below and start
+    # refreshing unpaused. SYSTEM STOP REPLICATED VIEW instead writes a persistent "paused"
+    # znode into the view's Keeper coordination state, which every replica checks before
+    # scheduling a refresh - including a replica that only attaches the view afterwards. All
+    # three views are coordinated (Replicated database, no all_replicas setting), so issuing
+    # it from any one replica that has the view attached pauses the whole cycle. The views may
+    # not exist yet (the first call precedes creation) or may not be attached on a given
+    # replica yet, hence the fallback to the other replica. Only that absence error is
+    # tolerated - SYSTEM STOP REPLICATED VIEW on a replica whose RefreshSet has no such view
+    # throws BAD_ARGUMENTS "Refreshable view ... doesn't exist" (there is no table lookup
+    # before the RefreshSet lookup, so no UNKNOWN_TABLE). Any other failure to pause a live
+    # view would leak the running cycle into the rest of the module, so it is re-raised
+    # instead of letting cleanup continue and mask the root cause behind later DDL failures.
+    for v in ("current_batch_v", "batch_log_v", "stats_v"):
+        unexpected_error = None
+        for n in nodes:
+            try:
+                n.query(f"SYSTEM STOP REPLICATED VIEW {v}")
+                unexpected_error = None
+                break
+            except helpers.client.QueryRuntimeException as e:
+                # 36 = BAD_ARGUMENTS, thrown by InterpreterSystemQuery::getRefreshTasks
+                if e.returncode == 36 and "doesn't exist" in str(e):
+                    continue
+                unexpected_error = e
+        if unexpected_error is not None:
+            raise unexpected_error
+    for n in nodes:
+        n.query("SYSTEM SYNC DATABASE REPLICA default")
+
     node.query("DROP TABLE IF EXISTS current_batch_v ON CLUSTER default SYNC")
     node.query("DROP TABLE IF EXISTS batch_log_v ON CLUSTER default SYNC")
     node.query("DROP TABLE IF EXISTS stats_v ON CLUSTER default SYNC")
@@ -593,47 +642,52 @@ def test_circular_dependencies_survive_restart(module_setup_tables):
         "SELECT cityHash64(v) % 8 AS h, count() AS n FROM current_batch GROUP BY h"
     )
 
-    # Kick the cycle once. Subsequent waves must run without further intervention. Each wave
-    # advances the frontier max(max_t) by exactly 5 (every refresh reads 5 fresh numbers), so 3
-    # self-sustained waves means the frontier reaches at least 15.
-    node.query("SYSTEM REFRESH VIEW current_batch_v")
+    # From here on the cycle is live and keeps enqueueing replicated-DDL entries on every wave,
+    # so the cleanup must run even when an assertion fails — a leaked cycle starves the DDL
+    # queue and makes every later test in the module fail with "Cannot enqueue query on this
+    # replica" (NOT_A_LEADER).
+    try:
+        # Kick the cycle once. Subsequent waves must run without further intervention. Each wave
+        # advances the frontier max(max_t) by exactly 5 (every refresh reads 5 fresh numbers), so 3
+        # self-sustained waves means the frontier reaches at least 15.
+        node.query("SYSTEM REFRESH VIEW current_batch_v")
 
-    pre_max = _wait_batch_log_max_t(15)
-    assert pre_max >= 15
+        pre_max = _wait_batch_log_max_t(15)
+        assert pre_max >= 15
 
-    # Full cluster restart. With Replicated DB, dependency state is persisted in Keeper, so the
-    # cycle should resume on its own and push the frontier further without another manual kick.
-    for n in nodes:
-        n.restart_clickhouse()
+        # Full cluster restart. With Replicated DB, dependency state is persisted in Keeper, so the
+        # cycle should resume on its own and push the frontier further without another manual kick.
+        for n in nodes:
+            n.restart_clickhouse()
 
-    post_max = _wait_batch_log_max_t(pre_max + 15)
-    assert post_max >= pre_max + 15
+        post_max = _wait_batch_log_max_t(pre_max + 15)
+        assert post_max >= pre_max + 15
 
-    # Sanity-check the wave invariants. The cycle can occasionally re-run a wave (e.g. an extra
-    # refresh right after restart re-reads current_batch before it advances), and since the loggers
-    # are APPEND views such a re-run produces a duplicate row. So max_t is not required to be
-    # unique. What must hold: max_t never goes backwards, the distinct waves are exactly the gapless
-    # progression 5, 10, 15, ... (no skipped or spurious wave), and every wave has a positive count.
-    #
-    # post_max may have been observed on either replica by _wait_batch_log_max_t, but the invariants
-    # below are read from node1. batch_log is a ReplicatedMergeTree, so node1 may not have fetched
-    # the latest part yet; sync it first so it has caught up to at least post_max. Otherwise the
-    # distinct[-1] >= post_max check could spuriously fail under replication lag.
-    node.query("SYSTEM SYNC REPLICA batch_log")
-    rows = node.query(
-        "SELECT max_t, n FROM batch_log ORDER BY max_t FORMAT TabSeparated"
-    ).strip().split("\n")
-    parsed = [tuple(int(x) for x in row.split("\t")) for row in rows]
-    max_ts = [mt for mt, _ in parsed]
-    assert max_ts == sorted(max_ts), f"max_t went backwards: {parsed}"
-    distinct = sorted(set(max_ts))
-    assert distinct == list(
-        range(5, distinct[-1] + 1, 5)
-    ), f"distinct waves are not the gapless 5, 10, 15, ... progression: {parsed}"
-    assert distinct[-1] >= post_max, f"frontier regressed below {post_max}: {parsed}"
-    assert all(n > 0 for _, n in parsed), f"some waves had n<=0: {parsed}"
-
-    _drop_circular_objects()
+        # Sanity-check the wave invariants. The cycle can occasionally re-run a wave (e.g. an extra
+        # refresh right after restart re-reads current_batch before it advances), and since the loggers
+        # are APPEND views such a re-run produces a duplicate row. So max_t is not required to be
+        # unique. What must hold: max_t never goes backwards, the distinct waves are exactly the gapless
+        # progression 5, 10, 15, ... (no skipped or spurious wave), and every wave has a positive count.
+        #
+        # post_max may have been observed on either replica by _wait_batch_log_max_t, but the invariants
+        # below are read from node1. batch_log is a ReplicatedMergeTree, so node1 may not have fetched
+        # the latest part yet; sync it first so it has caught up to at least post_max. Otherwise the
+        # distinct[-1] >= post_max check could spuriously fail under replication lag.
+        node.query("SYSTEM SYNC REPLICA batch_log")
+        rows = node.query(
+            "SELECT max_t, n FROM batch_log ORDER BY max_t FORMAT TabSeparated"
+        ).strip().split("\n")
+        parsed = [tuple(int(x) for x in row.split("\t")) for row in rows]
+        max_ts = [mt for mt, _ in parsed]
+        assert max_ts == sorted(max_ts), f"max_t went backwards: {parsed}"
+        distinct = sorted(set(max_ts))
+        assert distinct == list(
+            range(5, distinct[-1] + 1, 5)
+        ), f"distinct waves are not the gapless 5, 10, 15, ... progression: {parsed}"
+        assert distinct[-1] >= post_max, f"frontier regressed below {post_max}: {parsed}"
+        assert all(n > 0 for _, n in parsed), f"some waves had n<=0: {parsed}"
+    finally:
+        _drop_circular_objects()
 
 
 def _drop_sync_objects():
@@ -786,3 +840,378 @@ def test_dependent_sees_latest_data_other_replica(module_setup_tables, with_appe
     node.query("SYSTEM START VIEW child_v")
     node2.query("SYSTEM START VIEW parent_v")
     _drop_sync_objects()
+
+
+def coordination_path(node, database, table):
+    # `default_replica_path` is /clickhouse/tables/{uuid}/{shard}, and both replicas are in shard 1.
+    uuid = node.query(
+        f"SELECT uuid FROM system.tables WHERE database = '{database}' AND name = '{table}'"
+    ).strip()
+    return f"/clickhouse/tables/{uuid}/1"
+
+
+def requested_znode(zk, path, replica):
+    # The persistent "requested-<replica>" znode: a `SYSTEM REFRESH VIEW` accepted on that replica and not started yet.
+    zk.sync(path)
+    return zk.exists(f"{path}/requested-{replica}")
+
+
+def test_wait_view_covers_refresh_requested_on_another_replica(fn3_setup_tables):
+    node.query(
+        CREATE_RMV.render(
+            table_name="test_rmv",
+            refresh_interval="EVERY 1 YEAR",
+            to_clause="tgt1",
+            # 5 rows, one second each: every refresh takes ~5s and appends 5 rows.
+            select_query="SELECT now() + sleepEachRow(1) a FROM numbers(5) SETTINGS max_block_size = 1, insert_deduplicate = 0",
+            with_append=True,
+            on_cluster="default",
+            empty=True,
+        )
+    )
+
+    # Requests queued behind a running refresh, one per replica: each gets its own refresh, as on a single replica,
+    # and the wait on the other replica must cover all three.
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Running")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    node2.query("SYSTEM REFRESH VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    node.query("SYSTEM SYNC REPLICA tgt1")
+    assert node.query("SELECT count() FROM tgt1").strip() == "15"
+
+    # The same with the waiting replica stopped: the request is still owed on the requesting one.
+    node2.query("SYSTEM STOP VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Running")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    node.query("SYSTEM SYNC REPLICA tgt1")
+    assert node.query("SELECT count() FROM tgt1").strip() == "25"
+    node2.query("SYSTEM START VIEW test_rmv")
+
+    # The wait reads the coordination state from Keeper first; a Keeper error there must fail it, not hang it.
+    fp = "refresh_mv_fail_znodes_read"
+    node2.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+    try:
+        assert "KEEPER_EXCEPTION" in node2.query_and_get_error(
+            "SYSTEM WAIT VIEW test_rmv"
+        )
+    finally:
+        node2.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+
+
+def test_refresh_request_is_shared_and_durable(fn3_setup_tables):
+    node.query(
+        CREATE_RMV.render(
+            table_name="test_rmv",
+            refresh_interval="EVERY 1 YEAR",
+            to_clause="tgt1",
+            select_query="SELECT now() a FROM numbers(5) SETTINGS insert_deduplicate = 0",
+            with_append=True,
+            on_cluster="default",
+            empty=True,
+        )
+    )
+    zk = cluster.get_kazoo_client("zoo1")
+    path = coordination_path(node, "default", "test_rmv")
+
+    # Requested on a stopped replica, then on the other one too: that one runs its own request at once and the stopped
+    # replica's after a Keeper session timeout, one refresh each. The stopped replica's wait covers both; starting it runs no third.
+    node.query("SYSTEM STOP VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    znode = requested_znode(zk, path, 1)
+    assert znode is not None and znode.ephemeralOwner == 0
+    node2.query("SYSTEM REFRESH VIEW test_rmv")
+    wait_condition(
+        lambda: node2.query("SELECT count() FROM tgt1").strip(),
+        lambda x: x == "5",
+        max_attempts=100,
+    )
+    assert requested_znode(zk, path, 1) is not None
+    node.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    assert node2.query("SELECT count() FROM tgt1").strip() == "10"
+    assert requested_znode(zk, path, 1) is None
+    assert (
+        node2.query(
+            "SELECT last_refresh_replica FROM system.view_refreshes WHERE view = 'test_rmv'"
+        ).strip()
+        == "2"
+    )
+    node.query("SYSTEM START VIEW test_rmv")
+    node.query("SYSTEM WAIT VIEW test_rmv", timeout=30)
+    node.query("SYSTEM SYNC REPLICA tgt1")
+    assert node.query("SELECT count() FROM tgt1").strip() == "10"
+
+    # Stopped cluster-wide: no replica runs the request, so the wait returns. The request survives a restart
+    # of the requesting replica and is run once the view is started again.
+    node.query("SYSTEM STOP REPLICATED VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    for n in nodes:
+        n.query("SYSTEM WAIT VIEW test_rmv", timeout=30)
+    node.restart_clickhouse()
+    assert requested_znode(zk, path, 1) is not None
+    node.query("SYSTEM START REPLICATED VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    # Either replica may have run it, and an APPEND wait does not cover the replication of the target.
+    node.query("SYSTEM SYNC REPLICA tgt1")
+    assert node.query("SELECT count() FROM tgt1").strip() == "15"
+    assert requested_znode(zk, path, 1) is None
+
+    # Dropped with a request pending: the coordination znode must go all the same.
+    node.query("SYSTEM STOP REPLICATED VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    node.query("DROP TABLE test_rmv ON CLUSTER default SYNC")
+    zk.sync(path)
+    assert zk.exists(path) is None
+
+
+def test_takeover_waits_for_recreated_request(fn3_setup_tables):
+    node.query(
+        CREATE_RMV.render(
+            table_name="test_rmv",
+            refresh_interval="EVERY 1 YEAR",
+            to_clause="tgt1",
+            # ~20 s per refresh: longer than the Keeper session timeout (15 s) a takeover waits for.
+            select_query="SELECT now() + sleepEachRow(1) a FROM numbers(20) SETTINGS max_block_size = 1, insert_deduplicate = 0",
+            with_append=True,
+            on_cluster="default",
+            empty=True,
+        )
+    )
+
+    # node2 sees node's request pending with nothing running and starts its takeover clock.
+    node.query("SYSTEM STOP VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    time.sleep(2)
+    # node2 misses the window in which node runs that request and queues a new one behind it: the same znode name,
+    # but a new request, so the clock must start over once nothing is running.
+    fp = "refresh_mv_fail_znodes_read"
+    node2.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+    try:
+        node.query("SYSTEM START VIEW test_rmv")
+        get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Running")
+        node.query("SYSTEM REFRESH VIEW test_rmv")
+        # Leaves the queued request to node2 without cancelling the running refresh.
+        node.query("SYSTEM PAUSE VIEW test_rmv")
+    finally:
+        node2.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+    get_rmv_info(
+        node2,
+        "test_rmv",
+        condition=lambda x: x["status"] == "RunningOnAnotherReplica",
+        max_attempts=100,
+    )
+    get_rmv_info(
+        node2,
+        "test_rmv",
+        condition=lambda x: x["status"] != "RunningOnAnotherReplica",
+        max_attempts=400,
+        delay=0.1,
+    )
+    first_refresh_ended = time.monotonic()
+    get_rmv_info(
+        node2, "test_rmv", condition=lambda x: x["status"] == "Running", max_attempts=400, delay=0.1
+    )
+    assert time.monotonic() - first_refresh_ended >= 10
+    node.query("SYSTEM START VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+
+
+def _drop_randomize_objects():
+    node.query("DROP TABLE IF EXISTS randomize_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS randomize_multi_rmv ON CLUSTER default SYNC")
+    # The dependent goes first, so the dependency is never dropped out from under it.
+    node.query("DROP TABLE IF EXISTS randomize_child_rmv ON CLUSTER default SYNC")
+    node.query("DROP TABLE IF EXISTS randomize_dep_rmv ON CLUSTER default SYNC")
+
+
+def _next_refresh_time(n, view, after=None):
+    """next_refresh_time once the view has actually picked one.
+
+    Waiting for a non-empty value is not enough: the row appears in system.view_refreshes as soon as
+    startup() registers the view, while next_refresh_time is only assigned by the first scheduling
+    pass, and until then it holds its default of epoch 0, which renders as a non-empty timestamp.
+
+    `after` additionally waits for a value later than the given timestamp. A refresh keeps the
+    next_refresh_time it was started for until it completes, so a caller that has just made a
+    refresh come due needs this to avoid reading the deadline the refresh is already serving.
+    """
+
+    def query():
+        return n.query_with_retry(
+            "SELECT status, toString(next_refresh_time) FROM system.view_refreshes "
+            f"WHERE view='{view}' FORMAT TabSeparated",
+            check_callback=lambda r: r.strip() != "",
+            retry_count=200,
+            sleep_time=0.3,
+        ).strip()
+
+    def picked(raw):
+        parts = raw.split("\t")
+        if len(parts) != 2:
+            return False
+        status, next_time = parts
+        if status == "Scheduling" or next_time in ("", "\\N", "1970-01-01 00:00:00"):
+            return False
+        return after is None or next_time > after
+
+    return wait_condition(query, picked, max_attempts=200, delay=0.3).split("\t")[1]
+
+
+def test_randomize_for_is_per_replica(module_setup_tables):
+    """RANDOMIZE FOR is applied by each replica on its own, so the replicas disagree about when the
+    next refresh is due and whichever one comes first performs it."""
+    # Retry because there's a tiny chance the random next_refresh_time values conicide by chance.
+    for attempt in range(2):
+        _drop_randomize_objects()
+
+        # A wide window keeps the two draws from landing on the same second, which next_refresh_time
+        # rounds to. EMPTY so no refresh fires while we look at the scheduled time.
+        node.query(
+            "CREATE MATERIALIZED VIEW randomize_rmv ON CLUSTER default "
+            "REFRESH EVERY 1 YEAR RANDOMIZE FOR 30 DAY "
+            "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT 1 AS x"
+        )
+
+        time1 = _next_refresh_time(node, "randomize_rmv")
+        time2 = _next_refresh_time(node2, "randomize_rmv")
+        if time1 != time2:
+            break  # success
+        assert attempt == 0, f"both replicas scheduled the refresh for {time1}, so the random offset is still shared"
+
+    _drop_randomize_objects()
+
+
+def test_randomize_for_is_redrawn_on_every_replica(module_setup_tables):
+    """Every replica has to draw a new offset for each timeslot, not just the one that refreshed.
+
+    A replica that keeps its first draw forever would keep winning whenever that draw happened to be
+    the earliest, which is what per-replica randomization exists to avoid. Two assertions are needed:
+    that the replicas DISAGREE in each timeslot, which a shared draw fails, and that each replica's
+    own offset CHANGES between timeslots, which a draw frozen at construction fails. Neither implies
+    the other.
+
+    The fake clock jumps a year per round, so the scheduled refresh falls due and each replica has to
+    pick an offset for the next timeslot.
+    """
+    _drop_randomize_objects()
+
+    node.query(
+        "CREATE MATERIALIZED VIEW randomize_multi_rmv ON CLUSTER default "
+        "REFRESH EVERY 1 YEAR RANDOMIZE FOR 30 DAY "
+        "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT 1 AS x"
+    )
+
+    coinciding_rounds = 0
+    offsets = {n.name: set() for n in nodes}
+    for round_number in range(3):
+        fake_time = f"20{45+round_number}-07-04 00:00:00"
+        for n in nodes:
+            n.query(f"SYSTEM TEST VIEW randomize_multi_rmv SET FAKE TIME '{fake_time}'")
+
+        times = {
+            n.name: _next_refresh_time(n, "randomize_multi_rmv", after=fake_time) for n in nodes
+        }
+        for name, t in times.items():
+            # The schedule is yearly, so everything after the year is the offset that was drawn.
+            offsets[name].add(t.split("-", 1)[1])
+
+        if len(set(times.values())) == 1:
+            coinciding_rounds += 1
+            # Ignore if there's only one coincidence.
+            assert coinciding_rounds == 1, f"both replicas scheduled the refresh for {times} on round {round_number}, so the random offset is still shared"
+
+    for name, seen in offsets.items():
+        assert len(seen) > 1, f"{name} drew offset {sorted(seen)} in every timeslot, so its offset is frozen rather than redrawn"
+
+    _drop_randomize_objects()
+
+
+def _znode_randomness(n, view):
+    """The RANDOMIZE FOR offset as a replica running an older version reads it, out of Keeper."""
+    uuid = n.query(f"SELECT uuid FROM system.tables WHERE name = '{view}'").strip()
+    # Children of the view's path are its coordination znodes, one per shard, and the query fails
+    # rather than returning nothing if the path is wrong.
+    drawn = n.query_with_retry(
+        "SELECT extract(value, 'randomness: (-?[0-9]+)') FROM system.zookeeper "
+        f"WHERE path = '/clickhouse/tables/{uuid}'",
+        check_callback=lambda r: r.strip() != "",
+        retry_count=20,
+        sleep_time=0.5,
+    ).split()
+    assert len(drawn) == 1, f"expected one coordination znode carrying a randomness field, got {drawn}"
+    return drawn[0]
+
+
+def test_randomize_for_offset_in_znode_stays_compatible(module_setup_tables):
+    """The coordination znode keeps carrying a random offset, which this version does not read.
+
+    A replica running a version from before per-replica randomization applies the serialized
+    `randomness` field as the shared offset, so a zero there would schedule it at the exact
+    timeslot with no spread at all. That version drew the field when the view was created and
+    again after every successful refresh, so both still have to happen.
+    """
+    _drop_randomize_objects()
+
+    node.query(
+        "CREATE MATERIALIZED VIEW randomize_rmv ON CLUSTER default "
+        "REFRESH EVERY 1 YEAR RANDOMIZE FOR 30 DAY "
+        "ENGINE = ReplicatedMergeTree ORDER BY tuple() EMPTY AS SELECT 1 AS x"
+    )
+
+    drawn = _znode_randomness(node, "randomize_rmv")
+    assert drawn != "0", "the coordination znode carries no random offset, so a replica running an older version would schedule its refresh at the exact timeslot"
+
+    node.query("SYSTEM REFRESH VIEW randomize_rmv")
+    node.query_with_retry(
+        "SELECT last_success_time IS NOT NULL FROM system.view_refreshes WHERE view = 'randomize_rmv'",
+        check_callback=lambda r: r.strip() == "1",
+        retry_count=600,
+        sleep_time=0.3,
+    )
+
+    redrawn = _znode_randomness(node, "randomize_rmv")
+    assert redrawn != drawn, f"the coordination znode still carries offset {drawn} after a refresh, so a replica running an older version would keep reusing it"
+
+    _drop_randomize_objects()
+
+
+def test_randomize_for_is_applied_before_the_first_refresh(module_setup_tables):
+    """A view that has not refreshed yet still has to randomize its first refresh.
+
+    REFRESH AFTER ... DEPENDS ON reports no next_refresh_time at all until the dependency refreshes,
+    so it picks its first one while it has never refreshed itself.
+    """
+    # Retry because there's a tiny chance the random next_refresh_time values coincide by chance.
+    for attempt in range(2):
+        _drop_randomize_objects()
+
+        # Not EMPTY, so the dependency refreshes at once and then not again for a year, which pins
+        # the deadline the dependent counts from.
+        node.query(
+            "CREATE MATERIALIZED VIEW randomize_dep_rmv ON CLUSTER default REFRESH EVERY 1 YEAR "
+            "ENGINE = ReplicatedMergeTree ORDER BY tuple() AS SELECT 1 AS x"
+        )
+        node.query_with_retry(
+            "SELECT last_success_time IS NOT NULL FROM system.view_refreshes WHERE view = 'randomize_dep_rmv'",
+            check_callback=lambda r: r.strip() == "1",
+            retry_count=600,
+            sleep_time=0.3,
+        )
+
+        # A wide window keeps the two draws from landing on the same second, which next_refresh_time
+        # rounds to.
+        node.query(
+            "CREATE MATERIALIZED VIEW randomize_child_rmv ON CLUSTER default "
+            "REFRESH AFTER 1 YEAR RANDOMIZE FOR 300 DAY DEPENDS ON randomize_dep_rmv "
+            "ENGINE = ReplicatedMergeTree ORDER BY tuple() AS SELECT 1 AS x"
+        )
+
+        time1 = _next_refresh_time(node, "randomize_child_rmv")
+        time2 = _next_refresh_time(node2, "randomize_child_rmv")
+        if time1 != time2:
+            break  # success
+        assert attempt == 0, f"both replicas scheduled the first refresh for {time1}, so it carries no per-replica offset"
+
+    _drop_randomize_objects()

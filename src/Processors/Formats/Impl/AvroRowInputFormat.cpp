@@ -6,11 +6,13 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -31,6 +33,7 @@
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <Formats/FormatFactory.h>
+#include <Functions/DateTimeTransforms.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <fmt/format.h>
@@ -335,6 +338,115 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                 return createDecimalDeserializeFn<DataTypeDateTime64>(root_node, target_type, false);
             break;
         case avro::AVRO_INT:
+            if (target.isDate32())
+            {
+                /// Avro `date` is a day count since the epoch, and it is inferred as `Date32`.
+                /// Validate it against the range of `Date32` instead of storing an impossible date,
+                /// the same invariant that the Arrow, Arrow IPC, Parquet and ORC readers enforce.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                return [target, date_time_overflow_behavior](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > DATE_LUT_MAX_EXTEND_DAY_NUM || days_num < DATE_LUT_MIN_EXTEND_DAY_NUM)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < DATE_LUT_MIN_EXTEND_DAY_NUM) ? DATE_LUT_MIN_EXTEND_DAY_NUM : DATE_LUT_MAX_EXTEND_DAY_NUM;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the range of type Date32, which is [{}, {}]",
+                                days_num,
+                                DATE_LUT_MIN_EXTEND_DAY_NUM,
+                                DATE_LUT_MAX_EXTEND_DAY_NUM);
+                    }
+                    insertNumber(column, target, days_num);
+                    return true;
+                };
+            }
+            if (target.isDate())
+            {
+                /// An Avro `date` day count can exceed the range of `Date`, so validate it
+                /// instead of silently wrapping in the `UInt16` representation,
+                /// the same way the ORC reader validates a `Date` type hint.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                return [target, date_time_overflow_behavior](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > DATE_LUT_MAX_DAY_NUM || days_num < 0)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < 0) ? 0 : DATE_LUT_MAX_DAY_NUM;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the range of type Date, which is [0, {}]",
+                                days_num,
+                                DATE_LUT_MAX_DAY_NUM);
+                    }
+                    insertNumber(column, target, days_num);
+                    return true;
+                };
+            }
+            if (target.isDateTime() && root_node->logicalType().type() == avro::LogicalType::DATE)
+            {
+                /// An Avro `date` is a day count since the epoch, while the generic numeric branch
+                /// below would insert it as raw unix seconds. Convert the day count to midnight of
+                /// that day in the column's time zone, validating the same [0, MAX_DATETIME_DAY_NUM]
+                /// window that `ToDateTimeImpl` uses, the same way the other format readers do.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                return [target_type, date_time_overflow_behavior](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > MAX_DATETIME_DAY_NUM || days_num < 0)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < 0) ? 0 : MAX_DATETIME_DAY_NUM;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the day range of type DateTime, which is [0, {}]",
+                                days_num,
+                                MAX_DATETIME_DAY_NUM);
+                    }
+                    const auto & time_zone = assert_cast<const DataTypeDateTime &>(*target_type).getTimeZone();
+                    assert_cast<ColumnVector<UInt32> &>(column).insertValue(
+                        static_cast<UInt32>(time_zone.fromDayNum(ExtendedDayNum(days_num))));
+                    return true;
+                };
+            }
+            if (target.isDateTime64() && root_node->logicalType().type() == avro::LogicalType::DATE)
+            {
+                /// Same for DateTime64: convert the day count to midnight of that day instead of
+                /// inserting it as raw ticks. The day count is validated against the window that the
+                /// target scale can actually represent, which is narrower than the `Date32` range at
+                /// high precision - a scale-9 `DateTime64` stops at `2262-04-11`.
+                const auto date_time_overflow_behavior = settings.date_time_overflow_behavior;
+                const auto & dt64_type = assert_cast<const DataTypeDateTime64 &>(*target_type);
+                const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_type.getScale());
+                const auto [min_day, max_day] = getDateTime64DayNumRange(scale_multiplier, dt64_type.getTimeZone());
+                return [target_type, date_time_overflow_behavior, scale_multiplier, min_day, max_day](IColumn & column, avro::Decoder & decoder)
+                {
+                    Int32 days_num = decoder.decodeInt();
+                    if (days_num > max_day || days_num < min_day)
+                    {
+                        if (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                            days_num = (days_num < min_day) ? min_day : max_day;
+                        else
+                            throw Exception(
+                                ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+                                "Input value {} exceeds the day range representable by type {}, which is [{}, {}]",
+                                days_num,
+                                target_type->getName(),
+                                min_day,
+                                max_day);
+                    }
+                    const auto & dt64 = assert_cast<const DataTypeDateTime64 &>(*target_type);
+                    const Int64 seconds = dt64.getTimeZone().fromDayNum(ExtendedDayNum(days_num));
+                    assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(
+                        DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(seconds, 0, scale_multiplier));
+                    return true;
+                };
+            }
             if (target_type->isValueRepresentedByNumber())
             {
                 return [target](IColumn & column, avro::Decoder & decoder)
@@ -1621,19 +1733,6 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
     return false;
 }
 
-size_t AvroRowInputFormat::countRows(size_t max_block_size)
-{
-    size_t num_rows = 0;
-    while (file_reader_ptr->hasMore() && num_rows < max_block_size)
-    {
-        file_reader_ptr->decr();
-        file_reader_ptr->decoder().drain();
-        ++num_rows;
-    }
-
-    return num_rows;
-}
-
 static uint32_t readConfluentSchemaId(ReadBuffer & in)
 {
     uint8_t magic = 0;
@@ -2015,10 +2114,102 @@ import DataTypeMapping from '/snippets/data-types-matching.mdx';
 |---------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
 | `input_format_avro_allow_missing_fields`    | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
 | `input_format_avro_null_as_default`         | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
+| `input_format_avro_union_type_name`         | Expose the active union branch name as a `$name` sub-column, and each branch of a multi-branch union as a named sub-column. See [Union sub-columns](#union-sub-columns). |   `0`   |
 | `output_format_avro_codec`                  | Compression algorithm for Avro output files. Possible values: `null`, `deflate`, `snappy`, `zstd`.            |         |
 | `output_format_avro_sync_interval`          | Sync marker frequency in Avro files (in bytes). | `16384` |
 | `output_format_avro_string_column_pattern`  | Regular expression to identify `String` columns for Avro string type mapping. By default, ClickHouse `String` columns are written as Avro `bytes` type.                                 |         |
 | `output_format_avro_rows_in_file`           | Maximum number of rows per Avro output file. When this limit is reached, a new file is created (if the storage system supports file splitting).                                                         | `1`     |
+
+## Union sub-columns {#union-sub-columns}
+
+Avro unions carry no indication in the data of which branch a given record used —
+that information is in the encoded branch index, not in the value. With
+[`input_format_avro_union_type_name`](/reference/settings/formats/input-format#input_format_avro_union_type_name)
+enabled, each union-typed field gets extra sub-columns that make the branch
+addressable by name.
+
+Given this Avro schema:
+
+```json
+{
+  "type": "record", "name": "Event",
+  "fields": [
+    {"name": "id", "type": "int"},
+    {"name": "payload", "type": [
+      "null",
+      {"type": "record", "name": "TypeB", "fields": [{"name": "y", "type": "string"}]},
+      {"type": "record", "name": "TypeC", "fields": [{"name": "z", "type": "double"}]}
+    ]}
+  ]
+}
+```
+
+the inferred structure is:
+
+```sql
+DESCRIBE file('events.avro') SETTINGS input_format_avro_union_type_name = 1;
+```
+
+```text
+id              Int32
+payload         Variant(Tuple(y String), Tuple(z Float64))
+payload.$name   Nullable(String)
+payload.TypeB   Nullable(Tuple(y String))
+payload.TypeC   Nullable(Tuple(z Float64))
+```
+
+- `payload.$name` holds the active branch name for each row, or `NULL` for the
+  null branch.
+- `payload.TypeB` and `payload.TypeC` hold that branch's value on the rows where
+  it is active, and `NULL` on all other rows.
+
+This makes it possible to filter and project by branch:
+
+```sql
+SELECT id, `payload.TypeB`
+FROM file('events.avro')
+WHERE `payload.$name` = 'TypeB'
+SETTINGS input_format_avro_union_type_name = 1;
+```
+
+### Which unions get branch sub-columns {#which-unions-get-branch-sub-columns}
+
+Only unions with more than one non-null branch, which map to `Variant`, get
+branch sub-columns. A union such as `["null", "TypeA"]` maps to `Nullable(TypeA)`,
+whose value is already directly accessible, so only its `$name` sub-column is
+exposed.
+
+### Nested unions {#nested-unions}
+
+If a branch is a record containing a union field, that inner union's `$name` is
+exposed one level deeper:
+
+```text
+payload.TypeA.inner.$name   Nullable(String)
+```
+
+This currently covers the first qualifying nested union field per branch, and
+only the `$name` sub-column — inner branch values are not exposed as separate
+sub-columns, though they remain reachable inside `payload.TypeA`.
+
+The nested `$name` can be selected on its own, or together with the union value
+column (`payload` above). Selecting it together with the outer union's own
+`$name` sub-column but without the value column is not supported, and fails with
+`THERE_IS_NO_COLUMN`.
+
+### Declaring the sub-columns explicitly {#declaring-union-sub-columns}
+
+When the structure is given explicitly instead of inferred, the sub-columns have
+to be declared too. A branch sub-column must be `Nullable`, because it is `NULL`
+on every row where the union holds a different branch; declaring it non-nullable
+is rejected. Note that [`Nullable(Tuple(...))`](/sql-reference/data-types/tuple#nullable-tuple)
+is supported when `enable_nullable_tuple_type = 1` is enabled.
+
+```sql
+SELECT id, `payload.$name`
+FROM file('events.avro', 'Avro', 'id Int32, `payload.$name` Nullable(String)')
+SETTINGS input_format_avro_union_type_name = 1;
+```
 
 ## Examples {#examples}
 
@@ -2037,7 +2228,7 @@ This comparison is case-sensitive and unused fields are skipped.
 
 Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/reference/functions/regular-functions/type-conversion-functions#CAST) the data to the corresponding column type.
 
-While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/reference/settings/formats#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
+While importing data, when a field is not found in the schema and setting [`input_format_avro_allow_missing_fields`](/reference/settings/formats/input-format#input_format_avro_allow_missing_fields) is enabled, the default value will be used instead of throwing an error.
 
 ### Writing Avro data {#writing-avro-data}
 
@@ -2052,7 +2243,7 @@ Column names must:
 - Start with `[A-Za-z_]`
 - Be followed by only `[A-Za-z0-9_]`
 
-The output compression and sync interval for Avro files can be configured using the [`output_format_avro_codec`](/reference/settings/formats#output_format_avro_codec) and [`output_format_avro_sync_interval`](/reference/settings/formats#output_format_avro_sync_interval) settings, respectively.
+The output compression and sync interval for Avro files can be configured using the [`output_format_avro_codec`](/reference/settings/formats/output-format#output_format_avro_codec) and [`output_format_avro_sync_interval`](/reference/settings/formats/output-format#output_format_avro_sync_interval) settings, respectively.
 
 ### Inferring the Avro schema {#inferring-the-avro-schema}
 
@@ -2108,12 +2299,18 @@ Each message uses the Confluent wire format: a magic byte (`0x00`) followed by a
 |------------------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
 | `input_format_avro_allow_missing_fields`             | Whether to use a default value instead of throwing an error when a field is not found in the schema. | `0`     |
 | `input_format_avro_null_as_default`                  | Whether to use a default value instead of throwing an error when inserting a `null` value into a non-nullable column. |   `0`   |
+| `input_format_avro_union_type_name`                  | Expose the active union branch name as a `$name` sub-column, and each branch of a multi-branch union as a named sub-column. See [Union sub-columns](/interfaces/formats/Avro#union-sub-columns). |   `0`   |
 | `format_avro_schema_registry_url`                    | The Confluent Schema Registry URL. For basic authentication, URL-encoded credentials can be included directly in the URL path. |         |
-| `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0 and less than 600 (10 minutes). | `1`     |
-| `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
-| `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0 and less than 600 (10 minutes). | `1`     |
+| `format_avro_schema_registry_connection_timeout`     | Connection timeout in seconds for the Schema Registry HTTP client (used for both schema fetch and registration). Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
+| `format_avro_schema_registry_send_timeout`           | Send timeout in seconds for the Schema Registry HTTP client. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
+| `format_avro_schema_registry_receive_timeout`        | Receive timeout in seconds for the Schema Registry HTTP client. Must be greater than 0; a value of 600 (10 minutes) or more is reduced to 599. | `1`     |
 | `output_format_avro_confluent_subject`               | For output: the subject name under which the schema is registered in the Schema Registry. Required when writing. |         |
 | `output_format_avro_string_column_pattern`           | For output: regexp of String columns to serialize as Avro `string` (default is `bytes`). |         |
+
+Union sub-columns work the same way as for the [`Avro`](/interfaces/formats/Avro#union-sub-columns)
+format, since both share the same deserializer. On the streaming read path the
+structure comes from the columns already declared on the table rather than from
+schema inference, so the sub-columns you want must be part of that declaration.
 
 ## Examples {#examples}
 

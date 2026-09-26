@@ -5,19 +5,22 @@
 #if USE_ROCKSDB
 
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeySSTProbe.h>
 
 #include <Common/ProfileEvents.h>
 
 #include <Disks/DiskLocal.h>
 #include <Disks/SingleDiskVolume.h>
+#include <IO/HashingReadBuffer.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -34,13 +37,9 @@
 
 #include <algorithm>
 #include <cstring>
-#include <mutex>
 #include <filesystem>
-#include <fstream>
-#include <random>
 #include <string>
 #include <vector>
-
 
 using namespace DB;
 
@@ -63,6 +62,8 @@ namespace
         std::shared_ptr<DiskLocal> disk;
         std::shared_ptr<SingleDiskVolume> volume;
         std::shared_ptr<DataPartStorageOnDiskFull> storage;
+        /// Filled by the write path with the `unique_key_index.sst` entry.
+        MergeTreeDataPartChecksums checksums;
 
         void SetUp() override
         {
@@ -76,16 +77,6 @@ namespace
             disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());
             volume = std::make_shared<SingleDiskVolume>("test_volume", disk);
             storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", "part");
-
-            /// `Context::setTemporaryStoragePath` throws if called twice, so set
-            /// it only if no other fixture in this binary already configured the
-            /// shared temporary storage (e.g. the UNIQUE KEY probe suite).
-            if (!getContext().context->getSharedTempDataOnDisk())
-            {
-                auto shared_tmp = std::filesystem::temp_directory_path() / "ck_uk_gtest_tmp";
-                std::filesystem::create_directories(shared_tmp);
-                getMutableContext().context->setTemporaryStoragePath(shared_tmp.string() + "/", 0);
-            }
         }
 
         void TearDown() override
@@ -102,6 +93,10 @@ namespace
         }
 
     };
+
+    /// The static writers write and commit the SST in one step (recording the
+    /// checksum in `checksums`), so tests can read the file right after the
+    /// call. Returns the entry count (0 on empty input - no file).
 
     Columns makeUInt64Columns(const std::vector<UInt64> & keys)
     {
@@ -166,8 +161,8 @@ namespace
 /// Smoke: write 10K sorted UInt64 keys, read back via `SstFileReader`,
 /// every key resolves to its expected row_number. One smoke test gates
 /// the wrapper layer end-to-end; the rest of this file pins our own
-/// SST-write contracts (atomic rename, empty short-circuit, value
-/// encoding, unsorted-path sort, memory-limit, corruption rebuild).
+/// SST-write contracts (empty short-circuit, value encoding,
+/// unsorted-path sort, corruption rebuild).
 TEST_F(SSTFixture, RoundTrip10K)
 {
     constexpr size_t N = 10'000;
@@ -180,7 +175,8 @@ TEST_F(SSTFixture, RoundTrip10K)
     auto block = makeUInt64Block(keys);
 
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256,
+        checksums, /*fsync=*/false, getContext().context);
     ASSERT_EQ(written, N);
     ASSERT_TRUE(std::filesystem::exists(finalPath()));
 
@@ -188,7 +184,7 @@ TEST_F(SSTFixture, RoundTrip10K)
     auto status = reader.Open(finalPath());
     ASSERT_TRUE(status.ok()) << status.ToString();
 
-    std::vector<String> encoded;
+    VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, /*max_size=*/256, encoded);
     for (size_t i = 0; i < N; ++i)
     {
@@ -220,7 +216,8 @@ TEST_F(SSTFixture, CorruptionRebuild)
     auto block = makeUInt64Block(keys);
 
     ASSERT_EQ(SSTIndexWriter::writeFromBlock(
-                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context),
+                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256,
+                  checksums, /*fsync=*/false, getContext().context),
               keys.size());
 
     {
@@ -238,28 +235,92 @@ TEST_F(SSTFixture, CorruptionRebuild)
             << "Expected corruption detection to fail Open; got: " << status.ToString();
     }
 
-    /// Rebuild from the same input → open succeeds.
+    /// Rebuild from the same input -> open succeeds.
     ASSERT_EQ(SSTIndexWriter::writeFromBlock(
-                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context),
+                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256,
+                  checksums, /*fsync=*/false, getContext().context),
               keys.size());
 
     rocksdb::SstFileReader reader(makeReaderOptions());
     ASSERT_TRUE(reader.Open(finalPath()).ok());
     auto one_col = makeUInt64Columns({keys[42]});
-    std::vector<String> encoded;
+    VectorWithMemoryTracking<String> encoded;
     UniqueKeyEncoding::encodeBlock(one_col, /*permutation=*/nullptr, 256, encoded);
     EXPECT_TRUE(sstIteratorContains(reader, encoded[0]));
 }
 
-/// Empty-input short-circuit: zero keys → no `.sst` produced, no `.tmp`
-/// residue. Pins `finalizeToStorage`'s empty-input contract.
+/// A valid SST whose entry count does not match the part's `rows_count` (a
+/// stale/wrong-count index) opens and verifies its block checksums cleanly, so
+/// neither `Open` nor `VerifyChecksum` flags it. `num_entries` (read from the
+/// SST's table properties) is the only signal that discriminates it, and it is
+/// exactly what load-time validation compares against `rows_count`. Pins that
+/// `num_entries` is exposed and equals the entries actually written, so the
+/// wrong-count case is detectable. (The load-time policy that acts on the
+/// mismatch lives in `classifyDenseIndexSST`.)
+TEST_F(SSTFixture, NumEntriesDiscriminatesWrongCountSST)
+{
+    /// Write a valid 1-entry SST (stands in for a stale index swapped onto a
+    /// part whose real `rows_count` is larger).
+    auto block = makeUInt64Block({99});
+    ASSERT_EQ(SSTIndexWriter::writeFromBlock(
+       *storage, block, Names{"k"}, /*permutation=*/nullptr, 256,
+              checksums, /*fsync=*/false, getContext().context),
+              1u);
+
+    auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
+    /// Opens and every block checksum verifies - the damage is size-preserving.
+    ASSERT_TRUE(reader->verifyChecksum().ok());
+
+    auto props = reader->getProperties();
+    ASSERT_NE(props, nullptr);
+    /// The entry count is exposed and truthful; comparing it against a part's
+    /// `rows_count` (1 != 3, say) is what catches a stale/wrong-count index.
+    EXPECT_EQ(props->num_entries, 1u);
+}
+
+/// Empty-input short-circuit: zero keys → the output stream is never
+/// opened, so no `.sst` is produced. Pins `finish`'s empty-input contract.
 TEST_F(SSTFixture, EmptyInputProducesNoFile)
 {
     auto block = makeUInt64Block({});
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, 256,
+        checksums, /*fsync=*/false, getContext().context);
     EXPECT_EQ(written, 0u);
     EXPECT_FALSE(std::filesystem::exists(finalPath()));
+    /// No file → no checksum entry, so the part never claims one that cannot be read.
+    EXPECT_FALSE(checksums.files.contains(SSTIndexWriter::FILE_NAME));
+}
+
+/// The write path records the SST under its own file name in `out_checksums`,
+/// describing the bytes actually on disk - that is what makes the
+/// `checksums.txt` entry (and so `CHECK TABLE`) meaningful. The hash is
+/// recomputed here independently via `HashingReadBuffer`.
+TEST_F(SSTFixture, RecordsChecksumMatchingFileOnDisk)
+{
+    std::vector<UInt64> keys;
+    for (UInt64 i = 0; i < 200; ++i)
+        keys.push_back(i * 5);
+    auto block = makeUInt64Block(keys);
+
+    ASSERT_EQ(SSTIndexWriter::writeFromBlock(
+                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256,
+                  checksums, /*fsync=*/false, getContext().context),
+              keys.size());
+
+    ASSERT_TRUE(checksums.files.contains(SSTIndexWriter::FILE_NAME));
+    const auto & recorded = checksums.files.at(SSTIndexWriter::FILE_NAME);
+
+    std::error_code ec;
+    auto file_size = std::filesystem::file_size(finalPath(), ec);
+    ASSERT_FALSE(ec) << ec.message();
+    EXPECT_EQ(recorded.file_size, file_size);
+
+    ReadBufferFromFile in(finalPath());
+    HashingReadBuffer hashing_in(in);
+    hashing_in.ignoreAll();
+    EXPECT_EQ(hashing_in.count(), recorded.file_size);
+    EXPECT_EQ(hashing_in.getHash(), recorded.file_hash);
 }
 
 /// Row-number value encoding: SST values are UInt32 BE. End-to-end scan
@@ -273,7 +334,8 @@ TEST_F(SSTFixture, RowNumbersMonotonic)
     auto block = makeUInt64Block(keys);
 
     ASSERT_EQ(SSTIndexWriter::writeFromBlock(
-                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256, getContext().context), N);
+                  *storage, block, Names{"k"}, /*permutation=*/nullptr, 256,
+                  checksums, /*fsync=*/false, getContext().context), N);
 
     rocksdb::SstFileReader reader(makeReaderOptions());
     ASSERT_TRUE(reader.Open(finalPath()).ok());
@@ -305,7 +367,7 @@ TEST_F(SSTFixture, UnsortedBlockSortedBeforeWrite)
 
     UInt64 written = SSTIndexWriter::writeFromBlockUnsorted(
         *storage, block, Names{"k"}, /*permutation=*/nullptr,
-        /*max_encoded_size=*/256, getContext().context);
+        /*max_encoded_size=*/256, checksums, /*fsync=*/false, getContext().context);
     ASSERT_EQ(written, values.size());
 
     rocksdb::SstFileReader reader(makeReaderOptions());
@@ -367,7 +429,7 @@ TEST_F(SSTFixture, UnsortedNullableSortsConsistently)
 
     UInt64 written = SSTIndexWriter::writeFromBlockUnsorted(
         *storage, block, Names{"k"}, /*permutation=*/nullptr,
-        /*max_encoded_size=*/256, getContext().context);
+        /*max_encoded_size=*/256, checksums, /*fsync=*/false, getContext().context);
     ASSERT_EQ(written, 4u);
 
     rocksdb::SstFileReader reader(makeReaderOptions());
@@ -412,7 +474,7 @@ TEST_F(SSTFixture, UnsortedWithCallerPermutationStoresPartOffset)
 
     UInt64 written = SSTIndexWriter::writeFromBlockUnsorted(
         *storage, block, Names{"k"}, &pk_perm,
-        /*max_encoded_size=*/256, getContext().context);
+        /*max_encoded_size=*/256, checksums, /*fsync=*/false, getContext().context);
     ASSERT_EQ(written, values.size());
 
     rocksdb::SstFileReader reader(makeReaderOptions());
@@ -453,7 +515,8 @@ TEST_F(SSTFixture, WriteFromBlockProducesSortedSST)
     block.insert({std::move(col), type_u64, "k"});
 
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256,
+        checksums, /*fsync=*/false, getContext().context);
     ASSERT_EQ(written, N);
     ASSERT_TRUE(std::filesystem::exists(finalPath()));
 
@@ -483,7 +546,8 @@ TEST_F(SSTFixture, WriteFromBlockConstUKColumnAccepted)
     block.insert({const_col, type_u64, "k"});
 
     UInt64 written = SSTIndexWriter::writeFromBlock(
-        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+        *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256,
+        checksums, /*fsync=*/false, getContext().context);
     EXPECT_EQ(written, 1u);
     EXPECT_TRUE(std::filesystem::exists(finalPath()));
 }
@@ -498,7 +562,8 @@ TEST_F(SSTFixture, DuplicateKeyInBlockRejected)
     try
     {
         SSTIndexWriter::writeFromBlock(
-            *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+            *storage, block, Names{"k"}, /*permutation=*/nullptr, /*max_encoded_size=*/256,
+            checksums, /*fsync=*/false, getContext().context);
         FAIL() << "expected SUPPORT_IS_DISABLED for a duplicate UNIQUE KEY in the block";
     }
     catch (const DB::Exception & e)
@@ -515,7 +580,8 @@ TEST_F(SSTFixture, DuplicateKeyInBlockRejected)
     {
         SSTIndexWriter::write(
             *storage, block_unsorted, /*uk_names=*/Names{"k"}, /*sort_names=*/Names{"other"},
-            /*sort_reverse_flags=*/{}, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context);
+            /*sort_reverse_flags=*/{}, /*permutation=*/nullptr, /*max_encoded_size=*/256,
+            checksums, /*fsync=*/false, getContext().context);
         FAIL() << "expected SUPPORT_IS_DISABLED for a duplicate UNIQUE KEY (unsorted path)";
     }
     catch (const DB::Exception & e)
@@ -551,6 +617,8 @@ TEST_F(SSTFixture, WriteDenseIndexDescPrefixFallsBackToUnsorted)
         /*sort_reverse_flags=*/std::vector<bool>{true},
         /*permutation=*/nullptr,
         /*max_encoded_size=*/256,
+        checksums,
+        /*fsync=*/false,
         getContext().context);
     ASSERT_EQ(written, values.size());
     ASSERT_TRUE(std::filesystem::exists(finalPath()));
@@ -582,6 +650,29 @@ TEST_F(SSTFixture, WriteDenseIndexDescPrefixFallsBackToUnsorted)
     EXPECT_EQ(observed_keys, sorted);
 }
 
+/// Mid-stream failure: out-of-order keys make the second `SstFileWriter::Put`
+/// return an error. The exception must propagate cleanly, and the writer
+/// destructor — run during stack unwinding with a partially-written
+/// `WriteBuffer` — must not abort.
+TEST_F(SSTFixture, MidStreamFailurePropagatesCleanly)
+{
+    /// Descending keys: second Put violates the strictly-increasing invariant.
+    auto cols = makeUInt64Columns({10, 5});
+    VectorWithMemoryTracking<String> encoded;
+    UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, encoded);
+    ASSERT_EQ(encoded.size(), 2u);
+
+    EXPECT_THROW(
+    {
+        SSTIndexWriter writer(*storage, getContext().context);
+        writer.addEncoded(encoded[0], 0);
+        writer.addEncoded(encoded[1], 1); /// out-of-order → throws
+    }, DB::Exception);
+
+    /// The destructor must have removed the abandoned partial SST file.
+    EXPECT_FALSE(std::filesystem::exists(finalPath()));
+}
+
 #endif  // USE_ROCKSDB
 
 /// ---------------------------------------------------------------------------
@@ -592,7 +683,6 @@ TEST_F(SSTFixture, WriteDenseIndexDescPrefixFallsBackToUnsorted)
 #if !USE_ROCKSDB
 
 #include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyEncoding.h>
 
 #include <Disks/DiskLocal.h>
@@ -616,8 +706,7 @@ TEST(UniqueKeyNoRocksDB, StaticWritersThrowSupportIsDisabled)
 {
     auto tmp_path = std::filesystem::temp_directory_path()
         / ("gtest_unique_key_no_rocksdb_"
-           + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
-           + "_" + std::to_string(reinterpret_cast<uintptr_t>(&tmp_path)));
+           + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
     std::filesystem::remove_all(tmp_path);
     std::filesystem::create_directories(tmp_path / "part");
     auto disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());
@@ -632,18 +721,21 @@ TEST(UniqueKeyNoRocksDB, StaticWritersThrowSupportIsDisabled)
     };
 
     Names uk_names{"a"};
+    MergeTreeDataPartChecksums checksums;
 
     /// Both static entry points must fail loudly on USE_ROCKSDB=0; a silent
     /// success would let the merge-write path skip index creation without the
     /// caller noticing.
     EXPECT_THROW(
         SSTIndexWriter::writeFromBlock(
-            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context),
+            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256,
+            checksums, /*fsync=*/false, getContext().context),
         DB::Exception);
 
     EXPECT_THROW(
         SSTIndexWriter::writeFromBlockUnsorted(
-            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context),
+            *storage, block, uk_names, /*permutation=*/nullptr, /*max_encoded_size=*/256,
+            checksums, /*fsync=*/false, getContext().context),
         DB::Exception);
 
     EXPECT_FALSE(storage->existsFile(SSTIndexWriter::FILE_NAME));
@@ -655,8 +747,7 @@ TEST(UniqueKeyNoRocksDB, ConstructorThrowsSupportIsDisabled)
 {
     auto tmp_path = std::filesystem::temp_directory_path()
         / ("gtest_unique_key_no_rocksdb_ctor_"
-           + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
-           + "_" + std::to_string(reinterpret_cast<uintptr_t>(&tmp_path)));
+           + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
     std::filesystem::remove_all(tmp_path);
     std::filesystem::create_directories(tmp_path / "part");
     auto disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());
@@ -678,8 +769,7 @@ TEST(UniqueKeyNoRocksDB, WriteDenseIndexOnInsertThrowsSupportIsDisabled)
 {
     auto tmp_path = std::filesystem::temp_directory_path()
         / ("gtest_unique_key_no_rocksdb_insert_"
-           + std::to_string(::testing::UnitTest::GetInstance()->random_seed())
-           + "_" + std::to_string(reinterpret_cast<uintptr_t>(&tmp_path)));
+           + std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
     std::filesystem::remove_all(tmp_path);
     std::filesystem::create_directories(tmp_path / "part");
     auto disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());
@@ -695,10 +785,12 @@ TEST(UniqueKeyNoRocksDB, WriteDenseIndexOnInsertThrowsSupportIsDisabled)
 
     auto metadata = std::make_shared<StorageInMemoryMetadata>();
     metadata->unique_key.column_names = {"a"};
+    MergeTreeDataPartChecksums checksums;
 
     EXPECT_THROW(
-        UniqueKeyDenseIndexOps::writeDenseIndexOnInsert(
-            *storage, metadata, block, /*permutation=*/nullptr, /*max_encoded_size=*/256, getContext().context),
+        SSTIndexWriter::writeDenseIndexOnInsert(
+            *storage, metadata, block, /*permutation=*/nullptr, /*max_encoded_size=*/256,
+            checksums, /*fsync=*/false, getContext().context),
         DB::Exception);
 
     EXPECT_FALSE(storage->existsFile(SSTIndexWriter::FILE_NAME));
