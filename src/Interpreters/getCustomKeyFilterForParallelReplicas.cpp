@@ -10,8 +10,10 @@
 #include <Parsers/parseQuery.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <Storages/ReplaceAliasByExpressionVisitor.h>
 #include <Storages/extractKeyExpressionList.h>
 
 
@@ -44,6 +46,21 @@ ASTPtr getCustomKeyFilterForParallelReplica(
 {
     chassert(replicas_count > 1);
     chassert(filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING || filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_RANGE);
+
+    /// `parseCustomKeyForTable` validates the key as written, but the key may reference an `ALIAS`
+    /// column of the table, and the filter built below resolves it to the alias expression. Check the
+    /// key again after alias replacement, so a subquery or a column matcher hidden in an `ALIAS` column
+    /// is rejected too. The key is a setting of the current query, so there is no stored metadata to
+    /// keep loading, unlike an index over such a column.
+    {
+        using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+        ASTPtr expanded_custom_key_ast = custom_key_ast->clone();
+        ReplaceAliasToExprVisitor::Data data{columns, {}};
+        ReplaceAliasToExprVisitor{data}.visit(expanded_custom_key_ast);
+        checkExpressionDoesntContainSubqueries(*expanded_custom_key_ast);
+        checkExpressionDoesntContainMatchers(*expanded_custom_key_ast);
+    }
+
     if (filter.filter_type == ParallelReplicasMode::CUSTOM_KEY_SAMPLING)
     {
         // first we do modulo with replica count
