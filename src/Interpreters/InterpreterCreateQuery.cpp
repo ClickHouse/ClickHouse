@@ -2361,11 +2361,20 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
+void validateStorage(
+    IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary, bool check_inferred_aggregate_states = false)
 try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
+
+    /// Columns an engine infers are known only once it is built.
+    if (check_inferred_aggregate_states)
+    {
+        auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
+        checkAggregateFunctionStatesCanBeStored(
+            metadata_snapshot->getColumns().getAll(), storage.getStorageID().database_name, context);
+    }
 }
 catch (...)
 {
@@ -2624,13 +2633,6 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             mode,
             is_restore_from_backup);
 
-        /// Columns an engine infers are known only once it is built.
-        if (properties.columns.empty() && (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup))
-        {
-            auto metadata_snapshot = res->getInMemoryMetadataPtr(getContext(), false);
-            checkAggregateFunctionStatesCanBeStored(metadata_snapshot->getColumns().getAll(), create.getDatabase(), getContext());
-        }
-
         /// If schema was inferred while storage creation, add columns description to create query.
         auto & create_query = query_ptr->as<ASTCreateQuery &>();
         addColumnsDescriptionToCreateQueryIfNecessary(create_query, res);
@@ -2639,7 +2641,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext(), create.isTemporary());
+    validateStorage(*res, mode, getContext(), create.isTemporary(),
+        /*check_inferred_aggregate_states=*/ properties.columns.empty()
+            && (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup));
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
