@@ -44,6 +44,7 @@ namespace MergeTreeSetting
 
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_json_bloom_filter_index;
     extern const SettingsBool allow_suspicious_indices;
 }
 
@@ -127,9 +128,14 @@ BlockIO createHypotheticalIndex(
     /// so calling get() on an unvalidated user AST can dereference absent arguments.
     MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false, *merge_tree.getSettings());
 
+    if (index_desc.type == "jsonbf_v1" && !context->getSettingsRef()[Setting::allow_experimental_json_bloom_filter_index])
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "The `jsonbf_v1` index is experimental. Enable the setting `allow_experimental_json_bloom_filter_index` to use it");
+
     /// fail closed, a newly registered index type is rejected until someone checks it
     static constexpr std::string_view supported_types[]
-        {"bloom_filter", "minmax", "ngrambf_v1", "set", "sparse_grams", "tokenbf_v1"};
+        {"bloom_filter", "jsonbf_v1", "minmax", "ngrambf_v1", "set", "sparse_grams", "tokenbf_v1"};
     if (!std::ranges::contains(supported_types, index_desc.type))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,

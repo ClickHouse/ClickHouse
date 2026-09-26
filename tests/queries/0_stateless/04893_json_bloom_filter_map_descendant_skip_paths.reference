@@ -1,0 +1,8 @@
+tuple unoptimized	[2]
+json unoptimized	[2]
+tuple optimized	[2]
+json optimized	[2]
+tuple exact kept	[2]
+json exact kept	[2]
+tuple regexp kept	[2]
+json regexp kept	[2]

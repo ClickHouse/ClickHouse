@@ -5,6 +5,7 @@
 #include <Interpreters/BloomFilter.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -16,6 +17,9 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+/// Whether `parent`, a comparison over `indexOf(array, value)`, implies that the array contains the value.
+bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent);
 
 class MergeTreeIndexGranuleBloomFilter final : public IMergeTreeIndexGranule
 {
@@ -94,6 +98,7 @@ public:
 private:
     const Block & header;
     const size_t hash_functions;
+    const FormatSettings comparison_format_settings;
     const NameSet columns_shadowing_map_subcolumns;
     std::vector<RPNElement> rpn;
 
