@@ -93,6 +93,7 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.enable_parallel_replicas,
         optimization_settings.short_circuit_function_evaluation_disabled,
         optimization_settings.lower_array_join_function,
+        optimization_settings.array_join_nondeterministic_before_expansion,
         optimization_settings.enable_lazy_columns_replication,
     };
 }
