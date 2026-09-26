@@ -30,11 +30,15 @@ public:
     ASTPtr getExpressionAST(const String & col_name) const;
 
     bool isASCIILowerOrUpper() const { return is_ascii_lower_or_upper; }
+    bool isUTF8LowerOrUpper() const { return is_utf8_lower_or_upper; }
 
 private:
     /// True only when the preprocessor is exactly lower/upper applied directly to the index column
     /// (no nested transformations, and not the UTF-8 variants).
     bool is_ascii_lower_or_upper = false;
+    /// The same for lowerUTF8/upperUTF8. ICU maps most code points independently of their neighbours, but not
+    /// all of them, so a caller must also decide whether the input it holds contains such a code point.
+    bool is_utf8_lower_or_upper = false;
     /// The name of the column on which the index is defined.
     String index_column_name;
     /// The type of the column on which the index is defined.
