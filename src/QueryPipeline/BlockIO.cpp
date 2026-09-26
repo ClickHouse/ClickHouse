@@ -111,7 +111,7 @@ void BlockIO::onException(bool log_as_error)
     setAllDataSent();
 
     for (const auto & callback : exception_callbacks)
-        callback(log_as_error);
+        callback(log_as_error, pipeline);
 
     /// Stop the pipeline before releasing workload resources: pipeline threads hold raw
     /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
