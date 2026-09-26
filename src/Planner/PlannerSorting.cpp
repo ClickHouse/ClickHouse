@@ -5,8 +5,12 @@
 #include <Common/FieldAccurateComparison.h>
 
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeNullable.h>
+
+#include <Formats/FormatFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/SortNode.h>
@@ -57,7 +61,21 @@ std::pair<Field, std::optional<IntervalKind>> extractWithFillValueWithIntervalKi
     return {constant_node.getValue(), {}};
 }
 
-FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
+/// `FillingTransform` turns a numeric `FROM` / `TO` bound of a `DateTime64` sort key (a number of seconds) into the
+/// ticks of a plain `Decimal64`, which knows nothing of the calendar window, and then writes the filled values into the
+/// `DateTime64` column. Convert such a bound here, where the query settings are known, as the value it materializes:
+/// the same `date_time_overflow_behavior` outcome as `CAST` gives for the same constant (see `dateTime64OutOfWindow`).
+/// The bound then carries the type of the sort key, which `FillingTransform` accepts as is.
+void convertDateTime64FillBound(Field & value, DataTypePtr & value_type, const DataTypePtr & sort_key_type, const FormatSettings & format_settings)
+{
+    if (value.isNull() || !value_type || (!isNumber(value_type) && !isDecimal(value_type)))
+        return;
+
+    value = convertFieldToTypeOrThrow(value, *sort_key_type, value_type.get(), format_settings, /*convert_inexact_floats=*/true);
+    value_type = sort_key_type;
+}
+
+FillColumnDescription extractWithFillDescription(const SortNode & sort_node, const ContextPtr & context)
 {
     FillColumnDescription fill_column_description;
 
@@ -94,6 +112,14 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
         fill_column_description.staleness_kind = std::move(extract_result.second);
     }
 
+    const auto sort_key_type = removeNullable(sort_node.getExpression()->getResultType());
+    if (isDateTime64(sort_key_type))
+    {
+        const auto format_settings = getFormatSettings(context);
+        convertDateTime64FillBound(fill_column_description.fill_from, fill_column_description.fill_from_type, sort_key_type, format_settings);
+        convertDateTime64FillBound(fill_column_description.fill_to, fill_column_description.fill_to_type, sort_key_type, format_settings);
+    }
+
     if (const auto reason = checkFillDescription(fill_column_description, sort_node.getSortDirection() == SortDirection::ASCENDING ? 1 : -1);
         !reason.empty())
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "{}", reason);
@@ -125,7 +151,7 @@ SortDescription extractSortDescription(const QueryTreeNodePtr & order_by_node, c
 
         if (sort_node_typed.withFill())
         {
-            FillColumnDescription fill_description = extractWithFillDescription(sort_node_typed);
+            FillColumnDescription fill_description = extractWithFillDescription(sort_node_typed, planner_context.getQueryContext());
             if (sort_node_typed.getColumnName().empty())
                 sort_column_description.emplace_back(column_name, direction, nulls_direction, collator, true /*with_fill*/, fill_description);
             else
