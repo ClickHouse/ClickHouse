@@ -420,6 +420,12 @@ if (OS_LINUX AND ARCH_AARCH64 AND NOT SANITIZE)
     #     macro expands `AARCH64_SIGN_LINK_REGISTER` and `AARCH64_VALIDATE_LINK_REGISTER` to
     #     `paciasp` and `autiasp`, so they do get signed returns and the PAC property note - by
     #     their own `#if`, not because the flag instruments them.
+    #   - the `boost::context` switch trampolines (`jump_arm64_aapcs_elf_gas.S`,
+    #     `make_arm64_aapcs_elf_gas.S`, `ontop_arm64_aapcs_elf_gas.S`), which key only BTI off the
+    #     feature macros. They save `x30` into the suspended fiber's stack and resume through it
+    #     with a plain `ret`, so a stackful-coroutine continuation stays unsigned. Signing it cannot
+    #     reuse `paciasp` either, because the continuation is resumed on a different `SP` from the
+    #     one it was saved on; it wants a modifier that survives the switch, in its own change.
     #   - the Rust objects (`skim`, `delta-kernel`, `chdig`, `wasmtime`, ...). `rustc` treats
     #     `-Zbranch-protection` as ABI-affecting and refuses it while `std` comes precompiled
     #     without it ("mixing `-Zbranch-protection` will cause an ABI mismatch"), so signing them
