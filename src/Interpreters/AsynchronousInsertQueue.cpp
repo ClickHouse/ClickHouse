@@ -139,6 +139,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const String & current_user_,
     const String & initial_user_,
     const String & authenticated_user_,
+    const String & quota_key_,
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
@@ -151,6 +152,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     , current_user(current_user_)
     , initial_user(initial_user_)
     , authenticated_user(authenticated_user_)
+    , quota_key(quota_key_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -192,7 +194,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
 
     /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
     /// by hash alone, so otherwise "a"/"a"/"aaa" and "aa"/"aa"/"a" would collide.
-    for (const String & identity_field : {current_user, initial_user, authenticated_user})
+    for (const String & identity_field : {current_user, initial_user, authenticated_user, quota_key})
     {
         siphash.update(identity_field.size());
         siphash.update(identity_field);
@@ -228,6 +230,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     current_user = other.current_user;
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
+    quota_key = other.quota_key;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -249,6 +252,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         current_user = other.current_user;
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
+        quota_key = other.quota_key;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -675,6 +679,7 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         client_info.current_user,
         client_info.initial_user,
         client_info.authenticated_user,
+        client_info.quota_key,
         settings,
         data_kind};
     InsertDataPtr data_to_process;
@@ -1197,6 +1202,8 @@ try
     insert_context->setCurrentUserName(key.current_user);
     insert_context->setInitialUserName(key.initial_user);
     insert_context->setAuthenticatedUserName(key.authenticated_user);
+    /// Restore the quota key so `KEYED BY client_key` quotas bill the originating bucket.
+    insert_context->setQuotaClientKey(key.quota_key);
 
     insert_context->setSettings(*key.settings);
 
