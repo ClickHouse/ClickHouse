@@ -6182,3 +6182,13 @@ def test_reserved_dropped_metric_name():
         120,
         expected,
     )
+    do_clickhouse_only_query_test_expect_error(
+        'label_replace(rate(foo[5m]), "copied", "$1", "__name__.dropped", "(.+)")',
+        120,
+        expected,
+    )
+    do_clickhouse_only_query_test_expect_error(
+        'label_join(rate(foo[5m]), "copied", "", "__name__.dropped")',
+        120,
+        expected,
+    )

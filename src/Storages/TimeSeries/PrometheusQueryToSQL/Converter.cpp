@@ -85,6 +85,13 @@ namespace
                     const auto & arguments = function->getArguments();
                     if (arguments.size() > 1 && arguments[1]->node_type == NodeType::StringLiteral)
                         rejectReservedLabelName(static_cast<const PrometheusQueryTree::StringLiteral *>(arguments[1])->string);
+
+                    size_t source_end = arguments.size();
+                    if (function->function_name == "label_replace" && source_end > 4)
+                        source_end = 4;
+                    for (size_t i = 3; i < source_end; ++i)
+                        if (arguments[i]->node_type == NodeType::StringLiteral)
+                            rejectReservedLabelName(static_cast<const PrometheusQueryTree::StringLiteral *>(arguments[i])->string);
                 }
                 break;
             }
