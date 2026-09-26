@@ -423,14 +423,12 @@ ReturnType readIntTextUnsafe(T & x, ReadBuffer & buf)
         return ReturnType(false);
     }
 
-    /// A per-digit threshold test, so the bound holds at every width: `common::mulOverflow`, which
-    /// `readIntTextInBaseImpl` uses, is a no-op stub for the big-int types.
+    /// A per-digit threshold test: `common::mulOverflow` is a no-op for the big-int types.
     [[maybe_unused]] bool overflow = false;
     [[maybe_unused]] make_unsigned_t<T> bound_div_10 = 0;
     [[maybe_unused]] make_unsigned_t<T> bound_mod_10 = 0;
     if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW)
     {
-        /// The tail negates the unsigned accumulator, so a negative signed value reaches `min(T)` at `max(T) + 1`.
         const make_unsigned_t<T> bound = static_cast<make_unsigned_t<T>>(std::numeric_limits<T>::max())
             + static_cast<make_unsigned_t<T>>(is_signed_v<T> && negative ? 1 : 0);
         bound_div_10 = bound / 10;
