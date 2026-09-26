@@ -775,20 +775,9 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
             if (caches_to_drop.contains("Files"))
             {
-                fs::path format_schema_cached_dir = fs::path(system_context->getFormatSchemaPath()) / FormatSchemaInfo::CACHE_DIR_NAME;
-                if (fs::exists(format_schema_cached_dir))
-                {
-                    size_t count = 0;
-                    for (const auto & entry : fs::directory_iterator(format_schema_cached_dir))
-                    {
-                        if (entry.is_regular_file())
-                        {
-                            fs::remove(entry.path());
-                            count++;
-                        }
-                    }
-                    LOG_INFO(log, "Cleared format schema cache files {}", count);
-                }
+                auto [removed, kept] = FormatSchemaInfo::removeCachedSchemaFiles(
+                    fs::path(system_context->getFormatSchemaPath()) / FormatSchemaInfo::CACHE_DIR_NAME);
+                LOG_INFO(log, "Cleared format schema cache files {}, kept {} in use", removed, kept);
             }
             break;
         }
