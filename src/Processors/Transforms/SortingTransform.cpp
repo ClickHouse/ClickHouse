@@ -44,11 +44,13 @@ MergeSorter::MergeSorter(
 
         size_t num_rows = chunk.getNumRows();
         auto columns = chunk.detachColumns();
-        /// Sort cursors compare materialized keys; replicated payloads retain their representation.
+        /// Sort cursors compare keys with a raw `compareAt`, which handles neither sparse nor
+        /// replicated columns, at any nesting depth inside a composite key (a tuple/nullable
+        /// child); non-key payloads retain their representation.
         for (const auto & column_desc : description)
         {
             size_t column_number = header->getPositionByName(column_desc.column_name);
-            columns[column_number] = columns[column_number]->convertToFullColumnIfReplicated();
+            columns[column_number] = columns[column_number]->convertToFullIfWrapped();
         }
         chunk.setColumns(std::move(columns), num_rows);
 
