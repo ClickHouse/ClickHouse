@@ -28,7 +28,7 @@ done
 
 echo '--- Variant element ---'
 run_local db1 "
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 CREATE TABLE t (id UInt64, tup Nullable(Tuple(v Variant(UInt64))))
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
@@ -42,7 +42,7 @@ SELECT count(tup), count(tup.v), sum(tup.v.UInt64) FROM t;
 
 echo '--- Variant element, more ranges ---'
 run_local db2 "
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 CREATE TABLE t (id UInt64, tup Nullable(Tuple(v Variant(UInt64))))
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
@@ -55,7 +55,7 @@ SELECT id, tup.v, tup FROM t PREWHERE id % 4 >= 1 ORDER BY id LIMIT 8;
 
 echo '--- Multi-variant element with its own NULLs ---'
 run_local db3 "
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 CREATE TABLE t (id UInt64, tup Nullable(Tuple(v Variant(UInt64, String))))
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
@@ -71,7 +71,7 @@ SELECT id, tup.v, tup, tup.v.UInt64, tup.v.String FROM t ORDER BY id;
 
 echo '--- Dynamic element ---'
 run_local db4 "
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 CREATE TABLE t (id UInt64, tup Nullable(Tuple(a Dynamic)))
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
@@ -83,7 +83,7 @@ SELECT id, tup, tup.a, tup.a.UInt64 FROM t ORDER BY id;
 
 echo '--- LowCardinality elements ---'
 run_local db5 "
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 CREATE TABLE t_lc (id UInt64, tup Nullable(Tuple(s LowCardinality(Nullable(String)))))
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
@@ -100,7 +100,7 @@ SELECT id, tup.p, tup FROM t_lc_plain ORDER BY id;
 
 echo '--- All element kinds, Wide and Compact ---'
 run_local db6 "
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 CREATE TABLE t_wide (id UInt64, tup Nullable(Tuple(a Dynamic, v Variant(UInt64), s LowCardinality(Nullable(String)))))
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 2, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
