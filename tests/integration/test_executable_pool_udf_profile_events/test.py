@@ -42,6 +42,8 @@ def started_cluster():
             "pool_udf_echo.py",
             "pool_udf_sleep.py",
             "pool_udf_cpu.py",
+            "pool_udf_cpu_short.py",
+            "pool_udf_cpu_exit.py",
             "pool_udf_mem.py",
             "pool_udf_syscall.py",
             "pool_udf_persistent_helper.py",
@@ -73,6 +75,19 @@ def _profile_event_value(query_id, event_name):
     raw = node.query(
         "SELECT ProfileEvents[{name}] FROM system.query_log "
         "WHERE query_id = '{qid}' AND type = 'QueryFinish' "
+        "ORDER BY event_time_microseconds DESC LIMIT 1".format(
+            name=repr(event_name), qid=query_id
+        )
+    ).strip()
+    return int(raw) if raw else 0
+
+
+def _failed_query_profile_event_value(query_id, event_name):
+    """Same, for a query that ended in an exception - its counters are on that row."""
+    node.query("SYSTEM FLUSH LOGS")
+    raw = node.query(
+        "SELECT ProfileEvents[{name}] FROM system.query_log "
+        "WHERE query_id = '{qid}' AND type = 'ExceptionWhileProcessing' "
         "ORDER BY event_time_microseconds DESC LIMIT 1".format(
             name=repr(event_name), qid=query_id
         )
@@ -154,6 +169,55 @@ def test_cpu_user_microseconds(started_cluster):
     )
     cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
     assert cpu > 0, f"Expected UserTimeMicroseconds > 0, got {cpu}"
+
+
+def test_cpu_user_microseconds_survives_a_discarded_worker(started_cluster):
+    _skip_msan()
+    qid = "cpu-short-1"
+
+    # The command does the same CPU work as `test_cpu_user_microseconds` but answers one row short
+    # and closes its stdout. The borrow then ends with a worker that cannot go back into the pool,
+    # so the teardown reaps it - and the CPU and peak resident set of that borrow live in
+    # `/proc/<pid>`, which the reap takes away. Sampled afterwards, the invocation reports as though
+    # the command had done nothing at all, which is the opposite of useful on a failing call.
+    with pytest.raises(Exception) as exc:
+        _run(
+            "SELECT sum(test_pool_udf_cpu_short(number)) FROM numbers(2000)",
+            qid,
+        )
+    assert "wrong result" in str(exc.value), str(exc.value)
+
+    cpu = _failed_query_profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    assert cpu > 0, f"Expected UserTimeMicroseconds > 0 for a discarded worker, got {cpu}"
+
+    # Peak memory is the other half of the same invariant, and it is lost earlier than CPU: a zombie
+    # still has readable `stat`, so CPU only disappears at the reap, while `VmHWM` goes the moment
+    # the process exits. Asserting only CPU would leave a regression that reports zero peak memory
+    # on failing borrows perfectly green, since peak is otherwise only checked on successful ones.
+    peak = _failed_query_profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
+    assert peak > 0, f"Expected PeakMemoryByteSeconds > 0 for a discarded worker, got {peak}"
+
+
+def test_cpu_and_peak_memory_survive_a_worker_that_answered_and_exited(started_cluster):
+    _skip_msan()
+    qid = "cpu-exit-1"
+
+    # The command does the same work as `test_cpu_user_microseconds`, answers every row, and closes
+    # its stdout: the query succeeds, but the worker cannot go back into the pool, and under
+    # `check_exit_code` its status is read right after the answer. That read reaps it. The borrow's
+    # CPU and peak resident set live in `/proc/<pid>`, so they have to be sampled before the reap -
+    # otherwise exactly this case, a command that did its work and left, reports zeros, while the
+    # one that answered short (the test above) is accounted for.
+    _run(
+        "SELECT sum(test_pool_udf_cpu_exit(number)) FROM numbers(2000)",
+        qid,
+    )
+
+    cpu = _profile_event_value(qid, "ExecutableUserDefinedFunctionUserTimeMicroseconds")
+    assert cpu > 0, f"Expected UserTimeMicroseconds > 0 for a worker that answered and exited, got {cpu}"
+
+    peak = _profile_event_value(qid, "ExecutableUserDefinedFunctionPeakMemoryByteSeconds")
+    assert peak > 0, f"Expected PeakMemoryByteSeconds > 0 for a worker that answered and exited, got {peak}"
 
 
 def test_system_time_microseconds(started_cluster):
