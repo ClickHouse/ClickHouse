@@ -345,8 +345,8 @@ where `web` is from the server configuration file:
 | `proxy`                                         | Proxy configuration for S3 endpoint. Each `uri` element inside `proxy` block should contain a proxy URL.                                                                                                                                      | -                                        |
 | `connect_timeout_ms`                            | Socket connect timeout in milliseconds.                                                                                                                                                                                                       | `10000` (10 seconds)                     |
 | `request_timeout_ms`                            | Request timeout in milliseconds.                                                                                                                                                                                                              | `5000` (5 seconds)                       |
-| `retry_attempts`                                | Number of retry attempts for failed requests.                                                                                                                                                                                                 | `10`                                     |
-| `single_read_retries`                           | Number of retry attempts for connection drops during read.                                                                                                                                                                                    | `4`                                      |
+| `s3_retry_attempts`                             | Number of retry attempts for failed requests.                                                                                                                                                                                                 | `500`                                    |
+| `s3_max_single_read_retries`                    | Number of retry attempts for connection drops during read.                                                                                                                                                                                    | `4`                                      |
 | `min_bytes_for_seek`                            | Minimum number of bytes to use seek operation instead of sequential read.                                                                                                                                                                     | `1 MB`                                   |
 | `metadata_path`                                 | Local filesystem path to store S3 metadata files.                                                                                                                                                                                             | `/var/lib/clickhouse/disks/<disk_name>/` |
 | `skip_access_check`                             | If `true`, skips disk access checks during startup.                                                                                                                                                                                           | `false`                                  |
@@ -359,8 +359,6 @@ where `web` is from the server configuration file:
 | `s3_max_put_burst`                              | Maximum concurrent PUT requests before hitting RPS limit.                                                                                                                                                                                     | Same as `s3_max_put_rps`                 |
 | `s3_max_get_rps`                                | Maximum GET requests per second before throttling.                                                                                                                                                                                            | `0` (unlimited)                          |
 | `s3_max_get_burst`                              | Maximum concurrent GET requests before hitting RPS limit.                                                                                                                                                                                     | Same as `s3_max_get_rps`                 |
-| `read_resource`                                 | Resource name for [scheduling](/concepts/features/configuration/server-config/workload-scheduling) read requests.                                                                                                                                                             | Empty string (disabled)                  |
-| `write_resource`                                | Resource name for [scheduling](/concepts/features/configuration/server-config/workload-scheduling) write requests.                                                                                                                                                            | Empty string (disabled)                  |
 | `key_template`                                  | Defines object key generation format using [re2](https://github.com/google/re2/wiki/Syntax) syntax. Requires `storage_metadata_write_full_object_key` flag. Incompatible with `root path` in `endpoint`. Requires `key_compatibility_prefix`. | -                                        |
 | `key_compatibility_prefix`                      | Required with `key_template`. Specifies the previous `root path` from `endpoint` for reading older metadata versions.                                                                                                                         | -                                        |
 | `read_only`                                      | Only allowing reading from the disk.                                                                                                                                                                                                          | -                                        |
@@ -467,7 +465,6 @@ Configuration markup:
             <account_name>account</account_name>
             <account_key>pass123</account_key>
             <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
-            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
             <skip_access_check>false</skip_access_check>
         </blob_storage_disk>
     </disks>
@@ -495,12 +492,12 @@ Authentication parameters (the disk will try all available methods **and** Manag
 
 | Parameter                            | Description                                                                 |
 |--------------------------------------|-----------------------------------------------------------------------------|
-| `s3_max_single_part_upload_size`     | Maximum size of a single block upload to Blob Storage.                      |
+| `max_single_part_upload_size`        | Maximum size of a single block upload to Blob Storage.                      |
 | `min_bytes_for_seek`                 | Minimum size of a seekable region.                                          |
 | `max_single_read_retries`            | Maximum number of attempts to read a chunk of data from Blob Storage.       |
 | `max_single_download_retries`        | Maximum number of attempts to download a readable buffer from Blob Storage. |
 | `thread_pool_size`                   | Maximum number of threads for `IDiskRemote` instantiation.                  |
-| `s3_max_inflight_parts_for_one_file` | Maximum number of concurrent put requests for a single object.              |
+| `max_inflight_parts_for_one_file`    | Maximum number of concurrent put requests for a single object.              |
 
 #### Other parameters {#azure-blob-storage-other-parameters}
 
@@ -508,8 +505,6 @@ Authentication parameters (the disk will try all available methods **and** Manag
 |----------------------------------|------------------------------------------------------------------------------------|------------------------------------------|
 | `metadata_path`                  | Local filesystem path to store metadata files for Blob Storage.                    | `/var/lib/clickhouse/disks/<disk_name>/` |
 | `skip_access_check`              | If `true`, skips disk access checks during startup.                                | `false`                                  |
-| `read_resource`                  | Resource name for [scheduling](/concepts/features/configuration/server-config/workload-scheduling) read requests.  | Empty string (disabled)                  |
-| `write_resource`                 | Resource name for [scheduling](/concepts/features/configuration/server-config/workload-scheduling) write requests. | Empty string (disabled)                  |
 | `metadata_keep_free_space_bytes` | Amount of free metadata disk space to reserve.                                     | -                                        |
 
 Examples of working configurations can be found in integration tests directory (see e.g. [test_merge_tree_azure_blob_storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) or [test_azure_blob_storage_zero_copy_replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
@@ -609,7 +604,7 @@ Example of disk configuration:
         <disks>
             <disk_s3>
                 <type>s3</type>
-                <endpoint>...
+                <endpoint>...</endpoint>
             </disk_s3>
             <disk_s3_encrypted>
                 <type>encrypted</type>
@@ -657,8 +652,9 @@ Example of configuration for versions later or equal to 22.8:
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 Example of configuration for versions earlier than 22.8:
@@ -683,8 +679,9 @@ Example of configuration for versions earlier than 22.8:
                     </main>
                 </volumes>
             </s3_cache>
-        <policies>
+        </policies>
     </storage_configuration>
+</clickhouse>
 ```
 
 File Cache **disk configuration settings**:
@@ -696,9 +693,8 @@ These settings should be defined in the disk configuration section.
 | `path`                                | String  | -          | **Required**. Path to the directory where cache will be stored.                                                                                                                              |
 | `max_size`                            | Size    | -          | **Required**. Maximum cache size in bytes or readable format (e.g., `10Gi`). Files are evicted using LRU policy when the limit is reached. Supports `ki`, `Mi`, `Gi` formats (since v22.10). |
 | `cache_on_write_operations`           | Boolean | `false`    | Enables write-through cache for `INSERT` queries and background merges. Can be overridden per query with `enable_filesystem_cache_on_write_operations`.                                      |
-| `enable_filesystem_query_cache_limit` | Boolean | `false`    | Enables per-query cache size limits based on `max_query_cache_size`.                                                                                                                         |
-| `enable_cache_hits_threshold`         | Boolean | `false`    | When enabled, data is cached only after being read multiple times.                                                                                                                           |
-| `cache_hits_threshold`                | Integer | `0`        | Number of reads required before data is cached (requires `enable_cache_hits_threshold`).                                                                                                     |
+| `enable_filesystem_query_cache_limit` | Boolean | `false`    | Enables per-query cache size limits based on `filesystem_cache_max_download_size`.                                                                                                                         |
+| `cache_hits_threshold`                | Integer | `0`        | Deprecated; has no effect.                                                                                                                          |
 | `enable_bypass_cache_with_threshold`  | Boolean | `false`    | Skips cache for large read ranges.                                                                                                                                                           |
 | `bypass_cache_threshold`              | Size    | `256Mi`    | Read range size that triggers cache bypass (requires `enable_bypass_cache_with_threshold`).                                                                                                  |
 | `max_file_segment_size`               | Size    | `8Mi`      | Maximum size of a single cache file in bytes or readable format.                                                                                                                             |
@@ -718,8 +714,8 @@ These settings should be defined in the disk configuration section.
 | `enable_filesystem_cache_on_write_operations`                 | Boolean | `false` (Cloud: `true`) | Enables write-through cache. Requires `cache_on_write_operations` in cache config.                                                                             |
 | `enable_filesystem_cache_log`                                 | Boolean | `false`                 | Enables detailed cache usage logging to `system.filesystem_cache_log`.                                                                                         |
 | `filesystem_cache_allow_background_download`                  | Boolean | `true`                  | Allows partially downloaded segments to be finished in the background. Disable to keep downloads in the foreground for the current query/session.             |
-| `max_query_cache_size`                                        | Size    | `false`                 | Maximum cache size per query. Requires `enable_filesystem_query_cache_limit` in cache config.                                                                  |
-| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`          | Controls behavior when `max_query_cache_size` is reached: <br/>- `true`: Stops downloading new data <br/>- `false`: Evicts old data to make space for new data |
+| `filesystem_cache_max_download_size` | UInt64  | `137438953472` (128 GiB) | Max remote filesystem cache size that can be downloaded by a single query. Requires `enable_filesystem_query_cache_limit` in cache config.                                                                  |
+| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`          | Controls behavior when `filesystem_cache_max_download_size` is reached: <br/>- `true`: Stops downloading new data <br/>- `false`: Evicts old data to make space for new data |
 
 <Warning>
 Cache configuration settings and cache query settings correspond to the latest ClickHouse version, 
@@ -1050,11 +1046,7 @@ SETTINGS storage_policy='web';
 
 #### Optional parameters {#optional-parameters-web}
 
-| Parameter                           | Description                                                                  | Default Value   |
-|-------------------------------------|------------------------------------------------------------------------------|-----------------|
-| `min_bytes_for_seek`                | The minimal number of bytes to use seek operation instead of sequential read | `1` MB          |
-| `remote_fs_read_backoff_threashold` | The maximum wait time when trying to read data for remote disk               | `10000` seconds |
-| `remote_fs_read_backoff_max_tries`  | The maximum number of attempts to read with backoff                          | `5`             |
+The `web` object storage backend reads only the `endpoint` parameter. There are no additional web-specific optional parameters; generic disk options still apply.
 
 If a query fails with an exception `DB:Exception Unreachable URL`, then you can try to adjust the settings: [http_connection_timeout](/reference/settings/session-settings/http#http_connection_timeout), [http_receive_timeout](/reference/settings/session-settings/http#http_receive_timeout), [keep_alive_timeout](/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
@@ -1065,7 +1057,7 @@ When loading files by `endpoint`, they must be loaded into `<endpoint>/store/` p
 
 If URL is not reachable on disk load when the server is starting up tables, then all errors are caught. If in this case there were errors, tables can be reloaded (become visible) via `DETACH TABLE table_name` -> `ATTACH TABLE table_name`. If metadata was successfully loaded at server startup, then tables are available straight away.
 
-Use [http_max_single_read_retries](/concepts/features/configuration/server-config/storing-data#web-storage) setting to limit the maximum number of retries during a single HTTP read.
+Use [`http_max_tries`](/reference/settings/session-settings/http-max#http_max_tries) to limit the number of HTTP read attempts, including the initial attempt. Use [`http_retry_initial_backoff_ms`](/reference/settings/session-settings/http-retry#http_retry_initial_backoff_ms) and [`http_retry_max_backoff_ms`](/reference/settings/session-settings/http-retry#http_retry_max_backoff_ms) to configure the initial and maximum delays between retries.
 
 ### Zero-copy Replication (not ready for production) {#zero-copy}
 

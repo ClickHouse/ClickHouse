@@ -104,6 +104,12 @@ std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
         res.hits += radix_hash_join_stats->hits;
         res.misses += radix_hash_join_stats->misses;
     }
+    if (auto hash_join_match_stats = getHashTablesStatistics<HashJoinMatchEntry>().getCacheStats())
+    {
+        res.entries += hash_join_match_stats->entries;
+        res.hits += hash_join_match_stats->hits;
+        res.misses += hash_join_match_stats->misses;
+    }
     return res;
 }
 
@@ -159,7 +165,15 @@ std::optional<HashJoinEntry> getSizeHint(const DB::StatsCollectingParams & stats
     return std::nullopt;
 }
 
+std::optional<HashJoinMatchEntry> getHashJoinMatchHint(const DB::StatsCollectingParams & stats_collecting_params)
+{
+    if (stats_collecting_params.isCollectionAndUseEnabled())
+        return DB::getHashTablesStatistics<HashJoinMatchEntry>().getSizeHint(stats_collecting_params);
+    return std::nullopt;
+}
+
 template class HashTablesStatistics<AggregationEntry>;
 template class HashTablesStatistics<HashJoinEntry>;
 template class HashTablesStatistics<RadixHashJoinEntry>;
+template class HashTablesStatistics<HashJoinMatchEntry>;
 }

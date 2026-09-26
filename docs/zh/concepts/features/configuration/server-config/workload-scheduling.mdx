@@ -462,45 +462,6 @@ graph TD
 * `precedence_allocation` - 按照静态优先次序执行驱逐 (值越小，优先次序越高) ；高优先次序的待处理分配会驱逐低优先次序的分配；子节点应指定 `precedence` (默认为 0) 。
 * `queue` - 层级结构中的叶节点，可容纳正在运行和待处理的分配。
 
-<div id="deprecated-configuration">
-  ## 已弃用的 XML 配置
-</div>
-
-另一种指定资源使用哪些磁盘的方式，是通过 server 的 `storage_configuration`：
-
-要为特定磁盘启用 IO 调度，必须在存储配置中指定 `read_resource` 和/或 `write_resource`。这样可以告诉 ClickHouse，对于给定磁盘的每个读写请求应使用哪个资源。读取资源和写入资源可以指向同一个资源名称，这对于本地 SSD 或 HDD 很有用。多个不同的磁盘也可以指向同一个资源，这对于远程磁盘很有用：例如，如果你希望在 &quot;production&quot; 和 &quot;development&quot; 工作负载 之间公平分配网络带宽。
-
-示例：
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-请注意，服务器配置选项的优先级高于通过 SQL 定义资源。
-
 <div id="see-also">
   ## 另请参阅
 </div>

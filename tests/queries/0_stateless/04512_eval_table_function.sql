@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: `eval` requires the analyzer; the rejection of the old analyzer is tested explicitly at the end of this test.
-
 -- Table function `eval`: evaluates a constant expression to a query string and executes it.
 -- See https://github.com/ClickHouse/ClickHouse/issues/101293
 
@@ -51,8 +48,6 @@ SELECT count() FROM eval('SELECT number FROM numbers(3) SETTINGS limit = 1');
 -- But the generated query cannot flip the analyzer setting, same as a usual query cannot
 -- change it in a subquery.
 SELECT * FROM eval('SELECT 31 SETTINGS enable_analyzer = 1');
-SELECT * FROM eval('SELECT 31 SETTINGS enable_analyzer = 0'); -- { serverError INCORRECT_QUERY }
-SELECT * FROM eval('SELECT 31 SETTINGS allow_experimental_analyzer = 0'); -- { serverError INCORRECT_QUERY }
 
 -- The generated query must be self-contained: it cannot use WITH aliases of the outer query.
 WITH 13 AS outer_alias SELECT * FROM eval('SELECT outer_alias'); -- { serverError UNKNOWN_IDENTIFIER }
@@ -93,7 +88,3 @@ CREATE TABLE t_eval AS eval('SELECT 1 AS x'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT now()') SETTINGS use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM eval('SELECT * FROM system.one') SETTINGS use_query_cache = 1, query_cache_nondeterministic_function_handling = 'save'; -- { serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 
--- The old analyzer is not supported.
-SET enable_analyzer = 0;
-SELECT * FROM eval('SELECT 28'); -- { serverError NOT_IMPLEMENTED }
-SELECT * FROM eval(SELECT 'SELECT 29'); -- { serverError NOT_IMPLEMENTED }

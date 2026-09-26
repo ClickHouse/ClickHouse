@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
+#include <Core/Joins.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 
@@ -75,6 +76,7 @@ public:
     ~RadixHashJoin() override;
 
     std::string getName() const override { return "RadixHashJoin"; }
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::RADIX_JOIN); }
     const TableJoin & getTableJoin() const override;
 
     /// Build is parallel: the build path only accumulates blocks into per-lane stores (no shared map).

@@ -11,11 +11,11 @@ CREATE TABLE t_adaptive_projection
     PROJECTION p_order (SELECT v, k ORDER BY v)
 )
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 1;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 1;
 
 CREATE TABLE t_adaptive_projection_off AS t_adaptive_projection
 ENGINE = MergeTree ORDER BY k
-SETTINGS min_bytes_for_wide_part = 0, allow_experimental_adaptive_codec_selection = 0;
+SETTINGS min_bytes_for_wide_part = 0, enable_adaptive_codec_selection = 0;
 
 INSERT INTO t_adaptive_projection SELECT number, 99999 - number FROM numbers(50000);
 INSERT INTO t_adaptive_projection SELECT number, 99999 - number FROM numbers(50000, 50000);

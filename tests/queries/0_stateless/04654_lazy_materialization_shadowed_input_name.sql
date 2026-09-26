@@ -19,7 +19,6 @@ SET optimize_move_to_prewhere = 0;
 SET query_plan_optimize_lazy_materialization = 1, query_plan_max_limit_for_lazy_materialization = 10;
 
 SELECT x, y FROM lm_mv ORDER BY x LIMIT 3;
-SELECT x, y FROM lm_mv ORDER BY x LIMIT 3 SETTINGS enable_analyzer = 0;
 
 DROP ROW POLICY rp_04654 ON lm_mv;
 DROP VIEW lm_mv;

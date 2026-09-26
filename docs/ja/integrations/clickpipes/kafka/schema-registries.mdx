@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-ClickPipes は、Avro および Protobuf でエンコードされたトピックをデコードするためのスキーマレジストリとの連携をサポートしています。
+ClickPipes は、Avro および Protobuf でエンコードされたレコード値と[構造化 Kafka キー](/ja/integrations/clickpipes/kafka/reference#structured-message-keys)をデコードするためのスキーマレジストリとの連携をサポートしています。
 
 <div id="supported-schema-registries">
   ## Kafka ClickPipes でサポートされるスキーマレジストリ
@@ -59,11 +59,13 @@ Kafka ブローカーに [reverse private endpoint](/ja/integrations/clickpipes/
 
 ClickPipes は、設定されたスキーマレジストリからスキーマを動的に取得して適用します。
 
-* メッセージにスキーマ ID が埋め込まれている場合は、それを使ってスキーマを取得します。
-* メッセージにスキーマ ID が埋め込まれていない場合は、ClickPipe の設定で指定されたスキーマ ID または subject 名を使ってスキーマを取得します。
-* メッセージに埋め込みのスキーマ ID がなく、かつ ClickPipe の設定でスキーマ ID も subject 名も指定されていない場合、スキーマは取得されず、ClickPipes のエラーテーブルに `SOURCE_SCHEMA_ERROR` が記録され、そのメッセージはスキップされます。
-* メッセージがスキーマに準拠していない場合、ClickPipes のエラーテーブルに `DATA_PARSING_ERROR` が記録され、そのメッセージはスキップされます。
+* レコード値にスキーマ ID が埋め込まれている場合は、それを使ってスキーマを取得します。
+* レコード値にスキーマ ID が埋め込まれていない場合は、ClickPipe の設定で指定されたスキーマ ID または subject 名を使ってスキーマを取得します。
+* レコード値に埋め込みのスキーマ ID がなく、かつ ClickPipe の設定でスキーマ ID も subject 名も指定されていない場合、スキーマは取得されず、ClickPipes のエラーテーブルに `SOURCE_SCHEMA_ERROR` が記録され、そのメッセージはスキップされます。
+* レコード値がスキーマに準拠していない場合、ClickPipes のエラーテーブルに `DATA_PARSING_ERROR` が記録され、そのメッセージはスキップされます。
 * Protobuf スキーマのみ: ClickPipes は、依存関係として定義された import 済みのスキーマを読み込みます。外部参照を含む Avro スキーマは、現時点ではサポートされていません。
+
+`_key.id` などのフィールドのマッピングが設定されている場合、ClickPipes は Kafka のキーに埋め込まれたスキーマ ID をレコード値とは独立して解決します。キーには異なるスキーマ ID を使用できますが、値と同じレジストリファミリーおよびシリアライゼーションフォーマットを使用する必要があります。解決されたキースキーマはキャッシュされ、スキーマ変更は自動的に検出されます。
 
 <div id="aws-glue-schema-registry">
   ## AWS Glue Schema Registry
@@ -213,7 +215,7 @@ Kafka ClickPipe がすでに IAM を使用して MSK に認証している場合
   ## スキーママッピング
 </div>
 
-次のルールは、Confluent 互換レジストリと AWS Glue Schema Registry の両方に適用されます。これらのルールは、取得したスキーマと ClickHouse の宛先テーブルのマッピングを規定します。
+次のルールは、Confluent 互換レジストリと AWS Glue Schema Registry の両方に適用されます。これらのルールは、取得した値のスキーマと ClickHouse の宛先テーブルのマッピングを規定し、`_key.` プレフィックスを持つ構造化キーからマッピングされたレコードまたはメッセージのフィールドにも適用されます。
 
 * スキーマに、ClickHouse の宛先マッピングに含まれていないフィールドがある場合、そのフィールドは無視されます。
 * スキーマに、ClickHouse の宛先マッピングで定義されているフィールドがない場合、ClickHouse のカラムには 0 や空文字列などの「ゼロ」値が設定されます。なお、`DEFAULT` 式はサポートされていません。

@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <limits>
 #include <numeric>
 #include <ranges>
 
@@ -548,4 +549,100 @@ TEST(HashTable, StringHashMapMoveConstructorDoesNotAllocate)
     ALLOW_ALLOCATIONS_IN_SCOPE;
 
     check_map(dst2);
+}
+
+namespace
+{
+
+/// Records the allocation overlap required by the memory tracker before a replacement is admitted.
+struct GrowthTrackingAllocator : HashTableAllocator
+{
+    static inline size_t allocated_bytes = 0;
+    static inline size_t peak_bytes = 0;
+
+    void * alloc(size_t bytes)
+    {
+        void * result = HashTableAllocator::alloc(bytes);
+        allocated_bytes += bytes;
+        peak_bytes = std::max(peak_bytes, allocated_bytes);
+        return result;
+    }
+
+    void * realloc(void * buffer, size_t old_bytes, size_t new_bytes)
+    {
+        peak_bytes = std::max(peak_bytes, allocated_bytes + new_bytes);
+        void * result = HashTableAllocator::realloc(buffer, old_bytes, new_bytes);
+        allocated_bytes += new_bytes - old_bytes;
+        return result;
+    }
+
+    void free(void * buffer, size_t bytes)
+    {
+        HashTableAllocator::free(buffer, bytes);
+        allocated_bytes -= bytes;
+    }
+};
+
+
+template <typename Grower>
+void checkGrowthAllocations()
+{
+    using Table = HashSet<UInt64, DefaultHash<UInt64>, Grower, GrowthTrackingAllocator>;
+    Table table;
+    UInt64 next_key = 1;
+    for (size_t additional_keys : {0, 1, 2, 20, 500, 2000, 40000})
+    {
+        const size_t initial_bytes = GrowthTrackingAllocator::allocated_bytes;
+        GrowthTrackingAllocator::peak_bytes = initial_bytes;
+        const size_t growth_memory = table.estimateGrowthMemory(additional_keys);
+        for (size_t i = 0; i < additional_keys; ++i)
+            table.insert(next_key++);
+        EXPECT_EQ(GrowthTrackingAllocator::peak_bytes, initial_bytes + growth_memory);
+    }
+}
+
+}
+
+TEST(HashTableGrowth, MatchesSuccessiveReplacementAllocations)
+{
+    checkGrowthAllocations<HashTableGrower<2>>();
+    checkGrowthAllocations<HashTableGrowerWithPrecalculation<2>>();
+    checkGrowthAllocations<TwoLevelHashTableGrower<15>>();
+}
+
+TEST(HashTableGrowth, SaturatesAtRepresentableSize)
+{
+    constexpr size_t max_size = std::numeric_limits<size_t>::max();
+    auto check = [&]<typename Key, typename Grower>()
+    {
+        HashSet<Key, DefaultHash<Key>, Grower> table;
+        const size_t initial_bytes = table.getBufferSizeInBytes();
+        EXPECT_EQ(table.estimateGrowthMemory(max_size), max_size);
+        EXPECT_EQ(table.estimateGrowthMemory(max_size / 2), max_size);
+        EXPECT_TRUE(table.empty());
+        EXPECT_EQ(table.getBufferSizeInBytes(), initial_bytes);
+
+        table.insert(1);
+        EXPECT_EQ(table.estimateGrowthMemory(max_size), max_size);
+        EXPECT_EQ(table.size(), 1);
+        EXPECT_EQ(table.getBufferSizeInBytes(), initial_bytes);
+    };
+    check.template operator()<UInt8, HashTableGrower<2>>();
+    check.template operator()<UInt64, HashTableGrower<2>>();
+    check.template operator()<UInt8, HashTableGrowerWithPrecalculation<2>>();
+    check.template operator()<UInt64, HashTableGrowerWithPrecalculation<2>>();
+    check.template operator()<UInt8, TwoLevelHashTableGrower<15>>();
+    check.template operator()<UInt64, TwoLevelHashTableGrower<15>>();
+    check.template operator()<UInt8, StringHashTableGrower<2>>();
+    check.template operator()<UInt64, StringHashTableGrower<2>>();
+}
+
+TEST(HashTableGrowth, SaturatesCombinedReplacementMemory)
+{
+    /// Each buffer fits in `size_t`, but accounting for both during replacement exceeds it.
+    HashMap<UInt64, std::pair<UInt64, UInt64>> table;
+    const size_t initial_bytes = table.getBufferSizeInBytes();
+    EXPECT_EQ(table.estimateGrowthMemory(size_t(1) << 58), std::numeric_limits<size_t>::max());
+    EXPECT_TRUE(table.empty());
+    EXPECT_EQ(table.getBufferSizeInBytes(), initial_bytes);
 }

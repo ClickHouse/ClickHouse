@@ -539,6 +539,10 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+/// the part of a projection declaration after its name: `(SELECT ...)` or `INDEX ... TYPE ...`,
+/// optionally followed by `WITH SETTINGS (...)`
+bool parseProjectionDeclarationBody(IParser::Pos & pos, Expected & expected, const String & name, ASTPtr & node);
+
 class ParserProjectionDeclaration : public IParserBase
 {
 protected:
@@ -636,14 +640,6 @@ class ParserCreateTableQuery : public IParserBase
 {
 protected:
     const char * getName() const override { return "CREATE TABLE or ATTACH TABLE query"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-/// CREATE|ATTACH WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE] AS SELECT ...
-class ParserCreateWindowViewQuery : public IParserBase
-{
-protected:
-    const char * getName() const override { return "CREATE WINDOW VIEW query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

@@ -3,6 +3,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <vector>
 #include <sys/types.h>
@@ -112,11 +113,15 @@ protected:
 
     /// Named arguments carrying NATS credentials. They are the setting names, because the `NATS` engine
     /// takes its arguments as overrides of a named collection (`NATS(collection, nats_token = '...')`).
+    /// `nats_server_list` is a destination and can carry URI userinfo credentials, so hide it whole.
+    /// `nats_url` is not here: it is hidden only when its value carries an '@'.
     /// Keep in sync with `NATS::SETTINGS_TO_HIDE`, which masks the same secrets in the `SETTINGS` clause.
-    /// `nats_credentials` is not a supported setting anymore, but the query is formatted for logging
-    /// before the overrides are validated, so the old spelling has to stay masked.
     static constexpr std::string_view nats_secret_keys[]
-        = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials"};
+        = {"nats_password", "nats_token", "nats_credential_file", "nats_credentials", "nats_server_list"};
+
+    /// As `nats_secret_keys`, for RabbitMQ; `rabbitmq_address` is hidden only when it carries an '@'.
+    /// Keep in sync with `RabbitMQ::SETTINGS_TO_HIDE`.
+    static constexpr std::string_view rabbitmq_secret_keys[] = {"rabbitmq_password"};
 
     void markSecretArgument(size_t index, bool argument_is_named = false);
 
@@ -164,14 +169,14 @@ protected:
     void findRedisTableEngineSecretArguments();
     void findArrowFlightSecretArguments();
     void findXDBCSecretArguments();
-
-    /// Similar to `findSecretNamedArgument`, but if the value is a URI with credentials,
-    /// masks only the password part instead of hiding the entire value.
-    void maskXDBCSecretNamedArgument(std::string_view key, size_t start);
-
     void findS3FunctionSecretArguments(bool is_cluster_function);
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function);
     bool maskAzureConnectionString(ssize_t url_arg_idx, bool argument_is_named = false, size_t start = 0);
+    /// Whether the arguments an `AzureBlobStorage(named_collection, ...)` destination or table takes
+    /// from `start` can be shown: only an argument written here can carry a credential, and each has
+    /// to be readable enough to tell that it does not. `positional_limit` bounds the plain literals
+    /// read beside the overrides: one filename for a backup locator, none for a table engine.
+    bool azureCollectionArgumentsAreShowable(size_t start, size_t positional_limit);
     /// Masks the secrets of every URL form (`url`/`urlCluster` table functions, the `URL` table
     /// engine, and their named-collection variants): the userinfo password of the url positional or a
     /// named `url = ...` override, and the `headers(...)` values at any position. `url` is at
@@ -180,6 +185,18 @@ protected:
 
     bool tryGetStringFromArgument(size_t arg_idx, String * res, bool allow_identifier = true) const;
     static bool tryGetStringFromArgument(const AbstractFunction::Argument & argument, String * res, bool allow_identifier = true);
+
+    /// `BackupInfo` keeps named overrides and a trailing map for every backup engine, including the
+    /// ones that read neither, so an argument that is not a plain literal can carry a credential.
+    static bool hasOnlyLiteralArguments(const AbstractFunction & function);
+
+    /// Whether a backup locator names its destination with exactly the literal arguments its engine
+    /// accepts, and therefore holds no credential. An engine that takes fewer rejects the rest only
+    /// after the statement has been formatted for logging, so the count has to be checked here too.
+    static bool isCredentialFreeBackupLocator(const AbstractFunction & function);
+
+    /// Hides every argument, for a shape whose valid slots cannot be established.
+    void maskEveryArgument();
 
     void findRemoteFunctionSecretArguments();
 
@@ -200,13 +217,20 @@ protected:
     void findRedisFunctionSecretArguments();
     void findYTsaurusStorageTableEngineSecretArguments();
     void findBigQuerySecretArguments();
+    void findBrokerTableEngineSecretArguments(
+        std::span<const std::string_view> secret_keys, std::string_view address_key);
     void findNATSTableEngineSecretArguments();
+    void findRabbitMQTableEngineSecretArguments();
     void findDatabaseEngineSecretArguments();
     void findMySQLDatabaseSecretArguments();
     void findS3DatabaseSecretArguments();
     void findDataLakeCatalogSecretArguments();
     void findBackupDatabaseSecretArguments();
     void findBackupNameSecretArguments();
+
+    /// A backup destination reads a different signature than the table engine of the same name, so the
+    /// table-engine rule leaves an argument it does not model visible.
+    void findAzureBlobStorageBackupSecretArguments();
 
     /// Whether a specified argument can be the name of a named collection?
     bool isNamedCollectionName(size_t arg_idx) const;
@@ -219,6 +243,13 @@ protected:
     /// Marks *every* occurrence, not just the first: a malformed query is formatted for logging before
     /// duplicate-key validation runs, so `session_token = 'a', session_token = 'b'` must hide both.
     bool findSecretNamedArgument(std::string_view key, size_t start = 0);
+
+    /// Hides the value of every `key = value` argument from `start` on whose key is not a plain literal.
+    void markNamedArgumentsWithUnreadableKeys(size_t start);
+
+    /// The raw indexes of the arguments from `start` on that are not `key = value` pairs, in order. A
+    /// positional argument after the first named one is hidden instead of listed: its slot is unknowable.
+    std::vector<size_t> classifyPositionalArguments(size_t start = 0);
 
     /// Masks the secrets of an S3 named-collection form: the secret named overrides (every occurrence,
     /// in any order; the span covering them may hide a non-secret argument in between, which is safe)
