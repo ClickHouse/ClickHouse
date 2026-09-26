@@ -1,0 +1,49 @@
+-- Tags: long
+-- long: fast locally, but the spilling joins exceed the flaky-check time limit on heavily
+-- loaded sanitizer runners.
+
+-- Randomized differential check for mixed (cross-side non-equi) JOIN ON conditions in the
+-- partial merge join: compare order-independent digests of the join result between `hash` and
+-- `partial_merge`, with settings that force right-side spilling, small sorted right blocks
+-- (equal-key runs span blocks) and result cuts (continuations).
+-- The small deterministic query matrix lives in
+-- 04838_join_on_mixed_conditions_partial_merge_{matrix,splits,any_nullable}.sql.j2.
+-- Note: `max_rows_in_join` is applied only to `partial_merge` queries. The hash join treats it
+-- as a hard limit (`join_overflow_mode`), while the partial merge join spills to disk.
+
+SET enable_analyzer = 1;
+SET join_use_nulls = 0;
+-- The CI harness randomizes the swap setting: pin it so that the right side is the spilled one
+-- and both algorithms run the same plan.
+SET query_plan_join_swap_table = 'false';
+
+DROP TABLE IF EXISTS big1;
+DROP TABLE IF EXISTS big2;
+
+CREATE TABLE big1 (key UInt32, x UInt32, payload String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE big2 (key UInt32, y UInt32, payload String) ENGINE = MergeTree ORDER BY tuple();
+
+-- Skewed keys: key = number % 50, so 60 duplicates per key on each side.
+INSERT INTO big1 SELECT number % 50, number % 37, 'l' || toString(number) FROM numbers(3000);
+INSERT INTO big2 SELECT number % 50, number % 41, 'r' || toString(number) FROM numbers(3000);
+
+DROP TABLE IF EXISTS digests;
+CREATE TABLE digests (algorithm String, join_type String, cnt UInt64, digest UInt64) ENGINE = Memory;
+
+{% for join_type in ['LEFT', 'INNER', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'partial_merge'] -%}
+INSERT INTO digests
+SELECT '{{ algorithm }}', '{{ join_type }}', count(), sum(cityHash64(big1.key, big1.x, big1.payload, big2.key, big2.y, big2.payload))
+FROM big1 {{ join_type }} JOIN big2 ON big1.key = big2.key AND big1.x < big2.y
+SETTINGS join_algorithm = '{{ algorithm }}'{% if algorithm == 'partial_merge' %}, partial_merge_join_rows_in_right_blocks = 50, max_rows_in_join = 500, max_joined_block_size_rows = 500{% endif %};
+{% endfor -%}
+{% endfor -%}
+
+-- { echoOn }
+SELECT join_type, countDistinct((cnt, digest)) = 1 AS identical, anyIf(cnt, algorithm = 'hash') > 0 AS non_empty
+FROM digests GROUP BY join_type ORDER BY join_type;
+-- { echoOff }
+
+DROP TABLE digests;
+DROP TABLE big1;
+DROP TABLE big2;
