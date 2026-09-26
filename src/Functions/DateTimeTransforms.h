@@ -1264,8 +1264,10 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
 
         /// The result keeps the time of day of the origin, which the comparison of the days of month above ignores.
         /// If the argument is earlier in the day than the origin, the bucket starts one interval before.
+        /// `offset` is in whole seconds and `t` is non-negative, so `offset > scaled_time` is the same as
+        /// `offset * scale_multiplier > t`, but cannot overflow near the top of the `DateTime64` range.
         Int64 offset = time_zone.addMonths(time_zone.toDate(scaled_origin), month_multiplier) - time_zone.toDate(scaled_origin);
-        if (month_multiplier >= months && offset * scale_multiplier > t)
+        if (month_multiplier >= months && offset > scaled_time)
         {
             month_multiplier -= months;
             offset = time_zone.addMonths(time_zone.toDate(scaled_origin), month_multiplier) - time_zone.toDate(scaled_origin);
