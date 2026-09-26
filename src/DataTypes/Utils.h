@@ -19,4 +19,17 @@ namespace DB
   */
 bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type);
 
+/// Whether a value of this type is converted to a `Field` that no longer tells which type the
+/// value actually has. A `Variant` flattens a row to the `Field` of its active alternative
+/// (`ColumnVariant::operator []`) and `DataTypeVariant::equals` allows several aggregate-state
+/// alternatives that are compatible by state representation; `Dynamic` and `JSON` similarly store
+/// values of types that are not fixed by the column type. Two values on different alternatives can
+/// then produce equal `Field`s although the alternative itself is a part of the value and is
+/// observable (e.g. by `variantType`).
+///
+/// Only these three types are checked, not `IDataType::hasDynamicSubcolumns`: the latter is also
+/// true for a plain `Map`, which merely exposes the `m.keys` and `m.values` virtual subcolumns while
+/// the type of every value it holds is still fixed by the declared `Map(K, V)`.
+bool typeCanHideTheValueType(const IDataType & type);
+
 }
