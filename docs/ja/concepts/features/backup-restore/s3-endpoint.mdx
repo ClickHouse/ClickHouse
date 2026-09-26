@@ -52,9 +52,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
 <br />
 
 <Steps>
-  <Step>
-    #### セットアップ
-
+  <Step title="セットアップ" id="create-a-table">
     以下のデータベースとテーブルを作成し、ランダムなデータをいくつか挿入します。
 
     ```sql
@@ -76,9 +74,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### ベースバックアップを作成する
-
+  <Step title="ベースバックアップを作成する" id="create-a-base-initial-backup">
     増分バックアップを開始するには、*ベース*バックアップが必要です。S3 の宛先の
     最初のパラメータは S3 エンドポイントで、その後にこのバックアップで使用する
     bucket 内の directory が続きます。この例では、directory 名は `my_backup` です。
@@ -100,9 +96,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### さらにデータを追加する
-
+  <Step title="さらにデータを追加する" id="add-more-data">
     増分バックアップには、ベースバックアップと
     バックアップ対象のテーブルの現在の内容との差分が保存されます。増分バックアップを取得する前に、
     さらにデータを追加してください。
@@ -114,9 +108,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 増分バックアップを取得する
-
+  <Step title="増分バックアップを取得する" id="take-an-incremental-backup">
     このバックアップコマンドはベースバックアップの場合と似ていますが、`SETTINGS base_backup` とベースバックアップの保存場所を追加で指定します。増分バックアップの宛先はベースバックアップと同じディレクトリではありません。エンドポイントは同じですが、バケット内の書き込み先ディレクトリは異なります。ベースバックアップは `my_backup` にあり、増分バックアップは `my_incremental` に書き込まれます:
 
     ```sql
@@ -139,9 +131,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### インクリメンタルバックアップから復元
-
+  <Step title="インクリメンタルバックアップから復元" id="restore-from-the-incremental-backup">
     このコマンドは、インクリメンタルバックアップを新しいテーブル `test_table_restored` に復元します。
     インクリメンタルバックアップを復元する際は、ベースバックアップの内容も含まれます。
     復元時に指定するのは、**インクリメンタルバックアップ** のみです。
@@ -161,9 +151,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 件数を確認する
-
+  <Step title="件数を確認する" id="verify-the-count">
     元のテーブル `data` には 2 回 insert されており、1 回は 1,000 行、もう 1 回は 100 行で、合計 1,100 行です。
     restore したテーブルに 1,100 行あることを確認します:
 
@@ -179,9 +167,7 @@ S3('<s3 endpoint>/<directory>', '<access key id>', '<secret access key>', '<extr
     ```
   </Step>
 
-  <Step>
-    #### 内容を確認する
-
+  <Step title="内容を確認する" id="verify-the-content">
     ここでは、元のテーブル `test_table` の内容と、復元したテーブル `test_table_restored` の内容を比較します。
 
     ```sql

@@ -22,9 +22,7 @@ Esta guía asume que ya has completado [la configuración de tu OpenTelemetry Co
 El ClickStack collector puede desplegarse como un **contenedor de Docker** (consulta [la configuración de tu OpenTelemetry Collector](/es/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)) o como un **release de Helm** en Kubernetes mediante el gráfico de Helm oficial de OpenTelemetry con la imagen del ClickStack collector (consulta [Despliegue del collector](/es/clickstack/ingesting-data/collector#configuring-the-collector)). **Asegúrate de haber anotado su endpoint de OTLP** y el `OTLP_AUTH_TOKEN` que configuraste al desplegarlo.
 
 <Steps>
-  <Step>
-    ## Reúne los requisitos previos
-
+  <Step title="Reúne los requisitos previos" id="gather-prerequisites">
     Necesitarás:
 
     * Una **cuenta de AWS** con uno o más grupos de logs de CloudWatch y credenciales con los permisos de IAM que se indican a continuación.
@@ -33,9 +31,7 @@ El ClickStack collector puede desplegarse como un **contenedor de Docker** (cons
     * El valor de `OTLP_AUTH_TOKEN` que configuraste en tu ClickStack collector. Si no lo protegiste, puedes quitar la cabecera `authorization` de la configuración siguiente.
   </Step>
 
-  <Step>
-    ## Configurar las credenciales de AWS
-
+  <Step title="Configurar las credenciales de AWS" id="configure-aws">
     El receiver toma las credenciales de AWS de las variables de entorno estándar. Expórtalas en el equipo que ejecutará el collector.
 
     **Para usuarios de AWS SSO:**
@@ -83,9 +79,7 @@ El ClickStack collector puede desplegarse como un **contenedor de Docker** (cons
     </Info>
   </Step>
 
-  <Step>
-    ## Configura el receiver de CloudWatch
-
+  <Step title="Configura el receiver de CloudWatch" id="configure-receiver">
     Exporta el endpoint y el token de autenticación de tu ClickStack collector y luego crea un `otel-collector-config.yaml`.
 
     <Info>
@@ -220,9 +214,7 @@ El ClickStack collector puede desplegarse como un **contenedor de Docker** (cons
     </Info>
   </Step>
 
-  <Step>
-    ## Inicia el collector receptor
-
+  <Step title="Inicia el collector receptor" id="start-collector">
     Crea un `docker-compose.yaml` junto a `otel-collector-config.yaml`. La entrada `extra_hosts` permite que el contenedor acceda a un ClickStack collector que se ejecuta en el mismo host mediante `host.docker.internal`; el montaje `bind` en formato largo genera un error explícito si falta el archivo de configuración, en lugar de crear silenciosamente un directorio vacío:
 
     ```shell
@@ -262,9 +254,7 @@ El ClickStack collector puede desplegarse como un **contenedor de Docker** (cons
     ```
   </Step>
 
-  <Step>
-    ## Confirma en la UI de ClickStack
-
+  <Step title="Confirma en la UI de ClickStack" id="confirm-in-ui">
     Abre tu servicio en la [consola de ClickHouse Cloud](https://console.clickhouse.cloud) y selecciona **ClickStack** en el menú de la izquierda.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Iniciar ClickStack" border />
@@ -296,9 +286,7 @@ El ClickStack collector puede desplegarse como un **contenedor de Docker** (cons
     * Confirma que `OTLP_AUTH_TOKEN` coincide con el valor configurado en tu ClickStack collector.
   </Step>
 
-  <Step>
-    ## Importa el dashboard de CloudWatch (opcional)
-
+  <Step title="Importa el dashboard de CloudWatch (opcional)" id="import-dashboard">
     Hay disponible para descargar un dashboard preconfigurado con volumen de logs, desglose por nivel de gravedad y distribución de errores.
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Descarga `cloudwatch-logs-dashboard.json`</TrackedLink>; luego, en la UI de ClickStack, ve a **Dashboards** y haz clic en **Import**.
@@ -310,9 +298,7 @@ El ClickStack collector puede desplegarse como un **contenedor de Docker** (cons
     <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="Diálogo Finish Import" />
   </Step>
 
-  <Step>
-    ## Lecturas adicionales
-
+  <Step title="Lecturas adicionales" id="further-reading">
     * [Referencia de la integración con AWS CloudWatch Logs](/es/clickstack/integration-examples/cloudwatch) para el conjunto de datos de demostración, la guía completa de solución de problemas y las opciones de ajuste.
     * [Protección del collector](/es/clickstack/ingesting-data/collector#securing-the-collector) con TLS en el endpoint OTLP y usuarios de ingestión con el mínimo privilegio necesario.
     * [Procesamiento, filtrado y enriquecimiento](/es/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) de eventos en el collector.

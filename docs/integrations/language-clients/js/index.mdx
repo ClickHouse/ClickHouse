@@ -32,7 +32,7 @@ The client source code is available in the [ClickHouse-JS GitHub repository](htt
 The JS client ships with AI agent skills that can help coding agents work with the client. Install them with:
 
 ```sh
-npm skills add ClickHouse/clickhouse-js
+npx skills add ClickHouse/clickhouse-js
 ```
 </Info>
 
@@ -948,7 +948,7 @@ Though the server can accept it as a number, it is returned as a string in `JSON
 integer overflow as max values for these types are bigger than `Number.MAX_SAFE_INTEGER`.
 
 This behavior, however, can be modified
-with [`output_format_json_quote_64bit_integers` setting](/reference/settings/formats#output_format_json_quote_64bit_integers)
+with [`output_format_json_quote_64bit_integers` setting](/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
 .
 
 **Example:** Adjust the JSON output format for 64-bit numbers.
@@ -1034,7 +1034,7 @@ await client.query({
 })
 ```
 
-Check https://clickhouse.com/docs/interfaces/cli#cli-queries-with-parameters-syntax for additional details.
+Check https://clickhouse.com/docs/interfaces/client#cli-queries-with-parameters-syntax for additional details.
 
 ### Compression {#compression}
 

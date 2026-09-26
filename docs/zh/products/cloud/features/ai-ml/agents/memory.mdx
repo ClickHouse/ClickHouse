@@ -2,12 +2,12 @@
 sidebarTitle: 'Memory'
 slug: /cloud/features/ai-ml/agents/memory
 title: 'Memory'
-description: 'ClickHouse 智能体中的 Memory 和个性化'
-keywords: ['AI', 'ClickHouse Cloud', '智能体', 'Memory', '个性化']
+description: 'ClickHouse agent中的 Memory 和个性化'
+keywords: ['AI', 'ClickHouse Cloud', 'agent', 'Memory', '个性化']
 doc_type: 'reference'
 ---
 
-import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge />
@@ -32,7 +32,7 @@ Memory 是按用户划分的存储，agent 可以在不同对话中调用其中�
 
 <Image img="/images/cloud/agent-builder/memory/memories.webp" alt="记忆面板，显示左侧导航中高亮的大脑图标、过滤输入框、Add 按钮、使用记忆复选框、一条带有编辑和删除控件的记忆条目，以及一个 Admin Settings 按钮" size="sm" />
 
-记忆仅对当前用户私有。其他人的agent绝不会看到你的条目，你的agent也绝不会看到他们的条目。
+Memory仅对当前用户私有。其他人的agent绝不会看到你的条目，你的agent也绝不会看到他们的条目。
 
 <div id="create-memory">
   ### 创建一条 Memory
@@ -59,22 +59,22 @@ Memory 是按用户划分的存储，agent 可以在不同对话中调用其中�
 <Image img="/images/cloud/agent-builder/memory/edit.webp" alt="高亮显示 Edit Memory 铅笔图标的 Memory 条目" size="sm" />
 
 <div id="delete-memory">
-  ### 删除Memory条目
+  ### 删除 Memory
 </div>
 
-点击某条Memory上的垃圾桶图标即可将其删除。
+点击某条 Memory 上的垃圾桶图标即可将其删除。
 
-<Image img="/images/cloud/agent-builder/memory/delete.webp" alt="高亮显示“删除Memory”垃圾桶图标的Memory条目" size="sm" />
+<Image img="/images/cloud/agent-builder/memory/delete.webp" alt="高亮显示“删除 Memory”垃圾桶图标的 Memory 条目" size="sm" />
 
 <div id="toggle-memory">
   ## 开启或关闭Memory
 </div>
 
-使用Memory面板顶部的 **使用Memory** 复选框来开启或关闭Memory。对于不希望被存储的敏感话题，或不需要个性化的一次性对话，请将其关闭。
+使用Memory面板顶部的 **使用记忆** 复选框来开启或关闭Memory。对于不希望被存储的敏感话题，或不需要个性化的一次性对话，请将其关闭。
 
 关闭Memory后，agent 不会从你的Memory存储中读取内容，也不会向其中写入内容。
 
-<Image img="/images/cloud/agent-builder/memory/toggle.webp" alt="Memory面板，顶部的“使用Memory”复选框已高亮显示" size="sm" />
+<Image img="/images/cloud/agent-builder/memory/toggle.webp" alt="Memory面板，顶部的“使用记忆”复选框已高亮显示" size="sm" />
 
 <div id="memory-best-practices">
   ## Memory 最佳实践

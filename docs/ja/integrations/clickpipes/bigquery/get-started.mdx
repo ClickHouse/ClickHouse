@@ -21,9 +21,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * 初期ロードでは、ステージング用にユーザーが用意した Google Cloud Storage (GCS) バケットが必要です。[公式ドキュメント](https://docs.cloud.google.com/storage/docs/creating-buckets)に従って、ClickPipe 専用のバケットを作成することを推奨します。将来的には、この中間バケットは ClickPipes が提供および管理する予定です。
 
 <Steps>
-  <Step>
-    ## データソースを選択する
-
+  <Step title="データソースを選択する" id="1-select-the-data-source">
     **1.** ClickHouse Cloud で、メインナビゲーションメニューから **Data sources** を選択し、**Create ClickPipe** をクリックします。
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
@@ -33,12 +31,10 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="BigQuery タイルを選択" size="lg" border />
   </Step>
 
-  <Step>
-    ## ClickPipe 接続を設定する
-
+  <Step title="ClickPipe 接続を設定する" id="2-setup-your-clickpipe-connection">
     新しい ClickPipe を設定するには、BigQuery データウェアハウスへの接続方法と認証情報に加え、ステージング用の GCS バケットを指定する必要があります。
 
-    **1.** ClickPipes 用に作成したサービスアカウントの `.json` 秘密鍵をアップロードします。サービスアカウントに、必要最小限の [permissions](/ja/integrations/clickpipes/bigquery/overview#permissions) が付与されていることを確認してください。
+    **1.** ClickPipes 用に作成したサービス アカウントの `.json` 秘密鍵をアップロードします。サービス アカウントに、必要最小限の [permissions](/ja/integrations/clickpipes/bigquery/overview#permissions) が付与されていることを確認してください。
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="サービスアカウントの秘密鍵をアップロード" size="lg" border />
 
@@ -49,18 +45,14 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     **4.** **Next** をクリックして検証します。
   </Step>
 
-  <Step>
-    ## ClickPipe を設定する
-
+  <Step title="ClickPipe を設定する" id="3-configure-your-clickpipe">
     BigQuery データセットのサイズや、同期するテーブルの合計サイズによっては、ClickPipe のデフォルトのインジェスト設定を調整する必要がある場合があります。
   </Step>
 
-  <Step>
-    ## テーブルを設定する
-
+  <Step title="テーブルを設定する" id="4-configure-tables">
     **1.** BigQuery テーブルのレプリケーション先となる ClickHouse データベースを選択します。既存のデータベースを選択することも、新しく作成することもできます。
 
-    **2.** レプリケートするテーブルと、必要に応じてカラムを選択します。一覧には、指定したサービスアカウントがアクセスできるデータセットのみが表示されます。
+    **2.** レプリケートするテーブルと、必要に応じてカラムを選択します。一覧には、指定したサービス アカウントがアクセスできるデータセットのみが表示されます。
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="権限" size="lg" border />
 
@@ -73,9 +65,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="権限" size="lg" border />
   </Step>
 
-  <Step>
-    ## 権限を設定する
-
+  <Step title="権限を設定する" id="6-configure-permissions">
     最後に、ClickPipes の内部ユーザーに対する権限を設定できます。
 
     **Permissions:** ClickPipes は、宛先テーブルにデータを書き込むための専用ユーザーを作成します。この内部ユーザーには、カスタムロールまたは事前定義されたロールのいずれかを割り当てられます。
@@ -84,9 +74,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     * `Only destination`: 宛先テーブルへの INSERT 権限のみ。
   </Step>
 
-  <Step>
-    ## 設定を完了する
-
+  <Step title="設定を完了する" id="7-complete-setup">
     **Create ClickPipe** をクリックして設定を完了します。概要ページにリダイレクトされ、そこで初期ロードの進行状況を確認したり、BigQuery ClickPipes の詳細をクリックして表示したりできます。
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="権限" size="lg" border />

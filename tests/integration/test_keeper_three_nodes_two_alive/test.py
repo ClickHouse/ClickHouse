@@ -3,6 +3,7 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
+from kazoo.exceptions import NoNodeError
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -33,6 +34,7 @@ def get_fake_zk(nodename, timeout=30.0):
 def started_cluster():
     try:
         cluster.start()
+        keeper_utils.wait_nodes(cluster, [node1, node2, node3])
 
         yield cluster
 
@@ -45,6 +47,15 @@ def start(node):
     keeper_utils.wait_until_connected(cluster, node)
 
 
+def stop_zk(zk):
+    try:
+        if zk:
+            zk.stop()
+            zk.close()
+    except Exception:
+        pass
+
+
 def delete_with_retry(node_name, path):
     for _ in range(30):
         zk = None
@@ -52,16 +63,20 @@ def delete_with_retry(node_name, path):
             zk = get_fake_zk(node_name)
             zk.delete(path)
             return
-        except:
+        except NoNodeError:
+            return
+        except Exception:
             time.sleep(0.5)
         finally:
-            zk.stop()
-            zk.close()
+            stop_zk(zk)
     raise Exception(f"Cannot delete {path} from node {node_name}")
 
 
 def test_start_offline(started_cluster):
     p = Pool(3)
+    node1_zk = None
+    node2_zk = None
+
     try:
         node1_zk = get_fake_zk("node1")
         node1_zk.create("/test_alive", b"aaaa")
@@ -87,8 +102,8 @@ def test_start_offline(started_cluster):
         p.map(start, [node1, node2, node3])
         delete_with_retry("node1", "/test_alive")
 
-        node1_zk.stop()
-        node1_zk.close()
+        stop_zk(node1_zk)
+        stop_zk(node2_zk)
 
 
 def test_start_non_existing(started_cluster):
@@ -137,12 +152,12 @@ def test_start_non_existing(started_cluster):
         p.map(start, [node1, node2, node3])
         delete_with_retry("node2", "/test_non_exising")
 
-        if node2_zk:
-            node2_zk.stop()
-            node2_zk.close()
+        stop_zk(node2_zk)
 
 
 def test_restart_third_node(started_cluster):
+    node1_zk = None
+
     try:
         node1_zk = get_fake_zk("node1")
         node1_zk.create("/test_restart", b"aaaa")
@@ -155,5 +170,4 @@ def test_restart_third_node(started_cluster):
         )
         node1_zk.delete("/test_restart")
     finally:
-        node1_zk.stop()
-        node1_zk.close()
+        stop_zk(node1_zk)

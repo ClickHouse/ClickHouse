@@ -5,11 +5,19 @@ title: Authentification GCS et bucket
 <Accordion title="Créer des buckets GCS et une clé HMAC">
   ### ch&#95;bucket&#95;us&#95;east1
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-1.webp" alt="Création d’un bucket GCS dans US East 1" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-bucket-1.webp" alt="Création d’un bucket GCS dans US East 1" />
+    </Frame>
+  </div>
 
   ### ch&#95;bucket&#95;us&#95;east4
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-2.webp" alt="Création d’un bucket GCS dans US East 4" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-bucket-2.webp" alt="Création d’un bucket GCS dans US East 4" />
+    </Frame>
+  </div>
 
   ### Générer une clé d’accès
 
@@ -17,27 +25,51 @@ title: Authentification GCS et bucket
 
   Ouvrez **Cloud Storage &gt; Settings &gt; Interoperability** et choisissez soit une **Access key** existante, soit **CREATE A KEY FOR A SERVICE ACCOUNT**. Ce guide décrit la procédure de création d’une nouvelle clé pour un nouveau compte de service.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-a-service-account-key.webp" alt="Génération d’une clé HMAC de compte de service dans GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-a-service-account-key.webp" alt="Génération d’une clé HMAC de compte de service dans GCS" />
+    </Frame>
+  </div>
 
   ### Ajouter un nouveau compte de service
 
   S’il s’agit d’un projet sans compte de service existant, cliquez sur **CREATE NEW ACCOUNT**.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-0.webp" alt="Ajout d’un nouveau compte de service dans GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-0.webp" alt="Ajout d’un nouveau compte de service dans GCS" />
+    </Frame>
+  </div>
 
-  La création du compte de service se fait en trois étapes. Lors de la première, donnez au compte un nom, un ID et une description explicites.
+  La création du compte de service comporte trois étapes ; lors de la première, attribuez au compte un nom, un ID et une description explicites.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-a.webp" alt="Définition d’un nouveau nom et ID de compte de service dans GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-a.webp" alt="Définition du nom et de l’ID d’un nouveau compte de service dans GCS" />
+    </Frame>
+  </div>
 
-  Dans la boîte de dialogue des paramètres Interoperability, le rôle IAM **Storage Object Admin** est recommandé ; sélectionnez-le à la deuxième étape.
+  Dans la boîte de dialogue des paramètres Interoperability, le rôle IAM **Storage Object Admin** est recommandé ; sélectionnez-le à la deuxième étape.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-2.webp" alt="Sélection du rôle IAM Storage Object Admin dans GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-2.webp" alt="Sélection du rôle IAM Storage Object Admin dans GCS" />
+    </Frame>
+  </div>
 
-  La troisième étape est facultative et n’est pas utilisée dans ce guide. Vous pouvez autoriser des utilisateurs à disposer de ces privilèges selon vos politiques.
+  La troisième étape est facultative et n’est pas utilisée dans ce guide. Vous pouvez accorder ces privilèges à des utilisateurs selon vos politiques.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-3.webp" alt="Configuration de paramètres supplémentaires pour le nouveau compte de service dans GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-create-service-account-3.webp" alt="Configuration de paramètres supplémentaires pour le nouveau compte de service dans GCS" />
+    </Frame>
+  </div>
 
   La clé HMAC du compte de service s’affichera. Enregistrez ces informations, car elles seront utilisées dans la configuration de ClickHouse.
 
-  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-guide-key.webp" alt="Récupération de la clé HMAC générée pour GCS" border />
+  <div className="ch-image-md">
+    <Frame>
+      <img src="/images/integrations/data-ingestion/s3/GCS-guide-key.webp" alt="Récupération de la clé HMAC générée pour GCS" />
+    </Frame>
+  </div>
 </Accordion>

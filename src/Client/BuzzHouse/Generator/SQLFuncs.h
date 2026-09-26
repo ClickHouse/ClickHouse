@@ -121,6 +121,7 @@ const std::vector<CHTableFunction> CHTableFuncs = {
     CHTableFunction(SQLTableFunc::TFmerge, 1, 2),
     CHTableFunction(SQLTableFunc::TFmergeTreeAnalyzeIndexes, 2, 3),
     CHTableFunction(SQLTableFunc::TFmergeTreeAnalyzeIndexesUUID, 1, 2),
+    CHTableFunction(SQLTableFunc::TFmergeTreeCodecBlockCounts, 2, 2),
     CHTableFunction(SQLTableFunc::TFmergeTreeIndex, 2, 4),
     CHTableFunction(SQLTableFunc::TFmergeTreeProjection, 3, 3),
     CHTableFunction(SQLTableFunc::TFmergeTreeTextIndex, 3, 3),

@@ -22,7 +22,6 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   * Maven Central (项目页面) ：https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * 夜间构建 (仓库链接) ：https://central.sonatype.com/repository/maven-snapshots/
-  * 旧版 Nightly 构建制品库 (仓库链接) ：https://s01.oss.sonatype.org/content/repositories/snapshots/
 
   <br />
 
@@ -437,7 +436,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   `tableName` - 目标表名称。
 
-  `data` - 已编码数据的输入 stream。
+  `data` - 已编码数据的输入流。
 
   `format` - 数据编码所使用的格式。
 
@@ -478,7 +477,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   `tableName` - 目标表的名称。
 
-  `data` - 集合 DTO (数据传输对象) 对象。
+  `data` - DTO (数据传输对象) 对象集合。
 
   `settings` - 请求设置。
 
@@ -532,7 +531,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   ### query(String sqlQuery)
 
-  按原样发送 `sqlQuery`。响应格式由查询设置决定。`QueryResponse` 将持有对响应 stream 的引用，该 stream 应由支持相应格式的读取器消费。
+  按原样发送 `sqlQuery`。响应格式由查询设置决定。`QueryResponse` 将保存对响应流的引用，该流应由支持相应格式的读取器 (reader) 读取。
 
   **签名**
 
@@ -543,7 +542,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   **参数**
 
-  `sqlQuery` - 单条 SQL 语句。查询将按原样发送至服务器。
+  `sqlQuery` - 单条 SQL 语句。该查询会按原样发送到服务器。
 
   `settings` - 请求设置。
 
@@ -671,18 +670,18 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   **配置方法**
 
-  | 方法                                                | 描述                                                                                                           |
-  | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-  | `setQueryId(String queryId)`                      | 设置将分配给该操作的查询 ID。                                                                                             |
-  | `setFormat(ClickHouseFormat format)`              | 设置响应格式。完整列表请参见 `RowBinaryWithNamesAndTypes`。                                                                 |
-  | `setMaxExecutionTime(Integer maxExecutionTime)`   | 设置该操作在服务器端的执行时间。不会影响读取超时。                                                                                    |
-  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | 请求服务器在发送响应前等待查询结束。                                                                                           |
-  | `setUseServerTimeZone(Boolean useServerTimeZone)` | 将使用服务器时区 (参见客户端配置) 来解析操作结果中的日期/时间类型。默认为 `false`。                                                             |
-  | `setUseTimeZone(String timeZone)`                 | 请求服务器使用 `timeZone` 进行时间转换。请参见 [session&#95;timezone](/zh/reference/settings/session-settings#session_timezone)。 |
-  | `serverSetting(String name, String value)`        | 为该操作设置单个服务器级设置。                                                                                              |
-  | `serverSetting(String name, Collection values)`   | 为某项操作设置一个具有多个值的服务器设置。集合中的项应为 `String` 值。                                                                     |
-  | `setDBRoles(Collection dbRoles)`                  | 设置在执行操作前生效的 DB 角色。集合中的项应为 `String` 值。                                                                        |
-  | `setOption(String option, Object value)`          | 以原始格式设置一个配置选项。这不是服务器级设置项。                                                                                    |
+  | 方法                                                | 描述                                                                                                                 |
+  | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+  | `setQueryId(String queryId)`                      | 设置将分配给该操作的查询 ID。                                                                                                   |
+  | `setFormat(ClickHouseFormat format)`              | 设置响应格式。完整列表请参见 `RowBinaryWithNamesAndTypes`。                                                                       |
+  | `setMaxExecutionTime(Integer maxExecutionTime)`   | 设置该操作在服务器端的执行时间。不会影响读取超时。                                                                                          |
+  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | 请求服务器在发送响应前等待查询结束。                                                                                                 |
+  | `setUseServerTimeZone(Boolean useServerTimeZone)` | 将使用服务器时区 (参见客户端配置) 来解析操作结果中的日期/时间类型。默认为 `false`。                                                                   |
+  | `setUseTimeZone(String timeZone)`                 | 请求服务器使用 `timeZone` 进行时间转换。请参见 [session&#95;timezone](/zh/reference/settings/session-settings/other#session_timezone)。 |
+  | `serverSetting(String name, String value)`        | 为该操作设置单个服务器级设置。                                                                                                    |
+  | `serverSetting(String name, Collection values)`   | 为某项操作设置一个具有多个值的服务器设置。集合中的项应为 `String` 值。                                                                           |
+  | `setDBRoles(Collection dbRoles)`                  | 设置在执行操作前生效的 DB 角色。集合中的项应为 `String` 值。                                                                              |
+  | `setOption(String option, Object value)`          | 以原始格式设置一个配置选项。这不是服务器级设置项。                                                                                          |
 
   ### QueryResponse
 
@@ -709,7 +708,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   ### getTableSchema(String table)
 
-  拉取 `table` 的表 schema。
+  获取 `table` 的 schema。
 
   **签名**
 
@@ -763,7 +762,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   `clazz` - 表示用于读取/写入数据的 POJO 的类。
 
-  `schema` - 用于与 POJO 属性进行匹配的数据 schema。
+  `schema` - 用于匹配 POJO 属性的 schema。
 
   **示例**
 
@@ -807,7 +806,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
       ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
       while (reader.next() != null) {
-          
+
           Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
           Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
 
@@ -855,7 +854,7 @@ import WideTableWrapper from "/snippets/zh/components/WideTableWrapper/WideTable
 
   V1 中有 3 个与配置相关的枚举类：
 
-  * `com.clickhouse.client.config.ClickHouseDefaults` - 在大多数情况下都需要设置的配置参数，例如 `USER` 和 `PASSWORD`。
+  * `com.clickhouse.client.config.ClickHouseDefaults` - 在大多数用例中都应设置的配置参数，例如 `USER` 和 `PASSWORD`。
   * `com.clickhouse.client.config.ClickHouseClientOption` - 客户端特有的配置参数，例如 `HEALTH_CHECK_INTERVAL`。
   * `com.clickhouse.client.http.config.ClickHouseHttpOption` - HTTP 接口专用的配置参数，例如 `RECEIVE_QUERY_PROGRESS`。
 

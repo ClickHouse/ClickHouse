@@ -5,8 +5,11 @@
 #include <gtest/gtest.h>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/RestCatalog.h>
+#include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/AutoPtr.h>
@@ -21,10 +24,19 @@
 #include <Poco/SharedPtr.h>
 #include <Poco/URI.h>
 
+#include <atomic>
+#include <iterator>
 #include <memory>
 #include <string>
 
 using namespace DataLake;
+
+namespace ProfileEvents
+{
+    extern const Event OneLakeAccessTokenRequests;
+    extern const Event OneLakeAccessTokenRequestFailures;
+    extern const Event OneLakeAccessTokenExpirations;
+}
 
 namespace DB
 {
@@ -33,11 +45,14 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
+    extern const int DATALAKE_DATABASE_ERROR;
 }
 }
 
 namespace
 {
+
+constexpr int DEFAULT_TOKEN_EXPIRES_IN_SECONDS = 3600;
 
 enum class CatalogShape
 {
@@ -48,11 +63,24 @@ enum class CatalogShape
     /// echoes the same top-level namespace for every parent. A REST catalog would recurse on this
     /// forever (gold -> gold.gold -> ...); a flat-namespace catalog must list the top level only.
     ParentIgnoringEcho,
+    /// Flat-namespace catalog (Apache Polaris federated to AWS Glue) that rejects `parent` with
+    /// HTTP 400 instead of ignoring it, and holds a table in its only top-level namespace.
+    ParentRejecting,
+    /// Rejects the client credentials at the OAuth token endpoint.
+    OAuthTokenRejected,
 };
 
-void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body)
+void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body, Poco::Net::HTTPResponse::HTTPStatus status = Poco::Net::HTTPResponse::HTTP_OK)
 {
-    response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+    response.setStatus(status);
+    response.setContentType("application/json");
+    response.setContentLength(body.size());
+    response.send() << body;
+}
+
+void writeError(Poco::Net::HTTPServerResponse & response, Poco::Net::HTTPResponse::HTTPStatus status, const std::string & body)
+{
+    response.setStatus(status);
     response.setContentType("application/json");
     response.setContentLength(body.size());
     response.send() << body;
@@ -69,8 +97,10 @@ std::string getRawPath(const std::string & uri)
 class RestCatalogRequestHandler final : public Poco::Net::HTTPRequestHandler
 {
 public:
-    explicit RestCatalogRequestHandler(CatalogShape shape_)
+    RestCatalogRequestHandler(CatalogShape shape_, int token_expires_in_seconds_, std::atomic<size_t> & token_requests_)
         : shape(shape_)
+        , token_expires_in_seconds(token_expires_in_seconds_)
+        , token_requests(token_requests_)
     {
     }
 
@@ -80,6 +110,27 @@ public:
         const auto path = getRawPath(request.getURI());
         const auto params = uri.getQueryParameters();
 
+        /// Entra ID style token endpoint for the OneLake refresh-token flow.
+        if (path == "/token")
+        {
+            const std::string request_body(std::istreambuf_iterator<char>(request.stream()), {});
+            ++token_requests;
+            if (request_body.contains("refresh_token=expired-refresh"))
+            {
+                writeJSON(
+                    response,
+                    R"({"error":"invalid_grant","error_description":"AADSTS700082: The refresh token has expired due to inactivity."})",
+                    Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+                return;
+            }
+            writeJSON(
+                response,
+                fmt::format(
+                    R"({{"token_type":"Bearer","expires_in":{},"access_token":"mock-access-token-{}","refresh_token":"rotated-refresh-token"}})",
+                    token_expires_in_seconds, token_requests.load()));
+            return;
+        }
+
         if (path == "/v1/config")
         {
             writeJSON(response, R"({"defaults":{},"overrides":{}})");
@@ -88,6 +139,22 @@ public:
 
         if (path == "/v1/oauth/tokens")
         {
+            const std::string request_body(std::istreambuf_iterator<char>(request.stream()), {});
+            ++token_requests;
+            if (shape == CatalogShape::OAuthTokenRejected)
+            {
+                writeError(
+                    response,
+                    Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED,
+                    R"({"error":"invalid_client","error_description":"Client secret does not match"})");
+                return;
+            }
+            /// Horizon secret-only credentials omit client_id; standard REST includes it.
+            if (request_body.contains("client_secret=") && !request_body.contains("client_id="))
+            {
+                writeJSON(response, R"({"token_type":"Bearer","expires_in":3600,"access_token":"mock-horizon-secret-only-token"})");
+                return;
+            }
             writeJSON(response, R"({"token_type":"Bearer","expires_in":3600,"access_token":"mock-access-token"})");
             return;
         }
@@ -111,6 +178,12 @@ public:
             else if (shape == CatalogShape::ParentIgnoringEcho)
                 /// Ignores `parent` and echoes the top-level namespace back for any parent.
                 writeJSON(response, R"({"namespaces":[["gold"]]})");
+            else if (shape == CatalogShape::ParentRejecting)
+                writeError(
+                    response,
+                    Poco::Net::HTTPResponse::HTTP_BAD_REQUEST,
+                    R"({"error":{"message":"Malformed request: Glue dataCatalog does not support multipart namespace.",)"
+                    R"("type":"BadRequestException","code":400}})");
             else
                 writeJSON(response, R"({"namespaces":[]})");
             return;
@@ -118,7 +191,7 @@ public:
 
         if (path == "/v1/namespaces/namespace/tables")
         {
-            if (shape == CatalogShape::TopLevelTable)
+            if (shape == CatalogShape::TopLevelTable || shape == CatalogShape::ParentRejecting)
                 writeJSON(response, R"({"identifiers":[{"name":"table_a"}]})");
             else
                 writeJSON(response, R"({"identifiers":[]})");
@@ -139,6 +212,37 @@ public:
             return;
         }
 
+        if (path == "/v1/namespaces/namespace/tables/table_a")
+        {
+            writeJSON(
+                response,
+                R"({"metadata-location":"s3://bucket/table_a/metadata/v1.metadata.json",)"
+                R"("metadata":{"table-uuid":"11111111-2222-3333-4444-555555555555","location":"s3://bucket/table_a"}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/missing_table")
+        {
+            writeError(response, Poco::Net::HTTPResponse::HTTP_NOT_FOUND, R"({"error":{"message":"Table does not exist","type":"NoSuchTableException","code":404}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/unauthorized_table")
+        {
+            writeError(response, Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED, R"({"error":{"message":"The access token has expired","type":"NotAuthorizedException","code":401}})");
+            return;
+        }
+
+        /// Fabric-style response once the bearer token has expired.
+        if (path == "/v1/namespaces/namespace/tables/expired_token_table")
+        {
+            writeJSON(
+                response,
+                R"({"error":{"code":"Unauthorized","message":"Lifetime validation failed, the token is expired."}})",
+                Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED);
+            return;
+        }
+
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected request to fake Iceberg REST catalog: {}", request.getURI());
     }
 
@@ -154,34 +258,41 @@ private:
     }
 
     CatalogShape shape;
+    int token_expires_in_seconds;
+    std::atomic<size_t> & token_requests;
 };
 
 class RestCatalogRequestHandlerFactory final : public Poco::Net::HTTPRequestHandlerFactory
 {
 public:
-    explicit RestCatalogRequestHandlerFactory(CatalogShape shape_)
+    RestCatalogRequestHandlerFactory(CatalogShape shape_, int token_expires_in_seconds_, std::atomic<size_t> & token_requests_)
         : shape(shape_)
+        , token_expires_in_seconds(token_expires_in_seconds_)
+        , token_requests(token_requests_)
     {
     }
 
     Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
     {
-        return new RestCatalogRequestHandler(shape);
+        return new RestCatalogRequestHandler(shape, token_expires_in_seconds, token_requests);
     }
 
 private:
     CatalogShape shape;
+    int token_expires_in_seconds;
+    std::atomic<size_t> & token_requests;
 };
 
 class RestCatalogTestServer
 {
 public:
-    explicit RestCatalogTestServer(CatalogShape shape)
+    explicit RestCatalogTestServer(CatalogShape shape, int token_expires_in_seconds = DEFAULT_TOKEN_EXPIRES_IN_SECONDS)
         : server_socket(std::make_unique<Poco::Net::ServerSocket>(Poco::Net::SocketAddress("127.0.0.1", 0)))
-        , handler_factory(new RestCatalogRequestHandlerFactory(shape))
+        , handler_factory(new RestCatalogRequestHandlerFactory(shape, token_expires_in_seconds, token_requests))
         , server_params(new Poco::Net::HTTPServerParams())
-        , server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
     {
+        server_params->setKeepAlive(false);
+        server = std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params);
         server->start();
     }
 
@@ -195,7 +306,13 @@ public:
         return "http://" + server_socket->address().toString();
     }
 
+    size_t tokenRequests() const
+    {
+        return token_requests.load();
+    }
+
 private:
+    std::atomic<size_t> token_requests{0};
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
     Poco::SharedPtr<RestCatalogRequestHandlerFactory> handler_factory;
     Poco::AutoPtr<Poco::Net::HTTPServerParams> server_params;
@@ -215,7 +332,7 @@ void expectThrowsCode(std::function<void()> fn, int expected_code)
     }
 }
 
-bool restCatalogEmpty(CatalogShape shape)
+bool restCatalogEmpty(CatalogShape shape, bool flat_namespaces = false)
 {
     RestCatalogTestServer server(shape);
     auto context = DB::Context::createCopy(getContext().context);
@@ -229,9 +346,30 @@ bool restCatalogEmpty(CatalogShape shape)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        flat_namespaces,
         context);
 
     return catalog.empty();
+}
+
+DataLake::ICatalog::Namespaces restCatalogNamespaces(CatalogShape shape, bool flat_namespaces)
+{
+    RestCatalogTestServer server(shape);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        flat_namespaces,
+        context);
+
+    return catalog.getNamespaces();
 }
 
 bool deltaSharingCatalogEmpty(CatalogShape shape)
@@ -248,6 +386,7 @@ bool deltaSharingCatalogEmpty(CatalogShape shape)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     return catalog.empty();
@@ -279,6 +418,155 @@ TEST(RestCatalog, EmptyReturnsTrueWhenNoTablesExist)
     EXPECT_TRUE(restCatalogEmpty(CatalogShape::Empty));
 }
 
+TEST(RestCatalog, RejectedClientCredentialsReportTheOAuthError)
+{
+    RestCatalogTestServer server(CatalogShape::OAuthTokenRejected);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    try
+    {
+        RestCatalog catalog(
+            "warehouse",
+            server.getUrl(),
+            /* catalog_credential */"client-1:wrong-secret",
+            /* auth_scope */"PRINCIPAL_ROLE:ALL",
+            /* auth_header */"",
+            /* oauth_server_uri */"",
+            /* oauth_server_use_request_body */true,
+            /* flat_namespaces */false,
+            context);
+        FAIL() << "expected the rejected client credentials to fail the catalog construction";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+        EXPECT_TRUE(e.message().contains("invalid_client")) << e.message();
+        EXPECT_TRUE(e.message().contains("Client secret does not match")) << e.message();
+        EXPECT_TRUE(e.message().contains("status 401")) << e.message();
+        EXPECT_FALSE(e.message().contains("wrong-secret")) << e.message();
+    }
+}
+
+TEST(RestCatalog, ParentFilterRejectionReportsFlatNamespacesSetting)
+{
+    try
+    {
+        restCatalogNamespaces(CatalogShape::ParentRejecting, /* flat_namespaces */false);
+        FAIL() << "expected the rejected `parent` filter to fail the namespace listing";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+        EXPECT_TRUE(e.message().contains("flat_namespaces")) << e.message();
+        EXPECT_TRUE(e.message().contains("HTTP status: 400")) << e.message();
+    }
+}
+
+TEST(RestCatalog, FlatNamespacesSettingSkipsSubNamespaceListing)
+{
+    EXPECT_FALSE(restCatalogEmpty(CatalogShape::ParentRejecting, /* flat_namespaces */true));
+    EXPECT_EQ(restCatalogNamespaces(CatalogShape::ParentRejecting, /* flat_namespaces */true), ICatalog::Namespaces{"namespace"});
+}
+
+TEST(RestCatalog, FlatNamespacesSettingIgnoresEchoedParent)
+{
+    EXPECT_EQ(restCatalogNamespaces(CatalogShape::ParentIgnoringEcho, /* flat_namespaces */true), ICatalog::Namespaces{"gold"});
+}
+
+TEST(RestCatalog, OneLakeFlatNamespacesSettingSkipsSubNamespaceListing)
+{
+    RestCatalogTestServer server(CatalogShape::ParentRejecting);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    OneLakeCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* onelake_tenant_id */"tenant-1",
+        /* onelake_client_id */"",
+        /* onelake_client_secret */"",
+        /* bearer_token */"token-1",
+        /* refresh_token */"",
+        /* auth_scope */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        /* flat_namespaces */true,
+        context);
+
+    EXPECT_FALSE(catalog.empty());
+    EXPECT_EQ(catalog.getNamespaces(), ICatalog::Namespaces{"namespace"});
+}
+
+TEST(RestCatalog, TryGetTableMetadataDistinguishesMissingTableFromOtherErrors)
+{
+    RestCatalogTestServer server(CatalogShape::TopLevelTable);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
+        context);
+
+    auto existing = TableMetadata().withLocation();
+    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", existing));
+    EXPECT_EQ(existing.getLocation(), "s3://bucket/table_a");
+    EXPECT_TRUE(catalog.existsTable("namespace", "table_a"));
+
+    TableMetadata missing;
+    EXPECT_FALSE(catalog.tryGetTableMetadata("namespace", "missing_table", missing));
+    EXPECT_FALSE(catalog.existsTable("namespace", "missing_table"));
+
+    TableMetadata unauthorized;
+    EXPECT_THROW(catalog.tryGetTableMetadata("namespace", "unauthorized_table", unauthorized), DB::HTTPException);
+    EXPECT_THROW(catalog.existsTable("namespace", "unauthorized_table"), DB::HTTPException);
+}
+
+TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
+{
+    /// An expired or revoked token must not read as "table does not exist" (which surfaces
+    /// as `UNKNOWN_TABLE` on SELECT and `EXISTS TABLE` returning 0): the HTTP 401 from the
+    /// catalog propagates to the user instead.
+    RestCatalogTestServer server(CatalogShape::TopLevelTable);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    OneLakeCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* onelake_tenant_id */"tenant-1",
+        /* onelake_client_id */"",
+        /* onelake_client_secret */"",
+        /* bearer_token */"expired-token",
+        /* refresh_token */"",
+        /* auth_scope */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
+        context);
+
+    TableMetadata metadata;
+    try
+    {
+        catalog.tryGetTableMetadata("namespace", "expired_token_table", metadata);
+        FAIL() << "expected the HTTP 401 from the catalog to propagate";
+    }
+    catch (const DB::HTTPException & e)
+    {
+        EXPECT_EQ(e.getHTTPStatus(), Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED);
+        EXPECT_NE(e.displayText().find("the token is expired"), std::string::npos);
+    }
+
+    EXPECT_THROW(catalog.existsTable("namespace", "expired_token_table"), DB::HTTPException);
+}
+
 TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
 {
     RestCatalogTestServer server(CatalogShape::Empty);
@@ -293,6 +581,7 @@ TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     DB::SettingsChanges changes;
@@ -314,6 +603,7 @@ TEST(RestCatalog, ApplySettingsChangesCredentialMode)
         /* auth_header */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     EXPECT_EQ(catalog.getStateSnapshot()->client_id, "client-1");
@@ -355,6 +645,7 @@ TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
         /* auth_header */"Authorization: Bearer token-1",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     DB::SettingsChanges changes;
@@ -383,9 +674,11 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
         /* onelake_client_id */"",
         /* onelake_client_secret */"",
         /* bearer_token */"token-1",
+        /* refresh_token */"",
         /* auth_scope */"",
         /* oauth_server_uri */"",
         /* oauth_server_use_request_body */false,
+        /* flat_namespaces */false,
         context);
 
     const auto snapshot_before = catalog.getStateSnapshot();
@@ -421,6 +714,268 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
     DB::SettingsChanges empty_value;
     empty_value.emplace_back("onelake_bearer_token", "");
     expectThrowsCode([&] { catalog.applySettingsChanges(empty_value); }, DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, OneLakeRejectsMalformedBearerToken)
+{
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    /// A pre-obtained bearer token becomes the `Authorization: Bearer <token>` header, so it must
+    /// pass the same validation as a user-supplied `auth_header`: a token with an embedded newline
+    /// would smuggle a second header into the request. The constructor validates the synthetic
+    /// header up front and must reject such a token before any request is issued.
+    expectThrowsCode(
+        [&]
+        {
+            OneLakeCatalog catalog(
+                "warehouse",
+                "http://127.0.0.1:1",
+                /* onelake_tenant_id */ "tenant",
+                /* onelake_client_id */ "",
+                /* onelake_client_secret */ "",
+                /* bearer_token */ "token\r\nX-Injected: evil",
+                /* refresh_token */ "",
+                /* auth_scope */ "",
+                /* oauth_server_uri */ "",
+                /* oauth_server_use_request_body */ false,
+                /* flat_namespaces */ false,
+                context);
+        },
+        DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, ValidateBearerTokenRejectsMalformedHeader)
+{
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    /// Every bearer-token catalog path (Unity, and Paimon via HTTPBasedCatalogUtils) runs this
+    /// shared check before the token becomes an `Authorization: Bearer <token>` header, matching
+    /// the explicit validation OneLake performs. A token with an embedded CR/LF would otherwise
+    /// smuggle a second header into the request.
+    expectThrowsCode([&] { validateBearerToken(context, "token\r\nX-Injected: evil"); }, DB::ErrorCodes::BAD_ARGUMENTS);
+
+    /// A well-formed token is accepted; an empty token sends no header and is a no-op.
+    EXPECT_NO_THROW(validateBearerToken(context, "good-token"));
+    EXPECT_NO_THROW(validateBearerToken(context, ""));
+}
+
+TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)
+{
+    /// expires_in = 0: every issued access token is immediately expired, so every
+    /// catalog request must transparently redeem the refresh token again.
+    RestCatalogTestServer server(CatalogShape::Empty, /* token_expires_in_seconds */ 0);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    OneLakeCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* onelake_tenant_id */"tenant-1",
+        /* onelake_client_id */"client-1",
+        /* onelake_client_secret */"",
+        /* bearer_token */"",
+        /* refresh_token */"good-refresh",
+        /* auth_scope */"https://storage.azure.com/.default",
+        /* oauth_server_uri */server.getUrl() + "/token",
+        /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
+        context);
+
+    const auto requests_after_construction = server.tokenRequests();
+    EXPECT_GE(requests_after_construction, 1u);
+
+    const auto token_requests_before = ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenRequests];
+    const auto expirations_before = ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenExpirations];
+
+    EXPECT_TRUE(catalog.empty());
+    EXPECT_GT(server.tokenRequests(), requests_after_construction);
+
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenRequests], token_requests_before);
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenExpirations], expirations_before);
+
+    const auto requests_before_storage_token = server.tokenRequests();
+    const auto [storage_token, expires_on] = catalog.getCurrentAccessToken();
+    EXPECT_TRUE(storage_token.starts_with("mock-access-token-"));
+    EXPECT_GT(server.tokenRequests(), requests_before_storage_token);
+}
+
+TEST(RestCatalog, OneLakeRefreshTokenExpiredThrowsWithAlterHint)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    const auto failures_before = ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenRequestFailures];
+
+    try
+    {
+        OneLakeCatalog catalog(
+            "warehouse",
+            server.getUrl(),
+            /* onelake_tenant_id */"tenant-1",
+            /* onelake_client_id */"client-1",
+            /* onelake_client_secret */"",
+            /* bearer_token */"",
+            /* refresh_token */"expired-refresh",
+            /* auth_scope */"https://storage.azure.com/.default",
+            /* oauth_server_uri */server.getUrl() + "/token",
+            /* oauth_server_use_request_body */true,
+            /* flat_namespaces */false,
+            context);
+        /// ADD_FAILURE (rather than FAIL) does not return from the test, so the
+        /// profile event check below is reached on every path; FAIL would make
+        /// `failures_before` a dead store on the no-throw path for clang-tidy.
+        ADD_FAILURE() << "expected an exception for an expired refresh token";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+        EXPECT_NE(e.message().find("ALTER DATABASE"), std::string::npos);
+        EXPECT_NE(e.message().find("onelake_refresh_token"), std::string::npos);
+        EXPECT_NE(e.message().find("AADSTS700082"), std::string::npos);
+    }
+
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::OneLakeAccessTokenRequestFailures], failures_before);
+}
+
+TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    OneLakeCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* onelake_tenant_id */"tenant-1",
+        /* onelake_client_id */"client-1",
+        /* onelake_client_secret */"",
+        /* bearer_token */"",
+        /* refresh_token */"good-refresh",
+        /* auth_scope */"https://storage.azure.com/.default",
+        /* oauth_server_uri */server.getUrl() + "/token",
+        /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
+        context);
+
+    DB::SettingsChanges changes;
+    changes.emplace_back("onelake_refresh_token", "another-good-refresh");
+    catalog.applySettingsChanges(changes);
+    EXPECT_EQ(catalog.getStateSnapshot()->refresh_token, "another-good-refresh");
+
+    /// The mode is fixed: a bearer token cannot be set on a refresh-token catalog.
+    DB::SettingsChanges mode_switch;
+    mode_switch.emplace_back("onelake_bearer_token", "token");
+    expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
+
+    /// An expired refresh token fails the ALTER during prepare, nothing is published.
+    DB::SettingsChanges expired;
+    expired.emplace_back("onelake_refresh_token", "expired-refresh");
+    expectThrowsCode([&] { catalog.applySettingsChanges(expired); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
+    EXPECT_EQ(catalog.getStateSnapshot()->refresh_token, "another-good-refresh");
+}
+
+TEST(RestCatalog, HorizonParseCredentialKeepsColonsInSecret)
+{
+    {
+        const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("my-pat-token");
+        EXPECT_TRUE(client_id.empty());
+        EXPECT_EQ(client_secret, "my-pat-token");
+    }
+    {
+        /// Snowflake PATs may contain `:`; Horizon must not split them into client_id/client_secret.
+        const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("ver:1-hint:abc:rest-of-token");
+        EXPECT_TRUE(client_id.empty());
+        EXPECT_EQ(client_secret, "ver:1-hint:abc:rest-of-token");
+    }
+    {
+        const auto [client_id, client_secret] = HorizonCatalog::parseHorizonCredential("");
+        EXPECT_TRUE(client_id.empty());
+        EXPECT_TRUE(client_secret.empty());
+    }
+}
+
+TEST(RestCatalog, HorizonCatalogAuthenticatesWithBarePAT)
+{
+    RestCatalogTestServer server(CatalogShape::TopLevelTable);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    HorizonCatalog catalog(
+        "ICEBERG_TEST_DB",
+        server.getUrl(),
+        /* catalog_credential */"horizon-pat-without-colon",
+        /* auth_scope */"session:role:DATA_ENGINEER",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
+        context);
+
+    EXPECT_EQ(catalog.getCatalogType(), DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON);
+    EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
+    EXPECT_EQ(catalog.getStateSnapshot()->client_secret, "horizon-pat-without-colon");
+    EXPECT_FALSE(catalog.empty());
+
+    TableMetadata metadata;
+    metadata.withLocation();
+    catalog.getTableMetadata("namespace", "table_a", metadata);
+    EXPECT_TRUE(metadata.hasLocation());
+    EXPECT_EQ(metadata.getLocation(), "s3://bucket/table_a");
+}
+
+TEST(RestCatalog, HorizonCatalogRequiresCredentialOrAuthHeader)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    expectThrowsCode(
+        [&]
+        {
+            HorizonCatalog catalog(
+                "ICEBERG_TEST_DB",
+                server.getUrl(),
+                /* catalog_credential */"",
+                /* auth_scope */"session:role:DATA_ENGINEER",
+                /* auth_header */"",
+                /* oauth_server_uri */"",
+                /* oauth_server_use_request_body */true,
+                /* flat_namespaces */false,
+                context);
+        },
+        DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, HorizonApplySettingsChangesBarePAT)
+{
+    RestCatalogTestServer server(CatalogShape::Empty);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    HorizonCatalog catalog(
+        "ICEBERG_TEST_DB",
+        server.getUrl(),
+        /* catalog_credential */"pat-one",
+        /* auth_scope */"session:role:DATA_ENGINEER",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */true,
+        /* flat_namespaces */false,
+        context);
+
+    DB::SettingsChanges changes;
+    changes.emplace_back("catalog_credential", "pat-two");
+    catalog.applySettingsChanges(changes);
+    EXPECT_TRUE(catalog.getStateSnapshot()->client_id.empty());
+    EXPECT_EQ(catalog.getStateSnapshot()->client_secret, "pat-two");
+
+    /// Mode is fixed: cannot switch to auth_header on a credential catalog.
+    DB::SettingsChanges mode_switch;
+    mode_switch.emplace_back("auth_header", "Authorization: Bearer token");
+    expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
 #endif
