@@ -121,20 +121,28 @@ struct TokenRegexpMatcher
 
     bool startValue(std::string_view value, bool check_literal) const
     {
-        return !check_literal || containsLiteral(value, regexp.getRequiredSubstring());
+        if (check_literal && !containsLiteral(value, regexp.getRequiredSubstring()))
+            return false;
+
+        /// The JIT agrees with re2 only on valid UTF-8, and the text index uses re2, so other values use re2 too.
+        use_jit = jit && isAllASCII(reinterpret_cast<const UInt8 *>(value.data()), value.size());
+        return true;
     }
 
     bool operator()(std::string_view token) const
     {
-        if (!jit)
+        if (!use_jit)
             return regexp.match(token.data(), token.size());
 
         const auto * begin = reinterpret_cast<const uint8_t *>(token.data());
-        return jit.func(begin, begin + token.size(), begin, capture_starts.data(), capture_ends.data()) == 1;
+        const bool matched = jit.func(begin, begin + token.size(), begin, capture_starts.data(), capture_ends.data()) == 1;
+        chassert(matched == regexp.match(token.data(), token.size()));
+        return matched;
     }
 
     OptimizedRegularExpression regexp;
     RegexpJITMatcher jit;
+    mutable bool use_jit = false;
     mutable VectorWithMemoryTracking<const uint8_t *> capture_starts;
     mutable VectorWithMemoryTracking<const uint8_t *> capture_ends;
 };
