@@ -1,0 +1,6 @@
+after the first merge
+1	5	50	old	{'b':1}
+FINAL resolves the late row
+1	5	50	new
+after the second merge
+1	5	50	new	{'b':3}

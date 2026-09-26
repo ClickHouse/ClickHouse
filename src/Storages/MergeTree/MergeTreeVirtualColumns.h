@@ -34,6 +34,15 @@ struct BlockNumberColumn
     static const ASTPtr codec;
 };
 
+/// For VersionedCoalescingMergeTree: (column name -> version of the row that supplied the
+/// column's value), holding only the columns whose value is older than the row's version column.
+/// The versions are stored in an order-preserving normalized form (see normalizedVersion).
+struct ColumnVersionsColumn
+{
+    static const String name;
+    static const DataTypePtr type;
+};
+
 struct BlockOffsetColumn
 {
     static const String name;
