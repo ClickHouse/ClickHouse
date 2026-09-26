@@ -12,6 +12,7 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/CompressionInfo.h>
@@ -358,18 +359,20 @@ off_t CompressedReadBufferBase::getPosition() const
     throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implement getPosition");
 }
 
-size_t CompressedReadBufferBase::computeCompressedBlockEnd(size_t block_start_offset, const char * checksum_and_header)
+size_t CompressedReadBufferBase::getCompressedBlockEnd(ReadBufferFromFileBase & file_in, size_t block_start_offset)
 {
     static_assert(CHECKSUM_SIZE == sizeof(Checksum));
+
+    /// Bound the read to the header so the block body is not fetched.
+    file_in.setReadUntilPosition(block_start_offset + CHECKSUM_AND_HEADER_SIZE);
+    file_in.seek(block_start_offset, SEEK_SET);
+    char checksum_and_header[CHECKSUM_AND_HEADER_SIZE];
+    file_in.readStrict(checksum_and_header, sizeof(checksum_and_header));
+
     /// After the checksum the header is [method: 1 byte][compressed size: 4 bytes][decompressed size: 4 bytes];
     /// the compressed size includes the header itself, so it spans the rest of the block after the checksum.
     UInt32 size_compressed_without_checksum = unalignedLoadLittleEndian<UInt32>(checksum_and_header + CHECKSUM_SIZE + 1);
     return block_start_offset + CHECKSUM_SIZE + size_compressed_without_checksum;
-}
-
-size_t CompressedReadBufferBase::getCompressedBlockEnd(size_t)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "CompressedReadBufferBase does not implement getCompressedBlockEnd");
 }
 
 CompressedReadBufferBase::~CompressedReadBufferBase() = default; /// Proper destruction of unique_ptr of forward-declared type.

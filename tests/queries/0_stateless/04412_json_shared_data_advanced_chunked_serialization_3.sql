@@ -31,7 +31,7 @@ insert into source format JSONAsObject
 {"a" : {"a1" : 6, "a2" : 7}};
 
 drop table if exists test_wide_advanced;
-create table test_wide_advanced (json JSON(max_dynamic_paths=8)) engine=MergeTree order by tuple() settings index_granularity=4, min_bytes_for_wide_part=1, min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='advanced_chunked', object_shared_data_serialization_version_for_zero_level_parts='advanced_chunked', object_shared_data_buckets_for_wide_part=2, object_shared_data_target_chunk_rows=2;
+create table test_wide_advanced (json JSON(max_dynamic_paths=8)) engine=MergeTree order by tuple() settings index_granularity=4, min_bytes_for_wide_part=1, min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='advanced_chunked', object_shared_data_serialization_version_for_zero_level_parts='advanced_chunked', object_shared_data_buckets_for_wide_part=2, object_shared_data_target_chunk_rows=2, min_bytes_for_full_part_storage=536870912;
 insert into test_wide_advanced select * from source;
 
 select 'select json settings max_block_size=3';
