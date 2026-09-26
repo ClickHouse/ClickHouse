@@ -159,6 +159,9 @@ private:
     ColumnPtr executeWithoutLowCardinalityColumns(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
+    /// The function and every lambda passed to it are deterministic in the scope of the query.
+    bool isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const;
+
     ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
