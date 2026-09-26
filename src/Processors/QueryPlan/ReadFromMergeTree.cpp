@@ -722,6 +722,7 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             index_read_tasks,
             actions_settings,
             reader_settings,
+            getContext(),
             index_build_context,
             lazy_materializing_rows,
             &storage_snapshot->metadata->getColumns());
@@ -840,6 +841,7 @@ Pipe ReadFromMergeTree::readFromPool(
             index_read_tasks,
             actions_settings,
             reader_settings,
+            getContext(),
             index_build_context,
             lazy_materializing_rows,
             &storage_snapshot->metadata->getColumns());
@@ -1023,6 +1025,7 @@ Pipe ReadFromMergeTree::readInOrder(
             index_read_tasks,
             actions_settings,
             reader_settings,
+            getContext(),
             index_build_context,
             lazy_materializing_rows,
             &storage_snapshot->metadata->getColumns());
@@ -3792,7 +3795,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             const bool skip_top_k = top_k_filter_info && !settings[Setting::use_query_condition_cache_for_top_k];
             if (outputs.size() == 1 && !skip_top_k && isDeterministicAllowingTopKFilter(outputs.front()))
             {
-                size_t hash = queryConditionCacheHash(outputs.front()->getHash(), reader_settings.query_condition_cache_settings_salt);
+                size_t hash = outputs.front()->getHash();
                 if (top_k_filter_info)
                     boost::hash_combine(hash, top_k_filter_info->condition_hash);
                 condition_hash = hash;
@@ -3891,6 +3894,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
                     data_part->storage.getStorageID().uuid,
                     part_name,
                     profiled_condition_hash,
+                    context_->getSettingsRef(),
                     output->result_name,
                     remaining_ranges.ranges,
                     data_part->index_granularity->getMarksCount(),
@@ -5418,7 +5422,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                         context),
                     read_info.prewhere_info,
                     actions_settings,
-                    reader_settings));
+                    reader_settings,
+                    context));
         }
 
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));

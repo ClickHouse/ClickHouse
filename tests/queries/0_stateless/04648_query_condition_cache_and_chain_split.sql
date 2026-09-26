@@ -1,5 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-parallel-replicas
 -- Tag no-parallel: Messes with internal cache
+-- Tag no-parallel-replicas: The initiator and the workers run under different settings, this confused the query condition cache
 
 -- Tests that the query condition cache is populated for granules eliminated by any conjunct of a WHERE, not just by the
 -- last one. With `query_plan_merge_filters` (the default), `FilterStep` splits an AND chain into one `FilterTransform`

@@ -21,7 +21,6 @@
 9
 --- a pending mutation on an unread column must not disable the cache
 0
-0
---- pending-mutation prime reads everything, reuse prunes
+--- pending-mutation prime reads everything and writes the cache
 04669_lwd_pending_prime	0	0
-04669_lwd_pending_reuse	1	1
+1

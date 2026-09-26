@@ -261,6 +261,8 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_con
 namespace
 {
 
+/// Keep the settings lists in-sync with the ones for the query result cache
+
 bool isQueryResultCacheRelatedSetting(const String & setting_name)
 {
     return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
@@ -476,10 +478,10 @@ IASTHash calculateASTHash(ASTPtr ast, const String & current_database, const Set
     }
 
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
-    for (const auto & setting : changed_settings_sorted)
+    for (const auto & [name, value] : changed_settings_sorted)
     {
-        hash.update(setting.first);
-        hash.update(setting.second);
+        hash.update(name);
+        hash.update(value);
     }
 
     return getSipHash128AsPair(hash);

@@ -124,7 +124,7 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<std::pair<UInt64, String>> condition_,
+    std::optional<QueryConditionCacheCondition> condition_,
     bool update_row_numbers_info_)
     : FilterTransform(
             header_,
@@ -148,7 +148,7 @@ FilterTransform::FilterTransform(
     bool remove_filter_column_,
     bool on_totals_,
     std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<std::pair<UInt64, String>> condition_,
+    std::optional<QueryConditionCacheCondition> condition_,
     bool update_row_numbers_info_)
     : ISimpleTransform(
             header_,
@@ -451,8 +451,9 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
         query_condition_cache->write(
             buffered_mark_ranges_info->table_uuid,
             buffered_mark_ranges_info->part_name,
-            condition->first,
-            condition->second,
+            condition->hash,
+            condition->context->getSettingsRef(),
+            condition->condition,
             buffered_mark_ranges_info->mark_ranges,
             buffered_mark_ranges_info->marks_count,
             buffered_mark_ranges_info->has_final_mark);
@@ -476,8 +477,9 @@ void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mar
             query_condition_cache->write(
                 buffered_mark_ranges_info->table_uuid,
                 buffered_mark_ranges_info->part_name,
-                condition->first,
-                condition->second,
+                condition->hash,
+                condition->context->getSettingsRef(),
+                condition->condition,
                 buffered_mark_ranges_info->mark_ranges,
                 buffered_mark_ranges_info->marks_count,
                 buffered_mark_ranges_info->has_final_mark);

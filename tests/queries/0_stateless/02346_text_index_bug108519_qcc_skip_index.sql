@@ -72,11 +72,12 @@ CREATE TABLE rl (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id SETTINGS in
 INSERT INTO rl SELECT number, number FROM numbers(1000);
 
 SELECT 'rowlevel_populate', count() FROM rl WHERE v = 500
-SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0, max_block_size = 8, max_threads = 1;
+SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0, max_block_size = 8, max_threads = 1, use_skip_indexes_on_data_read = 0, parallel_replicas_for_cluster_engines = 0;
+-- The two settings at the end of the list were added because EXPLAIN (next statement) sets them internally and we like to achieve a QCC hit.
 
 SELECT 'rowlevel_qcc_prunes', countIf(explain LIKE '%Granules: 1/125%') FROM (
     EXPLAIN indexes = 1 SELECT count() FROM rl WHERE v = 500
-    SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0
+    SETTINGS use_query_condition_cache = 1, use_skip_indexes = 0, max_block_size = 8, max_threads = 1
 );
 
 DROP TABLE rl;

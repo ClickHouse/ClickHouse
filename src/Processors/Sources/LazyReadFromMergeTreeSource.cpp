@@ -284,6 +284,7 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             /*index_read_tasks*/ IndexReadTasks{},
             actions_settings,
             reader_settings,
+            context,
             /*index_build_context*/ nullptr,
             lazy_materializing_rows);
 
