@@ -62,7 +62,7 @@ SELECT log_comment,
         AND (ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0) AS statistics_collected
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
-  AND (current_database = currentDatabase()) AND (log_comment LIKE '05243_wrapper_over_%') AND (type = 'QueryFinish')
+  AND (current_database = currentDatabase()) AND startsWith(log_comment, '05243_wrapper_over_') AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;
 

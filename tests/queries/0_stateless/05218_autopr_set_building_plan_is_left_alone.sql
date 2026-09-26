@@ -4,16 +4,9 @@
 -- set-building one - the candidate is built without it, so `CreatingSetsStep` would be handed a plan
 -- carrying the subquery's own columns instead of the empty header it requires.
 --
--- Considering such a plan is not free even when nothing comes of it: AutoPR builds a probe plan to price
--- the switch. A `GLOBAL IN` runs its subquery as a plan of its own, so the count of queries AutoPR weighed
--- up says plainly whether the set-building plan was among them.
---
--- That count, and not the rounds of index analysis the considerations cost. The rounds are what first
--- showed the refusal working, but how many a consideration takes depends on what index analysis can reuse,
--- which moves with the environment: the plan-based figure here is 2 locally and 3 in CI. The count of
--- considerations is the thing being asserted, and it does not drift.
---
--- A count, not wall time, so it is the same under sanitizers.
+-- A `GLOBAL IN` runs its subquery as a plan of its own, which is what brings a set-building plan in front
+-- of AutoPR here, and the optimization logs the refusal when it declines to take it. That log line is what
+-- this test looks for, in both implementations of parallel replicas.
 
 DROP TABLE IF EXISTS t_autopr_set_root_hits;
 DROP TABLE IF EXISTS t_autopr_set_root_keys;
@@ -48,8 +41,6 @@ FORMAT Null SETTINGS log_comment='05218_autopr_set_root_global_in';
 -- matching hash in single-node plan" - so it is also the one that goes on to consider the set-building
 -- plan. Its statistics key is its own, hence its own warm-up run.
 --
--- Only the count moves here in any case: having matched, this implementation reaches its verdict from the
--- statistics rather than by re-analysing, so the refusal costs it no round of index analysis at all.
 SELECT sum(length(URL)) FROM t_autopr_set_root_hits
 WHERE WatchID GLOBAL IN (SELECT a % 1000000 FROM t_autopr_set_root_keys)
 FORMAT Null SETTINGS parallel_replicas_plan_based=1;
@@ -60,15 +51,26 @@ FORMAT Null SETTINGS parallel_replicas_plan_based=1, log_comment='05218_autopr_s
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS query_log, text_log;
 
--- `ParallelReplicasQueryCount` counts the queries AutoPR weighed up, the discarded probes included, so
--- one per row is the query itself and a second would be the set-building plan behind its `GLOBAL IN`.
-SELECT log_comment,
-    ProfileEvents['ParallelReplicasQueryCount'] AS autopr_considered
+-- Ask the optimization itself. It says so when it refuses, and the refusal is what is being asserted, so
+-- the message is the closest thing to the behaviour there is. Counting instead - rounds of index
+-- analysis, or `ParallelReplicasQueryCount` - measures what the refusal happens to save, and both of
+-- those move with the environment: the rounds depend on what index analysis can reuse, and the query
+-- count is raised when the coordinator is destroyed, which need not happen on a thread the query is
+-- still accounted to.
+WITH refused AS
+(
+    SELECT DISTINCT query_id
+    FROM system.text_log
+    WHERE (event_date >= yesterday()) AND (logger_name = 'optimizeTree')
+      AND (message LIKE '%The plan builds a set, its root must be preserved%')
+)
+SELECT log_comment, query_id IN (SELECT query_id FROM refused) AS set_plan_left_alone
 FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
-  AND (current_database = currentDatabase()) AND (log_comment LIKE '05218_autopr_set_root_global_in%') AND (type = 'QueryFinish')
+  AND (current_database = currentDatabase()) AND startsWith(log_comment, '05218_autopr_set_root_global_in')
+  AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;
 
