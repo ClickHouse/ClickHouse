@@ -262,6 +262,7 @@ public:
     void rollback(const ColumnCheckpoint & checkpoint) override;
     void forEachMutableSubcolumn(MutableColumnCallback callback) override;
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    ColumnPlanes getPlanes() const override;
     void forEachSubcolumn(ColumnCallback callback) const override;
     void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 
