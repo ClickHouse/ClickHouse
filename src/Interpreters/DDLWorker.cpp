@@ -150,7 +150,7 @@ DDLWorker::DDLWorker(
     }
 
     host_fqdn = getFQDNOrHostName();
-    host_fqdn_id = Cluster::Address::toString(host_fqdn, context->getTCPPort());
+    host_fqdn_id = Cluster::Address::toString(host_fqdn, context->getBoundTCPPort());
 }
 
 void DDLWorker::startup()
@@ -1387,8 +1387,8 @@ void DDLWorker::createReplicaDirs(const ZooKeeperPtr & zookeeper, const NameSet 
 void DDLWorker::markReplicasActive(bool reinitialized)
 {
     auto zookeeper = getZooKeeper();
-    const auto maybe_secure_port = context->getTCPPortSecure();
-    const auto port = context->getTCPPort();
+    const auto maybe_secure_port = context->getBoundTCPPortSecure();
+    const auto port = context->getBoundTCPPort();
 
     auto all_host_ids = getAllHostIDsFromClusters();
 
