@@ -93,6 +93,10 @@ public:
         LOG_TRACE(log, "Loading lazy table on first access");
 
         auto nested_storage = get_nested();
+        /// The catalog keeps handing out this stand-in, while the database iterator hands out the storage
+        /// behind it, see `unwrapMaterializedLazyTable`. `DROP` and `TRUNCATE` lock the former, `BACKUP`
+        /// and `Merge` lock the latter, so the two must share the lock to exclude each other.
+        nested_storage->shareDropLockWith(*this);
         nested_storage->startup();
         nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;

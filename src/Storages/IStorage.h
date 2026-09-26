@@ -400,6 +400,11 @@ public:
     /// heavyweight and makes table irresponsive.
     TableExclusiveLockHolder lockExclusively(const String & query_id, const Poco::Timespan & acquire_timeout);
 
+    /// Makes `lockForShare` / `lockExclusively` of this storage and of `other` use the same lock, for two
+    /// objects that stand for the same table, such as a lazy-load stand-in and the storage behind it.
+    /// Must be called before this storage is visible to any other thread.
+    void shareDropLockWith(const IStorage & other) { drop_lock = other.drop_lock; }
+
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
       *  for example, the request can be partially processed on a remote server, or an aggregate projection.)

@@ -22,6 +22,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
+#include <Storages/StorageTableProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -1528,6 +1529,12 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         /// Do not postpone removal of in-memory tables
         ignore_delay = ignore_delay || !table->storesDataOnDisk();
+        table->is_dropped = true;
+        /// The data is removed once nobody uses the table any more. A materialized lazy-load stand-in
+        /// is not the only owner of the storage behind it: the database iterator hands that storage out
+        /// directly, e.g. to `BACKUP` and to `Merge`, so wait until that one is unused - it is referenced
+        /// by the stand-in as well, so this also covers the users of the stand-in.
+        table = unwrapMaterializedLazyTable(table);
         table->is_dropped = true;
     }
     else
