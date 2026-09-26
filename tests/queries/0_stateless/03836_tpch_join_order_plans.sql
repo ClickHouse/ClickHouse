@@ -103,7 +103,7 @@ SET rewrite_in_to_join = 0;
 SET use_index_for_in_with_subqueries = 0;
 SET enable_early_constant_folding = 0;
 SET correlated_subqueries_use_in_memory_buffer = 0;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 -- The CI test profile sets non-zero max_rows_in_join/max_bytes_in_join, which alters the
 -- correlated-subquery join order. Pin to 0 so the asserted plan is stable.
 SET max_rows_in_join = 0;

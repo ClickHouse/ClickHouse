@@ -576,6 +576,14 @@ public:
         allow_query_condition_cache = replaced_step.allow_query_condition_cache;
     }
 
+    /// Carries the join runtime filter descriptors for the second-pass index analysis over from a read
+    /// step that this step replaces (the projection read built by `optimizeUseNormalProjections`).
+    /// `registerLeftSideIndexAnalysisSecondPass` runs before the projection rewrite, so the descriptors
+    /// are attached to the base-table read and would be lost otherwise. Every descriptor is registered
+    /// anew through `addJoinRuntimeFilterIndexAnalysisOnDataRead`, so it is kept only if the key column
+    /// is prunable through this step's own metadata (the projection's primary key or skip indexes).
+    void copyJoinRuntimeFilterIndexAnalysisDescriptors(const ReadFromMergeTree & replaced_step);
+
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
@@ -655,9 +663,12 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
-    /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
-    /// only the optimization is lost); propagating it there is a follow-up.
+    /// optimization. Carried over to a projection read by copyJoinRuntimeFilterIndexAnalysisDescriptors,
+    /// but not by clone()/serialize()/deserialize(), so the pruning is intentionally skipped when the step
+    /// is rebuilt for distributed or parallel-replicas reads (results stay correct, only the optimization
+    /// is lost); propagating it there is a follow-up. This is part of the setting's documented contract
+    /// (see its description in `Settings.cpp`) and is pinned by
+    /// `05153_join_runtime_filters_index_analysis_distributed_noop`.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed
