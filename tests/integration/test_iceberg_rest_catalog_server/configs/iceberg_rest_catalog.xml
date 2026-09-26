@@ -1,0 +1,6 @@
+<clickhouse>
+    <iceberg_rest_catalog>
+        <port>8182</port>
+        <warehouse>my_warehouse</warehouse>
+    </iceberg_rest_catalog>
+</clickhouse>
