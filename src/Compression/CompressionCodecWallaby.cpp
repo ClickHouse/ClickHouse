@@ -355,11 +355,14 @@ QuantizeStatus quantizeValueWithAdjustment(
 /// lanes (at most width/4 bits per value) cost less than the extra quantized-lane width
 /// (log2(10) bits per scale step) — decimals disturbed by lossy arithmetic are bit-exact only
 /// at a very fine scale, while values that are exact at a low scale vote it directly.
-/// The exact scale (when one exists) goes into exact_alpha_out: the tolerant vote is a
-/// preference, not a guarantee — a vector whose other values reject the voted scale still has
-/// the exact scale as its provably representable fallback.
+/// The other scale of the pair (when one exists) goes into alternative_alpha_out, because the
+/// vote is a preference, not a guarantee. When the vote is the near scale, the alternative is
+/// the exact scale: a vector whose other values reject the voted scale still has it as its
+/// provably representable fallback. When the vote is the exact scale, the alternative is the
+/// near scale: the fixed advantage above compares one value's lanes, not the payload of a
+/// whole vector, so a near scale only a few steps lower can still pack the vector smaller.
 template <typename T>
-std::optional<Int32> findAlpha(typename WallabyTraits<T>::FloatType value, std::optional<Int32> * exact_alpha_out = nullptr)
+std::optional<Int32> findAlpha(typename WallabyTraits<T>::FloatType value, std::optional<Int32> * alternative_alpha_out = nullptr)
 {
     using Traits = WallabyTraits<T>;
     constexpr T near_threshold = T{1} << (Traits::width_bits / 4);
@@ -368,8 +371,8 @@ std::optional<Int32> findAlpha(typename WallabyTraits<T>::FloatType value, std::
     /// Positive zero is exactly representable at every scale; skip the downward probing.
     if (std::bit_cast<T>(value) == 0)
     {
-        if (exact_alpha_out)
-            *exact_alpha_out = Traits::min_alpha;
+        if (alternative_alpha_out)
+            *alternative_alpha_out = Traits::min_alpha;
         return Traits::min_alpha;
     }
     const QuantizeStatus at_zero = quantizeValue<T>(value, 0, quantized);
@@ -378,8 +381,8 @@ std::optional<Int32> findAlpha(typename WallabyTraits<T>::FloatType value, std::
         Int32 alpha = 0;
         while (alpha > Traits::min_alpha && quantizeValue<T>(value, alpha - 1, quantized) == QuantizeStatus::Ok)
             --alpha;
-        if (exact_alpha_out)
-            *exact_alpha_out = alpha;
+        if (alternative_alpha_out)
+            *alternative_alpha_out = alpha;
         return alpha;
     }
     Int32 near_scan_start = 0;
@@ -400,8 +403,8 @@ std::optional<Int32> findAlpha(typename WallabyTraits<T>::FloatType value, std::
             {
                 while (alpha > Traits::min_alpha && quantizeValue<T>(value, alpha - 1, quantized) == QuantizeStatus::Ok)
                     --alpha;
-                if (exact_alpha_out)
-                    *exact_alpha_out = alpha;
+                if (alternative_alpha_out)
+                    *alternative_alpha_out = alpha;
                 return alpha;
             }
             break;
@@ -431,10 +434,14 @@ std::optional<Int32> findAlpha(typename WallabyTraits<T>::FloatType value, std::
             break;
         }
     }
-    if (exact_alpha_out)
-        *exact_alpha_out = exact_alpha;
     if (near_alpha && (!exact_alpha || *near_alpha <= *exact_alpha - near_scale_advantage))
+    {
+        if (alternative_alpha_out)
+            *alternative_alpha_out = exact_alpha;
         return near_alpha;
+    }
+    if (alternative_alpha_out)
+        *alternative_alpha_out = near_alpha;
     return exact_alpha;
 }
 
@@ -475,9 +482,10 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
     /// growing is limited to power-of-two counts, where the multiplicative sequence is a bijection
     /// and distinctness is free (that is every vector but a partial last one).
     std::array<Int8, WALLABY_MAX_SAMPLES> sampled_alphas{};
-    /// The exact scale of each sampled value (the vote itself when the vote is exact): the
-    /// candidate to fall back to when the value's tolerant vote fails on the rest of the vector.
-    std::array<Int8, WALLABY_MAX_SAMPLES> sampled_exact_alphas{};
+    /// The other scale of each sampled value's {near, exact} pair (the vote itself when the value
+    /// has only one): the exact scale to fall back to when the tolerant vote fails on the rest of
+    /// the vector, or the near scale to compete with an exact vote on the payload of the vector.
+    std::array<Int8, WALLABY_MAX_SAMPLES> sampled_alternative_alphas{};
     UInt32 sampled_alpha_count = 0;
     /// Sampled values that no scale can represent: they are exceptions of every candidate.
     UInt32 sampled_unquantizable = 0;
@@ -492,11 +500,11 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             /// An odd multiplier hits every position exactly once modulo a power of two
             /// and spreads the samples uniformly for any other count.
             const UInt32 position = static_cast<UInt32>((static_cast<UInt64>(i) * 2654435761u) % count);
-            std::optional<Int32> sample_exact;
-            if (auto sample_alpha = findAlpha<T>(values[position], &sample_exact))
+            std::optional<Int32> sample_alternative;
+            if (auto sample_alpha = findAlpha<T>(values[position], &sample_alternative))
             {
                 sampled_alphas[sampled_alpha_count] = static_cast<Int8>(*sample_alpha);
-                sampled_exact_alphas[sampled_alpha_count] = static_cast<Int8>(sample_exact.value_or(*sample_alpha));
+                sampled_alternative_alphas[sampled_alpha_count] = static_cast<Int8>(sample_alternative.value_or(*sample_alpha));
                 ++sampled_alpha_count;
             }
             else
@@ -524,11 +532,11 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             if (seen)
                 continue;
             seen_positions[sampled_positions++] = position;
-            std::optional<Int32> sample_exact;
-            if (auto sample_alpha = findAlpha<T>(values[position], &sample_exact))
+            std::optional<Int32> sample_alternative;
+            if (auto sample_alpha = findAlpha<T>(values[position], &sample_alternative))
             {
                 sampled_alphas[sampled_alpha_count] = static_cast<Int8>(*sample_alpha);
-                sampled_exact_alphas[sampled_alpha_count] = static_cast<Int8>(sample_exact.value_or(*sample_alpha));
+                sampled_alternative_alphas[sampled_alpha_count] = static_cast<Int8>(sample_alternative.value_or(*sample_alpha));
                 ++sampled_alpha_count;
             }
             else
@@ -1293,13 +1301,14 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         for (UInt32 p = 0; p < probes; ++p)
         {
             const UInt32 e = std::min<UInt32>(p * stride, exception_count - 1);
-            std::optional<Int32> probe_exact;
-            if (auto exception_alpha = findAlpha<T>(values[exception_positions[e]], &probe_exact))
+            std::optional<Int32> probe_alternative;
+            if (auto exception_alpha = findAlpha<T>(values[exception_positions[e]], &probe_alternative))
                 consider_candidate(*exception_alpha);
             /// The tolerant vote of a disturbed decimal can repeat a scale it is an
             /// exception of; the exact scale is the one that absorbs it into the lanes.
-            if (probe_exact)
-                consider_candidate(*probe_exact);
+            /// (For an exact vote the alternative is the near scale.)
+            if (probe_alternative)
+                consider_candidate(*probe_alternative);
         }
     };
 
@@ -1318,10 +1327,12 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
             /// tolerant vote; when the rest of the vector rejects it, their exact scales are the
             /// provably representable fallback. Without this, a vector whose only considered
             /// candidate fails here never fills a reference quantization, so neither the
-            /// trailing-zero scan nor the exception probes get to run.
+            /// trailing-zero scan nor the exception probes get to run. (The samples that voted an
+            /// exact scale contribute their near scale, which may absorb into adjustments what
+            /// the exact scale had to except.)
             for (UInt32 i = 0; i < sampled_alpha_count; ++i)
-                if (sampled_alphas[i] == candidate && sampled_exact_alphas[i] != sampled_alphas[i])
-                    consider_candidate(sampled_exact_alphas[i]);
+                if (sampled_alphas[i] == candidate && sampled_alternative_alphas[i] != sampled_alphas[i])
+                    consider_candidate(sampled_alternative_alphas[i]);
             /// The exceptions recorded before the scan hit its budget are equally real values of
             /// the vector, and they are exactly the ones this scale cannot represent - the scale
             /// they need is a candidate that absorbs them into the lanes. Without this, a block
@@ -1350,10 +1361,14 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
         /// lanes can be much smaller. The widest-adjustment probes below cannot stand in for
         /// this — they only fire once the adjustments grow beyond a fixed threshold, so a
         /// vector whose exact scale is hidden behind uniformly small adjustments would keep the
-        /// tolerant scale as its only candidate.
+        /// tolerant scale as its only candidate. The same holds the other way round: a sample
+        /// votes its exact scale over a near scale fewer than `near_scale_advantage` steps lower
+        /// by comparing the lanes of that one value, but on the whole vector the near scale can
+        /// still win - its narrower integers have no trailing decimal zeros to be found by the
+        /// scan below, and with neither exceptions nor wide adjustments no probe would find it.
         for (UInt32 i = 0; i < sampled_alpha_count; ++i)
-            if (sampled_alphas[i] == candidate && sampled_exact_alphas[i] != sampled_alphas[i])
-                consider_candidate(sampled_exact_alphas[i]);
+            if (sampled_alphas[i] == candidate && sampled_alternative_alphas[i] != sampled_alphas[i])
+                consider_candidate(sampled_alternative_alphas[i]);
 
         if (!reference_filled)
         {
@@ -1386,11 +1401,11 @@ std::optional<DecimalEncodingResult<T>> encodeDecimal(
                 if (w + 2 < max_adjustment_width)
                     continue;
                 ++probed;
-                std::optional<Int32> probe_exact;
-                if (auto adjustment_alpha = findAlpha<T>(values[i], &probe_exact))
+                std::optional<Int32> probe_alternative;
+                if (auto adjustment_alpha = findAlpha<T>(values[i], &probe_alternative))
                     consider_candidate(*adjustment_alpha);
-                if (probe_exact)
-                    consider_candidate(*probe_exact);
+                if (probe_alternative)
+                    consider_candidate(*probe_alternative);
             }
         }
 

@@ -4034,6 +4034,27 @@ TEST_F(WallabyTest, KeepsTheExactSampledScaleWhenTheTolerantScaleSucceeds)
     EXPECT_LT(wallabyCompressedSize(values), 400u);
 }
 
+TEST_F(WallabyTest, KeepsTheNearSampledScaleWhenTheExactScaleIsFewStepsAway)
+{
+    /// Pseudo-random cents around `1000000.004` with a constant `+3e-8`: every value is exact at
+    /// `alpha = 8` and within a few hundred ULPs of the `alpha = 3` grid, so each sample reports the
+    /// near scale 3 and the exact scale 8. The two are closer than the fixed advantage that makes a
+    /// sample vote its near scale, so every sample votes 8, and nothing else reintroduces 3: the
+    /// `alpha = 8` integers have no trailing decimal zeros, and the vector has neither exceptions
+    /// nor wide adjustments to probe. An encoder revision that kept only the vote persisted the
+    /// `alpha = 8` packing (~3840 bytes), while `alpha = 3` with narrow adjustment lanes takes ~3490.
+    std::vector<Float64> values(1024);
+    UInt64 state = 1;
+    for (auto & value : values)
+    {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        const UInt64 cents = (state >> 33) % 10000;
+        value = static_cast<Float64>(100000000400003ULL + cents * 1000000ULL) / 1e8;
+    }
+
+    EXPECT_LT(wallabyCompressedSize(values), 3650u);
+}
+
 TEST_F(WallabyTest, CapsTheFrameOfReferenceLanesToDissolveTheAdjustmentLanes)
 {
     /// The Frame-of-Reference cap and the adjustment cap cannot be chosen one after the other:
