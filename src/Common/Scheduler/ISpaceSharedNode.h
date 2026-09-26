@@ -25,6 +25,7 @@ public:
 
     ResourceCost allocated = 0; /// Currently allocated amount of resource under this node.
     size_t allocations = 0; /// Number of currently running allocations under this node.
+    size_t active_allocations = 0; /// Number of allocations currently holding a nonzero amount.
 
     /// Requests to be processed next from the node or its children.
     /// Keeping these fields up-to-date is part of request processing and activation logic
@@ -46,36 +47,42 @@ public:
         ISpaceSharedNode * detached = nullptr; /// Detached node (may be not an immediate child) or nullptr if no node detached
         std::optional<IncreaseRequest *> increase; /// New increase request or nullptr if no more increase requests, null_opt means no change
         std::optional<DecreaseRequest *> decrease; /// New decrease request or nullptr if no more decrease requests, null_opt means no change
+        std::optional<ResourceAllocation *> suction; /// One suction owner in this subtree, or nullptr when it was cleared
 
-        explicit operator bool() const { return attached || detached || increase || decrease; }
+        explicit operator bool() const { return attached || detached || increase || decrease || suction; }
 
         Update & setAttached(ISpaceSharedNode * new_attached) & noexcept { attached = new_attached; return *this; }
         Update & setDetached(ISpaceSharedNode * new_detached) & noexcept { detached = new_detached; return *this; }
         Update & setIncrease(IncreaseRequest * new_increase) & noexcept { increase = new_increase; return *this; }
         Update & setDecrease(DecreaseRequest * new_decrease) & noexcept { decrease = new_decrease; return *this; }
+        Update & setSuction(ResourceAllocation * new_suction) & noexcept { suction = new_suction; return *this; }
         Update & resetAttached() & noexcept { attached = nullptr; return *this; }
         Update & resetDetached() & noexcept { detached = nullptr; return *this; }
         Update & resetIncrease() & noexcept { increase = std::nullopt; return *this; }
         Update & resetDecrease() & noexcept { decrease = std::nullopt; return *this; }
+        Update & resetSuction() & noexcept { suction = std::nullopt; return *this; }
 
         // To keep Update().setXXX() methods usable in rvalue context and avoid copies
         Update && setAttached(ISpaceSharedNode * new_attached) && noexcept { attached = new_attached; return std::move(*this); }
         Update && setDetached(ISpaceSharedNode * new_detached) && noexcept { detached = new_detached; return std::move(*this); }
         Update && setIncrease(IncreaseRequest * new_increase) && noexcept { increase = new_increase; return std::move(*this); }
         Update && setDecrease(DecreaseRequest * new_decrease) && noexcept { decrease = new_decrease; return std::move(*this); }
+        Update && setSuction(ResourceAllocation * new_suction) && noexcept { suction = new_suction; return std::move(*this); }
         Update && resetAttached() && noexcept { attached = nullptr; return std::move(*this); }
         Update && resetDetached() && noexcept { detached = nullptr; return std::move(*this); }
         Update && resetIncrease() && noexcept { increase = std::nullopt; return std::move(*this); }
         Update && resetDecrease() && noexcept { decrease = std::nullopt; return std::move(*this); }
+        Update && resetSuction() && noexcept { suction = std::nullopt; return std::move(*this); }
 
         // For debugging purposes only
         String toString() const
         {
-            return fmt::format("{{ attached={}, detached={}, increase={}, decrease={} }}",
+            return fmt::format("{{ attached={}, detached={}, increase={}, decrease={}, suction={} }}",
                 attached ? attached->getPath() : "nullptr",
                 detached ? detached->getPath() : "nullptr",
                 increase ? (*increase ? (*increase)->allocation.id : "nullptr") : "no_change",
-                decrease ? (*decrease ? (*decrease)->allocation.id : "nullptr") : "no_change");
+                decrease ? (*decrease ? (*decrease)->allocation.id : "nullptr") : "no_change",
+                suction ? (*suction ? (*suction)->id : "nullptr") : "no_change");
         }
     };
 
@@ -89,6 +96,20 @@ public:
     /// Recursively propagates to children if necessary.
     virtual void approveIncrease() = 0;
     virtual void approveDecrease() = 0;
+
+    /// Starts a new fit-check round for increases hidden by memory-growth suspension.
+    /// Composite nodes forward this to their children; queues perform the reset on activation.
+    virtual void retrySuspendedIncreases() = 0;
+
+    /// State owned by this exact hierarchy level. These are intentionally not aggregated:
+    /// spilling follows descendants while suction follows the selected ancestor path.
+    virtual ResourceAllocation * getLocalSpillingAllocation() const { return nullptr; }
+    virtual ResourceAllocation * getLocalSuctionAllocation() const { return nullptr; }
+    virtual ResourceAllocation * getSuctionAllocation() const { return getLocalSuctionAllocation(); }
+
+    /// Reports whether this subtree contains a parked increase. Precedence policies use this as a
+    /// barrier: hiding a high-precedence request for reclaim must not expose lower-precedence work.
+    virtual bool hasSuspendedIncrease() const { return false; }
 
     /// Returns allocation to be killed from this node or its children to approve a `killer` increase request.
     /// NOTE: It is important to keep killing order opposite to acquire ordering.
@@ -125,17 +146,21 @@ public:
         {
             allocated += update.attached->allocated;
             allocations += update.attached->allocations;
+            active_allocations += update.attached->active_allocations;
         }
         if (update.detached)
         {
             allocated -= update.detached->allocated;
             allocations -= update.detached->allocations;
+            active_allocations -= update.detached->active_allocations;
         }
         ++updates;
     }
 
     void apply(IncreaseRequest & request)
     {
+        if (request.allocation.allocated == 0)
+            ++active_allocations;
         allocated += request.size;
         ++increases;
         if (request.kind == IncreaseRequest::Kind::Initial || request.kind == IncreaseRequest::Kind::Pending)
@@ -149,6 +174,11 @@ public:
 
     void apply(DecreaseRequest & request)
     {
+        if (request.size > 0 && request.allocation.allocated == request.size)
+        {
+            chassert(active_allocations > 0);
+            --active_allocations;
+        }
         allocated -= request.size;
         ++decreases;
         if (request.removing_allocation)

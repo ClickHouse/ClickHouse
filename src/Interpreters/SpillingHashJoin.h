@@ -110,6 +110,14 @@ public:
     void onBuildPhaseFinish() override;
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
 
+    /// Make the auto-spill wrapper participate in memory-reservation recovery. During collection
+    /// explicit reservation pressure may force the normal HashJoin -> GraceHashJoin transition;
+    /// after the switch the request is delegated to the active GraceHashJoin.
+    bool trySpillForMemoryPressure();
+    bool hasPendingMemoryPressureSpill() const;
+    /// Arm the active GraceHashJoin to spill from ordinary processor work.
+    bool forceSpill();
+
     bool canSpillToDisk() const override { return true; }
     size_t getSpillableBytes() const override;
     void requestSpill() override;

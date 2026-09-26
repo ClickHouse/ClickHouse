@@ -120,6 +120,9 @@ public:
     bool canSpillToDisk() const override { return true; }
     size_t getSpillableBytes() const override;
     void requestSpill() override { force_spill = true; }
+    void forceSpill() { requestSpill(); }
+    bool hasPendingSpill() const;
+    bool trySpillForMemoryPressure();
 
 private:
     void initBuckets();
@@ -192,6 +195,8 @@ private:
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
     std::atomic<bool> force_spill = false;
+    bool build_finished = false; /// Protected by `hash_join_mutex`.
+    bool delayed_bucket_loading = false; /// Protected by `hash_join_mutex`.
 
     /// What the buckets built and already released held, for the `max_rows_in_join` /
     /// `max_bytes_in_join` check. The bucket in memory right now is added on top, see `checkSizeLimits`.

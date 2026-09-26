@@ -389,6 +389,28 @@ public:
     // If the in-memory data's size is not larger then bytes, it doesn't spill
     virtual bool spillOnSize(size_t /*bytes*/) { return false; }
 
+    /// Deferred spilling may need more than one work call. Called after work by the same worker;
+    /// implementations with shared spill state must also synchronize with its completion.
+    virtual bool hasPendingSpill() const { return false; }
+
+    enum class MemoryPressureSpillResult : UInt8
+    {
+        Progress,
+        Pending,
+        NotSpillable,
+    };
+
+    /// Execute one synchronized memory-pressure spill attempt without consuming input or producing
+    /// output. Implementations own synchronization and any algorithm transition required for the
+    /// attempt, so the recovery scheduler never interprets processor-specific state.
+    virtual MemoryPressureSpillResult spillForMemoryPressure()
+    {
+        return MemoryPressureSpillResult::NotSpillable;
+    }
+
+    /// Processors sharing spillable state must return the same stable identity for that state.
+    virtual const void * getMemoryPressureSpillTarget() const { return this; }
+
 protected:
     /// May be called in parallel with work().
     virtual void onCancel() noexcept {}

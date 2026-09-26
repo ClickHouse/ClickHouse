@@ -387,6 +387,29 @@ bool GraceHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     return false;
 }
 
+bool GraceHashJoin::trySpillForMemoryPressure()
+{
+    /// Delayed bucket loading publishes `current_bucket` under `current_bucket_mutex` and then
+    /// updates the active hash table under `hash_join_mutex`. Use the same lock order here so a
+    /// recovery spill observes one coherent bucket/table pair.
+    std::lock_guard current_bucket_lock(current_bucket_mutex);
+    std::lock_guard hash_join_lock(hash_join_mutex);
+    /// During normal probing the current hash table is immutable. Delayed-bucket loading is a
+    /// second build phase, so reservation recovery may rebucket only while that phase is active.
+    if ((build_finished && !delayed_bucket_loading) || !current_bucket || !canForceRepartition())
+        return false;
+    repartitionCurrentBucket(hash_join->getTotalRowCount(), {});
+    return true;
+}
+
+bool GraceHashJoin::hasPendingSpill() const
+{
+    /// Wait for any in-flight repartition and report only actionable requests. A retained hint
+    /// at the bucket limit must not keep memory-reservation recovery pending indefinitely.
+    std::lock_guard lock(hash_join_mutex);
+    return forcedSpillPending();
+}
+
 bool GraceHashJoin::checkSizeLimits() const
 {
     /// Count what the hash tables hold, exactly as `HashJoin` does when it checks the same limits: the
@@ -830,7 +853,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
     if (hash_join)
     {
         stats.foldIn(*hash_join);
-        /// This bucket is about to be released, so its share of the hard cap has to survive it.
+        /// Preserve the hard-cap accounting when this bucket is released.
         accounted_right_rows += hash_join->getTotalRowCount();
         accounted_right_bytes += hash_join->getTotalByteCount();
     }
@@ -843,9 +866,7 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     size_t prev_keys_num = 0;
     if (hash_join && buckets.size() > 1)
-    {
         prev_keys_num = hash_join->getTotalRowCount();
-    }
 
     for (bucket_idx = bucket_idx + 1; bucket_idx < buckets.size(); ++bucket_idx)
     {
@@ -856,26 +877,53 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
             continue;
         }
 
-        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
         auto right_reader = current_bucket->startJoining();
-        size_t num_rows = 0; /// count rows that were written and rehashed
-        for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
         {
-            num_rows += block.rows();
-            addBlockToJoinImpl(std::move(block));
+            std::lock_guard lock(hash_join_mutex);
+            hash_join.reset();
+            hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_idx), prev_keys_num);
+            delayed_bucket_loading = true;
         }
-        hash_join->onBuildPhaseFinish();
 
-        /// The same hard cap as during the build phase, now that this bucket's hash table is complete.
-        /// `join_overflow_mode = 'break'` keeps this bucket, the way `HashJoin` keeps the block that crossed
-        /// the cap, and stops before the next one.
-        if (!table_join->legacyJoinSizeLimitsTriggerSpilling() && !checkSizeLimits())
-            stop_after_current_bucket = true;
+        try
+        {
+            size_t num_rows = 0; /// count rows that were written and rehashed
+            for (Block block = right_reader.read(); !block.empty(); block = right_reader.read())
+            {
+                num_rows += block.rows();
+                addBlockToJoinImpl(std::move(block));
+            }
 
-        LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
-            bucket_idx, hash_join->getTotalRowCount(), num_rows, ReadableSize(hash_join->getTotalByteCount()));
+            InMemoryJoinPtr loaded_hash_join;
+            size_t loaded_rows = 0;
+            size_t loaded_bytes = 0;
+            {
+                std::lock_guard lock(hash_join_mutex);
+                hash_join->onBuildPhaseFinish();
+                delayed_bucket_loading = false;
+                force_spill = false;
+                loaded_rows = hash_join->getTotalRowCount();
+                loaded_bytes = hash_join->getTotalByteCount();
+                loaded_hash_join = hash_join;
+            }
 
-        return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, hash_join, left_key_names, right_key_names);
+            /// Check the completed bucket outside `hash_join_mutex`: the accessors lock it.
+            /// Break mode keeps this bucket and stops before loading the next one.
+            if (!table_join->legacyJoinSizeLimitsTriggerSpilling() && !checkSizeLimits())
+                stop_after_current_bucket = true;
+
+            LOG_TRACE(log, "Loaded bucket {} with {}(/{}) rows, {}",
+                bucket_idx, loaded_rows, num_rows, ReadableSize(loaded_bytes));
+
+            return std::make_unique<DelayedBlocks>(current_bucket->idx, buckets, std::move(loaded_hash_join), left_key_names, right_key_names);
+        }
+        catch (...)
+        {
+            std::lock_guard lock(hash_join_mutex);
+            delayed_bucket_loading = false;
+            force_spill = false;
+            throw;
+        }
     }
 
     LOG_TRACE(log, "Finished loading all {} buckets", buckets.size());
@@ -1050,7 +1098,9 @@ GraceHashJoin::Buckets GraceHashJoin::getCurrentBuckets() const
 
 void GraceHashJoin::onBuildPhaseFinish()
 {
-    // It cannot be called concurrently with other IJoin methods
+    /// Close the build phase under the same mutex used by dedicated reservation recovery.
+    std::lock_guard lock(hash_join_mutex);
+    build_finished = true;
     if (!hash_join)
         return;
 
@@ -1058,6 +1108,7 @@ void GraceHashJoin::onBuildPhaseFinish()
     if (current_bucket && forcedSpillPending())
         repartitionCurrentBucket(hash_join->getTotalRowCount(), {});
 
+    force_spill = false;
     hash_join->onBuildPhaseFinish();
 }
 }
