@@ -1638,9 +1638,11 @@ DynamicQueryHandler::DynamicQueryHandler(
     const std::string & param_name_,
     const HTTPResponseHeaderSetup & http_response_headers_override_,
     const std::string & url_prefix_,
-    HTTPPathHintsPtr path_hints_)
+    HTTPPathHintsPtr path_hints_,
+    bool parse_http_path_)
     : HTTPHandler(server_, connection_config_, "DynamicQueryHandler", http_response_headers_override_, url_prefix_, std::move(path_hints_))
     , param_name(param_name_)
+    , parse_http_path(parse_http_path_)
 {
 }
 
@@ -1918,7 +1920,12 @@ HTTPRequestHandlerFactoryPtr createDynamicHandlerFactory(IServer & server,
     }
 
     auto creator = [&server, query_param_name, http_response_headers_override, connection_config, url_prefix]() -> std::unique_ptr<DynamicQueryHandler>
-    { return std::make_unique<DynamicQueryHandler>(server, connection_config, query_param_name, http_response_headers_override, url_prefix); };
+    {
+        /// A rule without `url_prefix` is matched by its own `url`, which is not a `database/table.format` path.
+        const bool parse_http_path = !url_prefix.empty();
+        return std::make_unique<DynamicQueryHandler>(
+            server, connection_config, query_param_name, http_response_headers_override, url_prefix, nullptr, parse_http_path);
+    };
 
     auto factory = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(std::move(creator));
     factory->addFiltersFromConfig(config, config_prefix);
