@@ -13,6 +13,7 @@
 
 #include <Common/thread_local_rng.h>
 #include <Common/FailPoint.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <base/scope_guard.h>
 
@@ -36,6 +37,8 @@ public:
         {
             ServerUUID::setRandomForUnitTests();
             getIOThreadPool().initializeWithDefaultSettingsIfNotInitialized();
+            /// The metadata storage writes snapshots of its state in a task of the schedule pool of the global context.
+            getContext();
             initialized = true;
         }
     }
@@ -54,7 +57,7 @@ public:
     {
         std::unique_lock<std::mutex> lock(active_metadatas_mutex);
         auto object_storage = active_object_storages.at(key_prefix);
-        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+        active_metadatas[key_prefix] = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", snapshot_settings);
         return active_metadatas.at(key_prefix);
     }
 
@@ -82,7 +85,7 @@ private:
         fs::remove_all("./" + key_prefix);
         LocalObjectStorageSettings settings("test", "./" + key_prefix, /*read_only_=*/false);
         auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
-        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
+        auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "", snapshot_settings);
 
         active_metadatas.emplace(key_prefix, metadata_storage);
         active_object_storages.emplace(key_prefix, object_storage);
@@ -91,6 +94,9 @@ private:
     }
 
     static inline bool initialized = false;
+
+    /// The snapshot is written right after every commit, so that every restart goes through the snapshot and the reconcile.
+    static constexpr PlainRewritableSnapshotSettings snapshot_settings{.enabled = true, .write_delay_ms = 0};
 
     std::mutex active_metadatas_mutex;
     std::unordered_map<std::string, std::shared_ptr<IMetadataStorage>> active_metadatas;
@@ -146,6 +152,8 @@ static std::vector<std::string> sorted(std::vector<std::string> array)
     return array;
 }
 
+/// All objects of the disk except the snapshot of the metadata (`__meta/snapshot.bin`): it is a derived copy of
+/// the state, rewritten after every commit, and the tests check the layout of the data and the `prefix.path` objects.
 static std::vector<std::string> listAllBlobs(std::string test)
 {
     if (!std::filesystem::exists(fmt::format("./{}", test)))
@@ -154,6 +162,7 @@ static std::vector<std::string> listAllBlobs(std::string test)
     return sorted(std::filesystem::recursive_directory_iterator(fmt::format("./{}", test))
                     | std::views::filter([](const auto & inode) { return inode.is_regular_file(); })
                     | std::views::transform([](const auto & file) { return file.path(); })
+                    | std::views::filter([](const std::string & path) { return !path.ends_with("/__meta/" + PlainRewritableLayout::SNAPSHOT_FILE_NAME); })
                     | std::ranges::to<std::vector<std::string>>());
 }
 

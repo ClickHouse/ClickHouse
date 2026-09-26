@@ -249,6 +249,17 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::execute()
     }
 
     fs_tree->moveDirectory(path_from, path_to);
+
+    /// The rewritten `prefix.path` objects have new ETags. The state in memory (and the snapshot file written from it)
+    /// must have them, otherwise the reload from the snapshot considers every moved directory changed and reads it again.
+    for (const auto & [subdir, remote_info] : from_tree_info)
+    {
+        if (!remote_info.has_value())
+            continue;
+
+        auto metadata = object_storage->getObjectMetadata(layout->constructDirectoryObjectKey(remote_info->remote_path), /*with_tags=*/ false);
+        fs_tree->updateDirectoryObjectMetadata(path_to / subdir / "", metadata.etag, metadata.last_modified.epochTime());
+    }
 }
 
 void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::undo()

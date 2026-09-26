@@ -191,6 +191,24 @@ void FsSnapshot::recordDirectoryPath(const std::string & path, DirectoryRemoteIn
     remote_layout_files_delta += info.files.size();
 }
 
+void FsSnapshot::updateDirectoryObjectMetadata(const std::string & path, const std::string & etag, time_t last_modified)
+{
+    UniqueLock lock(mutex);
+    const auto normalized_path = normalizePath(path);
+    const auto node = walk(root, normalized_path);
+
+    if (!node)
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' does not exist", normalized_path.string());
+
+    if (isVirtual(node))
+        throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Directory '{}' is virtual", normalized_path.string());
+
+    auto new_info = node->info.value();
+    new_info.etag = etag;
+    new_info.last_modified = last_modified;
+    root = updateInfo(root, normalized_path, new_info);
+}
+
 void FsSnapshot::moveDirectory(const std::string & from, const std::string & to)
 {
     UniqueLock lock(mutex);

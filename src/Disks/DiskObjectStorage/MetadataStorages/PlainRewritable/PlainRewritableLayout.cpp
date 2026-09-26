@@ -19,6 +19,11 @@ std::string PlainRewritableLayout::constructMetadataDirectoryKey() const
     return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN;
 }
 
+std::string PlainRewritableLayout::constructSnapshotObjectKey() const
+{
+    return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN / SNAPSHOT_FILE_NAME;
+}
+
 std::string PlainRewritableLayout::constructRootFilesDirectoryKey() const
 {
     return object_storage_common_key_prefix / ROOT_DIRECTORY_TOKEN;
