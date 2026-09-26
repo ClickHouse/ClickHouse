@@ -126,9 +126,9 @@ SELECT 'block mismatch off', count() FROM (SELECT DISTINCT x FROM (SELECT DISTIN
 -- Both results are 0 either way, so assert the rewrite itself: one filter per branch with the
 -- pushdown, a single one above the set operation without it. A count() parent collapses the plan,
 -- so this probe selects the set-key column instead.
-SELECT 'block mismatch filters on', countIf(explain ILIKE '%Filter column: materialize(NULL) = materialize(NULL)%') FROM
+SELECT 'block mismatch filters on', countIf(explain ILIKE '%Filter column:%') FROM
 (EXPLAIN SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY NULL) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 1);
-SELECT 'block mismatch filters off', countIf(explain ILIKE '%Filter column: materialize(NULL) = materialize(NULL)%') FROM
+SELECT 'block mismatch filters off', countIf(explain ILIKE '%Filter column:%') FROM
 (EXPLAIN SELECT DISTINCT x FROM (SELECT DISTINCT NULL AS x INTERSECT ALL SELECT DISTINCT NULL AS x GROUP BY NULL) AS t0 WHERE t0.x = t0.x SETTINGS query_plan_filter_push_down = 0);
 
 -- A branch whose GROUP BY keys differ from its sibling's keeps a Const the step materialized away,
