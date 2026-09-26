@@ -6,6 +6,13 @@ from typing import Any, Dict
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.database_disk import (
+    get_database_disk_name,
+    read_file,
+    read_metadata,
+    replace_text_in_file,
+    replace_text_in_metadata,
+)
 
 
 cluster = ClickHouseCluster(__file__)
@@ -22,11 +29,12 @@ node1 = cluster.add_instance(
 )
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/config.xml"],
+    main_configs=["configs/config.xml", "configs/backups_disk.xml"],
     user_configs=["configs/users.xml"],
     keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
     macros={"shard": "shard1", "replica": "2"},
     with_zookeeper=True,
+    external_dirs=["/backups/"],
 )
 node3 = cluster.add_instance(
     "node3",
@@ -36,6 +44,46 @@ node3 = cluster.add_instance(
     macros={"shard": "shard2", "replica": "1"},
     with_zookeeper=True,
 )
+# `logs_to_keep` used to be 64-bit, so a config an older server accepted may hold a value above
+# `UInt32::max`. A dedicated node, because the config default is read once per server lifetime and
+# would leak into every other test on the node.
+node_logs_to_keep_overflow = cluster.add_instance(
+    "node_logs_to_keep_overflow",
+    main_configs=[
+        "configs/config.xml",
+        "configs/database_replicated_settings_overflow.xml",
+        "configs/backups_disk.xml",
+    ],
+    user_configs=["configs/users.xml"],
+    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    macros={"shard": "shard3", "replica": "1"},
+    stay_alive=True,
+    with_zookeeper=True,
+    external_dirs=["/backups/"],
+)
+
+
+def assert_exported_definition_is_clamped(node, db_name, stale_value, stage):
+    # Every surface that exports the definition goes through `getCreateDatabaseQuery`, which reparses
+    # the metadata file rather than serializing the live settings, so each is checked against the
+    # value the file holds: they must carry the clamped value, which `CREATE` accepts back, and not
+    # the stale literal, which it rejects. `stage` keeps the backup names apart when the same
+    # database is checked more than once: a backup is never overwritten.
+    show_create = node.query(f"SHOW CREATE DATABASE {db_name}")
+    assert "logs_to_keep = 4294967295" in show_create
+    assert stale_value not in show_create
+
+    engine_full = node.query(
+        f"SELECT engine_full FROM system.databases WHERE name = '{db_name}'"
+    )
+    assert "logs_to_keep = 4294967295" in engine_full
+    assert stale_value not in engine_full
+
+    backup_name = f"{db_name}_exported_{stage}"
+    node.query(f"BACKUP DATABASE {db_name} TO Disk('backups', '{backup_name}')")
+    backup_definition = read_file(node, "backups", f"{backup_name}/metadata/{db_name}.sql")
+    assert "logs_to_keep = 4294967295" in backup_definition
+    assert stale_value not in backup_definition
 
 
 @pytest.fixture(scope="module")
@@ -186,6 +234,149 @@ def test_database_replicated_settings_zero_logs_to_keep(started_cluster):
         + r"'{shard}', '{replica}') "
         + "SETTINGS logs_to_keep=0"
     )
+
+def test_logs_to_keep_from_config_is_clamped(started_cluster):
+    db_name = "test_" + get_random_string()
+
+    # The out-of-range config default must not prevent creating a database (which on a restart is
+    # exactly the metadata replay path); the effective value is clamped to `UInt32::max` and written
+    # to Keeper as such.
+    node_logs_to_keep_overflow.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
+        + r"'{shard}', '{replica}')"
+    )
+
+    logs_to_keep_in_keeper = node_logs_to_keep_overflow.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/test/{db_name}' AND name = 'logs_to_keep'"
+    ).strip()
+    assert logs_to_keep_in_keeper == "4294967295"
+
+    assert node_logs_to_keep_overflow.contains_in_log(
+        "exceeds the maximum of 4294967295"
+    )
+
+    node_logs_to_keep_overflow.query(f"DROP DATABASE {db_name}")
+
+
+def test_logs_to_keep_replay_of_out_of_range_metadata(started_cluster):
+    node = node_logs_to_keep_overflow
+    db_name = "test_" + get_random_string()
+    # Relative to the root of the database disk: under `/var/lib/clickhouse` by default, on a
+    # remote object storage disk in the `db disk` CI flavor.
+    metadata_file = f"metadata/{db_name}.sql"
+
+    # An older server accepted `logs_to_keep` above `UInt32::max` and wrote it into the database
+    # definition. Every path that writes the file now validates the value, so the legacy state is
+    # fabricated by editing the file directly - the same state an upgrade would find on disk.
+    node.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
+        + r"'{shard}', '{replica}') "
+        + "SETTINGS logs_to_keep = 1000"
+    )
+    db_uuid = node.query(
+        f"SELECT uuid FROM system.databases WHERE name = '{db_name}'"
+    ).strip()
+
+    node.query(f"DETACH DATABASE {db_name}")
+
+    # A full-syntax ATTACH carries a user-written definition, so an out-of-range value is rejected
+    # the same way CREATE rejects it, not clamped. The rejection leaves the database detached.
+    assert "BAD_ARGUMENTS" in node.query_and_get_error(
+        f"ATTACH DATABASE {db_name} UUID '{db_uuid}' ENGINE=Replicated('/test/{db_name}', "
+        + r"'{shard}', '{replica}') "
+        + "SETTINGS logs_to_keep = 9999999999"
+    )
+
+    # 9999999999 rather than the 10000000000 this node's config holds, so the log assertion below
+    # cannot match the warnings caused by the config default. The file is edited through
+    # `clickhouse disks`, which works for both a local and a remote database disk. The `assert`
+    # guards against the stored formatting of the SETTINGS clause drifting away from the pattern.
+    replace_text_in_metadata(
+        node, metadata_file, "logs_to_keep = 1000", "logs_to_keep = 9999999999"
+    )
+    assert "logs_to_keep = 9999999999" in read_metadata(node, metadata_file)
+
+    # The write bypassed the server, and a plain-rewritable database disk caches file metadata, so
+    # the cache has to be dropped for ATTACH to read the edited file.
+    db_disk_name = get_database_disk_name(node)
+    if db_disk_name != "default":
+        node.query(f"SYSTEM CLEAR DISK METADATA CACHE {db_disk_name}")
+
+    # The short syntax replays the metadata file: the value is clamped with a warning and the file
+    # stays intact, so the warning repeats on every replay rather than disappearing after one.
+    node.query(f"ATTACH DATABASE {db_name}")
+    assert node.contains_in_log(
+        "`logs_to_keep` of a Replicated database is 9999999999"
+    )
+    assert "logs_to_keep = 9999999999" in read_metadata(node, metadata_file)
+    # The file is stale, but the definition the database exports is not.
+    assert_exported_definition_is_clamped(node, db_name, "9999999999", "attach")
+
+    # Server startup replays the same file through a different path (an internal query with the full
+    # definition, not the short syntax), and it must clamp too: rejecting would leave a server that
+    # is healthy today unable to load the database after an upgrade.
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            f"SELECT count() FROM system.databases WHERE name = '{db_name}'"
+        ).strip()
+        == "1"
+    )
+    assert "logs_to_keep = 9999999999" in read_metadata(node, metadata_file)
+    assert_exported_definition_is_clamped(node, db_name, "9999999999", "restart")
+
+    node.query(f"DROP DATABASE {db_name} SYNC")
+
+
+def test_logs_to_keep_restore_of_out_of_range_backup(started_cluster):
+    node = node2
+    db_name = "test_" + get_random_string()
+    backup_name = f"{db_name}_backup"
+    # Relative to the root of the `backups` disk, see `configs/backups_disk.xml`.
+    backup_metadata_file = f"{backup_name}/metadata/{db_name}.sql"
+
+    # A backup ships the database definition as the metadata file holds it, so a backup made by an
+    # older server may carry `logs_to_keep` above `UInt32::max`. RESTORE replays that definition and
+    # must clamp it the way server startup does; rejecting would make such backups unrestorable.
+    # Every writer now validates the value, so the legacy backup is fabricated by editing the
+    # definition inside the backup. The `Disk` reader does not check a file against the manifest, so
+    # neither the recorded size nor the checksum needs a fix-up.
+    node.query(
+        f"CREATE DATABASE {db_name} ENGINE=Replicated('/test/{db_name}', "
+        + r"'{shard}', '{replica}') "
+        + "SETTINGS logs_to_keep = 1000"
+    )
+    node.query(f"BACKUP DATABASE {db_name} TO Disk('backups', '{backup_name}')")
+
+    # A value no other test uses, so the log assertion below cannot match another clamp. The
+    # `assert` guards against the stored formatting of the SETTINGS clause drifting from the pattern.
+    replace_text_in_file(
+        node, "backups", backup_metadata_file, "logs_to_keep = 1000", "logs_to_keep = 8888888888"
+    )
+    assert "logs_to_keep = 8888888888" in read_file(node, "backups", backup_metadata_file)
+
+    # Dropping the last replica removes the whole database path from Keeper, so the restore creates
+    # the path anew and the `logs_to_keep` node reflects the value the restored database uses.
+    node.query(f"DROP DATABASE {db_name} SYNC")
+    node.query(f"RESTORE DATABASE {db_name} FROM Disk('backups', '{backup_name}')")
+
+    logs_to_keep_in_keeper = node.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/test/{db_name}' AND name = 'logs_to_keep'"
+    ).strip()
+    assert logs_to_keep_in_keeper == "4294967295"
+    assert node.contains_in_log(
+        "`logs_to_keep` of a Replicated database is 8888888888"
+    )
+    # RESTORE writes a fresh metadata file from the restored definition, and the clamp is applied to
+    # that definition itself, so unlike a replayed file the definition of record holds the clamped
+    # value: nothing downstream of this restore ever sees the stale literal again.
+    restored_definition = read_metadata(node, f"metadata/{db_name}.sql")
+    assert "logs_to_keep = 4294967295" in restored_definition
+    assert "8888888888" not in restored_definition
+    assert_exported_definition_is_clamped(node, db_name, "8888888888", "restore")
+
+    node.query(f"DROP DATABASE {db_name} SYNC")
+
 
 def test_create_database_replicated_with_default_args(started_cluster):
     db_name = "test_" + get_random_string()
