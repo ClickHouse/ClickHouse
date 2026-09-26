@@ -117,19 +117,19 @@ ReturnType parseDateTimeBestEffortImpl(
     res = 0;
     UInt16 year = 0;
 
-    /// A year field of `0` is indistinguishable from "the year is not specified" in the code below, so an
-    /// explicitly written year of `0000` is silently replaced with the current (or previous) year. Remember
-    /// that this happened, so that a caller which must not accept a value it was not given can reject it -
-    /// see the `has_explicit_zero_year` parameter.
-    bool zero_year_was_read = false;
-    auto note_year_was_read = [&] { zero_year_was_read |= !year; };
-
     UInt8 month = 0;
     UInt8 day_of_month = 0;
     UInt8 hour = 0;
     UInt8 minute = 0;
     UInt8 second = 0;
 
+    /// Which date components were written explicitly. A year field of `0` is a real value (calendar year 0 for
+    /// DateTime64, or part of a zero-date placeholder such as `0000-00-00`), so it cannot mean "the year is not
+    /// specified". A caller which must not accept an explicit year `0000` can detect it with the
+    /// `has_explicit_zero_year` parameter.
+    bool has_year = false;
+    bool has_month = false;
+    bool has_day = false;
     bool has_time = false;
     bool has_fractional = false;
 
@@ -143,7 +143,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
     bool has_comma_between_date_and_time = false;
 
-    auto read_alpha_month = [&month] (const auto & alpha)
+    auto read_alpha_month = [&month, &has_month] (const auto & alpha)
     {
         if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
         else if (0 == strncasecmp(alpha, "Feb", 3)) month = 2;
@@ -159,6 +159,7 @@ ReturnType parseDateTimeBestEffortImpl(
         else if (0 == strncasecmp(alpha, "Dec", 3)) month = 12;
         else
             return false;
+        has_month = true;
         return true;
     };
 
@@ -266,9 +267,11 @@ ReturnType parseDateTimeBestEffortImpl(
             if (engage)
             {
                 year = fp_year;
-                note_year_was_read();
                 month = fp_month;
                 day_of_month = fp_day;
+                has_year = true;
+                has_month = true;
+                has_day = true;
                 if (time_matches)
                 {
                     hour = fp_hour;
@@ -285,7 +288,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
     while (!in.eof())
     {
-        if ((year && !has_time) || (!year && has_time))
+        if ((has_year && !has_time) || (!has_year && has_time))
         {
             if (*in.position() == ',')
             {
@@ -301,7 +304,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
         size_t num_digits = 0;
 
-        if (!year || !has_time)
+        if (!has_year || !has_time)
         {
             num_digits = readDigits(digits, sizeof(digits), in);
 
@@ -311,7 +314,7 @@ ReturnType parseDateTimeBestEffortImpl(
             /// 1970. The trade-off is that pre-2001 subsecond timestamps (12-digit ms, 15-digit us, 18-digit ns)
             /// are rejected here; resolving that would require make this function aware of `scale` argument so we could
             /// split from the right instead.
-            if (num_digits == 13 && !year && !has_time)
+            if (num_digits == 13 && !has_year && !has_time)
             {
                 /// This is unix timestamp with millisecond.
                 readDecimalNumber<10>(res, digits);
@@ -327,7 +330,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 }
                 return checkParsedDateTimeRange<ReturnType, is_64>(res, overflow == DateTimeOverflow::Saturate);
             }
-            if (num_digits == 16 && !year && !has_time)
+            if (num_digits == 16 && !has_year && !has_time)
             {
                 /// This is unix timestamp with microsecond.
                 readDecimalNumber<10>(res, digits);
@@ -343,7 +346,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 }
                 return checkParsedDateTimeRange<ReturnType, is_64>(res, overflow == DateTimeOverflow::Saturate);
             }
-            if (num_digits == 19 && !year && !has_time)
+            if (num_digits == 19 && !has_year && !has_time)
             {
                 /// This is unix timestamp with nanosecond.
                 readDecimalNumber<10>(res, digits);
@@ -359,7 +362,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 }
                 return checkParsedDateTimeRange<ReturnType, is_64>(res, overflow == DateTimeOverflow::Saturate);
             }
-            if (num_digits == 10 && !year && !has_time)
+            if (num_digits == 10 && !has_year && !has_time)
             {
                 if constexpr (strict)
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow timestamps");
@@ -378,7 +381,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 }
                 return checkParsedDateTimeRange<ReturnType, is_64>(res, overflow == DateTimeOverflow::Saturate);
             }
-            if (num_digits == 9 && !year && !has_time)
+            if (num_digits == 9 && !has_year && !has_time)
             {
                 if constexpr (strict)
                     return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow timestamps");
@@ -397,7 +400,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 }
                 return checkParsedDateTimeRange<ReturnType, is_64>(res, overflow == DateTimeOverflow::Saturate);
             }
-            if (num_digits == 14 && !year && !has_time)
+            if (num_digits == 14 && !has_year && !has_time)
             {
                 if constexpr (strict)
                     return on_error(
@@ -405,15 +408,17 @@ ReturnType parseDateTimeBestEffortImpl(
 
                 /// This is YYYYMMDDhhmmss
                 readDecimalNumber<4>(year, digits);
-                note_year_was_read();
                 readDecimalNumber<2>(month, digits + 4);
                 readDecimalNumber<2>(day_of_month, digits + 6);
                 readDecimalNumber<2>(hour, digits + 8);
                 readDecimalNumber<2>(minute, digits + 10);
                 readDecimalNumber<2>(second, digits + 12);
+                has_year = true;
+                has_month = true;
+                has_day = true;
                 has_time = true;
             }
-            else if (num_digits == 8 && !year)
+            else if (num_digits == 8 && !has_year)
             {
                 if constexpr (strict)
                     return on_error(
@@ -421,9 +426,11 @@ ReturnType parseDateTimeBestEffortImpl(
 
                 /// This is YYYYMMDD
                 readDecimalNumber<4>(year, digits);
-                note_year_was_read();
                 readDecimalNumber<2>(month, digits + 4);
                 readDecimalNumber<2>(day_of_month, digits + 6);
+                has_year = true;
+                has_month = true;
+                has_day = true;
             }
             else if (num_digits == 6)
             {
@@ -432,11 +439,12 @@ ReturnType parseDateTimeBestEffortImpl(
                         ErrorCodes::CANNOT_PARSE_DATETIME, "Strict best effort parsing doesn't allow date times without separators");
 
                 /// This is YYYYMM or hhmmss
-                if (!year && !month)
+                if (!has_year && !month)
                 {
                     readDecimalNumber<4>(year, digits);
-                    note_year_was_read();
                     readDecimalNumber<2>(month, digits + 4);
+                    has_year = true;
+                    has_month = true;
                 }
                 else if (!has_time)
                 {
@@ -449,7 +457,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     return on_error(
                         ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: ambiguous 6 digits, it can be YYYYMM or hhmmss");
             }
-            else if (num_digits == 4 && !year)
+            else if (num_digits == 4 && !has_year)
             {
                 /// YYYY
                 /// YYYY*MM
@@ -459,7 +467,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 /// YYYY*M*D
 
                 readDecimalNumber<4>(year, digits);
-                note_year_was_read();
+                has_year = true;
 
                 if (!in.eof())
                 {
@@ -487,6 +495,7 @@ ReturnType parseDateTimeBestEffortImpl(
                             ErrorCodes::CANNOT_PARSE_DATETIME,
                             "Cannot read DateTime: unexpected number of decimal digits after year: {}",
                             num_digits);
+                    has_month = true;
 
                     /// Only the same delimiter.
                     if (!day_of_month && checkChar(delimiter_after_year, in))
@@ -504,6 +513,7 @@ ReturnType parseDateTimeBestEffortImpl(
                                 ErrorCodes::CANNOT_PARSE_DATETIME,
                                 "Cannot read DateTime: unexpected number of decimal digits after year and month: {}",
                                 num_digits);
+                        has_day = true;
                     }
 
                     if (!isSymbolIn(delimiter_after_year, allowed_date_delimiters))
@@ -572,7 +582,10 @@ ReturnType parseDateTimeBestEffortImpl(
                 else if (checkChar(',', in))
                 {
                     if (month && !day_of_month)
+                    {
                         day_of_month = hour_or_day_of_month_or_month;
+                        has_day = true;
+                    }
                 }
                 else if (
                     (!in.eof() && isSymbolIn(*in.position(), allowed_date_delimiters))
@@ -587,6 +600,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     if constexpr (is_us_style)
                     {
                         month = hour_or_day_of_month_or_month;
+                        has_month = true;
                         num_digits = readDigits(digits, sizeof(digits), in);
                         if (num_digits == 2)
                             readDecimalNumber<2>(day_of_month, digits);
@@ -597,17 +611,25 @@ ReturnType parseDateTimeBestEffortImpl(
                                 ErrorCodes::CANNOT_PARSE_DATETIME,
                                 "Cannot read DateTime: unexpected number of decimal digits after month: {}",
                                 num_digits);
+                        has_day = true;
                     }
                     else
                     {
                         day_of_month = hour_or_day_of_month_or_month;
+                        has_day = true;
 
                         num_digits = readDigits(digits, sizeof(digits), in);
 
                         if (num_digits == 2)
+                        {
                             readDecimalNumber<2>(month, digits);
+                            has_month = true;
+                        }
                         else if (num_digits == 1)
+                        {
                             readDecimalNumber<1>(month, digits);
+                            has_month = true;
+                        }
                         else if (num_digits == 0)
                         {
                             /// Month in alphabetical form
@@ -648,7 +670,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     if ((!in.eof() && isSymbolIn(*in.position(), allowed_date_delimiters))
                         && (checkChar('/', in) || checkChar('.', in) || checkChar('-', in)))
                     {
-                        if (year)
+                        if (has_year)
                             return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year component is duplicated");
 
                         num_digits = readDigits(digits, sizeof(digits), in);
@@ -656,7 +678,6 @@ ReturnType parseDateTimeBestEffortImpl(
                         if (num_digits == 4)
                         {
                             readDecimalNumber<4>(year, digits);
-                            note_year_was_read();
                         }
                         else if (num_digits == 2)
                         {
@@ -672,6 +693,8 @@ ReturnType parseDateTimeBestEffortImpl(
                                 ErrorCodes::CANNOT_PARSE_DATETIME,
                                 "Cannot read DateTime: unexpected number of decimal digits after day of month and month: {}",
                                 num_digits);
+
+                        has_year = true;
                     }
                 }
                 else
@@ -687,6 +710,7 @@ ReturnType parseDateTimeBestEffortImpl(
                     else
                     {
                         day_of_month = hour_or_day_of_month_or_month;
+                        has_day = true;
                     }
                 }
             }
@@ -702,7 +726,7 @@ ReturnType parseDateTimeBestEffortImpl(
             /// 'T' is a separator between date and time according to ISO 8601.
             /// But don't skip it if we didn't read the date part yet, because 'T' is also a prefix for 'Tue' and 'Thu'.
 
-            if (c == ' ' || (c == 'T' && year && !has_time))
+            if (c == ' ' || (c == 'T' && has_year && !has_time))
             {
                 ++in.position();
             }
@@ -743,7 +767,7 @@ ReturnType parseDateTimeBestEffortImpl(
                 ++in.position();
                 num_digits = readDigits(digits, sizeof(digits), in);
 
-                if (num_digits == 6 && !has_time && year && month && day_of_month)
+                if (num_digits == 6 && !has_time && has_year && month && day_of_month)
                 {
                     /// It looks like hhmmss
                     readDecimalNumber<2>(hour, digits);
@@ -909,12 +933,33 @@ ReturnType parseDateTimeBestEffortImpl(
     }
 
     //// Date like '2022/03/04, ' should parse fail?
-    if (has_comma_between_date_and_time && (!has_time || !year || !month || !day_of_month))
+    if (has_comma_between_date_and_time && (!has_time || !has_year || !month || !day_of_month))
         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: unexpected word after Date");
 
     /// If neither Date nor Time is parsed successfully, it should fail
-    if (!year && !month && !day_of_month && !has_time)
+    if (!has_year && !month && !day_of_month && !has_time)
         return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: neither Date nor Time was parsed successfully");
+
+    /// Explicit zero month/day components in year 0 denote a zero-date placeholder and map to the
+    /// Unix epoch before missing components are defaulted. DateTime rejects real calendar dates in
+    /// year 0, while DateTime64 accepts them. In non-strict DateTime64 parsing, genuinely missing
+    /// components are still defaulted below (ex. 0000-05 becomes 0000-05-01).
+    if (has_year && year == 0)
+    {
+        if ((has_month && month == 0) || (has_day && day_of_month == 0))
+        {
+            /// Zero-date placeholders map to the Unix epoch for normal callers. Callers that pass
+            /// `has_explicit_zero_year` must still see an explicit year `0000`, including placeholder
+            /// spellings such as `0000-00-00`, so they can reject the input themselves.
+            if (has_explicit_zero_year == nullptr)
+            {
+                res = 0;
+                if (fractional)
+                    fractional->value = 0;
+                return ReturnType(true);
+            }
+        }
+    }
 
     if (!day_of_month)
     {
@@ -930,17 +975,8 @@ ReturnType parseDateTimeBestEffortImpl(
         month = 1;
     }
 
-    if (!year)
+    auto substitute_unspecified_year = [&]() -> bool
     {
-        /// The year is either absent or explicitly written as `0000`; in the latter case the value returned
-        /// below is not the one the caller asked for, so report it to a caller that wants to know.
-        if (has_explicit_zero_year)
-            *has_explicit_zero_year = zero_year_was_read;
-
-        /// Year 0000 is outside DateTime and the substitution below would hide that, which `throw` forbids
-        if (!is_64 && zero_year_was_read && overflow == DateTimeOverflow::Report)
-            return on_error(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Year 0000 is out of bounds of type DateTime");
-
         if constexpr (strict)
             return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year is required");
 
@@ -948,11 +984,34 @@ ReturnType parseDateTimeBestEffortImpl(
         /// otherwise it will be the previous year.
         /// This convoluted logic is needed to parse the syslog format, which looks as follows: "Mar  3 01:33:48".
         /// If you have questions, ask Victor Krasnov, https://www.linkedin.com/in/vickr/
-
         time_t now = time(nullptr);
         auto today = local_time_zone.toDayNum(now);
         UInt16 curr_year = local_time_zone.toYear(today);
         year = local_time_zone.makeDayNum(curr_year, month, day_of_month) <= today ? curr_year : curr_year - 1;
+        return true;
+    };
+
+    if (has_year && year == 0)
+    {
+        if constexpr (!is_64)
+        {
+            /// `VALID UNTIL` and similar callers need the flag plus a substitute year, so they reject themselves.
+            if (has_explicit_zero_year == nullptr)
+            {
+                if (overflow == DateTimeOverflow::Report)
+                    return on_error(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Year 0000 is out of bounds of type DateTime");
+                return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year 0 is out of supported range");
+            }
+
+            *has_explicit_zero_year = true;
+            if (!substitute_unspecified_year())
+                return ReturnType(false);
+        }
+    }
+    else if (!has_year)
+    {
+        if (!substitute_unspecified_year())
+            return ReturnType(false);
     }
 
     auto is_leap_year = (year % 400 == 0) || (year % 100 != 0 && year % 4 == 0);
