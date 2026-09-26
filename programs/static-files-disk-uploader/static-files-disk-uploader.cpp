@@ -68,7 +68,7 @@ static void processFile(const fs::path & file_path, const String & dst_path, boo
     RE2::FullMatch(pathToGenericString(file_path), EXTRACT_PATH_PATTERN, &remote_path);
     bool is_directory = fs::is_directory(file_path);
 
-    writeText(file_path.filename().string(), metadata_buf);
+    writeText(pathToString(file_path.filename()), metadata_buf);
     writeChar('\t', metadata_buf);
     writeBoolText(is_directory, metadata_buf);
     if (!is_directory)
@@ -112,71 +112,50 @@ static void processFile(const fs::path & file_path, const String & dst_path, boo
 }
 
 
+/// Uploads the files of a directory and writes its `.index`, then does the same for each subdirectory: the table
+/// directory contains the parts, and a part contains the directories of its projections (`p.proj`).
+static void processDirectory(const fs::path & directory_path, const String & dst_path, bool test_mode, bool link)
+{
+    String directory_prefix;
+    RE2::FullMatch(pathToGenericString(directory_path), EXTRACT_PATH_PATTERN, &directory_prefix);
+
+    std::shared_ptr<WriteBuffer> directory_meta;
+    if (test_mode)
+    {
+        directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(joinDestinationPath(joinDestinationPath(dst_path, encodeUrlPath(directory_prefix)), ".index")))
+                            .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+                            .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
+                            .create();
+    }
+    else
+    {
+        const auto directory_root = joinDestinationPath(dst_path, directory_prefix);
+        fs::create_directories(pathFromString(directory_root));
+        directory_meta = std::make_shared<WriteBufferFromFile>(joinDestinationPath(directory_root, ".index"));
+    }
+
+    fs::directory_iterator end;
+    for (fs::directory_iterator it(directory_path); it != end; ++it)
+    {
+        processFile(it->path(), dst_path, test_mode, link, *directory_meta);
+        if (it->is_directory())
+            processDirectory(it->path(), dst_path, test_mode, link);
+    }
+
+    directory_meta->next();
+    directory_meta->finalize();
+}
+
 static void processTableFiles(const fs::path & data_path, String dst_path, bool test_mode, bool link)
 {
     std::cerr << "Data path: " << data_path << ", destination path: " << dst_path << std::endl;
 
-    String prefix;
-    RE2::FullMatch(pathToGenericString(data_path), EXTRACT_PATH_PATTERN, &prefix);
-
-    std::shared_ptr<WriteBuffer> root_meta;
     if (test_mode)
-    {
         dst_path = joinDestinationPath(dst_path, "store");
-        auto files_root = joinDestinationPath(dst_path, encodeUrlPath(prefix));
-        root_meta = BuilderWriteBufferFromHTTP(Poco::URI(joinDestinationPath(files_root, ".index")))
-                      .withConnectionGroup(HTTPConnectionGroupType::HTTP)
-                      .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
-                      .create();
-    }
     else
-    {
         dst_path = pathToGenericString(fs::canonical(pathFromString(dst_path)));
-        auto files_root = joinDestinationPath(dst_path, prefix);
-        fs::create_directories(pathFromString(files_root));
-        root_meta = std::make_shared<WriteBufferFromFile>(joinDestinationPath(files_root, ".index"));
-    }
 
-    fs::directory_iterator dir_end;
-    for (fs::directory_iterator dir_it(data_path); dir_it != dir_end; ++dir_it)
-    {
-        if (dir_it->is_directory())
-        {
-            processFile(dir_it->path(), dst_path, test_mode, link, *root_meta);
-
-            String directory_prefix;
-            RE2::FullMatch(pathToGenericString(dir_it->path()), EXTRACT_PATH_PATTERN, &directory_prefix);
-
-            std::shared_ptr<WriteBuffer> directory_meta;
-            if (test_mode)
-            {
-                directory_meta = BuilderWriteBufferFromHTTP(Poco::URI(joinDestinationPath(joinDestinationPath(dst_path, encodeUrlPath(directory_prefix)), ".index")))
-                                    .withConnectionGroup(HTTPConnectionGroupType::HTTP)
-                                    .withMethod(Poco::Net::HTTPRequest::HTTP_PUT)
-                                    .create();
-            }
-            else
-            {
-                dst_path = pathToGenericString(fs::canonical(pathFromString(dst_path)));
-                const auto directory_root = joinDestinationPath(dst_path, directory_prefix);
-                fs::create_directories(pathFromString(directory_root));
-                directory_meta = std::make_shared<WriteBufferFromFile>(joinDestinationPath(directory_root, ".index"));
-            }
-
-            fs::directory_iterator files_end;
-            for (fs::directory_iterator file_it(dir_it->path()); file_it != files_end; ++file_it)
-                processFile(file_it->path(), dst_path, test_mode, link, *directory_meta);
-
-            directory_meta->next();
-            directory_meta->finalize();
-        }
-        else
-        {
-            processFile(dir_it->path(), dst_path, test_mode, link, *root_meta);
-        }
-    }
-    root_meta->next();
-    root_meta->finalize();
+    processDirectory(data_path, dst_path, test_mode, link);
 }
 }
 
@@ -217,7 +196,7 @@ try
     fs::path fs_path = fs::weakly_canonical(metadata_path);
     if (!fs::exists(fs_path))
     {
-        std::cerr << fmt::format("Data path ({}) does not exist", fs_path.string());
+        std::cerr << fmt::format("Data path ({}) does not exist", pathToString(fs_path));
         return 1;
     }
 
