@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 import pytest
 
@@ -183,24 +184,58 @@ def test_url_s3_scheme_with_parallel_replicas(started_cluster):
     # The destination must support replication: `distributedWriteIntoReplicatedMergeTreeOrDataLakeFromClusterStorage`
     # returns early for a plain `MergeTree`, so with one the `INSERT` would never even reach the point where the
     # source is examined and the regression could not show up. With a `ReplicatedMergeTree` the distributed path is
-    # entered and rejects the query only because the delegated `url` resolved to a plain storage rather than to an
+    # entered and declines the query only because the delegated `url` resolved to a plain storage rather than to an
     # `IStorageCluster` - which is exactly the property under test. If the delegate ever fans out again, the
     # forwarded query names `urlCluster('s3://...')` and every replica reads the whole file.
-    node.query("DROP TABLE IF EXISTS url_s3_parallel_replicas SYNC")
-    node.query(
-        """
-            CREATE TABLE url_s3_parallel_replicas (a UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/url_s3_parallel_replicas', 'r1') ORDER BY a
-        """
-    )
-    node.query(
-        f"""
-            INSERT INTO url_s3_parallel_replicas
-            SELECT * FROM url('s3://data/parallel_replicas_url.csv', 'CSV', 'a UInt32')
-            {parallel_replicas_settings}, parallel_distributed_insert_select = 2
-        """
-    )
+    #
+    # A row count alone cannot tell "declined because of the source" from "declined earlier for another reason",
+    # so the same `INSERT` from `s3('s3://...')` serves as a positive control: with the identical destination and
+    # settings it must be forwarded to every replica. The two queries differ only in the source, so the `url` one
+    # reached the source check and was declined there.
+    # Separate tables, so that the deduplication of `ReplicatedMergeTree` cannot swallow the second insert.
+    run_id = uuid.uuid4().hex
+    query_ids = {}
+    for function in ("url", "s3"):
+        table = f"{function}_s3_parallel_replicas"
+        query_ids[function] = f"{table}_{run_id}"
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"""
+                CREATE TABLE {table} (a UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table}_{run_id}', 'r1') ORDER BY a
+            """
+        )
+        node.query(
+            f"""
+                INSERT INTO {table}
+                SELECT * FROM {function}('s3://data/parallel_replicas_url.csv', 'CSV', 'a UInt32')
+                {parallel_replicas_settings}, parallel_distributed_insert_select = 2, log_queries = 1
+            """,
+            query_id=query_ids[function],
+        )
 
-    # The rows must be inserted exactly once, not once per replica.
-    assert node.query("SELECT count() FROM url_s3_parallel_replicas") == "10\n"
-    node.query("DROP TABLE url_s3_parallel_replicas SYNC")
+        # The rows must be inserted exactly once, not once per replica.
+        assert node.query(f"SELECT count() FROM {table}") == "10\n"
+
+    node.query("SYSTEM FLUSH LOGS query_log")
+
+    def forwarded_inserts(query_id):
+        return node.query(
+            f"""
+                SELECT count(), countIf(query ILIKE '%Cluster(%'), sum(read_rows)
+                FROM system.query_log
+                WHERE initial_query_id = '{query_id}'
+                    AND is_initial_query = 0
+                    AND query_kind = 'Insert'
+                    AND type = 'QueryFinish'
+                    AND event_date >= yesterday()
+            """
+        )
+
+    # Control: every replica ran the forwarded `INSERT` naming `s3Cluster`, and together they read the file once.
+    assert forwarded_inserts(query_ids["s3"]) == "3\t3\t10\n"
+    # The delegated `url` was not forwarded at all: it was inserted locally by the initiator.
+    assert forwarded_inserts(query_ids["url"]) == "0\t0\t0\n"
+
+    for function in ("url", "s3"):
+        node.query(f"DROP TABLE {function}_s3_parallel_replicas SYNC")
