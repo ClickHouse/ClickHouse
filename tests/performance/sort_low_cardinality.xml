@@ -31,6 +31,7 @@
     <query>SELECT * FROM sort_lc ORDER BY uint_col, lc_col FORMAT Null SETTINGS max_threads = {threads}</query>
     <query>SELECT * FROM sort_lc_50k ORDER BY lc_col FORMAT Null SETTINGS max_threads = {threads}</query>
     <query>SELECT * FROM sort_lc_50k ORDER BY lc_col LIMIT 10 FORMAT Null SETTINGS max_threads = {threads}</query>
+    <query>SELECT * FROM sort_lc ORDER BY lc_col LIMIT 10 FORMAT Null SETTINGS max_threads = {threads}</query>
 
     <drop_query>DROP TABLE IF EXISTS sort_lc</drop_query>
     <drop_query>DROP TABLE IF EXISTS sort_lc_50k</drop_query>

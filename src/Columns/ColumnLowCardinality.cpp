@@ -468,24 +468,50 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
         && WhichDataType(dict.getNestedNotNullableColumn()->getDataType()).isFloat();
 
     /// Rank of every dictionary index in the sorted dictionary. Ranks are dense, so they double as bucket numbers.
-    PaddedPODArray<UInt64> rank_by_index(dict.size());
+    PaddedPODArray<UInt64> rank_by_index;
     size_t num_ranks = 0;
-    for (size_t i = 0; i < unique_perm.size(); ++i)
+    if (merge_value_equal_entries)
     {
-        const bool equal_to_previous = i != 0 && merge_value_equal_entries
-            && dict.compareAt(unique_perm[i - 1], unique_perm[i], dict, nan_direction_hint) == 0;
-        if (!equal_to_previous)
-            ++num_ranks;
-        rank_by_index[unique_perm[i]] = num_ranks - 1;
+        rank_by_index.resize_exact(dict.size());
+        for (size_t i = 0; i < unique_perm.size(); ++i)
+        {
+            const bool equal_to_previous = i != 0 && dict.compareAt(unique_perm[i - 1], unique_perm[i], dict, nan_direction_hint) == 0;
+            if (!equal_to_previous)
+                ++num_ranks;
+            rank_by_index[unique_perm[i]] = num_ranks - 1;
+        }
     }
 
     const size_t indexes_size = getIndexes().size();
     const size_t perm_size = std::min(indexes_size, limit);
-    PaddedPODArray<UInt64> offsets(num_ranks, 0);
+    PaddedPODArray<UInt64> offsets(merge_value_equal_entries ? num_ranks : dict.size(), 0);
     res.resize(perm_size);
 
     auto scatter = [&](const auto & positions)
     {
+        /// Fast path: nothing to merge, bucket rows by dict idx directly and skip building rank table.
+        if (!merge_value_equal_entries)
+        {
+            for (size_t row = 0; row < indexes_size; ++row)
+                ++offsets[positions[row]];
+
+            size_t sum = 0;
+            for (const size_t index : unique_perm)
+            {
+                const size_t count = offsets[index];
+                offsets[index] = sum;
+                sum += count;
+            }
+
+            for (size_t row = 0; row < indexes_size; ++row)
+            {
+                const size_t pos = offsets[positions[row]]++;
+                if (pos < perm_size)
+                    res[pos] = row;
+            }
+            return;
+        }
+
         for (size_t row = 0; row < indexes_size; ++row)
             ++offsets[rank_by_index[positions[row]]];
 
