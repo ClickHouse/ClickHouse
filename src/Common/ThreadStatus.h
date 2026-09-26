@@ -130,6 +130,11 @@ public:
         return shared_data;
     }
 
+    /// The constructor-installed predicates resolve through the context's process-list element, so a group
+    /// without one polls constant `false`. Must be called before the group's first attach, which copies
+    /// `shared_data` into the thread's `local_data` once.
+    void setCancellationPredicates(QueryIsCanceledPredicate is_canceled, ThrowIfQueryCanceledPredicate throw_if_canceled);
+
     /// Mutation shared data
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level);
     void attachQueryForLog(const String & query_, UInt64 normalized_hash = 0);
