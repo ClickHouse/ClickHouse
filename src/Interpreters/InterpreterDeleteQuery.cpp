@@ -101,6 +101,9 @@ BlockIO InterpreterDeleteQuery::execute()
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
+    if (delete_query.cluster.empty())
+        checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
@@ -185,6 +188,11 @@ BlockIO InterpreterDeleteQuery::execute()
 
             DDLQueryOnClusterParams params;
             params.access_to_check.emplace_back(AccessType::ALTER_DELETE, table_id.database_name, table_id.table_name);
+            params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context = getContext()](const String &)
+            {
+                checkNoRowPolicyForSetOperands(
+                    captured_query_ptr, table_id.database_name, context, /* throw_if_unresolved = */ true);
+            };
             return executeDDLQueryOnCluster(query_ptr, getContext(), params);
         }
 
