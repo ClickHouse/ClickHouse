@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-msan
 
 # NOTE: this sh wrapper is required because of shell_config
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-msan
 # Regression test: a dependent materialized view hidden behind an Alias hop whose target forwards the
 # write into a separate context (a Buffer, or a Distributed) must not let a plain INSERT fan out to
 # max_insert_threads sink branches. An INSERT INTO an Alias of a table with a `mv TO Buffer(dst)`

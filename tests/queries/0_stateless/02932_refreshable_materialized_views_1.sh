@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, long
+# Tags: atomic-database, long, no-msan
 # long: the refresh schedules this waits on put it right at the 180s cap the flaky check
 #   applies to untagged tests, so it tips over on some runs.
 

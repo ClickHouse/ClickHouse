@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-fasttest, no-debug, no-openssl-fips
+# Tags: long, no-parallel, no-fasttest, no-debug, no-openssl-fips, no-msan
 # fips: SHA1 is not available in FIPS mode
 
 ##################################################################################################

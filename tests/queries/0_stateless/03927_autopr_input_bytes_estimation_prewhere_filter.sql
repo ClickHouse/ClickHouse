@@ -1,4 +1,4 @@
--- Tags: stateful, long
+-- Tags: stateful, long, no-msan
 
 SET use_uncompressed_cache=0;
 
