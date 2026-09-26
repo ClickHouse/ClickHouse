@@ -407,3 +407,62 @@ def test_host_id_migration_with_stale_active_node(started_cluster, unsynced_mark
 
     node2.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
     node2.query(f"DROP DATABASE {db} SYNC")
+
+
+def test_replica_host_on_cluster_only_active(started_cluster):
+    """Test that the generic `DDLWorker` claims the `replica_host` host ID as active.
+
+    `replica_host` changes the host ID a Replicated database publishes in its automatically
+    generated cluster, so the `DDLWorker` must mark `/task_queue/replicas/<replica_host>:<port>`
+    active right at startup, as it does for the interserver IO host. Otherwise the first
+    `ON CLUSTER` query with a `*_only_active` output mode can treat a running replica as inactive.
+    """
+    db = "test_on_cluster_only_active"
+    # Host IDs are stored in Keeper with the host escaped by `escapeForFileName`.
+    replica_host_id = "public%2Enode1%2Ecom:9000"
+    replicas_dir = "/clickhouse/task_queue/replicas"
+
+    # Make the advertised address resolve to node1 on node1 itself, so it is recognized as local.
+    node1_ip = cluster.get_instance_ip("node1")
+    node1.exec_in_container(
+        ["bash", "-c", f"cp /etc/hosts /etc/hosts.bak && echo '{node1_ip} public.node1.com' >> /etc/hosts"],
+        user="root",
+    )
+
+    try:
+        node1.restart_clickhouse()
+
+        # The host ID must be claimed at startup, before any distributed DDL mentions it.
+        node1.query_with_retry(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{replicas_dir}/{replica_host_id}' AND name = 'active'",
+            check_callback=lambda result: result.strip() == "1",
+        )
+        active_owner = node1.query(
+            f"SELECT value FROM system.zookeeper WHERE path = '{replicas_dir}/{replica_host_id}' AND name = 'active'"
+        ).strip()
+        assert active_owner == node1.query("SELECT serverUUID()").strip()
+
+        # A mixed cluster: node1 advertises `replica_host`, node2 falls back to its hostname.
+        for node in [node1, node2]:
+            node.query(
+                f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', '{node.name}')"
+            )
+            node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+
+        # A table in a non-replicated database, so the query goes through the generic `DDLWorker`
+        # on the cluster of the Replicated database.
+        result = node2.query(
+            f"CREATE TABLE default.t_on_cluster_only_active ON CLUSTER {db} (x UInt64) ENGINE = Memory "
+            "SETTINGS distributed_ddl_output_mode = 'throw_only_active', distributed_ddl_task_timeout = 60"
+        )
+        print(f"ON CLUSTER result: {result}")
+        assert "public.node1.com" in result, f"Expected node1 to be reported by its replica_host, got: {result}"
+
+        for node in [node1, node2]:
+            assert node.query("EXISTS TABLE default.t_on_cluster_only_active").strip() == "1"
+    finally:
+        for node in [node1, node2]:
+            node.query("DROP TABLE IF EXISTS default.t_on_cluster_only_active SYNC")
+            node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+        node1.exec_in_container(["bash", "-c", "cp /etc/hosts.bak /etc/hosts"], user="root")
+        node1.query("SYSTEM DROP DNS CACHE")
