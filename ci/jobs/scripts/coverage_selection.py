@@ -1,10 +1,8 @@
-"""Coverage contract, query construction and scoring shared by CI and replay."""
+"""Coverage contract, query construction and scoring of the targeted test selection."""
 
 import json
-import math
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from statistics import median
 
 from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
 
@@ -49,23 +47,74 @@ def snapshot_predicate(snapshots):
     return f"(check_start_time, check_name) IN ({keys})"
 
 
-def snapshot_query(cutoff, config=SELECTION_CONFIG):
-    # Temporary identity until CIDB has a workflow run/shard metadata table.
-    # Select independent observations per shard; hours are never workflow IDs.
+def snapshot_query_settings(config=SELECTION_CONFIG):
+    return (
+        f"SETTINGS use_query_cache = 1, "
+        f"query_cache_ttl = {config.snapshot_query_cache_ttl_sec}"
+    )
+
+
+def snapshot_times_query(cutoff, config=SELECTION_CONFIG):
+    # Reads only `check_start_time`, which compresses to almost nothing (about
+    # 0.3 s for the 14-day window). It deliberately does not filter by
+    # `check_name`, which would read that column for billions of rows.
     return f"""
-        SELECT check_start_time, check_name, uniqExact(test_name) AS exported_tests
+        SELECT DISTINCT check_start_time
         FROM checks_coverage_lines
         WHERE check_start_time <= toDateTime({sql_string(cutoff)}, 'UTC')
           AND check_start_time > toDateTime({sql_string(cutoff)}, 'UTC')
               - INTERVAL {config.coverage_search_days} DAY
+        {snapshot_query_settings(config)}
+        FORMAT JSONEachRow
+    """
+
+
+def snapshot_query(times, config=SELECTION_CONFIG):
+    # Temporary identity until CIDB has a workflow run/shard metadata table.
+    # Select independent observations per shard; hours are never workflow IDs.
+    # The explicit timestamps let the primary key skip everything else, as
+    # `uniqExact(test_name)` over the whole window reads tens of GB.
+    keys = ", ".join(f"toDateTime({sql_string(t)}, 'UTC')" for t in times)
+    return f"""
+        SELECT check_start_time, check_name, uniqExact(test_name) AS exported_tests
+        FROM checks_coverage_lines
+        WHERE check_start_time IN ({keys})
           AND check_name LIKE 'Stateless%per_test_coverage%'
           AND match(test_name, '^[0-9]{{5}}_')
         GROUP BY check_start_time, check_name
         HAVING exported_tests >= {config.min_exported_tests_per_shard}
         ORDER BY check_start_time DESC, check_name
-        LIMIT {config.coverage_run_count} BY check_name
+        {snapshot_query_settings(config)}
         FORMAT JSONEachRow
     """
+
+
+def load_snapshots(query, cutoff, config=SELECTION_CONFIG):
+    """Return the newest `coverage_run_count` healthy snapshots per shard.
+
+    `query(sql, timeout)` runs SQL and returns the raw `JSONEachRow` response. Timestamps are
+    walked newest first, a few at a time, until every shard seen has enough
+    healthy snapshots, so only the exports actually used are read.
+    """
+    times = sorted(
+        {row["check_start_time"] for row in parse_rows(query(snapshot_times_query(cutoff, config), config.snapshot_query_timeout_sec))},
+        reverse=True,
+    )
+    per_shard = defaultdict(list)
+    batch = config.snapshot_batch_timestamps
+    for start in range(0, len(times), batch):
+        for row in parse_rows(
+            query(snapshot_query(times[start : start + batch], config), config.snapshot_query_timeout_sec)
+        ):
+            per_shard[row["check_name"]].append(row)
+        if len(per_shard) >= config.coverage_shards and all(
+            len(rows) >= config.coverage_run_count for rows in per_shard.values()
+        ):
+            break
+    snapshots = [row for rows in per_shard.values() for row in rows[: config.coverage_run_count]]
+    snapshots.sort(key=lambda row: row["check_name"])
+    snapshots.sort(key=lambda row: row["check_start_time"], reverse=True)
+    return snapshots
 
 
 def validate_snapshots(snapshots, cutoff, config=SELECTION_CONFIG):
@@ -185,10 +234,7 @@ def rank_candidates(
     hunk_ranges,
     snapshots,
     config=SELECTION_CONFIG,
-    entry_mode="disabled",
 ):
-    if entry_mode not in ("disabled", "relative-low", "relative-high", "legacy-tier"):
-        raise ValueError(f"Unknown entry-count experiment: {entry_mode}")
     snapshot_keys = {(s["check_start_time"], s["check_name"]) for s in snapshots}
     changed = defaultdict(set)
     for path, line in changed_lines:
@@ -229,25 +275,7 @@ def rank_candidates(
         if not exact and not hunks:
             continue
         weight = len(exact) if exact else config.hunk_context_weight
-        counts = {
-            test: median(math.log1p(value) for value in runs.values() if value != 255)
-            for test, runs in observations.items()
-            if any(value != 255 for value in runs.values())
-        }
         for test, runs in sorted(observations.items()):
-            relative = 0.5
-            if test in counts and len(counts) > 1:
-                # Tied censored values (254 means >=254) receive the same midrank.
-                relative = (
-                    sum(value < counts[test] for value in counts.values())
-                    + (sum(value == counts[test] for value in counts.values()) - 1) / 2
-                ) / (len(counts) - 1)
-            multiplier = 1.0
-            if entry_mode.startswith("relative-"):
-                direction = 1 if entry_mode == "relative-high" else -1
-                multiplier += (
-                    direction * config.entry_count_bonus_bound * (2 * relative - 1)
-                )
             feature = {
                 "region": region_id,
                 "file": path,
@@ -255,15 +283,6 @@ def rank_candidates(
                 "region_owners": owners,
                 "exact_lines": exact,
                 "hunks": hunks,
-                "entry_count_observations": [
-                    {
-                        "snapshot": list(key),
-                        "entry_count": value,
-                        "censored": value == 254,
-                    }
-                    for key, value in sorted(runs.items())
-                ],
-                "entry_count_percentile": relative,
                 "coverage_run_frequency": len(runs),
             }
             candidate = candidates.setdefault(
@@ -276,20 +295,12 @@ def rank_candidates(
                     "features": [],
                 },
             )
-            candidate["score"] += multiplier * weight / (width * owners)
+            candidate["score"] += weight / (width * owners)
             candidate["features"].append(feature)
 
-    def order(candidate):
-        legacy_tier = 0
-        if entry_mode == "legacy-tier":
-            legacy_tier = not any(
-                observation["entry_count"] <= 10
-                for feature in candidate["features"]
-                for observation in feature["entry_count_observations"]
-            )
-        return legacy_tier, -candidate["score"], candidate["test"]
-
-    ranked = sorted(candidates.values(), key=order)
+    ranked = sorted(
+        candidates.values(), key=lambda candidate: (-candidate["score"], candidate["test"])
+    )
     for rank, candidate in enumerate(ranked, 1):
         candidate["rank"] = rank
     return ranked
