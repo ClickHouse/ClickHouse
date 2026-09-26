@@ -68,3 +68,13 @@ for mode in 0 1 2; do
         automatic_parallel_replicas_mode = $mode, parallel_replicas_allow_in_with_subquery = 0" 2>&1 \
         | grep -oE -m1 'ReadFrom(URL|Cluster)|SUPPORT_IS_DISABLED')"
 done
+
+# A query with a `JOIN` never replaces a cluster engine by its `*Cluster` variant, in any mode. So a `JOIN USING` key
+# resolved from an alias nested in the SELECT list, which a replica could not resolve, is never shipped with it.
+NESTED_ALIAS_QUERY="SELECT uniqExact(lower(toString(x)) AS id) FROM url('http://localhost:1/05175.tsv', TSV, 'x UInt64') AS l
+    INNER JOIN (SELECT toString(number) AS id FROM numbers(3)) AS r USING (id)"
+for mode in 0 1 2; do
+    echo "JOIN USING a nested alias, mode $mode: $($CLICKHOUSE_CLIENT -q "EXPLAIN $NESTED_ALIAS_QUERY SETTINGS $SETTINGS,
+        enable_parallel_replicas = 1, automatic_parallel_replicas_mode = $mode,
+        analyzer_compatibility_join_using_top_level_identifier = 1" 2>&1 | grep -oE -m1 'ReadFrom(URL|Cluster)|Code: [0-9]+')"
+done

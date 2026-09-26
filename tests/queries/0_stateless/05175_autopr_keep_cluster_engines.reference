@@ -17,3 +17,6 @@ additional_table_filters in force mode, mode 2: ReadFromURL
 IN subquery in force mode without cluster engines, mode 0: SUPPORT_IS_DISABLED
 IN subquery in force mode without cluster engines, mode 1: ReadFromURL
 IN subquery in force mode without cluster engines, mode 2: ReadFromURL
+JOIN USING a nested alias, mode 0: ReadFromURL
+JOIN USING a nested alias, mode 1: ReadFromURL
+JOIN USING a nested alias, mode 2: ReadFromURL
