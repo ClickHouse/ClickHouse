@@ -22,7 +22,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد لتمكين تجميع `GROUP BY` التكيفي، الذي يجمّد جدول التجزئة المحلي لكل خيط عند بلوغه `adaptive_aggregator_freeze_threshold` مفتاحًا، بحيث تستمر المفاتيح المتكررة في التجميع ضمن الجداول المحلية الصغيرة، بينما تُوجَّه المفاتيح النادرة وفق تجزئتها إلى قوائم انتظار لكل bucket وتُجمَّع مرة واحدة فقط ضمن الدمج المتوازي للـbucket؛ وبذلك تُخزَّن المفاتيح النادرة وتُعالج مرة واحدة بدلًا من مرة لكل خيط."}]}]} />
 
-يُفعّل خوارزمية `GROUP BY` التكيفية: يُجمّع كل خيط البيانات في جدول التجزئة المحلي الخاص به حتى يبلغ `adaptive_aggregator_freeze_threshold` مفتاحًا، ثم يُجمَّد الجدول، بحيث تستمر صفوف المفاتيح المرصودة مسبقًا (المتكررة) في تحديثه مباشرةً، بينما تُوجَّه المفاتيح الجديدة (النادرة) وفق تجزئتها إلى قوائم انتظار لكل bucket وتُجمَّع مرة واحدة فقط ضمن الدمج المتوازي للـbucket. تبقى المفاتيح المتكررة في جداول صغيرة مقيمة في ذاكرة التخزين المؤقت، بينما تُخزَّن المفاتيح النادرة وتُعالج مرة واحدة بدلًا من مرة لكل خيط.
+يُفعّل خوارزمية `GROUP BY` التكيفية: يُجمّع كل خيط البيانات في جدول التجزئة المحلي الخاص به حتى يبلغ `adaptive_aggregator_freeze_threshold` مفتاحًا (أو `adaptive_aggregator_freeze_threshold_bytes` من الذاكرة)، ثم يُجمَّد الجدول، بحيث تستمر صفوف المفاتيح المرصودة مسبقًا (المتكررة) في تحديثه مباشرةً، بينما تُوجَّه المفاتيح الجديدة (النادرة) وفق تجزئتها إلى قوائم انتظار لكل bucket وتُجمَّع مرة واحدة فقط ضمن الدمج المتوازي للـbucket. تبقى المفاتيح المتكررة في جداول صغيرة مقيمة في ذاكرة التخزين المؤقت، بينما تُخزَّن المفاتيح النادرة وتُعالج مرة واحدة بدلًا من مرة لكل خيط.
 
 تُراعى إعدادات التجميع الخارجي (`max_bytes_before_external_group_by`، `max_bytes_ratio_before_external_group_by`): عند تجاوز العتبة، تُفرَّغ قوائم الانتظار مبكرًا في الجدول المشترك، وإذا لم يكن ذلك كافيًا للعودة إلى ما دون العتبة، يُرحَّل الجدول المشترك إلى القرص باستخدام التجميع الخارجي العادي.
 
@@ -48,6 +48,18 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 فعِّل `DISTINCT` في الاستعلامات الفرعية `IN`. هذا إعداد للموازنة بين الفوائد والتكلفة: إذ يمكن أن يؤدي تفعيله إلى تقليل حجم الجداول المؤقتة المنقولة للاستعلامات الفرعية `IN` الموزعة بشكل كبير، وتسريع نقل البيانات بين المقاطع بشكل ملحوظ، من خلال ضمان إرسال القيم الفريدة فقط.
 ومع ذلك، فإن تفعيل هذا الإعداد يضيف عبئًا إضافيًا على عمليات الدمج في كل عقدة، إذ يجب تنفيذ إزالة التكرار (`DISTINCT`). استخدم هذا الإعداد عندما يكون نقل البيانات عبر الشبكة هو عنق الزجاجة وتكون الكلفة الإضافية للدمج مقبولة.
+
+<div id="enable_alp_codec">
+  ## enable_alp_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لتمكين برنامج الترميز التجريبي للضغط `ALP` بشكل منفصل، من دون `allow_experimental_codecs`."}]}]} />
+
+يسمح باستخدام برنامج الترميز التجريبي للضغط `ALP`.
 
 <div id="enable_automatic_decision_for_merging_across_partitions_for_final">
   ## enable_automatic_decision_for_merging_across_partitions_for_final
@@ -127,6 +139,17 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 إذا ضُبط هذا الإعداد على true، فسيُسمح باستخدام فهرس النص الكامل.
 
+<div id="enable_function_early_short_circuit">
+  ## enable_function_early_short_circuit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+
+فعّل طيّ الثوابت مبكرًا باستخدام التقييم قصير الدائرة لـ `and` و`or` أثناء تحليل الاستعلام.
+عند تفعيله، تُحلَّل الفروع غير القابلة للوصول والمؤهلة في الاستعلامات الفرعية القياسية للحفاظ على أنواعها والتحقق من دلالات الاستعلام، لكنها لا تُنفَّذ. ويعود التحسين إلى التحليل العادي عندما تكون قيمة العددية القياسية أو قيم وقت التشغيل مطلوبة.
+
 <div id="enable_global_with_statement">
   ## enable_global_with_statement
 </div>
@@ -136,6 +159,37 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.2"},{"label": "1"},{"label": "تمرير عبارات WITH إلى استعلامات UNION وجميع الاستعلامات الفرعية افتراضيًا"}]}]} />
 
 تمرير عبارات WITH إلى استعلامات UNION وجميع الاستعلامات الفرعية
+
+<div id="enable_group_by_top_k_optimization">
+  ## enable_group_by_top_k_optimization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد للتحكم في تحسين تصفية TopK أثناء التجميع في استعلامات `GROUP BY key ORDER BY key LIMIT N`."}]}]} />
+
+فعّل تحسين تصفية TopK أثناء التجميع في استعلامات `GROUP BY keys ORDER BY <prefix of keys> LIMIT K`، وكذلك في استعلامات `GROUP BY keys LIMIT K` التي لا تتضمن `ORDER BY` (إذ تكون أي مجموعات `K` نتيجة صالحة، لذا يُنشأ فرز على جميع المفاتيح).
+
+عند تفعيله، يحتفظ المُجمِّع بكومة محدودة تضم أفضل `K` مفاتيح ظهرت حتى الآن، ويتخطى إدراج صفوف جديدة في جدول التجزئة عندما لا يمكن لمفتاح التجميع الخاص بها أن يندرج ضمن النتيجة النهائية. يؤدي ذلك إلى تجنب تجميع الصفوف التي سيتخلص منها `ORDER BY ... LIMIT` اللاحق. وعندما ترتب الكومة مفتاح `GROUP BY` بالكامل، فإنها تحذف أيضًا المجموعات المُزالة من جدول التجزئة الوسيط، مما يحدّ حجمه بـ `LIMIT` بدلًا من عدد المفاتيح المميزة. أما عندما يغطي `ORDER BY` بادئة حقيقية فقط من مفاتيح `GROUP BY`، فلا يمكن للترتيب تحديد مجموعة كاملة، لذا لا يُطبّق سوى تخطي الصفوف: يحتفظ جدول التجزئة بكل مجموعة مقبولة، وقد يستمر في النمو بحسب عدد عناصر أعمدة المفاتيح المتبقية.
+
+يُعطّل التحسين عندما يتجاوز `LIMIT` المطلوب [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/ar/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization) أو الحد الأقصى الصارم البالغ `100000`، لأن تكلفة الذاكرة ووحدة المعالجة المركزية للكومة تزداد بزيادة `LIMIT` المطلوب.
+
+يُتخطى التحسين في أشكال الاستعلامات التي قد يؤدي فيها حذف المجموعات إلى تغيير النتيجة، بما في ذلك `WITH TOTALS` و`HAVING` و`QUALIFY` ودوال النافذة و`ROLLUP`/`CUBE`/`GROUPING SETS` و`LIMIT WITH TIES`، ووجود `COLLATE` على أي من مفاتيح `GROUP BY` المطابقة (أما `COLLATE` على عمود `ORDER BY` لاحق بعد بادئة المفتاح الكاملة فلا يمكن أن يؤثر في المجموعات المؤهلة، لذا لا يعطّل التحسين)، و`ORDER BY` على قيمة مجمّعة أو على أي عنصر ليس بادئة أولية من مفاتيح `GROUP BY`، وعند تعيين `max_rows_to_group_by` أو `exact_rows_before_limit`.
+
+القيم الممكنة:
+
+* 0 — معطّل.
+* 1 — مفعّل.
+
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد لتمكين تحويل حمولة hash join إلى تخطيط صفّي."}]}]} />
+
+تمكين تحويل حمولة hash join إلى تخطيط صفّي.
 
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
@@ -331,6 +385,18 @@ SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
 قد يحسّن ذلك الأداء عندما تكون أحجام buckets التجميع غير متوازنة، إذ يتيح للنسخة المتماثلة إرسال buckets ذات المعرّفات الأعلى إلى initiator بينما تواصل معالجة بعض buckets الكبيرة ذات المعرّفات الأقل.
 والجانب السلبي هو احتمال زيادة استخدام الذاكرة.
 
+<div id="enable_quantized_codec">
+  ## enable_quantized_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لتمكين برنامج الترميز الضغط التجريبي `Quantized` بشكل مستقل، دون `allow_experimental_codecs`."}]}]} />
+
+يسمح باستخدام برنامج الترميز الضغط التجريبي `Quantized`.
+
 <div id="enable_reads_from_query_cache">
   ## enable_reads_from_query_cache
 </div>
@@ -445,6 +511,18 @@ WHERE (_part, _part_offset) IN (
 أثناء بناء الخطة. هذا هو مفتاح التحكم الرئيسي لميزة
 الاستعلامات المتدفقة؛ وقد تُقيَّد إمكانات إضافية بإعداداتها الخاصة.
 
+<div id="enable_sz3_codec">
+  ## enable_sz3_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لتمكين برنامج الترميز الضغط التجريبي `SZ3` بشكل مستقل، دون `allow_experimental_codecs`."}]}]} />
+
+يتيح استخدام برنامج الترميز الضغط التجريبي `SZ3`.
+
 <div id="enable_time_time64_type">
   ## enable_time_time64_type
 </div>
@@ -499,5 +577,17 @@ WHERE (_part, _part_offset) IN (
 
 * 0 - معطّل
 * 1 - مفعّل
+
+<div id="enable_zxc_codec">
+  ## enable_zxc_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لتمكين استخدام برنامج الترميز التجريبي للضغط `ZXC` بشكل مستقل، دون `allow_experimental_codecs`."}]}]} />
+
+يسمح باستخدام برنامج الترميز التجريبي للضغط `ZXC`.
 
 {/*AUTOGENERATED_END*/}

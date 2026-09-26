@@ -15,6 +15,8 @@ The command changes the [sorting key](/reference/engines/table-engines/mergetree
 
 The command is lightweight in a sense that it only changes metadata. To keep the property that data part rows are ordered by the sorting key expression you cannot add expressions containing existing columns to the sorting key (only columns added by the `ADD COLUMN` command in the same `ALTER` query, without default column value).
 
+For the same reason you cannot change the sort direction (`ASC` or `DESC`) of a sorting key column that `new_expression` keeps: the existing parts stay physically sorted in the direction the column had when they were written, and no regular data part records that direction. To use a different direction, create a new table with the desired `ORDER BY` and copy the data into it with `INSERT ... SELECT`.
+
 <Note>
 It only works for tables in the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) family (including [replicated](/reference/engines/table-engines/mergetree-family/replication) tables).
 </Note>

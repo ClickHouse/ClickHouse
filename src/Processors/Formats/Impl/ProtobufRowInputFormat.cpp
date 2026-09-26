@@ -280,9 +280,9 @@ This means that before every message its length should be written as a [variable
 
 ### Reading and writing data {#basic-examples}
 
-:::note Example files
+<Note title="Example files">
 The files used in this example are available in the [examples repository](https://github.com/ClickHouse/formats/ProtoBuf)
-:::
+</Note>
 
 In this example we will read some data from a file `protobuf_message.bin` into a ClickHouse table. We'll then write it
 back out to a file called `protobuf_message_from_clickhouse.bin` using the `Protobuf` format.

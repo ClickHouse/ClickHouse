@@ -1,0 +1,36 @@
+-- FROM 0 TO 6 INTERPOLATE, local
+0	1
+1	10
+2	20
+3	30
+4	31
+5	40
+-- FROM 0 TO 6 INTERPOLATE, one shard
+0	1
+1	10
+2	20
+3	30
+4	31
+5	40
+-- STEP 2, one shard
+1
+2
+3
+5
+-- DESC WITH FILL STALENESS, one shard
+5
+4
+3
+2
+1
+-- FROM 0 TO 6 INTERPOLATE, two shards
+0	1
+1	10
+1	10
+2	20
+2	20
+3	30
+3	30
+4	31
+5	40
+5	40

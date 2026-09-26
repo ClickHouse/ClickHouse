@@ -491,7 +491,6 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         length = token >> 4;
 
         UInt8 * copy_end = nullptr;
-        size_t real_length = 0;
 
         /// It might be true fairly often for well-compressed columns.
         /// ATST it may hurt performance in other cases because this condition is hard to predict (especially if the number of zeros is ~50%).
@@ -503,14 +502,16 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         if (length == 0x0F)
         {
-            if (unlikely(ip + 1 >= input_end))
+            /// At least two more bytes have to be available. The check is written as a distance rather
+            /// than as `ip + 1 >= input_end`, because `ip` is allowed to be exactly `input_end` here, and
+            /// then `ip + 1` would be two past the end of the payload - out-of-range pointer arithmetic.
+            /// The same applies to the other availability checks below.
+            if (unlikely(input_end - ip < 2))
                 return false;
             continue_read_length();
         }
 
         /// Copy literals.
-
-        copy_end = op + length;
 
         /// input: Hello, world
         ///        ^-ip
@@ -523,21 +524,27 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         /// output: xyzHello, w
         ///                  ^-op (we will overwrite excessive bytes on next iteration)
 
-        if (unlikely(copy_end > output_end))
+        /// The literal has to fit in what is left of the output. `length` is attacker-controlled and
+        /// bounded only by `255 * source_size`, so the check is a distance rather than
+        /// `op + length > output_end`: the latter would form `copy_end` megabytes outside of the
+        /// destination before rejecting it, which is out-of-range pointer arithmetic.
+        if (unlikely(length > static_cast<size_t>(output_end - op)))
             return false;
 
-        // Due to implementation specifics the copy length is always a multiple of copy_amount
-        real_length = 0;
+        copy_end = op + length;
 
-        static_assert(copy_amount == 8 || copy_amount == 16 || copy_amount == 32);
-        if constexpr (copy_amount == 8)
-            real_length = (((length >> 3) + 1) * 8);
-        else if constexpr (copy_amount == 16)
-            real_length = (((length >> 4) + 1) * 16);
-        else if constexpr (copy_amount == 32)
-            real_length = (((length >> 5) + 1) * 32);
-
-        if (unlikely(ip + real_length >= input_end + ADDITIONAL_BYTES_AT_END_OF_BUFFER))
+        /// The literal has to be entirely inside the compressed payload.
+        ///
+        /// It is not enough to check that the copy stays within the `ADDITIONAL_BYTES_AT_END_OF_BUFFER`
+        /// slack reserved after the payload: that slack is uninitialized memory (`PODArray::resize` does
+        /// not zero it), so a crafted block declaring a literal longer than the bytes it actually carries
+        /// would copy uninitialized heap into the decompressed block and still report success. Only the
+        /// unconditional over-read of `wildCopyFromInput` may touch the slack - it exceeds the literal by
+        /// less than `copy_amount` bytes, which is always less than `ADDITIONAL_BYTES_AT_END_OF_BUFFER`,
+        /// and those bytes always land after `copy_end`, where they are either overwritten by the next
+        /// iteration or fall outside of `size_decompressed`.
+        static_assert(copy_amount <= ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+        if (unlikely(length > static_cast<size_t>(input_end - ip)))
             return false;
 
         wildCopyFromInput<copy_amount>(op, ip, copy_end - op); /// Here we can write up to copy_amount - 1 bytes after buffer.
@@ -550,7 +557,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
     decompress_match:
 
-        if (unlikely(ip + 1 >= input_end))
+        if (unlikely(input_end - ip < 2))
             return false;
 
         /// Get match offset.
@@ -577,7 +584,7 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
         length = token & 0x0F;
         if (length == 0x0F)
         {
-            if (unlikely(ip + 1 >= input_end))
+            if (unlikely(input_end - ip < 2))
                 return false;
             continue_read_length();
         }
@@ -585,10 +592,11 @@ bool NO_INLINE decompressImpl(const char * const source, char * const dest, size
 
         /// Copy match within block, that produce overlapping pattern. Match may replicate itself.
 
-        copy_end = op + length;
-
-        if (unlikely(copy_end > output_end))
+        /// A distance check, for the same reason as for the literal above.
+        if (unlikely(length > static_cast<size_t>(output_end - op)))
             return false;
+
+        copy_end = op + length;
 
         /** Here we can write up to copy_amount - 1 - 4 * 2 bytes after buffer.
           * The worst case when offset = 1 and length = 4

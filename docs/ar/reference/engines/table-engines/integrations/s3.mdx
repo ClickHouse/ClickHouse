@@ -52,7 +52,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `format` — [تنسيق](/ar/reference/formats/index#formats-overview) الملف.
 * `aws_access_key_id`, `aws_secret_access_key` - بيانات اعتماد طويلة الأجل لمستخدم حساب [AWS](https://aws.amazon.com/). يمكنك استخدامها لمصادقة طلباتك. هذه المعلمة اختيارية. إذا لم يتم تحديد بيانات الاعتماد، فستُستخدم من ملف التهيئة. لمزيد من المعلومات، راجع [استخدام S3 لتخزين البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 * `compression` — نوع الضغط. القيم المدعومة: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. هذه المعلمة اختيارية. افتراضيًا، سيُكتشف نوع الضغط تلقائيًا من امتداد الملف.
-* `partition_strategy` – الخيارات: `wildcard` أو `hive`. يتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. لا يسمح `hive` بأحرف البدل، ويفترض أن المسار هو جذر الجدول، ويُنشئ أدلة تقسيم بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. إذا كان المسار يحتوي على عنصر نائب `{_partition_id}`، تكون القيمة الافتراضية هي `wildcard` — وهي الاستراتيجية الوحيدة المتوافقة مع مثل هذا المسار. وبخلاف ذلك، تكون القيمة الافتراضية هي الإعداد `file_like_engine_default_partition_strategy` (`wildcard` ضمن إعدادات `compatibility` الأقدم من `26.6`، و`hive` بخلاف ذلك).
+* `partition_strategy` – الخيارات: `wildcard` أو `hive`. يتطلب `wildcard` وجود `{_partition_id}` في المسار، ويُستبدل بمفتاح التقسيم. لا يسمح `hive` بأحرف البدل، ويفترض أن المسار هو جذر الجدول، ويُنشئ أدلة تقسيم بنمط Hive مع Snowflake IDs كأسماء ملفات وتنسيق الملف كامتداد. دون استراتيجية صريحة، يستخدم المسار الذي يحتوي على `{_partition_id}` استراتيجية `wildcard`. ولا يستخدم المسار الذي يحتوي على glob آخر أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. ويستخدم المسار الذي لا يحتوي على glob استراتيجية `hive` عندما يكون `file_like_engine_default_partition_strategy` هو `hive`؛ وإلا فلن يستخدم أي استراتيجية تقسيم.
 * `partition_columns_in_data_file` - يُستخدم فقط مع استراتيجية التقسيم `hive`. ويُخبر ClickHouse ما إذا كان ينبغي توقع كتابة أعمدة التقسيم في ملف البيانات. القيمة الافتراضية `false`.
 * `storage_class_name` - الخيارات: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. لا تُدعَم إلا فئات تخزين S3 التي تسمح بالاسترجاع الفوري (أما الفئات الأرشيفية مثل `GLACIER` و `DEEP_ARCHIVE` فغير مدعومة). وتسمح بتحديد [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
 * `extra_credentials` - اختياري. يُستخدم لتمرير `role_arn` من أجل التحكم في الوصول المستند إلى الأدوار في ClickHouse Cloud. راجع [تأمين S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) لمعرفة خطوات الإعداد.
@@ -102,7 +102,9 @@ SETTINGS filesystem_cache_name = 'cache_for_s3', enable_filesystem_cache = 1;
   #### استراتيجية التقسيم
 </div>
 
-`wildcard`: يستبدل رمز البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. القراءة غير مدعومة. يُحدَّد هذا الخيار افتراضيًا عندما يحتوي المسار على عنصر نائب `{_partition_id}` (وهي الاستراتيجية الوحيدة المتوافقة مع هذا المسار)، وإلا عند استخدام إعدادات `compatibility` الأقدم من `26.6`؛ وفي الحالات المتبقية تكون القيمة الافتراضية هي `hive` (راجع الإعداد `file_like_engine_default_partition_strategy`).
+`حرف بدل`: يستبدل رمز البدل `{_partition_id}` في مسار الملف بمفتاح التقسيم الفعلي. القراءة غير مدعومة. يُحدَّد هذا الخيار افتراضيًا عندما يحتوي المسار على `{_partition_id}`.
+
+عند عدم تعيين `partition_strategy`، لا يستخدم المسار الذي يحتوي على نمط `glob` آخر أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. أما المسار الذي لا يحتوي على نمط `glob` فيستخدم `hive` عندما تكون قيمة `file_like_engine_default_partition_strategy` هي `hive`؛ وإلا فلا يستخدم أي استراتيجية تقسيم.
 
 يطبّق `hive` التقسيم بنمط Hive لعمليات القراءة والكتابة. وتُنفَّذ القراءة باستخدام نمط `glob` تكراري، وهو ما يعادل `SELECT * FROM s3('table_root/**.parquet')`.
 أما الكتابة فتُنشئ ملفات بالتنسيق التالي: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
@@ -447,7 +449,7 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
   ## العمل مع ملفات الأرشيف
 </div>
 
-لنفترض أن لدينا عدة ملفات أرشيفية بمعرّفات URI التالية على S3:
+لنفترض أن لدينا عدة ملفات أرشيفية بعناوين URI التالية على S3:
 
 * &#39;https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-10.csv.zip&#39;
 * &#39;https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-11.csv.zip&#39;
@@ -458,7 +460,8 @@ CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Clo
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
