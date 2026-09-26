@@ -3988,10 +3988,16 @@ bool MutateTask::prepare()
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
 
     /// The commands were fixed when the part was selected. A RENAME is the only mutation of its task, so if a part holding
-    /// the renamed column (as a column or a missing-column marker, or a patch of it) does not see the rename's version in
-    /// this snapshot, the mutation was killed since then: stop like a task the kill cancels.
+    /// the renamed column (as a column or a missing-column marker, or a patch of it) does not see the rename's version,
+    /// the mutation was killed since then: stop like a task the kill cancels.
     if (std::ranges::any_of(*ctx->commands, [](const MutationCommand & command) { return command.type == MutationCommand::RENAME_COLUMN; }))
     {
+        /// `mutations_snapshot` omits the alter mutations the part has already seen, which an older patch of it can still need.
+        auto rename_check_params = params;
+        rename_check_params.min_part_metadata_version = -1;
+        rename_check_params.need_patch_parts = false;
+        const auto rename_check_snapshot = ctx->data->getMutationsSnapshot(rename_check_params);
+
         const auto target_version = static_cast<UInt64>(ctx->future_part->part_info.mutation);
         auto throw_if_rename_was_killed = [&](const MergeTreeDataPartPtr & part)
         {
@@ -4007,9 +4013,12 @@ bool MutateTask::prepare()
             if (!renames_part_column)
                 return;
 
-            const auto on_fly_commands = mutations_snapshot->getOnFlyMutationCommandsForPart(part);
-            if (!std::ranges::any_of(on_fly_commands, [&](const MutationCommand & command) { return command.mutation_version == target_version; }))
-                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating part {}: mutation {} was killed", ctx->source_part->name, target_version);
+            const auto on_fly_commands = rename_check_snapshot->getOnFlyMutationCommandsForPart(part);
+            const bool rename_is_live = std::ranges::any_of(
+                on_fly_commands, [&](const MutationCommand & command) { return command.mutation_version == target_version; });
+            if (!rename_is_live)
+                throw Exception(
+                    ErrorCodes::ABORTED, "Cancelled mutating part {}: mutation {} was killed", ctx->source_part->name, target_version);
         };
 
         throw_if_rename_was_killed(ctx->source_part);

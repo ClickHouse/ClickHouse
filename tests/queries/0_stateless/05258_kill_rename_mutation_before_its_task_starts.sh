@@ -6,6 +6,7 @@
 
 # `KILL MUTATION` of a `RENAME COLUMN` whose task for a part was already selected, but has not
 # started yet, must stop that task: the part keeps all its columns, whatever its type and storage.
+# A live rename is not stopped when only an older patch of a part merged after it holds the old name.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -16,6 +17,7 @@ FP="mt_mutate_task_pause_before_merge_list"
 function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $FP" 2>/dev/null
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_no_free_threads" 2>/dev/null
 }
 trap cleanup EXIT
 
@@ -110,4 +112,39 @@ $CLICKHOUSE_CLIENT --query "
     WHERE database = currentDatabase() AND table = 't_replicated' AND event_type = 'MutatePart' ORDER BY event_time_microseconds;
 
     SELECT count() FROM system.replication_queue WHERE database = currentDatabase();
+"
+
+# A live rename is not stopped: its part was merged after the rename and only an older patch of it holds the old name.
+$CLICKHOUSE_CLIENT --query "
+    CREATE TABLE t_live (x UInt32, v UInt32) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_live', '1') ORDER BY tuple()
+    SETTINGS $COMPACT, enable_block_number_column = 1, enable_block_offset_column = 1, apply_patches_on_merge = 0,
+        merge_selecting_sleep_ms = 100, max_merge_selecting_sleep_ms = 200;
+    INSERT INTO t_live SETTINGS insert_keeper_fault_injection_probability = 0 VALUES (1, 1);
+    UPDATE t_live SET v = 5 WHERE 1 SETTINGS enable_lightweight_update = 1, insert_keeper_fault_injection_probability = 0;
+    SYSTEM ENABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
+    ALTER TABLE t_live RENAME COLUMN v TO w SETTINGS alter_sync = 0, mutations_sync = 0;
+    SYSTEM SYNC REPLICA t_live;
+    OPTIMIZE TABLE t_live FINAL SETTINGS optimize_throw_if_noop = 1;
+
+    SELECT name, has(groupArray(column), 'w'), has(groupArray(column), 'v') FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_live' AND active AND NOT startsWith(name, 'patch-') GROUP BY name;
+    SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_live' AND active AND startsWith(name, 'patch-') AND column = 'v';
+
+    SYSTEM DISABLE FAILPOINT rmt_merge_selecting_task_no_free_threads;
+"
+
+deadline=$((SECONDS + 120))
+while [ "$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_live' AND NOT is_done")" != "0" ]; do
+    if [ $SECONDS -ge $deadline ]; then
+        echo "The mutation of t_live is not done after 120 seconds"
+        break
+    fi
+    sleep 0.5
+done
+
+$CLICKHOUSE_CLIENT --query "
+    SYSTEM FLUSH LOGS part_log;
+    SELECT is_done, latest_fail_reason = '' FROM system.mutations WHERE database = currentDatabase() AND table = 't_live';
+    SELECT countIf(error != 0) FROM system.part_log WHERE database = currentDatabase() AND table = 't_live' AND event_type = 'MutatePart';
 "
