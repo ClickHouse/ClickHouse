@@ -1,7 +1,7 @@
 export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   const featuredIds = featured.map((f) => f.id)
   const data = quickStartsData || []
-  const assetBase = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
+  const assetBase = typeof window === "undefined" || window.location.pathname.startsWith("/docs") ? "/docs" : ""
   const withBase = (p) => (p && p.startsWith("/") ? assetBase + p : p)
 
   // Filter options. `value` is a stable slug matched against the tag slugs in
@@ -15,7 +15,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
     { value: "ai-ml", label: "AI/ML" }
   ]
   const productOptions = [
-    { value: "self-managed", label: "ClickHouse (Open-Source)" },
+    { value: "self-managed", label: "ClickHouse（开源）" },
     { value: "cloud", label: "ClickHouse Cloud" },
     { value: "clickpipes", label: "ClickPipes" },
     { value: "language-clients", label: "语言客户端" },

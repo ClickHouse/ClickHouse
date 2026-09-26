@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'C#'
+sidebarTitle: 'Visão geral'
 keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'cliente', 'driver', 'conectar', 'integrar']
 slug: /integrations/csharp
 description: 'O cliente C# oficial para se conectar ao ClickHouse.'
@@ -898,16 +898,16 @@ Se você precisar despachar com base na string de tipo do lado do ClickHouse (po
 ```csharp
 public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
 {
-    public object ConvertValue(object value, string columnName, string clickHouseType)
+    public object ConvertValue(object value, string columnName, string clickhouseType)
     {
-        if (value is DateTime dt && clickHouseType == "DateTime")
+        if (value is DateTime dt && clickhouseType == "DateTime")
             return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
 
-    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
+    public T ConvertValue<T>(T value, string columnName, string clickhouseType)
     {
-        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickhouseType == "DateTime")
             return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }

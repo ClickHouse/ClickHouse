@@ -278,7 +278,7 @@ ALTER TABLE uk.uk_price_paid_with_projections
 SETTINGS mutations_sync = 1
 ```
 
-[`mutations_sync`](/zh/reference/settings/session-settings#mutations_sync) 设置
+[`mutations_sync`](/zh/reference/settings/session-settings/mutations#mutations_sync) 设置
 用于强制以同步方式执行。
 
 我们创建并填充投影 `prj_gby_county`——这是一个额外的 (隐藏) 表，
@@ -417,10 +417,10 @@ INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 ```
 
 <div id="build-projection">
-  #### 创建投影
+  #### 创建PROJECTION
 </div>
 
-我们按维度 `toYear(date)`、`district` 和 `town` 创建一个聚合投影：
+我们按维度 `toYear(date)`、`district` 和 `town` 创建一个聚合PROJECTION：
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
@@ -440,7 +440,7 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
     )
 ```
 
-为现有数据填充该投影。 (如果不将其物化，该投影将只针对新插入的数据创建) ：
+为现有数据填充该PROJECTION。 (如果不将其物化，该PROJECTION将只针对新插入的数据创建) ：
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
@@ -448,7 +448,7 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-以下查询对比了使用 projections 与不使用 projections 时的性能差异。若要禁用 projections 的使用，我们使用设置 [`optimize_use_projections`](/zh/reference/settings/session-settings#optimize_use_projections)，该设置默认处于启用状态。
+以下查询对比了使用投影与不使用投影时的性能差异。若要禁用投影的使用，我们使用设置 [`optimize_use_projections`](/zh/reference/settings/session-settings/optimize-use#optimize_use_projections)，该设置默认处于启用状态。
 
 <div id="average-price-projections">
   #### 查询 1. 每年平均价格

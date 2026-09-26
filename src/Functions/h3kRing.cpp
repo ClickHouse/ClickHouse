@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
+#include <Functions/CancellationBudget.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
@@ -42,6 +43,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -101,6 +106,12 @@ public:
         auto & dst_offsets = dst_offsets_column->getData();
         auto current_offset = 0;
 
+        /// The whole block is expanded inside this one call and the size of each row's result is driven by the
+        /// arguments rather than by the input size, so the executor's between-blocks cancellation check cannot
+        /// bound it: a cancelled query would keep a thread busy until the last row was done.
+        const std::function<void()> check_cancellation = makeCancellationCheck(name);
+        CancellationBudget budget(check_cancellation);
+
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const H3Index origin_hindex = data_hindex[row];
@@ -125,11 +136,14 @@ public:
             int64_t disk_size = 0;
             maxGridDiskSize(k, &disk_size);
             const auto vec_size = static_cast<size_t>(disk_size);
+            budget.charge(vec_size * sizeof(H3Index));
+
             VectorWithMemoryTracking<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());
 
-            dst_data.reserve(dst_data.size() + vec_size);
+            /// Go through PODArray::reserve: it grows capacity geometrically, IColumn::reserve sizes it exactly.
+            dst_data.getData().reserve(dst_data.size() + vec_size);
             for (auto hindex : hindex_vec)
             {
                 if (hindex != 0)

@@ -72,7 +72,7 @@ Recomenda-se que você revise a seguinte documentação do ClickHouse antes de r
 * [Como o ClickHouse armazena dados: parts e grânulos](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) - Guia mais avançado sobre como os dados são estruturados e consultados no ClickHouse, cobrindo grânulos e chaves primárias em detalhes.
 * [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree)- Guia avançado de referência do MergeTree útil para comandos e detalhes internos.
 
-Todas as otimizações descritas abaixo podem ser aplicadas diretamente às tabelas subjacentes usando o ClickHouse SQL padrão, seja por meio do [console SQL do ClickHouse Cloud](/pt-BR/integrations/connectors/sql-clients/sql-console) ou via [ClickHouse client](/pt-BR/concepts/features/interfaces/cli).
+Todas as otimizações descritas abaixo podem ser aplicadas diretamente às tabelas subjacentes usando o ClickHouse SQL padrão, seja por meio do [console SQL do ClickHouse Cloud](/pt-BR/integrations/connectors/sql-clients/sql-console) ou via [ClickHouse client](/pt-BR/concepts/features/interfaces/client).
 
 <div id="materialize-frequently-queried-attributes">
   ## Otimização 1. Materialize os atributos consultados com frequência
@@ -597,15 +597,35 @@ fazem referência a `LogAttributes['key']` se beneficiam do ganho de desempenho 
 A reescrita da consulta exige uma versão do ClickHouse compatível com
 poda direta no nível de token em colunas de array com índice de texto. O ClickStack detecta a
 versão do servidor conectado (`SELECT version()`, armazenada em cache por conexão) e só
-emite a forma reescrita quando o servidor está nesse limite ou acima dele. Servidores
-mais antigos voltam automaticamente para a forma original com subscrito de Map.
+emite a forma reescrita quando o servidor atende ao limite correspondente
+abaixo. Versões mais antigas voltam para a forma original com subscrito de Map
+automaticamente.
 
-| Branch do ClickHouse | Versão mínima    |
-| -------------------- | ---------------- |
-| 26.2                 | 26.2.19.43       |
-| 26.3                 | 26.3.12.3        |
-| 26.4                 | 26.4.3.37        |
-| 26.5+                | Todas as versões |
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    As compilações do ClickHouse Cloud e os lançamentos de código aberto usam linhas de versão independentes.
+    Use as versões mínimas do Cloud abaixo.
+
+    | Branch do ClickHouse | Versão mínima do Cloud |
+    | -------------------- | ---------------------- |
+    | 26.2                 | `26.2.1.307`           |
+    | 26.3                 | `26.3.0.0`             |
+    | 26.4                 | `26.4.1.1740`          |
+    | 26.5+                | Todas as versões       |
+
+    O mínimo `26.3.0.0` é a base da branch, portanto todas as compilações `26.3` são
+    compatíveis.
+  </Tab>
+
+  <Tab title="Código aberto">
+    | Branch do ClickHouse | Versão mínima de código aberto |
+    | -------------------- | ------------------------------ |
+    | 26.2                 | `26.2.19.43`                   |
+    | 26.3                 | `26.3.12.3`                    |
+    | 26.4                 | `26.4.3.37`                    |
+    | 26.5+                | Todas as versões               |
+  </Tab>
+</Tabs>
 
 <Info>
   **Por que ALIAS, e não MATERIALIZED**

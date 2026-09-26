@@ -186,9 +186,9 @@ Finds the period of the given series data using FFT - [Fast Fourier transform](h
         "Period detection with simple pattern",
         "SELECT seriesPeriodDetectFFT([1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6, 1, 4, 6]) AS print_0",
         R"(
-┌───────────print_0──────┐
-│                      3 │
-└────────────────────────┘
+┌─print_0─┐
+│       3 │
+└─────────┘
         )"
     },
     {

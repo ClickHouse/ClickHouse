@@ -595,7 +595,7 @@ export const IntegrationGrid = () => {
           color: #fff;
         }
         .dark .integration-external-overlay svg {
-          color: #1f1f1f;
+          color: #fff;
         }
         .integration-card:hover .integration-external-overlay {
           opacity: 1;

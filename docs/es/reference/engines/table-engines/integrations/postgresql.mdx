@@ -3,7 +3,7 @@ description: 'El motor PostgreSQL permite consultas `SELECT` y `INSERT` sobre da
   en un servidor PostgreSQL remoto.'
 sidebarTitle: 'PostgreSQL'
 slug: /engines/table-engines/integrations/postgresql
-title: 'Motor de tabla de PostgreSQL'
+title: 'motor de tabla PostgreSQL'
 doc_type: 'guide'
 ---
 
@@ -16,7 +16,7 @@ El motor PostgreSQL permite consultas `SELECT` y `INSERT` sobre datos almacenado
 </Note>
 
 <Tip>
-  Consulte nuestro servicio [Managed Postgres](/es/products/managed-postgres/overview). Basado en almacenamiento NVMe físicamente colocalizado con el cómputo, ofrece un rendimiento hasta 10 veces mayor para cargas de trabajo limitadas por el disco en comparación con alternativas que usan almacenamiento conectado a la red como EBS, y le permite replicar sus datos de Postgres a ClickHouse mediante el conector Postgres CDC en ClickPipes.
+  Consulte nuestro servicio [ClickHouse Managed Postgres](/es/products/managed-postgres/overview). Basado en almacenamiento NVMe físicamente colocalizado con el cómputo, ofrece un rendimiento hasta 10 veces mayor para cargas de trabajo limitadas por el disco en comparación con alternativas que usan almacenamiento conectado a la red como EBS, y le permite replicar sus datos de Postgres a ClickHouse mediante el conector Postgres CDC en ClickPipes.
 </Tip>
 
 <div id="creating-a-table">
@@ -45,7 +45,7 @@ La estructura de la tabla puede diferir de la estructura de la tabla original de
 
 * Los nombres de las columnas deben ser los mismos que en la tabla original de PostgreSQL, pero puede usar solo algunas de ellas y en cualquier orden.
 * Los tipos de las columnas pueden diferir de los de la tabla original de PostgreSQL. ClickHouse intenta [convertir](/es/reference/engines/database-engines/postgresql#data_types-support) los valores a los tipos de datos de ClickHouse.
-* La configuración [external&#95;table&#95;functions&#95;use&#95;nulls](/es/reference/settings/session-settings#external_table_functions_use_nulls) define cómo manejar las columnas Nullable. Valor predeterminado: 1. Si es 0, la función de tabla no crea columnas Nullable e inserta valores predeterminados en lugar de valores nulos. Esto también se aplica a los valores NULL dentro de arrays.
+* La configuración [external&#95;table&#95;functions&#95;use&#95;nulls](/es/reference/settings/session-settings/external-table#external_table_functions_use_nulls) define cómo manejar las columnas Nullable. Valor predeterminado: 1. Si es 0, la función de tabla no crea columnas Nullable e inserta valores predeterminados en lugar de valores nulos. Esto también se aplica a los valores NULL dentro de arrays.
 
 **Parámetros del motor**
 
@@ -75,6 +75,40 @@ Algunos parámetros pueden sobrescribirse mediante argumentos de clave-valor:
 
 ```sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
+```
+
+<div id="tls-ssl">
+  ### TLS/SSL
+</div>
+
+Los parámetros de TLS/SSL se reenvían a `libpq` y pueden establecerse como claves de una colección con nombre o como argumentos de clave-valor finales: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` o `verify-full`), así como los certificados y la clave, en una de dos formas. Si no se establecen, se aplican los valores predeterminados de `libpq` (`sslmode=prefer`).
+
+* `sslrootcert` (certificado de CA o el valor especial `system`), `sslcert` (certificado de cliente) y `sslkey` (clave privada de cliente) son rutas a archivos locales del servidor. Solo pueden especificarse en una colección con nombre definida en el archivo de configuración del servidor y no pueden sobrescribirse en una consulta: el servidor abre los archivos con sus propios privilegios.
+* `sslrootcert_pem`, `sslcert_pem` y `sslkey_pem` aceptan el contenido literal del archivo correspondiente en lugar de una ruta. Pueden especificarse en cualquier lugar —en una consulta, en una colección con nombre creada con SQL o como sobrescritura de una colección con nombre— y se ocultan en los logs y las consultas `SHOW`, como las contraseñas.
+
+Por ejemplo, para requerir una conexión cifrada y verificar el certificado del servidor:
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <sslmode>verify-full</sslmode>
+        <sslrootcert>/etc/clickhouse-server/postgresql-ca.crt</sslrootcert>
+    </postgres_creds>
+</named_collections>
+```
+
+Lo mismo, pero sin un archivo de configuración, pasando el contenido del certificado en la consulta:
+
+```sql
+CREATE TABLE postgres_table (id UInt64, value String)
+ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
+                    sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
 ```
 
 <div id="settings">
@@ -162,7 +196,7 @@ Esto es útil para hacer pushdown de joins, agregaciones o cualquier otro proces
 <Note>
   La forma de subconsulta `(SELECT ...)` es analizada por ClickHouse y se vuelve a serializar en el dialecto de PostgreSQL (entrecomillado de identificadores de PostgreSQL y escape de literales de cadena) antes de enviarse al servidor. Por lo tanto, debe ser válida en ClickHouse SQL. Para pasar sintaxis específica de PostgreSQL que ClickHouse no analiza, use la forma `query('...')`, cuyo texto se envía literalmente a PostgreSQL.
 
-  Cualquier `WHERE`, `LIMIT`, agregación, etc. externo de la consulta de ClickHouse que la rodea **no** se delega a la consulta pasada; se aplica en ClickHouse después de recuperar el resultado completo de la consulta. Para restringir los datos leídos desde PostgreSQL, coloque el filtro dentro de la consulta pasada. Con [`external_table_strict_query = 1`](/es/reference/settings/session-settings#external_table_strict_query), un filtro externo que no pueda delegarse se rechaza con una excepción en lugar de aplicarse localmente.
+  Cualquier `WHERE`, `LIMIT`, agregación, etc. externo de la consulta de ClickHouse que la rodea **no** se delega a la consulta pasada; se aplica en ClickHouse después de recuperar el resultado completo de la consulta. Para restringir los datos leídos desde PostgreSQL, coloque el filtro dentro de la consulta pasada. Con [`external_table_strict_query = 1`](/es/reference/settings/session-settings/external-table#external_table_strict_query), un filtro externo que no pueda delegarse se rechaza con una excepción en lugar de aplicarse localmente.
 </Note>
 
 Las consultas `INSERT` del lado de PostgreSQL se ejecutan como `COPY \"table_name\" (field1, field2, ... fieldN) FROM STDIN` dentro de una transacción de PostgreSQL con auto-commit después de cada sentencia `INSERT`.
@@ -179,7 +213,7 @@ Admite varias réplicas que deben listarse mediante `|`. Por ejemplo:
 CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgres{2|3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword');
 ```
 
-Se admite la prioridad de las réplicas para el origen de diccionario de PostgreSQL. Cuanto mayor sea el número en el mapa, menor será la prioridad. La prioridad más alta es `0`.
+Se admite la prioridad de las réplicas para la fuente de diccionario de PostgreSQL. Cuanto mayor sea el número en el mapa, menor será la prioridad. La prioridad más alta es `0`.
 
 En el ejemplo siguiente, la réplica `example01-1` tiene la prioridad más alta:
 

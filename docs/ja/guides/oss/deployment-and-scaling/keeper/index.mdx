@@ -66,40 +66,51 @@ ClickHouse Keeper のメイン設定タグは `<keeper_server>` で、以下の�
 
 内部協調設定は `<keeper_server>.<coordination_settings>` セクションにあり、次のパラメータがあります。
 
-| Parameter                          | Description                                                                                                            | Default          |
-| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `operation_timeout_ms`             | 1 回のクライアント操作のタイムアウト (ms)                                                                                               | `10000`          |
-| `min_session_timeout_ms`           | クライアントセッションの最小タイムアウト (ms)                                                                                              | `10000`          |
-| `session_timeout_ms`               | クライアントセッションの最大タイムアウト (ms)                                                                                              | `100000`         |
-| `dead_session_check_period_ms`     | ClickHouse Keeper が切れたセッションをチェックして削除する間隔 (ms)                                                                          | `500`            |
-| `heart_beat_interval_ms`           | ClickHouse Keeper のリーダーがフォロワーにハートビートを送信する間隔 (ms)                                                                       | `500`            |
-| `election_timeout_lower_bound_ms`  | フォロワーがこの時間内にリーダーからハートビートを受信しなかった場合、リーダー選出を開始できます。`election_timeout_upper_bound_ms` 以下である必要があります。理想的には、両者は同じ値にしないでください。 | `1000`           |
-| `election_timeout_upper_bound_ms`  | フォロワーがこの時間内にリーダーからハートビートを受信しなかった場合、リーダー選出を開始しなければなりません。                                                                | `2000`           |
-| `rotate_log_storage_interval`      | 1 つのファイルに保存するログレコード数。                                                                                                  | `100000`         |
-| `reserved_log_items`               | compaction を実行するまでに保持する協調ログレコード数。                                                                                      | `100000`         |
-| `snapshot_distance`                | ClickHouse Keeper が新しいスナップショットを作成する間隔 (ログ内のレコード数ベース) 。                                                                 | `100000`         |
-| `snapshots_to_keep`                | 保持するスナップショットの数。                                                                                                        | `3`              |
-| `stale_log_gap`                    | リーダーがフォロワーを stale と見なし、ログの代わりにスナップショットを送信するしきい値。                                                                       | `10000`          |
-| `fresh_log_gap`                    | ノードが fresh と見なされるしきい値。                                                                                                 | `200`            |
-| `max_requests_batch_size`          | RAFT に送信する前の、リクエスト数ベースの Batch の最大サイズ。                                                                                  | `100`            |
-| `force_sync`                       | 協調ログへの書き込みごとに `fsync` を呼び出します。                                                                                         | `true`           |
-| `quorum_reads`                     | 読み取りリクエストを、同程度の速度で RAFT コンセンサス全体を通る書き込みとして実行します。                                                                       | `false`          |
-| `raft_logs_level`                  | 協調に関するテキストログのログレベル (trace、debug など) 。                                                                                  | `system default` |
-| `auto_forwarding`                  | フォロワーからリーダーへの書き込みリクエストの転送を許可します。                                                                                       | `true`           |
-| `shutdown_timeout`                 | 内部接続の終了とシャットダウンの完了を待機する時間 (ms) 。                                                                                       | `5000`           |
-| `startup_timeout`                  | サーバーが指定されたタイムアウト内に他のクォーラム参加者に接続できない場合、終了します (ms) 。                                                                     | `30000`          |
-| `async_replication`                | 非同期レプリケーションを有効にします。書き込みと読み取りの保証はすべて維持したまま、より高いパフォーマンスを実現します。後方互換性を損なわないよう、この設定はデフォルトで無効になっています                         | `false`          |
-| `latest_logs_cache_size_threshold` | 最新の log entries を保持するインメモリ cache の合計最大サイズ                                                                              | `1GiB`           |
-| `commit_logs_cache_size_threshold` | commit に次に必要な log entries を保持するインメモリ cache の合計最大サイズ                                                                    | `500MiB`         |
-| `disk_move_retries_wait_ms`        | ファイルをディスク間で移動中に失敗した場合、再試行までに待機する時間                                                                                     | `1000`           |
-| `disk_move_retries_during_init`    | 初期化中にファイルをディスク間で移動中に失敗した場合の再試行回数                                                                                       | `100`            |
-| `experimental_use_rocksdb`         | バックエンドストレージとして rocksdb を使用します                                                                                          | `0`              |
+| パラメータ                                     | 説明                                                                                                                                                                                                    | デフォルト            |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `operation_timeout_ms`                    | 1 回のクライアント操作のタイムアウト (ms)                                                                                                                                                                              | `10000`          |
+| `min_session_timeout_ms`                  | クライアントセッションの最小タイムアウト (ms)                                                                                                                                                                             | `10000`          |
+| `session_timeout_ms`                      | クライアントセッションの最大タイムアウト (ms)                                                                                                                                                                             | `100000`         |
+| `dead_session_check_period_ms`            | ClickHouse Keeper が切れたセッションをチェックして削除する間隔 (ms)                                                                                                                                                         | `500`            |
+| `heart_beat_interval_ms`                  | ClickHouse Keeper のリーダーがフォロワーにハートビートを送信する間隔 (ms)                                                                                                                                                      | `500`            |
+| `election_timeout_lower_bound_ms`         | フォロワーがこの時間内にリーダーからハートビートを受信しなかった場合、リーダー選出を開始できます。`election_timeout_upper_bound_ms` 以下である必要があります。理想的には、両者は同じ値にしないでください。                                                                                | `1000`           |
+| `election_timeout_upper_bound_ms`         | フォロワーがこの時間内にリーダーからハートビートを受信しなかった場合、リーダー選出を開始しなければなりません。                                                                                                                                               | `2000`           |
+| `rotate_log_storage_interval`             | 1 つのファイルに保存するログレコード数。                                                                                                                                                                                 | `100000`         |
+| `reserved_log_items`                      | compaction を実行するまでに保持する協調ログレコード数。                                                                                                                                                                     | `100000`         |
+| `snapshot_distance`                       | ClickHouse Keeper が新しいスナップショットを作成する間隔 (ログ内のレコード数ベース) 。                                                                                                                                                | `100000`         |
+| `snapshots_to_keep`                       | 保持するスナップショットの数。                                                                                                                                                                                       | `3`              |
+| `stale_log_gap`                           | リーダーがフォロワーを stale と見なし、ログの代わりにスナップショットを送信するしきい値。                                                                                                                                                      | `10000`          |
+| `fresh_log_gap`                           | ノードが fresh と見なされるしきい値。                                                                                                                                                                                | `200`            |
+| `max_requests_batch_size`                 | RAFT に送信する前の、リクエスト数ベースの Batch の最大サイズ。                                                                                                                                                                 | `100`            |
+| `force_sync`                              | 協調ログへの書き込みごとに `fsync` を呼び出します。                                                                                                                                                                        | `true`           |
+| `quorum_reads`                            | 読み取りリクエストを、同程度の速度で RAFT コンセンサス全体を通る書き込みとして実行します。                                                                                                                                                      | `false`          |
+| `raft_logs_level`                         | 協調に関するテキストログのログレベル (trace、debug など) 。                                                                                                                                                                 | `system default` |
+| `auto_forwarding`                         | フォロワーからリーダーへの書き込みリクエストの転送を許可します。                                                                                                                                                                      | `true`           |
+| `shutdown_timeout`                        | 内部接続の終了とシャットダウンの完了を待機する時間 (ms) 。                                                                                                                                                                      | `5000`           |
+| `startup_timeout`                         | サーバーが指定されたタイムアウト内に他のクォーラム参加者に接続できない場合、終了します (ms) 。                                                                                                                                                    | `30000`          |
+| `async_replication`                       | 非同期レプリケーションを有効にします。書き込みと読み取りの保証はすべて維持したまま、より高いパフォーマンスを実現します。後方互換性を損なわないよう、この設定はデフォルトで無効になっています                                                                                                        | `false`          |
+| `latest_logs_cache_size_threshold`        | 最新の log entries を保持するインメモリ cache の合計最大サイズ                                                                                                                                                             | `1GiB`           |
+| `commit_logs_cache_size_threshold`        | 非推奨。この設定自体が設定されていない場合、`log_readahead_commit_window_bytes` に使用されます。                                                                                                                                    | -                |
+| `commit_logs_cache_entry_count_threshold` | 非推奨。効果はありません。代わりに `log_readahead_commit_window_bytes` を使用してください。                                                                                                                                      | -                |
+| `log_readahead_enabled`                   | changelog の catch-up 読み取り (フォロワーレプリケーション) 向けに、ピアごとのデコード済み先読みを有効にします。                                                                                                                                  | `false`          |
+| `log_readahead_window_bytes`              | ピア reader ごとにバッファリングするデコード済みエントリの最大バイト数。通常の append-entries Batch 以上にする必要があります。                                                                                                                        | `64MiB`          |
+| `log_readahead_max_peer_readers`          | 同時実行するピアごとの先読み reader の最大数。                                                                                                                                                                           | `8`              |
+| `log_readahead_eviction_timeout_ms`       | 非アクティブなピアごとの先読み reader または commit reader を追い出すまでのアイドルタイムアウト (後続のミスで再作成されます) 。                                                                                                                         | `30000`          |
+| `log_readahead_pool_threads`              | 専用の先読み thread pool 内のスレッド数。`0` の場合は `log_readahead_max_peer_readers` から値を導出します。                                                                                                                       | `0`              |
+| `log_readahead_serve_wait_timeout_ms`     | 直接読み取りにフォールバックする前に、バックグラウンドでの先読みの充填を待機する最大時間。                                                                                                                                                         | `200`            |
+| `log_readahead_chunk_size`                | 先読み補完タスクで chunk ごとにデコードする log entries の数。                                                                                                                                                             | `16`             |
+| `log_readahead_commit_window_bytes`       | commit スレッドに先行して buffer するデコード済み log entries の合計最大サイズ。`0` は commit の先読みを無効にします (commit はエントリをディスクから 1 件ずつ読み取ります)。                                                                                     | `500MiB`         |
+| `log_startup_read_max_streams`            | Keeper の起動時に同時に読み取る changelog ファイルの最大数。`0` = CPU コア数を自動的に使用します。`1` = 直列 (並列化前) の起動時読み取りを使用します。有効な並列度は読み取る必要がある changelog ファイル数によって制限されます。seek 制約のあるストレージ (HDD、IOPS が制限された volume) では値を下げることを検討してください。 | `0`              |
+| `log_startup_read_buffer_size`            | Keeper の起動時に changelog を読み取る際に使用する、stream ごとの読み取りバッファサイズ (バイト)。`0` より大きくする必要があります。バッファはさらにファイルサイズまでに制限されます。                                                                                           | `8MiB`           |
+| `disk_move_retries_wait_ms`               | ファイルをディスク間で移動中に失敗した場合、再試行までに待機する時間                                                                                                                                                                    | `1000`           |
+| `disk_move_retries_during_init`           | 初期化中にファイルをディスク間で移動中に失敗した場合の再試行回数                                                                                                                                                                      | `100`            |
+| `experimental_use_rocksdb`                | バックエンドストレージとして rocksdb を使用します                                                                                                                                                                         | `0`              |
 
-クォーラム設定は `<keeper_server>.<raft_configuration>` セクションにあり、サーバーの説明が含まれます。
+クォーラムの設定は `<keeper_server>.<raft_configuration>` セクションにあり、サーバーの定義が含まれます。
 
-クォーラム全体に対する唯一のパラメータは `secure` で、クォーラム参加者間の通信に暗号化接続を有効にします。ノード間の内部通信用に SSL 接続が必要な場合は、このパラメータを `true` に設定できます。それ以外の場合は指定しないままにできます。
+クォーラム全体に対する唯一のパラメーターは `secure` で、クォーラム参加者間の通信に暗号化接続を有効にします。ノード間の内部通信に SSL 接続が必要な場合は、このパラメーターを `true` に設定します。それ以外の場合は指定する必要はありません。
 
-各 `<server>` の主なパラメータは次のとおりです。
+各 `<server>` の主なパラメーターは次のとおりです。
 
 * `id` — クォーラム内でのサーバー識別子。
 * `hostname` — このサーバーが配置されているホスト名。
@@ -207,9 +218,20 @@ zk_ephemerals_count     0
 zk_approximate_data_size        723
 zk_open_file_descriptor_count   310
 zk_max_file_descriptor_count    10240
+zk_leader_uptime        1234
+zk_sum_leader_unavailable_time 1234
+zk_cnt_leader_unavailable_time 1
+zk_sum_election_time 1234
+zk_cnt_election_time 1
 zk_followers    0
 zk_synced_followers     0
 ```
+
+`zk_sum_leader_unavailable_time`、`zk_cnt_leader_unavailable_time`、`zk_sum_election_time`、`zk_cnt_election_time` は、リーダー 専用の累積メトリクスです。これらはサーバーごとの観測値であり、クラスター全体の可用性を示す測定値ではありません。追跡は、そのサーバーが稼働中の リーダー を観測しなくなった時点で開始されます。ネットワークパーティション中は、古い リーダー が別のパーティションで稼働し続けている時間も含まれる場合があります。選出メトリクスには、このようにローカルで観測された リーダー 不在期間の後に成功した選出のみが記録されます。サンプリング時に リーダー 不在状態が検出されないリーダーシップの移行は、意図的にカウントされません。
+
+Keeper はローカルの NuRaft リーダー 状態を `heart_beat_interval_ms` ごとにサンプリングしますが、その頻度は最大でも 100 ミリ秒ごとです。各期間の境界は、ローカル状態の遷移時点から有効間隔分までずれる可能性があり、その間隔より短い期間は見逃される可能性があります。Keeper は NuRaft の `BecomeLeader` 時にローカルでの選出完了を記録します。`srst` は 4 つすべての値をリセットします。
+
+各種類について直近にローカルで観測された期間の長さも、`system.asynchronous_metrics` に `KeeperLastLeaderElectionTime` および `KeeperLastLeaderUnavailableTime` としてミリ秒単位でエクスポートされます。`KeeperLastLeaderElectionTime` は `zk_sum_election_time` と同じ リーダー 不在期間の定義に従います。どちらも リーダー 専用です。アクティブな リーダー ではないノード、またはまだ期間を完了していないノードは、`0` を報告します。`srst` は累積カウンターとともにこれらもリセットします。
 
 * `srvr`: サーバーの詳細情報を一覧表示します。
 
@@ -242,13 +264,13 @@ Mode: leader
 Node count: 4
 ```
 
-* `srst`: サーバーの統計情報をリセットします。このコマンドは `srvr`、`mntr`、`stat` の結果に影響します。
+* `srst`: サーバー統計をリセットします。このコマンドは `srvr`、`mntr`、`stat` の結果に影響します。
 
 ```response
 Server stats reset.
 ```
 
-* `conf`: 現在の設定の詳細を表示します。
+* `conf`: サーバー構成の詳細を表示します。
 
 ```response
 server_id=1
@@ -374,13 +396,13 @@ target_committed_log_idx    101
 last_snapshot_idx   50
 ```
 
-* `rqld`: 新しいリーダーになるよう要求します。要求の送信に成功した場合は `Sent leadership request to leader.` を、送信できなかった場合は `Failed to send leadership request to leader.` を返します。ノードがすでにリーダーである場合も、結果は要求の送信に成功した場合と同じです。
+* `rqld`: 新しいリーダーになるためのリクエストを送信します。リクエストが送信された場合は `Sent leadership request to leader.` を返し、送信されなかった場合は `Failed to send leadership request to leader.` を返します。ノードがすでにリーダーの場合も、リクエストが送信された場合と同じ結果になります。
 
 ```response
 Sent leadership request to leader.
 ```
 
-* `ftfl`: すべての機能フラグと、それぞれがKeeperインスタンスで有効かどうかを一覧表示します。
+* `ftfl`: すべての 機能フラグ と、それらが Keeper インスタンスで enabled かどうかを一覧表示します。
 
 ```response
 filtered_list   1
@@ -388,13 +410,13 @@ multi_read  1
 check_not_exists    0
 ```
 
-* `ydld`: リーダーシップを譲ってフォロワーになるよう要求します。要求を受信したサーバーがリーダーの場合、まず書き込み処理を一時停止し、後継ノード (現在のリーダーが後継ノードになることはありません) が最新のログへの追従を完了するまで待ってから、リーダーを退任します。後継ノードは自動的に選択されます。要求が送信された場合は `Sent yield leadership request to leader.`、送信されなかった場合は `Failed to send yield leadership request to leader.` を返します。ノードがすでにフォロワーである場合も、結果は要求が送信された場合と同じです。
+* `ydld`: リーダー権限を譲り、フォロワーになるようリクエストします。リクエストを受信したサーバーがリーダーの場合、まず書き込み操作を一時停止し、後継ノード (現在のリーダーが後継ノードになることはありません) が最新のログへの追いつきを完了するまで待ってから、リーダーを辞任します。後継ノードは自動的に選択されます。リクエストが送信された場合は `Sent yield leadership request to leader.` を、送信されなかった場合は `Failed to send yield leadership request to leader.` を返します。ノードがすでにフォロワーの場合も、リクエストが送信された場合と同じ結果になります。
 
 ```response
 Sent yield leadership request to leader.
 ```
 
-* `pfev`: 収集されたすべてのイベントの値を返します。各イベントについて、イベント名、イベント値、イベントの説明を返します。
+* `pfev`: 収集されたすべてのイベントについて、イベント名、イベント値、イベントの説明を返します。
 
 ```response
 FileOpen        62      Number of files opened.
@@ -721,17 +743,27 @@ Keeper インスタンスのストレージ構成例は、次のようになり�
 </div>
 
 ディスクから読み取るデータ量を最小限に抑えるため、Keeper はログエントリをメモリにキャッシュします。
-リクエストが大きい場合、ログエントリがメモリを過剰に消費する可能性があるため、キャッシュされるログ量には上限が設けられています。
-この上限は、次の 2 つの設定で制御します。
+リクエストが大きい場合、ログエントリがメモリを過度に消費する可能性があるため、キャッシュするログの量には上限が設けられています。
+最新ログキャッシュの上限は、次の設定で制御します。
 
-* `latest_logs_cache_size_threshold` - キャッシュに保存される最新ログの合計サイズ
-* `commit_logs_cache_size_threshold` - 次にコミットする必要がある後続ログの合計サイズ
+* `latest_logs_cache_size_threshold` - キャッシュに保存する最新ログの合計サイズ
 
-デフォルト値が大きすぎる場合は、この 2 つの設定を小さくすることでメモリ使用量を削減できます。
+デフォルト値が大きすぎる場合は、この設定を小さくすることでメモリ使用量を削減できます。
+
+次のコミットで必要となるログエントリは、デコード済みの先読みリーダーによって提供されます。このリーダーのサイズは
+`log_readahead_commit_window_bytes` で指定します (`0` を指定すると、コミット時の先読みが無効になります) 。この設定は、
+非推奨の `commit_logs_cache_size_threshold` および `commit_logs_cache_entry_count_threshold` 設定を置き換えるものであり、
+これらは設定の互換性のためにのみ残されています (前者は未設定の場合、引き続き `log_readahead_commit_window_bytes` にマッピングされます。
+後者は効果がありません) 。同じ先読みメカニズムは、`log_readahead_enabled` が `true` の場合、follower の
+レプリケーションのキャッチアップ読み取りにも使用されます。ピア側のチューニング
+パラメータについては、[内部協調設定](#internal-coordination-settings)の
+`log_readahead_window_bytes`、`log_readahead_max_peer_readers`、`log_readahead_eviction_timeout_ms`、
+`log_readahead_pool_threads`、`log_readahead_serve_wait_timeout_ms`、および `log_readahead_chunk_size`
+を参照してください。
 
 <Note>
-  `pfev` コマンドを使用すると、各キャッシュおよびファイルから読み取られたログ量を確認できます。
-  また、Prometheus エンドポイントのメトリクスを使用して、両方のキャッシュの現在のサイズを追跡することもできます。
+  `pfev` コマンドを使用すると、各キャッシュおよびファイルから読み取られたログの量を確認できます。
+  Prometheus エンドポイントのメトリクスを使用して、両方のキャッシュの現在のサイズを追跡することもできます。
 </Note>
 
 <div id="prometheus">

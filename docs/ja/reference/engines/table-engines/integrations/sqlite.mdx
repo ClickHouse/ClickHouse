@@ -48,7 +48,7 @@ CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 
 <Note>
   サブクエリ形式 `(SELECT ...)` は ClickHouse によって解析され、SQLite に送信される前に再シリアライズされます。そのため、有効な ClickHouse SQL である必要があります。ClickHouse が解析しない SQLite 固有の構文を渡すには、`query('...')` 形式を使用してください。この形式では、テキストがそのまま SQLite に送信されます。
 
-  周囲の ClickHouse クエリにある外側の `WHERE`、`LIMIT`、集約などは、渡したクエリには **プッシュダウンされず**、完全なクエリ結果を取得した後に ClickHouse で適用されます。SQLite から読み取るデータを制限するには、渡すクエリの中にフィルターを含めてください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings#external_table_strict_query) を指定すると、プッシュダウンできない外側のフィルターはローカルで適用される代わりに、例外を返して拒否されます。
+  周囲の ClickHouse クエリにある外側の `WHERE`、`LIMIT`、集約などは、渡したクエリには **プッシュダウンされず**、完全なクエリ結果を取得した後に ClickHouse で適用されます。SQLite から読み取るデータを制限するには、渡すクエリの中にフィルターを含めてください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を指定すると、プッシュダウンできない外側のフィルターはローカルで適用される代わりに、例外を返して拒否されます。
 </Note>
 
 <div id="data-types-support">
