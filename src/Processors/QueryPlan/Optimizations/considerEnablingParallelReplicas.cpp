@@ -5,6 +5,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -58,14 +59,19 @@ bool isReadFromOtherReplicas(const IQueryPlanStep & step)
 /// `SELECT ... WHERE ...` it is the only node above the read, so peeling it would leave nothing to
 /// instrument but the reading step itself.
 ///
-/// `DelayedCreatingSetsStep` and `CreatingSetsStep` pass their rows through by construction.
+/// The set and CTE bookkeeping steps pass their rows through by construction, in both their delayed and
+/// their resolved form. The CTE pair is listed for completeness rather than for a shape that arrives here
+/// today: the gate below refuses a plan that still carries a `DelayedMaterializingCTEsStep`, and the
+/// comment there says why that refusal stays for now.
 bool isPassthroughWrapper(const IQueryPlanStep & step)
 {
     if (typeid_cast<const ExpressionStep *>(&step))
         return isPassthroughExpressionWithRenames(step);
 
     return typeid_cast<const DelayedCreatingSetsStep *>(&step)
-        || typeid_cast<const CreatingSetsStep *>(&step);
+        || typeid_cast<const CreatingSetsStep *>(&step)
+        || typeid_cast<const DelayedMaterializingCTEsStep *>(&step)
+        || typeid_cast<const MaterializingCTEsStep *>(&step);
 }
 
 /// Does this branch of the `Union` end in a read from the other replicas? Only the destination matters,
@@ -609,6 +615,20 @@ void considerEnablingParallelReplicas(
     // since such steps obviously don't support statistics collection, `supportsDataflowStatisticsCollection` is handy to check if the plan is simple enough.
     // `BuildRuntimeFilterStep` and `*CreatingSetsStep` don't collect statistics themselves but always appear below the instrumented top node,
     // so they are allowed to pass through the check.
+    //
+    // `DelayedMaterializingCTEsStep` is transparent in the same way and is deliberately NOT allowed
+    // through, which is what keeps a query with `enable_materialized_cte` out of the optimization:
+    // `resolveMaterializingCTEs` runs after this pass (`QueryPlan::optimize`), so the placeholder is still
+    // in the plan when the gate looks at it. Letting it through buys nothing yet - the boundary is then
+    // found, but it matches nothing in the single-node plan, and the parallel-replicas build of such a
+    // query carries no remote read at all - so the query would pay for a probe plan, index analysis
+    // included, and still not be parallelized. It belongs here once matching handles a materialized CTE;
+    // `isPassthroughWrapper` above is ready for it.
+    //
+    // `MaterializingCTEStep` - the singular one, which caps a CTE's own plan - is a different matter and
+    // must not be added without extending the set-building refusal below to that root too. Such a plan is
+    // optimized like any other (`DelayedMaterializingCTEsStep::optimizePlans`) and switching it would
+    // replace the very step that fills the CTE, exactly as for `CreatingSetStep`.
     bool plan_is_simple_enough = true;
     String unsupported_steps;
     traverseQueryPlan(
