@@ -1080,28 +1080,36 @@ const ProjectionDescription & ProjectionsDescription::get(const String & project
     return *(it->second);
 }
 
-void ProjectionsDescription::add(ProjectionDescription && projection, const String & after_projection, bool first, bool if_not_exists)
+bool ProjectionsDescription::checkCanAdd(const String & projection_name, bool if_not_exists) const
 {
-    if (has(projection.name))
+    if (has(projection_name))
     {
         if (if_not_exists)
-            return;
+            return false;
         throw Exception(
-            ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists", projection.name);
+            ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists", projection_name);
     }
 
     for (const auto & definition_ast : unavailable)
     {
-        if (definition_ast->as<const ASTProjectionDeclaration &>().name != projection.name)
+        if (definition_ast->as<const ASTProjectionDeclaration &>().name != projection_name)
             continue;
         if (if_not_exists)
-            return;
+            return false;
         throw Exception(
             ErrorCodes::ILLEGAL_PROJECTION,
             "Cannot add projection {}: a projection with this name is declared but could not be analyzed when the table "
             "was loaded. Drop it first, or remove the cause recorded in the server log and restart the server",
-            projection.name);
+            projection_name);
     }
+
+    return true;
+}
+
+void ProjectionsDescription::add(ProjectionDescription && projection, const String & after_projection, bool first, bool if_not_exists)
+{
+    if (!checkCanAdd(projection.name, if_not_exists))
+        return;
 
     auto insert_it = projections.cend();
 

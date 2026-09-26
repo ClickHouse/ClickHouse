@@ -213,6 +213,9 @@ struct ProjectionsDescription : public IHints<>
     bool has(const String & projection_name) const;
     const ProjectionDescription & get(const String & projection_name) const;
 
+    /// Check the name before analyzing a new declaration. Return false for a duplicate
+    /// `IF NOT EXISTS`; otherwise throw the same conflict error as `add`.
+    bool checkCanAdd(const String & projection_name, bool if_not_exists) const;
     void
     add(ProjectionDescription && projection, const String & after_projection = String(), bool first = false, bool if_not_exists = false);
     void remove(const String & projection_name, bool if_exists);

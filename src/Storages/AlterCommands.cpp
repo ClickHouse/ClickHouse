@@ -1198,6 +1198,8 @@ void AlterCommand::apply(
     }
     else if (type == ADD_PROJECTION)
     {
+        if (!metadata.projections.checkCanAdd(projection_name, if_not_exists))
+            return;
         auto projection = ProjectionDescription::getProjectionFromAST(
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
@@ -2164,8 +2166,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     for (const auto & constraint : metadata->constraints.getConstraints())
         constraint_names.insert(constraint->as<const ASTConstraintDeclaration &>().name);
     /// Projection names need the same statement-local snapshot. In particular, an
-    /// `ADD PROJECTION IF NOT EXISTS` whose name is already taken is a no-op and its
-    /// declaration must not be built or validated.
+    /// `ADD PROJECTION IF NOT EXISTS` whose name is already taken is a no-op, while
+    /// a plain duplicate must report the name conflict before its codec is validated.
     NameSet projection_names;
     for (const auto & projection : metadata->projections)
         projection_names.insert(projection.name);
@@ -2549,7 +2551,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             /// Building the projection here would otherwise move failures for every other
             /// `ADD PROJECTION` from `apply` to this point.
             if (validate_projection_codecs
-                && !(command.if_not_exists && projection_names.contains(command.projection_name))
+                && !projection_names.contains(command.projection_name)
                 && command.projection_decl->as<const ASTProjectionDeclaration &>().columns)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(
