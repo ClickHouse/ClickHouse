@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: race
+# Tags: race, no-random-detach
+# no-random-detach: test uses DETACH/ATTACH itself
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

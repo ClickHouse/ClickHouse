@@ -1,3 +1,7 @@
+-- Tags: no-random-detach
+-- no-random-detach: the oracle is an exact `SharedPartsLocks` delta between the same query with
+-- statistics on and off. A random `DETACH`/`ATTACH` before a query takes parts locks of its own,
+-- so the delta no longer isolates the statistics loads.
 SET enable_analyzer = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 -- Lock deltas measure one local planner, without additional parallel-replica candidate plans.
 SET enable_parallel_replicas = 0;

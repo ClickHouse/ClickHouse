@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-flaky-check
+# Tags: long, no-flaky-check, no-random-detach
 #  - no-flaky-check: near the 600s cap on amd_msan; the rerun count
 #    does not affect the snapshot-teardown race this test exercises.
 

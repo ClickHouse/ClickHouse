@@ -1,3 +1,9 @@
+-- Tags: no-random-detach
+-- no-random-detach: the tables are created under a session-level `SET session_timezone`, and the
+-- implicit time zone of a `DateTime` / `DateTime64` column is resolved when the table is attached.
+-- A random `DETACH`/`ATTACH` re-resolves it in another context, which changes what the stored
+-- values mean whenever that context's time zone differs from the one the test set.
+
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/119173 on plain MergeTree.
 --
 -- A `DateTime`/`DateTime64` whose type name carries no time zone binds one when the type object is

@@ -1,4 +1,7 @@
--- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas, no-random-detach
+-- no-random-detach: the oracle is an exact `SharedPartsLocks` count, taken as the difference between
+-- the same query with statistics on and off. A random `DETACH`/`ATTACH` before a query takes parts
+-- locks of its own, so the difference no longer isolates the statistics loads.
 -- A scalar predicate on the partition key must restrict PREWHERE statistics to its parts.
 SET enable_analyzer = 1, use_statistics_cache = 0, use_statistics_for_part_pruning = 0;
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;

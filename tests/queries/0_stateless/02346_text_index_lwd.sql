@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: text index mark files cannot be reloaded after DETACH/ATTACH (fails with CANNOT_READ_ALL_DATA)
+
 -- Some tests for lightweight deleted on a column with text index
 
 DROP TABLE IF EXISTS tab;

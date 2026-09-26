@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel
+# Tags: no-replicated-database, no-parallel, no-random-detach
+# no-random-detach: test checks mutation state
 # no-replicated-database - path in zookeeper differs with replicated database
 # no-parallel: the `*_lightweight_update_sleep_after_block_allocation` failpoint fires exactly
 #   once globally; a concurrent run of a sibling 03100_lwu_* test could steal the pause or

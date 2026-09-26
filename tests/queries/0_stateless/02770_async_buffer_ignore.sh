@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, no-distributed-cache
+# Tags: no-fasttest, no-random-settings, no-distributed-cache, no-random-detach, no-flaky-check
+# no-random-detach: test checks profile events
+# no-flaky-check: consistently exceeds the 180 s per-run budget of the flaky check under TSan;
+# the S3-backed insert of 1M rows alone dominates the run time
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
