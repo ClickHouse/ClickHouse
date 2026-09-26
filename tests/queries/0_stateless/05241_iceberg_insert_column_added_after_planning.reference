@@ -1,0 +1,3 @@
+rows	[0,1,2,10,11,12]
+added_column_nulls	6
+files	2	size_keys_per_file	[[1],[1]]	sizes_positive	1	null_counts_per_file	[{1:0},{1:0}]
