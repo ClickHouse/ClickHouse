@@ -25,8 +25,11 @@ namespace ErrorCodes
 }
 
 RemoteQueryExecutorReadContext::RemoteQueryExecutorReadContext(
-    RemoteQueryExecutor & executor_, bool suspend_when_query_sent_, bool read_packet_type_separately_)
-    : AsyncTaskExecutor(std::make_unique<Task>(*this), "RemoteQueryExecutorReadContext")
+    RemoteQueryExecutor & executor_,
+    bool suspend_when_query_sent_,
+    bool read_packet_type_separately_,
+    OpenTelemetry::TracingContextOnThread fragment_trace_context_)
+    : AsyncTaskExecutor(std::make_unique<Task>(*this), "RemoteQueryExecutorReadContext", std::move(fragment_trace_context_))
     , executor(executor_)
     , suspend_when_query_sent(suspend_when_query_sent_)
     , read_packet_type_separately(read_packet_type_separately_)
