@@ -56,8 +56,6 @@ public:
 
     virtual std::any visitLabelMatcher(PromQLParser::LabelMatcherContext *context) = 0;
 
-    virtual std::any visitSelectorIdentifier(PromQLParser::SelectorIdentifierContext *context) = 0;
-
     virtual std::any visitLabelMatcherOperator(PromQLParser::LabelMatcherOperatorContext *context) = 0;
 
     virtual std::any visitLabelMatcherList(PromQLParser::LabelMatcherListContext *context) = 0;

@@ -920,13 +920,13 @@ h3ExactEdgeLengthM(index)
 **示例**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
+SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
 ```
 
 ```text title="Response"
-┌───exactEdgeLengthM─┐
-│ 195449.63163407316 │
-└────────────────────┘
+┌─exactEdgeLengthM─┐
+│    195449.631634 │
+└──────────────────┘
 ```
 
 <div id="h3exactedgelengthkm">
@@ -952,13 +952,13 @@ h3ExactEdgeLengthKm(index)
 **示例**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
+SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
 ```
 
 ```text title="Response"
-┌──exactEdgeLengthKm─┐
-│ 195.44963163407317 │
-└────────────────────┘
+┌─exactEdgeLengthKm─┐
+│      195.44963163 │
+└───────────────────┘
 ```
 
 <div id="h3exactedgelengthrads">
@@ -984,13 +984,13 @@ h3ExactEdgeLengthRads(index)
 **示例**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
+SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthRads;
 ```
 
 ```text title="Response"
-┌──exactEdgeLengthRads─┐
-│ 0.030677980118976447 │
-└──────────────────────┘
+┌─exactEdgeLengthRads─┐
+│      0.030677980119 │
+└─────────────────────┘
 ```
 
 <div id="h3numhexagons">
@@ -1053,9 +1053,9 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 ```
 
 ```text title="Response"
-┌──────h3PointDistM─┐
-│ 2223901.039504589 │
-└───────────────────┘
+┌───────h3PointDistM─┐
+│ 2223901.0395045886 │
+└────────────────────┘
 ```
 
 <div id="h3pointdistkm">
@@ -1086,9 +1086,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 ```
 
 ```text title="Response"
-┌─────h3PointDistKm─┐
-│ 2223.901039504589 │
-└───────────────────┘
+┌──────h3PointDistKm─┐
+│ 2223.9010395045884 │
+└────────────────────┘
 ```
 
 <div id="h3pointdistrads">
@@ -1248,7 +1248,7 @@ h3Distance(start,end)
 
 ```text title="Response"
 ┌─distance─┐
-│        7 │
+│        6 │
 └──────────┘
 ```
 
@@ -1291,7 +1291,7 @@ h3HexRing(index, k)
   ## h3GetUnidirectionalEdge
 </div>
 
-根据提供的起点和终点，返回一个单向边 H3 index；如果出错，则返回 0。
+返回两个相邻 H3 单元索引 (起点和终点) 对应的单向边 H3 index。如果任一输入不是有效的 H3 单元，将抛出异常 (由 `functions_h3_default_if_invalid` 设置控制) 。对于有效但不相邻的单元 (包括两次传入同一单元) ，返回 `0`。
 
 **语法**
 
@@ -1329,7 +1329,7 @@ h3GetUnidirectionalEdge(originIndex, destinationIndex)
 **语法**
 
 ```sql
-h3UnidirectionalEdgeisValid(index)
+h3UnidirectionalEdgeIsValid(index)
 ```
 
 **参数**
@@ -1357,7 +1357,7 @@ h3UnidirectionalEdgeisValid(index)
   ## h3GetOriginIndexFromUnidirectionalEdge
 </div>
 
-返回单向边 H3Index 对应的起点六边形索引。
+返回单向边 H3Index 对应的起点六边形索引。如果输入不是有效的有向边，则会抛出异常 (由 `functions_h3_default_if_invalid` 设置控制) ；仅当该设置启用时才返回 `0`。
 
 **语法**
 
@@ -1372,16 +1372,17 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 **返回值**
 
 * 起点六边形索引编号。[UInt64](/zh/reference/data-types/int-uint).
+* 默认情况下，无效的定向边会抛出 `INCORRECT_DATA`；当 `functions_h3_default_if_invalid = 1` 时返回 `0`。
 
 **示例**
 
 ```sql title="Query"
- SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin;
+ SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707199) AS origin;
 ```
 
 ```text title="Response"
 ┌─────────────origin─┐
-│ 599686042433355773 │
+│ 599686042433355775 │
 └────────────────────┘
 ```
 
@@ -1389,7 +1390,7 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
   ## h3GetDestinationIndexFromUnidirectionalEdge
 </div>
 
-返回单向边 H3Index 对应的目标六边形索引。
+返回单向边 H3Index 对应的目标六边形索引。如果输入不是有效的有向边，则会引发异常 (由 `functions_h3_default_if_invalid` 设置控制) ；仅当该设置启用时才返回 `0`。
 
 **语法**
 
@@ -1404,16 +1405,17 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 **返回值**
 
 * 终点六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* 对于无效的有向边，默认抛出 `INCORRECT_DATA`；当 `functions_h3_default_if_invalid = 1` 时返回 `0`。
 
 **示例**
 
 ```sql title="Query"
- SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination;
+ SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707199) AS destination;
 ```
 
 ```text title="Response"
 ┌────────destination─┐
-│ 599686043507097597 │
+│ 599686043507097599 │
 └────────────────────┘
 ```
 
@@ -1440,7 +1442,7 @@ h3GetIndexesFromUnidirectionalEdge(edge)
 * `origin` — 起点六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
 * `destination` — 终点六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
 
-如果提供的输入无效，则返回 `(0,0)`。
+如果提供的输入不是有效的有向边，则会引发异常 (由 `functions_h3_default_if_invalid` 设置控制) ；仅当启用该设置时才返回 `(0,0)`。
 
 **示例**
 
@@ -1458,7 +1460,7 @@ h3GetIndexesFromUnidirectionalEdge(edge)
   ## h3GetUnidirectionalEdgesFromHexagon
 </div>
 
-返回给定 H3Index 的所有单向边。
+返回给定 H3Index 的所有单向边。如果输入不是有效的 H3 单元，则会引发异常 (由 `functions_h3_default_if_invalid` 设置控制) ；仅当该设置启用时，才返回空数组。
 
 **语法**
 
@@ -1468,16 +1470,17 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 
 **参数**
 
-* `index` — 表示单向边的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
+* `index` — 表示单元的六边形索引编号。[UInt64](/zh/reference/data-types/int-uint)。
 
 **返回值**
 
-由表示各条单向边的 H3 索引组成的数组。[数组](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+* 由表示各条单向边的 H3 索引组成的数组。[Array](/zh/reference/data-types/array)([UInt64](/zh/reference/data-types/int-uint))。
+* 默认情况下，无效单元会抛出 `INCORRECT_DATA`；当 `functions_h3_default_if_invalid = 1` 时返回 `[]`。
 
 **示例**
 
 ```sql title="Query"
- SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199) AS edges;
+ SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355775) AS edges;
 ```
 
 ```text title="Response"
@@ -1490,7 +1493,7 @@ h3GetUnidirectionalEdgesFromHexagon(index)
   ## h3GetUnidirectionalEdgeBoundary
 </div>
 
-返回定义该单向边的坐标。
+返回定义该单向边的坐标。如果输入不是有效的有向边，则会引发异常 (由 `functions_h3_default_if_invalid` 设置控制) ；仅当该设置已启用时才返回空数组。
 
 **语法**
 
@@ -1504,7 +1507,8 @@ h3GetUnidirectionalEdgeBoundary(index)
 
 **返回值**
 
-* 由 &#39;(lon, lat)&#39; 对组成的数组。[Array](/zh/reference/data-types/array)([Float64](/zh/reference/data-types/float), [Float64](/zh/reference/data-types/float))。
+* 由 &#39;(lat, lon)&#39; 对组成的数组。[Array](/zh/reference/data-types/array)([Float64](/zh/reference/data-types/float), [Float64](/zh/reference/data-types/float))。
+* 默认情况下，无效的单向边会抛出 `INCORRECT_DATA`；当 `functions_h3_default_if_invalid = 1` 时返回 `[]`。
 
 **示例**
 

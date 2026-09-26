@@ -1,7 +1,7 @@
 export const ExperimentalBadge = () => {
     return (
         <a
-            href="https://clickhouse.com/docs/es/reference/settings/beta-and-experimental-features#experimental-features"
+            href="https://clickhouse.com/docs/reference/settings/beta-and-experimental-features#experimental-features"
             className="experimentalBadge"
         >
             <div className="experimentalIcon">
@@ -15,5 +15,4 @@ export const ExperimentalBadge = () => {
         </a>
     )
 }
-
 export default ExperimentalBadge;

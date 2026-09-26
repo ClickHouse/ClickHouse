@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'JavaScript'
+sidebarTitle: 'نظرة عامة'
 keywords: ['clickhouse', 'js', 'JavaScript', 'NodeJS', 'الويب', 'المتصفح', 'Cloudflare', 'العمّال', 'عميل', 'الاتصال', 'التكامل']
 slug: /integrations/javascript
 description: 'عميل JavaScript الرسمي للاتصال بـ ClickHouse.'
@@ -20,7 +20,7 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
 تتوفر نسختان مختلفتان من العميل لبيئات مختلفة:
 
-* `@clickhouse/client` - Node.js only
+* `@clickhouse/client` - Node.js فقط
 * `@clickhouse/client-web` - المتصفحات (Chrome/Firefox)، Cloudflare workers
 
 عند استخدام TypeScript، تأكد من أن الإصدار لا يقل عن [4.5](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-5.html)، إذ يتيح ذلك [بنية import وexport المضمنة](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-5.html#type-modifiers-on-import-names).
@@ -33,7 +33,7 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
   يأتي عميل JS مزودًا بمهارات AI Agent يمكن أن تساعد وكلاء البرمجة على العمل مع العميل. ثبّتها باستخدام:
 
   ```sh
-  npm skills add ClickHouse/clickhouse-js
+  npx skills add ClickHouse/clickhouse-js
   ```
 </Info>
 
@@ -1004,14 +1004,14 @@ await client.query({
 راجع [هذا المثال](https://github.com/ClickHouse/clickhouse-js/blob/main/examples/node/coding/insert_decimals.ts) لمزيد من التفاصيل.
 
 <div id="integral-types-int64-int128-int256-uint64-uint128-uint256">
-  ### الأنواع العددية الصحيحة: Int64, Int128, Int256, UInt64, UInt128, UInt256
+  ### Integral types: Int64, Int128, Int256, UInt64, UInt128, UInt256
 </div>
 
 على الرغم من أن الخادم يمكنه قبولها كأرقام، فإنها تُعاد كسلاسل نصية في تنسيقات الإخراج من عائلة `JSON*` لتجنب
 overflow للأعداد الصحيحة، لأن القيم القصوى لهذه الأنواع أكبر من `Number.MAX_SAFE_INTEGER`.
 
 ومع ذلك، يمكن تعديل هذا السلوك
-باستخدام [إعداد `output_format_json_quote_64bit_integers`](/ar/reference/settings/formats#output_format_json_quote_64bit_integers)
+باستخدام [إعداد `output_format_json_quote_64bit_integers`](/ar/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
 .
 
 **مثال:** اضبط تنسيق إخراج JSON للأرقام ذات 64 بت.
@@ -1103,7 +1103,7 @@ await client.query({
 })
 ```
 
-اطّلع على https://clickhouse.com/docs/interfaces/cli#cli-queries-with-parameters-syntax لمزيد من التفاصيل.
+اطّلع على https://clickhouse.com/docs/interfaces/client#cli-queries-with-parameters-syntax لمزيد من التفاصيل.
 
 <div id="compression">
   ### الضغط

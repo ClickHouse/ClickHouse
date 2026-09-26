@@ -15,7 +15,7 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
 يدعم ClickHouse Cloud تسجيل الدخول الأحادي (SSO) عبر لغة توصيف تأكيد الأمان (SAML). يتيح لك ذلك تسجيل الدخول بأمان إلى المؤسسة الخاصة بك في ClickHouse Cloud من خلال المصادقة باستخدام موفّر الهوية (IdP) لديك.
 
-نحن ندعم SSO الذي يبدأه موفّر الخدمة، واستخدام مؤسسات متعددة لاتصالات منفصلة، والتوفير الفوري عند الحاجة. كما ندعم [توفير SCIM](/ar/products/cloud/guides/security/cloud-access-management/scim-setup) في private preview، مع دعم Okta. ولا ندعم حتى الآن تعيين السمات.
+نحن ندعم SSO الذي يبدأه موفّر الخدمة، واستخدام مؤسسات متعددة لاتصالات منفصلة، والتوفير الفوري عند الحاجة. كما ندعم توفير SCIM مع [Okta](/ar/products/cloud/guides/security/cloud-access-management/scim-setup) و[Microsoft Entra ID](/ar/products/cloud/guides/security/cloud-access-management/scim-setup-entra). ولا ندعم حتى الآن تعيين السمات.
 
 يمكن للعملاء الذين يفعّلون تكاملات SAML أيضًا تحديد الدور الافتراضي الذي سيُعيَّن للمستخدمين الجدد وضبط إعدادات مهلة الجلسة.
 
@@ -351,7 +351,13 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
   </Accordion>
 
   <Accordion title="كيف أستخدم SAML SSO مع مؤسسات متعددة؟">
-    يدعم ClickHouse Cloud تسجيل الدخول الأحادي SSO عبر مؤسسات متعددة، مع اتصال منفصل لكل مؤسسة. استخدم الرابط المباشر (`https://console.clickhouse.cloud/?connection={organizationid}`) لتسجيل الدخول إلى كل مؤسسة، وسجّل الخروج من إحداها قبل تسجيل الدخول إلى أخرى. إذا كنت لا تريد توجيه المستخدمين ضمن نطاقك إلى مؤسسة تلقائيًا عند إدخال بريدهم الإلكتروني في `https://console.clickhouse.cloud`، فافتح تذكرة دعم لإيقاف هذا السلوك.
+    يدعم ClickHouse Cloud تسجيل الدخول الأحادي SSO عبر مؤسسات متعددة، مع اتصال منفصل لكل مؤسسة.
+
+    يجب استخدام رابط كل مؤسسة المباشر (`https://console.clickhouse.cloud/?connection={organizationId}`) عند تسجيل الدخول إليها للمرة الأولى. يؤدي تسجيل الدخول الأول هذا إلى إعداد حسابك في تلك المؤسسة. إذا كانت مؤسستك قد فعّلت SCIM، فيمكنك تخطي هذه الخطوة لأن حسابك سيكون مُعدًّا بالفعل.
+
+    في عمليات تسجيل الدخول اللاحقة، سجّل الدخول إلى أيٍّ من مؤسسات SAML التابعة لك. تتوفر مؤسسات SAML الأخرى الخاصة بك في مُبدّل المؤسسات في الشريط الجانبي لـ Console، ويؤدي اختيار إحداها إلى تسجيل دخولك إلى تلك المؤسسة عبر SSO الخاص بها.
+
+    إذا كنت لا تريد توجيه المستخدمين ضمن نطاقك إلى مؤسسة تلقائيًا عند إدخال بريدهم الإلكتروني في `https://console.clickhouse.cloud`، فافتح تذكرة دعم لإيقاف هذا السلوك.
   </Accordion>
 
   <Accordion title="لماذا أرى حسابات متعددة للمستخدم نفسه؟">
@@ -364,5 +370,5 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 </div>
 
 * [Manage cloud users](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — إدارة أذونات المستخدمين وقصر الوصول على اتصالات SAML فقط.
-* [توفير SCIM](/ar/products/cloud/guides/security/cloud-access-management/scim-setup) — أتمتة تهيئة المستخدمين والمجموعات (معاينة خاصة).
+* توفير SCIM — أتمتة تهيئة المستخدمين والمجموعات باستخدام [Okta](/ar/products/cloud/guides/security/cloud-access-management/scim-setup) أو [Microsoft Entra ID](/ar/products/cloud/guides/security/cloud-access-management/scim-setup-entra).
 * [Console roles and permissions](/ar/products/cloud/reference/security/console-roles) — الأدوار التي يمكنك تعيينها كدور SAML افتراضي.
