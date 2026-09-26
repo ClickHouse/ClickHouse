@@ -3986,6 +3986,45 @@ bool MutateTask::prepare()
     };
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
+
+    /// The commands predate this snapshot, and a RENAME is the only mutation of its task: if a part holding the renamed
+    /// column does not see the rename's version, the mutation was killed in between.
+    if (std::ranges::any_of(*ctx->commands, [](const MutationCommand & command) { return command.type == MutationCommand::RENAME_COLUMN; }))
+    {
+        /// A ReplicatedMergeTree snapshot bounded by the part's metadata version omits alters its older patches still need.
+        auto rename_check_params = params;
+        rename_check_params.min_part_metadata_version = -1;
+        rename_check_params.need_patch_parts = false;
+        const auto rename_check_snapshot = ctx->data->getMutationsSnapshot(rename_check_params);
+
+        const auto target_version = static_cast<UInt64>(ctx->future_part->part_info.mutation);
+        auto throw_if_rename_was_killed = [&](const MergeTreeDataPartPtr & part)
+        {
+            const auto & columns = part->getColumnsDescription();
+            const auto & serialization_infos = part->getSerializationInfos();
+            const bool renames_part_column = std::ranges::any_of(*ctx->commands, [&](const MutationCommand & command)
+            {
+                return command.type == MutationCommand::RENAME_COLUMN
+                    && (columns.has(command.column_name) || columns.hasNested(command.column_name)
+                        || serialization_infos.isMissingColumn(command.column_name));
+            });
+
+            if (!renames_part_column)
+                return;
+
+            const auto on_fly_commands = rename_check_snapshot->getOnFlyMutationCommandsForPart(part);
+            const bool rename_is_live = std::ranges::any_of(
+                on_fly_commands, [&](const MutationCommand & command) { return command.mutation_version == target_version; });
+            if (!rename_is_live)
+                throw Exception(
+                    ErrorCodes::ABORTED, "Cancelled mutating part {}: mutation {} was killed", ctx->source_part->name, target_version);
+        };
+
+        throw_if_rename_was_killed(ctx->source_part);
+        for (const auto & patch : mutations_snapshot->getPatchesForPart(ctx->source_part))
+            throw_if_rename_was_killed(patch.part);
+    }
+
     auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context
 #if CLICKHOUSE_CLOUD
         , nullptr

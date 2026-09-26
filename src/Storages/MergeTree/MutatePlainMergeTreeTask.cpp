@@ -5,6 +5,7 @@
 #include <Interpreters/TransactionManager.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
@@ -23,6 +24,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace FailPoints
+{
+    extern const char mt_mutate_task_pause_before_merge_list[];
+}
+
 
 StorageID MutatePlainMergeTreeTask::getStorageID() const
 {
@@ -37,6 +43,8 @@ void MutatePlainMergeTreeTask::onCompleted()
 
 void MutatePlainMergeTreeTask::prepare()
 {
+    FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_before_merge_list);
+
     future_part = merge_mutate_entry->future_part;
 
     task_context = createTaskContext();
