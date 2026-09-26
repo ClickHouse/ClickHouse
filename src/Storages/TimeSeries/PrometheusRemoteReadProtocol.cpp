@@ -77,8 +77,8 @@ namespace
         /// serialized to PromQL and reparsed by timeSeriesSelector.
         res_matchers.emplace_back(PrometheusQueryTree::Matcher{
             .label_name = "__name__",
-            .label_value = ".+",
-            .matcher_type = PrometheusQueryTree::MatcherType::RE});
+            .label_value = "",
+            .matcher_type = PrometheusQueryTree::MatcherType::NE});
 
         return PrometheusQueryTree{std::move(instant_selector)};
     }
