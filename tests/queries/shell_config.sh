@@ -223,6 +223,17 @@ function random_str()
     LC_ALL=C tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }
 
+# Repeat a string N times: rep '(' 100
+function rep()
+{
+    local s=$1 n=$2 i
+    if [[ ${#s} == 1 ]]; then
+        head -c "$n" /dev/zero | tr '\0' "$s"
+    else
+        for ((i = 0; i < n; i++)); do printf '%s' "$s"; done
+    fi
+}
+
 function query_with_retry()
 {
     local query="$1" && shift

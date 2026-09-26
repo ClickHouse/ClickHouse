@@ -7,12 +7,6 @@ title: 'Инструкция по установке'
 doc_type: 'guide'
 ---
 
-export const withDocsBase = (href) => {
-  if (!href || !href.startsWith('/')) return href;
-  const base = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
-  return base + href;
-};
-
 <div className="ch-install-cloud-card">
   <span className="ch-install-cloud-badge">Рекомендуется</span>
   <span className="ch-install-cloud-icon" aria-hidden="true"></span>
@@ -25,7 +19,7 @@ export const withDocsBase = (href) => {
     <a className="ch-install-cloud-cta" href="https://clickhouse.cloud/signUp?loc=docs-install-page-banner">
       Начать бесплатно
     </a>
-    <a className="ch-install-cloud-cta ch-install-cloud-cta-secondary" href={withDocsBase('/ru/get-started/setup/cloud')}>
+    <a className="ch-install-cloud-cta ch-install-cloud-cta-secondary" href="/ru/get-started/setup/cloud">
       Прочитать руководство по быстрому старту
     </a>
   </div>

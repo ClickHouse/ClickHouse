@@ -112,9 +112,9 @@ DPJoinEntryPtr DPSizeJoinOrderOptimizer::solve()
                         continue;
 
                     auto applicable_edge = getApplicableExpressions(query_graph, left->relations, right->relations);
-                    /// Only leave the edges that connect left and right.
-                    /// DPsize also includes non-connecting predicates (single-table filters) at the earliest
-                    /// stage (component_size == 2), unlike DPhyp which handles them separately via the hyperedge graph.
+                    /// Keep the edges that connect left and right, plus non-connecting single-table filters
+                    /// and constants, which DPsize attaches at the join that introduces their relation
+                    /// (unlike DPhyp, which handles them separately via the hyperedge graph).
                     std::vector<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
                     {
@@ -123,14 +123,35 @@ DPJoinEntryPtr DPSizeJoinOrderOptimizer::solve()
                             LOG_TEST(log, "Adding predicate connecting {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
                             edge.push_back(edge_it);
                         }
-                        else if ((edge_it->fromLeft() || edge_it->fromRight() || edge_it->fromNone()) && component_size == 2)
-                        {
-                            LOG_TEST(log, "Adding early non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
-                            edge.push_back(edge_it);
-                        }
                         else
                         {
-                            LOG_TEST(log, "Skipping non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            /// Non-connecting predicate. A single-table filter (references exactly one
+                            /// relation) or a constant (references none) must still be applied; a predicate
+                            /// spanning two or more relations was already applied in a sub-join and is skipped.
+                            ///
+                            /// Attach a single-table filter at the join that introduces its relation (the
+                            /// side equal to that relation) so it filters as low as possible, and a constant
+                            /// at the earliest (component_size == 2) join. Two earlier conditions each
+                            /// silently dropped the predicate, changing the query result:
+                            ///   - `component_size == 2` drops the filter whenever its relation is introduced
+                            ///     against an already-multi-relation component (that step has size > 2).
+                            ///   - `fromLeft() || fromRight() || fromNone()` drops it for any single-table
+                            ///     filter on a relation whose id is >= 2, because `fromLeft`/`fromRight` test
+                            ///     relation ids 0 and 1 specifically (they describe the two inputs of a binary
+                            ///     join step, not "references a single relation").
+                            auto filter_rel = edge_it->getSourceRelations().getSingleBit();
+                            bool relation_introduced = filter_rel.has_value()
+                                && (left->relations.getSingleBit() == filter_rel || right->relations.getSingleBit() == filter_rel);
+                            bool constant_at_earliest_join = edge_it->fromNone() && component_size == 2;
+                            if (relation_introduced || constant_at_earliest_join)
+                            {
+                                LOG_TEST(log, "Adding non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                                edge.push_back(edge_it);
+                            }
+                            else
+                            {
+                                LOG_TEST(log, "Skipping non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            }
                         }
                     }
 

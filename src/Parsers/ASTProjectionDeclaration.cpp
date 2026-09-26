@@ -109,6 +109,12 @@ void ASTProjectionDeclaration::formatImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
+    formatBody(ostr, settings, state, frame);
+}
+
+void ASTProjectionDeclaration::formatBody(
+    WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
     if (query)
     {
         std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');

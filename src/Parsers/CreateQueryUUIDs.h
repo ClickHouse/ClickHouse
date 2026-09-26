@@ -3,6 +3,8 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Core/UUID.h>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -37,6 +39,11 @@ struct CreateQueryUUIDs
 
     /// UUIDs of its target table (or tables).
     std::vector<std::pair<ViewTarget::Kind, UUID>> targets_inner_uuids;
+
+    /// The version of a TimeSeries table (see TimeSeriesVersion.h): toString() writes the "metric families" target
+    /// under its old name "Metrics" in the versions before TimeSeriesVersion::MIN_WITH_METRIC_FAMILIES_TARGET_NAME.
+    /// Not set for other tables.
+    std::optional<UInt64> time_series_version;
 };
 
 }

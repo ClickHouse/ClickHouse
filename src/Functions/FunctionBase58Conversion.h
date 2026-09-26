@@ -68,13 +68,22 @@ struct Base58DecodeTraits
         return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
     }
 
+    /// The size argument is a requirement on the decoded size at every value, not only at the two the
+    /// removed fixed-size decoders served. Zero means no requirement and never reaches this function.
     static std::optional<size_t> performWithSizeHint(std::string_view src, UInt8 * dst, size_t expected_size, const std::function<void()> & check_cancellation = {})
     {
-        if (expected_size == 32)
-            return decodeBase58_32(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
-        if (expected_size == 64)
-            return decodeBase58_64(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst);
-        return decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
+        /// An `n`-byte value encodes to between `n` and `maxBase58EncodedLength(n)` characters, so an input
+        /// outside that window cannot decode to `expected_size` and is rejected without paying the quadratic
+        /// conversion. The first comparison also bounds `expected_size` by the input length, which is what
+        /// keeps the product in the second one from overflowing.
+        if (src.size() < expected_size || src.size() > maxBase58EncodedLength(expected_size))
+            return {};
+
+        const std::optional<size_t> decoded_size
+            = decodeBase58(reinterpret_cast<const UInt8 *>(src.data()), src.size(), dst, check_cancellation);
+        if (decoded_size && *decoded_size != expected_size)
+            return {};
+        return decoded_size;
     }
 };
 }
