@@ -1,0 +1,14 @@
+-- CREATE
+kafka_definition	input_format_allow_errors_num	5	definition
+kafka_definition	kafka_max_block_size	4242	definition
+kafka_definition	kafka_num_consumers	1	default
+kafka_definition_pinned	input_format_allow_errors_num	0	other
+kafka_definition_pinned	kafka_max_block_size	0	default
+kafka_definition_pinned	kafka_num_consumers	1	default
+-- loaded again from what they stored
+kafka_definition	input_format_allow_errors_num	5	definition
+kafka_definition	kafka_max_block_size	4242	definition
+kafka_definition	kafka_num_consumers	1	default
+kafka_definition_pinned	input_format_allow_errors_num	0	other
+kafka_definition_pinned	kafka_max_block_size	0	default
+kafka_definition_pinned	kafka_num_consumers	1	default

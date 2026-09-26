@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Storages/SettingDescription.h>
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Common/SettingsChanges.h>
 
@@ -71,13 +72,28 @@ struct KafkaSettings
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const MutableNamedCollectionPtr & named_collection);
 
+    /// Assigns a value the engine chose itself, over whatever a loader assigned: unlike `operator[]`, the
+    /// setting no longer counts as supplied by a named collection. By the setting's typed index, so that a
+    /// misspelled name does not compile. See `SettingsWithRecordedOrigin::setAtOffset`.
+    template <typename FieldType>
+    void set(SettingIndex<KafkaSettings, FieldType> setting, const Field & value)
+    {
+        setAtOffset(setting.offset, value);
+    }
+
     SettingsChanges getFormatSettings() const;
 
     void sanityCheck(ContextPtr global_context) const;
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
+    /// The declared name of the setting at `offset`, for an engine naming one of its settings by typed
+    /// index - `setEffectiveValue` matches a described row, which is keyed by name.
+    static std::string_view nameAtOffset(size_t offset);
 
 private:
+    void setAtOffset(size_t offset, const Field & value);
+
     std::unique_ptr<KafkaSettingsImpl> impl;
 };
 

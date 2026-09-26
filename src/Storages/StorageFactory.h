@@ -8,6 +8,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/registerStorages.h>
 #include <Access/Common/AccessType.h>
+#include <Storages/SettingDescription.h>
 #include <unordered_map>
 
 
@@ -33,6 +34,16 @@ public:
     /// Helper function to validate if a specific storage supports a setting
     /// Used to validate if table settings belong to the engine or the query before the start of the query interpretation
     using HasBuiltinSettingFn = bool(std::string_view);
+
+    /// The settings this engine has, for `system.engine_settings`. The same enumeration
+    /// `IStorage::getTableSettings` reports per table, from a server-level instance instead of a
+    /// table's - so the two tables describe a setting identically.
+    /// An engine whose settings a server-level instance decides - or whose creator fills some of them from
+    /// the server's core settings, as `Distributed` does - needs a function that reads that instance.
+    /// `enumerateCompiledDefaults` would compile and describe values no table of that engine ever has.
+    /// Engines that share a settings struct but draw on different server-level instances register
+    /// different functions - see the replicated `MergeTree` variants.
+    using EnumerateEngineSettingsFn = SettingDescriptions(ContextPtr context);
 
     struct Arguments
     {
@@ -82,6 +93,7 @@ public:
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
         HasBuiltinSettingFn * has_builtin_setting_fn = nullptr;
+        EnumerateEngineSettingsFn * enumerate_engine_settings_fn = nullptr;
     };
 
     using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
@@ -120,6 +132,7 @@ public:
         .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,
+        .enumerate_engine_settings_fn = nullptr,
     }, Documentation documentation = {});
 
     const Storages & getAllStorages() const

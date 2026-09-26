@@ -43,6 +43,7 @@
 #include <Core/Settings.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace CurrentMetrics
 {
@@ -200,8 +201,9 @@ StorageKafka::StorageKafka(
     if (auto mode = getStreamingHandleErrorMode();
         mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
     {
-        (*kafka_settings)[KafkaSetting::input_format_allow_errors_num] = 0;
-        (*kafka_settings)[KafkaSetting::input_format_allow_errors_ratio] = 0;
+        /// A value pinned here is the engine's, whichever source supplied the one it replaces.
+        kafka_settings->set(KafkaSetting::input_format_allow_errors_num, 0);
+        kafka_settings->set(KafkaSetting::input_format_allow_errors_ratio, 0.0);
     }
 
     StorageInMemoryMetadata storage_metadata;
@@ -227,6 +229,11 @@ StorageKafka::StorageKafka(
         DB::setThreadName(ThreadName::KAFKA_CLEANUP);
         cleanConsumersByTTL();
     });
+}
+
+SettingDescriptions StorageKafka::getTableSettings(ContextPtr query_context) const
+{
+    return StorageKafkaUtils::getTableSettings(*this, query_context);
 }
 
 StorageKafka::~StorageKafka()

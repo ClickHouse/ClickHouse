@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/SettingDescription.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
 #include <Parsers/IAST_fwd.h>
@@ -33,11 +35,13 @@ struct GenerateRandomSettings
 
     GENERATE_RANDOM_SETTINGS_SUPPORTED_TYPES(GenerateRandomSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
+    /// The table's own `SETTINGS` clause, recorded as the definition, as `loadFromQuery` records it.
     void loadFromQuery(ASTStorage & storage_def);
     void sanityCheck() const;
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<GenerateRandomSettingsImpl> impl;

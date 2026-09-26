@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/SettingDescription.h>
+
 #if USE_YTSAURUS
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
@@ -42,6 +44,7 @@ struct YTsaurusSettings
     static YTsaurusSettings createFromQuery(ASTStorage & storage_def);
     static YTsaurusSettings createFromQuery(const ASTSetQuery & settings_def);
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<YTsaurusSettingsImpl> impl;

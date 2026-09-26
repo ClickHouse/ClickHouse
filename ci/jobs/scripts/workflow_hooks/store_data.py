@@ -354,10 +354,10 @@ def parse_settings_history_changes(patch, file_lines):
     # record moved to another release. The OLD name must not be demanded under the current
     # version block, because a record naming it cannot exist at all: the setting is gone, and
     # 03999_stateless_settings_history rejects a documented name that is not in system.settings
-    # / system.merge_tree_settings ("DOES NOT EXIST (typo/rename?)"). Aliases do not rescue it
-    # either - system.merge_tree_settings has no alias rows. Only the NEW name is reported, and
-    # the caller then requires it under the current version block like any other added record,
-    # which is what keeps the rename honest.
+    # / system.merge_tree_settings ("DOES NOT EXIST (typo/rename?)"). For a MergeTree setting an
+    # alias does not rescue it either - that check reads only the rows with alias_for = ''. Only
+    # the NEW name is reported, and the caller then requires it under the current version block
+    # like any other added record, which is what keeps the rename honest.
     added_by_bare = {}
     for ns, ver, name, _, bare in added:
         added_by_bare.setdefault((ns, ver, bare), set()).add(name)

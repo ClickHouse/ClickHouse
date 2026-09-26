@@ -2,6 +2,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/Context.h>
@@ -20,6 +21,8 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsEnums.h>
+#include <Core/SettingsFields.h>
 #include <Interpreters/JoinUtils.h>
 #include <Formats/NativeWriter.h>
 
@@ -74,6 +77,7 @@ StorageJoin::StorageJoin(
     const ConstraintsDescription & constraints_,
     const String & comment,
     bool overwrite_,
+    bool any_join_distinct_right_table_keys_,
     bool persistent_)
     : StorageSetOrJoinBase{disk_, relative_path_, table_id_, columns_, constraints_, comment, persistent_}
     , key_names(key_names_)
@@ -82,6 +86,7 @@ StorageJoin::StorageJoin(
     , kind(kind_)
     , strictness(strictness_)
     , overwrite(overwrite_)
+    , any_join_distinct_right_table_keys(any_join_distinct_right_table_keys_)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     for (const auto & key : key_names)
@@ -155,6 +160,116 @@ void StorageJoin::optimizeUnlocked()
     size_t optimized_bytes = join->getTotalByteCount();
     if (current_bytes > optimized_bytes)
         LOG_INFO(getLogger("StorageJoin"), "Optimized Join storage from {} to {} bytes", current_bytes, optimized_bytes);
+}
+
+namespace
+{
+
+/// A setting `Join` takes from the server's settings for whatever its definition leaves out. The value
+/// is rendered through the same setting field the server's settings use, so the comparison with the default compares
+/// like with like. A value other than the default was set by something `Join` cannot name, such as a settings
+/// profile, which is what `Other` says; `StorageDistributed` reports what it copies from the server the same way.
+/// `metadata` is any `Settings` instance: what is read from it - the default, type, description and tier - is
+/// compiled in, so every instance answers alike, and the caller always has one at hand.
+/// Named by string, not by `Setting::x`: these are the core settings' own names, and a typed index of the core
+/// `Settings` is the one thing that would make a settings class outside `Core` name one. A name that a later
+/// release renames does not go unnoticed - `metadata.getDefaultValueString` throws `UNKNOWN_SETTING` for a name
+/// the core does not have, and `hasBuiltinSetting` builds its list through here, so the first `Join` table with
+/// a `SETTINGS` clause raises it and the tests below cover that path.
+SettingDescription enumerateServerBackedJoinSetting(const Settings & metadata, String name, String value)
+{
+    SettingDescription described;
+    described.value = std::move(value);
+    described.default_value = metadata.getDefaultValueString(name);
+    described.type = metadata.getTypeName(name);
+    described.comment = metadata.getDescription(name);
+    described.tier = metadata.getTier(name);
+    described.name = std::move(name);
+    described.origin = described.value == described.default_value ? SettingOrigin::Default : SettingOrigin::Other;
+    return described;
+}
+
+/// The values a `Join` holds for its server-backed settings.
+struct ServerBackedJoinValues
+{
+    bool use_nulls = false;
+    SizeLimits limits;
+    bool overwrite = false;
+    bool any_join_distinct_right_table_keys = false;
+};
+
+/// The one place they are named: `hasBuiltinSetting`, `getTableSettings` and `enumerateEngineSettings` all read
+/// the list from here, so they cannot disagree about which settings there are.
+SettingDescriptions enumerateServerBackedJoinSettings(const Settings & metadata, const ServerBackedJoinValues & values)
+{
+    return {
+        enumerateServerBackedJoinSetting(metadata, "join_use_nulls", SettingFieldBool{values.use_nulls}.toString()),
+        enumerateServerBackedJoinSetting(metadata, "max_rows_in_join", SettingFieldUInt64{values.limits.max_rows}.toString()),
+        enumerateServerBackedJoinSetting(metadata, "max_bytes_in_join", SettingFieldUInt64{values.limits.max_bytes}.toString()),
+        enumerateServerBackedJoinSetting(
+            metadata, "join_overflow_mode", SettingFieldOverflowMode{values.limits.overflow_mode}.toString()),
+        enumerateServerBackedJoinSetting(metadata, "join_any_take_last_row", SettingFieldBool{values.overwrite}.toString()),
+        enumerateServerBackedJoinSetting(
+            metadata,
+            "any_join_distinct_right_table_keys",
+            SettingFieldBool{values.any_join_distinct_right_table_keys}.toString()),
+    };
+}
+
+}
+
+bool StorageJoin::hasBuiltinSetting(std::string_view name)
+{
+    /// Looked up by `std::string_view`, which is what `StorageFactory` asks with.
+    static const NameSetWithViewLookup names = []
+    {
+        NameSetWithViewLookup result;
+        for (const auto & setting : enumerateServerBackedJoinSettings(Settings{}, {}))
+            result.insert(setting.name);
+        for (const auto & setting : persistenceSettingDefaults())
+            result.insert(setting.name);
+        return result;
+    }();
+    return names.contains(name);
+}
+
+SettingDescriptions StorageJoin::getTableSettings(ContextPtr query_context) const
+{
+    /// `Join` keeps no settings object. The creator resolves its settings once - from the table's own
+    /// `SETTINGS` clause and, for what the clause leaves out, from the server's settings (`args.getContext`, the
+    /// global context, not the creating session) - and passes the results to the constructor. Report what the
+    /// table holds: a setting the clause leaves out is shown nowhere else, not even by `SHOW CREATE TABLE`.
+    auto settings = enumerateServerBackedJoinSettings(
+        query_context->getSettingsRef(), {use_nulls, limits, overwrite, any_join_distinct_right_table_keys});
+
+    /// These two have defaults of the engine's own rather than server settings behind them, so unless the
+    /// definition states them they are at those defaults.
+    for (auto & setting : persistenceSettings())
+        settings.push_back(std::move(setting));
+
+    return withOriginFromDefinition(std::move(settings), getStorageID(), query_context);
+}
+
+SettingDescriptions StorageJoin::enumerateEngineSettings(ContextPtr context)
+{
+    /// What a table created now would take for each setting its definition leaves out: the server's settings,
+    /// which the creator reads from the global context - `StorageFactory::Arguments::getContext` is the global
+    /// context, as `StorageFactory::get` asserts, so a session that changed one of these still creates tables
+    /// with the server's value - and the engine's own defaults for `disk` and `persistent`.
+    const auto & server = context->getGlobalContext()->getSettingsRef();
+    auto settings = enumerateServerBackedJoinSettings(
+        server,
+        {
+            .use_nulls = server[Setting::join_use_nulls],
+            .limits = SizeLimits(
+                server[Setting::max_rows_in_join], server[Setting::max_bytes_in_join], server[Setting::join_overflow_mode]),
+            .overwrite = server[Setting::join_any_take_last_row],
+            .any_join_distinct_right_table_keys = server[Setting::any_join_distinct_right_table_keys],
+        });
+
+    const auto defaults = persistenceSettingDefaults();
+    settings.insert(settings.end(), defaults.begin(), defaults.end());
+    return settings;
 }
 
 void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr context, TableExclusiveLockHolder &)
@@ -388,20 +503,6 @@ void StorageJoin::convertRightBlock(Block & block) const
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory)
 {
-    auto has_builtin_fn = [](std::string_view name)
-    {
-        static const std::unordered_set<std::string_view> valid_settings
-            = {"join_use_nulls",
-               "max_rows_in_join",
-               "max_bytes_in_join",
-               "join_overflow_mode",
-               "join_any_take_last_row",
-               "any_join_distinct_right_table_keys",
-               "disk",
-               "persistent"};
-        return valid_settings.contains(name);
-    };
-
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         /// Join(ANY, LEFT, k1, k2, ...)
@@ -534,6 +635,7 @@ void registerStorageJoin(StorageFactory & factory)
             args.constraints,
             args.comment,
             join_any_take_last_row,
+            old_any_join,
             persistent);
     };
 
@@ -542,7 +644,8 @@ void registerStorageJoin(StorageFactory & factory)
         creator_fn,
         StorageFactory::StorageFeatures{
             .supports_settings = true,
-            .has_builtin_setting_fn = has_builtin_fn,
+            .has_builtin_setting_fn = StorageJoin::hasBuiltinSetting,
+            .enumerate_engine_settings_fn = StorageJoin::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(

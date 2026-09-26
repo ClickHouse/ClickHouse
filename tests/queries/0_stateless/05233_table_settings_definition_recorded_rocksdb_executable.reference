@@ -1,0 +1,20 @@
+-- EmbeddedRocksDB: CREATE
+bulk_insert_block_size	1000	definition
+optimize_for_bulk_insert	1	default
+-- EmbeddedRocksDB: MODIFY SETTING
+bulk_insert_block_size	1000	definition
+optimize_for_bulk_insert	0	definition
+-- EmbeddedRocksDB: RESET SETTING
+bulk_insert_block_size	1048449	default
+optimize_for_bulk_insert	0	definition
+-- EmbeddedRocksDB: loaded again from what it stored
+bulk_insert_block_size	1048449	default
+optimize_for_bulk_insert	0	definition
+-- Executable: CREATE
+command_termination_timeout	3	definition
+pool_size	16	default
+send_chunk_header	1	definition
+-- Executable: loaded again from what it stored
+command_termination_timeout	3	definition
+pool_size	16	default
+send_chunk_header	1	definition

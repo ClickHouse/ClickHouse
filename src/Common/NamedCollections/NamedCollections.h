@@ -92,6 +92,9 @@ public:
     /// the server configuration from values any user could have set with SQL.
     SourceId getSourceId() const { return source_id; }
 
+    /// The name this collection is registered under, which is what a grant on a named collection names.
+    const std::string & getName() const { return collection_name; }
+
     virtual String getCreateStatement(bool /*show_secrects*/) { return  {}; }
 
     virtual void update(const ASTAlterNamedCollectionQuery & query);

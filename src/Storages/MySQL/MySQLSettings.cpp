@@ -6,6 +6,9 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
+#include <Storages/loadSettingsFromNamedCollection.h>
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
@@ -33,7 +36,7 @@ namespace ErrorCodes
     DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32,geometry", "Which MySQL types should be converted to corresponding ClickHouse types. All modern mappings (decimal, datetime64, date2Date32, geometry) are enabled by default. Can be set to any combination of 'decimal', 'datetime64', 'date2Date32', 'date2String', or 'geometry'. Must match the default of the 'mysql_datatypes_support_level' server setting, so that creating a MySQL database or table engine with the default settings does not persist a redundant SETTINGS clause.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MYSQL_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MySQLSettings, MySQLSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS, MySQLSettings, MySQLSetting)
 
 MySQLSettings::MySQLSettings() : impl(std::make_unique<MySQLSettingsImpl>())
 {
@@ -61,7 +64,7 @@ void MySQLSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            loadFromQuery(*storage_def.settings);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -111,6 +114,11 @@ void MySQLSettings::loadFromQueryContext(ContextPtr context, ASTStorage & storag
         {
             changes.push_back(SettingChange{setting_name, settings[Setting::mysql_datatypes_support_level].toString()});
         }
+
+        /// Written into the clause just above, so the table's definition states it from now on - and states it
+        /// again to `loadFromQuery` when the server restarts and reads the stored query back. Recorded here so
+        /// that the same table does not report `other` before a restart and `definition` after it.
+        impl->recordOrigin(setting_name, SettingOrigin::Definition);
     }
 }
 
@@ -124,16 +132,14 @@ VectorWithMemoryTracking<std::string_view> MySQLSettings::getAllRegisteredNames(
 
 void MySQLSettings::loadFromNamedCollection(const NamedCollection & named_collection)
 {
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        if (named_collection.has(setting_name))
-            impl->set(setting_name, named_collection.get<String>(setting_name));
-    }
+    loadSettingsFromNamedCollection(*impl, named_collection);
 }
 
 bool MySQLSettings::hasBuiltin(std::string_view name)
 {
     return MySQLSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(MySQLSettings)
+
 }

@@ -7,7 +7,7 @@ namespace RabbitMQ
 {
 
 static constexpr auto TABLE_ENGINE_NAME = "RabbitMQ";
-static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "'[HIDDEN]'"; };
+static constexpr auto DEFAULT_MASKING_RULE = [](const DB::Field &){ return "[HIDDEN]"; };
 
 using ValueMaskingFunc = std::function<std::optional<std::string>(const DB::Field &)>;
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
@@ -21,10 +21,11 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
         if (!value.tryGet<std::string>(masked_value))
             return {};
         /// AMQP-CPP ends the login at the FIRST '@' after the scheme, unbounded by the `/?#` that closes
-        /// an RFC 3986 authority (`contrib/AMQP-CPP/include/amqpcpp/address.h`), so no URI masker bounds it.
+        /// an RFC 3986 authority (`contrib/AMQP-CPP/include/amqpcpp/address.h`), so no URI masker bounds
+        /// it and nothing short of the whole value can be masked safely.
         if (masked_value.contains('@'))
             masked_value = "[HIDDEN]";
-        return fmt::format("'{}'", masked_value);
+        return masked_value;
     }}
 };
 

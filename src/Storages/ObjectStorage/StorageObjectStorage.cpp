@@ -1249,4 +1249,29 @@ void StorageObjectStorage::checkAlterPartitionIsPossible(
     configuration->checkAlterPartitionIsPossible(object_storage, context, commands);
 }
 
+SettingDescriptions StorageObjectStorage::getTableSettings(ContextPtr query_context) const
+{
+    /// The settings belong to the configuration rather than to this storage. A data lake configuration keeps
+    /// them; plain object storage - `S3`, `GCS`, `AzureBlobStorage`, `HDFS` - never builds a
+    /// `StorageObjectStorageSettings` at all, since `createStorageObjectStorage` applies the `SETTINGS` clause to
+    /// a copy of `Settings` and converts the result to `FormatSettings`, which carries no setting names.
+    ///
+    /// Which of the two it is is asked of the configuration, not inferred from an empty enumeration: every data
+    /// lake settings struct happens to be non-empty today, so the two agree, but a lake that enumerated nothing
+    /// would otherwise fall to the definition-only path without anything saying so.
+    auto settings = configuration->enumerateSettings();
+    if (!configuration->isDataLakeConfiguration())
+    {
+        /// What the clause states is still in the stored `CREATE` query, so report that, as `File` and `URL` do,
+        /// with the metadata the engine's registered settings give it. What the clause does not state cannot be
+        /// recovered: the creator applied the clause to a copy of the creating session's settings, and only the
+        /// resulting `FormatSettings` survives - so the compiled defaults would not be the values in effect.
+        return IStorage::getTableSettings(query_context);
+    }
+
+    /// A data lake configuration keeps a `DataLakeStorageSettings`, which records the table's own `SETTINGS`
+    /// clause as `loadFromQuery` applies it.
+    return settings;
+}
+
 }

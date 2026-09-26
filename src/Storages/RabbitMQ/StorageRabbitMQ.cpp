@@ -29,6 +29,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StreamingStorageRegistry.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
@@ -43,6 +44,7 @@
 #include <utility>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {
@@ -1596,7 +1598,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         if (!(*rabbitmq_settings)[RabbitMQSetting::rabbitmq_format].changed)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "You must specify `rabbitmq_format` setting");
 
-        return std::make_shared<StorageRabbitMQ>(args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode);
+        return std::make_shared<StorageRabbitMQ>(
+            args.table_id, args.getContext(), args.columns, args.comment, std::move(rabbitmq_settings), args.mode);
     };
 
     factory.registerStorage(
@@ -1606,6 +1609,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,
             .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = enumerateCompiledDefaults<RabbitMQSettings>,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1820,6 +1824,35 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 )DOCS_MD",
             .syntax = "ENGINE = RabbitMQ() SETTINGS rabbitmq_host_port = 'host:port', rabbitmq_exchange_name = 'exchange', rabbitmq_format = 'format', ...",
             .related = {"Kafka", "NATS", "FileLog"}});
+}
+
+SettingDescriptions StorageRabbitMQ::getTableSettings(ContextPtr /* query_context */) const
+{
+    /// The settings object (a `SettingsWithRecordedOrigin`) records what a named collection supplied, as
+    /// `loadSettingsFromNamedCollection` loads it, and the table's own `SETTINGS` clause, as `loadFromQuery`
+    /// applies it over the collection.
+    auto settings = rabbitmq_settings->enumerateSettings();
+
+    /// What the table works with. The constructor expands macros in these, and lets the `rabbitmq` server config
+    /// section's `vhost` override the table's.
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_exchange_name, exchange_name);
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_format, format_name);
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_routing_key_list, boost::algorithm::join(routing_keys, ","));
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_schema, schema_name);
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_queue_base, queue_base);
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_queue_settings_list, boost::algorithm::join(queue_settings_list, ","));
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_address, configuration.connection_string);
+    setEffectiveValue(settings, RabbitMQSetting::rabbitmq_vhost, configuration.vhost,
+        getContext()->getConfigRef().has("rabbitmq.vhost") ? std::optional(SettingOrigin::Config) : std::nullopt);
+
+    /// A `rabbitmq_host_port` table takes the username and password from the server config section when it gives
+    /// none. A `rabbitmq_address` table takes them from the address, and these two settings are not used.
+    if (!configuration.host.empty())
+    {
+        setEffectiveValueWithConfigFallback(settings, RabbitMQSetting::rabbitmq_username, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_username].value, configuration.username);
+        setEffectiveValueWithConfigFallback(settings, RabbitMQSetting::rabbitmq_password, (*rabbitmq_settings)[RabbitMQSetting::rabbitmq_password].value, configuration.password);
+    }
+    return settings;
 }
 
 }

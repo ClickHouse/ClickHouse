@@ -1,16 +1,29 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
+#include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Common/Exception.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool distributed_background_insert_batch;
+    extern const SettingsBool distributed_background_insert_split_batch_on_failure;
+    extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
+    extern const SettingsMilliseconds distributed_background_insert_max_sleep_time_ms;
+}
 
 namespace ErrorCodes
 {
@@ -36,7 +49,7 @@ namespace ErrorCodes
     DECLARE(Bool, flush_on_detach, true, "Flush data to remote nodes on DETACH/DROP/server shutdown", 0) \
 
 DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DISTRIBUTED_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DistributedSettings, DistributedSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DistributedSettings, DistributedSetting)
 
 DistributedSettings::DistributedSettings() : impl(std::make_unique<DistributedSettingsImpl>())
 {
@@ -64,7 +77,7 @@ void DistributedSettings::loadFromConfig(const String & config_elem, const Poco:
     try
     {
         for (const String & key : config_keys)
-            impl->set(key, config.getString(config_elem + "." + key));
+            impl->setWithOrigin(key, config.getString(config_elem + "." + key), SettingOrigin::Config);
     }
     catch (Exception & e)
     {
@@ -80,7 +93,7 @@ void DistributedSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            impl->applyChanges(storage_def.settings->changes);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -102,9 +115,45 @@ void DistributedSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+void DistributedSettings::applyBackgroundInsertDefaults(const Settings & query_settings)
+{
+    if (!(*impl)[DistributedSetting::background_insert_batch].changed)
+        (*impl)[DistributedSetting::background_insert_batch] = query_settings[Setting::distributed_background_insert_batch];
+    if (!(*impl)[DistributedSetting::background_insert_split_batch_on_failure].changed)
+        (*impl)[DistributedSetting::background_insert_split_batch_on_failure]
+            = query_settings[Setting::distributed_background_insert_split_batch_on_failure];
+    if (!(*impl)[DistributedSetting::background_insert_sleep_time_ms].changed)
+        (*impl)[DistributedSetting::background_insert_sleep_time_ms] = query_settings[Setting::distributed_background_insert_sleep_time_ms];
+    if (!(*impl)[DistributedSetting::background_insert_max_sleep_time_ms].changed)
+        (*impl)[DistributedSetting::background_insert_max_sleep_time_ms]
+            = query_settings[Setting::distributed_background_insert_max_sleep_time_ms];
+}
+
 bool DistributedSettings::hasBuiltin(std::string_view name)
 {
     return DistributedSettingsImpl::hasBuiltin(name);
 }
+
+SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr context)
+{
+    /// The `distributed` config section is applied to these, so they can differ from the compiled
+    /// defaults, and this is the instance a new table starts from.
+    auto settings = context->getDistributedSettings();
+    /// From the global context, because that is what `StorageDistributed` fills them from - the creator reads
+    /// `StorageFactory::Arguments::getContext`, which is the global context.
+    settings.applyBackgroundInsertDefaults(context->getGlobalContext()->getSettingsRef());
+
+    auto described = settings.enumerateSettings();
+    /// Filling one of these copies the core setting's field, changed bit and all, so the bit says nothing
+    /// about them here: it is set for a value that merely equals the default and clear for one that does not.
+    /// The value decides instead - the same rule, and the same call, `StorageDistributed::getTableSettings`
+    /// applies to the table's own rows, so the two cannot answer differently for the same value.
+    /// A setting the `distributed` config section assigned keeps the source it recorded.
+    setOriginByValue(described);
+    return described;
+}
+
+IMPLEMENT_SETTINGS_ENUMERATION(DistributedSettings)
+
 }
 

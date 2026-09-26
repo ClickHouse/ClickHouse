@@ -1,0 +1,10 @@
+-- a table of a Remote database reports the settings of its Distributed storage
+fsync_after_insert	0	default
+-- hidden from system.table_settings with show_remote_databases_in_system_tables off
+0
+-- SHOW TABLE SETTINGS names the database, so it shows the table even then
+fsync_after_insert	0	0	default
+-- an unreachable Remote database: no rows, no error, whether listed by database or by table
+0
+0
+-- SHOW TABLE SETTINGS looks the table up first, and reports that the server is unreachable

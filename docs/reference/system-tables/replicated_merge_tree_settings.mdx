@@ -11,17 +11,24 @@ doc_type: 'reference'
 
 Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.
 
+The values are the ones this server uses, which need not be the compiled-in defaults: the `<merge_tree>` and `<replicated_merge_tree>` sections of the server configuration set them, and the `compatibility` setting rolls them back to an older release's. The `source` column names which of those a value came from, and `changed` is `source != 'default'`.
+
+A setting that is also writable under an older name has a row for each name, as in [`system.settings`](/reference/system-tables/settings); `alias_for` is empty on the row of the name the setting is declared under and names that setting on the others. Add `WHERE alias_for = ''` to a query that reads this table as a list of settings, one row per setting.
+
+For the settings in effect for one table, rather than for the engine, see [`system.table_settings`](/reference/system-tables/table_settings).
+
 ## Columns {#columns}
 
 - `name` ([String](/reference/data-types/string)) — Setting name.
-- `value` ([String](/reference/data-types/string)) — Setting value.
-- `default` ([String](/reference/data-types/string)) — Setting default value.
-- `changed` ([UInt8](/reference/data-types/int-uint)) — 1 if the setting was explicitly defined in the config or explicitly changed.
+- `value` ([String](/reference/data-types/string)) — The value in effect. It need not be what a `CREATE` query states: it can come from the server configuration, the `compatibility` setting, a named collection or replicated metadata.
+- `default` ([String](/reference/data-types/string)) — Value the setting has when nothing sets it.
+- `changed` ([UInt8](/reference/data-types/int-uint)) — 1 if the value has a source other than the engine's compiled-in default, which is `source != 'default'`. Where the engine records who assigned a setting, assigning it the value it already had still counts; where the engine cannot say and the source is read back from the value - see `source` - a value equal to the default reads as unchanged.
+- `source` ([Enum8('default' = 0, 'config' = 1, 'compatibility' = 2, 'named_collection' = 3, 'definition' = 4, 'shared_metadata' = 5, 'other' = 6)](/reference/data-types/enum)) — Where the value came from: the engine's compiled-in `default`, a server `config` section, an older release's default the `compatibility` setting rolled back to, a `named_collection` the table was built from, the table's own `SETTINGS` clause (`definition`), metadata shared between replicas (`shared_metadata`), or `other` where the engine does not say - which is also how a value the engine adjusts while it runs is reported. Which of them can appear depends on the engine. The value of a setting a named collection supplied is hidden, as `system.named_collections` hides it: a collection is secret as a whole, not only the keys a masking rule knows.
 - `description` ([String](/reference/data-types/string)) — Setting description.
-- `min` ([Nullable(String)](/reference/data-types/nullable)) — Minimum value of the setting, if any is set via constraints. If the setting has no minimum value, contains NULL.
-- `max` ([Nullable(String)](/reference/data-types/nullable)) — Maximum value of the setting, if any is set via constraints. If the setting has no maximum value, contains NULL.
-- `disallowed_values` ([Array(String)](/reference/data-types/array)) — List of disallowed values
-- `readonly` ([UInt8](/reference/data-types/int-uint)) — Shows whether the current user can change the setting: 0 — Current user can change the setting, 1 — Current user can't change the setting.
+- `min` ([Nullable(String)](/reference/data-types/nullable)) — Minimum value the current user's settings constraints allow, or NULL if none is set. Only `MergeTree` settings can be constrained.
+- `max` ([Nullable(String)](/reference/data-types/nullable)) — Maximum value the current user's settings constraints allow, or NULL if none is set. Only `MergeTree` settings can be constrained.
+- `disallowed_values` ([Array(String)](/reference/data-types/array)) — Values the current user's settings constraints forbid, empty when none are. Only `MergeTree` settings can be constrained.
+- `readonly` ([UInt8](/reference/data-types/int-uint)) — 1 if the setting cannot be changed: a settings constraint of the current user makes it read-only, or the engine does not allow changing it on an existing table (for example `index_granularity`); 0 otherwise. Only `MergeTree` settings are ever read-only. It says nothing about the user's `ALTER` privileges.
 - `type` ([String](/reference/data-types/string)) — Setting type (implementation specific string value).
 - `is_obsolete` ([UInt8](/reference/data-types/int-uint)) — Shows whether a setting is obsolete.
 - `tier` ([Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12, 'PrivatePreview' = 16)](/reference/data-types/enum)) — Support level for this feature. ClickHouse features are organized in tiers, varying depending on the current status of their
@@ -31,4 +38,5 @@ Contains a list of all ReplicatedMergeTree engine specific settings, their curre
   * EXPERIMENTAL: The feature is under development. Only intended for developers and ClickHouse enthusiasts. The feature might or might not work and could be removed at any time.
   * PRIVATE PREVIEW: The feature is on a clear path to general availability. Its applicability is still limited and it is not recommended for production use.
   * OBSOLETE: No longer supported. Either it is already removed or it will be removed in future releases.
+- `alias_for` ([String](/reference/data-types/string)) — Empty on a setting's own row. A setting writable under more than one name also gets a row per other name, carrying the same values, with this naming the one it is declared under.
 {/*AUTOGENERATED_END*/}

@@ -2,6 +2,7 @@
 
 #include <Disks/IStoragePolicy.h>
 #include <Common/CurrentThread.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/StringUtils.h>
 #include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
@@ -17,6 +18,9 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/maskEngineSettingValue.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
 #include <Planner/collectSelectedColumnsFromTable.h>
@@ -306,6 +310,17 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLock
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
+}
+
+SettingDescriptions IStorage::getTableSettings(ContextPtr context) const
+{
+    /// A dictionary and a system table have no `SETTINGS` clause, so their stored definition is not read at all.
+    /// A view can have one - a materialized view's own `ENGINE` takes it, and its rows are the view's, separate
+    /// from those of the inner table the data lands in - so views are read like any other table.
+    if (isDictionary() || isSystemStorage())
+        return {};
+
+    return describeSettingsStatedInDefinition(getStorageID(), context);
 }
 
 void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const

@@ -75,6 +75,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int ALL_CONNECTION_TRIES_FAILED;
+    extern const int UNKNOWN_SETTING;
 }
 
 /// Demote only a connection failure to the (unreachable) remote, so that anything else is not
@@ -424,7 +425,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(
                 ConstraintsDescription{},
                 String{},
                 getContext(),
-                MySQLSettings{}));
+                *mysql_settings));
     }
 }
 
@@ -825,8 +826,20 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             configuration.password = safeGetLiteralValue<String>(arguments[3], engine_name);
         }
         mysql_settings->loadFromQueryContext(args.context, *engine_define);
+        /// The database's own clause is not the definition of the tables it makes, which report it as `other`.
         if (engine_define->settings)
-            mysql_settings->loadFromQuery(*engine_define);
+        {
+            try
+            {
+                mysql_settings->loadFromQuery(*engine_define->settings);
+            }
+            catch (Exception & e)
+            {
+                if (e.code() == ErrorCodes::UNKNOWN_SETTING)
+                    e.addMessage("for storage " + engine_define->engine->name);
+                throw;
+            }
+        }
 
         auto mysql_pool = createMySQLPoolWithFailover(configuration, *mysql_settings);
 

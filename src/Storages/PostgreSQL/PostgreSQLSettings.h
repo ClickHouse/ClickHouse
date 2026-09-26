@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/SettingDescription.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
@@ -37,6 +39,7 @@ struct PostgreSQLSettings
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
 
     void loadFromQuery(const ASTSetQuery & settings_def);
+    /// A table's own `SETTINGS` clause, recorded as the definition.
     void loadFromQuery(ASTStorage & storage_def);
     void loadFromNamedCollection(const NamedCollection & named_collection);
 
@@ -46,6 +49,7 @@ struct PostgreSQLSettings
     void loadFromQueryContext(const Context & context);
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<PostgreSQLSettingsImpl> impl;

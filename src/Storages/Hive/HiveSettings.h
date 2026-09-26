@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/SettingDescription.h>
+
 #include "config.h"
 
 #if USE_HIVE
@@ -66,6 +68,7 @@ struct HiveSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
 
 private:
     std::unique_ptr<HiveSettingsImpl> impl;

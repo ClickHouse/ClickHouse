@@ -1,3 +1,5 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <optional>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
@@ -77,7 +79,7 @@ namespace ErrorCodes
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 DECLARE_SETTINGS_TRAITS(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, OBJECT_STORAGE_QUEUE_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, ObjectStorageQueueSettings, ObjectStorageQueueSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(ObjectStorageQueueSettingsTraits, LIST_OF_OBJECT_STORAGE_QUEUE_SETTINGS, ObjectStorageQueueSettings, ObjectStorageQueueSetting)
 
 ObjectStorageQueueSettings::ObjectStorageQueueSettings() : impl(std::make_unique<ObjectStorageQueueSettingsImpl>())
 {
@@ -141,10 +143,7 @@ void ObjectStorageQueueSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-namespace
-{
-
-std::optional<std::string_view> adjustSettingName(std::string_view name)
+std::optional<std::string_view> ObjectStorageQueueSettings::adjustSettingName(std::string_view name)
 {
     static constexpr std::string_view s3queue_prefix = "s3queue_";
 
@@ -165,8 +164,6 @@ std::optional<std::string_view> adjustSettingName(std::string_view name)
         return name;
 
     return std::nullopt;
-}
-
 }
 
 void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id)
@@ -244,4 +241,8 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
         name = *maybe_new_name;
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(ObjectStorageQueueSettings)
+IMPLEMENT_SETTINGS_NAME_AT_OFFSET(ObjectStorageQueueSettings)
+
 }

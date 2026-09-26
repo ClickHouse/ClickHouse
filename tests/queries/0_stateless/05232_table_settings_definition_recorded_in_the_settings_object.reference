@@ -1,0 +1,25 @@
+-- MergeTree: CREATE
+index_granularity	1	0
+min_bytes_for_wide_part	1	0
+min_rows_for_wide_part	0	1
+-- MergeTree: MODIFY SETTING
+index_granularity	1	0
+min_bytes_for_wide_part	1	0
+min_rows_for_wide_part	1	0
+-- MergeTree: RESET SETTING
+index_granularity	1	0
+min_bytes_for_wide_part	0	1
+min_rows_for_wide_part	1	0
+-- MergeTree: loaded again from what it stored
+index_granularity	1	0
+min_bytes_for_wide_part	0	1
+min_rows_for_wide_part	1	0
+-- Memory: CREATE
+max_rows_to_keep	100	definition
+min_rows_to_keep	0	default
+-- Memory: MODIFY SETTING
+max_rows_to_keep	100	definition
+min_rows_to_keep	10	definition
+-- Memory: loaded again from what it stored
+max_rows_to_keep	100	definition
+min_rows_to_keep	10	definition

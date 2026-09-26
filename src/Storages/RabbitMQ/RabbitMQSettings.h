@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/SettingDescription.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
@@ -59,6 +61,10 @@ struct RabbitMQSettings
     SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
+    SettingDescriptions enumerateSettings() const;
+    /// The declared name of the setting at `offset`, for an engine naming one of its settings by typed
+    /// index - `setEffectiveValue` matches a described row, which is keyed by name.
+    static std::string_view nameAtOffset(size_t offset);
 
 private:
     std::unique_ptr<RabbitMQSettingsImpl> impl;

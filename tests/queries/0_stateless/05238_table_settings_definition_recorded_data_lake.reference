@@ -1,0 +1,6 @@
+-- CREATE
+iceberg_metadata_file_path		default
+iceberg_use_version_hint	1	definition
+-- loaded again from what it stored
+iceberg_metadata_file_path		default
+iceberg_use_version_hint	1	definition

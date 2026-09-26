@@ -11,6 +11,7 @@
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/SettingDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
@@ -265,6 +266,22 @@ public:
     {
         return metadata.get();
     }
+
+    /// Report this table's settings as they are actually in effect, for `system.table_settings`.
+    ///
+    /// The base implementation answers from the table's own `SETTINGS` clause, with the metadata the engine's
+    /// registered settings give each stated setting, and reports nothing for a view, a dictionary or a system
+    /// table. That is all a storage can say when it keeps no settings of its own: `File` and `URL` take core
+    /// settings, plain object storage only a `FormatSettings`. An engine with settings of its own overrides this to
+    /// report every one of them with its
+    /// origin (see `SettingOrigin`) - from a settings struct, or from the values it holds, as `StorageJoin` does.
+    /// It is a method on the storage rather than a static enumeration of the settings type because some values
+    /// live only in the instance - replicated metadata, see `StorageObjectStorageQueue`. An override with a settings
+    /// object enumerates it, and reaches for `Storages/TableSettingsHelpers.h` only for what that object cannot hold.
+    ///
+    /// The `type`, `comment` and `aliases` an override reports are views: they have to point at storage that lives
+    /// as long as the program, a string literal or a settings struct's metadata, never at anything this call owns.
+    virtual SettingDescriptions getTableSettings(ContextPtr context) const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without

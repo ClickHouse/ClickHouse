@@ -1440,12 +1440,18 @@ void ReadFromStorageLogStep::initializePipeline(QueryPipelineBuilder & pipeline,
     pipeline.init(std::move(pipe));
 }
 
+SettingDescriptions StorageLog::getTableSettings(ContextPtr query_context) const
+{
+    return StorageLogSettings::enumerateTableSettings(disk->getName(), getStorageID(), query_context);
+}
+
 void registerStorageLog(StorageFactory & factory);
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = StorageLogSettings::enumerateEngineSettings,
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)

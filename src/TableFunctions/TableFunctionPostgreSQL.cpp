@@ -55,6 +55,9 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     postgres::PoolWithFailoverPtr connection_pool;
+    /// Kept so that the storage this function builds can report the settings it works with, as a table
+    /// created by the engine does. `PostgreSQLSettings` has no assignment operator - hence the optional.
+    std::optional<PostgreSQLSettings> storage_settings;
     std::optional<StoragePostgreSQL::Configuration> configuration;
 };
 
@@ -75,6 +78,7 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
         ConstraintsDescription{},
         String{},
         context,
+        *storage_settings,
         configuration->schema,
         configuration->on_conflict);
 
@@ -134,6 +138,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
         postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_retries],
         postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection],
         postgresql_settings[PostgreSQLSetting::postgresql_connection_attempt_timeout]);
+
+    storage_settings.emplace(std::move(postgresql_settings));
 }
 
 }

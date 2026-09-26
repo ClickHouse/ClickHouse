@@ -1,0 +1,9 @@
+-- a temporary table is found by its name
+max_rows_to_keep	70	1	definition
+min_rows_to_keep	7	1	definition
+-- a temporary table shadows a table of the current database with the same name
+max_rows_to_keep	20	1	definition
+min_rows_to_keep	2	1	definition
+-- naming the database still reaches the permanent table
+max_rows_to_keep	10	1	definition
+min_rows_to_keep	1	1	definition

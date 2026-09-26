@@ -195,8 +195,9 @@ StorageKafka2::StorageKafka2(
     if (auto mode = getHandleKafkaErrorMode();
         mode == StreamingHandleErrorMode::STREAM || mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
     {
-        (*kafka_settings)[KafkaSetting::input_format_allow_errors_num] = 0;
-        (*kafka_settings)[KafkaSetting::input_format_allow_errors_ratio] = 0;
+        /// A value pinned here is the engine's, whichever source supplied the one it replaces.
+        kafka_settings->set(KafkaSetting::input_format_allow_errors_num, 0);
+        kafka_settings->set(KafkaSetting::input_format_allow_errors_ratio, 0.0);
     }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -222,6 +223,15 @@ StorageKafka2::StorageKafka2(
 
     activating_task = getContext()->getSchedulePool()->createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
     activating_task->deactivate();
+}
+
+SettingDescriptions StorageKafka2::getTableSettings(ContextPtr query_context) const
+{
+    /// This storage holds the same settings as `StorageKafka` and derives the same working values from them, so it
+    /// reports them the same way. `kafka_keeper_path` and `kafka_replica_name` need nothing more: the factory
+    /// expands their macros in the settings object before constructing the storage, and writes both into the
+    /// stored `SETTINGS` clause.
+    return StorageKafkaUtils::getTableSettings(*this, query_context);
 }
 
 StorageKafka2::~StorageKafka2()

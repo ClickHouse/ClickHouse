@@ -1,0 +1,8 @@
+-- the definition is recorded, and what it leaves out is the compiled-in default
+max_json_depth	7	3	1	definition
+max_json_keys_per_object	8	8	0	default
+null_ratio	0.5	0.0625	1	definition
+-- the engine describes the same settings, at the values a table created now would get
+max_json_depth	3	3	0	default
+max_json_keys_per_object	8	8	0	default
+null_ratio	0.0625	0.0625	0	default

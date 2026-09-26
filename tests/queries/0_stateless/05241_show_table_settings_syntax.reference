@@ -1,0 +1,14 @@
+-- formatted form: IN becomes FROM, and names that need backquotes keep them
+SHOW TABLE SETTINGS FROM t
+SHOW CHANGED TABLE SETTINGS FROM `a.b`.`1c` NOT ILIKE \'x%\'
+SHOW TABLE SETTINGS FROM t LIKE \'it\\\'s\\\\\'
+-- a name has at most two parts
+-- a table name and a pattern with a quote and a backslash reach the rewritten query intact
+max_rows_to_keep	10	1	definition
+-- FORMAT applies to the result
+{"name":"max_rows_to_keep","value":"10","changed":1,"source":"definition"}
+-- SHOW CHANGED SETTINGS is still the statement about the session
+max_block_size	NonZeroUInt64	12345
+-- and SHOW TABLE <name> is still SHOW CREATE TABLE, also for a table called settings
+ShowCreateTableQuery  settings (children 1)
+ Identifier settings

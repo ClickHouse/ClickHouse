@@ -1,0 +1,7 @@
+-- macros are reported expanded
+kafka_topic_list	1	definition
+kafka_group_name	kfk_effective_group	definition
+-- the client id the engine generates when none is given
+kafka_client_id	1	other
+-- no row reports the default source for a value that is not the default
+0

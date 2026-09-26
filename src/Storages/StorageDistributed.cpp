@@ -21,6 +21,7 @@
 #include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TableSettingsHelpers.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -1999,16 +2000,7 @@ static void finalizeDistributedSettings(DistributedSettings & distributed_settin
     }
 
     /// Set default values from the distributed_background_insert_* global context settings.
-    if (!distributed_settings[DistributedSetting::background_insert_batch].changed)
-        distributed_settings[DistributedSetting::background_insert_batch] = context->getSettingsRef()[Setting::distributed_background_insert_batch];
-    if (!distributed_settings[DistributedSetting::background_insert_split_batch_on_failure].changed)
-        distributed_settings[DistributedSetting::background_insert_split_batch_on_failure]
-            = context->getSettingsRef()[Setting::distributed_background_insert_split_batch_on_failure];
-    if (!distributed_settings[DistributedSetting::background_insert_sleep_time_ms].changed)
-        distributed_settings[DistributedSetting::background_insert_sleep_time_ms] = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms];
-    if (!distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms].changed)
-        distributed_settings[DistributedSetting::background_insert_max_sleep_time_ms]
-            = context->getSettingsRef()[Setting::distributed_background_insert_max_sleep_time_ms];
+    distributed_settings.applyBackgroundInsertDefaults(context->getSettingsRef());
 }
 
 void registerStorageDistributed(StorageFactory & factory);
@@ -2108,6 +2100,7 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = DistributedSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -2558,6 +2551,7 @@ void registerStorageRemote(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::REMOTE,
         .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = DistributedSettings::enumerateEngineSettings,
     };
 
     const String common_description = R"DOCS_MD(
@@ -2629,4 +2623,23 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
 
     return true;
 }
+
+SettingDescriptions StorageDistributed::getTableSettings(ContextPtr /* query_context */) const
+{
+    /// A `Distributed` table starts from the server-effective settings - the `distributed` config section
+    /// applied over the compiled defaults, which `DistributedSettings::loadFromConfig` records in the settings
+    /// object (a `SettingsWithRecordedOrigin`) and the table's copy keeps - and then applies its own `SETTINGS`
+    /// clause, which `DistributedSettings::loadFromQuery` records as the definition. The engine supports no
+    /// settings `ALTER`, so nothing applies the clause again.
+    auto settings = distributed_settings->enumerateSettings();
+
+    /// `finalizeDistributedSettings` copies the server's `distributed_background_insert_*` settings into the ones
+    /// the definition does not state, and copying a field of the same type copies its changed bit with it. So the
+    /// bit says nothing here: it is set for a value that merely equals the default, and clear for one that does
+    /// not. The value decides instead - whatever set a value other than the default, it was not the default.
+    setOriginByValue(settings);
+
+    return settings;
+}
+
 }

@@ -6,6 +6,9 @@
             <host>postgres1</host>
             <port>5432</port>
             <database>postgres</database>
+            <!-- 16 is also the compiled-in default of this setting, so only the reported source can say
+                 that the collection is where it came from. -->
+            <postgresql_connection_pool_size>16</postgresql_connection_pool_size>
         </postgres1>
         <postgres2>
             <user>postgres</user>

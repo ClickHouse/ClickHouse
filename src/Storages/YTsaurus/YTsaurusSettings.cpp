@@ -1,3 +1,6 @@
+#include <Storages/SettingsWithRecordedOrigin.h>
+#include <Storages/loadSettingsFromNamedCollection.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Interpreters/Context.h>
@@ -28,7 +31,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_streams, 4, "Max number of streams to read from static table.", 0) \
 
 DECLARE_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTSAURUS_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTsaurusSettings, YTsaurusSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(YTsaurusSettingsTraits, LIST_OF_YTSAURUS_SETTINGS, YTsaurusSettings, YTsaurusSetting)
 
 YTsaurusSettings::YTsaurusSettings() : impl(std::make_unique<YTsaurusSettingsImpl>())
 {
@@ -61,7 +64,9 @@ void YTsaurusSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            loadFromQuery(*storage_def.settings);
+            /// A table's own `SETTINGS` clause, recorded as the definition. The `ASTSetQuery` overload, which
+            /// dictionaries use, records nothing.
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -88,12 +93,11 @@ VectorWithMemoryTracking<std::string_view> YTsaurusSettings::getAllRegisteredNam
 
 void YTsaurusSettings::loadFromNamedCollection(const NamedCollection & named_collection)
 {
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        if (named_collection.has(setting_name))
-            impl->set(setting_name, named_collection.get<String>(setting_name));
-    }
+    /// Through the shared loader, which records that the collection supplied these values and which collection
+    /// it was. A reader may see a collection's values only where it may read that collection, and that is
+    /// decided from what the settings object recorded - so a loader that assigns without recording would put
+    /// its values outside the check.
+    loadSettingsFromNamedCollection(*impl, named_collection);
 }
 
 void YTsaurusSettings::set(const std::string & name, const std::string & value)
@@ -106,5 +110,6 @@ bool YTsaurusSettings::hasBuiltin(std::string_view name)
     return YTsaurusSettingsImpl::hasBuiltin(name);
 }
 
+IMPLEMENT_SETTINGS_ENUMERATION(YTsaurusSettings)
 
 }

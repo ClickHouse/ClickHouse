@@ -771,12 +771,18 @@ void StorageStripeLog::restoreDataImpl(const BackupPtr & backup, const String & 
 }
 
 
+SettingDescriptions StorageStripeLog::getTableSettings(ContextPtr query_context) const
+{
+    return StorageLogSettings::enumerateTableSettings(disk->getName(), getStorageID(), query_context);
+}
+
 void registerStorageStripeLog(StorageFactory & factory);
 void registerStorageStripeLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
         .supports_settings = true,
         .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = StorageLogSettings::enumerateEngineSettings,
     };
 
     factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
