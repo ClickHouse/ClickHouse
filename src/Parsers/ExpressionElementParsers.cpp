@@ -1243,7 +1243,7 @@ static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & l
         {
             if (!isOneOf<OpeningSquareBracket, OpeningRoundBracket, Comma>(last_token))
                 return false;
-            literal.has_null = true;
+            literal.null_depths.push_back(stack.size());
             holds_own_scalar |= own;
             literal.text += "NULL";
         }
@@ -1318,6 +1318,10 @@ bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal)
     else
         return false;
 
+    /// Keep NULL depths sorted and unique so they can be compared efficiently with the sorted Nullable depths.
+    std::ranges::sort(result.null_depths);
+    result.null_depths.erase(std::unique(result.null_depths.begin(), result.null_depths.end()), result.null_depths.end());
+
     literal = std::move(result);
     return true;
 }
@@ -1357,8 +1361,8 @@ enum class NumeralReader : uint8_t
     UnsignedInteger,
 };
 
-/// `nullable` is set when a `Nullable` is passed on the way, which is what reads a `NULL` back.
-static NumeralReader numeralReaderOf(const IAST & type, bool & nullable)
+/// Records the array nesting depths at which `Nullable` occurs while walking to the numeral type.
+static NumeralReader numeralReaderOf(const IAST & type, std::vector<size_t> & nullable_depths, size_t array_depth)
 {
     const auto * data_type = type.as<ASTDataType>();
     if (!data_type)
@@ -1374,8 +1378,14 @@ static NumeralReader numeralReaderOf(const IAST & type, bool & nullable)
         const auto arguments = data_type->getArguments();
         if (!arguments || arguments->children.size() != 1)
             return NumeralReader::None;
-        nullable |= name == "NULLABLE";
-        return numeralReaderOf(*arguments->children[0], nullable);
+
+        if (name == "ARRAY")
+            array_depth++;
+
+        if (name == "NULLABLE")
+            nullable_depths.push_back(array_depth);
+
+        return numeralReaderOf(*arguments->children[0], nullable_depths, array_depth);
     }
 
     static const std::unordered_set<std::string_view> decimal_names
@@ -1395,6 +1405,32 @@ static NumeralReader numeralReaderOf(const IAST & type, bool & nullable)
     return NumeralReader::None;
 }
 
+static bool nullDepthsAreNullable(std::vector<size_t> null_depths, const std::vector<size_t> & nullable_depths)
+{
+    size_t null_pos = 0;
+    size_t nullable_pos = 0;
+
+    while (null_pos < null_depths.size() && nullable_pos < nullable_depths.size())
+    {
+        if (null_depths[null_pos] == nullable_depths[nullable_pos])
+        {
+            ++null_pos;
+            ++nullable_pos;
+        }
+        else if (null_depths[null_pos] > nullable_depths[nullable_pos])
+        {
+            ++nullable_pos;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return null_pos == null_depths.size();
+}
+
+
 bool typeReadsLiteralExactly(const String & type_text, const LiteralAsText & literal, const IParser::Pos & outer_pos)
 {
     Tokens tokens(type_text.data(), type_text.data() + type_text.size());
@@ -1411,11 +1447,11 @@ bool typeReadsLiteralExactly(const String & type_text, const LiteralAsText & lit
     if (!ParserDataType().parse(pos, type, expected) || !pos->isEnd())
         return false;
 
-    bool nullable = false;
-    const NumeralReader reader = numeralReaderOf(*type, nullable);
+    std::vector<size_t> nullable_depths;
+    const NumeralReader reader = numeralReaderOf(*type, nullable_depths, /*array_depth=*/0);
 
     /// A `NULL` element is only read back by a `Nullable` target.
-    if (literal.has_null && !nullable)
+    if (!nullDepthsAreNullable(literal.null_depths, nullable_depths))
         return false;
 
     switch (reader)
@@ -1469,7 +1505,7 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     /// see `typeReadsLiteralExactly`. Everything else falls back to the ordinary expression path,
     /// where a `NULL` converts, or fails to, the way it always did: the text parsers of some types
     /// would silently turn it into a default value instead.
-    if (literal.has_null && !typeReadsLiteralExactly(*type_text, literal, pos))
+    if (!literal.null_depths.empty() && !typeReadsLiteralExactly(*type_text, literal, pos))
         return false;
 
     /// The text is a literal only together with the type that reads it, so it is not recorded in the
