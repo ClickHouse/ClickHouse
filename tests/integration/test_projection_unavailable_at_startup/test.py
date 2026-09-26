@@ -24,7 +24,7 @@ POSITIONAL_XML = "/etc/clickhouse-server/users.d/positional.xml"
 POSITIONAL = {"enable_positional_arguments_for_projections": 1}
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True)
+node = cluster.add_instance("node", stay_alive=True, with_zookeeper=True)
 
 
 @pytest.fixture(scope="module")
@@ -262,19 +262,40 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
         },
     )
     assert "distributed_ddl_entry_format_version >= 2" in error
+    error = node.query_and_get_error(
+        "CREATE TABLE dl.t6_cluster_copy_v3 ON CLUSTER test_shard_localhost AS dl.t6 "
+        "ENGINE = MergeTree ORDER BY a",
+        settings={
+            "distributed_ddl_entry_format_version": 3,
+            "allow_projection_column_list_in_replicated_metadata": 1,
+        },
+    )
+    assert "Cannot copy unavailable projection declarations" in error
     assert node.query(
         "SELECT count() FROM system.tables WHERE database = 'dl' "
-        "AND name IN ('t6_replicated_copy', 't6_cluster_list_copy', 't6_cluster_copy')"
+        "AND name IN ('t6_replicated_copy', 't6_cluster_list_copy', "
+        "'t6_cluster_copy', 't6_cluster_copy_v3')"
     ).strip() == "0"
 
-    # An ALTER is validated against fewer projections than the table declares, so one that invalidated
-    # the unanalyzable declaration would be accepted; it is refused while such a declaration exists.
-    error = node.query_and_get_error("ALTER TABLE dl.t MODIFY COMMENT 'x'")
-    assert "projection pp is declared but could not be analyzed" in error
-    assert "DROP PROJECTION" in error
+    # A local `CREATE AS` must retain the declaration even though this server cannot analyze it
+    # until the projection setting is restored. It is absent from `system.projections` meanwhile.
+    node.query("CREATE TABLE dl.t6_local_copy AS dl.t6 ENGINE = MergeTree ORDER BY a")
+    assert projections("t6_local_copy") == "0"
+    assert declarations_on_disk("t6_local_copy") == 1
+    assert "CODEC(Delta, Delta)" in node.query("SHOW CREATE TABLE dl.t6_local_copy")
+
+    # Metadata-only changes leave the source schema intact and must remain usable while a
+    # projection declaration is unavailable.
+    node.query("ALTER TABLE dl.t MODIFY COMMENT 'x'")
+    assert "COMMENT 'x'" in node.query("SHOW CREATE TABLE dl.t")
+    node.query("ALTER TABLE dl.t6 MODIFY COLUMN b COMMENT 'safe'")
+    node.query("ALTER TABLE dl.t6 MODIFY COLUMN b CODEC(ZSTD)")
+    assert "COMMENT 'safe'" in node.query("SHOW CREATE TABLE dl.t6")
+    assert "CODEC(ZSTD)" in node.query("SHOW CREATE TABLE dl.t6")
     assert "PROJECTION" in node.query("SHOW CREATE TABLE dl.t")
     assert declarations_on_disk("t") == 1
 
+    # Retyping a source column can invalidate the unavailable declaration and its stored codec.
     error = node.query_and_get_error("ALTER TABLE dl.t6 MODIFY COLUMN b UInt32")
     assert "projection pp is declared but could not be analyzed" in error
     assert node.query(
@@ -313,13 +334,14 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert declarations_on_disk("t4") == 1
     assert projections("t4") == "0"
 
-    error = node.query_and_get_error(
-        "ALTER TABLE dl.t2 ADD PROJECTION rr (SELECT a GROUP BY a)"
-    )
-    assert "could not be analyzed" in error
+    node.query("ALTER TABLE dl.t2 ADD PROJECTION rr (SELECT a GROUP BY a)")
+    assert projections("t2") == "1"
+    assert declarations_on_disk("t2") == 3
+    node.query("ALTER TABLE dl.t2 DROP PROJECTION rr")
+    assert declarations_on_disk("t2") == 2
 
-    # Re-adding the same name hits the guard in `ProjectionsDescription::add`, which runs before the
-    # blanket refusal: on master this silently replaced the declaration that is still on disk.
+    # Re-adding the same name hits the guard in `ProjectionsDescription::add`: on master this silently
+    # replaced the declaration still on disk.
     error = node.query_and_get_error(
         "ALTER TABLE dl.t ADD PROJECTION pp (SELECT a GROUP BY a)"
     )
@@ -389,6 +411,7 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     assert projections("t") == "1"
     assert active_projection_parts("t") == "1"
     assert projections("t6") == "1"
+    assert projections("t6_local_copy") == "1"
 
     # The declaration coming back is only half the claim: the projection data written before the
     # restart must be readable. `force_optimize_projection_name` fails the query if `pp` is not used.

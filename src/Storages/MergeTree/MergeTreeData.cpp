@@ -6410,9 +6410,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         is_secondary_replay = true;
 #endif
 
-    /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
-    /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a
-    /// table it no longer matches. `DROP PROJECTION` and `CLEAR PROJECTION` share a command type and cannot do that.
+    /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate. Do not
+    /// change the source columns it will see after a restart: that could leave existing projection parts with
+    /// stale data or grandfather a declared codec against a different resolved type. Other ALTERs and changes
+    /// to a column's comment, codec, TTL, statistics, or settings leave that source schema intact.
     if (!is_secondary_replay && new_metadata.projections.hasUnavailable())
     {
         for (const auto & command : commands)
@@ -6420,7 +6421,18 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             if (command.ignore)
                 continue;
 
-            if (command.type == AlterCommand::DROP_PROJECTION)
+            bool changes_source_columns = command.type == AlterCommand::ADD_COLUMN
+                || command.type == AlterCommand::DROP_COLUMN
+                || command.type == AlterCommand::RENAME_COLUMN;
+            if (command.type == AlterCommand::MODIFY_COLUMN)
+                changes_source_columns = command.data_type
+                    || command.default_expression
+                    || command.first
+                    || !command.after_column.empty()
+                    || command.to_remove == AlterCommand::RemoveProperty::DEFAULT
+                    || command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED
+                    || command.to_remove == AlterCommand::RemoveProperty::ALIAS;
+            if (!changes_source_columns)
                 continue;
 
             throw Exception(

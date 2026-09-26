@@ -1824,7 +1824,8 @@ bool isStorageReplicated(const ASTCreateQuery & create)
 }
 
 void checkProjectionColumnListReplicationCompatibility(
-    const ASTCreateQuery & create, const ContextPtr & context, const DatabasePtr & database, bool is_fresh_definition)
+    const ASTCreateQuery & create, const ContextPtr & context, const DatabasePtr & database, bool is_fresh_definition,
+    const ProjectionsDescription * copied_projections = nullptr)
 {
     /// Workers replay the DDL entry with their own settings when the old entry format is used.
     /// The initiator must check the syntax before enqueueing it, not the worker during replay.
@@ -1897,6 +1898,19 @@ void checkProjectionColumnListReplicationCompatibility(
             /// `ProjectionsDescription::clone` copies unavailable declarations too.
             for (const auto & definition : source_metadata->getProjections().getUnavailableDefinitions())
                 inspect_projection(definition);
+        }
+    }
+    /// `CREATE AS` has already normalized its query at this call site. Unavailable source declarations
+    /// remain in the copied properties, but have not yet been appended to the query for persistence.
+    if (copied_projections)
+    {
+        for (const auto & definition : copied_projections->getUnavailableDefinitions())
+        {
+            if (const auto * declaration = definition->as<const ASTProjectionDeclaration>(); declaration && declaration->columns)
+            {
+                has_projection_column_list = true;
+                has_projection_column_codec |= hasDeclaredProjectionColumnCodec(*declaration);
+            }
         }
     }
 
@@ -2237,7 +2251,25 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// RESTORE supplies a fresh definition despite using SECONDARY_CREATE for other checks.
     /// A secondary replay or stored ATTACH must keep accepting metadata already written.
     checkProjectionColumnListReplicationCompatibility(
-        create, getContext(), database, isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup);
+        create, getContext(), database, isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup,
+        &properties.projections);
+
+    /// A normalized distributed CREATE sends its column list rather than the original `AS src` query.
+    /// Workers would analyze an appended unavailable declaration as fresh SQL and reject it, while omitting
+    /// it would silently publish a different schema. Local copies preserve it after storage construction.
+    bool is_copy_replay = is_restore_from_backup || getContext()->isRecoveryFromStoredMetadata()
+        || is_secondary_query || getContext()->isDDLOrOnClusterInternal()
+        || getContext()->getClientInfo().is_replicated_database_internal;
+#if CLICKHOUSE_CLOUD
+    if (getContext()->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(getContext()))
+        is_copy_replay = true;
+#endif
+    if (!is_copy_replay && properties.projections.hasUnavailable()
+        && (is_storage_replicated || !create.cluster.empty()
+            || (database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared"))))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot copy unavailable projection declarations into replicated or distributed CREATE metadata. "
+            "Restore projection analysis on the source table or drop the unavailable declaration before copying it");
 
     bool allow_heavy_populate = getContext()->getSettingsRef()[Setting::database_replicated_allow_heavy_create] && create.is_populate;
     if (!allow_heavy_populate && database && database->getEngineName() == "Replicated" && (create.select || create.is_populate))
@@ -2518,6 +2550,32 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties,
                                            DDLGuardPtr & ddl_guard, LoadingStrictnessLevel mode)
 {
+    auto preserve_unavailable_projections = [&](const StoragePtr & storage)
+    {
+        const auto & unavailable = properties.projections.getUnavailableDefinitions();
+        if (unavailable.empty())
+            return;
+
+        chassert(create.columns_list && create.columns_list->projections);
+        auto metadata_handle = storage->getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/true);
+        auto metadata = *metadata_handle;
+        for (const auto & definition : unavailable)
+            metadata.projections.addUnavailable(definition->clone());
+        storage->setInMemoryMetadata(metadata);
+        /// `validateStorage` may have cached the pre-copy metadata in this query.
+        if (auto metadata_cache = getContext()->getQueryMetadataCache())
+        {
+            auto [cache, lock] = metadata_cache->getStorageMetadataCache();
+            cache->erase(storage.get());
+        }
+
+        /// A fresh storage must analyze every projection it sees. Append declarations copied from
+        /// an unavailable source only after construction and validation, and publish the same set
+        /// in both the storage metadata and the persisted CREATE query.
+        for (const auto & definition : unavailable)
+            create.columns_list->projections->children.push_back(definition->clone());
+    };
+
     if (create.isTemporary())
     {
         if (create.if_not_exists && getContext()->tryResolveStorageID({"", create.getTable()}, Context::ResolveExternal))
@@ -2537,6 +2595,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                 mode,
                 is_restore_from_backup);
             validateStorage(*res, mode, getContext(), /*is_temporary=*/true);
+            preserve_unavailable_projections(res);
             return res;
         };
         auto temporary_table = TemporaryTableHolder(getContext(), creator, query_ptr);
@@ -2759,6 +2818,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     validateStorage(*res, mode, getContext(), create.isTemporary());
+    preserve_unavailable_projections(res);
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
