@@ -29,11 +29,14 @@ SELECT x FROM v_05136;
 SELECT position(create_table_query, 'enable_analyzer = 0') = 0 FROM system.tables WHERE database = currentDatabase() AND name = 'v_05136';
 DROP VIEW v_05136;
 
--- An access entity can be created with the disabling value, too.
+-- An access entity can be created with the disabling value, too, and stores `1` instead.
 DROP SETTINGS PROFILE IF EXISTS profile_05136;
 CREATE SETTINGS PROFILE profile_05136 SETTINGS enable_analyzer = 0;
+SELECT value FROM system.settings_profile_elements WHERE profile_name = 'profile_05136';
 ALTER SETTINGS PROFILE profile_05136 SETTINGS allow_experimental_analyzer = 0;
-ALTER SETTINGS PROFILE profile_05136 SETTINGS enable_analyzer = 1;
+SELECT value FROM system.settings_profile_elements WHERE profile_name = 'profile_05136';
+ALTER SETTINGS PROFILE profile_05136 MODIFY SETTINGS enable_analyzer = 0;
+SELECT value FROM system.settings_profile_elements WHERE profile_name = 'profile_05136';
 DROP SETTINGS PROFILE profile_05136;
 
 -- `compatibility` with a version older than the one that made the analyzer the default used to revert
