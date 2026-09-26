@@ -205,6 +205,11 @@ ISink::Status StreamingExchangeSink::prepare()
     {
         if (!connection_wait)
             connection_wait.emplace();
+        /// Ask for the input before the receiver connects (see the constructor). A build task
+        /// depends on it: `BuildRuntimeFilterPartialTransform` finishes its data output only after
+        /// it pushes the partial. The packet stays in the port until `work` extracts the socket.
+        if (advisory && !input.isFinished())
+            input.setNeeded();
         return Status::Async;
     }
 
@@ -342,7 +347,7 @@ std::tuple<int, uint32_t, int64_t> StreamingExchangeSink::scheduleForEvent()
     /// readable once the connection is ready, so the wake is immediate even if the connection
     /// got ready before this call. Extracting the socket here instead would skip that wake and
     /// `prepare` would never run with the socket: the sink would sleep on a quiet socket
-    /// without ever marking its input as needed, and the fragment would never start.
+    /// without ever pulling its input, and a data fragment would never start.
     int fd = future_connection->getEventFd();
 
     LOG_TEST(log, "Schedule exchange stream sink {} waiting for connection, eventfd: {}", stream_name, fd);

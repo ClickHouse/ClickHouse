@@ -1,7 +1,9 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <future>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -9,6 +11,7 @@
 #include <gtest/gtest.h>
 #include <fmt/format.h>
 
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -27,8 +30,13 @@
 #include <Processors/ISink.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/IParameterLookup.h>
+#include <Processors/QueryPlan/MergeRuntimeFiltersStep.h>
+#include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <Processors/Sources/SourceFromChunks.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/MergeRuntimeFiltersTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -837,6 +845,229 @@ TEST(StreamingExchangeTransport, OnlyTheEmptyEndOfStreamMarkerIsAccepted)
         expect_rejected([&] { prefix_of(body); }, what, "the prefix reader");
         expect_rejected([&] { packet_of(body); }, what, "the body reader");
     }
+}
+
+namespace
+{
+
+/// How long a test waits for a task to end, so that a task that never ends fails the test instead
+/// of hanging it.
+constexpr auto task_failsafe = std::chrono::minutes(1);
+
+/// The parameters of one task: `MergeRuntimeFiltersStep` reads only its `bucket_id`.
+class BucketParameter : public IParameterLookup
+{
+public:
+    explicit BucketParameter(String bucket_)
+        : bucket(std::move(bucket_))
+    {
+    }
+    Field getParameter(const String &) const override { return Field(bucket); }
+
+private:
+    const String bucket;
+};
+
+RuntimeFilterGeometry partialGeometry()
+{
+    return RuntimeFilterGeometry{
+        .exact_values_limit = 64,
+        .exact_bytes_limit = 4096,
+        .bloom_filter_bytes = 4096,
+        .bloom_filter_hash_functions = 3,
+        .pass_ratio_threshold_for_disabling = 1.0,
+        .blocks_to_skip_before_reenabling = 0,
+        .max_ratio_of_set_bits_in_bloom_filter = 1.0,
+    };
+}
+
+/// The serialized partial state of the keys `0 .. keys - 1`, as a build task sends it.
+Chunk makePartialChunk(size_t keys)
+{
+    AdaptiveSetRuntimeFilter filter(
+        std::make_shared<DataTypeUInt64>(),
+        partialGeometry(),
+        /*distinct_keys_hint_=*/ std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/ false);
+    filter.insert(makeChunk(0, keys).getColumns().front());
+    WriteBufferFromOwnString out;
+    filter.serialize(out);
+    auto column = ColumnString::create();
+    column->insertData(out.str().data(), out.str().size());
+    return Chunk(Columns{std::move(column)}, 1);
+}
+
+ExchangeLookupPtr makeLookup(ExchangeConnectionsPtr connections, const ExchangeStreamSources & sources)
+{
+    return createStreamingExchangeLookup(
+        "query",
+        std::move(connections),
+        sources,
+        /*cancellation=*/ nullptr,
+        /*auth_token=*/ String{},
+        CompressionCodecFactory::instance().getDefaultCodec());
+}
+
+/// Runs a pipeline on its own thread, like a worker task, until it ends or `cancel` stops it.
+class TaskThread
+{
+public:
+    explicit TaskThread(QueryPipeline pipeline_)
+        : pipeline(std::move(pipeline_))
+    {
+    }
+
+    ~TaskThread() { cancel(); }
+
+    void start()
+    {
+        thread = std::thread(
+            [this]
+            {
+                std::optional<int> code;
+                try
+                {
+                    CompletedPipelineExecutor executor(pipeline);
+                    executor.setCancelCallback([this] { return cancelled.load(); }, /*interactive_timeout_ms_=*/ 10);
+                    executor.execute();
+                }
+                catch (const Exception & e)
+                {
+                    code = e.code();
+                }
+                done.set_value(code);
+            });
+    }
+
+    /// False if the pipeline still runs after `task_failsafe`.
+    bool endsInTime() { return result.wait_for(task_failsafe) == std::future_status::ready; }
+
+    /// Stops the pipeline if it still runs; returns the code it threw with, if any.
+    std::optional<int> cancel()
+    {
+        cancelled = true;
+        if (!thread.joinable())
+            return std::nullopt;
+        thread.join();
+        return result.get();
+    }
+
+private:
+    QueryPipeline pipeline;
+    std::atomic<bool> cancelled = false;
+    std::promise<std::optional<int>> done;
+    std::future<std::optional<int>> result = done.get_future();
+    std::thread thread;
+};
+
+/// A build task's side of a runtime filter: its partial goes to the advisory sink of `stream`.
+QueryPipeline makeBuildTaskPipeline(LoopbackExchange & exchange, const ExchangeStreamId & stream)
+{
+    auto lookup = makeLookup(exchange.connections, ExchangeStreamSources{});
+    QueryPipelineBuilder builder;
+    builder.init(Pipe(std::make_shared<SourceFromSingleChunk>(runtimeFilterPartialsHeader(), makePartialChunk(10))));
+    builder.addSimpleTransform([&](const SharedHeader & header) { return lookup->createSerializer(header, stream.exchange_id); });
+    builder.setSinks([&](const SharedHeader & header, Pipe::StreamType) { return lookup->createSink(header, stream, /*advisory=*/ true); });
+    return QueryPipelineBuilder::getPipeline(std::move(builder));
+}
+
+/// A runtime filter merge task as a worker builds it: its source reads `child` from the build task
+/// behind `child_exchange`, and its sinks wait for their receivers on `connections`.
+QueryPipeline makeMergeTaskPipeline(
+    ExchangeConnectionsPtr connections,
+    LoopbackExchange & child_exchange,
+    const ExchangeStreamId & child,
+    std::vector<MergeRuntimeFiltersStep::Output> outputs)
+{
+    ExchangeStreamSources sources;
+    sources.stream_hosts[child.toString()] = StreamSourceAddress{.host = "127.0.0.1", .port = child_exchange.server.port()};
+    BuildQueryPipelineSettings settings(getContext().context);
+    settings.exchange_lookup = makeLookup(std::move(connections), sources);
+    settings.parameter_lookup = std::make_shared<BucketParameter>("0");
+    MergeRuntimeFiltersStep step(
+        "filter",
+        std::make_shared<DataTypeUInt64>(),
+        partialGeometry(),
+        child.exchange_id,
+        {child.source_bucket},
+        /*fan_in_=*/ 8,
+        std::move(outputs));
+    return QueryPipelineBuilder::getPipeline(std::move(*step.updatePipeline({}, settings)));
+}
+
+}
+
+/// A runtime filter merge task takes the partials of its children whether or not any of its
+/// receivers connects. A build task ends only once its partial is taken, so a merge task that waited
+/// for a receiver would hold up the whole query when every receive branch fails before connecting.
+TEST(RuntimeFilterMergeTask, TakesThePartialWhileNoReceiverConnects)
+{
+    MainThreadStatus::getInstance();
+
+    const std::vector<std::pair<const char *, std::vector<MergeRuntimeFiltersStep::Output>>> shapes = {
+        {"a root with one receiver", {{"exchange_2", {"0"}}}},
+        {"a root with two receivers", {{"exchange_2", {"0", "1"}}}},
+    };
+    for (const auto & [what, outputs] : shapes)
+    {
+        SCOPED_TRACE(what);
+        LoopbackExchange build_exchange;
+        const ExchangeStreamId partial_stream("exchange_1", "0", "0");
+        TaskThread merge(makeMergeTaskPipeline(std::make_shared<ExchangeConnections>(), build_exchange, partial_stream, outputs));
+        TaskThread build(makeBuildTaskPipeline(build_exchange, partial_stream));
+        merge.start();
+        build.start();
+
+        EXPECT_TRUE(build.endsInTime()) << "the build task waited for a receiver of the merge task";
+        EXPECT_EQ(build.cancel(), std::nullopt);
+        EXPECT_EQ(merge.cancel(), std::nullopt);
+    }
+}
+
+/// A receiver that never connects does not hold back the others: the one that connects gets the
+/// union and the end of its stream, so its receive branch can register the filter.
+TEST(RuntimeFilterMergeTask, AReceiverThatNeverConnectsDoesNotHoldBackTheOthers)
+{
+    MainThreadStatus::getInstance();
+
+    LoopbackExchange build_exchange;
+    LoopbackExchange root_exchange;
+    const ExchangeStreamId partial_stream("exchange_1", "0", "0");
+    const ExchangeStreamId connected_stream("exchange_2", "0", "0");
+    TaskThread merge(makeMergeTaskPipeline(root_exchange.connections, build_exchange, partial_stream, {{"exchange_2", {"0", "1"}}}));
+    TaskThread build(makeBuildTaskPipeline(build_exchange, partial_stream));
+
+    /// The sources of the receive branch for destination bucket 0. A `CollectingSink` replaces the
+    /// merge, so the test can count the union row. Destination bucket 1 never connects.
+    ExchangeStreamSources sources;
+    sources.stream_hosts[connected_stream.toString()] = StreamSourceAddress{.host = "127.0.0.1", .port = root_exchange.server.port()};
+    BuildQueryPipelineSettings settings(getContext().context);
+    settings.exchange_lookup = makeLookup(std::make_shared<ExchangeConnections>(), sources);
+    const VectorWithMemoryTracking<ExchangeStreamId> streams{connected_stream};
+    auto receive = receiveExchangeStreams(
+        runtimeFilterPartialsHeader(),
+        connected_stream.exchange_id,
+        streams,
+        settings,
+        /*spread_over_max_threads=*/ false,
+        /*advisory=*/ true);
+    auto sink = std::make_shared<CollectingSink>(runtimeFilterPartialsHeader());
+    receive.setSinks([&](const SharedHeader &, Pipe::StreamType) { return sink; });
+    TaskThread receiver(QueryPipelineBuilder::getPipeline(std::move(receive)));
+
+    receiver.start();
+    merge.start();
+    build.start();
+
+    EXPECT_TRUE(receiver.endsInTime()) << "the connected receiver did not get the end of its stream";
+    EXPECT_TRUE(build.endsInTime());
+    EXPECT_EQ(receiver.cancel(), std::nullopt);
+    EXPECT_EQ(build.cancel(), std::nullopt);
+    size_t rows = 0;
+    for (const auto & chunk : sink->chunks)
+        rows += chunk.getNumRows();
+    EXPECT_EQ(rows, 1u);
+    EXPECT_EQ(merge.cancel(), std::nullopt);
 }
 
 #endif

@@ -339,10 +339,11 @@ void wireRuntimeFilterExchangeTopology(
 
         /// Every transported filter gets its own filter-only merge stages, even with a single build
         /// task. The root's broadcast sink may wait until query end for a receiver that finished
-        /// early, and a data task must never hold that wait. The stages form a merge tree of fan-in
-        /// `fan_in`: each build task sends its partial to its parent merge task, each level merges
-        /// complete child states, and the single root task broadcasts the union to every task of
-        /// every receiving stage.
+        /// early or never connected, and a data task must never hold that wait. A merge task takes
+        /// its inputs without waiting for its receivers (see `StreamingExchangeSink`), so the wait
+        /// stays in the root. The stages form a merge tree of fan-in `fan_in`: each build task
+        /// sends its partial to its parent merge task, each level merges complete child states, and
+        /// the single root task broadcasts the union to every task of every receiving stage.
         const size_t fan_in = RUNTIME_FILTER_MERGE_FAN_IN;
 
         /// The whole chain uses one exchange kind, by default the plan's data-exchange kind. If a

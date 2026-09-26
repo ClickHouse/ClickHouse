@@ -11,8 +11,8 @@ the merge tree every state normally arrives. The root's broadcast to the probe t
 best-effort by design, so its arrivals are only bounded. A receiver consumes at most
 `RUNTIME_FILTER_MERGE_FAN_IN` (16) states, including in a 2-level tree (`N = 32` -> 2
 first-level merges -> root). Peak merge-task memory is compared across `N = 2 / 8 / 32` with
-equal bloom sizes. Persisted exchanges, cancellation, and `LIMIT` early close are separate
-cases.
+equal bloom sizes. Persisted exchanges, cancellation, `LIMIT` early close, and a receive branch
+that fails before it connects are separate cases.
 """
 
 import logging
@@ -179,7 +179,8 @@ def _collect_task_rows(query_id):
                 memory_usage,
                 ProfileEvents['StreamingExchangeSendBytes'] + ProfileEvents['StreamingExchangeReceiveBytes'],
                 ProfileEvents['WriteBufferFromS3Bytes'],
-                ProfileEvents['ReadBufferFromS3Bytes']
+                ProfileEvents['ReadBufferFromS3Bytes'],
+                ProfileEvents['RuntimeFilterReceiveBranchFailures']
             FROM system.query_log
             WHERE type = 'QueryFinish' AND initial_query_id = '{query_id}'
                 AND query_id != initial_query_id AND event_date >= yesterday()
@@ -199,6 +200,7 @@ def _collect_task_rows(query_id):
                     "streaming_bytes": int(fields[7]),
                     "s3_bytes_written": int(fields[8]),
                     "s3_bytes_read": int(fields[9]),
+                    "branch_failures": int(fields[10]),
                     "node": node.name,
                 }
             )
@@ -546,6 +548,32 @@ def test_early_close_stays_correct(started_cluster):
     assert any(t["task"].startswith("rf_merge_") for t in tasks), tasks
 
     # No worker task may linger after the early close.
+    _assert_no_lingering_tasks()
+
+
+def test_receive_branch_failing_before_connect(started_cluster):
+    """When every receive branch fails before it connects, no receiver connects to the root merge
+    task. The root must still take the partials, so the build side ends and the query returns the
+    right count, unfiltered. `max_execution_time` turns a hang into an error instead of a test
+    timeout."""
+    failpoint = "distributed_plan_runtime_filter_receive_branch_fails_before_connect"
+    try:
+        for node in NODES:
+            node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        result, tasks = _run_and_collect(
+            JOIN_QUERY,
+            4,
+            extra_settings=BLOOM_STATE_SETTINGS + ", max_execution_time = 60",
+        )
+    finally:
+        for node in NODES:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    assert result == JOIN_EXPECTED
+    # The branch exists only for a transported filter, so a failure also proves the chain was wired.
+    assert sum(t["branch_failures"] for t in tasks) > 0, tasks
+
+    # The root merge task waits for its receivers until query cleanup cancels it.
     _assert_no_lingering_tasks()
 
 

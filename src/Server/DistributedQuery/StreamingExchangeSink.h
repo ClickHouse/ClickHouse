@@ -30,7 +30,9 @@ public:
     /// runtime filter: a receiver task that finished early disconnects or never connects. On an
     /// advisory sink, a peer-side problem (disconnect, reset, unexpected bytes) only means that this
     /// destination gets nothing. Otherwise a vanished receiver would fail the producing task, and
-    /// with it the whole query.
+    /// with it the whole query. An advisory sink also asks for its input before the receiver
+    /// connects, so the transforms that build and merge the filter can finish even if the receiver
+    /// never connects.
     StreamingExchangeSink(SharedHeader header_, FutureConnectionPtr future_connection_, String stream_name_, bool advisory_)
         : ISink(std::move(header_))
         , future_connection(std::move(future_connection_))

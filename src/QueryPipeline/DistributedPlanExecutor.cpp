@@ -117,6 +117,7 @@ namespace FailPoints
 {
     extern const char distributed_plan_status_check_reenqueue_fault[];
     extern const char distributed_plan_record_failure_while_starting_tasks[];
+    extern const char distributed_plan_runtime_filter_receive_branch_fails_before_connect[];
 }
 
 class TaskParameters : public IParameterLookup
@@ -821,7 +822,7 @@ static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, Cont
 /// cancels the branches that still wait. The exception is a branch still in the exchange handshake
 /// with an unresponsive producer: it holds `finish` until that handshake times out. A branch error
 /// never fails the task: the filter is not registered, and `__applyFilter` passes all rows. And a
-/// remote worker does not deadlock. A branch folded into the data streams would deadlock it (see
+/// branch connects at once, not only when the consumer pulls the task's data (see
 /// `MergeRuntimeFiltersTransform`).
 class RuntimeFilterReceiveBranches
 {
@@ -840,6 +841,10 @@ public:
                     ThreadGroupSwitcher switcher(thread_group, ThreadName::DISTRIBUTED_QUERY_TASK);
                     try
                     {
+                        fiu_do_on(FailPoints::distributed_plan_runtime_filter_receive_branch_fails_before_connect,
+                        {
+                            throw Exception(ErrorCodes::EXCHANGE_PEER_DISCONNECTED, "Injected receive branch failure before it connects");
+                        });
                         CompletedPipelineExecutor executor(branch->pipeline);
                         executor.setCancelCallback([branch] { return branch->cancelled.load(); }, /*interactive_timeout_ms_*/ 50);
                         executor.execute();
