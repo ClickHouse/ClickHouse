@@ -1,5 +1,12 @@
 SET output_format_write_statistics = 0;
 
+-- Without `exact_rows_before_limit`, `rows_before_limit_at_least` reports how many rows `LIMIT BY`
+-- had already emitted when `LIMIT` stopped the pipeline, so it depends on the block size of the
+-- sorted stream. The queries below pin that with `max_block_size = 1`, but external sorting merges
+-- its runs into blocks of at least 128 rows and would make the counter report a larger value.
+SET max_bytes_before_external_sort = 0;
+SET max_bytes_ratio_before_external_sort = 0;
+
 DROP TABLE IF EXISTS 03408_unsorted;
 
 CREATE TABLE 03408_unsorted (id Int32, val String) ENGINE = MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=1

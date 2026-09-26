@@ -36,10 +36,10 @@
         "ru/integrations/connectors/data-sources/gcs",
         "ru/integrations/connectors/data-ingestion/s3-minio",
         "ru/integrations/connectors/data-ingestion/s3-tigris",
+        "ru/integrations/connectors/data-ingestion/s3-seaweedfs",
         "ru/integrations/connectors/data-ingestion/emqx/index",
         "ru/integrations/connectors/data-ingestion/insert-local-files",
-        "ru/integrations/connectors/data-ingestion/jdbc-with-clickhouse",
-        "ru/integrations/connectors/data-ingestion/odbc-with-clickhouse"
+        "ru/integrations/connectors/data-ingestion/jdbc-with-clickhouse"
       ]
     },
     {
@@ -102,7 +102,6 @@
       "expanded": true,
       "group": "Data ingestion",
       "pages": [
-        "ru/integrations/connectors/data-ingestion/index",
         "ru/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
         "ru/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
         "ru/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
@@ -149,15 +148,7 @@
         },
         "ru/integrations/connectors/data-ingestion/etl-tools/bladepipe-and-clickhouse",
         {
-          "expanded": false,
-          "group": "dbt",
-          "pages": [
-            "ru/integrations/connectors/data-ingestion/etl-tools/dbt/index",
-            "ru/integrations/connectors/data-ingestion/etl-tools/dbt/features-and-configurations",
-            "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materializations",
-            "ru/integrations/connectors/data-ingestion/etl-tools/dbt/materialization-materialized-view",
-            "ru/integrations/connectors/data-ingestion/etl-tools/dbt/guides"
-          ]
+          "$ref": "data-ingestion/etl-tools/dbt/navigation.json"
         },
         "ru/integrations/connectors/data-ingestion/etl-tools/dlt-and-clickhouse",
         {
@@ -183,6 +174,7 @@
           "group": "Community integrations",
           "pages": [
             "ru/integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
+            "ru/integrations/connectors/data-ingestion/community-integrations/erathos",
             {
               "group": "Estuary",
               "pages": [
@@ -202,6 +194,7 @@
         "ru/integrations/connectors/tools/data-integration-index",
         "ru/integrations/connectors/data-integrations/integrations/retool",
         "ru/integrations/connectors/data-integrations/integrations/easypanel",
+        "ru/integrations/connectors/data-integrations/integrations/microsoft-fabric",
         "ru/integrations/connectors/data-integrations/integrations/middleware",
         "ru/integrations/connectors/data-integrations/integrations/notion",
         "ru/integrations/connectors/data-integrations/integrations/splunk"
@@ -228,6 +221,7 @@
       "group": "Tools",
       "pages": [
         "ru/integrations/connectors/tools/index",
+        "ru/integrations/connectors/tools/misc-index",
         "ru/integrations/connectors/tools/gui",
         "ru/integrations/connectors/tools/proxy",
         "ru/integrations/connectors/tools/third-party-libraries"

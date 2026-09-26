@@ -14,11 +14,11 @@
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/LimitRangeTransform.h>
 #include <Processors/NegativeLimitTransform.h>
 #include <Processors/FractionalLimitTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/NullSource.h>
@@ -28,6 +28,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
+#include <Processors/Transforms/DroppingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
@@ -219,6 +220,17 @@ static void initRowsBeforeLimit(IOutputFormat * output_format)
         if ((typeid_cast<RemoteSource *>(processor) || typeid_cast<DelayedSource *>(processor)) && !limit_being_counted)
         {
             processors.emplace(processor);
+            continue;
+        }
+
+        if (typeid_cast<LimitRangeTransform *>(processor))
+        {
+            has_limit = true;
+            /// LimitRangeTransform is a single-input simple transform that keeps its own counter
+            /// over all rows it reads (i.e. rows before the AFTER/UNTIL range is applied). Like any
+            /// other limiting operation, it does not take the counter over from a limit downstream.
+            if (!limit_being_counted)
+                processors.emplace(processor);
             continue;
         }
 
@@ -502,16 +514,38 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
     processors->emplace_back(std::move(format));
 }
 
-static void drop(OutputPort *& port, Processors & processors)
+/// Discards `totals`/`extremes` without adding a childless node; see `DroppingTransform`.
+/// Requires `output != nullptr`.
+static void dropTotalsAndExtremesViaTransform(
+    OutputPort *& output, OutputPort *& totals, OutputPort *& extremes, Processors & processors)
 {
-    if (!port)
+    if (!totals && !extremes)
         return;
 
-    auto null_sink = std::make_shared<NullSink>(port->getSharedHeader());
-    connect(*port, null_sink->getPort());
+    chassert(output);
 
-    processors.emplace_back(std::move(null_sink));
-    port = nullptr;
+    auto dropping = std::make_shared<DroppingTransform>(
+        output->getSharedHeader(),
+        /*num_streams_=*/1,
+        totals ? totals->getSharedHeader() : nullptr,
+        extremes ? extremes->getSharedHeader() : nullptr);
+
+    connect(*output, dropping->getInputs().front());
+
+    if (totals)
+    {
+        connect(*totals, *dropping->getTotalsPort());
+        totals = nullptr;
+    }
+
+    if (extremes)
+    {
+        connect(*extremes, *dropping->getExtremesPort());
+        extremes = nullptr;
+    }
+
+    output = &dropping->getOutputs().front();
+    processors.emplace_back(std::move(dropping));
 }
 
 QueryPipeline::QueryPipeline(std::shared_ptr<SinkToStorage> sink) : QueryPipeline(Chain(std::move(sink))) {}
@@ -521,8 +555,7 @@ void QueryPipeline::complete(std::shared_ptr<ISink> sink)
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with sink");
 
-    drop(totals, *processors);
-    drop(extremes, *processors);
+    dropTotalsAndExtremesViaTransform(output, totals, extremes, *processors);
 
     connect(*output, sink->getPort());
     processors->emplace_back(std::move(sink));
@@ -536,8 +569,7 @@ void QueryPipeline::complete(Chain chain)
 
     resources = chain.detachResources();
 
-    drop(totals, *processors);
-    drop(extremes, *processors);
+    dropTotalsAndExtremesViaTransform(output, totals, extremes, *processors);
 
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
@@ -560,8 +592,7 @@ void QueryPipeline::complete(Pipe pipe)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pushing to be completed with pipe");
 
     pipe.resize(1);
-    pipe.dropExtremes();
-    pipe.dropTotals();
+    pipe.dropTotalsAndExtremes();
     connect(*pipe.getOutputPort(0), *input);
     input = nullptr;
 
@@ -852,6 +883,9 @@ void QueryPipeline::convertStructureTo(const ColumnsWithTypeAndName & columns, c
 
 std::unique_ptr<ReadProgressCallback> QueryPipeline::getReadProgressCallback() const
 {
+    if (!report_read_progress)
+        return nullptr;
+
     auto callback = std::make_unique<ReadProgressCallback>();
 
     callback->setProgressCallback(progress_callback);

@@ -10,8 +10,11 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 -- Override randomized max_threads to avoid timeout on slow builds (ASan)
 SET max_threads=0;
 
--- The runtime dataflow output-bytes estimate is sensitive to the block size, so pin
--- `max_block_size` to its default to keep the estimate stable against randomization.
+-- Override randomized max_block_size so the output-bytes estimate stays deterministic.
+-- `RuntimeDataflowStatisticsOutputBytes` is accumulated per block (the output columns are
+-- serialized block-by-block with the default codec), so a randomized `max_block_size` shifts
+-- the estimate and can push `query_43`'s `URL` output past the tolerance below. The expected
+-- sizes are calibrated for the default `max_block_size` (65409).
 SET max_block_size=65409;
 
 -- The aggregation-state size estimate is recorded per bucket after the conversion to
@@ -53,6 +56,11 @@ SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 SYSTEM FLUSH LOGS query_log;
 
 -- Just checking that the estimation is not too far off.
+-- The expected output sizes are calibrated for the `ZSTD(3)` default codec: the estimator serializes
+-- output columns with `getDefaultCodec`, so switching the default from `LZ4` to `ZSTD(3)` shrinks the
+-- estimate for the queries whose output is dominated by well-compressing data.
+-- query_12's value (3rd) is the aggregation state, ~3.6M under `ZSTD(3)` instead of ~11.2M under `LZ4`.
+-- query_43's value (11th) is the `URL` output, ~16.8M under `ZSTD(3)` instead of ~48.3M under `LZ4`.
 -- The `query_28` value was re-measured. The previously recorded 23722663 dates from 2025-12-31,
 -- when the whole array was calibrated on the branch of the pull request that later merged as
 -- "Introduce PackedStringRef & PackedStringHashTable"; merging it also overwrote the value master
@@ -70,7 +78,10 @@ SYSTEM FLUSH LOGS query_log;
 -- Once the estimator measures the compressed size, this value has to be re-measured again - it goes
 -- back to about the previously recorded 23722663.
 WITH
-    [3, 195461, 5962954, 1100491, 2, 16885, 42323, 9434, 58136394, 203701090, 82404720/*, 641835*/] AS expected_bytes,
+    -- `query_12` (index 2) and `query_43` (index 10) are recalibrated for the `ZSTD(3)` default:
+    -- the estimator serializes the output with `getDefaultCodec`, and these two outputs
+    -- (an aggregation state and the `URL` column) compress about 3x better than under `LZ4`.
+    [3, 195461, 2640000, 1100491, 2, 16885, 42323, 9434, 58136394, 203701090, 22000000/*, 641835*/] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
 SELECT format('{} {} {}', res.1, res.2, res.3)
 FROM

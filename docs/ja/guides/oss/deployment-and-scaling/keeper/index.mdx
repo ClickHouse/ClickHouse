@@ -218,9 +218,20 @@ zk_ephemerals_count     0
 zk_approximate_data_size        723
 zk_open_file_descriptor_count   310
 zk_max_file_descriptor_count    10240
+zk_leader_uptime        1234
+zk_sum_leader_unavailable_time 1234
+zk_cnt_leader_unavailable_time 1
+zk_sum_election_time 1234
+zk_cnt_election_time 1
 zk_followers    0
 zk_synced_followers     0
 ```
+
+`zk_sum_leader_unavailable_time`、`zk_cnt_leader_unavailable_time`、`zk_sum_election_time`、`zk_cnt_election_time` は、リーダー 専用の累積メトリクスです。これらはサーバーごとの観測値であり、クラスター全体の可用性を示す測定値ではありません。追跡は、そのサーバーが稼働中の リーダー を観測しなくなった時点で開始されます。ネットワークパーティション中は、古い リーダー が別のパーティションで稼働し続けている時間も含まれる場合があります。選出メトリクスには、このようにローカルで観測された リーダー 不在期間の後に成功した選出のみが記録されます。サンプリング時に リーダー 不在状態が検出されないリーダーシップの移行は、意図的にカウントされません。
+
+Keeper はローカルの NuRaft リーダー 状態を `heart_beat_interval_ms` ごとにサンプリングしますが、その頻度は最大でも 100 ミリ秒ごとです。各期間の境界は、ローカル状態の遷移時点から有効間隔分までずれる可能性があり、その間隔より短い期間は見逃される可能性があります。Keeper は NuRaft の `BecomeLeader` 時にローカルでの選出完了を記録します。`srst` は 4 つすべての値をリセットします。
+
+各種類について直近にローカルで観測された期間の長さも、`system.asynchronous_metrics` に `KeeperLastLeaderElectionTime` および `KeeperLastLeaderUnavailableTime` としてミリ秒単位でエクスポートされます。`KeeperLastLeaderElectionTime` は `zk_sum_election_time` と同じ リーダー 不在期間の定義に従います。どちらも リーダー 専用です。アクティブな リーダー ではないノード、またはまだ期間を完了していないノードは、`0` を報告します。`srst` は累積カウンターとともにこれらもリセットします。
 
 * `srvr`: サーバーの詳細情報を一覧表示します。
 
@@ -253,13 +264,13 @@ Mode: leader
 Node count: 4
 ```
 
-* `srst`: サーバーの統計情報をリセットします。このコマンドは `srvr`、`mntr`、`stat` の結果に影響します。
+* `srst`: サーバー統計をリセットします。このコマンドは `srvr`、`mntr`、`stat` の結果に影響します。
 
 ```response
 Server stats reset.
 ```
 
-* `conf`: 現在の設定の詳細を表示します。
+* `conf`: サーバー構成の詳細を表示します。
 
 ```response
 server_id=1
@@ -385,13 +396,13 @@ target_committed_log_idx    101
 last_snapshot_idx   50
 ```
 
-* `rqld`: 新しいリーダーになるよう要求します。要求の送信に成功した場合は `Sent leadership request to leader.` を、送信できなかった場合は `Failed to send leadership request to leader.` を返します。ノードがすでにリーダーである場合も、結果は要求の送信に成功した場合と同じです。
+* `rqld`: 新しいリーダーになるためのリクエストを送信します。リクエストが送信された場合は `Sent leadership request to leader.` を返し、送信されなかった場合は `Failed to send leadership request to leader.` を返します。ノードがすでにリーダーの場合も、リクエストが送信された場合と同じ結果になります。
 
 ```response
 Sent leadership request to leader.
 ```
 
-* `ftfl`: すべての機能フラグと、それぞれがKeeperインスタンスで有効かどうかを一覧表示します。
+* `ftfl`: すべての 機能フラグ と、それらが Keeper インスタンスで enabled かどうかを一覧表示します。
 
 ```response
 filtered_list   1
@@ -399,13 +410,13 @@ multi_read  1
 check_not_exists    0
 ```
 
-* `ydld`: リーダーシップを譲ってフォロワーになるよう要求します。要求を受信したサーバーがリーダーの場合、まず書き込み処理を一時停止し、後継ノード (現在のリーダーが後継ノードになることはありません) が最新のログへの追従を完了するまで待ってから、リーダーを退任します。後継ノードは自動的に選択されます。要求が送信された場合は `Sent yield leadership request to leader.`、送信されなかった場合は `Failed to send yield leadership request to leader.` を返します。ノードがすでにフォロワーである場合も、結果は要求が送信された場合と同じです。
+* `ydld`: リーダー権限を譲り、フォロワーになるようリクエストします。リクエストを受信したサーバーがリーダーの場合、まず書き込み操作を一時停止し、後継ノード (現在のリーダーが後継ノードになることはありません) が最新のログへの追いつきを完了するまで待ってから、リーダーを辞任します。後継ノードは自動的に選択されます。リクエストが送信された場合は `Sent yield leadership request to leader.` を、送信されなかった場合は `Failed to send yield leadership request to leader.` を返します。ノードがすでにフォロワーの場合も、リクエストが送信された場合と同じ結果になります。
 
 ```response
 Sent yield leadership request to leader.
 ```
 
-* `pfev`: 収集されたすべてのイベントの値を返します。各イベントについて、イベント名、イベント値、イベントの説明を返します。
+* `pfev`: 収集されたすべてのイベントについて、イベント名、イベント値、イベントの説明を返します。
 
 ```response
 FileOpen        62      Number of files opened.

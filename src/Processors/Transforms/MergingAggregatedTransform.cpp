@@ -71,7 +71,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
     {
         if (!header_->has("__grouping_set"))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Cannot find __grouping_set column in header of MergingAggregatedTransform with grouping sets."
+                "Cannot find __grouping_set column in header of MergingAggregatedTransform with grouping sets. "
                 "Header {}", header_->dumpStructure());
 
         auto in_header = *header_;
