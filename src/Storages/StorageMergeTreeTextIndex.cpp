@@ -485,7 +485,13 @@ void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const IS
             "distributed query can execute it only as the initiating user: through a cluster with an interserver secret, "
             "or through `remote` with the credentials of that user");
 
-    context->checkAccess(AccessType::SELECT, source_storage_id, index.getColumnsRequiredForIndexCalc());
+    /// Column-level grants are tracked against top-level storage columns only, so map any subcolumns
+    /// required for the index (e.g. `json.a.b`) to their parent storage column (e.g. `json`).
+    const auto source_metadata_snapshot = source_table.getInMemoryMetadataPtr(context, false);
+    context->checkAccess(
+        AccessType::SELECT,
+        source_storage_id,
+        source_metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(index.getColumnsRequiredForIndexCalc(), context, source_storage_id));
 
     /// The index is built over all rows of a part, so it contains tokens of the rows a row policy hides,
     /// regardless of which columns the policy filters on. The policy cannot be applied to the dictionary.

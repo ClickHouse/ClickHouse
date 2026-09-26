@@ -425,7 +425,13 @@ void StorageMergeTreeIndex::readImpl(
     }
 
     auto source_storage_id = source_table->getStorageID();
-    context->checkAccess(AccessType::SELECT, source_storage_id, columns_from_storage);
+
+    /// Column-level grants are tracked against top-level storage columns only, so map any requested
+    /// subcolumns (e.g. `t.a`) to their parent storage column (e.g. `t`).
+    context->checkAccess(
+        AccessType::SELECT,
+        source_storage_id,
+        storage_columns.getColumnNamesForSelectAccessCheck(columns_from_storage, context, source_storage_id));
 
     /// We cannot apply a row policy to granules, but the index leaks keys of the rows it hides
     if (getEffectiveRowPolicyFilter(*source_table, context))

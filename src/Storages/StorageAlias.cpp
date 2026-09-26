@@ -50,13 +50,10 @@ StorageAlias::StorageAlias(
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
 {
+    /// Table-level access check only. Column-level checks resolve subcolumns against the target
+    /// metadata snapshot, so they are done by the caller that owns that snapshot (see `StorageAlias::read`).
     if (access_check)
-    {
-        if (access_check->column_names.empty())
-            access_check->context->checkAccess(access_check->access_type, target_database, target_table);
-        else
-            access_check->context->checkAccess(access_check->access_type, target_database, target_table, access_check->column_names);
-    }
+        access_check->context->checkAccess(access_check->access_type, target_database, target_table);
 
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
@@ -259,12 +256,25 @@ void StorageAlias::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::SELECT, column_names});
+    auto target_storage = getTargetTable();
+    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+
+    /// Resolve subcolumns against the same target metadata snapshot the read below uses, so the
+    /// authorized columns are exactly the ones that are read.
+    if (column_names.empty())
+        local_context->checkAccess(AccessType::SELECT, target_database, target_table);
+    else
+        local_context->checkAccess(
+            AccessType::SELECT,
+            target_database,
+            target_table,
+            target_metadata->getColumns().getColumnNamesForSelectAccessCheck(
+                column_names, local_context, StorageID(target_database, target_table)));
+
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-    auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
 
     target_storage->read(

@@ -329,11 +329,17 @@ void StorageBuffer::read(
 
     if (auto destination = getDestinationTable())
     {
-        local_context->checkAccess(AccessType::SELECT, destination->getStorageID(), column_names);
+        /// Resolve subcolumns against the destination's metadata snapshot, which the read below uses too.
+        /// It may differ from the Buffer table's layout, so the same dotted identifier can resolve differently there.
+        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
+        local_context->checkAccess(
+            AccessType::SELECT,
+            destination->getStorageID(),
+            destination_metadata_snapshot->getColumns().getColumnNamesForSelectAccessCheck(
+                column_names, local_context, destination->getStorageID()));
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
         const auto get_columns_options = GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         auto destination_columns = destination_snapshot->getColumns(get_columns_options);

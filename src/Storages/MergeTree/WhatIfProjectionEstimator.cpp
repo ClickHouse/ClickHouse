@@ -671,7 +671,8 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     String & reason)
 {
     if (!stored.required_columns.empty())
-        context->checkAccess(AccessType::SELECT, data.getStorageID(), stored.required_columns);
+        context->checkAccess(
+            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(stored.required_columns, context, data.getStorageID()));
     context->checkAccess(AccessType::ALTER_ADD_PROJECTION, data.getStorageID());
 
     std::optional<ProjectionDescription> fresh;
@@ -690,7 +691,8 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     /// an ALTER can re-point an ALIAS the definition selects, so the columns the scan will really read
     /// are not the ones stored at CREATE time, and a denial here must not read as drift
     if (!fresh->required_columns.empty())
-        context->checkAccess(AccessType::SELECT, data.getStorageID(), fresh->required_columns);
+        context->checkAccess(
+            AccessType::SELECT, data.getStorageID(), metadata->getColumns().getColumnNamesForSelectAccessCheck(fresh->required_columns, context, data.getStorageID()));
     return fresh;
 }
 

@@ -541,6 +541,25 @@ public:
         return true;
     }
 
+    /// Like `isGranted`, but for the last name returns what that name inherits from its enclosing level, ignoring
+    /// a grant or revoke made on this exact name. A grant or revoke on a name changes only its leaf, while the parent
+    /// node of the leaf keeps the inherited flags.
+    template <typename... Args>
+    bool isGrantedInherited(const AccessFlags & flags_, std::string_view name, const Args &... subnames) const
+    {
+        const auto next_level = static_cast<Level>(level + 1);
+        if constexpr (sizeof...(Args) == 0)
+        {
+            const auto node = tryGetLeaf(name, next_level, /* return_parent_node= */ true);
+            return node.flags.contains(flags_);
+        }
+        else
+        {
+            const auto node = tryGetLeaf(name, next_level);
+            return node.isGrantedInherited(flags_, subnames...);
+        }
+    }
+
     friend bool operator ==(const Node & left, const Node & right)
     {
         if (left.node_name != right.node_name)
@@ -1659,6 +1678,13 @@ bool AccessRights::isGranted(const AccessFlags & flags, std::string_view databas
 bool AccessRights::isGranted(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { return isGrantedImpl<false, false>(flags, database, table, columns); }
 bool AccessRights::isGranted(const AccessRightsElement & element) const { return isGrantedImpl<false, false>(element); }
 bool AccessRights::isGranted(const AccessRightsElements & elements) const { return isGrantedImpl<false, false>(elements); }
+
+bool AccessRights::isGrantedInherited(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const
+{
+    if (!root)
+        return flags.isEmpty();
+    return root->isGrantedInherited(flags, database, table, column);
+}
 
 bool AccessRights::isGrantedWildcard(const AccessFlags & flags) const { return isGrantedImpl<false, true>(flags); }
 bool AccessRights::isGrantedWildcard(const AccessFlags & flags, std::string_view database) const { return isGrantedImpl<false, true>(flags, database); }

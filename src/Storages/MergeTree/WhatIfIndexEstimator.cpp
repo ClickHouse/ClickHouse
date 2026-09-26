@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
 #include <Storages/MergeTree/WhatIfProjectionEstimator.h>
@@ -41,6 +42,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int INDEX_NOT_USED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -231,8 +233,22 @@ WhatIfCandidateResult evaluateIndex(
     }
 
     /// CREATE checked these columns, but the scan reads them now, so re-check SELECT against
-    /// current grants, a grant revoked since CREATE should deny the estimate
-    context->checkAccess(AccessType::SELECT, data.getStorageID(), index_helper->getColumnsRequiredForIndexCalc());
+    /// current grants, a grant revoked since CREATE should deny the estimate.
+    /// Resolve subcolumns against the table's schema so a grant on a parent column covers them.
+    auto storage_metadata = read_step->getStorageMetadata();
+    auto storage_id = data.getStorageID();
+    context->checkAccess(
+        AccessType::SELECT,
+        storage_id,
+        storage_metadata->getColumns().getColumnNamesForSelectAccessCheck(
+            index_helper->getColumnsRequiredForIndexCalc(), context, storage_id));
+
+    /// The estimate (skip ratio) is derived from every row, including the rows a row policy hides
+    if (getEffectiveRowPolicyFilter(data, context))
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot use `EXPLAIN WHATIF` because a row policy is applied on table {}. "
+            "The index estimate is derived from all rows, so it could violate the row policy",
+            storage_id.getNameForLogs());
 
     const auto & filter_dag = read_step->getFilterActionsDAG();
     if (!filter_dag)
