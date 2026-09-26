@@ -29,7 +29,9 @@
 #include <libnuraft/timer_task.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Stopwatch.h>
 #include <Common/saturatedWaitDuration.h>
@@ -38,6 +40,8 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadStatus.h>
+
+#include <algorithm>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -64,8 +68,19 @@ namespace ProfileEvents
     extern const Event KeeperServerWriteLockWaitMicroseconds;
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric KeeperRaftThreadsWaitingForLogsPreprocessing;
+}
+
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char keeper_local_logs_preprocessing_wait[];
+    extern const char keeper_never_pause_appending_entries[];
+}
 
 namespace CoordinationSetting
 {
@@ -744,6 +759,17 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     raft_instance->keeper_context = keeper_context;
 
+    state_machine->setAppendEntriesPauseCondition([this]
+    {
+        /// Leaves the leader re-sending, which is how a test reaches the admission gate.
+        bool never_pause = false;
+        fiu_do_on(FailPoints::keeper_never_pause_appending_entries, { never_pause = true; });
+
+        return !never_pause
+            && !keeper_context->localLogsPreprocessed()
+            && raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk;
+    });
+
     state_manager->getLogStore()->setRaftServer(raft_instance);
 
     nuraft::raft_server::limits raft_limits;
@@ -1019,6 +1045,36 @@ void KeeperServer::resetLeaderMetrics()
     last_leader_election_time_ms.reset();
 }
 
+/// Waits for the local log replay, one thread at a time and only up to a deadline, because an
+/// unbounded wait on a thread of the Raft event loop would stop the loop.
+void KeeperServer::waitForLocalLogsPreprocessing()
+{
+    if (threads_waiting_for_local_logs_preprocessing.fetch_add(1) != 0)
+    {
+        threads_waiting_for_local_logs_preprocessing.fetch_sub(1);
+        LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: another thread is already waiting for preprocessing");
+        return;
+    }
+
+    SCOPE_EXIT(threads_waiting_for_local_logs_preprocessing.fetch_sub(1));
+    CurrentMetrics::Increment waiting_metric_increment{CurrentMetrics::KeeperRaftThreadsWaitingForLogsPreprocessing};
+
+    FailPointInjection::pauseFailPoint(FailPoints::keeper_local_logs_preprocessing_wait);
+
+    /// The values the instance is running with, already narrowed to int32 on their way into
+    /// NuRaft. The smaller limit binds - the leader discards the response past the reconnect
+    /// limit, the cluster counts the node down past the response limit - and one heartbeat of it
+    /// is margin, of which there is none to spend once that limit is one.
+    const auto raft_limits = nuraft::raft_server::get_raft_limits();
+    const uint64_t heartbeats_to_wait = std::min<uint64_t>(raft_limits.response_limit_, raft_limits.reconnect_limit_);
+    const uint64_t wait_timeout_ms = static_cast<uint64_t>(raft_instance->get_current_params().heart_beat_interval_)
+        * (heartbeats_to_wait > 1 ? heartbeats_to_wait - 1 : 0);
+
+    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
+    bool preprocessed = keeper_context->waitLocalLogsPreprocessedOrShutdown(wait_timeout_ms);
+    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: stopped waiting for preprocessing, preprocessed={}", preprocessed);
+}
+
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
 {
     /// We / nuraft currently don't have a good way to recover from exceptions here, the whole
@@ -1177,8 +1233,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 /// we don't want to append new logs if we are committing local logs
                 else if (raft_instance->get_target_committed_log_idx() >= last_log_idx_on_disk)
                 {
-                    LOG_TRACE(log, "Logs not preprocessed, ProcessReq callback: waiting for preprocessing");
-                    keeper_context->waitLocalLogsPreprocessedOrShutdown();
+                    waitForLocalLogsPreprocessing();
                 }
                 else
                 {
