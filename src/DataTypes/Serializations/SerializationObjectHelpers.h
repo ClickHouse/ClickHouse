@@ -70,6 +70,15 @@ private:
     size_t num_buckets;
     /// Bucket index for each path, in the order paths are traversed (rows [start, end), paths within a row).
     PODArray<UInt8> path_buckets;
+    /// Group the paths by bucket for `extractBucket`, so that each call visits only the paths of its bucket.
+    void groupPathsByBucket() const;
+
+    /// Paths grouped by bucket, in the traversal order within a bucket: the paths of bucket `b` are at positions
+    /// [bucket_begin[b], bucket_begin[b + 1]). For each of them, the index in the shared data and the row relative to `start`.
+    /// Filled on the first call to `extractBucket`.
+    mutable PODArray<UInt64> bucket_path_indexes;
+    mutable PODArray<UInt32> bucket_path_rows;
+    mutable std::vector<size_t> bucket_begin;
     std::vector<size_t> bucket_num_paths;
     std::vector<size_t> bucket_paths_chars_size;
     std::vector<size_t> bucket_values_chars_size;

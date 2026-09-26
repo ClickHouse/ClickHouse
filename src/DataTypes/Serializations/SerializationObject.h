@@ -14,6 +14,7 @@ namespace DB
 class SerializationObjectDynamicPath;
 class SerializationSubObject;
 class SerializationObjectDistinctPaths;
+struct SerializeBinaryBulkStateObject;
 
 /// Class for binary serialization/deserialization of an Object type (currently only JSON).
 class SerializationObject : public ISerialization
@@ -181,6 +182,13 @@ protected:
     SerializationPtr dynamic_serialization;
 
 private:
+    void serializeTypedPathsBulk(
+        const ColumnObject & column_object,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStateObject & object_state) const;
+
     std::vector<String> sorted_typed_paths;
 };
 
