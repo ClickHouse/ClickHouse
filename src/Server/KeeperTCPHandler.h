@@ -56,7 +56,6 @@ private:
 
 public:
     KeeperTCPHandler(
-        const Poco::Util::AbstractConfiguration & config_ref,
         std::shared_ptr<KeeperDispatcher> keeper_dispatcher_,
         Poco::Timespan receive_timeout_,
         Poco::Timespan send_timeout_,

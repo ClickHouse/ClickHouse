@@ -2995,7 +2995,6 @@ try
                         "Keeper (tcp): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
-                                config_getter,
                                 global_context->getKeeperDispatcher(),
                                 global_context->getSettingsRef()[Setting::receive_timeout].totalSeconds(),
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
@@ -3021,7 +3020,6 @@ try
                         "Keeper with secure protocol (tcp_secure): " + address.toString(),
                         std::make_unique<TCPServer>(
                             new KeeperTCPHandlerFactory(
-                                config_getter,
                                 global_context->getKeeperDispatcher(),
                                 global_context->getSettingsRef()[Setting::receive_timeout].totalSeconds(),
                                 global_context->getSettingsRef()[Setting::send_timeout].totalSeconds(),
