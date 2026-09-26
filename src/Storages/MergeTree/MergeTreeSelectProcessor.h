@@ -157,6 +157,7 @@ public:
         const ExpressionActionsSettings & actions_settings,
         bool enable_multiple_prewhere_read_steps,
         bool force_short_circuit_execution,
+        bool read_ahead_prewhere_columns,
         const ColumnsDescription * columns = nullptr);
 
     void addPartLevelToChunk(bool add_part_level_) { add_part_level = add_part_level_; }
