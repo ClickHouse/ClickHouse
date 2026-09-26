@@ -1,5 +1,5 @@
-#include <Common/logger_useful.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
 
 #include <Core/Joins.h>
@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/Optimizations/DataPropertyDerivation.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
@@ -39,6 +40,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include <base/types.h>
 
@@ -285,6 +287,8 @@ struct QueryGraphBuilder
 
     std::vector<RelationStats> relation_stats;
     std::vector<QueryPlan::Node *> inputs;
+    std::optional<JoinOrderDataPropertyCatalogBuilder> data_property_catalog_builder;
+    std::optional<JoinOrderPropertyUnsupportedReason> canonical_property_region_rejection;
 
     std::vector<JoinActionRef> join_edges;
 
@@ -308,6 +312,7 @@ struct QueryGraphBuilder
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
         String stats_hint;
+        DataPropertyCollectionPolicy data_property_policy;
         UInt64 effective_randomize_seed = 0;
 
         BuilderContext(
@@ -319,6 +324,9 @@ struct QueryGraphBuilder
             , statistics_context(optimization_settings_, root_node)
             , join_settings(join_settings_)
             , sorting_settings(sorting_settings_)
+            , data_property_policy(
+                  {.costing_enabled = optimization_settings_.query_plan_optimize_join_order_use_proven_uniqueness,
+                   .diagnostics_enabled = optimization_settings_.query_plan_optimize_join_order_data_property_diagnostics})
             , effective_randomize_seed(optimization_settings_.query_plan_optimize_join_order_randomize)
         {
         }
@@ -327,11 +335,18 @@ struct QueryGraphBuilder
     std::shared_ptr<BuilderContext> context;
 
     explicit QueryGraphBuilder(std::shared_ptr<BuilderContext> context_)
-        : context(std::move(context_)) {}
+        : context(std::move(context_))
+    {
+        if (context->data_property_policy.collectsDataProperties())
+            data_property_catalog_builder.emplace();
+    }
 
-    QueryGraphBuilder(const QueryPlanOptimizationSettings & optimization_settings_, const QueryPlan::Node & root_node,
-                      const JoinSettings & join_settings_, const SortingStep::Settings & sorting_settings_)
-        : context(std::make_shared<BuilderContext>(optimization_settings_, root_node, join_settings_, sorting_settings_))
+    QueryGraphBuilder(
+        const QueryPlanOptimizationSettings & optimization_settings_,
+        const QueryPlan::Node & root_node,
+        const JoinSettings & join_settings_,
+        const SortingStep::Settings & sorting_settings_)
+        : QueryGraphBuilder(std::make_shared<BuilderContext>(optimization_settings_, root_node, join_settings_, sorting_settings_))
     {}
 
     bool hasCompatibleSettings(const JoinStepLogical & join_step) const
@@ -354,6 +369,12 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
         sources.shift(shift);
     lhs.expression_actions.setNodeSources(rhs_expression_sources);
 
+    if (lhs.data_property_catalog_builder.has_value() != rhs.data_property_catalog_builder.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent join-order data property catalog collection state");
+    if (lhs.data_property_catalog_builder)
+        lhs.data_property_catalog_builder->merge(std::move(*rhs.data_property_catalog_builder));
+    if (!lhs.canonical_property_region_rejection && rhs.canonical_property_region_rejection)
+        lhs.canonical_property_region_rejection = rhs.canonical_property_region_rejection;
     lhs.relation_stats.append_range(std::move(rhs.relation_stats));
     lhs.inputs.append_range(std::move(rhs.inputs));
 
@@ -570,10 +591,35 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
     if (UInt64 seed = graph.context->effective_randomize_seed)
         stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
 
-    LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
-        num_rows_from_cache.has_value() ? " (from cache)" : "",
-        node->step->getName(), dumpStatsForLogs(stats));
-    graph.relation_stats.push_back(stats);
+    std::optional<DataPropertySet> data_properties;
+    if (graph.context->data_property_policy.collectsDataProperties())
+    {
+        if (!graph.data_property_catalog_builder)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Join-order data property catalog builder is not initialized");
+        data_properties = deriveDataPropertiesForPlanDAG(*node);
+        graph.data_property_catalog_builder->appendLeaf(*data_properties, *node->step->getOutputHeader());
+    }
+
+    if (graph.context->data_property_policy.diagnostics_enabled)
+    {
+        LOG_TRACE(
+            getLogger("optimizeJoin"),
+            "Estimated statistics{} for {} {}, data properties: {}",
+            num_rows_from_cache.has_value() ? " (from cache)" : "",
+            node->step->getName(),
+            dumpStatsForLogs(stats),
+            data_properties ? data_properties->dump() : "none");
+    }
+    else
+    {
+        LOG_TRACE(
+            getLogger("optimizeJoin"),
+            "Estimated statistics{} for {} {}",
+            num_rows_from_cache.has_value() ? " (from cache)" : "",
+            node->step->getName(),
+            dumpStatsForLogs(stats));
+    }
+    graph.relation_stats.push_back(std::move(stats));
     return 1;
 }
 
@@ -685,7 +731,14 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     QueryPlan::Node * lhs_plan = node.children[0];
     QueryPlan::Node * rhs_plan = node.children[1];
     auto [lhs_label, rhs_label] = join_step->getInputLabels();
-    auto join_kind = join_step->getJoinOperator().kind;
+    const auto & original_join_operator = join_step->getJoinOperator();
+    auto join_kind = original_join_operator.kind;
+    if (query_graph.context->data_property_policy.collectsDataProperties() && !query_graph.canonical_property_region_rejection
+        && (join_kind != JoinKind::Inner || original_join_operator.strictness != JoinStrictness::All))
+    {
+        query_graph.canonical_property_region_rejection = isCrossOrComma(join_kind) ? JoinOrderPropertyUnsupportedReason::CrossOrCommaRegion
+                                                                                    : JoinOrderPropertyUnsupportedReason::NonInnerAllRegion;
+    }
 
     auto type_changing_sides = join_step->typeChangingSides();
     bool allow_left_subgraph = !type_changing_sides.contains(JoinTableSide::Left) && (isInnerOrCross(join_kind) || isLeft(join_kind));
@@ -937,13 +990,30 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
-static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
+static QueryPlan::Node chooseJoinOrder(
+    QueryGraphBuilder query_graph_builder,
+    QueryPlan::Nodes & nodes,
+    JoinStrictness join_strictness,
+    JoinOrderOptimizationDebugInfo * debug_info)
 {
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
+    if (query_graph_builder.data_property_catalog_builder)
+    {
+        if (query_graph_builder.data_property_catalog_builder->relationCount() != query_graph.relation_stats.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Join-order data property catalog has {} relations, expected {}",
+                query_graph_builder.data_property_catalog_builder->relationCount(),
+                query_graph.relation_stats.size());
+        query_graph.data_property_catalog
+            = std::move(*query_graph_builder.data_property_catalog_builder)
+                  .finalize(joinOrderDataPropertyCatalogMode(query_graph_builder.context->data_property_policy));
+    }
     query_graph.edges = std::move(query_graph_builder.join_edges);
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
+    query_graph.canonical_property_region_rejection = query_graph_builder.canonical_property_region_rejection;
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
 
     LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"), "Optimizing join order for query graph with {} relations", query_graph.relation_stats.size());
@@ -984,7 +1054,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
     const UInt64 cluster_id = ++optimization_settings.join_reorder_next_cluster_id;
 
-    auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
+    auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings, debug_info);
     auto sequence = getJoinTreePostOrderSequence(optimized);
 
     if (sequence.empty())
@@ -1521,7 +1591,11 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
-    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);
+
+    std::optional<JoinOrderOptimizationDebugInfo> debug_info;
+    if (optimization_settings.query_plan_optimize_join_order_data_property_diagnostics)
+        debug_info.emplace();
+    node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness, debug_info ? &*debug_info : nullptr);
 }
 
 }

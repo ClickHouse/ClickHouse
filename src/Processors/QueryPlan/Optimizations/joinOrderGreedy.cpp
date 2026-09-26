@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderBitSet.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderDP.h>
 
 #include <Common/Exception.h>
 #include <IO/Operators.h>
@@ -25,8 +26,9 @@ namespace
 class GreedyJoinOrderOptimizer
 {
 public:
-    explicit GreedyJoinOrderOptimizer(QueryGraph & query_graph_)
+    GreedyJoinOrderOptimizer(QueryGraph & query_graph_, const JoinOrderPropertyContext & properties_)
         : query_graph(query_graph_)
+        , properties(properties_)
     {
     }
 
@@ -34,6 +36,7 @@ public:
 
 private:
     QueryGraph & query_graph;
+    const JoinOrderPropertyContext & properties;
     SelectivityCache expression_selectivity;
     PlanMemo dp_table;
     LoggerPtr log = DB::getJoinOrderOptimizerLogger();
@@ -76,19 +79,30 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
                     continue;
 
                 auto edges = getApplicableExpressions(query_graph, left->relations, right->relations);
-                bool connected = !edges.empty()
-                    || query_graph.areTransitivelyConnected(left->relations, right->relations);
+                const bool legacy_connected = !edges.empty();
+                const bool has_cross_split_predicate
+                    = std::ranges::any_of(edges, [&](const auto * edge) { return connects(edge, left->relations, right->relations); });
+                const auto assessment = properties.assessCandidate(
+                    left->relations,
+                    right->relations,
+                    left->estimated_rows,
+                    right->estimated_rows,
+                    *join_kind,
+                    {.legacy_connected = legacy_connected, .has_cross_split_predicate = has_cross_split_predicate});
+                const bool connected = assessment.connected();
                 if (!connected && best_plan)
                     continue;
 
-                auto selectivity = computeSelectivity(query_graph, dp_table, expression_selectivity, edges, left->relations, right->relations);
-                auto current_cost = computeJoinCost(left, right, selectivity);
+                auto selectivity = assessment.equivalence_selectivity_allowed
+                    ? computeSelectivity(query_graph, dp_table, expression_selectivity, edges, left->relations, right->relations)
+                    : computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
+                const auto effective_kind = (*join_kind == JoinKind::Inner && !connected) ? JoinKind::Cross : *join_kind;
+                auto estimate = properties.estimateCardinality(
+                    left->estimated_rows, right->estimated_rows, selectivity, effective_kind, JoinStrictness::All, assessment.canonical_cap);
+                auto current_cost = computeJoinCost(left, right, selectivity, estimate.upper_bound);
                 if (!best_plan || current_cost < best_plan->cost)
                 {
-                    if (join_kind == JoinKind::Inner && !connected)
-                        join_kind = JoinKind::Cross;
-                    auto cardinality = estimateJoinCardinality(left, right, selectivity, join_kind.value());
-                    JoinOperator join_operator(join_kind.value(), JoinStrictness::All, JoinLocality::Unspecified);
+                    JoinOperator join_operator(effective_kind, JoinStrictness::All, JoinLocality::Unspecified);
                     bool is_inner_step = isInner(join_kind.value()) || isCrossOrComma(join_kind.value());
                     for (const auto * e : edges)
                     {
@@ -101,8 +115,11 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
                         else
                             join_operator.residual_filter.push_back(*e);
                     }
-                    applied_edges = std::move(edges);
-                    best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, selectivity, cardinality, std::move(join_operator));
+                    applied_edges.swap(edges);
+                    best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, selectivity, estimate.rows, std::move(join_operator));
+                    best_plan->used_canonical_cap = estimate.upper_bound.has_value();
+                    const auto * proven_cap = getProvenCap(assessment.canonical_cap);
+                    best_plan->canonical_cap_obligations = proven_cap ? proven_cap->obligation_classes : 0;
                     best_i = i;
                     best_j = j;
                 }
@@ -148,9 +165,9 @@ DPJoinEntryPtr GreedyJoinOrderOptimizer::solve()
 
 }
 
-DPJoinEntryPtr solveGreedyJoinOrder(QueryGraph & query_graph)
+DPJoinEntryPtr solveGreedyJoinOrder(QueryGraph & query_graph, const JoinOrderPropertyContext & properties)
 {
-    return GreedyJoinOrderOptimizer(query_graph).solve();
+    return GreedyJoinOrderOptimizer(query_graph, properties).solve();
 }
 
 }

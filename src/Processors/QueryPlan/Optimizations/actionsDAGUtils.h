@@ -2,16 +2,40 @@
 
 #include <Interpreters/ActionsDAG.h>
 
+#include <optional>
+#include <string_view>
+
 namespace DB
 {
+
+class Block;
 
 using NodeSet = std::unordered_set<const ActionsDAG::Node *>;
 using NodeMap = std::unordered_map<const ActionsDAG::Node *, bool>;
 
+/// Unique name+type column matching shared by data-property derivation: `find` returns a
+/// position only when exactly one indexed column matches both name and type; zero or
+/// multiple matches are ambiguous and yield nullopt (the shared `matches == 1` rule).
+/// Columns are indexed by name once, so repeated lookups do not rescan the whole header
+/// or node list. The index borrows the source names and types, so the indexed header/nodes
+/// must outlive it.
+class UniqueColumnPositionIndex
+{
+public:
+    explicit UniqueColumnPositionIndex(const Block & header);
+    explicit UniqueColumnPositionIndex(const ActionsDAG::NodeRawConstPtrs & nodes);
+
+    std::optional<size_t> find(const String & name, const IDataType & type) const;
+
+private:
+    std::unordered_map<std::string_view, std::vector<std::pair<const IDataType *, size_t>>> positions_by_name;
+};
+
 /// Describes how one `ActionsDAG` output can be traced to one input.
 /// `ValuePreserving` is deliberately restricted to operations explicitly known
 /// to retain the input value. `DistinctValuesBound` is weaker: it only proves
-/// that output NDV is bounded by input NDV (plus `ndv_delta`).
+/// that output NDV is bounded by input NDV (plus `ndv_delta`). A zero delta for
+/// a Nullable result assumes that the function maps NULL to NULL.
 enum class ActionsDAGLineageKind : UInt8
 {
     Identity,
@@ -36,20 +60,17 @@ struct ActionsDAGInputLineage
     bool preserves_width;
 };
 
-struct ActionsDAGOutputLineage
-{
-    size_t output_position;
-    /// Absence means that this output cannot be traced to an input through supported hops.
-    std::optional<ActionsDAGInputLineage> input;
-};
+/// Entry N describes output N of the `ActionsDAG`. Absence means that the output
+/// cannot be traced to an input through supported hops.
+using ActionsDAGOutputLineage = std::optional<ActionsDAGInputLineage>;
 
 /// Classify a single node relative to its first child. This does not recursively
 /// establish that the child itself reaches an input. Absence means the hop is unsupported.
 std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node);
 
 /// Trace every output to at most one input using iterative, memoized traversal.
-/// The returned vector is ordered by output position and remains unambiguous even
-/// when input or output names are duplicated.
+/// The returned vector has exactly one entry per output in output order and remains
+/// unambiguous even when input or output names are duplicated.
 std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions);
 
 /// This structure stores a node mapping from one DAG to another.

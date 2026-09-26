@@ -1,0 +1,20 @@
+proven edges off - explicit topology
+        Type: INNER
+        Clauses: [(__table3.key) = (__table1.key)]
+              Type: INNER
+              Clauses: [(__table3.key) = (__table4.key)]
+                    ReadFromMergeTree (default.dpe_fact)
+                        ReadFromMergeTree (default.dpe_dim_b)
+                  ReadFromMergeTree (default.dpe_dim_a)
+proven edges off - result
+10000
+proven edges on - proven dimension edge
+        Type: INNER
+        Clauses: [(__table3.key) = (__table1.key)]
+              ReadFromMergeTree (default.dpe_fact)
+              Type: INNER
+              Clauses: [(__table1.key) = (__table4.key)]
+                        ReadFromMergeTree (default.dpe_dim_a)
+                        ReadFromMergeTree (default.dpe_dim_b)
+proven edges on - result
+10000

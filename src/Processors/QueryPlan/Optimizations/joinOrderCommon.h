@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <optional>
 
 namespace DB
 {
@@ -144,10 +145,143 @@ inline std::optional<UInt64> estimateJoinCardinality(
     return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
 }
 
-inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, double selectivity)
+/// `upper_bound` is a proven canonical cardinality cap of the join output, if any: the local cost
+/// of the join must not exceed the number of rows it can produce.
+inline double computeJoinCost(
+    const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, double selectivity, std::optional<UInt64> upper_bound = {})
 {
-    return left->cost + right->cost
-        + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
+    double local_cost
+        = selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
+    if (upper_bound)
+        local_cost = std::min(local_cost, static_cast<double>(*upper_bound));
+    return left->cost + right->cost + local_cost;
 }
+
+/// Checks that a relation id fits a native `UInt32` relation mask (used by DPsub).
+UInt32 checkedRelationBit32(size_t relation);
+
+struct JoinOrderPropertyOptions
+{
+    bool proven_uniqueness_enabled = false;
+    bool dphyp_proven_edges_enabled = false;
+    bool transitive_predicates_enabled = false;
+    bool diagnostics_enabled = false;
+};
+
+/// Canonical data-property state of one join-order optimization, shared by every algorithm of
+/// the fallback chain: admission of transitively-connected candidates, proven canonical
+/// cardinality caps, and their diagnostics. With the properties disabled (no provider), every
+/// candidate is assessed exactly like before the feature: caps are `Disabled` and transitive
+/// connectivity follows only the independent `enable_join_transitive_predicates` setting.
+class JoinOrderPropertyContext
+{
+public:
+    JoinOrderPropertyContext(
+        const QueryGraph & query_graph_,
+        JoinOrderPropertyOptions options,
+        std::unique_ptr<JoinOrderCanonicalProperties> canonical_properties_,
+        JoinOrderOptimizationDebugInfo * debug_info_);
+
+    const bool proven_uniqueness_enabled;
+    const bool dphyp_proven_edges_enabled;
+    const bool transitive_predicates_enabled;
+    const bool data_property_diagnostics_enabled;
+
+    const JoinOrderCanonicalProperties * canonicalProperties() const { return canonical_properties.get(); }
+    JoinOrderOptimizationDebugInfo * debugInfo() const { return debug_info; }
+
+    bool costingPropertiesEnabled() const { return proven_uniqueness_enabled && canonical_properties; }
+
+    void recordCanonicalCapAssessment(const JoinOrderCardinalityCap & cap) const;
+
+    /// `Subset` is a `BitSet` or a native `UInt32` relation mask; the native instantiation keeps
+    /// the DPsub hot path free of `BitSet` allocations by using the provider's native group lookup.
+    template <typename Subset>
+    JoinOrderCardinalityCap getCanonicalCap(
+        const Subset & left_relations,
+        const Subset & right_relations,
+        std::optional<UInt64> left_rows,
+        std::optional<UInt64> right_rows) const
+    {
+        if (!costingPropertiesEnabled())
+            return JoinOrderNoCardinalityCapReason::Disabled;
+        return canonical_properties->inferInnerAllCardinalityCap(left_relations, right_relations, left_rows, right_rows);
+    }
+
+    /// Ordinary estimate, clamped by a proven canonical cap. Proven caps exist only for
+    /// `INNER ALL` regions, so a cap is applied only to an `INNER ALL` join.
+    JoinOrderCardinalityEstimate estimateCardinality(
+        std::optional<UInt64> left_rows,
+        std::optional<UInt64> right_rows,
+        double selectivity,
+        JoinKind join_kind,
+        JoinStrictness strictness,
+        const JoinOrderCardinalityCap & canonical_cap) const;
+
+    /// Assessment of a predicate-free transitively-connected pair for the DPsub acceptor and
+    /// the DPhyp synthetic hyperedges. The independent transitive setting admits every such
+    /// pair; with the setting off only a proven canonical assessment may authorize
+    /// proven-uniqueness-gated transitive connectivity. Every other outcome fails closed.
+    struct TransitivePairAssessment
+    {
+        bool admitted = false;
+        JoinOrderCardinalityCap canonical_cap;
+    };
+    template <typename Subset>
+    TransitivePairAssessment assessTransitivePair(
+        const Subset & left_relations,
+        const Subset & right_relations,
+        std::optional<UInt64> left_rows,
+        std::optional<UInt64> right_rows) const
+    {
+        if (!query_graph.areTransitivelyConnected(toRelationBitSet(left_relations), toRelationBitSet(right_relations)))
+            return {};
+
+        if (transitive_predicates_enabled)
+            return {.admitted = true, .canonical_cap = {}};
+
+        const auto cap = getCanonicalCap(left_relations, right_relations, left_rows, right_rows);
+        recordCanonicalCapAssessment(cap);
+        return {.admitted = getProvenCap(cap) != nullptr, .canonical_cap = cap};
+    }
+
+    /// How a candidate pair is connected before canonical assessment. `legacy_connected`
+    /// means applicable predicates exist; `has_cross_split_predicate` means at least one of
+    /// them references both sides of this particular split.
+    struct JoinCandidateConnectivity
+    {
+        bool legacy_connected = false;
+        bool has_cross_split_predicate = false;
+    };
+
+    struct JoinCandidateAssessment
+    {
+        bool legacy_connected = false;
+        bool has_cross_split_predicate = false;
+        bool independently_transitive_connected = false;
+        bool proof_gated_transitive_connected = false;
+        bool equivalence_selectivity_allowed = false;
+        JoinOrderCardinalityCap canonical_cap;
+
+        bool connected() const { return legacy_connected || independently_transitive_connected || proof_gated_transitive_connected; }
+    };
+
+    JoinCandidateAssessment assessCandidate(
+        const BitSet & left_relations,
+        const BitSet & right_relations,
+        std::optional<UInt64> left_rows,
+        std::optional<UInt64> right_rows,
+        JoinKind join_kind,
+        JoinCandidateConnectivity connectivity) const;
+
+private:
+    static BitSet toRelationBitSet(const BitSet & subset) { return subset; }
+    static BitSet toRelationBitSet(UInt32 subset) { return BitSet::fromUInt(subset); }
+
+    const QueryGraph & query_graph;
+    std::unique_ptr<JoinOrderCanonicalProperties> canonical_properties;
+    JoinOrderOptimizationDebugInfo * debug_info;
+    LoggerPtr log;
+};
 
 }

@@ -28,8 +28,7 @@ UInt32 toMask(const BitSet & bits)
     UInt32 mask = 0;
     for (auto bit : bits)
     {
-        chassert(bit < std::numeric_limits<UInt32>::digits);
-        mask |= (static_cast<UInt32>(1) << bit);
+        mask |= checkedRelationBit32(bit);
     }
     return mask;
 }
@@ -37,8 +36,10 @@ UInt32 toMask(const BitSet & bits)
 class DPSubJoinOrderOptimizer
 {
 public:
-    explicit DPSubJoinOrderOptimizer(QueryGraph & query_graph_)
+    DPSubJoinOrderOptimizer(QueryGraph & query_graph_, const JoinOrderPropertyContext & properties_)
         : query_graph(query_graph_)
+        , properties(properties_)
+        , transitive_predicates_enabled(properties_.transitive_predicates_enabled)
     {
     }
 
@@ -51,9 +52,37 @@ private:
     template <class TDPTable, class TOptimizer>
     friend class DB::EnumeratorCheckerWithCosts;
 
-    std::optional<UInt64> estimateCardinality(
-        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind,
-        JoinStrictness strictness = JoinStrictness::All) const;
+    JoinOrderCardinalityEstimate estimateCardinality(
+        std::optional<UInt64> left_rows,
+        std::optional<UInt64> right_rows,
+        double selectivity,
+        JoinKind join_kind,
+        JoinStrictness strictness,
+        const JoinOrderCardinalityCap & canonical_cap) const
+    {
+        return properties.estimateCardinality(left_rows, right_rows, selectivity, join_kind, strictness, canonical_cap);
+    }
+
+    JoinOrderCardinalityCap getCanonicalCap(
+        UInt32 left_mask, UInt32 right_mask, std::optional<UInt64> left_rows, std::optional<UInt64> right_rows) const
+    {
+        return properties.getCanonicalCap(left_mask, right_mask, left_rows, right_rows);
+    }
+
+    void recordCanonicalCapAssessment(const JoinOrderCardinalityCap & cap) const { properties.recordCanonicalCapAssessment(cap); }
+
+    JoinOrderPropertyContext::TransitivePairAssessment assessTransitivePair(
+        UInt32 left_mask, UInt32 right_mask, std::optional<UInt64> left_rows, std::optional<UInt64> right_rows) const
+    {
+        return properties.assessTransitivePair(left_mask, right_mask, left_rows, right_rows);
+    }
+
+    /// Selectivity of the predicates alone, without equivalence-derived selectivity: used for a
+    /// candidate that may not rely on transitive equalities (feature-off costing).
+    double computeSelectivity(const std::vector<JoinActionRef *> & edges)
+    {
+        return DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
+    }
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
     void initDPsubScratch();
@@ -82,6 +111,8 @@ private:
     double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
 
     QueryGraph & query_graph;
+    const JoinOrderPropertyContext & properties;
+    const bool transitive_predicates_enabled;
     SelectivityCache expression_selectivity;
     PlanMemo dp_table;
 
@@ -126,13 +157,6 @@ private:
     LoggerPtr log = DB::getJoinOrderOptimizerLogger();
 };
 
-std::optional<UInt64> DPSubJoinOrderOptimizer::estimateCardinality(
-    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind,
-    JoinStrictness strictness) const
-{
-    return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind, strictness);
-}
-
 void DPSubJoinOrderOptimizer::initDPsubScratch()
 {
     using EquivClass = EquivalenceClasses<JoinActionRef>::Class;
@@ -156,7 +180,7 @@ void DPSubJoinOrderOptimizer::initDPsubScratch()
         if (auto pin_it = query_graph.outer_join_conditions.find(edge); pin_it != query_graph.outer_join_conditions.end())
         {
             dpsub_data.edge_pinned[i] = 1;
-            dpsub_data.edge_pin_mask[i] = static_cast<UInt32>(1) << pin_it->second;
+            dpsub_data.edge_pin_mask[i] = checkedRelationBit32(pin_it->second);
         }
     }
 
@@ -439,7 +463,7 @@ double DPSubJoinOrderOptimizer::computeSelectivityMask(
                 auto relation = equiv_member.getSourceRelations().getSingleBit();
                 if (!relation)
                     continue;
-                const UInt32 relation_bit = static_cast<UInt32>(1) << *relation;
+                const UInt32 relation_bit = checkedRelationBit32(*relation);
                 if (left_mask & relation_bit)
                 {
                     has_left = true;
@@ -485,7 +509,10 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
-    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
+    auto result = std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
+    result->used_canonical_cap = entry.used_canonical_cap;
+    result->canonical_cap_obligations = entry.canonical_cap_obligations;
+    return result;
 }
 
 /** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
@@ -531,6 +558,8 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         double sel{.0};
         JoinKind kind{JoinKind::Inner};
         JoinStrictness strictness{JoinStrictness::All};
+        bool used_canonical_cap{false};
+        UInt64 canonical_cap_obligations{0};
         std::vector<JoinActionRef*> edges; // needed for physical plan generation
     };
     using DPTable = DPTable<DPEntry, Bitvector>;
@@ -568,9 +597,9 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
 
 }
 
-DPJoinEntryPtr solveDPSubJoinOrder(QueryGraph & query_graph)
+DPJoinEntryPtr solveDPSubJoinOrder(QueryGraph & query_graph, const JoinOrderPropertyContext & properties)
 {
-    return DPSubJoinOrderOptimizer(query_graph).solve();
+    return DPSubJoinOrderOptimizer(query_graph, properties).solve();
 }
 
 }

@@ -1,0 +1,712 @@
+#include <Processors/QueryPlan/Optimizations/DataPropertyDerivation.h>
+
+#include <Core/Block.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
+#include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/ISourceStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
+#include <Processors/QueryPlan/NegativeLimitByStep.h>
+#include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Common/Exception.h>
+
+#include <algorithm>
+#include <unordered_map>
+
+namespace DB::ErrorCodes
+{
+extern const int LOGICAL_ERROR;
+}
+
+namespace DB::QueryPlanOptimizations
+{
+namespace
+{
+
+std::optional<ColumnSet>
+mapColumnSet(const ColumnSet & columns, const Block & input_header, const std::vector<std::optional<PlanColumnRef>> & identity_outputs)
+{
+    ColumnSet mapped;
+    mapped.reserve(columns.size());
+    for (const auto & column : columns)
+    {
+        if (column.position >= input_header.columns() || input_header.getByPosition(column.position).name != column.name
+            || column.position >= identity_outputs.size() || !identity_outputs[column.position])
+            return std::nullopt;
+        mapped.push_back(*identity_outputs[column.position]);
+    }
+    if (!normalizeColumnSet(mapped))
+        return std::nullopt;
+    return mapped;
+}
+
+DataPropertySet mapThroughActionsDAG(
+    const ActionsDAG & actions,
+    const Block & input_header,
+    const Block & output_header,
+    const DataPropertySet & input_properties,
+    DataPropertyPreservingTransformationKind preservation_transformation)
+{
+    const auto & dag_inputs = actions.getInputs();
+    const UniqueColumnPositionIndex input_header_index(input_header);
+    std::vector<std::optional<size_t>> input_positions(dag_inputs.size());
+    for (size_t dag_input_position = 0; dag_input_position < dag_inputs.size(); ++dag_input_position)
+        input_positions[dag_input_position]
+            = input_header_index.find(dag_inputs[dag_input_position]->result_name, *dag_inputs[dag_input_position]->result_type);
+
+    const auto & dag_outputs = actions.getOutputs();
+    const UniqueColumnPositionIndex dag_output_index(dag_outputs);
+    std::vector<std::optional<size_t>> dag_output_positions(output_header.columns());
+    for (size_t output_position = 0; output_position < output_header.columns(); ++output_position)
+    {
+        const auto & output_column = output_header.getByPosition(output_position);
+        dag_output_positions[output_position] = dag_output_index.find(output_column.name, *output_column.type);
+    }
+
+    const auto traced = traceActionsDAGLineage(actions);
+    std::vector<std::optional<PlanColumnRef>> identity_outputs(input_header.columns());
+    DataPropertySet result;
+    for (size_t output_position = 0; output_position < output_header.columns(); ++output_position)
+    {
+        const auto & output_column = output_header.getByPosition(output_position);
+        if (!canContainNull(*output_column.type))
+            result.addNonNullColumn({output_position, output_column.name});
+
+        if (!dag_output_positions[output_position])
+            continue;
+        const auto & output_lineage = traced[*dag_output_positions[output_position]];
+        if (!output_lineage || output_lineage->input_position >= input_positions.size() || !input_positions[output_lineage->input_position])
+            continue;
+
+        const size_t input_position = *input_positions[output_lineage->input_position];
+        ColumnLineageKind kind = ColumnLineageKind::Unknown;
+        DataPropertyTransformationKind lineage_transformation = DataPropertyTransformationKind::Identity;
+        switch (output_lineage->kind)
+        {
+            case ActionsDAGLineageKind::Identity:
+                kind = ColumnLineageKind::Identity;
+                lineage_transformation = DataPropertyTransformationKind::Identity;
+                break;
+            case ActionsDAGLineageKind::ValuePreserving:
+                kind = ColumnLineageKind::ValuePreserving;
+                lineage_transformation = DataPropertyTransformationKind::ValuePreservingExpression;
+                break;
+            case ActionsDAGLineageKind::DistinctValuesBound:
+                kind = ColumnLineageKind::NDVBound;
+                lineage_transformation = DataPropertyTransformationKind::NDVBoundExpression;
+                break;
+        }
+
+        const PlanColumnRef output_ref{output_position, output_column.name};
+        const auto & input_column = input_header.getByPosition(input_position);
+        result.addLineage(
+            {output_ref, {0, input_position, input_column.name}, kind, DataPropertyProvenance::transformation(lineage_transformation)});
+
+        if ((kind == ColumnLineageKind::Identity || kind == ColumnLineageKind::ValuePreserving) && !identity_outputs[input_position])
+            identity_outputs[input_position] = output_ref;
+    }
+
+    for (const auto & unique_key : input_properties.uniqueKeys())
+    {
+        if (auto mapped = mapColumnSet(unique_key.columns, input_header, identity_outputs))
+            result.addUniqueKey(unique_key.remap(std::move(*mapped), preservation_transformation));
+    }
+
+    for (const auto & dependency : input_properties.functionalDependencies())
+    {
+        auto determinant = mapColumnSet(dependency.determinant, input_header, identity_outputs);
+        auto dependents = mapColumnSet(dependency.dependents, input_header, identity_outputs);
+        if (determinant && dependents)
+            result.addFunctionalDependency(dependency.remap(std::move(*determinant), std::move(*dependents), preservation_transformation));
+    }
+
+    for (const auto & non_null : input_properties.nonNullColumns())
+    {
+        if (non_null.position < identity_outputs.size() && identity_outputs[non_null.position])
+            result.addNonNullColumn(*identity_outputs[non_null.position]);
+    }
+
+    for (const auto & lineage : result.columnLineage())
+    {
+        if (lineage.kind != ColumnLineageKind::NDVBound || lineage.input.position >= identity_outputs.size()
+            || !identity_outputs[lineage.input.position])
+            continue;
+        result.addFunctionalDependency(
+            {{*identity_outputs[lineage.input.position]},
+             {lineage.output},
+             DataPropertyDependencyKind::Statistical,
+             DataPropertyProvenance::transformation(DataPropertyTransformationKind::NDVBoundExpression)});
+    }
+
+    return result;
+}
+
+std::vector<std::optional<PlanColumnRef>>
+mapPreservedColumns(const Block & source_header, const Block & other_header, const Block & output_header)
+{
+    const UniqueColumnPositionIndex output_header_index(output_header);
+    std::vector<std::optional<PlanColumnRef>> mapped(source_header.columns());
+    for (size_t source_position = 0; source_position < source_header.columns(); ++source_position)
+    {
+        const auto & source = source_header.getByPosition(source_position);
+        if (other_header.has(source.name))
+            continue;
+
+        if (const auto output_position = output_header_index.find(source.name, *source.type))
+            mapped[source_position] = PlanColumnRef{*output_position, source.name};
+    }
+    return mapped;
+}
+
+void appendPreservedSide(
+    DataPropertySet & result,
+    const DataPropertySet & source_properties,
+    const Block & source_header,
+    const Block & other_header,
+    const Block & output_header,
+    size_t child_index,
+    bool preserve_keys_and_dependencies)
+{
+    const auto mapped_columns = mapPreservedColumns(source_header, other_header, output_header);
+
+    if (preserve_keys_and_dependencies)
+    {
+        for (const auto & unique_key : source_properties.uniqueKeys())
+        {
+            if (auto mapped = mapColumnSet(unique_key.columns, source_header, mapped_columns))
+                result.addUniqueKey(unique_key.remap(std::move(*mapped), DataPropertyPreservingTransformationKind::JoinPreservation));
+        }
+        for (const auto & dependency : source_properties.functionalDependencies())
+        {
+            auto determinant = mapColumnSet(dependency.determinant, source_header, mapped_columns);
+            auto dependents = mapColumnSet(dependency.dependents, source_header, mapped_columns);
+            if (determinant && dependents)
+                result.addFunctionalDependency(dependency.remap(
+                    std::move(*determinant), std::move(*dependents), DataPropertyPreservingTransformationKind::JoinPreservation));
+        }
+    }
+
+    for (const auto & non_null : source_properties.nonNullColumns())
+    {
+        if (non_null.position >= mapped_columns.size() || !mapped_columns[non_null.position])
+            continue;
+        const auto & mapped = *mapped_columns[non_null.position];
+        if (!canContainNull(*output_header.getByPosition(mapped.position).type))
+            result.addNonNullColumn(mapped);
+    }
+
+    for (size_t source_position = 0; source_position < mapped_columns.size(); ++source_position)
+    {
+        if (!mapped_columns[source_position])
+            continue;
+        result.addLineage(
+            {*mapped_columns[source_position],
+             {child_index, source_position, source_header.getByPosition(source_position).name},
+             ColumnLineageKind::Identity,
+             DataPropertyProvenance::transformation(DataPropertyTransformationKind::JoinPreservation)});
+    }
+}
+
+const QueryPlan::Node * getCommonSubplanProducer(const CommonSubplanReferenceStep & reference)
+{
+    const auto * referenced_root = reference.getSubplanReferenceRoot();
+    if (!referenced_root || !typeid_cast<const CommonSubplanStep *>(referenced_root->step.get()) || referenced_root->children.size() != 1)
+        return nullptr;
+    return referenced_root->children.front();
+}
+
+size_t dataPropertyDependencyCount(const QueryPlan::Node & node)
+{
+    if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get()))
+        return getCommonSubplanProducer(*reference) ? 1 : 0;
+    return node.children.size();
+}
+
+const QueryPlan::Node * dataPropertyDependencyAt(const QueryPlan::Node & node, size_t index)
+{
+    if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get()))
+        return index == 0 ? getCommonSubplanProducer(*reference) : nullptr;
+    return node.children[index];
+}
+
+enum class VisitColor : UInt8
+{
+    White,
+    Gray,
+    Black,
+};
+
+struct DataPropertyNodeMetadata
+{
+    VisitColor color = VisitColor::White;
+    size_t remaining_consumers = 0;
+};
+
+struct DataPropertyDiscoveryFrame
+{
+    const QueryPlan::Node * node;
+    size_t next_dependency = 0;
+};
+
+DataPropertySet remapCommonSubplanProperties(const CommonSubplanReferenceStep & reference, const DataPropertySet & source_properties)
+{
+    const auto * referenced_root = reference.getSubplanReferenceRoot();
+    if (!referenced_root || !referenced_root->step->getOutputHeader() || !reference.getOutputHeader())
+        return {};
+
+    const auto & source_header = *referenced_root->step->getOutputHeader();
+    const auto & output_header = *reference.getOutputHeader();
+    const auto & columns_to_use = reference.getColumnsToUse();
+    if (columns_to_use.size() != output_header.columns())
+        return {};
+
+    std::vector<std::optional<PlanColumnRef>> source_to_output(source_header.columns());
+    for (size_t output_position = 0; output_position < output_header.columns(); ++output_position)
+    {
+        const auto & identifier = columns_to_use[output_position];
+        const auto & output_column = output_header.getByPosition(output_position);
+        if (output_column.name != identifier || !source_header.has(identifier))
+            return {};
+
+        const size_t source_position = source_header.getPositionByName(identifier);
+        const auto & source_column = source_header.getByPosition(source_position);
+        if (!output_column.type->equals(*source_column.type))
+            return {};
+
+        if (!source_to_output[source_position])
+            source_to_output[source_position] = PlanColumnRef{output_position, output_column.name};
+    }
+
+    DataPropertySet result = deriveDataPropertiesForStorageRead(output_header, nullptr);
+    for (const auto & unique_key : source_properties.uniqueKeys())
+        if (auto mapped = mapColumnSet(unique_key.columns, source_header, source_to_output))
+            result.addUniqueKey(
+                {.columns = std::move(*mapped), .provenance = unique_key.provenance, .equality_mode = unique_key.equality_mode});
+
+    for (const auto & dependency : source_properties.functionalDependencies())
+    {
+        auto determinant = mapColumnSet(dependency.determinant, source_header, source_to_output);
+        auto dependents = mapColumnSet(dependency.dependents, source_header, source_to_output);
+        if (determinant && dependents)
+            result.addFunctionalDependency({std::move(*determinant), std::move(*dependents), dependency.kind, dependency.provenance});
+    }
+
+    for (const auto & non_null : source_properties.nonNullColumns())
+    {
+        if (non_null.position < source_header.columns() && source_header.getByPosition(non_null.position).name == non_null.name
+            && source_to_output[non_null.position])
+            result.addNonNullColumn(*source_to_output[non_null.position]);
+    }
+
+    SortDescription mapped_sort_description;
+    mapped_sort_description.reserve(source_properties.sorting().sort_description.size());
+    for (const auto & sort_column : source_properties.sorting().sort_description)
+    {
+        std::optional<size_t> source_position;
+        for (size_t position = 0; position < source_header.columns(); ++position)
+        {
+            if (source_header.getByPosition(position).name != sort_column.column_name)
+                continue;
+            if (source_position)
+            {
+                source_position.reset();
+                break;
+            }
+            source_position = position;
+        }
+        if (!source_position || !source_to_output[*source_position])
+            break;
+
+        auto mapped_column = sort_column;
+        mapped_column.column_name = source_to_output[*source_position]->name;
+        mapped_sort_description.push_back(std::move(mapped_column));
+    }
+    if (!mapped_sort_description.empty())
+        result.setSorting({std::move(mapped_sort_description), source_properties.sorting().sort_scope});
+    return result;
+}
+
+}
+
+static SortingProperty deriveSortingPropertyValue(const IQueryPlanStep & step, std::span<const SortingProperty> child_properties)
+{
+    if (!step.hasOutputHeader())
+        return {};
+
+    if (const auto * read_from_merge_tree = dynamic_cast<const ReadFromMergeTree *>(&step))
+        return {read_from_merge_tree->getSortDescription(), SortingScope::Stream};
+
+    if (const auto * aggregating_step = dynamic_cast<const AggregatingStep *>(&step))
+    {
+        const auto & sort_description = aggregating_step->getSortDescription();
+        if (!sort_description.empty())
+            return {sort_description, SortingScope::Global};
+    }
+
+    if (const auto * merging_aggregated = dynamic_cast<const MergingAggregatedStep *>(&step))
+    {
+        const auto & sort_description = merging_aggregated->getSortDescription();
+        if (!sort_description.empty())
+            return {sort_description, SortingScope::Global};
+    }
+
+    if (const auto * sorting_step = dynamic_cast<const SortingStep *>(&step))
+    {
+        const auto scope = sorting_step->hasPartitions() ? SortingScope::Stream : SortingScope::Global;
+        return {sorting_step->getSortDescription(), scope};
+    }
+
+    if (dynamic_cast<const UnionStep *>(&step))
+    {
+        if (child_properties.empty())
+            return {};
+
+        SortDescription common_sort_description = child_properties.front().sort_description;
+        for (size_t index = 1; index < child_properties.size(); ++index)
+            common_sort_description = commonPrefix(common_sort_description, child_properties[index].sort_description);
+        if (common_sort_description.empty())
+            return {};
+
+        const auto scope = child_properties.size() == 1 ? child_properties.front().sort_scope : SortingScope::Stream;
+        return {std::move(common_sort_description), scope};
+    }
+
+    if (child_properties.size() != 1)
+        return {};
+
+    SortingProperty result = child_properties.front();
+    if (result.empty())
+        return {};
+
+    if (const auto * distinct_step = dynamic_cast<const DistinctStep *>(&step))
+    {
+        if (result.sort_scope == SortingScope::Global || (distinct_step->isPreliminary() && result.sort_scope == SortingScope::Stream))
+            return result;
+        return {};
+    }
+
+    if (const auto * expression_step = dynamic_cast<const ExpressionStep *>(&step))
+    {
+        applyActionsToSortDescription(result.sort_description, expression_step->getExpression());
+        return result.empty() ? SortingProperty{} : std::move(result);
+    }
+
+    if (const auto * filter_step = dynamic_cast<const FilterStep *>(&step))
+    {
+        const auto & expression = filter_step->getExpression();
+        const ActionsDAG::Node * output_to_skip = nullptr;
+        if (filter_step->removesFilterColumn())
+        {
+            output_to_skip = expression.tryFindInOutputs(filter_step->getFilterColumnName());
+            if (!output_to_skip)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
+                    filter_step->getFilterColumnName(),
+                    expression.dumpDAG());
+        }
+        applyActionsToSortDescription(result.sort_description, expression, output_to_skip);
+        return result.empty() ? SortingProperty{} : std::move(result);
+    }
+
+    if (dynamic_cast<const LimitByStep *>(&step) || dynamic_cast<const NegativeLimitByStep *>(&step))
+        return result.sort_scope == SortingScope::Global ? std::move(result) : SortingProperty{};
+
+    /// The range is evaluated over a single stream, so several per-stream-sorted inputs are
+    /// concatenated without a merge and only a global order survives the step.
+    if (dynamic_cast<const LimitRangeStep *>(&step))
+        return result.sort_scope == SortingScope::Global ? std::move(result) : SortingProperty{};
+
+    if (const auto * transforming = dynamic_cast<const ITransformingStep *>(&step))
+    {
+        if (transforming->getDataStreamTraits().preserves_sorting)
+            return result;
+    }
+
+    return {};
+}
+
+SortingPropertyDerivationResult deriveSortingProperty(const IQueryPlanStep & step, std::span<const SortingProperty> child_properties)
+{
+    auto property = deriveSortingPropertyValue(step, child_properties);
+    const auto * union_step = dynamic_cast<const UnionStep *>(&step);
+    const bool requires_union_narrowing_disabled = union_step && union_step->isNarrowingAllowed() && !property.empty();
+    return {std::move(property), requires_union_narrowing_disabled};
+}
+
+namespace
+{
+DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::span<DataPropertySet> child_properties);
+}
+
+DataPropertySet deriveDataPropertiesForPlanDAG(const QueryPlan::Node & root)
+{
+    std::unordered_map<const QueryPlan::Node *, DataPropertyNodeMetadata> metadata;
+    std::vector<const QueryPlan::Node *> postorder;
+    std::vector<DataPropertyDiscoveryFrame> stack{{&root}};
+    metadata[&root].color = VisitColor::Gray;
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+        const size_t dependency_count = dataPropertyDependencyCount(*frame.node);
+        if (frame.next_dependency < dependency_count)
+        {
+            const auto * dependency = dataPropertyDependencyAt(*frame.node, frame.next_dependency++);
+            auto & dependency_metadata = metadata[dependency];
+            ++dependency_metadata.remaining_consumers;
+
+            if (dependency_metadata.color == VisitColor::Gray)
+                return {};
+            if (dependency_metadata.color == VisitColor::White)
+            {
+                dependency_metadata.color = VisitColor::Gray;
+                stack.push_back({dependency});
+            }
+            continue;
+        }
+
+        metadata.at(frame.node).color = VisitColor::Black;
+        postorder.push_back(frame.node);
+        stack.pop_back();
+    }
+
+    std::unordered_map<const QueryPlan::Node *, DataPropertySet> live_results;
+    auto consume_dependency = [&](const QueryPlan::Node * dependency, DataPropertySet * destination)
+    {
+        auto & remaining_consumers = metadata.at(dependency).remaining_consumers;
+        auto result_it = live_results.find(dependency);
+        if (destination)
+        {
+            if (remaining_consumers == 1)
+                *destination = std::move(result_it->second);
+            else
+                *destination = result_it->second;
+        }
+        --remaining_consumers;
+        if (remaining_consumers == 0)
+            live_results.erase(result_it);
+    };
+
+    for (const auto * node : postorder)
+    {
+        DataPropertySet result;
+        if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(node->step.get()))
+        {
+            if (const auto * producer = getCommonSubplanProducer(*reference))
+            {
+                result = remapCommonSubplanProperties(*reference, live_results.at(producer));
+                consume_dependency(producer, nullptr);
+            }
+        }
+        else
+        {
+            std::vector<DataPropertySet> child_properties(node->children.size());
+            for (size_t index = 0; index < node->children.size(); ++index)
+                consume_dependency(node->children[index], &child_properties[index]);
+            result = deriveDataPropertiesForStep(*node->step, child_properties);
+        }
+        live_results.emplace(node, std::move(result));
+    }
+
+    DataPropertySet result = std::move(live_results.at(&root));
+    return result;
+}
+
+DataPropertySet deriveDataPropertiesForStorageRead(const Block & output_header, const StorageInMemoryMetadata * metadata)
+{
+    DataPropertySet properties;
+    for (size_t position = 0; position < output_header.columns(); ++position)
+    {
+        const auto & column = output_header.getByPosition(position);
+        if (!canContainNull(*column.type))
+            properties.addNonNullColumn({position, column.name});
+    }
+
+    if (!metadata || !metadata->hasUniqueKey())
+        return properties;
+
+    const auto output_names = output_header.getNames();
+    const auto unique_key_names = metadata->getUniqueKeyColumns();
+    auto unique_key = resolveColumnSetByName(output_names, unique_key_names);
+    if (unique_key)
+        properties.addUniqueKey(UniqueKeyFact::fromStorageDeclaration(std::move(*unique_key)));
+    return properties;
+}
+
+DataPropertySet
+deriveDataPropertiesForAggregation(const Block & output_header, const Names & grouping_keys, AggregationDataPropertyOptions options)
+{
+    DataPropertySet result;
+    for (size_t position = 0; position < output_header.columns(); ++position)
+    {
+        const auto & column = output_header.getByPosition(position);
+        if (!canContainNull(*column.type))
+            result.addNonNullColumn({position, column.name});
+    }
+
+    if (!options.final || options.has_grouping_sets || options.has_overflow_row || grouping_keys.empty())
+        return result;
+
+    const auto output_names = output_header.getNames();
+    if (auto key = resolveColumnSetByName(output_names, grouping_keys))
+        result.addUniqueKey(UniqueKeyFact::fromAggregationGrouping(std::move(*key)));
+    return result;
+}
+
+DataPropertySet deriveDataPropertiesForJoin(
+    JoinKind kind, JoinStrictness strictness, const Block & output_header, DataPropertyInputView left, DataPropertyInputView right)
+{
+    DataPropertySet result;
+    const bool subset_join = strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
+    if (subset_join && kind == JoinKind::Left)
+    {
+        appendPreservedSide(result, left.properties, left.header, right.header, output_header, 0, true);
+        return result;
+    }
+    if (subset_join && kind == JoinKind::Right)
+    {
+        appendPreservedSide(result, right.properties, right.header, left.header, output_header, 1, true);
+        return result;
+    }
+
+    const bool preserve_left_non_null
+        = kind == JoinKind::Inner || kind == JoinKind::Left || kind == JoinKind::Cross || kind == JoinKind::Comma;
+    const bool preserve_right_non_null
+        = kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Cross || kind == JoinKind::Comma;
+    if (preserve_left_non_null)
+        appendPreservedSide(result, left.properties, left.header, right.header, output_header, 0, false);
+    if (preserve_right_non_null)
+        appendPreservedSide(result, right.properties, right.header, left.header, output_header, 1, false);
+    return result;
+}
+
+namespace
+{
+DataPropertySet deriveLogicalDataPropertiesForStep(const IQueryPlanStep & step, std::span<DataPropertySet> child_properties)
+{
+    if (child_properties.size() > 2 || !step.hasOutputHeader())
+        return {};
+
+    if (child_properties.empty())
+    {
+        if (!dynamic_cast<const ISourceStep *>(&step))
+            return {};
+
+        const StorageInMemoryMetadata * metadata = nullptr;
+        if (const auto * storage_source = dynamic_cast<const SourceStepWithFilter *>(&step))
+        {
+            const auto & snapshot = storage_source->getStorageSnapshot();
+            if (snapshot && snapshot->metadata)
+                metadata = snapshot->metadata.get();
+        }
+        return deriveDataPropertiesForStorageRead(*step.getOutputHeader(), metadata);
+    }
+
+    const auto & output_header = *step.getOutputHeader();
+    if (const auto * aggregation = dynamic_cast<const AggregatingStep *>(&step))
+    {
+        if (child_properties.size() != 1 || step.getInputHeaders().size() != 1)
+            return {};
+        return deriveDataPropertiesForAggregation(
+            output_header,
+            aggregation->getParams().keys,
+            {.final = aggregation->getFinal(),
+             .has_grouping_sets = aggregation->isGroupingSets(),
+             .has_overflow_row = aggregation->getParams().overflow_row});
+    }
+    if (const auto * join = dynamic_cast<const JoinStepLogical *>(&step))
+    {
+        if (child_properties.size() != 2 || step.getInputHeaders().size() != 2)
+            return {};
+        const auto & join_operator = join->getJoinOperator();
+        return deriveDataPropertiesForJoin(
+            join_operator.kind,
+            join_operator.strictness,
+            output_header,
+            {*step.getInputHeaders()[0], child_properties[0]},
+            {*step.getInputHeaders()[1], child_properties[1]});
+    }
+
+    if (child_properties.size() != 1 || step.getInputHeaders().size() != 1)
+        return {};
+
+    const auto & input_header = *step.getInputHeaders().front();
+    if (const auto * expression = dynamic_cast<const ExpressionStep *>(&step))
+    {
+        /// `arrayJoin` multiplies rows, so a pass-through column keeps its lineage but not its
+        /// uniqueness: a proven unique key would produce a false cardinality cap. Fail closed,
+        /// mirroring `preserves_number_of_rows` in `ExpressionStep` and the graph-builder guard
+        /// in `optimizeJoin.cpp`.
+        if (expression->getExpression().hasArrayJoin())
+            return {};
+        return mapThroughActionsDAG(
+            expression->getExpression(),
+            input_header,
+            output_header,
+            child_properties.front(),
+            DataPropertyPreservingTransformationKind::Identity);
+    }
+    if (const auto * filter = dynamic_cast<const FilterStep *>(&step))
+    {
+        if (filter->getExpression().hasArrayJoin())
+            return {};
+        return mapThroughActionsDAG(
+            filter->getExpression(),
+            input_header,
+            output_header,
+            child_properties.front(),
+            DataPropertyPreservingTransformationKind::FilterSubset);
+    }
+    if (const auto * sorting_step = dynamic_cast<const SortingStep *>(&step))
+    {
+        const bool has_fill
+            = std::ranges::any_of(sorting_step->getSortDescription(), [](const auto & sort_column) { return sort_column.with_fill; });
+        if (!has_fill && blocksHaveEqualStructure(input_header, output_header))
+            return std::move(child_properties.front());
+        return {};
+    }
+    if (dynamic_cast<const LimitStep *>(&step) && blocksHaveEqualStructure(input_header, output_header))
+        return std::move(child_properties.front());
+    return {};
+}
+
+DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::span<DataPropertySet> child_properties)
+{
+    std::vector<SortingProperty> child_sorting;
+    child_sorting.reserve(child_properties.size());
+    for (const auto & properties : child_properties)
+        child_sorting.push_back(properties.sorting());
+
+    auto result = deriveLogicalDataPropertiesForStep(step, child_properties);
+    auto sorting = deriveSortingProperty(step, child_sorting);
+    if (!sorting.requires_union_narrowing_disabled)
+        result.setSorting(std::move(sorting.property));
+    return result;
+}
+}
+
+DataPropertySet deriveDataProperties(const IQueryPlanStep & step, std::span<const DataPropertySet> child_properties)
+{
+    /// Copy so per-step derivation may move from its inputs; child counts are tiny,
+    /// so a plain vector beats maintaining a small-size special case in two places.
+    std::vector<DataPropertySet> owned_child_properties(child_properties.begin(), child_properties.end());
+    return deriveDataPropertiesForStep(step, owned_child_properties);
+}
+}

@@ -98,6 +98,12 @@ struct QueryPlanOptimizationSettings
     UInt64 query_plan_optimize_join_order_limit;
     /// Maximum number of partial plans to enumerate before falling back to the next algorithm
     UInt64 query_plan_optimize_join_order_max_searched_plans;
+    /// Use proven uniqueness to cap join-order cardinality estimates
+    bool query_plan_optimize_join_order_use_proven_uniqueness = false;
+    /// Let DPhyp install singleton transitive edges backed by proven canonical caps
+    bool query_plan_optimize_join_order_dphyp_proven_edges = false;
+    /// Collect and emit join-order data-property diagnostics
+    bool query_plan_optimize_join_order_data_property_diagnostics = false;
     /// When non-zero, randomize statistics for join reordering using this value as seed
     UInt64 query_plan_optimize_join_order_randomize = 0;
     /// Conflict detector deciding join reordering validity in the DPsub algorithm, instead of the

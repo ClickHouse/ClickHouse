@@ -338,9 +338,9 @@ TEST(ColumnStatsDerivation, LineageDistinguishesIdentityFromDistinctValueBounds)
     const auto & outputs = dag.getOutputs();
     auto kind_for = [&](const String & output_name) -> std::optional<ActionsDAGLineageKind>
     {
-        for (const auto & fact : lineage)
-            if (outputs[fact.output_position]->result_name == output_name && fact.input)
-                return fact.input->kind;
+        for (size_t output_position = 0; output_position < outputs.size(); ++output_position)
+            if (outputs[output_position]->result_name == output_name && lineage[output_position])
+                return lineage[output_position]->kind;
         return {};
     };
 
@@ -364,10 +364,10 @@ TEST(ColumnStatsDerivation, LineageUsesInputPositionsWithDuplicateNames)
 
     const auto lineage = traceActionsDAGLineage(dag);
     ASSERT_EQ(lineage.size(), 2u);
-    ASSERT_TRUE(lineage[0].input);
-    ASSERT_TRUE(lineage[1].input);
-    EXPECT_EQ(lineage[0].input->input_position, 0u);
-    EXPECT_EQ(lineage[1].input->input_position, 1u);
+    ASSERT_TRUE(lineage[0]);
+    ASSERT_TRUE(lineage[1]);
+    EXPECT_EQ(lineage[0]->input_position, 0u);
+    EXPECT_EQ(lineage[1]->input_position, 1u);
 }
 
 TEST(ColumnStatsDerivation, LineageUsesOutputPositionsWithDuplicateNames)
@@ -388,12 +388,10 @@ TEST(ColumnStatsDerivation, LineageUsesOutputPositionsWithDuplicateNames)
     ASSERT_EQ(lineage.size(), 2u);
     ASSERT_EQ(outputs.size(), 2u);
     EXPECT_EQ(outputs[0]->result_name, outputs[1]->result_name);
-    EXPECT_EQ(lineage[0].output_position, 0u);
-    EXPECT_EQ(lineage[1].output_position, 1u);
-    ASSERT_TRUE(lineage[0].input);
-    ASSERT_TRUE(lineage[1].input);
-    EXPECT_EQ(lineage[0].input->input_position, 0u);
-    EXPECT_EQ(lineage[1].input->input_position, 1u);
+    ASSERT_TRUE(lineage[0]);
+    ASSERT_TRUE(lineage[1]);
+    EXPECT_EQ(lineage[0]->input_position, 0u);
+    EXPECT_EQ(lineage[1]->input_position, 1u);
 }
 
 TEST(ColumnStatsDerivation, LineageKeepsDifferentExpressionsWithDuplicateOutputNames)
@@ -416,14 +414,34 @@ TEST(ColumnStatsDerivation, LineageKeepsDifferentExpressionsWithDuplicateOutputN
     ASSERT_EQ(lineage.size(), 2u);
     ASSERT_EQ(outputs.size(), 2u);
     EXPECT_EQ(outputs[0]->result_name, outputs[1]->result_name);
-    EXPECT_EQ(lineage[0].output_position, 0u);
-    EXPECT_EQ(lineage[1].output_position, 1u);
-    ASSERT_TRUE(lineage[0].input);
-    ASSERT_TRUE(lineage[1].input);
-    EXPECT_EQ(lineage[0].input->input_position, 0u);
-    EXPECT_EQ(lineage[1].input->input_position, 1u);
-    EXPECT_EQ(lineage[0].input->kind, ActionsDAGLineageKind::ValuePreserving);
-    EXPECT_EQ(lineage[1].input->kind, ActionsDAGLineageKind::DistinctValuesBound);
+    ASSERT_TRUE(lineage[0]);
+    ASSERT_TRUE(lineage[1]);
+    EXPECT_EQ(lineage[0]->input_position, 0u);
+    EXPECT_EQ(lineage[1]->input_position, 1u);
+    EXPECT_EQ(lineage[0]->kind, ActionsDAGLineageKind::ValuePreserving);
+    EXPECT_EQ(lineage[1]->kind, ActionsDAGLineageKind::DistinctValuesBound);
+}
+
+/// Two NULL-collapsing hops in one lineage each contribute one to the accumulated NDV bound.
+TEST(ColumnStatsDerivation, LineageAccumulatesDistinctValueDeltas)
+{
+    tryRegisterFunctions();
+
+    auto nullable_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>());
+    ActionsDAG dag;
+    const auto & input = dag.addInput("n", nullable_type);
+    const auto & inner_is_null
+        = dag.addFunction(FunctionFactory::instance().get("isNull", getContext().context), {&input}, "inner_is_null");
+    const auto & nullable
+        = dag.addFunction(FunctionFactory::instance().get("toNullable", getContext().context), {&inner_is_null}, "nullable");
+    addOutputFunction(dag, "isNull", {&nullable}, "outer_is_null");
+
+    const auto lineage = traceActionsDAGLineage(dag);
+    ASSERT_EQ(lineage.size(), 1u);
+    ASSERT_TRUE(lineage.front());
+    EXPECT_EQ(lineage.front()->input_position, 0u);
+    EXPECT_EQ(lineage.front()->kind, ActionsDAGLineageKind::DistinctValuesBound);
+    EXPECT_EQ(lineage.front()->ndv_delta, 2u);
 }
 
 TEST(ColumnStatsDerivation, RemapColumnStatsTracksWidthAcrossEntireLineage)

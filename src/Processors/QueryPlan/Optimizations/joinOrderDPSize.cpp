@@ -18,10 +18,12 @@ class DPSizeJoinOrderOptimizer
 public:
     DPSizeJoinOrderOptimizer(
         QueryGraph & query_graph_,
+        const JoinOrderPropertyContext & properties_,
         UInt64 max_searched_plans_,
         QueryStatusPtr query_status_,
         std::function<bool()> interactive_cancel_callback_)
         : query_graph(query_graph_)
+        , properties(properties_)
         , max_searched_plans(max_searched_plans_)
         , query_status(std::move(query_status_))
         , interactive_cancel_callback(std::move(interactive_cancel_callback_))
@@ -35,6 +37,7 @@ private:
     void checkLimits();
 
     QueryGraph & query_graph;
+    const JoinOrderPropertyContext & properties;
     PlanMemo dp_table;
     SelectivityCache expression_selectivity;
     size_t searched_plans = 0;
@@ -116,10 +119,12 @@ DPJoinEntryPtr DPSizeJoinOrderOptimizer::solve()
                     /// and constants, which DPsize attaches at the join that introduces their relation
                     /// (unlike DPhyp, which handles them separately via the hyperedge graph).
                     std::vector<JoinActionRef *> edge;
+                    bool has_cross_split_predicate = false;
                     for (auto & edge_it : applicable_edge)
                     {
                         if (connects(edge_it, left->relations, right->relations))
                         {
+                            has_cross_split_predicate = true;
                             LOG_TEST(log, "Adding predicate connecting {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
                             edge.push_back(edge_it);
                         }
@@ -155,16 +160,31 @@ DPJoinEntryPtr DPSizeJoinOrderOptimizer::solve()
                         }
                     }
 
-                    bool connected = !edge.empty()
-                        || query_graph.areTransitivelyConnected(left->relations, right->relations);
+                    const auto assessment = properties.assessCandidate(
+                        left->relations,
+                        right->relations,
+                        left->estimated_rows,
+                        right->estimated_rows,
+                        *join_kind,
+                        {.legacy_connected = !edge.empty(), .has_cross_split_predicate = has_cross_split_predicate});
 
-                    LOG_TEST(log, "Considering join between {} and {}, predicates count: {}, connected: {}",
-                        left->dump(), right->dump(), edge.size(), connected);
+                    LOG_TEST(
+                        log,
+                        "Considering join between {} and {}, predicates count: {}, legacy connected: {}, cross-split predicate: {}, "
+                        "independently transitive: {}, proof-gated transitive: {}",
+                        left->dump(),
+                        right->dump(),
+                        edge.size(),
+                        assessment.legacy_connected,
+                        assessment.has_cross_split_predicate,
+                        assessment.independently_transitive_connected,
+                        assessment.proof_gated_transitive_connected);
 
-                    if (!connected)
+                    if (!assessment.connected())
                         continue;
 
-                    auto new_entry = evaluateJoin(query_graph, dp_table, expression_selectivity, left, right, *join_kind, edge, log);
+                    auto new_entry = evaluateJoin(
+                        query_graph, properties, dp_table, expression_selectivity, left, right, *join_kind, edge, assessment, log);
                     if (new_entry)
                         components[component_size][new_entry->relations] = new_entry;
                 }
@@ -184,12 +204,14 @@ DPJoinEntryPtr DPSizeJoinOrderOptimizer::solve()
 
 DPJoinEntryPtr solveDPSizeJoinOrder(
     QueryGraph & query_graph,
+    const JoinOrderPropertyContext & properties,
     UInt64 max_searched_plans,
     QueryStatusPtr query_status,
     std::function<bool()> interactive_cancel_callback)
 {
     return DPSizeJoinOrderOptimizer(
         query_graph,
+        properties,
         max_searched_plans,
         std::move(query_status),
         std::move(interactive_cancel_callback)).solve();
