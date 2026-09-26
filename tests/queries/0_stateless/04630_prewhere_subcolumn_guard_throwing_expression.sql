@@ -337,7 +337,7 @@ CREATE TABLE t_prewhere_guard_rf_parse_build (c1 UInt64, c2 Float64) ENGINE = Me
 CREATE TABLE t_prewhere_guard_rf_parse_probe (c1 String, c2 Float64) ENGINE = MergeTree ORDER BY c1;
 INSERT INTO t_prewhere_guard_rf_parse_build SELECT number, number % 1000 FROM numbers(200000);
 INSERT INTO t_prewhere_guard_rf_parse_probe
-SELECT if(number % 4 = 0, concat('nmf-', toString(number)), lower(hex(MD5(toString(number))))), number % 1000
+SELECT if(number % 4 = 0, concat('nmf-', toString(number)), lower(hex(cityHash64(toString(number))))), number % 1000
 FROM numbers(200000);
 
 SELECT 'runtime filter, parsing conversion guarded by LIKE';
