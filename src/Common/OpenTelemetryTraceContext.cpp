@@ -52,6 +52,15 @@ namespace OpenTelemetry
 /// This code can be executed inside coroutines, we should use coroutine local tracing context.
 static constinit FiberLocal<TracingContextOnThread, FiberLocalSlot::TRACE_CONTEXT> current_trace_context;
 
+bool Span::addAttribute(SpanAttribute attribute) noexcept
+{
+    if (!this->isTraceEnabled())
+        return false;
+
+    /// Only an allocation can fail here, in which case the attribute is dropped.
+    return tryOrFalse([&] { attributes.push_back(std::move(attribute)); });
+}
+
 bool Span::addAttribute(std::string_view name, UInt64 value) noexcept
 {
     if (!this->isTraceEnabled() || name.empty())
@@ -89,16 +98,12 @@ bool Span::addAttribute(std::string_view name, std::function<String()> value_sup
     if (!this->isTraceEnabled() || name.empty() || !value_supplier)
         return false;
 
-    try
-    {
-        auto value = value_supplier();
-        return value.empty() ? false : addAttributeImpl(name, value);
-    }
-    catch (...) // Ok: noexcept function, ignore supplier exception
-    {
-        /// Ignore exception raised by value_supplier
+    /// An exception raised by the supplier drops the attribute.
+    String value;
+    if (!tryOrFalse([&] { value = value_supplier(); }))
         return false;
-    }
+
+    return value.empty() ? false : addAttributeImpl(name, value);
 }
 
 bool Span::addAttribute(const Exception & e) noexcept
@@ -180,7 +185,7 @@ SpanHolder::SpanHolder(
 SpanHolder::SpanHolder(
     std::string_view _operation_name,
     SpanKind _kind,
-    std::vector<SpanAttribute> _attributes,
+    SpanAttributes _attributes,
     bool create_trace_if_not_exists)
     : SpanHolder(_operation_name, _kind, create_trace_if_not_exists)
 {
@@ -230,6 +235,102 @@ void SpanHolder::finish(std::chrono::system_clock::time_point time) noexcept
 SpanHolder::~SpanHolder()
 {
     finish(std::chrono::system_clock::now());
+}
+
+ManualSpan::ManualSpan(std::string_view operation_name, SpanKind kind)
+{
+    /// Use try-catch to make sure the ctor is exception safe.
+    try
+    {
+        const TracingContextOnThread & trace_context = CurrentContext();
+        if (!trace_context.isTraceEnabled())
+            return;
+
+        span.trace_id = trace_context.trace_id;
+        span.parent_span_id = trace_context.span_id;
+        span.span_id = TracingContext::generateSpanId();
+        span.operation_name = operation_name;
+        span.kind = kind;
+        span.start_time_us
+            = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        span_log_table = trace_context.span_log;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__FUNCTION__);
+
+        /// Clear related fields to make sure the span won't be recorded.
+        span.trace_id = UUID();
+    }
+}
+
+void ManualSpan::finish() noexcept
+{
+    if (!span.isTraceEnabled())
+        return;
+
+    try
+    {
+        /// The log might be disabled or already shut down, check it before use.
+        if (auto log = span_log_table.lock())
+        {
+            span.finish_time_us
+                = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+            log->add([&](OpenTelemetrySpanLogElement & element)
+            {
+                element.span = span;
+            });
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__FUNCTION__);
+    }
+
+    span.trace_id = UUID();
+}
+
+void ManualSpan::finish(SpanStatus status, String status_message) noexcept
+{
+    /// Already finished (or never traced): the recorded outcome stands.
+    if (!span.isTraceEnabled())
+        return;
+
+    span.status_code = status;
+    span.status_message = std::move(status_message);
+    finish();
+}
+
+ManualSpan::~ManualSpan()
+{
+    finish();
+}
+
+ParentSpanGuard::ParentSpanGuard(UInt64 span_id_)
+{
+    TracingContextOnThread & trace_context = *current_trace_context;
+    if (!span_id_ || !trace_context.isTraceEnabled())
+        return;
+    old_span_id = trace_context.span_id;
+    trace_context.span_id = span_id_;
+    active = true;
+}
+
+ParentSpanGuard::~ParentSpanGuard()
+{
+    if (active)
+        current_trace_context->span_id = old_span_id;
+}
+
+TracingContextGuard::TracingContextGuard(const TracingContextOnThread & context)
+    : previous(*current_trace_context)
+{
+    *current_trace_context = context;
+}
+
+TracingContextGuard::~TracingContextGuard()
+{
+    *current_trace_context = previous;
 }
 
 bool TracingContext::parseTraceparentHeader(std::string_view traceparent, String & error)
