@@ -49,7 +49,11 @@ static constexpr size_t DEFAULT_READER_EXECUTOR_WINDOW_SIZE = 8 * 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_BLOCK_SIZE = 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_MIN_BYTES_FOR_SEEK = 2 * 1_MiB;
 static constexpr size_t DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN = 1_MiB;
+/// How far ahead the `ReaderExecutor` resolves cache residency into its held `ReadPlan` (a cheap
+/// probe, not a read) so one resolve serves many windows.
+static constexpr size_t DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD = 16_MiB;
 static constexpr size_t MIN_READER_EXECUTOR_SIZE = 128_KiB;
+static constexpr size_t MAX_READER_EXECUTOR_SIZE = 40_MiB;
 
 /// The default memory-pressure thresholds, as a percent of a memory tracker's hard limit. Shared by the
 /// `reader_executor_memory_pressure_*_level_pct` settings and the monitor's built-in thresholds, which are
@@ -177,5 +181,9 @@ static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS = 1'000'000uz;
 /// Not `uz`: the value does not fit into `size_t` on 32-bit platforms, and it is compared against
 /// a row count read from the wire as `UInt64`.
 static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS = 1'000'000'000ULL;
+
+static constexpr UInt64 MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS = 599;
+static constexpr UInt64 MAX_SCHEMA_REGISTRY_RETRIES = 20;
+static constexpr UInt64 MAX_SCHEMA_REGISTRY_INITIAL_BACKOFF_MS = 60000;
 
 }

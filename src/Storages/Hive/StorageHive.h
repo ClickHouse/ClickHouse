@@ -43,6 +43,13 @@ public:
     bool isExternalDatabase() const override { return true; }
 
     bool supportsSubcolumns() const override { return true; }
+    /// Like `File` and `URL`, the requested names go straight to the Parquet/ORC reader, which cannot
+    /// serve synthesised subcolumns such as `.null`/`.size0`/`.keys` as standalone inputs. The reader
+    /// also binds flattened names up to case (`input_format_parquet_case_insensitive_column_matching`),
+    /// so a physical `M.keys` column would shadow a rewritten `m.keys`. Only the tuple element rewrite
+    /// is allowed; its guard in `FunctionToSubcolumnsPass` handles the case-insensitive collision.
+    bool supportsOptimizationToSubcolumns() const override { return false; }
+    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     void read(
         QueryPlan & query_plan,

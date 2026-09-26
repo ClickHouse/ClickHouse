@@ -11,12 +11,17 @@ from helpers.test_tools import TSV, assert_eq_with_retry
 # then 2 seconds (2000 - 2500 ms).
 kill_duration_ms_threshold = 4000
 
+# main_configs are copied into config.d/ of the instance.
+shutdown_wait_config = "/etc/clickhouse-server/config.d/shutdown_wait_unfinished.xml"
+shutdown_wait_seconds = 10
+
 cluster = ClickHouseCluster(__file__)
 
 main_configs = [
     "configs/backups_disk.xml",
     "configs/slow_backups.xml",
     "configs/shutdown_cancel_backups.xml",
+    "configs/shutdown_wait_unfinished.xml",
 ]
 
 node = cluster.add_instance(
@@ -237,3 +242,91 @@ def test_shutdown_cancel_backup():
             f"RESTORE TABLE tbl FROM {get_backup_name(backup_id)}"
         ),
     )
+
+
+# Test that a backup which cannot observe its own cancellation does not keep the server from
+# terminating on a single SIGTERM.
+def test_shutdown_cancel_wedged_backup():
+    node.query("CREATE TABLE tbl (x UInt64) ENGINE=MergeTree() ORDER BY tuple()")
+    node.query("INSERT INTO tbl SELECT number FROM numbers(100)")
+
+    backup_id = uuid.uuid4().hex
+    try:
+        # This parks the backup at the top of doBackup, before any checkTimeLimit() check,
+        # so the operation never observes a cancellation request.
+        node.query("SYSTEM ENABLE FAILPOINT backup_pause_on_start")
+        node.query(
+            f"BACKUP TABLE tbl TO {get_backup_name(backup_id)}"
+            f" SETTINGS id='{backup_id}' ASYNC"
+        )
+        node.query("SYSTEM WAIT FAILPOINT backup_pause_on_start PAUSE")
+
+        assert (
+            node.query(f"SELECT status FROM system.backups WHERE id='{backup_id}'")
+            == "CREATING_BACKUP\n"
+        )
+
+        # True means the process exited on its own; None means this had to escalate to SIGKILL.
+        assert node.stop_clickhouse(stop_wait_sec=30, kill=False) is True
+    finally:
+        node.start_clickhouse()
+        node.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
+        assert (
+            node.query("SELECT count() FROM system.fail_points WHERE enabled") == "0\n"
+        )
+
+
+# Test that the wait above is the one configured by shutdown_wait_unfinished rather than any
+# fixed duration: with a large value the server must keep waiting past the SIGTERM window.
+# Replacing the configured deadline with a constant leaves the test above passing and makes
+# this one fail.
+def test_shutdown_wait_for_backup_is_configurable():
+    node.replace_in_config(
+        shutdown_wait_config,
+        f"<shutdown_wait_unfinished>{shutdown_wait_seconds}</shutdown_wait_unfinished>",
+        "<shutdown_wait_unfinished>600</shutdown_wait_unfinished>",
+    )
+    try:
+        # The setting is not changeable without a restart, so SYSTEM RELOAD CONFIG would not
+        # apply it.
+        node.restart_clickhouse()
+        assert (
+            node.query(
+                "SELECT value FROM system.server_settings"
+                " WHERE name = 'shutdown_wait_unfinished'"
+            )
+            == "600\n"
+        )
+
+        node.query("CREATE TABLE tbl (x UInt64) ENGINE=MergeTree() ORDER BY tuple()")
+        node.query("INSERT INTO tbl SELECT number FROM numbers(100)")
+
+        backup_id = uuid.uuid4().hex
+        node.query("SYSTEM ENABLE FAILPOINT backup_pause_on_start")
+        node.query(
+            f"BACKUP TABLE tbl TO {get_backup_name(backup_id)}"
+            f" SETTINGS id='{backup_id}' ASYNC"
+        )
+        node.query("SYSTEM WAIT FAILPOINT backup_pause_on_start PAUSE")
+
+        assert (
+            node.query(f"SELECT status FROM system.backups WHERE id='{backup_id}'")
+            == "CREATING_BACKUP\n"
+        )
+
+        # None means the stop had to escalate to SIGKILL, i.e. the server was still honouring
+        # the 600 second wait. 600 is also outside the 180 second window stop_clickhouse uses
+        # on a coverage build, so this holds for every build type.
+        assert node.stop_clickhouse(stop_wait_sec=30, kill=False) is None
+    finally:
+        # The server is down after the forced kill, so it picks the restored value up on start.
+        node.replace_in_config(
+            shutdown_wait_config,
+            "<shutdown_wait_unfinished>600</shutdown_wait_unfinished>",
+            f"<shutdown_wait_unfinished>{shutdown_wait_seconds}</shutdown_wait_unfinished>",
+        )
+        node.start_clickhouse()
+        node.query("SYSTEM DISABLE FAILPOINT backup_pause_on_start")
+        assert (
+            node.query("SELECT count() FROM system.fail_points WHERE enabled") == "0\n"
+        )

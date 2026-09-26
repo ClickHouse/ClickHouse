@@ -49,28 +49,29 @@ Want to speak? Apply [here](https://forms.gle/3h4XCEENJZ3eaVGy7)
 You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
-* [Boston Hands-on training: Building agents with ClickHouse and LibreChat Boston](https://luma.com/clickh-nw1d) - September 14th, 2026
-* [Amsterdam Meetup](https://luma.com/clickh-vu1p) - September 15th, 2026
-* [Cape Town Meetup](https://luma.com/clickh-dw1v) - September 15th, 2026
 * [DET New York](https://luma.com/xf3wghdh) - September 17th, 2026
 * [The Agentic Data Stack: Paris](https://luma.com/clickh-s2a1) - September 17th, 2026
 * [The Agentic Data Stack: Zurich](https://luma.com/clickh-oo1l) - September 17th, 2026
 * [Rows And Columns Summit](https://luma.com/event/evt-bQcR6tDKi8OmTXu) - September 22nd, 2026
+* [Hands-on training: Building agents with ClickHouse and LibreChat Seattle](https://luma.com/clickh-0vvr) - September 23rd, 2026
+* [Hands-on training: Agent Observability with Langfuse in San Francisco](https://luma.com/gp4dehl2) - September 23rd, 2026
 * [PyData Seattle Meetup](https://luma.com/clickh-ttgg) - September 24th, 2026
-* [Mountain view Meetup](https://luma.com/clickh-5ms6) - September 24th, 2026
+* [build fridays sf x clickhouse + langfuse - work on your startup alongside others](https://luma.com/bf925) - September 25th, 2026
 * [Chicago Meetup](https://luma.com/clickh-8tnc) - September 28th, 2026
 * [Paris Meetup](https://luma.com/clickh-gsz1) - September 29th, 2026
 * [Open House London](https://luma.com/ggnwajnd) - September 30th, 2026
 * [Open House Munich](https://luma.com/6xorx3qw) - October 6th, 2026
+* [SF Tech Week AI Night](https://luma.com/clickh-zngw) - October 6th, 2026
 * [AI Builders and Databases Stockholm](https://luma.com/clickh-ku2p) - October 8th, 2026
+* [Mountain View Meetup](https://luma.com/clickh-5ms6) - October 8th, 2026
 
 
 Recent meetups
-* [Bangalore Iceberg Community Meetup](https://luma.com/clickh-t3iz) - August 22nd, 2026
-* [Vancouver Meetup](https://luma.com/jr8tc94e) - August 25th, 2026
-* [Boston Trivia](https://luma.com/clickh-thmi) - August 31st, 2026
-* [Bangkok Meetup](https://luma.com/clickh-ct1j) - September 1st, 2026
+* [Amsterdam Meetup](https://luma.com/clickh-vu1p) - September 15th, 2026
+* [Cape Town Meetup](https://luma.com/clickh-dw1v) - September 15th, 2026
+* [Boston Hands-on training: Building agents with ClickHouse and LibreChat Boston](https://luma.com/clickh-nw1d) - September 14th, 2026
 * [Agentic Data Stack: Berlin](https://luma.com/clickh-2ccj) - September 2nd, 2026
+* [Bangkok Meetup](https://luma.com/clickh-ct1j) - September 1st, 2026
 
 
 ## Recent Recordings

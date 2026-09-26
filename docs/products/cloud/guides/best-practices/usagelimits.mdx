@@ -86,6 +86,10 @@ The replica limit is the **combined** replica count across all services in the w
 Because every service in a warehouse shares a single ClickHouse Keeper, this limit exists to protect Keeper stability. The default of 50 is soft and depends on your data and workload; the ceiling is higher on ClickHouse 26.6+, and we plan to raise it further in the future.
 Contact [support](https://clickhouse.com/support/program) to raise it; for more detail on warehouse scaling, see [warehouses](/products/cloud/features/infrastructure/warehouses#scaling).
 
+<Note>
+On-Demand Compute has separate private-preview eligibility and limits that are not represented in the table above. See the [On-Demand Compute limitations](/products/cloud/features/infrastructure/on-demand-compute#limitations) for current capacity, concurrency, and availability details.
+</Note>
+
 There is **no separate cap on the number of services** in a warehouse — it is bounded only by the combined replica limit above.
 
 Because services in a warehouse share one catalog (the same tables, databases, views, and so on), the [service-level data object limits](#service-limits) above are counted **once per warehouse** rather than multiplied per service. Separate warehouses are isolated from each other, so each warehouse counts its own tables and databases toward these limits.

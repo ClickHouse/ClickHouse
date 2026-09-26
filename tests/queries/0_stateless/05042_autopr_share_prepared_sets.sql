@@ -4,7 +4,9 @@
 --
 -- `SetsBuiltFromSubquery` counts the sets filled by executing their subquery, so the query below
 -- must report 1 rather than 2. The join matters: without it the probe plan never reaches the set
--- and the count is 1 either way, which would make this test pass even with the sharing removed.
+-- and the count is 1 either way, which would make this test pass even with the sharing removed. The
+-- tables are far below `automatic_parallel_replicas_min_bytes_per_replica` for the same reason: its
+-- gate skips building the probe plan altogether, which would make the count 1 just as vacuously.
 
 DROP TABLE IF EXISTS t_autopr_sets;
 DROP TABLE IF EXISTS t_autopr_sets_join;
@@ -28,6 +30,7 @@ WHERE t.key IN (SELECT x FROM t_autopr_sets_in)
 FORMAT Null
 SETTINGS enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 1, parallel_replicas_local_plan = 1,
     parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3,
+    automatic_parallel_replicas_min_bytes_per_replica = 0,
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     enable_analyzer = 1, log_comment = '05042_autopr_share_prepared_sets';
 
