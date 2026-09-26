@@ -437,7 +437,13 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
     /// part immediately to make its rows visible without waiting for the next consume()
     /// or onFinish(); the normal write/commit pipelining is preferred otherwise.
     if (settings[Setting::input_format_max_block_wait_ms] != 0)
+    {
         finishDelayed(zookeeper);
+        /// Such an INSERT can stay open indefinitely, so it cannot postpone the fsync of what it
+        /// has already committed until onFinish(): make each flushed block durable as it goes.
+        /// This also keeps the pending list from growing without a bound.
+        fsyncCommittedParts();
+    }
 
     if (synchronously_commit_part_for_dependent_views)
         finishDelayed(zookeeper);
@@ -495,6 +501,8 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 {
                     // Successfully committed
                     block_ids_for_log = deduplication_blocks_ids;
+                    if (partition.temp_part->needs_fsync_on_finish)
+                        committed_parts.push_back(partition.temp_part->part->info);
                     partition.temp_part->prewarmCaches();
                     break;
                 }
@@ -1304,6 +1312,16 @@ void ReplicatedMergeTreeSink::onFinish()
     ZooKeeperWithFaultInjectionPtr zookeeper = createKeeper("ReplicatedMergeTreeSink::onFinish");
     auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeSink::onFinish");
     finishDelayed(zookeeper);
+    fsyncCommittedParts();
+}
+
+void ReplicatedMergeTreeSink::fsyncCommittedParts()
+{
+    if (committed_parts.empty())
+        return;
+
+    storage.fsyncPartsAfterInsert(committed_parts);
+    committed_parts.clear();
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(

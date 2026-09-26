@@ -172,6 +172,7 @@ public:
     void removeSharedRecursive(bool keep_in_remote_fs) override;
 
     SyncGuardPtr getDirectorySyncGuard() const override;
+    void syncFiles() const override;
     bool hasActiveTransaction() const override;
 
     bool isCaseInsensitive() const override;
