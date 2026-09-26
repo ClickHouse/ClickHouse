@@ -10,6 +10,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/LowCardinalityValueIndex.h>
+#include <Core/AccurateComparison.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1892,7 +1893,7 @@ struct MatcherNumber
     const PaddedPODArray<DataType> & data;
     const PaddedPODArray<IndexType> & index;
 
-    bool match(size_t row_data, size_t row_index) const { return data[row_data] == static_cast<DataType>(index[row_index]); }
+    bool match(size_t row_data, size_t row_index) const { return accurate::equalsOp(data[row_data], index[row_index]); }
 };
 
 template <typename DataType>
@@ -2083,15 +2084,31 @@ bool FunctionArrayElement<mode>::matchKeyToIndexNumberConst(
         {
             using DataType = typename std::decay_t<decltype(data_column)>::ValueType;
             std::optional<DataType> index_as_integer;
+            bool index_matches_no_key = false;
 
             Field::dispatch(
                 [&](const auto & value)
                 {
                     using FieldType = std::decay_t<decltype(value)>;
-                    if constexpr (areConvertibleTypes<FieldType, DataType>)
-                        index_as_integer = static_cast<DataType>(value);
+                    if constexpr (std::is_same_v<FieldType, DataType>)
+                        index_as_integer = value;
+                    else if constexpr (areConvertibleTypes<FieldType, DataType>)
+                    {
+                        /// A number outside of the range of the key type is not equal to any key.
+                        DataType converted{};
+                        if (accurate::convertNumeric(value, converted))
+                            index_as_integer = converted;
+                        else
+                            index_matches_no_key = true;
+                    }
                 },
                 index);
+
+            if (index_matches_no_key)
+            {
+                matched_idxs.resize_fill(offsets.size());
+                return true;
+            }
 
             if (!index_as_integer)
                 return false;

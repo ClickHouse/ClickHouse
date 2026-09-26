@@ -42,6 +42,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Common/FieldAccurateComparison.h>
 #include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
@@ -396,6 +397,11 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
         if (enum_value.isNull() || !tmp_key_column->tryInsert(enum_value))
             return;
     }
+
+    /// `tryInsert` narrows an integer the key type cannot hold (300 into `UInt8` becomes 44), and no key equals such a constant.
+    const Field & key_constant = second_argument_constant_node->getValue();
+    if (isInt64OrUInt64FieldType(key_constant.getType()) && !accurateEquals((*tmp_key_column)[0], key_constant))
+        return;
 
     /// Serialize the key to its text representation to construct the subcolumn name,
     /// e.g. the string key "foo" becomes the subcolumn suffix "key_foo".
