@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemPrivileges.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/SettingsProfile.h>
@@ -31,6 +32,8 @@ namespace
         NAMED_COLLECTION,
         USER_NAME,
         TABLE_ENGINE,
+        DEFINER,
+        SOURCE,
     };
 
     DataTypeEnum8::Values getLevelEnumValues()
@@ -45,6 +48,8 @@ namespace
         enum_values.emplace_back("NAMED_COLLECTION", static_cast<Int8>(NAMED_COLLECTION));
         enum_values.emplace_back("USER_NAME", static_cast<Int8>(USER_NAME));
         enum_values.emplace_back("TABLE_ENGINE", static_cast<Int8>(TABLE_ENGINE));
+        enum_values.emplace_back("DEFINER", static_cast<Int8>(DEFINER));
+        enum_values.emplace_back("SOURCE", static_cast<Int8>(SOURCE));
         return enum_values;
     }
 }
@@ -79,8 +84,8 @@ ColumnsDescription StorageSystemPrivileges::getColumnsDescription()
          "List of aliases which can be used instead of the name of the privilege."},
         {"level",
          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getLevelEnumValues())),
-         "Level of the privilege. GLOBAL privileges can be granted only globally (ON *.*), DATABASE privileges can be granted "
-         "on a specific database (ON <database>.*) or globally (ON *.*), TABLE privileges can be granted either on a specific table or "
+         "Level of the privilege. GLOBAL privileges can be granted only globally (`ON *.*`), DATABASE privileges can be granted "
+         "on a specific database (`ON <database>.*`) or globally (`ON *.*`), TABLE privileges can be granted either on a specific table or "
          "on a specific database or globally, and COLUMN privileges can be granted like TABLE privileges but also allow to specify columns."},
         {"parent_group", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues())),
          "Parent privilege - if the parent privilege is granted then all its children privileges are considered as granted too."
@@ -120,7 +125,7 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
 
         if (max_level == GROUP)
         {
-            column_level.push_back(0);
+            column_level.push_back(static_cast<Int8>(0));
             column_level_null_map.push_back(true);
         }
         else
@@ -131,7 +136,7 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
 
         if (parent_group == AccessType::NONE)
         {
-            column_parent_group.push_back(0);
+            column_parent_group.push_back(static_cast<Int16>(0));
             column_parent_group_null_map.push_back(true);
         }
         else
@@ -150,3 +155,6 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemPrivileges) }

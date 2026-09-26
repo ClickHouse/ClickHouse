@@ -47,6 +47,9 @@ enum class AuthenticationType : uint8_t
     /// Password is encrypted in SCRAM-SHA256 hash.
     SCRAM_SHA256_PASSWORD,
 
+    /// Internal user. It's impossible to log in to this user.
+    NO_AUTHENTICATION,
+
     /// NOT an AuthenticationType. It is used indicate the element number of AuthenticationType.
     /// It should always be placed at the bottom of the element list.
     MAX,
@@ -64,5 +67,11 @@ inline String toString(AuthenticationType type_)
 {
     return String(toStringView(AuthenticationTypeInfo::get(type_).keyword));
 }
+
+/// Whether a credential for this authentication type is verified purely locally, with no external side effects.
+/// `LDAP`/`KERBEROS`/`HTTP` contact an external system to verify a credential. `JWT` validation may also
+/// contact an external system: while a token itself is self-contained, verifying it may require fetching
+/// the signing keys (JWKS) or delegating the check to an external validator.
+bool authenticationTypeIsVerifiedLocally(AuthenticationType type_);
 
 }

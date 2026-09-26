@@ -3,7 +3,9 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
-#include <Common/Throttler_fwd.h>
+#include <IO/HTTPRequestThrottler.h>
+
+#include <map>
 
 namespace Poco::Util
 {
@@ -20,7 +22,6 @@ struct Settings;
 /// List of available types supported in the Settings object
 #define S3REQUEST_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
-    M(CLASS_NAME, BoolAuto) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, String)
 
@@ -67,11 +68,19 @@ struct S3RequestSettings
 
     void updateFromSettings(const DB::Settings & settings, bool if_changed, bool validate_settings = true);
     void updateIfChanged(const S3RequestSettings & settings);
+    /// Returns true if applying `settings` via `updateIfChanged` would change a setting marked with `AFFECTS_CLIENT`,
+    /// i.e. the S3 client has to be rebuilt to pick up the change.
+    bool hasChangesAffectingClient(const S3RequestSettings & settings) const;
     void validateUploadSettings();
 
-    ThrottlerPtr get_request_throttler;
-    ThrottlerPtr put_request_throttler;
+    HTTPRequestThrottler request_throttler;
     std::shared_ptr<ProxyConfigurationResolver> proxy_resolver;
+
+    void serialize(WriteBuffer & out, ContextPtr context) const;
+    static S3RequestSettings deserialize(ReadBuffer & in, ContextPtr context);
+
+    /// Returns all effective request settings as a string map, for observability (e.g. `system.backups`).
+    std::map<String, String> getSettingsRepresentation() const; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
 private:
     void finishInit(const DB::Settings & settings, bool validate_settings);

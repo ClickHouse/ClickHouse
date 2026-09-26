@@ -1,13 +1,16 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnReplicated.h>
 #include <Core/Block.h>
 #include <base/defines.h>
 #include <Common/PODArray.h>
+#include <Interpreters/RowDataStore.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
+#include <span>
 #include <boost/noncopyable.hpp>
 #include <fmt/ranges.h>
 
@@ -96,17 +99,15 @@ public:
         }
     }
 
+    static size_t size(const Range & range) { return range.second - range.first; }
+    static size_t size(const Indexes & indexes) { return indexes.size(); }
+
     size_t size() const
     {
         if (std::holds_alternative<Range>(data))
-        {
-            const auto range = std::get<Range>(data);
-            return range.second - range.first;
-        }
+            return size(std::get<Range>(data));
         else
-        {
-            return std::get<IndexesPtr>(data)->size();
-        }
+            return size(*std::get<IndexesPtr>(data));
     }
 
     /// First selector contains first `num_rows` rows, second selector contains the rest
@@ -224,8 +225,9 @@ struct ScatteredBlock : private boost::noncopyable
     Block && getSourceBlock() && { return std::move(block); }
 
     const auto & getSelector() const { return selector; }
+    std::pair<Block, Selector> detachData() && { return {std::move(block), std::move(selector)}; }
 
-    explicit operator bool() const { return !!block; }
+    bool empty() const { return block.empty(); }
 
     /// Accounts only selected rows
     size_t rows() const { return selector.size(); }
@@ -264,44 +266,82 @@ struct ScatteredBlock : private boost::noncopyable
         return block.getByName(name);
     }
 
-    /// Filters selector by mask discarding rows for which filter is false
-    void filter(const IColumnFilter & filter)
+    void filter(std::span<UInt64> matched_rows)
     {
-        chassert(block && block.rows() == filter.size());
-        IndexesPtr new_selector = Indexes::create();
-        new_selector->reserve(selector.size());
-        std::copy_if(
-            selector.begin(), selector.end(), std::back_inserter(new_selector->getData()), [&](size_t idx) { return filter[idx]; });
+        if (matched_rows.empty())
+        {
+            selector = Selector();
+            return;
+        }
+        else if (matched_rows.size() == rows())
+            return;
+
+        IndexesPtr new_selector = Indexes::create(matched_rows.size());
+        auto & data = new_selector->getData();
+        size_t i = 0;
+        for (const auto pos : matched_rows)
+            data[i++] = selector[pos];
         selector = Selector(std::move(new_selector));
+    }
+
+    /// Creates ColumnReplicated to lazily apply index from `selector` to the `block`
+    void filterBySelectorLazily()
+    {
+        if (block.empty() || !wasScattered())
+            return;
+
+        if (selector.isContinuousRange())
+        {
+            filterBySelector();
+            return;
+        }
+
+        /// The general case when `selector` is non-trivial (likely the result of applying a filter)
+        auto indexes_col = selector.getIndexes().getPtr();
+        auto columns = block.getColumns();
+        transformColumnsWithSharedIndex(
+            columns,
+            [&](const ColumnPtr & index) { return index->index(selector.getIndexes(), /*limit*/ 0); },
+            [&](ColumnPtr & col)
+            {
+                if (col->isConst())
+                    col = col->index(selector.getIndexes(), /*limit*/ 0);
+                else
+                    col = ColumnReplicated::create(col, indexes_col);
+            }
+        );
+        block.setColumns(columns);
+        selector = Selector(block.rows());
     }
 
     /// Applies `selector` to the `block` in-place
     void filterBySelector()
     {
-        if (!block || !wasScattered())
+        if (block.empty() || !wasScattered())
             return;
 
         if (selector.isContinuousRange())
         {
             const auto range = selector.getRange();
-            for (size_t i = 0; i < block.columns(); ++i)
-            {
-                auto & col = block.getByPosition(i);
-                col.column = col.column->cut(range.first, range.second - range.first);
-            }
+            auto columns = block.getColumns();
+            transformColumnsWithSharedIndex(
+                columns,
+                [&](const ColumnPtr & col) { return col->cut(range.first, range.second - range.first); });
+            block.setColumns(columns);
             selector = Selector(block.rows());
             return;
         }
 
         /// The general case when `selector` is non-trivial (likely the result of applying a filter)
         auto columns = block.getColumns();
-        for (auto & col : columns)
-            col = col->index(selector.getIndexes(), /*limit*/ 0);
+        transformColumnsWithSharedIndex(
+            columns,
+            [&](const ColumnPtr & col) { return col->index(selector.getIndexes(), /*limit*/ 0); });
         block.setColumns(columns);
         selector = Selector(block.rows());
     }
 
-    /// Cut first `num_rows` rows from `block` in place and returns block with remaining rows
+    /// Cuts first `num_rows` rows from `block` in place and returns a block with the remaining rows
     ScatteredBlock cut(size_t num_rows)
     {
         if (num_rows >= rows())
@@ -310,7 +350,7 @@ struct ScatteredBlock : private boost::noncopyable
             return ScatteredBlock{Block{}};
         }
 
-        chassert(block);
+        chassert(!block.empty());
 
         auto && [first_num_rows, remaining_selector] = selector.split(num_rows);
 
@@ -328,6 +368,61 @@ private:
 };
 
 using ScatteredBlocks = std::vector<ScatteredBlock>;
+
+/// Describes how a join output column is read from a `StoredBlock`: directly from `columns[index]`
+/// (`Columns`), or as a `(field_offset, field_size)` slice of the block's row store (`RowStore`).
+struct ColumnAccessIndex
+{
+    enum Type : uint8_t { Columns, RowStore };
+
+    ColumnAccessIndex(Type type_, size_t index_, size_t field_offset_ = 0, size_t field_size_ = 0, bool is_nullable_ = false)
+        : type(type_), index(index_), field_offset(field_offset_), field_size(field_size_), is_nullable(is_nullable_)
+    {
+    }
+
+    Type type;
+    size_t index;
+
+    /// Valid only when type is RowStore.
+    size_t field_offset;
+    size_t field_size;
+    bool is_nullable;
+
+    bool operator==(const ColumnAccessIndex &) const = default;
+};
+
+using ColumnAccessIndexes = std::vector<ColumnAccessIndex>;
+
+/// A right-side block as stored by HashJoin for the build/probe lifetime. Owns the (already projected)
+/// columns together with the partition `selector` and the `block_no` that row refs (`RowRef`)
+/// index through `StoredColumnsIndex`. Replaces the former `ColumnsInfo` + `ScatteredColumns` split:
+/// the column bundle is inlined here, so the emit path can resolve a column to a direct `IColumn *`
+/// (see `StoredColumnsIndex::EmitColumn`) instead of going through a `ColumnsInfo` wrapper.
+struct StoredBlock
+{
+    Columns columns;
+    /// For each column: a pointer to it as `ColumnReplicated` if it is one, otherwise nullptr. Lets the
+    /// emit loop insert from a replicated column without a per-row virtual call / cast.
+    PODArray<const ColumnReplicated *> replicated_columns;
+    detail::Selector selector;
+    UInt32 block_no = 0;
+
+    /// Row-major store for fixed size contiguous columns.
+    RowDataStorePtr row_store;
+
+    StoredBlock() = default;
+    explicit StoredBlock(Columns columns_, RowDataStorePtr row_store_ = nullptr);
+    StoredBlock(Columns columns_, detail::Selector selector_, RowDataStorePtr row_store_ = nullptr);
+
+    /// Must be called after `columns` are replaced in-place (e.g. by cloneResized). The raw pointers in
+    /// `replicated_columns` point into the old column objects and dangle once those objects are released.
+    void rebuildReplicatedColumns();
+
+    bool hasRowStore() const;
+
+    size_t allocatedBytes() const;
+    size_t blockRows() const;
+};
 
 struct ExtraScatteredBlocks
 {

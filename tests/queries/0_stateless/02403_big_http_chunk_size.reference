@@ -1,3 +1,4 @@
-HTTP/1.1 500 Internal Server Error
-encoding type chunked
-error code 69
+HTTP status string : HTTP/1.1 500 Internal Server Error
+Connection : Close
+Transfer-Encoding : chunked
+X-ClickHouse-Exception-Code : 69

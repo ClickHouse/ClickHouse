@@ -1,4 +1,6 @@
+#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/ColumnNode.h>
 #include <Analyzer/ListNode.h>
 #include <Analyzer/Utils.h>
 #include <IO/Operators.h>
@@ -26,7 +28,7 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     JoinStrictness strictness_,
     JoinKind kind_,
     bool is_using_join_expression_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
     , locality(locality_)
     , strictness(strictness_)
     , kind(kind_)
@@ -37,25 +39,99 @@ JoinNode::JoinNode(QueryTreeNodePtr left_table_expression_,
     children[join_expression_child_index] = std::move(join_expression_);
 }
 
+/// There is a special workaround for the case when ARRAY JOIN alias is used in USING statement.
+/// Example: ... ARRAY JOIN arr AS dummy INNER JOIN system.one USING (dummy);
+///
+/// In case of ARRAY JOIN, the column is renamed, so the query tree will look like:
+/// JOIN EXPRESSION
+/// LIST
+///   COLUMN id: 16, column_name: dummy
+///     EXPRESSION
+///       LIST
+///         COLUMN id: 18, column_name: __array_join_exp_1
+///         COLUMN id: 19, column_name: dummy
+///
+/// Previously, when we convert QueryTree back to ast, the query would look like:
+/// ARRAY JOIN arr AS __array_join_exp_1 ALL INNER JOIN system.one USING (__array_join_exp_1)
+/// Which is incorrect query (which is broken in distributed case) because system.one do not have __array_join_exp_1.
+///
+/// In order to mitigate this, the syntax 'USING (__array_join_exp_1 AS dummy)' is introduced,
+/// which means that '__array_join_exp_1' is taken from left, 'dummy' is taken from right,
+/// and the USING column name is also 'dummy'
+///
+/// See 03448_analyzer_array_join_alias_in_join_using_bug
+static ASTPtr tryMakeUsingColumnASTWithAlias(const QueryTreeNodePtr & node)
+{
+    const auto * column_node = node->as<ColumnNode>();
+    if (!column_node)
+        return nullptr;
+
+    const auto & expr = column_node->getExpression();
+    if (!expr)
+        return nullptr;
+
+    const auto * expr_list_node = expr->as<ListNode>();
+    if (!expr_list_node)
+        return nullptr;
+
+    if (expr_list_node->getNodes().size() != 2)
+        return nullptr;
+
+    const auto * lhs_column_node = expr_list_node->getNodes()[0]->as<ColumnNode>();
+    const auto * rhs_column_node = expr_list_node->getNodes()[1]->as<ColumnNode>();
+    if (!lhs_column_node || !rhs_column_node)
+        return nullptr;
+
+    /// If USING column resolved from projection, keep its name
+    if (lhs_column_node->hasExpression())
+        return nullptr;
+
+    if (lhs_column_node->getColumnName() == rhs_column_node->getColumnName())
+        return nullptr;
+
+    auto node_ast = make_intrusive<ASTIdentifier>(lhs_column_node->getColumnName());
+    node_ast->setAlias(rhs_column_node->getColumnName());
+    return node_ast;
+}
+
+static ASTPtr makeUsingAST(const QueryTreeNodePtr & node)
+{
+    const auto & list_node = node->as<ListNode &>();
+
+    auto expr_list = make_intrusive<ASTExpressionList>();
+    expr_list->children.reserve(list_node.getNodes().size());
+
+    for (const auto & child : list_node.getNodes())
+    {
+        ASTPtr node_ast = tryMakeUsingColumnASTWithAlias(child);
+
+        if (!node_ast)
+            node_ast = child->toAST();
+
+        expr_list->children.push_back(std::move(node_ast));
+    }
+
+    return expr_list;
+}
+
 ASTPtr JoinNode::toASTTableJoin() const
 {
-    auto join_ast = std::make_shared<ASTTableJoin>();
+    auto join_ast = make_intrusive<ASTTableJoin>();
     join_ast->locality = locality;
     join_ast->strictness = strictness;
     join_ast->kind = kind;
+    join_ast->is_natural = is_natural && !hasJoinExpression();
 
     if (children[join_expression_child_index])
     {
-        auto join_expression_ast = children[join_expression_child_index]->toAST();
-
         if (is_using_join_expression)
         {
-            join_ast->using_expression_list = join_expression_ast;
+            join_ast->using_expression_list = makeUsingAST(children[join_expression_child_index]);
             join_ast->children.push_back(join_ast->using_expression_list);
         }
         else
         {
-            join_ast->on_expression = join_expression_ast;
+            join_ast->on_expression = children[join_expression_child_index]->toAST();
             join_ast->children.push_back(join_ast->on_expression);
         }
     }
@@ -75,11 +151,13 @@ void JoinNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 
     buffer << ", kind: " << toString(kind);
 
+    /// Use the raw node accessors: in an unresolved tree (e.g. EXPLAIN QUERY TREE
+    /// with run_passes = 0) the children are still identifiers, not table expressions.
     buffer << '\n' << std::string(indent + 2, ' ') << "LEFT TABLE EXPRESSION\n";
-    getLeftTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
+    getLeftTableExpressionNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     buffer << '\n' << std::string(indent + 2, ' ') << "RIGHT TABLE EXPRESSION\n";
-    getRightTableExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
+    getRightTableExpressionNode()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     if (getJoinExpression())
     {
@@ -92,7 +170,8 @@ bool JoinNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const JoinNode &>(rhs);
     return locality == rhs_typed.locality && strictness == rhs_typed.strictness && kind == rhs_typed.kind &&
-        is_using_join_expression == rhs_typed.is_using_join_expression;
+        is_using_join_expression == rhs_typed.is_using_join_expression &&
+        is_natural == rhs_typed.is_natural;
 }
 
 void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
@@ -101,18 +180,23 @@ void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     state.update(strictness);
     state.update(kind);
     state.update(is_using_join_expression);
+    state.update(is_natural);
 }
 
 QueryTreeNodePtr JoinNode::cloneImpl() const
 {
-    return std::make_shared<JoinNode>(
-        getLeftTableExpression(), getRightTableExpression(), getJoinExpression(),
+    auto clone = std::make_shared<JoinNode>(
+        getLeftTableExpressionNode(),
+        getRightTableExpressionNode(),
+        getJoinExpression(),
         locality, strictness, kind, is_using_join_expression);
+    clone->is_natural = is_natural;
+    return clone;
 }
 
 ASTPtr JoinNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+    ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
 
     addTableExpressionOrJoinIntoTablesInSelectQuery(tables_in_select_query_ast, children[left_table_expression_child_index], options);
 
@@ -145,13 +229,13 @@ void JoinNode::crossToInner(const QueryTreeNodePtr & join_expression_)
 
 
 CrossJoinNode::CrossJoinNode(QueryTreeNodePtr table_expression)
-    : IQueryTreeNode(1)
+    : ITableExpressionNode(1)
 {
     children = {std::move(table_expression)};
 }
 
 CrossJoinNode::CrossJoinNode(QueryTreeNodes table_expressions, JoinTypes join_types_)
-    : IQueryTreeNode(table_expressions.size())
+    : ITableExpressionNode(table_expressions.size())
     , join_types(std::move(join_types_))
 {
     children = std::move(table_expressions);
@@ -210,7 +294,7 @@ QueryTreeNodePtr CrossJoinNode::cloneImpl() const
 
 ASTPtr CrossJoinNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    ASTPtr tables_in_select_query_ast = std::make_shared<ASTTablesInSelectQuery>();
+    ASTPtr tables_in_select_query_ast = make_intrusive<ASTTablesInSelectQuery>();
 
     for (size_t i = 0; i < children.size(); ++i)
     {
@@ -220,7 +304,7 @@ ASTPtr CrossJoinNode::toASTImpl(const ConvertToASTOptions & options) const
 
         if (i > 0)
         {
-            auto join_ast = std::make_shared<ASTTableJoin>();
+            auto join_ast = make_intrusive<ASTTableJoin>();
             join_ast->locality = join_types[i - 1].locality;
             join_ast->strictness = JoinStrictness::Unspecified;
             join_ast->kind = join_types[i - 1].is_comma ? JoinKind::Comma : JoinKind::Cross;

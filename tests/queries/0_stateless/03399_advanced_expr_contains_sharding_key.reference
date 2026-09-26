@@ -1,0 +1,29 @@
+query plan of GROUP BY sharding key
+ReadFromRemote (Read from remote replica)
+Expression ((Project names + Projection))
+  MergingAggregated
+    ReadFromRemote (Read from remote replica)
+ReadFromRemote (Read from remote replica)
+Expression ((Project names + Projection))
+  MergingAggregated
+    ReadFromRemote (Read from remote replica)
+query plan of DISTINCT sharding key
+ReadFromRemote (Read from remote replica)
+Expression (Project names)
+  Distinct (DISTINCT)
+    ReadFromRemote (Read from remote replica)
+ReadFromRemote (Read from remote replica)
+Expression (Project names)
+  Distinct (DISTINCT)
+    ReadFromRemote (Read from remote replica)
+query plan of LIMIT BY sharding key
+ReadFromRemote (Read from remote replica)
+Expression (Project names)
+  LimitBy
+    Expression (Before LIMIT BY)
+      ReadFromRemote (Read from remote replica)
+ReadFromRemote (Read from remote replica)
+Expression (Project names)
+  LimitBy
+    Expression (Before LIMIT BY)
+      ReadFromRemote (Read from remote replica)

@@ -1,0 +1,5 @@
+<clickhouse>
+    <oom_canary_enable>1</oom_canary_enable>
+    <oom_canary_size>1048576</oom_canary_size>
+    <oom_canary_relaunch>0</oom_canary_relaunch>
+</clickhouse>

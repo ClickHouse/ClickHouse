@@ -12,13 +12,16 @@ class SinkToStorage : public ExceptionKeepingTransform
 {
 /// PartitionedSink owns nested sinks.
 friend class PartitionedSink;
+friend class DeltaLakePartitionedSink;
 
 public:
-    explicit SinkToStorage(const Block & header);
+    explicit SinkToStorage(SharedHeader header);
 
     const Block & getHeader() const { return inputs.front().getHeader(); }
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
     void addInterpreterContext(std::shared_ptr<const Context> context) { interpreter_context.emplace_back(std::move(context)); }
+
+    virtual void setHasDependentMaterializedViews(bool /*has_dependent_views*/) {}
 
 protected:
     virtual void consume(Chunk & chunk) = 0;
@@ -36,7 +39,7 @@ private:
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
 
-class NullSinkToStorage : public SinkToStorage
+class NullSinkToStorage final : public SinkToStorage
 {
 public:
     using SinkToStorage::SinkToStorage;

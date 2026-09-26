@@ -1,3 +1,4 @@
+-- Tags: memory-engine
 drop table if exists t_row_exists;
 
 create table t_row_exists(a int, _row_exists int) engine=MergeTree order by a; --{serverError ILLEGAL_COLUMN}

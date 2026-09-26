@@ -1,17 +1,37 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
+
+DROP DATABASE IF EXISTS test_max_num_to_warn_02931;
+DROP DATABASE IF EXISTS test_max_num_to_warn_1;
+DROP DATABASE IF EXISTS test_max_num_to_warn_2;
+DROP DATABASE IF EXISTS test_max_num_to_warn_3;
+DROP DATABASE IF EXISTS test_max_num_to_warn_4;
+DROP DATABASE IF EXISTS test_max_num_to_warn_5;
+DROP DATABASE IF EXISTS test_max_num_to_warn_6;
+DROP DATABASE IF EXISTS test_max_num_to_warn_7;
+DROP DATABASE IF EXISTS test_max_num_to_warn_8;
+DROP DATABASE IF EXISTS test_max_num_to_warn_9;
+DROP DATABASE IF EXISTS test_max_num_to_warn_10;
+DROP DATABASE IF EXISTS test_max_num_to_warn_11;
+
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_1;
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_2;
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_3;
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_4;
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_5;
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_6;
 
 CREATE DATABASE IF NOT EXISTS test_max_num_to_warn_02931;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_1 (id Int32, str String) Engine=Memory;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_2 (id Int32, str String) Engine=Memory;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_3 (id Int32, str String) Engine=Memory;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_4 (id Int32, str String) Engine=Memory;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_5 (id Int32, str String) Engine=Memory;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_6 (id Int32, str String) Engine=Memory;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_7 (id Int32, str String) Engine=Memory;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_8 (id Int32, str String) Engine=Memory;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_9 (id Int32, str String) Engine=Memory;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_10 (id Int32, str String) Engine=Memory;
-CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_11 (id Int32, str String) Engine=Memory;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_1 (id Int32, str String) Engine=MergeTree ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_2 (id Int32, str String) Engine=MergeTree ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_3 (id Int32, str String) Engine=MergeTree ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_4 (id Int32, str String) Engine=MergeTree ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_5 (id Int32, str String) Engine=MergeTree ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_6 (id Int32, str String) Engine=MergeTree ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_7 (id Int32, str String) Engine=MergeTree ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_8 (id Int32, str String) Engine=MergeTree ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_9 (id Int32, str String) Engine=MergeTree ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_10 (id Int32, str String) Engine=MergeTree ORDER BY id;
+CREATE TABLE IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_11 (id Int32, str String) Engine=MergeTree ORDER BY id;
 
 CREATE VIEW IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_view_1 AS SELECT * FROM test_max_num_to_warn_02931.test_max_num_to_warn_1;
 CREATE VIEW IF NOT EXISTS test_max_num_to_warn_02931.test_max_num_to_warn_view_2 AS SELECT * FROM test_max_num_to_warn_02931.test_max_num_to_warn_2;
@@ -58,6 +78,13 @@ CREATE DATABASE IF NOT EXISTS test_max_num_to_warn_9;
 CREATE DATABASE IF NOT EXISTS test_max_num_to_warn_10;
 CREATE DATABASE IF NOT EXISTS test_max_num_to_warn_11;
 
+CREATE NAMED COLLECTION test_max_num_to_warn_1 AS key = 1;
+CREATE NAMED COLLECTION test_max_num_to_warn_2 AS key = 1;
+CREATE NAMED COLLECTION test_max_num_to_warn_3 AS key = 1;
+CREATE NAMED COLLECTION test_max_num_to_warn_4 AS key = 1;
+CREATE NAMED COLLECTION test_max_num_to_warn_5 AS key = 1;
+CREATE NAMED COLLECTION test_max_num_to_warn_6 AS key = 1;
+
 INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_1 VALUES (1, 'Hello');
 INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_2 VALUES (1, 'Hello');
 INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_3 VALUES (1, 'Hello');
@@ -70,13 +97,7 @@ INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_9 VALUES (1, 'Hello'
 INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_10 VALUES (1, 'Hello');
 INSERT INTO test_max_num_to_warn_02931.test_max_num_to_warn_11 VALUES (1, 'Hello');
 
-SELECT * FROM system.warnings where message in (
-    'The number of attached tables is more than 5.',
-    'The number of attached views is more than 5.',
-    'The number of attached dictionaries is more than 5.',
-    'The number of attached databases is more than 2.',
-    'The number of active parts is more than 10.'
-) ORDER BY message;
+SELECT replaceRegexpAll(message, '\(\d+\)', '_'), message_format_string FROM system.warnings WHERE message LIKE 'The number of%' ORDER BY message;
 
 DROP DATABASE IF EXISTS test_max_num_to_warn_02931;
 DROP DATABASE IF EXISTS test_max_num_to_warn_1;
@@ -90,3 +111,10 @@ DROP DATABASE IF EXISTS test_max_num_to_warn_8;
 DROP DATABASE IF EXISTS test_max_num_to_warn_9;
 DROP DATABASE IF EXISTS test_max_num_to_warn_10;
 DROP DATABASE IF EXISTS test_max_num_to_warn_11;
+
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_1;
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_2;
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_3;
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_4;
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_5;
+DROP NAMED COLLECTION IF EXISTS test_max_num_to_warn_6;

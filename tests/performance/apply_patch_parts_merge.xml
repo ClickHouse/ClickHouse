@@ -1,0 +1,61 @@
+<test>
+    <settings>
+        <allow_experimental_lightweight_update>1</allow_experimental_lightweight_update>
+    </settings>
+
+    <create_query>
+        CREATE TABLE test_lwu_merge
+        (
+            id UInt64,
+            uint_1p UInt64,
+            uint_10p UInt64,
+            str_1p String,
+            str_10p String,
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+    </create_query>
+
+    <fill_query>INSERT INTO test_lwu_merge
+        SELECT
+            number,
+            rand(),
+            rand(),
+            randomPrintableASCII(8),
+            randomPrintableASCII(8),
+        FROM numbers_mt(50000000) SETTINGS max_insert_threads=8
+    </fill_query>
+
+    <fill_query>SYSTEM STOP MERGES test_lwu_merge</fill_query>
+
+    <fill_query>UPDATE test_lwu_merge SET uint_1p = rand() WHERE id % 500 = 0</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET uint_1p = rand() WHERE id % 500 = 100</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET uint_1p = rand() WHERE id % 500 = 200</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET uint_1p = rand() WHERE id % 500 = 300</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET uint_1p = rand() WHERE id % 500 = 400</fill_query>
+
+    <fill_query>UPDATE test_lwu_merge SET uint_10p = rand() WHERE id % 50 = 0</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET uint_10p = rand() WHERE id % 50 = 10</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET uint_10p = rand() WHERE id % 50 = 20</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET uint_10p = rand() WHERE id % 50 = 20</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET uint_10p = rand() WHERE id % 50 = 30</fill_query>
+
+    <fill_query>UPDATE test_lwu_merge SET str_1p = randomPrintableASCII(8) WHERE id % 500 = 0</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET str_1p = randomPrintableASCII(8) WHERE id % 500 = 100</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET str_1p = randomPrintableASCII(8) WHERE id % 500 = 200</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET str_1p = randomPrintableASCII(8) WHERE id % 500 = 300</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET str_1p = randomPrintableASCII(8) WHERE id % 500 = 400</fill_query>
+
+    <fill_query>UPDATE test_lwu_merge SET str_10p = randomPrintableASCII(8) WHERE id % 50 = 0</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET str_10p = randomPrintableASCII(8) WHERE id % 50 = 10</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET str_10p = randomPrintableASCII(8) WHERE id % 50 = 20</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET str_10p = randomPrintableASCII(8) WHERE id % 50 = 30</fill_query>
+    <fill_query>UPDATE test_lwu_merge SET str_10p = randomPrintableASCII(8) WHERE id % 50 = 40</fill_query>
+
+    <query>SELECT count() FROM test_lwu_merge WHERE NOT ignore(uint_1p)</query>
+    <query>SELECT count() FROM test_lwu_merge WHERE NOT ignore(uint_10p)</query>
+    <query>SELECT count() FROM test_lwu_merge WHERE NOT ignore(str_1p)</query>
+    <query>SELECT count() FROM test_lwu_merge WHERE NOT ignore(str_10p)</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_lwu_merge</drop_query>
+</test>

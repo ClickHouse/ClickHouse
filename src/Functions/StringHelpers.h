@@ -74,18 +74,16 @@ struct ExtractSubstringImpl
         size_t res_offset = 0;
 
         /// Matched part.
-        Pos start;
-        size_t length;
+        Pos start = nullptr;
+        size_t length = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            Extractor::execute(reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset - 1, start, length);
+            Extractor::execute(reinterpret_cast<const char *>(&data[prev_offset]), offsets[i] - prev_offset, start, length);
 
-            res_data.resize(res_data.size() + length + 1);
+            res_data.resize(res_data.size() + length);
             memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], start, length);
-            res_offset += length + 1;
-            res_data[res_offset - 1] = 0;
-
+            res_offset += length;
             res_offsets[i] = res_offset;
             prev_offset = offsets[i];
         }
@@ -94,8 +92,8 @@ struct ExtractSubstringImpl
     static void constant(const std::string & data,
         std::string & res_data)
     {
-        Pos start;
-        size_t length;
+        Pos start = nullptr;
+        size_t length = 0;
         Extractor::execute(data.data(), data.size(), start, length);
         res_data.assign(start, length);
     }
@@ -124,13 +122,13 @@ struct CutSubstringImpl
         size_t res_offset = 0;
 
         /// Matched part.
-        Pos start;
-        size_t length;
+        Pos start = nullptr;
+        size_t length = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const char * current = reinterpret_cast<const char *>(&data[prev_offset]);
-            Extractor::execute(current, offsets[i] - prev_offset - 1, start, length);
+            Extractor::execute(current, offsets[i] - prev_offset, start, length);
             size_t start_index = start - reinterpret_cast<const char *>(data.data());
 
             res_data.resize(res_data.size() + offsets[i] - prev_offset - length);
@@ -148,8 +146,8 @@ struct CutSubstringImpl
     static void constant(const std::string & data,
         std::string & res_data)
     {
-        Pos start;
-        size_t length;
+        Pos start = nullptr;
+        size_t length = 0;
         Extractor::execute(data.data(), data.size(), start, length);
         res_data.reserve(data.size() - length);
         res_data.append(data.data(), start);

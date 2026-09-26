@@ -1,0 +1,11 @@
+Row 1:
+──────
+query: select * from data settings load_marks_asynchronously=1 format Null /* 1 */;
+async: 1
+sync:  0
+
+Row 2:
+──────
+query: select * from data settings load_marks_asynchronously=1 format Null /* 2 */;
+async: 0
+sync:  1

@@ -10,6 +10,19 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             </disk_s3_plain_rewritable>
+            <disk_cache_s3_plain_rewritable>
+                <type>cache</type>
+                <disk>disk_s3_plain_rewritable</disk>
+                <path>disks/cache/</path>
+                <max_size>1000000000</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+            </disk_cache_s3_plain_rewritable>
+            <disk_encrypted>
+                <type>encrypted</type>
+                <disk>disk_cache_s3_plain_rewritable</disk>
+                <key>1234567812345678</key>
+                <path>disks/encrypted/</path>
+            </disk_encrypted>
         </disks>
         <policies>
             <s3_plain_rewritable>
@@ -19,6 +32,20 @@
                     </main>
                 </volumes>
             </s3_plain_rewritable>
+            <cache>
+                <volumes>
+                    <main>
+                        <disk>disk_cache_s3_plain_rewritable</disk>
+                    </main>
+                </volumes>
+            </cache>
+            <encrypted>
+                <volumes>
+                    <main>
+                        <disk>disk_encrypted</disk>
+                    </main>
+                </volumes>
+            </encrypted>
         </policies>
     </storage_configuration>
 </clickhouse>

@@ -6,6 +6,7 @@ insert into t SELECT number, -number, number FROM numbers(10000);
 
 set max_rows_to_read = 4;
 
+set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 select count() from t where id = 3;
 
 drop table t;

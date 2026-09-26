@@ -2,8 +2,8 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
+#include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -32,7 +32,7 @@ struct QueryThreadLogElement
     Int64 memory_usage{};
     Int64 peak_memory_usage{};
 
-    String thread_name;
+    ThreadName thread_name{};
     UInt64 thread_id{};
     UInt64 master_thread_id{};
 
@@ -42,7 +42,7 @@ struct QueryThreadLogElement
 
     ClientInfo client_info;
 
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::optional<ProfileEvents::Counters::Snapshot> profile_counters;
 
     static std::string name() { return "QueryThreadLog"; }
 

@@ -1,0 +1,23 @@
+Create tables with vector similarity indexs on Float64, Float32 and BFloat16 columns
+Run all combinations of vector search queries: column type x reference vector type
+5
+5
+5
+5
+5
+5
+5
+5
+5
+Check that the index is used for all combinations of vector search queries: column type x reference vector type
+Description: vector_similarity GRANULARITY 100000000
+Description: vector_similarity GRANULARITY 100000000
+Description: vector_similarity GRANULARITY 100000000
+Description: vector_similarity GRANULARITY 100000000
+Description: vector_similarity GRANULARITY 100000000
+Description: vector_similarity GRANULARITY 100000000
+Description: vector_similarity GRANULARITY 100000000
+Description: vector_similarity GRANULARITY 100000000
+Description: vector_similarity GRANULARITY 100000000
+Check that non-const reference vectors also work
+Description: vector_similarity GRANULARITY 100000000

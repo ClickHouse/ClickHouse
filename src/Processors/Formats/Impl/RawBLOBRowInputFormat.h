@@ -16,7 +16,7 @@ class ReadBuffer;
 class RawBLOBRowInputFormat final : public IRowInputFormat
 {
 public:
-    RawBLOBRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
+    RawBLOBRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_);
 
     String getName() const override { return "RawBLOBRowInputFormat"; }
 
@@ -29,7 +29,7 @@ private:
     bool done_count_rows = false;
 };
 
-class RawBLOBSchemaReader: public IExternalSchemaReader
+class RawBLOBSchemaReader final : public IExternalSchemaReader
 {
 public:
     NamesAndTypesList readSchema() override

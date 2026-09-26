@@ -15,7 +15,7 @@ namespace DB
 class TSKVRowOutputFormat final : public TabSeparatedRowOutputFormat
 {
 public:
-    TSKVRowOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings);
+    TSKVRowOutputFormat(WriteBuffer & out_, SharedHeader header, const FormatSettings & format_settings);
 
     String getName() const override { return "TSKVRowOutputFormat"; }
 

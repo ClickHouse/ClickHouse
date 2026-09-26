@@ -1,0 +1,5 @@
+<clickhouse>
+    <interserver_http_host>NODE_NAME</interserver_http_host>
+    <interserver_http_port>9009</interserver_http_port>
+    <async_load_databases>false</async_load_databases>
+</clickhouse>

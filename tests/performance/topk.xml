@@ -1,0 +1,23 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>func</name>
+            <values>
+                <value>topK(5, 3)</value>
+                <value>topK(10, 3)</value> <!-- Default -->
+                <value>topK(100, 10)</value> <!-- Larger K and larger accuracy -->
+            </values>
+        </substitution>
+        <substitution>
+           <name>key</name>
+           <values>
+               <value>SearchEngineID</value>
+               <value>RegionID</value>
+               <value>SearchPhrase</value>
+               <value>UserID</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT {func}({key}) FROM hits_100m_single FORMAT Null</query>
+</test>

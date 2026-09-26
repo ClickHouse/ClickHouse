@@ -1,0 +1,4 @@
+Dynamic splitting on: the block is split by estimated size
+1
+Dynamic splitting off: one call per pipeline block
+4096

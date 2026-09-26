@@ -21,9 +21,9 @@
 #include "Poco/Net/Net.h"
 #include "Poco/Net/SocketAddress.h"
 #include "Poco/Net/SocketDefs.h"
+#include "Poco/Net/Throttler.h"
 #include "Poco/RefCountedObject.h"
 #include "Poco/Timespan.h"
-
 
 namespace Poco
 {
@@ -215,7 +215,7 @@ namespace Net
         /// Returns true if the next operation corresponding to
         /// mode will not block, false otherwise.
 
-        bool pollImpl(Poco::Timespan & timeout, int mode);
+        virtual bool pollImpl(Poco::Timespan & timeout, int mode);
         /// Modifies `timeout`
 
         virtual void setSendBufferSize(int size);
@@ -260,6 +260,18 @@ namespace Net
         /// The returned timeout may be different than the
         /// timeout previously set with setReceiveTimeout(),
         /// as the system is free to adjust the value.
+
+        virtual void setSendThrottler(const Poco::Net::ThrottlerPtr & throttler);
+        /// Sets the throttler that will be used to limit the speed of data sent through the socket.
+
+        virtual Poco::Net::ThrottlerPtr getSendThrottler();
+        /// Returns the throttler that is used to limit the speed of data sent through the socket.
+
+        virtual void setReceiveThrottler(const Poco::Net::ThrottlerPtr & throttler);
+        /// Sets the throttler that will be used to limit the speed of data received through the socket.
+
+        virtual Poco::Net::ThrottlerPtr getReceiveThrottler();
+        /// Returns the throttler that is used to limit the speed of data received through the socket.
 
         virtual SocketAddress address();
         /// Returns the IP address and port number of the socket.
@@ -375,6 +387,14 @@ namespace Net
         /// Returns true iff the socket's connection is secure
         /// (using SSL or TLS).
 
+        virtual bool supportsExternalPolling() const;
+        /// Returns true iff an external poller can drive this socket's
+        /// readiness (the non-blocking / EAGAIN model).
+
+        virtual bool connectionOpen();
+        /// Returns true iff the peer has not closed the connection,
+        /// checked without consuming pending data or blocking.
+
         int socketError();
         /// Returns the value of the SO_ERROR socket option.
 
@@ -401,7 +421,7 @@ namespace Net
 
         static void error(int code);
         /// Throws an appropriate exception for the given error code.
-    
+
     protected:
 	    SocketImpl();
 		/// Creates a SocketImpl.
@@ -452,6 +472,18 @@ namespace Net
         static void error(int code, const std::string & arg);
         /// Throws an appropriate exception for the given error code.
 
+        void throttleSend(size_t length, bool blocking);
+        /// Properly throttles the send operation.
+
+        void throttleRecv(size_t length, bool blocking);
+        /// Properly throttles the recv operation.
+
+        void useSendThrottlerBudget(int rc);
+        /// Checks the return code `rc` and updates send throttler budget.
+
+        void useRecvThrottlerBudget(int rc);
+        /// Checks the return code `rc` and updates recv throttler budget.
+
     protected:
         SocketImpl(const SocketImpl &);
         SocketImpl & operator=(const SocketImpl &);
@@ -460,7 +492,13 @@ namespace Net
         Poco::Timespan _recvTimeout;
         Poco::Timespan _sndTimeout;
         bool _blocking;
-        bool _isBrokenTimeout;
+
+        static constexpr size_t THROTTLER_QUANTUM = 32 * 1024;
+        static constexpr size_t THROTTLER_MAX_BLOCK_NS = 20'000'000'000ull;
+        size_t _recvThrottlerBudget;
+        size_t _sndThrottlerBudget;
+        ThrottlerPtr _recvThrottler;
+        ThrottlerPtr _sndThrottler;
 
         friend class Socket;
         friend class SecureSocketImpl;

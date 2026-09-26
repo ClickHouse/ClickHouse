@@ -234,6 +234,12 @@ struct ExpressionAnalysisResult
     bool first_stage = false;
     /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
     bool second_stage = false;
+    /// Do I run on the initiating server over data the remote servers already aggregated, because they
+    /// processed the query up to `WithMergeableStateAfterAggregation` or further? Neither `first_stage` nor
+    /// `second_stage` is set then, yet the final clauses still run here, so `appendLimitRange` must build the
+    /// `LIMIT AFTER`/`UNTIL` expressions for execution: their `IN (subquery)` sets get created, unlike in the
+    /// types-only analysis that skips them.
+    bool from_aggregation_stage = false;
 
     bool need_aggregate = false;
     bool has_order_by   = false;
@@ -260,6 +266,9 @@ struct ExpressionAnalysisResult
     ActionsAndProjectInputsFlagPtr before_window;
     ActionsAndProjectInputsFlagPtr before_order_by;
     ActionsAndProjectInputsFlagPtr before_limit_by;
+    ActionsAndProjectInputsFlagPtr before_limit_range;
+    String limit_range_start_column_name;
+    String limit_range_end_column_name;
     ActionsAndProjectInputsFlagPtr final_projection;
 
     /// Columns from the SELECT list, before renaming them to aliases. Used to
@@ -273,7 +282,7 @@ struct ExpressionAnalysisResult
     NameSet columns_to_remove_after_prewhere;
 
     PrewhereInfoPtr prewhere_info;
-    FilterDAGInfoPtr filter_info;
+    FilterDAGInfoPtr row_policy_info;
     ConstantFilterDescription prewhere_constant_filter_description;
     ConstantFilterDescription where_constant_filter_description;
     /// Actions by every element of ORDER BY
@@ -287,13 +296,14 @@ struct ExpressionAnalysisResult
         const StorageMetadataPtr & metadata_snapshot,
         bool first_stage,
         bool second_stage,
+        bool from_aggregation_stage,
         bool only_types,
-        const FilterDAGInfoPtr & filter_info,
+        const FilterDAGInfoPtr & row_policy_info,
         const FilterDAGInfoPtr & additional_filter, /// for setting additional_filters
         const Block & source_header);
 
     /// Filter for row-level security.
-    bool hasFilter() const { return filter_info.get(); }
+    bool hasRowPolicyFilter() const { return row_policy_info.get(); }
 
     bool hasJoin() const { return join.get(); }
     bool hasPrewhere() const { return prewhere_info.get(); }
@@ -426,6 +436,7 @@ private:
     ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
     void validateOrderByKeyType(const DataTypePtr & key_type) const;
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
+    bool appendLimitRange(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };
 

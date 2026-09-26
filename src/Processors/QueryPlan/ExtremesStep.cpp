@@ -21,7 +21,7 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-ExtremesStep::ExtremesStep(const Header & input_header)
+ExtremesStep::ExtremesStep(const SharedHeader & input_header)
     : ITransformingStep(input_header, input_header, getTraits())
 {
 }
@@ -36,11 +36,17 @@ void ExtremesStep::serialize(Serialization & ctx) const
     (void)ctx;
 }
 
-std::unique_ptr<IQueryPlanStep> ExtremesStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr ExtremesStep::deserialize(Deserialization & ctx)
 {
     return std::make_unique<ExtremesStep>(ctx.input_headers.front());
 }
 
+QueryPlanStepPtr ExtremesStep::clone() const
+{
+    return std::make_unique<ExtremesStep>(*this);
+}
+
+void registerExtremesStep(QueryPlanStepRegistry & registry);
 void registerExtremesStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Extremes", ExtremesStep::deserialize);

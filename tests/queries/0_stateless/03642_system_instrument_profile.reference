@@ -1,0 +1,7 @@
+-- Check ENTRY_AND_EXIT is present in system.instrumentation
+EntryAndExit
+-- Check the Entrys and Exits
+Entry	\N
+Exit	1
+-- Check a recursive function has Entrys and Exits
+1	1

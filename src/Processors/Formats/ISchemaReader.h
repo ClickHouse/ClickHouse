@@ -4,7 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -105,7 +105,7 @@ protected:
 
     virtual bool allowVariableNumberOfColumns() const { return false; }
 
-    size_t field_index;
+    size_t field_index{};
 
 private:
     DataTypePtr getDefaultType(size_t column) const;

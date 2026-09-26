@@ -11,10 +11,12 @@ struct FormatSettings;
 class IColumn;
 
 /** Simple ISerialization that uses serializeText/deserializeText
- * for all serialization and deserialization. */
+  * for all serialization and deserialization.
+  */
 class SerializationCustomSimpleText : public SerializationWrapper
 {
 public:
+    SerializationCustomSimpleText() = delete;
     explicit SerializationCustomSimpleText(const SerializationPtr & nested_);
 
     // Methods that subclasses must override in order to get full serialization/deserialization support.
@@ -32,14 +34,14 @@ public:
     /** Text serialization with escaping but without quoting.
       */
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const  override;
-    bool tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const  override;
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    bool tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     /** Text serialization as a literal that may be inserted into a query.
       */
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const  override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const  override;
-    bool tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const  override;
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    bool tryDeserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     /** Text serialization for the CSV format.
       */

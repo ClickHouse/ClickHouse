@@ -1,15 +1,24 @@
 #pragma once
 
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
+
+#include <Disks/IStoragePolicy.h>
 
 #include <Core/UUID.h>
 
 #include <optional>
 #include <set>
 #include <span>
+#include <ctime>
 
 namespace DB
 {
+
+class IMergeTreeDataPart;
+using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
+
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 struct PartProperties
 {
@@ -18,6 +27,7 @@ struct PartProperties
     const std::set<std::string> projection_names = {};
 
     const bool all_ttl_calculated_if_any = false;
+    const bool is_in_volume_where_merges_avoid = false;
 
     /// Size of data part in bytes.
     const size_t size = 0;
@@ -25,12 +35,20 @@ struct PartProperties
     /// How old this data part in seconds.
     const time_t age = 0;
 
+    /// Number of rows in part.
+    const size_t rows = 0;
+
     /// Information about different TTLs for part. Used by Part/Row Delete Merge Selectors.
     struct GeneralTTLInfo
     {
         const bool has_any_non_finished_ttls;
+        const bool has_any_non_finished_row_ttls;
+        const bool has_any_non_finished_column_ttls;
         const time_t part_min_ttl;
         const time_t part_max_ttl;
+        /// The earliest due time among the unfinished column TTLs, as opposed to `part_min_ttl`,
+        /// which is the minimum across the row TTLs as well.
+        const time_t column_min_ttl;
     };
     const std::optional<GeneralTTLInfo> general_ttl_info = std::nullopt;
 
@@ -50,6 +68,7 @@ using PartsRangeView = std::span<const PartProperties>;
 PartProperties buildPartProperties(
     const MergeTreeDataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
+    const StoragePolicyPtr & storage_policy,
     time_t current_time);
 
 }

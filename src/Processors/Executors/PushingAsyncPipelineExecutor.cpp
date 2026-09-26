@@ -1,5 +1,5 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -7,6 +7,7 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 #include <Poco/Event.h>
 
 namespace DB
@@ -21,7 +22,7 @@ namespace ErrorCodes
 class PushingAsyncSource : public ISource
 {
 public:
-    explicit PushingAsyncSource(const Block & header)
+    explicit PushingAsyncSource(SharedHeader header)
         : ISource(header)
     {}
 
@@ -101,7 +102,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, "QueryPushPipeEx");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::PUSHING_ASYNC_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
     }
@@ -109,11 +110,10 @@ static void threadFunction(
     {
         data.exception = std::current_exception();
         data.has_exception = true;
-
-        /// Finish source in case of exception. Otherwise thread.join() may hung.
-        if (data.source)
-            data.source->finish();
     }
+
+    if (data.source)
+        data.source->finish();
 
     data.is_finished = true;
     data.finish_event.set();
@@ -125,7 +125,7 @@ PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipel
     if (!pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PushingPipelineExecutor must be pushing");
 
-    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getHeader());
+    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getSharedHeader());
     connect(pushing_source->getPort(), *pipeline.input);
     pipeline.processors->emplace_back(pushing_source);
 }
@@ -170,10 +170,9 @@ void PushingAsyncPipelineExecutor::start()
     data->thread = ThreadFromGlobalPool(std::move(func));
 }
 
-[[noreturn]] static void throwOnExecutionStatus(PipelineExecutor::ExecutionStatus status)
+[[noreturn]] static void throwOnUnexpectedPipelineFinish(const IProcessor & pushing_source)
 {
-    if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
-        || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
+    if (pushing_source.isCancelled())
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -189,7 +188,7 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
     data->rethrowExceptionIfHas();
 
     if (!is_pushed)
-        throwOnExecutionStatus(data->executor->getExecutionStatus());
+        throwOnUnexpectedPipelineFinish(*pushing_source);
 }
 
 void PushingAsyncPipelineExecutor::push(Block block)

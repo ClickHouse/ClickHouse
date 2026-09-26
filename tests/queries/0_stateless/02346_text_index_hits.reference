@@ -1,0 +1,54 @@
+hasToken reference without index
+idx_search_phrase
+604
+666
+28
+497
+181
+86
+3
+idx_url
+1564661
+111669
+1452992
+8084935
+858062
+52
+54
+idx_search_phrase,idx_url
+34	2014-03-17	2014-03-23
+27
+hasToken direct read from index
+idx_search_phrase
+604
+666
+28
+497
+181
+86
+3
+idx_url
+1564661
+111669
+1452992
+8084935
+858062
+52
+54
+idx_search_phrase,idx_url
+34	2014-03-17	2014-03-23
+27
+hasAnyTokens/hasAllTokens reference without direct read from index
+8843360
+111669
+23690
+2922
+28
+126901
+hasAnyTokens/hasAllTokens direct read from index
+8843360
+111669
+23690
+2922
+28
+126901

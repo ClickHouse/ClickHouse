@@ -1,0 +1,41 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/</url>
+            <handler>
+                <type>redirect</type>
+                <location>/play</location>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <url>regex:^/pla</url>
+            <handler>
+                <type>redirect</type>
+                <location>/play</location>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <full_url>http://127.0.0.1:8123/play</full_url>
+            <empty_query_string></empty_query_string>
+            <handler>
+                <type>redirect</type>
+                <location>/play?from=http://127.0.0.1:8123/play</location>
+            </handler>
+        </rule>
+
+        <rule>
+            <methods>GET</methods>
+            <full_url>regex:^http://[^:]*:8123/dashboard</full_url>
+            <empty_query_string></empty_query_string>
+            <handler>
+                <type>redirect</type>
+                <location>/dashboard?from=http://:8123/dashboard</location>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>

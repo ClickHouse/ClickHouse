@@ -13,7 +13,8 @@
 #include <azure/core/io/body_stream.hpp>
 #include <Common/ThreadPoolTaskTracker.h>
 #include <Common/BufferAllocationPolicy.h>
-#include <Disks/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <Common/BlobStorageLogWriter.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
 
 namespace Poco
 {
@@ -36,6 +37,8 @@ public:
         size_t buf_size_,
         const WriteSettings & write_settings_,
         std::shared_ptr<const AzureBlobStorage::RequestSettings> settings_,
+        const String & container_for_logging_ = {},
+        BlobStorageLogWriterPtr blob_log_ = {},
         ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {});
 
     ~WriteBufferFromAzureBlobStorage() override;
@@ -57,17 +60,20 @@ private:
     void setFakeBufferWhenPreFinalized();
 
     void finalizeImpl() override;
-    void execWithRetry(std::function<void()> func, size_t num_tries, size_t cost = 0);
+    void execWithRetry(std::function<void(size_t)> func, size_t num_tries, size_t cost = 0);
     void uploadBlock(const char * data, size_t size);
 
     /// Returns true if not a single byte was written to the buffer
     bool isEmpty() const { return total_size == 0 && count() == 0 && hidden_size == 0 && offset() == 0; }
+
+    Azure::Core::Context azure_context;
 
     LoggerPtr log;
     LogSeriesLimiterPtr limited_log = std::make_shared<LogSeriesLimiter>(log, 1, 5);
 
     BufferAllocationPolicyPtr buffer_allocation_policy;
 
+    const std::shared_ptr<const AzureBlobStorage::RequestSettings> settings;
     const size_t max_single_part_upload_size;
     const size_t max_unexpected_write_error_retries;
     const std::string blob_path;
@@ -96,6 +102,9 @@ private:
     bool check_objects_after_upload = false;
 
     std::deque<PartData> detached_part_data;
+
+    String container_for_logging;
+    BlobStorageLogWriterPtr blob_log;
 };
 
 }

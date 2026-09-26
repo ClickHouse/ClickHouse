@@ -168,7 +168,7 @@ void WhereConstraintsOptimizer::perform()
     if (select_query->where() && metadata_snapshot)
     {
         const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
-        auto cnf = TreeCNFConverter::toCNF(select_query->where());
+        auto cnf = TreeCNFConverter::toCNF(select_query->where().get());
         cnf.pullNotOutFunctions()
             .filterAlwaysTrueGroups([&compare_graph, this](const auto & group)
             {

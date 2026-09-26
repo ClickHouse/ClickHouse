@@ -1,5 +1,6 @@
 import logging
 import os
+import signal
 import subprocess as sp
 import tempfile
 from threading import Timer
@@ -8,6 +9,35 @@ import numpy as np
 import pandas as pd
 
 DEFAULT_QUERY_TIMEOUT = 600
+
+# Asked to explain a failed request whose cause is not in the client's own stderr, because
+# something outside the server broke the connection. Takes the address the request was
+# actually aimed at and the client's stderr, and returns the explanation to prepend, or an
+# empty string for the ordinary case, in which nothing about the request changes. Installed
+# by helpers/cluster.py at import time - see `describe_transport_error_for_host` there.
+#
+# It hangs off the module, rather than being handed to each `Client`, because the address is
+# the only thing that says which server a request reached. Tests build a `Client` straight
+# against a node's IP without going through the cluster, and `query(host=...)` re-aims an
+# existing client at another node for a single request. Keying on the address covers both -
+# and covers the clients written after this, which no audit of call sites could.
+_transport_error_describer = None
+
+
+def set_transport_error_describer(describer):
+    global _transport_error_describer
+    _transport_error_describer = describer
+
+
+def describe_transport_error(host, error_text):
+    """The cause of a failed request to `host` that the client cannot see, or "".
+
+    Answers "" whenever nothing is installed, so `helpers/client.py` stays usable on its
+    own - `helpers/keeper_utils.py` and a few tests drive it without a cluster.
+    """
+    if _transport_error_describer is None:
+        return ""
+    return _transport_error_describer(host, error_text)
 
 
 class Client:
@@ -109,14 +139,39 @@ class Client:
             command += ["--password", password]
         if database is not None:
             command += ["--database", database]
+
         if host is not None:
-            command += ["--host", host]
+            replaced = False
+            for i, token in enumerate(command):
+                if token == "--host" and i + 1 < len(command):
+                    command[i + 1] = host
+                    replaced = True
+                    break
+            if not replaced:
+                # Should not happen normally, but keep fallback
+                command += ["--host", host]
+
         if query_id is not None:
             command += ["--query_id", query_id]
         if parse:
             command += ["--format=TabSeparatedWithNames"]
 
-        return CommandRequest(command, stdin, timeout, ignore_error, parse)
+        # The server this request will actually reach, which `host` may have just changed.
+        # Resolved per request rather than per client, so re-aiming one client at another
+        # node investigates the node that failed instead of the one the client was built
+        # for.
+        effective_host = self.host if host is None else host
+
+        return CommandRequest(
+            command,
+            stdin,
+            timeout,
+            ignore_error,
+            parse,
+            describe_transport_error=lambda stderr: describe_transport_error(
+                effective_host, stderr
+            ),
+        )
 
     @stacktraces_on_timeout_decorator
     def query_and_get_error(
@@ -178,26 +233,26 @@ class QueryRuntimeException(Exception):
 
 class CommandRequest:
     def __init__(
-        self, command, stdin=None, timeout=None, ignore_error=False, parse=False
+        self, command, stdin=None, timeout=None, ignore_error=False, parse=False, stdout_file_path=None, stderr_file_path=None, env = {}, describe_transport_error=None
     ):
         # Write data to tmp file to avoid PIPEs and execution blocking
-        stdin_file = tempfile.TemporaryFile(mode="w+")
-        stdin_file.write(stdin)
-        stdin_file.seek(0)
-        self.stdout_file = tempfile.TemporaryFile()
-        self.stderr_file = tempfile.TemporaryFile()
+        self.stdin_file = tempfile.TemporaryFile(mode="w+")
+        self.stdin_file.write(stdin)
+        self.stdin_file.seek(0)
+        self.stdout_file = tempfile.TemporaryFile() if stdout_file_path is None else stdout_file_path
+        self.stderr_file = tempfile.TemporaryFile() if stderr_file_path is None else stderr_file_path
         self.ignore_error = ignore_error
         self.parse = parse
+        self.describe_transport_error = describe_transport_error
         # print " ".join(command)
 
         # we suppress stderror on client becase sometimes thread sanitizer
         # can print some debug information there
-        env = {}
         env["ASAN_OPTIONS"] = "use_sigaltstack=0"
         env["TSAN_OPTIONS"] = "use_sigaltstack=0 verbosity=0"
         self.process = sp.Popen(
             command,
-            stdin=stdin_file,
+            stdin=self.stdin_file,
             stdout=self.stdout_file,
             stderr=self.stderr_file,
             env=env,
@@ -216,6 +271,19 @@ class CommandRequest:
             self.timer = Timer(timeout, kill_process)
             self.timer.start()
 
+    def _transport_failure_cause(self, stderr):
+        """What broke the connection, when the client's own stderr cannot say.
+
+        Every request passes through here, so the answer is attached wherever the failure
+        surfaces - raised by `get_answer`, returned by `get_error`, or collected from a
+        handle long after `get_query_request` returned it - and not only on the one
+        entrypoint that raises. `describe_transport_error` decides whether the error is
+        worth investigating at all, so an ordinary failed query costs one substring check.
+        """
+        if self.describe_transport_error is None:
+            return ""
+        return self.describe_transport_error(stderr)
+
     def remove_trash_from_stderr(self, stderr):
         # FIXME https://github.com/ClickHouse/ClickHouse/issues/48181
         if not stderr:
@@ -226,13 +294,29 @@ class CommandRequest:
         ]
         return "\n".join(lines)
 
-    def get_answer(self):
-        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
-        self.stdout_file.seek(0)
-        self.stderr_file.seek(0)
+    def wait_and_read_output(self):
+        try:
+            self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
+            self.stdout_file.seek(0)
+            self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
+            stdout = self.stdout_file.read().decode("utf-8", errors="replace")
+            stderr = self.stderr_file.read().decode("utf-8", errors="replace")
+
+            return stdout, stderr
+
+        finally:
+            # A pending Timer is a non-daemon thread, so leaving it armed after the process
+            # is gone delays interpreter shutdown by the rest of the timeout. Keep it while
+            # the process still runs: then it is what kills it.
+            if self.timer is not None and self.process.poll() is not None:
+                self.timer.cancel()
+            self.stdin_file.close()
+            self.stdout_file.close()
+            self.stderr_file.close()
+
+    def get_answer(self):
+        stdout, stderr = self.wait_and_read_output()
 
         if (
             self.timer is not None
@@ -242,35 +326,42 @@ class CommandRequest:
             logging.debug(f"Timed out. Last stdout:{stdout}, stderr:{stderr}")
             raise QueryTimeoutExceedException("Client timed out!")
 
-        if (
-            self.process.returncode != 0 or self.remove_trash_from_stderr(stderr)
-        ) and not self.ignore_error:
-            raise QueryRuntimeException(
-                "Client failed! Return code: {}, stderr: {}".format(
-                    self.process.returncode, stderr
-                ),
-                self.process.returncode,
-                stderr,
-            )
+        if self.process.returncode != 0 or self.remove_trash_from_stderr(stderr):
+            cause = self._transport_failure_cause(stderr)
+            if not self.ignore_error:
+                raise QueryRuntimeException(
+                    "{}Client failed! Return code: {}, stderr: {}".format(
+                        f"{cause} " if cause else "", self.process.returncode, stderr
+                    ),
+                    self.process.returncode,
+                    stderr,
+                )
+            if cause:
+                # `ignore_error` promises to ignore what the *server* answers, and cannot
+                # promise more than that: with the container cut off the network there is
+                # no answer to ignore, and every later request in the module fails the
+                # same way. Handing back the empty stdout would leave the test asserting
+                # on nothing, with the run's actual cause nowhere in the report.
+                raise QueryRuntimeException(cause, self.process.returncode, stderr)
 
         if self.parse:
             from io import StringIO
 
-            return (
+            res = (
                 pd.read_csv(StringIO(stdout), sep="\t")
                 .replace(r"\N", None)
                 .replace(np.nan, None)
             )
 
+            if self.parse == "dict":
+                res = res.to_dict(orient="records")
+
+            return res
+
         return stdout
 
     def get_error(self):
-        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
-        self.stdout_file.seek(0)
-        self.stderr_file.seek(0)
-
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
+        stdout, stderr = self.wait_and_read_output()
 
         if (
             self.timer is not None
@@ -286,15 +377,15 @@ class CommandRequest:
                 stderr,
             )
 
-        return stderr
+        # These helpers hand the error back to the test instead of raising it, and the
+        # assertion the test then fails is the only text the CI report will carry. So the
+        # cause goes into the value itself - and only when there is one, i.e. when the test
+        # was going to fail on this string anyway.
+        cause = self._transport_failure_cause(stderr)
+        return f"{cause} {stderr}" if cause else stderr
 
     def get_answer_and_error(self):
-        self.process.wait(timeout=DEFAULT_QUERY_TIMEOUT)
-        self.stdout_file.seek(0)
-        self.stderr_file.seek(0)
-
-        stdout = self.stdout_file.read().decode("utf-8", errors="replace")
-        stderr = self.stderr_file.read().decode("utf-8", errors="replace")
+        stdout, stderr = self.wait_and_read_output()
 
         if (
             self.timer is not None
@@ -303,4 +394,11 @@ class CommandRequest:
         ):
             raise QueryTimeoutExceedException("Client timed out!")
 
-        return (stdout, stderr)
+        cause = self._transport_failure_cause(stderr)
+        return (stdout, f"{cause} {stderr}" if cause else stderr)
+
+    def pause_process(self):
+        self.process.send_signal(signal.SIGSTOP)
+
+    def resume_process(self):
+        self.process.send_signal(signal.SIGCONT)

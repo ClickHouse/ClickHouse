@@ -4,7 +4,6 @@
 #include <base/types.h>
 #include <base/simd.h>
 #include <Common/BitHelpers.h>
-#include <Poco/UTF8Encoding.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -90,31 +89,15 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
 }
 
 
-template <typename CharT>
-requires (sizeof(CharT) == 1)
-size_t convertCodePointToUTF8(int code_point, CharT * out_bytes, size_t out_length)
-{
-    static const Poco::UTF8Encoding utf8;
-    int res = utf8.convert(
-        code_point,
-        reinterpret_cast<uint8_t *>(out_bytes),
-        static_cast<int>(out_length));
-    assert(res >= 0);
-    return res;
-}
+size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_length);
+std::optional<uint32_t> convertUTF8ToCodePoint(const char * in_bytes, size_t in_length);
 
-template <typename CharT>
-requires (sizeof(CharT) == 1)
-std::optional<uint32_t> convertUTF8ToCodePoint(const CharT * in_bytes, size_t in_length)
+/// Surrogate code points are reserved for UTF-16 and are not Unicode scalar values,
+/// so they have no valid UTF-8 encoding. `convertCodePointToUTF8` doesn't check that,
+/// it encodes them as CESU-8, so callers must reject them beforehand.
+constexpr bool isSurrogateCodePoint(UInt32 code_point)
 {
-    static const Poco::UTF8Encoding utf8;
-    int res = utf8.queryConvert(
-        reinterpret_cast<const uint8_t *>(in_bytes),
-        static_cast<int>(in_length));
-
-    if (res >= 0)
-        return res;
-    return {};
+    return code_point >= 0xD800 && code_point <= 0xDFFF;
 }
 
 
@@ -135,6 +118,16 @@ size_t computeWidth(const UInt8 * data, size_t size, size_t prefix = 0) noexcept
   * The same result will be for limit 4, because the last character would not fit.
   */
 size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept;
+
+/** Calculate the number of bytes before limit-th code point.
+  */
+size_t computeBytesBeforeCodePoint(const UInt8 * data, size_t size, size_t limit) noexcept;
+
+/// True if `Poco::Unicode::toLower` maps some non-ASCII code point onto the ASCII character `c`, or onto its
+/// other case. Today that set is {'k', 'K'}, reachable from U+212A KELVIN SIGN.
+/// Case-insensitive UTF-8 search folds per code point with that same rule, so a caller comparing bytes cannot
+/// reproduce it and must not answer a needle containing such a character.
+bool isASCIIReachableByCaseFolding(char c);
 
 }
 

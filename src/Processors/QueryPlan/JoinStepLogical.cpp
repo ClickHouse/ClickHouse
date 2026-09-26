@@ -1,123 +1,231 @@
+#include <Columns/ColumnConst.h>
+#include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
-#include <Processors/QueryPlan/Serialization.h>
+#include <base/scope_guard.h>
 
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/Context.h>
-#include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Common/safe_cast.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Storages/StorageJoin.h>
-#include <ranges>
-#include <Core/Settings.h>
-#include <Functions/FunctionFactory.h>
-#include <Interpreters/PasteJoin.h>
-#include <Interpreters/JoinUtils.h>
-#include <Planner/PlannerJoins.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Core/ColumnWithTypeAndName.h>
 
+#include <Core/Joins.h>
+#include <Core/ProtocolDefines.h>
+#include <Core/Settings.h>
+
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeTuple.h>
+
+#include <Functions/FunctionFactory.h>
+#include <Functions/ComparisonNames.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/FunctionsComparison.h>
-#include <Functions/isNotDistinctFrom.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <Functions/isNotDistinctFrom.h>
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
 
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DirectJoinMergeTreeEntity.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Processors/QueryPlan/IEJoinStep.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
+#include <Interpreters/PasteJoin.h>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/HashTablesStatistics.h>
 
+#include <IO/Operators.h>
+
+#include <Planner/PlannerJoins.h>
+#include <Processors/QueryPlan/CreateSetAndFilterOnTheFlyStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/QueryPlan/Optimizations/Optimizations.h>
+
+#include <QueryPipeline/QueryPipelineBuilder.h>
+
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageJoin.h>
+
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <algorithm>
+#include <memory>
+#include <optional>
+#include <ranges>
+#include <stack>
+#include <string_view>
+#include <unordered_map>
+#include <unordered_set>
+
+namespace
+{
+constexpr std::string_view join_dummy_result_name = "__join_result_dummy";
+}
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsJoinAlgorithm join_algorithm;
-    extern const SettingsBool join_any_take_last_row;
-    extern const SettingsUInt64 default_max_bytes_in_join;
-    extern const SettingsBool join_use_nulls;
-}
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_COLUMN;
 }
 
-std::string operatorToFunctionName(PredicateOperator op)
+static std::optional<ASOFJoinInequality> operatorToAsofInequality(JoinConditionOperator op)
 {
     switch (op)
     {
-        case PredicateOperator::NullSafeEquals: return FunctionIsNotDistinctFrom::name;
-        case PredicateOperator::Equals: return NameEquals::name;
-        case PredicateOperator::Less: return NameLess::name;
-        case PredicateOperator::LessOrEquals: return NameLessOrEquals::name;
-        case PredicateOperator::Greater: return NameGreater::name;
-        case PredicateOperator::GreaterOrEquals: return NameGreaterOrEquals::name;
-    }
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value for PredicateOperator: {}", static_cast<Int32>(op));
-}
-
-std::optional<ASOFJoinInequality> operatorToAsofInequality(PredicateOperator op)
-{
-    switch (op)
-    {
-        case PredicateOperator::Less: return ASOFJoinInequality::Less;
-        case PredicateOperator::LessOrEquals: return ASOFJoinInequality::LessOrEquals;
-        case PredicateOperator::Greater: return ASOFJoinInequality::Greater;
-        case PredicateOperator::GreaterOrEquals: return ASOFJoinInequality::GreaterOrEquals;
+        case JoinConditionOperator::Less: return ASOFJoinInequality::Less;
+        case JoinConditionOperator::LessOrEquals: return ASOFJoinInequality::LessOrEquals;
+        case JoinConditionOperator::Greater: return ASOFJoinInequality::Greater;
+        case JoinConditionOperator::GreaterOrEquals: return ASOFJoinInequality::GreaterOrEquals;
         default: return {};
     }
 }
 
-void formatJoinCondition(const JoinCondition & join_condition, WriteBuffer & buf)
+static void addToNullableIfNeeded(
+    JoinExpressionActions & expression_actions,
+    JoinKind join_kind,
+    bool use_nulls,
+    const NameSet & required_output_columns,
+    std::vector<const ActionsDAG::Node *> & actions_after_join,
+    const std::unordered_map<String, const ActionsDAG::Node *> & changed_types)
 {
-    auto quote_string = std::views::transform([](const auto & s) { return fmt::format("({})", s.getColumnName()); });
-    auto format_predicate = std::views::transform([](const auto & p) { return fmt::format("{} {} {}", p.left_node.getColumnName(), toString(p.op), p.right_node.getColumnName()); });
-    buf << "[";
-    buf << fmt::format("Predcates: ({})", fmt::join(join_condition.predicates | format_predicate, ", "));
-    if (!join_condition.left_filter_conditions.empty())
-        buf << " " << fmt::format("Left filter: ({})", fmt::join(join_condition.left_filter_conditions | quote_string, ", "));
-    if (!join_condition.right_filter_conditions.empty())
-        buf << " " << fmt::format("Right filter: ({})", fmt::join(join_condition.right_filter_conditions | quote_string, ", "));
-    if (!join_condition.residual_conditions.empty())
-        buf << " " << fmt::format("Residual filter: ({})", fmt::join(join_condition.residual_conditions | quote_string, ", "));
-    buf << "]";
-}
+    auto to_nullable = FunctionFactory::instance().get("toNullable", nullptr);
 
-String formatJoinCondition(const JoinCondition & join_condition)
-{
-    WriteBufferFromOwnString buf;
-    formatJoinCondition(join_condition, buf);
-    return buf.str();
+    auto actions_dag = expression_actions.getActionsDAG();
+    auto & outputs = actions_dag->getOutputs();
+    outputs.clear();
+
+    bool to_null_left = use_nulls && isRightOrFull(join_kind);
+    bool to_null_right = use_nulls && isLeftOrFull(join_kind);
+    for (const auto * node : actions_dag->getInputs())
+    {
+        if (!required_output_columns.contains(node->result_name) && node->result_name != join_dummy_result_name)
+            continue;
+
+        String original_name = node->result_name;
+
+        /// The `changed_types` map is used to handle type changes occurred in `USING` clause
+        if (auto it = changed_types.find(node->result_name); it != changed_types.end())
+        {
+            node = it->second;
+        }
+
+        JoinActionRef input_action(node, expression_actions);
+        bool convert_to_nullable = (to_null_left && input_action.fromLeft()) || (to_null_right && input_action.fromRight());
+        if (convert_to_nullable && removeLowCardinality(node->result_type)->canBeInsideNullable())
+        {
+            node = &actions_dag->addFunction(to_nullable, {node}, {});
+        }
+
+        if (node->result_name != original_name)
+            node = &actions_dag->addAlias(*node, std::move(original_name));
+
+        actions_after_join.push_back(node);
+        outputs.push_back(node);
+    }
+
+    if (outputs.empty())
+    {
+        auto column_type = std::make_shared<DataTypeUInt8>();
+        auto column = column_type->createColumnConst(0, 0);
+        const auto * node = &actions_dag->addColumn(std::move(column), column_type, String(join_dummy_result_name));
+        actions_after_join.push_back(node);
+        outputs.push_back(node);
+    }
 }
 
 JoinStepLogical::JoinStepLogical(
-    const Block & left_header_,
-    const Block & right_header_,
-    JoinInfo join_info_,
+    SharedHeader left_header_,
+    SharedHeader right_header_,
+    JoinOperator join_operator_,
     JoinExpressionActions join_expression_actions_,
-    Names required_output_columns_,
+    const NameSet & required_output_columns_,
+    const std::unordered_map<String, const ActionsDAG::Node *> & changed_types,
     bool use_nulls_,
     JoinSettings join_settings_,
     SortingStep::Settings sorting_settings_)
     : expression_actions(std::move(join_expression_actions_))
-    , join_info(std::move(join_info_))
-    , required_output_columns(std::move(required_output_columns_))
-    , use_nulls(use_nulls_)
+    , join_operator(std::move(join_operator_))
     , join_settings(std::move(join_settings_))
     , sorting_settings(std::move(sorting_settings_))
 {
+    if (!changed_types.empty())
+    {
+        /// FIXME: do not reorder join with `using` clause
+        optimized = true;
+    }
+    addToNullableIfNeeded(expression_actions, join_operator.kind, use_nulls_, required_output_columns_, actions_after_join, changed_types);
     updateInputHeaders({left_header_, right_header_});
 }
+
+JoinStepLogical::JoinStepLogical(
+    const SharedHeader & left_header_,
+    const SharedHeader & right_header_,
+    JoinOperator join_operator_,
+    JoinExpressionActions join_expression_actions_,
+    std::vector<const ActionsDAG::Node *> actions_after_join_,
+    JoinSettings join_settings_,
+    SortingStep::Settings sorting_settings_)
+    : expression_actions(std::move(join_expression_actions_))
+    , join_operator(std::move(join_operator_))
+    , join_settings(std::move(join_settings_))
+    , sorting_settings(std::move(sorting_settings_))
+{
+    actions_after_join = std::move(actions_after_join_);
+    updateInputHeaders({left_header_, right_header_});
+
+#ifndef NDEBUG
+    auto all_nodes_set = std::ranges::to<std::unordered_set>(
+        expression_actions.getActionsDAG()->getNodes() | std::views::transform([](const auto & node) { return &node; }));
+    for (const auto * node_after_join : actions_after_join)
+    {
+        if (!all_nodes_set.contains(node_after_join))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not in the expression actions dag", fmt::ptr(node_after_join));
+    }
+#endif
+}
+
+std::unordered_set<JoinTableSide> JoinStepLogical::typeChangingSides() const
+{
+    std::unordered_set<JoinTableSide> result;
+    for (const auto * node_after_join : actions_after_join)
+    {
+        if (node_after_join->type == ActionsDAG::ActionType::INPUT ||
+            node_after_join->type == ActionsDAG::ActionType::COLUMN)
+            continue;
+        if (JoinActionRef(node_after_join, expression_actions).fromLeft())
+            result.insert(JoinTableSide::Left);
+        if (JoinActionRef(node_after_join, expression_actions).fromRight())
+            result.insert(JoinTableSide::Right);
+        if (result.size() == 2)
+            break;
+    }
+    return result;
+}
+
+JoinStepLogical::~JoinStepLogical() = default;
 
 QueryPipelineBuilderPtr JoinStepLogical::updatePipeline(QueryPipelineBuilders /* pipelines */, const BuildQueryPipelineSettings & /* settings */)
 {
@@ -129,769 +237,2491 @@ void JoinStepLogical::describePipeline(FormatSettings & settings) const
     IQueryPlanStep::describePipeline(processors, settings);
 }
 
-std::vector<std::pair<String, String>> JoinStepLogical::describeJoinActions() const
+static String formatJoinCondition(const std::vector<JoinActionRef> & predicates)
+{
+    return fmt::format("{}", fmt::join(predicates | std::views::transform([](const auto & x) { return x.getColumnName(); }), " AND "));
+}
+
+std::string_view joinTypePretty(JoinKind join_kind, JoinStrictness strictness)
+{
+    /*
+     * Inner Join: ⋈ (Unicode U+22C8)
+     * Left Outer Join: ⟕ (Unicode U+27D5)
+     * Right Outer Join: ⟖ (Unicode U+27D6)
+     * Full Outer Join: ⟗ (Unicode U+27D7)
+     * Semi Join: ⋉ (Unicode U+22C9)
+     * Right Semi Join: ⋊ (Unicode U+22CA)
+     * Anti Join: ⋉̸ (Unicode U+22C9 U+0338)
+     * Right Anti Join: ⋊̸ (Unicode U+22CA U+0338)
+     * Cross Join: × (Unicode U+00D7)
+     * Paste Join: ⟘ (Unicode U+27D8)
+     */
+
+    constexpr auto def_symb = "?";
+    auto symbols = std::array{
+        ///         Inner     Left            Right           Full      Cross    Comma      Paste
+        std::array{"\u22C8", "\u27D5",       "\u27D6",       "\u27D7", "\u00D7", ",",      "\u27D8"},  /// All/Any
+        std::array{"\u22C8", "\u22C9",       "\u22CA",       "\u22C8", def_symb, def_symb, def_symb},  /// Semi
+        std::array{def_symb, "\u22C9\u0338", "\u22CA\u0338", def_symb, def_symb, def_symb, def_symb},  /// Anti
+    };
+
+    size_t row = 0;
+    switch (strictness)
+    {
+        case JoinStrictness::Semi: row = 1; break;
+        case JoinStrictness::Anti: row = 2; break;
+        default: break;
+    }
+    size_t col = 0;
+    switch (join_kind)
+    {
+        case JoinKind::Inner: col = 0; break;
+        case JoinKind::Left: col = 1; break;
+        case JoinKind::Right: col = 2; break;
+        case JoinKind::Full: col = 3; break;
+        case JoinKind::Cross: col = 4; break;
+        case JoinKind::Comma: col = 5; break;
+        case JoinKind::Paste: col = 6; break;
+    }
+    return symbols[row][col];
+}
+
+static std::string_view joinTypePretty(const JoinOperator & join_operator)
+{
+    return joinTypePretty(join_operator.kind, join_operator.strictness);
+}
+
+String JoinStepLogical::getReadableRelationName() const
+{
+    if (left_relation.name.empty() || right_relation.name.empty())
+        return "";
+    String right_name = right_relation.displayName();
+    if (right_relation.composite)
+        right_name = fmt::format("({})", right_name);
+    return fmt::format("{} {} {}", left_relation.displayName(), joinTypePretty(join_operator), right_name);
+}
+
+void JoinStepLogical::swapInputs()
+{
+    auto inputs = getInputHeaders();
+    chassert(inputs.size() == 2);
+
+    /// TODO: any other checks that join sides can be swapped?
+
+    updateInputHeaders({inputs[1], inputs[0]});
+
+    if (join_operator.kind == JoinKind::Left)
+        join_operator.kind = JoinKind::Right;
+    else if (join_operator.kind == JoinKind::Right)
+        join_operator.kind = JoinKind::Left;
+
+    expression_actions.swapExpressionSources();
+
+    std::swap(left_relation, right_relation);
+}
+
+std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
 {
     std::vector<std::pair<String, String>> description;
 
-    description.emplace_back("Type", toString(join_info.kind));
-    description.emplace_back("Strictness", toString(join_info.strictness));
-    description.emplace_back("Locality", toString(join_info.locality));
+    auto readable_relation_name = getReadableRelationName();
+    if (!readable_relation_name.empty())
+        description.emplace_back("Join", std::move(readable_relation_name));
 
-    {
-        WriteBufferFromOwnString join_expression_str;
-        join_expression_str << (join_info.expression.is_using ? "USING" : "ON") << " " ;
-        formatJoinCondition(join_info.expression.condition, join_expression_str);
-        for (const auto & condition : join_info.expression.disjunctive_conditions)
-        {
-            join_expression_str << " | ";
-            formatJoinCondition(condition, join_expression_str);
-        }
-        description.emplace_back("Expression", join_expression_str.str());
-    }
+    if (imprecise_estimate)
+        description.emplace_back("ResultRows", result_rows_estimation ? fmt::format("~~{}", result_rows_estimation.value()) : "unknown");
+    else
+        description.emplace_back("ResultRows", result_rows_estimation ? toString(result_rows_estimation.value()) : "unknown");
 
-    description.emplace_back("Required Output", fmt::format("[{}]", fmt::join(required_output_columns, ", ")));
-
-    for (const auto & [name, value] : runtime_info_description)
-        description.emplace_back(name, value);
-
+    description.emplace_back("Type", toString(join_operator.kind));
+    description.emplace_back("Strictness", toString(join_operator.strictness));
+    description.emplace_back("Locality", toString(join_operator.locality));
+    description.emplace_back("Expression", formatJoinCondition(join_operator.expression));
     return description;
+}
+
+JoinEstimation JoinStepLogical::getEstimation() const
+{
+    return JoinEstimation{
+        .output_rows = result_rows_estimation,
+        .left_rows = left_relation.estimated_rows,
+        .right_rows = right_relation.estimated_rows,
+        .cost = estimated_cost,
+        .selectivity = estimated_selectivity,
+    };
 }
 
 void JoinStepLogical::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, settings.indent_char);
+    const String & prefix = settings.detail_prefix;
 
-    for (const auto & [name, value] : describeJoinActions())
+    for (const auto & [name, value] : describeJoinProperties())
         settings.out << prefix << name << ": " << value << '\n';
 
-    settings.out << prefix << "Post Expression:\n";
-    ExpressionActions(expression_actions.post_join_actions->clone()).describeActions(settings.out, prefix);
-    settings.out << prefix << "Left Expression:\n";
-    ExpressionActions(expression_actions.left_pre_join_actions->clone()).describeActions(settings.out, prefix);
-    settings.out << prefix << "Right Expression:\n";
-    ExpressionActions(expression_actions.right_pre_join_actions->clone()).describeActions(settings.out, prefix);
+    if (!settings.compact)
+    {
+        settings.out << prefix << "Expression:\n";
+
+        auto actions_dag = expression_actions.getActionsDAG();
+        ExpressionActions(actions_dag->clone()).describeActions(settings.out, prefix);
+
+        settings.out << prefix << "Expression Sources:\n";
+
+        for (const auto * input_ptr : actions_dag->getInputs())
+            settings.out << prefix << JoinActionRef(input_ptr, expression_actions).dump() << "\n";
+    }
 }
 
 void JoinStepLogical::describeActions(JSONBuilder::JSONMap & map) const
 {
-    for (const auto & [name, value] : describeJoinActions())
+    for (const auto & [name, value] : describeJoinProperties())
         map.add(name, value);
 
-    map.add("Left Actions", ExpressionActions(expression_actions.left_pre_join_actions->clone()).toTree());
-    map.add("Right Actions", ExpressionActions(expression_actions.right_pre_join_actions->clone()).toTree());
-    map.add("Post Actions", ExpressionActions(expression_actions.post_join_actions->clone()).toTree());
+    auto actions_dag = expression_actions.getActionsDAG()->clone();
+    map.add("Actions", ExpressionActions(std::move(actions_dag)).toTree());
 }
 
-static ActionsDAG::NodeRawConstPtrs getAnyColumn(const ActionsDAG::NodeRawConstPtrs & nodes)
+bool JoinStepLogical::canRemoveUnusedColumns() const
 {
-    if (nodes.empty())
-        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "No columns in JOIN result");
+    /// Position-based unused column removal can break HashJoin (and probably other joins too).
+    /// It is not clear yet why exactly, but the issue is probably around dealing with duplicate
+    /// columns by name instead of positions in TableJoin/HashJoin.
 
-    ActionsDAG::NodeRawConstPtrs result_nodes;
-    for (const auto * output : nodes)
+    /// Collect all INPUT nodes reachable from join condition nodes.
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::unordered_set<std::string_view> left_condition_input_names;
+    std::unordered_set<std::string_view> right_condition_input_names;
+
+    std::vector<const ActionsDAG::Node *> stack;
+    for (const auto & join_action : join_operator.expression)
+        stack.push_back(join_action.getNode());
+    for (const auto & join_action : join_operator.residual_filter)
+        stack.push_back(join_action.getNode());
+
+    while (!stack.empty())
     {
-        /// Add column as many times as it is used in output
-        /// Otherwise, invariants in other parts of the code may be violated
-        if (output->result_name == nodes.at(0)->result_name)
-            result_nodes.push_back(output);
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (!visited.insert(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            auto ref = JoinActionRef(node, expression_actions);
+            if (ref.fromLeft())
+                left_condition_input_names.insert(node->result_name);
+            else if (ref.fromRight())
+                right_condition_input_names.insert(node->result_name);
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
     }
-    return result_nodes;
+
+    auto has_duplicated_condition_input = [](const Block & header, const std::unordered_set<std::string_view> & condition_names)
+    {
+        for (const auto & name : condition_names)
+        {
+            size_t count = 0;
+            for (size_t i = 0; i < header.columns(); ++i)
+            {
+                if (header.getByPosition(i).name == name && ++count > 1)
+                    return true;
+            }
+        }
+        return false;
+    };
+
+    return !has_duplicated_condition_input(*input_headers.at(0), left_condition_input_names)
+        && !has_duplicated_condition_input(*input_headers.at(1), right_condition_input_names);
+}
+
+JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
+{
+    auto & actions_dag = *expression_actions.getActionsDAG();
+    const size_t original_input_count = actions_dag.getInputs().size();
+    ActionsDAG::NodeRawConstPtrs required_nodes;
+    ActionsDAG::NodeRawConstPtrs new_actions_after_join = actions_after_join;
+
+    /// For JoinStepLogical, the output header maps directly to DAG outputs (no pass-throughs).
+    /// Build a set of required DAG output positions.
+    std::set<size_t> required_positions_set(required_output_positions.begin(), required_output_positions.end());
+
+    /// Track which original output positions survive (required + non-removable like dummy).
+    std::vector<size_t> kept_output_positions;
+    kept_output_positions.reserve(required_output_positions.size());
+
+    bool removed_any_output = false;
+    const auto & dag_outputs = actions_dag.getOutputs();
+    for (size_t i = 0; i < dag_outputs.size(); ++i)
+    {
+        const auto * output_node = dag_outputs[i];
+        if (required_positions_set.contains(i))
+        {
+            required_nodes.push_back(output_node);
+            kept_output_positions.push_back(i);
+        }
+        else if (!isDummyColumnOfThisStep(output_node))
+        {
+            /// Do not remove join_dummy_result from the outputs, because it was added to ensure at least one output column
+            removed_any_output = true;
+            new_actions_after_join.erase(
+                std::remove(new_actions_after_join.begin(), new_actions_after_join.end(), output_node), new_actions_after_join.end());
+        }
+        else
+        {
+            /// Dummy column kept even though not required.
+            required_nodes.push_back(output_node);
+            kept_output_positions.push_back(i);
+        }
+    }
+
+    if (required_nodes.empty())
+    {
+        auto column_type = std::make_shared<DataTypeUInt8>();
+        auto column = column_type->createColumnConst(0, 0);
+        const auto * node = &actions_dag.addColumn(std::move(column), column_type, String(join_dummy_result_name));
+        new_actions_after_join.push_back(node);
+        required_nodes.push_back(node);
+        actions_dag.getOutputs().push_back(node);
+        kept_output_positions.push_back(RemoveUnusedColumnsResult::NEWLY_ADDED_COLUMN_POSITION);
+    }
+
+    ActionsDAG::NodeRawConstPtrs new_outputs = required_nodes;
+
+    for (const auto & join_action : join_operator.expression)
+        required_nodes.push_back(join_action.getNode());
+
+    for (const auto & join_action : join_operator.residual_filter)
+        required_nodes.push_back(join_action.getNode());
+
+    if (required_nodes.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No required output nodes, actions_dag: {}", actions_dag.dumpDAG());
+
+    bool has_required_input_from_left = false;
+    bool has_required_input_from_right = false;
+    for (const auto * required_node : required_nodes)
+    {
+        const auto source_relations = JoinActionRef(required_node, expression_actions).getSourceRelations();
+        has_required_input_from_left |= source_relations.test(0);
+        has_required_input_from_right |= source_relations.test(1);
+        if (has_required_input_from_left && has_required_input_from_right)
+            break;
+    }
+
+    /// The inputs should be in the same order as input headers
+    if (!has_required_input_from_left && !actions_dag.getInputs().empty() && !getInputHeaders().at(0)->empty())
+    {
+        const auto * maybe_left_input = actions_dag.getInputs().front();
+        if (JoinActionRef(maybe_left_input, expression_actions).fromLeft())
+            required_nodes.push_back(maybe_left_input);
+    }
+
+    const auto number_of_left_inputs = input_headers.at(0)->columns();
+    if (!has_required_input_from_right && actions_dag.getInputs().size() > number_of_left_inputs && !getInputHeaders().at(1)->empty())
+    {
+        const auto * maybe_right_input = actions_dag.getInputs().at(number_of_left_inputs);
+        if (JoinActionRef(maybe_right_input, expression_actions).fromRight())
+            required_nodes.push_back(maybe_right_input);
+    }
+
+    const auto removed_any_actions = std::invoke(
+        [&]()
+        {
+            actions_dag.getOutputs().swap(required_nodes);
+            SCOPE_EXIT({ actions_dag.getOutputs().swap(required_nodes); });
+            return actions_dag.removeUnusedActions(remove_inputs);
+        });
+
+    if (!removed_any_actions && !removed_any_output)
+        return {};
+
+    actions_dag.getOutputs().swap(new_outputs);
+    actions_after_join = std::move(new_actions_after_join);
+
+    /// Update source mapping since nodes may have been removed.
+    {
+        JoinExpressionActions::NodeToSourceMapping node_sources;
+        for (const auto & node : actions_dag.getNodes())
+        {
+            const auto action_ref = JoinActionRef(&node, expression_actions);
+            node_sources[&node] = action_ref.getSourceRelations();
+        }
+        expression_actions.resetNodeSources(std::move(node_sources));
+    }
+
+    /// Check if any DAG inputs were actually removed.
+    const bool inputs_were_removed = remove_inputs && actions_dag.getInputs().size() < original_input_count;
+
+    if (inputs_were_removed)
+    {
+        /// Rebuild input headers based on surviving DAG inputs.
+        /// Use source mapping to classify each surviving input as left (0) or right (1).
+        ActionsDAG::NodeRawConstPtrs surviving_left_inputs;
+        ActionsDAG::NodeRawConstPtrs surviving_right_inputs;
+        for (const auto * input_node : actions_dag.getInputs())
+        {
+            auto ref = JoinActionRef(input_node, expression_actions);
+            chassert(ref.fromLeft() || ref.fromRight());
+            if (ref.fromLeft())
+                surviving_left_inputs.push_back(input_node);
+            else if (ref.fromRight())
+                surviving_right_inputs.push_back(input_node);
+        }
+
+        auto build_new_header = [](const ActionsDAG::NodeRawConstPtrs & surviving_inputs, const Block & old_header)
+        {
+            auto positions = ActionsDAG::matchInputNodesToHeader(surviving_inputs, old_header).matched;
+            Block new_header;
+            for (size_t pos : positions)
+                new_header.insert(old_header.getByPosition(pos));
+            return std::pair{std::move(positions), std::make_shared<const Block>(std::move(new_header))};
+        };
+
+        auto [left_positions, new_left_header] = build_new_header(surviving_left_inputs, *input_headers[0]);
+        auto [right_positions, new_right_header] = build_new_header(surviving_right_inputs, *input_headers[1]);
+
+        updateInputHeaders({std::move(new_left_header), std::move(new_right_header)});
+
+        return {true, {std::move(left_positions), std::move(right_positions)}, std::move(kept_output_positions)};
+    }
+
+    updateOutputHeader();
+    return {true, {}, std::move(kept_output_positions)};
+}
+
+bool JoinStepLogical::canRemoveColumnsFromOutput() const
+{
+    if (output_header == nullptr)
+        return false;
+
+    return canRemoveUnusedColumns() && output_header->columns() > 1;
 }
 
 void JoinStepLogical::updateOutputHeader()
 {
-    Header & header = output_header.emplace();
-    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
+    auto actions_dag = expression_actions.getActionsDAG();
+    Block header(actions_dag->getResultColumns());
 
-    for (const auto * node : expression_actions.post_join_actions->getInputs())
+    for (auto & column : header)
     {
-        const auto & column_type = node->result_type;
-        const auto & column_name = node->result_name;
-        if (required_output_columns_set.contains(column_name))
-            header.insert(ColumnWithTypeAndName(column_type->createColumn(), column_type, column_name));
+        if (!column.column)
+            column.column = column.type->createColumn();
     }
 
-    if (!header)
+    if (!header.columns())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is empty, actions_dag: {}", actions_dag->dumpDAG());
+
+    /// Materialize constant columns because we need a non-constant dummy column as result
+    const auto & outputs = actions_dag->getOutputs();
+    for (const auto * node : outputs)
     {
-        for (const auto * node : getAnyColumn(expression_actions.post_join_actions->getInputs()))
+        if (isDummyColumnOfThisStep(node))
         {
-            const auto & column_type = node->result_type;
-            const auto & column_name = node->result_name;
-            header.insert(ColumnWithTypeAndName(column_type->createColumn(), column_type, column_name));
+            materializeBlockInplace(header);
+            break;
         }
     }
+
+    output_header = std::make_shared<const Block>(std::move(header));
 }
 
-JoinActionRef addNewOutput(const ActionsDAG::Node & node, ActionsDAGPtr & actions_dag)
+bool JoinStepLogical::isDummyColumnOfThisStep(const ActionsDAG::Node * node) const
 {
-    actions_dag->addOrReplaceInOutputs(node);
-    return JoinActionRef(&node, actions_dag.get());
+    return node->result_name == join_dummy_result_name && JoinActionRef(node, expression_actions).fromNone();
 }
 
-/// We may have expressions like `a and b` that work even if `a` and `b` are non-boolean and expression return boolean or nullable.
-/// In some contexts, we may split `a` and `b`, but we still want to have the same logic applied, as if it were still an `and` operand.
-JoinActionRef toBoolIfNeeded(JoinActionRef condition, ActionsDAG & actions_dag, const FunctionOverloadResolverPtr & concat_function)
+JoinStepLogicalLookup::JoinStepLogicalLookup(QueryPlan child_plan_, PreparedJoinStorage prepared_join_storage_, bool use_nulls_)
+    : ISourceStep(child_plan_.getCurrentHeader())
+    , prepared_join_storage(std::move(prepared_join_storage_))
+    , child_plan(std::move(child_plan_))
+    , use_nulls(use_nulls_)
 {
-    auto output_type = removeNullable(condition.getType());
-    WhichDataType which_type(output_type);
-    if (!which_type.isUInt8())
+}
+
+void JoinStepLogicalLookup::initializePipeline(QueryPipelineBuilder & pipeline_builder, const BuildQueryPipelineSettings & build_pipeline_settings)
+{
+    QueryPlanOptimizationSettings optimization_settings({}, {}, {}, {}, {}, false);
+    pipeline_builder = std::move(*child_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /* do_optimize */ false));
+}
+
+QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans()
+{
+    return {&child_plan};
+}
+
+void JoinStepLogicalLookup::optimize(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (optimized)
+        return;
+    optimized = true;
+    child_plan.optimize(optimization_settings);
+}
+
+/// Splitting `a AND b` into separate conditions loses the boolean conversion `AND` applied to each
+/// side, so a non-boolean one has to be converted explicitly to read the same way.
+static JoinActionRef toBoolIfNeeded(JoinActionRef condition)
+{
+    const auto & condition_type = condition.getType();
+    if (WhichDataType(removeNullable(condition_type)).isUInt8())
+        return condition;
+
+    DataTypePtr bool_type = std::make_shared<DataTypeUInt8>();
+    if (isNullableOrLowCardinalityNullable(condition_type))
+        bool_type = makeNullable(bool_type);
+
+    return JoinActionRef::transform({condition}, [&bool_type](auto & dag, auto && nodes)
     {
-        DataTypePtr uint8_ty = std::make_shared<DataTypeUInt8>();
-        ColumnWithTypeAndName rhs;
-        const ActionsDAG::Node * rhs_node = nullptr;
-        if (concat_function->getName() == "and")
-            rhs_node = &actions_dag.addColumn(ColumnWithTypeAndName(uint8_ty->createColumnConst(1, 1), uint8_ty, "true"));
-        else if (concat_function->getName() == "or")
-            rhs_node = &actions_dag.addColumn(ColumnWithTypeAndName(uint8_ty->createColumnConst(0, 0), uint8_ty, "false"));
+        return &dag.addBooleanCondition(*nodes.at(0), bool_type, nullptr);
+    });
+}
 
-        if (rhs_node)
+/// If side is not specified, check if filter can be executed after JOIN itself.
+static bool canPushDownFromOn(const JoinOperator & join_operator, std::optional<JoinTableSide> side = {})
+{
+    switch (join_operator.strictness)
+    {
+        case JoinStrictness::Any:
+            /// We cannot push down to either side for ANY JOIN.
+            /// Let's say we have LEFT ANY JOIN:
+            /// 1. If we push down filter to the right side,
+            /// we may filter out rows that would otherwise match the left side rows,
+            /// resulting in different join results.
+            /// 2. If we push down filter to the left side,
+            /// we may filter out rows that should be included in the join result
+            /// with defaults or NULLs.
+            return false;
+        case JoinStrictness::All:
         {
-            rhs_node = &actions_dag.addFunction(concat_function, {condition.getNode(), rhs_node}, {});
-            actions_dag.addOrReplaceInOutputs(*rhs_node);
-            return JoinActionRef(rhs_node, &actions_dag);
+            /// Filter pushdown for PASTE JOIN is *disabled* to preserve positional alignment
+            bool is_suitable_kind = join_operator.kind == JoinKind::Inner
+                || join_operator.kind == JoinKind::Cross
+                || join_operator.kind == JoinKind::Comma
+                || (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
+                || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
+
+            return is_suitable_kind;
         }
-    }
-    return condition;
-}
-
-JoinActionRef concatConditionsWithFunction(
-    const std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag, const FunctionOverloadResolverPtr & concat_function)
-{
-    if (conditions.empty())
-        return JoinActionRef(nullptr);
-
-    if (conditions.size() == 1)
-        return toBoolIfNeeded(conditions.front(), *actions_dag, concat_function);
-
-    auto nodes = std::ranges::to<ActionsDAG::NodeRawConstPtrs>(std::views::transform(conditions, [](const auto & x) { return x.getNode(); }));
-
-    const auto & result_node = actions_dag->addFunction(concat_function, nodes, {});
-    actions_dag->addOrReplaceInOutputs(result_node);
-    return JoinActionRef(&result_node, actions_dag.get());
-}
-
-JoinActionRef concatConditions(const std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag)
-{
-    FunctionOverloadResolverPtr and_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-    return concatConditionsWithFunction(conditions, actions_dag, and_function);
-}
-
-JoinActionRef concatMergeConditions(std::vector<JoinActionRef> & conditions, const ActionsDAGPtr & actions_dag)
-{
-    auto condition = concatConditions(conditions, actions_dag);
-    conditions.clear();
-    if (condition)
-        conditions = {condition};
-    return condition;
-}
-
-const ActionsDAG::Node & findOrAddInput(const ActionsDAGPtr & actions_dag, const ColumnWithTypeAndName & column)
-{
-    for (const auto * node : actions_dag->getInputs())
-    {
-        if (node->result_name == column.name)
-            return *node;
-    }
-
-    return actions_dag->addInput(column);
-}
-
-JoinActionRef predicateToCondition(const JoinPredicate & predicate, const ActionsDAGPtr & actions_dag)
-{
-    const auto & left_node = findOrAddInput(actions_dag, predicate.left_node.getColumn());
-    const auto & right_node = findOrAddInput(actions_dag, predicate.right_node.getColumn());
-
-    auto operator_function = FunctionFactory::instance().get(operatorToFunctionName(predicate.op), nullptr);
-    const auto & result_node = actions_dag->addFunction(operator_function, {&left_node, &right_node}, {});
-    actions_dag->addOrReplaceInOutputs(result_node);
-    return JoinActionRef(&result_node, actions_dag.get());
-}
-
-bool canPushDownFromOn(const JoinInfo & join_info, std::optional<JoinTableSide> side = {})
-{
-    bool is_suitable_kind = join_info.kind == JoinKind::Inner
-        || join_info.kind == JoinKind::Cross
-        || join_info.kind == JoinKind::Comma
-        || join_info.kind == JoinKind::Paste
-        || (side == JoinTableSide::Left && join_info.kind == JoinKind::Right)
-        || (side == JoinTableSide::Right && join_info.kind == JoinKind::Left);
-
-    return is_suitable_kind
-        && join_info.expression.disjunctive_conditions.empty()
-        && join_info.strictness == JoinStrictness::All;
-}
-
-void addRequiredInputToOutput(const ActionsDAGPtr & dag, const NameSet & required_output_columns)
-{
-    NameSet existing_output_columns;
-    auto & outputs = dag->getOutputs();
-    for (const auto & node : outputs)
-        existing_output_columns.insert(node->result_name);
-
-    for (const auto * node : dag->getInputs())
-    {
-        if (!required_output_columns.contains(node->result_name)
-         || existing_output_columns.contains(node->result_name))
-            continue;
-        outputs.push_back(node);
+        case JoinStrictness::Semi:
+            /// We can push down to both sides for LEFT SEMI and RIGHT SEMI joins
+            return side.has_value();
+        case JoinStrictness::Anti:
+            /// We can push down to only to opposite sides for LEFT ANTI and RIGHT ANTI joins
+            /// See https://github.com/ClickHouse/ClickHouse/issues/93483
+            return (side == JoinTableSide::Left && join_operator.kind == JoinKind::Right)
+                || (side == JoinTableSide::Right && join_operator.kind == JoinKind::Left);
+        default:
+            /// TODO: Support RightAny strictness?
+            return false;
     }
 }
+
+using NameViewToNodeMapping = std::unordered_map<std::string_view, const ActionsDAG::Node *>;
+
 
 struct JoinPlanningContext
 {
-    PreparedJoinStorage * prepared_join_storage = nullptr;
-    bool is_asof = false;
-    bool is_using = false;
+    NameViewToNodeMapping actions_after_join_map;
+    bool is_storage_join{};
+    /// Per-side column statistics of the join inputs, keyed by input header column name.
+    /// Filled only when the IEJoin key condition choice needs them; empty otherwise.
+    std::unordered_map<String, ColumnStats> left_column_stats;
+    std::unordered_map<String, ColumnStats> right_column_stats;
+    bool is_prebuilt_hash_join{};
 };
 
-void predicateOperandsToCommonType(JoinPredicate & predicate, JoinExpressionActions & expression_actions, JoinPlanningContext join_context)
+/** Convert the operands of an equality (or ASOF inequality) predicate in the JOIN ON section to a common type.
+  * `allow_conversion_to_subtype` enables the fallback described in `JoinCommon::tryGetCommonSubtypeForJoinKeys`.
+  * It is not applicable to null-safe comparisons, because there NULL matches NULL,
+  * and to ASOF inequalities, because there the order of the values matters, not only their equality.
+  */
+static void predicateOperandsToCommonType(
+    JoinActionRef & left_node,
+    JoinActionRef & right_node,
+    const JoinSettings & join_settings,
+    const JoinPlanningContext & planning_context,
+    std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors,
+    bool allow_conversion_to_subtype)
 {
-    auto & left_node = predicate.left_node;
-    auto & right_node = predicate.right_node;
     const auto & left_type = left_node.getType();
     const auto & right_type = right_node.getType();
+
+    if (!join_settings.allow_dynamic_type_in_join_keys)
+    {
+        bool is_left_key_dynamic = hasDynamicType(left_type);
+        bool is_right_key_dynamic = hasDynamicType(right_type);
+
+        if (is_left_key_dynamic || is_right_key_dynamic)
+        {
+            throw DB::Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "JOIN on keys with Dynamic type is not supported: key {} has type {}. In order to use this key in JOIN you should cast it to any other type",
+                is_left_key_dynamic ? left_node.getColumnName() : right_node.getColumnName(),
+                is_left_key_dynamic ? left_type->getName() : right_type->getName());
+        }
+    }
 
     if (left_type->equals(*right_type))
         return;
 
     DataTypePtr common_type;
+    bool cast_to_subtype = false;
     try
     {
         common_type = getLeastSupertype(DataTypes{left_type, right_type});
     }
     catch (Exception & ex)
     {
-        ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
-            left_node.getColumnName(), left_type->getName(),
-            right_node.getColumnName(), right_type->getName());
-        throw;
-    }
-
-    if (!left_type->equals(*common_type))
-    {
-        const auto & result_name = join_context.is_using ? left_node.getColumnName() : "";
-        left_node = addNewOutput(
-            expression_actions.left_pre_join_actions->addCast(*left_node.getNode(), common_type, result_name),
-            expression_actions.left_pre_join_actions);
-    }
-
-    if (!join_context.prepared_join_storage && !right_type->equals(*common_type))
-    {
-        const std::string & result_name = join_context.is_using ? right_node.getColumnName() : "";
-        right_node = addNewOutput(
-            expression_actions.right_pre_join_actions->addCast(*right_node.getNode(), common_type, result_name),
-            expression_actions.right_pre_join_actions);
-    }
-}
-
-std::tuple<const ActionsDAG::Node *, const ActionsDAG::Node *> leftAndRightNodes(const JoinPredicate & predicate)
-{
-    return {predicate.left_node.getNode(), predicate.right_node.getNode()};
-}
-
-bool addJoinConditionToTableJoin(JoinCondition & join_condition, TableJoin::JoinOnClause & table_join_clause, JoinExpressionActions & expression_actions, JoinPlanningContext join_context)
-{
-    std::vector<JoinPredicate> new_predicates;
-    for (size_t i = 0; i < join_condition.predicates.size(); ++i)
-    {
-        auto & predicate = join_condition.predicates[i];
-        predicateOperandsToCommonType(predicate, expression_actions, join_context);
-        if (PredicateOperator::Equals == predicate.op || PredicateOperator::NullSafeEquals == predicate.op)
+        if (allow_conversion_to_subtype)
         {
-            auto [left_key_node, right_key_node] = leftAndRightNodes(predicate);
-            bool null_safe_comparison = PredicateOperator::NullSafeEquals == predicate.op;
-            if (null_safe_comparison && isNullableOrLowCardinalityNullable(left_key_node->result_type) && isNullableOrLowCardinalityNullable(right_key_node->result_type))
+            if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(left_type, right_type))
             {
-                /**
-                  * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
-                  * we need to wrap keys with a non-nullable type.
-                  * The type `tuple` can be used for this purpose,
-                  * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
-                  * Thus, join algorithm will match keys with values tuple(NULL).
-                  * Example:
-                  *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
-                  * This will be semantically transformed to:
-                  *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
-                  */
+                /// A converted key must report a NULL at the top level; see `removeNullableInsideTuple`.
+                subtype = JoinCommon::removeNullableInsideTuple(subtype);
 
-                FunctionOverloadResolverPtr wrap_nullsafe_function = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
-
-                const auto & new_left_node = expression_actions.left_pre_join_actions->addFunction(wrap_nullsafe_function, {left_key_node}, {});
-                expression_actions.left_pre_join_actions->addOrReplaceInOutputs(new_left_node);
-                predicate.left_node = JoinActionRef(&new_left_node, expression_actions.left_pre_join_actions.get());
-
-                const auto & new_right_node = expression_actions.right_pre_join_actions->addFunction(wrap_nullsafe_function, {right_key_node}, {});
-                expression_actions.right_pre_join_actions->addOrReplaceInOutputs(new_right_node);
-                predicate.right_node = JoinActionRef(&new_right_node, expression_actions.right_pre_join_actions.get());
+                /// The `Join` table engine holds a hash table prebuilt over the original key columns, and its reuse
+                /// path cannot remap a key rewritten to a derived expression (see `chooseJoinAlgorithm`). The fallback
+                /// applies only when the storage key itself is the subtype, so that only the probe side is converted.
+                /// The comparison ignores the `LowCardinality` and `Nullable` wrappers, same as `JoinCommon::checkTypesOfKeys`:
+                /// the hash table serves a probe key that differs from the build key only in these wrappers as is.
+                if (!planning_context.is_prebuilt_hash_join || removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*subtype))
+                    common_type = makeNullable(subtype);
             }
-
-            table_join_clause.addKey(predicate.left_node.getColumnName(), predicate.right_node.getColumnName(), null_safe_comparison);
-            new_predicates.push_back(predicate);
         }
-        else if (join_context.is_asof)
+
+        if (!common_type)
         {
-            /// ASOF preficate is handled later, keep it in predicate list
-            new_predicates.push_back(predicate);
+            ex.addMessage("JOIN cannot infer common type in ON section for keys. Left key '{}' type {}. Right key '{}' type {}",
+                left_node.getColumnName(), left_type->getName(),
+                right_node.getColumnName(), right_type->getName());
+            throw;
         }
-        else
+        cast_to_subtype = true;
+    }
+
+    auto cast_transform = [&common_type, &planning_context, cast_to_subtype](auto & dag, auto && nodes)
+    {
+        auto arg = nodes.at(0);
+        /// The nodes in `actions_after_join_map` are plain `CAST`s (from `buildJoinUsingCondition`),
+        /// which wrap the values that are out of the range of the target type instead of turning them into NULL,
+        /// so they cannot be reused as the key conversions for the subtype fallback.
+        if (cast_to_subtype)
+            return &dag.addAccurateCastOrNull(*arg, common_type, {}, nullptr);
+        auto mapped_it = planning_context.actions_after_join_map.find(arg->result_name);
+        if (mapped_it != planning_context.actions_after_join_map.end() && mapped_it->second->result_type->equals(*common_type))
+            return mapped_it->second;
+        return &dag.addCast(*arg, common_type, {}, nullptr);
+    };
+    if (!left_type->equals(*common_type))
+        left_node = JoinActionRef::transform({left_node}, cast_transform);
+
+    auto cast_right_node = [&]
+    {
+        /// The build-side key name is the rendezvous between the shared runtime filter descriptors
+        /// registered by the joinRuntimeFilter optimization and `HashJoin::publishSharedRuntimeFilters`;
+        /// keep the descriptors pointing at the cast key the join clause will use.
+        String name_before_cast = right_node.getColumnName();
+        right_node = JoinActionRef::transform({right_node}, cast_transform);
+        for (auto & descriptor : shared_runtime_filter_descriptors)
         {
-            /// Move non-equality predicates to residual conditions
-            auto predicate_action = predicateToCondition(predicate, expression_actions.post_join_actions);
-            join_condition.residual_conditions.push_back(predicate_action);
+            if (descriptor.build_key_name == name_before_cast)
+            {
+                descriptor.build_key_name = right_node.getColumnName();
+                descriptor.common_type = common_type;
+            }
+        }
+    };
+
+    if (planning_context.is_prebuilt_hash_join)
+    {
+        /// A `Join` table engine keeps the key declared by its storage. Under the subtype fallback
+        /// the check above guarantees that a prebuilt hash table uses the subtype modulo the
+        /// `LowCardinality` and `Nullable` wrappers, so its key must not be rewritten at all.
+        if (!cast_to_subtype && !right_type->equals(*removeNullableOrLowCardinalityNullable(common_type)))
+            cast_right_node();
+    }
+    else if (planning_context.is_storage_join
+        && (!cast_to_subtype || removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*removeNullable(common_type))))
+    {
+        /// A direct dictionary lookup accepts its declared key type for an ordinary promotion or
+        /// a subtype fallback where only the probe needs an accurate conversion. In particular,
+        /// a nullable probe key does not require converting the dictionary key to `Nullable`,
+        /// which would turn it into a derived expression and disable the direct algorithm.
+        if (!removeNullable(recursiveRemoveLowCardinality(right_type))->equals(*removeNullable(common_type)))
+            cast_right_node();
+    }
+    else
+    {
+        if (!right_type->equals(*common_type))
+            cast_right_node();
+    }
+}
+
+/// Under `join_use_nulls`, a right column selected from a LEFT or FULL JOIN is output through `toNullable(x)`
+/// (see `addToNullableIfNeeded`). When that column is also a join key, joining on the `Nullable` node makes
+/// it the single right column that is both the key and the output, which the join restores from the left
+/// key. Joining on the plain input instead leaves the `Nullable` wrapper as a payload column next to the
+/// key: a whole extra column where the join keeps keys only in its arena, and a second count of the same
+/// bytes toward the spill threshold where it saves the key columns too.
+static void preferNullableRightKey(
+    JoinActionRef & right_node,
+    const JoinPlanningContext & planning_context,
+    std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors)
+{
+    /// The `Join` engine and a dictionary are looked up by the key they declare.
+    if (planning_context.is_storage_join || planning_context.is_prebuilt_hash_join)
+        return;
+
+    const auto * input = right_node.getNode();
+    if (input->type != ActionsDAG::ActionType::INPUT)
+        return;
+
+    auto it = planning_context.actions_after_join_map.find(input->result_name);
+    if (it == planning_context.actions_after_join_map.end())
+        return;
+
+    const auto * to_nullable = it->second;
+    if (to_nullable->type != ActionsDAG::ActionType::FUNCTION || to_nullable->children.size() != 1
+        || to_nullable->children.front() != input || to_nullable->function_base->getName() != "toNullable")
+        return;
+
+    /// The build-side key name is the rendezvous with the shared runtime filter descriptors, as in
+    /// `predicateOperandsToCommonType`.
+    String name_before = right_node.getColumnName();
+    right_node = JoinActionRef::transform({right_node}, [to_nullable](auto &, auto &&) { return to_nullable; });
+    for (auto & descriptor : shared_runtime_filter_descriptors)
+    {
+        if (descriptor.build_key_name == name_before)
+            descriptor.build_key_name = right_node.getColumnName();
+    }
+}
+
+static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
+    std::vector<JoinActionRef> & used_expressions, const JoinSettings & join_settings, const JoinPlanningContext & planning_context,
+    std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors)
+{
+    bool has_join_predicates = false;
+    std::vector<JoinActionRef> new_predicates;
+
+    for (auto & pred : predicates)
+    {
+        auto & predicate = new_predicates.emplace_back(std::move(pred));
+        auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
+            continue;
+
+        if (lhs.fromRight() && rhs.fromLeft())
+            std::swap(lhs, rhs);
+        else if (!lhs.fromLeft() || !rhs.fromRight())
+            continue;
+
+        bool null_safe_comparison = JoinConditionOperator::NullSafeEquals == predicate_op;
+        predicateOperandsToCommonType(
+            lhs, rhs, join_settings, planning_context, shared_runtime_filter_descriptors,
+            /* allow_conversion_to_subtype= */ !null_safe_comparison);
+        if (!null_safe_comparison)
+            preferNullableRightKey(rhs, planning_context, shared_runtime_filter_descriptors);
+        if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
+        {
+            /**
+                * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
+                * we need to wrap keys with a non-nullable type.
+                * The type `tuple` can be used for this purpose,
+                * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
+                * Thus, join algorithm will match keys with values tuple(NULL).
+                * Example:
+                *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
+                * This will be semantically transformed to:
+                *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
+                */
+
+            JoinActionRef::AddFunction wrap_nullsafe_function(std::make_shared<FunctionTuple>());
+            lhs = JoinActionRef::transform({lhs}, wrap_nullsafe_function);
+            rhs = JoinActionRef::transform({rhs}, wrap_nullsafe_function);
+        }
+
+        has_join_predicates = true;
+        // std::cerr << "Adding key " << lhs.getColumnName() << ' ' << rhs.getColumnName() << std::endl;
+        table_join_clause.addKey(lhs.getColumnName(), rhs.getColumnName(), null_safe_comparison);
+
+        /// We applied predicate, do not add it to residual conditions
+        used_expressions.push_back(lhs);
+        used_expressions.push_back(rhs);
+        new_predicates.pop_back();
+    }
+
+    predicates = std::move(new_predicates);
+
+    return has_join_predicates;
+}
+
+/// An inequality (`<`, `<=`, `>`, `>=`) between an expression over the left table and an
+/// expression over the right table, normalized so that the left operand comes from the left
+/// table; std::nullopt when the condition has a different shape.
+static std::optional<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>> tryGetInequalityBetweenTables(const JoinActionRef & condition)
+{
+    auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+    if (predicate_op != JoinConditionOperator::Less && predicate_op != JoinConditionOperator::LessOrEquals
+        && predicate_op != JoinConditionOperator::Greater && predicate_op != JoinConditionOperator::GreaterOrEquals)
+        return {};
+
+    if (lhs.fromRight() && rhs.fromLeft())
+    {
+        predicate_op = reverseInequalityOperator(predicate_op);
+        std::swap(lhs, rhs);
+    }
+    else if (!lhs.fromLeft() || !rhs.fromRight())
+        return {};
+
+    return {{predicate_op, std::move(lhs), std::move(rhs)}};
+}
+
+/// Two inequality conditions extracted from the JOIN ON expression for the IEJoin algorithm,
+/// in the query orientation. Key names refer to the outputs of the pre-join actions; they are
+/// used only inside the planner to resolve the key positions for `IEJoinStep`.
+struct IEJoinPlanDescription
+{
+    Names key_names_left;
+    Names key_names_right;
+    std::array<JoinConditionOperator, 2> operators = {};
+};
+
+/// Whether SQL comparison of the type diverges from the `IColumn::compareAt` total order the
+/// IEJoin operator matches by: comparison of `Tuple` decomposes elementwise (IEEE NaN, NULL
+/// propagation), and comparison of `Dynamic` and `Variant` unwraps the underlying values
+/// (NULL values and mismatched alternatives yield NULL or throw, while `compareAt` orders them).
+/// Other types (including `Array`) compare via `compareAt` itself; the operator handles the
+/// top-level NULL/NaN divergence by excluding such rows from matching.
+static bool hasIEJoinIncompatibleComparison(const DataTypePtr & type)
+{
+    bool result = false;
+    auto check = [&](const IDataType & t) { result |= isTuple(t) || isDynamic(t) || isVariant(t); };
+    check(*type);
+    if (!result)
+        type->forEachChild(check);
+    return result;
+}
+
+/// An inequality between the two tables that the IEJoin operator can use as one of its two key
+/// conditions, or std::nullopt when the condition has a different shape or compares operands the
+/// operator cannot handle. Pure: the caller commits the condition by casting its operands.
+static std::optional<std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>>
+tryGetIEJoinKeyCondition(const JoinActionRef & condition)
+{
+    auto inequality = tryGetInequalityBetweenTables(condition);
+    if (!inequality)
+        return {};
+
+    /// The commit in `tryExtractIEJoinDescription` casts both sides of the condition to a common
+    /// type; probe that here, so that a combination `predicateOperandsToCommonType` cannot handle
+    /// makes the caller fall back to the generic handling (which compares such operands in a
+    /// filter) instead of throwing.
+    const auto & [predicate_op, lhs, rhs] = *inequality;
+    const auto & lhs_type = lhs.getType();
+    const auto & rhs_type = rhs.getType();
+    if (hasIEJoinIncompatibleComparison(lhs_type) || hasIEJoinIncompatibleComparison(rhs_type))
+        return {};
+    if (!lhs_type->equals(*rhs_type) && !tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}))
+        return {};
+
+    return inequality;
+}
+
+using IEJoinKeyCandidate = std::tuple<JoinConditionOperator, JoinActionRef, JoinActionRef>;
+
+/// P(x < y) (strict) or P(x <= y) for independent x ~ U[min_x, max_x] and y ~ U[min_y, max_y].
+/// Under the continuous model boundary ties have measure zero and strictness is ignored, except
+/// when both ranges degenerate to the same point: there the comparison always ties, so the strict
+/// probability is 0 and the non-strict one is 1.
+static Float64 uniformLessProbability(Float64 min_x, Float64 max_x, Float64 min_y, Float64 max_y, bool strict)
+{
+    if (min_x == max_x && min_y == max_y && min_x == min_y)
+        return strict ? 0.0 : 1.0;
+    if (max_x <= min_y)
+        return 1.0;
+    if (max_y <= min_x)
+        return 0.0;
+
+    /// The ranges properly overlap: min_x < max_y and min_y < max_x, and at most one is a point.
+    const Float64 width_x = max_x - min_x;
+    const Float64 width_y = max_y - min_y;
+    if (width_x <= 0)
+        return (max_y - min_x) / width_y;
+    if (width_y <= 0)
+        return (min_y - min_x) / width_x;
+
+    /// (x, y) is a uniform point in the rectangle [min_x, max_x] x [min_y, max_y], and
+    /// P(x < y) is the share of the rectangle above the line x = y. Summing that share
+    /// slice by slice in y: a slice with y < min_x adds 0, a slice with y > max_x adds 1,
+    /// and in between the share grows linearly with y, which sums to the quadratic term
+    /// over the overlap [lo, hi].
+    const Float64 lo = std::max(min_x, min_y);
+    const Float64 hi = std::min(max_x, max_y);
+    Float64 integral = ((hi - min_x) * (hi - min_x) - (lo - min_x) * (lo - min_x)) / (2 * width_x);
+    integral += std::max(0.0, max_y - std::max(min_y, max_x));
+    return std::clamp(integral / width_y, 0.0, 1.0);
+}
+
+/// The statistics min/max of a key operand as raw numbers, with the fraction of NULL values.
+struct IEJoinOperandRange
+{
+    Float64 min;
+    Float64 max;
+    std::optional<Float64> null_fraction;
+};
+
+/// The numeric value of a statistics min/max Field. Basic statistics keep min/max only for
+/// values represented by numbers (`hasNumericMinMax`), so only the numeric Field types occur;
+/// anything else (e.g. a Decimal) yields no estimate rather than a wrong one.
+static std::optional<Float64> statisticsFieldToFloat64(const Field & value)
+{
+    switch (value.getType())
+    {
+        case Field::Types::UInt64:
+            return static_cast<Float64>(value.safeGet<UInt64>());
+        case Field::Types::Int64:
+            return static_cast<Float64>(value.safeGet<Int64>());
+        case Field::Types::Float64:
+            return value.safeGet<Float64>();
+        default:
+            return {};
+    }
+}
+
+/// The fraction of row pairs satisfying the condition, estimated from per-column min/max
+/// statistics under a uniformity assumption, or std::nullopt when the statistics do not cover
+/// the operands.
+static std::optional<Float64> estimateIEJoinConditionSelectivity(
+    JoinConditionOperator predicate_op,
+    const JoinActionRef & lhs,
+    const JoinActionRef & rhs,
+    const JoinPlanningContext & planning_context)
+{
+    /// The two ranges are compared as raw numbers, so the sides need a shared unit: the same
+    /// underlying type (e.g. two DateTime columns), or plain numbers, which all share one axis.
+    const DataTypePtr left_type = removeNullable(removeLowCardinality(lhs.getType()));
+    const DataTypePtr right_type = removeNullable(removeLowCardinality(rhs.getType()));
+    if (!left_type->equals(*right_type) && !(isNumber(left_type) && isNumber(right_type)))
+        return {};
+
+    auto get_range = [](const std::unordered_map<String, ColumnStats> & column_stats, const JoinActionRef & operand)
+        -> std::optional<IEJoinOperandRange>
+    {
+        auto it = column_stats.find(operand.getColumnName());
+        if (it == column_stats.end() || !it->second.min_value || !it->second.max_value)
+            return {};
+        auto min_value = statisticsFieldToFloat64(*it->second.min_value);
+        auto max_value = statisticsFieldToFloat64(*it->second.max_value);
+        if (!min_value || !max_value || !std::isfinite(*min_value) || !std::isfinite(*max_value))
+            return {};
+        return IEJoinOperandRange{.min = *min_value, .max = *max_value, .null_fraction = it->second.null_fraction};
+    };
+
+    auto left_range = get_range(planning_context.left_column_stats, lhs);
+    auto right_range = get_range(planning_context.right_column_stats, rhs);
+    if (!left_range || !right_range)
+        return {};
+
+    /// The Greater family goes through the complement, which flips strictness:
+    /// P(x > y) = 1 - P(x <= y) and P(x >= y) = 1 - P(x < y).
+    bool strict = predicate_op == JoinConditionOperator::Less || predicate_op == JoinConditionOperator::GreaterOrEquals;
+    Float64 result = uniformLessProbability(left_range->min, left_range->max, right_range->min, right_range->max, strict);
+    if (predicate_op == JoinConditionOperator::Greater || predicate_op == JoinConditionOperator::GreaterOrEquals)
+        result = 1.0 - result;
+
+    /// A NULL operand fails any inequality; an unknown NULL fraction leaves the estimate uncorrected.
+    result *= (1.0 - left_range->null_fraction.value_or(0.0)) * (1.0 - right_range->null_fraction.value_or(0.0));
+    return std::clamp(result, 0.0, 1.0);
+}
+
+static bool isLessFamily(JoinConditionOperator op)
+{
+    return op == JoinConditionOperator::Less || op == JoinConditionOperator::LessOrEquals;
+}
+
+/// Joint selectivity of a pair of key conditions. Independence is assumed for unrelated
+/// conditions. For two conditions reading the same column on one side independence is grossly
+/// wrong, and sharp Frechet bounds are used instead: with opposite directions
+/// (`lo < x AND x < hi`, the band shape) failing both requires the reversed band `hi <= x <= lo`,
+/// which is empty for a genuine band, so P(A and B) = P(A) + P(B) - 1; with the same direction
+/// one condition mostly implies the other, so P(A and B) = min(P(A), P(B)).
+static Float64 estimateIEJoinKeyPairSelectivity(
+    const IEJoinKeyCandidate & first, Float64 first_selectivity,
+    const IEJoinKeyCandidate & second, Float64 second_selectivity)
+{
+    const auto & [first_op, first_lhs, first_rhs] = first;
+    const auto & [second_op, second_lhs, second_rhs] = second;
+
+    bool same_column_on_one_side = first_lhs.getColumnName() == second_lhs.getColumnName()
+        || first_rhs.getColumnName() == second_rhs.getColumnName();
+    if (same_column_on_one_side)
+    {
+        if (isLessFamily(first_op) != isLessFamily(second_op))
+            return std::max(0.0, first_selectivity + second_selectivity - 1.0);
+        return std::min(first_selectivity, second_selectivity);
+    }
+    return first_selectivity * second_selectivity;
+}
+
+/// Positions of the two eligible conditions with the smallest estimated joint selectivity,
+/// or std::nullopt when an estimate is unavailable for any candidate (the caller keeps the
+/// syntax order then).
+static std::optional<std::pair<size_t, size_t>> chooseIEJoinKeyConditions(
+    const std::vector<IEJoinKeyCandidate> & candidates, const JoinPlanningContext & planning_context)
+{
+    std::vector<Float64> selectivities(candidates.size());
+    for (size_t i = 0; i < candidates.size(); ++i)
+    {
+        const auto & [predicate_op, lhs, rhs] = candidates[i];
+        auto selectivity = estimateIEJoinConditionSelectivity(predicate_op, lhs, rhs, planning_context);
+        if (!selectivity)
+            return {};
+        selectivities[i] = *selectivity;
+    }
+
+    std::pair<size_t, size_t> best{0, 1};
+    Float64 best_selectivity = std::numeric_limits<Float64>::infinity();
+
+    /// The exact pair enumeration is quadratic. A handwritten ON clause has a handful of
+    /// conjuncts, but a machine-generated one can have many: beyond the cap, take the two
+    /// smallest marginal selectivities independently, forgoing only the correlation
+    /// correction for pairs reading the same column.
+    static constexpr size_t max_candidates_to_rank_pairwise = 64;
+    if (candidates.size() > max_candidates_to_rank_pairwise)
+    {
+        /// Strict improvement only, here and below: ties resolve to the earliest in syntax order.
+        size_t first = 0;
+        for (size_t i = 1; i < selectivities.size(); ++i)
+            if (selectivities[i] < selectivities[first])
+                first = i;
+        size_t second = first == 0 ? 1 : 0;
+        for (size_t i = 0; i < selectivities.size(); ++i)
+            if (i != first && selectivities[i] < selectivities[second])
+                second = i;
+        best = std::minmax(first, second);
+        best_selectivity = selectivities[first] * selectivities[second];
+    }
+    else
+    {
+        for (size_t i = 0; i < candidates.size(); ++i)
+        {
+            for (size_t j = i + 1; j < candidates.size(); ++j)
+            {
+                Float64 pair_selectivity
+                    = estimateIEJoinKeyPairSelectivity(candidates[i], selectivities[i], candidates[j], selectivities[j]);
+                if (pair_selectivity < best_selectivity)
+                {
+                    best = {i, j};
+                    best_selectivity = pair_selectivity;
+                }
+            }
         }
     }
 
-    join_condition.predicates = std::move(new_predicates);
-
-    return !join_condition.predicates.empty();
+    LOG_TRACE(getLogger("JoinStepLogical"), "Selected IEJoin key conditions {} and {} of {} eligible, estimated joint selectivity {}",
+        best.first, best.second, candidates.size(), best_selectivity);
+    return best;
 }
 
-JoinActionRef buildSingleActionForJoinCondition(const JoinCondition & join_condition, JoinExpressionActions & expression_actions)
+/// Try to interpret the JOIN ON expression as two inequality conditions between the two tables
+/// to execute the join with the IEJoin algorithm. Returns std::nullopt when the join has a different shape.
+/// On success the conditions are consumed from `join_expression`: key expressions are casted
+/// to common types and registered in `used_expressions`. Extra conjuncts (including equalities)
+/// are left in `join_expression`; the caller has to apply them as a filter over the join result when
+/// that is equivalent (ALL INNER), and as a residual condition inside the operator otherwise
+/// (the ON conditions of the other kinds affect matching: unmatched rows are emitted padded,
+/// not dropped).
+static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
+    std::vector<JoinActionRef> & join_expression,
+    JoinOperator & join_operator,
+    std::vector<JoinActionRef> & used_expressions,
+    const JoinSettings & join_settings,
+    const JoinPlanningContext & planning_context)
 {
-    std::vector<JoinActionRef> all_conditions;
+    if (!IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
+        return {};
 
-    if (auto filter_condition = concatConditions(join_condition.left_filter_conditions, expression_actions.left_pre_join_actions))
+    if (planning_context.is_storage_join)
+        return {};
+
+    std::vector<IEJoinKeyCandidate> candidates;
+    std::vector<size_t> candidate_positions;
+    for (size_t i = 0; i < join_expression.size(); ++i)
     {
-        const auto & node = findOrAddInput(expression_actions.post_join_actions, filter_condition.getColumn());
-        expression_actions.post_join_actions->addOrReplaceInOutputs(node);
-        all_conditions.emplace_back(&node, expression_actions.post_join_actions.get());
+        if (auto inequality = tryGetIEJoinKeyCondition(join_expression[i]))
+        {
+            candidates.push_back(std::move(*inequality));
+            candidate_positions.push_back(i);
+        }
     }
 
-    if (auto filter_condition = concatConditions(join_condition.right_filter_conditions, expression_actions.right_pre_join_actions))
+    if (candidates.size() < 2)
+        return {};
+
+    /// Which two of the eligible conditions become the IEJoin conditions is a planner degree
+    /// of freedom: the conditions not chosen as keys are evaluated per pair of rows passing both
+    /// key conditions, so the pair with the smallest estimated joint selectivity minimizes that
+    /// work. Without an estimate for every candidate, the first two in syntax order are used.
+    std::pair<size_t, size_t> chosen{0, 1};
+    if (candidates.size() > 2)
     {
-        const auto & node = findOrAddInput(expression_actions.post_join_actions, filter_condition.getColumn());
-        expression_actions.post_join_actions->addOrReplaceInOutputs(node);
-        all_conditions.emplace_back(&node, expression_actions.post_join_actions.get());
+        if (auto best = chooseIEJoinKeyConditions(candidates, planning_context))
+            chosen = *best;
     }
 
-    auto residual_conditions_action = concatConditions(join_condition.residual_conditions, expression_actions.post_join_actions);
-    if (residual_conditions_action)
-        all_conditions.push_back(residual_conditions_action);
-
-    for (const auto & predicate : join_condition.predicates)
+    std::array<IEJoinKeyCandidate, 2> keys{std::move(candidates[chosen.first]), std::move(candidates[chosen.second])};
+    std::vector<JoinActionRef> residual_conditions;
+    for (size_t i = 0; i < join_expression.size(); ++i)
     {
-        auto predicate_action = predicateToCondition(predicate, expression_actions.post_join_actions);
-        all_conditions.push_back(predicate_action);
+        if (i != candidate_positions[chosen.first] && i != candidate_positions[chosen.second])
+            residual_conditions.push_back(join_expression[i]);
     }
 
-    return concatConditions(all_conditions, expression_actions.post_join_actions);
+    /// Both conditions are validated, commit: mutate the DAG.
+    IEJoinPlanDescription description;
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        auto & [predicate_op, lhs, rhs] = keys[i];
+        /// The subtype fallback is not applicable: the IEJoin key conditions are inequalities,
+        /// where the order of the values matters, not only their equality.
+        predicateOperandsToCommonType(
+            lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors,
+            /* allow_conversion_to_subtype= */ false);
+
+        description.operators[i] = predicate_op;
+        description.key_names_left.push_back(lhs.getColumnName());
+        description.key_names_right.push_back(rhs.getColumnName());
+
+        used_expressions.push_back(lhs);
+        used_expressions.push_back(rhs);
+    }
+
+    join_expression = std::move(residual_conditions);
+    return description;
 }
 
-JoinActionRef buildSingleActionForJoinExpression(const JoinExpression & join_expression, JoinExpressionActions & expression_actions)
+bool isIEJoinPreferred(const JoinOperator & join_operator, const JoinSettings & join_settings)
 {
-    std::vector<JoinActionRef> all_conditions;
+    const auto & join_algorithms = join_settings.join_algorithms;
+    if (join_algorithms.empty() || join_algorithms.front() != JoinAlgorithm::IE_JOIN)
+        return false;
 
-    if (auto condition = buildSingleActionForJoinCondition(join_expression.condition, expression_actions))
-        all_conditions.push_back(condition);
+    if (!IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
+        return false;
 
-    for (const auto & join_condition : join_expression.disjunctive_conditions)
-        if (auto condition = buildSingleActionForJoinCondition(join_condition, expression_actions))
-            all_conditions.push_back(condition);
-
-
-    FunctionOverloadResolverPtr or_function = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionOr>());
-    return concatConditionsWithFunction(all_conditions, expression_actions.post_join_actions, or_function);
-}
-
-void JoinStepLogical::setPreparedJoinStorage(PreparedJoinStorage storage) { prepared_join_storage = std::move(storage); }
-
-static Block blockWithColumns(ColumnsWithTypeAndName columns)
-{
-    Block block;
-    for (const auto & column : columns)
-        block.insert(ColumnWithTypeAndName(column.column ? column.column : column.type->createColumn(), column.type, column.name));
-    return block;
-}
-
-static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolverPtr & to_nullable_function)
-{
-    for (auto & output_node : dag.getOutputs())
+    size_t inequality_conditions = 0;
+    for (const auto & condition : join_operator.expression)
     {
-        DataTypePtr type_to_check = output_node->result_type;
-        if (const auto * type_to_check_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type_to_check.get()))
-            type_to_check = type_to_check_low_cardinality->getDictionaryType();
-
-        if (type_to_check->canBeInsideNullable())
-            output_node = &dag.addFunction(to_nullable_function, {output_node}, output_node->result_name);
+        if (tryGetIEJoinKeyCondition(condition))
+            ++inequality_conditions;
     }
+    return inequality_conditions >= 2;
 }
 
-void JoinStepLogical::appendRequiredOutputsToActions(JoinActionRef & post_filter)
+
+static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 {
-    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
-    addRequiredInputToOutput(expression_actions.left_pre_join_actions, required_output_columns_set);
-    addRequiredInputToOutput(expression_actions.right_pre_join_actions, required_output_columns_set);
-    addRequiredInputToOutput(expression_actions.post_join_actions, required_output_columns_set);
-
-    ActionsDAG::NodeRawConstPtrs new_outputs;
-    for (const auto * output : expression_actions.post_join_actions->getOutputs())
+    ColumnsWithTypeAndName columns;
+    columns.reserve(actions_dag.getOutputs().size());
+    for (const auto & node : actions_dag.getOutputs())
     {
-        if (required_output_columns_set.contains(output->result_name))
-            new_outputs.push_back(output);
+        ColumnPtr column = node->column ? ColumnPtr(node->column) : ColumnPtr(node->result_type->createColumn());
+        columns.emplace_back(std::move(column), node->result_type, node->result_name);
     }
-
-    if (new_outputs.empty())
-    {
-        new_outputs = getAnyColumn(expression_actions.post_join_actions->getOutputs());
-    }
-
-    if (post_filter)
-        new_outputs.push_back(post_filter.getNode());
-    expression_actions.post_join_actions->getOutputs() = std::move(new_outputs);
-    expression_actions.post_join_actions->removeUnusedActions();
+    return std::make_shared<const Block>(Block{columns});
 }
 
-JoinPtr JoinStepLogical::convertToPhysical(
-    JoinActionRef & post_filter,
-    bool is_explain_logical,
-    UInt64 max_threads,
-    UInt64 max_entries_for_hash_table_stats,
-    String initial_query_id,
-    std::chrono::milliseconds lock_acquire_timeout,
-    const ExpressionActionsSettings & actions_settings,
-    std::optional<UInt64> rhs_size_estimation)
+using QueryPlanNode = QueryPlan::Node;
+using QueryPlanNodePtr = QueryPlanNode *;
+
+static JoinActionRef concatConditions(
+    std::vector<JoinActionRef> & conditions,
+    std::optional<JoinTableSide> side = {}
+)
 {
-    auto table_join = std::make_shared<TableJoin>(join_settings, use_nulls,
+    auto matching_point = std::ranges::partition(conditions,
+        [side](const auto & node)
+        {
+            if (side == JoinTableSide::Left)
+                return node.fromLeft() || node.fromNone();
+            else if (side == JoinTableSide::Right)
+                return node.fromRight();
+            else
+                return true;
+        });
+
+    JoinActionRef result(nullptr);
+
+    std::vector<JoinActionRef> matching(conditions.begin(), matching_point.begin());
+    if (matching.empty())
+        return result;
+
+    if (matching.size() == 1)
+        result = toBoolIfNeeded(matching.front());
+    else if (matching.size() > 1)
+        result = toBoolIfNeeded(JoinActionRef::transform({matching}, JoinActionRef::AddFunction(JoinConditionOperator::And)));
+
+    conditions.erase(conditions.begin(), matching_point.begin());
+    return result;
+}
+
+static bool tryAddDisjunctiveConditions(
+    std::vector<JoinActionRef> & join_expressions,
+    TableJoin::Clauses & table_join_clauses,
+    std::vector<JoinActionRef> & used_expressions,
+    const JoinSettings & join_settings,
+    const JoinPlanningContext & planning_context,
+    std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors,
+    bool throw_on_error)
+{
+    if (join_expressions.size() != 1)
+        return false;
+
+    auto & join_expression = join_expressions.front();
+    if (!join_expression.isFunction(JoinConditionOperator::Or))
+        return false;
+
+    size_t initial_clauses_num = table_join_clauses.size();
+    std::vector<JoinActionRef> disjunctive_conditions = join_expression.getArguments();
+    bool has_residual_condition = false;
+    for (const auto & expr : disjunctive_conditions)
+    {
+        std::vector<JoinActionRef> join_condition = {expr};
+        if (expr.isFunction(JoinConditionOperator::And))
+            join_condition = expr.getArguments();
+
+        auto & table_join_clause = table_join_clauses.emplace_back();
+        bool has_keys = addJoinPredicatesToTableJoin(
+            join_condition, table_join_clause, used_expressions, join_settings, planning_context, shared_runtime_filter_descriptors);
+        if (!has_keys)
+        {
+            table_join_clauses.resize(initial_clauses_num);
+            if (!throw_on_error)
+                return false;
+
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}", formatJoinCondition({expr}));
+        }
+
+        if (auto left_pre_filter_condition = concatConditions(join_condition, JoinTableSide::Left))
+        {
+            table_join_clause.analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
+            used_expressions.push_back(left_pre_filter_condition);
+        }
+
+        if (auto right_pre_filter_condition = concatConditions(join_condition, JoinTableSide::Right))
+        {
+            table_join_clause.analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
+            used_expressions.push_back(right_pre_filter_condition);
+        }
+
+        if (!join_condition.empty())
+            has_residual_condition = true;
+    }
+
+    /// Clear join_expressions if there is no unhandled conditions, no need to calculate residual filter
+    if (!has_residual_condition)
+        join_expressions.clear();
+
+    return true;
+}
+
+static void addSortingForMergeJoin(
+    const FullSortingMergeJoin * join_ptr,
+    QueryPlan::Node *& left_node,
+    QueryPlan::Node *& right_node,
+    QueryPlan::Nodes & nodes,
+    const SortingStep::Settings & sort_settings,
+    const JoinSettings & join_settings,
+    const TableJoin & table_join,
+    size_t max_step_description_length)
+{
+    auto join_kind = table_join.kind();
+    auto join_strictness = table_join.strictness();
+    auto add_sorting = [&] (QueryPlan::Node *& node, const Names & key_names, JoinTableSide join_table_side)
+    {
+        SortDescription sort_description;
+        sort_description.reserve(key_names.size());
+        for (const auto & key_name : key_names)
+            sort_description.emplace_back(key_name);
+
+        auto sorting_step = std::make_unique<SortingStep>(
+            node->step->getOutputHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
+        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side), max_step_description_length);
+        node = &nodes.emplace_back(QueryPlan::Node{std::move(sorting_step), {node}});
+    };
+
+    auto crosswise_connection = CreateSetAndFilterOnTheFlyStep::createCrossConnection();
+    auto add_create_set = [&](QueryPlan::Node *& node, const Names & key_names, JoinTableSide join_table_side)
+    {
+        auto creating_set_step = std::make_unique<CreateSetAndFilterOnTheFlyStep>(
+            node->step->getOutputHeader(), key_names, join_settings.max_rows_in_set_to_optimize_join, crosswise_connection, join_table_side);
+        creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_table_side), max_step_description_length);
+
+        node = &nodes.emplace_back(QueryPlan::Node{std::move(creating_set_step), {node}});
+        return static_cast<CreateSetAndFilterOnTheFlyStep *>(node->step.get());
+    };
+
+    const auto & join_clause = join_ptr->getTableJoin().getOnlyClause();
+
+    bool join_type_allows_filtering = (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
+                                    && (isInner(join_kind) || isLeft(join_kind) || isRight(join_kind));
+
+    auto has_non_const = [](const Block & block, const auto & keys)
+    {
+        for (const auto & key : keys)
+        {
+            const auto & column = block.getByName(key).column;
+            if (column && !isColumnConst(*column))
+                return true;
+        }
+        return false;
+    };
+
+    /// This optimization relies on the sorting that should buffer data from both streams before emitting any rows.
+    /// Sorting on a stream with const keys can start returning rows immediately and pipeline may stuck.
+    /// Note: it's also doesn't work with the read-in-order optimization.
+    /// No checks here because read in order is not applied if we have `CreateSetAndFilterOnTheFlyStep` in the pipeline between the reading and sorting steps.
+    bool has_non_const_keys = has_non_const(*left_node->step->getOutputHeader(), join_clause.key_names_left)
+        && has_non_const(*right_node->step->getOutputHeader() , join_clause.key_names_right);
+    if (join_settings.max_rows_in_set_to_optimize_join > 0 && join_type_allows_filtering && has_non_const_keys)
+    {
+        auto * left_set = add_create_set(left_node, join_clause.key_names_left, JoinTableSide::Left);
+        auto * right_set = add_create_set(right_node, join_clause.key_names_right, JoinTableSide::Right);
+
+        if (isInnerOrLeft(join_kind))
+            right_set->setFiltering(left_set->getSet());
+
+        if (isInnerOrRight(join_kind))
+            left_set->setFiltering(right_set->getSet());
+    }
+
+    add_sorting(left_node, join_clause.key_names_left, JoinTableSide::Left);
+    add_sorting(right_node, join_clause.key_names_right, JoinTableSide::Right);
+}
+
+static void constructPhysicalStep(
+    QueryPlanNode & node,
+    ActionsDAG left_pre_join_actions,
+    ActionsDAG right_after_join_actions,
+    ActionsDAG post_join_actions,
+    std::pair<String, bool> residual_filter_condition,
+    JoinPtr join_ptr,
+    const JoinSettings & join_settings,
+    QueryPlan::Nodes & nodes)
+{
+    if (!join_ptr->isFilled())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is not filled");
+
+    node.children.resize(1);
+
+    auto * join_left_node = node.children[0];
+    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, makeDescription("Left Join Actions"));
+
+    node.step = std::make_unique<FilledJoinStep>(join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size);
+    node.step->setStepDescription("Filled JOIN");
+
+    if (!right_after_join_actions.getNodes().empty())
+        makeExpressionNodeOnTopOf(node, std::move(right_after_join_actions), nodes, makeDescription("Right Type Conversion Actions"));
+
+    post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
+    makeFilterNodeOnTopOf(
+        node, std::move(post_join_actions),
+        residual_filter_condition.first, residual_filter_condition.second,
+        nodes, makeDescription("Post Join Actions"));
+}
+
+static void constructPhysicalStep(
+    QueryPlanNode & node,
+    ActionsDAG left_pre_join_actions,
+    ActionsDAG right_pre_join_actions,
+    ActionsDAG post_join_actions,
+    std::pair<String, bool> residual_filter_condition,
+    JoinPtr join_ptr,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    const JoinSettings & join_settings,
+    const SortingStep::Settings & sorting_settings,
+    QueryPlan::Nodes & nodes,
+    LogicalJoinInfo && logical_join_info)
+{
+    if (node.children.size() != 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 children, got {}", node.children.size());
+
+    if (join_ptr->isFilled())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is already filled");
+
+    auto * join_left_node = node.children[0];
+    auto * join_right_node = node.children[1];
+
+    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, makeDescription("Left Pre Join Actions"));
+
+    makeExpressionNodeOnTopOf(*join_right_node, std::move(right_pre_join_actions), nodes, makeDescription("Right Pre Join Actions"));
+
+    if (const auto * fsmjoin = dynamic_cast<const FullSortingMergeJoin *>(join_ptr.get()))
+        addSortingForMergeJoin(fsmjoin, join_left_node, join_right_node, nodes,
+            sorting_settings, join_settings, fsmjoin->getTableJoin(), optimization_settings.max_step_description_length);
+
+    auto required_output_from_join = post_join_actions.getRequiredColumnsNames();
+    auto join_step = std::make_unique<JoinStep>(
+        join_left_node->step->getOutputHeader(),
+        join_right_node->step->getOutputHeader(),
+        join_ptr,
+        join_settings.max_block_size,
+        join_settings.min_joined_block_size_rows,
+        join_settings.min_joined_block_size_bytes,
+        optimization_settings.max_threads,
+        NameSet(required_output_from_join.begin(), required_output_from_join.end()),
+        false /*optimize_read_in_order*/,
+        true /*use_new_analyzer*/);
+    join_step->setLogicalJoinInfo(std::move(logical_join_info));
+    join_step->setStepDescription(fmt::format("JOIN {}", join_ptr->pipelineType()), optimization_settings.max_step_description_length);
+    join_step->setOptimized();
+    node.step = std::move(join_step);
+
+    node.children = {join_left_node, join_right_node};
+
+    post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
+    makeFilterNodeOnTopOf(
+        node, std::move(post_join_actions),
+        residual_filter_condition.first, residual_filter_condition.second,
+        nodes, makeDescription("Post Join Actions"));
+}
+
+static void constructIEJoinStep(
+    QueryPlanNode & node,
+    ActionsDAG left_pre_join_actions,
+    ActionsDAG right_pre_join_actions,
+    ActionsDAG post_join_actions,
+    std::pair<String, bool> residual_filter_condition,
+    IEJoinPlanDescription description,
+    ExpressionActionsPtr residual_condition,
+    JoinKind kind,
+    JoinStrictness strictness,
+    const JoinSettings & join_settings,
+    const SortingStep::Settings & sort_settings,
+    size_t max_step_description_length,
+    QueryPlan::Nodes & nodes)
+{
+    if (node.children.size() != 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 children, got {}", node.children.size());
+
+    auto * join_left_node = node.children[0];
+    auto * join_right_node = node.children[1];
+
+    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, makeDescription("Left Pre Join Actions"));
+
+    makeExpressionNodeOnTopOf(*join_right_node, std::move(right_pre_join_actions), nodes, makeDescription("Right Pre Join Actions"));
+
+    /// Pre-sort each input by its first-condition key: the operator then builds the L1 order
+    /// with an O(n) merge of two sorted runs instead of sorting the whole union. The sort is
+    /// always ascending with NULLS LAST regardless of the operator (a descending L1 iterates
+    /// the materialized inputs backwards), which lets `optimizeReadInOrder` relax or elide it
+    /// when the table is already ordered by the key. Which condition gets the sort is a
+    /// planner degree of freedom; fixed to the first condition for now.
+    auto add_sorting = [&](QueryPlan::Node *& sort_node, const String & key_name, JoinTableSide join_table_side)
+    {
+        SortDescription sort_description;
+        sort_description.emplace_back(key_name);
+
+        auto sorting_step = std::make_unique<SortingStep>(
+            sort_node->step->getOutputHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
+        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side), max_step_description_length);
+        sort_node = &nodes.emplace_back(QueryPlan::Node{std::move(sorting_step), {sort_node}});
+    };
+
+    add_sorting(join_left_node, description.key_names_left[0], JoinTableSide::Left);
+    add_sorting(join_right_node, description.key_names_right[0], JoinTableSide::Right);
+
+    const auto & left_header = join_left_node->step->getOutputHeader();
+    const auto & right_header = join_right_node->step->getOutputHeader();
+
+    IEJoinConditions conditions;
+    for (size_t i = 0; i < 2; ++i)
+    {
+        conditions[i].op = description.operators[i];
+        conditions[i].left_key_position = left_header->getPositionByName(description.key_names_left[i]);
+        conditions[i].right_key_position = right_header->getPositionByName(description.key_names_right[i]);
+    }
+
+    /// `max_joined_block_size_rows = 0` means the result block size is bound by `max_block_size` alone.
+    size_t max_block_size = join_settings.max_joined_block_size_rows
+        ? std::min<size_t>(join_settings.max_block_size, join_settings.max_joined_block_size_rows)
+        : join_settings.max_block_size;
+
+    SizeLimits size_limits(join_settings.max_rows_in_join, join_settings.max_bytes_in_join, join_settings.join_overflow_mode);
+    node.step = std::make_unique<IEJoinStep>(
+        left_header, right_header, conditions, std::move(residual_condition), kind, strictness,
+        /*inputs_sorted_by_first_key=*/ true, size_limits, max_block_size, join_settings.max_joined_block_size_bytes);
+
+    node.children = {join_left_node, join_right_node};
+
+    post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
+    makeFilterNodeOnTopOf(
+        node, std::move(post_join_actions),
+        residual_filter_condition.first, residual_filter_condition.second,
+        nodes, makeDescription("Post Join Actions"));
+}
+
+static QueryPlanNode buildPhysicalJoinImpl(
+    std::vector<QueryPlanNode *> children,
+    JoinOperator join_operator,
+    JoinExpressionActions expression_actions,
+    JoinSettings join_settings,
+    JoinAlgorithmParams join_algorithm_params,
+    SortingStep::Settings sorting_settings,
+    const ActionsDAG::NodeRawConstPtrs & actions_after_join,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    QueryPlan::Nodes & nodes,
+    LogicalJoinInfo && logical_join_info)
+{
+    auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
+
+    auto table_join = std::make_shared<TableJoin>(join_settings, logical_lookup && logical_lookup->useNulls(),
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
         Context::getGlobalContextInstance()->getTempDataOnDisk());
 
-    auto & join_expression = join_info.expression;
-
-    JoinPlanningContext join_context;
-    if (prepared_join_storage)
+    PreparedJoinStorage prepared_join_storage;
+    if (logical_lookup)
     {
-        join_context.prepared_join_storage = &prepared_join_storage;
+        prepared_join_storage = std::move(logical_lookup->getPreparedJoinStorage());
         prepared_join_storage.visit([&table_join](const auto & storage_)
         {
             table_join->setStorageJoin(storage_);
         });
-        swap_inputs = false;
     }
 
-    if (join_expression.is_using || join_info.kind == JoinKind::Paste)
-        swap_inputs = false;
+    auto & join_expression = join_operator.expression;
 
-    join_context.is_asof = join_info.strictness == JoinStrictness::Asof;
-    join_context.is_using = join_expression.is_using;
+    const bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
 
-    auto & table_join_clauses = table_join->getClauses();
-
-    if (!isCrossOrComma(join_info.kind) && !isPaste(join_info.kind))
+    const bool is_always_true_predicate = !is_join_without_expression && join_expression.empty();
+    const bool is_always_false_predicate = join_expression.size() == 1
+        && join_expression[0].getType()->onlyNull()
+        && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown;
+    /// When we do JOIN ON NULL or JOIN ON 1 we create dummy columns and in fact joining on 1 = 0 or 1 = 1.
+    /// For INNER JOIN we could just do CROSS, but for OUTER result depends on whether any table is empty or not.
+    /// ASOF JOIN is excluded: a constant expression cannot contain the required inequality predicate,
+    /// and marking the join as a join with constant would leave `table_join_clauses` empty.
+    /// Instead, it is rejected below with INVALID_JOIN_ON_EXPRESSION.
+    if (join_operator.strictness != JoinStrictness::Asof && (is_always_true_predicate || is_always_false_predicate))
     {
-        bool has_keys = addJoinConditionToTableJoin(
-            join_expression.condition, table_join_clauses.emplace_back(),
-            expression_actions, join_context);
+        bool join_expression_value = join_expression.empty();
+        join_expression.clear();
+        table_join->setJoinExpressionValue(join_expression_value);
+    }
 
-        if (!has_keys)
+    std::vector<JoinActionRef> used_expressions;
+
+    JoinPlanningContext planning_context;
+    planning_context.is_storage_join = bool(prepared_join_storage);
+    planning_context.is_prebuilt_hash_join = bool(prepared_join_storage.storage_join);
+    for (const auto * node : actions_after_join)
+    {
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+        planning_context.actions_after_join_map[node->result_name] = node->children.at(0);
+    }
+
+    /// Selectivity estimates for the IEJoin key condition choice; only needed when the choice is
+    /// not forced, i.e. there are more eligible inequality conditions than the two the operator
+    /// uses as keys.
+    if (!planning_context.is_storage_join
+        && children.size() == 2
+        && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN)
+        && IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
+    {
+        size_t eligible_conditions = 0;
+        for (const auto & condition : join_operator.expression)
+            eligible_conditions += tryGetIEJoinKeyCondition(condition).has_value();
+        if (eligible_conditions > 2)
         {
-            if (!TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH))
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot convert JOIN ON expression to CROSS JOIN, because hash join is disabled");
-
-            table_join_clauses.pop_back();
-            bool can_convert_to_cross = (isInner(join_info.kind) || isCrossOrComma(join_info.kind))
-                && join_info.strictness == JoinStrictness::All
-                && join_expression.disjunctive_conditions.empty()
-                && join_expression.condition.left_filter_conditions.empty()
-                && join_expression.condition.right_filter_conditions.empty();
-
-            if (!can_convert_to_cross)
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
-                    formatJoinCondition(join_expression.condition));
-            join_info.kind = JoinKind::Cross;
+            planning_context.left_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[0]).column_stats;
+            planning_context.right_column_stats = QueryPlanOptimizations::estimateReadRowsCount(*children[1]).column_stats;
         }
     }
 
-    if (auto left_pre_filter_condition = concatMergeConditions(join_expression.condition.left_filter_conditions, expression_actions.left_pre_join_actions))
+
+    bool is_disjunctive_condition = false;
+    std::optional<IEJoinPlanDescription> ie_join_description;
+    auto & table_join_clauses = table_join->getClauses();
+    if (!is_join_without_expression && !table_join->isJoinWithConstant())
     {
-        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
+        /// The position of `ie_join` in the `join_algorithm` list sets its priority: listed first,
+        /// it claims the join before the equality conditions are claimed as hash join keys
+        /// (they become a filter over the join result for ALL INNER, or a residual condition
+        /// inside the operator for the other kinds); listed after other algorithms, it is used
+        /// only when no equality conditions are found.
+        if (isIEJoinPreferred(join_operator, join_settings))
+            ie_join_description = tryExtractIEJoinDescription(
+                join_expression, join_operator, used_expressions, join_settings, planning_context);
+
+        bool has_keys = !ie_join_description
+            && addJoinPredicatesToTableJoin(
+                join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings, planning_context,
+                join_operator.shared_runtime_filter_descriptors);
+
+        if (!ie_join_description && !has_keys && join_operator.strictness != JoinStrictness::Asof)
+        {
+            /// No equality keys were found: drop the empty clause added above; the disjunctive
+            /// path below builds its own clauses, IEJoin does not use them at all.
+            table_join_clauses.pop_back();
+
+            if (TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::IE_JOIN))
+                ie_join_description = tryExtractIEJoinDescription(
+                    join_expression, join_operator, used_expressions, join_settings, planning_context);
+
+            if (!ie_join_description)
+            {
+                bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind))
+                    && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
+                    && join_operator.strictness == JoinStrictness::All;
+
+                is_disjunctive_condition = tryAddDisjunctiveConditions(
+                    join_expression, table_join_clauses, used_expressions, join_settings, planning_context,
+                    join_operator.shared_runtime_filter_descriptors, !can_convert_to_cross);
+
+                if (!is_disjunctive_condition)
+                {
+                    if (!can_convert_to_cross)
+                        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
+                            formatJoinCondition(join_expression));
+
+                    join_operator.kind = JoinKind::Cross;
+                    join_operator.residual_filter.append_range(join_expression);
+                    join_expression.clear();
+                }
+            }
+        }
+    }
+    else if (!join_expression.empty())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected JOIN ON expression {} for {} JOIN",
+            formatJoinCondition(join_expression), toString(join_operator.kind));
     }
 
-    if (auto right_pre_filter_condition = concatMergeConditions(join_expression.condition.right_filter_conditions, expression_actions.right_pre_join_actions))
+    if (join_operator.strictness == JoinStrictness::Asof)
     {
-        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
-    }
-
-    if (join_info.strictness == JoinStrictness::Asof)
-    {
-        if (!join_expression.disjunctive_conditions.empty())
+        if (is_disjunctive_condition)
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple disjuncts in JOIN ON expression");
 
         /// Find strictly only one inequality in predicate list for ASOF join
         chassert(table_join_clauses.size() == 1);
-        auto & join_predicates = join_expression.condition.predicates;
-        bool asof_predicate_found = false;
-        for (auto & predicate : join_predicates)
+        auto found_asof_predicate_it = join_expression.end();
+        for (auto it = join_expression.begin(); it != join_expression.end(); ++it)
         {
-            predicateOperandsToCommonType(predicate, expression_actions, join_context);
-            auto asof_inequality_op = operatorToAsofInequality(predicate.op);
+            auto [predicate_op, lhs, rhs] = it->asBinaryPredicate();
+            auto asof_inequality_op = operatorToAsofInequality(predicate_op);
             if (!asof_inequality_op)
                 continue;
 
-            if (asof_predicate_found)
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple inequality predicates in JOIN ON expression");
-            asof_predicate_found = true;
-            table_join->setAsofInequality(*asof_inequality_op);
-            table_join_clauses.front().addKey(predicate.left_node.getColumnName(), predicate.right_node.getColumnName(), /* null_safe_comparison = */ false);
-        }
-        if (!asof_predicate_found)
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join requires one inequality predicate in JOIN ON expression, in {}",
-                formatJoinCondition(join_expression.condition));
-    }
-
-    for (auto & join_condition : join_expression.disjunctive_conditions)
-    {
-        auto & table_join_clause = table_join_clauses.emplace_back();
-        bool has_keys = addJoinConditionToTableJoin(join_condition, table_join_clause, expression_actions, join_context);
-        if (!has_keys)
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
-                formatJoinCondition(join_condition));
-        if (auto left_pre_filter_condition = concatMergeConditions(join_condition.left_filter_conditions, expression_actions.left_pre_join_actions))
-            table_join_clause.analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
-        if (auto right_pre_filter_condition = concatMergeConditions(join_condition.right_filter_conditions, expression_actions.right_pre_join_actions))
-            table_join_clause.analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
-    }
-
-    JoinActionRef residual_filter_condition(nullptr);
-    if (join_expression.disjunctive_conditions.empty())
-    {
-        residual_filter_condition = concatMergeConditions(
-            join_expression.condition.residual_conditions, expression_actions.post_join_actions);
-    }
-    else
-    {
-        bool need_residual_filter = !join_expression.condition.residual_conditions.empty();
-        for (const auto & join_condition : join_expression.disjunctive_conditions)
-        {
-            need_residual_filter = need_residual_filter || !join_condition.residual_conditions.empty();
-            if (need_residual_filter)
-                break;
-        }
-
-        if (need_residual_filter)
-            residual_filter_condition = buildSingleActionForJoinExpression(join_expression, expression_actions);
-    }
-
-    bool need_add_nullable = join_info.kind == JoinKind::Left
-        || join_info.kind == JoinKind::Right
-        || join_info.kind == JoinKind::Full;
-    if (need_add_nullable && use_nulls)
-    {
-        if (residual_filter_condition)
-        {
-            throw Exception(
-                ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "{} JOIN ON expression '{}' contains column from left and right table, which is not supported with `join_use_nulls`",
-                toString(join_info.kind), residual_filter_condition.getColumnName());
-        }
-
-        auto to_nullable_function = FunctionFactory::instance().get("toNullable", nullptr);
-        if (join_info.kind == JoinKind::Left || join_info.kind == JoinKind::Full)
-            addToNullableActions(*expression_actions.right_pre_join_actions, to_nullable_function);
-        if (join_info.kind == JoinKind::Right || join_info.kind == JoinKind::Full)
-            addToNullableActions(*expression_actions.left_pre_join_actions, to_nullable_function);
-    }
-
-    if (residual_filter_condition && canPushDownFromOn(join_info))
-    {
-        post_filter = residual_filter_condition;
-    }
-    else if (residual_filter_condition)
-    {
-        ActionsDAG dag;
-        if (is_explain_logical)
-        {
-            /// Keep post_join_actions for explain
-            dag = expression_actions.post_join_actions->clone();
-        }
-        else
-        {
-            /// Move post_join_actions to join, replace with no-op dag
-            dag = std::move(*expression_actions.post_join_actions);
-            *expression_actions.post_join_actions = ActionsDAG(dag.getRequiredColumns());
-        }
-        auto & outputs = dag.getOutputs();
-        for (const auto * node : outputs)
-        {
-            if (node->result_name == residual_filter_condition.getColumnName())
+            if (lhs.fromRight() && rhs.fromLeft())
             {
-                outputs = {node};
-                break;
+                *asof_inequality_op = reverseASOFJoinInequality(*asof_inequality_op);
+                std::swap(lhs, rhs);
+            }
+            else if (!lhs.fromLeft() || !rhs.fromRight())
+                continue;
+
+            if (found_asof_predicate_it != join_expression.end())
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF join does not support multiple inequality predicates in JOIN ON expression");
+            found_asof_predicate_it = it;
+
+            predicateOperandsToCommonType(
+                lhs, rhs, join_settings, planning_context, join_operator.shared_runtime_filter_descriptors,
+                /* allow_conversion_to_subtype= */ false);
+
+            used_expressions.push_back(lhs);
+            used_expressions.push_back(rhs);
+
+            table_join->setAsofInequality(*asof_inequality_op);
+            table_join_clauses.front().addKey(lhs.getColumnName(), rhs.getColumnName(), /* null_safe_comparison = */ false);
+        }
+        if (found_asof_predicate_it == join_expression.end())
+        {
+            /// The equality predicates have already been taken out of `join_expression` by the loop above,
+            /// so for the common mistake - `ASOF JOIN ... ON l.a = r.a`, with no inequality at all - what is
+            /// left to print is nothing, and the message used to end in ", in .".
+            const auto remaining_condition = formatJoinCondition(join_expression);
+            /// Equality predicates are optional for an ASOF join, so mention them only when there are some.
+            const bool has_equality_keys = table_join_clauses.front().keysCount() != 0;
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "ASOF join requires one inequality predicate (<, <=, > or >=) in the JOIN ON expression{}{}",
+                has_equality_keys ? ", in addition to the equality predicates" : "",
+                remaining_condition.empty() ? "" : fmt::format(", but only found: {}", remaining_condition));
+        }
+
+        join_expression.erase(found_asof_predicate_it);
+    }
+
+    /// For IEJoin there is no join clause to attach single-side conditions to; conditions
+    /// remaining in `join_expression` become a filter over the join result (ALL INNER) or the
+    /// operator's residual condition (the other kinds) below. Attaching eligible single-side
+    /// conditions as pre-join filters for IEJoin is a possible follow-up optimization.
+    if (!ie_join_description)
+    {
+        if (auto left_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Left))
+        {
+            table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
+            used_expressions.push_back(left_pre_filter_condition);
+        }
+
+        /// A `StorageJoin` right side is a prebuilt join read by stored column name rather than a
+        /// stream, so no query-specific filter can be evaluated over it. The other two terms negate
+        /// `build_mixed_join_expression` below, so such a condition becomes a post-join filter.
+        const bool right_condition_is_applied_after_join
+            = prepared_join_storage.storage_join && !is_disjunctive_condition && canPushDownFromOn(join_operator);
+
+        if (!right_condition_is_applied_after_join)
+        {
+            if (auto right_pre_filter_condition = concatConditions(join_expression, JoinTableSide::Right))
+            {
+                table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
+                used_expressions.push_back(right_pre_filter_condition);
             }
         }
-        ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
-        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), actions_settings);
     }
 
-    appendRequiredOutputsToActions(post_filter);
+    /// Conditions left in `join_expression` belong to the JOIN ON clause, while
+    /// `join_operator.residual_filter` is a WHERE-like filter applied to the join result
+    /// (e.g. an inner-join predicate placed above an outer join by join reordering).
+    /// For INNER and CROSS joins the two are equivalent and both can be applied as a filter
+    /// after the join. For OUTER joins ON conditions affect matching (non-matching rows are
+    /// NULL-extended, not dropped), so they are evaluated during the join as a mixed join
+    /// expression, while the residual filter still drops rows from the result.
+    JoinActionRef on_clause_condition = concatConditions(join_expression);
+    JoinActionRef residual_filter_condition = concatConditions(join_operator.residual_filter);
+
+    const bool build_mixed_join_expression
+        = on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator));
+
+    /// A prepared storage delivers its columns already converted to `Nullable`, so the conversion is
+    /// dropped from the right-side expression below and the aliased `Nullable` node is what the join
+    /// is expected to output.
+    ///
+    /// A mixed join expression is the exception for a key-value storage: it is evaluated during the
+    /// join, over the right columns as they were stored, and only the hash family evaluates it at all.
+    /// `DirectKeyValueJoin` declines a mixed condition, so such a join always runs an algorithm that
+    /// reads the key-value storage as an ordinary stream and applies `join_use_nulls` itself. Handing
+    /// it a pre-converted right side would shadow the non-`Nullable` columns the mixed condition is
+    /// built on with same-named `Nullable` ones, and `HashJoin`, which resolves those columns by name,
+    /// would then evaluate the condition over mismatched column types.
+    const bool right_nullable_from_prepared_storage
+        = prepared_join_storage && !(prepared_join_storage.storage_key_value && build_mixed_join_expression);
+
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> actions_after_join_fold;
+    for (const auto * action : actions_after_join)
+    {
+        if (action->type == ActionsDAG::ActionType::ALIAS)
+        {
+            if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
+            {
+                /// StorageJoin should convert to nullable by itself.
+            }
+            else
+            {
+                /// x (Alias) -> toNullable(x) -> x (Input)
+                action = action->children.at(0);
+                /// toNullable(x) -> x (Input)
+            }
+        }
+
+        actions_after_join_fold[action] = action;
+    }
+
+    std::vector<const ActionsDAG::Node *> required_residual_nodes;
+    auto collect_required_input_nodes = [&](const JoinActionRef & condition)
+    {
+        if (!condition)
+            return;
+        std::stack<const ActionsDAG::Node *> stack;
+        stack.push(condition.getNode());
+        while (!stack.empty())
+        {
+            const auto * node = stack.top();
+            stack.pop();
+            if (node->type == ActionsDAG::ActionType::INPUT)
+            {
+                if (actions_after_join_fold.contains(node))
+                    continue;
+                actions_after_join_fold[node] = node;
+                required_residual_nodes.push_back(node);
+            }
+            for (const auto * child : node->children)
+                stack.push(child);
+        }
+    };
+    collect_required_input_nodes(on_clause_condition);
+    collect_required_input_nodes(residual_filter_condition);
+
+    ExpressionActionsPtr ie_join_residual_condition;
+    if (build_mixed_join_expression)
+    {
+        auto on_clause_dag = JoinExpressionActions::getSubDAG(std::views::single(on_clause_condition));
+        auto on_clause_expression = std::make_shared<ExpressionActions>(std::move(on_clause_dag), optimization_settings.actions_settings);
+        /// For IEJoin the condition gates candidate pairs inside the operator; TableJoin's
+        /// mixed join expression is consumed only by the hash-family algorithms.
+        if (ie_join_description)
+        {
+            /// IEJoin evaluates this condition per batch of candidate pairs and indexes the result by
+            /// a pair's position in that batch, so it must preserve the number of rows.
+            if (on_clause_expression->hasArrayJoin())
+            {
+                throw Exception(
+                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                    "Condition '{}' from JOIN ON section contains 'arrayJoin', which changes the number of rows. "
+                    "If the expansion depends on one side only, use ARRAY JOIN in a subquery before the JOIN",
+                    on_clause_condition.getColumnName());
+            }
+            ie_join_residual_condition = std::move(on_clause_expression);
+        }
+        else
+            table_join->getMixedJoinExpression() = std::move(on_clause_expression);
+        on_clause_condition = JoinActionRef(nullptr);
+    }
+
+    if (on_clause_condition)
+    {
+        /// ON-clause conditions of an inner-like join are equivalent to a filter after the join.
+        std::vector<JoinActionRef> filter_conditions;
+        filter_conditions.push_back(on_clause_condition);
+        if (residual_filter_condition)
+            filter_conditions.push_back(residual_filter_condition);
+        residual_filter_condition = concatConditions(filter_conditions);
+    }
+
+    for (const auto * action : actions_after_join)
+    {
+        if (action->type == ActionsDAG::ActionType::ALIAS)
+        {
+            if (right_nullable_from_prepared_storage && JoinActionRef(action, expression_actions).fromRight())
+            {
+                /// x (Alias) -> toNullable(x) -> x (Input)
+                action = action->children.at(0)->children.at(0);
+                /// toNullable(x) -> x (Input)
+            }
+            else
+                action = action->children.at(0);
+        }
+        used_expressions.emplace_back(action, expression_actions);
+    }
+
+    for (const auto * action : required_residual_nodes)
+        used_expressions.emplace_back(action, expression_actions);
+
+    /// We expect dag inputs to be a subset of child step header columns.
+    /// If a child step returns duplicate columns, or both children's headers carry the same name,
+    /// we need to find corresponding duplicates in dag inputs, which will be different nodes.
+    /// The queue is consumed across children, so it must not be rebuilt per child.
+    const auto & dag_inputs = expression_actions.getActionsDAG()->getInputs();
+    std::unordered_map<std::string_view, std::deque<const ActionsDAG::Node *>> name_to_nodes;
+    for (const auto * node : dag_inputs)
+        name_to_nodes[node->result_name].push_back(node);
+
+    /// An input that only feeds a used expression, such as the `toNullable(x)` key under `join_use_nulls`
+    /// or a key cast to a common type, is not passed to the join as a column of its own: the join would
+    /// keep it as payload for nothing. `ActionsDAG::updateHeader` drops such consumed inputs anyway.
+    std::unordered_set<const ActionsDAG::Node *> consumed_inputs;
+    {
+        std::unordered_set<const ActionsDAG::Node *> used_nodes;
+        for (const auto & expression : used_expressions)
+            used_nodes.insert(expression.getNode());
+
+        std::stack<const ActionsDAG::Node *> stack;
+        for (const auto * node : used_nodes)
+            for (const auto * child : node->children)
+                stack.push(child);
+        while (!stack.empty())
+        {
+            const auto * node = stack.top();
+            stack.pop();
+            if (node->type == ActionsDAG::ActionType::INPUT)
+            {
+                if (!used_nodes.contains(node))
+                    consumed_inputs.insert(node);
+                continue;
+            }
+            for (const auto * child : node->children)
+                stack.push(child);
+        }
+    }
+
+    for (const auto * child : children)
+    {
+        for (const auto & column : *child->step->getOutputHeader())
+        {
+            auto input_it = name_to_nodes.find(column.name);
+
+            if (input_it == name_to_nodes.end() || input_it->second.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Cannot find input column {} on its position in inputs of expression actions DAG, expected inputs {} in\n{}",
+                    column.name,
+                    fmt::join(children | std::views::transform([](const auto & c) { return fmt::format("[{}]", c->step->getOutputHeader()->dumpNames()); }), ", "),
+                    expression_actions.getActionsDAG()->dumpDAG());
+
+            const auto * input = input_it->second.front();
+            input_it->second.pop_front();
+            if (!consumed_inputs.contains(input))
+                used_expressions.emplace_back(input, expression_actions);
+        }
+    }
+
+    {
+        std::unordered_set<const ActionsDAG::Node *> seen_used_expressions;
+        auto it = std::remove_if(used_expressions.begin(), used_expressions.end(),
+            [&](const JoinActionRef & x) { return !seen_used_expressions.insert(x.getNode()).second; });
+        used_expressions.erase(it, used_expressions.end());
+    }
+
+    ActionsDAG left_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromLeft() || node.fromNone(); }));
+    ActionsDAG right_dag = JoinExpressionActions::getSubDAG(used_expressions | std::views::filter([](const auto & node) { return node.fromRight(); }));
+
+    if (logical_lookup && prepared_join_storage.storage_key_value && right_nullable_from_prepared_storage)
+    {
+        right_dag.mergeInplace(
+            JoinExpressionActions::getSubDAG(
+                actions_after_join
+                    | std::views::transform([&](const auto * action) { return JoinActionRef(action, expression_actions); })
+                    | std::views::filter([](const auto & action) { return action.fromRight(); })));
+    }
+
+    auto common_dag = expression_actions.getActionsDAG();
+
+    bool can_remove_residual_filter = false;
+    auto & required_output_nodes = common_dag->getOutputs();
+    if (residual_filter_condition && !std::ranges::contains(required_output_nodes, residual_filter_condition.getNode()))
+    {
+        can_remove_residual_filter = true;
+        required_output_nodes.emplace_back(residual_filter_condition.getNode());
+    }
+
+    ActionsDAG residual_dag = ActionsDAG::foldActionsByProjection(actions_after_join_fold, required_output_nodes);
+
+    /// The IEJoin path does not reach chooseJoinAlgorithm, so `table_join` (consumed only
+    /// there) is left untouched.
+    if (ie_join_description)
+    {
+        QueryPlanNode node;
+        node.children = std::move(children);
+        String ie_residual_filter_condition_name = residual_filter_condition ? residual_filter_condition.getColumnName() : "";
+        constructIEJoinStep(
+            node, std::move(left_dag), std::move(right_dag), std::move(residual_dag),
+            std::make_pair(ie_residual_filter_condition_name, can_remove_residual_filter),
+            std::move(*ie_join_description), std::move(ie_join_residual_condition),
+            join_operator.kind, join_operator.strictness,
+            join_settings, sorting_settings,
+            optimization_settings.max_step_description_length, nodes);
+        return node;
+    }
 
     table_join->setInputColumns(
-        expression_actions.left_pre_join_actions->getNamesAndTypesList(),
-        expression_actions.right_pre_join_actions->getNamesAndTypesList());
-    table_join->setUsedColumns(expression_actions.post_join_actions->getRequiredColumnsNames());
-    table_join->setJoinInfo(join_info);
-
-    Block left_sample_block = blockWithColumns(expression_actions.left_pre_join_actions->getResultColumns());
-    Block right_sample_block = blockWithColumns(expression_actions.right_pre_join_actions->getResultColumns());
-
-    if (swap_inputs)
+        left_dag.getNamesAndTypesList(),
+        right_dag.getNamesAndTypesList());
     {
-        table_join->swapSides();
-        std::swap(left_sample_block, right_sample_block);
-        if (hash_table_key_hashes)
-            std::swap(hash_table_key_hashes->key_hash_left, hash_table_key_hashes->key_hash_right);
+        auto used_columns = residual_dag.getRequiredColumnsNames();
+        if (used_columns.empty())
+        {
+            /// Ensure the join produces at least one output column so that result blocks
+            /// have the correct row count. When all post-join outputs are constants
+            /// (e.g. `__join_result_dummy`), residual_dag has no required inputs,
+            /// and the join would produce blocks with 0 columns
+            if (!left_dag.getOutputs().empty())
+                used_columns.push_back(left_dag.getOutputs().front()->result_name);
+            else if (!right_dag.getOutputs().empty())
+                used_columns.push_back(right_dag.getOutputs().front()->result_name);
+        }
+        table_join->setUsedColumns(used_columns);
+    }
+    table_join->setJoinOperator(join_operator);
+
+    if (logical_lookup && prepared_join_storage.storage_join)
+    {
+        /// Right keys of the Join engine whose output type is corrected after the join (USING
+        /// common-type promotion). For a LEFT/FULL join these must be emitted as Nullable so an
+        /// unmatched-left row fills NULL; the raw right key of a `JOIN ... ON` is not corrected here
+        /// and must keep its storage type. See TableJoin::getRequiredRightKeys.
+        NameSet using_promoted_right_keys;
+        for (const auto * action : actions_after_join)
+        {
+            JoinActionRef action_ref(action, expression_actions);
+            if (action->type != ActionsDAG::ActionType::INPUT && action_ref.fromRight())
+                using_promoted_right_keys.insert(action->result_name);
+        }
+        table_join->setUsingPromotedRightKeys(std::move(using_promoted_right_keys));
     }
 
-    JoinAlgorithmSettings algo_settings(
-        join_settings,
-        max_threads,
-        max_entries_for_hash_table_stats,
-        std::move(initial_query_id),
-        lock_acquire_timeout);
+    SharedHeader left_sample_block = blockWithActionsDAGOutput(left_dag);
+    SharedHeader right_sample_block = blockWithActionsDAGOutput(right_dag);
 
-    auto join_algorithm_ptr = chooseJoinAlgorithm(
+    JoinPtr join_algorithm_ptr = chooseJoinAlgorithm(
         table_join,
         prepared_join_storage,
         left_sample_block,
         right_sample_block,
-        algo_settings,
-        hash_table_key_hashes ? hash_table_key_hashes->key_hash_right : 0,
-        rhs_size_estimation);
-    runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
-    return join_algorithm_ptr;
-}
+        join_algorithm_params);
 
-bool JoinStepLogical::hasPreparedJoinStorage() const
-{
-    return prepared_join_storage;
-}
-
-std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, String & filter_column_name)
-{
-    if (join_info.strictness != JoinStrictness::All)
-        return {};
-
-    auto & join_expression = join_info.expression;
-    if (!join_expression.disjunctive_conditions.empty())
-        return {};
-
-    if (!canPushDownFromOn(join_info, side))
-        return {};
-
-    const ActionsDAGPtr & actions_dag = side == JoinTableSide::Left ? expression_actions.left_pre_join_actions : expression_actions.right_pre_join_actions;
-    std::vector<JoinActionRef> & conditions = side == JoinTableSide::Left ? join_expression.condition.left_filter_conditions : join_expression.condition.right_filter_conditions;
-
-    if (auto filter_condition = concatMergeConditions(conditions, actions_dag))
+    QueryPlanNode node;
+    node.children = std::move(children);
+    String residual_filter_condition_name = residual_filter_condition ? residual_filter_condition.getColumnName() : "";
+    if (!join_algorithm_ptr->isFilled())
     {
-        filter_column_name = filter_condition.getColumnName();
-        conditions.clear();
-        ActionsDAG new_dag(actions_dag->getResultColumns());
-        new_dag.getOutputs() = new_dag.getInputs();
+        constructPhysicalStep(
+            node, std::move(left_dag), std::move(right_dag), std::move(residual_dag), std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
+            std::move(join_algorithm_ptr), optimization_settings, join_settings, sorting_settings, nodes, std::move(logical_join_info));
+    }
+    else
+    {
+        ActionsDAG right_type_correction_actions;
+        if (logical_lookup && prepared_join_storage.storage_join)
+        {
+            right_type_correction_actions = JoinExpressionActions::getSubDAG(
+                actions_after_join
+                    | std::views::transform([&](const auto * action) { return JoinActionRef(action, expression_actions); })
+                    | std::views::filter([](const auto & action) { return action.fromRight() && action.getNode()->type != ActionsDAG::ActionType::INPUT; }));
+        }
 
-        ActionsDAG result = std::move(*actions_dag);
-        *actions_dag = std::move(new_dag);
+        constructPhysicalStep(
+            node,
+            std::move(left_dag),
+            std::move(right_type_correction_actions),
+            std::move(residual_dag),
+            std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
+            std::move(join_algorithm_ptr),
+            join_settings,
+            nodes
+        );
+    }
+    return node;
+}
 
-        updateInputHeader(result.getResultColumns(), side == JoinTableSide::Left ? 0 : 1);
-
-        return result;
+void JoinStepLogical::buildPhysicalJoin(
+    QueryPlanNode & node,
+    const QueryPlanOptimizationSettings & optimization_settings,
+    QueryPlan::Nodes & nodes)
+{
+    auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
+    if (!join_step || node.children.empty())
+    {
+        if (node.step)
+        {
+            const auto & step = *node.step;
+            auto type_name = demangle(typeid(step).name());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStepLogical, got '{}' of type {} with {} children", node.step->getName(), type_name, node.children.size());
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected JoinStepLogical, got {}", !join_step ? "nullptr" : "empty children");
     }
 
-    return {};
+    UInt64 hash_table_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getRightHashTableCacheKey() : 0;
+    UInt64 join_output_key_hash = optimization_settings.collect_hash_table_stats_during_joins ? join_step->getJoinOutputCacheKey() : 0;
+
+    if (!join_step->join_algorithm_params)
+    {
+        join_step->join_algorithm_params = std::make_unique<JoinAlgorithmParams>(
+            join_step->join_settings,
+            optimization_settings.max_threads,
+            hash_table_key_hash,
+            join_output_key_hash,
+            optimization_settings.max_entries_for_hash_table_stats,
+            optimization_settings.initial_query_id,
+            optimization_settings.lock_acquire_timeout);
+
+        if (join_step->right_relation.estimated_rows)
+            join_step->join_algorithm_params->rhs_size_estimation = join_step->right_relation.estimated_rows;
+
+        if (join_step->result_rows_estimation)
+            join_step->join_algorithm_params->result_rows_estimation = join_step->result_rows_estimation;
+
+        if (hash_table_key_hash)
+        {
+            StatsCollectingParams params{
+                /*key_=*/hash_table_key_hash,
+                /*enable=*/ optimization_settings.collect_hash_table_stats_during_joins,
+                optimization_settings.max_entries_for_hash_table_stats,
+                optimization_settings.max_size_to_preallocate_for_joins};
+            auto & hash_table_stats = getHashTablesStatistics<HashJoinEntry>();
+            if (auto hint = hash_table_stats.getSizeHint(params))
+                join_step->join_algorithm_params->rhs_size_estimation = hint->source_rows;
+        }
+    }
+
+    LogicalJoinInfo logical_join_info{
+        .readable_relation_name = join_step->getReadableRelationName(),
+        .estimation = join_step->getEstimation(),
+        .locality = join_step->join_operator.locality,
+        .cluster_id = join_step->getClusterId()
+    };
+
+    auto new_node = buildPhysicalJoinImpl(
+        node.children,
+        join_step->join_operator,
+        std::move(join_step->expression_actions),
+        join_step->join_settings,
+        *join_step->join_algorithm_params,
+        join_step->sorting_settings,
+        join_step->actions_after_join,
+        optimization_settings,
+        nodes,
+        std::move(logical_join_info)
+    );
+
+    new_node.cost_estimation = node.cost_estimation;
+
+    node = std::move(new_node);
 }
 
-void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings) const
+using NameToColumnMap = std::unordered_map<std::string_view, ColumnWithTypeAndName>;
+
+static const ColumnConst * findInlinableConstant(const ActionsDAG::Node * node, const NameToColumnMap & constants)
 {
-    join_settings.updatePlanSettings(settings);
+    if (node->type != ActionsDAG::ActionType::INPUT)
+        return nullptr;
+
+    auto it = constants.find(node->result_name);
+    if (it == constants.end() || !it->second.type->equals(*node->result_type))
+        return nullptr;
+
+    return typeid_cast<const ColumnConst *>(it->second.column.get());
+}
+
+static void inlineConstantInputs(ActionsDAG & dag, const NameToColumnMap & constants)
+{
+    std::unordered_set<const ActionsDAG::Node *> bound_inputs(dag.getInputs().begin(), dag.getInputs().end());
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::INPUT || bound_inputs.contains(&node))
+            continue;
+
+        const auto * constant = findInlinableConstant(&node, constants);
+        if (!constant)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Cannot evaluate condition, column {} is neither available in the stream nor a known constant",
+                node.result_name);
+
+        ActionsDAG::Node const_node;
+        const_node.type = ActionsDAG::ActionType::COLUMN;
+        const_node.result_name = node.result_name;
+        const_node.result_type = node.result_type;
+        const_node.column = ColumnConst::create(constant->getDataColumnPtr(), 0);
+
+        const_cast<ActionsDAG::Node &>(node) = std::move(const_node);
+    }
+}
+
+static bool areOppositeJoinSides(const JoinActionRef & lhs, const JoinActionRef & rhs)
+{
+    return (lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft());
+}
+
+static bool canBeEvaluatedOnSide(
+    const JoinActionRef & condition, JoinTableSide side, const NameToColumnMap & constants)
+{
+    if (side == JoinTableSide::Left && (condition.fromLeft() || condition.fromNone()))
+        return true;
+    if (side == JoinTableSide::Right && condition.fromRight())
+        return true;
+
+    if (constants.empty())
+        return false;
+
+    /// Skip evalutation of equiality conditions, since it's used for join key extraction
+    auto [op, lhs, rhs] = condition.asBinaryPredicate();
+    bool is_equality = op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals;
+    if (is_equality && areOppositeJoinSides(lhs, rhs))
+        return false;
+
+    bool reads_own_column = false;
+    std::stack<JoinActionRef> stack;
+    stack.push(condition);
+
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        auto action = stack.top();
+        stack.pop();
+
+        const auto * raw_node = action.getNode();
+        if (!visited.insert(raw_node).second)
+            continue;
+
+        if (raw_node->type == ActionsDAG::ActionType::INPUT)
+        {
+            if (side == JoinTableSide::Left ? action.fromLeft() : action.fromRight())
+                reads_own_column = true;
+            else if (!findInlinableConstant(raw_node, constants))
+                return false;
+        }
+        else if (raw_node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            for (const auto & argument : action.getArguments())
+                stack.push(argument);
+        }
+        else if (raw_node->type == ActionsDAG::ActionType::FUNCTION
+            && raw_node->function_base
+            && raw_node->function_base->isDeterministic())
+        {
+            for (const auto & argument : action.getArguments())
+                stack.push(argument);
+        }
+        else if (raw_node->type == ActionsDAG::ActionType::COLUMN)
+        {
+            /// Column represent a constant value, so it can be evaluated on any side
+            continue;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return reads_own_column;
+}
+
+std::optional<ActionsDAG::ActionsForFilterPushDown> JoinStepLogical::getFilterActions(
+    JoinTableSide side, const SharedHeader & left_header, const SharedHeader & right_header)
+{
+    if (!canPushDownFromOn(join_operator, side))
+        return {};
+
+    const auto & stream_header = side == JoinTableSide::Left ? left_header : right_header;
+    const auto & opposite_header = side == JoinTableSide::Right ? left_header : right_header;
+
+    NameToColumnMap header_constants;
+    {
+        for (const auto & column : opposite_header->getColumnsWithTypeAndName())
+            if (column.column && isColumnConst(*column.column))
+                header_constants.emplace(column.name, column);
+    }
+
+    ActionsDAG::NodeRawConstPtrs extracted;
+    std::vector<JoinActionRef> kept;
+    kept.reserve(join_operator.expression.size());
+    for (const auto & condition : join_operator.expression)
+    {
+        if (canBeEvaluatedOnSide(condition, side, header_constants))
+            extracted.push_back(toBoolIfNeeded(condition).getNode());
+        else
+            kept.push_back(condition);
+    }
+
+    if (extracted.empty())
+        return {};
+
+    auto filter_actions = ActionsDAG::createActionsForConjunction(extracted, stream_header->getColumnsWithTypeAndName());
+    if (!filter_actions)
+        return {};
+
+    inlineConstantInputs(filter_actions->dag, header_constants);
+
+    join_operator.expression = std::move(kept);
+    return filter_actions;
+}
+
+static void remapNodes(ActionsDAG::NodeRawConstPtrs & keys, const ActionsDAG::NodeMapping & node_map)
+{
+    for (const auto *& key : keys)
+    {
+        if (auto it = node_map.find(key); it != node_map.end())
+            key = it->second;
+    }
+}
+
+static ActionsDAG cloneSubdagWithInputs(const SharedHeader & stream_header, ActionsDAG::NodeRawConstPtrs & keys)
+{
+    ActionsDAG dag(stream_header->getColumnsWithTypeAndName(), /* duplicate_const_columns */ false);
+
+    ActionsDAG::NodeMapping node_map;
+    auto second_dag = ActionsDAG::cloneSubDAG(keys, node_map, false);
+
+    remapNodes(keys, node_map);
+    node_map.clear();
+
+    dag.mergeInplace(std::move(second_dag), node_map, true);
+    remapNodes(keys, node_map);
+
+    dag.getOutputs() = dag.getInputs();
+    dag.getOutputs().append_range(keys | std::views::filter([&](const auto * node) { return node->type != ActionsDAG::ActionType::INPUT; }));
+
+    return dag;
+}
+
+std::optional<std::pair<JoinStepLogical::ActionsDAGWithKeys, JoinStepLogical::ActionsDAGWithKeys>>
+JoinStepLogical::preCalculateKeys(const SharedHeader & left_header, const SharedHeader & right_header)
+{
+    auto & join_expression = join_operator.expression;
+
+    ActionsDAG::NodeRawConstPtrs left_keys;
+    ActionsDAG::NodeRawConstPtrs right_keys;
+
+    for (auto & expr : join_expression)
+    {
+        auto [predicate_op, lhs, rhs] = expr.asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Equals)
+            continue;
+
+        const auto * left_node = lhs.getNode();
+        const auto * right_node = rhs.getNode();
+        if (lhs.fromLeft() && rhs.fromRight())
+        {
+            left_keys.push_back(left_node);
+            right_keys.push_back(right_node);
+        }
+        else if (lhs.fromRight() && rhs.fromLeft())
+        {
+            left_keys.push_back(right_node);
+            right_keys.push_back(left_node);
+        }
+        else
+        {
+            continue;
+        }
+
+        /// Replace keys expression with calculated inputs
+        /// We also could possibly remove some nodes from dag,
+        /// but they will simply remain unused when converting to a physical step
+        if (left_node->type != ActionsDAG::ActionType::INPUT ||
+            right_node->type != ActionsDAG::ActionType::INPUT)
+        {
+            if (left_node->type != ActionsDAG::ActionType::INPUT)
+                lhs = expression_actions.addInput(left_node->result_name, left_node->result_type, lhs.fromLeft() ? 0 : 1);
+            if (right_node->type != ActionsDAG::ActionType::INPUT)
+                rhs = expression_actions.addInput(right_node->result_name, right_node->result_type, rhs.fromRight() ? 1 : 0);
+            expr = JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(predicate_op));
+        }
+    }
+
+    if (left_keys.empty() || right_keys.empty())
+        return {};
+
+    auto left_dag = cloneSubdagWithInputs(left_header, left_keys);
+    updateInputHeader(std::make_shared<Block>(left_dag.getResultColumns()), 0);
+
+    auto right_dag = cloneSubdagWithInputs(right_header, right_keys);
+    updateInputHeader(std::make_shared<Block>(right_dag.getResultColumns()), 1);
+
+    return std::make_optional(std::pair{
+        ActionsDAGWithKeys{std::move(left_dag), std::move(left_keys)},
+        ActionsDAGWithKeys{std::move(right_dag), std::move(right_keys)},
+    });
+}
+
+std::vector<JoinActionRef> JoinStepLogical::getInputActions() const
+{
+    std::vector<JoinActionRef> input_actions;
+    const auto & raw_inputs = expression_actions.getActionsDAG()->getInputs();
+    for (const auto * node : raw_inputs)
+        input_actions.emplace_back(node, expression_actions);
+    return input_actions;
+}
+
+
+std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
+{
+    std::vector<JoinActionRef> output_actions;
+    const auto & raw_outputs = expression_actions.getActionsDAG()->getOutputs();
+    for (const auto * node : raw_outputs)
+        output_actions.emplace_back(node, expression_actions);
+    return output_actions;
+}
+
+
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
+{
+    join_settings.updatePlanSettings(settings, version, join_operator);
     sorting_settings.updatePlanSettings(settings);
+}
+
+static void serializeNodeList(
+    WriteBuffer & out,
+    const std::unordered_map<const ActionsDAG::Node *, size_t> & node_to_id,
+    const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    writeVarUInt(nodes.size(), out);
+    for (const auto * node : nodes)
+    {
+        if (auto it = node_to_id.find(node); it != node_to_id.end())
+            writeVarUInt(it->second, out);
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find node '{}' in node map", node->result_name);
+    }
 }
 
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
-    if (prepared_join_storage)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of JoinStepLogical with prepared storage is not implemented");
-
-    if (swap_inputs)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of JoinStepLogical with swapped inputs is not implemented");
-
     UInt8 flags = 0;
-    if (use_nulls)
-        flags |= 1;
-
     writeIntBinary(flags, ctx.out);
 
-    JoinActionRef::ActionsDAGRawPtrs dags = {
-        expression_actions.left_pre_join_actions.get(),
-        expression_actions.right_pre_join_actions.get(),
-        expression_actions.post_join_actions.get()};
+    writeVarUInt(1, ctx.out);
+    auto actions_dag = expression_actions.getActionsDAG();
+    actions_dag->serialize(ctx.out, ctx.registry);
 
-    writeVarUInt(dags.size(), ctx.out);
-    for (const auto * dag : dags)
-        dag->serialize(ctx.out, ctx.registry);
+    join_operator.serialize(ctx.out, actions_dag.get());
+    serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
 
-    join_info.serialize(ctx.out, dags);
-
-    writeVarUInt(required_output_columns.size(), ctx.out);
-    for (const auto & name : required_output_columns)
-        writeStringBinary(name, ctx.out);
+    /// A step that crosses the wire tells the receiver which decisions were already taken on it, so
+    /// that the receiver does not take them again. Both bits stand for a decision that reads a row
+    /// estimate, and estimates are deliberately not part of the plan format, so a receiver that
+    /// decided for itself would decide from an empty estimate and could decide differently. The byte
+    /// is left out of a plan cache key because it differs between the single-node and the
+    /// parallel-replicas plan build, and those two builds have to hash alike.
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS && !ctx.for_cache_key)
+    {
+        UInt8 optimizer_flags = 0;
+        if (optimized)
+            optimizer_flags |= 1;
+        if (runtime_filter_declined_small_probe)
+            optimizer_flags |= 2;
+        writeIntBinary(optimizer_flags, ctx.out);
+    }
 }
 
-std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & ctx)
+static ActionsDAG::NodeRawConstPtrs deserializeNodeList(ReadBuffer & in, const ActionsDAG::NodeRawConstPtrs & id_to_node)
+{
+    size_t num_nodes = 0;
+    readVarUInt(num_nodes, in);
+
+    size_t max_node_id = id_to_node.size();
+
+    ActionsDAG::NodeRawConstPtrs nodes(num_nodes);
+    for (size_t i = 0; i < num_nodes; ++i)
+    {
+        size_t node_id = 0;
+        readVarUInt(node_id, in);
+        if (node_id >= max_node_id)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Node id {} is out of range, must be less than {}", node_id, max_node_id);
+
+        nodes[i] = id_to_node[node_id];
+    }
+    return nodes;
+}
+
+QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 2)
         throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical must have two input streams");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
-    bool use_nulls = flags & 1;
-
-    std::vector<ActionsDAGPtr> dag_ptrs;
+    ActionsDAG actions_dag;
     {
-        UInt64 num_dags;
+        UInt64 num_dags = 0;
         readVarUInt(num_dags, ctx.in);
 
-        if (num_dags != 3)
+        if (num_dags != 1)
             throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical deserialization expect 3 DAGs, got {}", num_dags);
 
-        dag_ptrs.reserve(num_dags);
-        for (size_t i = 0; i < num_dags; ++i)
-            dag_ptrs.emplace_back(std::make_unique<ActionsDAG>(ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context)));
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
     }
+    auto id_to_node = actions_dag.getIdToNode();
 
-    JoinExpressionActions expression_actions(std::move(dag_ptrs[0]), std::move(dag_ptrs[1]), std::move(dag_ptrs[2]));
+    auto left_header = ctx.input_headers.front();
+    auto right_header = ctx.input_headers.back();
+    JoinExpressionActions expression_actions(*left_header, *right_header, std::move(actions_dag));
 
-    JoinActionRef::ActionsDAGRawPtrs dags = {
-        expression_actions.left_pre_join_actions.get(),
-        expression_actions.right_pre_join_actions.get(),
-        expression_actions.post_join_actions.get()};
-
-    auto join_info = JoinInfo::deserialize(ctx.in, dags);
-
-    Names required_output_columns;
-    {
-        UInt64 num_output_columns;
-        readVarUInt(num_output_columns, ctx.in);
-
-        required_output_columns.resize(num_output_columns);
-        for (auto & name : required_output_columns)
-            readStringBinary(name, ctx.in);
-    }
+    auto join_operator = JoinOperator::deserialize(ctx.in, expression_actions);
+    auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
-    JoinSettings join_settings(ctx.settings);
+    JoinSettings join_settings(ctx.settings, ctx.version);
 
-    return std::make_unique<JoinStepLogical>(
-        ctx.input_headers.front(), ctx.input_headers.back(),
-        std::move(join_info),
+    auto step = std::make_unique<JoinStepLogical>(
+        std::move(left_header),
+        std::move(right_header),
+        std::move(join_operator),
         std::move(expression_actions),
-        std::move(required_output_columns),
-        use_nulls,
+        std::move(actions_after_join),
         std::move(join_settings),
         std::move(sort_settings));
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS)
+    {
+        UInt8 optimizer_flags = 0;
+        readIntBinary(optimizer_flags, ctx.in);
+
+        step->optimized = bool(optimizer_flags & 1);
+        step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
+    }
+
+    return step;
 }
+
+QueryPlanStepPtr JoinStepLogical::clone() const
+{
+    auto new_join_operator = join_operator;
+    ActionsDAG::NodeMapping node_map;
+    auto new_expression_actions = expression_actions.clone(node_map);
+
+    auto remap = [&](const auto * node)
+    {
+        auto it = node_map.find(node);
+        if (it == node_map.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find node in node map");
+        return it->second;
+    };
+
+    auto new_actions_dag = new_expression_actions.getActionsDAG();
+    auto new_actions_after_join = actions_after_join;
+    for (const auto * & action : new_actions_after_join)
+        action = remap(action);
+    for (auto & action : new_join_operator.expression)
+        action = JoinActionRef(remap(action.getNode()), new_expression_actions);
+    for (auto & action : new_join_operator.residual_filter)
+        action = JoinActionRef(remap(action.getNode()), new_expression_actions);
+
+    auto result_step = std::make_unique<JoinStepLogical>(
+        getInputHeaders().front(), getInputHeaders().back(),
+        std::move(new_join_operator),
+        std::move(new_expression_actions),
+        std::move(new_actions_after_join),
+        join_settings,
+        sorting_settings);
+    result_step->setStepDescription(*this);
+
+    /// Preserve the optimizer state. The `optimized` flag is load-bearing: correlated subquery
+    /// decorrelation pins the layout of its result join (see PlannerCorrelatedSubqueries) because
+    /// only that layout guarantees that the in-memory buffer of the common subplan is fully written
+    /// before it is read. If a clone dropped the flag, optimizing the cloned plan could swap the
+    /// join sides and schedule the buffer reader before the writers, failing with the logical error
+    /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
+    result_step->optimized = optimized;
+    result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
+    result_step->result_rows_estimation = result_rows_estimation;
+    result_step->estimated_cost = estimated_cost;
+    result_step->estimated_selectivity = estimated_selectivity;
+    result_step->cluster_id = cluster_id;
+    result_step->imprecise_estimate = imprecise_estimate;
+    result_step->result_column_stats = result_column_stats;
+    result_step->right_hash_table_cache_key = right_hash_table_cache_key;
+    result_step->join_output_cache_key = join_output_cache_key;
+    result_step->left_relation = left_relation;
+    result_step->right_relation = right_relation;
+    result_step->table_stats_hint = table_stats_hint;
+    result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
+
+    return result_step;
+}
+
+void JoinStepLogical::addConditions(ActionsDAG actions_dag)
+{
+    ActionsDAG::NodeRawConstPtrs conditions;
+    expression_actions.getActionsDAG()->mergeNodes(std::move(actions_dag), &conditions);
+    for (const auto * node : conditions)
+        join_operator.expression.emplace_back(node, expression_actions);
+}
+
+std::optional<UInt64> JoinStepLogical::getInputRowsEstimation(JoinTableSide side) const
+{
+    if (side == JoinTableSide::Left)
+        return left_relation.estimated_rows;
+    else
+        return right_relation.estimated_rows;
+}
+
+void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Join", JoinStepLogical::deserialize);
 }
+
 
 }

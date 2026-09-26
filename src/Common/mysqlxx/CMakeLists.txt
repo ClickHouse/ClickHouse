@@ -5,6 +5,7 @@ add_library (mysqlxx
     ResultBase.cpp
     UseQueryResult.cpp
     Row.cpp
+    SSLParams.cpp
     Value.cpp
     Pool.cpp
     PoolFactory.cpp
@@ -20,7 +21,3 @@ target_link_libraries (mysqlxx
 )
 
 add_library(ch::mysqlxx ALIAS mysqlxx)
-
-if (ENABLE_TESTS)
-    add_subdirectory (tests)
-endif ()

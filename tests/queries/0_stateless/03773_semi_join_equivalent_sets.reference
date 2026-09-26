@@ -1,0 +1,79 @@
+  Filter column: equals(__table2.number, 0_UInt8) (removed)
+      Type: LEFT
+      Strictness: ANY
+            ReadType: Default
+Expression ((Project names + (Projection + )))
+Actions: INPUT : 0 -> __table1.uid UInt64 : 0
+         INPUT : 1 -> __table1.name String : 1
+         INPUT : 2 -> __table1.age Int16 : 2
+         INPUT : 3 -> __table2.number UInt64 : 3
+         ALIAS __table1.uid :: 0 -> uid UInt64 : 4
+         ALIAS __table1.name :: 1 -> name String : 0
+         ALIAS __table1.age :: 2 -> age Int16 : 1
+         ALIAS __table2.number :: 3 -> number UInt64 : 2
+Positions: 4 0 1 2
+  Expression (Post Join Actions)
+  Actions: INPUT :: 0 -> __table1.uid UInt64 : 0
+           INPUT :: 1 -> __table1.name String : 1
+           INPUT :: 2 -> __table1.age Int16 : 2
+           INPUT :: 3 -> __table2.number UInt64 : 3
+  Positions: 0 1 2 3
+    Join (JOIN FillRightFirst)
+    Type: LEFT
+    Strictness: SEMI
+    Algorithm: ConcurrentHashJoin
+    Clauses: [(__table1.uid) = (__table2.number)]
+      Expression (Left Pre Join Actions)
+      Actions: INPUT :: 0 -> __table1.uid UInt64 : 0
+               INPUT :: 1 -> __table1.name String : 1
+               INPUT :: 2 -> __table1.age Int16 : 2
+      Positions: 0 1 2
+        Filter ((WHERE + Change column names to column identifiers))
+        Filter column: equals(__table1.uid, 1_UInt8) (removed)
+        Actions: INPUT : 0 -> uid UInt64 : 0
+                 INPUT : 1 -> name String : 1
+                 INPUT : 2 -> age Int16 : 2
+                 COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 3
+                 ALIAS uid : 0 -> __table1.uid UInt64 : 4
+                 ALIAS name :: 1 -> __table1.name String : 5
+                 ALIAS age :: 2 -> __table1.age Int16 : 1
+                 FUNCTION equals(uid :: 0, 1_UInt8 :: 3) -> equals(__table1.uid, 1_UInt8) UInt8 : 2
+        Positions: 2 4 5 1
+          ReadFromMergeTree (default.users)
+          ReadType: Default
+          Parts: 0
+          Granules: 0
+      Expression (Right Pre Join Actions)
+      Actions: INPUT :: 0 -> __table2.number UInt64 : 0
+      Positions: 0
+        Filter ((WHERE + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
+        Filter column: equals(__table2.number, 1_UInt8) (removed)
+        Actions: INPUT : 0 -> number UInt64 : 0
+                 COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 1
+                 ALIAS number : 0 -> __table2.number UInt64 : 2
+                 FUNCTION equals(number :: 0, 1_UInt8 :: 1) -> equals(__table2.number, 1_UInt8) UInt8 : 3
+        Positions: 3 2
+          ReadFromSystemNumbers
+    Type: LEFT
+    Strictness: SEMI
+        Filter column: equals(__table1.uid, 1_UInt8) (removed)
+          ReadType: Default
+        Filter column: equals(__table2.number, 1_UInt8) (removed)
+--
+    Type: LEFT
+    Strictness: SEMI
+        Filter column: equals(__table1.uid, 1_UInt8) (removed)
+          ReadType: Default
+        Filter column: equals(__table2.number, 1_UInt8) (removed)
+--
+    Type: RIGHT
+    Strictness: SEMI
+        Filter column: equals(__table1.uid, 1_UInt8) (removed)
+          ReadType: Default
+        Filter column: equals(__table2.number, 1_UInt8) (removed)
+--
+    Type: RIGHT
+    Strictness: SEMI
+        Filter column: equals(__table1.uid, 1_UInt8) (removed)
+          ReadType: Default
+        Filter column: equals(__table2.number, 1_UInt8) (removed)

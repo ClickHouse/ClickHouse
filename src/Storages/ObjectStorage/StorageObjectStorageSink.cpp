@@ -1,10 +1,14 @@
-#include "StorageObjectStorageSink.h"
+#include <IO/CompressionMethod.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSink.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/isValidUTF8.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <base/defines.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -12,27 +16,58 @@ namespace Setting
 {
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    void validateKey(const String & str)
+    {
+        /// See:
+        /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
+        /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#putobject
+
+        if (str.empty() || str.size() > 1024)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect key length (not empty, max 1023 characters), got: {}", str.size());
+
+        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in key");
+
+        PartitionedSink::validatePartitionKey(str, true);
+    }
+
+    void validateNamespace(const String & str, StorageObjectStorageConfigurationPtr configuration)
+    {
+        configuration->validateNamespace(str);
+
+        if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in bucket name");
+
+        PartitionedSink::validatePartitionKey(str, false);
+    }
 }
 
 StorageObjectStorageSink::StorageObjectStorageSink(
+    const std::string & path_,
     ObjectStoragePtr object_storage,
-    ConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings_,
-    const Block & sample_block_,
+    SharedHeader sample_block_,
     ContextPtr context,
-    const std::string & blob_path)
+    const String & format,
+    const String & compression_method)
     : SinkToStorage(sample_block_)
+    , path(path_)
     , sample_block(sample_block_)
 {
     const auto & settings = context->getSettingsRef();
-    const auto path = blob_path.empty() ? configuration->getPaths().back() : blob_path;
-    const auto chosen_compression_method = chooseCompressionMethod(path, configuration->compression_method);
+    const auto chosen_compression_method = chooseCompressionMethod(path, compression_method);
 
     auto buffer = object_storage->writeObject(
         StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
@@ -41,10 +76,10 @@ StorageObjectStorageSink::StorageObjectStorageSink(
         std::move(buffer),
         chosen_compression_method,
         static_cast<int>(settings[Setting::output_format_compression_level]),
-        static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
+        static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]),
+        settings[Setting::snappy_mode]);
 
-    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        configuration->format, *write_buf, sample_block, context, format_settings_);
+    writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, *sample_block, context, format_settings_);
 }
 
 void StorageObjectStorageSink::consume(Chunk & chunk)
@@ -56,7 +91,9 @@ void StorageObjectStorageSink::consume(Chunk & chunk)
 
 void StorageObjectStorageSink::onFinish()
 {
-    chassert(!isCancelled());
+    if (isCancelled())
+        return;
+
     finalizeBuffers();
     releaseBuffers();
 }
@@ -80,6 +117,7 @@ void StorageObjectStorageSink::finalizeBuffers()
     }
 
     write_buf->finalize();
+    result_file_size = write_buf->count();
 }
 
 void StorageObjectStorageSink::releaseBuffers()
@@ -96,14 +134,20 @@ void StorageObjectStorageSink::cancelBuffers()
         write_buf->cancel();
 }
 
+size_t StorageObjectStorageSink::getFileSize() const
+{
+    if (!result_file_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sink must be finalized before requesting result file size");
+    return *result_file_size;
+}
+
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
+    StorageObjectStorageConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
-    const Block & sample_block_,
-    ContextPtr context_,
-    const ASTPtr & partition_by)
-    : PartitionedSink(partition_by, context_, sample_block_)
+    SharedHeader sample_block_,
+    ContextPtr context_)
+    : PartitionedSink(configuration_->partition_strategy, context_, sample_block_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , query_settings(configuration_->getQuerySettings(context_))
@@ -121,51 +165,27 @@ StorageObjectStorageSink::~StorageObjectStorageSink()
 
 SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String & partition_id)
 {
-    auto partition_bucket = replaceWildcards(configuration->getNamespace(), partition_id);
-    validateNamespace(partition_bucket);
+    auto file_path = configuration->getPathForWrite(partition_id).path;
 
-    auto partition_key = replaceWildcards(configuration->getPath(), partition_id);
-    validateKey(partition_key);
+    validateNamespace(configuration->getNamespace(), configuration);
+    validateKey(file_path);
 
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, query_settings, partition_key, /* sequence_number */1))
+            *object_storage, *configuration, query_settings, file_path, /* sequence_number */1))
     {
-        partition_key = *new_key;
+        file_path = *new_key;
     }
 
+    last_written_object_path = file_path;
+
     return std::make_shared<StorageObjectStorageSink>(
+        file_path,
         object_storage,
-        configuration,
         format_settings,
-        sample_block,
+        std::make_shared<Block>(partition_strategy->getFormatHeader()),
         context,
-        partition_key
-    );
-}
-
-void PartitionedStorageObjectStorageSink::validateKey(const String & str)
-{
-    /// See:
-    /// - https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
-    /// - https://cloud.ibm.com/apidocs/cos/cos-compatibility#putobject
-
-    if (str.empty() || str.size() > 1024)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect key length (not empty, max 1023 characters), got: {}", str.size());
-
-    if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
-        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in key");
-
-    validatePartitionKey(str, true);
-}
-
-void PartitionedStorageObjectStorageSink::validateNamespace(const String & str)
-{
-    configuration->validateNamespace(str);
-
-    if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data()), str.size()))
-        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in bucket name");
-
-    validatePartitionKey(str, false);
+        configuration->format,
+        configuration->compression_method);
 }
 
 }

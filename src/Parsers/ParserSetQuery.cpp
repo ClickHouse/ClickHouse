@@ -8,6 +8,8 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FieldFromAST.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Core/Names.h>
 #include <IO/ReadBufferFromString.h>
@@ -16,6 +18,7 @@
 #include <IO/Operators.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -39,6 +42,7 @@ public:
 
     String operator() (const Array & x) const
     {
+        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '[';
@@ -55,6 +59,7 @@ public:
 
     String operator() (const Map & x) const
     {
+        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '{';
@@ -81,6 +86,7 @@ public:
 
     String operator() (const Tuple & x) const
     {
+        checkStackSize();
         WriteBufferFromOwnString wb;
 
         wb << '(';
@@ -144,13 +150,13 @@ protected:
             map.push_back(std::move(tuple));
         }
 
-        node = std::make_shared<ASTLiteral>(std::move(map));
+        node = make_intrusive<ASTLiteral>(std::move(map));
         return true;
     }
 };
 
 /// Parse Identifier, Literal, Array/Tuple/Map of literals
-bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
+static bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Expected & expected)
 {
     ASTPtr node;
 
@@ -211,12 +217,16 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
         return false;
 
     /// for SETTINGS disk=disk(type='s3', path='', ...)
-    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
     {
-        tryGetIdentifierNameInto(name, change.name);
-        change.value = createFieldFromAST(function_ast);
+        auto pos_before_func = pos;
+        if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+        {
+            tryGetIdentifierNameInto(name, change.name);
+            change.value = createFieldFromAST(function_ast);
 
-        return true;
+            return true;
+        }
+        pos = pos_before_func;
     }
     if (!literal_or_map_p.parse(pos, value, expected))
         return false;
@@ -228,7 +238,7 @@ bool ParserSetQuery::parseNameValuePair(SettingChange & change, IParser::Pos & p
 }
 
 bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
-    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected)
+    SettingChange & change, String & default_settings, ParserSetQuery::Parameter & parameter, IParser::Pos & pos, Expected & expected, bool enable_shorthand_syntax)
 {
     ParserCompoundIdentifier name_p;
     ParserLiteralOrMap value_p;
@@ -238,11 +248,14 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     ASTPtr node;
     String name;
     ASTPtr function_ast;
+    bool have_eq = false;
 
     if (!name_p.parse(pos, node, expected))
         return false;
 
-    if (!s_eq.ignore(pos, expected))
+    have_eq = s_eq.ignore(pos, expected);
+
+    if (!enable_shorthand_syntax && !have_eq)
         return false;
 
     tryGetIdentifierNameInto(node, name);
@@ -250,6 +263,9 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     /// Parameter
     if (name.starts_with(QUERY_PARAMETER_NAME_PREFIX))
     {
+        if (!have_eq)
+            return false;
+
         name = name.substr(strlen(QUERY_PARAMETER_NAME_PREFIX));
 
         if (name.empty())
@@ -264,26 +280,58 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
         return true;
     }
 
-    /// Default
-    if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
+    if (have_eq)
     {
-        default_settings = name;
-        return true;
-    }
+        /// Default
+        if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
+        {
+            default_settings = name;
+            return true;
+        }
 
-    /// Setting
-    if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+        /// Setting
+        {
+            auto pos_before_func = pos;
+            if (function_p.parse(pos, function_ast, expected) && function_ast->as<ASTFunction>()->name == "disk")
+            {
+                change.name = name;
+                change.value = createFieldFromAST(function_ast);
+
+                return true;
+            }
+            pos = pos_before_func;
+        }
+
+        /// Query parameter as a setting value, e.g. `SET max_threads = {threads:UInt64}`
+        /// or `SELECT ... SETTINGS max_threads = {threads:UInt64}`.
+        /// Keep it as an ASTQueryParameter wrapped into a Field (same mechanism as disk(...) above);
+        /// it is resolved later by ReplaceQueryParameterVisitor once parameter values are known.
+        {
+            ParserSubstitution substitution_p;
+            ASTPtr substitution;
+            if (substitution_p.parse(pos, substitution, expected))
+            {
+                change.name = name;
+                change.value = createFieldFromAST(substitution);
+
+                return true;
+            }
+        }
+
+        if (!value_p.parse(pos, node, expected))
+            return false;
+    }
+    else
     {
-        change.name = name;
-        change.value = createFieldFromAST(function_ast);
-
-        return true;
+        /// A setting name with no value is shorthand for `= true`. Only a Bool setting can be
+        /// written this way, but the parser does not know the settings schema, so it records that
+        /// the value was omitted and leaves the check to `BaseSettings::applyChange`.
+        node = make_intrusive<ASTLiteral>(Field(true));
     }
-    if (!value_p.parse(pos, node, expected))
-        return false;
 
     change.name = name;
     change.value = node->as<ASTLiteral &>().value;
+    change.shorthand = !have_eq;
 
     return true;
 }
@@ -303,6 +351,30 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// Parse SET TRANSACTION ... queries using ParserTransactionControl
         if (ParserKeyword{Keyword::TRANSACTION}.check(pos, expected))
             return false;
+
+        /// Parse SET TIME ZONE 'tz' as an alias for SET session_timezone = 'tz'
+        if (ParserKeyword{Keyword::TIME_ZONE}.ignore(pos, expected))
+        {
+            ParserToken eq(TokenType::Equals);
+            eq.ignore(pos, expected); // optional, for PostgreSQL compatibility
+            ASTPtr value_node;
+            ParserLiteralOrMap literal_parser;
+
+            if (!literal_parser.parse(pos, value_node, expected))
+                return false;
+
+            auto query = make_intrusive<ASTSetQuery>();
+            node = query;
+
+            query->is_standalone = !parse_only_internals;
+
+            SettingChange change;
+            change.name = "session_timezone";
+            change.value = value_node->as<ASTLiteral &>().value;
+            query->changes.push_back(std::move(change));
+
+            return true;
+        }
     }
 
     SettingsChanges changes;
@@ -318,7 +390,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         String name_of_default_setting;
         Parameter parameter;
 
-        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected))
+        if (!parseNameValuePairWithParameterOrDefault(setting, name_of_default_setting, parameter, pos, expected, shorthand_syntax))
             return false;
 
         if (!parameter.first.empty())
@@ -329,7 +401,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             changes.push_back(std::move(setting));
     }
 
-    auto query = std::make_shared<ASTSetQuery>();
+    auto query = make_intrusive<ASTSetQuery>();
     node = query;
 
     query->is_standalone = !parse_only_internals;
@@ -340,5 +412,92 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     return true;
 }
 
+
+}
+
+namespace DB
+{
+
+void registerStatementSet(StatementFactory & factory)
+{
+    factory.registerStatement("SET",
+    {
+        .description = R"DOCS_MD(
+```sql
+SET param = value
+```
+
+Assigns `value` to the `param` [setting](/concepts/features/configuration/settings/overview) for the current session. You cannot change [server settings](/reference/settings/server-settings/settings) this way.
+
+You can also set all the values from the specified settings profile in a single query.
+
+```sql
+SET profile = 'profile-name-from-the-settings-file'
+```
+
+For boolean settings set to true, you can use a shorthand syntax by omitting the value assignment. When only the setting name is specified, it is automatically set to `1` (true).
+
+```sql
+-- These are equivalent:
+SET force_index_by_date = 1
+SET force_index_by_date
+```
+
+## SET TIME ZONE {#set-time-zone}
+
+```sql
+SET TIME ZONE [=] 'timezone'
+```
+
+Sets the session time zone. This is an alias for `SET session_timezone = 'timezone'`, provided for compatibility with PostgreSQL and other SQL databases.
+
+Many SQL clients, ORMs, and JDBC drivers automatically issue `SET TIME ZONE` when connecting. This syntax allows such tools to work with ClickHouse without custom workarounds.
+
+```sql
+SET TIME ZONE 'UTC';
+SET TIME ZONE 'Europe/Amsterdam';
+SET TIME ZONE 'America/New_York';
+
+-- Verify the current session time zone
+SELECT getSetting('session_timezone');
+```
+
+The time zone value must be a name that `system.time_zones` lists - the [IANA Time Zone Database](https://www.iana.org/time-zones) that is shipped with the server - or a fixed offset spelled `Fixed/UTC±HH:MM:SS`. Any other value, including a name that only the operating system's time zone database has, results in an error.
+
+For more information about the `session_timezone` setting, see [session_timezone](/reference/settings/session-settings/other#session_timezone).
+
+## Setting query parameters {#setting-query-parameters}
+
+The `SET` statement can also be used to define query parameters by prefixing the parameter name with `param_`.
+Query parameters allow you to write generic queries with placeholders that are replaced with actual values at execution time.
+
+```sql
+SET param_name = value
+```
+
+To use a query parameter in your query, reference it with the syntax `{name: datatype}`:
+
+```sql
+SET param_id = 42;
+SET param_name = 'John';
+
+SELECT * FROM users
+WHERE id = {id: UInt32}
+AND name = {name: String};
+```
+
+Query parameters are particularly useful when the same query needs to be executed multiple times with different values.
+
+For more detailed information about query parameters, including usage with the `Identifier` type, see [Defining and Using Query Parameters](/reference/syntax#defining-and-using-query-parameters).
+
+For more information, see [Settings](/reference/settings/session-settings).
+)DOCS_MD",
+        .syntax = R"(
+SET param = value
+SET profile = 'profile-name-from-the-settings-file'
+)",
+        .related = {"SET ROLE", "CREATE SETTINGS PROFILE", "SHOW", "ALTER TABLE ... MODIFY SETTING"},
+    });
+}
 
 }

@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <logger>
+        <formatting>
+            <type>json</type>
+            <channel>errorlog</channel>
+            <names>
+                <date_time>DATE_TIME</date_time>
+                <date_time_utc>DATE_TIME_UTC</date_time_utc>
+                <thread_name>THREAD_NAME</thread_name>
+                <thread_id>THREAD_ID</thread_id>
+                <level>LEVEL</level>
+                <query_id>QUERY_ID</query_id>
+                <logger_name>LOGGER_NAME</logger_name>
+                <message>MESSAGE</message>
+                <source_file>SOURCE_FILE</source_file>
+                <source_line>SOURCE_LINE</source_line>
+            </names>
+        </formatting>
+    </logger>
+</clickhouse>

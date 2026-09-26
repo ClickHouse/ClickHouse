@@ -70,6 +70,4 @@ done
 
 $CLICKHOUSE_CLIENT --query "SELECT is_done, parts_to_do FROM system.mutations where table='mutation_table' and database='$CLICKHOUSE_DATABASE' FORMAT TSVWithNames"
 
-$CLICKHOUSE_CLIENT --query "SELECT type, new_part_name FROM system.replication_queue WHERE table='mutation_table' and database='$CLICKHOUSE_DATABASE'"
-
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS mutation_table SYNC"

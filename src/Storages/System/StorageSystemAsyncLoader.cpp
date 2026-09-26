@@ -1,5 +1,8 @@
 #include <chrono>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemAsyncLoader.h>
+
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -8,6 +11,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Interpreters/Context.h>
 #include <base/EnumReflection.h>
+#include <Common/AsyncLoader.h>
 
 
 namespace DB
@@ -33,7 +37,7 @@ namespace
     {
         auto time_us = std::chrono::duration_cast<std::chrono::microseconds>(time_point.time_since_epoch()).count();
         DecimalUtils::DecimalComponents<DateTime64> components{time_us / 1'000'000, time_us % 1'000'000};
-        return DecimalField(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
+        return DecimalField<DateTime64>(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
     }
 
     Field optionalTimeInMicroseconds(const TimePoint & time_point)
@@ -90,7 +94,7 @@ void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr
         TimePoint finished = state.job->finishTime();
         TimePoint last = finished != TimePoint{} ? finished : now;
         TimeDuration elapsed = started != TimePoint{} ? last - started : TimeDuration{0};
-        double elapsed_sec = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count() * 1e-9;
+        double elapsed_sec = static_cast<double>(std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count()) * 1e-9;
 
         Field ready_seqno;
         if (state.ready_seqno)
@@ -136,3 +140,6 @@ void StorageSystemAsyncLoader::fillData(MutableColumns & res_columns, ContextPtr
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemAsyncLoader) }

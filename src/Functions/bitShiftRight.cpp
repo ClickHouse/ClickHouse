@@ -28,7 +28,7 @@ struct BitShiftRightImpl
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "BitShiftRight is not implemented for big integers as second argument");
         else if (b < 0)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
-        else if (static_cast<UInt256>(b) > 8 * sizeof(A))
+        else if (static_cast<UInt256>(b) >= 8 * sizeof(A))
             return static_cast<Result>(0);
         else if constexpr (is_big_int_v<A>)
             return static_cast<Result>(a) >> static_cast<UInt32>(b);
@@ -64,11 +64,10 @@ struct BitShiftRightImpl
             if (b < 0)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
 
-            if (b == bit_limit || static_cast<decltype(bit_limit)>(b) > bit_limit)
+            if (static_cast<decltype(bit_limit)>(b) >= bit_limit)
             {
                 /// insert default value
-                out_vec.push_back(0);
-                out_offsets.push_back(out_offsets.back() + 1);
+                out_offsets.push_back(out_offsets.back());
                 return;
             }
 
@@ -80,9 +79,8 @@ struct BitShiftRightImpl
 
             const size_t old_size = out_vec.size();
             size_t length = shift_right_end - begin;
-            const size_t new_size = old_size + length + 1;
+            const size_t new_size = old_size + length;
             out_vec.resize(new_size);
-            out_vec[old_size + length] = 0;
 
             /// We start from the byte on the right and shift right shift_right_bits bit by byte
             UInt8 * op_pointer = const_cast<UInt8 *>(shift_right_end);
@@ -105,7 +103,7 @@ struct BitShiftRightImpl
             if (b < 0)
                 throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The number of shift positions needs to be a non-negative value");
 
-            if (b == bit_limit || static_cast<decltype(bit_limit)>(b) > bit_limit)
+            if (static_cast<decltype(bit_limit)>(b) >= bit_limit)
             {
                 // insert default value
                 out_vec.resize_fill(out_vec.size() + n);
@@ -133,13 +131,22 @@ struct BitShiftRightImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
+    /// `apply` above refuses a big-integer shift amount and a negative one. The compiled body cannot
+    /// throw, so it must not answer for those at all: otherwise the same query raises an exception
+    /// until the expression gets compiled and then silently returns a value.
+    static constexpr bool compilable = !is_big_int_v<B> && is_unsigned_v<B>;
 
     static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
     {
         if (!left->getType()->isIntegerTy())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "BitShiftRightImpl expected an integral type");
-        return is_signed ? b.CreateAShr(left, right) : b.CreateLShr(left, right);
+
+        /// A shift by the width of the left operand or more answers zero above, while a shift by such
+        /// an amount is poison. The width is that of the operand as declared: `compileImpl` has already
+        /// widened both values to the result type, while the interpreted path clamps at `8 * sizeof(A)`.
+        auto * width = llvm::ConstantInt::get(left->getType(), 8 * sizeof(A));
+        auto * shifted = is_signed ? b.CreateAShr(left, right) : b.CreateLShr(left, right);
+        return b.CreateSelect(b.CreateICmpULT(right, width), shifted, llvm::ConstantInt::get(left->getType(), 0));
     }
 #endif
 };
@@ -152,7 +159,52 @@ using FunctionBitShiftRight = BinaryArithmeticOverloadResolver<BitShiftRightImpl
 
 REGISTER_FUNCTION(BitShiftRight)
 {
-    factory.registerFunction<FunctionBitShiftRight>();
+        FunctionDocumentation::Description description = R"(
+Shifts the binary representation of a value to the right by a specified number of bit positions.
+
+A `FixedString` or a `String` is treated as a single multibyte value.
+
+Bits of a `FixedString` value are lost as they are shifted out.
+On the contrary, a `String` value is extended with additional bytes, so no bits are lost.
+)";
+    FunctionDocumentation::Syntax syntax = "bitShiftRight(a, N)";
+    FunctionDocumentation::Arguments arguments = {
+        {"a", "A value to shift.", {"(U)Int*", "String", "FixedString"}},
+        {"N", "The number of positions to shift.", {"UInt8/16/32/64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the shifted value with type equal to that of `a`."};
+    FunctionDocumentation::Examples examples = {{"Usage example with binary encoding",
+        R"(
+SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
+        )",
+        R"(
+┌───a─┬─bin(a)───┬─a_shifted─┬─bin(a_shifted)─┐
+│ 101 │ 01100101 │        25 │ 00011001       │
+└─────┴──────────┴───────────┴────────────────┘
+        )"},
+        {"Usage example with hexadecimal encoding", R"(
+-- The shifted value is binary, so it is shown with `hex`.
+SELECT 'abc' AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
+        )",
+        R"(
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 0616      │
+└─────┴────────┴───────────┘
+        )"},
+{"Usage example with Fixed String encoding", R"(
+SELECT toFixedString('abc', 3) AS a, hex(a), hex(bitShiftRight(a, 12)) AS a_shifted;
+        )",
+R"(
+┌─a───┬─hex(a)─┬─a_shifted─┐
+│ abc │ 616263 │ 000616    │
+└─────┴────────┴───────────┘
+        )"},
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Bit;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionBitShiftRight>(documentation);
 }
 
 }

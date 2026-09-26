@@ -1,0 +1,65 @@
+---
+slug: '/examples/aggregate-function-combinators/argMaxIf'
+title: 'argMaxIf'
+description: 'argMaxIf コンビネータの使用例'
+keywords: ['argMax', 'if', 'combinator', 'examples', 'argMaxIf']
+sidebarTitle: 'argMaxIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+[`If`](/ja/reference/functions/aggregate-functions/combinators#-if) コンビネータは、[`argMax`](/ja/reference/functions/aggregate-functions/argMax)
+関数に適用できます。これにより、集約コンビネータ関数 `argMaxIf` を使用して、
+条件が true の行に対し、`val` の最大値に対応する `arg` の値を見つけることができます。
+
+`argMaxIf` 関数は、データセット内の最大値に対応する値を見つけたいが、
+特定の条件を満たす行のみを対象にしたい場合に便利です。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+この例では、製品の売上に関するサンプルデータを使って、`argMaxIf` の動作を説明します。価格が最も高い製品名を求めますが、
+対象となるのは、少なくとも 10 回販売されている製品のみです。
+
+```sql title="Query"
+CREATE TABLE product_sales
+(
+    product_name String,
+    price Decimal32(2),
+    sales_count UInt32
+) ENGINE = Memory;
+
+INSERT INTO product_sales VALUES
+    ('Laptop', 999.99, 10),
+    ('Phone', 499.99, 15),
+    ('Tablet', 299.99, 0),
+    ('Watch', 1199.99, 5),
+    ('Headphones', 79.99, 20);
+
+SELECT argMaxIf(product_name, price, sales_count >= 10) AS most_expensive_popular_product
+FROM product_sales;
+```
+
+`argMaxIf` 関数は、少なくとも 10 回販売されたすべての製品の中で、
+最も価格が高い製品名を返します (sales&#95;count &gt;= 10) 。
+この場合、よく売れている製品の中で最も価格が高いのは (999.99) &#39;Laptop&#39; であるため、
+&#39;Laptop&#39; を返します。
+
+```response title="Response"
+   ┌─most_expensi⋯lar_product─┐
+1. │ Laptop                   │
+   └──────────────────────────┘
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [`argMax`](/ja/reference/functions/aggregate-functions/argMax)
+* [`argMin`](/ja/reference/functions/aggregate-functions/argMin)
+* [`argMinIf`](/ja/guides/clickhouse/examples/aggregate-function-combinators/argMinIf)
+* [`If コンビネータ`](/ja/reference/functions/aggregate-functions/combinators#-if)

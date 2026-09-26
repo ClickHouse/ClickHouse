@@ -1,8 +1,8 @@
 #pragma once
 
 #include <base/types.h>
-#include <Interpreters/Context.h>
 #include <Core/MySQL/PacketEndpoint.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include "config.h"
 

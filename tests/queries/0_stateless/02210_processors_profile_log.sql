@@ -7,7 +7,7 @@ WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND Settings['log_processors_profiles']='1'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND Settings['log_processors_profiles']='1'
     ) AS query_id_
 SELECT
     name,
@@ -29,5 +29,5 @@ SELECT
     output_rows,
     output_bytes
 FROM system.processors_profile_log
-WHERE query_id = query_id_
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = query_id_
 ORDER BY name;

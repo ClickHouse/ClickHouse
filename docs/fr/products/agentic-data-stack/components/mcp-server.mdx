@@ -1,0 +1,24 @@
+---
+sidebarTitle: 'ClickHouse MCP server'
+title: 'Le ClickHouse MCP server'
+description: "Comment le ClickHouse MCP server fournit la couche d’accès reposant sur un standard ouvert de l’Agentic Data Stack"
+doc_type: 'guide'
+keywords: ['Agentic Data Stack', 'MCP', 'Model Context Protocol', 'ClickHouse MCP server']
+---
+
+Le ClickHouse MCP server est la **couche d’accès reposant sur un standard ouvert** de l’[Agentic Data Stack](/fr/products/agentic-data-stack/overview) : il expose ClickHouse à l’interface de chat via le Model Context Protocol, afin que l’agent puisse explorer vos données et exécuter des requêtes en lecture seule.
+
+Dans la stack, le serveur open-source s’exécute aux côtés de ClickHouse et est préconfiguré dans LibreChat. Il expose trois outils à l’agent :
+
+* **Lister les bases de données** — répertorier les bases de données dans l’instance ClickHouse connectée.
+* **Lister les tables** — inspecter les tables et leurs schémas au sein d’une base de données.
+* **Exécuter des requêtes SELECT** — exécuter des requêtes en lecture seule et renvoyer les résultats.
+
+Pour l’exécuter dans la stack, consultez le [guide de configuration Docker](/fr/products/agentic-data-stack/docker-setup). Pour utiliser le ClickHouse MCP server avec d’autres clients et frameworks d’agents, ou pour consulter son code source et sa configuration :
+
+* [Catalogue des intégrations MCP](/fr/guides/use-cases/ai-ml/MCP) : guides des clients et des bibliothèques d’agents.
+* [Référentiel MCP](https://github.com/ClickHouse/mcp-clickhouse) : code source et configuration.
+
+<Info>
+  **Vous préférez un MCP Server géré ?** ClickHouse Cloud propose un [Remote MCP server](/fr/products/cloud/features/ai-ml/remote-mcp) entièrement géré — aucune installation, une authentification OAuth et un jeu d’outils plus riche, qui ajoute des opérations de gestion (services, facturation, ClickPipes, sauvegardes) aux outils en lecture seule ci-dessus. Consultez sa [comparaison avec le serveur open-source](/fr/products/cloud/features/ai-ml/remote-mcp#remote-vs-oss).
+</Info>

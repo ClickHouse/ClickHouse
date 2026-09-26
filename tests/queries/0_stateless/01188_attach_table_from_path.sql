@@ -1,4 +1,4 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, memory-engine
 
 drop table if exists test;
 drop table if exists file;

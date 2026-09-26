@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemDDLWorkerQueue.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/DDLTask.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -8,9 +9,12 @@
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
@@ -27,6 +31,11 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+}
+
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
 }
 
 enum class Status : uint8_t
@@ -62,7 +71,7 @@ ColumnsDescription StorageSystemDDLWorkerQueue::getColumnsDescription()
         {"entry_version",       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Version of the entry."},
         {"initiator_host",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Host that initiated the DDL operation."},
         {"initiator_port",      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>()), "Port used by the initiator."},
-        {"cluster",             std::make_shared<DataTypeString>(), "Cluster name."},
+        {"cluster",             std::make_shared<DataTypeString>(), "Cluster name, empty if not determined."},
         {"query",               std::make_shared<DataTypeString>(), "Query executed."},
         {"settings",            std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()), "Settings used in the DDL operation."},
         {"query_create_time",   std::make_shared<DataTypeDateTime>(), "Query created time."},
@@ -77,7 +86,7 @@ ColumnsDescription StorageSystemDDLWorkerQueue::getColumnsDescription()
     };
 }
 
-static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
+static ASTPtr tryParseDDLQuery(const ContextPtr & context, const DDLTask & task)
 {
     const char * begin = task.entry.query.data();
     const char * end = begin + task.entry.query.size();
@@ -85,17 +94,55 @@ static String clusterNameFromDDLQuery(ContextPtr context, const DDLTask & task)
 
     String description = fmt::format("from {}", task.entry_path);
     ParserQuery parser_query(end, settings[Setting::allow_settings_after_format_in_insert]);
-    ASTPtr query = parseQuery(
-        parser_query, begin, end, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    ASTPtr query;
 
-    String cluster_name;
-    if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query.get()))
-        cluster_name = query_on_cluster->cluster;
+    try
+    {
+        query = parseQuery(
+            parser_query, begin, end, description, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    }
+    catch (const Exception & e)
+    {
+        LOG_INFO(getLogger("StorageSystemDDLWorkerQueue"), "Failed to determine cluster");
+        if (e.code() == ErrorCodes::SYNTAX_ERROR)
+        {
+            /// ignore parse error and present available information
+            return nullptr;
+        }
+        throw;
+    }
 
-    return cluster_name;
+    return query;
 }
 
-static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const DDLTask & task, const String & cluster_name, UInt64 query_create_time_ms)
+static String clusterNameFromDDLQuery(const ASTPtr & query)
+{
+    if (const auto * query_on_cluster = dynamic_cast<const ASTQueryWithOnCluster *>(query.get()))
+        return query_on_cluster->cluster;
+
+    return "";
+}
+
+/// The entry in Keeper keeps the real values, because the hosts have to execute the query. Hide the
+/// secrets on the way out instead, the way `system.tables.create_table_query` does.
+static String queryForDisplay(const ContextPtr & context, const DDLTask & task, const ASTPtr & query)
+{
+    if (query)
+        return format({.ctx = context, .query = *query});
+
+    /// Nothing parsed, so there is no AST to hide a secret in. `executeQuery` falls back to the
+    /// masking rules for a query it could not parse either.
+    return wipeSensitiveDataAndCutToLength(task.entry.query, 0, /* wipe_sensitive */ true);
+}
+
+static void fillCommonColumns(
+    MutableColumns & res_columns,
+    size_t & col,
+    const DDLTask & task,
+    const String & cluster_name,
+    const String & query_for_display,
+    bool show_secrets,
+    UInt64 query_create_time_ms)
 {
     /// entry
     res_columns[col++]->insert(task.entry_name);
@@ -123,16 +170,20 @@ static void fillCommonColumns(MutableColumns & res_columns, size_t & col, const 
     res_columns[col++]->insert(cluster_name);
 
     /// query
-    res_columns[col++]->insert(task.entry.query);
+    res_columns[col++]->insert(query_for_display);
 
     Map settings_map;
     if (task.entry.settings)
     {
         for (const auto & change : *task.entry.settings)
         {
+            String value = fieldToString(change.value);
+            if (!show_secrets)
+                CoreSettings::maskSettingValue(change.name, change.value, value);
+
             Tuple pair;
             pair.push_back(change.name);
-            pair.push_back(toString(change.value));
+            pair.push_back(std::move(value));
             settings_map.push_back(std::move(pair));
         }
     }
@@ -216,9 +267,11 @@ static void fillStatusColumns(MutableColumns & res_columns, size_t & col,
 
 void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    auto& ddl_worker = context->getDDLWorker();
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemDDLWorkerQueue::fillData");
+    const bool show_secrets = canDisplaySecrets(context);
+    auto & ddl_worker = context->getDDLWorker();
     fs::path ddl_zookeeper_path = ddl_worker.getQueueDir();
-    zkutil::ZooKeeperPtr zookeeper = ddl_worker.getAndSetZooKeeper();
+    zkutil::ZooKeeperPtr zookeeper = ddl_worker.getZooKeeperFromContext();
     Strings ddl_task_paths = zookeeper->getChildren(ddl_zookeeper_path);
 
 
@@ -235,8 +288,8 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
         ddl_task_status_paths.push_back(ddl_zookeeper_path / task_path / "finished");
     }
 
-    auto ddl_tasks_info = zookeeper->get(ddl_task_full_paths);
-    auto ddl_task_statuses = zookeeper->getChildren(ddl_task_status_paths);
+    auto ddl_tasks_info = zookeeper->tryGet(ddl_task_full_paths);
+    auto ddl_task_statuses = zookeeper->tryGetChildren(ddl_task_status_paths);
 
     for (size_t i = 0; i < ddl_task_paths.size(); ++i)
     {
@@ -259,11 +312,13 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             throw;
         }
 
-        String cluster_name = clusterNameFromDDLQuery(context, task);
+        ASTPtr query = tryParseDDLQuery(context, task);
+        String cluster_name = clusterNameFromDDLQuery(query);
         UInt64 query_create_time_ms = task_info.stat.ctime;
 
         size_t col = 0;
-        fillCommonColumns(res_columns, col, task, cluster_name, query_create_time_ms);
+        fillCommonColumns(
+            res_columns, col, task, cluster_name, queryForDisplay(context, task, query), show_secrets, query_create_time_ms);
 
         /// At first we process finished nodes, to avoid duplication if some host was active
         /// and suddenly become finished during status dirs listing.
@@ -287,7 +342,7 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
             for (const auto & host_id_str : finished_hosts.names)
                 finished_status_paths.push_back(fs::path(task.entry_path) / "finished" / host_id_str);
 
-            auto finished_statuses = zookeeper->get(finished_status_paths);
+            auto finished_statuses = zookeeper->tryGet(finished_status_paths);
             for (size_t host_idx = 0; host_idx < finished_hosts.names.size(); ++host_idx)
             {
                 const auto & host_id_str = finished_hosts.names[host_idx];
@@ -370,3 +425,6 @@ void StorageSystemDDLWorkerQueue::fillData(MutableColumns & res_columns, Context
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDDLWorkerQueue) }

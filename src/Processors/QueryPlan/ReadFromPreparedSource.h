@@ -1,12 +1,15 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
+
+class IStorage;
+using StoragePtr = std::shared_ptr<IStorage>;
 
 /// Create source from prepared pipe.
 class ReadFromPreparedSource : public ISourceStep
@@ -29,6 +32,12 @@ public:
     String getName() const override { return "ReadFromStorage"; }
 
     const StoragePtr & getStorage() const { return storage; }
+
+    void serialize(Serialization & ctx) const override;
+    /// serialize is implemented only for StorageSystemOne.
+    bool isSerializable() const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
     StoragePtr storage;

@@ -97,14 +97,14 @@ void DiagramOutputFormat::write()
     }
 }
 
-DiagramOutputFormat::DiagramOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings{format_settings_}, serializations(header_.getSerializations())
+DiagramOutputFormat::DiagramOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_)
+    : IOutputFormat(header_, out_), format_settings{format_settings_}, serializations(header_->getSerializations())
 {
     if (!diagram_type.contains(format_settings.diagram.diagram_type))
         throw Exception(ErrorCodes::UNKNOWN_SETTING, "No such diagram type.");
 
-    if (header_.columns() != DiagramConstants::EXPECTED_COLUMN_NUMBER)
-        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Diagram output format expects exactly 2 columns (x, y), got {}", header_.columns());
+    if (header_->columns() != DiagramConstants::EXPECTED_COLUMN_NUMBER)
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Diagram output format expects exactly 2 columns (x, y), got {}", header_->columns());
     /// TODO: Check data types.
 
     is_ascii_symbols = format_settings_.diagram.is_ascii_symbols;
@@ -639,12 +639,13 @@ std::vector<std::pair<size_t, size_t>> DiagramOutputFormat::drawLine(std::pair<I
     return result;
 }
 
+void registerOutputFrormatDiagram(FormatFactory & factory);
 void registerOutputFrormatDiagram(FormatFactory & factory)
 {
     factory.registerOutputFormat(
         "Diagram",
-        [](WriteBuffer & buf, const Block & sample, const FormatSettings & format_settings)
-        { return std::make_shared<DiagramOutputFormat>(buf, sample, format_settings); });
+        [](WriteBuffer & buf, const Block & sample, const FormatSettings & format_settings, FormatFilterInfoPtr /*format_filter_info*/)
+        { return std::make_shared<DiagramOutputFormat>(buf, std::make_shared<const Block>(sample), format_settings); });
 }
 
 }

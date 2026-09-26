@@ -34,5 +34,5 @@ echo -ne 'str\tu\nLine16\t1\nLine17\t2\n'                  | eval "$INSERT_QUERY
 echo -ne 'd\tstr\n2019-04-18\tLine18\n2019-04-18\tLine19\n'| eval "$INSERT_QUERY" $USE_HEADER
 echo -ne 'unknown\n\n\n'                                   | eval "$INSERT_QUERY" $USE_HEADER $SKIP_UNKNOWN
 
-$CLICKHOUSE_CLIENT --query="SELECT * FROM tsv"
+$CLICKHOUSE_CLIENT --query="SELECT * FROM tsv ORDER BY ALL"
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS tsv"

@@ -93,6 +93,10 @@ namespace Net
         /// Returns an iterator pointing to the first name-value pair
         /// with the given name.
 
+        ConstIterator findLast(const std::string & name) const;
+        /// Returns an iterator pointing to the last name-value pair
+        /// with the given name.
+
         ConstIterator begin() const;
         /// Returns an iterator pointing to the begin of
         /// the name-value pair collection.

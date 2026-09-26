@@ -22,11 +22,6 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
 }
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 namespace
 {
 
@@ -89,10 +84,6 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
 
         auto function_window_description = extractWindowDescriptionFromWindowNode(window_function_node, planner_context);
 
-        auto frame_type = function_window_description.frame.type;
-        if (frame_type != WindowFrame::FrameType::ROWS && frame_type != WindowFrame::FrameType::RANGE)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Window frame '{}' is not implemented", frame_type);
-
         auto window_name = function_window_description.window_name;
 
         auto [it, _] = window_name_to_description.emplace(window_name, std::move(function_window_description));
@@ -139,7 +130,7 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
 
 void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions)
 {
-    auto window_description_comparator = [](const WindowDescription & lhs, const WindowDescription & rhs)
+    auto window_description_comparator = [](const WindowDescription & lhs, const WindowDescription & rhs) -> bool
     {
         const auto & left = lhs.full_sort_description;
         const auto & right = rhs.full_sort_description;
@@ -159,7 +150,19 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
             if (left[i].nulls_direction > right[i].nulls_direction)
                 return false;
 
-            assert(left[i] == right[i]);
+            if (left[i].collator || right[i].collator)
+            {
+                if (!left[i].collator)
+                    return true;
+                if (!right[i].collator)
+                    return false;
+                if (left[i].collator->getLocale() < right[i].collator->getLocale())
+                    return true;
+                if (left[i].collator->getLocale() > right[i].collator->getLocale())
+                    return false;
+            }
+
+            chassert(left[i] == right[i]);
         }
 
         /** Note that we check the length last, because we want to put together the

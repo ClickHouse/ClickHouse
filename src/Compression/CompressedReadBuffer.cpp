@@ -1,14 +1,12 @@
-#include "CompressedReadBuffer.h"
-#include <Compression/LZ4_decompress_faster.h>
-
+#include <Compression/CompressedReadBuffer.h>
 
 namespace DB
 {
 
 bool CompressedReadBuffer::nextImpl()
 {
-    size_t size_decompressed;
-    size_t size_compressed_without_checksum;
+    size_t size_decompressed = 0;
+    size_t size_compressed_without_checksum = 0;
     size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum, false);
     if (!size_compressed)
         return false;
@@ -16,7 +14,7 @@ bool CompressedReadBuffer::nextImpl()
     auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
     /// This is for clang static analyzer.
-    assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+    chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
 
     memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
     working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
@@ -37,8 +35,8 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
     /// If you need to read more - we will, if possible, uncompress at once to `to`.
     while (bytes_read < n)
     {
-        size_t size_decompressed;
-        size_t size_compressed_without_checksum;
+        size_t size_decompressed = 0;
+        size_t size_compressed_without_checksum = 0;
 
         if (!readCompressedData(size_decompressed, size_compressed_without_checksum, false))
             return bytes_read;
@@ -57,7 +55,7 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
             bytes += offset();
 
             /// This is for clang static analyzer.
-            assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+            chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
 
             memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);

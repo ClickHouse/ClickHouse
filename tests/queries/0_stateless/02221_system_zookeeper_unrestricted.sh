@@ -25,7 +25,7 @@ ENGINE ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/02221_
 ORDER BY tuple();
 "
 
-${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 --query "SELECT name FROM (SELECT path, name FROM system.zookeeper ORDER BY name) WHERE path LIKE '%$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/02221_system_zookeeper_unrestricted%'";
+${CLICKHOUSE_CLIENT} --allow_unrestricted_reads_from_keeper=1 --query "SELECT name FROM (SELECT path, name FROM system.zookeeper ORDER BY name) WHERE path LIKE '%$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/02221_system_zookeeper_unrestricted%' AND name NOT LIKE 'zero\\_copy%' AND name != 'shared'";
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS sample_table"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS sample_table_2"

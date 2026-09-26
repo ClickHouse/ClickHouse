@@ -1,8 +1,8 @@
 #include <Interpreters/Context.h>
 #include <Common/TerminalSize.h>
-#include "DisksApp.h"
-#include "DisksClient.h"
-#include "ICommand.h"
+#include <DisksApp.h>
+#include <DisksClient.h>
+#include <ICommand.h>
 #include <Common/logger_useful.h>
 
 namespace DB

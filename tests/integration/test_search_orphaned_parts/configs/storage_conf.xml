@@ -1,0 +1,66 @@
+<clickhouse>
+    <storage_configuration>
+      <disks>
+            <default>
+                <keep_free_space_bytes>1024</keep_free_space_bytes>
+            </default>
+            <disk_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>true</skip_access_check>
+            </disk_s3_plain>
+            <local_disk_1>
+              <path>/internal/1/</path>
+            </local_disk_1>
+            <local_disk_2>
+              <type>local_blob_storage</type>
+              <path>/internal/2/</path>
+            </local_disk_2>
+            <!-- plain_rewritable disk is not able to start w/o S3, since it tries to load metadata at start-->
+            <!-- <s3_plain_rewritable> -->
+            <!--     <type>object_storage</type> -->
+            <!--     <object_storage_type>s3</object_storage_type> -->
+            <!--     <metadata_type>plain_rewritable</metadata_type> -->
+            <!--     <endpoint>http://minio1:9001/root/data/disks/disk_s3_plain_rewritable/</endpoint> -->
+            <!--     <access_key_id>minio</access_key_id> -->
+            <!--     <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key> -->
+            <!--     <skip_access_check>true</skip_access_check> -->
+            <!-- </s3_plain_rewritable> -->
+            <local_cache>
+                <type>cache</type>
+                <disk>local_disk_2</disk>
+                <path>/local_cache/</path>
+                <cache_policy>LRU</cache_policy>
+                <max_size>12M</max_size>
+                <max_file_segment_size>100K</max_file_segment_size>
+                <boundary_alignment>100K</boundary_alignment>
+                <cache_on_write_operations>1</cache_on_write_operations>
+            </local_cache>
+        </disks>
+        <policies>
+            <default>
+                <volumes>
+                    <vol1>
+                        <disk>default</disk>
+                    </vol1>
+                </volumes>
+            </default>
+            <no_s3>
+                <volumes>
+                    <main>
+                        <disk>local_disk_1</disk>
+                    </main>
+                </volumes>
+            </no_s3>
+            <local_cache>
+                <volumes>
+                    <main>
+                        <disk>local_cache</disk>
+                    </main>
+                </volumes>
+            </local_cache>
+        </policies>
+    </storage_configuration>
+</clickhouse>

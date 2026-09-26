@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 SET optimize_read_in_order = 1, query_plan_read_in_order = 1, enable_analyzer = 1;
 
 drop table if exists tab;
@@ -23,8 +24,8 @@ select * from (explain plan actions = 1 select * from tab order by (a + b) * c d
 select * from tab order by (a + b) * c, sin(a / b);
 select * from (explain plan actions = 1 select * from tab order by (a + b) * c, sin(a / b)) where explain like '%sort description%';
 
-select * from tab order by (a + b) * c desc, sin(a / b) desc;
-select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, sin(a / b) desc) where explain like '%sort description%';
+select * from tab order by (a + b) * c desc, sin(a / b) desc nulls first;
+select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, sin(a / b) desc nulls first) where explain like '%sort description%';
 
 -- Exact match, mixed direction
 select * from tab order by (a + b) * c desc, sin(a / b);
@@ -68,7 +69,7 @@ select * from (explain plan actions = 1 select * from tab order by (a + b) * c d
 select * from (explain plan actions = 1 select * from tab order by (a + b) * c, intDiv(sin(a / b), 2) desc) where explain like '%sort description%';
 
 -- select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc;
-select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc) where explain like '%sort description%';
+select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), 2) desc nulls first) where explain like '%sort description%';
 
 -- select * from tab order by (a + b) * c desc, intDiv(sin(a / b), -2);
 select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), -2)) where explain like '%sort description%';

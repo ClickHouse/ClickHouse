@@ -1,4 +1,5 @@
--- Tags: use-rocksdb
+-- Tags: use-rocksdb, no-parallel-replicas
+-- no-parallel-replicas: Can't execute JOIN with any of the algorithms enabled by the 'join_algorithm' setting (NOT_IMPLEMENTED)
 
 DROP TABLE IF EXISTS rdb;
 DROP TABLE IF EXISTS t1;

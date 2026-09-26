@@ -49,4 +49,16 @@ const std::vector<std::pair<String, Int8>> & getBackupStatusEnumValues()
     return values;
 }
 
+const std::vector<std::pair<String, Int8>> & getSnapshotLockStatusEnumValues()
+{
+    static const std::vector<std::pair<String, Int8>> values = []
+    {
+        std::vector<std::pair<String, Int8>> res;
+        res.emplace_back(magic_enum::enum_name(SnapshotLockStatus::SNAPSHOT_LOCKED), static_cast<Int8>(SnapshotLockStatus::SNAPSHOT_LOCKED));
+        res.emplace_back(magic_enum::enum_name(SnapshotLockStatus::SNAPSHOT_UNLOCKING), static_cast<Int8>(SnapshotLockStatus::SNAPSHOT_UNLOCKING));
+        return res;
+    }();
+    return values;
+}
+
 }

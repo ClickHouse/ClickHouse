@@ -34,6 +34,7 @@ void ForkWriteBuffer::nextImpl()
             buffer->next();
         }
         source_buffer->next();
+        set(sources.front()->buffer().begin(), sources.front()->buffer().size());
     }
     catch (Exception & exception)
     {
@@ -43,22 +44,25 @@ void ForkWriteBuffer::nextImpl()
 
 }
 
+void ForkWriteBuffer::preFinalize()
+{
+    WriteBuffer::preFinalize();
+    for (const WriteBufferPtr & buffer : sources)
+        buffer->preFinalize();
+}
+
 void ForkWriteBuffer::finalizeImpl()
 {
-    WriteBuffer::finalizeImpl();
+    preFinalize();
     for (const WriteBufferPtr & buffer : sources)
-    {
         buffer->finalize();
-    }
 }
 
 void ForkWriteBuffer::cancelImpl() noexcept
 {
     WriteBuffer::cancelImpl();
     for (const WriteBufferPtr & buffer : sources)
-    {
         buffer->cancel();
-    }
 }
 
 }

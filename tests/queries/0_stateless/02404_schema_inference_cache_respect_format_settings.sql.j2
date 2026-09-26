@@ -2,6 +2,7 @@
 
 system drop schema cache for file;
 set input_format_json_try_infer_numbers_from_strings=1;
+set session_timezone='UTC';
 {% for format in ['TSV', 'TSVWithNames', 'CSV', 'CSVWithNames', 'TSKV', 'CustomSeparated', 'JSONEachRow', 'JSONCompactEachRow', 'Values'] -%}
 
 select '{{ format }}';

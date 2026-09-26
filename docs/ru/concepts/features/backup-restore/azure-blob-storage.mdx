@@ -1,0 +1,40 @@
+---
+description: 'Сведения о резервном копировании и восстановлении через конечную точку Azure Blob Storage'
+sidebarTitle: 'AzureBlobStorage'
+slug: /operations/backup/azure
+title: BACKUP И RESTORE В Azure Blob Storage И ИЗ НЕГО
+doc_type: 'guide'
+---
+
+import Syntax from '/snippets/ru/_syntax.mdx';
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+<Syntax />
+
+<div id="configuring-backuprestore-to-use-an-azureblobstorage-endpoint">
+  ## Настройка BACKUP / RESTORE для использования конечной точки AzureBlobStorage
+</div>
+
+Чтобы записывать резервные копии в контейнер AzureBlobStorage, вам потребуются следующие данные:
+
+* строка подключения / URL конечной точки AzureBlobStorage,
+* контейнер,
+* путь,
+* имя учётной записи (если указан URL),
+* ключ учётной записи (если указан URL)
+
+Пункт назначения резервной копии указывается следующим образом:
+
+```sql
+AzureBlobStorage('<connection string>/<url>', '<container>', '<path>', '<account name>', '<account key>')
+```
+
+```sql
+BACKUP TABLE data TO AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'testcontainer', 'data_backup');
+RESTORE TABLE data AS data_restored FROM AzureBlobStorage('DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite1:10000/devstoreaccount1/;',
+    'testcontainer', 'data_backup');
+```

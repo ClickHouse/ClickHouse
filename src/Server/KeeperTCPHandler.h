@@ -6,7 +6,7 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/MultiVersion.h>
-#include "IServer.h"
+#include <Server/IServer.h>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -44,6 +44,7 @@ class KeeperTCPHandler : public Poco::Net::TCPServerConnection
 public:
     static void registerConnection(KeeperTCPHandler * conn);
     static void unregisterConnection(KeeperTCPHandler * conn);
+    static void closeAllConnections();
     /// dump all connections statistics
     static void dumpConnections(WriteBufferFromOwnString & buf, bool brief);
     static void resetConnsStats();
@@ -71,7 +72,7 @@ public:
 private:
     LoggerPtr log;
     std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
-    Poco::Timespan operation_timeout;
+    KeeperContextPtr keeper_context;
     Poco::Timespan min_session_timeout;
     Poco::Timespan max_session_timeout;
     Poco::Timespan session_timeout;
@@ -85,6 +86,7 @@ private:
 
     Coordination::XID close_xid = Coordination::CLOSE_XID;
     bool use_xid_64 = false;
+    bool expect_opentelemetry_tracing_context = false;
 
     /// Streams for reading/writing from/to client connection socket.
     std::optional<ReadBufferFromPocoSocket> in;
@@ -93,6 +95,7 @@ private:
     std::optional<CompressedWriteBuffer> compressed_out;
 
     std::atomic<bool> connected{false};
+    std::atomic<bool> closing_for_shutdown{false};
 
     void runImpl();
 
@@ -106,7 +109,7 @@ private:
     Poco::Timespan receiveHandshake(int32_t handshake_length, bool & use_compression);
 
     static bool isHandShake(int32_t handshake_length);
-    bool tryExecuteFourLetterWordCmd(int32_t command);
+    bool tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer & in);
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
 

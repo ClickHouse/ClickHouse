@@ -5,10 +5,9 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <Loggers/Loggers.h>
 #include <Disks/IDisk.h>
 
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
 

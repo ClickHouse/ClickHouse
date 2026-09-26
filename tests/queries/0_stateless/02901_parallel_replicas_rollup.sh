@@ -12,12 +12,10 @@ function were_parallel_replicas_used ()
     $CLICKHOUSE_CLIENT --query "
         SELECT
             initial_query_id,
-            concat('Used parallel replicas: ', (countIf(initial_query_id != query_id) != 0)::bool::String) as used
+            'Used parallel replicas: ' || (ProfileEvents['ParallelReplicasUsedCount'] > 0)::bool::String
         FROM system.query_log
-    WHERE event_date >= yesterday()
-      AND initial_query_id = '$1'
-    GROUP BY initial_query_id
-    ORDER BY min(event_time_microseconds) ASC
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND query_id = '$1' AND type = 'QueryFinish'
     FORMAT TSV"
 }
 
@@ -29,10 +27,11 @@ $CLICKHOUSE_CLIENT \
   --query_id "${query_id}" \
   --max_parallel_replicas 3 \
   --cluster_for_parallel_replicas "test_cluster_one_shard_three_replicas_localhost" \
+  --automatic_parallel_replicas_mode 0 \
   --enable_parallel_replicas 1 \
   --parallel_replicas_for_non_replicated_merge_tree 1 \
   --parallel_replicas_min_number_of_rows_per_replica 0 \
-  --parallel_replicas_only_with_analyzer 0 \
+  --enable_analyzer 1 \
   --query "
   SELECT 1 FROM nested
   GROUP BY 1 WITH ROLLUP
@@ -42,7 +41,7 @@ were_parallel_replicas_used $query_id
 
 # It was a bug in analyzer distributed header.
 echo "Distributed query with analyzer"
-$CLICKHOUSE_CLIENT --query "SELECT 1 FROM remote('127.0.0.{2,3}', currentDatabase(), nested) GROUP BY 1 WITH ROLLUP ORDER BY max((SELECT 1 WHERE 0))"
+$CLICKHOUSE_CLIENT --enable_analyzer 1 --query "SELECT 1 FROM remote('127.0.0.{2,3}', currentDatabase(), nested) GROUP BY 1 WITH ROLLUP ORDER BY max((SELECT 1 WHERE 0))"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS nested"
 
@@ -67,10 +66,10 @@ $CLICKHOUSE_CLIENT \
   --query_id "${query_id}" \
   --max_parallel_replicas 3 \
   --cluster_for_parallel_replicas "test_cluster_one_shard_three_replicas_localhost" \
+  --automatic_parallel_replicas_mode 0 \
   --enable_parallel_replicas 1 \
   --parallel_replicas_for_non_replicated_merge_tree 1 \
   --parallel_replicas_min_number_of_rows_per_replica 0 \
-  --parallel_replicas_only_with_analyzer 0 \
   --query "SELECT * FROM (SELECT year, month, day, count(*) FROM days GROUP BY year, month, day WITH ROLLUP) ORDER BY 1, 2, 3";
 
 were_parallel_replicas_used $query_id

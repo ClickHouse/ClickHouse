@@ -1,0 +1,64 @@
+Expression ((Project names + Projection))
+Header: x Nullable(UInt32)
+        str String
+        s String
+Actions: INPUT : 0 -> __table1.str String : 0
+         INPUT : 1 -> __table2.x Nullable(UInt32) : 1
+         INPUT : 2 -> __table2.s String : 2
+         ALIAS __table1.str :: 0 -> str String : 3
+         ALIAS __table2.x :: 1 -> x Nullable(UInt32) : 0
+         ALIAS __table2.s :: 2 -> s String : 1
+Positions: 0 3 1
+  Filter (WHERE)
+  Header: __table1.str String
+          __table2.x Nullable(UInt32)
+          __table2.s String
+  Filter column: equals(__table2.x, 1_UInt8) (removed)
+  Actions: INPUT :: 0 -> __table1.str String : 0
+           INPUT : 1 -> __table2.x Nullable(UInt32) : 1
+           INPUT :: 2 -> __table2.s String : 2
+           COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 3
+           FUNCTION equals(__table2.x : 1, 1_UInt8 :: 3) -> equals(__table2.x, 1_UInt8) Nullable(UInt8) : 4
+  Positions: 4 0 1 2
+    Expression (Post Join Actions)
+    Header: __table1.str String
+            __table2.x Nullable(UInt32)
+            __table2.s String
+    Actions: INPUT :: 0 -> __table1.str String : 0
+             INPUT :: 1 -> __table2.x Nullable(UInt32) : 1
+             INPUT :: 2 -> __table2.s String : 2
+    Positions: 0 1 2
+      Expression (Right Type Conversion Actions)
+      Header: __table2.x Nullable(UInt32)
+              __table1.str String
+              __table2.s String
+      Actions: INPUT : 0 -> __table2.x UInt32 : 0
+               COLUMN Const(String) -> \'Nullable(UInt32)\'_String String : 1
+               FUNCTION _CAST(__table2.x :: 0, \'Nullable(UInt32)\'_String :: 1) -> _CAST(__table2.x, \'Nullable(UInt32)\'_String) Nullable(UInt32) : 2
+               ALIAS _CAST(__table2.x, \'Nullable(UInt32)\'_String) :: 2 -> __table2.x Nullable(UInt32) : 1
+      Positions: 1
+        FilledJoin (Filled JOIN)
+        Header: __table1.str String
+                __table2.s String
+                __table2.x UInt32
+        Type: RIGHT
+        Strictness: ALL
+        Algorithm: HashJoin
+        Clauses: [(__table1.x) = (x)]
+          Expression (Left Join Actions)
+          Header: __table1.x Nullable(UInt32)
+                  __table1.str String
+          Actions: INPUT :: 0 -> __table1.x Nullable(UInt32) : 0
+                   INPUT :: 1 -> __table1.str String : 1
+          Positions: 0 1
+            Expression (Change column names to column identifiers)
+            Header: __table1.str String
+                    __table1.x Nullable(UInt32)
+            Actions: INPUT : 0 -> str String : 0
+                     INPUT : 1 -> x Nullable(UInt32) : 1
+                     ALIAS str :: 0 -> __table1.str String : 2
+                     ALIAS x :: 1 -> __table1.x Nullable(UInt32) : 0
+            Positions: 2 0
+              ReadFromMemoryStorage
+              Header: str String
+                      x Nullable(UInt32)

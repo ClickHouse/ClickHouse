@@ -1,0 +1,12 @@
+1000
+row0	[]	\N	{'k':''}	('0',0)	lc0
+row1x	['']	1	{'k':'v'}	('1',1)	lc1
+row2xx	['','e']	2	{'k':'vv'}	('2',2)	lc2
+row3xxx	['','e','ee']	\N	{'k':'vvv'}	('3',3)	lc0
+Sparse
+10000	100		rare9900
+native dumps differ
+1
+1
+buffers dumps identical
+1

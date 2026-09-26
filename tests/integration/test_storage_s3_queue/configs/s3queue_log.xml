@@ -7,4 +7,7 @@
         <database>system</database>
         <table>s3queue_log</table>
     </s3queue_log>
+    <logger>
+        <count>25</count>
+    </logger>
 </clickhouse>

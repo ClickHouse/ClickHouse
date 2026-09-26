@@ -73,6 +73,8 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         case TypeIndex::Date32:
         case TypeIndex::DateTime:
         case TypeIndex::DateTime64:
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
         case TypeIndex::FixedString:
         case TypeIndex::Enum8:
         case TypeIndex::Enum16:
@@ -130,15 +132,14 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
                 return canBeSafelyCast(from_type_nullable.getNestedType(), to_type_unwrapped);
             }
 
-            if (to_which_type.isString())
-                return true;
-
             return false;
         }
         case TypeIndex::LowCardinality:
         {
+            /// The target keeps its nullability here, because a Nullable dictionary type needs a target
+            /// that can hold a NULL. Stripping only LowCardinality leaves the unwrapped target the same.
             const auto & from_type_low_cardinality = assert_cast<const DataTypeLowCardinality &>(*from_type);
-            return canBeSafelyCast(from_type_low_cardinality.getDictionaryType(), to_type_unwrapped);
+            return canBeSafelyCast(from_type_low_cardinality.getDictionaryType(), removeLowCardinality(to_type));
         }
         case TypeIndex::Array:
         {
@@ -222,17 +223,26 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
 
             return false;
         }
-        case TypeIndex::String:
-        case TypeIndex::ObjectDeprecated:
+        case TypeIndex::QBit:
+            return to_which_type.isQBit();
         case TypeIndex::Object:
+        {
+            if (to_which_type.isString())
+                return true;
+
+            return false;
+        }
+        case TypeIndex::Variant:
+        case TypeIndex::Dynamic:
+            /// Both encode a NULL via NULL_DISCRIMINATOR, so only a target that can hold one is safe.
+            return to_type_was_nullable && to_which_type.isString();
+        case TypeIndex::String:
         case TypeIndex::Set:
         case TypeIndex::Interval:
         case TypeIndex::Function:
         case TypeIndex::AggregateFunction:
         case TypeIndex::Nothing:
         case TypeIndex::JSONPaths:
-        case TypeIndex::Variant:
-        case TypeIndex::Dynamic:
             return false;
     }
 

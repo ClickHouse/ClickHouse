@@ -27,6 +27,10 @@ MapContains with existing key
 0	{'K0':'V0'}
 MapContains with non existing key
 MapContains with non existing key and default value
+MapContainsKey with existing key
+0	{'K0':'V0'}
+MapContainsKey with non existing key
+MapContainsKey with non existing key and default value
 Has with existing key
 0	{'K0':'V0'}
 Has with non existing key
@@ -56,3 +60,7 @@ NOT IN with non existing key
 0	{'K0':'V0'}
 1	{'K1':'V1'}
 NOT IN with non existing key and default value
+MapContainsValue with existing value
+0	{'K0':'V0'}
+MapContainsValue with non existing value
+MapContainsValue with non existing default value

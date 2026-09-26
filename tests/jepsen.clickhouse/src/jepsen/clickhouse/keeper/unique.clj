@@ -14,7 +14,7 @@
   (open! [this test node]
     (assoc
      (assoc this
-            :conn (zk-connect node 9181 30000))
+            :conn (zk-connect node 9181 30000 (:with-auth test)))
      :nodename node))
 
   (setup! [this test])
@@ -23,7 +23,7 @@
     (case
      :generate
       (try
-        (let [result-path (zk-create-sequential conn "/seq-" "")]
+        (let [result-path (zk-create-sequential conn "/seq-" "" :with-acl (:with-auth test))]
           (assoc op :type :ok :value (parse-and-get-counter result-path)))
         (catch Exception _ (assoc op :type :info, :error :connect-error)))))
 

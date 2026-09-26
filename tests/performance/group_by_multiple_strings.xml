@@ -1,0 +1,144 @@
+<test>
+    <settings>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE test_group_by_strings (
+            key1_8 String,
+            key2_8 String,
+            key1_16 String,
+            key2_16 String,
+            key1_32 String,
+            key2_32 String,
+            key1_64 String,
+            key2_64 String,
+            key1_512 String,
+            key2_512 String,
+            value UInt64
+        ) ENGINE = MergeTree ORDER BY (key1_8, key2_8)
+    </create_query>
+
+    <!-- Fill data, pad strings to required lengths -->
+    <fill_query>
+        INSERT INTO test_group_by_strings
+        SELECT
+            lpad(toString(number % 1000), 8, '0'),
+            lpad(toString(((number * 17 + 12345) % 1000)), 8, '0'),
+            lpad(toString(number % 1000), 16, '0'),
+            lpad(toString(((number * 17 + 12345) % 1000)), 16, '0'),
+            lpad(toString(number % 1000), 32, '0'),
+            lpad(toString(((number * 17 + 12345) % 1000)), 32, '0'),
+            lpad(toString(number % 1000), 64, '0'),
+            lpad(toString(((number * 17 + 12345) % 1000)), 64, '0'),
+            lpad(toString(number % 1000), 512, '0'),
+            lpad(toString(((number * 17 + 12345) % 1000)), 512, '0'),
+            number
+        FROM numbers_mt(3000000)
+    </fill_query>
+
+    <fill_query>OPTIMIZE TABLE test_group_by_strings FINAL</fill_query>
+
+    <!-- For each key length, test different max_threads -->
+    <!-- 16 bytes -->
+    <query>
+        select key1_8, key2_8, sum(value) from test_group_by_strings group by key1_8, key2_8 settings max_threads = 1
+    </query>
+    <query>
+        select key1_8, key2_8, sum(value) from test_group_by_strings group by key1_8, key2_8 settings max_threads = 2
+    </query>
+    <query>
+        select key1_8, key2_8, sum(value) from test_group_by_strings group by key1_8, key2_8 settings max_threads = 4
+    </query>
+    <query>
+        select key1_8, key2_8, sum(value) from test_group_by_strings group by key1_8, key2_8 settings max_threads = 8
+    </query>
+    <query>
+        select key1_8, key2_8, sum(value) from test_group_by_strings group by key1_8, key2_8 settings max_threads = 16
+    </query>
+    <query>
+        select key1_8, key2_8, sum(value) from test_group_by_strings group by key1_8, key2_8 settings max_threads = 32
+    </query>
+
+    <!-- 32 bytes -->
+    <query>
+        select key1_16, key2_16, sum(value) from test_group_by_strings group by key1_16, key2_16 settings max_threads = 1
+    </query>
+    <query>
+        select key1_16, key2_16, sum(value) from test_group_by_strings group by key1_16, key2_16 settings max_threads = 2
+    </query>
+    <query>
+        select key1_16, key2_16, sum(value) from test_group_by_strings group by key1_16, key2_16 settings max_threads = 4
+    </query>
+    <query>
+        select key1_16, key2_16, sum(value) from test_group_by_strings group by key1_16, key2_16 settings max_threads = 8
+    </query>
+    <query>
+        select key1_16, key2_16, sum(value) from test_group_by_strings group by key1_16, key2_16 settings max_threads = 16
+    </query>
+    <query>
+        select key1_16, key2_16, sum(value) from test_group_by_strings group by key1_16, key2_16 settings max_threads = 32
+    </query>
+
+    <!-- 64 bytes -->
+    <query>
+        select key1_32, key2_32, sum(value) from test_group_by_strings group by key1_32, key2_32 settings max_threads = 1
+    </query>
+    <query>
+        select key1_32, key2_32, sum(value) from test_group_by_strings group by key1_32, key2_32 settings max_threads = 2
+    </query>
+    <query>
+        select key1_32, key2_32, sum(value) from test_group_by_strings group by key1_32, key2_32 settings max_threads = 4
+    </query>
+    <query>
+        select key1_32, key2_32, sum(value) from test_group_by_strings group by key1_32, key2_32 settings max_threads = 8
+    </query>
+    <query>
+        select key1_32, key2_32, sum(value) from test_group_by_strings group by key1_32, key2_32 settings max_threads = 16
+    </query>
+    <query>
+        select key1_32, key2_32, sum(value) from test_group_by_strings group by key1_32, key2_32 settings max_threads = 32
+    </query>
+
+    <!-- 128 bytes -->
+    <query>
+        select key1_64, key2_64, sum(value) from test_group_by_strings group by key1_64, key2_64 settings max_threads = 1
+    </query>
+    <query>
+        select key1_64, key2_64, sum(value) from test_group_by_strings group by key1_64, key2_64 settings max_threads = 2
+    </query>
+    <query>
+        select key1_64, key2_64, sum(value) from test_group_by_strings group by key1_64, key2_64 settings max_threads = 4
+    </query>
+    <query>
+        select key1_64, key2_64, sum(value) from test_group_by_strings group by key1_64, key2_64 settings max_threads = 8
+    </query>
+    <query>
+        select key1_64, key2_64, sum(value) from test_group_by_strings group by key1_64, key2_64 settings max_threads = 16
+    </query>
+    <query>
+        select key1_64, key2_64, sum(value) from test_group_by_strings group by key1_64, key2_64 settings max_threads = 32
+    </query>
+
+    <!-- 1024 bytes -->
+    <query>
+        select key1_512, key2_512, sum(value) from test_group_by_strings group by key1_512, key2_512 settings max_threads = 1
+    </query>
+    <query>
+        select key1_512, key2_512, sum(value) from test_group_by_strings group by key1_512, key2_512 settings max_threads = 2
+    </query>
+    <query>
+        select key1_512, key2_512, sum(value) from test_group_by_strings group by key1_512, key2_512 settings max_threads = 4
+    </query>
+    <query>
+        select key1_512, key2_512, sum(value) from test_group_by_strings group by key1_512, key2_512 settings max_threads = 8
+    </query>
+    <query>
+        select key1_512, key2_512, sum(value) from test_group_by_strings group by key1_512, key2_512 settings max_threads = 16
+    </query>
+    <query>
+        select key1_512, key2_512, sum(value) from test_group_by_strings group by key1_512, key2_512 settings max_threads = 32
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS test_group_by_strings</drop_query>
+</test>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
@@ -12,12 +12,15 @@ namespace DB
 class IMergingAlgorithmWithDelayedChunk : public IMergingAlgorithm
 {
 public:
-    IMergingAlgorithmWithDelayedChunk(Block header_, size_t num_inputs, SortDescription description_);
+    IMergingAlgorithmWithDelayedChunk(SharedHeader header_, size_t num_inputs, SortDescription description_);
 
     size_t prev_unequal_column = 0;
 
 protected:
-    SortingQueue<SortCursor> queue;
+    /// The batch queue identifies how many consecutive rows can be taken from the front
+    /// cursor in one go (see `SortingQueueImpl::updateBatchSize`), so consuming rows one by
+    /// one with `next(1)` restructures the queue once per batch instead of once per row.
+    SortingQueueForCursor<SortCursor, SortingQueueStrategy::Batch> queue;
     SortDescription description;
 
     /// Previous row. May refer to last_chunk_sort_columns or row from source_chunks.
@@ -47,7 +50,7 @@ protected:
         return false;
     }
 
-    Block header;
+    SharedHeader header;
 
 private:
     /// Inputs currently being merged.

@@ -1,3 +1,0 @@
-[libfuzzer]
-dict = all.dict
-jobs = 8

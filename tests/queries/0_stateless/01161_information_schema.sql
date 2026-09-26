@@ -1,3 +1,4 @@
+-- Tags: memory-engine
 -- Uppercase/lowercase are okay, mixed case isn't
 SHOW TABLES FROM information_schema;
 SHOW TABLES FROM INFORMATION_SCHEMA;

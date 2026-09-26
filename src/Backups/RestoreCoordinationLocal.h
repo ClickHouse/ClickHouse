@@ -23,10 +23,16 @@ public:
     void setRestoreQueryIsSentToOtherHosts() override {}
     bool isRestoreQuerySentToOtherHosts() const override { return false; }
     Strings setStage(const String &, const String &, bool) override { return {}; }
-    bool setError(std::exception_ptr, bool) override { return true; }
-    bool waitOtherHostsFinish(bool) const override { return true; }
-    bool finish(bool) override { return true; }
-    bool cleanup(bool) override { return true; }
+    void setError(std::exception_ptr, bool) override { is_error_set = true; }  /// RestoreStarter::onException() has already logged the error.
+    bool isErrorSet() const override { return is_error_set; }
+    void waitOtherHostsFinish(bool) const override {}
+    void finish(bool) override { is_finished = true; }
+    bool finished() const override { return is_finished; }
+    bool allHostsFinished() const override { return finished(); }
+    void cleanup(bool) override {}
+
+    /// Starts creating a shared database. Returns false if there is another host which is already creating this database.
+    bool acquireCreatingSharedDatabase(const String & database_name) override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
@@ -43,9 +49,16 @@ public:
     /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
     bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) override;
 
+    /// Sets that this replica is going to restore replicated workload entities (WORKLOAD and RESOURCE).
+    /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
+    bool acquireReplicatedWorkloadEntities(const String & loader_zk_path) override;
+
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
     bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) override;
+
+    void addRocksDBTable(const String & rocksdb_dir, const String & election_id) override;
+    String getRocksDBDataOwnerElectionId(const String & rocksdb_dir) const override;
 
     /// Generates a new UUID for a table. The same UUID must be used for a replicated table on each replica,
     /// (because otherwise the macro "{uuid}" in the ZooKeeper path will not work correctly).
@@ -61,8 +74,15 @@ private:
     std::unordered_set<String /* table_zk_path */> acquired_data_in_replicated_tables TSA_GUARDED_BY(mutex);
     std::unordered_map<String, CreateQueryUUIDs> create_query_uuids TSA_GUARDED_BY(mutex);
     std::unordered_set<String /* root_zk_path */> acquired_data_in_keeper_map_tables TSA_GUARDED_BY(mutex);
+    /// For each rocksdb_dir shared by several tables, keeps the highest election_id seen. The table whose
+    /// election_id matches is the single owner that replays the shared RocksDB data on restore.
+    std::unordered_map<String /* rocksdb_dir */, String /* election_id */> rocksdb_data_owner TSA_GUARDED_BY(mutex);
+    std::unordered_set<String /* table_zk_path */> acquired_shared_databases;
 
     mutable std::mutex mutex;
+
+    std::atomic<bool> is_finished = false;
+    std::atomic<bool> is_error_set = false;
 };
 
 }

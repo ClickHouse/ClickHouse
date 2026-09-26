@@ -1,0 +1,198 @@
+Native
+0	()
+1	()
+2	()
+3	()
+4	()
+TSV
+0	()
+1	()
+2	()
+3	()
+4	()
+CSV
+0	\N
+1	\N
+2	\N
+3	\N
+4	\N
+TSKV
+0	()
+1	()
+2	()
+3	()
+4	()
+JSON
+0	()
+1	()
+2	()
+3	()
+4	()
+JSONCompact
+0	()
+1	()
+2	()
+3	()
+4	()
+JSONEachRow
+0	[]
+1	[]
+2	[]
+3	[]
+4	[]
+JSONObjectEachRow
+0	[]
+1	[]
+2	[]
+3	[]
+4	[]
+JSONCompactEachRow
+0	[]
+1	[]
+2	[]
+3	[]
+4	[]
+JSONColumns
+0	[]
+1	[]
+2	[]
+3	[]
+4	[]
+JSONCompactColumns
+0	[]
+1	[]
+2	[]
+3	[]
+4	[]
+JSONColumnsWithMetadata
+0	()
+1	()
+2	()
+3	()
+4	()
+ORC
+0	()
+1	()
+2	()
+3	()
+4	()
+Arrow
+0	()
+1	()
+2	()
+3	()
+4	()
+Avro
+0	()
+1	()
+2	()
+3	()
+4	()
+RowBinary
+0	()
+1	()
+2	()
+3	()
+4	()
+Values
+0	()
+1	()
+2	()
+3	()
+4	()
+BSONEachRow
+0	()
+1	()
+2	()
+3	()
+4	()
+MsgPack
+0	()
+1	()
+2	()
+3	()
+4	()
+Native
+0	()
+1	()
+2	()
+3	()
+4	()
+TSV
+0	()
+1	()
+2	()
+3	()
+4	()
+CSV
+0	()
+1	()
+2	()
+3	()
+4	()
+TSKV
+0	()
+1	()
+2	()
+3	()
+4	()
+JSON
+0	()
+1	()
+2	()
+3	()
+4	()
+JSONCompact
+0	()
+1	()
+2	()
+3	()
+4	()
+JSONEachRow
+0	()
+1	()
+2	()
+3	()
+4	()
+JSONObjectEachRow
+0	()
+1	()
+2	()
+3	()
+4	()
+JSONCompactEachRow
+0	()
+1	()
+2	()
+3	()
+4	()
+JSONColumns
+0	()
+1	()
+2	()
+3	()
+4	()
+JSONCompactColumns
+0	()
+1	()
+2	()
+3	()
+4	()
+JSONColumnsWithMetadata
+0	()
+1	()
+2	()
+3	()
+4	()
+ORC
+0	()
+1	()
+2	()
+3	()
+4	()
+Arrow
+0	()
+1	()
+2	()
+3	()
+4	()

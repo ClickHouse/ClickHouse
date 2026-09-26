@@ -1,4 +1,7 @@
-#include "StorageSystemPartsColumns.h"
+#include <Storages/System/StorageSystemPartsColumns.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -8,15 +11,18 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNested.h>
+#include <Common/FieldVisitorToString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Databases/IDatabase.h>
 
 namespace DB
 {
-
 
 StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_)
     : StorageSystemPartsBase(table_id_,
@@ -64,9 +70,14 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>(), "Total size of the decompressed data in the column, in bytes."},
         {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>(), "The size of the marks for column, in bytes."},
         {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The last time the column was modified."},
-        {"column_ttl_min",                        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression of the column."},
-        {"column_ttl_max",                        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression of the column."},
-
+        {"column_ttl_min",                             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The minimum value of the calculated TTL expression of the column."},
+        {"column_ttl_max",                             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The maximum value of the calculated TTL expression of the column."},
+        {"statistics",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The statistics of the column."},
+        {"estimates.min",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Estimated minimum value of the column."},
+        {"estimates.max",                              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "Estimated maximum value of the column."},
+        {"estimates.cardinality",                      std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated cardinality of the column."},
+        {"estimates.null_count",                       std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated number of NULL values in the column."},
+        {"estimates.default_count",                    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Estimated number of rows equal to the column's storage default value (NULL for Nullable columns, 0 / '' / [] / ... for non-Nullable). NULL when no basic statistic is available."},
         {"serialization_kind",                         std::make_shared<DataTypeString>(), "Kind of serialization of a column"},
         {"substreams",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of substreams to which column is serialized"},
         {"filenames",                                  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Names of files for each substream of a column respectively"},
@@ -83,8 +94,9 @@ StorageSystemPartsColumns::StorageSystemPartsColumns(const StorageID & table_id_
 }
 
 void StorageSystemPartsColumns::processNextStorage(
-    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageSystemPartsColumns::processNextStorage");
     /// Prepare information about columns in storage.
     struct ColumnInfo
     {
@@ -92,9 +104,20 @@ void StorageSystemPartsColumns::processNextStorage(
         String default_expression;
     };
 
+    QueryStatusPtr query_status = context->getProcessListElement();
+
     std::unordered_map<String, ColumnInfo> columns_info;
-    for (const auto & column : info.storage->getInMemoryMetadataPtr()->getColumns())
+    auto metadata_snapshot = info.storage->getInMemoryMetadataPtr(context, false);
+    size_t metadata_column_number = 0;
+    for (const auto & column : metadata_snapshot->getColumns())
     {
+        /// The prepass alone can take a long time on a table with many columns.
+        /// A partially filled `columns_info` would report wrong defaults, so give up the whole storage instead.
+        ++metadata_column_number;
+        slowDownSystemPartsMetadataEnumeration(info.table, metadata_column_number);
+        if (query_status && metadata_column_number % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
+            return;
+
         ColumnInfo column_info;
         if (column.default_desc.expression)
         {
@@ -108,10 +131,18 @@ void StorageSystemPartsColumns::processNextStorage(
     /// Go through the list of parts.
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
-    all_parts = info.getParts(all_parts_state, has_state_column);
+
+    all_parts = info.getParts(all_parts_state, has_state_column, query_status);
+
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
+        if (query_status && !query_status->checkTimeLimit())
+            break;
+
+        slowDownSystemPartsEnumeration(info.table);
+
         const auto & part = all_parts[part_number];
+        const auto part_metadata_snapshot = part->getMetadataSnapshot();
         auto part_state = all_parts_state[part_number];
         auto columns_size = part->getTotalColumnsSize();
 
@@ -123,19 +154,36 @@ void StorageSystemPartsColumns::processNextStorage(
 
         auto index_size_in_bytes = part->getIndexSizeInBytes();
         auto index_size_in_allocated_bytes = part->getIndexSizeInAllocatedBytes();
+        std::optional<Estimates> estimates;
+
+        /// Lazy initialize statistics estimates if they are queried.
+        auto find_estimate = [&](const auto & column_name)
+        {
+            if (!estimates.has_value())
+                estimates = part->getEstimates();
+
+            return estimates->find(column_name);
+        };
 
         using State = MergeTreeDataPartState;
 
+        bool time_limit_exceeded = false;
         size_t column_position = 0;
         for (const auto & column : part->getColumns())
         {
             ++column_position;
+            slowDownSystemPartsColumnsEnumeration(info.table, column_position);
+            if (query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
+            {
+                time_limit_exceeded = true;
+                break;
+            }
+
             size_t src_index = 0;
             size_t res_index = 0;
 
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
-
+                columns[res_index++]->insert(part->partition.serializeToString(part_metadata_snapshot));
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])
@@ -261,21 +309,96 @@ void StorageSystemPartsColumns::processNextStorage(
                     columns[res_index++]->insertDefault();
             }
 
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end())
+                {
+                    Array types;
+                    for (const auto & type : estimate_it->second.types)
+                        types.push_back(toString(type));
+
+                    columns[res_index++]->insert(types);
+                }
+                else
+                {
+                    columns[res_index++]->insertDefault();
+                }
+            }
+
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end() && estimate_it->second.estimated_min.has_value())
+                    columns[res_index++]->insert(applyVisitor(FieldVisitorToString(), estimate_it->second.estimated_min.value()));
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end() && estimate_it->second.estimated_max.has_value())
+                    columns[res_index++]->insert(applyVisitor(FieldVisitorToString(), estimate_it->second.estimated_max.value()));
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end() && estimate_it->second.estimated_cardinality.has_value())
+                    columns[res_index++]->insert(estimate_it->second.estimated_cardinality.value());
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end() && estimate_it->second.estimated_null_count.has_value())
+                    columns[res_index++]->insert(estimate_it->second.estimated_null_count.value());
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
+            if (columns_mask[src_index++])
+            {
+                auto estimate_it = find_estimate(column.name);
+                if (estimate_it != estimates->end() && estimate_it->second.estimated_default_count.has_value())
+                    columns[res_index++]->insert(estimate_it->second.estimated_default_count.value());
+                else
+                    columns[res_index++]->insertDefault();
+            }
+
             auto serialization = part->getSerialization(column.name);
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
+                columns[res_index++]->insert(ISerialization::kindStackToString(serialization->getKindStack()));
 
             Array substreams;
             Array filenames;
 
-            serialization->enumerateStreams([&](const auto & subpath)
+            if (column.type->hasDynamicSubcolumns() && !part->getColumnsSubstreams().empty())
             {
-                auto substream = ISerialization::getFileNameForStream(column.name, subpath);
-                auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, part->checksums);
+                const auto & column_substreams = part->getColumnsSubstreams().getColumnSubstreams(column_position - 1);
+                for (const auto & substream : column_substreams)
+                {
+                    substreams.push_back(substream);
+                    auto filename = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", part->checksums);
+                    filenames.push_back(filename.value_or(""));
+                }
+            }
+            else
+            {
+                serialization->enumerateStreams([&](const auto & subpath)
+                {
+                    auto substream = ISerialization::getFileNameForStream(column.name, subpath, ISerialization::StreamFileNameSettings(*info.data->getSettings()));
+                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, ".bin", part->checksums, info.data->getSettings());
 
-                substreams.push_back(std::move(substream));
-                filenames.push_back(filename.value_or(""));
-            });
+                    substreams.push_back(std::move(substream));
+                    filenames.push_back(filename.value_or(""));
+                });
+            }
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(substreams);
@@ -297,14 +420,18 @@ void StorageSystemPartsColumns::processNextStorage(
                 if (isTuple(data.type) || isNested(data.type))
                     return;
 
+                /// Skip ephemeral subcolumns that don't store any real data.
+                if (ISerialization::isEphemeralSubcolumn(subpath, subpath.size()))
+                    return;
+
                 subcolumn_names.push_back(name);
                 subcolumn_types.push_back(data.type->getName());
-                subcolumn_serializations.push_back(ISerialization::kindToString(data.serialization->getKind()));
+                subcolumn_serializations.push_back(ISerialization::kindStackToString(data.serialization->getKindStack()));
 
                 ColumnSize size;
                 NameAndTypePair subcolumn(column.name, name, column.type, data.type);
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, part->checksums);
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums, info.data->getSettings());
                 if (stream_name)
                 {
                     auto bin_checksum = part->checksums.files.find(*stream_name + ".bin");
@@ -344,7 +471,13 @@ void StorageSystemPartsColumns::processNextStorage(
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());
         }
+
+        if (time_limit_exceeded)
+            break;
     }
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemPartsColumns) }

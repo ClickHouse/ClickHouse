@@ -1,0 +1,72 @@
+#!/usr/bin/expect -f
+
+# This test is about interaction with pager and proper handling of
+# SIGINT (Ctrl-C) sent to the pager and cancelling the query.
+#
+# https://github.com/ClickHouse/ClickHouse/issues/80778
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# Override some envs:
+# - TERM - do not rely on env (i.e. avoids "WARNING: terminal is not fully functional")
+# - LESS - remove any default options that may change less behavior (i.e. when it does not require Q for quiting if amount of output is less then screen size)
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm LESS= \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file --pager=less"
+expect ":) "
+
+send -- "SELECT 'foobar' || number::String, sleepEachRow(.1) FROM numbers(1000) FORMAT LineAsString SETTINGS max_block_size=1\r"
+# Wait for the first line
+expect "foobar0"
+# Cancel the query with Ctrl+C
+send "\3"
+
+# We should make sure, the query is terminated
+set timeout 30
+expect "Query was cancelled."
+expect " in set."
+expect ":) "
+
+# Try to exit from less and client in a loop, since client will hang if less is still alive
+set is_done 0
+set timeout 1
+set total_wait 0
+while {$is_done == 0 && $total_wait < 60} {
+    # Exit from less with q + Ctrl-C (just in case)
+    send "q"
+    send "\3"
+    # And try to exit from client (will hang if less is still alive)
+    send -- "\4"
+    expect {
+        eof {
+            set is_done 1
+        }
+        timeout {
+            incr total_wait 1
+        }
+        default {
+            # Reset the expect_after
+        }
+    }
+}
+if {$is_done == 0} {
+    send_user "less did not quit\n"
+    exit 1
+}

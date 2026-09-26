@@ -1,6 +1,15 @@
 """Long running tests, longer than 30 seconds"""
 
-from helpers.kafka.common_direct import *
+import json
+import logging
+
+from confluent_kafka.avro.cached_schema_registry_client import (
+    CachedSchemaRegistryClient,
+)
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
@@ -37,29 +46,7 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = k.get_admin_client(cluster)
-
-    def get_topics_to_delete():
-        return [t for t in admin_client.list_topics() if not t.startswith("_")]
-
-    topics = get_topics_to_delete()
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
-    retries = 0
-    topics = get_topics_to_delete()
-    while len(topics) != 0:
-        logging.info(f"Existing topics: {topics}")
-        if retries >= 5:
-            raise Exception(f"Failed to delete topics {topics}")
-        retries += 1
-        time.sleep(0.5)
+    k.clean_test_database_and_topics(instance, cluster)
     yield  # run test
 
 
@@ -69,16 +56,14 @@ def kafka_setup_teardown():
 # TODO: add test for SELECT LIMIT is working.
 
 
-@k.pytest.mark.parametrize(
+@pytest.mark.parametrize(
     "create_query_generator",
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
 )
 def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator):
     # data was dumped from clickhouse itself in a following manner
     # clickhouse-client --format=Native --query='SELECT toInt64(number) as id, toUInt16( intDiv( id, 65536 ) ) as blockNo, reinterpretAsString(19777) as val1, toFloat32(0.5) as val2, toUInt8(1) as val3 from numbers(100) ORDER BY id' | xxd -ps | tr -d '\n' | sed 's/\(..\)/\\x\1/g'
-    admin_client = k.KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
+    admin_client = k.get_admin_client(kafka_cluster)
 
     all_formats = {
         ## Text formats ##
@@ -254,7 +239,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             ],
             "expected": {
                 "raw_message": "00000000000000000342414402414D0000003F01",
-                "error": "Cannot read all data. Bytes read: 9. Bytes expected: 65.: (at row 1)\n",
+                "error": "Cannot read all data. Bytes read: 9. Bytes expected: 65: (at row 1)\n",
             },
             "printable": False,
         },
@@ -282,7 +267,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             ],
             "expected": {
                 "raw_message": "4F52430A0B0A030000001204080150000A150A050000000000120C0801120608001000180050000A120A06000000000000120808014202080650000A120A06000000000000120808014202080450000A290A0400000000122108011A1B09000000000000E03F11000000000000E03F19000000000000E03F50000A150A050000000000120C080112060802100218025000FF80FF80FF00FF80FF03424144FF80FF02414DFF800000003FFF80FF010A0608061000180D0A060806100118170A060806100218140A060806100318140A0608061004182B0A060806100518170A060800100018020A060800100118020A060801100118020A060800100218020A060802100218020A060801100218030A060800100318020A060802100318020A060801100318020A060800100418020A060801100418040A060800100518020A060801100518021204080010001204080010001204080010001204080010001204080010001204080010001A03474D540A590A04080150000A0C0801120608001000180050000A0808014202080650000A0808014202080450000A2108011A1B09000000000000E03F11000000000000E03F19000000000000E03F50000A0C080112060802100218025000080310EC021A0C0803108E01181D20C1012801222E080C120501020304051A0269641A07626C6F636B4E6F1A0476616C311A0476616C321A0476616C33200028003000220808042000280030002208080820002800300022080808200028003000220808052000280030002208080120002800300030013A04080150003A0C0801120608001000180050003A0808014202080650003A0808014202080450003A2108011A1B09000000000000E03F11000000000000E03F19000000000000E03F50003A0C08011206080210021802500040904E480108D5011000188080042202000B285B300682F403034F524318",
-                "error": "Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero/NULL instead of throwing exception.",
+                "error": "Cannot parse string 'BAD' as UInt16: syntax error at begin of string. Note: there are toUInt16OrZero and toUInt16OrNull functions, which returns zero/NULL instead of throwing exception",
             },
             "printable": False,
         },
@@ -301,7 +286,6 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             data_prefix = data_prefix + [""]
         if format_opts.get("printable", False) == False:
             raw_message = "hex(_raw_message)"
-        k.kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
         create_query = create_query_generator(
             f"kafka_{format_name}",
             "id Int64, blockNo UInt16, val1 String, val2 Float32, val3 UInt8",
@@ -313,6 +297,10 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
                 "kafka_flush_interval_ms": 1000,
             },
         )
+        # Create both materialized views, then detach/re-attach the Kafka table,
+        # before producing any message. Creating the first view starts the
+        # streaming loop, so producing earlier lets the loop consume and commit
+        # the broken message before the errors view is attached, leaving it empty.
         instance.query(
             f"""
             DROP TABLE IF EXISTS test.kafka_{format_name};
@@ -328,8 +316,12 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
             CREATE MATERIALIZED VIEW test.kafka_errors_{format_name}_mv ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT {raw_message} as raw_message, _error as error, _topic as topic, _partition as partition, _offset as offset FROM test.kafka_{format_name}
                 WHERE length(_error) > 0;
+
+            DETACH TABLE test.kafka_{format_name} SYNC;
+            ATTACH TABLE test.kafka_{format_name};
             """
         )
+        k.kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
 
     raw_expected = """\
 0	0	AM	0.5	1	{topic_name}	0	{offset_0}
@@ -383,13 +375,24 @@ def test_kafka_formats_with_broken_message(kafka_cluster, create_query_generator
         assert TSV(result) == TSV(expected), "Proper result for format: {}".format(
             format_name
         )
-        errors_result = json.loads(
-            instance.query(
-                "SELECT raw_message, error FROM test.kafka_errors_{format_name}_mv format JSONEachRow".format(
-                    format_name=format_name
-                )
-            )
+        errors_query = "SELECT raw_message, error FROM test.kafka_errors_{format_name}_mv FORMAT JSONEachRow".format(
+            format_name=format_name
         )
+        errors_text = instance.query_with_retry(
+            errors_query,
+            retry_count=60,
+            sleep_time=1,
+            check_callback=lambda res: len(res) > 0,
+        )
+        # query_with_retry returns the last result even if check_callback never
+        # passed, so guard against an empty error MV before json.loads (which
+        # would otherwise raise an opaque "Expecting value" JSONDecodeError).
+        assert (
+            len(errors_text) > 0
+        ), "Error row for format {} did not appear in kafka_errors_{}_mv".format(
+            format_name, format_name
+        )
+        errors_result = json.loads(errors_text)
         # print(errors_result.strip())
         # print(errors_expected.strip())
         assert (
@@ -751,7 +754,6 @@ def test_kafka_formats(kafka_cluster, create_query_generator):
             CREATE MATERIALIZED VIEW test.kafka_{format_name}_mv ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT *, _topic, _partition, _offset FROM test.kafka_{format_name};
             """.format(
-                topic_name=topic_name,
                 format_name=format_name,
                 create_query=create_query_generator(
                     f"kafka_{format_name}",

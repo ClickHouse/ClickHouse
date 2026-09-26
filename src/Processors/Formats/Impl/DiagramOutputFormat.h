@@ -46,7 +46,7 @@ class DiagramOutputFormat : public IOutputFormat
     size_t width = 0;
 
 public:
-    DiagramOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    DiagramOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);
 
 protected:
     // Write plot

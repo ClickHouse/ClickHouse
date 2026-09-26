@@ -93,7 +93,7 @@ TEST(CheckSortedTransform, CheckGoodCase)
         blocks.push_back(getSortedBlockWithSize(key_columns, 10, 1, i * 10));
 
     Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
-    pipe.addSimpleTransform([&](const Block & header)
+    pipe.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
@@ -120,7 +120,7 @@ TEST(CheckSortedTransform, CheckBadLastRow)
     blocks.push_back(getSortedBlockWithSize(key_columns, 100, 1, 300));
 
     Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
-    pipe.addSimpleTransform([&](const Block & header)
+    pipe.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
@@ -147,7 +147,7 @@ TEST(CheckSortedTransform, CheckUnsortedBlock1)
     blocks.push_back(getUnSortedBlockWithSize(key_columns, 100, 1, 0, 5, 1, 77));
 
     Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
-    pipe.addSimpleTransform([&](const Block & header)
+    pipe.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
@@ -171,7 +171,7 @@ TEST(CheckSortedTransform, CheckUnsortedBlock2)
     blocks.push_back(getUnSortedBlockWithSize(key_columns, 100, 1, 0, 99, 2, 77));
 
     Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
-    pipe.addSimpleTransform([&](const Block & header)
+    pipe.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
@@ -194,7 +194,7 @@ TEST(CheckSortedTransform, CheckUnsortedBlock3)
     blocks.push_back(getUnSortedBlockWithSize(key_columns, 100, 1, 0, 50, 0, 77));
 
     Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
-    pipe.addSimpleTransform([&](const Block & header)
+    pipe.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
@@ -219,7 +219,7 @@ TEST(CheckSortedTransform, CheckEqualBlock)
     blocks.push_back(getEqualValuesBlockWithSize(key_columns, 1));
 
     Pipe pipe(std::make_shared<BlocksListSource>(std::move(blocks)));
-    pipe.addSimpleTransform([&](const Block & header)
+    pipe.addSimpleTransform([&](const SharedHeader & header)
     {
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });

@@ -1,20 +1,22 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <Core/UUID.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/QueryPriorities.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+#include <Interpreters/QuerySlot.h>
 #include <QueryPipeline/BlockIO.h>
 #include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Poco/Condition.h>
 #include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
 #include <Common/UniqueLock.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -26,6 +28,8 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <map>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -40,7 +44,14 @@ class PipelineExecutor;
 struct ProcessListForUser;
 class QueryStatus;
 class ThreadStatus;
+class ThreadGroup;
+using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 class ProcessListEntry;
+
+/// Forward-declare to avoid pulling the whole scheduler stack into every TU that includes this header.
+/// The unique_ptr destructor is instantiated only in ProcessList.cpp where MemoryReservation.h is included.
+struct MemoryReservation;
+using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;
 
 enum CancelReason
 {
@@ -73,6 +84,7 @@ struct QueryStatusInfo
     bool is_cancelled;
     CancelReason cancel_reason;
     bool is_all_data_sent;
+    bool is_internal;
 
     /// Optional fields, filled by query
     std::vector<UInt64> thread_ids;
@@ -97,6 +109,14 @@ protected:
     String query;
     UInt64 normalized_query_hash;
     ClientInfo client_info;
+
+    /// The principal this query runs as; empty when its context has no bound user, as for a query the
+    /// server runs on its own behalf. The name in `client_info` is reusable, so it cannot decide identity.
+    std::optional<UUID> user_id;
+
+    /// Acquired workload resources
+    QuerySlotPtr query_slot;
+    MemoryReservationPtr memory_reservation;
 
     /// Info about all threads involved in query execution
     ThreadGroupPtr thread_group;
@@ -186,17 +206,26 @@ protected:
     /// This field is unused in this class, but it
     /// increments/decrements metric in constructor/destructor.
     CurrentMetrics::Increment num_queries_increment;
+
+    /// Same as above, but only for non-internal queries
+    std::optional<CurrentMetrics::Increment> num_non_internal_queries_increment;
+
+    bool is_internal;
 public:
     QueryStatus(
         ContextPtr context_,
         const String & query_,
         UInt64 normalized_query_hash_,
         const ClientInfo & client_info_,
+        const std::optional<UUID> & user_id_,
         QueryPriorities::Handle && priority_handle_,
+        QuerySlotPtr && query_slot_,
+        MemoryReservationPtr && memory_reservation_,
         ThreadGroupPtr && thread_group_,
         IAST::QueryKind query_kind_,
         const Settings & query_settings_,
-        UInt64 watch_start_nanoseconds);
+        UInt64 watch_start_nanoseconds,
+        bool is_internal);
 
     ~QueryStatus();
 
@@ -217,41 +246,37 @@ public:
 
     ThrottlerPtr getUserNetworkThrottler();
 
-    MemoryTracker * getMemoryTracker() const
+    MemoryTracker * getMemoryTracker() const;
+
+    MemoryReservation * getMemoryReservation() const
     {
-        if (!thread_group)
-            return nullptr;
-        return &thread_group->memory_tracker;
+        return memory_reservation.get();
     }
 
-    bool updateProgressIn(const Progress & value)
+    bool hasThreadGroup() const
     {
-        CurrentThread::updateProgressIn(value);
-        progress_in.incrementPiecewiseAtomically(value);
-
-        if (priority_handle)
-            priority_handle->waitIfNeed();
-
-        return !is_killed.load(std::memory_order_relaxed);
+        return bool(thread_group);
     }
 
-    bool updateProgressOut(const Progress & value)
-    {
-        CurrentThread::updateProgressOut(value);
-        progress_out.incrementPiecewiseAtomically(value);
-
-        return !is_killed.load(std::memory_order_relaxed);
-    }
+    bool updateProgressIn(const Progress & value);
+    bool updateProgressOut(const Progress & value);
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
-    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_ms, const UInt64 & elapsed_ns);
+    void throwProperExceptionIfNeeded(const UInt64 & max_execution_time_us, const UInt64 & elapsed_ns);
 
     /// Cancels the current query.
-    /// Optional argument `exception` allows to set an exception which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
+    /// Optional argument `exception` allows to set an exception, a copy of which checkTimeLimit() will throw instead of "QUERY_WAS_CANCELLED".
     CancellationCode cancelQuery(CancelReason reason, std::exception_ptr exception = nullptr);
 
     bool isKilled() const { return is_killed; }
+
+    /// Returns the reason `cancelQuery` was called with, or `UNDEFINED` if the query has not been cancelled.
+    /// Always returns `UNDEFINED` when `isKilled` is false, so consult `isKilled` first.
+    CancelReason getCancelReason() const;
+
+    /// Throws QUERY_WAS_CANCELLED or TIMEOUT_EXCEEDED if the query has been killed
+    void throwIfKilled();
 
     /// Returns an entry in the ProcessList associated with this QueryStatus. The function can return nullptr.
     std::shared_ptr<ProcessListEntry> getProcessListEntry() const;
@@ -271,6 +296,23 @@ public:
 
     /// Get the reference for the start of the query. Used to synchronize with other Stopwatches
     UInt64 getQueryCPUStartTime() { return watch.getStart(); }
+
+    bool isInternal() const
+    {
+        return is_internal;
+    }
+
+    /// Manually release all acquired workload resources.
+    void releaseWorkloadResources();
+
+    /// Release the query slot only. Safe to call while the query pipeline is still running:
+    /// pipeline threads do not access the query slot.
+    void releaseQuerySlot();
+
+    /// Release the memory reservation only. MUST NOT be called while the query pipeline is still
+    /// running: pipeline threads hold raw pointers to `MemoryReservation` (see `WorkloadResources`
+    /// in `PipelineExecutor`) and would race with its destruction.
+    void releaseMemoryReservation();
 };
 
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -279,8 +321,8 @@ using QueryStatusPtr = std::shared_ptr<QueryStatus>;
 /// Information of process list for user.
 struct ProcessListForUserInfo
 {
-    Int64 memory_usage;
-    Int64 peak_memory_usage;
+    Int64 memory_usage{};
+    Int64 peak_memory_usage{};
 
     // Optional field, filled by request.
     std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
@@ -297,10 +339,15 @@ struct ProcessListForUser
     /// query_id -> ProcessListElement(s). There can be multiple queries with the same query_id as long as all queries except one are cancelled.
     using QueryToElement = std::unordered_map<String, QueryStatusPtr>;
     QueryToElement queries;
+    size_t non_internal_queries = 0;
 
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
+
+    /// Per-user memory-pressure monitor: watches `user_memory_tracker`, escalates against the global
+    /// monitor. A query monitor is repointed onto this one when the query joins the user.
+    MemoryPressureMonitor user_memory_pressure_monitor{user_memory_tracker, getGlobalMemoryPressureMonitor()};
 
     TemporaryDataOnDiskScopePtr user_temp_data_on_disk;
 
@@ -309,21 +356,20 @@ struct ProcessListForUser
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
 
-    /// Number of queries waiting on load jobs
-    std::atomic<UInt64> waiting_queries_amount{0};
-
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
     /// Clears MemoryTracker for the user.
     /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
     ///  due to the fact that there are cases when memory can be allocated while processing the query, but released later.
-    /// Clears network bandwidth Throttler, so it will not count periods of inactivity.
     void resetTrackers()
     {
         /// TODO: should we drop user_temp_data_on_disk here?
         user_memory_tracker.reset();
-        if (user_throttler)
-            user_throttler.reset();
+        /// Called when the user's last query leaves, so clear the sticky level too - the next query
+        /// must not inherit the previous one's cooldown.
+        user_memory_pressure_monitor.reset();
+
+        /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
     }
 };
 
@@ -339,10 +385,11 @@ private:
 
     ProcessList & parent;
     Container::iterator it;
+    bool registered_in_cancellation_checker = false;
 
 public:
-    ProcessListEntry(ProcessList & parent_, Container::iterator it_)
-        : parent(parent_), it(it_) {}
+    ProcessListEntry(ProcessList & parent_, Container::iterator it_, bool registered_in_cancellation_checker_)
+        : parent(parent_), it(it_), registered_in_cancellation_checker(registered_in_cancellation_checker_) {}
 
     ~ProcessListEntry();
 
@@ -369,6 +416,8 @@ public:
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
     /// query_id -> User
     using QueriesToUser = std::unordered_map<String, String>;
+    /// A PostgreSQL connection's `BackendKeyData` pair -> the query_id of its current statement
+    using PostgreSQLCancellationKeys = std::map<std::pair<Int32, UInt32>, String>;
 
     using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
@@ -387,6 +436,8 @@ protected:
 
     /// List of queries
     Container processes;
+    size_t non_internal_processes = 0;
+
     /// Notify about cancelled queries (done with ProcessListBase::mutex acquired).
     mutable std::condition_variable cancelled_cv;
 
@@ -397,6 +448,12 @@ protected:
 
     /// Stores query IDs and associated users, used for query ID uniqueness check
     QueriesToUser queries_to_user;
+
+    /// A `CancelRequest` arrives on its own unauthenticated connection and carries only the pair from
+    /// `BackendKeyData`, so the secret is the credential. It is kept here rather than in the query ID
+    /// because `system.processes` and `system.query_log` expose query IDs verbatim. Keying on the whole
+    /// pair keeps a connection that reuses a connection ID from displacing a live one.
+    PostgreSQLCancellationKeys postgresql_cancellation_keys;
 
     /// Stores info about queries grouped by their priority
     QueryPriorities priorities;
@@ -419,23 +476,20 @@ protected:
     /// timeout in millisecond for low priority query to wait
     size_t low_priority_query_wait_time_ms = 0;
 
-    /// amount of queries by query kind.
+    /// amount of queries by query kind, excludes internal queries
     QueryKindAmounts query_kind_amounts;
 
     /// limit for waiting queries. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     std::atomic<UInt64> max_waiting_queries_amount{0};
 
-    /// amounts of waiting queries
-    std::atomic<UInt64> waiting_queries_amount{0};
-    std::atomic<UInt64> waiting_insert_queries_amount{0};
-    std::atomic<UInt64> waiting_select_queries_amount{0};
-
+    /// WARNING: for non-internal queries only
     void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
     void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
 
-    void increaseWaitingQueryAmount(const QueryStatusPtr & status);
-    void decreaseWaitingQueryAmount(const QueryStatusPtr & status);
+    /// An unset `expected_user_id` cancels whatever holds the key.
+    CancellationCode sendCancelToQueryImpl(
+        const String & current_query_id, const String & current_user, const std::optional<UUID> & expected_user_id);
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
@@ -445,9 +499,10 @@ public:
       * If timeout is passed - throw an exception.
       * Don't count KILL QUERY queries or async insert flush queries
       */
-    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds);
+    EntryPtr insert(const String & query_, UInt64 normalized_query_hash, const IAST * ast, ContextMutablePtr query_context, UInt64 watch_start_nanoseconds, bool is_internal);
 
     /// Number of currently executing queries.
+    /// WARNING: includes internal queries (e.g. those executed by dictionaries, RMVs, async inserts).
     size_t size() const { return processes.size(); }
 
     /// Get current state of process list.
@@ -523,13 +578,30 @@ public:
         return max_waiting_queries_amount.load();
     }
 
-    // Handlers for AsyncLoader waiters
-    void incrementWaiters();
-    void decrementWaiters();
+    struct OwnQuery
+    {
+        String user;
+        String query;
+    };
+
+    /// The running query with this id, if it belongs to `user_id`. A query id is unique across users
+    /// while it runs, so the id locates the entry and the user id decides whether it is that user's.
+    std::optional<OwnQuery> tryGetOwnRunningQuery(const String & current_query_id, const UUID & user_id);
 
     /// Try call cancel() for input and output streams of query with specified id and user
     CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user);
+    /// Cancel it only if it still belongs to `expected_user_id`, since user names are reusable.
+    CancellationCode sendCancelToQuery(const String & current_query_id, const String & current_user, const UUID & expected_user_id);
     CancellationCode sendCancelToQuery(QueryStatusPtr elem);
+
+    /// Remember the `BackendKeyData` pair that authenticates `CancelRequest` for a PostgreSQL
+    /// connection, and the query ID of its current statement. Call again when that ID changes.
+    void registerPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key, const String & query_id);
+    void unregisterPostgreSQLCancellationKey(Int32 connection_id, UInt32 secret_key);
+
+    /// Cancel an unauthenticated PostgreSQL request. Cancels only the query of the connection that
+    /// was given exactly this pair; queries from other interfaces never match.
+    CancellationCode sendCancelToPostgreSQLQuery(Int32 process_id, UInt32 secret_key);
 
     void killAllQueries();
 };

@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <Common/Stopwatch.h>
+#include <Examples/clickhouse_examples.h>
 
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
@@ -40,6 +41,9 @@ done
 */
 
 
+namespace
+{
+
 template <typename Map>
 void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
 {
@@ -49,7 +53,7 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
     for (auto value : data)
     {
         typename Map::LookupResult it;
-        bool inserted;
+        bool inserted = {};
 
         map.emplace(value, it, inserted);
         if (inserted)
@@ -67,7 +71,7 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
     }
     watch.stop();
     std::cerr << std::fixed << std::setprecision(2) << "HashMap (" << name << "). Size: " << map.size()
-              << ", elapsed: " << watch.elapsedSeconds() << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.)"
+              << ", elapsed: " << watch.elapsedSeconds() << " (" << static_cast<double>(data.size()) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
               << ", collisions: " << map.getCollisions()
 #endif
@@ -75,9 +79,9 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
 }
 
 template <typename Map>
-void insert(Map & map, StringRef & k)
+void insert(Map & map, std::string_view & k)
 {
-    bool inserted;
+    bool inserted = {};
     typename Map::LookupResult it;
     map.emplace(k, it, inserted, nullptr);
     if (inserted)
@@ -87,7 +91,9 @@ void insert(Map & map, StringRef & k)
     std::cout << map.find(k)->getMapped() << std::endl;
 }
 
-int main(int argc, char ** argv)
+}
+
+int mainEntryExampleHashMapLookup(int argc, char ** argv)
 {
     if (argc < 3)
     {
@@ -111,7 +117,7 @@ int main(int argc, char ** argv)
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2) << "Vector. Size: " << n << ", elapsed: " << watch.elapsedSeconds() << " ("
-                  << n / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
+                  << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)" << std::endl;
     }
 
     using OldLookup = HashMap<UInt16, UInt8, TrivialHash, HashTableFixedGrower<16>>;

@@ -1,26 +1,44 @@
 # docker build -t clickhouse/fasttest .
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
-# ARG for quick switch to a given ubuntu mirror
+# ARG for quick switch to a given ubuntu mirror. Defaults stay canonical so local
+# builds are unchanged; CI passes the in-region AWS mirror on the command line
+# (see ci/praktika/docker.py). amd64 base images use archive.ubuntu.com, arm64
+# uses ports.ubuntu.com, so rewrite both. On 24.04 the sources live in the deb822
+# file /etc/apt/sources.list.d/ubuntu.sources, so rewrite every apt source file.
+# The runners have no IPv6 egress, so force IPv4 to avoid hanging on IPv6 connect
+# attempts (this is a CI-only image, never pulled by end users, so forcing IPv4
+# here is safe). Also retry transient apt failures.
 ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-ARG LLVM_APT_VERSION="1:19.1.4"
+ARG apt_ports_archive="http://ports.ubuntu.com"
+RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 | xargs -0 -r sed -i \
+        -e "s|http://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|https://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|http://ports.ubuntu.com|$apt_ports_archive|g" \
+        -e "s|https://ports.ubuntu.com|$apt_ports_archive|g" \
+    && printf 'Acquire::ForceIPv4 "true";\nAcquire::Retries "5";\n' > /etc/apt/apt.conf.d/99-clickhouse-ci
+ARG LLVM_APT_VERSION="1:22.1.8~"
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=19
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=22
+
+# We need ca-certificates first to be able to update all repos. This is why it's run twice
+RUN apt-get update \
+    && apt-get install ca-certificates --yes --no-install-recommends --verbose-versions
 
 RUN apt-get update \
     && apt-get install \
         apt-transport-https \
         apt-utils \
-        ca-certificates \
         curl \
+        netcat-openbsd \
         gnupg \
         lsb-release \
         wget \
         git \
         xxd \
+        time \
         --yes --no-install-recommends --verbose-versions \
-    && export LLVM_PUBKEY_HASH="bda960a8da687a275a2078d43c111d66b1c6a893a3275271beedf266c1ff4a0cdecb429c7a5cccf9f486ea7aa43fd27f" \
+    && export LLVM_PUBKEY_HASH="5ffc7c9a9299ce774f81cada703e23ebba5bdfb0345b6c3b667b3ead7aa21c75ef62ccd74f7a8f2aa0cbe158d3068bbe" \
     && wget -nv -O /tmp/llvm-snapshot.gpg.key https://apt.llvm.org/llvm-snapshot.gpg.key \
     && echo "${LLVM_PUBKEY_HASH} /tmp/llvm-snapshot.gpg.key" | sha384sum -c \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
@@ -37,7 +55,7 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
     echo "deb [signed-by=/etc/apt/trusted.gpg.d/kitware.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" >> /etc/apt/sources.list.d/kitware.list
 
 # moreutils - provides ts fo FT
-# expect, bzip2 - requried by FT
+# expect, bzip2, less - requried by FT
 # bsdmainutils - provides hexdump for FT
 # nasm - nasm copiler for one of submodules, required from normal build
 # yasm - asssembler for libhdfs3, required from normal build
@@ -45,17 +63,22 @@ RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dear
 RUN apt-get update \
     && apt-get install \
         clang-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
         cmake \
         libclang-${LLVM_VERSION}-dev \
         libclang-rt-${LLVM_VERSION}-dev \
         lld-${LLVM_VERSION} \
+        lldb-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
+        libmpfr6 \
         lsof \
         ninja-build \
         python3 \
         python3-pip \
         zstd \
+        unzip \
         moreutils \
+        less \
         expect \
         bsdmainutils \
         pv \
@@ -67,10 +90,53 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
-COPY --from=clickhouse/cctools:4670e95dde3de689f103 /opt/gdb /opt/gdb
+# Rust toolchain and libraries
+ENV RUSTUP_HOME=/rust/rustup
+ENV CARGO_HOME=/rust/cargo
+ENV PATH="/rust/cargo/bin:${PATH}"
+ENV RUSTUP_VERSION=1.28.1
+
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        RUSTUP_ARCH="x86_64-unknown-linux-gnu"; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        RUSTUP_ARCH="aarch64-unknown-linux-gnu"; \
+    else \
+        echo "Unsupported architecture: $ARCH"; exit 1; \
+    fi && \
+    curl -fsSL -o rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${RUSTUP_ARCH}/rustup-init" && \
+    chmod +x rustup-init && \
+    ./rustup-init -y && \
+    rm rustup-init && \
+    chmod 777 -R /rust && \
+    rustup toolchain install nightly-2026-03-22 --no-self-update && \
+    rustup default nightly-2026-03-22 && \
+    rustup toolchain remove stable && \
+    rustup component add rust-src && \
+    rustup target add x86_64-unknown-linux-gnu && \
+    rustup target add aarch64-unknown-linux-gnu && \
+    rustup target add x86_64-apple-darwin && \
+    rustup target add x86_64-unknown-freebsd && \
+    rustup target add aarch64-apple-darwin && \
+    rustup target add powerpc64le-unknown-linux-gnu && \
+    rustup target add x86_64-unknown-linux-musl && \
+    rustup target add aarch64-unknown-linux-musl && \
+    rustup target add riscv64gc-unknown-linux-gnu
+
+# Note, libmpfr6 is also a requirement for gdb
+COPY --from=clickhouse/cctools:859fb360308eb8ac47ad /opt/gdb /opt/gdb
 # Give suid to gdb to grant it attach permissions
 RUN chmod u+s /opt/gdb/bin/gdb
 ENV PATH="/opt/gdb/bin:${PATH}"
+
+# lldb (installed with clang above) is the native debugger used by
+# clickhouse-test's `print_c_stacktraces` to dump server backtraces.
+# Symlink the versioned binary into /usr/bin so callers can run `lldb`
+# directly, and grant suid so non-root tests can still attach. gdb is kept
+# above for the fuzzer, perf comparison, stress, upgrade, and
+# integration-test harnesses that still drive it directly.
+RUN ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/lldb /usr/bin/lldb \
+    && chmod u+s /usr/lib/llvm-${LLVM_VERSION}/bin/lldb
 
 # This symlink is required by gcc to find the lld linker
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
@@ -79,7 +145,7 @@ RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
 
 ARG TARGETARCH
-ARG SCCACHE_VERSION=v0.10.0
+ARG SCCACHE_VERSION=v0.17.0
 ENV SCCACHE_IGNORE_SERVER_IO_ERROR=1
 # sccache requires a value for the region. So by default we use The Default Region
 ENV SCCACHE_REGION=us-east-1
@@ -94,7 +160,21 @@ RUN arch=${TARGETARCH} \
   && rm "/tmp/sccache-$SCCACHE_VERSION-$rarch-unknown-linux-musl" -r
 
 COPY requirements.txt /
-RUN pip3 install --no-cache-dir -r /requirements.txt
+RUN pip3 install --break-system-packages --no-cache-dir -r /requirements.txt
+ARG AWSCLI_VERSION=2.36.41
+ARG AWSCLI_SHA256_X86_64=659c1fe734a9534736fa452bb1b557dd4cccadea5823f45a74c0f09408a93d22
+ARG AWSCLI_SHA256_AARCH64=1612cda15d605985d8cb675ec429c8916e3b696fa52325994955dc3215c590a9
+RUN arch="$(uname -m)" \
+    && case "$arch" in \
+        x86_64) sha256="$AWSCLI_SHA256_X86_64" ;; \
+        aarch64) sha256="$AWSCLI_SHA256_AARCH64" ;; \
+        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${arch}-${AWSCLI_VERSION}.zip" -o awscliv2.zip \
+    && echo "$sha256  awscliv2.zip" | sha256sum --check --strict \
+    && unzip -q awscliv2.zip \
+    && ./aws/install \
+    && rm -rf awscliv2.zip aws
 
 # chmod 777 to make the container user independent
 RUN mkdir -p /var/lib/clickhouse \
@@ -103,7 +183,8 @@ RUN mkdir -p /var/lib/clickhouse \
 ENV TZ=Europe/Amsterdam
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN groupadd --system --gid 1000 clickhouse \
+RUN (userdel -r ubuntu 2>/dev/null || true) && (groupdel ubuntu 2>/dev/null || true) \
+    && groupadd --system --gid 1000 clickhouse \
     && useradd --system --gid 1000 --uid 1000 -m clickhouse \
     && mkdir -p /.cache/sccache && chmod 777 /.cache/sccache
 

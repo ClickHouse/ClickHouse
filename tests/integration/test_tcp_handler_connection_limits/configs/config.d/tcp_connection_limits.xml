@@ -1,0 +1,4 @@
+<clickhouse>
+    <tcp_close_connection_after_queries_num>3</tcp_close_connection_after_queries_num>
+    <tcp_close_connection_after_queries_seconds>2</tcp_close_connection_after_queries_seconds>
+</clickhouse>
