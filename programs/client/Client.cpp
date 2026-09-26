@@ -1397,7 +1397,8 @@ void Client::processOptions(
         }
     }
 
-    if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))
+    create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>();
+    if (create_query_fuzzer_runs)
     {
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);

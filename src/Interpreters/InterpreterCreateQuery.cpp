@@ -312,7 +312,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
         for (const auto & system_database : system_databases)
         {
-            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(std::string(system_database)))
+            if (db_count > 0 && DatabaseCatalog::instance().isDatabaseExist(system_database))
                 --db_count;
         }
 

@@ -848,7 +848,8 @@ private:
             if (!chunk)
             {
                 /// Try push the current bucket.
-                if ((chunk = get_bucket_if_ready(current_bucket_num)))
+                chunk = get_bucket_if_ready(current_bucket_num);
+                if (chunk)
                 {
                     ++current_bucket_num;
                 }

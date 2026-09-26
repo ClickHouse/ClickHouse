@@ -21,7 +21,6 @@ Checks: [
 
   '-boost-use-ranges',
 
-  '-bugprone-assignment-in-if-condition',
   '-bugprone-branch-clone',
   '-bugprone-derived-method-shadowing-base-method',
   '-bugprone-easily-swappable-parameters',
@@ -35,12 +34,15 @@ Checks: [
   '-bugprone-not-null-terminated-result',
   '-bugprone-forward-declaration-namespace',
   '-bugprone-nondeterministic-pointer-iteration-order',
+  '-bugprone-signed-bitwise', # formerly `hicpp-signed-bitwise`; too noisy
   '-bugprone-sizeof-expression', # too aggressive
   '-bugprone-throwing-static-initialization',
+  '-bugprone-unhandled-code-paths', # successor of the disabled `hicpp-multiway-paths-covered`; superset of the enabled `bugprone-switch-missing-default-case`
 
   '-cert-dcl16-c',
   '-cert-arr39-c', # alias of bugprone-sizeof-expression
   '-cert-err58-cpp',
+  '-cert-exp45-c', # alias of `bugprone-assignment-in-selection-statement`
 
   '-clang-analyzer-core.BitwiseShift', # false positive on boost::dynamic_bitset::to_ulong
 
@@ -93,6 +95,7 @@ Checks: [
   '-cppcoreguidelines-avoid-c-arrays',                          # alias of `modernize-avoid-c-arrays`
   '-cppcoreguidelines-avoid-magic-numbers',                     # alias of `readability-magic-numbers`
   '-cppcoreguidelines-c-copy-assignment-signature',             # alias of `misc-unconventional-assign-operator`
+  '-cppcoreguidelines-explicit-constructor',                    # alias of `google-explicit-constructor`
   '-cppcoreguidelines-explicit-virtual-functions',              # alias of `modernize-use-override`
   '-cppcoreguidelines-macro-to-enum',                           # alias of `modernize-macro-to-enum`
   '-cppcoreguidelines-narrowing-conversions',                   # alias of `bugprone-narrowing-conversions`
@@ -139,6 +142,7 @@ Checks: [
   '-llvmlibc-*',
 
   '-misc-const-correctness',
+  '-misc-explicit-constructor', # alias of `google-explicit-constructor`
   '-misc-include-cleaner', # useful but far too many occurrences
   '-misc-no-recursion',
   '-misc-multiple-inheritance',
@@ -161,14 +165,20 @@ Checks: [
   '-modernize-use-designated-initializers',
   '-modernize-use-scoped-lock',
   '-modernize-use-integer-sign-comparison',
+  '-modernize-use-string-view', # too noisy
+  '-modernize-use-structured-binding', # controversial, e.g. suggests structured bindings instead of `std::tie` into existing variables
 
   '-performance-avoid-endl',
   '-performance-enum-size',
+  '-performance-faster-string-find', # alias of `performance-prefer-single-char-overloads`
+  '-performance-prefer-single-char-overloads', # too noisy
   '-performance-inefficient-string-concatenation',
   '-performance-inefficient-vector-operation',
   '-performance-no-int-to-ptr',
   '-performance-unnecessary-value-param',
+  '-performance-use-std-move', # too noisy
 
+  '-portability-no-assembler', # formerly `hicpp-no-assembler`; inline assembler is used deliberately
   '-portability-simd-intrinsics',
   '-portability-avoid-pragma-once',
   '-portability-template-virtual-member-function',
@@ -196,9 +206,15 @@ Checks: [
         # initialized (example: s1 in struct S { String s1; String s2{};}; is not in-struct initialized, therefore it must be specified at instantiation time). As explicitly
         # specifying all members is tedious for large structs, `missing-field-initializers` makes programmers initialize as many members as possible in-struct. Clang-tidy
         # warning `readability-redundant-member-init` does the opposite thing, both are not compatible with each other.
+  '-readability-redundant-lambda-parameter-list', # we prefer explicit `()` in lambdas
+  '-readability-redundant-nested-if', # too noisy
+  '-readability-redundant-parentheses', # too noisy
+  '-readability-redundant-qualified-alias', # flags deliberate re-exports like `using DB::Decimal`
   '-readability-simplify-boolean-expr',
   '-readability-suspicious-call-argument',
   '-readability-uppercase-literal-suffix',
+  '-readability-trailing-comma', # too noisy
+  '-readability-trivial-switch', # successor of the disabled `hicpp-multiway-paths-covered`; flags single-case `switch` over an enum, which we use deliberately to get `-Wswitch` warnings when new enum values are added
   '-readability-use-anyofallof',
   '-readability-math-missing-parentheses',
   '-readability-use-concise-preprocessor-directives',

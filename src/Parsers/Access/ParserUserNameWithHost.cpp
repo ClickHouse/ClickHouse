@@ -53,7 +53,7 @@ bool parseUserNameWithHost(
 
                 Expected literal_check_expected;
                 ASTPtr literal_check_ast;
-                if (ParserIdentifier(allow_query_parameter = true).parse(literal_check_pos, literal_check_ast, literal_check_expected)
+                if (ParserIdentifier(/* allow_query_parameter_= */ true).parse(literal_check_pos, literal_check_ast, literal_check_expected)
                     && literal_check_ast->as<ASTIdentifier &>().isParam())
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,

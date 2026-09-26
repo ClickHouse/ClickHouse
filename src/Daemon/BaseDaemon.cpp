@@ -353,8 +353,8 @@ void BaseDaemon::initialize(Application & self)
         ///     }
         if (access(stderr_path.c_str(), W_OK))
         {
-            int fd = 0;
-            if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
+            int fd = creat(stderr_path.c_str(), 0600);
+            if (fd == -1 && errno != EEXIST)
                 throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
             if (fd != -1)
             {

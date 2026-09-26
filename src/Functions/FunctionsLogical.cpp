@@ -20,6 +20,7 @@
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitors.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <base/TypeLists.h>
 
 #include <cstring>
 #include <algorithm>
@@ -969,17 +970,14 @@ template <template <typename> class Impl, typename Name>
 ColumnPtr FunctionUnaryLogical<Impl, Name>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const
 {
     ColumnPtr res;
-    if (!((res = functionUnaryExecuteType<Impl, UInt8>(arguments))
-        || (res = functionUnaryExecuteType<Impl, UInt16>(arguments))
-        || (res = functionUnaryExecuteType<Impl, UInt32>(arguments))
-        || (res = functionUnaryExecuteType<Impl, UInt64>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Int8>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Int16>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Int32>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Int64>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Float32>(arguments))
-        || (res = functionUnaryExecuteType<Impl, Float64>(arguments))))
-       throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+    TypeListUtils::forEach(TypeListNativeNumber{}, [&]<typename T>(TypeList<T>)
+    {
+        if (!res)
+            res = functionUnaryExecuteType<Impl, T>(arguments);
+    });
+
+    if (!res)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
             "Illegal column {} of argument of function {}",
             arguments[0].column->getName(),
             getName());
