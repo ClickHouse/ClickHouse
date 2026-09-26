@@ -1,5 +1,8 @@
 -- Tags: zookeeper, no-replicated-database, no-shared-merge-tree
 
+-- Suppress per-replica DDL status rows; the mode still drains the status pipeline.
+SET distributed_ddl_output_mode = 'none';
+
 DROP TABLE IF EXISTS t_projection_column_list_gate;
 DROP TABLE IF EXISTS t_projection_column_list_gate_create;
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier} SYNC;

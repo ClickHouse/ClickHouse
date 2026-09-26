@@ -1,5 +1,8 @@
 -- Tags: zookeeper
 
+-- This test checks canonical metadata across replicas after the syntax has been explicitly enabled.
+SET allow_projection_column_list_in_replicated_metadata = 1;
+
 -- { echo ON }
 
 DROP TABLE IF EXISTS t_repl_codecs_r1;
