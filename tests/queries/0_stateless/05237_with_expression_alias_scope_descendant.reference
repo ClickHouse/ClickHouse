@@ -1,0 +1,12 @@
+live	100
+mutation	100
+live array	100
+mutation array	100
+view	100
+stored alias is bare	1
+live off	10
+mutation off	10
+live lambda	10
+mutation lambda	10
+live subquery	10
+mutation subquery	10
