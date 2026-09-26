@@ -221,7 +221,6 @@
                 "pt-BR/concepts/features/interfaces/framing-formats",
                 "pt-BR/concepts/features/interfaces/tcp",
                 "pt-BR/concepts/features/interfaces/adbc",
-                "pt-BR/concepts/features/interfaces/jdbc",
                 "pt-BR/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"
@@ -233,7 +232,6 @@
                 "pt-BR/concepts/features/interfaces/arrowflight"
               ]
             },
-            "pt-BR/concepts/features/interfaces/cpp",
             "pt-BR/concepts/features/interfaces/schema-inference",
             "pt-BR/concepts/features/interfaces/documentation-search",
             "pt-BR/concepts/features/interfaces/web-sql",
