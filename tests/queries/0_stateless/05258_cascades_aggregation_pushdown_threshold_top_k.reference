@@ -1,0 +1,18 @@
+-- canary: without ORDER BY ... LIMIT the aggregation is pushed below the join
+JoinLogical
+Aggregating
+-- with the top-K threshold merge the aggregation stays above the join
+Aggregating
+JoinLogical
+-- result through cascades
+49999	49999
+49998	49998
+49997	49997
+49996	49996
+49995	49995
+-- result classically
+49999	49999
+49998	49998
+49997	49997
+49996	49996
+49995	49995

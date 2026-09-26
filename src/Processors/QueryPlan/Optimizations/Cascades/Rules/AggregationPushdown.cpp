@@ -256,7 +256,8 @@ bool AggregationPushdown::checkPattern(GroupExpressionPtr expression, const Expr
         params.only_merge ||                    /// don't split a merge step that's already from a prior split
         agg_step->inOrder() ||
         agg_step->explicitSortingRequired() ||
-        params.bucket_top_k != 0)               /// bucket top-K assumes this aggregation directly feeds its `ORDER BY ... LIMIT`
+        params.bucket_top_k != 0 ||             /// bucket top-K assumes this aggregation directly feeds its `ORDER BY ... LIMIT`
+        params.threshold_top_k.has_value())     /// so does the top-K threshold merge, which prunes groups before a join could filter them
         return false;
 
     /// Global aggregation is not safe: an empty join output yields one global row originally,
