@@ -175,14 +175,20 @@ struct IntegerRoundingComputation
 };
 
 
-/// `Round` rounds half to even regardless of the current floating point rounding mode.
+/// `Round` rounds half to even regardless of the current floating point rounding mode, except on x86 without SSE4.1:
+/// there `roundeven` would be a libm call, and glibc has it only since 2.25, so `rint` is used instead. It rounds half to
+/// even in the default rounding mode.
 /// Plain scalar code, so the loop in `FloatRoundingImpl::apply` vectorizes to the widest vectors of the target.
 
 inline float roundWithMode(float x, RoundingMode mode)
 {
     switch (mode)
     {
+#if defined(__x86_64__) && !defined(__SSE4_1__)
+        case RoundingMode::Round: return rintf(x);
+#else
         case RoundingMode::Round: return __builtin_roundevenf(x);
+#endif
         case RoundingMode::Floor: return floorf(x);
         case RoundingMode::Ceil: return ceilf(x);
         case RoundingMode::Trunc: return truncf(x);
@@ -195,7 +201,11 @@ inline double roundWithMode(double x, RoundingMode mode)
 {
     switch (mode)
     {
+#if defined(__x86_64__) && !defined(__SSE4_1__)
+        case RoundingMode::Round: return rint(x);
+#else
         case RoundingMode::Round: return __builtin_roundeven(x);
+#endif
         case RoundingMode::Floor: return floor(x);
         case RoundingMode::Ceil: return ceil(x);
         case RoundingMode::Trunc: return trunc(x);
