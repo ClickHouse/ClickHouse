@@ -167,6 +167,13 @@ void ColumnFunction::doInsertFrom(const IColumn & src, size_t n)
 {
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
+    if (!function->isEqual(*src_func.function))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot insert into ColumnFunction from a column with a different function ({} vs {})",
+            function->getName(),
+            src_func.function->getName());
+
     size_t num_captured_columns = captured_columns.size();
     chassert(num_captured_columns == src_func.captured_columns.size());
 
@@ -188,6 +195,13 @@ void ColumnFunction::doInsertRangeFrom(const IColumn & src, size_t start, size_t
 {
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
+    if (!function->isEqual(*src_func.function))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot concatenate ColumnFunction with a different function ({} vs {})",
+            function->getName(),
+            src_func.function->getName());
+
     size_t num_captured_columns = captured_columns.size();
     chassert(num_captured_columns == src_func.captured_columns.size());
 
@@ -199,6 +213,32 @@ void ColumnFunction::doInsertRangeFrom(const IColumn & src, size_t start, size_t
     }
 
     elements_size += length;
+}
+
+bool ColumnFunction::structureEquals(const IColumn & rhs) const
+{
+    const auto * rhs_func = typeid_cast<const ColumnFunction *>(&rhs);
+    if (!rhs_func)
+        return false;
+
+    /// insertRangeFrom keeps the destination function for all appended rows. Require the same
+    /// callable (IFunctionBase::isEqual), not merely the same wrapper typeid — FunctionExpression
+    /// and FunctionToFunctionBaseAdaptor each wrap many distinct callables.
+    if (!function->isEqual(*rhs_func->function))
+        return false;
+
+    if (captured_columns.size() != rhs_func->captured_columns.size())
+        return false;
+
+    for (size_t i = 0; i < captured_columns.size(); ++i)
+    {
+        if (!captured_columns[i].type->equals(*rhs_func->captured_columns[i].type))
+            return false;
+        if (!captured_columns[i].column->structureEquals(*rhs_func->captured_columns[i].column))
+            return false;
+    }
+
+    return true;
 }
 
 ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) const
