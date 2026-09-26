@@ -16,9 +16,7 @@ Cuatro optimizaciones abarcan la mayor parte de lo que suele ayudar en la práct
 Los resúmenes a continuación son breves a propósito. Para conocer el motivo de cada cambio, ver benchmarks y consultar las recetas para aplicarlo a los datos existentes, consulta [optimización del rendimiento](/es/clickstack/managing/performance-tuning).
 
 <Steps>
-  <Step>
-    ## Materializar atributos consultados con frecuencia
-
+  <Step title="Materializar atributos consultados con frecuencia" id="materialize-attributes">
     Filtrar por `LogAttributes['service.version']` hace que ClickHouse cargue y decodifique el `Map` completo `LogAttributes` para cada fila que examina. Convierta el atributo en una columna `MATERIALIZED` y ese mismo filtro pasará a ser una lectura de columna, normalmente un orden de magnitud más rápida. ClickStack reescribe el filtro automáticamente una vez que la columna existe, por lo que las búsquedas guardadas y los dashboards seguirán funcionando sin cambios.
 
     Elija los atributos que realmente consulta con frecuencia. Cada columna materializada tiene un coste de almacenamiento y de tiempo de inserción, así que esto consiste en &quot;promover lo que usa&quot;, no en &quot;promoverlo todo&quot;.
@@ -34,9 +32,7 @@ Los resúmenes a continuación son breves a propósito. Para conocer el motivo d
     Más información: [Materializar atributos consultados con frecuencia](/es/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes).
   </Step>
 
-  <Step>
-    ## Añadir skip indexes
-
+  <Step title="Añadir skip indexes" id="add-skip-indexes">
     Los skip indexes permiten a ClickHouse descartar gránulos de datos que no pueden coincidir con un filtro, convirtiendo un escaneo en una lectura pequeña y dirigida. Hay tres tipos que conviene conocer:
 
     * **Índices de texto** (`text(tokenizer = ...)`) en columnas de cadenas y en arrays `mapKeys`/`*AttributeItems`. El esquema predeterminado de logs ya los incluye.
@@ -53,9 +49,7 @@ Los resúmenes a continuación son breves a propósito. Para conocer el motivo d
     Más información: [Añadir skip indexes](/es/clickstack/managing/performance-tuning#adding-skip-indexes).
   </Step>
 
-  <Step>
-    ## Precalcular agregaciones repetidas
-
+  <Step title="Precalcular agregaciones repetidas" id="materialized-views">
     Cuando la misma agregación se ejecuta una y otra vez en un dashboard (servicios principales por tasa de error, latencia p99 por endpoint, recuento de solicitudes por minuto), una vista materializada calcula el resultado en el momento de la inserción y lo escribe en una pequeña tabla de rollup. Después, los dashboards consultan el rollup en lugar de los logs o traces sin procesar, lo que resulta mucho más barato.
 
     Esto compensa cuando el dashboard tiene mucha actividad y la tabla subyacente es grande. El coste es algo más de CPU en el momento de la inserción y una segunda tabla que mantener.
@@ -63,9 +57,7 @@ Los resúmenes a continuación son breves a propósito. Para conocer el motivo d
     Más información: [Aprovechar las vistas materializadas](/es/clickstack/managing/performance-tuning#exploiting-materialized-views).
   </Step>
 
-  <Step>
-    ## Elija una clave primaria para su patrón de acceso
-
+  <Step title="Elija una clave primaria para su patrón de acceso" id="choose-primary-key">
     La clave primaria controla cómo se ordenan las filas en disco. Los filtros sobre las primeras columnas de esa clave permiten a ClickHouse ir directamente a la región relevante; los filtros que no empiezan por una de esas columnas escanean toda la partición.
 
     La clave predeterminada de logs `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)` favorece &quot;qué ocurrió en los últimos N minutos para el servicio X&quot;. Si la mayoría de sus consultas empiezan por una columna diferente (un ID de tenant, un ID de cliente, una región), cambiar la clave primaria para que empiece por esa columna es el cambio de mayor impacto que puede hacer.
@@ -79,7 +71,7 @@ Los resúmenes a continuación son breves a propósito. Para conocer el motivo d
     ORDER BY (TenantId, ServiceName, Timestamp);
     ```
 
-    ClickHouse no permite editar la clave primaria in situ, así que esto es una migración de tabla en lugar de un simple `ALTER`. La guía de ajuste del rendimiento explica cómo crear la nueva tabla, redirigir la ingestión y usar una tabla `Merge` para que los dashboards existentes sigan funcionando con datos antiguos y nuevos.
+    ClickHouse no permite editar la clave primaria in situ, así que esto es una migración de tabla en lugar de un simple `ALTER`. La guía de optimización del rendimiento explica cómo crear la nueva tabla, redirigir la ingestión y usar una tabla `Merge` para que los dashboards existentes sigan funcionando con datos antiguos y nuevos.
 
     Más información: [Modificar la clave primaria](/es/clickstack/managing/performance-tuning#modifying-the-primary-key).
   </Step>

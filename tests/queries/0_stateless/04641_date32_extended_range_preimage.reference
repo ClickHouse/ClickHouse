@@ -1,0 +1,131 @@
+toYear below the LUT range is rewritten to a key range
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.date32_preimage
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
+                CONSTANT id: 9, constant_value: \'1500-01-01\', constant_value_type: String
+          FUNCTION id: 10, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
+                CONSTANT id: 12, constant_value: \'1501-01-01\', constant_value_type: String
+  SETTINGS enable_analyzer=1
+1
+toYear above the LUT range is rewritten to a key range
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.date32_preimage
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
+                CONSTANT id: 9, constant_value: \'9000-01-01\', constant_value_type: String
+          FUNCTION id: 10, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
+                CONSTANT id: 12, constant_value: \'9001-01-01\', constant_value_type: String
+  SETTINGS enable_analyzer=1
+1
+toYYYYMM outside the LUT range is rewritten to a key range
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.date32_preimage
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
+                CONSTANT id: 9, constant_value: \'9000-12-01\', constant_value_type: String
+          FUNCTION id: 10, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
+                CONSTANT id: 12, constant_value: \'9001-01-01\', constant_value_type: String
+  SETTINGS enable_analyzer=1
+1
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.date32_preimage
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
+                CONSTANT id: 9, constant_value: \'1500-06-01\', constant_value_type: String
+          FUNCTION id: 10, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
+                CONSTANT id: 12, constant_value: \'1500-07-01\', constant_value_type: String
+  SETTINGS enable_analyzer=1
+1
+inequalities over the extended range
+3
+3
+3
+the boundary year 9999 has no representable exclusive upper endpoint, so it is not rewritten, but the result is correct
+1
+1
+year 0 is rewritten and correct
+QUERY id: 0
+  PROJECTION COLUMNS
+    count() UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.date32_preimage
+  WHERE
+    FUNCTION id: 4, function_name: and, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          FUNCTION id: 6, function_name: greaterOrEquals, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 7, nodes: 2
+                COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
+                CONSTANT id: 9, constant_value: \'0000-01-01\', constant_value_type: String
+          FUNCTION id: 10, function_name: less, function_type: ordinary, result_type: UInt8
+            ARGUMENTS
+              LIST id: 11, nodes: 2
+                COLUMN id: 8, column_name: d, result_type: Date32, source_id: 3
+                CONSTANT id: 12, constant_value: \'0001-01-01\', constant_value_type: String
+  SETTINGS enable_analyzer=1
+1

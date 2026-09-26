@@ -185,8 +185,8 @@ INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', '
 INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
 ```
 
-> ClickHouse は、`=`, `!=`, `>`,`>=`, `<`, `<=`, IN などの単純な `WHERE` 句を PostgreSQL サーバーにプッシュダウンします。そのため、変更セットの特定に使うカラムに索引を作成しておくことで、増分ロードをより効率的に行えます。
+> ClickHouse は、`=`, `!=`, `>`,`>=`, `<`, `<=`, IN などの単純な `WHERE` 句を PostgreSQL サーバーにプッシュダウンできます。そのため、変更セットの特定に使うカラムに索引を作成しておくことで、増分ロードをより効率化できます。
 
-> クエリレプリケーションの使用時に `UPDATE` 操作を検出する方法の 1 つは、[`XMIN` system column](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (トランザクション ID) をウォーターマークとして利用することです。このカラムの変化はデータの変更を示すため、宛先テーブルに反映できます。この方法を使用する場合は、`XMIN` の値が周回する可能性があること、また比較にはテーブル全体のスキャンが必要になるため、変更の追跡がより複雑になることに注意してください。
+> クエリレプリケーションの使用時に UPDATE 操作を検出する方法の 1 つとして、[`XMIN` system column](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (トランザクション ID) をウォーターマークとして使う方法があります。このカラムの値が変化した場合は変更があったことを示すため、その変更を宛先テーブルに適用できます。この方法を採用する場合は、`XMIN` の値が周回する可能性があること、また比較にはフルテーブルスキャンが必要になるため、変更の追跡がより複雑になる点に注意してください。
 
-[パート 2 はこちら](/ja/get-started/migrate/postgres/migration-guide/migration-guide-part2)
+[第2部はこちら](/ja/get-started/migrate/postgres/migration-guide/migration-guide-part2)

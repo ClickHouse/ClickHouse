@@ -44,7 +44,7 @@ namespace QueryProcessingStage
     {
         if (stage == QueryPlan)
             return "QueryPlan";
-        static const char * data[] =
+        static const char * const data[] =
         {
             "FetchColumns",
             "WithMergeableState",

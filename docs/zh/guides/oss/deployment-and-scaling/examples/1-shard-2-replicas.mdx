@@ -38,9 +38,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
 * 你的机器上已安装 Docker
 
 <Steps>
-  <Step>
-    ## 设置目录结构和测试环境
-
+  <Step title="设置目录结构和测试环境" id="set-up">
     <ExampleFiles />
 
     在本教程中，您将使用 [Docker compose](https://docs.docker.com/compose/) 搭建 ClickHouse 集群。该方案同样可以修改后适用于独立的本地机器、虚拟机或云实例。
@@ -51,12 +49,12 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     mkdir cluster_1S_2R
     cd cluster_1S_2R
 
-    # 创建 clickhouse-keeper 目录
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # 创建 clickhouse-server 目录
+    # Create clickhouse-server directories
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -140,9 +138,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## 配置 ClickHouse 节点
-
+  <Step title="配置 ClickHouse 节点" id="configure-clickhouse-servers">
     ### 服务器配置
 
     现在修改位于 `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d` 的每个空配置文件 `config.xml`。下方高亮显示的行需要根据各节点进行相应修改：
@@ -208,7 +204,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     </clickhouse>
     ```
 
-    | 目录                                                        | File 表引擎                                                                                                                                                                         |
+    | 目录                                                        | 文件                                                                                                                                                                               |
     | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/config.d/config.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/config.d` | [`config.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/config.d/config.xml) |
@@ -244,11 +240,11 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
 
     ```xml
     <remote_servers>
-        <!-- 集群名称（不应包含点） -->
+        <!-- cluster name (should not contain dots) -->
         <cluster_1S_2R>
             <!-- <allow_distributed_ddl_queries>false</allow_distributed_ddl_queries> -->
             <shard>
-                <!-- 可选。是否仅向其中一个副本写入数据。默认值：false（向所有副本写入数据）。-->
+                <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
                 <internal_replication>true</internal_replication>
                 <replica>
                     <host>clickhouse-01</host>
@@ -268,7 +264,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     #### Keeper 配置
 
     `<ZooKeeper>` 部分用于告知 ClickHouse，ClickHouse Keeper (或 ZooKeeper) 的运行位置。
-    由于我们使用的是 ClickHouse Keeper cluster，需要指定该 cluster 中的每个 `<node>`，
+    由于我们使用的是 ClickHouse Keeper 集群，需要指定该集群中的每个 `<node>`，
     并分别通过 `<host>` 和 `<port>` 标签指定其 hostname 和端口号。
 
     ClickHouse Keeper 的配置将在本教程的下一步中介绍。
@@ -355,7 +351,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     </clickhouse>
     ```
 
-    | 目录                                                       | File 表引擎                                                                                                                                                                      |
+    | 目录                                                       | 文件                                                                                                                                                                            |
     | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `fs/volumes/clickhouse-01/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-01/etc/clickhouse-server/users.d/users.xml) |
     | `fs/volumes/clickhouse-02/etc/clickhouse-server/users.d` | [`users.xml`](https://github.com/ClickHouse/examples/blob/main/docker-compose-recipes/recipes/cluster_1S_2R/fs/volumes/clickhouse-02/etc/clickhouse-server/users.d/users.xml) |
@@ -368,9 +364,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## 配置 ClickHouse Keeper
-
+  <Step title="配置 ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     ### Keeper 配置
 
     <KeeperConfig />
@@ -386,9 +380,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## 测试设置
-
+  <Step title="测试设置" id="test-the-setup">
     请确保你的机器上已运行 Docker。
     在 `cluster_1S_2R` 目录的根目录下，使用 `docker-compose up` 命令启动集群：
 
@@ -413,7 +405,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     以下查询。下面显示的是连接到第一个节点的命令：
 
     ```bash
-    # 连接到任意节点
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -467,9 +459,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     下一步，你将在该集群中创建一个表。
   </Step>
 
-  <Step>
-    ## 创建数据库
-
+  <Step title="创建数据库" id="creating-a-database">
     现在你已经确认集群已正确设置并正常运行，接下来你将重新创建一个与[英国房产价格](/zh/get-started/sample-datasets/uk-price-paid)
     示例数据集教程中相同的表。该数据集包含自 1995 年以来英格兰和威尔士房地产成交价格的约 3000 万行
     数据。
@@ -506,8 +496,8 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ```
 
     你可以再次从每台主机的客户端运行与之前相同的查询，
-    以确认尽管该查询仅在 `clickhouse-01` 上运行，
-    该数据库已在整个集群中创建：
+    以确认即使该查询仅在 `clickhouse-01` 上运行，
+    该数据库也已在整个集群中创建：
 
     ```sql
     SHOW DATABASES;
@@ -524,9 +514,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 在集群上创建表
-
+  <Step title="在集群上创建表" id="creating-a-table">
     现在数据库已创建完成，接下来在集群上创建一个表。
     在任意一个主机客户端上运行以下查询：
 
@@ -577,9 +565,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 插入数据
-
+  <Step title="插入数据" id="inserting-data">
     由于数据集较大，完全摄取需要几分钟，我们将先插入一小部分数据。
 
     使用以下查询从 `clickhouse-01` 插入一个较小的数据子集：
@@ -692,7 +678,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌─id─┬─name───────────────┐
+       ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -711,7 +697,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌─id─┬─name───────────────┐
+       ┌─id─┬─name───────────────┐
     1. │  1 │ Clicky McClickface │
     2. │  2 │ Alexey Milovidov   │
        └────┴────────────────────┘
@@ -766,8 +752,8 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌──count()─┐
-    1. │ 30212555 │ -- 3021万
+       ┌──count()─┐
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
     ```
   </Step>

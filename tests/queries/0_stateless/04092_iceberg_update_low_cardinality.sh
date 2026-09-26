@@ -27,13 +27,15 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t0"
 rm -rf "${ICEBERG_TABLE_PATH}"
 
 # Test 2: ALTER UPDATE on IcebergLocal with Avro format.
-# This was the exact reproduction case from the issue.
-${CLICKHOUSE_CLIENT} --query "
-    SET allow_experimental_insert_into_iceberg = 1;
+# This was the original reproduction case from issue #101916 (server crash). With
+# the followup fix for issue #102508, non-Parquet mutations are rejected outright
+# (the previous "no crash" outcome silently corrupted the table). The test now
+# verifies that the rejection happens cleanly without crashing.
+${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg=1 --query "
     CREATE TABLE t0 (c0 Int) ENGINE = IcebergLocal('${ICEBERG_TABLE_PATH}', 'Avro');
     INSERT INTO t0 VALUES (1);
-    ALTER TABLE t0 UPDATE c0 = 1 WHERE TRUE;
 "
+${CLICKHOUSE_CLIENT} --allow_experimental_insert_into_iceberg=1 --query "ALTER TABLE t0 UPDATE c0 = 1 WHERE TRUE" 2>&1 | grep -oE 'Code: [0-9]+' | head -1
 
 echo "OK"
 

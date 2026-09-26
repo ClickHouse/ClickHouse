@@ -3,11 +3,13 @@
 
 Auto-approves ONLY the exact safe command shapes the skill runs every time, so
 they need no allow-list entry (whose wildcard tail cannot be constrained) and no
-prompt. Two families:
+prompt. Three families:
 
   1. The play.clickhouse.com read-only SELECT history query.
   2. node .claude/tools/fetch_ci_report.js against known CI-report hosts, with
      only read/report flags (NO file-writing forms).
+  3. mkdir -p tmp/investigate/<sha> where <sha> is 7-40 lowercase hex chars only
+     (no path separators, no traversal, no shell composition).
 
 The hook never auto-approves a write: --download-logs and stdout redirection are
 deliberately excluded, because a string-pinned path cannot be made symlink-safe
@@ -42,7 +44,7 @@ FETCH = re.compile(
     r'"(?:https://s3\.amazonaws\.com/clickhouse-test-reports/'
     r"|https://d1k2gkhrlfqv31\.cloudfront\.net/clickhouse-test-reports-private/"
     r'|https://github\.com/ClickHouse/ClickHouse/(?:pull|issues)/)[^"$`]*"'
-    r"(?: (?:--failed|--cidb|--all|--links"
+    r"(?: (?:--failed|--cidb|--all|--links|--binary"
     r"|--report [0-9]+"
     r"|--credentials [^\s\"$`;|&<>]+))*"
     r"(?: 2>&1| 2>/dev/null)?"
@@ -62,6 +64,17 @@ def fetch_ok(command: str) -> bool:
     return bool(FETCH.fullmatch(command))
 
 
+# --- Family 3: mkdir for SHA working subdirectory ---
+# Accepts only mkdir -p tmp/investigate/<7-40 lowercase hex chars>. The hex
+# character class structurally excludes '/' and '.', so path traversal and nested
+# subdirs are impossible to match. The end anchor blocks shell composition.
+MKDIR_SHA = re.compile(r"mkdir -p tmp/investigate/[0-9a-f]{7,40}$")
+
+
+def mkdir_sha_ok(command: str) -> bool:
+    return bool(MKDIR_SHA.fullmatch(command))
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
@@ -72,7 +85,7 @@ def main() -> None:
         return
 
     command = data.get("tool_input", {}).get("command", "").strip()
-    if play_ok(command) or fetch_ok(command):
+    if play_ok(command) or fetch_ok(command) or mkdir_sha_ok(command):
         print(
             json.dumps(
                 {

@@ -1,0 +1,25 @@
+-- 1. no-append format, non-empty target, zero rows: rejected, target untouched
+CANNOT_APPEND_TO_FILE
+8
+-- 2. no-append format, non-empty target, with rows: rejected, target untouched
+CANNOT_APPEND_TO_FILE
+8
+-- 3. no-append format, empty target: still written, and readable back
+7
+-- 4. append-supporting format, non-empty target: still appends
+1
+9
+-- 5. partitioned write into an existing partition: rejected, first partition intact
+CANNOT_APPEND_TO_FILE
+3
+-- 6. Parquet, non-empty target: rejected too, the guard is not Avro-specific
+CANNOT_APPEND_TO_FILE
+-- 7. engine_file_truncate_on_insert still replaces the file
+2
+-- 8. engine_file_allow_create_multiple_files still creates a new file
+1
+2
+-- 9. settings-dependent checker is consulted: appendable config accepted, non-appendable rejected
+2
+CANNOT_APPEND_TO_FILE
+2

@@ -25,7 +25,7 @@ If there is a native driver available (e.g., [DBeaver](/integrations/connectors/
 If your use case involves a particular tool that doesn't have a native ClickHouse driver, and you would like to use it via the MySQL interface and you found certain incompatibilities - please [create an issue](https://github.com/ClickHouse/ClickHouse/issues) in the ClickHouse repository.
 
 <Note>
-To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](/reference/settings/session-settings#prefer_column_name_to_alias).
+To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](/reference/settings/session-settings/prefer#prefer_column_name_to_alias).
 This can't be turned off and it can lead in rare edge cases to different behavior between queries sent to ClickHouse's normal and MySQL query interfaces.
 </Note>
 
@@ -105,7 +105,7 @@ In this case, ensure that the username follows the `mysql4<subdomain>_<username>
 
 ## Enabling the MySQL interface on self-managed ClickHouse {#enabling-the-mysql-interface-on-self-managed-clickhouse}
 
-Add the [mysql_port](/reference/settings/server-settings/settings#mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](/concepts/features/configuration/server-config/configuration-files):
+Add the [mysql_port](/reference/settings/server-settings/settings/mysql#mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](/concepts/features/configuration/server-config/configuration-files):
 
 ```xml
 <clickhouse>

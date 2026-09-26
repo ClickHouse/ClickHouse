@@ -81,23 +81,17 @@ Puede establecer un rol predeterminado para usuarios nuevos en [Políticas de se
 </div>
 
 <Steps>
-  <Step>
-    ### Ve a configuración del equipo
-
+  <Step title="Ve a configuración del equipo" id="step-navigate">
     Abre **configuración del equipo** y desplázate hasta **RBAC Roles**.
 
     <Image img="/images/clickstack/rbac/rbac-section.webp" alt="Roles de RBAC" size="lg" />
   </Step>
 
-  <Step>
-    ### Añade un rol nuevo
-
+  <Step title="Añade un rol nuevo" id="step-add-role">
     Haz clic en **+ Add Role**. Introduce un **Role Name** y, opcionalmente, añade una **Description**.
   </Step>
 
-  <Step>
-    ### Configura los permisos y guarda
-
+  <Step title="Configura los permisos y guarda" id="step-configure">
     Establece los permisos del rol y, a continuación, haz clic en **Create Role**.
 
     <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="Modal Add Role" size="md" />
@@ -170,7 +164,7 @@ Cada regla de acceso consta de una **condición** y un **nivel de acceso**. Las 
 | Campo de condición | Operadores       | Qué coincide                                                                                                                                                                  | Ejemplo                                                                                                      |
 | ------------------ | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | **Name**           | `is`, `contains` | El nombre para mostrar del recurso; por ejemplo, el título del dashboard.                                                                                                     | Name contains `production` — coincide con cualquier dashboard que tenga &quot;production&quot; en el título. |
-| **Tag**            | `is`, `contains` | Tags asignadas al recurso mediante el panel de tags de la esquina superior derecha de la vista del recurso. Solo está disponible para Dashboards, Saved Searches y Notebooks. | Tag is `critical` — coincide con recursos etiquetados como &quot;critical&quot;.                             |
+| **Tag**            | `is`, `contains` | Tags asignadas al recurso mediante el panel de tags de la esquina superior derecha de la vista del recurso. Solo está disponible para Dashboards, búsqueda guardada y Notebooks. | Tag is `critical` — coincide con recursos etiquetados como &quot;critical&quot;.                             |
 | **ID**             | `is`, `contains` | El identificador del recurso, que aparece en la barra de URL al abrir el recurso.                                                                                             | ID is `abc123` — coincide con un único recurso específico.                                                   |
 
 La siguiente captura de pantalla muestra tanto el ID del dashboard resaltado en la barra de URL como una tag &quot;TESTING&quot; visible en el panel de tags (arriba a la derecha).
@@ -194,10 +188,10 @@ Un dashboard que coincida con cualquiera de las dos reglas será accesible.
   ## Políticas de seguridad
 </div>
 
-La sección **Políticas de seguridad** de **Configuración del equipo** ofrece controles adicionales.
+La sección **Políticas de seguridad** de **configuración del equipo** ofrece controles adicionales.
 
-**Rol predeterminado para nuevos usuarios** establece el rol que se asigna automáticamente a los nuevos usuarios que se unen al equipo.
+**Rol predeterminado para nuevo usuario** establece el rol que se asigna automáticamente a los nuevos usuarios que se unen al equipo.
 
-**IA generativa** permite habilitar o deshabilitar funciones basadas en LLM (como la generación de consultas en lenguaje natural) mediante Anthropic o Amazon Bedrock. Cuando está deshabilitada, no se envían datos a proveedores de IA.
+**IA generativa** permite habilitar o deshabilitar funciones basadas en LLM (como la generación de consultas en lenguaje natural) con tecnología de Anthropic o Amazon Bedrock. Cuando está deshabilitada, no se envían datos a proveedores de IA.
 
 <Image img="/images/clickstack/rbac/security-policies.webp" alt="Políticas de seguridad" size="lg" />

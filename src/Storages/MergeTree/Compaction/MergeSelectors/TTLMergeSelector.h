@@ -78,7 +78,7 @@ private:
     bool canConsiderPart(const PartProperties & part) const override;
 };
 
-/// Select parts that has some expired ttls.
+/// Select parts that have some expired row ttls.
 class TTLRowDeleteMergeSelector : public ITTLMergeSelector
 {
 public:
@@ -87,8 +87,26 @@ public:
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
 
-    /// Checks that part has at least one unfinished ttl. Because if all ttls
+    /// Checks that part has at least one unfinished row ttl. Because if all ttls
     /// are finished for part - it will be considered by TTLPartDropMergeSelector.
+    bool canConsiderPart(const PartProperties & part) const override;
+};
+
+/// Select parts that have some expired column ttls.
+///
+/// A column TTL can only be honoured by rewriting the part - dropping the part is not an alternative
+/// way of clearing a column - so this selector runs regardless of `ttl_only_drop_parts`, unlike
+/// `TTLRowDeleteMergeSelector`.
+class TTLColumnDeleteMergeSelector : public ITTLMergeSelector
+{
+public:
+    explicit TTLColumnDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_);
+
+private:
+    /// Returns the earliest due time among the unfinished column TTLs of the part, so that a row TTL
+    /// that expires earlier does not make the part eligible before a column TTL is actually due.
+    time_t getTTLForPart(const PartProperties & part) const override;
+
     bool canConsiderPart(const PartProperties & part) const override;
 };
 

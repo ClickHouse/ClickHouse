@@ -1,0 +1,154 @@
+-- captured String column
+['str_01','str_02','str_03']
+['str_11','str_12','str_13']
+['str_21','str_22','str_23']
+-- captured Array column (canonical shape)
+50
+-- captured Array column, value-sensitive (fast path of Replicated(Array) materialization)
+[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9]]
+[[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10]]
+[[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[11]]
+-- captured Array column, value-sensitive hash over many rows (UInt16 indexes)
+260112714912640316
+-- capture used without the lambda argument
+['0','0']
+['1','1']
+['2','2']
+-- captured Nullable column
+['01','02']
+['null1','null2']
+['21','22']
+-- captured LowCardinality column
+['lc_01','lc_02']
+['lc_11','lc_12']
+['lc_21','lc_22']
+-- captured const column
+['c11','c12']
+['c11','c12']
+-- multiple captures of different types
+[('0',[],1),('0',[],2)]
+[('1',[0],1),('1',[0],2)]
+[('2',[0,1],1),('2',[0,1],2)]
+-- multi-array lambda
+['011','022']
+['111','122']
+['211','222']
+-- arrayFilter and arrayExists with capture
+[1,2,3,4]	0
+[2,3,4]	1
+[3,4]	1
+[4]	1
+-- nested lambda capturing outer lambda argument and outer capture
+[['011','012'],['021','022']]
+[['111','112'],['121','122']]
+-- short-circuit function inside the lambda body
+['0','0!']
+['1','1!']
+['2','2!']
+-- capture produced by lazy ARRAY JOIN replication
+['s01','s02']
+['s01','s02']
+['s11','s12']
+['s11','s12']
+-- capture produced by lazy JOIN replication
+3000	15708660843997903544
+-- replication indexes of type UInt16 (more than 255 rows in a block)
+600
+-- replication indexes of type UInt32 (more than 65535 rows in a block)
+140000
+-- arrayFold with capture
+i0102
+i1112
+i2122
+-- arrayFold whose lambda returns the capture directly
+0
+1
+2
+-- arrayFold with capture produced by lazy ARRAY JOIN replication
+s0s0	s0
+s0s0	s0
+s1s1	s1
+s1s1	s1
+-- constant folding still works with all-const captures
+[2,3]
+[2,3]
+-- empty arrays and empty input
+[]
+[]
+-- captured String column
+['str_01','str_02','str_03']
+['str_11','str_12','str_13']
+['str_21','str_22','str_23']
+-- captured Array column (canonical shape)
+50
+-- captured Array column, value-sensitive (fast path of Replicated(Array) materialization)
+[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9]]
+[[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10]]
+[[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,9],[9,10],[10,11],[11]]
+-- captured Array column, value-sensitive hash over many rows (UInt16 indexes)
+260112714912640316
+-- capture used without the lambda argument
+['0','0']
+['1','1']
+['2','2']
+-- captured Nullable column
+['01','02']
+['null1','null2']
+['21','22']
+-- captured LowCardinality column
+['lc_01','lc_02']
+['lc_11','lc_12']
+['lc_21','lc_22']
+-- captured const column
+['c11','c12']
+['c11','c12']
+-- multiple captures of different types
+[('0',[],1),('0',[],2)]
+[('1',[0],1),('1',[0],2)]
+[('2',[0,1],1),('2',[0,1],2)]
+-- multi-array lambda
+['011','022']
+['111','122']
+['211','222']
+-- arrayFilter and arrayExists with capture
+[1,2,3,4]	0
+[2,3,4]	1
+[3,4]	1
+[4]	1
+-- nested lambda capturing outer lambda argument and outer capture
+[['011','012'],['021','022']]
+[['111','112'],['121','122']]
+-- short-circuit function inside the lambda body
+['0','0!']
+['1','1!']
+['2','2!']
+-- capture produced by lazy ARRAY JOIN replication
+['s01','s02']
+['s01','s02']
+['s11','s12']
+['s11','s12']
+-- capture produced by lazy JOIN replication
+3000	15708660843997903544
+-- replication indexes of type UInt16 (more than 255 rows in a block)
+600
+-- replication indexes of type UInt32 (more than 65535 rows in a block)
+140000
+-- arrayFold with capture
+i0102
+i1112
+i2122
+-- arrayFold whose lambda returns the capture directly
+0
+1
+2
+-- arrayFold with capture produced by lazy ARRAY JOIN replication
+s0s0	s0
+s0s0	s0
+s1s1	s1
+s1s1	s1
+-- constant folding still works with all-const captures
+[2,3]
+[2,3]
+-- empty arrays and empty input
+[]
+[]

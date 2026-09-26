@@ -32,8 +32,8 @@ docker pull clickhouse/clickhouse-server
   ### Compatibilidade
 </div>
 
-* A imagem amd64 requer suporte a [instruções SSE3](https://en.wikipedia.org/wiki/SSE3).
-  Praticamente todas as CPUs x86 posteriores a 2005 oferecem suporte a SSE3.
+* A imagem amd64 requer suporte ao [nível de microarquitetura x86-64-v3](https://en.wikipedia.org/wiki/X86-64#Microarchitecture_levels) (AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, XSAVE).
+  Praticamente todas as CPUs x86 posteriores a 2015 oferecem suporte a x86-64-v3.
 * A imagem arm64 requer suporte à [arquitetura ARMv8.2-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A) e,
   adicionalmente, ao registrador Load-Acquire RCpc. O registrador é opcional na versão ARMv8.2-A e obrigatório em
   [ARMv8.3-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.3-A). Há suporte em instâncias Graviton &gt;=2, Azure e GCP.
@@ -68,7 +68,7 @@ docker run -it --rm --network=container:some-clickhouse-server --entrypoint clic
 docker exec -it some-clickhouse-server clickhouse-client
 ```
 
-Consulte [ClickHouse client](/pt-BR/concepts/features/interfaces/cli) para mais informações sobre o cliente ClickHouse.
+Consulte [cliente ClickHouse](/pt-BR/concepts/features/interfaces/client) para mais informações sobre o cliente ClickHouse.
 
 <div id="connect-to-it-using-curl">
   ### Conecte-se a ele com curl
