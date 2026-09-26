@@ -304,6 +304,7 @@ ContextPtr ContextData::global_context_instance;
 ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
     extern const SettingsUInt64 ai_function_max_api_calls_per_query;
@@ -314,6 +315,7 @@ namespace Setting
     extern const SettingsMilliseconds async_insert_poll_timeout_ms;
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool cloud_mode;
     extern const SettingsString default_format;
     extern const SettingsBoolAuto force_read_through_distributed_cache;
@@ -9102,15 +9104,41 @@ QueryExecutionCountersPtr Context::getQueryExecutionCounters() const
     return query_execution_counters;
 }
 
+bool Context::isParallelReplicasEnabled() const
+{
+    const auto & settings_ref = getSettingsRef();
+    return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+        && !(settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
+             && settings_ref[Setting::automatic_parallel_replicas_mode] != 0);
+}
+
 bool Context::canUseTaskBasedParallelReplicas() const
+{
+    return canUseTaskBasedParallelReplicasForClusterEngines()
+        && getSettingsRef()[Setting::automatic_parallel_replicas_mode] == 0;
+}
+
+bool Context::canUseTaskBasedParallelReplicasForClusterEngines() const
 {
     const auto & settings_ref = getSettingsRef();
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
         && (settings_ref[Setting::max_parallel_replicas] > 1
-            || !settings_ref[Setting::parallel_replicas_prefer_local_replica])
-        && settings_ref[Setting::automatic_parallel_replicas_mode] == 0;
+            || !settings_ref[Setting::parallel_replicas_prefer_local_replica]);
+}
+
+bool Context::canReplaceClusterEngineWithClusterVariant() const
+{
+    const auto & settings_ref = getSettingsRef();
+    /// A replica matches `additional_table_filters` by the table name or alias in the query it receives, and the shipped
+    /// query renames the table expression (`__table1`), so the replica would silently read unfiltered data.
+    /// `serialize_query_plan` does not help here: cluster engines ship the query text, not the plan.
+    return !settings_ref[Setting::cluster_for_parallel_replicas].value.empty()
+        && settings_ref[Setting::parallel_replicas_for_cluster_engines]
+        && canUseTaskBasedParallelReplicasForClusterEngines()
+        && settings_ref[Setting::additional_table_filters].value.empty()
+        && !isDistributed();
 }
 
 bool Context::canUseParallelReplicasOnInitiator() const

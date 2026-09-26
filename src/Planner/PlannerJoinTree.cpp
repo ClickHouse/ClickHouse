@@ -608,7 +608,7 @@ bool applyTrivialCountIfPossible(
     if (!num_rows)
         return false;
 
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    if (query_context->isParallelReplicasEnabled() && settings[Setting::max_parallel_replicas] > 1)
     {
         /// Imagine the situation when we have a query with parallel replicas and
         /// this code executed on the remote server.
@@ -730,7 +730,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
 
     /// Disable parallel replicas: otherwise each remote shard would independently
     /// rewrite and the final result would be multiplied by the replica count.
-    if (settings[Setting::allow_experimental_parallel_reading_from_replicas] > 0 && settings[Setting::max_parallel_replicas] > 1)
+    if (query_context->isParallelReplicasEnabled() && settings[Setting::max_parallel_replicas] > 1)
     {
         if (settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE ||
             settings[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||

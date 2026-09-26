@@ -51,7 +51,9 @@ private:
 
 void DisableParallelReplicasPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    if (!context->canUseParallelReplicasOnInitiator())
+    /// Not `canUseParallelReplicasOnInitiator`: cluster engines use parallel replicas regardless of
+    /// `automatic_parallel_replicas_mode`, so the pass must not depend on it either.
+    if (!context->canUseTaskBasedParallelReplicasForClusterEngines() || context->getClientInfo().collaborate_with_initiator)
         return;
 
     DisableParallelReplicasVisitor visitor(context);
