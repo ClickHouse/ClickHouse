@@ -45,7 +45,6 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     auto & pipeline = *pipelines.front();
 
     const String bucket = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
-    bool input_is_serialized = false;
 
     /// Cannot have multiple sinks writing to the same file concurrently. Merge-sort rather than plain
     /// resize(1) when order must be preserved, since `GatherReceiveStep` merge-sorts assuming each bucket's
@@ -71,23 +70,19 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
                 /* filter_column_name */ std::nullopt,
                 /* blocks_are_granules_size */ false));
     }
-    else
+
+    /// A serializer on every stream; the sink takes packets only. After the merge above one stream is
+    /// left, and its serializer is the only one.
+    pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
     {
-        /// Serialize on every stream ahead of the merge into the single sink; otherwise the sink
-        /// would serialize everything alone. The sink is told whether it gets packets.
-        pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
-        {
-            auto transform = settings.exchange_lookup->createSerializer(header, exchange_id);
-            input_is_serialized |= transform != nullptr;
-            return transform;
-        });
-        pipeline.resize(1);
-    }
+        return settings.exchange_lookup->createSerializer(header, exchange_id);
+    });
+    pipeline.resize(1);
 
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
         chassert(stream_type == Pipe::StreamType::Main);
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"), input_is_serialized);
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"));
     });
 
     return std::move(pipelines.front());
