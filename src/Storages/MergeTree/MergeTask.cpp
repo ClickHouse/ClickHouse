@@ -381,6 +381,13 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
 }
 
+/// Whether any of `required_columns` is one of `columns` or its subcolumn (e.g. `props.a` of a `JSON` column `props`).
+static bool dependsOnAnyColumn(const Names & required_columns, const NameSet & columns)
+{
+    return std::ranges::any_of(
+        required_columns, [&](const String & name) { return Nested::tryGetColumnNameInStorage(name, columns).has_value(); });
+}
+
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const
 {
@@ -1227,14 +1234,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// The new part is left without such an index, as a part cleared by `createTaskToClearExpiredColumns`.
     if (!global_ctx->columns_fully_expired_by_ttl.empty())
     {
-        auto is_expired = [&](const String & name)
-        {
-            return Nested::tryGetColumnNameInStorage(name, global_ctx->columns_fully_expired_by_ttl).has_value();
-        };
-
         auto depends_on_expired_column = [&](const IndexDescription & index)
         {
-            return std::ranges::any_of(index.expression->getRequiredColumns(), is_expired);
+            return dependsOnAnyColumn(index.expression->getRequiredColumns(), global_ctx->columns_fully_expired_by_ttl);
         };
 
         auto & text_indexes = global_ctx->text_indexes_to_merge;
@@ -1606,11 +1608,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     for (const auto & projection : projections)
     {
-        const auto & required_columns = projection.getRequiredColumns();
-        bool some_source_column_expired = std::any_of(
-            required_columns.begin(),
-            required_columns.end(),
-            [&](const String & name) { return global_ctx->new_data_part->expired_columns.contains(name); });
+        bool some_source_column_expired = dependsOnAnyColumn(projection.getRequiredColumns(), global_ctx->new_data_part->expired_columns);
 
         /// The IGNORE mode is checked here purely for backward compatibility.
         /// However, if the projection contains `_parent_part_offset`, it must still be rebuilt,
@@ -3868,10 +3866,7 @@ MutateTaskPtr MergeTask::ExecuteAndFinalizeHorizontalPart::createTaskToClearExpi
         return nullptr;
 
     const auto & expired = global_ctx->columns_fully_expired_by_ttl;
-    auto depends_on_expired_column = [&](const Names & required_columns)
-    {
-        return std::ranges::any_of(required_columns, [&](const auto & name) { return expired.contains(name); });
-    };
+    auto depends_on_expired_column = [&](const Names & required_columns) { return dependsOnAnyColumn(required_columns, expired); };
 
     /// `CLEAR COLUMN` rebuilds everything that depends on the column from its default value, which reads the
     /// column. Only a projection needs that. A skip index is cleared instead: a part without the index is
