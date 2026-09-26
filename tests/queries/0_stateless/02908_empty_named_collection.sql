@@ -1,5 +1,0 @@
--- Tags: no-parallel
-
-CREATE NAMED COLLECTION foobar03 AS a = 1;
-ALTER NAMED COLLECTION foobar03 DELETE b; -- { serverError BAD_ARGUMENTS }
-DROP NAMED COLLECTION foobar03;

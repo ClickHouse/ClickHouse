@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -14,9 +14,6 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -36,9 +33,10 @@ namespace
 
 /// Implements the function h3ToGeo which takes a single argument (h3Index)
 /// and returns the longitude and latitude that correspond to the provided h3 index
-class FunctionH3ToGeo : public IFunction
+class FunctionH3ToGeo final : public IFunction
 {
     const bool h3togeo_lon_lat_result_order;
+    H3Validator validator;
 public:
     static constexpr auto name = "h3ToGeo";
 
@@ -46,6 +44,7 @@ public:
 
     explicit FunctionH3ToGeo(ContextPtr context)
         : h3togeo_lon_lat_result_order(context->getSettingsRef()[Setting::h3togeo_lon_lat_result_order])
+        , validator(context)
     {
     }
 
@@ -53,6 +52,10 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -107,10 +110,18 @@ public:
         {
             H3Index h3index = data[row];
             LatLng coord{};
+            lon_data[row] = 0;
+            lat_data[row] = 0;
 
-            cellToLatLng(h3index,&coord);
-            lon_data[row] = radsToDegs(coord.lng);
-            lat_data[row] = radsToDegs(coord.lat);
+            if (validator.validateCell(h3index))
+            {
+                H3Error err = cellToLatLng(h3index, &coord);
+                if (!err)
+                {
+                    lon_data[row] = radsToDegs(coord.lng);
+                    lat_data[row] = radsToDegs(coord.lat);
+                }
+            }
         }
 
         MutableColumns columns;
@@ -132,7 +143,37 @@ public:
 
 REGISTER_FUNCTION(H3ToGeo)
 {
-    factory.registerFunction<FunctionH3ToGeo>();
+    FunctionDocumentation::Description description = R"(
+Returns the centroid latitude and longitude corresponding to the provided [H3](https://h3geo.org/docs/core-library/h3Indexing/) index.
+
+<Note>
+In ClickHouse v24.12 or older, `h3ToGeo()` accepts arguments in the order `(lon, lat)`. As per ClickHouse v25.1, the returned values are ordered `(lat, lon)`.
+The previous behavior can be restored using setting `h3togeo_lon_lat_result_order = true`.
+</Note>
+    )";
+    FunctionDocumentation::Syntax syntax = "h3ToGeo(h3Index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"h3Index", "H3 index.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns a tuple consisting of two values `(lat, lon)` where `lat` is latitude and `lon` is longitude.",
+        {"Tuple(Float64, Float64)"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get coordinates from H3 index",
+            "SELECT h3ToGeo(644325524701193974) AS coordinates",
+            R"(
+┌─coordinates───────────────────────────┐
+│ (55.71290243145667,37.79506616830249) │
+└───────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3ToGeo>(documentation);
 }
 
 }

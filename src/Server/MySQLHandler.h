@@ -9,10 +9,10 @@
 #include <Poco/Net/TCPServerConnection.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
-#include "IO/ReadBufferFromString.h"
-#include "IServer.h"
+#include <IO/ReadBufferFromString.h>
+#include <Server/IServer.h>
 
-#include "base/types.h"
+#include <base/types.h>
 #include "config.h"
 
 #if USE_SSL
@@ -21,6 +21,7 @@
 #endif
 
 #include <memory>
+#include <mutex>
 
 namespace CurrentMetrics
 {
@@ -44,7 +45,9 @@ public:
         TCPServer & tcp_server_,
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
+        bool secure_required,
         uint32_t connection_id_,
+        std::optional<String> default_session_user_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -86,7 +89,11 @@ protected:
     IServer & server;
     TCPServer & tcp_server;
     LoggerPtr log;
+    bool secure_required = false;
     uint32_t connection_id = 0;
+
+    /// If set, overrides the `default_session_user` server setting for this listener.
+    std::optional<String> default_session_user;
 
     uint32_t server_capabilities = 0;
     uint32_t client_capabilities = 0;
@@ -126,7 +133,9 @@ public:
         TCPServer & tcp_server_,
         const Poco::Net::StreamSocket & socket_,
         bool ssl_enabled,
+        bool secure_required_,
         uint32_t connection_id_,
+        std::optional<String> default_session_user_,
         KeyPair & private_key_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());

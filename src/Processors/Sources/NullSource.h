@@ -5,10 +5,10 @@
 namespace DB
 {
 
-class NullSource : public ISource
+class NullSource final : public ISource
 {
 public:
-    explicit NullSource(Block header) : ISource(std::move(header)) {}
+    explicit NullSource(SharedHeader header) : ISource(std::move(header)) {}
     String getName() const override { return "NullSource"; }
 
 protected:

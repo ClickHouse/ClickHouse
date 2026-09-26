@@ -11,17 +11,19 @@ namespace DB
 
 class Block;
 
-class TTLTransform : public IAccumulatingTransform
+class TTLTransform final : public IAccumulatingTransform
 {
 public:
     TTLTransform(
         const ContextPtr & context,
-        const Block & header_,
+        SharedHeader header_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,
+        const NamesAndTypesList & expired_columns_,
         time_t current_time,
-        bool force_
+        bool force_,
+        bool ttl_delete_applied_by_merge_ = false
     );
 
     String getName() const override { return "TTL"; }
@@ -29,6 +31,8 @@ public:
     Status prepare() override;
 
     PreparedSets::Subqueries getSubqueries() { return std::move(subqueries_for_sets); }
+
+    static SharedHeader addExpiredColumnsToBlock(const SharedHeader & header, const NamesAndTypesList & expired_columns_);
 
 protected:
     void consume(Chunk chunk) override;
@@ -41,11 +45,23 @@ private:
     std::vector<TTLAlgorithmPtr> algorithms;
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
+    /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
+    const bool ttl_delete_applied_by_merge = false;
 
     PreparedSets::Subqueries subqueries_for_sets;
 
     /// ttl_infos and empty_columns are updating while reading
     const MergeTreeData::MutableDataPartPtr & data_part;
+
+    NamesAndTypesList expired_columns;
+
+    struct ExpiredColumnData
+    {
+        DataTypePtr type;
+        ExpressionActionsPtr default_expression;
+        String default_column_name;
+    };
+    std::unordered_map<String, ExpiredColumnData> expired_columns_data;
     LoggerPtr log;
 };
 

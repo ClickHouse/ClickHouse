@@ -20,7 +20,7 @@ ${CLICKHOUSE_CLIENT} --user ${MISTER_USER} --function_sleep_max_microseconds_per
 yes 'SELECT 1' 2>/dev/null | {
     head -n1000
 } | {
-    xargs -I{} ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${MISTER_USER}&wait_end_of_query=1&max_memory_usage_for_user=$((1<<30))" -d '{}'
+    xargs -I{} ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&user=${MISTER_USER}&http_wait_end_of_query=1&max_memory_usage_for_user=$((1<<30))" -d '{}'
 } | grep -x -c 1
 
 wait

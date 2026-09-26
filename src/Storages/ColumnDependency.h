@@ -37,7 +37,7 @@ struct ColumnDependency
 
     bool isReadOnly() const
     {
-        return kind == SKIP_INDEX || kind == PROJECTION || kind == TTL_EXPRESSION;
+        return kind == SKIP_INDEX || kind == PROJECTION || kind == TTL_EXPRESSION || kind == STATISTICS;
     }
 
     bool operator==(const ColumnDependency & other) const

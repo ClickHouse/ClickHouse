@@ -4,12 +4,9 @@
 #include <string_view>
 #include <algorithm>
 
-#include <cassert>
 #include <cstring>
 #include <unistd.h>
 #include <poll.h>
-#include <sys/time.h>
-#include <sys/types.h>
 
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
@@ -59,14 +56,13 @@ namespace DB
 /// Allows delaying the start of query execution until the entirety of query is inserted.
 bool LineReader::hasInputData() const
 {
-    timeval timeout = {0, 0};
-    fd_set fds{};
-    FD_ZERO(&fds);
-    FD_SET(in_fd, &fds);
-    return select(1, &fds, nullptr, nullptr, &timeout) == 1;
+    pollfd pfd{.fd = in_fd, .events = POLLIN, .revents = 0};
+    return poll(&pfd, 1, 0) == 1 && (pfd.revents & POLLIN);
 }
 
-replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length, const char * word_break_characters)
+LineReader::Suggest::Words LineReader::Suggest::getMatchingWords(
+    const String & prefix, size_t prefix_length, const char * word_break_characters,
+    const Words & priority_words, bool & last_word_empty)
 {
     std::string_view last_word;
 
@@ -75,27 +71,33 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
         last_word = prefix;
     else
         last_word = std::string_view{prefix}.substr(last_word_pos + 1, std::string::npos);
-    /// last_word can be empty.
+
+    last_word_empty = last_word.empty();
 
     std::pair<Words::const_iterator, Words::const_iterator> range;
 
-    std::lock_guard lock(mutex);
-
     Words to_search;
+    Words recent;
     bool no_case = false;
-    /// Only perform case sensitive completion when the prefix string contains any uppercase characters
-    if (std::none_of(prefix.begin(), prefix.end(), [](char32_t x) { return iswupper(static_cast<wint_t>(x)); }))
+
     {
-        to_search = words_no_case;
-        no_case = true;
+        std::lock_guard lock(mutex);
+        /// Only perform case sensitive completion when the prefix string contains any uppercase characters
+        if (std::none_of(prefix.begin(), prefix.end(), [](char32_t x) { return iswupper(static_cast<wint_t>(x)); }))
+        {
+            to_search = words_no_case;
+            no_case = true;
+        }
+        else
+            to_search = words;
+
+        recent.assign(recently_used.begin(), recently_used.end());
     }
-    else
-        to_search = words;
 
     if (custom_completions_callback)
     {
         auto new_words = custom_completions_callback(prefix, prefix_length);
-        assert(std::is_sorted(new_words.begin(), new_words.end()));
+        chassert(std::is_sorted(new_words.begin(), new_words.end()));
         addNewWords(to_search, new_words, std::less<std::string>{});
     }
 
@@ -103,16 +105,121 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
         range = std::equal_range(
             to_search.begin(), to_search.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
-                return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0; /// NOLINT(bugprone-suspicious-stringview-data-usage)
             });
     else
         range = std::equal_range(
             to_search.begin(), to_search.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
-                return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;  /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0; /// NOLINT(bugprone-suspicious-stringview-data-usage)
             });
 
-    return replxx::Replxx::completions_t(range.first, range.second);
+    Words result(range.first, range.second);
+
+    /// When matching case-insensitively, membership and deduplication are compared
+    /// case-insensitively too (consistent with the prefix matching above).
+    auto fold = [no_case](std::string_view s)
+    {
+        std::string folded(s);
+        if (no_case)
+            std::transform(folded.begin(), folded.end(), folded.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return folded;
+    };
+
+    std::unordered_set<std::string> recent_set;
+    for (const auto & w : recent)
+        recent_set.insert(fold(w));
+    std::unordered_set<std::string> priority_set;
+    for (const auto & w : priority_words)
+        priority_set.insert(fold(w));
+
+    /// Identifiers already present in the current query (aliases, column names) and identifiers
+    /// used earlier this session are eligible candidates even when they are not in the loaded
+    /// suggestion dictionary — otherwise a query-only alias such as `SELECT veryUniqueAlias AS x,
+    /// veryU` could never be hinted or completed, only re-ranked when it also exists in
+    /// `system.completions`. Add those that match the typed prefix (with the same case rules as the
+    /// dictionary lookup), skip the token currently being typed, and dedup against the dictionary
+    /// matches and each other.
+    if (!last_word_empty && (!recent_set.empty() || !priority_set.empty()))
+    {
+        auto prefix_matches = [&](const std::string & w)
+        {
+            if (w.size() < prefix_length || last_word.size() < prefix_length)
+                return false;
+            return no_case
+                ? strncasecmp(w.data(), last_word.data(), prefix_length) == 0 /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                : strncmp(w.data(), last_word.data(), prefix_length) == 0; /// NOLINT(bugprone-suspicious-stringview-data-usage)
+        };
+
+        std::unordered_set<std::string> present;
+        present.reserve(result.size());
+        for (const auto & w : result)
+            present.insert(fold(w));
+
+        const std::string typed = fold(last_word);
+        auto add_candidates = [&](const Words & extra)
+        {
+            for (const auto & w : extra)
+            {
+                if (!prefix_matches(w))
+                    continue;
+                std::string folded = fold(w);
+                if (folded == typed)
+                    continue; /// the word being typed completes to itself - nothing to offer
+                if (present.insert(folded).second)
+                    result.push_back(w);
+            }
+        };
+        /// Query-local identifiers first, then session-recent ones (their tiers are applied below).
+        add_candidates(priority_words);
+        add_candidates(recent);
+    }
+
+    /// Prioritize words that the user has used or already typed.
+    if (!result.empty() && (!recent_set.empty() || !priority_set.empty()))
+    {
+        /// Tier 0: used earlier this session; tier 1: present in the current input; tier 2: rest.
+        /// Compute the tier once per word, then a stable sort preserves the alphabetical order
+        /// within each tier.
+        std::vector<std::pair<int, std::string>> ranked;
+        ranked.reserve(result.size());
+        for (auto & w : result)
+        {
+            std::string folded = fold(w);
+            int tier = 2;
+            if (recent_set.contains(folded))
+                tier = 0;
+            else if (priority_set.contains(folded))
+                tier = 1;
+            ranked.emplace_back(tier, std::move(w));
+        }
+        std::stable_sort(ranked.begin(), ranked.end(),
+            [](const auto & a, const auto & b) { return a.first < b.first; });
+
+        result.clear();
+        for (auto & p : ranked)
+            result.push_back(std::move(p.second));
+    }
+
+    return result;
+}
+
+replxx::Replxx::completions_t LineReader::Suggest::getCompletions(
+    const String & prefix, size_t prefix_length, const char * word_break_characters, const Words & priority_words)
+{
+    bool last_word_empty = false;
+    Words matched = getMatchingWords(prefix, prefix_length, word_break_characters, priority_words, last_word_empty);
+    return replxx::Replxx::completions_t(matched.begin(), matched.end());
+}
+
+void LineReader::Suggest::addUsedWords(const Words & used)
+{
+    if (used.empty())
+        return;
+    std::lock_guard lock(mutex);
+    for (const auto & word : used)
+        recently_used.insert(word);
 }
 
 void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelines-rvalue-reference-param-not-moved)
@@ -129,8 +236,8 @@ void LineReader::Suggest::addWords(Words && new_words) // NOLINT(cppcoreguidelin
         addNewWords(words, new_words, std::less<std::string>{});
         addNewWords(words_no_case, new_words_no_case, NoCaseCompare{});
 
-        assert(std::is_sorted(words.begin(), words.end()));
-        assert(std::is_sorted(words_no_case.begin(), words_no_case.end(), NoCaseCompare{}));
+        chassert(std::is_sorted(words.begin(), words.end()));
+        chassert(std::is_sorted(words_no_case.begin(), words_no_case.end(), NoCaseCompare{}));
     }
 }
 
@@ -212,7 +319,7 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
             break;
     }
 
-    if (!line.empty() && line != prev_line)
+    if (!line.empty() && line != prev_line && !line.starts_with(" "))
     {
         addToHistory(line);
         prev_line = line;

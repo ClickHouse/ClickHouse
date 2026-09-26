@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Disks/DiskLocal.h>
 #include <Common/Exception.h>
+#include <Common/filesystemHelpers.h>
 
 namespace DB
 {
@@ -11,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
 }
 
 void loadDiskLocalConfig(const String & name,
@@ -56,8 +58,27 @@ void loadDiskLocalConfig(const String & name,
             tmp_path = context->getPath();
 
         // Create tmp disk for getting total disk space.
-        keep_free_space_bytes = static_cast<UInt64>(*DiskLocal("tmp", tmp_path, 0, config, config_prefix).getTotalSpace() * ratio);
+        keep_free_space_bytes
+            = static_cast<UInt64>(static_cast<double>(*DiskLocal("tmp", tmp_path, 0, config, config_prefix).getTotalSpace()) * ratio);
     }
+}
+
+void checkCustomLocalDiskPath(const String & path, ContextPtr context)
+{
+    static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
+    auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
+
+    if (disk_path_expected_prefix.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Base path for custom local disks must be defined in config file by `{}`",
+            custom_local_disks_base_dir_in_config);
+
+    if (!pathStartsWith(path, disk_path_expected_prefix))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Path of the custom local disk must be inside `{}` directory",
+            disk_path_expected_prefix);
 }
 
 }

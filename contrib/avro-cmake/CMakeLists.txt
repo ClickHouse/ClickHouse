@@ -17,7 +17,7 @@ if (EXISTS "${AVROCPP_ROOT_DIR}/../../share/VERSION.txt")
         AVRO_VERSION)
 endif()
 
-string(REPLACE "\n" "" AVRO_VERSION  ${AVRO_VERSION})
+string(REPLACE "\n" "" AVRO_VERSION "${AVRO_VERSION}")
 set (AVRO_VERSION_MAJOR ${AVRO_VERSION})
 set (AVRO_VERSION_MINOR "0")
 

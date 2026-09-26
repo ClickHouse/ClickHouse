@@ -5,7 +5,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <Loggers/Loggers.h>
 #include <Disks/IDisk.h>
 
 #include <Interpreters/Context_fwd.h>

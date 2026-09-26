@@ -18,6 +18,7 @@ BlockIO InterpreterCheckGrantQuery::execute()
 
     /// Collect access rights elements which will be checked.
     AccessRightsElements & elements_to_check_grant = query.access_rights_elements;
+    elements_to_check_grant.throwIfFilterIsNotCompilable();
     String current_database = getContext()->getCurrentDatabase();
     elements_to_check_grant.replaceEmptyDatabase(current_database);
 
@@ -26,11 +27,12 @@ BlockIO InterpreterCheckGrantQuery::execute()
 
     BlockIO res;
     res.pipeline = QueryPipeline(
-        std::make_shared<SourceFromSingleChunk>(Block{{ColumnUInt8::create(1, is_granted), std::make_shared<DataTypeUInt8>(), "result"}}));
+        std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{ColumnUInt8::create(1, is_granted), std::make_shared<DataTypeUInt8>(), "result"}})));
 
     return res;
 }
 
+void registerInterpreterCheckGrantQuery(InterpreterFactory & factory);
 void registerInterpreterCheckGrantQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

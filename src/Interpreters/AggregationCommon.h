@@ -1,9 +1,10 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Core/Defines.h>
-#include <base/StringRef.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/KeysNullMap.h>
 
@@ -69,7 +70,7 @@ void fillFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
             /// It should be ok as long as we do not refer to any value from `out` before filling.
             const char * source = static_cast<const ColumnFixedSizeHelper *>(column)->getRawDataBegin<sizeof(T)>();
             T * dest = reinterpret_cast<T *>(reinterpret_cast<char *>(out.data()) + offset);
-            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest); /// NOLINT(bugprone-sizeof-expression)
+            fillFixedBatch<T, sizeof(Key) / sizeof(T)>(num_rows, reinterpret_cast<const T *>(source), dest);
             offset += sizeof(T);
         }
     }
@@ -86,6 +87,60 @@ void packFixedBatch(size_t keys_size, const ColumnRawPtrs & key_columns, const S
     fillFixedBatch<UInt32>(keys_size, key_columns, key_sizes, out, offset);
     fillFixedBatch<UInt16>(keys_size, key_columns, key_sizes, out, offset);
     fillFixedBatch<UInt8>(keys_size, key_columns, key_sizes, out, offset);
+}
+
+/// The inverse of the fixed-size key packing above: writes the values of the key columns (and their
+/// null map, if any of the keys is nullable) from the packed key back into the columns.
+template <bool has_nullable_keys, typename Key>
+void unpackFixedKeyIntoColumns(const Key & key, const std::vector<size_t> * unpack_order, std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
+{
+    static constexpr auto bitmap_size = has_nullable_keys ? std::tuple_size_v<KeysNullMap<Key>> : 0;
+
+    /// In any hash key value, column values to be read start just after the bitmap, if it exists.
+    size_t pos = bitmap_size;
+
+    for (size_t j = 0; j < key_columns.size(); ++j)
+    {
+        const size_t i = unpack_order ? (*unpack_order)[j] : j;
+
+        IColumn * observed_column = key_columns[i];
+        ColumnUInt8 * null_map = nullptr;
+
+        bool column_nullable = false;
+        if constexpr (has_nullable_keys)
+            column_nullable = isColumnNullable(*key_columns[i]);
+
+        /// If we have a nullable column, get its nested column and its null map.
+        if (column_nullable)
+        {
+            auto & nullable_col = assert_cast<ColumnNullable &>(*key_columns[i]);
+            observed_column = &nullable_col.getNestedColumn();
+            null_map = assert_cast<ColumnUInt8 *>(&nullable_col.getNullMapColumn());
+        }
+
+        bool is_null = false;
+        if (column_nullable)
+        {
+            /// The current column is nullable. Check if the value of the
+            /// corresponding key is nullable. Update the null map accordingly.
+            size_t bucket = i / 8;
+            size_t offset = i % 8;
+            UInt8 val = (reinterpret_cast<const UInt8 *>(&key)[bucket] >> offset) & 1;
+            null_map->insertValue(val);
+            is_null = val == 1;
+        }
+
+        if (has_nullable_keys && is_null)
+        {
+            observed_column->insertDefault();
+        }
+        else
+        {
+            size_t size = key_sizes[i];
+            observed_column->insertData(reinterpret_cast<const char *>(&key) + pos, size);
+            pos += size;
+        }
+    }
 }
 
 /// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
@@ -171,7 +226,7 @@ static inline T ALWAYS_INLINE packFixed(
 
     size_t offset = 0;
 
-    static constexpr auto bitmap_size = std::tuple_size<KeysNullMap<T>>::value;
+    static constexpr auto bitmap_size = std::tuple_size_v<KeysNullMap<T>>;
     static constexpr bool has_bitmap = bitmap_size > 0;
 
     if constexpr (has_bitmap)
@@ -182,7 +237,7 @@ static inline T ALWAYS_INLINE packFixed(
 
     for (size_t j = 0; j < keys_size; ++j)
     {
-        bool is_null;
+        bool is_null = false;
 
         if (!has_bitmap)
             is_null = false;
@@ -225,14 +280,14 @@ static inline T ALWAYS_INLINE packFixed(
 
 /** Serialize keys into a continuous chunk of memory.
   */
-static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous( /// NOLINT
-    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, Arena & pool)
+static inline std::string_view ALWAYS_INLINE serializeKeysToPoolContiguous( /// NOLINT
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, Arena & pool, const IColumn::SerializationSettings * settings)
 {
     const char * begin = nullptr;
 
     size_t sum_size = 0;
     for (size_t j = 0; j < keys_size; ++j)
-        sum_size += key_columns[j]->serializeValueIntoArena(i, pool, begin).size;
+        sum_size += key_columns[j]->serializeValueIntoArena(i, pool, begin, settings).size();
 
     return {begin, sum_size};
 }
@@ -250,7 +305,7 @@ static T inline packFixedShuffle(
     size_t idx,
     const uint8_t * __restrict masks)
 {
-    assert(num_srcs > 0);
+    chassert(num_srcs > 0);
 
     __m128i res = _mm_shuffle_epi8(
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(srcs[0] + elem_sizes[0] * idx)),
@@ -264,7 +319,7 @@ static T inline packFixedShuffle(
                 _mm_loadu_si128(reinterpret_cast<const __m128i *>(&masks[i * sizeof(T)]))));
     }
 
-    T out;
+    T out{};
     __builtin_memcpy(&out, &res, sizeof(T));
     return out;
 }

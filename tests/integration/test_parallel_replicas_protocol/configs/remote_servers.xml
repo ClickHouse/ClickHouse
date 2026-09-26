@@ -17,5 +17,19 @@
                 </replica>
             </shard>
         </parallel_replicas>
+        <test_cluster_two_shards>
+            <shard>
+                <replica>
+                    <host>node0</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_two_shards>
     </remote_servers>
 </clickhouse>

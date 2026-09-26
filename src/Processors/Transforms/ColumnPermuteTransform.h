@@ -8,10 +8,10 @@
 namespace DB
 {
 
-class ColumnPermuteTransform : public ISimpleTransform
+class ColumnPermuteTransform final : public ISimpleTransform
 {
 public:
-    ColumnPermuteTransform(const Block & header_, const std::vector<size_t> & permutation_);
+    ColumnPermuteTransform(SharedHeader header_, const std::vector<size_t> & permutation_);
 
     String getName() const override { return "ColumnPermuteTransform"; }
 

@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -11,9 +11,6 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <h3api.h>
-
-
 namespace DB
 {
 namespace ErrorCodes
@@ -23,15 +20,23 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionH3ToGeoBoundary : public IFunction
+class FunctionH3ToGeoBoundary final : public IFunction
 {
 public:
     static constexpr auto name = "h3ToGeoBoundary";
     String getName() const override { return name; }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToGeoBoundary>(); }
+    H3Validator validator;
+
+    explicit FunctionH3ToGeoBoundary(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToGeoBoundary>(context); }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -78,6 +83,12 @@ public:
             H3Index h3index = data[row];
             CellBoundary boundary{};
 
+            if (!validator.validateCell(h3index))
+            {
+                offsets->insert(current_offset);
+                continue;
+            }
+
             auto err = cellToBoundary(h3index, &boundary);
             if (err)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", h3index, err);
@@ -100,7 +111,32 @@ public:
 
 REGISTER_FUNCTION(H3ToGeoBoundary)
 {
-    factory.registerFunction<FunctionH3ToGeoBoundary>();
+    FunctionDocumentation::Description description = R"(
+Returns array of pairs `(lat, lon)`, which corresponds to the boundary of the provided H3 index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3ToGeoBoundary(h3Index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"h3Index", "H3 index.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns an array of coordinate pairs `(lat, lon)` that define the boundary of the H3 hexagon.",
+        {"Array(Tuple(Float64, Float64))"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get boundary coordinates for an H3 index",
+            "SELECT h3ToGeoBoundary(644325524701193974) AS coordinates",
+            R"(
+┌─coordinates─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(55.71290022535552,37.79505811173474),(55.71289713485417,37.795065069971834),(55.712899340954834,37.79507312653982),(55.71290463755744,37.79507422487166),(55.71290772805917,37.79506726663345),(55.7129055219579,37.795059210064515)] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 11};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3ToGeoBoundary>(documentation);
 }
 
 }

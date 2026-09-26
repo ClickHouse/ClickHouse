@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnUniqueCompressed.h>
 #include <Common/Arena.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <string>
 #include <vector>
@@ -264,13 +265,13 @@ TEST(ColumnUniqueCompressed, SerializationFCBlockDF)
     const char * pos = nullptr;
     for (size_t i = 0; i < column_unique_compressed->size(); ++i)
     {
-        const auto data = column_unique_compressed->serializeValueIntoArena(i, arena, pos);
-        const size_t string_size = unalignedLoad<size_t>(data.data);
-        const StringRef value(data.data + sizeof(size_t), string_size);
+        const auto data = column_unique_compressed->serializeValueIntoArena(i, arena, pos, /*settings=*/ nullptr);
+        const size_t string_size = unalignedLoad<size_t>(data.data());
+        const std::string_view value(data.data() + sizeof(size_t), string_size);
 
         const auto real_value = (*column_unique_compressed)[i].safeGet<String>();
-        EXPECT_EQ(string_size, real_value.size() + 1);
-        EXPECT_EQ(value, real_value + '\0');
+        EXPECT_EQ(string_size, real_value.size());
+        EXPECT_EQ(value, real_value);
     }
 }
 
@@ -284,9 +285,9 @@ TEST(ColumnUniqueCompressed, DeserializationFCBlockDF)
     const char * pos = nullptr;
     for (size_t i = 0; i < column_unique_compressed->size(); ++i)
     {
-        const StringRef data = column_unique_compressed->serializeValueIntoArena(i, arena, pos);
-        const char * new_pos = nullptr;
-        const size_t index = other_column_ptr->uniqueDeserializeAndInsertFromArena(data.data, new_pos);
+        const std::string_view data = column_unique_compressed->serializeValueIntoArena(i, arena, pos, /*settings=*/ nullptr);
+        ReadBufferFromMemory in(data.data(), data.size());
+        const size_t index = other_column_ptr->uniqueDeserializeAndInsertFromArena(in, /*settings=*/ nullptr);
         EXPECT_EQ((*other_column)[index].safeGet<String>(), (*column_unique_compressed)[i].safeGet<String>());
     }
 }

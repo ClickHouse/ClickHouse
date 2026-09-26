@@ -34,7 +34,7 @@ echo """
     SELECT dictGet(02154_test_dictionary, 'value', toUInt64(0)), dictGet(02154_test_dictionary, 'value', toUInt64(1))
     SETTINGS enable_analyzer = 1
     FORMAT JSON
-""" | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}&wait_end_of_query=1&output_format_write_statistics=0" -d @-
+""" | ${CLICKHOUSE_CURL} -sSg "${CLICKHOUSE_URL}&http_wait_end_of_query=1&output_format_write_statistics=0" -d @-
 
 $CLICKHOUSE_CLIENT -q "DROP DICTIONARY 02154_test_dictionary"
 $CLICKHOUSE_CLIENT -q "DROP TABLE 02154_test_source_table"

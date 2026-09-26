@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
 #include <Common/BitHelpers.h>
@@ -19,7 +18,7 @@ extern const int ILLEGAL_COLUMN;
 }
 
 template <typename Impl, typename Name>
-class FunctionStringBytes : public IFunction
+class FunctionStringBytes final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -70,7 +69,7 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             const UInt8 * data_ptr = data.data() + prev_offset;
-            const size_t size = offsets[i] - prev_offset - 1;
+            const size_t size = offsets[i] - prev_offset;
 
             vec_res[i] = Impl::process(data_ptr, size);
             prev_offset = offsets[i];

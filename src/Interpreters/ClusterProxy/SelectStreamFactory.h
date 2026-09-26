@@ -6,6 +6,7 @@
 #include <Interpreters/Cluster.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
+#include <QueryPipeline/UnavailableShardTracker.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageSnapshot.h>
 
@@ -15,7 +16,6 @@ namespace DB
 
 struct Settings;
 class Cluster;
-class Throttler;
 struct SelectQueryInfo;
 
 class Pipe;
@@ -37,13 +37,6 @@ namespace ClusterProxy
 
 /// select query has database, table and table function names as AST pointers
 /// Creates a copy of query, changes database, table and table function names.
-ASTPtr rewriteSelectQuery(
-    ContextPtr context,
-    const ASTPtr & query,
-    const std::string & remote_database,
-    const std::string & remote_table,
-    ASTPtr table_function_ptr = nullptr);
-
 using ColumnsDescriptionByShardNum = std::unordered_map<UInt32, ColumnsDescription>;
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
 
@@ -62,9 +55,7 @@ public:
 
         /// Used to check the table existence on remote node
         StorageID main_table;
-        Block header;
-
-        bool has_missing_objects = false;
+        SharedHeader header;
 
         Cluster::ShardInfo shard_info;
 
@@ -77,8 +68,7 @@ public:
     using Shards = std::vector<Shard>;
 
     SelectStreamFactory(
-        const Block & header_,
-        const ColumnsDescriptionByShardNum & objects_by_shard_,
+        SharedHeader header_,
         const StorageSnapshotPtr & storage_snapshot_,
         QueryProcessingStage::Enum processed_stage_);
 
@@ -92,7 +82,8 @@ public:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
-        AdditionalShardFilterGenerator shard_filter_generator);
+        AdditionalShardFilterGenerator shard_filter_generator,
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
@@ -104,10 +95,10 @@ public:
         Shards & remote_shards,
         UInt32 shard_count,
         bool parallel_replicas_enabled,
-        AdditionalShardFilterGenerator shard_filter_generator);
+        AdditionalShardFilterGenerator shard_filter_generator,
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker);
 
-    const Block header;
-    const ColumnsDescriptionByShardNum objects_by_shard;
+    SharedHeader header;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
 
@@ -124,7 +115,7 @@ private:
         UInt32 shard_count,
         bool parallel_replicas_enabled,
         AdditionalShardFilterGenerator shard_filter_generator,
-        bool has_missing_objects = false);
+        const UnavailableShardTrackerPtr & unavailable_shard_tracker) const;
 };
 
 }

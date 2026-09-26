@@ -9,9 +9,9 @@ views:                ['default.matview_a_to_b','default.matview_b_to_c']
 sleep_calls:          200
 sleep_us:             300
 profile_select_rows:  300
-profile_select_bytes: 3600
+profile_select_bytes: 3500
 profile_insert_rows:  201
-profile_insert_bytes: 3608
+profile_insert_bytes: 3508
 Row 1:
 ──────
 stage:                Depending views
@@ -25,7 +25,7 @@ written_rows:         100
 sleep_calls:          100
 sleep_us:             100
 profile_select_rows:  100
-profile_select_bytes: 2000
+profile_select_bytes: 1900
 profile_insert_rows:  100
 profile_insert_bytes: 1600
 
@@ -66,7 +66,7 @@ view_name:            default.matview_join_d_e
 view_type:            Materialized
 status:               QueryFinish
 view_target:          default.table_f
-view_query:           SELECT table_d.a AS a, table_e.count + sleepEachRow(0.000003) AS count FROM default.table_d LEFT JOIN default.table_e ON table_d.a = table_e.a
+view_query:           SELECT table_d.a AS a, table_e.count + sleepEachRow(0.000003) AS count FROM default.table_d LEFT JOIN default.table_e ON table_d.a = table_e.a SETTINGS query_plan_optimize_join_order_randomize = 0
 read_rows:            50
 written_rows:         50
 sleep_calls:          50

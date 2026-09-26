@@ -17,6 +17,7 @@ SELECT sparseGramsUTF8('');
 SELECT sparseGramsUTF8('a😊Ω𐍈界𝄞bЦ⛄');
 SELECT sparseGramsUTF8('AΩЖ中😊🚀𝄞✨🎵🦄💡❄️', 4);
 SELECT sparseGramsUTF8(concat('a😊Ω𐍈', number, '🦄𝄞bЦ⛄', 4)) FROM numbers(3);
+SELECT sparseGramsUTF8('Ω', 5);
 
 SELECT '--- Regular hashes';
 SELECT sparseGramsHashes('');
@@ -43,3 +44,6 @@ SELECT sparseGrams('hello world hello world', 3, 4);
 SELECT sparseGramsHashes('hello world hello world', 3, 4);
 SELECT sparseGramsUTF8('a😊Ω𐍈界𝄞bЦ⛄', 3, 4);
 SELECT sparseGramsHashesUTF8('a😊Ω𐍈界𝄞bЦ⛄', 3, 4);
+
+SELECT '--- Maximal ngram length with cutoff';
+SELECT sparseGrams('hello world hello world', 3, 4, 4);

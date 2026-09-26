@@ -7,15 +7,17 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnIndex.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <DataTypes/EnumValues.h>
 
-#include "IArraySource.h"
-#include "IValueSource.h"
-#include "Slices.h"
+#include <Functions/GatherUtils/IArraySource.h>
+#include <Functions/GatherUtils/IValueSource.h>
+#include <Functions/GatherUtils/Slices.h>
 #include <Functions/FunctionHelpers.h>
 
 
@@ -237,6 +239,99 @@ struct ConstSource : public Base
 
 #pragma clang diagnostic pop
 
+
+/// ReplicatedSource<Base> makes the pair (nested array column, replication indexes) look like a flat source of logical rows.
+/// Base is an array source: NumericArraySource, GenericArraySource, or NullableArraySource
+///
+/// nested_row: the unreplicated data, a block of 3 array have 3 nested_rows (0, 1, 2)
+/// logical_row: a row_index into the column as consumers see it:
+///
+/// i.e.
+///     nested column (3 rows):     A      B  C
+///     replication_indexes:        [0, 0, 1, 2, 2, 2]
+///     logical view (6 rows):      A  A  B  C  C  C
+template <typename Base>
+struct ReplicatedSource : public Base
+{
+    using Slice = typename Base::Slice;
+    using SinkType = typename Base::SinkType;
+    using Base::row_num;
+    using Base::prev_offset;
+    using Base::offsets;
+
+    const ColumnIndex & replication_indexes;
+    size_t total_rows;
+    size_t logical_row = 0;
+
+    template <typename ColumnType>
+    ReplicatedSource(const ColumnType & col_, const ColumnIndex & replication_indexes_)
+        : Base(col_)
+        , replication_indexes(replication_indexes_)
+        , total_rows(replication_indexes_.size())
+    {
+        positionAtCurrentRow();
+    }
+
+    template <typename ColumnType>
+    ReplicatedSource(const ColumnType & col_, const NullMap & null_map_, const ColumnIndex & replication_indexes_)
+        : Base(col_, null_map_)
+        , replication_indexes(replication_indexes_)
+        , total_rows(replication_indexes_.size())
+    {
+        positionAtCurrentRow();
+    }
+
+    void accept(ArraySourceVisitor & visitor) override
+    {
+        visitor.visit(*this);
+    }
+
+    void next()
+    {
+        ++logical_row;
+        positionAtCurrentRow();
+    }
+
+    bool isEnd() const
+    {
+        return logical_row == total_rows;
+    }
+
+    size_t rowNum() const
+    {
+        return logical_row;
+    }
+
+    size_t getSizeForReserve() const override
+    {
+        /// A proportional estimate: the exact size would need an extra pass over the indexes.
+        size_t nested_rows = offsets.size();
+        return nested_rows == 0 ? 0 : Base::getSizeForReserve() / nested_rows * total_rows;
+    }
+
+    size_t getColumnSize() const override
+    {
+        return total_rows;
+    }
+
+    bool isReplicated() const override
+    {
+        return true;
+    }
+
+private:
+    /// Point the base source at the nested row of the current logical row.
+    void positionAtCurrentRow()
+    {
+        if (logical_row == total_rows)
+            return;
+        ssize_t nested_row = replication_indexes.getIndexAt(logical_row);
+        row_num = nested_row;
+        /// `offsets[-1]` is a guaranteed zero (`PaddedPODArray` left padding), same as `ColumnArray::offsetAt`.
+        prev_offset = offsets[nested_row - 1];
+    }
+};
+
 struct StringSource
 {
     using Slice = NumericArraySlice<UInt8>;
@@ -279,7 +374,7 @@ struct StringSource
 
     size_t getElementSize() const
     {
-        return offsets[row_num] - prev_offset - 1;
+        return offsets[row_num] - prev_offset;
     }
 
     size_t getColumnSize() const
@@ -289,12 +384,12 @@ struct StringSource
 
     Slice getWhole() const
     {
-        return {&elements[prev_offset], offsets[row_num] - prev_offset - 1};
+        return {&elements[prev_offset], offsets[row_num] - prev_offset};
     }
 
     Slice getSliceFromLeft(size_t offset) const
     {
-        size_t elem_size = offsets[row_num] - prev_offset - 1;
+        size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
             return {&elements[prev_offset], 0};
         return {&elements[prev_offset + offset], elem_size - offset};
@@ -302,7 +397,7 @@ struct StringSource
 
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
-        size_t elem_size = offsets[row_num] - prev_offset - 1;
+        size_t elem_size = offsets[row_num] - prev_offset;
         if (offset >= elem_size)
             return {&elements[prev_offset], 0};
         return {&elements[prev_offset + offset], std::min(length, elem_size - offset)};
@@ -310,7 +405,7 @@ struct StringSource
 
     Slice getSliceFromRight(size_t offset) const
     {
-        size_t elem_size = offsets[row_num] - prev_offset - 1;
+        size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
             return {&elements[prev_offset], elem_size};
         return {&elements[prev_offset + elem_size - offset], offset};
@@ -318,7 +413,7 @@ struct StringSource
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
-        size_t elem_size = offsets[row_num] - prev_offset - 1;
+        size_t elem_size = offsets[row_num] - prev_offset;
         if (offset > elem_size)
             return {&elements[prev_offset], length + elem_size > offset ? std::min(elem_size, length + elem_size - offset) : 0};
         return {&elements[prev_offset + elem_size - offset], std::min(length, offset)};
@@ -369,7 +464,7 @@ struct EnumSource
 
     size_t getElementSize() const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         return name.size();
     }
 
@@ -380,13 +475,13 @@ struct EnumSource
 
     Slice getWhole() const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         return {reinterpret_cast<const UInt8 *>(name.data()), name.size()};
     }
 
     Slice getSliceFromLeft(size_t offset) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset >= name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), 0};
         return {reinterpret_cast<const UInt8 *>(name.data()) + offset, name.size() - offset};
@@ -394,7 +489,7 @@ struct EnumSource
 
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset >= name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), 0};
         return {reinterpret_cast<const UInt8 *>(name.data()) + offset, std::min(length, name.size() - offset)};
@@ -402,7 +497,7 @@ struct EnumSource
 
     Slice getSliceFromRight(size_t offset) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset > name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), name.size()};
         return {reinterpret_cast<const UInt8 *>(name.data()) + name.size() - offset, offset};
@@ -410,7 +505,7 @@ struct EnumSource
 
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
-        std::string_view name = data_type.getNameForValue(data[row_num]).toView();
+        std::string_view name = data_type.getNameForValue(data[row_num]);
         if (offset > name.size())
             return {reinterpret_cast<const UInt8 *>(name.data()), length + name.size() > offset ? std::min(name.size(), length + name.size() - offset) : 0};
         return {reinterpret_cast<const UInt8 *>(name.data()) + name.size() - offset, std::min(length, offset)};
@@ -419,15 +514,6 @@ struct EnumSource
 
 
 /// Differs to StringSource by having 'offset' and 'length' in code points instead of bytes in getSlice* methods.
-/** NOTE: The behaviour of substring and substringUTF8 is inconsistent when negative offset is greater than string size:
-  * substring:
-  *      hello
-  * ^-----^ - offset -10, length 7, result: "he"
-  * substringUTF8:
-  *      hello
-  *      ^-----^ - offset -10, length 7, result: "hello"
-  * This may be subject for change.
-  */
 struct UTF8StringSource : public StringSource
 {
     using StringSource::StringSource;
@@ -439,15 +525,18 @@ struct UTF8StringSource : public StringSource
         return pos;
     }
 
-    static const ColumnString::Char * skipCodePointsBackward(const ColumnString::Char * pos, size_t size, const ColumnString::Char * begin)
+    static const ColumnString::Char * skipCodePointsBackward(
+        const ColumnString::Char * pos, size_t size, const ColumnString::Char * begin, size_t * skipped = nullptr)
     {
-        for (size_t i = 0; i < size && pos > begin; ++i)
+        size_t i = 0;
+        for (; i < size && pos > begin; ++i)
         {
             --pos;
-            if (pos == begin)
-                break;
-            UTF8::syncBackward(pos, begin);
+            if (pos != begin)
+                UTF8::syncBackward(pos, begin);
         }
+        if (skipped)
+            *skipped = i;
         return pos;
     }
 
@@ -459,7 +548,7 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromLeft(size_t offset) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * end = elements.data() + offsets[row_num];
         const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
@@ -471,7 +560,7 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromLeft(size_t offset, size_t length) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * end = elements.data() + offsets[row_num];
         const auto * res_begin = skipCodePointsForward(begin, offset, end);
 
         if (res_begin >= end)
@@ -488,7 +577,7 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromRight(size_t offset) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
+        const auto * end = elements.data() + offsets[row_num];
         const auto * res_begin = skipCodePointsBackward(end, offset, begin);
 
         return {res_begin, size_t(end - res_begin)};
@@ -497,8 +586,18 @@ struct UTF8StringSource : public StringSource
     Slice getSliceFromRight(size_t offset, size_t length) const
     {
         const auto * begin = &elements[prev_offset];
-        const auto * end = elements.data() + offsets[row_num] - 1;
-        const auto * res_begin = skipCodePointsBackward(end, offset, begin);
+        const auto * end = elements.data() + offsets[row_num];
+        size_t skipped = 0;
+        const auto * res_begin = skipCodePointsBackward(end, offset, begin, &skipped);
+
+        if (skipped < offset)
+        {
+            size_t clipped_prefix = offset - skipped;
+            if (length <= clipped_prefix)
+                return {begin, 0};
+            length -= clipped_prefix;
+        }
+
         const auto * res_end = skipCodePointsForward(res_begin, length, end);
 
         if (res_end >= end)
@@ -638,7 +737,7 @@ inline std::unique_ptr<IStringSource> createDynamicStringSource(const IColumn & 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of string column: {}", col.getName());
 }
 
-using StringSources = std::vector<std::unique_ptr<IStringSource>>;
+using StringSources = VectorWithMemoryTracking<std::unique_ptr<IStringSource>>;
 
 
 struct GenericArraySource : public ArraySourceImpl<GenericArraySource>

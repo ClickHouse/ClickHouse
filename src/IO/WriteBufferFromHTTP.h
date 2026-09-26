@@ -19,6 +19,7 @@ namespace DB
 class WriteBufferFromHTTP : public WriteBufferFromOStream
 {
     friend class BuilderWriteBufferFromHTTP;
+
     explicit WriteBufferFromHTTP(const HTTPConnectionGroupType & connection_group,
                                  const Poco::URI & uri,
                                  const std::string & method = Poco::Net::HTTPRequest::HTTP_POST, // POST or PUT only
@@ -42,8 +43,9 @@ class WriteBufferFromHTTP : public WriteBufferFromOStream
 
 class BuilderWriteBufferFromHTTP
 {
+private:
     Poco::URI uri;
-    HTTPConnectionGroupType connection_group;
+    HTTPConnectionGroupType connection_group{};
     std::string method = Poco::Net::HTTPRequest::HTTP_POST; // POST or PUT only
     bool bypass_proxy = false;
     std::string content_type;
@@ -54,7 +56,8 @@ class BuilderWriteBufferFromHTTP
 
 public:
     explicit BuilderWriteBufferFromHTTP(const Poco::URI & uri_) : uri(uri_)
-    {}
+    {
+    }
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define setterMember(name, member) \

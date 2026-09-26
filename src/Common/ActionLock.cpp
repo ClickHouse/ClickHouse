@@ -1,4 +1,4 @@
-#include "ActionLock.h"
+#include <Common/ActionLock.h>
 #include <Common/ActionBlocker.h>
 
 
@@ -11,9 +11,8 @@ ActionLock::ActionLock(const ActionBlocker & blocker) : counter_ptr(blocker.coun
         ++(*counter);
 }
 
-ActionLock::ActionLock(ActionLock && other) noexcept
+ActionLock::ActionLock(ActionLock && other) noexcept : counter_ptr(std::move(other.counter_ptr))
 {
-    *this = std::move(other);
 }
 
 ActionLock & ActionLock::operator=(ActionLock && other) noexcept

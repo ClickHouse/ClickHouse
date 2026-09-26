@@ -1,5 +1,5 @@
-#include "AggregateFunctionForEach.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionForEach.h>
 
 #include <Common/typeid_cast.h>
 
@@ -19,6 +19,8 @@ class AggregateFunctionCombinatorForEach final : public IAggregateFunctionCombin
 {
 public:
     String getName() const override { return "ForEach"; }
+
+    bool transformsArgumentTypes() const override { return true; }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
@@ -47,9 +49,13 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorForEach>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorForEach>(), Documentation{
+        .description = "Applied as a suffix to an aggregate function name (e.g. `sumForEach`), it aggregates arrays element-wise, producing an array of per-position results.",
+        .syntax = "<aggregate_function>ForEach",
+        .related = {"Array"}});
 }
 
 }

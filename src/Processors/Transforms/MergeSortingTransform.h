@@ -1,10 +1,11 @@
 #pragma once
 
 #include <Processors/Transforms/SortingTransform.h>
+#include <Common/Logger.h>
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
-#include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/TopKThresholdTracker.h>
 
 
 namespace DB
@@ -15,12 +16,12 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 /// Takes sorted separate chunks of data. Sorts them.
 /// Returns stream with globally sorted data.
-class MergeSortingTransform : public SortingTransform
+class MergeSortingTransform final : public SortingTransform
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingTransform(
-        const Block & header,
+        SharedHeader header,
         const SortDescription & description_,
         size_t max_merged_block_size_,
         size_t max_block_bytes,
@@ -28,10 +29,11 @@ public:
         bool increase_sort_description_compile_attempts,
         size_t max_bytes_before_remerge_,
         double remerge_lowered_memory_bytes_ratio_,
-        size_t min_external_sort_block_bytes_,
-        size_t max_bytes_before_external_sort_,
+        size_t max_bytes_in_block_before_external_sort_,
+        size_t max_bytes_in_query_before_external_sort_,
         TemporaryDataOnDiskScopePtr tmp_data_,
-        size_t min_free_disk_space_);
+        size_t min_free_disk_space_,
+        TopKThresholdTrackerPtr threshold_tracker_ = nullptr);
 
     String getName() const override { return "MergeSortingTransform"; }
 
@@ -40,13 +42,13 @@ protected:
     void serialize() override;
     void generate() override;
 
-    Processors expandPipeline() override;
+    PipelineUpdate updatePipeline() override;
 
 private:
     size_t max_bytes_before_remerge;
     double remerge_lowered_memory_bytes_ratio;
-    size_t min_external_sort_block_bytes;
-    size_t max_bytes_before_external_sort;
+    size_t max_bytes_in_block_before_external_sort;
+    size_t max_bytes_in_query_before_external_sort;
     TemporaryDataOnDiskScopePtr tmp_data;
     size_t temporary_files_num = 0;
     size_t min_free_disk_space;
@@ -64,6 +66,8 @@ private:
     void remerge();
 
     ProcessorPtr external_merging_sorted;
+
+    TopKThresholdTrackerPtr threshold_tracker;
 };
 
 }

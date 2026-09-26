@@ -29,25 +29,25 @@ def started_cluster():
 
 def test_check_projections_compatibility(started_cluster):
     create_with_invalid_projection = """
-        CREATE TABLE tp (type Int32, eventcnt UInt64, PROJECTION p (select sum(eventcnt), type group by type))
-        engine = {} order by type;
+        CREATE TABLE tp (type Int32, eventcnt UInt64, PROJECTION p (SELECT sum(eventcnt), type GROUP BY type))
+        ENGINE = {} ORDER BY type;
     """
 
-    create_no_projection = """
+    create_without_projection = """
         CREATE TABLE tp (type Int32, eventcnt UInt64)
-        engine = {} order by type;
+        ENGINE = {} ORDER BY type;
     """
 
     alter_add_projection = """
-        ALTER TABLE tp ADD PROJECTION p (select sum(eventcnt), type group by type);
+        ALTER TABLE tp ADD PROJECTION p (SELECT sum(eventcnt), type GROUP BY type);
     """
 
     # Create with invalid projection is not supported by default
 
-    assert "Projection is fully supported" in node.query_and_get_error(
+    assert "Projections are not supported" in node.query_and_get_error(
         create_with_invalid_projection.format("ReplacingMergeTree")
     )
-    assert "Projection is fully supported" in node.query_and_get_error(
+    assert "Projections are not supported" in node.query_and_get_error(
         create_with_invalid_projection.format(
             "ReplicatedReplacingMergeTree('/tables/tp', '0')"
         )
@@ -55,44 +55,44 @@ def test_check_projections_compatibility(started_cluster):
 
     # Adding invalid projection is not supported by default
 
-    node.query(create_no_projection.format("ReplacingMergeTree"))
-    assert "Projection is fully supported" in node.query_and_get_error(
+    node.query(create_without_projection.format("ReplacingMergeTree"))
+    assert "ADD PROJECTION is not supported" in node.query_and_get_error(
         alter_add_projection
     )
-    node.query("drop table tp;")
+    node.query("DROP TABLE tp SYNC")
 
     node.query(
-        create_no_projection.format("ReplicatedReplacingMergeTree('/tables/tp', '0')")
+        create_without_projection.format("ReplicatedReplacingMergeTree('/tables/tp', '0')")
     )
-    assert "Projection is fully supported" in node.query_and_get_error(
+    assert "ADD PROJECTION is not supported" in node.query_and_get_error(
         alter_add_projection
     )
-    node.query("drop table tp;")
+    node.query("DROP TABLE tp SYNC")
 
     # Create with invalid projection is supported with compatibility
 
     node_with_compatibility.query(
         create_with_invalid_projection.format("ReplacingMergeTree")
     )
-    node_with_compatibility.query("drop table tp;")
+    node_with_compatibility.query("DROP TABLE tp SYNC")
     node_with_compatibility.query(
         create_with_invalid_projection.format(
             "ReplicatedReplacingMergeTree('/tables/tp2', '0')"
         )
     )
-    node_with_compatibility.query("drop table tp;")
+    node_with_compatibility.query("DROP TABLE tp SYNC")
 
     # Adding invalid projection is supported with compatibility
 
-    node_with_compatibility.query(create_no_projection.format("ReplacingMergeTree"))
+    node_with_compatibility.query(create_without_projection.format("ReplacingMergeTree"))
     node_with_compatibility.query(alter_add_projection)
-    node_with_compatibility.query("drop table tp;")
+    node_with_compatibility.query("DROP TABLE tp SYNC")
 
     node_with_compatibility.query(
-        create_no_projection.format("ReplicatedReplacingMergeTree('/tables/tp3', '0')")
+        create_without_projection.format("ReplicatedReplacingMergeTree('/tables/tp3', '0')")
     )
     node_with_compatibility.query(alter_add_projection)
-    node_with_compatibility.query("drop table tp;")
+    node_with_compatibility.query("DROP TABLE tp SYNC")
 
 
 def test_config_overrides_compatibility(started_cluster):
@@ -102,13 +102,13 @@ def test_config_overrides_compatibility(started_cluster):
     """
 
     assert (
-        "Projection is fully supported"
+        "Projections are not supported"
         in node_with_compatibility_and_mt_setings.query_and_get_error(
             create_with_invalid_projection.format("ReplacingMergeTree")
         )
     )
     assert (
-        "Projection is fully supported"
+        "Projections are not supported"
         in node_with_compatibility_and_mt_setings.query_and_get_error(
             create_with_invalid_projection.format(
                 "ReplicatedReplacingMergeTree('/tables/tp', '0')"

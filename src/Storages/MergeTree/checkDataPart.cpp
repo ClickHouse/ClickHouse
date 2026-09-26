@@ -3,14 +3,13 @@
 
 #include <Poco/DirectoryIterator.h>
 
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
-#include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
@@ -18,7 +17,11 @@
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ErrnoException.h>
 #include <IO/AzureBlobStorage/isRetryableAzureException.h>
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/core/credentials/credentials.hpp>
+#endif
 #include <Poco/Net/NetException.h>
 
 
@@ -33,6 +36,7 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
+    extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
 }
 
 namespace ErrorCodes
@@ -51,6 +55,7 @@ namespace ErrorCodes
     extern const int BROKEN_PROJECTION;
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
 }
 
 
@@ -82,6 +87,11 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     {
         return isRetryableAzureException(e);
     }
+    catch (const Azure::Core::Credentials::AuthenticationException &)
+    {
+        /// AuthenticationException (token/RBAC not ready) is transient; separate catch — it isn't a RequestFailedException.
+        return true;
+    }
 #endif
     catch (const ErrnoException & e)
     {
@@ -109,7 +119,8 @@ bool isRetryableException(std::exception_ptr exception_ptr)
             || e.code() == ErrorCodes::SOCKET_TIMEOUT
             || e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK
             || e.code() == ErrorCodes::ABORTED
-            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM;
+            || e.code() == ErrorCodes::CANNOT_WRITE_TO_OSTREAM
+            || e.code() == ErrorCodes::CACHE_CANNOT_WRITE_TO_CACHE_DISK;
     }
     catch (const std::filesystem::filesystem_error & e)
     {
@@ -167,7 +178,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     NamesAndTypesList columns_txt;
 
     {
-        auto buf = data_part_storage.readFile("columns.txt", read_settings, std::nullopt, std::nullopt);
+        auto buf = data_part_storage.readFile("columns.txt", read_settings, std::nullopt);
         columns_txt.readText(*buf);
         assertEOF(*buf);
     }
@@ -182,9 +193,9 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     /// This function calculates checksum for both compressed and decompressed contents of compressed file.
     auto checksum_compressed_file = [&read_settings](const IDataPartStorage & data_part_storage_, const String & file_path)
     {
-        auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt, std::nullopt);
+        auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
-        CompressedReadBuffer uncompressing_buf(compressed_hashing_buf);
+        CompressedReadBuffer uncompressing_buf(compressed_hashing_buf, /* allow_different_codecs */ true);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
 
         uncompressed_hashing_buf.ignoreAll();
@@ -195,20 +206,22 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    auto ratio_of_defaults = (*data_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization];
-    SerializationInfoByName serialization_infos;
-
+    SerializationInfoByName serialization_infos({});
     if (data_part_storage.existsFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME))
     {
         try
         {
-            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt, std::nullopt);
-            SerializationInfo::Settings settings{ratio_of_defaults, false};
-            serialization_infos = SerializationInfoByName::readJSON(columns_txt, settings, *serialization_file);
+            auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
+            serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
         }
         catch (...)
         {
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Failed to load file {} of data part {}, with error {}", IMergeTreeDataPart::SERIALIZATION_FILE_NAME, data_part->name, getCurrentExceptionMessage(true));
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Failed to load file {} of data part {}, with error {}",
+                IMergeTreeDataPart::SERIALIZATION_FILE_NAME,
+                data_part->name,
+                getCurrentExceptionMessage(true));
         }
     }
 
@@ -216,14 +229,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto it = serialization_infos.find(column.name);
         return it == serialization_infos.end()
-            ? column.type->getDefaultSerialization()
+            ? column.type->getSerialization(serialization_infos.getSettings())
             : column.type->getSerialization(*it->second);
     };
 
     /// This function calculates only checksum of file content (compressed or uncompressed).
     auto checksum_file = [&](const String & file_name)
     {
-        auto file_buf = data_part_storage.readFile(file_name, read_settings, std::nullopt, std::nullopt);
+        auto file_buf = data_part_storage.readFile(file_name, read_settings, std::nullopt);
         HashingReadBuffer hashing_buf(*file_buf);
         hashing_buf.ignoreAll();
         checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
@@ -242,24 +255,60 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     }
     else if (part_type == MergeTreeDataPartType::Wide)
     {
-        for (const auto & column : columns_list)
+        const auto & cols_substreams = data_part->getColumnsSubstreams();
+        if (!cols_substreams.empty())
         {
-            get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            /// Use columns_substreams.txt as the source of truth for substream file names.
+            /// This is more reliable than enumerateStreams for types with dynamic structure (JSON, Dynamic)
+            /// because enumerateStreams requires deserialization state to correctly enumerate dynamic substreams.
+            size_t col_idx = 0;
+            for (const auto & column : columns_list)
             {
-                /// Skip ephemeral subcolumns that don't store any real data.
-                if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
-                    return;
+                const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
+                for (const auto & substream : substreams)
+                {
+                    auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", data_part_storage);
+                    if (!stream_name)
+                        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "There is no file for column '{}' (substream {}) in data part '{}'",
+                            column.name, substream, data_part->name);
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage);
+                    auto file_name = *stream_name + ".bin";
+                    checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
+                }
+                ++col_idx;
+            }
+        }
+        else
+        {
+            /// Fallback for old parts without columns_substreams.txt.
+            /// Don't enumerate dynamic streams because we don't have the proper deserialization state.
+            /// Dynamic stream files will still be verified by the subsequent directory-level check
+            /// against checksums.txt.
+            ISerialization::EnumerateStreamsSettings settings;
+            settings.enumerate_dynamic_streams = false;
+            for (const auto & column : columns_list)
+            {
+                auto serialization = get_serialization(column);
+                auto data = ISerialization::SubstreamData(serialization)
+                    .withType(column.type)
+                    .withColumn(data_part->getColumnSample(column));
+                serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                        return;
 
-                if (!stream_name)
-                    throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
-                        "There is no file for column '{}' in data part '{}'",
-                        column.name, data_part->name);
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", data_part_storage, data_part->storage.getSettings());
 
-                auto file_name = *stream_name + ".bin";
-                checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
-            }, column.type, data_part->getColumnSample(column));
+                    if (!stream_name)
+                        throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
+                            "There is no file for column '{}' in data part '{}'",
+                            column.name, data_part->name);
+
+                    auto file_name = *stream_name + ".bin";
+                    checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
+                }, data);
+            }
         }
     }
     else
@@ -272,7 +321,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
 
     if (require_checksums || data_part_storage.existsFile("checksums.txt"))
     {
-        auto buf = data_part_storage.readFile("checksums.txt", read_settings, std::nullopt, std::nullopt);
+        auto buf = data_part_storage.readFile("checksums.txt", read_settings, std::nullopt);
         checksums_txt.read(*buf);
         assertEOF(*buf);
     }
@@ -290,18 +339,18 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             continue;
         }
 
-        /// Exclude files written by full-text index from check. No correct checksums are available for them currently.
-        if (isGinFile(file_name))
-            continue;
-
         auto checksum_it = checksums_data.files.find(file_name);
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
         if (checksum_it == checksums_data.files.end() && !files_without_checksums.contains(file_name))
         {
             auto txt_checksum_it = checksums_txt_files.find(file_name);
-            if ((txt_checksum_it != checksums_txt_files.end() && txt_checksum_it->second.is_compressed))
+            if ((txt_checksum_it != checksums_txt_files.end() && txt_checksum_it->second.is_compressed)
+                || file_name.ends_with(".bin"))
             {
-                /// If we have both compressed and uncompressed in txt or its .cmrk(2/3) or .cidx, then calculate them
+                /// If we know from checksums.txt that the file is compressed, or it has the .bin extension
+                /// (all .bin files in MergeTree are compressed), compute both compressed and uncompressed checksums.
+                /// The .bin check is important for dynamic stream files that may not be visited
+                /// during enumerateStreams when columns_substreams.txt is absent.
                 checksums_data.files[file_name] = checksum_compressed_file(data_part_storage, file_name);
             }
             else
@@ -323,10 +372,28 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         IMergeTreeDataPart::Checksums projection_checksums;
         try
         {
-            bool noop;
+            bool noop = false;
+            auto projection_storage = data_part_storage.getProjection(projection_file);
+
+            /// A projection part that failed to load before its columns were set (e.g. because of a
+            /// corrupted serialization.json) has an empty column list. Checking against it would
+            /// report a misleading "columns don't match" error and hide the real corruption, so
+            /// read the expected columns from the part's own columns.txt in that case. The current
+            /// projection metadata would not do: existing parts can legitimately lag behind it
+            /// after an ALTER (readable through alter conversions). If
+            /// columns.txt itself is unreadable, this throws the actual problem into the catch
+            /// below.
+            NamesAndTypesList projection_columns = projection->getColumns();
+            if (projection_columns.empty())
+            {
+                auto buf = projection_storage->readFile("columns.txt", read_settings, std::nullopt);
+                projection_columns.readText(*buf);
+                assertEOF(*buf);
+            }
+
             projection_checksums = checkDataPart(
-                projection, *data_part_storage.getProjection(projection_file),
-                projection->getColumns(), projection->getType(),
+                projection, *projection_storage,
+                projection_columns, projection->getType(),
                 projection->getFileNamesWithoutChecksums(),
                 read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false);
         }
@@ -368,6 +435,59 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         projections_on_disk.erase(projection_file);
     }
 
+    /// Handle unknown projections: on disk and in checksums but not in the
+    /// part's projection list (e.g. a projection was dropped while the part
+    /// was detached, then re-attached, or an INSERT that had started before
+    /// `DROP PROJECTION` committed wrote the part afterwards).  Remove them
+    /// from checksums_txt so that the checkEqual below does not fail, and mark
+    /// the part as having a broken projection so the caller can handle it
+    /// gracefully.
+    if (!projections_on_disk.empty())
+    {
+        is_broken_projection = true;
+
+        for (auto it = projections_on_disk.begin(); it != projections_on_disk.end();)
+        {
+            /// A directory the part itself lists in its `checksums.txt` was written deliberately, with
+            /// a projection the table has since dropped; the part is intact and has to keep passing the
+            /// check. Drop it from the unexpected set as well, or the `require_checksums` branch below
+            /// reports the part as broken - which is what happens to every mutation descendant of such
+            /// a part, because a mutation hardlinks the directory and is checked with checksums
+            /// required. A directory that the part does not list is a leftover nobody wrote as part of
+            /// it, so it stays unexpected.
+            if (checksums_txt.files.contains(*it))
+            {
+                checksums_txt.remove(*it);
+                it = projections_on_disk.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+    }
+
+    /// Also handle leftover checksums entries for projections that are unknown to the current metadata
+    /// and were not found on disk either: their directory can legitimately be absent (a projection
+    /// dropped while the part was detached and re-attached, or a fetched part whose dropped-projection
+    /// directory was not transferred), while the stale entry survives in checksums.txt. Known
+    /// projections were validated above and left a computed checksum, so any .proj still listed without
+    /// one refers to such a removed projection. Drop it so the base-part checkEqual below does not fail,
+    /// while base files (and known projections) keep their mismatches fatal.
+    {
+        Names removed_projection_files;
+        for (const auto & [name, _] : checksums_txt.files)
+            if (name.ends_with(".proj") && !checksums_data.files.contains(name))
+                removed_projection_files.push_back(name);
+
+        if (!removed_projection_files.empty())
+        {
+            is_broken_projection = true;
+            for (const auto & projection_file : removed_projection_files)
+                checksums_txt.remove(projection_file);
+        }
+    }
+
     if (throw_on_broken_projection)
     {
         if (!broken_projections_message.empty())
@@ -375,8 +495,6 @@ static IMergeTreeDataPart::Checksums checkDataPart(
             throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
         }
 
-        /// This one is actually not broken, just redundant files on disk which
-        /// MergeTree will never use.
         if (require_checksums && !projections_on_disk.empty())
         {
             throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
@@ -424,21 +542,14 @@ IMergeTreeDataPart::Checksums checkDataPart(
             {
                 auto remote_paths = data_part_storage.getRemotePaths(file_name);
                 for (const auto & remote_path : remote_paths)
-                    cache.removePathIfExists(remote_path, FileCache::getCommonUser().user_id);
+                    cache.removePathIfExists(remote_path, FileCache::getCommonOrigin().user_id);
             }
         }
 
         ReadSettings read_settings;
-        read_settings.read_through_distributed_cache = false;
-        read_settings.enable_filesystem_cache = false;
-        read_settings.enable_filesystem_cache_log = false;
-        read_settings.enable_filesystem_read_prefetches_log = false;
-        read_settings.page_cache = nullptr;
-        read_settings.load_marks_asynchronously = false;
-        read_settings.remote_fs_prefetch = false;
-        read_settings.page_cache_inject_eviction = false;
-        read_settings.use_page_cache_for_disks_without_file_cache = false;
-        read_settings.local_fs_method = LocalFSReadMethod::pread;
+        read_settings.disableCaches();
+        read_settings.remote_fs_settings.prefetch = false;
+        read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
 
         try
         {

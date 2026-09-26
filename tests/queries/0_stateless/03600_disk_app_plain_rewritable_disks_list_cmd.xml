@@ -1,0 +1,12 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <test_plain_rewritable_metadata_object_storage>
+                <type>s3_plain_rewritable</type>
+                <endpoint>http://localhost:11111/test/s3</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse</secret_access_key>
+            </test_plain_rewritable_metadata_object_storage>
+        </disks>
+    </storage_configuration>
+</clickhouse>

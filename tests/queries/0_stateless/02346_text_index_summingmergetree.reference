@@ -1,0 +1,14 @@
+Sum values from all parts
+-- direct read disabled
+2
+4
+-- direct read enabled
+2
+4
+Values are summed up during merge
+-- direct read disabled
+2
+4
+-- direct read enabled
+2
+4

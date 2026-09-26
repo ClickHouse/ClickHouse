@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_HDFS
-#include "HDFSCommon.h"
+#include <Storages/ObjectStorage/HDFS/HDFSCommon.h>
 #include <base/types.h>
 
 namespace DB

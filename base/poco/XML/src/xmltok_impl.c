@@ -16,24 +16,26 @@
    Copyright (c) 2018      Anton Maklakov <antmak.pub@gmail.com>
    Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
    Copyright (c) 2020      Boris Kolpackov <boris@codesynthesis.com>
+   Copyright (c) 2022      Martin Ettl <ettl.martin78@googlemail.com>
+   Copyright (c) 2026      Nick Begg <nick@stunttruck.net>
    Licensed under the MIT license:
 
-   Permission is  hereby granted,  free of charge,  to any  person obtaining
-   a  copy  of  this  software   and  associated  documentation  files  (the
-   "Software"),  to  deal in  the  Software  without restriction,  including
-   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   Permission is hereby granted, free of charge, to any person obtaining
+   a copy of this software  and associated documentation files (the
+   "Software"), to deal in the Software without restriction, including
+   without limitation the rights to use, copy, modify, merge, publish,
    distribute, sublicense, and/or sell copies of the Software, and to permit
-   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   persons to whom the Software is furnished to do so, subject to the
    following conditions:
 
-   The above copyright  notice and this permission notice  shall be included
+   The above copyright notice and this permission notice shall be included
    in all copies or substantial portions of the Software.
 
-   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
-   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
    OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
    USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
@@ -82,7 +84,7 @@
       *nextTokPtr = ptr;                                                       \
       return XML_TOK_INVALID;                                                  \
     }                                                                          \
-    /* fall through */                                                         \
+    EXPAT_FALLTHROUGH;                                                         \
   case BT_NMSTRT:                                                              \
   case BT_HEX:                                                                 \
   case BT_DIGIT:                                                               \
@@ -96,7 +98,7 @@
 
 #  define CHECK_NMSTRT_CASE(n, enc, ptr, end, nextTokPtr)                      \
   case BT_LEAD##n:                                                             \
-    if (end - ptr < n)                                                         \
+    if ((end) - (ptr) < (n))                                                   \
       return XML_TOK_PARTIAL_CHAR;                                             \
     if (IS_INVALID_CHAR(enc, ptr, n) || ! IS_NMSTRT_CHAR(enc, ptr, n)) {       \
       *nextTokPtr = ptr;                                                       \
@@ -111,7 +113,7 @@
       *nextTokPtr = ptr;                                                       \
       return XML_TOK_INVALID;                                                  \
     }                                                                          \
-    /* fall through */                                                         \
+    EXPAT_FALLTHROUGH;                                                         \
   case BT_NMSTRT:                                                              \
   case BT_HEX:                                                                 \
     ptr += MINBPC(enc);                                                        \
@@ -124,7 +126,8 @@
 #    define PREFIX(ident) ident
 #  endif
 
-#  define HAS_CHARS(enc, ptr, end, count) (end - ptr >= count * MINBPC(enc))
+#  define HAS_CHARS(enc, ptr, end, count)                                      \
+    ((end) - (ptr) >= ((count) * MINBPC(enc)))
 
 #  define HAS_CHAR(enc, ptr, end) HAS_CHARS(enc, ptr, end, 1)
 
@@ -207,7 +210,7 @@ PREFIX(scanDecl)(const ENCODING *enc, const char *ptr, const char *end,
         *nextTokPtr = ptr;
         return XML_TOK_INVALID;
       }
-      /* fall through */
+      EXPAT_FALLTHROUGH;
     case BT_S:
     case BT_CR:
     case BT_LF:
@@ -321,7 +324,7 @@ PREFIX(scanPi)(const ENCODING *enc, const char *ptr, const char *end,
         *nextTokPtr = ptr + MINBPC(enc);
         return tok;
       }
-      /* fall through */
+      EXPAT_FALLTHROUGH;
     default:
       *nextTokPtr = ptr;
       return XML_TOK_INVALID;
@@ -613,7 +616,7 @@ PREFIX(scanAtts)(const ENCODING *enc, const char *ptr, const char *end,
           return XML_TOK_INVALID;
         }
       }
-      /* fall through */
+      EXPAT_FALLTHROUGH;
     case BT_EQUALS: {
       int open;
 #  ifdef XML_NS
@@ -896,7 +899,7 @@ PREFIX(contentTok)(const ENCODING *enc, const char *ptr, const char *end,
           return XML_TOK_INVALID;
         }
       }
-      /* fall through */
+      EXPAT_FALLTHROUGH;
     case BT_AMP:
     case BT_LT:
     case BT_NONXML:
@@ -1057,7 +1060,7 @@ PREFIX(prologTok)(const ENCODING *enc, const char *ptr, const char *end,
       /* indicate that this might be part of a CR/LF pair */
       return -XML_TOK_PROLOG_S;
     }
-    /* fall through */
+    EXPAT_FALLTHROUGH;
   case BT_S:
   case BT_LF:
     for (;;) {
@@ -1072,7 +1075,7 @@ PREFIX(prologTok)(const ENCODING *enc, const char *ptr, const char *end,
         /* don't split CR/LF pair */
         if (ptr + MINBPC(enc) != end)
           break;
-        /* fall through */
+        EXPAT_FALLTHROUGH;
       default:
         *nextTokPtr = ptr;
         return XML_TOK_PROLOG_S;
@@ -1187,7 +1190,7 @@ PREFIX(prologTok)(const ENCODING *enc, const char *ptr, const char *end,
       tok = XML_TOK_NMTOKEN;
       break;
     }
-    /* fall through */
+    EXPAT_FALLTHROUGH;
   default:
     *nextTokPtr = ptr;
     return XML_TOK_INVALID;
@@ -1482,7 +1485,7 @@ PREFIX(isPublicId)(const ENCODING *enc, const char *ptr, const char *end,
     case BT_NMSTRT:
       if (! (BYTE_TO_ASCII(enc, ptr) & ~0x7f))
         break;
-      /* fall through */
+      EXPAT_FALLTHROUGH;
     default:
       switch (BYTE_TO_ASCII(enc, ptr)) {
       case 0x24: /* $ */

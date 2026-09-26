@@ -22,6 +22,8 @@ SELECT tuple(tuple(number)) AS x FROM numbers(10) WHERE toString(toUUID(tuple(nu
 
 SELECT  materialize('a'), 'a' AS key GROUP BY key WITH CUBE WITH TOTALS SETTINGS group_by_use_nulls = 1;
 
+set ignore_format_null_for_explain = 0;
+
 EXPLAIN QUERY TREE
 SELECT a, b
 FROM numbers(3)

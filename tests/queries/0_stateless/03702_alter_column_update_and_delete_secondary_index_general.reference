@@ -1,0 +1,58 @@
+======== Check behavior with THROW ========
+======== Check behavior with COMPATIBILITY ========
+COMPACT BEFORE	1	1	4
+COMPACT BEFORE	1	100	6
+WIDE BEFORE	1	1	4
+WIDE BEFORE	1	100	6
+COMPACT AFTER UPDATE	1	3	4
+COMPACT AFTER UPDATE	1	100	6
+WIDE AFTER UPDATE	1	3	4
+WIDE AFTER UPDATE	1	100	6
+test_compact	idx_minmax	Emtpy : false
+test_wide	idx_minmax	Emtpy : false
+COMPACT AFTER DELETE	1	3	4
+WIDE AFTER DELETE	1	3	4
+test_compact	idx_minmax	Emtpy : false
+test_wide	idx_minmax	Emtpy : false
+======== Check behavior with REBUILD ========
+COMPACT BEFORE	1	3	4
+COMPACT BEFORE	1	100	6
+WIDE BEFORE	1	3	4
+WIDE BEFORE	1	100	6
+COMPACT AFTER UPDATE	1	5	4
+COMPACT AFTER UPDATE	1	100	6
+WIDE AFTER UPDATE	1	5	4
+WIDE AFTER UPDATE	1	100	6
+test_compact	idx_minmax	Emtpy : false
+test_wide	idx_minmax	Emtpy : false
+COMPACT AFTER DELETE	1	5	4
+WIDE AFTER DELETE	1	5	4
+test_compact	idx_minmax	Emtpy : false
+test_wide	idx_minmax	Emtpy : false
+======== Check behavior with DROP ========
+COMPACT BEFORE	1	5	4
+COMPACT BEFORE	1	100	6
+WIDE BEFORE	1	5	4
+WIDE BEFORE	1	100	6
+COMPACT AFTER UPDATE	1	7	4
+COMPACT AFTER UPDATE	1	100	6
+WIDE AFTER UPDATE	1	7	4
+WIDE AFTER UPDATE	1	100	6
+test_compact	idx_minmax	Emtpy : true
+test_wide	idx_minmax	Emtpy : true
+We are back #1
+test_compact	idx_minmax	Emtpy : false
+test_wide	idx_minmax	Emtpy : false
+COMPACT AFTER UPDATE	1	7	4
+COMPACT AFTER UPDATE	1	100	7
+WIDE AFTER UPDATE	1	7	4
+WIDE AFTER UPDATE	1	100	7
+test_compact	idx_minmax	Emtpy : true
+test_wide	idx_minmax	Emtpy : false
+We are back #2
+test_compact	idx_minmax	Emtpy : false
+test_wide	idx_minmax	Emtpy : false
+COMPACT AFTER DELETE	1	7	4
+WIDE AFTER UPDATE	1	7	4
+test_compact	idx_minmax	Emtpy : true
+test_wide	idx_minmax	Emtpy : true

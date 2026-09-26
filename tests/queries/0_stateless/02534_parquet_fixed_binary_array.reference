@@ -1,11 +1,11 @@
 Parquet
-fixed	Nullable(String)					
+fixed	String					
 0
 1
 2
 3
 4
-fixed	Nullable(FixedString(1))					
+fixed	FixedString(1)					
 0
 1
 2
@@ -22,13 +22,13 @@ fixed	Nullable(FixedString(1))
 \N
 9
 Arrow
-fixed	Nullable(String)					
+fixed	String					
 0
 1
 2
 3
 4
-fixed	Nullable(FixedString(1))					
+fixed	FixedString(1)					
 0
 1
 2

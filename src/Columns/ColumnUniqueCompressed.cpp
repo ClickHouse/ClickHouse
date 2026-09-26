@@ -7,6 +7,10 @@
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/SipHash.h>
+#include <IO/ReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 
@@ -15,6 +19,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
 }
@@ -49,7 +54,7 @@ MutableColumnPtr getLengthColumn(const PaddedPODArray<UInt64> & lengths)
     auto & data = static_cast<ColumnVector<T> *>(column.get())->getData();
     for (size_t i = 0; i < lengths.size(); ++i)
     {
-        data[i] = lengths[i];
+        data[i] = static_cast<T>(lengths[i]);
     }
     return column;
 }
@@ -69,17 +74,17 @@ String ColumnUniqueFCBlockDF::getDecompressedAt(size_t pos) const
     const size_t pos_in_block = (pos - specialValuesCount()) % block_size;
     if (pos_in_block == 0)
     {
-        return data_column->getDataAt(pos).toString();
+        return String(data_column->getDataAt(pos));
     }
 
     const size_t header_pos = pos - pos_in_block;
-    const StringRef header = data_column->getDataAt(header_pos);
-    const StringRef suffix = data_column->getDataAt(pos);
+    const std::string_view header = data_column->getDataAt(header_pos);
+    const std::string_view suffix = data_column->getDataAt(pos);
     const size_t prefix_length = common_prefix_lengths->get64(pos);
     String output;
-    output.resize(prefix_length + suffix.size);
-    memcpy(output.data(), header.data, prefix_length);
-    memcpy(output.data() + prefix_length, suffix.data, suffix.size);
+    output.resize(prefix_length + suffix.size());
+    memcpy(output.data(), header.data(), prefix_length);
+    memcpy(output.data() + prefix_length, suffix.data(), suffix.size());
     return output;
 }
 
@@ -90,26 +95,26 @@ ColumnUniqueFCBlockDF::DecompressedValue ColumnUniqueFCBlockDF::getDecompressedR
     /// Default and Null value
     if (pos < specialValuesCount())
     {
-        return {{nullptr, 0}, {nullptr, 0}};
+        return {};
     }
 
     const size_t pos_in_block = (pos - specialValuesCount()) % block_size;
     if (pos_in_block == 0)
     {
-        const StringRef prefix = data_column->getDataAt(pos);
-        const StringRef suffix = {nullptr, 0};
+        const std::string_view prefix = data_column->getDataAt(pos);
+        const std::string_view suffix;
         return {prefix, suffix};
     }
 
     const size_t header_pos = pos - pos_in_block;
-    const StringRef prefix = {data_column->getDataAt(header_pos).data, common_prefix_lengths->get64(pos)};
-    const StringRef suffix = data_column->getDataAt(pos);
+    const std::string_view prefix = {data_column->getDataAt(header_pos).data(), common_prefix_lengths->get64(pos)};
+    const std::string_view suffix = data_column->getDataAt(pos);
     return {prefix, suffix};
 }
 
 size_t ColumnUniqueFCBlockDF::getSizeAt(size_t pos) const
 {
-    return data_column->getDataAt(pos).size + common_prefix_lengths->get64(pos);
+    return data_column->getDataAt(pos).size() + common_prefix_lengths->get64(pos);
 }
 
 MutableColumnPtr ColumnUniqueFCBlockDF::getDecompressedValues(size_t start, size_t length) const
@@ -180,7 +185,7 @@ ColumnUniqueFCBlockDF::ColumnUniqueFCBlockDF(const ColumnUniqueFCBlockDF & other
 {
 }
 
-size_t ColumnUniqueFCBlockDF::getPosOfClosestHeader(StringRef value) const
+size_t ColumnUniqueFCBlockDF::getPosOfClosestHeader(std::string_view value) const
 {
     /// Default value case
     if (value.empty())
@@ -198,7 +203,7 @@ size_t ColumnUniqueFCBlockDF::getPosOfClosestHeader(StringRef value) const
         const size_t mid = (left + right) / 2;
         const size_t header_index = mid * block_size + special_values_count;
 
-        const StringRef header = data_column->getDataAt(header_index);
+        const std::string_view header = data_column->getDataAt(header_index);
         if (header < value || header == value)
         {
             output = header_index;
@@ -212,7 +217,7 @@ size_t ColumnUniqueFCBlockDF::getPosOfClosestHeader(StringRef value) const
     return output;
 }
 
-size_t ColumnUniqueFCBlockDF::getPosToInsert(StringRef value) const
+size_t ColumnUniqueFCBlockDF::getPosToInsert(std::string_view value) const
 {
     size_t pos = getPosOfClosestHeader(value);
     /// it's guaranteed that this takes no more than block_size iterations
@@ -251,12 +256,12 @@ void ColumnUniqueFCBlockDF::calculateCompression(const ColumnPtr & string_column
         insert_length(0);
     }
 
-    StringRef current_header = "";
-    StringRef prev_data = ""; // to skip duplicates
+    std::string_view current_header;
+    std::string_view prev_data; // to skip duplicates
     size_t pos_in_block = 0;
     for (size_t i = 0; i < string_column->size(); ++i)
     {
-        const StringRef data = string_column->getDataAt(i);
+        const std::string_view data = string_column->getDataAt(i);
         if (prev_data == data)
         {
             continue;
@@ -264,18 +269,18 @@ void ColumnUniqueFCBlockDF::calculateCompression(const ColumnPtr & string_column
         if (pos_in_block == 0)
         {
             current_header = data;
-            data_column->insertData(current_header.data, current_header.size);
-            insert_length(current_header.size);
+            data_column->insertData(current_header.data(), current_header.size());
+            insert_length(current_header.size());
         }
         else
         {
             size_t same_prefix_length = 0;
-            while (same_prefix_length < current_header.size && same_prefix_length < data.size
-                   && current_header.data[same_prefix_length] == data.data[same_prefix_length])
+            while (same_prefix_length < current_header.size() && same_prefix_length < data.size()
+                   && current_header[same_prefix_length] == data[same_prefix_length])
             {
                 ++same_prefix_length;
             }
-            data_column->insertData(data.data + same_prefix_length, data.size - same_prefix_length);
+            data_column->insertData(data.data() + same_prefix_length, data.size() - same_prefix_length);
             insert_length(same_prefix_length);
         }
         prev_data = data;
@@ -304,7 +309,7 @@ void ColumnUniqueFCBlockDF::calculateCompression(const ColumnPtr & string_column
     }
 }
 
-std::optional<UInt64> ColumnUniqueFCBlockDF::getOrFindValueIndex(StringRef value) const
+std::optional<UInt64> ColumnUniqueFCBlockDF::getOrFindValueIndex(std::string_view value) const
 {
     const size_t expected_pos = getPosToInsert(value);
     if (expected_pos == data_column->size() || getDecompressedAt(expected_pos) != value)
@@ -316,7 +321,12 @@ std::optional<UInt64> ColumnUniqueFCBlockDF::getOrFindValueIndex(StringRef value
 
 MutableColumnPtr ColumnUniqueFCBlockDF::cloneEmpty() const
 {
-    return ColumnUniqueFCBlockDF::create(data_column->cloneEmpty(), block_size, is_nullable);
+    return ColumnUniqueFCBlockDF::create(ColumnString::create(), block_size, is_nullable);
+}
+
+MutableColumnPtr ColumnUniqueFCBlockDF::cloneEmptyNullable() const
+{
+    return ColumnUniqueFCBlockDF::create(ColumnString::create(), block_size, true);
 }
 
 size_t ColumnUniqueFCBlockDF::uniqueInsert(const Field & x)
@@ -375,7 +385,7 @@ MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & sr
             }
             else
             {
-                const StringRef data = src_column->getDataAt(i);
+                const std::string_view data = src_column->getDataAt(i);
                 const UInt64 pos = getPosToInsert(data);
                 positions->insert(pos);
             }
@@ -385,7 +395,7 @@ MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & sr
     {
         for (size_t i = start; i < start + length; ++i)
         {
-            const StringRef data = src_column->getDataAt(i);
+            const std::string_view data = src_column->getDataAt(i);
             const UInt64 pos = getPosToInsert(data);
             positions->insert(pos);
         }
@@ -396,7 +406,7 @@ MutableColumnPtr ColumnUniqueFCBlockDF::uniqueInsertRangeFrom(const IColumn & sr
 
 size_t ColumnUniqueFCBlockDF::uniqueInsertData(const char * pos, size_t length)
 {
-    const size_t output = getPosToInsert(StringRef{pos, length});
+    const size_t output = getPosToInsert(std::string_view{pos, length});
     auto single_value_column = ColumnString::create();
     single_value_column->insertData(pos, length);
 
@@ -407,24 +417,31 @@ size_t ColumnUniqueFCBlockDF::uniqueInsertData(const char * pos, size_t length)
     return output;
 }
 
-size_t ColumnUniqueFCBlockDF::uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos)
+size_t ColumnUniqueFCBlockDF::uniqueDeserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
     if (is_nullable)
     {
-        const UInt8 val = unalignedLoad<UInt8>(pos);
-        pos += sizeof(val);
-
+        UInt8 val = 0;
+        readBinaryLittleEndian<UInt8>(val, in);
         if (val)
-        {
-            new_pos = pos;
             return getNullValueIndex();
-        }
     }
 
-    const size_t string_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size);
-    new_pos = pos + string_size;
-    return uniqueInsertData(pos, string_size - 1); /// -1 because of null terminator
+    const bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    size_t string_size = 0;
+    readBinaryLittleEndian<size_t>(string_size, in);
+    if (in.available() < string_size)
+        throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Not enough data to deserialize string value in ColumnUniqueFCBlockDF.");
+
+    const size_t ret = uniqueInsertData(in.position(), string_size - serialize_string_with_zero_byte);
+    in.ignore(string_size);
+    return ret;
+}
+
+size_t ColumnUniqueFCBlockDF::uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in)
+{
+    const auto settings = IColumn::SerializationSettings::createForAggregationState();
+    return uniqueDeserializeAndInsertFromArena(in, &settings);
 }
 
 size_t ColumnUniqueFCBlockDF::uniqueInsertFrom(const IColumn & src, size_t n)
@@ -434,16 +451,16 @@ size_t ColumnUniqueFCBlockDF::uniqueInsertFrom(const IColumn & src, size_t n)
         return getNullValueIndex();
     }
     const ColumnString * src_column = getAndCheckColumnString(&src);
-    const StringRef data = src_column->getDataAt(n);
-    const size_t output = uniqueInsertData(data.data, data.size);
+    const std::string_view data = src_column->getDataAt(n);
+    const size_t output = uniqueInsertData(data.data(), data.size());
     return output;
 }
 
 IColumnUnique::IndexesWithOverflow
 ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length, size_t max_dictionary_size)
 {
-    HashSet<StringRef> to_add_strings;
-    const auto is_already_present = [&to_add_strings, this](StringRef value)
+    HashSet<std::string_view> to_add_strings;
+    const auto is_already_present = [&to_add_strings, this](std::string_view value)
     {
         const auto index = getOrFindValueIndex(value);
         return index.has_value() || to_add_strings.contains(value);
@@ -456,7 +473,7 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
         {
             continue;
         }
-        const StringRef data = src.getDataAt(i);
+        const std::string_view data = src.getDataAt(i);
         if (size() + to_add_strings.size() >= max_dictionary_size)
         {
             first_overflowed = i;
@@ -478,7 +495,7 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
     old_indexes_mapping = prepareForInsert(values, to_add, sorted_column);
     calculateCompression(sorted_column);
 
-    HashMap<StringRef, size_t> overflow_map;
+    HashMap<std::string_view, size_t> overflow_map;
     MutableColumnPtr indexes = ColumnVector<UInt64>::create(length);
     MutableColumnPtr overflow = src.cloneEmpty();
     auto & indexes_data = static_cast<ColumnVector<UInt64> *>(indexes.get())->getData();
@@ -492,7 +509,7 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
             }
             else
             {
-                const StringRef data = src.getDataAt(i);
+                const std::string_view data = src.getDataAt(i);
                 const auto pos = getOrFindValueIndex(data);
                 if (pos.has_value())
                 {
@@ -515,7 +532,7 @@ ColumnUniqueFCBlockDF::uniqueInsertRangeWithOverflow(const IColumn & src, size_t
     {
         for (size_t i = start; i < start + length; ++i)
         {
-            const StringRef data = src.getDataAt(i);
+            const std::string_view data = src.getDataAt(i);
             const auto pos = getOrFindValueIndex(data);
             if (pos.has_value())
             {
@@ -565,16 +582,20 @@ void ColumnUniqueFCBlockDF::get(size_t n, Field & res) const
     res = getDecompressedAt(n);
 }
 
-std::pair<String, DataTypePtr> ColumnUniqueFCBlockDF::getValueNameAndType(size_t n) const
+void ColumnUniqueFCBlockDF::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const
 {
     if (is_nullable && n == getNullValueIndex())
     {
-        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+        if (options.notFull(name_buf))
+            name_buf << "NULL";
+        return;
     }
-    return data_column->getValueNameAndType(n);
+    auto value_column = ColumnString::create();
+    value_column->insert(getDecompressedAt(n));
+    value_column->getValueNameImpl(name_buf, 0, options);
 }
 
-void ColumnUniqueFCBlockDF::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const
+void ColumnUniqueFCBlockDF::collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const
 {
     /// nullable is handled internally
     chassert(!is_null);
@@ -594,26 +615,39 @@ void ColumnUniqueFCBlockDF::collectSerializedValueSizes(PaddedPODArray<UInt64> &
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Size of sizes: {} doesn't match rows_num: {}. It is a bug", sizes.size(), rows_count);
     }
 
+    const bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
     if (is_nullable)
     {
         ++sizes[0]; /* instead of checking i == getNullValueIndex() in the loop for performance, assumes getNullValueIndex is 0 */
         for (size_t i = 1; i < rows_count; ++i)
         {
-            const size_t string_size = getSizeAt(i);
-            sizes[i] += sizeof(string_size) + string_size + 2 /* null byte and null terminator */;
+            const size_t string_size = getSizeAt(i) + serialize_string_with_zero_byte;
+            sizes[i] += 1 /* null byte */ + sizeof(string_size) + string_size;
         }
     }
     else
     {
         for (size_t i = 0; i < rows_count; ++i)
         {
-            size_t string_size = getSizeAt(i);
-            sizes[i] += sizeof(string_size) + string_size + 1 /* null terminator */;
+            const size_t string_size = getSizeAt(i) + serialize_string_with_zero_byte;
+            sizes[i] += sizeof(string_size) + string_size;
         }
     }
 }
 
-char * ColumnUniqueFCBlockDF::serializeIntoMemory(size_t pos, DecompressedValue value, char * memory) const
+std::optional<size_t> ColumnUniqueFCBlockDF::getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const
+{
+    const bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
+    if (is_nullable)
+    {
+        if (n == getNullValueIndex())
+            return 1;
+        return 1 + sizeof(size_t) + getSizeAt(n) + serialize_string_with_zero_byte;
+    }
+    return sizeof(size_t) + getSizeAt(n) + serialize_string_with_zero_byte;
+}
+
+char * ColumnUniqueFCBlockDF::serializeIntoMemory(size_t pos, DecompressedValue value, char * memory, bool serialize_string_with_zero_byte) const
 {
     if (is_nullable)
     {
@@ -626,66 +660,58 @@ char * ColumnUniqueFCBlockDF::serializeIntoMemory(size_t pos, DecompressedValue 
         }
     }
 
-    const size_t value_size = value.size() + 1; /* Null terminator */
+    const size_t value_size = value.size() + serialize_string_with_zero_byte;
 
     memcpy(memory, &value_size, sizeof(value_size));
     memory += sizeof(value_size);
 
-    if (value.prefix.data) /// clang tidy is mad at nullptrs in memcpy even if count is zero
+    if (value.prefix.data()) /// clang tidy is mad at nullptrs in memcpy even if count is zero
     {
-        memcpy(memory, value.prefix.data, value.prefix.size);
+        memcpy(memory, value.prefix.data(), value.prefix.size());
     }
-    memory += value.prefix.size;
+    memory += value.prefix.size();
 
-    if (value.suffix.data)
+    if (value.suffix.data())
     {
-        memcpy(memory, value.suffix.data, value.suffix.size);
+        memcpy(memory, value.suffix.data(), value.suffix.size());
     }
-    memory += value.suffix.size;
-    *memory = '\0';
-    ++memory;
+    memory += value.suffix.size();
+    if (serialize_string_with_zero_byte)
+    {
+        *memory = '\0';
+        ++memory;
+    }
 
     return memory;
 }
 
-StringRef ColumnUniqueFCBlockDF::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+std::string_view ColumnUniqueFCBlockDF::serializeValueIntoArena(
+    size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const
 {
+    const bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
     DecompressedValue value;
     size_t serialization_size;
 
-    if (is_nullable)
+    if (is_nullable && n == getNullValueIndex())
     {
-        if (n == getNullValueIndex())
-        {
-            value = {{nullptr, 0}, {nullptr, 0}};
-            serialization_size = 1;
-        }
-        else
-        {
-            value = getDecompressedRefsAt(n);
-            serialization_size = sizeof(value.size()) + value.size() + 2; /* Null terminator and null byte */
-        }
+        serialization_size = 1;
     }
     else
     {
         value = getDecompressedRefsAt(n);
-        serialization_size = sizeof(value.size()) + value.size() + 1; /* Null terminator */
+        serialization_size = (is_nullable ? 1 : 0) + sizeof(size_t) + value.size() + serialize_string_with_zero_byte;
     }
 
-    StringRef res;
-    res.size = serialization_size;
-    char * pos = arena.allocContinue(res.size, begin);
-    res.data = pos;
-
-    serializeIntoMemory(n, value, pos);
-
-    return res;
+    char * pos = arena.allocContinue(serialization_size, begin);
+    serializeIntoMemory(n, value, pos, serialize_string_with_zero_byte);
+    return {pos, serialization_size};
 }
 
-char * ColumnUniqueFCBlockDF::serializeValueIntoMemory(size_t n, char * memory) const
+char * ColumnUniqueFCBlockDF::serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const
 {
+    const bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
     const DecompressedValue value = getDecompressedRefsAt(n);
-    return serializeIntoMemory(n, value, memory);
+    return serializeIntoMemory(n, value, memory, serialize_string_with_zero_byte);
 }
 
 void ColumnUniqueFCBlockDF::updateHashWithValue(size_t n, SipHash & hash_func) const
@@ -699,12 +725,13 @@ void ColumnUniqueFCBlockDF::updateHashWithValue(size_t n, SipHash & hash_func) c
             return;
         }
     }
+    /// Same as ColumnString::updateHashWithValue
     const DecompressedValue value = getDecompressedRefsAt(n);
-    const size_t size = value.size();
-    hash_func.update(reinterpret_cast<const char *>(&size), sizeof(size));
-    hash_func.update(value.prefix.data, value.prefix.size);
-    hash_func.update(value.suffix.data, value.suffix.size);
-    hash_func.update('\0');
+    const size_t size_used_in_hash = value.size() + 1;
+    hash_func.update(reinterpret_cast<const char *>(&size_used_in_hash), sizeof(size_used_in_hash));
+    hash_func.update(value.prefix.data(), value.prefix.size());
+    hash_func.update(value.suffix.data(), value.suffix.size());
+    hash_func.update(UInt8(0));
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
@@ -732,8 +759,8 @@ int ColumnUniqueFCBlockDF::doCompareAt(size_t n, size_t m, const IColumn & rhs, 
     /// TODO: it's inefficient, it's possible to do better
     const String lhs_value = getDecompressedAt(n);
     const String rhs_value = assert_cast<const ColumnUniqueFCBlockDF &>(rhs).getDecompressedAt(m);
-    const StringRef lhsref = lhs_value;
-    const StringRef rhsref = rhs_value;
+    const std::string_view lhsref = lhs_value;
+    const std::string_view rhsref = rhs_value;
     if (lhsref == rhsref)
     {
         return 0;
@@ -745,10 +772,11 @@ int ColumnUniqueFCBlockDF::doCompareAt(size_t n, size_t m, const IColumn & rhs, 
     return 1;
 }
 
-void ColumnUniqueFCBlockDF::getExtremes(Field & min, Field & max) const
+void ColumnUniqueFCBlockDF::getExtremes(Field & min, Field & max, size_t start, size_t end) const
 {
-    /// Only default and null value
-    if (size() == specialValuesCount())
+    /// Skip default and null value
+    start = std::max(start, specialValuesCount());
+    if (start >= end)
     {
         min = "";
         max = "";
@@ -756,8 +784,8 @@ void ColumnUniqueFCBlockDF::getExtremes(Field & min, Field & max) const
     }
 
     /// As values are sorted
-    get(specialValuesCount(), min);
-    get(size() - 1, max);
+    get(start, min);
+    get(end - 1, max);
 }
 
 size_t ColumnUniqueFCBlockDF::byteSize() const
@@ -812,7 +840,7 @@ MutableColumnPtr ColumnUniqueFCBlockDF::prepareForInsert(const MutableColumnPtr 
         sorted_permutation);
     sorted_column = column_to_modify->permute(sorted_permutation, 0);
 
-    HashMap<StringRef, size_t> map;
+    HashMap<std::string_view, size_t> map;
     for (size_t i = 0; i < sorted_column->size(); ++i)
     {
         map.insert({sorted_column->getDataAt(i), map.size()});
@@ -828,11 +856,11 @@ MutableColumnPtr ColumnUniqueFCBlockDF::prepareForInsert(const MutableColumnPtr 
         /// we must take into account that in nullable case there are 2 empty strings
         for (size_t i = 0; i < special_values; ++i)
         {
-            column_ptr->getData()[i] = i;
+            column_ptr->getData()[i] = static_cast<IntType>(i);
         }
         for (size_t i = special_values; i < initial_size; ++i)
         {
-            column_ptr->getData()[i] = map.at(column_to_modify->getDataAt(i)) + special_values - 1;
+            column_ptr->getData()[i] = static_cast<IntType>(map.at(column_to_modify->getDataAt(i)) + special_values - 1);
         }
         return column;
     };

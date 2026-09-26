@@ -46,3 +46,17 @@ polygons with reversed direction
 0
 eps for complex polygon in grid
 1
+multipolygon with one polygon with holes
+1
+0
+1
+0
+1
+0
+1
+multipolygon with two polygons with holes
+0
+1
+multipolygon with two polygons with holes (variadic)
+0
+1

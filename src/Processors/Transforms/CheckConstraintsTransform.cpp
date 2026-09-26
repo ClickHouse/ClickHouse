@@ -1,14 +1,13 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Processors/Transforms/CheckConstraintsTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/UTF8Helpers.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ConstraintsDescription.h>
@@ -26,13 +25,13 @@ namespace ErrorCodes
 
 CheckConstraintsTransform::CheckConstraintsTransform(
     const StorageID & table_id_,
-    const Block & header,
+    SharedHeader header,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
     : ExceptionKeepingTransform(header, header)
     , table_id(table_id_)
     , constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK))
-    , expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
+    , expressions(constraints_.getExpressions(context_, header->getNamesAndTypesList()))
     , context(std::move(context_))
 {
 }
@@ -62,7 +61,25 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Constraint {} does not return a value of type UInt8",
                     backQuote(constraint_ptr->name));
 
-            auto result_column = res_column.column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
+            auto result_column = res_column.column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
+
+            /// A constraint is checked row by row: the result is scanned for the first value that is not
+            /// 1, and the block's own columns are then read at that index to report the offending row. So
+            /// the result has to have exactly as many values as the block has rows. `arrayJoin` is the one
+            /// thing that breaks this, and it is rejected when a constraint is declared - but a constraint
+            /// stored before that check existed still loads, so the size is verified here rather than
+            /// trusted, and a read past the end of a block column is reported instead of performed.
+            if (result_column->size() != chunk.getNumRows())
+                throw Exception(
+                    ErrorCodes::UNSUPPORTED_METHOD,
+                    "Constraint {} for table {} returned {} values for a block of {} rows. Expression: ({}). "
+                    "An expression that changes the number of rows, such as `arrayJoin`, cannot be checked "
+                    "as a constraint; drop the constraint to be able to insert into the table",
+                    backQuote(constraint_ptr->name),
+                    table_id.getNameForLogs(),
+                    result_column->size(),
+                    chunk.getNumRows(),
+                    constraint_ptr->expr->formatForErrorMessage());
 
             if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&*result_column))
             {
@@ -107,13 +124,28 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                 for (const auto & name : related_columns)
                 {
                     const IColumn & column = *chunk.getColumns()[getInputPort().getHeader().getPositionByName(name)];
-                    assert(row_idx < column.size());
+                    chassert(row_idx < column.size());
 
                     if (!first)
                         column_values_msg.append(", ");
                     column_values_msg.append(backQuoteIfNeed(name));
                     column_values_msg.append(" = ");
-                    column_values_msg.append(applyVisitor(FieldVisitorToString(), column[row_idx]));
+
+                    String value = applyVisitor(FieldVisitorToString(), column[row_idx]);
+                    /// Limit the length, as we don't want too long exception messages.
+                    static constexpr size_t max_value_length = 100;
+                    size_t value_max_bytes = UTF8::computeBytesBeforeWidth(
+                        reinterpret_cast<const UInt8 *>(value.data()), value.size(), 0, max_value_length);
+                    if (value_max_bytes < value.size())
+                    {
+                        value.resize(value_max_bytes);
+                        value.append("…");
+                        /// Cosmetics.
+                        if (value.starts_with("'"))
+                            value.append("'");
+                    }
+
+                    column_values_msg.append(value);
                     first = false;
                 }
 

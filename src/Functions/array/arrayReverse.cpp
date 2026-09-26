@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -20,7 +21,7 @@ namespace ErrorCodes
 }
 
 
-class FunctionArrayReverse : public IFunction
+class FunctionArrayReverse final : public IFunction
 {
 public:
     static constexpr auto name = "arrayReverse";
@@ -30,6 +31,7 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -87,6 +89,10 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
         || executeNumber<Int64>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Float32>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<Float64>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Decimal32>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Decimal64>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Decimal128>(*src_inner_col, offsets, *res_inner_col)
+        || executeNumber<Decimal256>(*src_inner_col, offsets, *res_inner_col)
         || executeString(*src_inner_col, offsets, *res_inner_col)
         || executeFixedString(*src_inner_col, offsets, *res_inner_col)
         || executeGeneric(*src_inner_col, offsets, *res_inner_col);
@@ -105,7 +111,7 @@ ColumnPtr FunctionArrayReverse::executeImpl(const ColumnsWithTypeAndName & argum
 bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data)
 {
     size_t size = src_array_offsets.size();
-    res_data.reserve(size);
+    res_data.reserve(src_data.size());
 
     ColumnArray::Offset src_prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
@@ -127,10 +133,12 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
 template <typename T>
 bool FunctionArrayReverse::executeNumber(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data)
 {
-    if (const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data))
+    using ColVecType = ColumnVectorOrDecimal<T>;
+
+    if (const ColVecType * src_data_concrete = checkAndGetColumn<ColVecType>(&src_data))
     {
         const PaddedPODArray<T> & src_vec = src_data_concrete->getData();
-        PaddedPODArray<T> & res_vec = typeid_cast<ColumnVector<T> &>(res_data).getData();
+        PaddedPODArray<T> & res_vec = typeid_cast<ColVecType &>(res_data).getData();
         res_vec.resize(src_data.size());
 
         size_t size = src_offsets.size();
@@ -249,20 +257,20 @@ REGISTER_FUNCTION(ArrayReverse)
     FunctionDocumentation::Description description = R"(
 Reverses the order of elements of a given array.
 
-:::note
+<Note>
 Function `reverse(arr)` performs the same functionality but works on other data-types
 in addition to Arrays.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax = "arrayReverse(arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to reverse. [`Array(T)`](/sql-reference/data-types/array)."}
+        {"arr", "The array to reverse.", {"Array(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns an array of the same size as the original array containing the elements in reverse order. [`Array(T)`](/sql-reference/data-types/array).";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of the same size as the original array containing the elements in reverse order", {"Array(T)"}};
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT arrayReverse([1, 2, 3])", "[3,2,1]"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayReverse>(documentation);
 }

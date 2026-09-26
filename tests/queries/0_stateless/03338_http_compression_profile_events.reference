@@ -1,4 +1,4 @@
 SELECT 1 FORMAT RowBinary	compress=0	1
 SELECT 1 FORMAT RowBinary	compress=1	1
-SELECT 1 FORMAT RowBinary	wait_end_of_query=0	1
-SELECT 1 FORMAT RowBinary	wait_end_of_query=1	1
+SELECT 1 FORMAT RowBinary	http_wait_end_of_query=0	1
+SELECT 1 FORMAT RowBinary	http_wait_end_of_query=1	1

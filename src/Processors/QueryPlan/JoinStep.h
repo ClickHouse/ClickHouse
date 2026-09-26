@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/JoinEstimation.h>
 #include <Core/Joins.h>
 
 namespace DB
@@ -10,24 +11,50 @@ namespace DB
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
+struct LogicalJoinInfo
+{
+    String readable_relation_name;
+    JoinEstimation estimation;
+    JoinLocality locality{};
+    UInt64 cluster_id = 0;
+};
+
 /// Join two data streams.
 class JoinStep : public IQueryPlanStep
 {
 public:
+
+    enum class JoinStage : size_t
+    {
+        Default = 0,
+        Build = 1,
+        Probe = 2,
+    };
+
     JoinStep(
-        const Header & left_header_,
-        const Header & right_header_,
+        const SharedHeader & left_header_,
+        const SharedHeader & right_header_,
         JoinPtr join_,
         size_t max_block_size_,
+        size_t min_block_size_rows_,
         size_t min_block_size_bytes_,
         size_t max_streams_,
         NameSet required_output_,
         bool keep_left_read_in_order_,
-        bool use_new_analyzer_);
+        bool use_new_analyzer_,
+        bool use_join_disjunctions_push_down_ = false);
 
     String getName() const override { return "Join"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
+
+    /// A JoinStep never reads, so it has no meaningful input-byte stats of its own;
+    /// also it is not clear whether a Join is ever the top of a replicas plan,
+    /// i.e. not followed by an ExpressionStep.
+    /// Output-byte collection is nevertheless supported here for completeness, but only on the
+    /// analyzer path: `updatePipeline` appends the collector only there, so claiming support
+    /// otherwise would silently report zero output bytes.
+    bool supportsDataflowStatisticsCollection() const override { return use_new_analyzer; }
 
     void describePipeline(FormatSettings & settings) const override;
 
@@ -36,6 +63,7 @@ public:
 
     const JoinPtr & getJoin() const { return join; }
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
+    void setLogicalJoinInfo(LogicalJoinInfo && logical_join_info);
     bool allowPushDownToRight() const;
 
     /// Swap automatically if not set, otherwise always or never, depending on the value
@@ -47,29 +75,63 @@ public:
         std::string rhs_name;
     };
 
-    using PrimaryKeySharding = std::vector<PrimaryKeyNamesPair>;
+    struct PrimaryKeySharding : std::vector<PrimaryKeyNamesPair>
+    {
+        bool is_reverse_order = false;
+    };
 
     /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
     /// Names are required for EXPLAIN only.
     void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
-    void keepLeftPipelineInOrder() { keep_left_read_in_order = true; }
+    void keepLeftPipelineInOrder(bool disable_squashing = false);
+
+    bool isOptimized() const { return optimized; }
+    void setOptimized() { optimized = true; }
+
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
+
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+
+    const JoinEstimation & getEstimation() const { return estimation; }
+    UInt64 getClusterId() const { return cluster_id; }
 
 private:
+    bool optimized = false;
     void updateOutputHeader() override;
 
+    JoinAnalysisCounters collectMergeJoinCounters(StepProcessors step_processors) const;
+
     /// Header that expected to be returned from IJoin
-    Block join_algorithm_header;
+    SharedHeader join_algorithm_header;
+    String join_readable_relation_name;
 
     JoinPtr join;
+    JoinEstimation estimation;
+    UInt64 cluster_id = 0;
     size_t max_block_size;
+    size_t min_block_size_rows;
     size_t min_block_size_bytes;
     size_t max_streams;
 
     const NameSet required_output;
     std::set<size_t> columns_to_remove;
+    JoinLocality locality = JoinLocality::Unspecified;
     bool keep_left_read_in_order;
     bool use_new_analyzer = false;
+    bool use_join_disjunctions_push_down;
+    bool disjunctions_optimization_applied = false;    /// Flag that indicates that disjunction optimization was already applied
+    /// to prevent infinite optimization loop
+
+public:
+    /// Check if disjunction optimization was already applied to this JoinStep
+    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+
+    /// Mark that disjunction optimization has been applied to this JoinStep
+    void setDisjunctionsOptimizationApplied(bool value) { disjunctions_optimization_applied = value; }
+
     bool swap_streams = false;
+    bool useJoinDisjunctionsPushDown() const { return use_join_disjunctions_push_down; }
     PrimaryKeySharding primary_key_sharding;
 };
 
@@ -78,7 +140,7 @@ private:
 class FilledJoinStep : public ITransformingStep
 {
 public:
-    FilledJoinStep(const Header & input_header_, JoinPtr join_, size_t max_block_size_);
+    FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_);
 
     String getName() const override { return "FilledJoin"; }
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
@@ -88,11 +150,17 @@ public:
 
     const JoinPtr & getJoin() const { return join; }
 
+    bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
+    void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
+
+    StepAnalysisReport getAnalysisReport(StepProcessors step_processors) const override;
+
 private:
     void updateOutputHeader() override;
 
     JoinPtr join;
     size_t max_block_size;
+    bool disjunctions_optimization_applied = false;
 };
 
 }

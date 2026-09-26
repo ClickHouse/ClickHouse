@@ -21,4 +21,4 @@ WITH `cte1` AS (
         FROM cte2 LEFT ARRAY JOIN values AS value
     )
 )
-SELECT * FROM `cte1` -- { serverError TOO_DEEP_SUBQUERIES }
+SELECT * FROM `cte1` -- { serverError UNKNOWN_TABLE }

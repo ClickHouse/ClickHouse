@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # NOTE: Cannot use CLICKHOUSE_EXTRACT_CONFIG, since it uses default config.
 
-prefix=$CUR_DIR/"$(basename "${BASH_SOURCE[0]}" .sh)"
+prefix=$CUR_DIR/"03344_clickhouse_extract_from_config_try"
 
 $CLICKHOUSE_BINARY extract-from-config --key merge_tree.comment --config $prefix.xml
 $CLICKHOUSE_BINARY extract-from-config --key merge_tree.anything_xml --config $prefix.xml |& grep -o 'Not found: merge_tree.anything_xml'

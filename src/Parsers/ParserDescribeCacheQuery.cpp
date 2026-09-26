@@ -18,7 +18,7 @@ bool ParserDescribeCacheQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         || !p_cache.ignore(pos, expected))
         return false;
 
-    auto query = std::make_shared<ASTDescribeCacheQuery>();
+    auto query = make_intrusive<ASTDescribeCacheQuery>();
 
     ASTPtr ast;
     if (!p_cache_name.parse(pos, ast, expected))

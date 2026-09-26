@@ -1,4 +1,3 @@
-import uuid
 
 import pytest
 
@@ -56,6 +55,7 @@ def test_increase_error_count(start_cluster):
     for i in range(4):
         expected_result += f"{i}\t1000\n"
 
+    node1.query("SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas");
     assert (
         node1.query(
             f"SELECT key, count() FROM {table_name} GROUP BY key ORDER BY key",
@@ -71,7 +71,7 @@ def test_increase_error_count(start_cluster):
     assert (
         int(
             node1.query(
-                f"SELECT errors_count FROM system.clusters WHERE cluster = 'test_1_shard_3_replicas' AND host_name = 'node3'"
+                "SELECT errors_count FROM system.clusters WHERE cluster = 'test_1_shard_3_replicas' AND host_name = 'node3'"
             ).strip()
         )
         > 0

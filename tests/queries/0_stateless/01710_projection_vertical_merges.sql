@@ -14,6 +14,7 @@ optimize table t final;
 alter table t materialize projection p_norm settings mutations_sync = 1;
 
 set optimize_use_projections = 1, max_rows_to_read = 3;
+set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 
 select c18 from t where c1 < 0;
 

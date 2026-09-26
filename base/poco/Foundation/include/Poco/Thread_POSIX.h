@@ -124,13 +124,14 @@ private:
         std::size_t stackSize;
         bool started;
         bool joined;
+        mutable FastMutex mutex;
     };
 
     AutoPtr<ThreadData> _pData;
 
     static CurrentThreadHolder _currentThreadHolder;
 
-#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS)
+#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS) && !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     SignalHandler::JumpBufferVec _jumpBufferVec;
     friend class SignalHandler;
 #endif
@@ -154,6 +155,7 @@ inline int ThreadImpl::getOSPriorityImpl() const
 
 inline bool ThreadImpl::isRunningImpl() const
 {
+    FastMutex::ScopedLock l(_pData->mutex);
     return !_pData->pRunnableTarget.isNull();
 }
 

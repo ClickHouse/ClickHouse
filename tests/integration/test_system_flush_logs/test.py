@@ -10,6 +10,9 @@ from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain_wi
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node_default",
+    main_configs=[
+        "configs/config.xml",
+    ],
     stay_alive=True,
 )
 
@@ -33,7 +36,6 @@ def test_system_logs_exists():
         ("system.trace_log", 1),
         ("system.metric_log", 1),
         ("system.error_log", 1),
-        ("system.latency_log", 1),
     ]
 
     for table, exists in system_logs:
@@ -82,7 +84,7 @@ def test_log_max_size(start_cluster):
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <query_log>
                 <flush_interval_milliseconds replace=\\"replace\\">1000000</flush_interval_milliseconds>
@@ -97,7 +99,7 @@ def test_log_max_size(start_cluster):
     )
 
     node.query("SYSTEM FLUSH LOGS")
-    node.query(f"TRUNCATE TABLE IF EXISTS system.query_log")
+    node.query("TRUNCATE TABLE IF EXISTS system.query_log")
     node.restart_clickhouse()
 
     # all logs records above max_size_rows are lost
@@ -114,7 +116,7 @@ def test_log_max_size(start_cluster):
     ) == TSV([[1, 1]])
 
     node.exec_in_container(
-        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+        ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
 
 
@@ -123,7 +125,7 @@ def test_log_buffer_size_rows_flush_threshold(start_cluster):
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <query_log>
                 <flush_interval_milliseconds replace=\\"replace\\">1000000</flush_interval_milliseconds>
@@ -136,24 +138,24 @@ def test_log_buffer_size_rows_flush_threshold(start_cluster):
         ]
     )
     node.restart_clickhouse()
-    node.query(f"TRUNCATE TABLE IF EXISTS system.query_log")
+    node.query("TRUNCATE TABLE IF EXISTS system.query_log")
     for i in range(10):
         node.query(f"select {i}")
 
     assert_eq_with_retry(
         node,
-        f"select count() >= 11 from system.query_log",
+        "select count() >= 11 from system.query_log",
         "1",
         sleep_time=0.2,
         retry_count=100,
     )
 
-    node.query(f"TRUNCATE TABLE IF EXISTS system.query_log")
+    node.query("TRUNCATE TABLE IF EXISTS system.query_log")
     node.exec_in_container(
         [
             "bash",
             "-c",
-            f"""echo "
+            """echo "
         <clickhouse>
             <query_log>
                 <flush_interval_milliseconds replace=\\"replace\\">1000000</flush_interval_milliseconds>
@@ -172,12 +174,20 @@ def test_log_buffer_size_rows_flush_threshold(start_cluster):
     # Logs aren't flushed
     assert_eq_with_retry(
         node,
-        f"select count() < 10 from system.query_log",
+        "select count() < 10 from system.query_log",
         "1",
         sleep_time=0.2,
         retry_count=100,
     )
 
     node.exec_in_container(
-        ["rm", f"/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
+        ["rm", "/etc/clickhouse-server/config.d/yyy-override-query_log.xml"]
     )
+
+
+def test_system_warnings(start_cluster):
+    if node.is_debug_build():
+        assert node.query("SELECT count() > 1 FROM system.warnings") == "1\n"
+
+    node.query("TRUNCATE TABLE system.warnings")
+    assert node.query("SELECT count() FROM system.warnings") == "0\n"

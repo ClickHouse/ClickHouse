@@ -1,10 +1,16 @@
 #include <Formats/MarkInCompressedFile.h>
 
 #include <Common/BitHelpers.h>
+#include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 String MarkInCompressedFile::toString() const
 {
@@ -17,85 +23,24 @@ String MarkInCompressedFile::toStringWithRows(size_t rows_num) const
         + DB::toString(rows_num) + ")";
 }
 
-// Write a range of bits in a bit-packed array.
-// The array must be overallocated by one element.
-// The bit range must be pre-filled with zeros.
-void writeBits(UInt64 * dest, size_t bit_offset, UInt64 value)
+std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::create(const PlainArray & marks)
 {
-    size_t mod = bit_offset % 64;
-    dest[bit_offset / 64] |= value << mod;
-    if (mod)
-        dest[bit_offset / 64 + 1] |= value >> (64 - mod);
-}
-
-// The array must be overallocated by one element.
-UInt64 readBits(const UInt64 * src, size_t bit_offset, size_t num_bits)
-{
-    size_t mod = bit_offset % 64;
-    UInt64 value = src[bit_offset / 64] >> mod;
-    if (mod)
-        value |= src[bit_offset / 64 + 1] << (64 - mod);
-    return value & maskLowBits<UInt64>(num_bits);
-}
-
-MarksInCompressedFile::MarksInCompressedFile(const PlainArray & marks)
-    : num_marks(marks.size()), blocks((marks.size() + MARKS_PER_BLOCK - 1) / MARKS_PER_BLOCK, BlockInfo{})
-{
-    if (num_marks == 0)
-    {
-        return;
-    }
-
-    // First pass: calculate layout of all blocks and total memory required.
-    size_t packed_bits = 0;
-    for (size_t block_idx = 0; block_idx < blocks.size(); ++block_idx)
-    {
-        BlockInfo & block = blocks[block_idx];
-        block.bit_offset_in_packed_array = packed_bits;
-
-        size_t max_x = 0;
-        size_t max_y = 0;
-        size_t num_marks_in_this_block = std::min(MARKS_PER_BLOCK, num_marks - block_idx * MARKS_PER_BLOCK);
-        for (size_t i = 0; i < num_marks_in_this_block; ++i)
-        {
-            const auto & mark = marks[block_idx * MARKS_PER_BLOCK + i];
-            block.min_x = std::min(block.min_x, mark.offset_in_compressed_file);
-            max_x = std::max(max_x, mark.offset_in_compressed_file);
-            block.min_y = std::min(block.min_y, mark.offset_in_decompressed_block);
-            max_y = std::max(max_y, mark.offset_in_decompressed_block);
-
-            block.trailing_zero_bits_in_y
-                = std::min(block.trailing_zero_bits_in_y, static_cast<UInt8>(getTrailingZeroBits(mark.offset_in_decompressed_block)));
-        }
-
-        block.bits_for_x = sizeof(size_t) * 8 - getLeadingZeroBits(max_x - block.min_x);
-        block.bits_for_y = sizeof(size_t) * 8 - getLeadingZeroBits((max_y - block.min_y) >> block.trailing_zero_bits_in_y);
-        packed_bits += num_marks_in_this_block * (block.bits_for_x + block.bits_for_y);
-    }
-
-    // Overallocate by +1 element to let the bit packing/unpacking do less bounds checking.
-    size_t packed_length = (packed_bits + 63) / 64 + 1;
-    packed.reserve_exact(packed_length);
-    packed.resize_fill(packed_length);
-
-    // Second pass: write out the packed marks.
-    for (size_t idx = 0; idx < num_marks; ++idx)
-    {
-        const auto & mark = marks[idx];
-        auto [block, offset] = lookUpMark(idx);
-        writeBits(packed.data(), offset, mark.offset_in_compressed_file - block->min_x);
-        writeBits(
-            packed.data(),
-            offset + block->bits_for_x,
-            (mark.offset_in_decompressed_block - block->min_y) >> block->trailing_zero_bits_in_y);
-    }
+    Builder builder(marks.size());
+    builder.addAllMarks(marks.data(), marks.size());
+    return builder.finish();
 }
 
 MarkInCompressedFile MarksInCompressedFile::get(size_t idx) const
 {
+    if (idx >= num_marks)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Mark index {} is out of range [0, {})",
+            idx, num_marks);
+
     auto [block, offset] = lookUpMark(idx);
-    size_t x = block->min_x + readBits(packed.data(), offset, block->bits_for_x);
-    size_t y = block->min_y + (readBits(packed.data(), offset + block->bits_for_x, block->bits_for_y) << block->trailing_zero_bits_in_y);
+    size_t x = block->min_x + readBitsPacked64(packed.data(), offset, block->bits_for_x);
+    size_t y = block->min_y + (readBitsPacked64(packed.data(), offset + block->bits_for_x, block->bits_for_y) << block->trailing_zero_bits_in_y);
     return MarkInCompressedFile{.offset_in_compressed_file = x, .offset_in_decompressed_block = y};
 }
 
@@ -110,6 +55,144 @@ std::tuple<const MarksInCompressedFile::BlockInfo *, size_t> MarksInCompressedFi
 size_t MarksInCompressedFile::approximateMemoryUsage() const
 {
     return sizeof(*this) + blocks.allocated_bytes() + packed.allocated_bytes();
+}
+
+MarksInCompressedFile::MarksInCompressedFile(
+    size_t num_marks_,
+    PODArray<BlockInfo, 4096, JemallocCacheAllocator> && blocks_,
+    PODArray<UInt64, 4096, JemallocCacheAllocator> && packed_)
+    : num_marks(num_marks_)
+    , blocks(std::move(blocks_))
+    , packed(std::move(packed_))
+{
+}
+
+MarksInCompressedFile::Builder::Builder(size_t total_marks_)
+    : total_marks(total_marks_)
+    , blocks((total_marks_ + MARKS_PER_BLOCK - 1) / MARKS_PER_BLOCK, BlockInfo{})
+{
+}
+
+void MarksInCompressedFile::Builder::addAllMarks(const MarkInCompressedFile * marks, size_t count)
+{
+    chassert(pending.empty() && marks_flushed == 0);
+    chassert(count == total_marks);
+
+    while (count > 0)
+    {
+        size_t chunk = std::min(MARKS_PER_BLOCK, count);
+        flushBlock(marks, chunk);
+        marks += chunk;
+        count -= chunk;
+    }
+}
+
+void MarksInCompressedFile::Builder::addMarks(const MarkInCompressedFile * marks, size_t count)
+{
+    chassert(marks_flushed + pending.size() + count <= total_marks);
+
+    /// If there are pending marks from a previous call, fill up that block first.
+    if (!pending.empty())
+    {
+        size_t marks_to_copy = std::min(MARKS_PER_BLOCK - pending.size(), count);
+        pending.insert(pending.end(), marks, marks + marks_to_copy);
+        marks += marks_to_copy;
+        count -= marks_to_copy;
+
+        if (pending.size() == MARKS_PER_BLOCK)
+        {
+            flushBlock(pending.data(), pending.size());
+            pending.clear();
+        }
+    }
+
+    /// Process full blocks directly from input without copying.
+    while (count >= MARKS_PER_BLOCK)
+    {
+        flushBlock(marks, MARKS_PER_BLOCK);
+        marks += MARKS_PER_BLOCK;
+        count -= MARKS_PER_BLOCK;
+    }
+
+    /// Buffer remaining marks for the next call.
+    if (count > 0)
+        pending.insert(pending.end(), marks, marks + count);
+}
+
+void MarksInCompressedFile::Builder::flushBlock(const MarkInCompressedFile * data, size_t count)
+{
+    chassert(count > 0 && count <= MARKS_PER_BLOCK);
+
+    size_t block_idx = marks_flushed / MARKS_PER_BLOCK;
+    BlockInfo & block = blocks[block_idx];
+    block.bit_offset_in_packed_array = packed_bits;
+
+    /// Compute block metadata: min values, bit widths.
+    size_t max_x = 0;
+    size_t max_y = 0;
+    for (size_t i = 0; i < count; ++i)
+    {
+        block.min_x = std::min(block.min_x, data[i].offset_in_compressed_file);
+        max_x = std::max(max_x, data[i].offset_in_compressed_file);
+        block.min_y = std::min(block.min_y, data[i].offset_in_decompressed_block);
+        max_y = std::max(max_y, data[i].offset_in_decompressed_block);
+        block.trailing_zero_bits_in_y
+            = std::min(block.trailing_zero_bits_in_y, static_cast<UInt8>(getTrailingZeroBits(data[i].offset_in_decompressed_block)));
+    }
+
+    block.bits_for_x = static_cast<UInt8>(sizeof(size_t) * 8 - getLeadingZeroBits(max_x - block.min_x));
+    block.bits_for_y
+        = static_cast<UInt8>(sizeof(size_t) * 8 - getLeadingZeroBits((max_y - block.min_y) >> block.trailing_zero_bits_in_y));
+
+    /// Grow packed array to fit new bits + 1 overallocation element for writeBitsPacked64 safety.
+    size_t new_bits = count * (block.bits_for_x + block.bits_for_y);
+    size_t new_packed_length = (packed_bits + new_bits + 63) / 64 + 1;
+    if (new_packed_length > packed.size())
+        packed.resize_fill(new_packed_length);
+
+    /// Write bit-packed deltas.
+    size_t bit_offset = packed_bits;
+    for (size_t i = 0; i < count; ++i)
+    {
+        writeBitsPacked64(packed.data(), bit_offset, data[i].offset_in_compressed_file - block.min_x);
+        writeBitsPacked64(
+            packed.data(),
+            bit_offset + block.bits_for_x,
+            (data[i].offset_in_decompressed_block - block.min_y) >> block.trailing_zero_bits_in_y);
+        bit_offset += block.bits_for_x + block.bits_for_y;
+    }
+
+    packed_bits += new_bits;
+    marks_flushed += count;
+}
+
+std::shared_ptr<MarksInCompressedFile> MarksInCompressedFile::Builder::finish()
+{
+    /// Flush remaining buffered marks (last incomplete block).
+    if (!pending.empty())
+    {
+        flushBlock(pending.data(), pending.size());
+        pending.clear();
+    }
+
+    chassert(marks_flushed == total_marks);
+
+    /// +1 overallocation element is needed by readBitsPacked64, but only for non-empty marks.
+    size_t required_length = total_marks == 0 ? 0 : (packed_bits + 63) / 64 + 1;
+    if (packed.size() < required_length)
+        packed.resize_fill(required_length);
+
+    /// Shrink packed to exact size so approximateMemoryUsage reports the true
+    /// compressed size without power-of-two slack from incremental growth.
+    PODArray<UInt64, 4096, JemallocCacheAllocator> exact_packed;
+    exact_packed.reserve_exact(required_length);
+    exact_packed.resize_fill(required_length);
+    if (required_length > 0)
+        memcpy(exact_packed.data(), packed.data(), required_length * sizeof(UInt64));
+    packed = std::move(exact_packed);
+
+    return std::shared_ptr<MarksInCompressedFile>(
+        new MarksInCompressedFile(total_marks, std::move(blocks), std::move(packed)));
 }
 
 }

@@ -1,6 +1,6 @@
 #include <Interpreters/Context.h>
-#include "Common/Exception.h"
-#include "ICommand.h"
+#include <Common/Exception.h>
+#include <ICommand.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -28,7 +28,7 @@ public:
     {
         const auto & disk = client.getCurrentDiskWithPath();
         const String & path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));
-        bool recursive = options.count("recursive");
+        bool recursive = options.contains("recursive");
         if (disk.getDisk()->existsDirectory(path))
         {
             if (!recursive)

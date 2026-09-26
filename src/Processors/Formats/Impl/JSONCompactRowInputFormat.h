@@ -9,7 +9,7 @@ class JSONCompactFormatReader;
 class JSONCompactRowInputFormat final : public RowInputFormatWithNamesAndTypes<JSONCompactFormatReader>
 {
 public:
-    JSONCompactRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
+    JSONCompactRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "JSONCompactRowInputFormat"; }
 
@@ -22,7 +22,7 @@ private:
     void readSuffix() override;
 };
 
-class JSONCompactFormatReader : public JSONCompactEachRowFormatReader
+class JSONCompactFormatReader final : public JSONCompactEachRowFormatReader
 {
 public:
     JSONCompactFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_);

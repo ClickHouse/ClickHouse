@@ -2,8 +2,11 @@
 
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST.h>
+#include <IO/ReadBuffer.h>
 
 class SipHash;
+
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -34,7 +37,7 @@ public:
     const char * end = nullptr;
 
     /// Data from buffer to insert after inlined one - may be nullptr.
-    ReadBuffer * tail = nullptr;
+    mutable ReadBufferPtr tail = nullptr;
 
     bool async_insert_flush = false;
 
@@ -52,9 +55,12 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "InsertQuery" + (delim + table_id.database_name) + delim + table_id.table_name; }
 
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
+
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTInsertQuery>(*this);
+        auto res = make_intrusive<ASTInsertQuery>(*this);
         res->children.clear();
 
         if (database) { res->database = database->clone(); res->children.push_back(res->database); }

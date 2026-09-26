@@ -1,3 +1,4 @@
+#include <Common/StringUtils.h>
 #include <Parsers/Access/parseAccessRightsElements.h>
 
 #include <Access/Common/AccessRightsElement.h>
@@ -7,8 +8,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-
-#include <boost/algorithm/string/predicate.hpp>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 
 
 namespace DB
@@ -16,6 +16,26 @@ namespace DB
 
 namespace
 {
+    bool parseParameterRegExp(IParser::Pos & pos, Expected & expected, String & parameter_regexp)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected))
+                return true;
+
+            if (!parseIdentifierOrStringLiteral(pos, expected, parameter_regexp))
+                return false;
+
+            /// Whether the pattern actually compiles is checked by `InterpreterGrantQuery`:
+            /// that is semantics, and it keeps a regex engine out of the parser.
+
+            if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
+                return false;
+
+            return true;
+        });
+    }
+
     bool parseColumnNames(IParser::Pos & pos, Expected & expected, Strings & columns)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -47,7 +67,7 @@ bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & acc
         if (pos_->type != TokenType::BareWord)
             return false;
         std::string_view word{pos_->begin, pos_->size()};
-        return !(boost::iequals(word, toStringView(Keyword::ON)) || boost::iequals(word, toStringView(Keyword::TO)) || boost::iequals(word, toStringView(Keyword::FROM)));
+        return !(equalsCaseInsensitive(word, toStringView(Keyword::ON)) || equalsCaseInsensitive(word, toStringView(Keyword::TO)) || equalsCaseInsensitive(word, toStringView(Keyword::FROM)));
     };
 
     expected.add(pos, "access type");
@@ -67,16 +87,7 @@ bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & acc
         }
         while (is_one_of_access_type_words(pos));
 
-        try
-        {
-            access_flags = AccessFlags{str};
-        }
-        catch (...)
-        {
-            return false;
-        }
-
-        return true;
+        return AccessFlags::tryFromKeyword(str, access_flags);
     });
 }
 
@@ -120,6 +131,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
             String database_name;
             String table_name;
             String parameter;
+            String filter;
 
             size_t is_global_with_parameter = 0;
             for (const auto & elem : access_and_columns)
@@ -150,8 +162,23 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
                         return false;
                 }
 
+                auto add_to_expected = [&](const char * name) { expected.add(pos, name); };
+                for (const auto & elem : access_and_columns)
+                {
+                    if (!elem.first.validateParameter(parameter, add_to_expected))
+                        return false;
+                }
+
                 if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                     wildcard = true;
+
+                /// GRANT READ ON S3('s3://foo/*')
+                if (!parseParameterRegExp(pos, expected, filter))
+                    return false;
+
+                /// GRANT READ ON *(foo) is prohibited.
+                if ((wildcard || parameter.empty()) && !filter.empty())
+                    return false;
             }
             else if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, database_name, table_name, wildcard, default_database))
                 return false;
@@ -167,6 +194,8 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
                 element.database = database_name;
                 element.table = table_name;
                 element.parameter = parameter;
+                element.filter = filter;
+
                 element.wildcard = wildcard;
                 element.default_database = default_database;
                 res_elements.emplace_back(std::move(element));
@@ -178,6 +207,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
         if (!ParserList::parseUtil(pos, expected, parse_around_on, false))
             return false;
 
+        res_elements.replaceDeprecated();
         elements = std::move(res_elements);
         return true;
     });

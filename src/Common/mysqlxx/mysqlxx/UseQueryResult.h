@@ -10,17 +10,17 @@ namespace mysqlxx
 class Connection;
 
 
-/** Результат выполнения запроса, предназначенный для чтения строк, одна за другой.
-  * В памяти при этом хранится только одна, текущая строка.
-  * При чтении следующей строки, предыдущая становится некорректной.
-  * Вы обязаны прочитать все строки из результата
-  *  (вызывать функцию fetch(), пока она не вернёт значение, преобразующееся к false),
-  *  иначе при следующем запросе будет выкинуто исключение с текстом "Commands out of sync".
-  * Объект содержит ссылку на Connection.
-  * Если уничтожить Connection, то объект становится некорректным и все строки результата - тоже.
-  * Если задать следующий запрос в соединении, то объект и все строки тоже становятся некорректными.
-  * Использовать объект можно только для результата одного запроса!
-  * (При попытке присвоить объекту результат следующего запроса - UB.)
+/** Query execution result designed for reading rows one by one.
+  * Only one current row is stored in memory.
+  * When reading the next row, the previous one becomes invalid.
+  * You must read all rows from the result
+  *  (call the fetch() function until it returns a value that converts to false),
+  *  otherwise the next query will throw an exception with the text "Commands out of sync".
+  * The object contains a reference to Connection.
+  * If Connection is destroyed, the object becomes invalid and all result rows too.
+  * If you execute the next query in the connection, the object and all rows also become invalid.
+  * The object can only be used for the result of one query!
+  * (Attempting to assign the result of the next query to the object is UB.)
   */
 class UseQueryResult : public ResultBase
 {
@@ -29,7 +29,7 @@ public:
 
     Row fetch();
 
-    /// Для совместимости
+    /// For compatibility
     Row fetch_row() { return fetch(); } /// NOLINT
 };
 

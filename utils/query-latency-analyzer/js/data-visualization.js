@@ -48,15 +48,16 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
     const container = d3.select(containerId);
     const n = cov.length;
     const cellSize = 10;
-    const axisLabelOffset = 250;
+    const axisLabelOffset = 260;
     const matrixSize = cellSize * n;
     const bandMargin = 20;
-    const bandAreaWidth = container.node().getBoundingClientRect().width - matrixSize - bandMargin - axisLabelOffset;
+    // Use the pre-computed available width, subtract the matrix and fixed elements
+    const bandAreaWidth = (window.availableWidth || 1200) - matrixSize - axisLabelOffset - bandMargin - 270;
     const margin = {
         top: 2,
         right: axisLabelOffset + bandAreaWidth + bandMargin,
-        bottom: 2,
-        left: 2
+        bottom: 18,
+        left: 20
     };
 
     // Split labels into underscore and non-underscore groups
@@ -97,6 +98,17 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
     }
     if (total === 0) total = 1;
 
+    // Compute share for each label
+    const labelShares = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) {
+        for (let j = 0; j < n; j++) {
+            if (!labels[i].startsWith("_") && !labels[j].startsWith("_")) {
+                labelShares[i] += cov[i][j];
+            }
+        }
+        labelShares[i] = labelShares[i] / total;
+    }
+
     const norm = cov.map(row => row.map(v => v / total));
     for (let i = 0; i < n; i++) {
         for (let j = 0; j < n; j++) {
@@ -127,6 +139,25 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
             });
         });
 
+    // Add share percentages as text elements
+    svg.selectAll(".share-text")
+        .data(labelShares.map((share, i) => ({
+            share,
+            label: labels[i],
+            y: labelToY.get(labels[i]),
+            x: i * cellSize // Use same x-coordinate as diagonal cells
+        })))
+        .enter()
+        .filter(d => !d.label.startsWith('_'))
+        .append("text")
+        .attr("class", "share-text")
+        .attr("x", d => d.x - 2)
+        .attr("y", d => d.y + cellSize - 2) // Align with the diagonal cells
+        .attr("text-anchor", "end")
+        .style("font-size", "8px")
+        .style("font-weight", "bold")
+        .text(d => (d.share * 100).toFixed(0) + '%');
+
     // Y-axis with gap
     const yScale = d3.scaleOrdinal()
         .domain([...underscoreLabels.map(label => label.substring(1)), ...normalLabels])
@@ -143,10 +174,70 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
         })
         .on("mouseout", () => svg.selectAll(".cell").classed("unlight", false));
 
-    // Distribution bands
+    // Distribution bands with consistent scale across all visualizations
     const xScale = d3.scaleLinear()
-        .domain([d3.min(min), d3.max(max)])
+        .domain([0, window.globalMaxValue || d3.max(max)])
         .range([0, bandAreaWidth]);
+
+    // Add ruler elements
+    const ruler = svg.append("line")
+        .attr("class", "ruler")
+        .attr("y1", 0)
+        .attr("y2", totalHeight)
+        .style("stroke", "black")
+        .style("stroke-dasharray", "2,2")
+        .style("opacity", 0);
+
+    // Create label as HTML element for better positioning
+    const rulerLabel = container.append("div")
+        .style("position", "absolute")
+        .style("background", "white")
+        .style("padding", "0 4px")
+        .style("font-size", "10px")
+        .style("pointer-events", "none")
+        .style("opacity", 0)
+        .style("transform", "translate(-50%, 0)")  // Center horizontally only
+
+    // Create invisible overlay for mouse tracking
+    const overlay = svg.append("rect")
+        .attr("x", matrixSize + axisLabelOffset)
+        .attr("y", 0)
+        .attr("width", bandAreaWidth)
+        .attr("height", totalHeight)
+        .style("fill", "none")
+        .style("pointer-events", "all")
+        .on("mousemove", (event) => {
+            const [x] = d3.pointer(event);
+            const adjustedX = x - (matrixSize + axisLabelOffset);
+            if (adjustedX >= 0 && adjustedX <= bandAreaWidth) {
+                const xPos = matrixSize + axisLabelOffset + adjustedX;
+                const value = xScale.invert(adjustedX);
+                ruler
+                    .attr("x1", xPos)
+                    .attr("x2", xPos)
+                    .style("opacity", 1);
+
+                // Format value using K/M/G/T
+                let formattedValue;
+                if (Math.abs(value) >= 1e12) formattedValue = (value / 1e12).toFixed(1) + 'T';
+                else if (Math.abs(value) >= 1e9) formattedValue = (value / 1e9).toFixed(1) + 'G';
+                else if (Math.abs(value) >= 1e6) formattedValue = (value / 1e6).toFixed(1) + 'M';
+                else if (Math.abs(value) >= 1e3) formattedValue = (value / 1e3).toFixed(1) + 'K';
+                else formattedValue = value.toFixed(1);
+
+                // Get actual position relative to page for the label
+                const svgRect = container.select("svg").node().getBoundingClientRect();
+                rulerLabel
+                    .style("left", (svgRect.left + xPos) + "px")
+                    .style("top", (svgRect.top + totalHeight + margin.top - 7) + "px")  // Adjusted to align with x-axis
+                    .text(formattedValue)
+                    .style("opacity", 1);
+            }
+        })
+        .on("mouseleave", () => {
+            ruler.style("opacity", 0);
+            rulerLabel.style("opacity", 0);
+        });
 
     labels.forEach((label, i) => {
         const y = labelToY.get(label);
@@ -176,16 +267,18 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
         });
 
         // Standard deviation bar
+        const stdLeft = avg[i] - std[i];
+        const stdRight = avg[i] + std[i];
         const stdBar = svg.append("line")
-            .attr("x1", matrixSize + axisLabelOffset + xScale(avg[i] - std[i]))
-            .attr("x2", matrixSize + axisLabelOffset + xScale(avg[i] + std[i]))
+            .attr("x1", matrixSize + axisLabelOffset + xScale(Math.max(0, stdLeft)))
+            .attr("x2", matrixSize + axisLabelOffset + xScale(stdRight))
             .attr("y1", y + cellSize / 2)
             .attr("y2", y + cellSize / 2)
             .style("stroke", "black")
             .node();
 
         tippy(stdBar, {
-            content: `${label} ±1σ: [${(avg[i]-std[i]).toFixed(2)}, ${(avg[i]+std[i]).toFixed(2)}]`,
+            content: `${label} ±1σ: [${stdLeft.toFixed(2)}, ${stdRight.toFixed(2)}]`,
             placement: 'left',
             theme: 'latency-data',
             delay: [0, 0],
@@ -242,4 +335,20 @@ function addVisualization(containerId, labels, { cov, avg, std, min, max, p }) {
             duration: [0, 0]
         });
     });
+
+    // Add x-axis for distribution bands
+    const xAxis = d3.axisBottom(xScale)
+        .ticks(5)
+        .tickFormat(d => {
+            if (Math.abs(d) >= 1e12) return (d / 1e12).toFixed(1) + 'T';
+            if (Math.abs(d) >= 1e9) return (d / 1e9).toFixed(1) + 'G';
+            if (Math.abs(d) >= 1e6) return (d / 1e6).toFixed(1) + 'M';
+            if (Math.abs(d) >= 1e3) return (d / 1e3).toFixed(1) + 'K';
+            return d.toFixed(1);
+        });
+
+    svg.append("g")
+        .attr("class", "axis")
+        .attr("transform", `translate(${matrixSize + axisLabelOffset}, ${totalHeight})`)
+        .call(xAxis);
 }

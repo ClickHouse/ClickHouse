@@ -49,17 +49,18 @@ bool isDistributedSendBroken(int code, bool remote_error)
         || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
-void writeAndConvert(RemoteInserter & remote, const DistributedAsyncInsertHeader & distributed_header, ReadBufferFromFile & in)
+static void writeAndConvert(RemoteInserter & remote, const DistributedAsyncInsertHeader & distributed_header, ReadBufferFromFile & in)
 {
     CompressedReadBuffer decompressing_in(in);
     NativeReader block_in(decompressing_in, distributed_header.revision);
 
-    while (Block block = block_in.read())
+    for (Block block = block_in.read(); !block.empty(); block = block_in.read())
     {
         auto converting_dag = ActionsDAG::makeConvertingActions(
             block.cloneEmpty().getColumnsWithTypeAndName(),
             remote.getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            nullptr);
 
         auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
         converting_actions->execute(block);
@@ -74,7 +75,7 @@ void writeRemoteConvert(
     ReadBufferFromFile & in,
     LoggerPtr log)
 {
-    if (!remote.getHeader())
+    if (remote.getHeader().empty())
     {
         CheckingCompressedReadBuffer checking_in(in);
         remote.writePrepared(checking_in);
@@ -85,7 +86,7 @@ void writeRemoteConvert(
     /// applying ConvertingTransform in this case is not a big overhead.
     ///
     /// Anyway we can get header only from the first block, which contain all rows anyway.
-    if (!distributed_header.block_header)
+    if (distributed_header.block_header.empty())
     {
         LOG_TRACE(log, "Processing batch {} with old format (no header)", in.getFileName());
 

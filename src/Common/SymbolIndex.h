@@ -1,15 +1,17 @@
 #pragma once
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-
 #include <vector>
 #include <string>
 #include <Common/Elf.h>
 #include <boost/noncopyable.hpp>
 
-
 namespace DB
 {
+
+#if defined(OS_DARWIN)
+/// Forward declaration to avoid pulling heavy MachO.h (and MMapReadBufferFromFile) into every includer.
+class MachO;
+#endif
 
 /** Allow to quickly find symbol name from address.
   * Used as a replacement for "dladdr" function which is extremely slow.
@@ -23,24 +25,38 @@ protected:
 public:
     static const SymbolIndex & instance();
 
+    /// The index if `instance` has already built it, `nullptr` otherwise. Never builds it and never
+    /// waits for a build in progress, so it is safe to call from the fatal signal handler: `instance`
+    /// blocks on the function-local static's guard while another thread is inside the constructor,
+    /// and a thread that crashed there would leave the handler waiting on it forever.
+    static const SymbolIndex * instanceIfInitialized();
+
     struct Symbol
     {
-        const void * address_begin;
-        const void * address_end;
+        /// Here addresses are relative to objects.
+        const void * offset_begin;
+        const void * offset_end;
         const char * name;
     };
 
     struct Object
     {
-        const void * address_begin;
-        const void * address_end;
+        /// Here addresses are absolute virtual memory addresses.
+        const void * address_begin{};
+        const void * address_end{};
         std::string name;
         std::shared_ptr<Elf> elf;
+#if defined(OS_DARWIN)
+        /// ASLR slide for this image. Subtract from runtime address to get linked (DWARF) address.
+        uintptr_t slide = 0;
+        /// Parsed dSYM bundle, if found next to the binary.
+        std::shared_ptr<MachO> dsym;
+#endif
     };
 
-    /// Address in virtual memory should be passed. These addresses include offset where the object is loaded in memory.
     const Symbol * findSymbol(const void * address) const;
     const Object * findObject(const void * address) const;
+    const Object * thisObject() const;
 
     const std::vector<Symbol> & symbols() const { return data.symbols; }
     const std::vector<Object> & objects() const { return data.objects; }
@@ -63,5 +79,3 @@ private:
 };
 
 }
-
-#endif

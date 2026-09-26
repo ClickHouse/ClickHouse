@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -8,6 +9,8 @@
 #include <Interpreters/Context.h>
 #include <Core/DecimalFunctions.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 
 namespace DB
 {
@@ -37,6 +40,9 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
     if (!insert_queue)
         return;
 
+    const auto current_user_id = context->getUserID();
+    const bool show_all = context->getAccess()->isGranted(AccessType::SHOW_USERS);
+
     for (size_t shard_num = 0; shard_num < insert_queue->getPoolSize(); ++shard_num)
     {
         auto [queue, queue_lock] = insert_queue->getQueueLocked(shard_num);
@@ -45,13 +51,16 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
         {
             const auto & [key, data] = elem;
 
+            if (!show_all && key.user_id != current_user_id)
+                continue;
+
             auto time_in_microseconds = [](const time_point<steady_clock> & timestamp)
             {
                 auto time_diff = duration_cast<microseconds>(steady_clock::now() - timestamp);
                 auto time_us = (system_clock::now() - time_diff).time_since_epoch().count();
 
                 DecimalUtils::DecimalComponents<DateTime64> components{time_us / 1'000'000, time_us % 1'000'000};
-                return DecimalField(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
+                return DecimalField<DateTime64>(DecimalUtils::decimalFromComponents<DateTime64>(components, TIME_SCALE), TIME_SCALE);
             };
 
             const auto & insert_query = key.query->as<const ASTInsertQuery &>();
@@ -91,3 +100,6 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemAsynchronousInserts) }

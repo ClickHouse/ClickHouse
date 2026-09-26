@@ -11,10 +11,9 @@
 
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -156,9 +155,9 @@ public:
                 DB::ReadBufferFromFileDescriptor rb(fd, SMALL_READ_WRITE_BUFFER_SIZE);
                 try
                 {
-                    UInt64 current_value;
+                    UInt64 current_value = 0;
                     DB::readIntText(current_value, rb);
-                    char c;
+                    char c = 0;
                     DB::readChar(c, rb);
                     if (rb.count() > 0 && c == '\n' && rb.eof())
                         broken = false;

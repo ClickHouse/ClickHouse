@@ -5,6 +5,8 @@
 #include <Core/Field.h>
 
 #include <cstring>
+#include <span>
+#include <string_view>
 
 namespace DB
 {
@@ -34,6 +36,7 @@ public:
     std::string getNestedName() const override { return "String"; }
 
     MutableColumnPtr cloneEmpty() const override;
+    MutableColumnPtr cloneEmptyNullable() const override;
 
     /// Nested column is compressed
     ColumnPtr getNestedColumn() const override;
@@ -62,7 +65,8 @@ public:
     IColumnUnique::IndexesWithOverflow
     uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length, size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
-    size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
+    size_t uniqueDeserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
+    size_t uniqueDeserializeAndInsertAggregationStateValueFromArena(ReadBuffer & in) override;
 
     size_t getDefaultValueIndex() const override { return 0; }
     size_t getNullValueIndex() const override;
@@ -71,26 +75,22 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
-    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
+    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options & options) const override;
     TypeIndex getDataType() const override { return TypeIndex::String; }
 
     bool isDefaultAt(size_t n) const override { return n == getDefaultValueIndex(); }
     bool isNullAt(size_t n) const override { return is_nullable && n == getNullValueIndex(); }
 
     /// This method is not implemented as there is no continuous memory chunk containing the value
-    StringRef getDataAt(size_t) const override
+    std::string_view getDataAt(size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getDataAt' not implemented for ColumnUniqueFCBlockDF");
     }
 
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
-    char * serializeValueIntoMemory(size_t n, char * memory) const override;
-
-    const char * skipSerializedInArena(const char *) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'skipSerializedInArena' is not implemented for ColumnUniqueFCBlockDF");
-    }
+    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
+    std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
+    std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
+    char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
@@ -100,7 +100,7 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
 
-    void getExtremes(Field & min, Field & max) const override;
+    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
     bool valuesHaveFixedSize() const override { return false; }
     bool isFixedAndContiguous() const override { return false; }
@@ -160,16 +160,21 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getNumberOfDefaultRows' not implemented for ColumnUniqueFCBlockDF");
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'hasOnlyTypeDefaults' not implemented for ColumnUniqueFCBlockDF");
+    }
+
     void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUniqueFCBlockDF");
     }
 
-    const UInt64 * tryGetSavedHash() const override { return nullptr; }
+    std::span<const UInt64> tryGetSavedHash() const override { return {}; }
 
     UInt128 getHash() const override;
 
-    std::optional<UInt64> getOrFindValueIndex(StringRef value) const override;
+    std::optional<UInt64> getOrFindValueIndex(std::string_view value) const override;
 
 private:
     /// Default value and null value for nullable and only default value otherwise
@@ -179,10 +184,10 @@ private:
 
     struct DecompressedValue
     {
-        StringRef prefix;
-        StringRef suffix;
+        std::string_view prefix;
+        std::string_view suffix;
 
-        size_t size() const { return prefix.size + suffix.size; }
+        size_t size() const { return prefix.size() + suffix.size(); }
     };
 
     DecompressedValue getDecompressedRefsAt(size_t pos) const;
@@ -191,10 +196,10 @@ private:
     size_t getSizeAt(size_t pos) const;
 
     /// The header at this pos is always less or equal to the value
-    size_t getPosOfClosestHeader(StringRef value) const;
+    size_t getPosOfClosestHeader(std::string_view value) const;
 
     /// Value will be at this pos if inserted alone
-    size_t getPosToInsert(StringRef value) const;
+    size_t getPosToInsert(std::string_view value) const;
 
     /// Returns a string column containing the decompressed values
     MutableColumnPtr getDecompressedValues(size_t start, size_t length) const;
@@ -213,7 +218,7 @@ private:
 
     /// Returns pointer to the end of serialization (first byte past the data)
     /// `pos` is the index at which the value resides in the column
-    char * serializeIntoMemory(size_t pos, DecompressedValue value, char * memory) const;
+    char * serializeIntoMemory(size_t pos, DecompressedValue value, char * memory, bool serialize_string_with_zero_byte) const;
 
     IColumn::WrappedPtr data_column;
     IColumn::WrappedPtr common_prefix_lengths;

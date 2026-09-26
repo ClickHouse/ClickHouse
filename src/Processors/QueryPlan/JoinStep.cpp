@@ -1,15 +1,28 @@
+#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Interpreters/PasteJoin.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/MergeJoinTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
+#include <fmt/format.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -22,20 +35,56 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
+/// The algorithm to report in `system.query_log.used_join_algorithms`.
+std::string getExecutedJoinAlgorithm(const IJoin & join, bool use_sharding)
+{
+    if (!use_sharding)
+        return join.getAlgorithm();
+
+    const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(&join);
+    if (full_sorting_merge_join && full_sorting_merge_join->isParallel())
+        return toString(JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
+
+    return join.getAlgorithm();
+}
+
+std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join, const ExplainFormatSettings & settings)
 {
     std::vector<std::pair<String, String>> description;
     const auto & table_join = join->getTableJoin();
 
-    description.emplace_back("Type", toString(table_join.kind()));
-    description.emplace_back("Strictness", toString(table_join.strictness()));
+    auto to_lower = [](String & s)
+    {
+        std::transform(s.begin(), s.end(), s.begin(),
+            [](unsigned char c) { return std::tolower(c); });
+    };
+
+    String kind = toString(table_join.kind());
+    String strictness = toString(table_join.strictness());
+
+    if (settings.pretty)
+    {
+        to_lower(kind);
+        to_lower(strictness);
+    }
+
+    description.emplace_back("Type", kind);
+    description.emplace_back("Strictness", strictness);
     description.emplace_back("Algorithm", join->getName());
+
+    if (const auto join_expression_value = table_join.getJoinExpressionValue())
+        description.emplace_back("Constant expression value", *join_expression_value ? "true" : "false");
 
     if (table_join.strictness() == JoinStrictness::Asof)
         description.emplace_back("ASOF inequality", toString(table_join.getAsofInequality()));
 
     if (!table_join.getClauses().empty())
-        description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
+    {
+        if (settings.pretty)
+            description.emplace_back("Join conditions", TableJoin::formatClausesPretty(table_join.getClauses(), settings));
+        else
+            description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
+    }
 
     if (const auto & mixed_expression = table_join.getMixedJoinExpression())
         description.emplace_back("Residual filter", mixed_expression->getSampleBlock().dumpNames());
@@ -77,23 +126,30 @@ std::vector<size_t> getPermutationForBlock(
 }
 
 JoinStep::JoinStep(
-    const Header & left_header_,
-    const Header & right_header_,
+    const SharedHeader & left_header_,
+    const SharedHeader & right_header_,
     JoinPtr join_,
     size_t max_block_size_,
+    size_t min_block_size_rows_,
     size_t min_block_size_bytes_,
     size_t max_streams_,
     NameSet required_output_,
     bool keep_left_read_in_order_,
-    bool use_new_analyzer_)
+    bool use_new_analyzer_,
+    bool use_join_disjunctions_push_down_)
     : join(std::move(join_))
     , max_block_size(max_block_size_)
+    , min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
     , max_streams(max_streams_)
     , required_output(std::move(required_output_))
     , keep_left_read_in_order(keep_left_read_in_order_)
     , use_new_analyzer(use_new_analyzer_)
+    , use_join_disjunctions_push_down(use_join_disjunctions_push_down_)
+    , disjunctions_optimization_applied(false)
 {
+    if (keep_left_read_in_order)
+        join->keepLeftPipelineInOrder();
     updateInputHeaders({left_header_, right_header_});
 }
 
@@ -109,12 +165,20 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::swap(pipelines[0], pipelines[1]);
 
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
-    if (primary_key_sharding.empty())
+    /// Sharding requires both pipelines to have the same number of streams, because the shards of the two
+    /// sides are paired positionally. Every step that can feed a sharded join keeps one output port per
+    /// shard, so the counts diverge only if the plan is inconsistent: for a `YShaped` join the regular
+    /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
+    bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
+
+    QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding));
+
+    if (!use_sharding)
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
-                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
             joined_pipeline->resize(max_streams);
         }
         else
@@ -125,8 +189,10 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 join,
                 join_algorithm_header,
                 max_block_size,
+                min_block_size_rows,
                 min_block_size_bytes,
                 max_streams,
+                this,
                 keep_left_read_in_order,
                 &processors);
         }
@@ -136,7 +202,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShapedByShards(
-                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
         }
         else
         {
@@ -146,6 +212,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 join,
                 join_algorithm_header,
                 max_block_size,
+                this,
                 &processors);
         }
     }
@@ -153,35 +220,180 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (!use_new_analyzer)
         return joined_pipeline;
 
+    const auto tail_stage = join->pipelineType() == JoinPipelineType::YShaped ? JoinStage::Default : JoinStage::Probe;
+    auto tag_tail = [this, tail_stage](ProcessorPtr processor)
+    {
+        processor->setQueryPlanStep(this, static_cast<size_t>(tail_stage));
+        return processor;
+    };
+
     auto column_permutation = getPermutationForBlock(joined_pipeline->getHeader(), lhs_header, rhs_header, required_output);
     if (!column_permutation.empty())
     {
-        joined_pipeline->addSimpleTransform([&column_permutation](const Block & header)
+        joined_pipeline->addSimpleTransform([&](const SharedHeader & header)
         {
-            return std::make_shared<ColumnPermuteTransform>(header, column_permutation);
+            return tag_tail(std::make_shared<ColumnPermuteTransform>(header, column_permutation));
         });
     }
 
-    if (join->supportParallelJoin())
+    if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
     {
-        joined_pipeline->addSimpleTransform([&](const Block & header)
-                                            { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+        joined_pipeline->addSimpleTransform(
+            [&](const SharedHeader & header)
+            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes)); });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
     const auto & expected_output_header = getOutputHeader();
-    if (!isCompatibleHeader(pipeline_output_header, expected_output_header))
+    if (!isCompatibleHeader(pipeline_output_header, *expected_output_header))
     {
-        assertBlocksHaveEqualStructure(pipeline_output_header, expected_output_header,
-            fmt::format("JoinStep: [{}] and [{}]", pipeline_output_header.dumpNames(), expected_output_header.dumpNames()));
+        assertBlocksHaveEqualStructure(pipeline_output_header, *expected_output_header,
+            fmt::format("JoinStep: [{}] and [{}]", pipeline_output_header.dumpNames(), expected_output_header->dumpNames()));
+    }
+
+    if (dataflow_cache_updater)
+    {
+        joined_pipeline->addSimpleTransform([&](const SharedHeader & header)
+        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
     }
 
     return joined_pipeline;
 }
 
+namespace
+{
+
+std::unordered_set<const IJoin *> collectExecutedJoins(StepProcessors step_processors)
+{
+    std::unordered_set<const IJoin *> joins;
+    for (const auto * processor : step_processors)
+        if (const auto * joining = typeid_cast<const JoiningTransform *>(processor))
+            joins.insert(joining->getJoin().get());
+    return joins;
+}
+
+StepAnalysisReport buildShardedHashJoinReport(const std::unordered_set<const IJoin *> & shard_joins)
+{
+    JoinAnalysisCounters counters;
+    MatchedRowsAccumulator matched_left;
+    MatchedRowsAccumulator matched_right;
+    UInt64 unique_keys = 0;
+    UInt64 memory = 0;
+
+    for (const auto * shard_join : shard_joins)
+    {
+        const auto * hash_join = typeid_cast<const HashJoin *>(shard_join);
+        if (!hash_join)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected join type {} in a pipeline sharded by primary key ranges", shard_join->getName());
+
+        const auto * stats = hash_join->getMatchStats();
+        const UInt64 right_rows = hash_join->getRightTableRowCount();
+        counters.left_rows += stats->getInputLeft();
+        counters.right_rows += right_rows;
+        matched_left.add(stats->getMatchedLeft());
+        matched_right.add(stats->getMatchedRight(right_rows));
+
+        unique_keys += hash_join->getTotalRowCount();
+        memory += hash_join->getPeakBuildBytes();
+    }
+
+    counters.matched_left = matched_left.get();
+    counters.matched_right = matched_right.get();
+
+    StepAnalysisReport report = buildMatchedRowsReport(counters);
+
+    MetricList hash_table_metrics;
+    hash_table_metrics.emplace_back(MetricKey::UniqueKeys, unique_keys);
+    hash_table_metrics.emplace_back(MetricKey::Memory, memory);
+    report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
+
+    return report;
+}
+
+}
+
+JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_processors) const
+{
+    JoinAnalysisCounters counters;
+    MatchedRowsAccumulator matched_left;
+    MatchedRowsAccumulator matched_right;
+    for (const auto * proc : step_processors)
+    {
+        const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc);
+        if (!merge_join)
+            continue;
+
+        const auto join_counters = merge_join->getJoinAnalysisCounters();
+        counters.left_rows += join_counters.left_rows;
+        counters.right_rows += join_counters.right_rows;
+        matched_left.add(join_counters.matched_left);
+        matched_right.add(join_counters.matched_right);
+    }
+    counters.matched_left = matched_left.get();
+    counters.matched_right = matched_right.get();
+
+    return counters;
+}
+
+StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
+{
+    /// Only EXPLAIN ANALYZE asks for a report, and it turns the analyze mode on for the whole query,
+    /// so every join it reaches must have been told to collect statistics
+    chassert(join->getTableJoin().collectAnalyzeStats(), "JoinStep analyzed without the analyze mode");
+
+    /// Case of Y-shaped join
+    if (typeid_cast<const FullSortingMergeJoin *>(join.get()))
+        return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
+
+    if (typeid_cast<const PasteJoin *>(join.get()))
+        return join->getAnalysisReport();
+
+    /// Case for sharded join
+    auto executed_joins = collectExecutedJoins(step_processors);
+    const bool executed_by_shard_clones = !executed_joins.empty() && !executed_joins.contains(join.get());
+    if (executed_by_shard_clones)
+        return buildShardedHashJoinReport(executed_joins);
+
+    chassert(executed_joins.size() == 1);
+
+    /// Case for one join, stored in the JoinStep directly
+    return join->getAnalysisReport();
+}
+
 bool JoinStep::allowPushDownToRight() const
 {
     return join->pipelineType() == JoinPipelineType::YShaped || join->pipelineType() == JoinPipelineType::FillRightFirst;
+}
+
+void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
+{
+    if (disable_squashing)
+    {
+        min_block_size_rows = 0;
+        min_block_size_bytes = 0;
+    }
+    keep_left_read_in_order = true;
+    join->keepLeftPipelineInOrder();
+}
+
+std::vector<size_t> JoinStep::getStepGroups() const
+{
+    return {
+        static_cast<size_t>(JoinStage::Default),
+        static_cast<size_t>(JoinStage::Build),
+        static_cast<size_t>(JoinStage::Probe)
+    };
+}
+
+String JoinStep::getStepGroupName(size_t group) const
+{
+    switch (static_cast<JoinStage>(group))
+    {
+        case JoinStage::Default: return {};
+        case JoinStage::Build: return "build";
+        case JoinStage::Probe: return "probe";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JoinStage group {}", group);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
@@ -191,10 +403,38 @@ void JoinStep::describePipeline(FormatSettings & settings) const
 
 void JoinStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
 
-    for (const auto & [name, value] : describeJoinActions(join))
+    auto description = describeJoinActions(join, settings);
+    const size_t inline_count = settings.pretty ? 3 : 0;
+
+    if (settings.pretty)
+    {
+        if (!join_readable_relation_name.empty())
+            settings.out << prefix << join_readable_relation_name << '\n';
+
+        settings.out << prefix;
+        for (size_t i = 0; i < inline_count; ++i)
+        {
+            if (i > 0)
+                settings.out << " | ";
+            auto [name, value] = description[i];
+            settings.out << name << ": " << value;
+        }
+        settings.out << '\n';
+
+        if (!settings.inside_explain_analyze)
+            describeJoinEstimation(estimation, settings.out, prefix);
+
+        if (locality != JoinLocality::Unspecified)
+            settings.out << prefix << "Locality: " << toString(locality) << '\n';
+    }
+
+    for (size_t i = inline_count; i < description.size(); ++i)
+    {
+        const auto & [name, value] = description[i];
         settings.out << prefix << name << ": " << value << '\n';
+    }
     if (swap_streams)
         settings.out << prefix << "Swapped: true\n";
     if (!primary_key_sharding.empty())
@@ -212,11 +452,17 @@ void JoinStep::describeActions(FormatSettings & settings) const
 
         settings.out << "]\n";
     }
+
+    if (settings.pretty && !settings.inside_explain_analyze)
+        QueryPlanFormat::formatJoinInputColumns(settings.out, *this, prefix);
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    for (const auto & [name, value] : describeJoinActions(join))
+    WriteBufferFromOwnString dummy;
+    ExplainFormatSettings dummy_settings{.out = dummy, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
+
+    for (const auto & [name, value] : describeJoinActions(join, dummy_settings))
         map.add(name, value);
     if (swap_streams)
         map.add("Swapped", true);
@@ -236,35 +482,44 @@ void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
 {
-    join_algorithm_header.clear();
+    join_algorithm_header.reset();
     swap_streams = swap_streams_;
     join = std::move(join_);
+    if (keep_left_read_in_order)
+        join->keepLeftPipelineInOrder();
     updateOutputHeader();
+}
+
+void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)
+{
+    join_readable_relation_name = std::move(logical_join_info.readable_relation_name);
+    estimation = logical_join_info.estimation;
+    locality = logical_join_info.locality;
+    cluster_id = logical_join_info.cluster_id;
 }
 
 void JoinStep::updateOutputHeader()
 {
-    if (join_algorithm_header)
+    if (join_algorithm_header && !join_algorithm_header->empty())
         return;
 
     const auto & header = swap_streams ? input_headers[1] : input_headers[0];
 
-    Block result_header = JoiningTransform::transformHeader(header, join);
-    join_algorithm_header = result_header;
+    join_algorithm_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*header, join));
 
     if (!use_new_analyzer)
     {
         if (swap_streams)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without new analyzer");
-        output_header = result_header;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without the analyzer");
+        output_header = join_algorithm_header;
         return;
     }
 
-    auto column_permutation = getPermutationForBlock(result_header, input_headers[0], input_headers[1], required_output);
+    auto column_permutation = getPermutationForBlock(*join_algorithm_header, *input_headers[0], *input_headers[1], required_output);
     if (!column_permutation.empty())
-        result_header = ColumnPermuteTransform::permute(result_header, column_permutation);
-
-    output_header = result_header;
+        output_header = std::make_shared<const Block>(ColumnPermuteTransform::permute(*join_algorithm_header, column_permutation));
+    else
+        output_header = join_algorithm_header;
 }
 
 static ITransformingStep::Traits getStorageJoinTraits()
@@ -282,10 +537,10 @@ static ITransformingStep::Traits getStorageJoinTraits()
     };
 }
 
-FilledJoinStep::FilledJoinStep(const Header & input_header_, JoinPtr join_, size_t max_block_size_)
+FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_, size_t max_block_size_)
     : ITransformingStep(
         input_header_,
-        JoiningTransform::transformHeader(input_header_, join_),
+        std::make_shared<const Block>(JoiningTransform::transformHeader(*input_header_, join_)),
         getStorageJoinTraits())
     , join(std::move(join_))
     , max_block_size(max_block_size_)
@@ -296,39 +551,52 @@ FilledJoinStep::FilledJoinStep(const Header & input_header_, JoinPtr join_, size
 
 void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    QueryExecutionCounters::addExecutedJoin(*join);
+
     bool default_totals = false;
-    if (!pipeline.hasTotals() && join->getTotals())
+    if (!pipeline.hasTotals() && !join->getTotals().empty())
     {
         pipeline.addDefaultTotals();
         default_totals = true;
     }
 
     auto finish_counter = std::make_shared<FinishCounter>(pipeline.getNumStreams());
+    auto match_counter = std::make_shared<RightRowsMatchCounter>();
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
         auto counter = on_totals ? nullptr : finish_counter;
-        return std::make_shared<JoiningTransform>(header, *output_header, join, max_block_size, on_totals, default_totals, counter);
+        return std::make_shared<JoiningTransform>(header, output_header, join, max_block_size, on_totals, default_totals, counter, match_counter);
     });
 }
 
 void FilledJoinStep::updateOutputHeader()
 {
-    output_header = JoiningTransform::transformHeader(input_headers.front(), join);
+    output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
+}
+
+StepAnalysisReport FilledJoinStep::getAnalysisReport(StepProcessors /*step_processors*/) const
+{
+    chassert(join->getTableJoin().collectAnalyzeStats(), "FilledJoinStep analyzed without the analyze mode");
+
+    return join->getAnalysisReport();
 }
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
 
-    for (const auto & [name, value] : describeJoinActions(join))
+    for (const auto & [name, value] : describeJoinActions(join, settings))
         settings.out << prefix << name << ": " << value << '\n';
 }
 
 void FilledJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    for (const auto & [name, value] : describeJoinActions(join))
+    WriteBufferFromOwnString dummy;
+    ExplainFormatSettings dummy_settings{.out = dummy, .header_prefix = "", .detail_prefix = "", .pretty_names = {}, .runtime_filter_names = {}};
+
+    for (const auto & [name, value] : describeJoinActions(join, dummy_settings))
         map.add(name, value);
 }
 

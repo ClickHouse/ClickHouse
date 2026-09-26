@@ -46,13 +46,8 @@ struct IReadBufferIterator
     /// Used for caching number of rows from files metadata during schema inference.
     virtual void setNumRowsToLastFile(size_t /*num_rows*/) {}
 
-    /// Set schema inferred from last file. Used for UNION mode to cache schema
-    /// per file.
+    /// Set schema inferred from last file.
     virtual void setSchemaToLastFile(const ColumnsDescription & /*columns*/) {}
-
-    /// Set resulting inferred schema. Used for DEFAULT mode to cache schema
-    /// for all files.
-    virtual void setResultingSchema(const ColumnsDescription & /*columns*/) {}
 
     /// Set auto detected format name.
     virtual void setFormatName(const String & /*format_name*/) {}

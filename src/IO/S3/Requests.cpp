@@ -1,44 +1,161 @@
 #include <IO/S3/Requests.h>
+#include <Common/StringUtils.h>
+
+#include <algorithm>
+#include <cctype>
 
 #if USE_AWS_S3
 
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/Crypto/OpenSSLInitializer.h>
+#include <IO/S3RequestSettings.h>
 #include <aws/core/endpoint/EndpointParameter.h>
 #include <aws/core/utils/xml/XmlSerializer.h>
+
+#include <string_view>
+#include <fmt/format.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int INVALID_SETTING_VALUE;
+}
+}
+
+namespace DB::S3RequestSetting
+{
+    extern const S3RequestSettingsString upload_checksum_algorithm;
+}
 
 namespace DB::S3
 {
 
-Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() const
+RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket)
 {
-    auto headers = Model::CopyObjectRequest::GetRequestSpecificHeaders();
-    if (api_mode != ApiMode::GCS)
-        return headers;
+    /// An explicit setting always wins.
+    const auto & name = request_settings[DB::S3RequestSetting::upload_checksum_algorithm].value;
+    if (!name.empty())
+    {
+        const auto algorithm = tryParse(name);
+        if (!algorithm)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting upload_checksum_algorithm has invalid value {} which only supports {}",
+                name, supportedAlgorithms());
 
+        /// `MD5` selects the SDK's `Content-MD5` path, which `S3Express` and FIPS reject.
+        if (*algorithm == RequestChecksum::Algorithm::MD5)
+        {
+            if (is_s3express_bucket)
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting upload_checksum_algorithm cannot be MD5 for S3Express buckets, "
+                    "which require a flexible checksum; use CRC32 or SHA256");
+            if (OpenSSLInitializer::instance().isFIPSEnabled())
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting upload_checksum_algorithm cannot be MD5 when FIPS mode is enabled; use CRC32 or SHA256");
+        }
+        return *algorithm;
+    }
+
+    /// No explicit choice: pick a default for the environment.
+    if (is_s3express_bucket)
+        return RequestChecksum::Algorithm::CRC32; /// flexible checksum is mandatory, `Content-MD5` not accepted
+
+    /// Default to the SDK's `Content-MD5` path. Under FIPS the SDK silently drops it, leaving the upload with no
+    /// checksum header - the pre-flexible-checksum behavior, which is kept as the default because support for
+    /// `x-amz-checksum-*` outside AWS is inconsistent. Set the setting explicitly to attach one.
+    return RequestChecksum::Algorithm::MD5;
+}
+
+namespace
+{
+
+/// Translated in both directions; a name added here is renamed going out and recognised coming back.
+constexpr std::pair<std::string_view, std::string_view> GCS_TRANSLATED_HEADERS[] = {
+    {"x-amz-copy-source", "x-goog-copy-source"},
+    {"x-amz-metadata-directive", "x-goog-metadata-directive"},
+    /// Only the name is translated: S3 and GCS share no class name but STANDARD, so an S3 class
+    /// reaches GCS as 400 InvalidStorageClass.
+    {"x-amz-storage-class", "x-goog-storage-class"},
+};
+
+/// Object metadata is a family rather than one name, so it is matched by prefix.
+constexpr std::string_view AMZ_META_PREFIX = "x-amz-meta-";
+constexpr std::string_view GCS_META_PREFIX = "x-goog-meta-";
+
+/// No GCS counterpart, and some GCS requests reject them. `amz-sdk-invocation-id` and
+/// `amz-sdk-request` carry no `x-amz-` prefix, so they survive.
+constexpr std::string_view GCS_DROPPED_HEADERS[] = {
+    "x-amz-api-version",
+};
+
+}
+
+std::optional<std::string> translateHeaderNameFromGCS(const std::string & name)
+{
+    for (const auto & [amz_header, gcs_header] : GCS_TRANSLATED_HEADERS)
+        if (equalsCaseInsensitive(name, gcs_header))
+            return std::string(amz_header);
+
+    /// Lower-case the whole name: the SDK makes the part after the prefix a key in a case-sensitive map.
+    if (name.size() > GCS_META_PREFIX.size()
+        && equalsCaseInsensitive(std::string_view(name).substr(0, GCS_META_PREFIX.size()), GCS_META_PREFIX))
+    {
+        auto suffix = name.substr(GCS_META_PREFIX.size());
+        std::transform(suffix.begin(), suffix.end(), suffix.begin(), [](unsigned char c) { return std::tolower(c); });
+        return std::string(AMZ_META_PREFIX) + suffix;
+    }
+
+    return {};
+}
+
+void translateHeadersToGCS(Aws::Http::HttpRequest & request)
+{
+    const auto before = request.GetHeaders();
+    const auto after = translateHeadersToGCS(before);
+
+    for (const auto & [name, _] : before)
+        if (!after.contains(name))
+            request.DeleteHeader(name.c_str());
+
+    for (const auto & [name, value] : after)
+        if (!before.contains(name))
+            request.SetHeaderValue(name, value);
+}
+
+Aws::Http::HeaderValueCollection translateHeadersToGCS(Aws::Http::HeaderValueCollection headers)
+{
     /// GCS supports same headers as S3 but with a prefix x-goog instead of x-amz
     /// we have to replace all the prefixes client set internally
-    const auto replace_with_gcs_header = [&](const std::string & amz_header, const std::string & gcs_header)
+    const auto replace_with_gcs_header = [&](std::string_view amz_header, std::string_view gcs_header)
     {
-        if (const auto it = headers.find(amz_header); it != headers.end())
+        if (const auto it = headers.find(std::string(amz_header)); it != headers.end())
         {
             auto header_value = std::move(it->second);
             headers.erase(it);
-            headers.emplace(gcs_header, std::move(header_value));
+            headers.emplace(std::string(gcs_header), std::move(header_value));
         }
     };
 
-    replace_with_gcs_header("x-amz-copy-source", "x-goog-copy-source");
-    replace_with_gcs_header("x-amz-metadata-directive", "x-goog-metadata-directive");
-    replace_with_gcs_header("x-amz-storage-class", "x-goog-storage-class");
+    for (const auto & [amz_header, gcs_header] : GCS_TRANSLATED_HEADERS)
+        replace_with_gcs_header(amz_header, gcs_header);
+
+    for (const auto & dropped_header : GCS_DROPPED_HEADERS)
+        headers.erase(std::string(dropped_header));
 
     /// replace all x-amz-meta- headers
-    std::vector<std::pair<std::string, std::string>> new_meta_headers;
+    VectorWithMemoryTracking<std::pair<std::string, std::string>> new_meta_headers;
     for (auto it = headers.begin(); it != headers.end();)
     {
-        if (it->first.starts_with("x-amz-meta-"))
+        if (it->first.starts_with(AMZ_META_PREFIX))
         {
             auto value = std::move(it->second);
-            auto header = "x-goog" + it->first.substr(/* x-amz */ 5);
+            auto header = std::string(GCS_META_PREFIX) + it->first.substr(AMZ_META_PREFIX.size());
             new_meta_headers.emplace_back(std::pair{std::move(header), std::move(value)});
             it = headers.erase(it);
         }
@@ -52,17 +169,25 @@ Aws::Http::HeaderValueCollection CopyObjectRequest::GetRequestSpecificHeaders() 
     return headers;
 }
 
+void HeadObjectRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
+{
+    // S3's HeadObject doesn't support `x-amz-server-side-encryption` headers so we skip adding them
+    // Docs: https://docs.aws.amazon.com/AmazonS3/latest/API/API_HeadObject.html
+    if (headerName != "x-amz-server-side-encryption")
+        Model::HeadObjectRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
+}
+
 void CompleteMultipartUploadRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
 {
     // S3's CompleteMultipartUpload doesn't support metadata headers so we skip adding them
-    if (!headerName.starts_with("x-amz-meta-"))
+    if (!headerName.starts_with("x-amz-meta-") && (headerName != "x-amz-server-side-encryption"))
         Model::CompleteMultipartUploadRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
 }
 
 void UploadPartRequest::SetAdditionalCustomHeaderValue(const Aws::String& headerName, const Aws::String& headerValue)
 {
     // S3's UploadPart doesn't support metadata headers so we skip adding them
-    if (!headerName.starts_with("x-amz-meta-"))
+    if (!headerName.starts_with("x-amz-meta-") && (headerName != "x-amz-server-side-encryption"))
         Model::UploadPartRequest::SetAdditionalCustomHeaderValue(headerName, headerValue);
 }
 
@@ -156,7 +281,7 @@ void ComposeObjectRequest::SetKey(const char * value)
     key.assign(value);
 }
 
-void ComposeObjectRequest::SetComponentNames(std::vector<Aws::String> component_names_)
+void ComposeObjectRequest::SetComponentNames(Strings component_names_)
 {
     component_names = std::move(component_names_);
 }
@@ -166,6 +291,61 @@ void ComposeObjectRequest::SetContentType(Aws::String value)
     content_type = std::move(value);
 }
 
+
+static size_t getAttemptFromInfo(const Aws::String & request_info)
+{
+    static auto key = Aws::String("attempt=");
+
+    auto key_begin = request_info.find(key, 0);
+    if (key_begin == Aws::String::npos)
+        return 1;
+
+    auto val_begin = key_begin + key.size();
+    auto val_end = request_info.find(';', val_begin);
+    if (val_end == Aws::String::npos)
+        val_end = request_info.size();
+
+    if (val_begin == val_end)
+        return 1;
+
+    auto value = request_info.substr(val_begin, val_end - val_begin);
+    try
+    {
+        return std::stol(value, nullptr, 10);
+    }
+    catch (const std::exception &)
+    {
+        return 1;
+    }
+}
+
+static String getOrEmpty(const Aws::Http::HeaderValueCollection & map, const String & key)
+{
+    auto it = map.find(key);
+    if (it == map.end())
+        return {};
+    return it->second;
+}
+
+void setClickHouseAttemptNumber(Aws::AmazonWebServiceRequest & request, size_t attempt)
+{
+    request.SetAdditionalCustomHeaderValue("clickhouse-request", fmt::format("attempt={}", attempt));
+}
+
+size_t getClickHouseAttemptNumber(const Aws::AmazonWebServiceRequest & request)
+{
+    return getAttemptFromInfo(getOrEmpty(request.GetHeaders(), "clickhouse-request"));
+}
+
+size_t getClickHouseAttemptNumber(const Aws::Http::HttpRequest & request)
+{
+    return getAttemptFromInfo(getOrEmpty(request.GetHeaders(), "clickhouse-request"));
+}
+
+size_t getSDKAttemptNumber(const Aws::Http::HttpRequest & request)
+{
+       return getAttemptFromInfo(getOrEmpty(request.GetHeaders(), Aws::Http::SDK_REQUEST_HEADER));
+}
 }
 
 #endif

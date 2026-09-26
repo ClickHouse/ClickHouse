@@ -10,7 +10,7 @@ namespace DB
 
 void formatBlock(OutputFormatPtr out, const Block & block)
 {
-    auto source = std::make_shared<SourceFromSingleChunk>(block);
+    auto source = std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{block}));
     QueryPipeline pipeline(source);
     pipeline.complete(out);
     CompletedPipelineExecutor executor(pipeline);

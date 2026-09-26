@@ -5,6 +5,7 @@
 #if USE_SSH && defined(OS_LINUX)
 
 #include <memory>
+#include <mutex>
 #include <base/types.h>
 
 struct ssh_session_struct;
@@ -30,8 +31,6 @@ public:
 
     /// Disable reading default libssh configuration
     void disableDefaultConfig();
-    /// Disable session from closing socket. Can be used when a socket is passed.
-    void disableSocketOwning();
 
     /// Connect / disconnect
     void connect();
@@ -53,6 +52,8 @@ public:
 
 private:
     SessionPtr session = nullptr;
+    bool disconnected = false;
+    std::mutex disconnect_mutex;
 };
 
 }

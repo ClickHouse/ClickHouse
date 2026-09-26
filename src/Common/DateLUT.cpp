@@ -1,7 +1,8 @@
-#include "DateLUT.h"
+#include <Common/DateLUT.h>
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/filesystemHelpers.h>
 #include <Core/Settings.h>
@@ -24,11 +25,6 @@ namespace Setting
 namespace
 {
 
-std::string extractTimezoneFromContext(DB::ContextPtr query_context)
-{
-    return query_context->getSettingsRef()[DB::Setting::session_timezone].value;
-}
-
 Poco::DigestEngine::Digest calcSHA1(const std::string & path)
 {
     std::ifstream stream(path);
@@ -40,6 +36,39 @@ Poco::DigestEngine::Digest calcSHA1(const std::string & path)
     if (!stream.eof())
         throw Poco::Exception("Error while reading file: '" + path + "'.");
     return digest_engine.digest();
+}
+
+
+/// Some time zone databases keep alternate copies of the zones next to the canonical ones:
+/// `posix/` holds copies of the top-level files, and `right/` holds the same zones counting
+/// leap seconds. Neither directory name is part of a zone name - the zone is what follows it,
+/// and ClickHouse does not model leap seconds, so `right/Europe/Berlin` is `Europe/Berlin` here.
+/// The content-scan below already skips both directories; the relative-path fast paths above it
+/// see the host-selected name verbatim, so they have to strip the prefix themselves.
+std::string canonicalTimeZoneName(std::string name)
+{
+    for (std::string_view prefix : {"posix/", "right/"})
+        if (name.starts_with(prefix))
+            return name.substr(prefix.size());
+    return name;
+}
+
+
+/// The host selects its time zone by a path, and the same zone has many path spellings that the
+/// filesystem accepts but a zone name does not: `Europe/./Amsterdam`, `Europe//Amsterdam`, and any
+/// repetition of `./` and `/`. The raw spelling is preferred only because resolving symlinks can
+/// rename a zone (`UTC` -> `UCT`), so keep it when the time zone database knows it, and otherwise
+/// use the name that resolving the path produced.
+std::string preferredTimeZoneName(const std::string & tz_name, const std::filesystem::path & relative_path)
+{
+    if (!tz_name.empty())
+    {
+        std::string candidate = canonicalTimeZoneName(tz_name);
+        if (DateLUTImpl::isSupportedTimeZoneName(candidate))
+            return candidate;
+    }
+
+    return canonicalTimeZoneName(relative_path.lexically_normal().string());
 }
 
 
@@ -65,8 +94,19 @@ std::string determineDefaultTimeZone()
         if (*tz_env_var == ':')
             ++tz_env_var;
 
+        /// An empty TZ value (including a bare ":") means UTC, the same as in glibc.
+        /// Without this, the empty path resolves to the time zone database directory itself,
+        /// and reading it as a file fails with "Is a directory". See #68920.
+        if (*tz_env_var == '\0')
+            return "UTC";
+
         tz_file_path = tz_env_var;
-        tz_name = tz_env_var;
+
+        /// If TZ points to a file path (e.g. TZ=:/etc/localtime per POSIX),
+        /// don't use the path as the timezone name — let it be resolved from
+        /// the file's location relative to the timezone database. See #86495.
+        if (tz_env_var[0] != '/')
+            tz_name = tz_env_var;
     }
     else
     {
@@ -101,7 +141,7 @@ std::string determineDefaultTimeZone()
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
 
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
-                return tz_name.empty() ? relative_path.string() : tz_name;
+                return preferredTimeZoneName(tz_name, relative_path);
         }
 
         /// Try the same with full symlinks resolution
@@ -113,7 +153,7 @@ std::string determineDefaultTimeZone()
 
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
-                return tz_name.empty() ? relative_path.string() : tz_name;
+                return preferredTimeZoneName(tz_name, relative_path);
         }
 
         /// The file is not inside the tz_database_dir, so we hope that it was copied (not symlinked)
@@ -160,31 +200,27 @@ const DateLUTImpl & DateLUT::instance()
 {
     const auto & date_lut = getInstance();
 
+    std::optional<std::string> timezone_from_context;
     if (DB::CurrentThread::isInitialized())
     {
-        std::string timezone_from_context;
-        const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
+        const DB::ContextPtr query_context = DB::CurrentThread::get().tryGetQueryContext();
         if (query_context)
-        {
-            timezone_from_context = extractTimezoneFromContext(query_context);
+            timezone_from_context.emplace(query_context->getSettingsRef()[DB::Setting::session_timezone]);
+    }
 
-            if (!timezone_from_context.empty())
-                return date_lut.getImplementation(timezone_from_context);
-        }
-
+    if (!timezone_from_context.has_value())
+    {
         /// On the server side, timezone is passed in query_context,
         /// but on CH-client side we have no query context,
         /// and each time we modify client's global context
-        const DB::ContextPtr global_context = DB::CurrentThread::get().getGlobalContext();
+        const DB::ContextPtr global_context = DB::Context::getGlobalContextInstance();
         if (global_context)
-        {
-            timezone_from_context = extractTimezoneFromContext(global_context);
-
-            if (!timezone_from_context.empty())
-                return date_lut.getImplementation(timezone_from_context);
-        }
+            timezone_from_context.emplace(global_context->getSettingsRef()[DB::Setting::session_timezone]);
     }
+
+    if (timezone_from_context.has_value() && !timezone_from_context->empty())
+        return date_lut.getImplementation(*timezone_from_context);
+
     return serverTimezoneInstance();
 }
 
@@ -192,30 +228,63 @@ DateLUT::DateLUT()
 {
     /// Initialize the pointer to the default DateLUTImpl.
     std::string default_time_zone = determineDefaultTimeZone();
+
+    /// The name comes from the host's time zone database, while the zones ClickHouse can load come
+    /// from the database linked into the binary. Report the mismatch here, where the name and where
+    /// it came from are both known, instead of letting `DateLUTImpl` report an unsupported name with
+    /// no hint that the host, and not the query, chose it.
+    if (!DateLUTImpl::isSupportedTimeZoneName(default_time_zone))
+        throw Poco::Exception(
+            "The local time zone is '" + default_time_zone
+            + "', which ClickHouse does not know. Set the TZ environment variable, or the `timezone` "
+              "server setting, to a name from `system.time_zones`, or to a fixed offset spelled "
+              "`Fixed/UTC±HH:MM:SS`.");
+
     default_impl.store(&getImplementation(default_time_zone), std::memory_order_release);
 }
 
 
-const DateLUTImpl & DateLUT::getImplementation(const std::string & time_zone) const
+const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
 {
     std::lock_guard lock(mutex);
 
-    auto it = impls.emplace(time_zone, nullptr).first;
-    if (!it->second)
-        it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
+    auto [it, inserted] = impls.emplace(time_zone, nullptr);
+    if (inserted)
+    {
+        try
+        {
+            it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
+        }
+        catch (...)
+        {
+            /// `DateLUTImpl` construction throws for an unknown time zone. Erase the just-inserted
+            /// empty slot; otherwise a stream of distinct invalid time zone names (which can come from
+            /// untrusted input, e.g. binary type decoding or `toDateTime(x, '<garbage>')`) would grow
+            /// this cache without bound, since entries are never evicted.
+            impls.erase(it);
+            throw;
+        }
+    }
 
     return *it->second;
 }
 
 DateLUT & DateLUT::getInstance()
 {
-    static DateLUT ret;
-    return ret;
+    /// Intentionally leaked: must outlive the asynchronous logger threads that may still
+    /// be formatting `LocalDateTime` values when other static destructors run.
+    static DateLUT * ret = new DateLUT;
+    return *ret;
 }
 
 ExtendedDayNum makeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, Int32 default_error_day_num)
 {
     return date_lut.makeDayNum(year, month, day_of_month, default_error_day_num);
+}
+
+std::optional<ExtendedDayNum> tryToMakeDayNum(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month)
+{
+    return date_lut.tryToMakeDayNum(year, month, day_of_month);
 }
 
 Int64 makeDate(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month)
@@ -228,6 +297,12 @@ Int64 makeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 
 {
     static_assert(std::same_as<Int64, DateLUTImpl::Time>);
     return date_lut.makeDateTime(year, month, day_of_month, hour, minute, second);
+}
+
+std::optional<Int64> tryToMakeDateTime(const DateLUTImpl & date_lut, Int16 year, UInt8 month, UInt8 day_of_month, UInt8 hour, UInt8 minute, UInt8 second)
+{
+    static_assert(std::same_as<Int64, DateLUTImpl::Time>);
+    return date_lut.tryToMakeDateTime(year, month, day_of_month, hour, minute, second);
 }
 
 const std::string & getDateLUTTimeZone(const DateLUTImpl & date_lut)

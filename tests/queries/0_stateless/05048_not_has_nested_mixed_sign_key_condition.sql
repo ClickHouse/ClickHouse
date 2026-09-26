@@ -1,0 +1,112 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
+
+SET explain_query_plan_default = 'legacy';
+SET optimize_rewrite_has_to_in = 0;
+
+-- { echo }
+
+-- Inside a container, `has` compares the children of two `Tuple`/`Array` `Field`s with the plain
+-- `Field::operator==`, which requires the same carrier type: a nested `UInt64` child never equals a
+-- nested `Int64` child even for the same value. The set index, however, casts the element to the key
+-- type, mapping mixed-sign values onto each other. No set atom must be built for mixed-sign leaves
+-- inside a container, or `notHas` would prune rows that satisfy the predicate.
+DROP TABLE IF EXISTS test_not_has_tuple_int8;
+CREATE TABLE test_not_has_tuple_int8 (t Tuple(x Int8)) ENGINE = MergeTree
+ORDER BY t
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_not_has_tuple_int8 VALUES ((1)), ((2)), ((2)), ((3));
+
+SELECT count() FROM test_not_has_tuple_int8 WHERE notHas([tuple(toUInt8(2))], t);
+SELECT count() FROM test_not_has_tuple_int8 WHERE notHas([tuple(toUInt8(2))], t) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_not_has_tuple_int8 WHERE has([tuple(toUInt8(2))], t);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_tuple_int8 WHERE notHas([tuple(toUInt8(2))], t)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+-- Same signedness across widths keeps the same `Int64` carrier on both sides, so the raw comparison
+-- is numeric and agrees with the cast: the exact set atom stays and prunes correctly.
+SELECT count() FROM test_not_has_tuple_int8 WHERE notHas([tuple(toInt64(2))], t);
+SELECT count() FROM test_not_has_tuple_int8 WHERE notHas([tuple(toInt64(2))], t) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_tuple_int8 WHERE notHas([tuple(toInt64(2))], t)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+DROP TABLE test_not_has_tuple_int8;
+
+-- The reverse pair: an unsigned key with a signed element inside a `Tuple` is declined as well.
+DROP TABLE IF EXISTS test_not_has_tuple_uint8;
+CREATE TABLE test_not_has_tuple_uint8 (t Tuple(x UInt8)) ENGINE = MergeTree
+ORDER BY t
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_not_has_tuple_uint8 VALUES ((1)), ((2)), ((2)), ((3));
+
+SELECT count() FROM test_not_has_tuple_uint8 WHERE notHas([tuple(toInt8(2))], t);
+SELECT count() FROM test_not_has_tuple_uint8 WHERE notHas([tuple(toInt8(2))], t) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_tuple_uint8 WHERE notHas([tuple(toInt8(2))], t)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+-- Unsigned next to unsigned keeps the `UInt64` carrier on both sides and stays prunable.
+SELECT count() FROM test_not_has_tuple_uint8 WHERE notHas([tuple(toUInt64(2))], t);
+SELECT count() FROM test_not_has_tuple_uint8 WHERE notHas([tuple(toUInt64(2))], t) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_tuple_uint8 WHERE notHas([tuple(toUInt64(2))], t)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+DROP TABLE test_not_has_tuple_uint8;
+
+-- The same rule applies element-wise inside `Array`.
+DROP TABLE IF EXISTS test_not_has_array_int8;
+CREATE TABLE test_not_has_array_int8 (a Array(Int8)) ENGINE = MergeTree
+ORDER BY a
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_not_has_array_int8 VALUES ([1]), ([2]), ([2]), ([3]);
+
+SELECT count() FROM test_not_has_array_int8 WHERE notHas([[toUInt8(2)]], a);
+SELECT count() FROM test_not_has_array_int8 WHERE notHas([[toUInt8(2)]], a) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_not_has_array_int8 WHERE has([[toUInt8(2)]], a);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_array_int8 WHERE notHas([[toUInt8(2)]], a)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+-- Same signedness across widths stays prunable.
+SELECT count() FROM test_not_has_array_int8 WHERE notHas([[toInt64(2)]], a);
+SELECT count() FROM test_not_has_array_int8 WHERE notHas([[toInt64(2)]], a) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_array_int8 WHERE notHas([[toInt64(2)]], a)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+DROP TABLE test_not_has_array_int8;
+
+-- An `Enum` child is carried as `Int64`, so next to a nested *unsigned* integer the raw comparison
+-- never holds and the pair is declined; next to a nested *signed* integer the carriers match and the
+-- exact set atom stays.
+DROP TABLE IF EXISTS test_not_has_tuple_enum;
+CREATE TABLE test_not_has_tuple_enum (t Tuple(e Enum8('a' = 1, 'b' = 2, 'c' = 3))) ENGINE = MergeTree
+ORDER BY t
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_not_has_tuple_enum VALUES (('a')), (('b')), (('b')), (('c'));
+
+SELECT count() FROM test_not_has_tuple_enum WHERE notHas([tuple(toUInt8(2))], t);
+SELECT count() FROM test_not_has_tuple_enum WHERE notHas([tuple(toUInt8(2))], t) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_tuple_enum WHERE notHas([tuple(toUInt8(2))], t)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+SELECT count() FROM test_not_has_tuple_enum WHERE notHas([tuple(toInt8(2))], t);
+SELECT count() FROM test_not_has_tuple_enum WHERE notHas([tuple(toInt8(2))], t) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_tuple_enum WHERE notHas([tuple(toInt8(2))], t)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+DROP TABLE test_not_has_tuple_enum;
+
+-- With multiple key arguments the right-hand side of `has` is a tuple of key columns, so the
+-- per-column comparison also happens between the children of two `Tuple` `Field`s: mixed-sign pairs
+-- are declined there as well, while same-carrier pairs keep the exact atom.
+DROP TABLE IF EXISTS test_not_has_multi_key;
+CREATE TABLE test_not_has_multi_key (a Int8, b Int8) ENGINE = MergeTree
+ORDER BY (a, b)
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_not_has_multi_key VALUES (1, 1), (2, 2), (2, 2), (3, 3);
+
+SELECT count() FROM test_not_has_multi_key WHERE notHas([(toUInt8(2), toUInt8(2))], (a, b));
+SELECT count() FROM test_not_has_multi_key WHERE notHas([(toUInt8(2), toUInt8(2))], (a, b)) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_not_has_multi_key WHERE has([(toUInt8(2), toUInt8(2))], (a, b));
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_multi_key WHERE notHas([(toUInt8(2), toUInt8(2))], (a, b))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+SELECT count() FROM test_not_has_multi_key WHERE notHas([(toInt64(2), toInt64(2))], (a, b));
+SELECT count() FROM test_not_has_multi_key WHERE notHas([(toInt64(2), toInt64(2))], (a, b)) SETTINGS use_primary_key = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_not_has_multi_key WHERE notHas([(toInt64(2), toInt64(2))], (a, b))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
+
+DROP TABLE test_not_has_multi_key;

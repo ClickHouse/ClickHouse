@@ -4,6 +4,7 @@
 #include <optional>
 
 #include <Access/EnabledRowPolicies.h>
+#include <Core/Block.h>
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
@@ -36,7 +37,17 @@ struct RowPolicy;
 using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 
 
-/** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
+/** Interprets the SELECT query with `TreeRewriter` and `ExpressionAnalyzer`, the query analysis that
+  * preceded the analyzer. Returns the stream of blocks with the results of the query before the
+  * `to_stage` stage.
+  *
+  * A query a user sends is never interpreted this way anymore - the analyzer
+  * (`InterpreterSelectQueryAnalyzer`) has been the only query analysis a query is given since v26.9,
+  * and the code that gave it the other one was removed in v26.10. What is left are the
+  * internal callers that compile a synthetic `SELECT` over a source they construct themselves, and do
+  * not go through query analysis at all: the projection machinery (`ProjectionDescription`,
+  * `optimizeUseAggregateProjection`) and the AST-based arms of `EXPLAIN SYNTAX` / `EXPLAIN AST`. Do not
+  * add a new caller; use `InterpreterSelectQueryAnalyzer`.
   */
 class InterpreterSelectQuery : public IInterpreterUnionOrSelectQuery
 {
@@ -122,15 +133,22 @@ public:
 
     RowPolicyFilterPtr getRowPolicyFilter() const;
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
-
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
     static bool isQueryWithFinal(const SelectQueryInfo & info);
 
+    struct LimitInfo
+    {
+        UInt64 limit_length{0};
+        UInt64 limit_offset{0};
+        Float64 fractional_limit{0};
+        Float64 fractional_offset{0};
+        bool is_limit_length_negative{false};
+        bool is_limit_offset_negative{false};
+    };
 
-    static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
+    static LimitInfo getLimitLengthAndOffset(const ASTSelectQuery & query, const ContextPtr & context);
 
     /// Adjust the parallel replicas settings (enabled, disabled) based on the query analysis
     bool adjustParallelReplicasAfterAnalysis();
@@ -162,6 +180,9 @@ private:
     void addPrewhereAliasActions();
     void applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const;
     bool shouldMoveToPrewhere() const;
+    /// Whether the row policy filter can be handed to the storage's read(). Shared by the
+    /// push site and the apply-as-FilterStep fallback, which must stay exact complements.
+    bool shouldPushRowLevelFilterToStorage() const;
 
     Block getSampleBlockImpl();
 
@@ -175,7 +196,6 @@ private:
     void executeMergeAggregated(QueryPlan & query_plan, bool overflow_row, bool final, bool has_grouping_sets);
     void executeTotalsAndHaving(QueryPlan & query_plan, bool has_having, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter, bool overflow_row, bool final);
     void executeHaving(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, bool remove_filter);
-    static void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const std::string & description);
     /// FIXME should go through ActionsDAG to behave as a proper function
     void executeWindow(QueryPlan & query_plan);
     void executeOrder(QueryPlan & query_plan, InputOrderInfoPtr sorting_info);
@@ -219,7 +239,7 @@ private:
     ExpressionAnalysisResult analysis_result;
     /// For row-level security.
     RowPolicyFilterPtr row_policy_filter;
-    FilterDAGInfoPtr filter_info;
+    FilterDAGInfoPtr row_policy_info;
 
     /// For additional_filter setting.
     FilterDAGInfoPtr additional_filter_info;
@@ -232,7 +252,7 @@ private:
     /// List of columns to read to execute the query.
     Names required_columns;
     /// Structure of query source (table, subquery, etc).
-    Block source_header;
+    SharedHeader source_header;
 
     /// Actions to calculate ALIAS if required.
     std::optional<ActionsDAG> alias_actions;

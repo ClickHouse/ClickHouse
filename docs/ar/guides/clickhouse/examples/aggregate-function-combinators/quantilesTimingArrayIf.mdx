@@ -1,0 +1,70 @@
+---
+slug: '/examples/aggregate-function-combinators/quantilesTimingArrayIf'
+title: 'quantilesTimingArrayIf'
+description: 'مثال على استخدام المُركِّب quantilesTimingArrayIf'
+keywords: ['quantilesTiming', 'array', 'if', 'combinator', 'examples', 'quantilesTimingArrayIf']
+sidebarTitle: 'quantilesTimingArrayIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُركِّبين [`Array`](/ar/reference/functions/aggregate-functions/combinators#-array) و[`If`](/ar/reference/functions/aggregate-functions/combinators#-if)
+على الدالة [`quantilesTiming`](/ar/reference/functions/aggregate-functions/quantileTiming)
+لحساب الكوانتايلات لقيم التوقيت في المصفوفات ضمن الصفوف التي يكون فيها الشرط true،
+باستخدام دالة مُركِّب التجميع `quantilesTimingArrayIf`.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+في هذا المثال، سنُنشئ جدولًا يخزّن أزمنة استجابة واجهة برمجة التطبيقات لنقاط النهاية المختلفة،
+وسنستخدم `quantilesTimingArrayIf` لحساب كوانتايلات زمن الاستجابة للطلبات الناجحة.
+
+```sql title="Query"
+CREATE TABLE api_responses(
+    endpoint String,
+    response_times_ms Array(UInt32),
+    success_rate Float32
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO api_responses VALUES
+    ('orders', [82, 94, 98, 87, 103, 92, 89, 105], 0.98),
+    ('products', [45, 52, 48, 51, 49, 53, 47, 50], 0.95),
+    ('users', [120, 125, 118, 122, 121, 119, 123, 124], 0.92);
+
+SELECT
+    endpoint,
+    quantilesTimingArrayIf(0, 0.25, 0.5, 0.75, 0.95, 0.99, 1.0)(response_times_ms, success_rate >= 0.95) as response_time_quantiles
+FROM api_responses
+GROUP BY endpoint;
+```
+
+ستحسب الدالة `quantilesTimingArrayIf` الكوانتايلات فقط لنقاط النهاية التي يزيد معدل نجاحها على 95%.
+تحتوي المصفوفة المُعادة على الكوانتايلات التالية بالترتيب:
+
+* 0 (الحد الأدنى)
+* 0.25 (الربيع الأول)
+* 0.5 (الوسيط)
+* 0.75 (الربيع الثالث)
+* 0.95 (المئين الخامس والتسعون)
+* 0.99 (المئين التاسع والتسعون)
+* 1.0 (الحد الأقصى)
+
+```response title="Response"
+   ┌─endpoint─┬─response_time_quantiles─────────────────────────────────────────────┐
+1. │ orders   │ [82, 87, 92, 98, 103, 104, 105]                                     │
+2. │ products │ [45, 47, 49, 51, 52, 52, 53]                                        │
+3. │ users    │ [nan, nan, nan, nan, nan, nan, nan]                                 │
+   └──────────┴─────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## راجع أيضًا
+</div>
+
+* [`quantilesTiming`](/ar/reference/functions/aggregate-functions/quantileTiming)
+* [`If مُركِّب`](/ar/reference/functions/aggregate-functions/combinators#-if)

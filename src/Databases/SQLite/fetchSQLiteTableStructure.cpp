@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int SQLITE_ENGINE_ERROR;
 }
 
-static DataTypePtr convertSQLiteDataType(String type)
+DataTypePtr convertSQLiteDataType(String type)
 {
     DataTypePtr res;
     type = Poco::toLower(type);
@@ -36,7 +36,7 @@ static DataTypePtr convertSQLiteDataType(String type)
     /// particular width, even though it's not enforced in any way by SQLite itself.
     /// Docs: https://www.sqlite.org/datatype3.html
     /// The most insane quote from there: Note that a declared type of "FLOATING POINT" would give INTEGER affinity, not REAL affinity, due to the "INT" at the end of "POINT".
-    if (type.find("int") != std::string::npos)
+    if (type.contains("int"))
         res = std::make_shared<DataTypeInt64>();
     else if (type == "float" || type.starts_with("double") || type == "real")
         res = std::make_shared<DataTypeFloat64>();
@@ -86,7 +86,7 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connectio
 
     if (status != SQLITE_OK)
     {
-        String err_msg(err_message);
+        String err_msg(err_message ? err_message : "unknown error");
         sqlite3_free(err_message);
 
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,

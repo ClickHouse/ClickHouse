@@ -60,7 +60,7 @@ public:
             /// Let's parse everything that goes before the path
 
             /// Assume that the protocol has already been changed to lowercase.
-            while (pos < end && ((*pos > 'a' && *pos < 'z') || (*pos > '0' && *pos < '9')))
+            while (pos < end && ((*pos >= 'a' && *pos <= 'z') || (*pos >= '0' && *pos <= '9')))
                 ++pos;
 
             /** We will calculate the hierarchy only for URLs in which there is a protocol, and after it there are two slashes.
@@ -109,7 +109,20 @@ using FunctionURLPathHierarchy = FunctionTokens<URLPathHierarchyImpl>;
 
 REGISTER_FUNCTION(URLPathHierarchy)
 {
-    factory.registerFunction<FunctionURLPathHierarchy>();
+    FunctionDocumentation::Description description = R"(
+Returns an array containing the path component of the URL, truncated at the end by the symbols `/`, `?` and `#`. Unlike `URLHierarchy`, the result does not include the protocol and host — it starts from the path. Consecutive separator characters are counted as one.
+    )";
+    FunctionDocumentation::Syntax syntax = "URLPathHierarchy(url)";
+    FunctionDocumentation::Arguments arguments = {
+        {"url", "The URL to process.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of progressively longer URL path components forming a hierarchy.", {"Array(String)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT URLPathHierarchy('https://example.com/a/b?c=1')", "['/a/','/a/b?','/a/b?c=1']"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {1,1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::URL;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionURLPathHierarchy>(documentation);
 }
 
 }

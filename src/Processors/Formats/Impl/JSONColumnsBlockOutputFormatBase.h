@@ -15,7 +15,7 @@ class WriteBuffer;
 class JSONColumnsBlockOutputFormatBase : public OutputFormatWithUTF8ValidationAdaptor
 {
 public:
-    JSONColumnsBlockOutputFormatBase(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_, bool validate_utf8);
+    JSONColumnsBlockOutputFormatBase(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, bool validate_utf8);
 
     String getName() const override { return "JSONColumnsBlockOutputFormatBase"; }
 

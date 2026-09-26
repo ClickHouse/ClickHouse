@@ -18,3 +18,7 @@
 [1]	Array(Decimal(18, 8))
 [1]	Array(Decimal(38, 8))
 -
+[2,3]	Array(Decimal(9, 4))
+[2,3]	Array(Decimal(18, 8))
+[2,3]	Array(Decimal(38, 8))
+-

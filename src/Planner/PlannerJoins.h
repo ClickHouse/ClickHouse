@@ -7,7 +7,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/IJoin.h>
-#include <Interpreters/JoinInfo.h>
+#include <Interpreters/JoinOperator.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -241,10 +241,12 @@ JoinClausesAndActions buildJoinClausesAndActions(
   */
 std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join_node);
 
-struct JoinAlgorithmSettings
+struct JoinAlgorithmParams
 {
     bool join_any_take_last_row;
 
+    UInt64 hash_table_key_hash;
+    UInt64 join_output_key_hash;
     bool collect_hash_table_stats_during_joins;
     UInt64 max_entries_for_hash_table_stats;
 
@@ -256,14 +258,24 @@ struct JoinAlgorithmSettings
     UInt64 max_size_to_preallocate_for_joins;
     UInt64 max_threads;
 
+    UInt64 max_bytes_before_external_join = 0;
+
+    bool enable_hash_join_row_store = true;
+    Float64 min_rows_ratio_for_hash_join_row_store = 0;
+
     String initial_query_id;
-    std::chrono::milliseconds lock_acquire_timeout;
+    std::chrono::milliseconds lock_acquire_timeout{};
 
-    explicit JoinAlgorithmSettings(const Context & context);
+    std::optional<UInt64> rhs_size_estimation;
+    std::optional<UInt64> result_rows_estimation;
 
-    JoinAlgorithmSettings(
+    explicit JoinAlgorithmParams(const Context & context);
+
+    JoinAlgorithmParams(
         const JoinSettings & join_settings,
         UInt64 max_threads_,
+        UInt64 hash_table_key_hash_,
+        UInt64 join_output_key_hash_,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
         std::chrono::milliseconds lock_acquire_timeout_);
@@ -276,14 +288,12 @@ struct JoinAlgorithmSettings
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
-    const Block & left_table_expression_header,
-    const Block & right_table_expression_header,
-    const JoinAlgorithmSettings & settings,
-    UInt64 hash_table_key_hash,
-    std::optional<UInt64> rhs_size_estimation);
+    SharedHeader left_table_expression_header,
+    SharedHeader right_table_expression_header,
+    const JoinAlgorithmParams & params);
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
-TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node);
+TableExpressionSet extractTableExpressionsSet(const TableExpressionNodePtr & node);
 
 std::set<JoinTableSide> extractJoinTableSidesFromExpression(
     const IQueryTreeNode * expression_root_node,

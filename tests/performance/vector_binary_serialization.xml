@@ -1,0 +1,41 @@
+<test>
+    <!--
+        Exercises binary (de)serialization of std::vector of trivially-serializable
+        elements via writeVectorBinary / readVectorBinary.
+
+        The analysisOfVariance aggregate state holds three contiguous vectors
+        (std::vector<Float64> twice and std::vector<UInt64>), one element per group.
+        With many groups these vectors are large, so the bulk single-copy path added
+        in this change replaces an element-by-element (de)serialization loop.
+
+        Writing the AggregateFunction column to MergeTree serializes the state
+        (writeVectorBinary); reading it back deserializes it (readVectorBinary).
+    -->
+    <create_query>
+        CREATE TABLE aov_states
+        (
+            key UInt32,
+            state AggregateFunction(analysisOfVariance, Float64, UInt32)
+        )
+        ENGINE = MergeTree ORDER BY key
+    </create_query>
+
+    <!-- 200 states, each holding ~100000 groups => ~480 MB of vector data total.
+         The fill itself serializes the states when writing the parts. -->
+    <fill_query>
+        INSERT INTO aov_states
+        SELECT
+            intDiv(number, 100000) % 200 AS key,
+            analysisOfVarianceState(number * 1.5, (number % 100000)::UInt32)
+        FROM numbers_mt(20000000)
+        GROUP BY key
+    </fill_query>
+
+    <!-- Deserialization only (readVectorBinary). -->
+    <query>SELECT state FROM aov_states FORMAT Null</query>
+
+    <!-- Deserialization followed by merging the states. -->
+    <query>SELECT analysisOfVarianceMerge(state) FROM aov_states GROUP BY key FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS aov_states</drop_query>
+</test>

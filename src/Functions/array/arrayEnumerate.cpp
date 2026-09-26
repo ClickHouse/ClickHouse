@@ -17,7 +17,7 @@ namespace ErrorCodes
 }
 
 /// arrayEnumerate(arr) - Returns the array [1,2,3,..., length(arr)]
-class FunctionArrayEnumerate : public IFunction
+class FunctionArrayEnumerate final : public IFunction
 {
 public:
     static constexpr auto name = "arrayEnumerate";
@@ -79,15 +79,15 @@ REGISTER_FUNCTION(ArrayEnumerate)
     FunctionDocumentation::Description description = R"(
 Returns the array `[1, 2, 3, ..., length (arr)]`
 
-This function is normally used with the [`ARRAY JOIN`](/sql-reference/statements/select/array-join) clause. It allows counting something just
+This function is normally used with the [`ARRAY JOIN`](/reference/statements/select/array-join) clause. It allows counting something just
 once for each array after applying `ARRAY JOIN`.
 This function can also be used in higher-order functions. For example, you can use it to get array indexes for elements that match a condition.
 )";
     FunctionDocumentation::Syntax syntax = "arrayEnumerate(arr)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to enumerate. [`Array`](/sql-reference/data-types/array)."}
+        {"arr", "The array to enumerate.", {"Array"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = "Returns the array `[1, 2, 3, ..., length (arr)]`. Array(UInt32)";
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the array `[1, 2, 3, ..., length (arr)]`.", {"Array(UInt32)"}};
     FunctionDocumentation::Examples examples = {{"Basic example with ARRAY JOIN", R"(
 CREATE TABLE test
 (
@@ -119,7 +119,7 @@ ARRAY JOIN
     )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionArrayEnumerate>(documentation);
 }

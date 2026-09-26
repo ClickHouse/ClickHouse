@@ -1,5 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 
 #include <unordered_set>
@@ -13,7 +15,6 @@
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-
 
 namespace DB
 {
@@ -117,7 +118,7 @@ struct AggregateFunctionIntervalLengthSumData
     {
         readBinary(sorted, buf);
 
-        size_t size;
+        size_t size = 0;
         readBinary(size, buf);
 
         if (unlikely(size > MAX_ARRAY_SIZE))
@@ -164,7 +165,7 @@ private:
             /// Check if current interval intersects with next one then add length, otherwise advance interval end.
             if (curr_segment.second < next_segment.first)
             {
-                res += length(curr_segment);
+                res += static_cast<TResult>(length(curr_segment));
                 curr_segment = next_segment;
             }
             else if (next_segment.second > curr_segment.second)
@@ -172,7 +173,7 @@ private:
                 curr_segment.second = next_segment.second;
             }
         }
-        res += length(curr_segment);
+        res += static_cast<TResult>(length(curr_segment));
 
         return res;
     }
@@ -180,8 +181,8 @@ private:
 public:
     String getName() const override { return "intervalLengthSum"; }
 
-    explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, {}, createResultType())
+    explicit AggregateFunctionIntervalLengthSum(const DataTypes & arguments, const Array & parameters_)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>(arguments, parameters_, createResultType())
     {
     }
 
@@ -190,6 +191,17 @@ public:
         if constexpr (is_floating_point<T>)
             return std::make_shared<DataTypeFloat64>();
         return std::make_shared<DataTypeUInt64>();
+    }
+
+    /// Parameters are non-semantic here and never reach the serialized state, so parameterized and
+    /// parameterless states share one representation and stay Merge-/CAST-compatible.
+    DataTypePtr getNormalizedStateType() const override
+    {
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(this->argument_types.size());
+        for (const auto & arg : this->argument_types)
+            normalized_argument_types.emplace_back(arg->getNormalizedType());
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), normalized_argument_types, Array{});
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -210,7 +222,7 @@ public:
         this->data(place).add(begin, end);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -237,7 +249,7 @@ public:
 
 template <template <typename> class Data>
 AggregateFunctionPtr
-createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTypes & arguments, const Array &, const Settings *)
+createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
 {
     if (arguments.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -259,7 +271,7 @@ createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTyp
                             "be native integral type, Date/DateTime or Float", arg->getName(), name);
     }
 
-    AggregateFunctionPtr res(createWithBasicNumberOrDateOrDateTime<AggregateFunctionIntervalLengthSum, Data>(*arguments[0], arguments));
+    AggregateFunctionPtr res(createWithBasicNumberOrDateOrDateTime<AggregateFunctionIntervalLengthSum, Data>(*arguments[0], arguments, parameters));
 
     if (res)
         return res;
@@ -271,9 +283,74 @@ createAggregateFunctionIntervalLengthSum(const std::string & name, const DataTyp
 
 }
 
+void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("intervalLengthSum", createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>);
+    FunctionDocumentation::Description description = R"(
+Takes multiple numeric ranges and calculates the total length when all overlapping parts are combined into a single unified range.
+
+<Note>
+Arguments must be of the same data type.
+Otherwise, an exception will be thrown.
+</Note>
+    )";
+    FunctionDocumentation::Syntax syntax = R"(
+intervalLengthSum(start, end)
+    )";
+    FunctionDocumentation::Arguments arguments = {
+        {"start", "The starting value of the interval.", {"(U)Int32/64", "Float*", "DateTime", "Date"}},
+        {"end", "The ending value of the interval.", {"(U)Int32/64", "Float*", "DateTime", "Date"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the total length of union of all ranges (segments on numeric axis). Depending on the type of the argument, the return value may be UInt64 or Float64 type.", {"UInt64", "Float64"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Float32 example",
+        R"(
+CREATE TABLE fl_interval (id String, start Float32, end Float32) ENGINE = Memory;
+INSERT INTO fl_interval VALUES ('a', 1.1, 2.9), ('a', 2.5, 3.2), ('a', 4, 5);
+
+SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM fl_interval GROUP BY id ORDER BY id;
+        )",
+        R"(
+┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
+│ a  │            3.0999999046325684 │ Float64                                   │
+└────┴───────────────────────────────┴───────────────────────────────────────────┘
+        )"
+    },
+    {
+        "DateTime example",
+        R"(
+CREATE TABLE dt_interval (id String, start DateTime, end DateTime) ENGINE = Memory;
+INSERT INTO dt_interval VALUES ('a', '2020-01-01 01:12:30', '2020-01-01 02:10:10'), ('a', '2020-01-01 02:05:30', '2020-01-01 02:50:31'), ('a', '2020-01-01 03:11:22', '2020-01-01 03:23:31');
+
+SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM dt_interval GROUP BY id ORDER BY id;
+        )",
+        R"(
+┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
+│ a  │                          6610 │ UInt64                                    │
+└────┴───────────────────────────────┴───────────────────────────────────────────┘
+        )"
+    },
+    {
+        "Date example",
+        R"(
+CREATE TABLE date_interval (id String, start Date, end Date) ENGINE = Memory;
+INSERT INTO date_interval VALUES ('a', '2020-01-01', '2020-01-04'), ('a', '2020-01-12', '2020-01-18');
+
+SELECT id, intervalLengthSum(start, end), toTypeName(intervalLengthSum(start, end)) FROM date_interval GROUP BY id ORDER BY id;
+        )",
+        R"(
+┌─id─┬─intervalLengthSum(start, end)─┬─toTypeName(intervalLengthSum(start, end))─┐
+│ a  │                             9 │ UInt64                                    │
+└────┴───────────────────────────────┴───────────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction("intervalLengthSum", {createAggregateFunctionIntervalLengthSum<AggregateFunctionIntervalLengthSumData>, documentation});
 }
 
 }

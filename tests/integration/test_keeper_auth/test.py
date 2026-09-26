@@ -61,6 +61,22 @@ def zk_stop_and_close(zk):
         zk.close()
 
 
+# ZooKeeper checks delete against the PARENT's ACL, and its setACL leaves the
+# outstanding change record carrying the old ACL (duplicate() copies acl verbatim
+# and updates only stat.aversion), so a delete issued right after a widening
+# setACL can still be authorized against the pre-setACL ACL and get NoAuthError.
+def zk_delete_after_acl_change(zk, path, timeout=30.0):
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            zk.delete(path)
+            return
+        except NoAuthError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.1)
+
+
 @pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
 def test_remove_acl(started_cluster, get_zk):
     auth_connection = None
@@ -412,7 +428,9 @@ def test_partial_auth(started_cluster, get_zk):
         )
         auth_connection.set_acls("/test_partial_acl_delete", acls=[acl])
         auth_connection.set_acls("/test_partial_acl_delete/subnode", acls=[acl])
-        auth_connection.delete("/test_partial_acl_delete/subnode")
+        zk_delete_after_acl_change(auth_connection, "/test_partial_acl_delete/subnode")
+        # Authorized against "/", whose ACL this test never touches, so a
+        # NoAuthError here would be a real problem: do not retry it.
         auth_connection.delete("/test_partial_acl_delete")
         zk_stop_and_close(auth_connection)
 
@@ -600,6 +618,269 @@ def test_bad_auth_13(started_cluster):
         )
     zk_auth_failure_workaround()
     zk_stop_and_close(auth_connection)
+
+
+def test_world_anyone_specific_permissions(started_cluster):
+    """Test that world:anyone ACLs support specific permissions instead of granting all permissions"""
+    connection = None
+    no_auth_connection = None
+
+    try:
+        connection = get_fake_zk()
+        connection.add_auth("digest", "user1:password1")
+
+        # Create node with world:anyone read-only permission
+        connection.create(
+            "/test_world_anyone_read_only",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=True,
+                    write=False,
+                    create=False,
+                    delete=False,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Create node with world:anyone write-only permission
+        connection.create(
+            "/test_world_anyone_write_only",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=False,
+                    write=True,
+                    create=False,
+                    delete=False,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Create node with world:anyone create-only permission
+        connection.create(
+            "/test_world_anyone_create_only",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=False,
+                    write=False,
+                    create=True,
+                    delete=False,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Create node with world:anyone delete-only permission and auth all permission
+        connection.create(
+            "/test_world_anyone_delete_only",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=False,
+                    write=False,
+                    create=False,
+                    delete=True,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Create child node for testing delete permission on parent
+        connection.create(
+            "/test_world_anyone_delete_only/child",
+            b"child_data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=False,
+                    write=False,
+                    create=False,
+                    delete=True,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Create node with world:anyone admin-only permission
+        connection.create(
+            "/test_world_anyone_admin_only",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=False,
+                    write=False,
+                    create=False,
+                    delete=False,
+                    admin=True,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Test with a new unauthenticated connection
+        no_auth_connection = get_fake_zk()
+
+        # Test read-only permissions
+        assert no_auth_connection.get("/test_world_anyone_read_only")[0] == b"data"
+        with pytest.raises(NoAuthError):
+            no_auth_connection.set("/test_world_anyone_read_only", b"new_data")
+
+        # Test write-only permissions
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_world_anyone_write_only")
+        no_auth_connection.set("/test_world_anyone_write_only", b"new_data")
+
+        # Test create-only permissions
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_world_anyone_create_only")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.set("/test_world_anyone_create_only", b"new_data")
+        # Create operation should work
+        no_auth_connection.create("/test_world_anyone_create_only/new_child", b"child")
+
+        # Test delete-only permissions
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_world_anyone_delete_only")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.set("/test_world_anyone_delete_only", b"new_data")
+        # Delete operation should work
+        no_auth_connection.delete("/test_world_anyone_delete_only/child")
+
+        # Test admin-only permissions
+        with pytest.raises(NoAuthError):
+            no_auth_connection.get("/test_world_anyone_admin_only")
+        with pytest.raises(NoAuthError):
+            no_auth_connection.set("/test_world_anyone_admin_only", b"new_data")
+        # Admin operations (like get_acls, set_acls) should work
+        acls, stat = no_auth_connection.get_acls("/test_world_anyone_admin_only")
+        assert len(acls) == 2
+        assert acls[0].id.scheme == "world"
+        assert acls[0].id.id == "anyone"
+        assert acls[0].perms == 16  # Admin permission only
+
+        # Test combined permissions
+        connection.create(
+            "/test_world_anyone_read_write",
+            b"data",
+            acl=[
+                make_acl(
+                    "world",
+                    "anyone",
+                    read=True,
+                    write=True,
+                    create=False,
+                    delete=False,
+                    admin=False,
+                ),
+                make_acl("auth", "", all=True),
+            ],
+        )
+
+        # Should be able to read and write, but not create or delete
+        assert no_auth_connection.get("/test_world_anyone_read_write")[0] == b"data"
+        no_auth_connection.set("/test_world_anyone_read_write", b"updated_data")
+        assert (
+            no_auth_connection.get("/test_world_anyone_read_write")[0]
+            == b"updated_data"
+        )
+
+        # Cleanup created nodes
+        connection.delete("/test_world_anyone_create_only/new_child")
+        connection.delete("/test_world_anyone_create_only")
+        connection.delete("/test_world_anyone_delete_only")
+        connection.delete("/test_world_anyone_read_only")
+        connection.delete("/test_world_anyone_write_only")
+        connection.delete("/test_world_anyone_admin_only")
+        connection.delete("/test_world_anyone_read_write")
+
+    finally:
+        zk_stop_and_close(connection)
+        zk_stop_and_close(no_auth_connection)
+
+
+@pytest.mark.parametrize(("get_zk"), [get_genuine_zk, get_fake_zk])
+def test_world_anyone_all_permissions_with_other_acl(started_cluster, get_zk):
+    """world:anyone with all permissions still grants everyone when the list has other entries"""
+    connection = None
+    no_auth_connection = None
+    path = "/test_world_anyone_all_and_auth"
+
+    try:
+        connection = get_zk()
+        connection.add_auth("digest", "user1:password1")
+
+        connection.create(
+            path,
+            b"data",
+            acl=[
+                make_acl("world", "anyone", all=True),
+                make_acl("auth", "", read=True),
+            ],
+        )
+
+        # fixupACL appends in request order, so the index order is the request order.
+        acls, _ = connection.get_acls(path)
+        assert len(acls) == 2
+        assert acls[0].id.scheme == "world"
+        assert acls[0].id.id == "anyone"
+        assert acls[0].perms == 31  # All permissions
+        assert acls[1].id.scheme == "digest"
+        assert acls[1].id.id == "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI="
+        assert acls[1].perms == 1  # Read only
+
+        no_auth_connection = get_zk()
+        assert no_auth_connection.get(path)[0] == b"data"
+        no_auth_connection.set(path, b"new_data")
+
+        # The node stays repairable: world:anyone with all permissions carries ADMIN.
+        # The digest entry is wider than the one create stored, so the list below cannot
+        # resolve to the stored list and the assertions after it observe setACL only.
+        connection.set_acls(
+            path,
+            [
+                make_acl("world", "anyone", all=True),
+                make_acl(
+                    "digest",
+                    "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=",
+                    read=True,
+                    write=True,
+                ),
+            ],
+        )
+        acls, stat = connection.get_acls(path)
+        assert stat.aversion == 1
+        assert len(acls) == 2
+        assert acls[0].id.scheme == "world"
+        assert acls[0].id.id == "anyone"
+        assert acls[0].perms == 31  # All permissions
+        assert acls[1].id.scheme == "digest"
+        assert acls[1].id.id == "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI="
+        assert acls[1].perms == 3  # Read and write
+
+        zk_delete_after_acl_change(connection, path)
+    finally:
+        zk_stop_and_close(connection)
+        zk_stop_and_close(no_auth_connection)
 
 
 def test_auth_snapshot(started_cluster):

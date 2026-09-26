@@ -1,0 +1,7 @@
+input_format_protobuf_oneof_presence=false
+string1	String					
+string2	String					
+input_format_protobuf_oneof_presence=true
+string1	String					
+string2	String					
+string_oneof	Enum8(\'omitted\' = 0, \'string1\' = 1, \'string2\' = 2)					

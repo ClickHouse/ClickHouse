@@ -3,11 +3,16 @@
 #include <Core/Names.h>
 #include <Core/TypeId.h>
 #include <Common/COW.h>
+#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <memory>
+#include <optional>
 
 #include <boost/noncopyable.hpp>
+#include <fmt/format.h>
+
+class SipHash;
 
 namespace DB
 {
@@ -17,36 +22,22 @@ using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
 class IDataTypeCustomName;
 using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
-
 class ReadBuffer;
 class WriteBuffer;
 
-class IDataType;
 struct FormatSettings;
 
 class IColumn;
 using ColumnPtr = COW<IColumn>::Ptr;
 using MutableColumnPtr = COW<IColumn>::MutablePtr;
 
+class ColumnConst;
+using ColumnConstPtr = COW<IColumn>::immutable_ptr<ColumnConst>;
+using MutableColumnConstPtr = COW<IColumn>::mutable_ptr<ColumnConst>;
+
 class Field;
 
-using DataTypePtr = std::shared_ptr<const IDataType>;
-using DataTypes = std::vector<DataTypePtr>;
-
 struct NameAndTypePair;
-
-struct DataTypeWithConstInfo
-{
-    DataTypePtr type;
-    bool is_const;
-};
-
-using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
@@ -101,6 +92,9 @@ public:
     /// Storage type (e.g. Int64 for Interval)
     virtual TypeIndex getColumnType() const { return getTypeId(); }
 
+    void updateHash(SipHash & hash) const;
+    virtual void updateHashImpl(SipHash & hash) const = 0;
+
     bool hasSubcolumn(std::string_view subcolumn_name) const;
 
     DataTypePtr tryGetSubcolumnType(std::string_view subcolumn_name) const;
@@ -113,6 +107,18 @@ public:
 
     using SubstreamData = ISerialization::SubstreamData;
     using SubstreamPath = ISerialization::SubstreamPath;
+
+    /// A resolved subcolumn: everything needed to read it, plus the path saying which substream it is.
+    /// The name alone does not, because subcolumn names are flat and several substreams can claim one -
+    /// ``Tuple(`a.size` UInt64, `a` String)`` exposes `a.size` twice. Subcolumns resolved from the data
+    /// rather than from the static enumeration get a synthesized path that identifies them the same way.
+    struct SubcolumnInfo
+    {
+        SubstreamData data;
+        SubstreamPath substreams_path;
+    };
+
+    std::optional<SubcolumnInfo> tryGetSubcolumnInfo(std::string_view subcolumn_name) const;
 
     using SubcolumnCallback = std::function<void(
         const SubstreamPath &,
@@ -130,30 +136,37 @@ public:
     Names getSubcolumnNames() const;
 
     virtual MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const;
-    virtual SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
+    virtual SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const;
+    /// Convenience overload that enables all supported serializations. Callers that do not care about
+    /// the serialization versions (most of them) use this one; only the Native writer/reader pass
+    /// explicit settings to pick the protocol-version-dependent variants.
+    SerializationInfoPtr getSerializationInfo(const IColumn & column) const;
 
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
+
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
     SerializationPtr getDefaultSerialization() const;
-    SerializationPtr getSparseSerialization() const;
-
-    /// Chooses serialization according to serialization kind.
-    SerializationPtr getSerialization(ISerialization::Kind kind) const;
 
     /// Chooses serialization according to collected information about content of column.
     virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
+
+    SerializationPtr getSerialization(const SerializationInfoSettings & settings) const;
+
+    SerializationPtr wrapSerializationBasedOnKindStack(SerializationPtr serialization, const ISerialization::KindStack & kind_stack, const SerializationInfoSettings & settings) const;
 
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
     static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
 
+    static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfoSettings & settings);
+
     static SerializationPtr getSerialization(const NameAndTypePair & column);
 
 protected:
     virtual String doGetName() const { return getFamilyName(); }
-    virtual SerializationPtr doGetDefaultSerialization() const = 0;
+    virtual SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const = 0;
 
     virtual String doGetPrettyName(size_t /*indent*/) const { return doGetName(); }
 
@@ -162,14 +175,20 @@ public:
       */
     virtual MutableColumnPtr createColumn() const = 0;
 
+    /** Creates a column with specified size, without initializing values.
+      * This is useful when you need to create a large column to fill later (e.g. the result of a function)
+      * Default implementation uses createColumn and cloneResized.
+      */
+    virtual MutableColumnPtr createUninitializedColumnWithSize(size_t size) const;
+
     /** Create empty column for corresponding type and serialization.
      */
-    virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
-    virtual ColumnPtr createColumnConst(size_t size, const Field & field) const;
-    ColumnPtr createColumnConstWithDefaultValue(size_t size) const;
+    virtual MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const;
+    MutableColumnConstPtr createColumnConstWithDefaultValue(size_t size) const;
 
     /** Get default value of data type.
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.
@@ -191,6 +210,10 @@ public:
     virtual void insertDefaultInto(IColumn & column) const;
 
     void insertManyDefaultsInto(IColumn & column, size_t n) const;
+
+    /// Returns true if insertDefaultInto simply calls column.insertDefault()
+    /// without any type-specific logic (e.g., Enum inserts first enum value instead of zero).
+    virtual bool isDefaultInsertTrivial() const { return true; }
 
     /// Checks that two instances belong to the same type
     virtual bool equals(const IDataType & rhs) const = 0;
@@ -323,13 +346,13 @@ public:
     /// Strings, Numbers, Date, DateTime, Nullable
     virtual bool canBeInsideLowCardinality() const { return false; }
 
-    /// Checks for deprecated Object type usage recursively: Object, Array(Object), Tuple(..., Object, ...)
-    virtual bool hasDynamicSubcolumnsDeprecated() const { return false; }
-
     /// Checks if column has dynamic subcolumns.
     virtual bool hasDynamicSubcolumns() const;
-    /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnData can be called.
+    /// Checks if column can create dynamic subcolumns data and getDynamicSubcolumnInfo can be called.
     virtual bool hasDynamicSubcolumnsData() const { return false; }
+
+    /// Checks if this type or any nested type has dynamic internal structure (like JSON or Dynamic).
+    virtual bool hasDynamicStructure() const { return false; }
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
     static void updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint);
@@ -338,33 +361,39 @@ protected:
     friend class DataTypeFactory;
     friend class AggregateFunctionSimpleState;
 
-    /// Customize this DataType
-    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
-
     /// This is mutable to allow setting custom name and serialization on `const IDataType` post construction.
     mutable DataTypeCustomNamePtr custom_name;
     mutable SerializationPtr custom_serialization;
 
 public:
+    /// Customize this DataType
+    void setCustomization(DataTypeCustomDescPtr custom_desc_) const;
+
     bool hasCustomName() const { return static_cast<bool>(custom_name.get()); }
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 
 protected:
-    static std::unique_ptr<SubstreamData> getSubcolumnData(
+    static std::unique_ptr<SubcolumnInfo> getSubcolumnInfo(
         std::string_view subcolumn_name,
         const SubstreamData & data,
+        size_t initial_array_level,
         bool throw_if_null);
 
-    virtual std::unique_ptr<SubstreamData> getDynamicSubcolumnData(
-        std::string_view /*subcolumn_name*/,
-        const SubstreamData & /*data*/,
-        bool throw_if_null) const
-    {
-        if (throw_if_null)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDynamicSubcolumnData is not implemented for type {}", getName());
-        return nullptr;
-    }
+    /// "sizeN" counts `Array` wrappers from the root of the column, so the array sizes get a
+    /// different number once the name is resolved against the type of a dynamically typed value
+    /// alone, which is what a serialization keeping the name does later: the inner sizes of an
+    /// element of type `Array(Array(Int64))` are "size2" below one wrapper and "size1" there. No
+    /// other name depends on the level, hence `resolved_path` rather than the name alone.
+    static String getSubcolumnNameForZeroArrayLevel(
+        std::string_view subcolumn_name,
+        const SubstreamPath & resolved_path);
+
+    virtual std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(
+        std::string_view subcolumn_name,
+        const SubstreamData & data,
+        size_t initial_array_level,
+        bool throw_if_null) const;
 };
 
 
@@ -413,6 +442,7 @@ struct WhichDataType
     constexpr bool isNativeFloat() const { return isFloat32() || isFloat64(); }
     constexpr bool isFloat() const { return isNativeFloat() || isBFloat16(); }
 
+    constexpr bool isIntegerOrDecimal() const { return isInteger() || isDecimal(); }
     constexpr bool isNativeNumber() const { return isNativeInteger() || isNativeFloat(); }
     constexpr bool isNumber() const { return isInteger() || isFloat() || isDecimal(); }
 
@@ -441,10 +471,10 @@ struct WhichDataType
     constexpr bool isIPv6() const { return idx == TypeIndex::IPv6; }
     constexpr bool isArray() const { return idx == TypeIndex::Array; }
     constexpr bool isTuple() const { return idx == TypeIndex::Tuple; }
+    constexpr bool isQBit() const { return idx == TypeIndex::QBit; }
     constexpr bool isMap() const {return idx == TypeIndex::Map; }
     constexpr bool isSet() const { return idx == TypeIndex::Set; }
     constexpr bool isInterval() const { return idx == TypeIndex::Interval; }
-    constexpr bool isObjectDeprecated() const { return idx == TypeIndex::ObjectDeprecated; }
 
     constexpr bool isNothing() const { return idx == TypeIndex::Nothing; }
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
@@ -490,9 +520,12 @@ bool isInteger(TYPE data_type); \
 bool isNativeInteger(TYPE data_type); \
 \
 bool isDecimal(TYPE data_type); \
+bool isDecimal64(TYPE data_type); \
 \
 bool isFloat(TYPE data_type); \
+bool isNativeFloat(TYPE data_type); \
 \
+bool isIntegerOrDecimal(TYPE data_type); \
 bool isNativeNumber(TYPE data_type); \
 bool isNumber(TYPE data_type); \
 \
@@ -521,9 +554,9 @@ bool isIPv4(TYPE data_type); \
 bool isIPv6(TYPE data_type); \
 bool isArray(TYPE data_type); \
 bool isTuple(TYPE data_type); \
+bool isQBit(TYPE data_type); \
 bool isMap(TYPE data_type); \
 bool isInterval(TYPE data_type); \
-bool isObjectDeprecated(TYPE data_type); \
 bool isVariant(TYPE data_type); \
 bool isDynamic(TYPE data_type); \
 bool isObject(TYPE data_type); \

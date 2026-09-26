@@ -1,5 +1,6 @@
 -- Tags: zookeeper
 SET session_timezone = 'UTC';
+SET optimize_on_insert = 1;
 
 SELECT '-- Original issue with max_insert_delayed_streams_for_parallel_write <= 1';
 /*
