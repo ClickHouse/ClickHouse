@@ -6,11 +6,8 @@ set -o pipefail
 # Avoid dependency on locale
 LC_ALL=C
 
-PKG_ROOT='root'
-
 DEB_ARCH=${DEB_ARCH:-amd64}
 SANITIZER=${SANITIZER:-""}
-SOURCE=${SOURCE:-$PKG_ROOT}
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -27,8 +24,9 @@ Used envs:
   DEB_ARCH='${DEB_ARCH}'
   OUTPUT_DIR='${OUTPUT_DIR}' - where the artifact will be placed
   SANITIZER='${SANITIZER}' - if any sanitizer is used, affects version string
-  SOURCE='${SOURCE}' - directory with sources tree
   VERSION_STRING='${VERSION_STRING}' - the package version to overwrite
+
+./build-dir must link to the build directory, configured with -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1
 "
 
 CLICKHOUSE_VERSION_STRING=${VERSION_STRING}
@@ -245,12 +243,6 @@ elif [[ $BUILD_TYPE =~ 'coverage' ]]; then
     VERSION_POSTFIX+="+coverage"
 elif [[ $BUILD_TYPE == 'cfi' ]]; then
     VERSION_POSTFIX+="+cfi"
-fi
-
-if [[ "$PKG_ROOT" != "$SOURCE" ]]; then
-    # packages are built only from PKG_SOURCE
-    rm -rf "./$PKG_ROOT"
-    ln -sf "$SOURCE" "$PKG_SOURCE"
 fi
 
 CLICKHOUSE_VERSION_STRING+=$VERSION_POSTFIX
