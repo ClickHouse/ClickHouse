@@ -894,6 +894,12 @@ public:
         bool allow_delay = true,
         bool check_database_rows_limit = true) const;
 
+    /// The exception an INSERT gets when the owning database has already reached its `max_rows`
+    /// limit, or nullptr if it has not (or has no limit). This is the check that
+    /// `delayInsertOrThrowIfNeeded` performs; sinks with insert deduplication evaluate it at
+    /// construction too, but throw it only once a part turns out not to be a duplicate.
+    std::exception_ptr getDatabaseRowsLimitReachedException() const;
+
     /// Whether the owning database has a non-zero `max_rows` limit. Cheap guard for callers that
     /// would otherwise do extra work (e.g. ZooKeeper lookups) just to prepare the check below.
     bool hasDatabaseRowsLimit() const;

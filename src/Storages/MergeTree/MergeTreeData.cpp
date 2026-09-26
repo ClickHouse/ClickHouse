@@ -8332,20 +8332,10 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(
     /// checked before the write, so a single batch may overshoot and the next INSERT throws.
     if (allow_throw && check_database_rows_limit)
     {
-        const String database_name = getStorageID().getDatabaseName();
-        const auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-        const UInt64 limit = database ? database->getMaxRows() : 0;
-        if (limit != 0)
+        if (auto exception = getDatabaseRowsLimitReachedException())
         {
-            const UInt64 current_rows = database->getCurrentRowCount().value_or(0);
-            if (current_rows >= limit)
-            {
-                ProfileEvents::increment(ProfileEvents::RejectedInserts);
-                throw Exception(
-                    ErrorCodes::TOO_MANY_ROWS,
-                    "Too many rows in database {}. The limit (database setting `max_rows`) is set to {}, the current number of rows is {}",
-                    backQuote(database_name), limit, current_rows);
-            }
+            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            std::rethrow_exception(exception);
         }
     }
 
@@ -8491,6 +8481,24 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(
         until->tryWait(delay_milliseconds);
     else
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
+}
+
+std::exception_ptr MergeTreeData::getDatabaseRowsLimitReachedException() const
+{
+    const String database_name = getStorageID().getDatabaseName();
+    const auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    const UInt64 limit = database ? database->getMaxRows() : 0;
+    if (limit == 0)
+        return nullptr;
+
+    const UInt64 current_rows = database->getCurrentRowCount().value_or(0);
+    if (current_rows < limit)
+        return nullptr;
+
+    return std::make_exception_ptr(Exception(
+        ErrorCodes::TOO_MANY_ROWS,
+        "Too many rows in database {}. The limit (database setting `max_rows`) is set to {}, the current number of rows is {}",
+        backQuote(database_name), limit, current_rows));
 }
 
 bool MergeTreeData::hasDatabaseRowsLimit() const

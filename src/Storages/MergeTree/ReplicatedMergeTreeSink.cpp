@@ -37,6 +37,7 @@
 namespace ProfileEvents
 {
     extern const Event DuplicatedInsertedBlocks;
+    extern const Event RejectedInserts;
     extern const Event SelfDuplicatedAsyncInserts;
     extern const Event DuplicatedAsyncInserts;
     extern const Event DuplicationElapsedMicroseconds;
@@ -170,14 +171,24 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     /// deferred to onStart, so that the error still surfaces during execution, where the callers
     /// expect it (e.g. `materialized_views_ignore_errors` and async insert flushes handle errors
     /// thrown by an executing sink, not errors thrown while the insert chain is being built).
+    ///
+    /// With insert deduplication, the database `max_rows` check is evaluated here as well, but its
+    /// verdict is carried to `commitPart` and thrown only for a part that is not a duplicate, so that
+    /// retrying an INSERT which was already written stays a no-op even once the database is full.
+    /// `ATTACH` parts have their own admission check in `commitPart` (see `writeExistingPart`).
+    const bool defer_database_rows_limit = deduplicate && !is_attach;
     try
     {
-        storage.delayInsertOrThrowIfNeeded(nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false);
+        storage.delayInsertOrThrowIfNeeded(
+            nullptr, context, /*allow_throw=*/ true, /*allow_delay=*/ false, /*check_database_rows_limit=*/ !defer_database_rows_limit);
     }
     catch (...)
     {
         too_many_parts_exception = std::current_exception();
     }
+
+    if (defer_database_rows_limit && !too_many_parts_exception)
+        database_rows_limit_exception = storage.getDatabaseRowsLimitReachedException();
 }
 
 ReplicatedMergeTreeSink::~ReplicatedMergeTreeSink()
@@ -967,6 +978,15 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
         /// at this point, and it is released by the lock's destructor.
         if (check_database_rows_limit)
             storage.checkDatabaseRowsLimit(part->rows_count);
+
+        /// The same point for an INSERT into a database that had already reached `max_rows` when
+        /// the insert started (see the constructor): a duplicate part was accepted above as a no-op,
+        /// while a part that would add rows is rejected here.
+        if (database_rows_limit_exception)
+        {
+            ProfileEvents::increment(ProfileEvents::RejectedInserts);
+            std::rethrow_exception(database_rows_limit_exception);
+        }
 
         auto block_number = block_number_lock.getNumber();
 
