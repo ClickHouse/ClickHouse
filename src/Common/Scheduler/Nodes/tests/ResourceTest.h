@@ -6,7 +6,7 @@
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/ResourceGuard.h>
 #include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
-#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
+#include <Common/Scheduler/Nodes/TimeShared/RequestQueue.h>
 #include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
 #include <Common/Scheduler/Nodes/WorkloadNode.h>
