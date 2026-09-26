@@ -92,7 +92,6 @@ macro(clickhouse_program_add name)
     clickhouse_program_add_library(${name})
 endmacro()
 
-add_subdirectory (bash-completion)
 add_subdirectory (benchmark)
 add_subdirectory (check-marks)
 add_subdirectory (checksum-for-compressed-block)
@@ -156,24 +155,12 @@ clickhouse_target_link_split_lib(clickhouse install)
 macro(clickhouse_program_alias alias)
     message(STATUS "Adding alias ${alias}")
     add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${alias})
-    install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${alias}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endmacro()
 
 set (CLICKHOUSE_BUNDLE)
-
-# Link a subcommand's library into the multi-call `clickhouse` binary and create a
-# `clickhouse-<name>` symlink next to it in the build directory, without installing the
-# symlink. Use this when no packaging manifest references that standalone name.
 function(clickhouse_program_link name lib_name)
     clickhouse_target_link_split_lib(clickhouse ${lib_name})
     add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse ${name})
-endfunction()
-
-# Same as `clickhouse_program_link`, but also installs the standalone symlink (and any
-# extra aliases) so they are picked up when building packages.
-function(clickhouse_program_install name lib_name)
-    clickhouse_program_link(${name} ${lib_name})
-    install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${name}" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 
     foreach(alias ${ARGN})
         clickhouse_program_alias(${alias})
@@ -184,26 +171,21 @@ if (ENABLE_CLICKHOUSE_SELF_EXTRACTING)
     list(APPEND CLICKHOUSE_BUNDLE self-extracting)
 endif ()
 
-# Referenced as `root/usr/bin/clickhouse-<name>` by a manifest in packages/, so the
-# installed symlink has to stay.
-clickhouse_program_install(clickhouse-benchmark benchmark)
-clickhouse_program_install(clickhouse-client client chc)
-clickhouse_program_install(clickhouse-compressor compressor)
-clickhouse_program_install(clickhouse-extract-from-config extract-from-config)
-clickhouse_program_install(clickhouse-format format)
-clickhouse_program_install(clickhouse-local local chl ch)
-clickhouse_program_install(clickhouse-obfuscator obfuscator)
-clickhouse_program_install(clickhouse-server server)
-
-# No packaging manifest references these standalone names, so installing the symlink only
-# populates the staging tree. `clickhouse <name>` and `clickhouse install` are unaffected.
+clickhouse_program_link(clickhouse-benchmark benchmark)
 clickhouse_program_link(clickhouse-check-marks check-marks)
 clickhouse_program_link(clickhouse-checksum-for-compressed-block checksum-for-compressed-block)
+clickhouse_program_link(clickhouse-client client chc)
+clickhouse_program_link(clickhouse-compressor compressor)
 clickhouse_program_link(clickhouse-disks disks)
 clickhouse_program_link(clickhouse-docker-init docker-init)
+clickhouse_program_link(clickhouse-extract-from-config extract-from-config)
+clickhouse_program_link(clickhouse-format format)
 clickhouse_program_link(clickhouse-git-import git-import)
+clickhouse_program_link(clickhouse-local local chl ch)
+clickhouse_program_link(clickhouse-obfuscator obfuscator)
 clickhouse_program_link(clickhouse-oom-canary oom-canary)
 clickhouse_program_link(clickhouse-packed-io packed-io)
+clickhouse_program_link(clickhouse-server server)
 clickhouse_program_link(clickhouse-static-files-disk-uploader static-files-disk-uploader)
 clickhouse_program_link(clickhouse-su su)
 clickhouse_program_link(clickhouse-zookeeper-dump-tree zookeeper-dump-tree)
@@ -221,8 +203,6 @@ endif ()
 if (ENABLE_CLICKHOUSE_KEEPER)
     if (NOT BUILD_STANDALONE_KEEPER)
         add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper)
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-        clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLIT_DEBUG_SYMBOLS_DIR})
     endif()
 
     # otherwise we don't build keeper
@@ -232,12 +212,10 @@ if (ENABLE_CLICKHOUSE_KEEPER)
 endif ()
 if (ENABLE_CLICKHOUSE_KEEPER_CONVERTER)
     add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper-converter)
-    install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-converter" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif ()
 if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
     if (NOT BUILD_STANDALONE_KEEPER)
         add_custom_command (TARGET clickhouse POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper-client)
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-client" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
     endif ()
 endif ()
 
@@ -277,9 +255,6 @@ endif ()
 
 if (SPLIT_DEBUG_SYMBOLS)
     clickhouse_split_debug_symbols(TARGET clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR} BINARY_PATH clickhouse)
-else()
-    clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse BINARY clickhouse DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/${SPLIT_DEBUG_SYMBOLS_DIR})
-    install (TARGETS clickhouse RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif()
 
 if (BUILD_STRIPPED_BINARY)
@@ -295,13 +270,6 @@ if (ENABLE_TESTS)
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()
 
-if (TARGET ch_contrib::protobuf)
-    get_property(google_proto_files TARGET ch_contrib::protobuf PROPERTY google_proto_files)
-    foreach (proto_file IN LISTS google_proto_files)
-        install(FILES ${proto_file} DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse/protos/google/protobuf)
-    endforeach()
-endif ()
-
 # FIXME: This should be at the end, to avoid using symbols from chdig if there
 # are the same in one of contribs (the problem was with lz4)
 if (TARGET ch_rust::chdig)
@@ -309,15 +277,4 @@ if (TARGET ch_rust::chdig)
 
     clickhouse_program_alias(clickhouse-chdig)
     clickhouse_program_alias(chdig)
-else()
-    message(STATUS "Adding dummy chdig targets (for nfpm)")
-    foreach (chdig_path ${CMAKE_BINARY_DIR}/chdig ${CMAKE_BINARY_DIR}/clickhouse-chdig)
-        file(GENERATE OUTPUT ${chdig_path} CONTENT "#!/usr/bin/env sh\necho chdig is not enabled in this ClickHouse build >&2 && exit 1\n")
-        install(FILES ${chdig_path}
-            DESTINATION ${CMAKE_INSTALL_BINDIR}
-            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE
-                        GROUP_READ GROUP_EXECUTE
-                        WORLD_READ WORLD_EXECUTE
-        )
-    endforeach()
 endif ()
