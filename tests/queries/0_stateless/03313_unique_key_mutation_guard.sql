@@ -9,7 +9,7 @@
 -- since the rewrite loses the SST regardless of the target column. Covers
 -- ALTER DELETE / ALTER UPDATE / MATERIALIZE COLUMN / CLEAR COLUMN.
 
-SET allow_experimental_unique_key = 1;
+SET enable_unique_key = 1;
 SET async_insert = 0;
 
 DROP TABLE IF EXISTS uk_mut_guard;
