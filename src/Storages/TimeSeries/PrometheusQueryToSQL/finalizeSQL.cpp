@@ -10,6 +10,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -89,6 +90,8 @@ namespace
             case StoreMethod::CONST_STRING:
             case StoreMethod::VECTOR_GRID:
             case StoreMethod::RAW_DATA:
+            case StoreMethod::HISTOGRAM_RAW_DATA:
+            case StoreMethod::HISTOGRAM_GRID:
             {
                 /// Can't get in here because these store methods are incompatible with ResultType::SCALAR.
                 throwUnexpectedStoreMethod(result, context);
@@ -157,13 +160,15 @@ namespace
     }
 
 
-    /// Finalizes a SQL query returning an instant vector as three columns "tags", "time", "value".
+    /// Finalizes a SQL query returning an instant vector as three columns "tags", "time", "value"
+    /// (plus a column "histogram" for a combined grid).
     ASTPtr finalizeInstantVectorAsSQL(SQLQueryPiece && result, ConverterContext & context)
     {
         chassert(result.type == ResultType::INSTANT_VECTOR);
 
         ASTPtr tags;
         ASTPtr value;
+        ASTPtr histogram;
         ASTPtr where;
 
         switch (result.store_method)
@@ -186,9 +191,7 @@ namespace
 
             case StoreMethod::CONST_SCALAR:
             {
-                /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
-                ///        <start_time> AS timestamp,
-                ///        <scalar_value> AS value
+                /// SELECT materialize([]::Array(Tuple(String, String))) AS tags, <start_time> AS timestamp, <scalar_value> AS value
 
                 /// <scalar_value> AS value
                 value = timeSeriesScalarToAST(result.scalar_value);
@@ -250,8 +253,47 @@ namespace
                 break;
             }
 
+            case StoreMethod::HISTOGRAM_GRID:
+            {
+                /// `sample_kinds[1]` selects the winning arm (0 = float, 1 = histogram): the newest sample of either type wins
+                /// (ties keep the histogram), the loser is nulled, so a result row carries exactly one sample (matching Prometheus).
+
+                /// timeSeriesGroupToTags(group) AS tags
+                tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                tags->setAlias(ColumnNames::Tags);
+
+                /// if(equals(sample_kinds[1], 0), values[1], NULL) AS value
+                value = makeASTFunction(
+                    "if",
+                    makeASTFunction(
+                        "equals",
+                        makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds), make_intrusive<ASTLiteral>(1u)),
+                        make_intrusive<ASTLiteral>(UInt64{0})),
+                    makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)),
+                    make_intrusive<ASTLiteral>(Field{}));
+                value->setAlias(ColumnNames::Value);
+
+                /// if(equals(sample_kinds[1], 1), histogram_values[1], NULL) AS histogram
+                histogram = makeASTFunction(
+                    "if",
+                    makeASTFunction(
+                        "equals",
+                        makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds), make_intrusive<ASTLiteral>(1u)),
+                        make_intrusive<ASTLiteral>(UInt64{1})),
+                    makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues), make_intrusive<ASTLiteral>(1u)),
+                    make_intrusive<ASTLiteral>(Field{}));
+                histogram->setAlias(ColumnNames::Histogram);
+
+                /// WHERE isNotNull(sample_kinds[1])
+                where = makeASTFunction(
+                    "isNotNull",
+                    makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds), make_intrusive<ASTLiteral>(1u)));
+                break;
+            }
+
             case StoreMethod::CONST_STRING:
             case StoreMethod::RAW_DATA:
+            case StoreMethod::HISTOGRAM_RAW_DATA:
             {
                 /// Can't get in here because these store methods are incompatible with ResultType::INSTANT_VECTOR.
                 throwUnexpectedStoreMethod(result, context);
@@ -280,6 +322,8 @@ namespace
         builder.select_list.push_back(std::move(tags));
         builder.select_list.push_back(std::move(timestamp));
         builder.select_list.push_back(std::move(value));
+        if (histogram)
+            builder.select_list.push_back(std::move(histogram));
 
         builder.where = std::move(where);
 
@@ -294,7 +338,8 @@ namespace
     }
 
 
-    /// Finalizes a SQL query returning a range vector as two columns "tags", "samples".
+    /// Finalizes a SQL query returning a range vector as two columns "tags", "samples"
+    /// (plus a column "histogram_series" for a combined grid or a combined selector stream).
     ASTPtr finalizeRangeVectorAsSQL(SQLQueryPiece && result, ConverterContext & context)
     {
         chassert(result.type == ResultType::RANGE_VECTOR);
@@ -303,7 +348,9 @@ namespace
 
         ASTPtr tags;
         ASTPtr time_series;
+        ASTPtr histogram_series;
         ASTPtr values;
+        ASTPtr histogram_values;
         ASTPtr where;
         ASTs group_by;
         ASTPtr having;
@@ -328,8 +375,7 @@ namespace
             case StoreMethod::CONST_SCALAR:
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
-                ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>,
-                ///                           arrayResize([], <count_of_time_steps>, <scalar_value>)) AS samples
+                ///        timeSeriesFromGrid(..., arrayResize([], <count_of_time_steps>, <scalar_value>)) AS samples
 
                 /// arrayResize([], <count_of_time_steps>, <scalar_value>)
                 values = makeASTFunction(
@@ -419,6 +465,75 @@ namespace
                 break;
             }
 
+            case StoreMethod::HISTOGRAM_GRID:
+            {
+                /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesFromGrid(...) AS samples, ... AS histogram_series
+                /// FROM <histogram_grid> WHERE notEmpty(samples) OR notEmpty(histogram_series)
+
+                /// timeSeriesGroupToTags(group) AS tags
+                tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                tags->setAlias(ColumnNames::Tags);
+
+                /// values::Array(Nullable(Float64))
+                values = makeASTFunction(
+                    "CAST",
+                    make_intrusive<ASTIdentifier>(ColumnNames::Values),
+                    make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
+                histogram_values = make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues);
+
+                where = makeASTFunction(
+                    "or",
+                    makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name)),
+                    makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::HistogramSeries)));
+                break;
+            }
+
+            case StoreMethod::HISTOGRAM_RAW_DATA:
+            {
+                /// `timeSeriesGroupArray` supports only float values, so histogram samples are collected with `groupArrayIf` and sorted
+                /// by timestamp afterwards (`timeSeriesFromGrid` is not applicable: a selector stream is not grid-aligned).
+
+                /// timeSeriesGroupToTags(group) AS tags
+                tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                tags->setAlias(ColumnNames::Tags);
+
+                /// timeSeriesGroupArrayIf(timestamp, value, equals(is_histogram, 0)) AS samples
+                time_series = makeASTFunction(
+                    "timeSeriesGroupArrayIf",
+                    timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), context.result_timestamp_type),
+                    timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value)),
+                    makeASTFunction("equals", make_intrusive<ASTIdentifier>(ColumnNames::IsHistogram), make_intrusive<ASTLiteral>(UInt64{0})));
+                time_series->setAlias(samples_outer_column_name);
+
+                ASTs payload_columns;
+                for (const auto & [name, type] : getTimeSeriesHistogramPayloadColumns())
+                    payload_columns.push_back(make_intrusive<ASTIdentifier>(name));
+
+                auto payload_tuple = makeASTFunction("tuple");
+                payload_tuple->arguments->children = std::move(payload_columns);
+
+                /// arraySort(x -> x.1, groupArrayIf(tuple(timestamp, tuple(<payload columns>)), equals(is_histogram, 1))) AS histogram_series
+                histogram_series = makeASTFunction(
+                    "arraySort",
+                    makeASTLambda({"x"}, makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1u))),
+                    makeASTFunction(
+                        "groupArrayIf",
+                        makeASTFunction(
+                            "tuple",
+                            timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), context.result_timestamp_type),
+                            std::move(payload_tuple)),
+                        makeASTFunction("equals", make_intrusive<ASTIdentifier>(ColumnNames::IsHistogram), make_intrusive<ASTLiteral>(UInt64{1}))));
+                histogram_series->setAlias(ColumnNames::HistogramSeries);
+
+                group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                having = makeASTFunction(
+                    "or",
+                    makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name)),
+                    makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::HistogramSeries)));
+
+                break;
+            }
+
             case StoreMethod::CONST_STRING:
             {
                 /// Can't get in here because this store method are incompatible with ResultType::RANGE_VECTOR.
@@ -450,9 +565,23 @@ namespace
             time_series->setAlias(samples_outer_column_name);
         }
 
+        if (histogram_values)
+        {
+            /// timeSeriesFromGrid(<start_time>, <end_time>, <step>, <histogram_values>) AS histogram_series
+            histogram_series = makeASTFunction(
+                    "timeSeriesFromGrid",
+                    timeSeriesTimestampToAST(result.start_time, context.result_timestamp_type),
+                    timeSeriesTimestampToAST(result.end_time, context.result_timestamp_type),
+                    timeSeriesDurationToAST(result.step, context.result_timestamp_type),
+                    std::move(histogram_values));
+            histogram_series->setAlias(ColumnNames::HistogramSeries);
+        }
+
         SelectQueryBuilder builder;
         builder.select_list.push_back(std::move(tags));
         builder.select_list.push_back(std::move(time_series));
+        if (histogram_series)
+            builder.select_list.push_back(std::move(histogram_series));
 
         builder.where = std::move(where);
         builder.group_by = std::move(group_by);

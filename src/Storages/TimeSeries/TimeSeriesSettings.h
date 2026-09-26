@@ -77,4 +77,9 @@ bool hasExplicitTimeSeriesSettingVersion(const ASTCreateQuery & query);
 /// creating the SETTINGS clause if the query doesn't have one yet.
 void setTimeSeriesSettingVersion(ASTCreateQuery & query, UInt64 version);
 
+/// Returns the value of `store_native_histograms` from the SETTINGS clause of a
+/// CREATE TABLE ... ENGINE=TimeSeries query, or false if the query doesn't specify it.
+/// A true result means the query enables the optional "histograms" target table.
+bool getTimeSeriesSettingStoreNativeHistograms(const ASTCreateQuery & query);
+
 }

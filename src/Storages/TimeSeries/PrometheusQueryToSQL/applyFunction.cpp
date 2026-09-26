@@ -9,9 +9,11 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionQuantileOverTime.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyHistogramFraction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyHistogramQuantile.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelManipulationFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyMinMaxOfFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applyNativeHistogramFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyRoundFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
@@ -74,8 +76,14 @@ SQLQueryPiece applyFunction(
     if (isFunctionOverRange(function_name))
         return applyFunctionOverRange(function_node, std::move(arguments), context);
 
+    if (isNativeHistogramFunction(function_name))
+        return applyNativeHistogramFunction(function_node, std::move(arguments), context);
+
     if (isHistogramQuantile(function_name))
         return applyHistogramQuantile(function_node, std::move(arguments), context);
+
+    if (isHistogramFraction(function_name))
+        return applyHistogramFraction(function_node, std::move(arguments), context);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function_name);
 }

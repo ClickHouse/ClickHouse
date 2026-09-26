@@ -147,15 +147,8 @@ SQLQueryPiece applyLabelManipulationFunction(
         case StoreMethod::SINGLE_SCALAR:
         case StoreMethod::SCALAR_GRID:
         {
-            /// For const scalar:
-            /// SELECT f(0, 'arg2', 'arg3', ...) AS group, arrayResize([], <count_of_time_steps>, <scalar_value>) AS values
-            ///
-            /// For single scalar:
-            /// SELECT f(0, 'arg2', 'arg3', ...) AS group, arrayResize([], <count_of_time_steps>, value) AS values FROM <subquery>
-            ///
-            /// For scalar grid:
-            /// SELECT f(0, 'arg2', 'arg3', ...) AS group, values
-            /// FROM <scalar_grid>
+            /// SELECT f(0, 'arg2', 'arg3', ...) AS group, arrayResize([], <count_of_time_steps>, <scalar_value> | value) AS values
+            /// (for scalar grid: values is taken as-is) FROM <subquery>
             SelectQueryBuilder builder;
 
             ASTs group_function_args;
@@ -212,12 +205,10 @@ SQLQueryPiece applyLabelManipulationFunction(
         }
 
         case StoreMethod::VECTOR_GRID:
+        case StoreMethod::HISTOGRAM_GRID:
         {
-            /// Step 1:
-            /// SELECT f(group, 'arg2', 'arg3', ...) AS new_group, any(values) AS values
-            /// FROM <vector_grid>
-            /// GROUP BY new_group
-            /// HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, new_group) = 0
+            /// Step 1: SELECT f(group, 'arg2', 'arg3', ...) AS new_group, any(values) [, any(histogram_values), any(sample_kinds)]
+            /// FROM <vector_grid> GROUP BY new_group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, new_group) = 0
             ASTPtr label_replacing_query;
             {
                 SelectQueryBuilder builder;
@@ -239,6 +230,15 @@ SQLQueryPiece applyLabelManipulationFunction(
                 builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
                 builder.select_list.back()->setAlias(ColumnNames::Values);
 
+                if (first_argument.store_method == StoreMethod::HISTOGRAM_GRID)
+                {
+                    builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues)));
+                    builder.select_list.back()->setAlias(ColumnNames::HistogramValues);
+
+                    builder.select_list.push_back(makeASTFunction("any", make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds)));
+                    builder.select_list.back()->setAlias(ColumnNames::SampleKinds);
+                }
+
                 context.subqueries.emplace_back(
                     SQLSubquery{context.subqueries.size(), std::move(first_argument.select_query), SQLSubqueryType::TABLE});
                 builder.from_table = context.subqueries.back().name;
@@ -256,9 +256,7 @@ SQLQueryPiece applyLabelManipulationFunction(
                 label_replacing_query = builder.getSelectQuery();
             }
 
-            /// Step 2:
-            /// SELECT new_group AS group, values
-            /// FROM step1
+            /// Step 2: SELECT new_group AS group, values [, histogram_values, sample_kinds] FROM step1
             ASTPtr column_renaming_query;
             {
                 SelectQueryBuilder builder;
@@ -267,6 +265,12 @@ SQLQueryPiece applyLabelManipulationFunction(
                 builder.select_list.back()->setAlias(ColumnNames::Group);
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+                if (first_argument.store_method == StoreMethod::HISTOGRAM_GRID)
+                {
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues));
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds));
+                }
 
                 context.subqueries.emplace_back(
                     SQLSubquery{context.subqueries.size(), std::move(label_replacing_query), SQLSubqueryType::TABLE});
@@ -285,6 +289,7 @@ SQLQueryPiece applyLabelManipulationFunction(
 
         case StoreMethod::CONST_STRING:
         case StoreMethod::RAW_DATA:
+        case StoreMethod::HISTOGRAM_RAW_DATA:
         {
             /// Can't get in here because these store methods are incompatible with the allowed argument types
             /// (see checkArgumentTypes()).

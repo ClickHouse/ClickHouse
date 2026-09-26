@@ -20,6 +20,7 @@ ConverterContext::ConverterContext(std::shared_ptr<const PrometheusQueryTree> pr
     : promql_tree(promql_tree_)
     , time_series_storage_id(settings_.time_series_storage_id)
     , time_series_version(settings_.time_series_version)
+    , storage_has_native_histograms(settings_.storage_has_native_histograms)
     , result_timestamp_type(getPromQLResultTimestampType(settings_.time_scale, settings_.time_zone))
     , result_timestamp_scale(settings_.time_scale)
     , result_type(getResultType(*promql_tree_, settings_))
