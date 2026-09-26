@@ -3499,6 +3499,67 @@ def test_multiple_series_in_same_resultset():
         "Multiple series have the same tags {'http_code': '404'}",
     )
 
+    do_query_test_expect_error(
+        "abs(rate({http_code='404'}[100]))",
+        200,
+        "vector cannot contain metrics with the same labelset",
+        "Multiple series have the same tags {'http_code': '404'}",
+    )
+
+    # The metric name is removed at the end of the evaluation, so an inner expression may hold series
+    # which differ only by metric name. The reference Prometheus runs without `promql-delayed-name-removal`
+    # and fails on these queries, so they are checked in ClickHouse only.
+    do_clickhouse_only_query_test(
+        'label_replace(rate({http_code=\'404\'}[100]), "name", "$1", "__name__", "(.*)")[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"http_code": "404", "name": "download_failures"}, "values": [[200, "0.015"]]}, {"metric": {"http_code": "404", "name": "http_errors"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('http_code','404'),('name','download_failures')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('http_code','404'),('name','http_errors')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
+    do_clickhouse_only_query_test(
+        'label_replace(rate({http_code=\'404\'}[100]), "__name__", "${1}_rate", "__name__", "(.*)")[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "download_failures_rate", "http_code": "404"}, "values": [[200, "0.015"]]}, {"metric": {"__name__": "http_errors_rate", "http_code": "404"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('__name__','download_failures_rate'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('__name__','http_errors_rate'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
+    do_clickhouse_only_query_test(
+        'label_join(rate({http_code=\'404\'}[100]), "__name__", "_", "__name__", "http_code")[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "download_failures_404", "http_code": "404"}, "values": [[200, "0.015"]]}, {"metric": {"__name__": "http_errors_404", "http_code": "404"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('__name__','download_failures_404'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('__name__','http_errors_404'),('http_code','404')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
+    do_clickhouse_only_query_test(
+        "count(rate({http_code='404'}[100]))",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [200, "2"]}]}',
+        [["[]", "1970-01-01 00:03:20.000", 2]],
+    )
+
+    do_clickhouse_only_query_test(
+        'sum by (name) (label_replace(rate({http_code=\'404\'}[100]), "name", "$1", "__name__", "(.*)"))[1:1]',
+        200,
+        '{"resultType": "matrix", "result": [{"metric": {"name": "download_failures"}, "values": [[200, "0.015"]]}, {"metric": {"name": "http_errors"}, "values": [[200, "0.07"]]}]}',
+        [
+            ["[('name','download_failures')]", "[('1970-01-01 00:03:20.000',0.015)]"],
+            ["[('name','http_errors')]", "[('1970-01-01 00:03:20.000',0.07)]"],
+        ],
+        eps=1e-9,
+    )
+
     # FIXME: Function count_over_time() is not implemented yet.
     # do_query_test_expect_error(
     #     "count_over_time({http_code='404'}[10])[100:10]",

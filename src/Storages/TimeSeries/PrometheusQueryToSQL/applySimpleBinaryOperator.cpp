@@ -181,14 +181,14 @@ namespace
 
         /// Step 3:
         /// if without grouping:
-        /// SELECT timeSeriesRemoveTag(join_group, '__name__') AS group,
+        /// SELECT timeSeriesRemoveTags(join_group, ['__name__', '__name__.dropped']) AS group,
         ///        arrayMap(x, y -> f(x, y), left.values, right.values) AS values
         /// FROM left INNER ANY JOIN right
         /// ON left.join_group = right.join_group
         /// [GROUP BY group HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0]
         ///
         /// if with group_left/group_right:
-        /// SELECT timeSeriesCopyTags(timeSeriesRemoveTag(side_many.original_group, '__name__'), side_one.original_group, extra_labels) AS group,
+        /// SELECT timeSeriesCopyTags(timeSeriesRemoveTags(side_many.original_group, ['__name__', '__name__.dropped']), side_one.original_group, extra_labels) AS group,
         ///        arrayMap(x, y -> f(x, y), left.values, right.values) AS values
         /// FROM left LEFT/RIGHT SEMI JOIN right
         /// ON left.join_group = right.join_group
@@ -247,7 +247,8 @@ namespace
                 {
                     /// For example `a + on(__name__) b`
                     /// - here `join_group` has the __name__ tag, but the result shouldn't have it.
-                    new_group = makeASTFunction("timeSeriesRemoveTag", new_group, make_intrusive<ASTLiteral>(kMetricName));
+                    new_group = makeASTFunction(
+                        "timeSeriesRemoveTags", new_group, make_intrusive<ASTLiteral>(Array{kMetricName, kDroppedMetricNameMarker}));
                     metric_name_dropped_from_result = true;
                     check_no_duplicate_groups = true;
                 }
@@ -298,7 +299,8 @@ namespace
 
                 if (drop_metric_name && !metric_name_dropped_from_result)
                 {
-                    new_group = makeASTFunction("timeSeriesRemoveTag", new_group, make_intrusive<ASTLiteral>(kMetricName));
+                    new_group = makeASTFunction(
+                        "timeSeriesRemoveTags", new_group, make_intrusive<ASTLiteral>(Array{kMetricName, kDroppedMetricNameMarker}));
                     metric_name_dropped_from_result = true;
                     check_no_duplicate_groups = true;
                 }

@@ -30,8 +30,11 @@ ASTPtr transformGroupASTForAggregationOperator(
         tags_to_keep.erase(std::unique(tags_to_keep.begin(), tags_to_keep.end()), tags_to_keep.end());
 
         /// The metric name is preserved only if it is explicitly listed in by() and wasn't already dropped.
+        /// A preserved metric name keeps its dropped-name marker too, so finalizeSQL still removes it from the result.
         if (!metric_name_dropped && !std::binary_search(tags_to_keep.begin(), tags_to_keep.end(), kMetricName))
             metric_name_dropped = true;
+        else if (!metric_name_dropped)
+            tags_to_keep.push_back(kDroppedMetricNameMarker);
 
         return makeASTFunction(
             "timeSeriesRemoveAllTagsExcept",
@@ -47,6 +50,7 @@ ASTPtr transformGroupASTForAggregationOperator(
     if (!metric_name_dropped && drop_metric_name)
     {
         tags_to_remove.push_back(kMetricName);
+        tags_to_remove.push_back(kDroppedMetricNameMarker);
         metric_name_dropped = true;
     }
 
@@ -54,7 +58,10 @@ ASTPtr transformGroupASTForAggregationOperator(
     tags_to_remove.erase(std::unique(tags_to_remove.begin(), tags_to_remove.end()), tags_to_remove.end());
 
     if (!metric_name_dropped && std::binary_search(tags_to_remove.begin(), tags_to_remove.end(), kMetricName))
+    {
+        tags_to_remove.push_back(kDroppedMetricNameMarker);
         metric_name_dropped = true;
+    }
 
     return makeASTFunction(
         "timeSeriesRemoveTags",

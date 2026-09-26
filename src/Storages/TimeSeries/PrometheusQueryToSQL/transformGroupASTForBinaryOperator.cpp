@@ -71,12 +71,13 @@ ASTPtr transformGroupASTForBinaryOperator(
     {
         /// ignoring(tags) means we ignore the specified tags, and also the metric name "__name__".
 
-        /// timeSeriesRemoveTags(group, ignoring_tags + ['__name__'])
+        /// timeSeriesRemoveTags(group, ignoring_tags + ['__name__', '__name__.dropped'])
         std::vector<std::string_view> tags_to_remove{operator_node->labels.begin(), operator_node->labels.end()};
 
         if (!metric_name_dropped && drop_metric_name)
         {
             tags_to_remove.push_back(kMetricName);
+            tags_to_remove.push_back(kDroppedMetricNameMarker);
             metric_name_dropped = true;
         }
 
@@ -84,17 +85,21 @@ ASTPtr transformGroupASTForBinaryOperator(
         tags_to_remove.erase(std::unique(tags_to_remove.begin(), tags_to_remove.end()), tags_to_remove.end());
 
         if (!metric_name_dropped && std::binary_search(tags_to_remove.begin(), tags_to_remove.end(), kMetricName))
+        {
+            tags_to_remove.push_back(kDroppedMetricNameMarker);
             metric_name_dropped = true;
+        }
 
         return makeASTFunction(
             "timeSeriesRemoveTags", std::move(group), make_intrusive<ASTLiteral>(Array{tags_to_remove.begin(), tags_to_remove.end()}));
     }
 
     /// Neither on() keyword nor ignoring() keyword are specified,
-    /// so we use all the tags except the metric name "__name__".
+    /// so we use all the tags except the metric name "__name__" (and the marker of a dropped metric name).
     if (!metric_name_dropped && drop_metric_name)
     {
-        group = makeASTFunction("timeSeriesRemoveTag", std::move(group), make_intrusive<ASTLiteral>(kMetricName));
+        group = makeASTFunction(
+            "timeSeriesRemoveTags", std::move(group), make_intrusive<ASTLiteral>(Array{kMetricName, kDroppedMetricNameMarker}));
         metric_name_dropped = true;
     }
 
