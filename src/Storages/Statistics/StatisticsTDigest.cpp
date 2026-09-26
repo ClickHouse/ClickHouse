@@ -48,7 +48,7 @@ std::optional<Float64> StatisticsTDigest::estimateLess(const Field & val) const
     return t_digest.getCountLessThan(*val_as_float);
 }
 
-Float64 StatisticsTDigest::estimateEqual(const Field & val) const
+std::optional<Float64> StatisticsTDigest::estimateEqual(const Field & val) const
 {
     auto val_as_float = StatisticsUtils::tryConvertToFloat64(val, data_type);
     if (!val_as_float.has_value())

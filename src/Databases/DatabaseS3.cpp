@@ -88,10 +88,6 @@ bool DatabaseS3::checkUrl(const std::string & url, ContextPtr context_, bool thr
 
 bool DatabaseS3::isTableExist(const String & name, ContextPtr context_) const
 {
-    std::lock_guard lock(mutex);
-    if (loaded_tables.contains(name))
-        return true;
-
     return checkUrl(getFullUrl(name), context_, false);
 }
 
@@ -175,8 +171,7 @@ StoragePtr DatabaseS3::tryGetTable(const String & name, ContextPtr context_) con
 
 bool DatabaseS3::empty() const
 {
-    std::lock_guard lock(mutex);
-    return loaded_tables.empty();
+    return true;
 }
 
 ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
@@ -208,20 +203,6 @@ ASTPtr DatabaseS3::getCreateDatabaseQueryImpl() const
 
 void DatabaseS3::shutdown()
 {
-    Tables tables_snapshot;
-    {
-        std::lock_guard lock(mutex);
-        tables_snapshot = loaded_tables;
-    }
-
-    for (const auto & kv : tables_snapshot)
-    {
-        auto table_id = kv.second->getStorageID();
-        kv.second->flushAndShutdown();
-    }
-
-    std::lock_guard lock(mutex);
-    loaded_tables.clear();
 }
 
 DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_)
@@ -366,7 +347,48 @@ void registerDatabaseS3(DatabaseFactory & factory)
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::S3,
     }, Documentation{
-        .description = "A read-only database that exposes objects in Amazon S3 (or S3-compatible storage) as tables.",
+        .description = R"DOCS_MD(
+The `S3` database engine exposes objects in Amazon S3 and S3-compatible object storage as read-only tables. A table name is resolved as an object URL through the [`s3`](/reference/functions/table-functions/s3) table function.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE s3_data
+ENGINE = S3([url[, NOSIGN | access_key_id, secret_access_key]]);
+```
+
+The engine can also take a named collection. Supported configuration keys are `url`, `access_key_id`, `secret_access_key`, `no_sign_request`, and `use_environment_credentials`.
+
+## Usage {#usage}
+
+With a base URL, table names are object paths relative to that URL:
+
+```sql
+CREATE DATABASE s3_data
+ENGINE = S3('https://bucket.s3.amazonaws.com/data/', 'NOSIGN');
+
+SELECT * FROM s3_data.`events.parquet`;
+```
+
+Without a base URL, use the full object URL as the table name. The schema and format are inferred in the same way as for the `s3` table function. The database owns no table definitions and does not support table DDL or writes.
+
+## Access control {#access-control}
+
+S3 URLs are checked against the server's remote-host filter. Creating this database requires `READ` and `WRITE` source grants on `S3`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant), for example:
+
+```sql
+GRANT READ, WRITE ON S3 TO user_name;
+```
+
+See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
+
+## See also {#see-also}
+
+- [`s3` table function](/reference/functions/table-functions/s3)
+- [Using S3 with ClickHouse](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
+- [Filesystem database engine](/reference/engines/database-engines/filesystem)
+- [HDFS database engine](/reference/engines/database-engines/hdfs)
+)DOCS_MD",
         .syntax = "ENGINE = S3([config_or_url[, access_key_id, secret_access_key]])",
         .related = {"Filesystem", "HDFS"}});
 }

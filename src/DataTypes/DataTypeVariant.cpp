@@ -23,19 +23,33 @@ namespace ErrorCodes
 }
 
 
+/// Nullable(...), LowCardinality(Nullable(...)), Variant(...) and Dynamic types are not allowed inside Variant type.
+static void checkAllowedInsideVariant(const DataTypePtr & type)
+{
+    if (isNullableOrLowCardinalityNullable(type))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nullable/LowCardinality(Nullable) types are not allowed inside Variant type");
+    if (type->getTypeId() == TypeIndex::Variant)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nested Variant types are not allowed");
+    if (type->getTypeId() == TypeIndex::Dynamic)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dynamic type is not allowed inside Variant type");
+}
+
+static void checkVariantsNotEmptyAndNotTooMany(const DataTypes & variants)
+{
+    if (variants.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type should have at least one nested type");
+
+    if (variants.size() > ColumnVariant::MAX_NESTED_COLUMNS)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type with more than {} nested types is not allowed", ColumnVariant::MAX_NESTED_COLUMNS);
+}
+
 DataTypeVariant::DataTypeVariant(const DataTypes & variants_)
 {
     /// Sort nested types by their full names and squash identical types.
     std::map<String, DataTypePtr> name_to_type;
     for (const auto & type : variants_)
     {
-        /// Nullable(...), LowCardinality(Nullable(...)) and Variant(...) types are not allowed inside Variant type.
-        if (isNullableOrLowCardinalityNullable(type))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nullable/LowCardinality(Nullable) types are not allowed inside Variant type");
-        if (type->getTypeId() == TypeIndex::Variant)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nested Variant types are not allowed");
-        if (type->getTypeId() == TypeIndex::Dynamic)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dynamic type is not allowed inside Variant type");
+        checkAllowedInsideVariant(type);
 
         /// Don't use Nothing type as a variant.
         if (!isNothing(type))
@@ -46,11 +60,26 @@ DataTypeVariant::DataTypeVariant(const DataTypes & variants_)
     for (const auto & [_, type] : name_to_type)
         variants.push_back(type);
 
-    if (variants.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type should have at least one nested type");
+    checkVariantsNotEmptyAndNotTooMany(variants);
+}
 
-    if (variants.size() > ColumnVariant::MAX_NESTED_COLUMNS)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Variant type with more than {} nested types is not allowed", ColumnVariant::MAX_NESTED_COLUMNS);
+DataTypeVariant::DataTypeVariant(const DataTypes & variants_, FixedDiscriminatorOrder)
+{
+    std::unordered_set<String> names;
+    for (const auto & type : variants_)
+    {
+        checkAllowedInsideVariant(type);
+
+        if (isNothing(type))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Nothing type is not allowed in a Variant with a fixed discriminator order");
+
+        if (!names.insert(type->getName()).second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate type {} in a Variant with a fixed discriminator order", type->getName());
+
+        variants.push_back(type);
+    }
+
+    checkVariantsNotEmptyAndNotTooMany(variants);
 }
 
 void DataTypeVariant::updateHashImpl(SipHash & hash) const
@@ -247,10 +276,10 @@ has a value of either type `T1` or `T2` or ... or `TN` or none of them (`NULL` v
 The order of nested types doesn't matter: Variant(T1, T2) = Variant(T2, T1).
 Nested types can be arbitrary types except Nullable(...), LowCardinality(Nullable(...)) and Variant(...) types.
 
-:::note
+<Note>
 It's not recommended to use similar types as variants (for example different numeric types like `Variant(UInt32, Int64)` or different date types like `Variant(Date, DateTime)`),
 because working with values of such types can lead to ambiguity. By default, creating such `Variant` type will lead to an exception, but can be enabled using setting `allow_suspicious_variant_types`
-:::
+</Note>
 
 ## Creating Variant {#creating-variant}
 
@@ -792,11 +821,11 @@ SELECT v + 10 AS result, toTypeName(result) FROM test3;
 └────────┴─────────────────────────┘
 ```
 
-:::note
+<Note>
 **Error handling:** When a function cannot process a variant type, only type-related errors (ILLEGAL_TYPE_OF_ARGUMENT,
 TYPE_MISMATCH, CANNOT_CONVERT_TYPE, NO_COMMON_TYPE) are caught and result in NULL for those rows. Other errors like
 division by zero or out of memory are raised normally to prevent silently hiding real problems.
-:::
+</Note>
 
 ### Type mismatch behavior {#variant-type-mismatch-behavior}
 

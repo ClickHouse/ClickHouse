@@ -1,0 +1,12 @@
+reported greedy:
+0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
+reported dpsub:
+0	Join_1_Value_0	0	Join_2_Value_0	0	Join_3_Value_0
+filter deep relation greedy:
+0	Join_2_Value_0	0	Join_3_Value_0	0	Join_1_Value_0
+filter deep relation dpsub:
+0	Join_2_Value_0	0	Join_3_Value_0	0	Join_1_Value_0
+four way filter last greedy:
+0	0	0	0	Join_4_Value_0
+four way filter last dpsub:
+0	0	0	0	Join_4_Value_0

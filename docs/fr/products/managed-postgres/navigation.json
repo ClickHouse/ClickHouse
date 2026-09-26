@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Premiers pas",
+      "group": "Get started",
       "pages": [
         "fr/products/managed-postgres/overview",
         "fr/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Fonctionnalités",
+      "group": "Features",
       "pages": [
         "fr/products/managed-postgres/connection",
         "fr/products/managed-postgres/settings",
@@ -19,14 +19,15 @@
         "fr/products/managed-postgres/high-availability",
         "fr/products/managed-postgres/read-replicas",
         "fr/products/managed-postgres/backup-and-restore",
+        "fr/products/managed-postgres/branching",
         "fr/products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
           "pages": [
+            "fr/products/managed-postgres/extensions/pg_clickhouse/introduction",
             "fr/products/managed-postgres/extensions/pg_clickhouse/reference",
             "fr/products/managed-postgres/extensions/pg_clickhouse/tutorial"
-          ],
-          "root": "fr/products/managed-postgres/extensions/pg_clickhouse/introduction"
+          ]
         },
         "fr/products/managed-postgres/upgrades",
         "fr/products/managed-postgres/openapi",
@@ -34,19 +35,13 @@
       ]
     },
     {
-      "group": "Benchmarks",
-      "pages": [
-        "fr/products/managed-postgres/benchmarks"
-      ]
-    },
-    {
-      "group": "Tarification",
+      "group": "Pricing",
       "pages": [
         "fr/products/managed-postgres/pricing"
       ]
     },
     {
-      "group": "Intégration ClickHouse",
+      "group": "ClickHouse Integration",
       "pages": [
         "fr/products/managed-postgres/clickhouse-integration"
       ]
@@ -60,18 +55,18 @@
         "fr/products/managed-postgres/migrations/peerdb",
         "fr/products/managed-postgres/migrations/clickpipes",
         "fr/products/managed-postgres/migrations/data-validation",
-        "fr/products/managed-postgres/migrations/clickhouse-cloud",
         "fr/products/managed-postgres/migrations/faq"
       ]
     },
     {
-      "group": "Surveillance",
+      "group": "Monitoring",
       "pages": [
         "fr/products/managed-postgres/monitoring/overview",
         "fr/products/managed-postgres/monitoring/dashboard",
         "fr/products/managed-postgres/monitoring/metrics",
         "fr/products/managed-postgres/monitoring/prometheus",
-        "fr/products/managed-postgres/monitoring/query-insights"
+        "fr/products/managed-postgres/monitoring/query-insights",
+        "fr/products/managed-postgres/monitoring/notifications"
       ]
     },
     {
@@ -82,5 +77,5 @@
     }
   ],
   "icon": "/images/icons/icon-postgres.svg",
-  "item": "Managed Postgres"
+  "item": "ClickHouse Managed Postgres"
 }

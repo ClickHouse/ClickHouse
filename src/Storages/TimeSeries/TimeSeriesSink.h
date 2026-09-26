@@ -24,8 +24,8 @@ struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
 /// Sink for inserting data into the TimeSeries table engine.
-/// Transforms outer columns (time_series, metric_name, tags, metric_family, type, unit, help)
-/// into blocks for the three inner target tables (Tags, Samples, Metrics).
+/// Transforms outer columns (samples, metric_name, tags, metric_family, type, unit, help)
+/// into blocks for the target tables (Tags, Samples, RecentSamples, MetricFamilies).
 class TimeSeriesSink : public SinkToStorage, WithContext
 {
 public:
@@ -48,17 +48,14 @@ public:
     static void sortTagsAndRemoveDuplicates(std::vector<std::pair<std::string_view, std::string_view>> & tags);
 
     /// Dispatches one row of already-sorted tags into the appropriate output columns.
-    /// Tags matching a key in `columns_by_tag_name` go to that column; the rest go to `out_tags_names`/`out_tags_values`.
-    /// The optional `all_tags_*` columns (pass `nullptr` to skip) receive every non-`__name__` tag.
+    /// Every tag goes to `out_tags_names`/`out_tags_values`; tags matching a key in `columns_by_tag_name`
+    /// are also copied to the corresponding column.
     static void insertSortedTagsToColumns(
         const std::vector<std::pair<std::string_view, std::string_view>> & sorted_tags,
         IColumn & out_tags_names,
         IColumn & out_tags_values,
         IColumn & out_tags_offsets,
-        std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name,
-        IColumn * all_tags_names,
-        IColumn * all_tags_values,
-        IColumn * all_tags_offsets);
+        std::unordered_map<std::string_view, IColumn *> & columns_by_tag_name);
 
 private:
     /// A persistent pipeline for inserting blocks into one target table.
@@ -74,11 +71,11 @@ private:
     };
 
     void initTagsAndSamplesPipelines();
-    void initMetricsPipeline();
+    void initMetricFamiliesPipeline();
     std::unique_ptr<TargetPipeline> createTargetPipeline(ViewTarget::Kind kind, const Block & header);
 
     void consumeTagsAndSamples(const Block & block);
-    void consumeMetrics(const Block & block);
+    void consumeMetricFamilies(const Block & block);
 
     /// Calculates the "id" column by applying id_generator defaults and type conversion to the tags block.
     ColumnPtr calculateId(const Block & tags_block) const;
@@ -88,7 +85,7 @@ private:
     LoggerPtr log;
 
     bool insert_tags_and_samples = false;
-    bool insert_metrics = false;
+    bool insert_metric_families = false;
     bool async_insert = false;
 
     /// Source header for the tags pipeline WITHOUT the `id` column.
@@ -106,7 +103,8 @@ private:
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
-    std::unique_ptr<TargetPipeline> metrics_pipeline;
+    std::unique_ptr<TargetPipeline> recent_samples_pipeline;
+    std::unique_ptr<TargetPipeline> metric_families_pipeline;
 };
 
 }

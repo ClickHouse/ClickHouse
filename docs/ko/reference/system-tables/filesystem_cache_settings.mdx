@@ -24,6 +24,7 @@ doc_type: '참고'
 * `max_elements` ([UInt64](/ko/reference/data-types/int-uint)) — 캐시 원소의 최대 개수(예: file segment, 파일 시스템의 파일 수 제한)
 * `max_file_segment_size` ([UInt64](/ko/reference/data-types/int-uint)) — 단일 file segment의 최대 크기
 * `boundary_alignment` ([UInt64](/ko/reference/data-types/int-uint)) — file segment 정렬
+* `reserve_granularity` ([UInt64](/ko/reference/data-types/int-uint)) — file segment 다운로드를 위한 공간을 예약할 때 다운로드 크기보다 최소 이 바이트 수만큼 더 예약합니다(file segment 크기를 초과하지 않음). 세분화 수준을 낮추면 아직 다운로드되지 않은 예약 공간이 일부 유지되는 대신(file segment 완료 시 회수됨) 예약 핫 경로에서 캐시 상태 잠금 획득 빈도가 줄어듭니다. 값이 0이면 사전 예약이 비활성화되어 요청된 정확한 크기만큼 공간을 예약합니다.
 * `cache_on_write_operations` ([UInt8](/ko/reference/data-types/int-uint)) — write-through 캐시를 활성화합니다(INSERT 및 MERGE 시 캐시)
 * `cache_policy` ([String](/ko/reference/data-types/string)) — 캐시 제거 정책
 * `slru_size_ratio` ([Float64](/ko/reference/data-types/float)) — 보호된 원소와 probationary 원소 간 SLRU 캐시 정책의 크기 비율
@@ -35,6 +36,7 @@ doc_type: '참고'
 * `keep_free_space_size_ratio` ([Float64](/ko/reference/data-types/float)) — 캐시가 백그라운드에서 유지하려는 여유 공간 비율
 * `keep_free_space_elements_ratio` ([Float64](/ko/reference/data-types/float)) — 캐시가 백그라운드에서 유지하려는 여유 원소 비율
 * `keep_free_space_remove_batch` ([UInt64](/ko/reference/data-types/int-uint)) — 여유 공간/원소 비율을 유지하는 background thread가 한 번에 제거하는 캐시 원소 수
+* `keep_free_space_eviction_threads` ([UInt64](/ko/reference/data-types/int-uint)) — 백그라운드에서 여유 공간/원소 비율을 유지하기 위해 실제 file segment 제거(파일 시스템 삭제)를 수행하는 스레드 수입니다. 단일 background thread가 축출 후보를 수집하고 해당 priority queue 항목을 해제하며, 이 스레드들이 잠금 없이 병렬로 제거를 수행합니다
 * `invalidated_entries_cleanup_interval_ms` ([UInt64](/ko/reference/data-types/int-uint)) — 무효화된(지연 제거된) priority queue 항목을 purge하는 백그라운드 작업의 유휴 간격(밀리초)
 * `invalidated_entries_cleanup_threshold` ([UInt64](/ko/reference/data-types/int-uint)) — 누적된 무효화 priority queue 항목 수가 이 값에 도달하면 백그라운드 제거가 트리거됩니다
 * `invalidated_entries_cleanup_remove_batch` ([UInt64](/ko/reference/data-types/int-uint)) — 백그라운드 반복 1회당 단일 쓰기 잠금으로 제거되는 무효화 priority queue 항목의 최대 개수
@@ -44,14 +46,20 @@ doc_type: '참고'
 * `bypass_cache_threshold` ([UInt64](/ko/reference/data-types/int-uint)) — 문서화되지 않았습니다. 사용을 권장하지 않습니다
 * `write_cache_per_user_id_directory` ([UInt8](/ko/reference/data-types/int-uint)) — ClickHouse Cloud 내부 설정
 * `allow_dynamic_cache_resize` ([UInt8](/ko/reference/data-types/int-uint)) — 파일 시스템 캐시의 크기를 동적으로 조정하도록 허용합니다
+* `dynamic_resize_lock_wait_ms` ([UInt64](/ko/reference/data-types/int-uint)) — 크기 조정을 건너뛰기 전에 동적 크기 조정용 배타적 잠금을 획득하기까지 대기하는 제한 시간(밀리초)
 * `max_size_ratio_to_total_space` ([Float64](/ko/reference/data-types/float)) — 전체 디스크 공간 대비 `max_size`의 비율입니다
 * `skip_cache_on_disk_failure` ([UInt8](/ko/reference/data-types/int-uint)) — true이면 디스크 IO 오류 발생 시 파일 시스템 캐시 작업을 조용히 건너뜁니다. false(기본값)이면 디스크 IO 오류가 시작 실패로 전파됩니다.
 * `use_split_cache` ([UInt8](/ko/reference/data-types/int-uint)) — 파일을 시스템용/데이터용으로 분리하여 사용합니다.
 * `split_cache_ratio` ([Float64](/ko/reference/data-types/float)) — split&#95;cache에서 전체 캐시 크기 대비 시스템 세그먼트의 비율입니다
+* `system_cache_extensions` ([String](/ko/reference/data-types/string)) — `use_split_cache`가 활성화된 경우 시스템 캐시 세그먼트로 분류되는 파일 확장자의 쉼표로 구분된 목록입니다. 변경하면 기존 캐시 엔트리는 이전 세그먼트 유형에 유지되며 시간이 지나면서 자연스럽게 축출됩니다. 이 설정을 변경하려면 다시 시작해야 합니다.
 * `overcommit_eviction_evict_step` ([UInt64](/ko/reference/data-types/int-uint)) — 오버커밋 축출 정책에서 사용하는 바이트 단위 축출 간격입니다. keep&#95;free&#95;space&#95;*&#95;ratio 설정에 사용됩니다
 * `check_cache_probability` ([Float64](/ko/reference/data-types/float)) — 디버그 또는 새니타이저 빌드에서만 작동합니다. 전체 캐시를 순회하면서 각 캐시 원소의 상태를 확인해 캐시의 정확성을 검사합니다
+* `idle_client_ttl_sec` ([UInt64](/ko/reference/data-types/int-uint)) — 0이 아니고 `write_cache_per_user_id_directory`가 활성화된 경우, 이 시간(초) 동안 액세스되지 않은 클라이언트(user&#95;id)에 속한 모든 캐시 엔트리가 캐시에서 완전히 제거됩니다. 클라이언트가 액세스할 때마다 타이머가 갱신됩니다. 기본값은 1주입니다. Distributed Cache server에서 사용됩니다.
+* `idle_client_check_interval_sec` ([UInt64](/ko/reference/data-types/int-uint)) — 유휴 클라이언트 축출 작업의 실행 주기(초)입니다. `idle_client_ttl_sec`가 0이 아닐 때만 의미가 있습니다. 0은 자동 값(`max(1, idle_client_ttl_sec / 10)`)을 의미합니다.
+* `idle_client_eviction_threads` ([UInt64](/ko/reference/data-types/int-uint)) — 유휴 클라이언트의 캐시를 정리하는 데 사용하는 최대 스레드 수입니다. `idle_client_ttl_sec`가 0이 아닐 때만 의미가 있습니다.
 * `expose_prometheus_eviction_metrics` ([UInt8](/ko/reference/data-types/int-uint)) — 파일 시스템 캐시 축출 활동에 대한 Prometheus 메트릭(`filesystem_cache_evictions_total` 등)을 노출합니다. 기본적으로 비활성화되어 있습니다. `SYSTEM RELOAD CONFIG`를 통해 런타임에 켜고 끌 수 있습니다.
 * `expose_prometheus_eviction_metrics_per_user` ([UInt8](/ko/reference/data-types/int-uint)) — 추가로 사용자 ID별 축출 메트릭을 노출합니다. `expose_prometheus_eviction_metrics`가 필요합니다. 카디널리티는 축출을 수행하는 사용자 수가 서로 다를수록 증가합니다.
+* `drop_cache_threads` ([UInt64](/ko/reference/data-types/int-uint)) — `SYSTEM DROP FILESYSTEM CACHE`에서 캐시 키를 병렬로 제거하는 데 사용하는 최대 스레드 수입니다. 값이 1이면 쿼리 스레드만으로 제거가 수행됩니다
 * `is_initialized` ([UInt8](/ko/reference/data-types/int-uint)) — 캐시가 성공적으로 초기화되었는지 나타냅니다
 * `current_size` ([UInt64](/ko/reference/data-types/int-uint)) — 현재 캐시 크기입니다
 * `current_elements_num` ([UInt64](/ko/reference/data-types/int-uint)) — 현재 캐시 원소(파일 세그먼트) 수입니다

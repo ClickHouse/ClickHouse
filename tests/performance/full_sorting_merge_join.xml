@@ -32,9 +32,52 @@
     <fill_query>OPTIMIZE TABLE test_lc_left FINAL</fill_query>
     <fill_query>OPTIMIZE TABLE test_lc_right FINAL</fill_query>
 
+    <!-- Sparse match: the right table matches every 100th key of the dense left table,
+         so most left rows are skipped in runs of ~100 non-matching keys. -->
+    <create_query>CREATE TABLE fsm_u64_sparse_right (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO fsm_u64_sparse_right SELECT number * 100 FROM numbers(100000)</fill_query>
+    <fill_query>OPTIMIZE TABLE fsm_u64_sparse_right FINAL</fill_query>
+
+    <!-- Runs of 10 duplicates per key on the left: skip runs of ~1000 rows. -->
+    <create_query>CREATE TABLE fsm_u64_dup_left (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO fsm_u64_dup_left SELECT intDiv(number, 10) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE fsm_u64_dup_left FINAL</fill_query>
+
+    <!-- Interleaved keys (multiples of 2 vs multiples of 3): skip runs of 1-2 rows. -->
+    <create_query>CREATE TABLE fsm_u64_mult2 (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE fsm_u64_mult3 (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO fsm_u64_mult2 SELECT number * 2 FROM numbers_mt(6000000)</fill_query>
+    <fill_query>INSERT INTO fsm_u64_mult3 SELECT number * 3 FROM numbers_mt(4000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE fsm_u64_mult2 FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE fsm_u64_mult3 FINAL</fill_query>
+
+    <!-- Sparse match on String keys (no fixed-width comparison specialization). -->
+    <create_query>CREATE TABLE fsm_str_sparse_left (k String) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE fsm_str_sparse_right (k String) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO fsm_str_sparse_left SELECT leftPad(toString(number), 12, '0') FROM numbers_mt(5000000)</fill_query>
+    <fill_query>INSERT INTO fsm_str_sparse_right SELECT leftPad(toString(number * 100), 12, '0') FROM numbers(50000)</fill_query>
+    <fill_query>OPTIMIZE TABLE fsm_str_sparse_left FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE fsm_str_sparse_right FINAL</fill_query>
+
+    <!-- Sparse match on Nullable keys with ~10% NULLs on both sides. -->
+    <create_query>CREATE TABLE fsm_nullable_left (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE fsm_nullable_right (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO fsm_nullable_left SELECT if(number % 10 = 0, NULL, number) FROM numbers_mt(10000000)</fill_query>
+    <fill_query>INSERT INTO fsm_nullable_right SELECT if(number % 10 = 0, NULL, number * 100 + 1) FROM numbers(100000)</fill_query>
+    <fill_query>OPTIMIZE TABLE fsm_nullable_left FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE fsm_nullable_right FINAL</fill_query>
+
     <query>SELECT count() FROM test_u64_left_{card} AS a JOIN test_u64_right_{card} AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
     <query>SELECT count() FROM test_str_left AS a JOIN test_str_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
     <query>SELECT count() FROM test_lc_left AS a JOIN test_lc_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+
+    <query>SELECT count() FROM test_u64_left_10000000 AS a JOIN fsm_u64_sparse_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <query>SELECT count() FROM test_u64_left_10000000 AS a ANY INNER JOIN fsm_u64_sparse_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <query>SELECT count() FROM test_u64_left_10000000 AS a LEFT JOIN fsm_u64_sparse_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <query>SELECT count() FROM fsm_u64_dup_left AS a JOIN fsm_u64_sparse_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <query>SELECT count() FROM fsm_u64_mult2 AS a JOIN fsm_u64_mult3 AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <query>SELECT count() FROM fsm_str_sparse_left AS a JOIN fsm_str_sparse_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <query>SELECT count() FROM fsm_nullable_left AS a JOIN fsm_nullable_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge', join_use_nulls = 1</query>
 
     <drop_query>DROP TABLE IF EXISTS test_u64_left_{card}</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_u64_right_{card}</drop_query>
@@ -42,4 +85,12 @@
     <drop_query>DROP TABLE IF EXISTS test_str_right</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_left</drop_query>
     <drop_query>DROP TABLE IF EXISTS test_lc_right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fsm_u64_sparse_right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fsm_u64_dup_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fsm_u64_mult2</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fsm_u64_mult3</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fsm_str_sparse_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fsm_str_sparse_right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fsm_nullable_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS fsm_nullable_right</drop_query>
 </test>

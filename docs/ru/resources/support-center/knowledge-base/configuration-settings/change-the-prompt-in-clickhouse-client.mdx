@@ -8,10 +8,6 @@ keywords: ['клиент ClickHouse', 'Изменение промпта']
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-{frontMatter.description}
-
-{/* truncate */}
-
 Если вам не нравится, как `clickhouse client` и clickhouse-local отображают промпт в терминале, его можно изменить, добавив префикс.
 В этой статье объясняется, как изменить промпт на любое по вашему выбору.
 
@@ -93,7 +89,7 @@ clickhouse -C christmas.yaml
 <config>
     <connections_credentials>
         <connection>
-            <n>prod<n>
+            <n>prod</n>
             <hostname>127.0.0.1</hostname>
             <port>9000</port>
             <secure>0</secure>
@@ -101,7 +97,7 @@ clickhouse -C christmas.yaml
             <prompt>\e[31m[PRODUCTION]\e[0m {user}@prod</prompt>
         </connection>
         <connection>
-            <n>dev<n>
+            <n>dev</n>
             <hostname>127.0.0.1</hostname>
             <port>9000</port>
             <secure>0</secure>

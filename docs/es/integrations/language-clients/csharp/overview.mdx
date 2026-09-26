@@ -1,9 +1,9 @@
 ---
-sidebarTitle: 'C#'
+sidebarTitle: 'Descripción general'
 keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'connect', 'integrate']
 slug: /integrations/csharp
-description: 'El cliente oficial de C# para conectarse a ClickHouse.'
-title: 'Cliente C# de ClickHouse'
+description: 'El Client oficial de C# para conectarse a ClickHouse.'
+title: 'Client C# de ClickHouse'
 doc_type: 'guide'
 integration:
   - support_level: 'core'
@@ -13,13 +13,13 @@ integration:
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-El cliente oficial de C# para conectarse a ClickHouse.
-El código fuente del cliente está disponible en el [repositorio de GitHub](https://github.com/ClickHouse/clickhouse-cs).
+El Client oficial de C# para conectarse a ClickHouse.
+El código fuente del Client está disponible en el [repositorio de GitHub](https://github.com/ClickHouse/clickhouse-cs).
 Desarrollado originalmente por [Oleg V. Kozlyuk](https://github.com/DarkWanderer).
 
 La biblioteca ofrece dos API principales:
 
-* **`ClickHouseClient`** (recomendado): un cliente de alto nivel, seguro para subprocesos, diseñado para usarse como singleton. Ofrece una API asíncrona sencilla para consultas e inserciones masivas. Es la mejor opción para la mayoría de las aplicaciones.
+* **`ClickHouseClient`** (recomendado): un Client de alto nivel, seguro para subprocesos, diseñado para usarse como singleton. Ofrece una API asíncrona sencilla para consultas e inserciones masivas. Es la mejor opción para la mayoría de las aplicaciones.
 
 * **ADO.NET** (`ClickHouseDataSource`, `ClickHouseConnection`, `ClickHouseCommand`): abstracciones estándar de base de datos de .NET. Son necesarias para la integración con ORM (Dapper, Linq2db) y cuando necesita compatibilidad con ADO.NET. `ClickHouseBulkCopy` es una clase auxiliar para insertar datos de forma eficiente mediante una conexión ADO.NET. `ClickHouseBulkCopy` está obsoleto y se eliminará en una versión futura; en su lugar, use `ClickHouseClient.InsertBinaryAsync`.
 
@@ -898,16 +898,16 @@ Si necesita resolver según la cadena de tipo del lado de ClickHouse (por ejempl
 ```csharp
 public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
 {
-    public object ConvertValue(object value, string columnName, string clickHouseType)
+    public object ConvertValue(object value, string columnName, string clickhouseType)
     {
-        if (value is DateTime dt && clickHouseType == "DateTime")
+        if (value is DateTime dt && clickhouseType == "DateTime")
             return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
 
-    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
+    public T ConvertValue<T>(T value, string columnName, string clickhouseType)
     {
-        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickhouseType == "DateTime")
             return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
@@ -916,13 +916,13 @@ public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
 
 El convertidor debe preservar el tipo CLR en tiempo de ejecución; los metadatos de columna (`GetFieldType`, `GetSchemaTable`) no se redirigen a través de él y deben seguir siendo coherentes con lo que se devuelve.
 
-También puedes establecer un convertidor por consulta mediante `QueryOptions.ReadValueConverter`; cuando se establece, tiene prioridad sobre el convertidor a nivel de client.
+También puedes establecer un convertidor por consulta mediante `QueryOptions.ReadValueConverter`; cuando se establece, tiene prioridad sobre el convertidor a nivel de Client.
 
 **Límite de despacho:**
 
 El convertidor se invoca una vez por columna con el valor completo de la celda deserializado; **no** desciende recursivamente a contenedores compuestos. Para una columna `Array(Int32)`, el valor que se pasa es un `int[]`; para `Tuple(Int32, String)`, es un `ITuple`.
 
-El convertidor funciona con la ruta de ADO.NET `ClickHouseConnection`: la configuración se hereda en las conexiones creadas desde el client.
+El convertidor funciona con la ruta de ADO.NET `ClickHouseConnection`: la configuración se hereda en las conexiones creadas desde el Client.
 
 ***
 

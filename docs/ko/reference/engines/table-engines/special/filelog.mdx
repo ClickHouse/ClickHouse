@@ -44,9 +44,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 선택적 매개변수:
 
-* `poll_timeout_ms` - 로그 파일에서 한 번 폴링할 때의 시간 초과 값입니다. 기본값: [stream&#95;poll&#95;timeout&#95;ms](/ko/reference/settings/session-settings#stream_poll_timeout_ms).
-* `poll_max_batch_size` — 한 번의 폴링으로 가져올 수 있는 최대 레코드 수입니다. 기본값: [max&#95;block&#95;size](/ko/reference/settings/session-settings#max_block_size).
-* `max_block_size` — 폴링의 최대 배치 크기(레코드 수)입니다. 기본값: [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings#max_insert_block_size).
+* `poll_timeout_ms` - 로그 파일에서 한 번 폴링할 때의 시간 초과 값입니다. 기본값: [stream&#95;poll&#95;timeout&#95;ms](/ko/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+* `poll_max_batch_size` — 한 번의 폴링으로 가져올 수 있는 최대 레코드 수입니다. 기본값: [max&#95;block&#95;size](/ko/reference/settings/session-settings/max#max_block_size).
+* `max_block_size` — 폴링의 최대 배치 크기(레코드 수)입니다. 기본값: [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `max_threads` - 파일을 파싱하기 위한 최대 스레드 수입니다. 기본값은 0이며, 이 경우 스레드 수는 max(1, physical&#95;cpu&#95;cores / 4)입니다.
 * `poll_directory_watch_events_backoff_init` - 디렉터리 감시 스레드의 초기 대기 값입니다. 기본값: `500`.
 * `poll_directory_watch_events_backoff_max` - 디렉터리 감시 스레드의 최대 대기 값입니다. 기본값: `32000`.

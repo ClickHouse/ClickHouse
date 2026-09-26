@@ -18,13 +18,15 @@ Por padrão, o S3 ClickPipe pressupõe que os arquivos sejam adicionados a um bu
   ## Como funciona
 </div>
 
-Nesse modo, o ClickPipe do S3 faz uma carga inicial de **todos os arquivos** no caminho selecionado e, em seguida, passa a escutar eventos `ObjectCreated:*` na fila que correspondam ao caminho especificado. Qualquer mensagem referente a um arquivo já visto, a um arquivo que não corresponda ao caminho ou a um evento de outro tipo será **ignorada**. A ingestão dos arquivos ocorre quando o limite configurado em `max insert bytes` ou `max file count` é atingido, ou após um intervalo configurável (por padrão, 30 segundos). **Não é possível** iniciar a ingestão a partir de um arquivo específico ou de um ponto no tempo — o ClickPipes sempre carregará todos os arquivos no caminho selecionado.
+Nesse modo, o S3 ClickPipe faz uma carga inicial de **todos os arquivos** no caminho selecionado e, em seguida, passa a escutar eventos `ObjectCreated:*` na fila que correspondam ao caminho especificado. Qualquer mensagem referente a um arquivo já visto, a um arquivo que não corresponda ao caminho ou a um evento de outro tipo será **ignorada**. A ingestão dos arquivos ocorre quando o limite configurado em `max insert bytes` ou `max file count` é atingido, ou após um intervalo configurável (por padrão, 30 segundos).
+
+Para ingerir apenas arquivos entregues pela fila, habilite **Ignorar carga inicial**. Quando habilitada, essa opção faz com que o ClickPipes ignore a varredura inicial dos arquivos existentes no caminho selecionado e processe apenas os arquivos entregues pela fila SQS.
 
 Vários tipos de falha podem ocorrer durante a ingestão de dados, o que pode resultar em inserções parciais ou dados duplicados. Os ClickPipes de armazenamento de objetos são resilientes a falhas de inserção e fornecem semântica exactly-once usando tabelas temporárias de staging. Os dados são primeiro inseridos em uma tabela de staging; se algo der errado, a tabela de staging é truncada e a inserção é repetida a partir de um estado limpo. Somente depois que uma inserção é concluída com sucesso as partições são movidas para a tabela de destino.
 
 <Steps>
   <Step title="Criar uma fila do Amazon SQS" id="create-sqs-queue">
-    **1.** No AWS Console, navegue até **Simple Queue Service &gt; Create queue**. Use as configurações padrão para criar uma nova fila padrão.
+    **1.** No Console da AWS, navegue até **Simple Queue Service &gt; Create queue**. Use as configurações padrão para criar uma nova fila padrão.
 
     <Warning>
       **Uma fila por ClickPipe**
@@ -36,7 +38,7 @@ Vários tipos de falha podem ocorrer durante a ingestão de dados, o que pode re
       Recomendamos fortemente configurar uma **fila de mensagens mortas (DLQ)** para a fila do SQS, para facilitar a depuração e a nova tentativa de processamento de mensagens com falha. Se uma DLQ estiver configurada, as mensagens com falha serão reenfileiradas e reprocessadas até atingir o número de tentativas definido no parâmetro `maxReceiveCount` da DLQ.
     </Tip>
 
-    **2.** Conecte seu bucket do S3 à fila SQS usando uma das duas opções abaixo. O EventBridge é recomendado para a maioria dos casos de uso porque oferece suporte a fan-out, filtragem de eventos mais flexível e não está sujeito à restrição do S3 de uma regra de notificação por tipo de evento por prefixo.
+    **2.** Conecte seu bucket S3 à fila SQS usando uma das duas opções abaixo. O EventBridge é recomendado na maioria dos casos de uso porque oferece suporte a fan-out, filtragem de eventos mais flexível e não está sujeito à restrição do S3 de uma regra de notificação por tipo de evento, por prefixo.
 
     <Tabs>
       <Tab title="via EventBridge">
@@ -196,10 +198,10 @@ Vários tipos de falha podem ocorrer durante a ingestão de dados, o que pode re
   <Step title="Crie um ClickPipe com modo não ordenado" id="create-clickpipe">
     **1.** No console do ClickHouse Cloud, navegue até **Fontes de dados &gt; Criar ClickPipe** e selecione **Amazon S3**. Insira os detalhes para se conectar ao seu bucket do S3. Em **Método de autenticação**, escolha **IAM role** e informe o ARN da role que você criou na etapa anterior.
 
-    **2.** Em **Dados de entrada**, ative **Ingestão contínua**. Selecione **Qualquer ordem** como modo de ingestão e informe a **URL da fila do SQS** da fila conectada ao seu bucket. A fila deve ser usada exclusivamente por este ClickPipe — consulte [Criar uma fila do Amazon SQS](#create-sqs-queue).
+    **2.** Em **Dados de entrada**, ative **Ingestão contínua**. Selecione **Qualquer ordem** como modo de ingestão e informe a **URL da fila do SQS** da fila conectada ao seu bucket. Para processar apenas arquivos da fila e ignorar a varredura inicial dos arquivos existentes no caminho selecionado, habilite **Ignorar carregamento inicial**. A fila deve ser usada exclusivamente por este ClickPipe — consulte [Criar uma fila do Amazon SQS](#create-sqs-queue).
 
     **3.** Em **Informações de parsing**, defina uma **Chave de ordenação** para a tabela de destino. Faça os ajustes necessários no esquema mapeado e, em seguida, configure uma role para o usuário do banco de dados do ClickPipes.
 
-    **4.** Revise a configuração e clique em **Criar ClickPipe**. O ClickPipes fará uma varredura inicial no seu bucket para carregar todos os arquivos existentes que correspondam ao caminho especificado e, em seguida, começará a processar os arquivos à medida que novos eventos `ObjectCreated:*` chegarem à fila.
+    **4.** Revise a configuração e clique em **Criar ClickPipe**. A menos que **Ignorar carregamento inicial** esteja habilitado, o ClickPipes fará uma varredura inicial no seu bucket para carregar todos os arquivos existentes que correspondam ao caminho especificado e, em seguida, começará a processar os arquivos à medida que eventos `ObjectCreated:*` correspondentes forem entregues pela fila.
   </Step>
 </Steps>

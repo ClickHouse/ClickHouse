@@ -18,6 +18,7 @@ public:
 
     void setValuesFromConfig(const Poco::Util::AbstractConfiguration & config);
     void checkAndNormalizeHeaders(HTTPHeaderEntries & entries) const;
+    void checkAndNormalizeHeaders(NormalizedHTTPHeaderEntries & entries) const;
 
 private:
     /// Header names are case-insensitive (RFC 7230 3.2): entries are stored
