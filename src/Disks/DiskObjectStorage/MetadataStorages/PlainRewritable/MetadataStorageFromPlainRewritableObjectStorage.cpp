@@ -254,6 +254,13 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             throw;
         }
 #endif
+        catch (const ErrnoException & e)
+        {
+            /// The same for the local object storage.
+            if (e.getErrno() == ENOENT)
+                continue;
+            throw;
+        }
         catch (...)
         {
             throw;
@@ -841,10 +848,12 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const Tr
         ///    by concurrent transactions on unrelated paths in the meantime, and publishes the result.
         operations.commit();
 
-        /// 4. Remove the temporary objects left by the operations (copies of unlinked and moved files under random
-        ///    root paths, `prefix.path` objects of removed directories). This must happen under the locks as well:
-        ///    otherwise a full reload (`dropCache`), which takes the lock of the root, could list these objects and
-        ///    ingest them as ordinary metadata. The locks are per path, so this does not delay unrelated transactions.
+        /// 4. Remove the temporary objects left by the operations (backup copies of unlinked and moved files, the
+        ///    objects of removed directories). They live under reserved names with a tombstone marker, so a reload
+        ///    never ingests them as metadata, even if this best-effort cleanup fails, and the next initial load
+        ///    reclaims them (see `PlainRewritableLayout::REMOVED_NAME_PREFIX`). It still runs under the locks, so
+        ///    that a full reload (`dropCache`), which takes the lock of the root, does not see a removal half-done.
+        ///    The locks are per path, so this does not delay unrelated transactions.
         operations.finalize();
     }
 }
