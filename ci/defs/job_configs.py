@@ -257,6 +257,7 @@ common_integration_test_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
             "./ci/jobs/scripts/integration_tests_configs.py",
+            "./ci/jobs/scripts/integration_coverage_export.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
             "./ci/jobs/promql_compliance_job.py",
@@ -1384,6 +1385,26 @@ class JobConfigs:
             ],
         )
     )
+
+    # Per-module coverage for test selection: each server records its coverage under
+    # the name of the test module, exported into the CIDB tables of the stateless
+    # per-test coverage (see `ci/jobs/scripts/integration_coverage_export.py`).
+    integration_test_per_test_coverage_jobs = (
+        common_integration_test_job_config.parametrize(
+            *[
+                Job.ParamSet(
+                    parameter=f"{BuildTypes.PER_TEST_COVERAGE}, per_test_coverage, {batch}/{total_batches}",
+                    runs_on=RunnerLabels.AMD_MEDIUM,
+                    requires=[ArtifactNames.CH_AMD_PER_TEST_COVERAGE_BUILD],
+                )
+                for total_batches in (LLVM_IT_NUM_BATCHES,)
+                for batch in range(1, total_batches + 1)
+            ],
+        )
+    )
+    # Each night must collect afresh even when the build is cached.
+    for job in integration_test_per_test_coverage_jobs:
+        job.digest_config = None
 
     # Jobs that run only the tests normally disabled under LLVM coverage.
     # They use a regular binary (no coverage instrumentation) since these
