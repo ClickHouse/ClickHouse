@@ -1029,22 +1029,27 @@ def export_system_logs(servers):
 
 
 def insert_into_cidb(cidb, info, table, query, data, deadline):
-    """Run a REPORT-stage INSERT into `table`.
+    """Run a REPORT-stage INSERT into `table`. Returns None on success and the
+    reason of the failure otherwise.
 
-    With a `deadline` nothing is sent after it, and an upload in
-    `DASHBOARD_INPUT_TABLES` is retried until then. Every attempt carries the
-    same `insert_deduplication_token`, so the server drops a resent block
-    that an attempt abandoned by the client did commit."""
+    With a `deadline` no attempt starts after it, and an upload in
+    `DASHBOARD_INPUT_TABLES` that CIDB failed without rejecting it
+    (`last_rejected`) is retried while another attempt fits. Every attempt
+    carries the same `insert_deduplication_token`, so the server drops a
+    resent block that an attempt abandoned by the client did commit."""
     token = f"{info.pr_number}/{info.sha}/{info.job_name}/{get_check_start_time()}/{table}"
     settings = {"insert_deduplication_token": token}
     if deadline is None:
-        return cidb.do_insert_query(
+        if cidb.do_insert_query(
             query=query,
             data=data,
             timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
             retries=3,
             settings=settings,
-        )
+        ):
+            return None
+        return cidb.last_error
+    error = None
     while (remaining := deadline - time.monotonic()) > 0:
         if cidb.do_insert_query(
             query=query,
@@ -1052,15 +1057,19 @@ def insert_into_cidb(cidb, info, table, query, data, deadline):
             timeout=max(1, min(Settings.CI_DB_INSERT_TIMEOUT_SEC, remaining)),
             settings=settings,
         ):
-            return True
+            return None
+        error = cidb.last_error
+        if cidb.last_rejected:
+            return f"rejected: {error}"
         if table not in DASHBOARD_INPUT_TABLES:
-            return False
-        pause = min(CIDB_UPLOAD_RETRY_INTERVAL_SEC, deadline - time.monotonic())
-        if pause > 0:
-            print(f"WARNING: insert into [{table}] failed, retrying in {pause:.0f}s")
-            time.sleep(pause)
-    print(f"WARNING: no time left for the upload to [{table}]")
-    return False
+            return error
+        if deadline - time.monotonic() <= CIDB_UPLOAD_RETRY_INTERVAL_SEC:
+            break
+        print(f"WARNING: insert into [{table}] failed, retrying in {CIDB_UPLOAD_RETRY_INTERVAL_SEC}s")
+        time.sleep(CIDB_UPLOAD_RETRY_INTERVAL_SEC)
+    if error is None:
+        return f"not attempted, the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent"
+    return f"the {DASHBOARD_INGEST_TIMEOUT_SEC}s budget was spent, last error: {error}"
 
 
 def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release, deadline):
@@ -1068,19 +1077,18 @@ def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release, d
 
     Silently skips if the source TSV is missing or empty (e.g. because the
     test stage produced no unstable queries or no skipped tests). Returns
-    True when uploaded, False when the upload failed and None when there was
-    nothing to upload.
+    None when uploaded, otherwise why the rows were not uploaded.
     """
     source_path = Path(cfg["source"])
     if not source_path.is_file():
         print(f"Skipping upload to [{cfg['table']}]: [{source_path}] not found")
-        return None
+        return f"[{source_path}] not found"
 
     with open(source_path, "r", encoding="utf-8") as f:
         data = f.read()
     if not data.strip():
         print(f"Skipping upload to [{cfg['table']}]: [{source_path}] is empty")
-        return None
+        return f"[{source_path}] is empty"
 
     query_template = _make_insert_query(
         table=cfg["table"],
@@ -1100,12 +1108,12 @@ def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release, d
     )
     line_count = data.count("\n")
     print(f"Do insert into [{cfg['table']}]: >>>\n{query}\n<<<")
-    insert_ok = insert_into_cidb(cidb, info, cfg["table"], query, data, deadline)
-    if insert_ok:
+    error = insert_into_cidb(cidb, info, cfg["table"], query, data, deadline)
+    if error is None:
         print(f"Inserted [{line_count}] rows into [{cfg['table']}]")
     else:
-        print(f"Inserted [{line_count}] rows into [{cfg['table']}] - failed")
-    return insert_ok
+        print(f"Inserted [{line_count}] rows into [{cfg['table']}] - failed: {error}")
+    return error
 
 
 def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release, deadline):
@@ -1131,12 +1139,12 @@ def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release,
     )
     line_count = data.count("\n")
     print(f"Do insert flamegraph stacks query: >>>\n{query}\n<<<")
-    insert_ok = insert_into_cidb(cidb, info, FLAMEGRAPH_STACKS_TABLE, query, data, deadline)
-    if insert_ok:
+    error = insert_into_cidb(cidb, info, FLAMEGRAPH_STACKS_TABLE, query, data, deadline)
+    if error is None:
         print(f"Inserted [{line_count}] flamegraph stack rows")
     else:
-        print(f"Inserted [{line_count}] flamegraph stack rows - failed")
-    return insert_ok
+        print(f"Inserted [{line_count}] flamegraph stack rows - failed: {error}")
+    return error is None
 
 
 def match_reference_debug_info():
@@ -1674,8 +1682,8 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path, deadline, missing_inputs):
     passing a run nobody has judged."""
     if missing_inputs:
         raise PerfDashboardError(
-            "the shard's results were not uploaded to CIDB within "
-            f"{DASHBOARD_INGEST_TIMEOUT_SEC}s: {', '.join(missing_inputs)}"
+            "the shard's results were not uploaded to CIDB: "
+            + "; ".join(f"{table} ({reason})" for table, reason in missing_inputs.items())
         )
     tests, shard_queries = read_shard_queries(metrics_tsv_path)
     if not shard_queries:
@@ -2613,15 +2621,17 @@ def main():
     upload_deadline = (
         time.monotonic() + DASHBOARD_INGEST_TIMEOUT_SEC if compare_against_master else None
     )
-    missing_dashboard_inputs = []
+    # A dashboard input stays here, with the reason, until its upload succeeds.
+    missing_dashboard_inputs = {}
 
     if res and not info.is_local_run and JobStages.REPORT in stages:
 
         def insert_raw_query_metrics_data():
+            missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE] = "the upload step failed"
             cidb = CIDBCluster()
             if not build_raw_query_metrics_tsv():
                 print("WARNING: Failed to prepare raw query metrics TSV")
-                missing_dashboard_inputs.append(RAW_QUERY_METRICS_TABLE)
+                missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE] = "failed to prepare the TSV"
                 return True
 
             check_start_time = get_check_start_time()
@@ -2644,14 +2654,15 @@ def main():
             )
 
             print(f"Do insert raw query metrics query: >>>\n{query}\n<<<")
-            insert_ok = insert_into_cidb(
+            error = insert_into_cidb(
                 cidb, info, RAW_QUERY_METRICS_TABLE, query, data, upload_deadline
             )
-            if insert_ok:
+            if error is None:
                 print(f"Inserted [{line_count}] raw query metric lines")
+                del missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE]
             else:
-                print(f"Inserted [{line_count}] raw query metric lines - failed")
-                missing_dashboard_inputs.append(RAW_QUERY_METRICS_TABLE)
+                print(f"Inserted [{line_count}] raw query metric lines - failed: {error}")
+                missing_dashboard_inputs[RAW_QUERY_METRICS_TABLE] = error
             return True
 
         results.append(
@@ -2670,6 +2681,7 @@ def main():
     ):
 
         def insert_historical_data():
+            missing_dashboard_inputs[HISTORICAL_DATA_TABLE] = "the upload step failed"
             cidb = CIDBCluster()
             now = utc_now()
             date = now.date().isoformat()
@@ -2693,14 +2705,15 @@ def main():
             )
 
             print(f"Do insert historical data query: >>>\n{query}\n<<<")
-            insert_ok = insert_into_cidb(
+            error = insert_into_cidb(
                 cidb, info, HISTORICAL_DATA_TABLE, query, data, upload_deadline
             )
-            if insert_ok:
+            if error is None:
                 print(f"Inserted [{len(lines)}] lines")
+                del missing_dashboard_inputs[HISTORICAL_DATA_TABLE]
             else:
-                print(f"Inserted [{len(lines)}] lines - failed")
-                missing_dashboard_inputs.append(HISTORICAL_DATA_TABLE)
+                print(f"Inserted [{len(lines)}] lines - failed: {error}")
+                missing_dashboard_inputs[HISTORICAL_DATA_TABLE] = error
             return True
 
         results.append(
@@ -2721,10 +2734,11 @@ def main():
             does not fail this step; the dashboard gate fails the check when a
             table it judges from is missing.
             """
+            missing_dashboard_inputs[TEST_TIMES_TABLE] = "the upload step failed"
             cidb = CIDBCluster()
             for cfg in REPORT_UPLOADS:
                 try:
-                    uploaded = run_report_upload(
+                    error = run_report_upload(
                         cfg=cfg,
                         cidb=cidb,
                         info=info,
@@ -2732,11 +2746,14 @@ def main():
                         compare_against_release=compare_against_release,
                         deadline=upload_deadline,
                     )
-                except Exception:
+                except Exception as e:
                     traceback.print_exc()
-                    uploaded = False
-                if uploaded is not True and cfg["table"] in DASHBOARD_INPUT_TABLES:
-                    missing_dashboard_inputs.append(cfg["table"])
+                    error = repr(e)
+                if cfg["table"] in DASHBOARD_INPUT_TABLES:
+                    if error is None:
+                        missing_dashboard_inputs.pop(cfg["table"], None)
+                    else:
+                        missing_dashboard_inputs[cfg["table"]] = error
 
             try:
                 insert_flamegraph_stacks(
