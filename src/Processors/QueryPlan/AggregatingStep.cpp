@@ -736,7 +736,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     header, transform_params,
                     sort_description_for_merging, group_by_sort_description,
                     max_block_size, aggregation_in_order_max_block_bytes / num_shards,
-                    limit_hint, dataflow_cache_updater);
+                    limit_hint, limit_hint_prefix_columns, dataflow_cache_updater);
             });
             pipeline.addSimpleTransform([&](const SharedHeader & header)
             {
