@@ -12,3 +12,8 @@ INSERT INTO t_ulid_lc SELECT number, ['a', 'a', 'bb', 'bb'][number + 1] FROM num
 SELECT uniqExact(v) > 2 FROM (SELECT generateULID(s) AS v FROM t_ulid_lc);
 
 DROP TABLE t_ulid_lc;
+
+-- The optional argument exists only to suppress common subexpression elimination, so its type
+-- does not affect the result type.
+SELECT toTypeName(generateULID(assumeNotNull(materialize(NULL))));
+SELECT generateULID(assumeNotNull(materialize(NULL)), 1); -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
