@@ -297,10 +297,15 @@ private:
     /// validity determines its null map and column type independently of this inherited mask.
     /// `decoded_null_map`, when provided, receives that null map even when the column drops its `Nullable`
     /// wrapper. A missing map denotes a field with no declared nulls.
+    /// `decoded_union_type`, when provided and this field is a union, receives the `Variant` type of the
+    /// column built here. A union is the one field whose element types are settled while decoding rather
+    /// than by `fieldToCHType` alone, so a caller that declares the column must take the type from here to
+    /// be sure the two agree. Passing nothing keeps a union to the types its Arrow fields name.
     ColumnPtr decodeField(
         const ArrowField & field, bool allow_low_cardinality,
         const DataTypePtr & target_hint, const String & path, size_t list_depth,
-        const InvisibleRowsMask * invisible_rows, ColumnUInt8::Ptr * decoded_null_map = nullptr);
+        const InvisibleRowsMask * invisible_rows, ColumnUInt8::Ptr * decoded_null_map = nullptr,
+        DataTypePtr * decoded_union_type = nullptr);
     /// Advances the node/buffer/variadic cursors over `field` exactly as `decodeField` would, without
     /// materializing its data. With `validate_lengths`, checks buffer sizes and row-aligned child
     /// lengths before decoding. Otherwise, skips unrequested values without reading their buffers.
@@ -317,7 +322,14 @@ private:
         const ArrowField & field, const DataTypePtr & target_hint, const String & path, size_t list_depth,
         const UnorderedMapWithMemoryTracking<String, DataTypePtr> * lookup_types,
         UnorderedMapWithMemoryTracking<Int64, DictionaryUses> & uses) const;
-    ColumnPtr decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows);
+    /// `variant_hint` is the requested type for the union itself, already resolved for this field. Only a
+    /// child tagged `clickhouse.opaque` consults it, to look up the alternative its tag names; every other
+    /// child takes its type from the Arrow field alone. `decoded_type`, when provided, receives the
+    /// `Variant` type built here, and is what permits reading a tagged child back: without somewhere to
+    /// report the type, the column would carry a type its declaration does not name.
+    ColumnPtr decodeUnion(
+        const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows, const DataTypePtr & variant_hint,
+        DataTypePtr * decoded_type);
     /// `invisible_rows` carries the field's own nulls too (composed by `decodeField` from the same
     /// validity buffer), so this function needs no separate null map for the indices. `path` and
     /// `list_depth` are the field's position, which selects the dictionary values decoded for it.
