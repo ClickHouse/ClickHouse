@@ -48,13 +48,6 @@ private:
 
     struct Files : public std::map<String, FileDataPtr>
     {
-        auto find(const String & path, bool is_file) const
-        {
-            if (is_file)
-                return std::map<String, FileDataPtr>::find(path);
-            return std::map<String, FileDataPtr>::find(path.ends_with("/") ? path : path + '/');
-        }
-
         auto add(const String & path, FileDataPtr data)
         {
             if (data->type == FileType::Directory)

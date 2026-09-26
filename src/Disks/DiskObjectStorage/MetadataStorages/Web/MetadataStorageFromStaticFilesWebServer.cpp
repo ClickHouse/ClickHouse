@@ -1,4 +1,3 @@
-#include <base/pathToString.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Web/MetadataStorageFromStaticFilesWebServer.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/StaticDirectoryIterator.h>
 #include <Disks/IDisk.h>
@@ -12,8 +11,6 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 
-#include <filesystem>
-
 namespace DB
 {
 
@@ -22,8 +19,6 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
 }
-
-namespace fs = std::filesystem;
 
 namespace
 {
@@ -68,6 +63,26 @@ String makeRemotePath(const String & path)
     }
 
     return fmt::format("/{}{}{}", directory, escapeForFileName(String(stem)), extension);
+}
+
+/// The metadata of a web disk is a namespace of `/`-separated logical paths, not of local filesystem paths,
+/// so it is taken apart with string operations: a `std::filesystem::path` would split a name at a backslash on
+/// Windows and decode it through the active code page.
+String trimTrailingSlashes(const String & path)
+{
+    size_t size = path.size();
+    while (size > 0 && path[size - 1] == '/')
+        --size;
+    return path.substr(0, size);
+}
+
+/// The parent of a path without a trailing slash, also without one; empty for a top-level name.
+String logicalParentPath(const String & path)
+{
+    const size_t slash_pos = path.find_last_of('/');
+    if (slash_pos == String::npos)
+        return {};
+    return trimTrailingSlashes(path.substr(0, slash_pos));
 }
 
 }
@@ -272,58 +287,62 @@ MetadataStorageFromStaticFilesWebServer::loadFiles(const String & path, const st
 
 MetadataStorageFromStaticFilesWebServer::FileDataPtr MetadataStorageFromStaticFilesWebServer::tryGetFileInfo(const String & path) const
 {
-    std::shared_lock shared_lock(metadata_mutex);
+    /// `files` keys a directory as `name/` and a file as `name`, so both forms are probed rather than guessing
+    /// the kind from the name: an extension says nothing here, a projection directory is `p.proj`.
+    const String trimmed = trimTrailingSlashes(path);
+    const String directory_key = trimmed + '/';
 
-    bool is_file = fs::path(path).has_extension();
-    if (auto it = files.find(path, is_file); it != files.end())
-        return it->second;
-
-    if (is_file)
     {
-        shared_lock.unlock();
+        std::shared_lock shared_lock(metadata_mutex);
+        if (auto it = files.find(trimmed); it != files.end())
+            return it->second;
+        if (auto it = files.find(directory_key); it != files.end())
+            return it->second;
 
-        const auto parent_path = fs::path(path).parent_path();
-        auto parent_info = tryGetFileInfo(pathToGenericString(parent_path));
-        if (!parent_info)
+        /// A directory that has not been listed yet, but whose descendants already have.
+        if (!trimmed.empty())
         {
-            return nullptr;
+            auto it = files.lower_bound(directory_key);
+            if (it != files.end() && it->first.starts_with(directory_key))
+            {
+                shared_lock.unlock();
+                std::unique_lock unique_lock(metadata_mutex);
+                return files.add(directory_key, FileData::createDirectoryInfo(false)).first->second;
+            }
         }
+    }
 
-        if (!parent_info->loaded_children)
+    /// Every directory `.index` lists both the files and the subdirectories in it, so once the parent is listed
+    /// it is authoritative. Only the directories above the table have no `.index`: for them the lookup below
+    /// asks for the path's own `.index`.
+    if (!trimmed.empty())
+    {
+        const String parent_path = logicalParentPath(trimmed);
+        if (auto parent_info = tryGetFileInfo(parent_path))
         {
-            std::unique_lock unique_lock(metadata_mutex);
             if (!parent_info->loaded_children)
-                loadFiles(pathToGenericString(parent_path), unique_lock);
-        }
+            {
+                std::unique_lock unique_lock(metadata_mutex);
+                if (!parent_info->loaded_children)
+                    loadFiles(parent_path, unique_lock);
+            }
 
-        shared_lock.lock();
-
-        if (auto jt = files.find(path, is_file); jt != files.end())
-            return jt->second;
-
-        return nullptr;
-    }
-
-    auto it = std::lower_bound(
-        files.begin(), files.end(), path, [](const auto & file, const std::string & path_) { return file.first < path_; });
-    if (it != files.end())
-    {
-        if (startsWith(it->first, path) || (it != files.begin() && startsWith(std::prev(it)->first, path)))
-        {
-            shared_lock.unlock();
-            std::unique_lock unique_lock(metadata_mutex);
-
-            /// Add this directory path not files cache to simplify further checks for this path.
-            return files.add(path, FileData::createDirectoryInfo(false)).first->second;
+            if (parent_info->loaded_children)
+            {
+                std::shared_lock shared_lock(metadata_mutex);
+                if (auto it = files.find(trimmed); it != files.end())
+                    return it->second;
+                if (auto it = files.find(directory_key); it != files.end())
+                    return it->second;
+                return nullptr;
+            }
         }
     }
 
-    shared_lock.unlock();
     std::unique_lock unique_lock(metadata_mutex);
-
-    if (auto jt = files.find(path, is_file); jt != files.end())
-        return jt->second;
-    return loadFiles(path, unique_lock).first;
+    if (auto it = files.find(directory_key); it != files.end())
+        return it->second;
+    return loadFiles(trimmed, unique_lock).first;
 }
 
 std::vector<String> MetadataStorageFromStaticFilesWebServer::listDirectoryInternal(const String & path) const
@@ -342,10 +361,13 @@ std::vector<String> MetadataStorageFromStaticFilesWebServer::listDirectoryIntern
         if (!file_info->loaded_children)
             return loadFiles(path, unique_lock).second;
     }
+    const String directory = trimTrailingSlashes(path);
     std::shared_lock shared_lock(metadata_mutex);
     for (const auto & [file_path, _] : files)
     {
-        if (fs::path(parentPath(file_path)) / "" == fs::path(path) / "")
+        const String entry = trimTrailingSlashes(file_path);
+        /// The root directory is keyed as `/`, which is not its own child.
+        if (!entry.empty() && logicalParentPath(entry) == directory)
             result.emplace_back(file_path);
     }
     return result;
