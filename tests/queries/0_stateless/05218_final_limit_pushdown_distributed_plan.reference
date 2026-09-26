@@ -1,0 +1,38 @@
+-- Replacing, reverse read-in-order, local
+29999	2	new
+29998	2	new
+29997	2	new
+29996	2	new
+29995	2	new
+29499500	2000	1000
+-- Replacing, reverse read-in-order, distributed
+29999	2	new
+29998	2	new
+29997	2	new
+29996	2	new
+29995	2	new
+29499500	2000	1000
+17654	2	new
+17653	2	new
+17652	2	new
+17651	2	new
+17650	2	new
+-- Summing, limit pushdown settings, local
+0	11
+1	11
+2	11
+3	11
+4	11
+112492500	165000	15000
+-- Summing, limit pushdown settings, distributed
+0	11
+1	11
+2	11
+3	11
+4	11
+112492500	165000	15000
+12345	11
+12346	11
+12347	11
+12348	11
+12349	11
