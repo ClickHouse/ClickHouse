@@ -44,3 +44,6 @@ ACCESS_DENIED
 1	1	1
 1	1	1
 1	1	1
+--- the dependency filter is per table, not per database ---
+1	1
+0	1

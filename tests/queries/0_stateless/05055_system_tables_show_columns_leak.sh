@@ -177,6 +177,22 @@ ${CLICKHOUSE_CLIENT} --user="${dep_user}" --query "
     FROM system.tables WHERE database = '${db}' AND name IN ('secret', 'dict_src', 'leaky_dict')
     ORDER BY name;"
 
+echo "--- the dependency filter is per table, not per database ---"
+# mv_local and dep_view both depend on secret from inside ${db}. With SHOW TABLES on secret and
+# dep_view only, dep_view stays listed and mv_local does not. The admin arm proves the edge exists.
+${CLICKHOUSE_CLIENT} --query "
+    REVOKE SHOW TABLES ON ${db}.* FROM ${dep_user};
+    GRANT SHOW TABLES ON ${db}.secret TO ${dep_user};
+    GRANT SHOW TABLES ON ${db}.dep_view TO ${dep_user};"
+object_grant_probe() {
+    ${CLICKHOUSE_CLIENT} "$@" --query "
+        SELECT has(dependencies_table, 'mv_local') AS hidden_same_database_view,
+               has(dependencies_table, 'dep_view') AS visible_dependent_view
+        FROM system.tables WHERE database = '${db}' AND name = 'secret';"
+}
+object_grant_probe
+object_grant_probe "--user=${dep_user}"
+
 ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP USER ${user}, ${dep_user};
     -- These two live in \$db but reference \$dbx, so they block dropping it.
