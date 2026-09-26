@@ -1,4 +1,5 @@
 import re
+from pathlib import PurePosixPath
 
 from ci.defs.defs import JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
@@ -7,6 +8,7 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_integration_tests,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.jobs.scripts.workflow_hooks.store_data import PRODUCT_CODE_PATHS
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
 
@@ -116,6 +118,9 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/scripts/newly_covered_lines.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
+    # Exports per-test coverage and runs the post-export selector smoke.
+    "ci/jobs/scripts/functional_tests/export_coverage.py",
+    "ci/jobs/scripts/coverage_selection.py",
     "ci/jobs/scripts/workflow_hooks/filter_job.py",
     # Both set LLVM_PROFILE_FILE for the servers, i.e. whether their profiles
     # are continuous-mode kill-safe.
@@ -140,52 +145,231 @@ def _has_coverage_pipeline_changes(changed_files):
     return False
 
 
+# Stress tests, fuzzers and the SQL conformance suites (`SQLLogic test`,
+# `SQLStorm test`) are skipped in a PR that changes fewer than this many lines
+# (additions + deletions) of product code - counted by the `store_data.py`
+# pre-hook as `product_changed_lines` over `PRODUCT_CODE_PATHS`, the part of the
+# build digest that ends up in the built server. Tests, docs and CI scripts do
+# not count. The `ci-force-all` label (`Labels.CI_FORCE_ALL`) bypasses every
+# filter hook, including this one, so it is the way to run these jobs on a small
+# PR.
+SMALL_PR_CHANGED_LINES = 100
+
+# Only the main PR workflow skips these jobs. `BackportPR` is a `pull_request`
+# workflow using this same hook, and a backport has to be validated in full
+# whatever its size: it lands in a release branch, which `ClickGap` (which fuzzes
+# every commit merged to master) never fuzzes afterwards.
+# Must match the workflow name in ci.workflows.pull_request.
+SMALL_PR_WORKFLOW = "PR"
+
+# The `targeted` AST fuzzer variants fuzz the tests that exercise the PR's changed
+# symbols, i.e. they are designed for exactly the small PRs this rule skips the
+# untargeted fuzzers on, so they keep running. `SQLLogic test` and `SQLStorm test`
+# run fixed third-party suites unrelated to the change: over the 30 days before
+# 2026-09-19 their only PR failures were infrastructure (`Start ClickHouse`,
+# `Download dataset`), at 108 and 19 minutes per run.
+_STRESS_AND_FUZZER_JOB_PREFIXES = (
+    JobNames.STRESS,
+    JobNames.ASTFUZZER,
+    JobNames.BUZZHOUSE,
+    JobNames.SQL_LOGIC_TEST,
+    JobNames.SQL_STORM_TEST,
+)
+
+# Digest inputs of the skippable jobs that must not switch the skip off: a fifth
+# of all commits touches the stateless suite, so exempting it would make the rule
+# never fire. It is the only path of that frequency, and the other test inputs of
+# these jobs are deliberately absent: `tests/config`, from which the runners
+# install their server configuration (`run-fuzzer.sh` copies `listen.xml`,
+# `ssl_certs.xml`, `server.crt` and friends, `stress.py` installs
+# `cannot_allocate_thread_injection.xml`), and `tests/*.txt`, the blacklists
+# `tests/clickhouse-test` reads to decide which tests run. Both change in well
+# under 1% of commits.
+_COMMON_TEST_PATHS = ("tests/queries/0_stateless/",)
+
+# Machinery of these jobs that is not a digest input of theirs, but still decides
+# what they do or whether they run at all.
+_EXTRA_STRESS_AND_FUZZER_PATHS = (
+    # The fuzzers themselves live in the server code.
+    "src/Client/BuzzHouse/",
+    "src/Common/QueryFuzzer*",
+    # This rule, and the pre-hook computing the line count it reads.
+    "ci/jobs/scripts/workflow_hooks/filter_job.py",
+    "ci/jobs/scripts/workflow_hooks/store_data.py",
+    # What defines these jobs and puts them into the workflow: their commands,
+    # parameters, runners, timeouts and digests. A PR that rewrites the job
+    # definition and touches a few lines of `src/` on top would otherwise skip the
+    # very jobs it redefined. Same reasoning as `_COVERAGE_PIPELINE_PATHS` above.
+    "ci/defs/job_configs.py",
+    "ci/defs/defs.py",
+    "ci/workflows/pull_request.py",
+    # And praktika itself, which decides how any of it is scheduled and run.
+    "ci/praktika/",
+)
+
+
+def _stress_and_fuzzer_paths():
+    """Paths whose change makes a PR run the stress tests, fuzzers and SQL suites whatever its
+    size. Derived from the digest `include_paths` of the very jobs this rule can
+    skip, so an input added to one of them keeps its exemption here without a
+    second edit, minus `_COMMON_TEST_PATHS` and plus
+    `_EXTRA_STRESS_AND_FUZZER_PATHS`.
+    """
+    paths = set(_EXTRA_STRESS_AND_FUZZER_PATHS)
+    for job in (
+        *JobConfigs.stress_test_jobs,
+        *JobConfigs.ast_fuzzer_jobs,
+        *JobConfigs.buzz_fuzzer_jobs,
+        JobConfigs.sqllogic_test_master_job,
+        JobConfigs.sqlstorm_test_job,
+    ):
+        for path in job.digest_config.include_paths:
+            path = path.removeprefix("./")
+            if path not in _COMMON_TEST_PATHS:
+                paths.add(path)
+    return tuple(sorted(paths))
+
+
+_STRESS_AND_FUZZER_PATHS = _stress_and_fuzzer_paths()
+
+
+def _uncounted_build_paths():
+    """Build-digest inputs whose changed lines `store_data.py` does not count - it
+    counts `PRODUCT_CODE_PATHS` only. Their diff size says nothing about the size
+    of the change to the binary: a bumped gitlink under `contrib/` is two lines and
+    an arbitrary amount of new third-party code, and a one-line compiler flag in
+    `ci/jobs/build_clickhouse.py` rebuilds everything. A PR touching one of them is
+    therefore never small, which keeps the invariant that every input of the build
+    digest either counts towards the threshold or takes the PR out of the rule.
+    """
+    counted = {path.rstrip("/") for path in PRODUCT_CODE_PATHS}
+    return tuple(
+        sorted(
+            path
+            for path in (p.removeprefix("./") for p in build_digest_config.include_paths)
+            if path.rstrip("/") not in counted
+        )
+    )
+
+
+_UNCOUNTED_BUILD_PATHS = _uncounted_build_paths()
+_BUILD_DIGEST_EXCLUDES = tuple(
+    p.removeprefix("./") for p in build_digest_config.exclude_paths
+)
+
+
+def _is_stress_or_fuzzer_job(job_name):
+    return job_name.startswith(_STRESS_AND_FUZZER_JOB_PREFIXES) and "targeted" not in job_name
+
+
+def _matches_digest_path(path, patterns):
+    """Whether `path` is covered by one of `patterns`, matched the way praktika
+    matches a job's digest `include_paths` in `Job.is_affected_by`: a pattern is a
+    directory prefix, an exact path, or a glob. Prefix matching alone would silently
+    ignore the glob entries - `tests/*.txt` holds the blacklists `clickhouse-test`
+    reads, and no file name starts with that string.
+
+    `path` must already have its `./` prefix stripped. That is done by the caller,
+    with `removeprefix("./")` rather than the `.`-then-`/` idiom of the older helpers
+    in this file, because some of these paths are root dotfiles (`.gitmodules`).
+    """
+    for pattern in patterns:
+        pattern = pattern.rstrip("/")
+        if PurePosixPath("/" + path).match("/" + pattern) or path.startswith(
+            pattern + "/"
+        ):
+            return True
+    return False
+
+
+def _has_stress_or_fuzzer_changes(changed_files):
+    return any(
+        _matches_digest_path(f.removeprefix("./"), _STRESS_AND_FUZZER_PATHS)
+        for f in changed_files
+    )
+
+
+def _has_uncounted_build_changes(changed_files):
+    """True if the PR changes the built binary in a way the line count does not see
+    - see `_uncounted_build_paths`."""
+    for f in changed_files:
+        p = f.removeprefix("./")
+        if _matches_digest_path(p, _UNCOUNTED_BUILD_PATHS) and not _matches_digest_path(
+            p, _BUILD_DIGEST_EXCLUDES
+        ):
+            return True
+    return False
+
+
+def _is_small_pr(info):
+    """True if the PR changes fewer than `SMALL_PR_CHANGED_LINES` lines of product
+    code. False when the count is unknown (the pre-hook failed to fetch it), so an
+    API hiccup runs the jobs instead of skipping them, and false outside the main
+    PR workflow - see `SMALL_PR_WORKFLOW`."""
+    if info.pr_number <= 0 or info.workflow_name != SMALL_PR_WORKFLOW:
+        return False
+    product_changed_lines = info.get_kv_data("product_changed_lines")
+    if not isinstance(product_changed_lines, int):
+        print("WARNING: product_changed_lines is not stored - do not skip stress tests, fuzzers and SQL suites")
+        return False
+    return product_changed_lines < SMALL_PR_CHANGED_LINES
+
+
 _info_cache = None
 _pipeline_note_labels = set()
 
-# A revert pull request is recognized by the canonical shapes only - the ones
-# `git revert`, the GitHub "Revert" button and the `Revert CI regressions` job
-# produce - not by a prose mention of a revert:
-#   - the title `Revert "<title of the reverted change>"`;
-#   - the anchored `Reverts <owner>/<repo>#<n>` marker line in the body.
-# The same shapes are what `ci/jobs/revert_ci_regressions.py` refuses to revert
-# again, so the two automations agree on what a revert is.
-_REVERT_TITLE_RE = re.compile(r'^Revert\s+".*"$')
+# A revert pull request is recognized by its canonical title shape only - the
+# one `git revert` and the GitHub "Revert" button produce, not a prose mention
+# of a revert: `Revert "<title of the reverted change>"`. Reverting a revert
+# nests the wrappers (`Revert "Revert "X""`), so the nesting depth gives the net
+# effect: an odd depth is a real revert (it restores a state of `master` that CI
+# has already validated), while an even depth re-applies the original change and
+# must be tested as usual.
+_REVERT_TITLE_RE = re.compile(r'^Revert "(.*)"$', re.DOTALL)
 
-# The per-job reason shown on the report page and, when every job is skipped,
-# the description of the `Ready For Merge` commit status (80 characters max).
+# The per-job reason shown on the report page.
 REVERT_PR_SKIP_REASON = (
     f"Skipped: revert PR, CI is bypassed unless labeled '{Labels.CI_FORCE_ALL}'"
 )
 REVERT_PR_NOTE = (
-    "Revert PR: all CI jobs are skipped so that the revert can be merged as quickly "
-    f"as possible. Add the `{Labels.CI_FORCE_ALL}` label to run the full CI."
+    "Revert PR: all CI jobs except the style check are skipped so that the revert "
+    "can be merged as quickly as possible. Add the "
+    f"`{Labels.CI_FORCE_ALL}` label to run the full CI."
 )
 
 
-def is_revert_pr(title, body, repo):
-    """True if the pull request has the canonical shape of a revert: the
-    `Revert "..."` title, or the anchored `Reverts <repo>#<n>` marker line in
-    the body. See `_REVERT_TITLE_RE` for why only the canonical shapes count.
-    """
-    if _REVERT_TITLE_RE.fullmatch((title or "").strip()):
-        return True
-    marker = rf"^Reverts {re.escape(repo)}#\d+\s*$"
-    return re.search(marker, body or "", re.MULTILINE) is not None
+def revert_depth(title):
+    """Number of nested `Revert "..."` wrappers in the pull request title; see
+    `_REVERT_TITLE_RE`. An odd depth is a net revert, an even depth re-applies
+    the reverted change."""
+    depth = 0
+    t = (title or "").strip()
+    while True:
+        m = _REVERT_TITLE_RE.fullmatch(t)
+        if not m:
+            break
+        depth += 1
+        t = m.group(1).strip()
+    return depth
+
+
+def is_net_revert_pr(title):
+    """True if the pull request is, on balance, a revert: its title is an
+    odd-depth stack of `Revert "..."` wrappers. A revert of a revert (even
+    depth) re-applies the original change and is tested as usual."""
+    return revert_depth(title) % 2 == 1
 
 
 _revert_note_added = False
 
 
 def _add_revert_note():
-    """Explain the green light once: on the workflow report page and in the
-    description of the `Ready For Merge` commit status."""
+    """Explain the green light once on the workflow report page."""
     global _revert_note_added
     if _revert_note_added or _info_cache is None:
         return
     _revert_note_added = True
     _info_cache.add_workflow_note(REVERT_PR_NOTE)
-    _info_cache.set_ready_for_merge_description(REVERT_PR_SKIP_REASON)
 
 _PIPELINE_NOTES = {
     Labels.CI_BUILD: "Label `ci-build` runs build jobs and preliminary checks only.",
@@ -273,6 +457,9 @@ def should_skip_job(job_name):
         _info_cache = Info()
         print(f"INFO: PR labels: {_info_cache.pr_labels}")
 
+    if Labels.CI_FORCE_ALL in _info_cache.pr_labels:
+        return False, ""
+
     # There is no way to prevent GitHub Actions from running the PR workflow on
     # release branches, so we skip all jobs here. The ReleaseCI workflow is used
     # for testing on release branches instead.
@@ -282,21 +469,10 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped for release PR"
 
-    # A revert pull request gets a green light at once: `master` is broken by the
-    # change it reverts, and the state it restores is one that CI has already
-    # validated, so every job is skipped and the pull request is mergeable
-    # immediately. Two things still guard the merge: the merge queue runs its own
-    # (small) set of checks, and the full CI runs on `master` after the merge.
-    # The `ci-force-all` label opts out and runs the whole workflow - it also
-    # bypasses this hook entirely in `native_jobs.py`, the check here is only
-    # for clarity. Applies to pull requests only (`pr_number > 0`): a revert
-    # commit pushed to `master` or a release branch is tested as usual.
     if (
         _info_cache.pr_number > 0
-        and Labels.CI_FORCE_ALL not in _info_cache.pr_labels
-        and is_revert_pr(
-            _info_cache.pr_title, _info_cache.pr_body, _info_cache.repo_name
-        )
+        and job_name != JobNames.STYLE_CHECK
+        and is_net_revert_pr(_info_cache.pr_title)
     ):
         _add_revert_note()
         return True, REVERT_PR_SKIP_REASON
@@ -329,6 +505,23 @@ def should_skip_job(job_name):
                 "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
             )
         return False, ""
+
+    # Skip the stress tests, fuzzers and SQL conformance suites on small PRs. Each
+    # of these jobs takes up to 1-3 hours and they rarely catch anything a change
+    # of this size introduces;
+    # the targeted AST fuzzer still runs, and ClickGap fuzzes every merged PR on
+    # master once more. Bypass: the `ci-force-all` label.
+    if (
+        _is_stress_or_fuzzer_job(job_name)
+        and _is_small_pr(_info_cache)
+        and not _has_uncounted_build_changes(changed_files)
+        and not _has_stress_or_fuzzer_changes(changed_files)
+    ):
+        return (
+            True,
+            f"Skipped, fewer than {SMALL_PR_CHANGED_LINES} lines of product code changed "
+            f"(add the '{Labels.CI_FORCE_ALL}' label to run)",
+        )
 
     if (
         Labels.CI_BUILD in _info_cache.pr_labels
@@ -545,9 +738,9 @@ def should_skip_job(job_name):
     ):
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
-            if (
-                (match and match.group(1) != "1")
-                or ("sequential" in job_name and "selected tests" not in job_name)
+            if (match and match.group(1) != "1") or (
+                "sequential" in job_name
+                and "targeted" not in job_name
             ):
                 return True, "Skipped: only CI scripts changed; running stateless batch 1 only"
 

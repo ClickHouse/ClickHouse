@@ -573,6 +573,15 @@ void optimizeTreeSecondPass(
                 pushLimitByIntoSort(frame_node);
         });
 
+    /// The TopK filter is merged into the read's PREWHERE, so it needs the final read: after PREWHERE
+    /// promotion, after a projection has replaced the read, and after reading in order was decided.
+    /// All three change what there is to merge into, and the last one whether to merge at all.
+    traverseQueryPlan(stack, root,
+        [&](auto & frame_node)
+        {
+            installTopKDynamicFilter(frame_node, nodes);
+        });
+
     /// Find ReadFromLocalParallelReplicaStep and replace with optimized local plan.
     /// Place it after projection optimization to avoid executing projection optimization twice in the local plan,
     /// Which would cause an exception when force_use_projection is enabled.
@@ -602,11 +611,10 @@ void optimizeTreeSecondPass(
             /// So keep the outer `optimization_settings` (it carries the contracts this local plan must be
             /// optimized under — deferred set building, reused index/PK analysis, etc.) and override, with the
             /// subquery's values, exactly the settings that gate an optimization which can call
-            /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`),
-            /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
-            /// (`distinct_in_order`) and `tryReuseStorageOrderingForWindowFunctions`
-            /// (`reuse_storage_ordering_for_window_functions`). If a new such optimization is added, its gate
-            /// must be added here too.
+            /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`
+            /// and, for a sort with window partitions, `reuse_storage_ordering_for_window_functions`),
+            /// `optimizeAggregationInOrder` (`aggregation_in_order`) and `optimizeDistinctInOrder`
+            /// (`distinct_in_order`). If a new such optimization is added, its gate must be added here too.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {

@@ -2618,16 +2618,16 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 }
 
 
-void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    join_settings.updatePlanSettings(settings);
+    join_settings.updatePlanSettings(settings, version, join_operator);
     sorting_settings.updatePlanSettings(settings);
     /// A join executed by `ConstantJoin` (an explicit CROSS/COMMA join, or a join with a constant
     /// predicate such as `ON 1`) keeps its own dedicated threshold-based compression path, and PASTE
     /// join stores no build side, so `enable_join_in_memory_compression` never applies to this step
     /// and must not raise its fragment's minimum serialization version (a receiver that later
     /// rewrites the join into an inner hash join simply plans without the setting, the same graceful
-    /// degradation as a receiver below version 20). `ConstantJoin` does consume `max_memory_usage`
+    /// degradation as a receiver below version 21). `ConstantJoin` does consume `max_memory_usage`
     /// though, so a step-local value must still reach the receiver whatever `join_algorithm` allows.
     /// See getMinRequiredVersion.
     settings.join_executes_as_constant_join = willExecuteAsConstantJoin(join_operator);
@@ -2734,9 +2734,9 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
-    JoinSettings join_settings(ctx.settings);
+    JoinSettings join_settings(ctx.settings, ctx.version);
 
-    /// `max_memory_usage` joined the plan serialization only in version 20
+    /// `max_memory_usage` joined the plan serialization only in version 21
     /// (DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_IN_MEMORY_COMPRESSION), and version
     /// selection (QueryPlanSerializationSettings::getMinRequiredVersion) keeps fragments without
     /// in-memory join compression at the baseline version, so their streams omit it. It is not only
@@ -2749,7 +2749,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     if (!ctx.settings.isChanged("max_memory_usage"))
         join_settings.max_memory_usage = ctx.context->getSettingsRef()[Setting::max_memory_usage];
 
-    /// A step-local value (a subquery-local SETTINGS override, carried only by streams at version 20
+    /// A step-local value (a subquery-local SETTINGS override, carried only by streams at version 21
     /// or above - see QueryPlanSerializationSettings::getMinRequiredVersion) cannot be restored from the query
     /// context. Recompute the flag against this receiver's query context, so re-serializing the step
     /// for a further hop keeps carrying the value. An omitted value was just restored from that very
