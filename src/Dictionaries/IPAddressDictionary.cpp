@@ -423,7 +423,7 @@ void IPAddressDictionary::createAttributes()
         {
             if (attribute.is_nullable)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "{}: array or nullable attributes not supported for dictionary of type {}",
+                    "{}: nullable attributes not supported for dictionary of type {}",
                     getFullName(),
                     getTypeName());
 

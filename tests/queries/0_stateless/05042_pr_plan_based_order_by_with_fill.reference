@@ -1,0 +1,110 @@
+--- WITH FILL STEP 2, local ---
+199	39402
+--- WITH FILL STEP 2, plan_based = 1 ---
+199	39402
+--- WITH FILL STEP 2, head, local ---
+0
+2
+4
+6
+8
+10
+12
+14
+--- WITH FILL STEP 2, head, plan_based = 1 ---
+0
+2
+4
+6
+8
+10
+12
+14
+--- WITH FILL STEP 2 LIMIT 7 OFFSET 3, local ---
+6
+8
+10
+12
+14
+16
+18
+--- WITH FILL STEP 2 LIMIT 7 OFFSET 3, plan_based = 1 ---
+6
+8
+10
+12
+14
+16
+18
+--- WITH FILL FROM 2 TO 30 STEP 3, local ---
+0
+2
+4
+5
+8
+11
+12
+14
+16
+17
+20
+23
+26
+29
+--- WITH FILL FROM 2 TO 30 STEP 3, plan_based = 1 ---
+0
+2
+4
+5
+8
+11
+12
+14
+16
+17
+20
+23
+26
+29
+--- WITH FILL STEP 2 INTERPOLATE, local ---
+0	0
+2	0
+4	1
+6	1
+8	2
+10	2
+12	3
+14	3
+--- WITH FILL STEP 2 INTERPOLATE, plan_based = 1 ---
+0	0
+2	0
+4	1
+6	1
+8	2
+10	2
+12	3
+14	3
+--- GROUP BY, ORDER BY count() WITH FILL, local ---
+0	10
+0	11
+0	12
+0	13
+0	14
+0	15
+0	16
+0	17
+--- GROUP BY, ORDER BY count() WITH FILL, plan_based = 1 ---
+0	10
+0	11
+0	12
+0	13
+0	14
+0	15
+0	16
+0	17
+--- join over a filled build side, local ---
+199	39402
+--- join over a filled build side, plan_based = 1 ---
+199	39402
+--- explain: has_remote_read, sort_shipped ---
+1	1

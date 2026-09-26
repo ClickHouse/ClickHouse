@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-old-analyzer, no-flaky-check
+# Tags: no-flaky-check
 # no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
 # execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
 

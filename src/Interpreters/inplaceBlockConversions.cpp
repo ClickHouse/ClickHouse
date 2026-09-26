@@ -56,7 +56,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -156,6 +155,7 @@ void addDefaultRequiredExpressionsRecursively(
     }
 }
 
+
 ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, bool null_as_default)
 {
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
@@ -220,31 +220,18 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
     return conversion_expr_list;
 }
 
-std::optional<ActionsDAG> createExpressions(
-    const Block & header,
-    ASTPtr expr_list,
-    bool save_unneeded_columns,
-    ContextPtr context)
+/// The expression list resolved against a table made of `header`'s columns, with the context the resolution ran in
+/// (the planner needs the same one afterwards) and the table itself: the column nodes of the expression point at it
+/// and it has to outlive them.
+struct ResolvedExpressionList
 {
-    if (!expr_list)
-        return {};
+    QueryTreeNodePtr expression;
+    ContextMutablePtr context;
+    std::shared_ptr<TableNode> table;
+};
 
-    auto syntax_result = TreeRewriter(context).analyze(expr_list, header.getNamesAndTypesList());
-    auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
-    ActionsDAG dag(header.getNamesAndTypesList());
-    auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
-    return ActionsDAG::merge(std::move(dag), std::move(actions));
-}
-
-std::optional<ActionsDAG> createExpressionsAnalyzer(
-    const Block & header,
-    ASTPtr expr_list,
-    bool save_unneeded_columns,
-    ContextPtr context)
+ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
 {
-    if (!expr_list)
-        return {};
-
     auto execution_context = Context::createCopy(context);
     auto expression = buildQueryTree(expr_list, execution_context);
 
@@ -257,6 +244,22 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 
     QueryAnalyzer analyzer(false);
     analyzer.resolve(expression, fake_table_expression, execution_context);
+
+    return {std::move(expression), std::move(execution_context), std::move(fake_table_expression)};
+}
+
+std::optional<ActionsDAG> createExpressionsAnalyzer(
+    const Block & header,
+    ASTPtr expr_list,
+    bool save_unneeded_columns,
+    ContextPtr context)
+{
+    if (!expr_list)
+        return {};
+
+    auto resolved = resolveExpressionList(header, expr_list, context);
+    auto & expression = resolved.expression;
+    auto & execution_context = resolved.context;
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
@@ -293,11 +296,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     if (conversion_expr_list->children.empty())
         return;
 
-    std::optional<ActionsDAG> dag;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
-    else
-        dag = createExpressions(block, conversion_expr_list, true, context);
+    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
 
     if (dag)
     {
@@ -316,6 +315,19 @@ static bool needConvertAnyNullToDefault(const Block & header, const NamesAndType
     return false;
 }
 
+QueryTreeNodePtr resolveMissingDefaults(
+    const Block & header,
+    const NamesAndTypesList & required_columns,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    bool null_as_default)
+{
+    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
+    if (!expr_list)
+        return nullptr;
+    return resolveExpressionList(header, expr_list, context).expression;
+}
+
 std::optional<ActionsDAG> evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
@@ -328,10 +340,7 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
-
-    return createExpressions(header, expr_list, save_unneeded_columns, context);
+    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
 }
 
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class
@@ -557,7 +566,7 @@ static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAn
 static bool isSubcolumnOfAvailableColumn(
     const StorageSnapshotPtr & storage_snapshot,
     const NameAndTypePair & column,
-    const NamesAndTypesList & available_columns,
+    const NamesAndTypesList & requested_columns,
     const NameSet & additional_available_columns)
 {
     if (!column.isSubcolumn())
@@ -570,8 +579,10 @@ static bool isSubcolumnOfAvailableColumn(
     if (!column_in_storage || !column_in_storage->isSubcolumn())
         return false;
 
+    /// Both names must come from the table's metadata: a part's own column list can still hold the
+    /// pre-rename name, while evaluateMissingDefaults looks the parent up by its metadata name.
     auto parent_name = column_in_storage->getNameInStorage();
-    return available_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
+    return requested_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
 }
 
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
@@ -598,6 +609,7 @@ void fillMissingColumns(
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
     StorageSnapshotPtr storage_snapshot,
+    const NameSet & missing_columns,
     bool share_nested_offsets,
     const NameSet & additional_available_columns)
 {
@@ -625,13 +637,15 @@ void fillMissingColumns(
             res_columns[i] = nullptr;
 
         /// Nothing to fill or default should be filled in evaluateMissingDefaults.
-        if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
+        /// But if the column was explicitly marked as missing (frozen default at
+        /// write time), fill with type-defaults even if a DEFAULT expression exists.
+        if (res_columns[i] || (hasDefault(storage_snapshot, *requested_column) && !missing_columns.contains(requested_column->getNameInStorage())))
             continue;
 
         /// Subcolumn missing from the part's (older) type but whose parent is available (read here
         /// or produced by an earlier step): defer to evaluateMissingDefaults instead of default-
         /// filling. Needs a storage_snapshot, i.e. a caller that runs that pass (not Memory engine).
-        if (isSubcolumnOfAvailableColumn(storage_snapshot, *requested_column, available_columns, additional_available_columns))
+        if (isSubcolumnOfAvailableColumn(storage_snapshot, *requested_column, requested_columns, additional_available_columns))
             continue;
 
         std::vector<ColumnPtr> current_offsets;
