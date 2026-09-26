@@ -40,12 +40,27 @@ $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
 # A record is kept whole so that pages start where the page index says they do, and page indexes are
 # on by default. One `Array(String)` row larger than a page has to be split regardless, which is the
 # only case that gives up the index. The values need not be distinct here: the split counts the
-# bytes the record occupies, whether or not the dictionary would fold them together.
-$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
-    SELECT groupArray(s) AS a FROM (SELECT repeat('y', 1000) AS s FROM numbers(2200000))
+# bytes the record occupies, whether or not the dictionary would fold them together. Parallel encoding
+# would hand the encoder a copy of the whole column, doubling the memory the test needs.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --output_format_parquet_parallel_encoding 0 --query "
+    SELECT arrayMap(i -> repeat('y', 1000), range(2200000)) AS a
     FORMAT Parquet
 " > "$FILE"
 
 $CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
     SELECT length(a), arraySum(x -> length(x), a) FROM file('$FILE', Parquet)
+"
+
+# `FixedString` written as `BYTE_ARRAY` rather than `FIXED_LEN_BYTE_ARRAY`: that encoding prefixes
+# every value with its 4-byte length, so the batch is budgeted against what it writes, not just the
+# payload.
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --allow_suspicious_fixed_string_types 1 --query "
+    SELECT toFixedString(concat(toString(number), repeat('z', 70000)), 70008) AS s
+    FROM numbers(1024)
+    SETTINGS output_format_parquet_fixed_string_as_fixed_byte_array = 0
+    FORMAT Parquet
+" > "$FILE"
+
+$CLICKHOUSE_LOCAL --max_memory_usage 0 --query "
+    SELECT count(), sum(length(s)), uniqExact(cityHash64(s)) FROM file('$FILE', Parquet)
 "
