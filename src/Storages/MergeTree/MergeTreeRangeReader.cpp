@@ -1724,7 +1724,7 @@ static ColumnPtr combineFilters(ColumnPtr first, ColumnPtr second)
     return mut_first;
 }
 
-void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool is_last_reader) const
+void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & result, const Block & previous_header, bool keep_additional_columns) const
 {
     result.checkInternalConsistency();
 
@@ -1799,8 +1799,13 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
         result.additional_columns.clear();
 
-        /// Additional columns might only be needed if there are more steps in the chain.
-        if (!is_last_reader)
+        /// Additional columns are needed by the later steps of the chain, and after the last one by
+        /// `MergeTreeReadersChain::applyPatchesAfterReader`: a `DEFAULT` column of the result is
+        /// evaluated again when a patch part overwrites a column its expression reads, and that
+        /// column may be one the step projected out. The caller tells whether they are needed.
+        /// A column the action outputs is in `block` and is not stored here, so the stored columns
+        /// are exactly the ones the action passed through unchanged or dropped.
+        if (keep_additional_columns)
         {
             for (auto & col : additional_columns)
             {
