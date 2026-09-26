@@ -42,7 +42,8 @@ struct FixedHashTableCell
         const VoidKey getKey() const { return {}; } /// NOLINT
         VoidMapped getMapped() const { return {}; }
         const value_type & getValue() const { return key; }
-        void update(Key && key_, FixedHashTableCell *) { key = key_; }
+        /// The cell pointer is unused (the key is the cell index); const so that const iteration works.
+        void update(Key && key_, const FixedHashTableCell *) { key = key_; }
     };
 };
 
@@ -458,7 +459,7 @@ public:
     {
         Cell::State::read(rb);
         destroyElements();
-        size_t m_size;
+        size_t m_size = 0;
         DB::readVarUInt(m_size, rb);
         this->setSize(m_size);
         free();
@@ -479,7 +480,7 @@ public:
     {
         Cell::State::readText(rb);
         destroyElements();
-        size_t m_size;
+        size_t m_size = 0;
         DB::readText(m_size, rb);
         this->setSize(m_size);
         free();

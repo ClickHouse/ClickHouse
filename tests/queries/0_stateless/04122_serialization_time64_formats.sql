@@ -37,10 +37,11 @@ SELECT t FROM format(CSV, 't Time64(3)',
 '"12:30:45.123"
 ''00:00:00.000''') ORDER BY t;
 
-SELECT '--- CSV input: deserializeTextCSV without quotes (numeric) ---';
-SELECT t FROM format(CSV, 't Time64(3)',
-'45045123
-0') ORDER BY t;
+SELECT '--- CSV input: deserializeTextCSV rejects unquoted numeric with trailing data ---';
+SELECT t FROM format(CSV, 't Time64(3)', '45045123') ORDER BY t; -- { serverError UNEXPECTED_DATA_AFTER_PARSED_VALUE }
+
+SELECT '--- CSV input: deserializeTextCSV accepts valid unquoted numeric ---';
+SELECT t FROM format(CSV, 't Time64(3)', '0') ORDER BY t;
 
 SELECT '--- TSV input: deserializeTextEscaped ---';
 SELECT t FROM format(TabSeparated, 't Time64(3)',
@@ -80,3 +81,19 @@ SELECT accurateCastOrNull('garbage', 'Time64(3)');
 SELECT accurateCastOrDefault('garbage', 'Time64(3)');
 
 DROP TABLE t64_values;
+
+-- Coverage for SerializationTime.cpp: JSON and CSV text serializer/deserializer paths
+-- (lines 139-143 serializeTextJSON, 146-159 deserializeTextJSON, 195-200 deserializeTextCSV quoted)
+-- not covered by existing Time64 format tests (which only use text/binary formats).
+
+SELECT '--- Time JSON/CSV ---';
+
+-- serializeTextJSON: Time value to JSON string (lines 139-143)
+SELECT CAST('12:34:56' AS Time) AS t FORMAT JSONEachRow;
+
+-- deserializeTextJSON: parse quoted string and bare integer (lines 147-156)
+SELECT t FROM format(JSONEachRow, 't Time', '{"t":"12:34:56"}
+{"t":45056}');
+
+-- deserializeTextCSV quoted branch (lines 195-200)
+SELECT t FROM format(CSV, 't Time', '"12:34:56"');

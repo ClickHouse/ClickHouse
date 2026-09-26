@@ -18,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ExecuteCommandArgs.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/RemoveOrphanFilesExecute.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
@@ -95,7 +96,7 @@ String resolveScanPath(const String & table_path, const RemoveOrphanFilesParams 
     if (params.location.has_value())
     {
         String loc = *params.location;
-        if (loc.find("..") != String::npos || loc.starts_with('/'))
+        if (loc.contains("..") || loc.starts_with('/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "location must be a relative path under the table root, got '{}'", loc);
 
         while (loc.starts_with("./"))
@@ -255,12 +256,14 @@ RemoveOrphanFilesResult removeOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_table_components)
+    const PersistentTableComponents & persistent_table_components,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_name)
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
-    auto [reachable, metadata_version] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log);
+    auto [reachable, metadata_version, metadata_path] = collectReachableFiles(
+        object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
 
     String scan_path = resolveScanPath(persistent_table_components.table_path, params);
     if (!object_storage->existsOrHasAnyChild(scan_path))
@@ -276,13 +279,13 @@ RemoveOrphanFilesResult removeOrphanFiles(
     if (params.dry_run || scan.orphan_paths.empty())
         return tallyByCategory(scan.orphan_paths, scan.skipped_missing_metadata);
 
-    auto [_recheck_files, recheck_version] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log);
-    if (recheck_version != metadata_version)
+    auto [_recheck_files, recheck_version, recheck_path] = collectReachableFiles(
+        object_storage, persistent_table_components, data_lake_settings, context, log, catalog, table_name);
+    if (recheck_path != metadata_path)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Metadata version changed during orphan scan (v{} -> v{}); "
+            "Current metadata file changed during orphan scan ('{}' v{} -> '{}' v{}); "
             "aborting to avoid deleting files referenced by a concurrent commit",
-            metadata_version, recheck_version);
+            metadata_path, metadata_version, recheck_path, recheck_version);
 
     auto delete_result = deleteOrphanFiles(scan.orphan_paths, object_storage, log);
     LOG_INFO(log, "Deleted {}/{} orphan files ({} failed)",
@@ -305,14 +308,44 @@ Pipe executeRemoveOrphanFiles(
     ContextPtr context,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
-    const PersistentTableComponents & persistent_components)
+    const PersistentTableComponents & persistent_components,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const String & table_name)
 {
-    if (persistent_components.format_version < 2)
+    /// `persistent_components.format_version` is captured when the table was opened and
+    /// can become stale if an external tool (e.g. Spark) upgrades the table v1 -> v2
+    /// between queries. Resolve the same metadata file the scan below roots at, so the
+    /// gate and the scan judge one table state.
+    auto log = getLogger("IcebergRemoveOrphanFiles");
+    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
+        object_storage,
+        catalog,
+        table_name,
+        persistent_components.table_path,
+        data_lake_settings,
+        persistent_components.metadata_cache,
+        context,
+        log.get(),
+        persistent_components.table_uuid,
+        persistent_components.metadata_compression_method,
+        /* ignore_metadata_pointer_overrides */ true);
+
+    auto latest_metadata = getMetadataJSONObject(
+        latest_metadata_path,
+        object_storage,
+        persistent_components.metadata_cache,
+        context,
+        log,
+        compression_method,
+        persistent_components.table_uuid);
+
+    Int32 current_format_version = latest_metadata->getValue<Int32>(f_format_version);
+    if (current_format_version < 2)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "remove_orphan_files requires Iceberg format version >= 2, "
             "but this table uses format version {}",
-            persistent_components.format_version);
+            current_format_version);
 
     auto parsed = makeSchema().parse(args);
 
@@ -321,7 +354,7 @@ Pipe executeRemoveOrphanFiles(
     {
         String older_than_str = parsed.getAs<String>("older_than");
         ReadBufferFromString buf(older_than_str);
-        time_t ts;
+        time_t ts = 0;
         readDateTimeText(ts, buf);
 
         auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -342,7 +375,7 @@ Pipe executeRemoveOrphanFiles(
         params.location = parsed.getAs<String>("location");
     params.dry_run = parsed.getAs<UInt64>("dry_run") != 0;
 
-    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components);
+    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components, catalog, table_name);
 
     return resultToPipe(result);
 }

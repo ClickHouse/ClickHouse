@@ -1,12 +1,20 @@
--- Tags: no-fasttest, no-replicated-database
+-- Tags: no-fasttest
 -- ^^ ANTLR4 support is disabled in the fast-test build, and the PromQL
--- grammar requires it. The experimental TimeSeries table engine does not
--- round-trip through DatabaseReplicated and the cleanup query hangs.
+-- grammar requires it.
 --
 -- Exercise Prometheus/PromQL parsing (Parsers/Prometheus/PrometheusQueryParsingUtil.cpp
 -- and the ANTLR visitor) via the prometheusQuery() / prometheusQueryRange() table
 -- functions against an empty TimeSeries table. This drives tryParseScalar,
 -- tryUnescapeStringLiteral and the ANTLR grammar end-to-end.
+--
+-- Scope note: scalar / arithmetic / unary / bool-comparison / vector / scalar
+-- expressions return concrete values that genuinely exercise the evaluator.
+-- The selector-based queries (rate, offset, label matchers, by/without,
+-- group_left/right, prometheusQueryRange) only assert count() == 0 because the
+-- TimeSeries engine does not support direct INSERT (data only enters via the
+-- Prometheus remote-write HTTP path). They still cover the *parser* surface,
+-- which is the goal here; an evaluator regression on an empty selector would
+-- need a separate integration test.
 
 SET allow_experimental_time_series_table = 1;
 
@@ -70,6 +78,8 @@ SELECT count() FROM prometheusQuery('ts', 'up{job!~"ignore"}', 1000);
 SELECT '--- aggregations with by / without ---';
 SELECT count() FROM prometheusQuery('ts', 'sum by (job) (up)', 1000);
 SELECT count() FROM prometheusQuery('ts', 'sum without (instance) (up)', 1000);
+SELECT count() FROM prometheusQuery('ts', 'sum by ("service.name", "k8s.namespace.name") (up)', 1000);
+SELECT count() FROM prometheusQuery('ts', 'max without ("deployment.environment") (up)', 1000);
 SELECT count() FROM prometheusQuery('ts', 'topk(3, up)', 1000);
 SELECT count() FROM prometheusQuery('ts', 'quantile(0.5, up)', 1000);
 
@@ -78,6 +88,10 @@ SELECT count() FROM prometheusQuery('ts', 'up * on (job) up', 1000);
 SELECT count() FROM prometheusQuery('ts', 'up * ignoring (instance) up', 1000);
 SELECT count() FROM prometheusQuery('ts', 'up * on (job) group_left() up', 1000);
 SELECT count() FROM prometheusQuery('ts', 'up * ignoring (instance) group_right() up', 1000);
+SELECT count() FROM prometheusQuery('ts', 'up * on ("service.name") group_left ("pod.name") target_info', 1000);
+SELECT count() FROM prometheusQuery('ts', 'up / ignoring ("cluster.name") group_right ("instance.name") target_info', 1000);
+SELECT count() FROM prometheusQuery('ts', 'up + 1', 1000);
+SELECT count() FROM prometheusQuery('ts', 'up + on () 1', 1000);
 
 SELECT '--- prometheusQueryRange with various steps ---';
 SELECT count() FROM prometheusQueryRange('ts', 'up', 1000, 2000, 60);
@@ -90,5 +104,8 @@ SELECT * FROM prometheusQuery('ts', 'rate(up[abc])', 1000); -- { serverError CAN
 SELECT * FROM prometheusQuery('ts', '1 +', 1000); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
 SELECT * FROM prometheusQuery('ts', 'up{job=}', 1000); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
 SELECT * FROM prometheusQuery('ts', 'up{job="unclosed}', 1000); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
+SELECT * FROM prometheusQuery('ts', 'sum by ("") (up)', 1000); -- { serverError CANNOT_PARSE_PROMQL_QUERY }
+SELECT * FROM prometheusQuery('ts', 'up + on (job) 1', 1000); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
+SELECT * FROM prometheusQuery('ts', 'up == ignoring (instance) 1', 1000); -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 
 DROP TABLE ts;

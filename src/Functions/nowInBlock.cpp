@@ -23,7 +23,7 @@ namespace
 /** Returns current time at calculation of every block.
   * In contrast to 'now' function, it's not a constant expression and is not a subject of constant folding.
   */
-class FunctionNowInBlock : public IFunction
+class FunctionNowInBlock final : public IFunction
 {
 public:
     static constexpr auto name = "nowInBlock";

@@ -94,53 +94,9 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
         fill_column_description.staleness_kind = std::move(extract_result.second);
     }
 
-    ///////////////////////////////////
-
-    if (accurateEquals(fill_column_description.fill_step, Field{0}))
-        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-            "WITH FILL STEP value cannot be zero");
-
-    if (sort_node.hasFillStaleness())
-    {
-        if (sort_node.hasFillFrom())
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS cannot be used together with WITH FILL FROM");
-    }
-
-    if (sort_node.getSortDirection() == SortDirection::ASCENDING)
-    {
-        if (accurateLess(fill_column_description.fill_step, Field{0}))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STEP value cannot be negative for sorting in ascending direction");
-
-        if (accurateLess(fill_column_description.fill_staleness, Field{0}))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS value cannot be negative for sorting in ascending direction");
-
-        if (!fill_column_description.fill_from.isNull() && !fill_column_description.fill_to.isNull() &&
-            accurateLess(fill_column_description.fill_to, fill_column_description.fill_from))
-        {
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
-        }
-    }
-    else
-    {
-        if (accurateLess(Field{0}, fill_column_description.fill_step))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STEP value cannot be positive for sorting in descending direction");
-
-        if (accurateLess(Field{0}, fill_column_description.fill_staleness))
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL STALENESS value cannot be positive for sorting in descending direction");
-
-        if (!fill_column_description.fill_from.isNull() && !fill_column_description.fill_to.isNull() &&
-            accurateLess(fill_column_description.fill_from, fill_column_description.fill_to))
-        {
-            throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");
-        }
-    }
+    if (const auto reason = checkFillDescription(fill_column_description, sort_node.getSortDirection() == SortDirection::ASCENDING ? 1 : -1);
+        !reason.empty())
+        throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION, "{}", reason);
 
     return fill_column_description;
 }

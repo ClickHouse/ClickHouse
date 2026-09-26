@@ -77,12 +77,18 @@ skip LZ4_HC
 100	4950
 --- multiple row groups: count ---
 5000	12497500
---- filter pushdown on id column ---
+--- filter pushdown: row groups pruned ---
+pruned
+--- filter pushdown: result correctness ---
 101
 0	49
+--- filter pushdown: result identical with pushdown off ---
+101
 --- column pruning ---
 9900
 4950	14850
+--- column pruning: decoding tasks shrink with projection ---
+pruned
 --- nullable columns: null counts ---
 4	5
 --- schema inference ---

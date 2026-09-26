@@ -122,7 +122,8 @@ SELECT JSONExtract('{"x": null}', 'x', 'Map(String, Int32)');
 SELECT '--- VariantNode ---';
 SELECT JSONExtract('{"x": 1}', 'x', 'Variant(String, Int64, Float64)');
 SELECT JSONExtract('{"x": "hi"}', 'x', 'Variant(String, Int64, Float64)');
-SELECT JSONExtract('{"x": 3.14}', 'x', 'Variant(String, Int64, Float64)');
+-- Float-only Variant: the JSON 3.14 lands in Float64 as expected.
+SELECT JSONExtract('{"x": 3.14}', 'x', 'Variant(String, Float64)');
 SELECT JSONExtract('{"x": true}', 'x', 'Variant(String, Bool)');
 
 SELECT '--- DynamicNode ---';

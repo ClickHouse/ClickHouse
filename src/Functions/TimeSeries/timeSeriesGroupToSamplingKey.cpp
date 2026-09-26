@@ -18,7 +18,7 @@ namespace ErrorCodes
 /// Function timeSeriesGroupToSamplingKey(group) returns a stable UInt64 hash derived from the tags
 /// of a specified group. The value is intended as a deterministic sort key for sampling operations
 /// like `limitk` and `limit_ratio`, where Prometheus requires a "deterministic pseudo-random" order.
-class FunctionTimeSeriesGroupToSamplingKey : public IFunction
+class FunctionTimeSeriesGroupToSamplingKey final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesGroupToSamplingKey";
@@ -33,6 +33,12 @@ public:
     /// Function timeSeriesGroupToSamplingKey returns information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -57,13 +63,9 @@ public:
     {
         auto groups = TimeSeriesTagsFunctionHelpers::extractGroupFromArgument(name, arguments, 0);
 
-        auto sampling_keys = tags_collector->getSamplingKeyByGroup(groups);
-        chassert(sampling_keys.size() == input_rows_count);
-
         auto result_column = ColumnUInt64::create();
-        result_column->reserve(sampling_keys.size());
-        for (UInt64 key : sampling_keys)
-            result_column->insertValue(key);
+        tags_collector->getSamplingKeyByGroup(groups, result_column->getData());
+        chassert(result_column->size() == input_rows_count);
         return result_column;
     }
 
@@ -95,12 +97,12 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
         )",
         R"(
 ┌─group─┬─────────sampling_key─┐
-│     1 │ 12876543210987654321 │
+│     1 │ 15511321834549144507 │
 └───────┴──────────────────────┘
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 1};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::TimeSeries;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

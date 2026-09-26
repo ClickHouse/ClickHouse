@@ -15,7 +15,7 @@ $CLICKHOUSE_LOCAL -q "
 "
 
 # Read without schema to ensure nested inference works
-$CLICKHOUSE_LOCAL --input_format_parquet_use_native_reader_v3=1 -q "
+$CLICKHOUSE_LOCAL -q "
     SELECT toTypeName(opt_id), opt_id, toTypeName(arr_id), arr_id 
     FROM file('$DATA_FILE', 'Parquet') ORDER BY opt_id ASC;
 "

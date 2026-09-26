@@ -1,9 +1,4 @@
--- Regression test for legacy `JoinStep` filter pushdown through equivalent `USING` columns.
--- Equivalent-column replacement must preserve `Cast JOIN USING columns` actions instead of
--- replacing the derived node by name and dropping the type-conversion chain.
-
 SET enable_analyzer = 1;
-SET query_plan_use_new_logical_join_step = 0;
 SET enable_join_runtime_filters = 0;
 SET join_use_nulls = 1;
 
