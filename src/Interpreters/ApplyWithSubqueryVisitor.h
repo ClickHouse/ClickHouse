@@ -13,6 +13,7 @@ class ASTFunction;
 class ASTSelectQuery;
 class ASTSelectWithUnionQuery;
 struct ASTTableExpression;
+class ExpandedASTBudget;
 
 class ApplyWithSubqueryVisitor
 {
@@ -28,17 +29,15 @@ public:
         /// When set, each subquery's own settings are applied while descending, so that an inherited
         /// element is not substituted into a subquery whose settings hide it.
         ContextPtr context;
+        ExpandedASTBudget * budget = nullptr;
     };
 
-    static void visit(ASTPtr & ast) { visit(ast, Data{}); }
-    static void visit(ASTPtr & ast, ContextPtr context)
-    {
-        Data data;
-        data.context = std::move(context);
-        visit(ast, data);
-    }
-    static void visit(ASTSelectQuery & select) { visit(select, {}); }
-    static void visit(ASTSelectWithUnionQuery & select) { visit(select, {}); }
+    /// Each overload throws `TOO_BIG_AST` when the substituted copies exceed `max_expanded_ast_elements`
+    /// (zero means no limit). The overload with a context takes the limit from its settings.
+    static void visit(ASTPtr & ast, size_t max_expanded_ast_elements);
+    static void visit(ASTPtr & ast, ContextPtr context);
+    static void visit(ASTSelectQuery & select, size_t max_expanded_ast_elements);
+    static void visit(ASTSelectWithUnionQuery & select, size_t max_expanded_ast_elements);
 
 private:
     static void visit(ASTPtr & ast, const Data & data);
