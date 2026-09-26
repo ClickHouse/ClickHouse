@@ -32,7 +32,7 @@ BYOC デプロイメントでは、**Network Load Balancers (NLBs)** を使用�
 * 通常、顧客管理 VPC を使用する場合はデフォルトで有効になります。
 * 通常、ClickHouse 管理の専用 VPC を使用する場合はデフォルトで無効になります。
 
-要件に応じて有効にするエンドポイントは、**ClickHouse Cloud Support** と連携して調整できます。
+BYOC インフラストラクチャのプライベートロードバランサーは、ClickHouse Cloud console で直接有効にできます。その他のエンドポイント調整 (たとえば、パブリックロードバランサーの削除) については、**ClickHouse Cloud Support** と連携してください。
 
 <div id="private-load-balancer-security-group">
   ### AWS のプライベートロードバランサーのセキュリティグループ
@@ -53,10 +53,10 @@ BYOC デプロイメントでプライベートロードバランサーを使用
 </Note>
 
 <div id="privatelink-or-private-service-connect">
-  ## PrivateLink または Private Service Connect
+  ## PrivateLink、Private Service Connect、または プライベートリンク
 </div>
 
-ネットワーク分離とセキュリティを最大限に高めるため、BYOC デプロイでは **AWS PrivateLink** または **GCP Private Service Connect** を利用できます。これらのオプションを使用すると、VPC peering を必要とせず、エンドポイントをパブリックインターネットに公開することなく、アプリケーションから ClickHouse Cloud サービスにプライベート接続できます。
+ネットワーク分離とセキュリティを最大限に高めるため、BYOC デプロイでは **AWS PrivateLink**、**GCP Private Service Connect**、または **Azure プライベートリンク** を利用できます。これらのオプションを使用すると、VPC/VNet peering を必要とせず、エンドポイントをパブリックインターネットに公開することなく、アプリケーションから ClickHouse Cloud サービスにプライベート接続できます。
 
 手順を追ったセットアップについては、[Private Networking Setup guide](/ja/products/bring-your-own-cloud/onboarding/network)を参照してください。
 

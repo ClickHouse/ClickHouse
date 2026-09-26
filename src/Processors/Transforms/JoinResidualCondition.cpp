@@ -17,8 +17,7 @@ namespace ErrorCodes
 static void validateResidualOutput(const ExpressionActions & actions)
 {
     const auto & sample = actions.getSampleBlock();
-    if (sample.columns() != 1
-        || !WhichDataType(removeNullable(removeLowCardinality(sample.getByPosition(0).type))).isUInt8())
+    if (sample.columns() != 1 || !sample.getByPosition(0).type->canBeUsedInBooleanContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join residual condition must have a single boolean output, got {}",
             sample.dumpStructure());
 }
@@ -77,7 +76,19 @@ JoinResidualConditionEvaluator::JoinResidualConditionEvaluator(
 
 IColumn::Filter JoinResidualConditionEvaluator::evaluateMask(Columns columns, size_t num_rows) const
 {
-    Columns results = condition.actions->executeOnColumns(std::move(columns), input_header, input_positions, num_rows);
+    /// The mask is indexed by candidate, so the residual must return one row per candidate.
+    /// `executeOnColumns` reports the count its actions produced through the same reference, so
+    /// comparing it is a backstop against a row-count-changing action; it compares totals only.
+    size_t num_rows_after_execute = num_rows;
+    Columns results = condition.actions->executeOnColumns(std::move(columns), input_header, input_positions, num_rows_after_execute);
+    if (num_rows_after_execute != num_rows)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Join residual condition returned {} rows for {} candidates",
+            num_rows_after_execute,
+            num_rows);
+    }
     ColumnPtr result = results.at(0)->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
 
     IColumn::Filter mask(num_rows);

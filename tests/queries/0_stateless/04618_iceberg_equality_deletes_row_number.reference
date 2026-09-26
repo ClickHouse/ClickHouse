@@ -1,0 +1,11 @@
+--- equality + position deletes: exact id - _row_number offset per data file ---
+00000-0-fc48b21a-8536-4b1c-8171-c1b8e579b235-0-00001.parquet	[0]
+00000-6-b8c05bcb-8ab1-4aa5-8212-e81166075904-0-00001.parquet	[0]
+00001-1-fc48b21a-8536-4b1c-8171-c1b8e579b235-0-00001.parquet	[500]
+00001-7-b8c05bcb-8ab1-4aa5-8212-e81166075904-0-00001.parquet	[5]
+--- the same with reader-side PREWHERE composed with the equality-delete mask ---
+00000-0-fc48b21a-8536-4b1c-8171-c1b8e579b235-0-00001.parquet	[0]
+00001-1-fc48b21a-8536-4b1c-8171-c1b8e579b235-0-00001.parquet	[500]
+--- equality deletes only: exact physical row numbers ---
+bar	3
+world	1

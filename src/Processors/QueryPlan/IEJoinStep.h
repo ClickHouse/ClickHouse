@@ -25,7 +25,8 @@ public:
         JoinStrictness strictness_,
         bool inputs_sorted_by_first_key_,
         const SizeLimits & size_limits_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        size_t max_block_bytes_);
 
     /// Whether the step can execute this join type.
     static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
@@ -55,12 +56,20 @@ private:
     IEJoinKind kind = IEJoinKind::Inner;
     bool swap_inputs = false;
 
+    /// The join type as written in the query. `system.query_log` is filled from it, because `kind` above
+    /// is an `IEJoinKind` and the column reports the `JoinKind` and the `JoinStrictness` separately.
+    JoinKind query_kind;
+    JoinStrictness query_strictness;
+
     /// The planner pre-sorted each input by its first-condition key with a `SortingStep`
     /// (always ascending, NULLS LAST); selects the merge-based L1 build in the operator.
     bool inputs_sorted_by_first_key;
     /// Limits on the materialized input, from `max_rows_in_join` / `max_bytes_in_join`.
     SizeLimits size_limits;
+    /// Limits on a result block, from `max_block_size` / `max_joined_block_size_rows` and
+    /// `max_joined_block_size_bytes`.
     size_t max_block_size;
+    size_t max_block_bytes;
 };
 
 }

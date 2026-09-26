@@ -69,7 +69,8 @@ public:
         bool inputs_sorted_by_first_key_,
         const SharedHeaders & input_headers_,
         const SizeLimits & size_limits_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        size_t max_block_bytes_);
 
     const char * getName() const override { return "IEJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -94,6 +95,10 @@ private:
 
     /// Run the stage `build_stage` points at and advance it.
     void runBuildStage();
+
+    /// Lower `max_block_size` so that a result block stays within `max_block_bytes`. Called once
+    /// both inputs are materialized: they give the size of a result row.
+    void boundBlockSizeByResultBytes();
 
     /// Rows admitted to the union: byte mask over the side's rows (empty when every row is
     /// valid) and the count of valid rows.
@@ -195,8 +200,8 @@ private:
 
     /// Re-verify an emitted pair against both conditions by direct evaluation (debug builds).
     bool checkEmittedPair(size_t key_index, size_t left_row, size_t right_row) const;
-    /// Check that the bit array is exactly {right-side entries whose L2 key qualifies
-    /// against the current left entry} (debug builds, small inputs only).
+    /// Check that the bit array is exactly the set of right-side entries whose L2 key qualifies
+    /// against the current left entry (debug builds, small inputs only).
     void checkFrontierInvariant() const;
     /// Check at the end of emission that every filtered row of each post-phase side ended up
     /// exactly one of matched/unmatched (debug builds).
@@ -209,7 +214,11 @@ private:
 #endif
 
     SharedHeaders input_headers;
+    /// Result block limits, from `max_joined_block_size_rows` / `max_joined_block_size_bytes`
+    /// (bounded by `max_block_size`). The byte limit is folded into `max_block_size` by
+    /// `boundBlockSizeByResultBytes` once the result row size is known.
     size_t max_block_size;
+    size_t max_block_bytes;
 
     IEJoinKind kind;
     IEJoinConditions conditions;
@@ -350,7 +359,8 @@ public:
         SharedHeaders & input_headers,
         SharedHeader output_header,
         const SizeLimits & size_limits,
-        size_t max_block_size);
+        size_t max_block_size,
+        size_t max_block_bytes);
 
     String getName() const override { return "IEJoinTransform"; }
 };

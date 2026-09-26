@@ -50,9 +50,11 @@ IEJoinAlgorithm::IEJoinAlgorithm(
     bool inputs_sorted_by_first_key_,
     const SharedHeaders & input_headers_,
     const SizeLimits & size_limits_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    size_t max_block_bytes_)
     : input_headers(input_headers_)
     , max_block_size(std::max<size_t>(1, max_block_size_))
+    , max_block_bytes(max_block_bytes_)
     , kind(kind_)
     , conditions(conditions_)
     , inputs_sorted_by_first_key(inputs_sorted_by_first_key_)
@@ -135,10 +137,19 @@ void IEJoinAlgorithm::consume(Input & input, size_t source_num)
         accumulated_chunks[source_num].push_back(std::move(input.chunk));
     }
 
+    /// Both inputs are materialized entirely, so the join size limits apply to their total. The
+    /// chunk that reaches the limit is already accounted and kept, as `SizeLimits::softCheck`
+    /// prescribes; with `join_overflow_mode = 'break'` reading stops right after it, and since
+    /// the limit covers the two inputs together, it stops for both of them.
     if (!size_limits.check(
-            stat.num_rows[0] + stat.num_rows[1], stat.num_bytes[0] + stat.num_bytes[1],
+            stat.num_rows[0] + stat.num_rows[1],
+            stat.num_bytes[0] + stat.num_bytes[1],
             "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    {
         size_limit_reached = true;
+        source_finished[0] = true;
+        source_finished[1] = true;
+    }
 }
 
 #ifndef NDEBUG
@@ -195,6 +206,7 @@ void IEJoinAlgorithm::runBuildStage()
         case BuildStage::MaterializeRight:
             build_validity[1] = materializeSide(1);
             num_union_entries = build_validity[0].num_valid + build_validity[1].num_valid;
+            boundBlockSizeByResultBytes();
             build_stage = BuildStage::EncodeKeys;
             break;
         case BuildStage::EncodeKeys:
@@ -218,6 +230,26 @@ void IEJoinAlgorithm::runBuildStage()
         case BuildStage::Done:
             break;
     }
+}
+
+void IEJoinAlgorithm::boundBlockSizeByResultBytes()
+{
+    if (!max_block_bytes)
+        return;
+
+    /// A result row concatenates one row of each side, so the materialized inputs give its size.
+    size_t bytes_per_row = 0;
+    for (size_t side = 0; side < 2; ++side)
+    {
+        if (!num_side_rows[side])
+            continue;
+        size_t side_bytes = 0;
+        for (const auto & column : side_columns[side])
+            side_bytes += column->allocatedBytes();
+        bytes_per_row += side_bytes / num_side_rows[side];
+    }
+
+    max_block_size = std::max<size_t>(1, std::min(max_block_size, max_block_bytes / std::max<size_t>(bytes_per_row, 1)));
 }
 
 /// Concatenate the accumulated chunks into full (non-replicated) columns of the header's layout.
@@ -786,6 +818,15 @@ bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
             has_current_left = true;
         }
 
+        if (!residual && kind == IEJoinKind::LeftAnti)
+        {
+            if (bit_array_end > scan_pos)
+                matched[0][current_left_row] = 1;
+            has_current_left = false;
+            ++l2_cursor;
+            continue;
+        }
+
         std::optional<size_t> found = findNextSetBit();
         if (!found)
             break;
@@ -968,16 +1009,16 @@ void IEJoinAlgorithm::appendGathered(Chunk & chunk, size_t side, const ColumnUIn
 
 IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_rows, const ColumnUInt64 & right_rows)
 {
-    size_t num_rows = left_rows.size();
-    chassert(num_rows == right_rows.size());
-    produce_work += num_rows;
+    const size_t num_pairs = left_rows.size();
+    chassert(num_pairs == right_rows.size());
+    produce_work += num_pairs;
 
     Columns expression_columns;
     expression_columns.reserve(residual->sources().size());
     for (const auto & source : residual->sources())
         expression_columns.push_back(side_columns[source.side][source.position]->index(source.side == 0 ? left_rows : right_rows, 0));
 
-    return residual->evaluateMask(std::move(expression_columns), num_rows);
+    return residual->evaluateMask(std::move(expression_columns), num_pairs);
 }
 
 void IEJoinAlgorithm::appendPadded(Chunk & chunk, size_t side, size_t num_rows) const
@@ -1067,7 +1108,8 @@ IEJoinTransform::IEJoinTransform(
     SharedHeaders & input_headers,
     SharedHeader output_header,
     const SizeLimits & size_limits,
-    size_t max_block_size)
+    size_t max_block_size,
+    size_t max_block_bytes)
     : IMergingTransform<IEJoinAlgorithm>(
         input_headers,
         output_header,
@@ -1081,7 +1123,8 @@ IEJoinTransform::IEJoinTransform(
         inputs_sorted_by_first_key,
         input_headers,
         size_limits,
-        max_block_size)
+        max_block_size,
+        max_block_bytes)
 {
 }
 

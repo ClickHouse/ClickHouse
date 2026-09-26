@@ -10,6 +10,7 @@ namespace DB::PrometheusQueryToSQL
 bool isLabelManipulationFunction(std::string_view function_name);
 
 /// Applies prometheus function label_replace() or label_join().
-SQLQueryPiece applyLabelManipulationFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+SQLQueryPiece applyLabelManipulationFunction(
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

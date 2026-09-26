@@ -910,7 +910,7 @@ namespace
             if (!checkIfStructIsNamedUnion(struct_schema))
                 throw Exception(
                     ErrorCodes::CAPN_PROTO_BAD_CAST,
-                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type."
+                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type. "
                     "Given CapnProto struct is not a named union: {}",
                     column_name,
                     getCapnProtoFullTypeName(capnp_type));
@@ -919,7 +919,7 @@ namespace
             if (union_fields.size() != 2)
                 throw Exception(
                     ErrorCodes::CAPN_PROTO_BAD_CAST,
-                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type."
+                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type. "
                     "Given CapnProto union have more than 2 fields: {}",
                     column_name,
                     getCapnProtoFullTypeName(capnp_type));
@@ -943,7 +943,7 @@ namespace
             else
                 throw Exception(
                     ErrorCodes::CAPN_PROTO_BAD_CAST,
-                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type."
+                    "Cannot convert column \"{}\": Nullable can be represented only as a named union of type Void and nested type. "
                     "Given CapnProto union doesn't have field with type Void: {}",
                     column_name,
                     getCapnProtoFullTypeName(capnp_type));
