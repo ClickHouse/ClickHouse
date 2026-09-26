@@ -454,11 +454,14 @@ then
 
     for _ in {1..60}
     do
+        # `system.mutations` resolves every table it enumerates before the `WHERE` narrows the set down, so a
+        # table that cannot be loaded makes this query throw instead of answering `0` or `1`.
         mutation_across_upgrade_finished=$(timeout 1m clickhouse-client --query "
             SELECT
                 (SELECT count() = 1 AND countIf(NOT is_done OR latest_fail_reason != '') = 0
                     FROM system.mutations WHERE database = 'default' AND table = 'mutation_across_upgrade')
-                AND (SELECT sum(v) FROM default.mutation_across_upgrade) = 500500") ||:
+                AND (SELECT sum(v) FROM default.mutation_across_upgrade) = 500500" \
+            2> /test_output/mutation_across_upgrade_error.txt) || mutation_across_upgrade_finished=cannot_check
 
         if [ "$mutation_across_upgrade_finished" = 1 ]
         then
@@ -471,13 +474,18 @@ then
     if [ "$mutation_across_upgrade_finished" = 1 ]
     then
         echo -e "The mutation submitted before the upgrade was finished by the new server$OK" >> /test_output/test_results.tsv
+    elif [ "$mutation_across_upgrade_finished" = cannot_check ]
+    then
+        echo -e "Cannot check whether the mutation submitted before the upgrade was finished (see mutation_across_upgrade_error.txt)$FAIL$(head_escaped /test_output/mutation_across_upgrade_error.txt)" >> /test_output/test_results.tsv
     else
         timeout 1m clickhouse-client --query "
             SELECT * FROM system.mutations
             WHERE database = 'default' AND table = 'mutation_across_upgrade'
-            FORMAT Vertical" > /test_output/mutation_across_upgrade.txt ||:
+            FORMAT Vertical" > /test_output/mutation_across_upgrade.txt 2>&1 ||:
         echo -e "The mutation submitted before the upgrade was not finished by the new server (see mutation_across_upgrade.txt)$FAIL$(head_escaped /test_output/mutation_across_upgrade.txt)" >> /test_output/test_results.tsv
     fi
+
+    [ -s /test_output/mutation_across_upgrade_error.txt ] || rm -f /test_output/mutation_across_upgrade_error.txt
 fi
 
 stop_server || (echo "Failed to stop server" && exit 1)
@@ -652,6 +660,8 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       message, AND the `TABLE_ALREADY_EXISTS` code together. So a real `LOGICAL_ERROR` UUID-mapping crash, the same
 #       collision on a non-test database, a different init failure on an `rdb_test_` DB, and unrelated
 #       `TABLE_ALREADY_EXISTS` errors all still surface.
+# `StorageFileLog` + `The absolute data path should be inside` is expected:
+#       `04202_filelog_attach_path_outside_user_files` has an explicit `ATTACH` query for a path outside `user_files_path`.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -700,7 +710,6 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Bad get: has String, requested UInt64. (BAD_GET" \
            -e "Disk does not support stat. (NOT_IMPLEMENTED" \
            -e "QUALIFY clause is not supported in the old analyzer" \
-           -e "Cannot attach table \`test_7\`" \
            -e "Cannot open file /var/lib/clickhouse/access/" \
            -e "NO_SUCH_INTERSERVER_IO_ENDPOINT" \
            -e "Mapping for table with UUID=1f474183-1403-4282-9309-21f6e3518dab already exists" \
@@ -740,6 +749,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "while loading part.*is encrypted in the backup, it can be restored only to an encrypted disk" \
     | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
     | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "StorageFileLog (.*): The absolute data path should be inside" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then

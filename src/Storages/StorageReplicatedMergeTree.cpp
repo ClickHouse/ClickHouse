@@ -31,6 +31,7 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/ServerUUID.h>
+#include <Core/SettingsFields.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 
@@ -462,12 +463,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     , replicated_fetches_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_fetches_network_bandwidth], getContext()->getReplicatedFetchesThrottler()))
     , replicated_sends_throttler(std::make_shared<Throttler>((*getSettings())[MergeTreeSetting::max_replicated_sends_network_bandwidth], getContext()->getReplicatedSendsThrottler()))
 {
-    /// Reject user-initiated `CREATE`/`ATTACH` queries with `table_readonly = 1` for
-    /// `ReplicatedMergeTree`, while still allowing `FORCE_ATTACH`/`FORCE_RESTORE` (server startup,
-    /// restore from backup) to load tables whose metadata may carry the setting from before this check.
-    if (mode <= LoadingStrictnessLevel::ATTACH && (*getSettings())[MergeTreeSetting::table_readonly])
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
-
     auto table_disks = getDisks();
     for (const auto & disk : table_disks)
     {
@@ -2644,13 +2639,36 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             existing_part = getActiveContainingPart(entry.new_part_name);
 
         /// Even if the part is local, it (in exceptional cases) may not be in ZooKeeper. Let's check that it is there.
-        if (existing_part && getZooKeeper()->exists(fs::path(replica_path) / "parts" / existing_part->name))
+        if (existing_part)
         {
-            if (!is_get_or_attach || entry.source_replica != replica_name)
-                LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.",
-                    entry.new_part_name, existing_part->name);
+            if (getZooKeeper()->exists(fs::path(replica_path) / "parts" / existing_part->name))
+            {
+                if (!is_get_or_attach || entry.source_replica != replica_name)
+                    LOG_DEBUG(log, "Skipping action for part {} because part {} already exists.",
+                        entry.new_part_name, existing_part->name);
 
-            return true;
+                return true;
+            }
+
+            /** The part is in the working set but has no node in ZooKeeper, a state crash recovery can
+              * leave behind. Executing the entry cannot get out of it: a fetch downloads the whole
+              * part from a peer and then `renameTempPartAndReplaceImpl` throws `DUPLICATE_DATA_PART`
+              * for the part that is already there, and nothing in the retry path reconciles the two,
+              * so the entry is retried forever - the queue never drains and every round downloads the
+              * part again. The part check thread is what reconciles it: it adds the missing node when
+              * the local part is intact, and detaches the part when it is not, after which this entry
+              * is either skipped above or has nothing in its way. The entry stays in the queue
+              * meanwhile: the exponential backoff of a failed entry keeps its retries apart, and a
+              * retry costs nothing now that it fetches nothing.
+              */
+            enqueuePartForCheck(existing_part->name);
+
+            throw Exception(
+                ErrorCodes::PART_IS_TEMPORARILY_LOCKED,
+                "Part {} exists locally but has no node in ZooKeeper. Enqueued it for check; the log entry {} for part {} will be retried",
+                existing_part->name,
+                entry.znode_name,
+                entry.new_part_name);
         }
     }
 
@@ -6976,17 +6994,36 @@ void StorageReplicatedMergeTree::alter(
 
     removeImplicitStatistics(future_metadata.columns);
     auto old_settings = getSettings();
-    commands.apply(future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets]);
+    auto settings_defaults = getDefaultSettings();
+    commands.apply(
+        future_metadata, query_context, (*old_settings)[MergeTreeSetting::share_nested_offsets], settings_defaults.get());
 
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(future_metadata, *old_settings);
     addImplicitStatistics(future_metadata.columns, auto_statistics_types);
 
-    /// Reject `table_readonly` in any incoming `ALTER`, not only pure settings alters: a mixed
-    /// `ALTER TABLE ... MODIFY COLUMN ..., MODIFY SETTING table_readonly = 1` would otherwise
-    /// bypass the `isSettingsAlter()` branch and apply the unsupported setting via the metadata path.
+    /** Reject turning `table_readonly` on in any incoming `ALTER`, not only in a pure settings alter:
+      * a mixed `ALTER TABLE ... MODIFY COLUMN ..., MODIFY SETTING table_readonly = 1` would otherwise
+      * bypass the `isSettingsAlter()` branch and apply the unsupported setting via the metadata path.
+      * Turning it off is what the setting's documentation promises can always be done, and it is the
+      * way out for a table whose metadata carries it - refusing that left such a table stuck.
+      * A reset (`RESET SETTING table_readonly`, or its `MODIFY SETTING table_readonly = DEFAULT` spelling)
+      * falls back to the server default, which the `merge_tree` / `replicated_merge_tree` config sections
+      * can set, so it is judged by the value it resets to.
+      */
     for (const auto & command : commands)
     {
-        if (command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("table_readonly"))
+        bool turns_readonly_on = false;
+        if (command.type == AlterCommand::MODIFY_SETTING)
+        {
+            const Field * readonly_setting = command.settings_changes.tryGet("table_readonly");
+            turns_readonly_on = readonly_setting && SettingFieldBool{*readonly_setting}.value;
+        }
+        else if (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains("table_readonly"))
+        {
+            turns_readonly_on = (*settings_defaults)[MergeTreeSetting::table_readonly];
+        }
+
+        if (turns_readonly_on)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `table_readonly` setting is not supported for ReplicatedMergeTree");
     }
 
