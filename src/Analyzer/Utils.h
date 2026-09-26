@@ -189,6 +189,8 @@ std::string_view getNullInFunctionName(std::string_view function_name);
 /// (`src/Functions/in.cpp`), which is what makes it propagate a NULL argument instead of comparing it and
 /// what makes its result `Nullable`. That adaptor examines the top-level argument type, so the two names
 /// agree in value and in type exactly when the left argument cannot itself be NULL.
+/// For a top-level `Nullable` argument a caller may instead restore that NULL around the null-aware name;
+/// a `Variant` argument compares its NULL as a value, and the `in` family rejects a dynamic structure.
 std::optional<String> getInFunctionNameForPassCreatedNode(
     const String & in_function_name, const DataTypePtr & left_argument_type, const ContextPtr & context);
 
