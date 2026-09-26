@@ -20,3 +20,8 @@ S8 rows	1
 S8 prunes	1
 S9 oracle	1
 S9 rows	1
+S10 hasAllTokens oracle	1
+S10 hasAllTokens rows	1
+S10 hasPhrase oracle	1
+S10 hasPhrase rows	1
+S10 prunes	1

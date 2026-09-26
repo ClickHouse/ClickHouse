@@ -87,8 +87,23 @@ SELECT 'S8 prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_
 SELECT 'S9 oracle', count() FROM t_fs WHERE hasAnyTokens(m['k'], concat(char(0), char(0), char(0), 'zzz'), 'ngrams(3)') SETTINGS use_skip_indexes = 0;
 SELECT 'S9 rows', count() FROM t_fs WHERE hasAnyTokens(m['k'], concat(char(0), char(0), char(0), 'zzz'), 'ngrams(3)');
 
+DROP TABLE IF EXISTS t_sbs;
+CREATE TABLE t_sbs (id UInt32, m Map(String, FixedString(6)),
+                    INDEX tix mapValues(m) TYPE text(tokenizer = splitByString(['abc'])))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_sbs VALUES (1, map('other', 'abcdef')), (2, map('k', 'hello'));
+
+-- S10: as S9, for `hasAllTokens` and `hasPhrase`, on an index whose tokenizer reads the six NUL bytes
+-- as one token. A needle the default does not hold still prunes.
+SELECT 'S10 hasAllTokens oracle', count() FROM t_sbs WHERE hasAllTokens(m['k'], concat(toFixedString('', 6), 'abc'), 'splitByString([\'abc\'])') SETTINGS use_skip_indexes = 0;
+SELECT 'S10 hasAllTokens rows', count() FROM t_sbs WHERE hasAllTokens(m['k'], concat(toFixedString('', 6), 'abc'), 'splitByString([\'abc\'])');
+SELECT 'S10 hasPhrase oracle', count() FROM t_sbs WHERE hasPhrase(m['k'], concat(toFixedString('', 6), 'abc'), 'splitByString([\'abc\'])') SETTINGS use_skip_indexes = 0;
+SELECT 'S10 hasPhrase rows', count() FROM t_sbs WHERE hasPhrase(m['k'], concat(toFixedString('', 6), 'abc'), 'splitByString([\'abc\'])');
+SELECT 'S10 prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sbs WHERE hasPhrase(m['k'], 'zzz', 'splitByString([\'abc\'])')) WHERE explain LIKE '%Granules: 0/2%';
+
 DROP TABLE t_fs;
 DROP TABLE t_str;
 DROP TABLE t_null;
 DROP TABLE t_dyn;
 DROP TABLE t_arr;
+DROP TABLE t_sbs;
