@@ -1415,6 +1415,10 @@ These three codecs are the ones the server produces for whole-stream `Native` fr
 | `0x82` | LZ4    | Body is the **LZ4 block format** — *not* the LZ4 frame format. No magic number. |
 | `0x90` | ZSTD   | Body is a raw zstd single-frame stream (the standard zstd magic number is part of the body). |
 
+`Native` protocol revision `54493` explicitly guarantees that the receiver accepts `NONE` frames mixed with the configured network codec. When both peers support this revision, the sender uses `NONE` for frames with fewer than `network_compression_min_bytes` uncompressed bytes. The setting defaults to `128`; `0` disables the bypass. Frames at or above the threshold retain `network_compression_method`. This decision applies independently to each frame, including frames within the same block or query, and preserves the 9-byte header, 16-byte checksum, and existing frame boundaries. It applies in both directions of the native TCP protocol, including schema headers, terminal empty blocks, logs, and profile events. HTTP and storage compression are unaffected.
+
+Peers advertising an earlier revision continue receiving the configured codec for every frame. Support must not be inferred from a client name or an earlier revision: some third-party `Native` drivers only implement `LZ4` and `ZSTD`, despite `NONE` being an existing method byte. A client advertising revision `54493` or later must implement this mixed-frame contract.
+
 The method byte also encodes the [column-level codecs](/reference/statements/create/table/codec). These are applied per column on the MergeTree on-disk paths rather than to whole-stream framing, but the `decompress=1` HTTP input path takes the codec from each frame's method byte, so any of these bytes may legitimately appear on input. A conforming decoder must therefore recognize the whole assigned space and reject a byte it does not implement rather than misread the body. Their bodies are codec-specific and outside this generic frame contract:
 
 | Byte   | Method            |
