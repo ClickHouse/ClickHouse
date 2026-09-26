@@ -132,7 +132,7 @@ MEMCG_OOM_KILL = re.compile(rb"oom_memcg=([^,\s]+),task_memcg=([^,\s]+)")
 
 MAX_CPUS_PER_WORKER = 5
 MAX_MEM_PER_WORKER = 11
-# Flaky/targeted checks run with --dist=each, so every worker runs the full set
+# Flaky checks run with --dist=each, so every worker runs the full set
 # of changed modules concurrently (each with its own Docker cluster) instead of
 # splitting modules across workers. A worker's peak footprint is therefore much
 # larger, so it needs a bigger memory budget to avoid exhausting the container
@@ -1647,6 +1647,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
     assert (
         not is_per_test_coverage or is_llvm_coverage
     ), "per_test_coverage requires an amd_llvm_coverage* build"
+    if is_targeted_check and info.is_local_run and args.test:
+        # The PR workflow has only targeted integration jobs, so a local run with
+        # `--test` (the `integration` job alias) runs the given tests as a regular job.
+        is_targeted_check = False
 
     per_test_coverage_dir = f"{temp_path}/per_test_coverage"
     cidb_cluster = None
@@ -1661,16 +1665,17 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     if args.count:
         repeat_option = f"--count {args.count} --random-order"
-    # For flaky/targeted checks, --count is not used. Instead, --dist=each runs N workers
+    # For flaky checks, --count is not used. Instead, --dist=each runs N workers
     # each executing all modules independently with their own isolated Docker cluster
     # (ClickHouseCluster appends PYTEST_XDIST_WORKER to project_name for isolation).
+    # Targeted checks run every selected test once, like the regular jobs.
 
     # Read the budget here, not at import: `--param` above writes the environment it comes from.
     workers = planned_workers(
         args.workers,
         nested_budget_gb(),
         ncpu,
-        dist_each=is_flaky_check or is_targeted_check,
+        dist_each=is_flaky_check,
     )
 
     clickhouse_path = f"{Utils.cwd()}/ci/tmp/clickhouse"
@@ -1787,20 +1792,23 @@ tar -czf ./ci/tmp/logs.tar.gz \
         tests, results_with_info = targeter.get_all_relevant_tests_with_info()
         # no subtask level for integration tests - cannot add this info to the report now
         # results.append(results_with_info)
+        # The changed test modules run in every configuration, not only in the flaky check.
+        tests = changed_test_modules + tests
         if not tests:
             # early exit
             Result.create_from(
                 status=Result.Status.SKIPPED,
-                info="No failed tests found from previous runs",
+                info="No changed tests, and no tests found by coverage or previous failures",
             ).complete_job()
 
-        # Parse test names from the query result
-        for test_ in tests:
-            if test_.strip():
-                test_name = test_.strip()
-                targeted_tests.append(
-                    test_name.split("[")[0]
-                )  # remove parametrization - does not work with test repeat with --count
+        # Coverage and changed files select whole modules (`test_x/test.py`), previous
+        # failures select test cases (`test_x/test.py::test_case[param]`). Drop
+        # parametrization and the test cases of selected modules, so that every test runs once.
+        names = [t.strip().split("[")[0] for t in tests if t.strip()]
+        modules = {t for t in names if "::" not in t}
+        targeted_tests = list(
+            dict.fromkeys(t for t in names if "::" not in t or t.split("::")[0] not in modules)
+        )
         print(f"Parsed {len(targeted_tests)} test names: {targeted_tests}")
 
     if not Shell.check("docker info > /dev/null 2>&1", verbose=True):
@@ -1819,8 +1827,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
         )
     )
 
-    if is_flaky_check or is_targeted_check:
-        # The flaky/targeted parallel bucket runs `--dist=each`: every worker runs
+    if is_flaky_check:
+        # The flaky parallel bucket runs `--dist=each`: every worker runs
         # every parallel module at once. TEST_CONFIGS `dist_each_sequential` modules
         # would start one cluster per worker and OOM small runners, so move them to
         # the looped sequential phase. Normal `--dist=loadfile` runs do not call this.
@@ -2062,7 +2070,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     clear_rabbitmq_recreation_scan_inputs()
 
-    if is_flaky_check or is_targeted_check:
+    if is_flaky_check:
         # Each xdist worker runs all modules independently with its own isolated Docker cluster.
         # ClickHouseCluster appends PYTEST_XDIST_WORKER to the project name, so clusters
         # from different workers never interfere. --dist=each sends all tests to every worker.
@@ -2159,9 +2167,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     has_error = True
                     error_info.append(test_result_sequential.info)
                 break
-            if (is_flaky_check or is_targeted_check) and not test_result_sequential.is_ok():
+            if is_flaky_check and not test_result_sequential.is_ok():
                 print(
-                    f"Flaky/targeted check: sequential test run fails after attempt [{attempt+1}/{sequential_repeat_cnt}] - break"
+                    f"Flaky check: sequential test run fails after attempt [{attempt+1}/{sequential_repeat_cnt}] - break"
                 )
                 break
 
@@ -2315,7 +2323,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     # Rerun failed tests if any to check if failure is reproducible
     if 0 < len(failed_test_cases) < 10 and not (
-        is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
+        is_flaky_check or is_bugfix_validation or info.is_local_run
     ):
         test_result_retries, _, _ = run_pytest_and_collect_results(
             command=f"{quote_tests(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
@@ -2453,7 +2461,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     # For targeted, flaky checks, and bugfix validation, the synthetic "Timeout"
     # result must not be propagated as a top-level `FAIL`: for targeted checks a
-    # session-timeout is an expected risk (because of `--count N` overloading), for
+    # session-timeout is an expected risk (the selection may be large), for
     # flaky checks because of the soft `FLAKY_CHECK_TIME_LIMIT`, and for bugfix
     # validation an inverted `FAIL` would be mistakenly treated as successful bug
     # reproduction.
