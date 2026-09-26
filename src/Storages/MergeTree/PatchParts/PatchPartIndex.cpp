@@ -271,6 +271,10 @@ PatchPartIndex PatchPartIndex::readBinary(ReadBuffer & in)
     }
 
     res.buildSourcePartsByVersion();
+
+    /// Consumes exactly the bytes of the index and nothing after them: the index is also embedded in
+    /// larger streams, so whether anything may follow it is for the caller to decide (see
+    /// `IMergeTreeDataPart::loadPatchPartIndex` for the file that holds nothing else).
     return res;
 }
 

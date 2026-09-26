@@ -49,6 +49,7 @@ public:
 
     bool isRemote() const override;
     bool readsFromOtherTables() const override { return true; }
+    bool supportsTruncate() const override { return false; }
 
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
