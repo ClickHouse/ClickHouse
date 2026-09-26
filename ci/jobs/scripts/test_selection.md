@@ -23,8 +23,7 @@ snapshots and exercises the production query and scorer against it.
 The query admits regions no wider than 40 lines with at most 150 distinct test
 owners. These are conservative initial limits, not a validated recall claim.
 The final ceiling is 250 tests and the operational target remains below 100.
-`SelectionConfig` is shared by queries, scoring, diagnostics, monitoring, and
-replay. Change the selector version when changing the persisted contract.
+`SelectionConfig` is shared by queries, scoring, diagnostics, and monitoring. Change the selector version when changing the persisted contract.
 
 Each targeted job attaches its selection as `stateless-selection.json` to its
 report. It records the cutoff, commit and selector identity, configuration, coverage
@@ -59,6 +58,10 @@ These temporary keys are **not** workflow-run IDs; shards can start in different
 hours. New exports retain second-resolution timestamps. Selecting complete
 workflow runs directly in CIDB remains dependent on that schema migration.
 
+Snapshots are found by listing the distinct `check_start_time` values in the window and counting exported tests only for the newest five timestamps at a time, because counting over the whole window reads tens of GB of `test_name` and times out when CIDB is busy. These queries use a 180 s timeout and the query cache, as they only read settled exports and return the same result for every job and pull request.
+
+If a CIDB request of the selection still times out on every attempt, the targeted job is `SKIPPED` instead of failing, so it does not skip the jobs that wait for it. It adds a workflow warning and a comment that is shown in the summary table of the pull request comment, and it is not cached, so a rerun or the next commit selects again. Any other selection failure is still an `ERROR`.
+
 ## Validation and rollout
 
 Run deterministic smoke without network access:
@@ -67,29 +70,15 @@ Run deterministic smoke without network access:
 python3 -m ci.jobs.scripts.test_selection_smoke
 ```
 
+A targeted job runs it before selecting only when the pull request changes the selection code (`Targeting.SELECTION_SOURCES`).
+
 Operational monitoring uses the production query and scorer:
 
 ```bash
 python3 -m ci.jobs.scripts.test_selection_smoke --live
 ```
 
-The production entry-count feature is disabled. `min_depth` is an LLVM function
-entry count, not call depth: 254 is censored and 255 unavailable. Shadow manifests
-compare the legacy low-count tier with bounded region-relative low/high-count
-bonuses. All scorers consume the same deduplicated observations.
-
-Replay JSONL cases with pre-PR snapshots and independently sourced labels:
-
-```bash
-python3 -m ci.jobs.scripts.evaluate_test_selection tmp/cases.jsonl \
-    --output tmp/replay.json
-```
-
-The module docstring describes the input contract. `--query-url` fetches features
-through the production query at each case's cutoff. Future observations and
-unhealthy snapshots are errors. Changed regression tests are reported separately
-and do not establish coverage recall. A review-ready dataset needs at least 60
-days, actual failures, later flaky fixes, linked regressions, and controls.
+Entry counts do not affect scoring. `min_depth` is an LLVM function entry count, not call depth: 254 is censored and 255 unavailable. The query still fetches it and the scorer validates it.
 
 PRs run targeted checks in three configurations: AMD ASan with database disk
 and distributed plan, AMD TSan with S3 storage, and ARM ASan. Each job repeats
@@ -98,16 +87,6 @@ the complete related test list up to 50 times with randomized settings and a
 in-flight tests and cleanup to finish. The failure limit can stop execution earlier.
 Targeted jobs run only in the PR workflow. Master continues to run the full
 functional suite.
-
-`expanded_targeted_matrix` remains disabled pending replay and shadow review.
-It adds targeted checks for the other regular PR functional configurations.
-Dedicated Azure, LLVM coverage, and excluded-from-LLVM job groups are outside
-this matrix. LLVM coverage modes in the regular configurations remain exempt
-because those runners disable randomized settings. Targeted configurations
-are derived from the full-suite definitions. The runner schedules parallel and
-sequential tests within one job, with 50 repetitions for both. When combining
-execution flavors, the job uses the parallel flavor's runner. Build, storage,
-and query settings still define separate configurations.
 
 Validation on 2026-09-05 passed the live production canary with fresh snapshots
 from all eight shards. A pre-PR replay attempt for
