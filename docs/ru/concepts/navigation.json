@@ -233,7 +233,6 @@
                 "ru/concepts/features/interfaces/arrowflight"
               ]
             },
-            "ru/concepts/features/interfaces/cpp",
             "ru/concepts/features/interfaces/schema-inference",
             "ru/concepts/features/interfaces/documentation-search",
             "ru/concepts/features/interfaces/web-sql",

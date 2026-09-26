@@ -233,7 +233,6 @@
                 "zh/concepts/features/interfaces/arrowflight"
               ]
             },
-            "zh/concepts/features/interfaces/cpp",
             "zh/concepts/features/interfaces/schema-inference",
             "zh/concepts/features/interfaces/documentation-search",
             "zh/concepts/features/interfaces/web-sql",

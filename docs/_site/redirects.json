@@ -1,5 +1,37 @@
 [
   {
+    "destination": "/ar/integrations/language-clients/cpp",
+    "source": "/ar/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/es/integrations/language-clients/cpp",
+    "source": "/es/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/fr/integrations/language-clients/cpp",
+    "source": "/fr/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/ja/integrations/language-clients/cpp",
+    "source": "/ja/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/ko/integrations/language-clients/cpp",
+    "source": "/ko/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/pt-BR/integrations/language-clients/cpp",
+    "source": "/pt-BR/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/ru/integrations/language-clients/cpp",
+    "source": "/ru/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/zh/integrations/language-clients/cpp",
+    "source": "/zh/concepts/features/interfaces/cpp"
+  },
+  {
     "destination": "/integrations/language-clients/cpp",
     "source": "/concepts/features/interfaces/cpp"
   },
