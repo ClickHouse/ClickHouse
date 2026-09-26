@@ -5,19 +5,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 access_username="access_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-alias_database="alias_db_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-target_database="target_db_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-shortcut_alias_table="shortcut_alias_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-shortcut_buffer_alias_table="shortcut_buffer_alias_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # Test target access checks for a newly created `Alias`
 ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP USER IF EXISTS ${access_username};
-    DROP DATABASE IF EXISTS ${alias_database};
-    DROP DATABASE IF EXISTS ${target_database};
     DROP TABLE IF EXISTS test_alias_access;
     DROP TABLE IF EXISTS test_alias_buffer_access;
     DROP TABLE IF EXISTS test_buffer_access;
+    DROP TABLE IF EXISTS test_buffer_infer_access;
+    DROP TABLE IF EXISTS test_merge_access;
+    DROP TABLE IF EXISTS test_merge_explicit;
     DROP TABLE IF EXISTS test_table_access;
 
     CREATE TABLE test_table_access
@@ -43,7 +40,11 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     CREATE USER ${access_username} NOT IDENTIFIED;
     GRANT CREATE TABLE ON test_alias_access TO ${access_username};
     GRANT CREATE TABLE ON test_alias_buffer_access TO ${access_username};
+    GRANT CREATE TABLE ON test_buffer_infer_access TO ${access_username};
+    GRANT CREATE TABLE ON test_merge_access TO ${access_username};
     GRANT TABLE ENGINE ON Alias TO ${access_username};
+    GRANT TABLE ENGINE ON Buffer TO ${access_username};
+    GRANT TABLE ENGINE ON Merge TO ${access_username};
     GRANT SELECT ON system.completions TO ${access_username};
     GRANT SELECT ON system.constraints TO ${access_username};
     GRANT SELECT ON system.data_skipping_indices TO ${access_username};
@@ -66,6 +67,12 @@ ${CLICKHOUSE_CLIENT} --query "
     REVOKE SHOW COLUMNS ON test_table_access FROM ${access_username};
     REVOKE SHOW COLUMNS ON test_buffer_access FROM ${access_username};
 
+    -- An explicit column list makes \`Merge\` skip schema inference, so this table exercises
+    -- only the virtual columns it inherits from the first source table it may see.
+    CREATE TABLE test_merge_explicit (id UInt64, value String)
+    ENGINE = Merge(currentDatabase(), '^test_alias_access\$');
+    GRANT SHOW COLUMNS ON test_merge_explicit TO ${access_username};
+
     DETACH TABLE test_alias_access;
     ATTACH TABLE test_alias_access;
 "
@@ -78,6 +85,24 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT count() FROM te
 
 echo "Test DESCRIBE without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE TABLE test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | head -1
+
+echo "Test merge() structure without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE merge(currentDatabase(), '^test_alias_access\$');" 2>&1 | grep -o "ACCESS_DENIED" | head -1
+
+# `own` counts the virtual columns `Merge` publishes itself, so a query that fails prints 0 0
+# instead of matching the expected absence of the inherited ones.
+echo "Test Merge inherited virtual columns without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE TABLE test_merge_explicit SETTINGS describe_include_virtual_columns = 1;" | awk -F'\t' '$NF == 1 { own += ($1 == "_database" || $1 == "_table"); target += ($1 == "_partition_value") } END { print own+0, target+0 }'
+
+echo "Test ENGINE = Merge creation without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_merge_access ENGINE = Merge(currentDatabase(), '^test_alias_access\$');" 2>&1 | grep -o "ACCESS_DENIED" | head -1
+# Keeps the arm below independent of this one, so that both are still evaluated when the
+# statement above is wrongly allowed to create the table.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_merge_access;"
+
+echo "Test ENGINE = Buffer structure inference without target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_buffer_infer_access ENGINE = Buffer(currentDatabase(), test_alias_access, 1, 1000, 1000, 1000, 1000, 1000000, 1000000);" 2>&1 | grep -o "ACCESS_DENIED" | head -1
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_buffer_infer_access;"
 
 echo "Test SHOW CREATE without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE test_alias_access;" 2>&1 | grep -o "ACCESS_DENIED" | head -1
@@ -147,6 +172,16 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
 "
 
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT(value) ON test_table_access TO ${access_username};"
+
+echo "Test merge() structure with column-scoped target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE merge(currentDatabase(), '^test_alias_access\$');" 2>&1 | grep -o "ACCESS_DENIED" | head -1
+
+echo "Test Merge inherited virtual columns with column-scoped target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE TABLE test_merge_explicit SETTINGS describe_include_virtual_columns = 1;" | awk -F'\t' '$NF == 1 { own += ($1 == "_database" || $1 == "_table"); target += ($1 == "_partition_value") } END { print own+0, target+0 }'
+
+echo "Test ENGINE = Buffer structure inference with column-scoped target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "CREATE TABLE test_buffer_infer_access ENGINE = Buffer(currentDatabase(), test_alias_access, 1, 1000, 1000, 1000, 1000, 1000000, 1000000);" 2>&1 | grep -o "ACCESS_DENIED" | head -1
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_buffer_infer_access;"
 
 echo "Test direct and Alias count with column-scoped target SELECT permission using the analyzer"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
@@ -236,68 +271,19 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SELECT arraySort(group
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "DESCRIBE TABLE test_alias_access FORMAT Null; SELECT 'DESCRIBE OK';"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "SHOW COLUMNS FROM test_alias_access FORMAT Null; SELECT 'SHOW COLUMNS OK';"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW CREATE TABLE test_alias_access FORMAT TSVRaw;" | grep -o "ENGINE = Alias" | uniq
+${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "DESCRIBE merge(currentDatabase(), '^test_alias_access\$') FORMAT Null; SELECT 'merge() OK';"
 
-# Test database-level access shortcuts with a cross-database `Alias`
-${CLICKHOUSE_CLIENT} --multiquery --query "
-    CREATE DATABASE ${alias_database};
-    CREATE DATABASE ${target_database};
+echo "Test Merge inherited virtual columns with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --query "DESCRIBE TABLE test_merge_explicit SETTINGS describe_include_virtual_columns = 1;" | awk -F'\t' '$NF == 1 { own += ($1 == "_database" || $1 == "_table"); target += ($1 == "_partition_value") } END { print own+0, target+0 }'
 
-    CREATE TABLE ${target_database}.target
-    (
-        id UInt64,
-        CONSTRAINT id_not_zero CHECK id != 0,
-        PROJECTION id_projection (SELECT id ORDER BY id),
-        INDEX id_idx id TYPE minmax GRANULARITY 1
-    )
-    ENGINE = MergeTree
-    ORDER BY id;
-    INSERT INTO ${target_database}.target VALUES (1);
+echo "Test ENGINE = Merge creation with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "CREATE TABLE test_merge_access ENGINE = Merge(currentDatabase(), '^test_alias_access\$'); SELECT 'ENGINE = Merge OK';"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_merge_access;"
 
-    CREATE TABLE ${target_database}.target_buffer (id UInt64)
-    ENGINE = Buffer('${target_database}', 'target', 1, 1000, 1000, 1000, 1000, 1000000, 1000000);
-    INSERT INTO ${target_database}.target_buffer VALUES (2);
-
-    CREATE TABLE ${alias_database}.${shortcut_alias_table} ENGINE = Alias('${target_database}', 'target');
-    CREATE TABLE ${alias_database}.${shortcut_buffer_alias_table} ENGINE = Alias('${target_database}', 'target_buffer');
-    GRANT SHOW TABLES ON ${alias_database}.* TO ${access_username};
-    GRANT SHOW COLUMNS ON ${alias_database}.* TO ${access_username};
-"
-
-echo "Test system.tables with an Alias database-level grant"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT
-        (SELECT count()
-         FROM system.tables
-         WHERE database = '${alias_database}' AND name = '${shortcut_alias_table}'),
-        (SELECT countIf(
-             empty(create_table_query)
-             AND empty(engine_full)
-             AND empty(sorting_key)
-             AND empty(skipping_indices_types)
-             AND isNull(total_rows)
-             AND isNull(total_bytes)
-             AND isNull(total_bytes_uncompressed)
-             AND empty(data_paths)
-             AND empty(storage_policy))
-         FROM system.tables
-         WHERE database = '${alias_database}' AND name = '${shortcut_alias_table}'),
-        (SELECT count()
-         FROM system.tables
-         WHERE database = '${alias_database}' AND name = '${shortcut_buffer_alias_table}'),
-        (SELECT countIf(isNull(lifetime_rows) AND isNull(lifetime_bytes))
-         FROM system.tables
-         WHERE database = '${alias_database}' AND name = '${shortcut_buffer_alias_table}');
-"
-
-echo "Test other metadata tables with an Alias database-level grant"
-${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT
-        (SELECT count() FROM system.columns WHERE database = '${alias_database}' AND table = '${shortcut_alias_table}'),
-        (SELECT count() FROM system.constraints WHERE database = '${alias_database}' AND table = '${shortcut_alias_table}'),
-        (SELECT count() FROM system.projections WHERE database = '${alias_database}' AND table = '${shortcut_alias_table}'),
-        (SELECT count() FROM system.data_skipping_indices WHERE database = '${alias_database}' AND table = '${shortcut_alias_table}'),
-        (SELECT count() FROM system.completions WHERE context = 'column' AND belongs = '${shortcut_alias_table}');
-"
+echo "Test ENGINE = Buffer structure inference with target permission"
+${CLICKHOUSE_CLIENT} --user="${access_username}" --multiquery --query "CREATE TABLE test_buffer_infer_access ENGINE = Buffer(currentDatabase(), test_alias_access, 1, 1000, 1000, 1000, 1000, 1000000, 1000000); SELECT 'ENGINE = Buffer OK';"
+${CLICKHOUSE_CLIENT} --query "SELECT arraySort(groupArray(name)) FROM system.columns WHERE database = currentDatabase() AND table = 'test_buffer_infer_access';"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_buffer_infer_access;"
 
 # Test target access checks for `CREATE TABLE ... AS` an `Alias`
 copy_table="create_as_copy_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -323,8 +309,7 @@ ${CLICKHOUSE_CLIENT} --user="${create_as_username}" --query "CREATE TABLE ${copy
 ${CLICKHOUSE_CLIENT} --user="${create_as_username}" --query "DESCRIBE ${copy_table}" | cut -f 1,2
 
 ${CLICKHOUSE_CLIENT} --query "
-    DROP DATABASE ${alias_database};
-    DROP DATABASE ${target_database};
+    DROP TABLE test_merge_explicit;
     DROP TABLE ${copy_table};
     DROP TABLE test_alias_buffer_access;
     DROP TABLE test_alias_access;

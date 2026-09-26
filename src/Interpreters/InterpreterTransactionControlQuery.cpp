@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Parsers/ASTTransactionControl.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 
@@ -46,8 +46,23 @@ BlockIO InterpreterTransactionControlQuery::executeBegin(ContextMutablePtr sessi
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Nested transactions are not supported");
 
     session_context->checkTransactionsAreAllowed(/* explicit_tcl_query = */ true);
-    auto txn = TransactionLog::instance().beginTransaction();
+    auto txn = TransactionManager::instance().beginTransaction();
     session_context->initCurrentTransaction(txn);
+
+    /// A peer that declared this replica dead rolls back every transaction begun under the old
+    /// session, and that can land between the two calls above. Drop it from the session so the
+    /// client can begin again, the same way a lost commit is handled below.
+    /// Read the state once: re-reading would let a second rollback slip between test and assert.
+    const auto state = txn->getState();
+    if (state == MergeTreeTransaction::ROLLED_BACK)
+    {
+        session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+        throw Exception(ErrorCodes::INVALID_TRANSACTION,
+            "Transaction {} was rolled back: a peer declared this replica dead", txn->tid);
+    }
+    /// Nothing has been handed this transaction yet, so it cannot be committing or committed.
+    chassert(state == MergeTreeTransaction::RUNNING);
+
     query_context->setCurrentTransaction(txn);
     return {};
 }
@@ -68,7 +83,7 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
     CSN csn = 0;
     try
     {
-        csn = TransactionLog::instance().commitTransaction(txn, /* throw_on_unknown_status */ mode != TransactionsWaitCSNMode::WAIT_UNKNOWN);
+        csn = TransactionManager::instance().commitTransaction(txn, /* throw_on_unknown_status */ mode != TransactionsWaitCSNMode::WAIT_UNKNOWN);
     }
     catch (const Exception & e)
     {
@@ -109,7 +124,7 @@ BlockIO InterpreterTransactionControlQuery::executeCommit(ContextMutablePtr sess
 
     /// Wait for committed changes to become actually visible, so the next transaction in this session will see the changes
     if (mode != TransactionsWaitCSNMode::ASYNC)
-        TransactionLog::instance().waitForCSNLoaded(csn);
+        TransactionManager::instance().waitForCSNLoaded(csn);
 
     session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
     return {};
@@ -130,7 +145,7 @@ BlockIO InterpreterTransactionControlQuery::executeRollback(ContextMutablePtr se
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction is in COMMITTING state");
 
     if (txn->getState() == MergeTreeTransaction::RUNNING)
-        TransactionLog::instance().rollbackTransaction(txn);
+        TransactionManager::instance().rollbackTransaction(txn);
     session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
     return {};
 }
