@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: atomic-database
+# Tags: atomic-database, long
+# long: the refresh schedules this waits on put it right at the 180s cap the flaky check
+#   applies to untagged tests, so it tips over on some runs.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,12 +12,25 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT" | sed 's/--session_timezone[= ][^ ]*//g'`"
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --session_timezone Etc/UTC"`"
 
-# Whole budget for one wait, both SIGKILL graces and the diagnostic dump included: `timeout -k`
-# waits its grace in addition to the primary duration, so the graces come out of the budget.
-WAIT_TOTAL_S=30
+# Both SIGKILL graces and the diagnostic dump come out of every budget below: `timeout -k` waits
+# its grace in addition to the primary duration, so the graces are subtracted, not added on top.
 WAIT_DUMP_S=8
 WAIT_KILL_S=2
-WAIT_POLL_S=$((WAIT_TOTAL_S - WAIT_DUMP_S - WAIT_KILL_S))
+
+# Cap for a single wait. It has to cover a whole refresh rather than only scheduling latency: a
+# refresh writes a part to the default disk, and in the object-storage configurations under load
+# that takes tens of seconds. One `rmv_b` refresh in `arm_asan_ubsan, azure` spent 15.5s inside a
+# single-row part write and completed 0.2s after the 20s of polling this used to allow, which
+# reported a view that was refreshing normally as a failure.
+WAIT_MAX_S=120
+
+# `clickhouse-test` kills the test after CLICKHOUSE_TEST_TIMEOUT seconds, counted from the start of
+# this script, so a wait that expires later than that reports nothing: the kill truncates the very
+# diagnostic the bounded waits exist to produce. That cap is not the same everywhere - 60s in Fast
+# test, 600s in the stateless jobs - hence one deadline for the whole script, derived from it, that
+# no single wait may poll past. Hold back the dump's own budget and a margin for the harness.
+HARNESS_TIMEOUT_S=${CLICKHOUSE_TEST_TIMEOUT:-600}
+SCRIPT_DEADLINE=$((EPOCHSECONDS + HARNESS_TIMEOUT_S - WAIT_DUMP_S - 5))
 
 wait_failed() {
     echo "Wait failed for: $1"
@@ -33,22 +48,29 @@ wait_failed() {
 # skips the transient internal state system.view_refreshes briefly reports between state
 # transitions), leaving the last output in $wait_result. Expiry reports and exits non-zero.
 wait_for() {
-    local query="$1" op="$2" value="$3" rc remaining reason
-    local poll_end=$((EPOCHSECONDS + WAIT_POLL_S + WAIT_KILL_S))
+    local query="$1" op="$2" value="$3" rc remaining out
+    local poll_end=$((EPOCHSECONDS + WAIT_MAX_S)) bound="the ${WAIT_MAX_S}s cap on one wait"
+    if ((poll_end > SCRIPT_DEADLINE))
+    then
+        poll_end=$SCRIPT_DEADLINE
+        bound="the harness cap of ${HARNESS_TIMEOUT_S}s on the whole test"
+    fi
+    wait_result='(no poll returned)'
     while :
     do
         remaining=$((poll_end - EPOCHSECONDS - WAIT_KILL_S))
         if ((remaining <= 0))
         then
             wait_failed "$query" "$op $value" "$wait_result" \
-                "budget exhausted, last poll returned normally"
+                "budget exhausted ($bound), last poll returned normally"
         fi
         # -k because a client ignoring SIGTERM would keep a bare `timeout` waiting forever.
-        wait_result=$(timeout -k "$WAIT_KILL_S" "$remaining" $CLICKHOUSE_CLIENT -q "$query")
+        out=$(timeout -k "$WAIT_KILL_S" "$remaining" $CLICKHOUSE_CLIENT -q "$query")
         # Not through a pipe: rc would then be xargs' status, not the client's.
         rc=$?
         if ((rc == 0))
         then
+            wait_result=$out
             case "$op" in
                 # xargs trims the string and turns \t and \n into spaces.
                 '==') [ "$(echo "$wait_result" | xargs)" == "$value" ] && return ;;
@@ -56,11 +78,10 @@ wait_for() {
                 no-scheduling) grep -qE $'(^|\t)Scheduling(\t|$)' <<< "$wait_result" || return ;;
             esac
         else
-            if ((rc == 124 || rc == 137))
-            then reason="poll query hit the remaining budget, killed with exit $rc"
-            else reason="client failed with exit $rc"
-            fi
-            wait_failed "$query" "$op $value" "$wait_result" "$reason"
+            # `clickhouse-client` returns a server exception's code as its exit status, and 124 and
+            # 137 are themselves error codes, so rc cannot say whether `timeout` did the killing.
+            wait_failed "$query" "$op $value" "$wait_result" \
+                "last poll failed with status $rc, timeout was ${remaining}s"
         fi
         sleep 0.5
     done
@@ -129,8 +150,10 @@ $CLICKHOUSE_CLIENT -q "select '<6: refreshed>', * from rmv_a;"
 query_no_scheduling "select '<7: refreshed>', status, last_success_time, next_refresh_time from refreshes"
 
 # Create a dependent view, refresh it once.
+# A distributed cache write stalls a full receive timeout before retrying, and the retry envelope
+# can outlast the bounded waits below, so rmv_b's refresh commit is kept off that path.
 $CLICKHOUSE_CLIENT -q "
-    create materialized view rmv_b refresh every 2 year depends on rmv_a (y Int32) engine MergeTree order by y empty as select x*10 as y from rmv_a;
+    create materialized view rmv_b refresh every 2 year depends on rmv_a (y Int32) engine MergeTree order by y empty as select x*10 as y from rmv_a settings force_write_through_distributed_cache = 0;
     show create rmv_b;
     system test view rmv_b set fake time '2052-11-11 11:11:11';
     system refresh view rmv_b;
@@ -184,6 +207,13 @@ $CLICKHOUSE_CLIENT -q "
 wait_for "select status, last_refresh_time from refreshes where view = 'rmv_b' -- $LINENO" == 'Scheduled 2062-03-03 03:03:03'
 query_no_scheduling "select '<18: removed dependency>', view, status, last_success_time, last_refresh_time, next_refresh_time from refreshes where view = 'rmv_b'"
 $CLICKHOUSE_CLIENT -q "show create rmv_b;"
+# The pin is only useful if the refresh actually runs with it, which SHOW CREATE cannot show.
+$CLICKHOUSE_CLIENT -q "
+    system flush logs query_log;
+    select '<19: pin reached the refresh>', groupUniqArray(Settings['force_write_through_distributed_cache'])
+    from system.query_log
+    where event_date >= yesterday() and current_database = currentDatabase()
+      and log_comment like 'refresh of %.rmv_b%' and query_kind = 'Insert' and type = 'QueryFinish';"
 
 # Can't use the same time unit multiple times.
 $CLICKHOUSE_CLIENT -q "

@@ -17,6 +17,8 @@ doc_type: 'reference'
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
+The SQL standard `OFFSET ... FETCH` forms cannot be combined with the [`LIMIT ... AFTER ... UNTIL`](/reference/statements/select/limit#limit-after-until) range form.
+
 The `offset_row_count` or `fetch_row_count` value can be a number or a literal constant. You can omit `fetch_row_count`; by default, it equals to 1.
 
 `OFFSET` specifies the number of rows to skip before starting to return rows from the query result set. `OFFSET n` skips the first `n` rows from the result.

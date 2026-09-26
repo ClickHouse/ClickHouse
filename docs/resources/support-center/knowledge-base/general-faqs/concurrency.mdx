@@ -8,8 +8,30 @@ doc_type: 'reference'
 keywords: ['concurrency', 'QPS']
 ---
 
-ClickHouse is designed for real-time analytical applications that can serve external users directly. It can serve analytical queries with low latency (less than 10 milliseconds) and high concurrency (exceeding 10,000 queries per second) on petabyte-scale databases, combining historical data and real-time insertions.
+Yes. ClickHouse is designed for real-time analytical applications that can serve external users directly. It can serve analytical queries with low latency (less than 10 milliseconds) and high concurrency (exceeding 10,000 queries per second) on petabyte-scale databases, combining historical data and real-time insertions.
 
-This is possible thanks to the efficient indexing structure, flexible caching, and available configurations like projections and materialized views.
+## What makes high concurrency possible {#what-makes-high-concurrency-possible}
 
-Builtin role-based access control, resource usage quotas, configurable query complexity guardrails, workload scheduler, make ClickHouse ideal as a serving layer on top of analytical data.
+Fast individual queries are the foundation of high QPS. The less work each query does, the more queries a server can run at once. The main features that reduce per-query work are:
+
+- The [sparse primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) of the MergeTree table engine family, which skips reading data that doesn't match the query.
+- Caches such as the [query cache](/concepts/features/performance/caches/query-cache), which serves repeated `SELECT` queries directly from cached results.
+- [Projections](/concepts/features/projections/projections), which precompute data at insert time and can be selected automatically by ClickHouse, and [materialized views](/concepts/features/materialized-views/index), which store precomputed results in a separate target table that queries can read directly.
+
+## Controlling and limiting concurrency {#controlling-and-limiting-concurrency}
+
+By default, ClickHouse OSS doesn't limit the number of concurrent queries. ClickHouse Cloud sets `max_concurrent_queries_for_all_users` to `1000` by default. You can configure limits at several levels:
+
+- [`max_concurrent_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries) limits the total number of concurrently executed queries on the server. [`max_concurrent_insert_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries) and [`max_concurrent_select_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries) apply the same limit to `INSERT` and `SELECT` queries separately. All three default to `0` (unlimited).
+- [`max_concurrent_queries_for_user`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user) and [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) limit concurrency per user or across all users.
+
+## Isolating workloads {#isolating-workloads}
+
+To keep concurrent workloads from interfering with each other, ClickHouse provides:
+
+- [Workload scheduling](/concepts/features/configuration/server-config/workload-scheduling) to regulate how CPU, memory, and IO are shared between workloads.
+- [Quotas](/concepts/features/configuration/server-config/quotas) to limit resource usage per user over a time interval.
+- [Restrictions on query complexity](/concepts/features/configuration/settings/query-complexity) to guard against individual queries consuming excessive resources.
+- Built-in [role-based access control](/concepts/features/security/access-rights) to scope what each user can query.
+
+Together, these make ClickHouse suitable as a serving layer on top of analytical data.

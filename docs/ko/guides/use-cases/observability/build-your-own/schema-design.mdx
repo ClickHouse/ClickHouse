@@ -915,7 +915,7 @@ ORDER BY (ServiceName, Timestamp)
 
 [user agent 문자열](https://en.wikipedia.org/wiki/User_agent) 파싱은 정규식을 사용하는 대표적인 문제이며, 로그 및 trace 기반 데이터셋에서 흔히 필요한 작업입니다. ClickHouse는 정규 표현식 트리 딕셔너리를 사용하여 user agent를 효율적으로 파싱할 수 있습니다.
 
-정규식 트리 딕셔너리는 ClickHouse 오픈소스에서 정규식 트리가 포함된 YAML 파일의 경로를 제공하는 YAMLRegExpTree 딕셔너리 소스 유형으로 정의합니다. 자체 정규식 딕셔너리를 제공하려는 경우, 필요한 구조에 대한 자세한 내용은 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)에서 확인할 수 있습니다. 아래에서는 [uap-core](https://github.com/ua-parser/uap-core)를 사용한 user-agent 파싱에 초점을 맞추고, 지원되는 CSV 형식에 맞게 딕셔너리를 로드합니다. 이 방식은 OSS와 ClickHouse Cloud 모두에서 호환됩니다.
+정규 표현식 트리 딕셔너리는 ClickHouse 오픈소스에서 정규식 트리가 포함된 YAML 파일의 경로를 제공하는 YAMLRegExpTree 딕셔너리 소스 유형으로 정의합니다. 자체 정규식 딕셔너리를 제공하려는 경우, 필요한 구조에 대한 자세한 내용은 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)에서 확인할 수 있습니다. 아래에서는 [uap-core](https://github.com/ua-parser/uap-core)를 사용한 user-agent 파싱에 초점을 맞추고, 지원되는 CSV 형식에 맞게 딕셔너리를 로드합니다. 이 방식은 OSS와 ClickHouse Cloud 모두에서 호환됩니다.
 
 <Note>
   아래 예시에서는 user-agent 파싱을 위해 2024년 06월 기준 최신 uap-core 정규식 스냅샷을 사용합니다. 최신 파일은 수시로 업데이트되며 [여기](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml)에서 확인할 수 있습니다. 아래에서 사용하는 CSV file에 로드하려면 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values)의 단계를 따르십시오.
@@ -955,11 +955,11 @@ CREATE TABLE regexp_device
 이 테이블은 `url` 테이블 함수를 사용해 다음과 같이 공개적으로 호스팅된 CSV 파일에서 데이터를 채울 수 있습니다:
 
 ```sql
-INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 ```
 
 메모리 테이블이 채워졌으므로 이제 정규식 딕셔너리를 로드할 수 있습니다. 키 값은 컬럼으로 지정해야 하며, 이 컬럼들이 user agent에서 추출할 수 있는 속성이 됩니다.

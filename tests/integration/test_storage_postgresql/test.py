@@ -554,6 +554,59 @@ def test_postgres_on_conflict(started_cluster):
     cursor.execute(f"DROP TABLE {table} ")
 
 
+def test_postgres_on_conflict_mixed_case_identifiers(started_cluster):
+    # PostgreSQL folds unquoted identifiers to lowercase, so the generated
+    # INSERT ... ON CONFLICT statement must quote schema, table and column names.
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute('DROP SCHEMA IF EXISTS "MixedCaseSchema" CASCADE')
+    cursor.execute('CREATE SCHEMA "MixedCaseSchema"')
+    cursor.execute(
+        """
+        CREATE TABLE "MixedCaseSchema"."MixedCaseTable" (
+            "Key" text,
+            "SubKey" text,
+            "IntValue" integer,
+            "TextValue" text,
+            PRIMARY KEY ("Key", "SubKey")
+        )
+        """
+    )
+    cursor.execute(
+        """INSERT INTO "MixedCaseSchema"."MixedCaseTable" VALUES ('x', 'a', NULL, NULL)"""
+    )
+
+    on_conflict = 'ON CONFLICT ("Key", "SubKey") DO UPDATE SET "IntValue" = EXCLUDED."IntValue", "TextValue" = EXCLUDED."TextValue"'
+    node1.query(
+        f"""
+        CREATE TABLE test.test_conflict_mixed_case (Key String, SubKey String, IntValue Int32, TextValue String)
+        ENGINE PostgreSQL('postgres1:5432', 'postgres', 'MixedCaseTable', 'postgres', '{pg_pass}', 'MixedCaseSchema', '{on_conflict}');
+    """
+    )
+    node1.query(
+        "INSERT INTO test.test_conflict_mixed_case VALUES ('x', 'a', 500, 'first'), ('x', 'b', 501, 'second')"
+    )
+
+    table_func = f"""postgresql('{started_cluster.postgres_ip}:{started_cluster.postgres_port}', 'postgres', 'MixedCaseTable', 'postgres', '{pg_pass}', 'MixedCaseSchema', '{on_conflict}')"""
+    node1.query(
+        f"INSERT INTO TABLE FUNCTION {table_func} VALUES ('x', 'b', 502, 'third')"
+    )
+
+    cursor.execute(
+        'SELECT "Key", "SubKey", "IntValue", "TextValue" FROM "MixedCaseSchema"."MixedCaseTable" ORDER BY "SubKey" ASC'
+    )
+    assert cursor.fetchall() == [
+        ("x", "a", 500, "first"),
+        ("x", "b", 502, "third"),
+    ]
+
+    assert node1.query(
+        "SELECT Key, SubKey, IntValue, TextValue FROM test.test_conflict_mixed_case ORDER BY SubKey ASC"
+    ) == "x\ta\t500\tfirst\nx\tb\t502\tthird\n"
+
+    node1.query("DROP TABLE test.test_conflict_mixed_case")
+    cursor.execute('DROP SCHEMA "MixedCaseSchema" CASCADE')
+
+
 def test_predefined_connection_configuration(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     cursor.execute("DROP TABLE IF EXISTS test_table")
@@ -873,6 +926,84 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
     )
     assert int(result) == 1
     cursor.execute(f'DROP TABLE "{table}\'"')
+
+
+def test_postgresql_identifier_quoting(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+
+    # A PostgreSQL quoted identifier escapes '"' by doubling it and gives '\' no special meaning.
+    # Emitting an embedded '"' as '\"' instead ends the identifier at that quote, and the read path
+    # sends its query as COPY (<query>) TO STDOUT over the simple-query protocol, where every
+    # ';'-separated statement runs. Both relations below are legal PostgreSQL names.
+    cursor.execute('DROP TABLE IF EXISTS "ddq_bs\\"')
+    cursor.execute('CREATE TABLE "ddq_bs\\" (c integer)')
+    cursor.execute('INSERT INTO "ddq_bs\\" VALUES (1)')
+    cursor.execute('DROP TABLE IF EXISTS "ddq_q""x"')
+    cursor.execute('CREATE TABLE "ddq_q""x" ("c""o" integer)')
+    cursor.execute('INSERT INTO "ddq_q""x" VALUES (7)')
+
+    # Most arms below pass an explicit structure so that one read or insert call site is exercised at
+    # a time; one drops it to cover the default entrypoint, where the structure is inferred first.
+
+    # A remote name shaped like a payload must reach PostgreSQL as one identifier, so the statement
+    # after it is never executed and the lookup simply fails.
+    payload = 'ddq_bs") TO STDOUT; SELECT 1; --'
+    node1.query("DROP TABLE IF EXISTS ddq_inject")
+    node1.query(
+        f"CREATE TABLE ddq_inject (c Int32) ENGINE = PostgreSQL('postgres1:5432', 'postgres', '{payload}', 'postgres', '{pg_pass}')"
+    )
+    error = node1.query_and_get_error("SELECT * FROM ddq_inject")
+    assert "does not exist" in error
+    # The whole payload is named as one missing relation, which is what proves it stayed quoted.
+    assert payload in error
+
+    # A relation and a column whose names contain '"' are readable.
+    node1.query("DROP TABLE IF EXISTS ddq_quote")
+    node1.query(
+        f"""CREATE TABLE ddq_quote (`c"o` Int32) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'ddq_q"x', 'postgres', '{pg_pass}')"""
+    )
+    assert node1.query('SELECT `c"o` FROM ddq_quote').strip() == "7"
+
+    # The same read with no explicit structure, which is how the engine and the table function are
+    # normally used: the structure is inferred from PostgreSQL first, then the same query is built.
+    assert (
+        node1.query(
+            f"""SELECT `c"o` FROM postgresql('postgres1:5432', 'postgres', 'ddq_q"x', 'postgres', '{pg_pass}')"""
+        ).strip()
+        == "7"
+    )
+
+    # And so is a relation whose name ends in a backslash: it must be sent as that one byte.
+    node1.query("DROP TABLE IF EXISTS ddq_backslash")
+    node1.query(
+        f"CREATE TABLE ddq_backslash (c Int32) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'ddq_bs\\\\', 'postgres', '{pg_pass}')"
+    )
+    assert node1.query("SELECT c FROM ddq_backslash").strip() == "1"
+
+    # A query-backed source is re-serialized from the user's AST and then wrapped in a projection of
+    # the required columns, so the dialect has to reach both of those identifier positions as well.
+    node1.query("DROP TABLE IF EXISTS ddq_subquery")
+    node1.query(
+        f"""CREATE TABLE ddq_subquery (`c"o` Int32) ENGINE = PostgreSQL('postgres1:5432', 'postgres', (SELECT `c"o` FROM `ddq_q"x`), 'postgres', '{pg_pass}')"""
+    )
+    assert node1.query('SELECT `c"o` FROM ddq_subquery').strip() == "7"
+
+    # A non-empty ON CONFLICT switches the sink to a prepared INSERT whose text ClickHouse builds
+    # itself, so the destination and the column list need the dialect too. Kept last: it adds a row.
+    node1.query("DROP TABLE IF EXISTS ddq_conflict")
+    node1.query(
+        f"""CREATE TABLE ddq_conflict (`c"o` Int32) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'ddq_q"x', 'postgres', '{pg_pass}', '', 'ON CONFLICT DO NOTHING')"""
+    )
+    node1.query("INSERT INTO ddq_conflict VALUES (11)")
+    assert node1.query('SELECT `c"o` FROM ddq_conflict ORDER BY `c"o`').strip() == "7\n11"
+
+    node1.query("DROP TABLE ddq_inject")
+    node1.query("DROP TABLE ddq_quote")
+    node1.query("DROP TABLE ddq_backslash")
+    node1.query("DROP TABLE ddq_subquery")
+    node1.query("DROP TABLE ddq_conflict")
+    cursor.execute('DROP TABLE "ddq_bs\\"')
+    cursor.execute('DROP TABLE "ddq_q""x"')
 
 
 def test_postgres_datetime(started_cluster):

@@ -1,11 +1,11 @@
 {
   "groups": [
     {
-      "group": "Base de conocimientos",
+      "group": "Knowledgebase",
       "pages": [
         "es/resources/support-center/home",
         {
-          "group": "Rendimiento y optimización",
+          "group": "Performance & optimization",
           "pages": [
             "es/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
             "es/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
@@ -40,7 +40,7 @@
           ]
         },
         {
-          "group": "Importación y exportación de datos",
+          "group": "Data import & export",
           "pages": [
             "es/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
             "es/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
@@ -60,7 +60,7 @@
           ]
         },
         {
-          "group": "Configuración y ajustes",
+          "group": "Configuration & settings",
           "pages": [
             "es/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
             "es/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
@@ -71,7 +71,7 @@
           ]
         },
         {
-          "group": "Integraciones y bibliotecas client",
+          "group": "Integrations & client libraries",
           "pages": [
             "es/resources/support-center/knowledge-base/integrations/node-js-example",
             "es/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -83,7 +83,7 @@
           ]
         },
         {
-          "group": "Resolución de problemas y errores",
+          "group": "Troubleshooting & errors",
           "pages": [
             "es/resources/support-center/troubleshooting/index",
             "es/resources/support-center/troubleshooting/troubleshooting",
@@ -99,7 +99,7 @@
           ]
         },
         {
-          "group": "Tablas y esquema",
+          "group": "Tables & schema",
           "pages": [
             "es/resources/support-center/knowledge-base/tables-schema/add-column",
             "es/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -112,7 +112,7 @@
           ]
         },
         {
-          "group": "Consultas y SQL",
+          "group": "Queries & SQL",
           "pages": [
             "es/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
             "es/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
@@ -126,7 +126,7 @@
           ]
         },
         {
-          "group": "Vistas materializadas y proyecciones",
+          "group": "Materialized views & projections",
           "pages": [
             "es/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "es/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
@@ -135,7 +135,7 @@
           ]
         },
         {
-          "group": "Monitorización y depuración",
+          "group": "Monitoring & debugging",
           "pages": [
             "es/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
             "es/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
@@ -150,7 +150,7 @@
           ]
         },
         {
-          "group": "Seguridad y control de acceso",
+          "group": "Security & access control",
           "pages": [
             "es/resources/support-center/knowledge-base/security/check-users-roles",
             "es/resources/support-center/knowledge-base/security/common-rbac-queries",
@@ -161,7 +161,7 @@
           ]
         },
         {
-          "group": "Gestión de datos",
+          "group": "Data management",
           "pages": [
             "es/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
             "es/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
@@ -173,7 +173,7 @@
           ]
         },
         {
-          "group": "Configuración e instalación",
+          "group": "Setup & installation",
           "pages": [
             "es/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
             "es/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
@@ -185,7 +185,7 @@
           ]
         },
         {
-          "group": "General y preguntas frecuentes",
+          "group": "General & FAQs",
           "pages": [
             "es/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
@@ -211,7 +211,7 @@
               ]
             },
             {
-              "group": "Casos de uso",
+              "group": "Use cases",
               "pages": [
                 "es/resources/support-center/knowledge-base/general-faqs/use-cases-index",
                 "es/resources/support-center/knowledge-base/general-faqs/key-value",
@@ -221,7 +221,7 @@
               ]
             },
             {
-              "group": "Integración",
+              "group": "Integration",
               "pages": [
                 "es/resources/support-center/knowledge-base/integrations/index",
                 "es/resources/support-center/knowledge-base/data-import-export/json-import",
@@ -229,7 +229,7 @@
               ]
             },
             {
-              "group": "Operaciones",
+              "group": "Operations",
               "pages": [
                 "es/resources/support-center/knowledge-base/general-faqs/operations-index",
                 "es/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -241,7 +241,7 @@
           ]
         },
         {
-          "group": "Consejos y trucos",
+          "group": "Tips & tricks",
           "pages": [
             "es/resources/support-center/tips-and-tricks/community-wisdom",
             "es/resources/support-center/tips-and-tricks/cost-optimization",
@@ -256,5 +256,5 @@
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",
-  "item": "Centro de soporte"
+  "item": "Support center"
 }

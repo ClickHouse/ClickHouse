@@ -106,7 +106,7 @@ def test_persisted_function_fails_close_without_an_engine(start_cluster):
     )
 
     # The definition stays in SQL object storage, so after the restart the name is still known
-    # while nothing can run it. Both analyzers have their own resolution path for it.
+    # while nothing can run it.
     node.stop_clickhouse()
     node.replace_in_config(
         CONFIG_PATH,
@@ -122,20 +122,13 @@ def test_persisted_function_fails_close_without_an_engine(start_cluster):
             ).strip()
             == "0"
         )
-        for enable_analyzer in (0, 1):
-            error = node.query_and_get_error(
-                "SELECT wasm_is_prime(7 :: UInt32)",
-                settings={"enable_analyzer": enable_analyzer},
-            )
-            assert "SUPPORT_IS_DISABLED" in error, error
+        error = node.query_and_get_error("SELECT wasm_is_prime(7 :: UInt32)")
+        assert "SUPPORT_IS_DISABLED" in error, error
 
         # A bare name passed to a higher-order function is rewritten to a lambda from the
         # stored definition, so it reports the same reason as a direct call rather than
         # degrading into an unknown identifier. The rewrite exists only in the analyzer.
-        error = node.query_and_get_error(
-            "SELECT arrayMap(wasm_is_prime, [7 :: UInt32])",
-            settings={"enable_analyzer": 1},
-        )
+        error = node.query_and_get_error("SELECT arrayMap(wasm_is_prime, [7 :: UInt32])")
         assert "SUPPORT_IS_DISABLED" in error, error
 
         # The stored definition has no runtime registration, but it must stay discoverable:
