@@ -492,8 +492,6 @@ class Targeting:
             "src/Common/ErrorCodes.h",
             "src/Common/SettingsChanges.cpp",
             "src/Core/Settings.cpp",
-            "src/Core/SettingsChangesHistory.cpp",
-            "src/Core/SettingsChangesHistory.h",
         }
     )
 
