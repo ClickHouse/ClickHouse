@@ -54,6 +54,20 @@ SELECT * FROM (
     ) ORDER BY a DESC, x ASC NULLS FIRST WITH FILL
 ) FORMAT Null; -- { serverError TYPE_MISMATCH }
 
+-- Non-nullable Int64 vs UInt64 pair (STID 2241-3a03, issue #103814): the two branches
+-- supply a signed (`-1`) and an unsigned-inducing (`257`) constant for `a`, so `x` infers
+-- as Int64 in the first reference (storage) and UInt64 in the second. Aborted with
+-- 'Bad cast from type DB::ColumnVector<unsigned long> to DB::ColumnVector<long>' before
+-- the guard; now rejected cleanly.
+SELECT * FROM (
+    WITH t AS MATERIALIZED (SELECT number + a AS x FROM numbers(1))
+    SELECT * FROM (
+        SELECT -1 AS a, x FROM t
+        UNION ALL
+        SELECT 257 AS a, x FROM t
+    )
+) FORMAT Null; -- { serverError TYPE_MISMATCH }
+
 -- Sanity checks: shapes that previously worked must still work after the fix.
 
 -- The CTE body has no outer-scope dependency, so all references agree on the type.

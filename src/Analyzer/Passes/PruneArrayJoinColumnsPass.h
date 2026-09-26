@@ -14,6 +14,10 @@ namespace DB
   *    function with ALL subcolumns as arguments. This pass removes arguments that
   *    are not referenced, so that only the needed subcolumns are read from storage.
   *
+  * ARRAY JOIN nodes are collected from the whole tree, so subqueries, CTEs and UNION
+  * branches are pruned as well. References are counted from the whole tree too, which
+  * covers correlated references and expressions of a subsequent ARRAY JOIN.
+  *
   * Example 1: SELECT b FROM t ARRAY JOIN a, b  =>  ARRAY JOIN b
   *
   * Example 2: Table has n.a, n.b, n.c.

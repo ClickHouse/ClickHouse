@@ -10,6 +10,8 @@
 #include <zlib.h>
 #include <openssl/md5.h>
 
+#include <IO/Libdeflate.h>
+
 #include <cstring>
 #include <string>
 #include <unordered_map>
@@ -148,6 +150,18 @@ std::vector<FilenameTable> parseCovMapFilenames(
                 continue;
 
             uncompressed.resize(uncompressed_len);
+#if USE_LIBDEFLATE
+            try
+            {
+                Libdeflate::decompress(
+                    CompressionMethod::Zlib, reinterpret_cast<const char *>(fp), compressed_len,
+                    uncompressed.data(), uncompressed_len);
+            }
+            catch (...) /// Ok: skip coverage records that fail to decompress, matching the zlib path below.
+            {
+                continue;
+            }
+#else
             uLongf dest_len = static_cast<uLongf>(uncompressed_len);
             if (uncompress(
                     reinterpret_cast<Bytef *>(uncompressed.data()),
@@ -155,6 +169,7 @@ std::vector<FilenameTable> parseCovMapFilenames(
                     fp,
                     static_cast<uLong>(compressed_len)) != Z_OK)
                 continue;
+#endif
 
             fp += compressed_len;
         }

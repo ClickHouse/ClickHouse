@@ -8,7 +8,7 @@ Positions: 0
         Function: count() → UInt64
         Arguments: none
   Skip merging: 0
-    Expression
+    Expression (((Before GROUP BY + WHERE) + Post Join Actions))
     Actions: INPUT :: 0 -> __join_result_dummy UInt8 : 0
     Positions:
       Join (JOIN FillRightFirst)
@@ -20,7 +20,7 @@ Positions: 0
         Actions: INPUT :: 0 -> exists(__table2).__table1.c_nationkey Int32 : 0
                  COLUMN Const(UInt8) -> __join_result_dummy UInt8 : 1
         Positions: 0 1
-          Filter
+          Filter (((Apply runtime join filter + Create result for always true EXISTS expression) + (WHERE + (Renaming correlated columns to equivalent expressions in subquery + Change column names to column identifiers))))
           AND column: equals(__table1.c_nationkey, __table4.n_nationkey)
           Actions: INPUT : 0 -> n_nationkey Int32 : 0
                    FUNCTION equals(n_nationkey : 0, n_nationkey : 0) -> equals(__table1.c_nationkey, __table4.n_nationkey) UInt8 : 1
@@ -62,7 +62,7 @@ Positions: 0
         Function: count() → UInt64
         Arguments: none
   Skip merging: 0
-    Expression
+    Expression (((Before GROUP BY + WHERE) + Post Join Actions))
     Actions: INPUT :: 0 -> __join_result_dummy UInt8 : 0
     Positions:
       Join (JOIN FillRightFirst)
@@ -74,7 +74,7 @@ Positions: 0
         Actions: INPUT :: 0 -> __table1.c_nationkey Int32 : 0
                  COLUMN Const(UInt8) -> __join_result_dummy UInt8 : 1
         Positions: 0 1
-          Filter
+          Filter ((Apply runtime join filter + Change column names to column identifiers))
           Filter column: __applyFilter(_runtime_filter_UNIQ_ID, __table1.c_nationkey) (removed)
           Actions: INPUT : 0 -> c_nationkey Int32 : 0
                    COLUMN Const(String) -> _runtime_filter_UNIQ_ID String : 1

@@ -1,0 +1,324 @@
+---
+description: '지난 128년간의 기상 관측 데이터 1억 3,100만 행'
+sidebarTitle: '대만 과거 기상 데이터셋'
+slug: /getting-started/example-datasets/tw-weather
+title: '대만 과거 기상 데이터셋'
+doc_type: 'guide'
+keywords: ['예시 데이터셋', '날씨', '대만', '샘플 데이터', '기후 데이터']
+---
+
+이 데이터셋에는 지난 128년간의 기상 관측 기록이 포함되어 있습니다. 각 행은 특정 일시와 기상 관측소에서 측정된 값입니다.
+
+이 데이터셋의 출처는 [여기](https://github.com/Raingel/historical_weather)에서 확인할 수 있으며, 기상 관측소 번호 목록은 [여기](https://github.com/Raingel/weather_station_list)에서 확인할 수 있습니다.
+
+> 기상 데이터셋의 출처에는 Central Weather Administration에서 설치한 기상 관측소(관측소 코드는 C0, C1, 4로 시작)와 Council of Agriculture 소속 농업 기상 관측소(관측소 코드는 앞서 언급한 경우에 해당하지 않음)가 포함됩니다.
+
+* StationId
+  * MeasuredDate, 관측 시각
+  * StnPres, 관측소 기압
+  * SeaPres, 해면 기압
+  * Td, 이슬점 온도
+  * RH, 상대 습도
+  * 가능한 경우 기타 요소
+
+<div id="downloading-the-data">
+  ## 데이터 다운로드
+</div>
+
+* 정리, 재구성, 보강을 거친 ClickHouse용 데이터의 [전처리된 버전](#pre-processed-data)입니다. 이 데이터셋은 1896년부터 2023년까지를 다룹니다.
+* [원본 데이터 다운로드](#original-raw-data) 후 ClickHouse에 필요한 포맷으로 변환합니다. 자체 컬럼을 추가하려는 사용자는 자신만의 접근 방식을 더 검토하거나 완성할 수 있습니다.
+
+<div id="pre-processed-data">
+  ### 전처리된 데이터
+</div>
+
+데이터셋은 각 줄마다 하나의 측정값이 있던 구조에서, 각 기상 관측소 id와 측정 날짜별로 하나의 행이 되도록 다시 구성되었습니다. 즉,
+
+```csv
+StationId,MeasuredDate,StnPres,Tx,RH,WS,WD,WSGust,WDGust,Precp,GloblRad,TxSoil0cm,TxSoil5cm,TxSoil20cm,TxSoil50cm,TxSoil100cm,SeaPres,Td,PrecpHour,SunShine,TxSoil10cm,EvapA,Visb,UVI,Cloud Amount,TxSoil30cm,TxSoil200cm,TxSoil300cm,TxSoil500cm,VaporPressure
+C0X100,2016-01-01 01:00:00,1022.1,16.1,72,1.1,8.0,,,,,,,,,,,,,,,,,,,,,,,
+C0X100,2016-01-01 02:00:00,1021.6,16.0,73,1.2,358.0,,,,,,,,,,,,,,,,,,,,,,,
+C0X100,2016-01-01 03:00:00,1021.3,15.8,74,1.5,353.0,,,,,,,,,,,,,,,,,,,,,,,
+C0X100,2016-01-01 04:00:00,1021.2,15.8,74,1.7,8.0,,,,,,,,,,,,,,,,,,,,,,,
+```
+
+쿼리하기 쉬우며, 결과 테이블이 덜 희소하고 일부 요소는 이 기상 관측소에서 측정할 수 없는 값이므로 `NULL`임을 확인할 수 있습니다.
+
+이 데이터셋은 다음 Google CloudStorage 위치에서 사용할 수 있습니다. 데이터셋을 로컬 파일 시스템에 다운로드한 다음 `clickhouse client`로 삽입하거나, ClickHouse에 직접 삽입할 수 있습니다([URL에서 삽입](#inserting-from-url) 참고).
+
+다운로드하려면:
+
+```bash
+wget https://storage.googleapis.com/taiwan-weather-observaiton-datasets/preprocessed_weather_daily_1896_2023.tar.gz
+
+# 옵션: 체크섬 검증
+md5sum preprocessed_weather_daily_1896_2023.tar.gz
+# 체크섬이 다음 값과 일치해야 합니다: 11b484f5bd9ddafec5cfb131eb2dd008
+
+tar -xzvf preprocessed_weather_daily_1896_2023.tar.gz
+daily_weather_preprocessed_1896_2023.csv
+
+# 옵션: 체크섬 검증
+md5sum daily_weather_preprocessed_1896_2023.csv
+# 체크섬이 다음 값과 일치해야 합니다: 1132248c78195c43d93f843753881754
+```
+
+<div id="original-raw-data">
+  ### 원본 원시 데이터
+</div>
+
+다음은 필요에 맞게 변환하여 사용할 수 있도록 원본 원시 데이터를 다운로드하는 단계에 대한 설명입니다.
+
+<div id="download">
+  #### 다운로드
+</div>
+
+원본 원시 데이터를 다운로드하려면:
+
+```bash
+mkdir tw_raw_weather_data && cd tw_raw_weather_data
+
+wget https://storage.googleapis.com/taiwan-weather-observaiton-datasets/raw_data_weather_daily_1896_2023.tar.gz
+
+# 선택 사항: 체크섬(checksum) 검증
+md5sum raw_data_weather_daily_1896_2023.tar.gz
+# 체크섬은 다음 값과 일치해야 합니다: b66b9f137217454d655e3004d7d1b51a
+
+tar -xzvf raw_data_weather_daily_1896_2023.tar.gz
+466920_1928.csv
+466920_1929.csv
+466920_1930.csv
+466920_1931.csv
+...
+
+# 선택 사항: 체크섬(checksum) 검증
+cat *.csv | md5sum
+# 체크섬은 다음 값과 일치해야 합니다: b26db404bf84d4063fac42e576464ce1
+```
+
+<div id="retrieve-the-taiwan-weather-stations">
+  #### 대만 기상 관측소 가져오기
+</div>
+
+```bash
+wget -O weather_sta_list.csv https://github.com/Raingel/weather_station_list/raw/main/data/weather_sta_list.csv
+
+# 선택 사항: UTF-8-BOM을 UTF-8 인코딩으로 변환
+sed -i '1s/^\xEF\xBB\xBF//' weather_sta_list.csv
+```
+
+<div id="create-table-schema">
+  ## 테이블 스키마 생성
+</div>
+
+ClickHouse에서 MergeTree 테이블을 생성합니다(clickhouse client에서).
+
+```bash
+CREATE TABLE tw_weather_data (
+    StationId String null,
+    MeasuredDate DateTime64,
+    StnPres Float64 null,
+    SeaPres Float64 null,
+    Tx Float64 null,
+    Td Float64 null,
+    RH Float64 null,
+    WS Float64 null,
+    WD Float64 null,
+    WSGust Float64 null,
+    WDGust Float64 null,
+    Precp Float64 null,
+    PrecpHour Float64 null,
+    SunShine Float64 null,
+    GloblRad Float64 null,
+    TxSoil0cm Float64 null,
+    TxSoil5cm Float64 null,
+    TxSoil10cm Float64 null,
+    TxSoil20cm Float64 null,
+    TxSoil50cm Float64 null,
+    TxSoil100cm Float64 null,
+    TxSoil30cm Float64 null,
+    TxSoil200cm Float64 null,
+    TxSoil300cm Float64 null,
+    TxSoil500cm Float64 null,
+    VaporPressure Float64 null,
+    UVI Float64 null,
+    "Cloud Amount" Float64 null,
+    EvapA Float64 null,
+    Visb Float64 null
+)
+ENGINE = MergeTree
+ORDER BY (MeasuredDate);
+```
+
+<div id="inserting-into-clickhouse">
+  ## ClickHouse에 삽입하기
+</div>
+
+<div id="inserting-from-local-file">
+  ### 로컬 파일에서 삽입하기
+</div>
+
+다음과 같이 로컬 파일의 데이터를 삽입할 수 있습니다(ClickHouse client에서).
+
+```sql
+INSERT INTO tw_weather_data FROM INFILE '/path/to/daily_weather_preprocessed_1896_2023.csv'
+```
+
+여기서 `/path/to`는 디스크에 있는 로컬 파일의 사용자별 경로를 나타냅니다.
+
+ClickHouse에 데이터를 삽입한 후의 예시 응답 출력은 다음과 같습니다.
+
+```response
+Query id: 90e4b524-6e14-4855-817c-7e6f98fbeabb
+
+Ok.
+131985329 rows in set. Elapsed: 71.770 sec. Processed 131.99 million rows, 10.06 GB (1.84 million rows/s., 140.14 MB/s.)
+Peak memory usage: 583.23 MiB.
+```
+
+<div id="inserting-from-url">
+  ### URL을 통한 삽입
+</div>
+
+```sql
+INSERT INTO tw_weather_data SELECT *
+FROM url('https://storage.googleapis.com/taiwan-weather-observaiton-datasets/daily_weather_preprocessed_1896_2023.csv', 'CSVWithNames')
+
+```
+
+속도를 높이는 방법은 [대용량 데이터 로드 튜닝](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2) 블로그 게시물을 참조하십시오.
+
+<div id="check-data-rows-and-sizes">
+  ## 데이터 행 수와 크기 확인
+</div>
+
+1. 몇 개의 행이 삽입되었는지 확인해 보겠습니다:
+
+```sql
+SELECT formatReadableQuantity(count())
+FROM tw_weather_data;
+```
+
+```response
+┌─formatReadableQuantity(count())─┐
+│ 131.99 million                  │
+└─────────────────────────────────┘
+```
+
+2. 이 테이블이 얼마나 많은 디스크 공간을 사용하는지 확인해 보겠습니다:
+
+```sql
+SELECT
+    formatReadableSize(sum(bytes)) AS disk_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size
+FROM system.parts
+WHERE (`table` = 'tw_weather_data') AND active
+```
+
+```response
+┌─disk_size─┬─uncompressed_size─┐
+│ 2.13 GiB  │ 32.94 GiB         │
+└───────────┴───────────────────┘
+```
+
+<div id="sample-queries">
+  ## 예제 쿼리
+</div>
+
+<div id="q1-retrieve-the-highest-dew-point-temperature-for-each-weather-station-in-the-specific-year">
+  ### Q1: 특정 연도의 각 기상 관측소별 최고 이슬점 온도 조회
+</div>
+
+```sql
+SELECT
+    StationId,
+    max(Td) AS max_td
+FROM tw_weather_data
+WHERE (year(MeasuredDate) = 2023) AND (Td IS NOT NULL)
+GROUP BY StationId
+```
+
+```response
+┌─StationId─┬─max_td─┐
+│ 466940    │      1 │
+│ 467300    │      1 │
+│ 467540    │      1 │
+│ 467490    │      1 │
+│ 467080    │      1 │
+│ 466910    │      1 │
+│ 467660    │      1 │
+│ 467270    │      1 │
+│ 467350    │      1 │
+│ 467571    │      1 │
+│ 466920    │      1 │
+│ 467650    │      1 │
+│ 467550    │      1 │
+│ 467480    │      1 │
+│ 467610    │      1 │
+│ 467050    │      1 │
+│ 467590    │      1 │
+│ 466990    │      1 │
+│ 467060    │      1 │
+│ 466950    │      1 │
+│ 467620    │      1 │
+│ 467990    │      1 │
+│ 466930    │      1 │
+│ 467110    │      1 │
+│ 466881    │      1 │
+│ 467410    │      1 │
+│ 467441    │      1 │
+│ 467420    │      1 │
+│ 467530    │      1 │
+│ 466900    │      1 │
+└───────────┴────────┘
+
+30 rows in set. Elapsed: 0.045 sec. Processed 6.41 million rows, 187.33 MB (143.92 million rows/s., 4.21 GB/s.)
+```
+
+<div id="q2-raw-data-fetching-with-the-specific-duration-time-range-fields-and-weather-station">
+  ### Q2: 특정 기간 범위, 필드, 기상 관측소를 기준으로 한 원시 데이터 가져오기
+</div>
+
+```sql
+SELECT
+    StnPres,
+    SeaPres,
+    Tx,
+    Td,
+    RH,
+    WS,
+    WD,
+    WSGust,
+    WDGust,
+    Precp,
+    PrecpHour
+FROM tw_weather_data
+WHERE (StationId = 'C0UB10') AND (MeasuredDate >= '2023-12-23') AND (MeasuredDate < '2023-12-24')
+ORDER BY MeasuredDate ASC
+LIMIT 10
+```
+
+```response
+┌─StnPres─┬─SeaPres─┬───Tx─┬───Td─┬─RH─┬──WS─┬──WD─┬─WSGust─┬─WDGust─┬─Precp─┬─PrecpHour─┐
+│  1029.5 │    ᴺᵁᴸᴸ │ 11.8 │ ᴺᵁᴸᴸ │ 78 │ 2.7 │ 271 │    5.5 │    275 │ -99.8 │     -99.8 │
+│  1029.8 │    ᴺᵁᴸᴸ │ 12.3 │ ᴺᵁᴸᴸ │ 78 │ 2.7 │ 289 │    5.5 │    308 │ -99.8 │     -99.8 │
+│  1028.6 │    ᴺᵁᴸᴸ │ 12.3 │ ᴺᵁᴸᴸ │ 79 │ 2.3 │ 251 │    6.1 │    289 │ -99.8 │     -99.8 │
+│  1028.2 │    ᴺᵁᴸᴸ │   13 │ ᴺᵁᴸᴸ │ 75 │ 4.3 │ 312 │    7.5 │    316 │ -99.8 │     -99.8 │
+│  1027.8 │    ᴺᵁᴸᴸ │ 11.1 │ ᴺᵁᴸᴸ │ 89 │ 7.1 │ 310 │   11.6 │    322 │ -99.8 │     -99.8 │
+│  1027.8 │    ᴺᵁᴸᴸ │ 11.6 │ ᴺᵁᴸᴸ │ 90 │ 3.1 │ 269 │   10.7 │    295 │ -99.8 │     -99.8 │
+│  1027.9 │    ᴺᵁᴸᴸ │ 12.3 │ ᴺᵁᴸᴸ │ 89 │ 4.7 │ 296 │    8.1 │    310 │ -99.8 │     -99.8 │
+│  1028.2 │    ᴺᵁᴸᴸ │ 12.2 │ ᴺᵁᴸᴸ │ 94 │ 2.5 │ 246 │    7.1 │    283 │ -99.8 │     -99.8 │
+│  1028.4 │    ᴺᵁᴸᴸ │ 12.5 │ ᴺᵁᴸᴸ │ 94 │ 3.1 │ 265 │    4.8 │    297 │ -99.8 │     -99.8 │
+│  1028.3 │    ᴺᵁᴸᴸ │ 13.6 │ ᴺᵁᴸᴸ │ 91 │ 1.2 │ 273 │    4.4 │    256 │ -99.8 │     -99.8 │
+└─────────┴─────────┴──────┴──────┴────┴─────┴─────┴────────┴────────┴───────┴───────────┘
+
+10 rows in set. Elapsed: 0.009 sec. Processed 91.70 thousand rows, 2.33 MB (9.67 million rows/s., 245.31 MB/s.)
+```
+
+<div id="credits">
+  ## 제보
+</div>
+
+이 데이터셋의 준비, 정제 및 배포에 힘써 주신 Council of Agriculture 산하 Central Weather Administration과 Agricultural Meteorological Observation Network (Station)의 노고에 감사드립니다.
+
+Ou, J.-H., Kuo, C.-H., Wu, Y.-F., Lin, G.-C., Lee, M.-H., Chen, R.-K., Chou, H.-P., Wu, H.-Y., Chu, S.-C., Lai, Q.-J., Tsai, Y.-C., Lin, C.-C., Kuo, C.-C., Liao, C.-T., Chen, Y.-N., Chu, Y.-W., Chen, C.-Y., 2023. 대만의 벼 도열병 조기 경보를 위한 응용 지향 딥러닝 모델. Ecological Informatics 73, 101950. https://doi.org/10.1016/j.ecoinf.2022.101950 [13/12/2022]

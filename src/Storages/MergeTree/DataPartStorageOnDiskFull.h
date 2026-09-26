@@ -16,26 +16,14 @@ public:
     DataPartStoragePtr getProjection(const std::string & name) const override;
 
     bool exists() const override;
-    bool existsFile(const std::string & name) const override;
     bool existsDirectory(const std::string & name) const override;
 
     DataPartStorageIteratorPtr iterate() const override;
     Poco::Timestamp getFileLastModified(const String & file_name) const override;
-    size_t getFileSize(const std::string & file_name) const override;
+    std::optional<UInt64> getPackedFileUncompressedSize(const std::string & file_name) const override;
     UInt32 getRefCount(const std::string & file_name) const override;
     std::vector<std::string> getRemotePaths(const std::string & file_name) const override;
     String getUniqueId() const override;
-
-    void prepareRead(
-        const std::string & name,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const override;
-
-    std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
-        const std::string & name,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
 
     void createProjection(const std::string & name) override;
 
@@ -71,6 +59,18 @@ private:
     MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const override;
 
     NameSet getActualFileNamesOnDisk(const NameSet & file_names) const override { return file_names; }
+
+    bool existsFileImpl(const std::string & name) const override;
+    size_t getFileSizeImpl(const std::string & file_name) const override;
+    void prepareReadImpl(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const override;
+    std::unique_ptr<ReadBufferFromFileBase> readFileIfExistsImpl(
+        const std::string & name,
+        const ReadSettings & settings,
+        std::optional<size_t> read_hint) const override;
 };
 
 }

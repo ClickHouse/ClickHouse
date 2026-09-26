@@ -1,0 +1,181 @@
+---
+slug: /best-practices/choosing-a-primary-key
+sidebarTitle: 'Выбор первичного ключа'
+title: 'Выбор первичного ключа'
+description: 'Страница о том, как выбрать первичный ключ в ClickHouse'
+keywords: ['первичный ключ']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+> На этой странице мы используем термины &quot;ключ упорядочивания&quot; и &quot;первичный ключ&quot; как взаимозаменяемые. Строго говоря, [в ClickHouse это разные понятия](/ru/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key), но в рамках этого документа их можно считать взаимозаменяемыми; при этом под ключом упорядочивания имеются в виду столбцы, указанные в `ORDER BY` таблицы.
+
+Обратите внимание, что первичный ключ в ClickHouse работает [совсем иначе](/ru/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse), чем аналогичные понятия в OLTP-базах данных, таких как Postgres.
+
+Выбор эффективного первичного ключа в ClickHouse критически важен для производительности запросов и эффективности хранения. ClickHouse организует данные в части, каждая из которых содержит собственный разреженный первичный индекс. Этот индекс значительно ускоряет выполнение запросов, сокращая объём сканируемых данных. Кроме того, поскольку первичный ключ задаёт физический порядок данных на диске, он напрямую влияет на эффективность сжатия. Оптимально упорядоченные данные сжимаются лучше, что дополнительно повышает производительность за счёт снижения I/O.
+
+1. При выборе ключа упорядочивания отдавайте приоритет столбцам, которые часто используются в фильтрах запросов (то есть в условии `WHERE`), особенно если они позволяют исключить большое количество строк.
+2. Также полезны столбцы, сильно коррелирующие с другими данными в таблице, поскольку последовательное хранение улучшает коэффициент сжатия и эффективность использования памяти при операциях `GROUP BY` и `ORDER BY`.
+
+<br />
+
+При выборе ключа упорядочивания можно руководствоваться несколькими простыми правилами. Иногда они могут противоречить друг другу, поэтому учитывайте их именно в таком порядке. **С помощью этого подхода можно определить несколько ключей; обычно достаточно 4–5**:
+
+<Info>
+  **Важно**
+
+  Ключи упорядочивания должны задаваться при создании таблицы и не могут быть добавлены позже. Дополнительное упорядочивание можно добавить в таблицу после (или до) вставки данных с помощью возможности, известной как проекции. Имейте в виду, что это приводит к дублированию данных. Подробнее [здесь](/ru/reference/statements/alter/projection).
+</Info>
+
+<div id="example">
+  ## Пример
+</div>
+
+Рассмотрим следующую таблицу `posts_unordered`. В ней содержится по одной строке для каждого поста Stack Overflow.
+
+У этой таблицы нет первичного ключа — на это указывает `ORDER BY tuple()`.
+
+```sql
+CREATE TABLE posts_unordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 
+  'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime,
+  `Score` Int32,
+  `ViewCount` UInt32,
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime,
+  `LastActivityDate` DateTime,
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16,
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense`LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime,
+  `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+Предположим, пользователь хочет подсчитать количество вопросов, отправленных после 2024 года, и это его наиболее распространённый сценарий доступа.
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.055 sec. Processed 59.82 million rows, 361.34 MB (1.09 billion rows/s., 6.61 GB/s.)
+```
+
+Обратите внимание на количество строк и байтов, прочитанных этим запросом. Без первичного ключа запросам приходится сканировать весь набор данных.
+
+Использование `EXPLAIN indexes=1` подтверждает, что из-за отсутствия индексации выполняется полное сканирование таблицы.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain───────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                 │
+│   Aggregating                                             │
+│     Expression (Before GROUP BY)                          │
+│       Expression                                          │
+│         ReadFromMergeTree (stackoverflow.posts_unordered) │
+└───────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.003 sec.
+```
+
+Предположим, что таблица `posts_ordered`, содержащая те же данные, определена с `ORDER BY` вида `(PostTypeId, toDate(CreationDate))`, то есть
+
+```sql
+CREATE TABLE posts_ordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 
+  'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+...
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+`PostTypeId` имеет мощность 8 и является логичным выбором для первого элемента нашего ключа упорядочивания. Поскольку фильтрации с точностью до даты, скорее всего, будет достаточно (при этом она по-прежнему будет полезна и для фильтров по DateTime), мы используем `toDate(CreationDate)` в качестве второго компонента нашего ключа. Это также позволит уменьшить размер индекса, поскольку дату можно представить 16 битами, что ускоряет фильтрацию.
+
+Следующая анимация показывает, как создается оптимизированный разреженный первичный индекс для таблицы постов Stack Overflow. Вместо индексации отдельных строк индекс строится по блокам строк:
+
+<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="Первичный ключ" />
+
+Если повторить тот же запрос для таблицы с этим ключом упорядочивания:
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.013 sec. Processed 196.53 thousand rows, 1.77 MB (14.64 million rows/s., 131.78 MB/s.)
+```
+
+Этот запрос теперь использует разреженный индекс, что значительно сокращает объём читаемых данных и ускоряет выполнение в 4 раза — обратите внимание, насколько уменьшилось число прочитанных строк и байтов.
+
+Использование индекса можно подтвердить с помощью `EXPLAIN indexes=1`.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain─────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                                                   │
+│   Aggregating                                                                               │
+│     Expression (Before GROUP BY)                                                            │
+│       Expression                                                                            │
+│         ReadFromMergeTree (stackoverflow.posts_ordered)                                     │
+│         Indexes:                                                                            │
+│           PrimaryKey                                                                        │
+│             Keys:                                                                           │
+│               PostTypeId                                                                    │
+│               toDate(CreationDate)                                                          │
+│             Condition: and((PostTypeId in [1, 1]), (toDate(CreationDate) in [19723, +Inf))) │
+│             Parts: 14/14                                                                    │
+│             Granules: 39/7578                                                               │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.004 sec.
+```
+
+Кроме того, мы наглядно показываем, как разреженный индекс отсекает все блоки строк, которые заведомо не могут содержать совпадения для нашего примера запроса:
+
+<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="Первичный ключ" />
+
+<Note>
+  Все столбцы в таблице будут отсортированы по значению указанного ключа упорядочивания, независимо от того, входят ли они в сам ключ. Например, если в качестве ключа используется `CreationDate`, порядок значений во всех остальных столбцах будет соответствовать порядку значений в столбце `CreationDate`. Можно указать несколько ключей упорядочивания — в этом случае сортировка будет выполняться с той же семантикой, что и в предложении `ORDER BY` запроса `SELECT`.
+</Note>
+
+Подробное руководство по выбору первичных ключей можно найти [здесь](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes).
+
+Чтобы лучше понять, как ключи упорядочивания улучшают сжатие и дополнительно оптимизируют хранение, ознакомьтесь с официальными руководствами [Compression in ClickHouse](/ru/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) и [Column Compression Codecs](/ru/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec).
