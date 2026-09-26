@@ -582,8 +582,8 @@ struct LiteralAsText
     bool all_integers = true;
     /// No number in it is negative.
     bool all_non_negative = true;
-    /// It holds a `NULL`, which only a `Nullable` target reads back.
-    bool has_null = false;
+    /// Sorted unique array nesting depths at which `NULL` appears in the literal.
+    std::vector<size_t> null_depths;
 };
 
 /** Reads a literal - a number, or an array or a tuple of numbers, strings and `NULL`s - as text, leaving
