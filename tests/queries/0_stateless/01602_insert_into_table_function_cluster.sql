@@ -1,3 +1,5 @@
+SET handshake_timeout_ms = 60000;
+
 DROP TABLE IF EXISTS x;
 DROP TABLE IF EXISTS y;
 
