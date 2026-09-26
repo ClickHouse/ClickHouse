@@ -183,10 +183,12 @@ SELECT c.`j.arr`[1].b FROM t_array_of_json_shadowed_by_sibling SETTINGS optimize
 
 -- The guard must not reject the ordinary case: every rewrite still fires when nothing claims the name.
 -- The setting is randomized in CI, and these queries read it from the session.
+-- `m['key']` is rewritten only for bucketed Map serialization, pinned below because CI randomizes it.
 
 DROP TABLE IF EXISTS t_plain;
 CREATE TABLE t_plain (s String, arr Array(UInt64), m Map(String, UInt64), n Nullable(UInt64), t Tuple(x UInt64), v Variant(Int64, String))
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 INSERT INTO t_plain VALUES ('abc', [1, 2], {'k': 1}, 5, (1), 7::Int64);
 
 SET optimize_functions_to_subcolumns = 1;
@@ -214,7 +216,9 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT variantElement(v, 'Int64') FROM t
 -- return the same value, so only the query tree can see whether the rewrite was lost.
 
 DROP TABLE IF EXISTS t_json_path_plain;
-CREATE TABLE t_json_path_plain (j JSON(m Map(String, String), s String)) ENGINE = Memory;
+CREATE TABLE t_json_path_plain (j JSON(m Map(String, String), s String))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 INSERT INTO t_json_path_plain SELECT CAST('{"m":{"k":"v"},"s":"abc"}', 'JSON(m Map(String, String), s String)');
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT j.m['k'] FROM t_json_path_plain) WHERE explain LIKE '%j.m.key_k%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT mapKeys(j.m) FROM t_json_path_plain) WHERE explain LIKE '%j.m.keys%';
@@ -231,7 +235,9 @@ CREATE TABLE t_nested_plain (n Nested(a Int64, b String)) ENGINE = Memory;
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT length(`n.a`) FROM t_nested_plain) WHERE explain LIKE '%n.a.size0%';
 
 DROP TABLE IF EXISTS t_tuple_path_plain;
-CREATE TABLE t_tuple_path_plain (c Tuple(m Map(String, String), arr Array(Int64))) ENGINE = Memory;
+CREATE TABLE t_tuple_path_plain (c Tuple(m Map(String, String), arr Array(Int64)))
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT c.m['k'] FROM t_tuple_path_plain) WHERE explain LIKE '%c.m.key_k%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT length(c.arr) FROM t_tuple_path_plain) WHERE explain LIKE '%c.arr.size0%';
 
