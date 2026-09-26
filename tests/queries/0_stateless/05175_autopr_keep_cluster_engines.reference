@@ -11,6 +11,7 @@ additional_table_filters, serialize_query_plan 0, mode 2: ReadFromURL 5
 additional_table_filters, serialize_query_plan 1, mode 0: ReadFromURL 5
 additional_table_filters, serialize_query_plan 1, mode 1: ReadFromURL 5
 additional_table_filters, serialize_query_plan 1, mode 2: ReadFromURL 5
-additional_table_filters in force mode, mode 0: SUPPORT_IS_DISABLED
-additional_table_filters in force mode, mode 1: SUPPORT_IS_DISABLED
-additional_table_filters in force mode, mode 2: SUPPORT_IS_DISABLED
+additional_table_filters in force mode, mode 1: ReadFromURL
+additional_table_filters in force mode, mode 2: ReadFromURL
+IN subquery in force mode without cluster engines, mode 1: ReadFromURL
+IN subquery in force mode without cluster engines, mode 2: ReadFromURL

@@ -52,9 +52,18 @@ for serialize in 0 1; do
     done
 done
 
-# In force mode without `serialize_query_plan` the combination is rejected, as for `MergeTree`, in every mode.
-for mode in 0 1 2; do
-    echo "additional_table_filters in force mode, mode $mode: $($CLICKHOUSE_CLIENT -q "EXPLAIN $FILTERED_QUERY SETTINGS $SETTINGS,
+# Under the automatic mode the checks of parallel replicas apply only to a read that is shipped to the replicas. With
+# `additional_table_filters` nothing is shipped, so force mode without `serialize_query_plan` does not throw there.
+for mode in 1 2; do
+    echo "additional_table_filters in force mode, mode $mode: $(read_step "EXPLAIN $FILTERED_QUERY SETTINGS $SETTINGS,
         enable_parallel_replicas = 2, automatic_parallel_replicas_mode = $mode, serialize_query_plan = 0,
-        additional_table_filters = {'t': 'n > 1'}" 2>&1 | grep -o -m1 'SUPPORT_IS_DISABLED')"
+        additional_table_filters = {'t': 'n > 1'}")"
+done
+
+# The same for an `IN` subquery when cluster engines are not replaced by their `*Cluster` variant.
+for mode in 1 2; do
+    echo "IN subquery in force mode without cluster engines, mode $mode: $($CLICKHOUSE_CLIENT -q "EXPLAIN $QUERY WHERE x IN (SELECT 1)
+        SETTINGS $SETTINGS, parallel_replicas_for_cluster_engines = 0, enable_parallel_replicas = 2,
+        automatic_parallel_replicas_mode = $mode, parallel_replicas_allow_in_with_subquery = 0" 2>&1 \
+        | grep -oE 'ReadFrom(URL|Cluster)|SUPPORT_IS_DISABLED')"
 done
