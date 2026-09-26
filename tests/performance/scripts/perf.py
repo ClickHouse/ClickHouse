@@ -836,8 +836,14 @@ for conn_index, c in enumerate(all_connections):
 
 reportStageEnd("settings")
 
-# One-line summary per connection whose tolerated setup query failed there (the traceback goes to stderr).
+# One-line summary per connection whose tolerated setup query failed there.
 setup_error_on_connection = [None] * len(all_connections)
+
+# Diagnostics of setup queries tolerated on the reference server, reported
+# from the main thread below. They must not reach this test's stderr: a
+# persisted stderr becomes Run Errors rows, which are documented as requiring
+# action, and these rows would hide the error that actually failed the run.
+tolerated_setup_diagnostics = []
 
 if not args.use_existing_tables:
     # Run create and fill queries. We will run them simultaneously for both servers, to save time.
@@ -870,7 +876,7 @@ if not args.use_existing_tables:
                     f"by do_not_check_in_pr matching --pr-number {args.pr_number}, "
                     f"running the test on the new server only: {tsv_escape(q)[:200]}"
                 )
-                print(f"{message}\n{traceback.format_exc()}", file=sys.stderr)
+                tolerated_setup_diagnostics.append(f"{message}\n{traceback.format_exc()}")
                 setup_error_on_connection[index] = message
                 break
 
@@ -882,8 +888,26 @@ if not args.use_existing_tables:
     for t in threads:
         t.start()
 
+    # SafeThread.join() re-raises the worker's exception, so join every thread
+    # before reporting: a diagnostic queued by one thread must not be lost to
+    # another thread's failure, and the list must not be read while a thread
+    # can still append to it.
+    setup_exception = None
     for t in threads:
-        t.join()
+        try:
+            t.join()
+        except BaseException as e:
+            if setup_exception is None:
+                setup_exception = e
+
+    for diagnostic in tolerated_setup_diagnostics:
+        print(f"tolerated-setup-error\t{tsv_escape(diagnostic)}")
+
+    if setup_exception is not None:
+        # Flush before raising so the diagnostics reach the raw .tsv even though
+        # we are about to exit through an unhandled exception.
+        sys.stdout.flush()
+        raise setup_exception
 
     reportStageEnd("create")
 
@@ -1021,7 +1045,13 @@ for query_index in queries_to_run:
     no_errors = []
     for i, e in enumerate(query_error_on_connection):
         if e:
-            print(e, file=sys.stderr)
+            # A tolerated (do_not_check_in_pr) setup failure is inherited by
+            # every query of the test and was already reported once, above. It
+            # must not be repeated on this test's stderr, which the report stage
+            # turns into Run Errors rows. An error the query produced itself is
+            # still reported there.
+            if setup_error_on_connection[i] is None:
+                print(e, file=sys.stderr)
         else:
             no_errors.append(i)
 
