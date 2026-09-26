@@ -327,10 +327,11 @@ When set to `with_size_stream`, top-level `String` columns are serialized with a
 `.size` subcolumn storing string lengths, rather than inline. This allows real `.size`
 subcolumns and can improve compression efficiency.
 
-Nested `String` types inside a `Tuple` are always affected. Nested `String` types inside
-`Array`, `Map`, `Nullable`, and declared `JSON` paths are affected when
-`propagate_types_serialization_versions_to_nested_types = 1`. Nested `String` types inside
-`LowCardinality` are not affected.
+`String` types that are direct elements of a `Tuple` (including nested `Tuple`s) are always affected. Nested `String` types
+inside `Array`, `Map`, `Nullable`, and declared `JSON` paths are affected only when
+`propagate_types_serialization_versions_to_nested_types = 1`; this also applies when these types
+are themselves elements of a `Tuple`, such as `Tuple(Array(String))` or `Tuple(Nullable(String))`.
+Nested `String` types inside `LowCardinality` are not affected.
 
 Possible values:
 
@@ -399,7 +400,7 @@ Possible values:
 )", 0) \
     DECLARE(Bool, propagate_types_serialization_versions_to_nested_types, true, R"(
 If enabled, type serialization versions, such as `string_serialization_version`, also apply to nested types inside `Array`, `Map`, `Nullable`, and `JSON`.
-If disabled, these versions apply only to top-level columns and `Tuple` elements.
+If disabled, these versions apply only to top-level columns and direct `Tuple` elements.
 )", 0)\
     DECLARE(MergeTreeMapSerializationVersion, map_serialization_version, "basic", R"(
 Controls the serialization method used for `Map` columns.
