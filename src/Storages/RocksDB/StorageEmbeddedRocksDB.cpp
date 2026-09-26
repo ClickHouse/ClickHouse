@@ -352,8 +352,6 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
 
 void StorageEmbeddedRocksDB::initDBForRename()
 {
-    /// initDB() is also called from the constructor and from truncate(); the failpoint is applied
-    /// here so that only rename() can be made to fail.
     fiu_do_on(FailPoints::rocksdb_rename_fail_reopen,
     {
         throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while reopening RocksDB after a rename");
@@ -379,10 +377,7 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
                 rocksdb_ptr = nullptr;
             }
 
-            /// Whether the directory was relocated. The rollback below must know this instead of
-            /// inferring it from the paths: the old one can exist again for a reason other than
-            /// "the move never happened", and reopening it then serves an empty table for data
-            /// that is still on disk.
+            /// Tracked explicitly: the old path can exist again even though the data was moved.
             bool moved = false;
 
             try
@@ -401,13 +396,11 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
             }
             catch (...)
             {
-                /// The caller re-attaches the table under the old name when we throw, so the
-                /// handle has to be usable again before we rethrow.
+                /// The caller re-attaches the table under its old name after a throw, so restore the handle first.
                 try
                 {
                     FailPointInjection::pauseFailPoint(FailPoints::rocksdb_rename_pause_before_rollback);
-                    /// If the data cannot be moved back, rocksdb_dir is left naming the directory
-                    /// that holds it and the table refuses reads instead of answering zero rows.
+                    /// rocksdb_dir keeps naming the directory that holds the data until the move back succeeds.
                     if (moved)
                     {
                         try
@@ -416,9 +409,7 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
                         }
                         catch (...)
                         {
-                            /// An empty directory cannot hold data, so removing one that occupies
-                            /// the old location and letting the data come back loses nothing.
-                            /// Anything else stays where it is and the move back keeps failing.
+                            /// Only an empty directory may be removed from the old location: it cannot hold data.
                             std::error_code ec;
                             if (!fs::is_directory(old_rocksdb_dir, ec) || !fs::is_empty(old_rocksdb_dir, ec))
                                 throw;
@@ -432,8 +423,6 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
                 }
                 catch (...)
                 {
-                    /// The table stays attached under the old name, so remember that it cannot
-                    /// serve its data: reads have to refuse instead of reporting zero rows.
                     handle_unusable = true;
                     tryLogCurrentException(log, "Failed to restore RocksDB handle after a failed rename");
                 }
@@ -1203,7 +1192,6 @@ void StorageEmbeddedRocksDB::initDB()
         rocksdb_ptr = std::move(db);
     }
 
-    /// The handle is usable again, whatever left it unusable before.
     handle_unusable = false;
 }
 
