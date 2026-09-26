@@ -82,9 +82,10 @@ FiberSocket connectToBackend(const FrontendContext & ctx, Backend & backend, boo
         if (encrypt)
         {
 #if USE_SSL
-            /// The backend leg is a connection to the backend, so it is verified against - and announces -
-            /// the backend's own name. Reusing the name the client asked for (an HTTP `Host` header, a
-            /// client SNI) would verify the backend against the proxy's public identity instead.
+            /// The backend leg is a connection to the backend, so it announces - and, when
+            /// `openSSL.client.extendedVerification` is enabled, is verified against - the backend's own name.
+            /// Reusing the name the client asked for (an HTTP `Host` header, a client SNI) would verify
+            /// the backend against the proxy's public identity instead.
             socket = FiberSocket::connectTLS(
                 address, ctx.config.connect_timeout_ms, ctx.client_tls_context, backend.config().host);
 #else
