@@ -16,6 +16,7 @@ FROM
     WHERE arrayExists(x -> x IN ('2', 'ab'), arr)
     ORDER BY c2 DESC
     LIMIT 1000
+    SETTINGS query_plan_optimize_lazy_materialization = 1, max_threads = 2
 );
 
 SELECT count()
@@ -26,7 +27,7 @@ FROM
     WHERE arrayExists(x -> x IN ('2', 'ab'), arr)
     ORDER BY c2 DESC
     LIMIT 1000
-    SETTINGS query_plan_optimize_lazy_materialization = 0
+    SETTINGS query_plan_optimize_lazy_materialization = 0, max_threads = 2
 );
 
 DROP TABLE t_lazy_cf_set;
