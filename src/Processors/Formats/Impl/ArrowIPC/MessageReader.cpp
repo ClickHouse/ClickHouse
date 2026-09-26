@@ -87,6 +87,16 @@ bool MessageReader::readNextMessage(Message & out, Int64 expected_metadata_lengt
         throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted Arrow IPC message metadata");
 
     out.header = flatbuf::GetMessage(metadata_storage.data());
+
+    /// FlatBuffers verification only proves that a union value, *if present*, is a well-formed table; the
+    /// `Message.header` union is not `(required)`, so `VerifyMessageBuffer` accepts a message whose
+    /// `header_type` discriminant is set while the header value offset is absent (`Verifier::VerifyTable`
+    /// returns true for a null table). Every reader checks `header_type()` and then dereferences the typed
+    /// `header_as_X()` accessor, which returns null in exactly this case. Reject it here so a single guard
+    /// covers all those call sites instead of each one dereferencing null.
+    if (out.header->header_type() != flatbuf::MessageHeader_NONE && out.header->header() == nullptr)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC message header type is set but its value is missing");
+
     out.body_length = out.header->bodyLength();
     if (out.body_length < 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Negative Arrow IPC message body length {}", out.body_length);

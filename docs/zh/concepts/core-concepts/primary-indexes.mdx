@@ -62,13 +62,23 @@ ClickHouse 中的稀疏主索引有助于高效识别可能包含与查询在表
 
 <br />
 
-① 示例查询同时包含针对两个主键列的谓词：`town = 'LONDON' AND street = 'OXFORD STREET'`。
+<Steps>
+  <Step title="解析查询谓词">
+    示例查询同时包含针对两个主键列的谓词：`town = 'LONDON' AND street = 'OXFORD STREET'`。
+  </Step>
 
-② 为了加速查询，ClickHouse 会将表的主索引加载到内存中。
+  <Step title="加载主索引">
+    为了加速查询，ClickHouse 会将表的主索引加载到内存中。
+  </Step>
 
-③ 然后，它会扫描索引条目，以确定哪些粒度可能包含与该谓词匹配的行——也就是说，哪些粒度不能跳过。
+  <Step title="识别匹配的粒度">
+    然后，它会扫描索引条目，以确定哪些粒度可能包含与该谓词匹配的行——也就是说，哪些粒度不能跳过。
+  </Step>
 
-④ 随后，这些可能相关的粒度会被加载到内存中，并与查询所需的其他列中对应的粒度一起进行[处理](/zh/concepts/core-concepts/query-parallelism)。
+  <Step title="加载并处理粒度">
+    随后，这些可能相关的粒度会被加载到内存中，并与查询所需的其他列中对应的粒度一起进行[处理](/zh/concepts/core-concepts/query-parallelism)。
+  </Step>
+</Steps>
 
 <div id="monitoring-primary-indexes">
   ## 监控主索引
@@ -201,6 +211,6 @@ SELECT count() FROM uk.uk_price_paid_simple;
   ## 更多信息
 </div>
 
-如果你想更深入地了解 ClickHouse 中稀疏主索引的工作原理，包括它与传统数据库索引的区别以及使用方面的最佳实践，请参阅我们关于索引的详细[深度解析](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
+如果你想更深入地了解 ClickHouse 中稀疏主索引的工作原理，包括它与传统数据库索引的区别，以及使用它的最佳实践，请参阅我们关于索引的详细[深度解析](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
 
-如果你想了解 ClickHouse 如何以高度并行的方式处理主索引扫描选出的数据，请参阅[此处](/zh/concepts/core-concepts/query-parallelism)的查询并行指南。
+如果你想了解 ClickHouse 如何以高度并行的方式处理由主索引扫描选中的数据，请参阅[此处](/zh/concepts/core-concepts/query-parallelism)的查询并行指南。

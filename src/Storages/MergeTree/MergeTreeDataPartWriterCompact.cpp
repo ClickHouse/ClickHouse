@@ -7,6 +7,7 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <IO/NullWriteBuffer.h>
 #include <Common/FailPoint.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -77,6 +78,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc)
 {
+    const bool column_uses_default_codec = columnUsesDefaultCodec(name_and_type.getNameInStorage());
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         chassert(!substream_path.empty());
@@ -86,16 +88,19 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
         if (compressed_streams.contains(stream_name))
             return;
 
-        const auto & subtype = substream_path.back().data.type;
-        CompressionCodecPtr compression_codec;
-
-        /// If we can use special codec than just get it
-        if (ISerialization::isSpecialCompressionAllowed(substream_path))
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
-        else /// otherwise return only generic codecs and don't use info about data_type
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
+        auto compression_codec = getSubstreamCodec(effective_codec_desc, substream_path, column_uses_default_codec);
 
         UInt64 codec_id = compression_codec->getHash();
+        /// Codecs that need the vector dimension upfront (e.g. SZ3) keep per-stream state in the codec
+        /// object, so they must not be shared between streams. Make the key unique per stream so that
+        /// every such stream gets its own codec instance, while still being tracked for finalize/cancel.
+        if (compression_codec->needsVectorDimensionUpfront())
+        {
+            SipHash codec_hash;
+            codec_hash.update(codec_id);
+            codec_hash.update(stream_name.data(), stream_name.size());
+            codec_id = codec_hash.get64();
+        }
         /// Exception safety: if `make_shared` throws, the map is not modified, avoiding null entries in `cancel`.
         auto it = streams_by_codec.find(codec_id);
         if (it == streams_by_codec.end())
@@ -115,6 +120,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     enumerate_settings.object_serialization_version = settings.object_serialization_version;
     enumerate_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    enumerate_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
     enumerate_settings.max_buckets_in_map = settings.max_buckets_in_map;
     enumerate_settings.map_buckets_strategy = settings.map_buckets_strategy;
     enumerate_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
@@ -212,6 +218,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterCompact::getS
     serialize_settings.object_serialization_version = settings.object_serialization_version;
     serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    serialize_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
     serialize_settings.max_buckets_in_map = settings.max_buckets_in_map;
     serialize_settings.map_buckets_strategy = settings.map_buckets_strategy;
     serialize_settings.map_buckets_coefficient = settings.map_buckets_coefficient;
@@ -320,6 +327,20 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} not found", stream_name, name_and_type->name);
 
                 auto & result_stream = stream_it->second;
+
+                /// Some vector codecs (e.g., SZ3) used for compressing arrays like Array<Float>
+                /// require specifying the array dimensions before compression starts.
+                /// For 1D arrays, it's simply the length. The dimension is a property of the whole column
+                /// and `setAndCheckVectorDimension` accumulates it monotonically, so it only needs to be
+                /// computed once per block: rescanning the full column on every granule would make SZ3
+                /// writes O(rows * granules) in the insert/merge hot path. Do it while writing the first
+                /// granule, before its data is compressed.
+                if (&granule == &granules.front())
+                {
+                    auto compression_codec = result_stream->compressed_buf.getCodec();
+                    setVectorDimensionsIfNeeded(compression_codec, block.getColumnOrSubcolumnByName(name_and_type->name).column.get());
+                }
+
                 /// Write one compressed block per column in granule for more optimal reading.
                 if (prev_stream && prev_stream != result_stream)
                 {
@@ -354,10 +375,12 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 return {plain_hashing.count(), compressed_streams[stream_name]->hashing_buf.offset()};
             };
 
+            auto serialize_settings = getSerializationSettings();
+            serialize_settings.min_compress_block_size = getEffectiveMinCompressBlockSize(*name_and_type);
             writeColumnSingleGranule(
                 block.getByName(name_and_type->name), block_sample.getByName(name_and_type->name),
                 getSerialization(name_and_type->name),
-                stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, getSerializationSettings());
+                stream_getter, stream_mark_getter, granule.start_row, granule.rows_to_write, !data_written, std::move(serialize_settings));
 
             if (settings.compress_per_column_in_compact_parts)
             {

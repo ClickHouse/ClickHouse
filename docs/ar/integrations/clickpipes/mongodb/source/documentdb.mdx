@@ -22,7 +22,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 افتراضيًا، تبلغ مدة الاحتفاظ بسجلات change stream في Amazon DocumentDB ثلاث ساعات، بينما قد يستغرق التحميل الأولي وقتًا أطول بكثير حسب حجم البيانات الموجودة في DocumentDB لديك. نوصي بضبط مدة الاحتفاظ بسجلات change stream على 72 ساعة أو أكثر لضمان عدم حذفها قبل اكتمال اللقطة الأولية.
 
 <div id="update-change-stream-log-retention-via-aws-console">
-  ### حدِّث مدة الاحتفاظ بسجل change stream عبر AWS Console
+  ### حدِّث مدة الاحتفاظ بسجلات change stream عبر AWS Console
 </div>
 
 1. انقر على `Parameter groups` في اللوحة اليمنى، ثم اعثر على مجموعة المعلمات المستخدمة بواسطة عنقود DocumentDB لديك (إذا كنت تستخدم مجموعة المعلمات الافتراضية، فستحتاج أولًا إلى إنشاء مجموعة معلمات جديدة حتى تتمكن من تعديلها).

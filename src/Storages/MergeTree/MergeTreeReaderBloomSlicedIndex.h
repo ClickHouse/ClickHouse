@@ -25,11 +25,9 @@ public:
 
     size_t readRows(
         size_t from_mark,
-        size_t current_task_last_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        size_t rows_offset,
-        Columns & res_columns) override;
+        MutableColumns & res_columns) override;
 
 private:
     enum class CachedBitmapKind : UInt8

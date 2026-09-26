@@ -1,0 +1,199 @@
+---
+title: 'كيفية الاستعلام عن خادم ClickHouse بعيد'
+sidebarTitle: 'الاستعلام عن خادم ClickHouse بعيد'
+slug: /chdb/guides/query-remote-clickhouse
+description: 'في هذا الدليل، سنتعلم كيفية الاستعلام عن خادم ClickHouse بعيد من chDB.'
+keywords: ['chdb', 'clickhouse']
+doc_type: 'guide'
+---
+
+في هذا الدليل، سنتعلم كيفية الاستعلام عن خادم ClickHouse بعيد من chDB.
+
+<div id="setup">
+  ## الإعداد
+</div>
+
+لننشئ أولًا بيئة افتراضية:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+والآن سنثبّت chDB.
+تأكّد من أن لديك الإصدار 2.0.2 أو إصدارًا أحدث:
+
+```bash
+pip install "chdb>=2.0.2"
+```
+
+والآن سنثبّت pandas وipython:
+
+```bash
+pip install pandas ipython
+```
+
+سنستخدم `ipython` لتشغيل الأوامر في بقية هذا الدليل، ويمكنك بدء تشغيله بتنفيذ:
+
+```bash
+ipython
+```
+
+يمكنك أيضًا استخدام الشيفرة في برنامج نصي بلغة بايثون أو في دفترك المفضل.
+
+<div id="an-intro-to-clickpy">
+  ## مقدمة إلى ClickPy
+</div>
+
+خادم ClickHouse البعيد الذي سنُجري عليه استعلامات هو [ClickPy](https://clickpy.clickhouse.com).
+يتتبّع ClickPy جميع تنزيلات حزم PyPI ويتيح لك استكشاف إحصاءات الحزم عبر واجهة المستخدم.
+قاعدة البيانات الأساسية متاحة للاستعلام باستخدام المستخدم `play`.
+
+يمكنك معرفة المزيد عن ClickPy في [مستودعه على GitHub](https://github.com/ClickHouse/clickpy).
+
+<div id="querying-the-clickpy-clickhouse-service">
+  ## الاستعلام عن خدمة ClickHouse الخاصة بـ ClickPy
+</div>
+
+لنستورد chDB:
+
+```python
+import chdb
+```
+
+سنستعلم من ClickPy باستخدام الدالة `remoteSecure`.
+تتطلب هذه الدالة، كحد أدنى، اسم المضيف واسم الجدول واسم المستخدم.
+
+يمكننا كتابة الاستعلام التالي لإرجاع عدد التنزيلات اليومية لحزمة [`openai`](https://clickpy.clickhouse.com/dashboard/openai) بصيغة Pandas DataFrame:
+
+```python
+query = """
+SELECT
+    toStartOfDay(date)::Date32 AS x,
+    sum(count) AS y
+FROM remoteSecure(
+  'clickpy-clickhouse.clickhouse.com', 
+  'pypi.pypi_downloads_per_day', 
+  'play'
+)
+WHERE project = 'openai'
+GROUP BY x
+ORDER BY x ASC
+"""
+
+openai_df = chdb.query(query, "DataFrame")
+openai_df.sort_values(by=["x"], ascending=False).head(n=10)
+```
+
+```text
+               x        y
+2392  2024-10-02  1793502
+2391  2024-10-01  1924901
+2390  2024-09-30  1749045
+2389  2024-09-29  1177131
+2388  2024-09-28  1157323
+2387  2024-09-27  1688094
+2386  2024-09-26  1862712
+2385  2024-09-25  2032923
+2384  2024-09-24  1901965
+2383  2024-09-23  1777554
+```
+
+والآن لنفعل الأمر نفسه لاسترجاع تنزيلات [`scikit-learn`](https://clickpy.clickhouse.com/dashboard/scikit-learn):
+
+```python
+query = """
+SELECT
+    toStartOfDay(date)::Date32 AS x,
+    sum(count) AS y
+FROM remoteSecure(
+  'clickpy-clickhouse.clickhouse.com', 
+  'pypi.pypi_downloads_per_day', 
+  'play'
+)
+WHERE project = 'scikit-learn'
+GROUP BY x
+ORDER BY x ASC
+"""
+
+sklearn_df = chdb.query(query, "DataFrame")
+sklearn_df.sort_values(by=["x"], ascending=False).head(n=10)
+```
+
+```text
+               x        y
+2392  2024-10-02  1793502
+2391  2024-10-01  1924901
+2390  2024-09-30  1749045
+2389  2024-09-29  1177131
+2388  2024-09-28  1157323
+2387  2024-09-27  1688094
+2386  2024-09-26  1862712
+2385  2024-09-25  2032923
+2384  2024-09-24  1901965
+2383  2024-09-23  1777554
+```
+
+<div id="merging-pandas-dataframes">
+  ## دمج Pandas DataFrames
+</div>
+
+لدينا الآن DataFrameان، ويمكننا دمجهما معًا استنادًا إلى التاريخ (أي العمود `x`) كما يلي:
+
+```python
+df = openai_df.merge(
+  sklearn_df, 
+  on="x", 
+  suffixes=("_openai", "_sklearn")
+)
+df.head(n=5)
+```
+
+```text
+            x  y_openai  y_sklearn
+0  2018-02-26        83      33971
+1  2018-02-27        31      25211
+2  2018-02-28         8      26023
+3  2018-03-01         8      20912
+4  2018-03-02         5      23842
+```
+
+يمكننا بعد ذلك احتساب نسبة تنزيلات Open AI إلى تنزيلات `scikit-learn` كما يلي:
+
+```python
+df['ratio'] = df['y_openai'] / df['y_sklearn']
+df.head(n=5)
+```
+
+```text
+            x  y_openai  y_sklearn     ratio
+0  2018-02-26        83      33971  0.002443
+1  2018-02-27        31      25211  0.001230
+2  2018-02-28         8      26023  0.000307
+3  2018-03-01         8      20912  0.000383
+4  2018-03-02         5      23842  0.000210
+```
+
+<div id="querying-pandas-dataframes">
+  ## الاستعلام عن Pandas DataFrames
+</div>
+
+بعد ذلك، لنفترض أننا نريد العثور على التواريخ ذات أفضل وأسوأ النسب.
+يمكننا العودة إلى chDB وحساب هذه القيم:
+
+```python
+chdb.query("""
+SELECT max(ratio) AS bestRatio,
+       argMax(x, ratio) AS bestDate,
+       min(ratio) AS worstRatio,
+       argMin(x, ratio) AS worstDate
+FROM Python(df)
+""", "DataFrame")
+```
+
+```text
+   bestRatio    bestDate  worstRatio   worstDate
+0   0.693855  2024-09-19    0.000003  2020-02-09
+```
+
+إذا أردت معرفة المزيد حول الاستعلام عن Pandas DataFrames، فراجع [دليل المطور الخاص بـ Pandas DataFrames](/ar/chdb/guides/querying-pandas).

@@ -1,19 +1,19 @@
 ---
 slug: /cloud/managed-postgres
-title: 'Managed Postgres'
+title: 'ClickHouse Managed Postgres'
 description: 'Postgres سريع وقابل للتوسع بمستوى المؤسسات، ومدعوم بـ تخزين NVMe مع تكامل ClickHouse أصلي للتحليلات في الوقت الفعلي'
 keywords: ['Managed Postgres', 'PostgreSQL', 'قاعدة بيانات سحابية', 'خدمة Postgres', 'Postgres مع NVMe', 'تكامل ClickHouse']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
 
 ClickHouse Managed Postgres هي خدمة Postgres مُدارة على مستوى المؤسسات، ومصممة للأداء وقابلية التوسع. وبالاستناد إلى تخزين NVMe المتواجد فعليًا إلى جانب موارد المعالجة، توفّر أداءً أسرع بما يصل إلى 10 أضعاف لأعباء العمل المقيّدة بأداء القرص مقارنةً بالبدائل التي تستخدم التخزين المتصل بالشبكة مثل EBS.
 
-وقد طُوّرت بالشراكة مع [Ubicloud](https://www.ubicloud.com/)، إذ يمتلك فريقها المؤسس سجلًا حافلًا في تقديم Postgres عالمي المستوى في Citus Data وHeroku وMicrosoft. ويعالج Managed Postgres تحديات الأداء التي تواجهها التطبيقات سريعة النمو عادةً، مثل بطء إدخال البيانات والتحديثات، وبطء عمليات VACUUM، وارتفاع زمن الاستجابة عند الذيل، وارتفاعات WAL المفاجئة الناتجة عن محدودية IOPS الخاصة بالقرص.
+وقد طُوّرت بالشراكة مع [Ubicloud](https://www.ubicloud.com/)، إذ يمتلك فريقها المؤسس سجلًا حافلًا في تقديم Postgres عالمي المستوى في Citus Data وHeroku وMicrosoft. ويعالج ClickHouse Managed Postgres تحديات الأداء التي تواجهها التطبيقات سريعة النمو عادةً، مثل بطء إدخال البيانات والتحديثات، وبطء عمليات VACUUM، وارتفاع زمن الاستجابة عند الذيل، وارتفاعات WAL المفاجئة الناتجة عن محدودية IOPS الخاصة بالقرص.
 
 {/* TODO: مخطط معمارية يوضّح التكامل بين Postgres وClickHouse
     المسار: /images/cloud/managed-postgres/architecture-overview.png */}
@@ -24,7 +24,7 @@ ClickHouse Managed Postgres هي خدمة Postgres مُدارة على مستو�
 
 تستخدم معظم خدمات Postgres المُدارة وحدات تخزين متصلة بالشبكة مثل Amazon EBS، ما يتطلب انتقالًا ذهابًا وإيابًا عبر الشبكة مع كل عملية وصول إلى القرص. ويؤدي ذلك إلى زيادة زمن الاستجابة إلى مستوى المللي ثانية ويحدّ من IOPS، مما يسبب اختناقات في أحمال العمل كثيفة الكتابة أو كثيفة الإدخال/الإخراج.
 
-يستخدم Managed Postgres تخزين NVMe المتصل فعليًا بالخادم نفسه الذي توجد عليه قاعدة بياناتك. ويوفر هذا الاختلاف المعماري ما يلي:
+يستخدم ClickHouse Managed Postgres تخزين NVMe المتصل فعليًا بالخادم نفسه الذي توجد عليه قاعدة بياناتك. ويوفر هذا الاختلاف المعماري ما يلي:
 
 * **زمن استجابة للقرص على مستوى الميكروثانية** بدلًا من المللي ثانية
 * **حدود IOPS مستدامة أعلى بمقدار 10x**<sup>*</sup> من دون اختناقات الشبكة
@@ -42,7 +42,7 @@ ClickHouse Managed Postgres هي خدمة Postgres مُدارة على مستو�
   ## تكامل ClickHouse الأصلي
 </div>
 
-يوفّر Managed Postgres تكاملًا أصليًا مع ClickHouse، ليجمع بين المعاملات والتحليلات من دون عمليات ETL معقدة.
+يوفّر ClickHouse Managed Postgres تكاملًا أصليًا مع ClickHouse، ليجمع بين المعاملات والتحليلات من دون عمليات ETL معقدة.
 
 <div id="postgres-replication">
   ### النسخ المتماثل من Postgres إلى ClickHouse
@@ -54,7 +54,7 @@ ClickHouse Managed Postgres هي خدمة Postgres مُدارة على مستو�
   ### pg_clickhouse: طبقة استعلام موحّدة
 </div>
 
-يأتي كل مثيل من Managed Postgres مزوّدًا بامتداد [`pg_clickhouse`](https://github.com/ClickHouse/pg_clickhouse)، والذي يتيح لك الاستعلام من ClickHouse مباشرةً عبر Postgres. ويمكن لتطبيقك استخدام Postgres كطبقة استعلام موحّدة لكلٍّ من المعاملات والتحليلات، من دون الحاجة إلى الاتصال بعدة قواعد بيانات.
+يأتي كل مثيل من ClickHouse Managed Postgres مزوّدًا بامتداد [`pg_clickhouse`](https://github.com/ClickHouse/pg_clickhouse)، والذي يتيح لك الاستعلام من ClickHouse مباشرةً عبر Postgres. ويمكن لتطبيقك استخدام Postgres كطبقة استعلام موحّدة لكلٍّ من المعاملات والتحليلات، من دون الحاجة إلى الاتصال بعدة قواعد بيانات.
 
 يوفّر الامتداد تمريرًا شاملاً للاستعلامات إلى ClickHouse لتنفيذها بكفاءة، بما في ذلك دعم عوامل التصفية، وعمليات الربط، وأشباه الربط، والتجميعات، والدوال. حاليًا، يُمرَّر 14 استعلامًا من أصل 22 من استعلامات TPC-H بالكامل، ما يحقق تحسينات في الأداء تتجاوز 60X مقارنةً بتشغيل الاستعلامات نفسها في Postgres القياسي.
 
@@ -62,7 +62,7 @@ ClickHouse Managed Postgres هي خدمة Postgres مُدارة على مستو�
   ## موثوقية بمستوى المؤسسات
 </div>
 
-يوفّر Managed Postgres ميزات الموثوقية والأمان اللازمة لأحمال العمل في بيئة الإنتاج.
+يوفّر ClickHouse Managed Postgres ميزات الموثوقية والأمان اللازمة لأحمال العمل في بيئة الإنتاج.
 
 <div id="high-availability">
   ### التوافر العالي
@@ -80,7 +80,7 @@ ClickHouse Managed Postgres هي خدمة Postgres مُدارة على مستو�
   ### الأمان والامتثال
 </div>
 
-تم تصميم Managed Postgres ليلبّي معايير الأمان نفسها المعتمدة في ClickHouse Cloud:
+تم تصميم ClickHouse Managed Postgres ليلبّي معايير الأمان نفسها المعتمدة في ClickHouse Cloud:
 
 * **المصادقة**: دعم SAML/SSO
 * **أمان الشبكة**: قائمة سماح لعناوين IP، وتشفير البيانات المخزنة وأثناء النقل (TLS 1.3)

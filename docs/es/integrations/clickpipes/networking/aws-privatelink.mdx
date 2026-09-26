@@ -1,0 +1,399 @@
+---
+sidebarTitle: 'AWS PrivateLink'
+icon: 'aws'
+description: 'Establezca una conexión segura entre ClickPipes y una fuente de datos mediante AWS PrivateLink.'
+slug: /integrations/clickpipes/networking/aws-privatelink
+title: 'AWS PrivateLink'
+doc_type: 'guide'
+keywords: ['aws privatelink', 'seguridad de ClickPipes', 'endpoint de VPC', 'conectividad privada', 'recurso de VPC']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+Puede usar [AWS PrivateLink](https://aws.amazon.com/privatelink/) para establecer una conexión segura entre ClickPipes y una fuente de datos alojada en AWS. ClickPipes crea un **endpoint privado inverso (RPE)** en su VPC y lo conecta a un servicio de endpoint privado publicado para la fuente de datos, de modo que el tráfico nunca queda expuesto a Internet público.
+
+<Note>
+  Consulte las [regiones de AWS compatibles](#aws-privatelink-regions) antes de comenzar.
+</Note>
+
+<div id="supported-sources">
+  ## Fuentes de datos compatibles con ClickPipes
+</div>
+
+La funcionalidad de endpoint privado inverso de ClickPipes se limita a los siguientes
+tipos de fuentes de datos:
+
+* Kafka
+* Postgres
+* MySQL
+* MongoDB
+
+<Note>
+  En el caso de Kafka, se puede acceder a un [registro de esquemas compatible con Confluent](/es/integrations/clickpipes/kafka/schema-registries#confluent-compatible-registries) a través del mismo endpoint privado inverso que los brókeres; no es necesario que sea accesible públicamente, siempre que su nombre del host se resuelva en las direcciones IP privadas del endpoint.
+</Note>
+
+<div id="aws-privatelink-endpoint-types">
+  ## Tipos de endpoints de AWS PrivateLink compatibles
+</div>
+
+El endpoint privado inverso de ClickPipes se puede configurar mediante uno de los siguientes enfoques de AWS PrivateLink:
+
+* [Recurso de VPC](#vpc-resource)
+* [Conectividad multi-VPC de MSK para ClickPipe de MSK](#msk-multi-vpc)
+* [Servicio de endpoint de VPC](#vpc-endpoint-service)
+
+<div id="vpc-resource">
+  ### Recurso de VPC
+</div>
+
+<Info>
+  No se admite el acceso entre regiones.
+</Info>
+
+Puede acceder a sus recursos de VPC en ClickPipes mediante [PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-access-resources.html). Este enfoque no requiere configurar un balanceador de carga delante de la fuente de datos.
+
+La configuración de recursos puede dirigirse a un host específico o al ARN de un clúster de RDS.
+
+Es la opción preferida para ingerir datos de Postgres CDC desde un clúster de RDS.
+
+Para configurar PrivateLink con un recurso de VPC:
+
+1. Cree una puerta de enlace de recursos
+2. Cree una configuración de recursos
+3. Cree un recurso compartido
+
+<Steps>
+  <Step title="Crear un gateway de recursos" id="create-resource-gateway">
+    La gateway de recursos es el punto que recibe tráfico para los recursos especificados en su VPC.
+
+    <Note>
+      Se recomienda que las subredes asociadas a la gateway de recursos dispongan de suficientes direcciones IP.
+      Se recomienda una máscara de subred de al menos `/26` para cada subred.
+
+      Para cada endpoint de VPC (cada Reverse Private Endpoint), AWS requiere un bloque contiguo de 16 direcciones IP por subred (máscara de subred `/28`).
+      Si no se cumple este requisito, Reverse Private Endpoint pasará al estado Failed.
+    </Note>
+
+    Puede crear una gateway de recursos desde la [consola de AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/create-resource-gateway.html) o con el siguiente comando:
+
+    ```bash
+    aws vpc-lattice create-resource-gateway \
+        --vpc-identifier <VPC_ID> \
+        --subnet-ids <SUBNET_IDS> \
+        --security-group-ids <SG_IDs> \
+        --name <RESOURCE_GATEWAY_NAME>
+    ```
+
+    La salida contendrá un ID del gateway de recursos, que necesitará en el siguiente paso.
+
+    Antes de continuar, deberá esperar a que el gateway de recursos alcance el estado `Active`. Puede comprobar su estado ejecutando el siguiente comando:
+
+    ```bash
+    aws vpc-lattice get-resource-gateway \
+        --resource-gateway-identifier <RESOURCE_GATEWAY_ID>
+    ```
+  </Step>
+
+  <Step title="Crear una configuración de recursos de VPC" id="create-resource-configuration">
+    La configuración de recursos se asocia a la gateway de recursos para que el recurso sea accesible.
+
+    Puede crear una configuración de recursos desde la [consola de AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/create-resource-configuration.html) o mediante el siguiente comando:
+
+    ```bash
+    aws vpc-lattice create-resource-configuration \
+        --resource-gateway-identifier <RESOURCE_GATEWAY_ID> \
+        --type <RESOURCE_CONFIGURATION_TYPE> \
+        --resource-configuration-definition <RESOURCE_CONFIGURATION_DEFINITION> \
+        --name <RESOURCE_CONFIGURATION_NAME>
+    ```
+
+    El [tipo de configuración de recurso](https://docs.aws.amazon.com/vpc-lattice/latest/ug/resource-configuration.html#resource-configuration-types) más sencillo consiste en una única Resource-Configuration. Puede configurarla directamente con el ARN o compartir una dirección IP o un nombre de dominio que pueda resolverse públicamente.
+
+    Por ejemplo, para configurar una Resource-Configuration con el ARN de un clúster de RDS:
+
+    ```bash
+    aws vpc-lattice create-resource-configuration \
+        --name my-rds-cluster-config \
+        --type ARN \
+        --resource-gateway-identifier rgw-0bba03f3d56060135 \
+        --resource-configuration-definition 'arnResource={arn=arn:aws:rds:us-east-1:123456789012:cluster:my-rds-cluster}'
+    ```
+
+    <Note>
+      No puede crear una configuración de recurso para un clúster de acceso público.
+      Si su clúster es de acceso público, debe modificarlo
+      para que sea privado antes de crear la configuración de recurso
+      o usar la [lista de IP permitidas](/es/integrations/clickpipes/networking/static-ips).
+      Para obtener más información, consulte la [documentación de AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/resource-configuration.html#resource-definition).
+    </Note>
+
+    La salida incluirá un ARN de configuración de recurso, que necesitará para el siguiente paso. También incluirá un ID de configuración de recurso, que necesitará para configurar una conexión de ClickPipe con un recurso de VPC.
+  </Step>
+
+  <Step title="Crear un recurso compartido" id="create-resource-share">
+    Para compartir tu recurso, necesitas un Resource-Share. Esto se realiza mediante Resource Access Manager (RAM).
+
+    <Note>
+      Un Resource-Share solo se puede usar para un único Reverse Private Endpoint y no se puede reutilizar.
+      Si necesitas usar la misma Resource-Configuration para varios Reverse Private Endpoints,
+      debes crear un Resource-Share independiente para cada endpoint.
+      El Resource-Share permanece en tu cuenta de AWS después de eliminar un Reverse Private Endpoint
+      y debes eliminarlo manualmente si ya no lo necesitas.
+    </Note>
+
+    Puedes añadir la Resource-Configuration al Resource-Share mediante la [consola de AWS](https://docs.aws.amazon.com/ram/latest/userguide/working-with-sharing-create.html) o ejecutando el siguiente comando con el ID de cuenta de ClickPipes `072088201116` (arn:aws:iam::072088201116:root):
+
+    ```bash
+    aws ram create-resource-share \
+        --principals 072088201116 \
+        --resource-arns <RESOURCE_CONFIGURATION_ARN> \
+        --name <RESOURCE_SHARE_NAME>
+    ```
+
+    La salida contendrá un ARN de Resource-Share, que necesitará para configurar una conexión de ClickPipe con un recurso de VPC.
+
+    Ya puede [crear un ClickPipe con un endpoint privado inverso](#creating-clickpipe) mediante un recurso de VPC. Deberá:
+
+    * Establecer `VPC endpoint type` en `VPC Resource`.
+    * Establecer `Resource configuration ID` en el ID de la Resource-Configuration creada en el paso 2.
+    * Establecer `Resource share ARN` en el ARN del Resource-Share creado en el paso 3.
+
+    Para obtener más información sobre PrivateLink con recursos de VPC, consulte la [documentación de AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-access-resources.html).
+  </Step>
+</Steps>
+
+<div id="msk-multi-vpc">
+  ### Conectividad multi-VPC de MSK
+</div>
+
+La [conectividad multi-VPC](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html) es una funcionalidad integrada de AWS MSK que permite conectar varias VPC a un único clúster de MSK.
+La compatibilidad con DNS privado está disponible de forma predeterminada y no requiere configuración adicional.
+No se admite la conectividad entre regiones.
+
+Es una opción recomendada para ClickPipes para MSK.
+Consulta la guía de [introducción](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html) para obtener más información.
+
+<Info>
+  ClickPipes es propietario de la VPC del cliente y crea la conexión de VPC administrada. Para establecer la conexión de red, habilita la conectividad privada multi-VPC en tu clúster de MSK y autoriza la cuenta de AWS de ClickPipes en la política del clúster.
+  Consulta la guía de AWS para [asociar una política de clúster](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html) para obtener más información.
+</Info>
+
+Sigue nuestra [guía de configuración de MSK para ClickPipes](/es/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes) para saber cómo configurar la conexión.
+
+<div id="vpc-endpoint-service">
+  ### Servicio de endpoint de VPC
+</div>
+
+El [servicio de endpoint de VPC](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) es otra forma de compartir tu fuente de datos con ClickPipes.
+Requiere configurar un NLB (Network Load Balancer) delante de la fuente de datos
+y configurar el servicio de endpoint de VPC para que use el NLB.
+
+El servicio de endpoint de VPC puede [configurarse con DNS privado](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html), que será accesible desde una VPC de ClickPipes.
+El DNS privado administrado por AWS PrivateLink no siempre es una opción viable:
+
+* no eres propietario del nombre de dominio de tu fuente de datos, por lo que no puedes verificarlo con AWS
+* el proveedor exige que los consumidores administren la resolución de DNS, como ocurre con Confluent Cloud
+  En estos casos, consulta [DNS privado personalizado](#custom-private-dns).
+
+Es la opción recomendada para:
+
+* Cualquier configuración de Kafka on-premise que requiera compatibilidad con DNS privado
+* [Conectividad privada de Confluent Cloud](/es/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes)
+* [Conectividad entre regiones para Postgres CDC](/es/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
+* [Conectividad entre regiones para clústeres de MSK](/es/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
+
+Consulta la guía de [primeros pasos](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) para obtener más información.
+
+<Info>
+  Agrega el ID de cuenta de ClickPipes `072088201116` a los principales permitidos de tu servicio de endpoint de VPC.
+  Consulta la guía de AWS sobre [administración de permisos](https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html#add-remove-permissions) para obtener más información.
+</Info>
+
+<Info>
+  El [acceso entre regiones](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)
+  puede configurarse para ClickPipes. Agrega [tu región de ClickPipe](#aws-privatelink-regions) a las regiones autorizadas de tu servicio de endpoint de VPC.
+</Info>
+
+Para los clústeres de MSK, consulta [servicio de endpoint de VPC de AWS PrivateLink para un clúster de MSK](/es/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
+para obtener una configuración de un broker por servicio de endpoint que utiliza nombres de DNS privados personalizados.
+
+<div id="custom-private-dns">
+  ## DNS privado personalizado
+</div>
+
+<PrivatePreviewBadge />
+
+<Info>
+  El DNS privado personalizado se encuentra en **vista previa privada**. Ponte en contacto con el [equipo de soporte de ClickHouse](https://clickhouse.com/support/program) para habilitarlo en tu servicio.
+</Info>
+
+AWS PrivateLink proporciona [DNS privado administrado](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html)
+para servicios de endpoint de VPC con un dominio verificado. Algunos servicios requieren que cada consumidor administre la resolución de DNS en su propia VPC; por ejemplo, Confluent Cloud requiere que los consumidores resuelvan los nombres de los hosts de los brókeres en el endpoint de PrivateLink.
+
+En estos casos, ClickPipes permite asociar nombres de DNS privado personalizados a un endpoint privado
+inverso. ClickPipes resuelve estos nombres en las direcciones privadas del endpoint, de modo que se puede acceder a tu fuente de datos
+mediante su propio nombre del host a través de conectividad privada.
+
+El DNS privado personalizado complementa el DNS privado administrado; no lo sustituye. Si tu
+servicio de PrivateLink ya proporciona nombres de DNS privado, no necesitas nombres personalizados.
+
+Los nombres de DNS privado personalizados se admiten para los tipos de endpoint [servicio de endpoint de VPC](#vpc-endpoint-service)
+y [recurso de VPC](#vpc-resource). MSK multi-VPC proporciona DNS privado administrado
+de forma predeterminada y no admite nombres personalizados.
+
+<Note>
+  Actualmente, la consola de ClickHouse Cloud admite un nombre de DNS privado personalizado por endpoint privado inverso.
+  Si necesitas administrar varios nombres de DNS privado personalizados en el mismo endpoint, usa OpenAPI o Terraform.
+</Note>
+
+Se aplican las siguientes reglas a los nombres de DNS privado personalizados:
+
+* Se admiten nombres exactos (`kafka.internal.example.com`) y nombres comodín (`*.example.com`).
+  Un comodín coincide con una sola etiqueta de DNS; por ejemplo,
+  `*.abcde12345.us-east-1.aws.confluent.cloud` coincide con
+  `b0-lkc123.abcde12345.us-east-1.aws.confluent.cloud`.
+* Los nombres deben ser únicos en todos los endpoints privados inversos de un servicio de ClickHouse,
+  incluidos los solapamientos entre nombres comodín y nombres exactos.
+* Se rechazan los nombres con sufijos reservados (por ejemplo, `local`, `localhost`, `internal`, `corp`,
+  `private`).
+
+Para configurar nombres de DNS privado personalizados:
+
+* En la consola de ClickHouse Cloud, rellena el campo `Custom private DNS name` al
+  [crear un endpoint privado inverso](#creating-clickpipe). El campo aparece una vez que la
+  funcionalidad está habilitada en tu servicio.
+* Con [OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger), establece
+  `customPrivateDnsMappings` al crear un endpoint privado inverso o actualiza uno existente
+  mediante una solicitud `PATCH`. Las actualizaciones reemplazan la lista completa de asignaciones; una lista vacía
+  elimina todos los nombres personalizados.
+* Con Terraform, usa el recurso
+  [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns)
+  para administrar asignaciones en un endpoint privado inverso existente.
+
+<div id="creating-clickpipe">
+  ## Crear un ClickPipe con un endpoint privado inverso
+</div>
+
+1. Acceda a SQL Console de su servicio de ClickHouse Cloud.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Servicio de ClickPipes" size="md" border />
+
+2. Seleccione el botón `fuente de datos` en el menú lateral izquierdo y haga clic en &quot;Configurar un ClickPipe&quot;.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
+
+3. Seleccione Kafka o Postgres como fuente de datos.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="Seleccionar fuente de datos" size="lg" border />
+
+4. Seleccione la opción `Reverse private endpoint`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="Seleccionar endpoint privado inverso" size="lg" border />
+
+5. Seleccione uno de los endpoints privados inversos existentes o cree uno nuevo.
+
+<Info>
+  Si necesita acceso entre regiones para RDS, debe crear un servicio de endpoint de VPC, y
+  [esta guía](/es/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) ofrece un buen punto de partida para configurarlo.
+
+  Para el acceso dentro de la misma región, se recomienda crear un recurso de VPC.
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="Seleccionar endpoint privado inverso" size="lg" border />
+
+6. Proporcione los parámetros necesarios para el tipo de endpoint seleccionado.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="Seleccionar endpoint privado inverso" size="lg" border />
+
+* Para un recurso de VPC, proporcione el ARN del recurso compartido de configuración y el ID de configuración.
+  * Para MSK multi-VPC, proporcione el ARN del cluster y el método de autenticación utilizado con un endpoint creado.
+  * Para un servicio de endpoint de VPC, proporcione el nombre del servicio.
+  * De forma opcional, proporcione un [nombre DNS privado personalizado](#custom-private-dns).
+
+7. Haga clic en `Create` y espere a que el endpoint privado inverso esté listo.
+
+   Si está creando un endpoint nuevo, la configuración tardará un tiempo.
+   La página se actualizará automáticamente cuando el endpoint esté listo.
+   Es posible que el servicio de endpoint de VPC requiera que acepte la solicitud de conexión en la consola de AWS.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="Seleccionar endpoint privado inverso" size="lg" border />
+
+8. Cuando el endpoint esté listo, podrá usar un nombre DNS para conectarse a la fuente de datos.
+
+   En la lista de endpoints, puede consultar el nombre DNS del endpoint disponible.
+   Puede ser un nombre DNS aprovisionado internamente por ClickPipes, un nombre DNS privado proporcionado por un servicio PrivateLink
+   o un [nombre DNS privado personalizado](#custom-private-dns).
+   El nombre DNS no es una dirección de red completa.
+   Añada el puerto correspondiente según la fuente de datos.
+
+   Puede consultar la cadena de conexión de MSK en la consola de AWS.
+
+   Para ver la lista completa de nombres DNS, acceda a la configuración del servicio Cloud.
+
+<div id="managing-rpes">
+  ## Administración de endpoints privados inversos
+</div>
+
+Puede administrar los endpoints privados inversos existentes en la configuración del servicio de ClickHouse Cloud:
+
+1. En la barra lateral, busque el botón `Settings` y haga clic en él.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="Configuración de ClickHouse Cloud" size="lg" border />
+
+2. Haga clic en `Reverse private endpoints` en la sección `ClickPipe reverse private endpoints`.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="Configuración de ClickHouse Cloud" size="md" border />
+
+   La información detallada del endpoint privado inverso se muestra en el panel lateral.
+
+   No se puede editar un endpoint después de crearlo. Puede eliminarlo haciendo clic en la `×` del endpoint y confirmando la acción; la eliminación es permanente e interrumpe cualquier ClickPipe que esté utilizando ese endpoint.
+
+<div id="aws-privatelink-regions">
+  ## Regiones de AWS compatibles
+</div>
+
+La compatibilidad de AWS PrivateLink con ClickPipes se limita a determinadas regiones de AWS.
+Consulte la [lista de regiones de ClickPipes](/es/integrations/clickpipes/networking/static-ips) para conocer las regiones disponibles.
+
+Esta restricción no se aplica a un servicio de endpoint de VPC de PrivateLink con conectividad entre regiones habilitada.
+
+<div id="limitations">
+  ## Limitaciones
+</div>
+
+No se garantiza que los endpoints de AWS PrivateLink para ClickPipes creados en ClickHouse Cloud se creen
+en la misma región de AWS que el servicio de ClickHouse Cloud.
+
+Actualmente, solo el servicio de endpoint de VPC admite
+conectividad entre regiones.
+
+Los endpoints privados están vinculados a un servicio de ClickHouse específico y no se pueden transferir entre servicios.
+Varios ClickPipes de un mismo servicio de ClickHouse pueden reutilizar el mismo endpoint.
+
+AWS MSK admite solo un PrivateLink (endpoint de VPC) por clúster de MSK y tipo de autenticación (SASL&#95;IAM o SASL&#95;SCRAM). Como resultado, varios servicios u organizaciones de ClickHouse Cloud no pueden crear conexiones de PrivateLink independientes con el mismo clúster de MSK mediante el mismo tipo de autenticación.
+
+<div id="automatic-cleanup">
+  ### Limpieza automática de endpoints inactivos
+</div>
+
+Los endpoints privados inversos que permanecen en un estado terminal se eliminan automáticamente tras un período de gracia definido.
+Esto garantiza que los endpoints no utilizados o mal configurados no persistan indefinidamente.
+
+Se aplican los siguientes períodos de gracia según el estado del endpoint:
+
+| Estado                      | Período de gracia | Descripción                                                          |
+| --------------------------- | ----------------- | -------------------------------------------------------------------- |
+| **Failed**                  | 7 días            | El endpoint encontró un error durante el aprovisionamiento.          |
+| **Pendiente de aceptación** | 1 día             | El propietario del servicio no ha aceptado la conexión del endpoint. |
+| **Rechazado**               | 1 día             | El propietario del servicio rechazó la conexión del endpoint.        |
+| **Expirado**                | Inmediato         | El endpoint ya ha expirado y se elimina de inmediato.                |
+
+Una vez transcurrido el período de gracia, el endpoint y todos los recursos asociados se eliminan automáticamente.
+
+Para evitar la eliminación automática, resuelva el problema subyacente antes de que expire el período de gracia.
+Por ejemplo, acepte una solicitud de conexión pendiente en la consola de AWS
+o vuelva a crear el endpoint si ha pasado al estado Failed.

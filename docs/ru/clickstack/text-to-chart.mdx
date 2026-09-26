@@ -61,23 +61,17 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </div>
 
 <Steps>
-  <Step>
-    ### Перейдите в Chart Explorer
-
+  <Step title="Перейдите в Chart Explorer" id="navigate-chart-explorer">
     В левом меню HyperDX выберите **Chart Explorer**.
   </Step>
 
-  <Step>
-    ### Выберите источник данных
-
+  <Step title="Выберите источник данных" id="select-data-source">
     Выберите источник данных, который хотите визуализировать, — например, **журналы**, **Traces** или **Metrics**.
 
-    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart Explorer" />
+    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart explorer" />
   </Step>
 
-  <Step>
-    ### Введите текстовый промпт
-
+  <Step title="Введите текстовый промпт" id="enter-text-prompt">
     В верхней части страницы Chart Explorer найдите поле ввода **AI Assistant**. Введите на естественном языке описание диаграммы, которую хотите создать. Например:
 
     * `Show error rates by service over the last 24 hours`
@@ -140,7 +134,7 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
   ## Дополнительные материалы
 </div>
 
-* [От текста к графикам: более быстрый способ создавать визуализации в ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — пост в блоге, представляющий эту возможность
-* [Панели мониторинга и визуализации](/ru/clickstack/features/dashboards/overview) — ручное создание графиков с помощью Chart Explorer
-* [Поиск](/ru/clickstack/features/search) — синтаксис полнотекстового поиска и поиска по свойствам
+* [От текста к диаграммам: более быстрый способ визуализации в ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — пост в блоге, представляющий эту возможность
+* [Панели мониторинга и визуализации](/ru/clickstack/features/dashboards/overview) — создание диаграмм вручную с помощью Chart Explorer
+* [Search](/ru/clickstack/features/search) — полнотекстовый поиск и синтаксис поиска по свойствам
 * [Конфигурация](/ru/clickstack/managing/config) — все переменные окружения ClickStack

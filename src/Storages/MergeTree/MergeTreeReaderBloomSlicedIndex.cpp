@@ -47,22 +47,20 @@ MergeTreeReaderBloomSlicedIndex::MergeTreeReaderBloomSlicedIndex(
 
 size_t MergeTreeReaderBloomSlicedIndex::readRows(
     size_t from_mark,
-    size_t /*current_task_last_mark*/,
     bool continue_reading,
     size_t max_rows_to_read,
-    size_t rows_offset,
-    Columns & res_columns)
+    MutableColumns & res_columns)
 {
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
 
     size_t from_row = 0;
     if (continue_reading)
     {
-        from_row = current_row + rows_offset;
+        from_row = current_row;
     }
     else
     {
-        from_row = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
+        from_row = index_granularity.getMarkStartingRow(from_mark);
         current_mark = from_mark;
     }
 
@@ -83,16 +81,12 @@ size_t MergeTreeReaderBloomSlicedIndex::readRows(
         if (!res_columns[i])
             res_columns[i] = columns_to_read[i].type->createColumn(*serializations[i]);
 
-        auto mutable_column = IColumn::mutate(std::move(res_columns[i]));
-        auto & data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
+        auto & data = assert_cast<ColumnUInt8 &>(*res_columns[i]).getData();
         const size_t old_size = data.size();
         data.resize(old_size + max_rows_to_read);
 
         if (max_rows_to_read == 0 || cached_bitmap_kinds.empty())
-        {
-            res_columns[i] = std::move(mutable_column);
             continue;
-        }
 
         if (cached_bitmap_kinds[i] == CachedBitmapKind::AllTrue)
         {
@@ -132,8 +126,6 @@ size_t MergeTreeReaderBloomSlicedIndex::readRows(
                 }
             }
         }
-
-        res_columns[i] = std::move(mutable_column);
     }
 
     current_row = from_row + max_rows_to_read;

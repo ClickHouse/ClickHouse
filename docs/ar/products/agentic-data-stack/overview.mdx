@@ -10,7 +10,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 أسهل طريقة لتشغيل التحليلات المعتمدة على الوكلاء على ClickHouse هي [ClickHouse Agents](/ar/products/cloud/features/ai-ml/agents) في ClickHouse Cloud: مُدار بالكامل، من دون الحاجة إلى تشغيل أي بنية تحتية. يطرح المستخدمون أسئلة بلغة طبيعية، ويجيب عنها وكيل ذكاء اصطناعي عبر الاستعلام من قاعدة البيانات مباشرةً.
 
-للاستضافة الذاتية، تُعد **Agentic Data Stack** حزمةً مفتوحة المصدر قابلة للتركيب. أنت تشغّلها بنفسك، وتربط نماذجك الخاصة، وتُبقي محادثاتك وبياناتك داخل بيئتك الخاصة. وهي تتكوّن من [ClickHouse](/ar/get-started/setup/install)، و[ClickHouse MCP server](/ar/products/agentic-data-stack/components/mcp-server)، و[LibreChat](/ar/products/agentic-data-stack/components/librechat)، و[Langfuse](/ar/products/agentic-data-stack/components/langfuse).
+للاستضافة الذاتية، تُعد **Agentic Data Stack** حزمةً مفتوحة المصدر قابلة للتركيب. أنت تشغّلها بنفسك، وتربط نماذجك الخاصة، وتُبقي محادثاتك وبياناتك داخل بيئتك الخاصة. وهي تتكوّن من [ClickHouse](/ar/get-started/setup/install)، و[خادم MCP في ClickHouse](/ar/products/agentic-data-stack/components/mcp-server)، و[LibreChat](/ar/products/agentic-data-stack/components/librechat)، و[Langfuse](/ar/products/agentic-data-stack/components/langfuse).
 
 <div id="what-is-agentic-analytics">
   ## ما المقصود بالتحليلات المعتمدة على الوكلاء؟
@@ -42,12 +42,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## المكوّنات
 </div>
 
-| المكوّن               | الدور                                                              | تعرّف على المزيد                                                 |
-| --------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------- |
-| ClickHouse            | المحرّك التحليلي الذي يوجّه إليه الوكيل الاستعلامات                | [ابدأ مع ClickHouse](/ar/get-started/setup/install)            |
+| المكوّن                | الدور                                                              | تعرّف على المزيد                                                  |
+| ---------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| ClickHouse             | المحرّك التحليلي الذي يوجّه إليه الوكيل الاستعلامات                | [ابدأ مع ClickHouse](/ar/get-started/setup/install)               |
 | خادم MCP في ClickHouse | المعيار المفتوح الذي يتيح للوكيل استخدام ClickHouse على شكل أدوات  | [خادم MCP](/ar/products/agentic-data-stack/components/mcp-server) |
-| LibreChat             | واجهة الدردشة والواجهة الأمامية للوكيل التي يتفاعل معها المستخدمون | [LibreChat](/ar/products/agentic-data-stack/components/librechat)   |
-| Langfuse              | observability لكل prompt واستدعاء أداة وكل استجابة                 | [Langfuse](/ar/products/agentic-data-stack/components/langfuse)     |
+| LibreChat              | واجهة الدردشة والواجهة الأمامية للوكيل التي يتفاعل معها المستخدمون | [LibreChat](/ar/products/agentic-data-stack/components/librechat) |
+| Langfuse               | observability لكل الموجّه واستدعاء أداة وكل استجابة                 | [Langfuse](/ar/products/agentic-data-stack/components/langfuse)   |
 
 <div id="get-started">
   ## البدء

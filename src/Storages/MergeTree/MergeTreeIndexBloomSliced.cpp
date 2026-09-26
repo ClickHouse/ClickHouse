@@ -1360,7 +1360,7 @@ void MergeTreeIndexGranuleBloomSliced::deserializeBinaryWithMultipleStreams(
     std::vector<bool> chunks_to_load(chunks.size(), state.readable_ranges == nullptr);
     if (state.readable_ranges)
     {
-        const auto & index_granularity = *state.part.index_granularity;
+        const auto & index_granularity = state.part_info.getIndexGranularity();
         for (const auto & range : *state.readable_ranges)
         {
             const UInt64 row_begin = index_granularity.getMarkStartingRow(range.begin);
@@ -2088,7 +2088,7 @@ MergeTreeIndexConditionBloomSliced::predicateFromFunctionNode(const RPNBuilderFu
     /// predicate, the index admits the row. Two regimes provide that guarantee:
     ///
     /// * No preprocessor, or a pure case fold: `lower`, `lowerUTF8`, `upper` or `upperUTF8`
-    ///   applied directly to the index column (`isLowerOrUpper`). Case folding maps characters in
+    ///   applied directly to the index column (`isASCIILowerOrUpper`). Case folding maps characters in
     ///   place: letters stay letters and token separators stay separators, so if a needle (or a
     ///   required substring of a LIKE pattern or regexp) occurs in a raw row, its case-folded
     ///   form occurs at the same position in the case-folded row and yields the same tokens. For
@@ -2130,7 +2130,7 @@ MergeTreeIndexConditionBloomSliced::predicateFromFunctionNode(const RPNBuilderFu
     /// case-fold preprocessor (checked per branch below): tombstones certify nothing about case
     /// variants of stored tokens, so without a case-folded dictionary the index cannot answer
     /// case-insensitive queries without false negatives, and such predicates fail open.
-    const bool lossy_preprocessor = preprocessor->hasActions() && !preprocessor->isLowerOrUpper();
+    const bool lossy_preprocessor = preprocessor->hasActions() && !preprocessor->isASCIILowerOrUpper();
 
     auto haystack = function_node.getArgumentAt(0);
     auto needle = function_node.getArgumentAt(1);
@@ -2164,7 +2164,7 @@ MergeTreeIndexConditionBloomSliced::predicateFromFunctionNode(const RPNBuilderFu
     }
     else if (function_name == "hasTokenCaseInsensitive")
     {
-        if (const_value.getType() != Field::Types::String || !preprocessor->isLowerOrUpper())
+        if (const_value.getType() != Field::Types::String || !preprocessor->isASCIILowerOrUpper())
             return std::nullopt;
 
         const auto & needle_value = const_value.safeGet<String>();
@@ -2181,7 +2181,7 @@ MergeTreeIndexConditionBloomSliced::predicateFromFunctionNode(const RPNBuilderFu
     }
     else if (function_name == "ilike")
     {
-        if (const_value.getType() != Field::Types::String || !preprocessor->isLowerOrUpper())
+        if (const_value.getType() != Field::Types::String || !preprocessor->isASCIILowerOrUpper())
             return std::nullopt;
         tokens = stringLikeToTokens(const_value, /*preprocess=*/true);
     }
@@ -2430,7 +2430,7 @@ MergeTreeIndexBloomSliced::MergeTreeIndexBloomSliced(
     /// A lossy (non-case-fold) preprocessor switches on the per-chunk tombstone Bloom filters,
     /// both when building parts and when deciding whether the serialized chunk metadata contains
     /// the tombstone section.
-    params.has_lossy_preprocessor = preprocessor->hasActions() && !preprocessor->isLowerOrUpper();
+    params.has_lossy_preprocessor = preprocessor->hasActions() && !preprocessor->isASCIILowerOrUpper();
 }
 
 MergeTreeIndexSubstreams MergeTreeIndexBloomSliced::getSubstreams() const
@@ -2441,11 +2441,11 @@ MergeTreeIndexSubstreams MergeTreeIndexBloomSliced::getSubstreams() const
     };
 }
 
-MergeTreeIndexFormat MergeTreeIndexBloomSliced::getDeserializedFormat(
-    const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix, const IDataPartStorage * storage) const
+MergeTreeIndexFormat MergeTreeIndexBloomSliced::getPhysicalFormat(
+    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & path_prefix) const
 {
-    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx", storage)
-        && indexFileExistsInChecksums(checksums, path_prefix + ".bsb", ".idx", storage))
+    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx", &storage)
+        && indexFileExistsInChecksums(checksums, path_prefix + ".bsb", ".idx", &storage))
     {
         return {CURRENT_BLOOM_SLICED_INDEX_VERSION, getSubstreams()};
     }
