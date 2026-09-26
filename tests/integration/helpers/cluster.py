@@ -5267,8 +5267,18 @@ class ClickHouseInstance:
         # and there is no other way to kill clickhouse properly (easily), since
         # clickhosue is spawned with --daemon, and it is not a child neither in
         # the same session.
-        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill tail; pkill clickhouse' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
-            self.clickhouse_start_command_in_daemon
+        #
+        # With per-module coverage the trap waits for the server to exit: otherwise this shell,
+        # and with it the container, exits right after the signal, the kernel kills the server
+        # in the middle of its shutdown, and the coverage it flushes at exit is lost. That was
+        # the whole coverage of every module whose `stay_alive` servers are only stopped by the
+        # cluster shutdown. `docker compose stop` still escalates after `stop_grace_period`.
+        # The watchdog renames itself, so `clickhouse` matches only the server.
+        wait_for_server = (
+            "; while pkill -0 clickhouse; do sleep 0.1; done" if PER_TEST_COVERAGE_DIR else ""
+        )
+        self.clickhouse_stay_alive_command = "bash -c \"trap 'pkill clickhouse{}; pkill tail' INT TERM; {}; coproc tail -f /dev/null; wait $$!\"".format(
+            wait_for_server, self.clickhouse_start_command_in_daemon
         )
 
         self.path = p.join(self.cluster.instances_dir, name)
