@@ -26,7 +26,7 @@ Used envs:
   SANITIZER='${SANITIZER}' - if any sanitizer is used, affects version string
   VERSION_STRING='${VERSION_STRING}' - the package version to overwrite
 
-./build-dir must link to the build directory, configured with -DSPLIT_DEBUG_SYMBOLS=ON
+./build-dir must link to the build directory, configured with -DSPLIT_DEBUG_SYMBOLS=ON -DBUILD_STANDALONE_KEEPER=1
 "
 
 CLICKHOUSE_VERSION_STRING=${VERSION_STRING}
