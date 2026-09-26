@@ -3,6 +3,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FlattenTupleForCSVHeader.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
@@ -99,6 +100,29 @@ void registerOutputFormatCSV(FormatFactory & factory)
         factory.markOutputFormatSupportsParallelFormatting(format_name);
         /// https://www.iana.org/assignments/media-types/text/csv
         factory.setContentType(format_name, String("text/csv; charset=UTF-8; header=") + (with_names ? "present" : "absent"));
+
+        /// The `*WithNames*` variants write the column names (and data type names) into the header
+        /// through `writeCSVString`, which quotes special characters but does not validate UTF-8, so a
+        /// name that is not valid UTF-8 (a quoted identifier or an `Enum` element with arbitrary bytes)
+        /// makes the output non-textual. When a Tuple column is flattened into separate columns the
+        /// header carries the dotted leaf names (see `getCSVHeaderNamesAndTypes`), so a non-UTF-8 Tuple
+        /// element name would slip past a top-level-only check; validate the actual flattened header
+        /// under the current settings. The field delimiter is written verbatim between the fields (a
+        /// single byte >= 0x80 is never valid UTF-8 on its own), and the row values are written through
+        /// the `CSV` serializations, which write the `CSV` `NULL` representation and the `Bool`
+        /// representations verbatim (see `settingsLiteralsMayProduceRawBytes`). All of this is knowable
+        /// from the header and the settings, so the text framings reject or base64-encode the output
+        /// accordingly.
+        factory.registerOutputFormatMayProduceRawBytesChecker(
+            format_name,
+            [with_names, with_types](const FormatSettings & settings, const Block & header)
+            {
+                const bool flatten = settings.csv.serialize_tuple_into_separate_columns
+                    && settings.csv.header_serialize_tuple_into_separate_columns;
+                return ((with_names || with_types) && csvHeaderNamesMayProduceRawBytes(header, flatten, with_names, with_types))
+                    || static_cast<unsigned char>(settings.csv.delimiter) >= 0x80
+                    || settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::CSV);
+            });
     };
 
     registerWithNamesAndTypes("CSV", register_func);

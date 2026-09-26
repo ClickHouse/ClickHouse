@@ -17,7 +17,4 @@ INSERT INTO t_float_pk_prune VALUES (toFloat64(toUInt64(-1)));
 SELECT count() FROM t_float_pk_prune WHERE x > toUInt64(-1);
 SELECT x FROM t_float_pk_prune WHERE x > toUInt64(-1);
 
--- Same with the old analyzer, which also goes through KeyCondition.
-SELECT count() FROM t_float_pk_prune WHERE x > toUInt64(-1) SETTINGS allow_experimental_analyzer = 0;
-
 DROP TABLE t_float_pk_prune;

@@ -2,6 +2,7 @@
 
 #include <string>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <filesystem>
 #include <variant>
@@ -24,8 +25,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Disks/WriteMode.h>
 
-#include <Processors/ISimpleTransform.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeObjectMetadata.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -274,6 +273,13 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const;
 
+    /// Whether `iterate` treats its argument as an arbitrary key prefix rather than as a directory path,
+    /// and honours `start_after`. A true object storage has no directories, so listing `pref` also returns
+    /// `prefix/a/b`; `LocalObjectStorage` instead walks a real directory tree and returns nothing unless
+    /// the argument names an existing directory, and `AzureObjectStorage` ignores `start_after`. Both are
+    /// silent, so a caller that splits one listing into several by key range must check this first.
+    virtual bool supportsPrefixListing() const { return false; }
+
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
     virtual ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
@@ -343,7 +349,9 @@ public:
     virtual void removeObjectIfExists(const StoredObject & object) = 0;
 
     /// Remove objects on path if exists
-    virtual void removeObjectsIfExist(const StoredObjects & object) = 0;
+    virtual void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & object,
+        StoredObjects * successful_objects = nullptr) = 0;
 
     /// Copy object with different attributes if required
     virtual void copyObject( /// NOLINT
@@ -381,7 +389,8 @@ public:
 
         /// Force the client to be rebuilt even if the stored settings did not change. Used to re-resolve
         /// credentials under a different accessing context (e.g. re-applying the server-credential opt-in to a
-        /// server-internal table whose client was built restricted at metadata load) without detaching the table.
+        /// server-internal table whose client was built restricted at metadata load) without detaching the table,
+        /// and by the config reload of server disks, which rebuilds the client unconditionally.
         bool force_client_rebuild = false;
     };
     virtual void applyNewSettings(
@@ -406,8 +415,18 @@ public:
 
     virtual bool supportParallelWrite() const { return false; }
 
-    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
+    /// Whether a fetched `ObjectMetadata` is guaranteed to carry at least one comparable generation
+    /// token — a non-empty `etag`, a known size, or a known modification time — so that two fetches
+    /// of the same path can prove the object was not overwritten in between. Web origins may
+    /// legitimately omit all of them (no `ETag`, no `Content-Length`, no `Last-Modified`), so callers
+    /// that must reread the same generation of an object (e.g. lazy materialization) have to skip
+    /// such storages instead of failing close at read time.
+    virtual bool supportsObjectGenerationComparison() const { return true; }
 
+    void setIOSchedulingResourceNames(const String & read_resource_name_, const String & write_resource_name_);
+    std::pair<String, String> getIOSchedulingResourceNames() const;
+
+    virtual ReadSettings patchSettings(const ReadSettings & read_settings) const;
     virtual WriteSettings patchSettings(const WriteSettings & write_settings) const;
 
     virtual ObjectStorageKeyGeneratorPtr createKeyGenerator() const = 0;
@@ -418,7 +437,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
 
-    virtual const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const
+    /// Returns a snapshot: `applyNewSettings` may swap the parameters together with the client.
+    virtual std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
@@ -447,7 +467,11 @@ public:
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     /// Assign tag on objects
-    virtual void tagObjects(const StoredObjects &, const std::string &, const std::string &)
+    virtual void tagObjects( /// NOLINT
+        const StoredObjects &,
+        const std::string &,
+        const std::string &,
+        [[ maybe_unused ]] StoredObjects * successful_objects = nullptr)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The method 'tagObjects' is only implemented for S3 and Azure storages");
     }
@@ -456,6 +480,35 @@ public:
     /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
+
+    /// Creates a private copy of this object storage: same settings and an equivalent client, but
+    /// no shared mutable state, so `applyNewSettings` on the copy cannot affect the original.
+    /// Decorators (e.g. `CachedObjectStorage`) clone the wrapped storage and keep sharing the
+    /// immutable parts (the file cache object itself). Used by data-lake tables created on top of
+    /// a server disk (`SETTINGS disk = '...'`): the table works through a copy of the disk's
+    /// object storage, so per-table setting updates cannot corrupt the disk.
+    /// The only state shared with the copy on purpose is the IO scheduling resource names: they are a
+    /// property of the disk (see `DiskObjectStorage::propagateResourceNamesNoLock`) and change with
+    /// `CREATE RESOURCE` / `DROP RESOURCE`, so the copy keeps following the disk's resources.
+    ObjectStoragePtr clone() const;
+
+protected:
+    /// Creates the copy itself, see `clone`. The state of the base class is handled by `clone`.
+    virtual ObjectStoragePtr cloneImpl() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'clone' is not implemented for {}", getName());
+    }
+
+private:
+    /// Names of the workload scheduler resources for reads and writes. Set by the owning
+    /// `DiskObjectStorage`, shared with the copies created by `clone`.
+    struct IOSchedulingResourceNames
+    {
+        std::mutex mutex;
+        String read_resource_name;
+        String write_resource_name;
+    };
+    std::shared_ptr<IOSchedulingResourceNames> io_scheduling_resource_names = std::make_shared<IOSchedulingResourceNames>();
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;

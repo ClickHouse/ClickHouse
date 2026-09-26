@@ -1,4 +1,6 @@
 #include <Storages/System/StorageSystemPartsColumns.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
@@ -102,10 +104,20 @@ void StorageSystemPartsColumns::processNextStorage(
         String default_expression;
     };
 
+    QueryStatusPtr query_status = context->getProcessListElement();
+
     std::unordered_map<String, ColumnInfo> columns_info;
     auto metadata_snapshot = info.storage->getInMemoryMetadataPtr(context, false);
+    size_t metadata_column_number = 0;
     for (const auto & column : metadata_snapshot->getColumns())
     {
+        /// The prepass alone can take a long time on a table with many columns.
+        /// A partially filled `columns_info` would report wrong defaults, so give up the whole storage instead.
+        ++metadata_column_number;
+        slowDownSystemPartsMetadataEnumeration(info.table, metadata_column_number);
+        if (query_status && metadata_column_number % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
+            return;
+
         ColumnInfo column_info;
         if (column.default_desc.expression)
         {
@@ -119,9 +131,16 @@ void StorageSystemPartsColumns::processNextStorage(
     /// Go through the list of parts.
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
-    all_parts = info.getParts(all_parts_state, has_state_column);
+
+    all_parts = info.getParts(all_parts_state, has_state_column, query_status);
+
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
+        if (query_status && !query_status->checkTimeLimit())
+            break;
+
+        slowDownSystemPartsEnumeration(info.table);
+
         const auto & part = all_parts[part_number];
         const auto part_metadata_snapshot = part->getMetadataSnapshot();
         auto part_state = all_parts_state[part_number];
@@ -148,10 +167,18 @@ void StorageSystemPartsColumns::processNextStorage(
 
         using State = MergeTreeDataPartState;
 
+        bool time_limit_exceeded = false;
         size_t column_position = 0;
         for (const auto & column : part->getColumns())
         {
             ++column_position;
+            slowDownSystemPartsColumnsEnumeration(info.table, column_position);
+            if (query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
+            {
+                time_limit_exceeded = true;
+                break;
+            }
+
             size_t src_index = 0;
             size_t res_index = 0;
 
@@ -444,6 +471,9 @@ void StorageSystemPartsColumns::processNextStorage(
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());
         }
+
+        if (time_limit_exceeded)
+            break;
     }
 }
 

@@ -24,9 +24,6 @@ EOF
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM $db.test_view"
 ${CLICKHOUSE_CLIENT} --user $other_user --query "SELECT count() FROM $db.test_view"
 
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM $db.test_view SETTINGS enable_analyzer=0"
-${CLICKHOUSE_CLIENT} --user $other_user --query "SELECT count() FROM $db.test_view SETTINGS enable_analyzer=0"
-
 ${CLICKHOUSE_CLIENT} <<EOF
 DROP VIEW IF EXISTS $db.test_view;
 DROP USER IF EXISTS $other_user;

@@ -1,11 +1,13 @@
 {
   "groups": [
     {
-      "group": "ClickHouse 指南",
+      "group": "ClickHouse guides",
       "pages": [
+        "zh/guides/clickhouse/index",
         {
-          "group": "数据格式",
+          "group": "Data formats",
           "pages": [
+            "zh/guides/clickhouse/data-formats/intro",
             "zh/guides/clickhouse/data-formats/csv-tsv",
             "zh/guides/clickhouse/data-formats/parquet",
             "zh/guides/clickhouse/data-formats/arrow-avro-orc",
@@ -15,21 +17,21 @@
             {
               "group": "JSON",
               "pages": [
+                "zh/guides/clickhouse/data-formats/json/intro",
                 "zh/guides/clickhouse/data-formats/json/loading",
                 "zh/guides/clickhouse/data-formats/json/inference",
                 "zh/guides/clickhouse/data-formats/json/schema",
                 "zh/guides/clickhouse/data-formats/json/formats",
                 "zh/guides/clickhouse/data-formats/json/exporting",
                 "zh/guides/clickhouse/data-formats/json/other"
-              ],
-              "root": "zh/guides/clickhouse/data-formats/json/intro"
+              ]
             }
-          ],
-          "root": "zh/guides/clickhouse/data-formats/intro"
+          ]
         },
         {
-          "group": "数据建模",
+          "group": "Data modelling",
           "pages": [
+            "zh/guides/clickhouse/data-modelling/index",
             "zh/guides/clickhouse/data-modelling/schema-design",
             "zh/guides/clickhouse/data-modelling/sparse-primary-indexes",
             "zh/guides/clickhouse/data-modelling/denormalization",
@@ -39,7 +41,7 @@
             "zh/guides/clickhouse/data-modelling/generating-test-data",
             {
               "expanded": false,
-              "group": "压缩",
+              "group": "Compression",
               "pages": [
                 "zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse",
                 "zh/guides/clickhouse/data-modelling/compression/compression-modes"
@@ -47,13 +49,21 @@
             },
             "zh/guides/clickhouse/working-with-arrays",
             "zh/guides/clickhouse/working-with-joins"
-          ],
-          "root": "zh/guides/clickhouse/data-modelling/index"
+          ]
         },
         {
-          "group": "性能和监控",
+          "group": "Performance & monitoring",
           "pages": [
-            "zh/guides/clickhouse/performance-and-monitoring/query-optimization",
+            {
+              "group": "Query optimization",
+              "pages": [
+                "zh/guides/clickhouse/performance-and-monitoring/query-optimization",
+                "zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries",
+                "zh/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks",
+                "zh/guides/clickhouse/performance-and-monitoring/optimization-approaches",
+                "zh/guides/clickhouse/performance-and-monitoring/query-optimization-example"
+              ]
+            },
             "zh/guides/clickhouse/performance-and-monitoring/analyzer",
             "zh/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer",
             "zh/guides/clickhouse/performance-and-monitoring/dynamic-column-selection"
@@ -61,7 +71,7 @@
         },
         {
           "expanded": false,
-          "group": "聚合组合器示例",
+          "group": "Aggregate combinator examples",
           "pages": [
             "zh/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
             "zh/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
@@ -93,7 +103,7 @@
         },
         "zh/guides/oss/update",
         {
-          "group": "OSS 最佳实践",
+          "group": "OSS best practices",
           "pages": [
             "zh/guides/oss/best-practices/sizing-and-hardware-recommendations",
             "zh/guides/oss/best-practices/tips"
@@ -101,7 +111,7 @@
         },
         {
           "expanded": false,
-          "group": "部署和扩缩容",
+          "group": "Deployment and scaling",
           "pages": [
             "zh/guides/oss/deployment-and-scaling/terminology",
             "zh/guides/oss/deployment-and-scaling/shards",
@@ -112,13 +122,13 @@
               "expanded": false,
               "group": "Keeper",
               "pages": [
+                "zh/guides/oss/deployment-and-scaling/keeper/index",
                 "zh/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper"
-              ],
-              "root": "zh/guides/oss/deployment-and-scaling/keeper/index"
+              ]
             },
             {
               "expanded": false,
-              "group": "监控",
+              "group": "Monitoring",
               "pages": [
                 "zh/guides/oss/deployment-and-scaling/monitoring/monitoring",
                 "zh/guides/oss/deployment-and-scaling/monitoring/opentelemetry"
@@ -126,30 +136,30 @@
             },
             {
               "expanded": false,
-              "group": "示例",
+              "group": "Examples",
               "pages": [
                 "zh/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas",
                 "zh/guides/oss/deployment-and-scaling/examples/2-shards-1-replica",
                 "zh/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas"
               ]
             }
-          ],
-          "root": "zh/guides/oss/deployment-and-scaling/index"
+          ]
         }
-      ],
-      "root": "zh/guides/clickhouse/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "用例指南",
+      "group": "Use case guides",
       "pages": [
+        "zh/guides/use-cases/index",
         {
-          "group": "实时分析",
+          "group": "Real-time analytics",
           "pages": [
             {
               "expanded": false,
-              "group": "时间序列",
+              "group": "Time series",
               "pages": [
+                "zh/guides/use-cases/real-time-analytics/time-series/index",
                 "zh/guides/use-cases/real-time-analytics/time-series/date-time-data-types",
                 "zh/guides/use-cases/real-time-analytics/time-series/basic-operations",
                 "zh/guides/use-cases/real-time-analytics/time-series/analysis-functions",
@@ -157,70 +167,72 @@
                 "zh/guides/use-cases/real-time-analytics/time-series/query-performance",
                 "zh/guides/use-cases/real-time-analytics/time-series/materialized-view-rollup",
                 "zh/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps"
-              ],
-              "root": "zh/guides/use-cases/real-time-analytics/time-series/index"
+              ]
             }
           ]
         },
         {
-          "group": "可观测性",
+          "group": "Observability",
           "pages": [
+            "zh/guides/use-cases/observability/index",
             "zh/guides/use-cases/observability/cloud-monitoring",
             "zh/guides/use-cases/observability/self-managed-monitoring",
             {
-              "group": "自行搭建",
+              "group": "Build your own",
               "pages": [
+                "zh/guides/use-cases/observability/build-your-own/index",
                 "zh/guides/use-cases/observability/build-your-own/introduction",
                 "zh/guides/use-cases/observability/build-your-own/schema-design",
                 "zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry",
                 "zh/guides/use-cases/observability/build-your-own/managing-data",
                 "zh/guides/use-cases/observability/build-your-own/grafana",
                 "zh/guides/use-cases/observability/build-your-own/demo-application"
-              ],
-              "root": "zh/guides/use-cases/observability/build-your-own/index"
+              ]
             }
-          ],
-          "root": "zh/guides/use-cases/observability/index"
+          ]
         },
         {
-          "group": "数据仓库",
+          "group": "Data warehousing",
           "pages": [
+            "zh/guides/use-cases/data-warehousing/index",
             {
-              "group": "快速开始",
+              "group": "Getting started",
               "pages": [
+                "zh/guides/use-cases/data-warehousing/getting-started/overview",
                 "zh/guides/use-cases/data-warehousing/getting-started/querying-directly",
                 "zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs",
                 "zh/guides/use-cases/data-warehousing/getting-started/accelerating-analytics",
                 "zh/guides/use-cases/data-warehousing/getting-started/writing-data",
                 "zh/guides/use-cases/data-warehousing/getting-started/best-practices"
-              ],
-              "root": "zh/guides/use-cases/data-warehousing/getting-started/overview"
+              ]
             },
             {
-              "group": "目录",
+              "group": "Catalogs",
               "pages": [
+                "zh/guides/use-cases/data-warehousing/reference/index",
                 "zh/guides/use-cases/data-warehousing/glue-catalog",
                 "zh/guides/use-cases/data-warehousing/lakekeeper-catalog",
                 "zh/guides/use-cases/data-warehousing/nessie-catalog",
                 "zh/guides/use-cases/data-warehousing/onelake-catalog",
                 "zh/guides/use-cases/data-warehousing/polaris-catalog",
+                "zh/guides/use-cases/data-warehousing/horizon-catalog",
                 "zh/guides/use-cases/data-warehousing/rest-catalog",
+                "zh/guides/use-cases/data-warehousing/seaweedfs-catalog",
                 "zh/guides/use-cases/data-warehousing/unity-catalog",
                 "zh/guides/use-cases/data-warehousing/biglake-catalog"
-              ],
-              "root": "zh/guides/use-cases/data-warehousing/reference/index"
+              ]
             },
             "zh/guides/use-cases/data-warehousing/support-matrix"
-          ],
-          "root": "zh/guides/use-cases/data-warehousing/index"
+          ]
         },
         {
           "group": "AI/ML",
           "pages": [
+            "zh/guides/use-cases/ai-ml/index",
             "zh/guides/use-cases/ai-ml/vector-search",
             "zh/guides/use-cases/ai-ml/ai-powered-sql-generation",
             {
-              "group": "数据探索",
+              "group": "Data exploration",
               "pages": [
                 "zh/guides/use-cases/ai-ml/data-exploration/jupyter-notebook",
                 "zh/guides/use-cases/ai-ml/data-exploration/marimo-notebook"
@@ -229,6 +241,7 @@
             {
               "group": "MCP",
               "pages": [
+                "zh/guides/use-cases/ai-ml/MCP/index",
                 "zh/guides/use-cases/ai-ml/MCP/claude-desktop",
                 "zh/guides/use-cases/ai-ml/MCP/librechat",
                 "zh/guides/use-cases/ai-ml/MCP/anythingllm",
@@ -236,36 +249,33 @@
                 "zh/guides/use-cases/ai-ml/MCP/ollama",
                 "zh/guides/use-cases/ai-ml/MCP/janai",
                 {
-                  "group": "AI 智能体库",
+                  "group": "AI agent libraries",
                   "pages": [
-                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
-                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
-                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
-                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
-                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
                     "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
                     "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
                     "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
                     "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
                     "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
                     "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
                     "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
                     "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
-                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
-                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
-                  ],
-                  "root": "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index"
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "zh/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic"
+                  ]
                 }
-              ],
-              "root": "zh/guides/use-cases/ai-ml/MCP/index"
+              ]
             }
-          ],
-          "root": "zh/guides/use-cases/ai-ml/index"
+          ]
         }
-      ],
-      "root": "zh/guides/use-cases/index"
+      ]
     }
   ],
   "icon": "/images/icons/icon-guides.svg",
-  "item": "指南"
+  "item": "Guides"
 }

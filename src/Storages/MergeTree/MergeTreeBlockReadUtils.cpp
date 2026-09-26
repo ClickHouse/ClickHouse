@@ -401,7 +401,7 @@ void addPatchPartsColumns(
     if (patch_parts.empty())
         return;
 
-    NameSet required_virtuals;
+    NameSet required_key_columns;
     result.patch_columns.resize(patch_parts.size());
 
     for (size_t i = 0; i < patch_parts.size(); ++i)
@@ -432,9 +432,9 @@ void addPatchPartsColumns(
             patch_columns_to_read_set.insert(RowExistsColumn::name);
         }
 
-        auto patch_system_columns = getVirtualsRequiredForPatch(patch_parts[i]);
-        patch_columns_to_read_set.insert(patch_system_columns.begin(), patch_system_columns.end());
-        required_virtuals.insert(patch_system_columns.begin(), patch_system_columns.end());
+        auto patch_key_columns = getKeyColumnsRequiredForPatch(patch_parts[i]);
+        patch_columns_to_read_set.insert(patch_key_columns.begin(), patch_key_columns.end());
+        required_key_columns.insert(patch_key_columns.begin(), patch_key_columns.end());
 
         Names patch_columns_to_read_names(patch_columns_to_read_set.begin(), patch_columns_to_read_set.end());
 
@@ -454,11 +454,11 @@ void addPatchPartsColumns(
     auto & first_step_columns = result.pre_columns.empty() ? result.columns : result.pre_columns.front();
     auto first_step_columns_set = first_step_columns.getNameSet();
 
-    for (const auto & virtual_name : required_virtuals)
+    for (const auto & key_column_name : required_key_columns)
     {
-        if (!first_step_columns_set.contains(virtual_name))
+        if (!first_step_columns_set.contains(key_column_name))
         {
-            auto column = storage_snapshot->getColumn(options, virtual_name);
+            auto column = storage_snapshot->getColumn(options, key_column_name);
             first_step_columns.push_back(std::move(column));
         }
     }

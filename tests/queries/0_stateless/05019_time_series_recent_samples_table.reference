@@ -1,0 +1,33 @@
+-- the recent samples inner table exists
+1
+-- the recent samples inner table is partitioned by 5-hour buckets by default, has the TTL and ttl_only_drop_parts
+MergeTree PARTITION BY toStartOfInterval(toDateTime(timestamp), toIntervalHour(5)) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(864000) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+-- inserted samples are written to the recent samples table as well
+3	3
+-- a query fitting in the TTL window reads from the recent samples table and returns the same data
+1	0
+43
+100
+143
+-- a query outside the TTL window reads from the main samples table
+0	1
+-- disabling the preference reads from the main samples table
+0	1
+43
+100
+-- the table survives DETACH/ATTACH: the preference and the write path keep working
+1
+4	4
+-- custom partitioning and index granularity of the recent samples table
+MergeTree PARTITION BY toStartOfHour(timestamp) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(259200) SETTINGS index_granularity = 4096, ttl_only_drop_parts = 1
+-- the TTL of a user-declared recent samples engine is derived from the setting
+MergeTree PARTITION BY toStartOfDay(timestamp) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(432000) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+-- an external recent samples table is fed by inserts and preferred by reads
+1
+1
+7
+-- settings of the recent samples table require a non-zero recent_samples_ttl_seconds
+-- a RECENT SAMPLES clause requires a non-zero recent_samples_ttl_seconds
+-- the recent samples inner table requires a MergeTree-family engine
+-- DROP TABLE drops the inner tables
+0
