@@ -100,6 +100,19 @@ void AggregateFunctionFactory::registerNullsActionTransformation(const String & 
             ErrorCodes::LOGICAL_ERROR, "registerNullsActionTransformation: Assignment from '{}' is not unique", target_respect_nulls);
 }
 
+/// Whether the combinator stack of an aggregate function name contains `-SimpleState` at any position, e.g.
+/// `anySimpleStateIf` or `sumSimpleStateArgMax`, not only as the outermost suffix.
+static bool hasSimpleStateCombinator(String name)
+{
+    while (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
+    {
+        if (combinator->getName() == "SimpleState")
+            return true;
+        name = name.substr(0, name.size() - combinator->getName().size());
+    }
+    return false;
+}
+
 static DataTypes convertLowCardinalityTypesToNested(const DataTypes & types)
 {
     DataTypes res_types;
@@ -840,8 +853,9 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
             /// A `-SimpleState` value is stored as a `SimpleAggregateFunction`, whose raw values are re-aggregated
             /// during a later merge. It must therefore use the same historical Variant NULL behavior as the declared
             /// type, rather than applying the new wrapper around its producer and producing a value that the stored
-            /// type would not have produced itself.
-            if (top_level_has_variant && allow_skipping_variant_nulls && !out_properties.is_window_function && combinator_name != "SimpleState")
+            /// type would not have produced itself. This holds wherever `-SimpleState` sits in the combinator stack:
+            /// in `anySimpleStateIf` the outermost combinator is `-If`, but the result is still a `SimpleAggregateFunction`.
+            if (top_level_has_variant && allow_skipping_variant_nulls && !out_properties.is_window_function && !hasSimpleStateCombinator(name))
             {
                 if (!settings || (*settings)[Setting::aggregate_functions_skip_variant_nulls])
                     combined_function = std::make_shared<AggregateFunctionVariantNull>(combined_function, argument_types, parameters);
