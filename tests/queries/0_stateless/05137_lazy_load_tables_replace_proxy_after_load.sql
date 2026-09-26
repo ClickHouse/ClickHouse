@@ -84,4 +84,13 @@ SYSTEM START MERGES {CLICKHOUSE_DATABASE_1:Identifier}.t2;
 OPTIMIZE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t2 FINAL;
 SELECT 'started merges parts', count() FROM system.parts WHERE database = currentDatabase() AND table = 't2' AND active;
 
+-- Lifting an action lock must not load the table: a table that has not been loaded yet cannot hold
+-- one, and a `SYSTEM START MERGES` on a whole database would otherwise load every table in it.
+DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
+
+SYSTEM START MERGES {CLICKHOUSE_DATABASE_1:Identifier}.t2;
+SELECT 'engine after start merges', engine FROM system.tables WHERE database = currentDatabase() AND name = 't2';
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

@@ -11,3 +11,4 @@ cold rejected lightweight delete	2
 projection parts	1
 stopped merges parts	2
 started merges parts	1
+engine after start merges	TableProxy
