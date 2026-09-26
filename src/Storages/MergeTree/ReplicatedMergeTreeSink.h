@@ -97,11 +97,15 @@ protected:
 
     /// Rename temporary part and commit to ZooKeeper.
     /// Returns a map of conflicting blocks and its actual part names if block has to be deduplicated.
+    /// With check_database_rows_limit, the database `max_rows` limit is enforced right after
+    /// deduplication is decided, so that committing a duplicate part stays a no-op even when
+    /// the database is over the limit.
     std::vector<DeduplicationHash> commitPart(
         const ZooKeeperWithFaultInjectionPtr & zookeeper,
         MergeTreeData::MutableDataPartPtr & part,
         const std::vector<DeduplicationHash> & deduplication_hashes,
-        const std::vector<String> & deduplication_block_ids);
+        const std::vector<String> & deduplication_block_ids,
+        bool check_database_rows_limit = false);
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
@@ -145,6 +149,10 @@ protected:
     /// The result of the "too many parts" check, evaluated on the query thread at sink
     /// construction and thrown from onStart, when the sink starts executing.
     std::exception_ptr too_many_parts_exception;
+
+    /// The database `max_rows` check of an INSERT with deduplication, evaluated at sink construction
+    /// and thrown from `commitPart` only for a part that turns out not to be a duplicate.
+    std::exception_ptr database_rows_limit_exception;
 
     bool is_attach = false;
     bool allow_attach_while_readonly = false;

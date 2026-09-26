@@ -1,6 +1,7 @@
 #include <Access/ContextAccess.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -36,6 +37,11 @@ ColumnsDescription StorageSystemDatabases::getColumnsDescription()
         {"engine_full", std::make_shared<DataTypeString>(), "Parameters of the database engine."},
         {"comment", std::make_shared<DataTypeString>(), "Database comment."},
         {"is_external", std::make_shared<DataTypeUInt8>(), "Database is external (i.e. PostgreSQL/DataLakeCatalog)."},
+        {"rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+            "Current number of active rows counted toward the database's `max_rows` setting. "
+            "NULL for engines that do not track it (e.g. remote and data-lake catalogs), "
+            "and NULL unless the current user has `SHOW TABLES` on the whole database: "
+            "the total covers every table, so it is hidden from users with partial grants."},
     };
 
     description.setAliases({
@@ -122,6 +128,10 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
 {
     const auto access = context->getAccess();
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
+    /// `rows` sums every counted table in the database, so it must not be shown to a user who can see only some of
+    /// the tables: partial grants like `GRANT SELECT(x) ON db.t` already make the database visible here, and the exact
+    /// database-wide total would let such a user infer the sizes of hidden tables by subtraction.
+    const bool need_to_check_access_for_rows = !access->isGranted(AccessType::SHOW_TABLES);
     /// Data lake catalogs and remote databases are always shown in `system.databases` regardless of system-table settings.
     /// Listing a database name is purely local metadata and never requires expensive calls to an external service.
     /// The settings only guard operations like `system.tables` / `system.columns` that enumerate a database's contents.
@@ -162,7 +172,18 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[res_index++]->insert(database->getDatabaseComment());
         if (columns_mask[src_index++])
             res_columns[res_index++]->insert(database->isExternal());
-   }
+        if (columns_mask[src_index++])
+        {
+            const bool rows_visible = !need_to_check_access_for_rows || access->isGranted(AccessType::SHOW_TABLES, database_name);
+            std::optional<UInt64> rows;
+            if (rows_visible)
+                rows = database->getCurrentRowCount();
+            if (rows)
+                res_columns[res_index++]->insert(*rows);
+            else
+                res_columns[res_index++]->insertDefault();
+        }
+    }
 }
 
 }
