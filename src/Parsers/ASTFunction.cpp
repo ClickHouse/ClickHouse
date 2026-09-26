@@ -8,6 +8,7 @@
 
 
 #include <Common/quoteString.h>
+#include <Common/checkStackSize.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/SipHash.h>
@@ -184,6 +185,27 @@ void ASTFunction::writeJSON(WriteBuffer & out) const
     w.writeAlias(*this);
 }
 
+static bool containsBareSelectQuery(const IAST * node)
+{
+    checkStackSize();
+
+    const auto * list = node ? node->as<ASTExpressionList>() : nullptr;
+    if (!list)
+        return false;
+    for (const auto & child : list->children)
+        if (isBareSelectQuery(child.get()) || containsBareSelectQuery(child.get()))
+            return true;
+    return false;
+}
+
+static bool hasExpressionListChild(const IAST * node)
+{
+    const auto * list = node ? node->as<ASTExpressionList>() : nullptr;
+    if (!list)
+        return false;
+    return std::ranges::any_of(list->children, [](const ASTPtr & child) { return child->as<ASTExpressionList>() != nullptr; });
+}
+
 void ASTFunction::readJSON(const Poco::JSON::Object & json)
 {
     JSONObjectReader r(json);
@@ -271,40 +293,25 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Window function requires either a non-empty 'window_name' or a 'window_definition' child during AST JSON deserialization");
 
-    /// The parser produces a bare `SelectWithUnionQuery` function argument only inside the table
-    /// functions `view`, `viewIfPermitted` (`ViewLayer` is their only producer) and `obfuscate`
-    /// (`ObfuscateLayer`): `view(SELECT ...)` and `obfuscate(SELECT ...)` have exactly one argument,
-    /// the select, and `viewIfPermitted(SELECT ... ELSE table_function(...))` has exactly
-    /// (select, function), because after `ELSE` only a function call is accepted; none of these forms
-    /// has parameters. In an expression context these names parse as ordinary functions and a bare
-    /// select cannot appear among their arguments at all. The formatter prints special forms for
-    /// exactly the table function shapes (the query-argument form, which silently drops parameters,
-    /// and the `ELSE` form, which is unparseable elsewhere), so reject any other combination that
-    /// contains a bare select, which the parser cannot produce. The checks are case-insensitive
-    /// because the parser dispatches to the table function parser on the lowercased name, so any
-    /// spelling hits the same parse-back constraints.
+    /// A bare select query argument is parser-producible only as `view(SELECT ...)`,
+    /// `obfuscate(SELECT ...)` (`ObfuscateLayer`) or `viewIfPermitted(SELECT ... ELSE f(...))`, none of
+    /// which carries parameters, a window, a NULLS action or query output options.
     bool is_view = equalsCaseInsensitive(name, "view");
     bool is_view_if_permitted = equalsCaseInsensitive(name, "viewIfPermitted");
     bool is_obfuscate = equalsCaseInsensitive(name, "obfuscate");
-    if ((is_view || is_view_if_permitted || is_obfuscate) && arguments)
+    if (containsBareSelectQuery(arguments.get()) || containsBareSelectQuery(parameters.get()))
     {
-        bool has_bare_select = std::ranges::any_of(
-            arguments->children, [](const ASTPtr & child) { return child->as<ASTSelectWithUnionQuery>() != nullptr; });
-        bool is_table_function_shape = !parameters
-            && (is_view_if_permitted
-                ? arguments->children.size() == 2 && arguments->children[0]->as<ASTSelectWithUnionQuery>()
-                    && arguments->children[1]->as<ASTFunction>()
-                : arguments->children.size() == 1 && arguments->children[0]->as<ASTSelectWithUnionQuery>());
-        if (has_bare_select && !is_table_function_shape)
-        {
-            if (is_view_if_permitted)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "'viewIfPermitted' with a select query argument must have exactly two arguments, a select query "
-                    "followed by a function, and no parameters during AST JSON deserialization");
+        const auto * view_select
+            = arguments && !arguments->children.empty() ? arguments->children[0]->as<ASTSelectWithUnionQuery>() : nullptr;
+        bool is_view_shape = (is_view || is_obfuscate) && arguments && arguments->children.size() == 1 && view_select;
+        bool is_view_if_permitted_shape = is_view_if_permitted && arguments && arguments->children.size() == 2 && view_select
+            && arguments->children[1]->as<ASTFunction>();
+        bool is_table_function_shape = (is_view_shape || is_view_if_permitted_shape) && !parameters && !isWindowFunction()
+            && getNullsAction() == NullsAction::EMPTY && !view_select->hasOutputOptions();
+        if (!is_table_function_shape)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "'{}' with a select query argument must have exactly one argument, a select query, "
-                "and no parameters during AST JSON deserialization", is_view ? "view" : "obfuscate");
-        }
+                "A select query argument is only allowed in 'view(SELECT ...)', 'obfuscate(SELECT ...)' or "
+                "'viewIfPermitted(SELECT ... ELSE f(...))' during AST JSON deserialization");
 
         /// For the table function form the parser emits only the canonical spelling (`ViewLayer` and
         /// `ObfuscateLayer` dispatch on the lowercased name but always produce `view`,
@@ -312,16 +319,18 @@ void ASTFunction::readJSON(const Poco::JSON::Object & json)
         /// `StorageView::replaceWithSubquery` and the table function factory, where none of these
         /// three is registered case-insensitively), so a non-canonical spelling that reaches the
         /// interpreter through `clickhouse_json` would fail. Canonicalize it the way the parser does.
-        if (is_table_function_shape)
-        {
-            if (is_view)
-                name = "view";
-            else if (is_view_if_permitted)
-                name = "viewIfPermitted";
-            else
-                name = "obfuscate";
-        }
+        if (is_view)
+            name = "view";
+        else if (is_view_if_permitted)
+            name = "viewIfPermitted";
+        else
+            name = "obfuscate";
     }
+
+    /// A child of `arguments` or `parameters` is an expression, and an expression list is not one.
+    if (hasExpressionListChild(arguments.get()) || hasExpressionListChild(parameters.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'arguments' and 'parameters' cannot have an expression list child during AST JSON deserialization");
 
     r.readAlias(*this);
 }

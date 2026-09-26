@@ -73,6 +73,7 @@ void registerTableFunctions()
 
     registerTableFunctionFormat(factory);
     registerTableFunctionExplain(factory);
+    registerTableFunctionTraceView(factory);
     registerTableFunctionTimeSeries(factory);
 
     registerTableFunctionObjectStorage(factory);
