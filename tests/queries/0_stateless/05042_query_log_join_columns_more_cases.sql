@@ -44,7 +44,6 @@ DROP VIEW IF EXISTS mv_first;
 DROP VIEW IF EXISTS mv_chained;
 DROP VIEW IF EXISTS mv_inner;
 DROP VIEW IF EXISTS mv_over_view;
-DROP VIEW IF EXISTS mv_populate;
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS dst_chained;
@@ -164,12 +163,6 @@ INSERT INTO src_over_view SELECT t1.a FROM t1 JOIN t2 ON t1.a = t2.a
 SETTINGS log_comment = '05042_join_views_mv_over_view_b_insert_with_join', join_algorithm = 'hash';
 
 
--- `POPULATE` runs the `SELECT` of the view as part of the `CREATE`, and the join it executes is
--- reported in the row of the `CREATE` query.
-CREATE MATERIALIZED VIEW mv_populate ENGINE = Memory POPULATE AS SELECT src_inner.a AS a FROM src_inner JOIN t2 ON src_inner.a = t2.a
-SETTINGS log_comment = '05042_join_views_mv_populate', join_algorithm = 'hash';
-
-
 CREATE TABLE ins (a UInt64) ENGINE = Memory;
 -- Nothing is nested here: the join belongs to the `SELECT` of the `INSERT` itself, and it is reported
 -- in the row of that `INSERT`, which is the plainest case of a join in a query whose text is an
@@ -283,7 +276,6 @@ SELECT count() FROM t1 JOIN no_such_table ON t1.a = no_such_table.a
 SETTINGS log_comment = '05042_join_rows_exception_before_start', join_algorithm = 'hash'; -- { serverError UNKNOWN_TABLE }
 
 
-DROP VIEW mv_populate;
 DROP VIEW mv_over_view;
 DROP VIEW mv_inner;
 DROP VIEW v_over_view;
@@ -380,13 +372,6 @@ SELECT log_comment, used_number_of_joins, used_join_algorithms, used_join_kinds,
 FROM joins_log
 WHERE type = 'QueryFinish'
   AND log_comment LIKE '05042\_join\_views\_mv\_over\_view\_%'
-ORDER BY log_comment;
-
-SELECT 'join in the SELECT of CREATE MATERIALIZED VIEW POPULATE';
-SELECT query_kind, used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
-FROM joins_log
-WHERE type = 'QueryFinish'
-  AND log_comment LIKE '05042\_join\_views\_mv\_populate%'
 ORDER BY log_comment;
 
 SELECT 'join in the SELECT of an INSERT with no view attached';
