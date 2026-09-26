@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Tags: zookeeper, no-replicated-database, no-shared-merge-tree
+
+# `ADD ENUM VALUES` builds a new column type without a type node in the `ALTER` AST. Format-1
+# distributed DDL must reject it before enqueueing when a projection codec would be revalidated.
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+set -euo pipefail
+
+table="${CLICKHOUSE_DATABASE}.t_projection_codec_old_enum"
+
+${CLICKHOUSE_CLIENT} --allow_suspicious_codecs=1 -q "
+    CREATE TABLE ${table}
+        (k UInt64, x Enum8('a' = 1), PROJECTION p (x CODEC(Delta, Delta)) AS (SELECT k, x ORDER BY k))
+        ENGINE = MergeTree ORDER BY k"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${table} VALUES (1, 'a')"
+
+v1=(--distributed_ddl_entry_format_version=1 --distributed_ddl_task_timeout=0
+    --distributed_ddl_output_mode=none --allow_projection_column_list_in_replicated_metadata=1
+    --allow_suspicious_codecs=1)
+v2=(--distributed_ddl_entry_format_version=2 --distributed_ddl_task_timeout=180
+    --distributed_ddl_output_mode=throw --allow_projection_column_list_in_replicated_metadata=1
+    --allow_suspicious_codecs=1)
+
+if output=$(${CLICKHOUSE_CLIENT} "${v1[@]}" -q "
+    ALTER TABLE ${table} ON CLUSTER test_shard_localhost
+        MODIFY COLUMN x ADD ENUM VALUES ('b' = 2)" 2>&1); then
+    echo "format-1 enum alter unexpectedly succeeded" >&2
+    exit 1
+fi
+if [[ "$output" != *SUPPORT_IS_DISABLED* ]]; then
+    echo "format-1 enum alter failed with an unexpected error: $output" >&2
+    exit 1
+fi
+echo "format-1 enum alter rejected"
+${CLICKHOUSE_CLIENT} -q "SELECT type LIKE '%b%' FROM system.columns
+    WHERE database = currentDatabase() AND table = 't_projection_codec_old_enum' AND name = 'x'"
+
+${CLICKHOUSE_CLIENT} "${v2[@]}" -q "
+    ALTER TABLE ${table} ON CLUSTER test_shard_localhost
+        MODIFY COLUMN x ADD ENUM VALUES ('b' = 2) FORMAT Null"
+${CLICKHOUSE_CLIENT} -q "SELECT type LIKE '%b%' FROM system.columns
+    WHERE database = currentDatabase() AND table = 't_projection_codec_old_enum' AND name = 'x'"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${table} VALUES (2, 'b')"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ${table}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${table}"

@@ -150,9 +150,13 @@ void checkProjectionCodecOldDistributedDDLCompatibility(
                 "Projection column CODEC declarations in ON CLUSTER DDL require "
                 "distributed_ddl_entry_format_version >= 2, because version 1 does not carry codec validation settings");
 
-        if (command.type == ASTAlterCommand::MODIFY_COLUMN && command.col_decl
-            && command.col_decl->as<const ASTColumnDeclaration &>().getType())
-            changes_column_type = true;
+        /// `ADD ENUM VALUES` has no explicit type AST, but `AlterCommands::prepare` builds a new `Enum` type for it.
+        if (command.type == ASTAlterCommand::MODIFY_COLUMN)
+        {
+            const auto * declaration = command.col_decl ? command.col_decl->as<const ASTColumnDeclaration>() : nullptr;
+            if ((declaration && declaration->getType()) || command.add_enum_values)
+                changes_column_type = true;
+        }
     }
 
     if (!changes_column_type)
