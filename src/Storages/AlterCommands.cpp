@@ -158,11 +158,15 @@ void refreshSettingsDerivedMetadata(
         return;
 
     MergeTreeSettings effective_settings = *settings_defaults;
+    SettingsChanges builtin_changes;
     for (const auto & change : metadata.settings_changes->as<ASTSetQuery &>().changes)
     {
         if (MergeTreeSettings::hasBuiltin(change.name))
-            effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
+            builtin_changes.push_back(change);
     }
+    /// Only the implicit-index settings below are read here, and this runs before the statement is
+    /// known to be allowed, so the `disk` setting is left unresolved rather than creating the disk.
+    effective_settings.applyChangesLeavingDiskUnresolved(builtin_changes);
 
     metadata.add_minmax_index_for_numeric_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_numeric_columns];
     metadata.add_minmax_index_for_string_columns = effective_settings[MergeTreeSetting::add_minmax_index_for_string_columns];
