@@ -742,6 +742,11 @@ public:
 
     std::atomic<bool> is_dropped{false};
     std::atomic<bool> is_detached{false};
+
+    /// Whether the table this storage stands for has been dropped or detached. Checked by the
+    /// table-level lock functions. Overridden by `StorageTableProxy`, which shares its locks with the
+    /// storage it has loaded (see takeTableLocksFrom) and must share this state with it as well.
+    virtual bool isDroppedOrDetached() const { return is_dropped || is_detached; }
     std::atomic<bool> is_being_restarted{false};
 
     /** A list of tasks to check a validity of data.

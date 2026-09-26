@@ -474,8 +474,13 @@ bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & s
     if (!has_select_access)
         return false;
 
-    auto target = tryGetTargetTable();
-    return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
+    /// Ask the storage the snapshot was taken from instead of resolving the target again: a storage
+    /// can only interpret its own snapshot, and the target may have been replaced in between, e.g.
+    /// the proxy of a lazily loaded table by the loaded table.
+    const IStorage & target = storage_snapshot->storage;
+    if (&target == this)
+        return false;
+    return target.supportsTrivialCountOptimization(storage_snapshot, query_context);
 }
 
 std::optional<UInt64> StorageAlias::totalRows(ContextPtr query_context) const

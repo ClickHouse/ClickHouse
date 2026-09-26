@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <functional>
 
 #include <Storages/StorageProxy.h>
@@ -70,19 +71,30 @@ public:
         nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;
         get_nested = {};
+        is_loaded.store(true, std::memory_order_release);
         return nested;
     }
 
     StoragePtr getLoadedLazyTable() const override
     {
-        /// Never wait for the load to finish. This is called by the database with its own mutex
-        /// held, while `getNested` keeps `nested_mutex` for as long as the table takes to load, so
-        /// waiting here would hold the whole database up. Reporting "not loaded yet" is harmless:
-        /// the next lookup replaces the proxy instead.
-        std::unique_lock lock{nested_mutex, std::try_to_lock};
-        if (!lock.owns_lock())
+        /// Never wait for the load to finish, and do not take `nested_mutex` at all: this is called
+        /// by the database with its own mutex held, while `getNested` keeps `nested_mutex` for as
+        /// long as the table takes to load. `nested` is assigned once, before `is_loaded` is set,
+        /// and never changes after that, so it can be read without the mutex once `is_loaded` is.
+        if (!is_loaded.load(std::memory_order_acquire))
             return nullptr;
         return nested;
+    }
+
+    /// Once the table has been loaded, the database replaces this proxy with the loaded storage, and
+    /// `DETACH` or `DROP` from then on marks only the loaded storage. A query that resolved the proxy
+    /// before the replacement must still see that, otherwise it could lock a table that is gone.
+    bool isDroppedOrDetached() const override
+    {
+        if (IStorage::isDroppedOrDetached()) // NOLINT(bugprone-parent-virtual-call)
+            return true;
+        auto loaded = getLoadedLazyTable();
+        return loaded && loaded->isDroppedOrDetached();
     }
 
     StoragePtr loadLazyTable() const override { return getNested(); }
@@ -240,6 +252,7 @@ private:
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    mutable std::atomic<bool> is_loaded{false}; /// Set once `nested` has been assigned, see getLoadedLazyTable.
     LoggerPtr log;
 };
 

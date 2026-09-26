@@ -41,11 +41,22 @@ namespace
 /// object: a `SYSTEM STOP MERGES` may see the proxy and the matching `SYSTEM START MERGES` the
 /// storage itself, or a database-wide `SYSTEM STOP ...` may still hold the proxy from its snapshot
 /// of the tables after the database has already replaced it. Keying by the storage the proxy stands
-/// for makes both objects address the same locks. Loading the table here is fine: taking an action
-/// lock on the proxy loads it anyway, and lifting one addresses a table that has already been loaded.
-const IStorage * lockKey(const StoragePtr & table)
+/// for makes both objects address the same locks.
+///
+/// Taking a lock loads the table: taking an action lock on the proxy loads it anyway. Lifting one
+/// does not: a proxy that has not been loaded yet cannot hold a lock, because taking one would have
+/// loaded it, so there is nothing to lift, and loading here would turn a no-op `SYSTEM START ...` on
+/// a whole database into loading every table in it.
+const IStorage * lockKeyForAdd(const StoragePtr & table)
 {
     if (auto loaded = table->loadLazyTable())
+        return loaded.get();
+    return table.get();
+}
+
+const IStorage * lockKeyForRemove(const StoragePtr & table)
+{
+    if (auto loaded = table->getLoadedLazyTable())
         return loaded.get();
     return table.get();
 }
@@ -64,7 +75,7 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
 
     if (!action_lock.expired())
     {
-        const auto * key = lockKey(table);
+        const auto * key = lockKeyForAdd(table);
         std::lock_guard lock(mutex);
         storage_locks[key][action_type] = std::move(action_lock);
     }
@@ -78,7 +89,7 @@ void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockTy
 
 void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType action_type)
 {
-    const auto * key = lockKey(table);
+    const auto * key = lockKeyForRemove(table);
     std::lock_guard lock(mutex);
 
     if (auto it = storage_locks.find(key); it != storage_locks.end())
