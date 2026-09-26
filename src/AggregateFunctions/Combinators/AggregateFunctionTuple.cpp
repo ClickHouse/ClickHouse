@@ -600,6 +600,11 @@ bool AggregateFunctionTuple::shouldPrintParametersWithTypes() const
         nested_functions, [](const auto & nested) { return nested->shouldPrintParametersWithTypes(); });
 }
 
+bool AggregateFunctionTuple::isOnlyWindowFunction() const
+{
+    return std::ranges::any_of(nested_functions, [](const auto & nested) { return nested->isOnlyWindowFunction(); });
+}
+
 void AggregateFunctionTuple::checkCanBeStoredInTable() const
 {
     for (const auto & nested : nested_functions)

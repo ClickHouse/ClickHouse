@@ -158,6 +158,7 @@ public:
     DataTypePtr getNormalizedStateType() const override;
 
     bool shouldPrintParametersWithTypes() const override;
+    bool isOnlyWindowFunction() const override;
     void checkCanBeStoredInTable() const override;
 
     AggregateFunctionStateVariant getStateVariant() const override;

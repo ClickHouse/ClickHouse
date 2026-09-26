@@ -184,6 +184,7 @@ Each of the commands above is detailed below:
 | `TEMPORARY TABLE table_name [AS table_name_in_backup]`                 | Backs up/restores a temporary table (can be renamed)                                                                                                 |
 | `VIEW view_name [AS view_name_in_backup]`                              | Backs up/restores a view (can be renamed)                                                                                                            |
 | `[EXCEPT TABLES ...]`                                                  | Exclude specific tables when backing up a database                                                                                                   |
+| `[EXCEPT DATA FROM {TABLE\|TABLES} ...]`                               | **(BACKUP only)** Backs up a table's definition without its rows. Differs from `EXCEPT TABLES`, which omits the table entirely. Scoped to the element it is written on: see [Backing up a table without its data](#backup-without-data). |
 | `ALL`                                                                  | Backs up/restores everything (all databases, tables, etc.). Prior to version 23.4 of ClickHouse, `ALL` was only applicable to the `RESTORE` command. |
 | `[EXCEPT {TABLES\|DATABASES}...]`                                      | Exclude specific tables or databases when using `ALL`                                                                                                |
 | `[ON CLUSTER 'cluster_name']`                                          | Execute the backup/restore across a ClickHouse cluster                                                                                               |
@@ -193,6 +194,84 @@ Each of the commands above is detailed below:
 | `S3('<S3 endpoint>/<path>', '<Access key ID>', '<Secret access key>')` | Store to/restore from Amazon S3 or S3-compatible storage                                                                                             |
 | `[SETTINGS ...]`                                                       | See below for complete list of settings                                                                                                              |                                                                                                                         |
 | `[ASYNC]`                                                              | Makes the operation run asynchronously (returns immediately with an ID you can monitor)                                                              |
+
+### Backing up a table without its data {#backup-without-data}
+
+`EXCEPT DATA FROM {TABLE|TABLES}` puts a table's definition in the backup without its rows. It is useful
+for tables whose contents can be regenerated after a restore, for example the target tables of materialized
+views.
+
+The clause decides what `BACKUP` writes; it does not change what `RESTORE` is able to do with the result. For
+a table that `RESTORE` can recreate, a definition without rows restores as an empty table. It does not make a
+table restorable that would not be restorable anyway - whether a definition in the backup can be turned back
+into a table is up to the engine, and some engines refuse it outright: see
+[Engines that `RESTORE` cannot recreate](#engines-restore-cannot-recreate).
+
+The clause is scoped to the element it is written on:
+
+- On a `DATABASE` or `ALL` element it may name any table that element backs up:
+
+```sql
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLES events, metrics TO Disk('backups', 'mydb/')
+```
+
+- On a single-object element (`TABLE`, `DICTIONARY`, `VIEW`, `TEMPORARY TABLE`) the element's own object is
+  the only one in scope, so the clause must name it and nothing else. Give every table its own element and
+  its own clause:
+
+```sql
+-- Backs up both tables, without the data of `t1`
+BACKUP TABLE mydb.t1 EXCEPT DATA FROM TABLE mydb.t1, TABLE mydb.t2 TO Disk('backups', 'tables/')
+
+-- Rejected: the clause of the `mydb.t2` element names a different table
+BACKUP TABLE mydb.t1, TABLE mydb.t2 EXCEPT DATA FROM TABLE mydb.t1 TO Disk('backups', 'tables/')
+```
+
+If a table is named both by an element of its own and by the `EXCEPT DATA FROM` clause of a wider element,
+its data **is** backed up: an element asking for a table asks for its data. This matches `EXCEPT TABLES`,
+where a table named explicitly is backed up even though a wider element excludes it.
+
+The data of the inner table of a materialized view (or of the inner tables of a `TimeSeries` table) is
+excluded through the outer object's name; inner table names are not accepted by the clause.
+
+`EXCEPT DATA FROM {TABLE|TABLES}` is only valid for `BACKUP`. `RESTORE` rejects it, rather than accepting it
+as a no-op.
+
+#### Engines that `RESTORE` cannot recreate {#engines-restore-cannot-recreate}
+
+A few engines cannot be recreated by `RESTORE` at all, with or without `EXCEPT DATA FROM {TABLE|TABLES}`. For
+those tables the clause still controls the size of the backup, but it does not give you a table that comes
+back empty - nothing comes back in place, because `RESTORE` refuses to create the table.
+
+A standalone `MaterializedPostgreSQL` table is the case to know about. It would start replicating from the
+live PostgreSQL source as soon as it was created, mixing the backup snapshot with the current remote state, so
+`RESTORE` rejects it in the storage factory - before the table is created - with `NOT_IMPLEMENTED`. This is a
+property of the engine and applies to an ordinary full backup just the same.
+
+The supported flow is to restore under a different name, into a `ReplacingMergeTree` that you created
+beforehand with the structure of the nested table (including the `_sign` and `_version` columns):
+
+```sql
+-- Back up the definition without the rows: they are replicated from PostgreSQL and can be replicated again
+BACKUP DATABASE mydb EXCEPT DATA FROM TABLE mydb.pg_table TO Disk('backups', 'mydb/')
+
+CREATE TABLE mydb.plain_target
+(
+    key Int32,
+    value Int32,
+    _sign Int8 MATERIALIZED 1,
+    _version UInt64 MATERIALIZED 1
+)
+ENGINE = ReplacingMergeTree(_version) ORDER BY key
+
+-- Succeeds, and leaves `mydb.plain_target` empty because the backup carries no rows for `mydb.pg_table`
+RESTORE TABLE mydb.pg_table AS mydb.plain_target FROM Disk('backups', 'mydb/')
+SETTINGS allow_different_table_def = 1
+```
+
+`allow_different_table_def` is required because the definition stored in the backup uses the
+`MaterializedPostgreSQL` engine, which is deliberately being restored into a plain `ReplacingMergeTree`.
+Without `EXCEPT DATA FROM TABLE` the same `RESTORE` brings the rows across instead.
 
 ### Settings {#settings}
 
