@@ -31,6 +31,8 @@ SETTINGS log_comment='02402_external_disk_mertrics/partial_merge_join'
 FORMAT Null;
 
 SET join_algorithm = 'grace_hash', grace_hash_join_initial_buckets=32, grace_hash_join_max_buckets=32;
+-- `max_bytes_in_join` is a hard cap, not a spill trigger: use the spill threshold to force temporary files.
+SET max_bytes_in_join = 0, max_bytes_before_external_join = '20M';
 
 SELECT n, j * 2097152 FROM
 (SELECT number * 200000 as n FROM numbers(5)) nums
@@ -55,7 +57,7 @@ SELECT
         'ok',
         'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
     )
-    FROM system.query_log WHERE current_database = currentDatabase()
+    FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         AND log_comment = '02402_external_disk_mertrics/sort'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
@@ -72,7 +74,7 @@ SELECT
         'ok',
         'fail: ' || toString(count()) || ' ' || toString(any(ProfileEvents))
     )
-    FROM system.query_log WHERE current_database = currentDatabase()
+    FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         AND log_comment = '02402_external_disk_mertrics/aggregation'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
@@ -89,7 +91,7 @@ SELECT
         'fail: ' || toString(ProfileEvents) || ' ' || log_comment
     )
     FROM system.query_log
-    WHERE current_database = currentDatabase()
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         AND log_comment like '02402_external_disk_mertrics/%join'
         AND query ILIKE 'SELECT%2097152%' AND type = 'QueryFinish';
 
@@ -100,5 +102,6 @@ SELECT
     CurrentMetric_TemporaryFilesForJoin,
     CurrentMetric_TemporaryFilesForSort
 FROM system.metric_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
 ORDER BY event_time DESC LIMIT 5
 FORMAT Null;

@@ -12,4 +12,4 @@ ${CLICKHOUSE_CLIENT} --jemalloc_enable_profiler=1 --jemalloc_collect_profile_sam
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS trace_log";
 
-${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.trace_log WHERE query_id = '$query_id' AND trace_type = 'JemallocSample'";
+${CLICKHOUSE_CLIENT} -q "SELECT count() > 0 FROM system.trace_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id' AND trace_type = 'JemallocSample'";

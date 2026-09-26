@@ -24,13 +24,13 @@ EOF
 $CLICKHOUSE_CLIENT --query "SELECT c0 FROM t0_03301 FORMAT ProtobufList SETTINGS format_schema = '$SCHEMADIR/03301_protobuflist_empty_table:Message'" > "$BINARY_FILE_PATH"
 
 # First read (should not crash)
-$CLICKHOUSE_CLIENT --query "INSERT INTO t0_03301 SETTINGS format_schema='$SCHEMADIR/03301_protobuflist_empty_table:Message' FORMAT ProtobufList" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --throw_if_no_data_to_insert=0 --query "INSERT INTO t0_03301 SETTINGS format_schema='$SCHEMADIR/03301_protobuflist_empty_table:Message' FORMAT ProtobufList" < "$BINARY_FILE_PATH"
 
 # Second write (still empty data)
 $CLICKHOUSE_CLIENT --query "SELECT c0 FROM t0_03301 FORMAT ProtobufList SETTINGS format_schema = '$SCHEMADIR/03301_protobuflist_empty_table:Message'" > "$BINARY_FILE_PATH"
 
 # Second read (this used to crash with assertion error)
-$CLICKHOUSE_CLIENT --query "INSERT INTO t0_03301 SETTINGS format_schema='$SCHEMADIR/03301_protobuflist_empty_table:Message' FORMAT ProtobufList" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --throw_if_no_data_to_insert=0 --query "INSERT INTO t0_03301 SETTINGS format_schema='$SCHEMADIR/03301_protobuflist_empty_table:Message' FORMAT ProtobufList" < "$BINARY_FILE_PATH"
 
 # Now test with actual data
 $CLICKHOUSE_CLIENT --query "INSERT INTO t1_03301 VALUES (1), (2), (3)"

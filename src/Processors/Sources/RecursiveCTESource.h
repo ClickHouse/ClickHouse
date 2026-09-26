@@ -9,10 +9,12 @@ namespace DB
 
 class RecursiveCTEChunkGenerator;
 
-class RecursiveCTESource : public ISource
+class RecursiveCTESource final : public ISource
 {
 public:
-    explicit RecursiveCTESource(SharedHeader header, QueryTreeNodePtr recursive_cte_union_node_);
+    /// `repeated_build_scope_name_` names the pipeline of the recursive member for the deduplication
+    /// of the joins it rebuilds, see `QueryExecutionCounters::makeScopeForPipelineBuiltLater`.
+    RecursiveCTESource(SharedHeader header, QueryTreeNodePtr recursive_cte_union_node_, String repeated_build_scope_name_);
 
     ~RecursiveCTESource() override;
 

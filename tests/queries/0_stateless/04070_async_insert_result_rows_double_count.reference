@@ -1,0 +1,5 @@
+async_summary_result_rows: 3
+async_query_log_result_rows: 3
+sync_summary_result_rows: 3
+OK: summary matches query_log
+OK: async matches sync

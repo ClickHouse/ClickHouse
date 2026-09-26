@@ -1,4 +1,5 @@
 #pragma once
+#include <Common/Exception.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 
 namespace DB

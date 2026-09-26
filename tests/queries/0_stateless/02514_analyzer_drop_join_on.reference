@@ -187,8 +187,7 @@ Header: bx String
                   Expression ((WHERE + Change column names to column identifiers))
                   Header: __table4.c1 UInt64
                     ReadFromMergeTree (default.c)
-                    Header: c2 String
-                            c1 UInt64
+                    Header: c1 UInt64
           Expression (Right Pre Join Actions)
           Header: __table5.d1 UInt64
             Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))

@@ -1,3 +1,5 @@
+#include <DataTypes/IDataType.h>
+#include <Functions/FunctionHelpers.h>
 #include <base/demangle.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -14,14 +16,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
 {
 
-class FunctionDemangle : public IFunction
+class FunctionDemangle final : public IFunction
 {
 public:
     static constexpr auto name = "demangle";
@@ -48,15 +48,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != 1)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} needs exactly one argument; passed {}.",
-                getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"symbol", &isString, nullptr, "String"}
+        };
 
-        const auto & type = arguments[0].type;
-
-        if (!WhichDataType(type.get()).isString())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be String. "
-                "Found {} instead.", getName(), type->getName());
+        validateFunctionArguments(*this, arguments, mandatory_args);
 
         return std::make_shared<DataTypeString>();
     }
@@ -111,7 +107,7 @@ The symbol is usually returned by function `addressToSymbol`.
     {
         "Selecting the first string from the `trace_log` system table",
         R"(
-SELECT * FROM system.trace_log LIMIT 1 \G;
+SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
         )",
         R"(
 -- The `trace` field contains the stack trace at the moment of sampling.
@@ -130,7 +126,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
         "Getting a function name for a single address",
         R"(
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) \G;
+SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
         )",
         R"(
 Row 1:
@@ -150,15 +146,15 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-\G
+FORMAT Vertical;
         )",
         R"(
 Row 1:
 ──────
 trace_functions: DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
 DB::Aggregator::executeWithoutKeyImpl(char*&, unsigned long, DB::Aggregator::AggregateFunctionInstruction*, DB::Arena*) const
-DB::Aggregator::executeOnBlock(std::vector<COW<DB::IColumn>::immutable_ptr<DB::IColumn>, std::allocator<COW<DB::IColumn>::immutable_ptr<DB::IColumn> > >, unsigned long, DB::AggregatedDataVariants&, std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >&, std::vector<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >, std::allocator<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> > > >&, bool&)
-DB::Aggregator::executeOnBlock(DB::Block const&, DB::AggregatedDataVariants&, std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >&, std::vector<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >, std::allocator<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> > > >&, bool&)
+DB::Aggregator::executeOnBlock(...)
+DB::Aggregator::executeOnBlock(DB::Block const&, ...)
 DB::Aggregator::execute(std::shared_ptr<DB::IBlockInputStream> const&, DB::AggregatedDataVariants&)
 DB::AggregatingBlockInputStream::readImpl()
 DB::IBlockInputStream::read()

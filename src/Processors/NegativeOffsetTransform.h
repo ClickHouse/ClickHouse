@@ -11,7 +11,7 @@ namespace DB
 
 /// Implementation for OFFSET -N (without limit) (drop last N)
 /// This processor support multiple inputs and outputs (the same number).
-/// Each pair of input and output port works independently.
+/// The output ports are interchangeable, chunks can be pushed to any available output.
 
 /// Streams by keeping a tail buffer of size N (in rows) across all input ports.
 class NegativeOffsetTransform final : public IProcessor
@@ -49,9 +49,10 @@ private:
 
     struct ChunkWithPort
     {
-        OutputPort * output_port = nullptr;
         Chunk chunk;
     };
+
+    size_t next_output_port = 0;
 
     /// Stores the pending chunks which are not yet confirmed whether they are
     /// full outside the offset or not. Once we can be sure that a chunk is fully
@@ -63,8 +64,7 @@ public:
 
     String getName() const override { return "NegativeOffset"; }
 
-    Status prepare(const PortNumbers & /*updated_input_ports*/, const PortNumbers & /*updated_output_ports*/) override;
-    Status prepare() override; /// Compatibility for TreeExecutor.
+    Status prepare() override;
 
     InputPort & getInputPort() { return inputs.front(); }
     OutputPort & getOutputPort() { return outputs.front(); }
@@ -77,6 +77,11 @@ private:
 
     /// Does not do anything if the front chunk is not fully outside the offset.
     Status tryPushWholeFrontChunk();
+
+    /// Find an output port that can accept data at the moment.
+    OutputPort * getAvailableOutputPort();
+
+    bool allOutputsFinished() const;
 
     /// This should only be called when we know that the front chunk is NOT
     /// fully outside the offset.

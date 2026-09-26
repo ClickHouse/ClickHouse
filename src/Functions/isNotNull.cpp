@@ -11,6 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
+#include <Common/TargetSpecific.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
@@ -21,7 +22,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace
@@ -29,17 +29,15 @@ namespace
 
 /// Implements the function isNotNull which returns true if a value
 /// is not null, false otherwise.
-class FunctionIsNotNull : public IFunction
+class FunctionIsNotNull final : public IFunction
 {
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(ContextPtr)
     {
-        return std::make_shared<FunctionIsNotNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
+        return std::make_shared<FunctionIsNotNull>();
     }
-
-    explicit FunctionIsNotNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 
     std::string getName() const override
     {
@@ -48,10 +46,6 @@ public:
 
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
-        /// (column IS NULL) triggers a bug in old analyzer when it is replaced to constant.
-        if (!use_analyzer)
-            return nullptr;
-
         /// SELECT arrayFilter(x -> (x IS NOT NULL), []) can trigger `defaultImplementationForNothing()`
         /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
         if (isNothing(result_type))
@@ -139,33 +133,13 @@ public:
 #endif
 
 private:
-    MULTITARGET_FUNCTION_AVX2_SSE42(
-    MULTITARGET_FUNCTION_HEADER(static void NO_INLINE), vectorImpl, MULTITARGET_FUNCTION_BODY((const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res) /// NOLINT
+    static void vector(const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res)
     {
         size_t size = null_map.size();
         for (size_t i = 0; i < size; ++i)
             res[i] = !null_map[i];
-    }))
-
-    static void NO_INLINE vector(const PaddedPODArray<UInt8> & null_map, PaddedPODArray<UInt8> & res)
-    {
-#if USE_MULTITARGET_CODE
-        if (isArchSupported(TargetArch::AVX2))
-        {
-            vectorImplAVX2(null_map, res);
-            return;
-        }
-
-        if (isArchSupported(TargetArch::SSE42))
-        {
-            vectorImplSSE42(null_map, res);
-            return;
-        }
-#endif
-        vectorImpl(null_map, res);
     }
 
-    bool use_analyzer;
 };
 }
 
@@ -174,7 +148,7 @@ REGISTER_FUNCTION(IsNotNull)
     FunctionDocumentation::Description description = R"(
 Checks if the argument is not `NULL`.
 
-Also see: operator [`IS NOT NULL`](/sql-reference/operators#is_not_null).
+Also see: operator [`IS NOT NULL`](/reference/operators#is_not_null).
     )";
     FunctionDocumentation::Syntax syntax = "isNotNull(x)";
     FunctionDocumentation::Arguments arguments = {

@@ -44,8 +44,8 @@ expression
 // Unary operations have the same precedence as multiplications
 
 vectorOperation
-    : <assoc = right> vectorOperation powOp vectorOperation
-    | <assoc = right> vectorOperation subqueryOp
+    : <assoc = right> vectorOperation subqueryOp
+    | <assoc = right> vectorOperation powOp vectorOperation
     | unaryOp vectorOperation
     | vectorOperation multOp vectorOperation
     | vectorOperation addOp vectorOperation
@@ -66,7 +66,7 @@ powOp
     ;
 
 multOp
-    : (MULT | DIV | MOD) grouping?
+    : (MULT | DIV | MOD | ATAN2) grouping?
     ;
 
 addOp
@@ -112,6 +112,8 @@ parens
 
 timestamp
     : NUMBER
+    | START LEFT_PAREN RIGHT_PAREN
+    | END LEFT_PAREN RIGHT_PAREN
     ;
 
 duration
@@ -131,6 +133,7 @@ instantSelector
 
 labelMatcher
     : labelName labelMatcherOperator STRING
+    | STRING
     ;
 
 labelMatcherOperator
@@ -212,10 +215,11 @@ labelName
     : keyword
     | METRIC_NAME
     | LABEL_NAME
+    | STRING
     ;
 
 labelNameList
-    : LEFT_PAREN (labelName (COMMA labelName)*)? RIGHT_PAREN
+    : LEFT_PAREN (labelName (COMMA labelName)* COMMA?)? RIGHT_PAREN
     ;
 
 metricName
@@ -227,6 +231,7 @@ keyword
     : AND
     | OR
     | UNLESS
+    | ATAN2
     | BY
     | WITHOUT
     | ON
@@ -235,6 +240,8 @@ keyword
     | GROUP_RIGHT
     | OFFSET
     | BOOL
+    | START
+    | END
     | AGGREGATION_OPERATOR
     | FUNCTION
     ;

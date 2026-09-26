@@ -1,0 +1,8 @@
+(0,NULL)	Tuple(\n    e UInt32,\n    f Nullable(UInt32))
+(0,NULL)	Tuple(\n    e UInt32,\n    f Nullable(UInt32))
+(0,NULL)	Tuple(\n    e UInt32,\n    f Nullable(UInt32))
+(0,NULL)	Tuple(\n    e UInt32,\n    f Nullable(UInt32))
+\N	Nullable(Tuple(e UInt32, f Nullable(UInt32)))
+\N	Nullable(Tuple(e UInt32, f Nullable(UInt32)))
+\N	Nullable(Tuple(e UInt32, f Nullable(UInt32)))
+\N	Nullable(Tuple(e UInt32, f Nullable(UInt32)))

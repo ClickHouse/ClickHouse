@@ -46,6 +46,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+#if USE_AWS_S3
+
+namespace S3AuthSetting
+{
+    extern const S3AuthSettingsS3UriStyle uri_style;
+}
+
+#endif
+
 ObjectStorageFactory & ObjectStorageFactory::instance()
 {
     static ObjectStorageFactory factory;
@@ -63,7 +72,8 @@ ObjectStoragePtr ObjectStorageFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const ContextPtr & context,
-    bool skip_access_check) const
+    bool run_access_check,
+    bool run_local_paths_check) const
 {
     std::string type;
     if (config.has(config_prefix + ".object_storage_type"))
@@ -83,21 +93,21 @@ ObjectStoragePtr ObjectStorageFactory::create(
                         "ObjectStorageFactory: unknown object storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, context, skip_access_check);
+    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check);
 }
 
 #if USE_AWS_S3
 namespace
 {
 
-S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context)
+S3::URI getS3URI(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, const ContextPtr & context, S3UriStyle uri_style)
 {
     String endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
     String endpoint_subpath;
     if (config.has(config_prefix + ".endpoint_subpath"))
         endpoint_subpath = context->getMacros()->expand(config.getString(config_prefix + ".endpoint_subpath"));
 
-    S3::URI uri(fs::path(endpoint) / endpoint_subpath);
+    S3::URI uri(fs::path(endpoint) / endpoint_subpath, false, true, uri_style);
 
     /// An empty key remains empty.
     if (!uri.key.empty() && !uri.key.ends_with('/'))
@@ -116,20 +126,21 @@ static std::string getEndpoint(
     return context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
 }
 
-void registerS3ObjectStorage(ObjectStorageFactory & factory)
+static void registerS3ObjectStorage(ObjectStorageFactory & factory)
 {
      auto creator = [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */) -> ObjectStoragePtr
     {
-        auto uri = getS3URI(config, config_prefix, context);
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
         auto endpoint = getEndpoint(config, config_prefix, context);
         auto settings = std::make_unique<S3Settings>();
-        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), uri.uri.getScheme(), true);
+        settings->loadFromConfigForObjectStorage(config, config_prefix, context->getSettingsRef(), Poco::URI(endpoint).getScheme(), true);
+        auto uri = getS3URI(config, config_prefix, context, settings->auth_settings[S3AuthSetting::uri_style]);
         auto client = getClient(endpoint, *settings, context, /* for_disk_s3 */ true, name);
         auto key_generator = getKeyGenerator(uri, config, config_prefix);
 
@@ -145,7 +156,7 @@ void registerS3ObjectStorage(ObjectStorageFactory & factory)
 #endif
 
 #if USE_HDFS
-void registerHDFSObjectStorage(ObjectStorageFactory & factory)
+static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType(
         "hdfs",
@@ -153,7 +164,8 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
            const ContextPtr & context,
-           bool /* skip_access_check */) -> ObjectStoragePtr
+           bool /* run_access_check */,
+           bool /* run_local_paths_check */) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
             checkHDFSURL(uri);
@@ -169,14 +181,15 @@ void registerHDFSObjectStorage(ObjectStorageFactory & factory)
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-void registerAzureObjectStorage(ObjectStorageFactory & factory)
+static void registerAzureObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
 
@@ -190,12 +203,12 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true),
+            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true)
         };
 
         return std::make_shared<AzureObjectStorage>(
             name,
-            params.auth_method, AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
             params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
             params.endpoint.getServiceEndpoint(), common_key_prefix);
     };
@@ -207,14 +220,15 @@ void registerAzureObjectStorage(ObjectStorageFactory & factory)
 }
 #endif
 
-void registerWebObjectStorage(ObjectStorageFactory & factory)
+static void registerWebObjectStorage(ObjectStorageFactory & factory)
 {
     factory.registerObjectStorageType("web", [](
         const std::string & /* name */,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */) -> ObjectStoragePtr
     {
         auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
         if (!uri.ends_with('/'))
@@ -230,22 +244,26 @@ void registerWebObjectStorage(ObjectStorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS, "Bad URI: `{}`. Error: {}", uri, e.what());
         }
 
-        return std::make_shared<WebObjectStorage>(uri, context);
+        return std::make_shared<WebObjectStorage>(uri, "", context);
     });
 }
 
-void registerLocalObjectStorage(ObjectStorageFactory & factory)
+static void registerLocalObjectStorage(ObjectStorageFactory & factory)
 {
     auto creator = [](
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* run_access_check */,
+        bool run_local_paths_check) -> ObjectStoragePtr
     {
         String object_key_prefix;
-        UInt64 keep_free_space_bytes;
+        UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
+
+        if (run_local_paths_check)
+            checkCustomLocalDiskPath(object_key_prefix, context);
 
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
@@ -261,6 +279,8 @@ void registerLocalObjectStorage(ObjectStorageFactory & factory)
     factory.registerObjectStorageType("local_plain", creator);
     factory.registerObjectStorageType("local_plain_rewritable", creator);
 }
+
+void registerObjectStorages();
 
 void registerObjectStorages()
 {

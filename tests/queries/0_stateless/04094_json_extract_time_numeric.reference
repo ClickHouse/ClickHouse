@@ -1,0 +1,21 @@
+Time from Int64 numeric
+12:30:45
+Time from zero
+00:00:00
+Time from string
+12:30:45
+Time64 from Int64 numeric
+12:30:45.123
+DateTime from Int64 numeric
+2009-02-13T23:31:30Z
+DateTime from string
+2009-02-13T23:31:30Z
+DateTime64 from Int64 numeric
+2009-02-13T23:31:30.123Z
+DateTime from large UInt64
+2106-02-07T06:28:15Z
+DateTime from Int64
+1970-01-01 00:00:01
+2009-02-13 23:31:30
+1970-01-01 00:00:00
+1970-01-01 00:00:00

@@ -8,11 +8,12 @@ workflow = Workflow.Config(
     name="BackportPR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         *[
             job
             for job in JobConfigs.build_jobs
-            if any(t in job.name for t in ("amd_asan", "amd_tsan", "debug"))
+            if any(t in job.name for t in ("amd_asan_ubsan", "amd_tsan", "amd_debug"))
         ],
         *JobConfigs.release_build_jobs,
         *[
@@ -24,22 +25,28 @@ workflow = Workflow.Config(
         JobConfigs.docker_keeper,
         *JobConfigs.install_check_jobs,
         *JobConfigs.compatibility_test_jobs,
-        *[job for job in JobConfigs.functional_tests_jobs if "asan" in job.name],
-        *[job for job in JobConfigs.stress_test_jobs if "tsan" in job.name],
+        *[job for job in JobConfigs.functional_tests_jobs if "amd_asan_ubsan" in job.name],
+        *[
+            job
+            for job in JobConfigs.unittest_jobs
+            if any(t in job.name for t in ("asan_ubsan", "tsan"))
+        ],
+        *[job for job in JobConfigs.stress_test_jobs if "amd_tsan" in job.name],
         *[
             job
             for job in JobConfigs.integration_test_jobs_required
-            if "asan" in job.name
+            if "amd_asan_ubsan" in job.name
         ],
         *[
             job
             for job in JobConfigs.integration_test_jobs_non_required
-            if "tsan" in job.name
+            if "amd_tsan" in job.name
         ],
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,

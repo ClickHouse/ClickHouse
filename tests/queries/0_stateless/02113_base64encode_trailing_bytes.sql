@@ -12,7 +12,7 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT base64Decode(base64Encode(normalizeQuery(query)))
     FROM system.query_log
-    WHERE type = 'QueryFinish' AND log_comment = 'ad15a651' AND current_database = currentDatabase()
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND log_comment = 'ad15a651' AND current_database = currentDatabase()
     GROUP BY normalizeQuery(query)
     ORDER BY normalizeQuery(query);
 

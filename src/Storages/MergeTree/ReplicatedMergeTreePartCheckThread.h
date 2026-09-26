@@ -33,7 +33,7 @@ struct ReplicatedCheckResult
     CheckResult status;
     Action action = None;
 
-    bool exists_in_zookeeper;
+    bool exists_in_zookeeper{};
     MergeTreeDataPartPtr part;
     time_t recheck_after_seconds = 0;
 };
@@ -71,7 +71,7 @@ public:
     /// The returned guard can be safely destroyed from any thread.
     BackgroundSchedulePoolPausableTask::PauseHolderPtr temporaryPause();
 
-    /// Can be called only while holding a TemporaryPause guard.
+    /// Can be called only while holding a BackgroundSchedulePoolTaskBlocker guard.
     void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
 
 private:
@@ -108,6 +108,12 @@ private:
     mutable std::mutex parts_mutex;
     StringSet parts_set;
     PartsToCheckQueue parts_queue;
+
+    /// Serializes cancelRemovedPartsCheck against another such call and against enqueuePart.
+    /// cancelRemovedPartsCheck drops parts_mutex while removing parts from ZooKeeper; without this
+    /// mutex a concurrent cancel or enqueue could mutate parts_queue in that gap and break the
+    /// recheck invariant. Lock order: cancel_removed_parts_mutex before parts_mutex.
+    std::mutex cancel_removed_parts_mutex;
 
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };

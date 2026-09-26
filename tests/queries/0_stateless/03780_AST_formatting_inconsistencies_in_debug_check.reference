@@ -15,3 +15,6 @@ Alias in ON clause of JOIN:
 Test repeated alias for tuple after NOT fails cleanly:
 Test that INSERT INTO with EXCEPT does not crash debug build:
 Test weird SELECT/EXCEPT/SELECT statement:
+Testing complex tuple expressions with indexes:
+1
+1

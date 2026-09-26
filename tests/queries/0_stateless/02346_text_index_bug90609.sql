@@ -1,6 +1,5 @@
 -- Test for Bug 90609
-
-SET enable_full_text_index = 1;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab

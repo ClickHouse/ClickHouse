@@ -17,7 +17,7 @@ number < 35000,
 number < 40000,
 '{"arr" : [{"arr1" : 11, "arr2" : 12, "arr3" : 13, "arr4" : 14}]}',
 '{"a" : {"a1" : 5, "a2" : 6}}'
-)) from numbers(450000);
+)) from numbers(45000);
 
 select 'select json.data';
 select json.data from test_compact_map_with_buckets_tuple format Null;

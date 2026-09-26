@@ -1,0 +1,121 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nextjs
+description: 'ClickStack 的 Next.js SDK - ClickHouse 可观测性技术栈'
+title: 'Next.js'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', '日志', '集成', '应用监控']
+---
+
+在 Next 13.2 及以上版本中，ClickStack 可以从您的
+[Next.js 无服务器函数](https://nextjs.org/docs/pages/building-your-application/optimizing/open-telemetry#manual-opentelemetry-configuration)
+摄取原生 OpenTelemetry 链路追踪。
+
+本指南涵盖：
+
+* **控制台日志**
+* **链路追踪**
+
+<Note>
+  如果您需要会话回放/浏览器端监控，请安装 [Browser integration](/zh/clickstack/ingesting-data/sdks/browser)。
+</Note>
+
+<div id="installing">
+  ## 安装
+</div>
+
+<div id="enable-instrumentation-hook">
+  ### 启用 插桩 hook (v15 及以下版本必需)
+</div>
+
+首先，你需要在 `next.config.js` 中将 `experimental.instrumentationHook` 设置为 `true;`，以启用 Next.js 的 插桩 hook。
+
+**示例：**
+
+```javascript
+const nextConfig = {
+  experimental: {
+    instrumentationHook: true,
+  },
+  // 忽略 otel 包警告
+  // https://github.com/open-telemetry/opentelemetry-js/issues/4173#issuecomment-1822938936
+  webpack: (
+    config,
+    { buildId, dev, isServer, defaultLoaders, nextRuntime, webpack },
+  ) => {
+    if (isServer) {
+      config.ignoreWarnings = [{ module: /opentelemetry/ }];
+    }
+    return config;
+  },
+};
+
+module.exports = nextConfig;
+```
+
+<div id="install-sdk">
+  ### 安装 ClickHouse OpenTelemetry SDK
+</div>
+
+<Tabs>
+  <Tab title="NPM">
+    ```shell
+    npm install @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    ```shell
+    yarn add @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+</Tabs>
+
+<div id="create-instrumentation-files">
+  ### 创建 插桩 文件
+</div>
+
+在 Next.js 项目根目录中创建一个名为 `instrumentation.ts` (或 `.js`) 的文件，内容如下：
+
+```javascript
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { init } = await import('@hyperdx/node-opentelemetry');
+    init({
+      apiKey: '<YOUR_INGESTION_API_KEY>', // 可选，通过 `HYPERDX_API_KEY` 环境变量配置
+      service: '<MY_SERVICE_NAME>', // 可选，通过 `OTEL_SERVICE_NAME` 环境变量配置
+      additionalInstrumentations: [], // 可选，默认值：[]
+    });
+  }
+}
+```
+
+这将使 Next.js 能够在调用任何无服务器函数时导入 OpenTelemetry 插桩。
+
+<div id="configure-environment-variables">
+  ### 配置环境变量
+</div>
+
+如果你通过 OpenTelemetry 将链路追踪数据直接发送到 ClickStack，则需要使用以下环境变量启动 Next.js
+服务器，以便将 spans 发送到 OTel collector：
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    ```sh copy
+    OTEL_SERVICE_NAME=<MY_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318
+    npm run dev
+    ```
+  </Tab>
+
+  <Tab title="ClickStack 开源版">
+    ```sh copy
+    HYPERDX_API_KEY=<YOUR_INGESTION_API_KEY> \
+    OTEL_SERVICE_NAME=<MY_SERVICE_NAME> \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318
+    npm run dev
+    ```
+  </Tab>
+</Tabs>
+
+如果你部署在 Vercel 上，请确保已为该部署
+配置上述所有环境变量。
