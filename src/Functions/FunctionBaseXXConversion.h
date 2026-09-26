@@ -138,7 +138,7 @@ struct BaseXXDecode
 {
     static constexpr auto name = Name::name;
     static constexpr bool has_size_optimization = Traits::has_size_optimization;
-    /// The zero bytes of a default `FixedString` are not valid encoded data.
+    /// The zero bytes of a default `FixedString`, and an empty string when an expected size is given, do not decode.
     static constexpr bool can_be_executed_on_default_arguments = ErrorHandling != BaseXXDecodeErrorHandling::ThrowException;
     /// Compile-time default input-size limit (0 means "no limit"). Only base58 sets a non-zero value;
     /// the actual limit is configurable at runtime, see FunctionBaseXXConversion.
