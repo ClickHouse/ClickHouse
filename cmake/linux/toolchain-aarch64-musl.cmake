@@ -37,14 +37,3 @@ set (USE_MUSL 1)
 # musl's name for the target architecture: the arch/<MUSL_ARCH> directory in the musl sources.
 set (MUSL_ARCH "aarch64")
 add_definitions(-DUSE_MUSL=1 -D__MUSL__=1)
-
-# On aarch64, the kernel UAPI headers pulled in via <asm/ptrace.h> (asm/sigcontext.h,
-# linux/prctl.h) and via <linux/sysctl.h> (linux/sysinfo.h) redefine structs that musl's own
-# headers (bits/signal.h, sys/prctl.h, sys/sysinfo.h) already provide with identical layout -
-# whichever of the two is included second in a given translation unit fails to compile. This
-# does not happen on x86_64: its asm/ptrace.h does not pull in asm/sigcontext.h at all. Rather
-# than patching every affected source file (ClickHouse's own, or any contrib, present or
-# future) as it is discovered, block the kernel copy everywhere via its own include guards;
-# musl's copy, which every such translation unit needs anyway on this toolchain, then wins
-# regardless of include order.
-add_definitions(-D__ASM_SIGCONTEXT_H -D_LINUX_PRCTL_H -D_LINUX_SYSINFO_H)
