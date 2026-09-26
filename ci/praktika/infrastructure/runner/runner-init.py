@@ -70,6 +70,7 @@ class RunnerConfig:
     free_blocks_threshold_percent: int = 5
 
     RUNNER_VERSION_LABEL = "runner-init version"
+    LOW_DISK_SPACE_LABEL = "runner-init low disk space"
 
     def __post_init__(self):
         self.runner_url = f"https://github.com/{self.runner_org}"
@@ -467,12 +468,14 @@ class Runner:
         free_blocks = int(last[3])
         free_percent = int(last[3]) * 100 // int(last[1])
 
+        error = None
         if free_blocks < config.free_blocks_threshold:
-            raise RuntimeError(f"Out of disk space: {free_blocks} blocks on rootfs")
-        if free_percent < config.free_blocks_threshold_percent:
-            raise RuntimeError(
-                f"Out of disk space: {free_percent}% of free space on rootfs"
-            )
+            error = f"Out of disk space: {free_blocks} blocks on rootfs"
+        elif free_percent < config.free_blocks_threshold_percent:
+            error = f"Out of disk space: {free_percent}% of free space on rootfs"
+        if error:
+            log(f"{config.LOW_DISK_SPACE_LABEL}: {error}\n{result.stdout.strip()}", "disk-space")
+            raise RuntimeError(error)
 
     @staticmethod
     def check_post_run() -> None:
