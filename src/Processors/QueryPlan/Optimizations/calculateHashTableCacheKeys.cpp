@@ -15,6 +15,7 @@
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -39,14 +40,23 @@ UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
 UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
 {
     SipHash hash;
-    hash.update(read.getSerializationName());
+    /// `SipHash::update` of a string mixes in its bytes and nothing else, so a sequence of strings
+    /// hashed one after another is not self-delimiting: a header of `a UInt8` and one of `aU Int8`
+    /// both produce the bytes `aUInt8`. Mix in each length so that only the same split matches.
+    const auto update_with_size = [&hash](std::string_view s)
+    {
+        hash.update(s.size());
+        hash.update(s);
+    };
+
+    update_with_size(read.getSerializationName());
     if (const auto & snapshot = read.getStorageSnapshot())
     {
         StorageID storage_id = snapshot->storage.getStorageID();
         if (storage_id.hasUUID())
             hash.update(storage_id.uuid.toUnderType());
         else
-            hash.update(storage_id.getFullTableName());
+            update_with_size(storage_id.getFullTableName());
     }
     /// A storage created by a table function has no UUID, and its StorageID does not depend on
     /// the arguments: any numbers(N) reads from `_table_function.numbers`. Mix in the table
@@ -57,6 +67,38 @@ UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
         if (table_expression->as<TableFunctionNode>())
             hash.update(table_expression->getTreeHash({.compare_aliases = false}));
     }
+    /// The columns the read produces. Two reads of the same table that produce different columns move
+    /// different volumes of data, so they must not share a statistics entry: the cache stores
+    /// `input_bytes` and `output_bytes`, and nothing downstream catches the difference - the drift
+    /// check compares `total_rows_to_read`, which is the same for both. A projection above the read is
+    /// no help either, since one that hands its inputs onward unchanged is transparent for the key.
+    ///
+    /// Types are hashed alongside the names because a subcolumn is a column of its own here: `n.a` and
+    /// `n.a.size0` are both read from the same `Nested` column under names that differ only in a
+    /// suffix, and they differ by the whole array payload.
+    ///
+    /// This is the read's own header, before any renaming step, so the names are the table's columns
+    /// rather than the branch-local `__tableN.x` form, and the single-replica and parallel-replicas
+    /// plan builds agree on them.
+    for (const auto & column : *read.getOutputHeader())
+    {
+        update_with_size(column.name);
+        update_with_size(column.type->getName());
+    }
+    /// `SAMPLE`, `FINAL` and `OFFSET` change how much of the table the read touches while leaving the
+    /// storage, the header and the PREWHERE identical, so without this `SAMPLE 1` and `SAMPLE 0.1`
+    /// share an entry and the sampled query is priced at ten times what it reads. `SAMPLE` is the one
+    /// case the drift check would eventually catch, since it changes the row count too, but only
+    /// after a decision has already been made on the wrong estimate.
+    if (const auto & modifiers = read.getQueryInfo().table_expression_modifiers)
+        modifiers->updateTreeHash(hash);
+    /// A row policy is pushed into the read itself rather than becoming a step above it, so there is
+    /// nothing else in the plan to tell two policies apart: the header is the same, and a policy over
+    /// a column outside the primary key leaves index analysis - and so the drift check - unmoved. Two
+    /// policies that pass very different numbers of rows to the boundary would otherwise share an
+    /// entry.
+    if (const auto & row_level_filter = read.getRowLevelFilter())
+        row_level_filter->actions.updateHash(hash);
     if (const auto & dag = read.getPrewhereInfo())
         dag->prewhere_actions.updateHash(hash);
     return hash.get64();
@@ -111,9 +153,13 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
     IQueryPlanStep::Serialization ctx{
         .out = wbuf, .registry = registry, .for_cache_key = true, .version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION};
 
-    writeStringBinary(transform.getSerializationName(), wbuf);
+    const auto step_name = transform.getSerializationName();
+    writeStringBinary(step_name, wbuf);
     if (transform.isSerializable())
+    {
+        ctx.step_version = QueryPlanStepRegistry::instance().versionToWrite(step_name, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
         transform.serialize(ctx);
+    }
 
     wbuf.finalize();
     return hash.get64();

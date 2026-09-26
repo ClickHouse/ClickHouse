@@ -164,6 +164,11 @@ namespace DB
         static constexpr auto name = "isIPAddressInRange";
         String getName() const override { return name; }
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPAddressContainedIn>(); }
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so a function that throws on the default value must not be executed on
+        /// the whole dictionary - it would fail on entirely valid data.
+        bool canBeExecutedOnDefaultArguments() const override { return false; }
+
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
         template <IPKind kind>
