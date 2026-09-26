@@ -24,13 +24,13 @@ REGISTER_FUNCTION(ArrayPushFront)
         {"x", R"(
 - Single value to add to the start of the array. [`Array(T)`](/reference/data-types/array).
 
-:::note
+<Note>
 - Only numbers can be added to an array with numbers, and only strings can be added to an array of strings.
 - When adding numbers, ClickHouse automatically sets the type of `x` for the data type of the array.
 - Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 For more information about the types of data in ClickHouse, see [Data types](/reference/data-types).
-:::
+</Note>
     )"},
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an array identical to `arr` but with an additional value `x` at the beginning of the array", {"Array(T)"}};

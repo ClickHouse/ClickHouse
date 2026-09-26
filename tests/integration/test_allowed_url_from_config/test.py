@@ -60,6 +60,27 @@ def test_config_with_hosts(start_cluster):
     node1.query("DROP TABLE table_test_1_2")
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "CREATE TABLE azure_blocked_host (x UInt8) ENGINE = AzureBlobStorage("
+        "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV')",
+        "INSERT INTO TABLE FUNCTION azureBlobStorage("
+        "'http://127.0.0.1:1', 'container', 'data.csv', 'account', 'YQ==', 'CSV', 'x UInt8') VALUES (1)",
+    ],
+)
+def test_azure_host_filter_before_client_creation(start_cluster, query):
+    container_requests = (
+        "SELECT sum(value) FROM system.events "
+        "WHERE event IN ('AzureGetProperties', 'AzureCreateContainer')"
+    )
+    before = node5.query(container_requests)
+    error = node5.query_and_get_error(query, settings={"azure_sdk_max_retries": 0})
+    assert "UNACCEPTABLE_URL" in error
+    # The host check must run before even a container existence probe.
+    assert node5.query(container_requests) == before
+
+
 def test_config_with_only_primary_hosts(start_cluster):
     assert (
         node2.query(

@@ -17,13 +17,10 @@ NC_NAME="test_nc_dep_${CLICKHOUSE_DATABASE}"
 
 # Setup: clean up any leftover state. Tables go before the collection, otherwise a table left by an
 # interrupted run outlives the collection it references.
-# ignore_drop_queries_probability = 0: the stress runner sets it to 0.2, which makes a DROP a no-op
-# (for URL, a TRUNCATE that throws).
 # ast_fuzzer_runs = 0: a fuzzed DROP TABLE can become UNDROP TABLE for the same target, which
 # reattaches the table after this block has dropped the collection it references.
 $CLICKHOUSE_CLIENT -m -q "
 SET check_named_collection_dependencies = false;
-SET ignore_drop_queries_probability = 0;
 SET ast_fuzzer_runs = 0;
 DROP TABLE IF EXISTS test_nc_dep_table;
 DROP TABLE IF EXISTS test_nc_dep_table_renamed;
@@ -94,8 +91,8 @@ $CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME2}; -- { serverError NA
 # Clean up
 $CLICKHOUSE_CLIENT -m -q "
 SET ast_fuzzer_runs = 0;
-DROP TABLE test_nc_dep_table_renamed SETTINGS ignore_drop_queries_probability = 0;
-DROP TABLE test_nc_dep_table2 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE test_nc_dep_table_renamed;
+DROP TABLE test_nc_dep_table2;
 DROP NAMED COLLECTION ${NC_NAME};
 DROP NAMED COLLECTION ${NC_NAME2};
 "
@@ -124,13 +121,13 @@ $CLICKHOUSE_CLIENT -q "RENAME TABLE ${ORDINARY_DB}.test_nc_dep_ordinary TO ${ORD
 $CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # Drop the Atomic table, should still fail because Ordinary table uses the collection
-$CLICKHOUSE_CLIENT -q "DROP TABLE test_nc_dep_atomic SETTINGS ignore_drop_queries_probability = 0, ast_fuzzer_runs = 0;"
+$CLICKHOUSE_CLIENT -q "DROP TABLE test_nc_dep_atomic SETTINGS ast_fuzzer_runs = 0;"
 $CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # Drop the Ordinary table, now drop should succeed
 $CLICKHOUSE_CLIENT -m -q "
 SET ast_fuzzer_runs = 0;
-DROP TABLE ${ORDINARY_DB}.test_nc_dep_ordinary_renamed SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE ${ORDINARY_DB}.test_nc_dep_ordinary_renamed;
 DROP NAMED COLLECTION ${NC_NAME};
 DROP DATABASE ${ORDINARY_DB};
 "

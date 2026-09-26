@@ -31,8 +31,16 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         if (optimization_settings.distinct_in_order && distinct_step->getSortDescription().empty()
             && (input.sort_scope == SortingScope::Global || (distinct_step->isPreliminary() && input.sort_scope == SortingScope::Stream)))
         {
-            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(input.sort_description, distinct_step->getColumnNames()));
+            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(
+                input.sort_description, distinct_step->getColumnNames(), *distinct_step->getInputHeaders().front()));
         }
+
+        /// Distinct never breaks global order: the steps above may rely on it, so the final `DISTINCT`,
+        /// which may spill, has to restore the order after the spill (see
+        /// `DistinctStep::preserveInputOrder`). The preliminary `DISTINCT` never spills, and an empty
+        /// description carries no order to preserve.
+        if (input.sort_scope == SortingScope::Global && !distinct_step->isPreliminary() && !input.sort_description.empty())
+            distinct_step->preserveInputOrder();
     }
 
     if (auto * sorting_step = typeid_cast<SortingStep *>(parent->step.get()); sorting_step && !child_properties.empty())
@@ -52,7 +60,8 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         const auto & input = child_properties.front();
         if (input.sort_scope == SortingScope::Global)
         {
-            auto prefix = getCollationAwareSortPrefixInColumns(input.sort_description, limit_by_step->getColumns());
+            auto prefix = getCollationAwareSortPrefixInColumns(
+                input.sort_description, limit_by_step->getColumns(), *limit_by_step->getInputHeaders().front());
             if (prefix.size() == limit_by_step->getColumns().size())
                 limit_by_step->applyOrder(prefix);
         }
@@ -64,7 +73,8 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         const auto & input = child_properties.front();
         if (input.sort_scope == SortingScope::Global)
         {
-            auto prefix = getCollationAwareSortPrefixInColumns(input.sort_description, negative_limit_by_step->getColumns());
+            auto prefix = getCollationAwareSortPrefixInColumns(
+                input.sort_description, negative_limit_by_step->getColumns(), *negative_limit_by_step->getInputHeaders().front());
             if (prefix.size() == negative_limit_by_step->getColumns().size())
                 negative_limit_by_step->applyOrder(prefix);
         }

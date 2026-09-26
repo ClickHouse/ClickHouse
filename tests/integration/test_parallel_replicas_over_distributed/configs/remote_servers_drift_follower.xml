@@ -1,0 +1,20 @@
+<clickhouse>
+    <remote_servers>
+        <!-- The n4 group's copy of test_config_drift: the same shards as in remote_servers_drift_initiator.xml,
+             numbered the other way round. Shard 2 here is the n1 group, which the initiator numbers 1. -->
+        <test_config_drift>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>n4</host><port>9000</port></replica>
+                <replica><host>n5</host><port>9000</port></replica>
+                <replica><host>n6</host><port>9000</port></replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>n1</host><port>9000</port></replica>
+                <replica><host>n2</host><port>9000</port></replica>
+                <replica><host>n3</host><port>9000</port></replica>
+            </shard>
+        </test_config_drift>
+    </remote_servers>
+</clickhouse>

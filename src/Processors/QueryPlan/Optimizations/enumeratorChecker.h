@@ -153,11 +153,15 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptImpl(
     const UInt32 left_mask = static_cast<UInt32>(lhs_subset);
     const UInt32 right_mask = static_cast<UInt32>(rhs_subset);
 
-    auto join_kind = optimizer.isValidJoinOrderMask(left_mask, right_mask);
-    if (!join_kind)
+    /// Resolve validity + the resulting (kind, strictness). With a conflict detector (CD-A/CD-C)
+    /// this uses the per-operator check (which can admit semi/anti joins), otherwise the
+    /// per-relation outer-join check with strictness fixed to All.
+    auto resolved = optimizer.resolveJoinMask(left_mask, right_mask);
+    if (!resolved)
         return;
 
-    auto kind = *join_kind;
+    auto kind = resolved->first;
+    auto strictness = resolved->second;
 
     /// `edge` aliases an internal scratch buffer that the next `collectJoinEdgesMask` call overwrites
     /// it is only read below and copied into the DP entry, so the aliasing is safe.
@@ -174,7 +178,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptImpl(
     JoinOrderCardinalityCap canonical_cap;
     if (preassessed_proven_cap)
         canonical_cap = std::move(*preassessed_proven_cap);
-    else if (kind == JoinKind::Inner)
+    else if (kind == JoinKind::Inner && strictness == JoinStrictness::All)
     {
         canonical_cap
             = optimizer.getCanonicalCap(left_mask, right_mask, dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows);
@@ -187,7 +191,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptImpl(
     auto selectivity = equivalence_selectivity_allowed ? optimizer.computeSelectivityMask(edge, left_mask, right_mask)
                                                        : optimizer.computeSelectivity(edge);
     auto estimate = optimizer.estimateCardinality(
-        dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, selectivity, kind, canonical_cap);
+        dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, selectivity, kind, strictness, canonical_cap);
     auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity, estimate.upper_bound);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
@@ -204,6 +208,7 @@ void EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::acceptImpl(
         entry.cost = plan_cost;
         entry.sel = selectivity;
         entry.kind = kind;
+        entry.strictness = strictness;
         entry.estimated_rows = estimate.rows;
         entry.used_canonical_cap = estimate.upper_bound.has_value();
         const auto * proven_cap = getProvenCap(canonical_cap);

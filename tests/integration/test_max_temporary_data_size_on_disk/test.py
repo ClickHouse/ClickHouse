@@ -34,6 +34,12 @@ def test(start_cluster):
         ):
             node.query("SELECT sumMap([number], [number]) FROM numbers(1e6) group by number%100000 format Null settings max_threads=1, max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0, group_by_two_level_threshold = 1, max_block_size=1000")
 
+        with pytest.raises(
+            QueryRuntimeException,
+            match="Limit for temporary files size exceeded.* 10240 bytes",
+        ):
+            node.query("SELECT DISTINCT number FROM numbers(1e6) FORMAT Null SETTINGS max_bytes_before_external_distinct = 1, max_bytes_ratio_before_external_distinct = 0, max_untracked_memory = 0, max_block_size = 1000")
+
         for _ in range(10):
             node.query("SELECT k1, k2, k3, sum(value) v FROM t_proj_external GROUP BY k1, k2, k3 ORDER BY k1, k2, k3 SETTINGS optimize_aggregation_in_order = 0, max_bytes_before_external_group_by = 1, max_bytes_ratio_before_external_group_by = 0, group_by_two_level_threshold = 1, max_block_size=65000")
 

@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
+#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
@@ -425,6 +426,11 @@ static SortingProperty deriveSortingPropertyValue(const IQueryPlanStep & step, s
     }
 
     if (dynamic_cast<const LimitByStep *>(&step) || dynamic_cast<const NegativeLimitByStep *>(&step))
+        return result.sort_scope == SortingScope::Global ? std::move(result) : SortingProperty{};
+
+    /// The range is evaluated over a single stream, so several per-stream-sorted inputs are
+    /// concatenated without a merge and only a global order survives the step.
+    if (dynamic_cast<const LimitRangeStep *>(&step))
         return result.sort_scope == SortingScope::Global ? std::move(result) : SortingProperty{};
 
     if (const auto * transforming = dynamic_cast<const ITransformingStep *>(&step))

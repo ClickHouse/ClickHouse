@@ -61,6 +61,10 @@ public:
     MutableColumnPtr cloneResized(size_t new_size) const override;
     size_t size() const override { return _size; }
     bool isDefaultAt(size_t n) const override;
+
+    /// All values are default iff the offsets array is empty (no non-default
+    /// values have been stored).
+    bool hasOnlyTypeDefaults() const override;
     bool isNullAt(size_t n) const override;
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
@@ -80,7 +84,6 @@ public:
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 #else

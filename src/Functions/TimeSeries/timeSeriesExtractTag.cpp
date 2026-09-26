@@ -68,13 +68,10 @@ public:
         auto tag_to_extract = TimeSeriesTagsFunctionHelpers::extractConstTagNameFromArgument(name, arguments, 1);
 
         auto tag_values = ColumnString::create();
-        tags_collector->extractTag(groups, tag_to_extract, *tag_values);
-        chassert(tag_values->size() == input_rows_count);
-
         auto null_map = ColumnUInt8::create();
-        null_map->reserve(input_rows_count);
-        for (size_t i = 0; i != input_rows_count; ++i)
-            null_map->insertValue(tag_values->getDataAt(i).empty());
+        tags_collector->extractTag(groups, tag_to_extract, *tag_values, null_map->getData());
+        chassert(tag_values->size() == input_rows_count);
+        chassert(null_map->size() == input_rows_count);
 
         return ColumnNullable::create(std::move(tag_values), std::move(null_map));
     }

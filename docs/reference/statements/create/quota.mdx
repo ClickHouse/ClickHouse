@@ -31,6 +31,8 @@ Parameters `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`,
 
 `ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](/reference/statements/distributed-ddl).
 
+`CREATE QUOTA` requires the [CREATE QUOTA](/reference/statements/grant#access-management) privilege. `OR REPLACE` throws away an existing quota of the same name, including which roles it applies to, so it additionally requires the [DROP QUOTA](/reference/statements/grant#access-management) privilege. The `DROP QUOTA` privilege is required whether or not the quota already exists, so the statement cannot be used to find out which quotas exist.
+
 **Examples**
 
 Limit the maximum number of queries for the current user with 123 queries in 15 months constraint:
