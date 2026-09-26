@@ -220,6 +220,7 @@ void registerTableFunctionExplain(TableFunctionFactory & factory)
             .description=R"(
                 Returns result of EXPLAIN query.
                 The function should not be called directly but can be invoked via `SELECT * FROM (EXPLAIN <query>)`.
+                `EXPLAIN TEXT` is not supported this way; run it as a top-level statement.
                 You can use this query to process the result of EXPLAIN further using SQL (e.g., in tests).
                 Example:
                 [example:1]
