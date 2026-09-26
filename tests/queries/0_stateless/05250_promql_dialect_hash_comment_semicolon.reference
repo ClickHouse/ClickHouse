@@ -16,6 +16,9 @@ Max query size exceeded
 [('__name__','up'),('instance','host1')]	30
 [('__name__','up'),('instance','host2')]	10
 []	40
+-- several semicolons in one comment, then another statement
+[('__name__','up'),('instance','host1')]	30
+[]	40
 -- multiple statements in clickhouse-local, with SET statements between them
 [('__name__','up'),('instance','host1')]	5
 [('instance','host1')]	10

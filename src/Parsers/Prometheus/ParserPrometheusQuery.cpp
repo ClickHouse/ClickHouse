@@ -29,38 +29,53 @@ namespace
 /// The raw text is scanned with the PromQL lexical rules (see `PromQLLexer.g4`), because the SQL lexer
 /// does not know that `#` starts a comment unless a space follows it, so a `;` in `up #keep ; x`
 /// would read as the statement end. A `;` inside a string literal doesn't end the statement either.
-const char * findEndOfPromQLStatement(const char * begin, const char * end)
+class PromQLStatementEndFinder
 {
-    const char * p = begin;
-    while (p < end)
-    {
-        const char c = *p;
-        if (c == ';')
-            return p;
+public:
+    explicit PromQLStatementEndFinder(const char * begin) : pos(begin) {}
 
-        if (c == '#')
+    /// Resumes where the previous call stopped, so each byte is read once. `end` must not decrease.
+    const char * find(const char * end)
+    {
+        while (pos < end)
         {
-            p = find_first_symbols<'\n'>(p, end);
-        }
-        else if (c == '"' || c == '\'' || c == '`')
-        {
-            /// Backquoted strings are raw, the others have backslash escapes.
-            ++p;
-            while (p < end && *p != c)
+            if (open == '#')
             {
-                if (*p == '\\' && c != '`' && p + 1 < end)
-                    ++p;
-                ++p;
+                pos = find_first_symbols<'\n'>(pos, end);
+                if (pos < end)
+                    open = 0;
             }
-            p = std::min(p + 1, end);
+            else if (open)
+            {
+                /// Backquoted strings are raw, the others have backslash escapes.
+                if (*pos == '\\' && open != '`')
+                {
+                    /// The escaped char is past `end`, so it is read on the next call.
+                    if (pos + 1 == end)
+                        return end;
+                    ++pos;
+                }
+                else if (*pos == open)
+                    open = 0;
+                ++pos;
+            }
+            else
+            {
+                if (*pos == ';')
+                    return pos;
+                if (*pos == '#' || *pos == '"' || *pos == '\'' || *pos == '`')
+                    open = *pos;
+                ++pos;
+            }
         }
-        else
-        {
-            ++p;
-        }
+        return end;
     }
-    return end;
-}
+
+private:
+    const char * pos;
+    /// `#` inside a comment, the opening quote inside a string, 0 otherwise.
+    char open = 0;
+};
 
 }
 
@@ -101,6 +116,7 @@ bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     /// parsed position, which `tryParseQuery` reports as the end of the query, so the rest of a
     /// multi-statement input would be skipped.
     const char * end = nullptr;
+    PromQLStatementEndFinder end_finder(begin);
     for (Pos lookahead = pos; !end; ++lookahead)
     {
         /// The lexer returns this token forever once the input crosses `max_query_size`, so it is
@@ -111,10 +127,10 @@ bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
 
         if (lookahead->isEnd())
-            end = findEndOfPromQLStatement(begin, lookahead->begin);
+            end = end_finder.find(lookahead->begin);
         else if (lookahead->type == TokenType::Semicolon)
         {
-            const char * found = findEndOfPromQLStatement(begin, lookahead->end);
+            const char * found = end_finder.find(lookahead->end);
             if (found != lookahead->end)
                 end = found;
         }

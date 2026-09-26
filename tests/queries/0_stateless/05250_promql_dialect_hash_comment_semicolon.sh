@@ -47,6 +47,9 @@ promql_client --max_query_size 50 -q $'sum(up #keep ; comment\n+ up + up + up + 
 echo "-- multiple statements: each one runs, the parse of one does not skip the rest"
 promql_client -m -q $'up{instance="host1"}; up{instance="host2"} #a ; b\n; sum(up)' | cut -f1,3
 
+echo "-- several semicolons in one comment, then another statement"
+promql_client -m -q $'up{instance="host1"} #a;b;c\n; sum(up)' | cut -f1,3
+
 echo "-- multiple statements in clickhouse-local, with SET statements between them"
 $CLICKHOUSE_LOCAL --allow_experimental_time_series_table 1 -m -q "
 CREATE TABLE ts ENGINE = TimeSeries;
