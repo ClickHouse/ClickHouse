@@ -352,7 +352,6 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
     /// the same path; a shared temporary name would let them overwrite and delete each other's files.
     auto temp_path = fs::path(file_path.string() + "." + getRandomASCIIString(8) + ".tmp");
 
-    /// The removal must not take the temporary file away between creating it and renaming it.
     CachedSchemaFileInUse temp_file_in_use(temp_path.filename().string());
 
     try
@@ -363,7 +362,6 @@ void FormatSchemaInfo::storeSchemaOnDisk(const fs::path & file_path, const Strin
         out.sync();
         out.close();
 
-        /// The temporary holds the whole schema here and is not reachable under the final name yet.
         FailPointInjection::pauseFailPoint(FailPoints::format_schema_cache_pause_before_publish);
 
         if (fs::exists(file_path))
