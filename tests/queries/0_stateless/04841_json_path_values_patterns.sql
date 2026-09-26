@@ -97,7 +97,7 @@ INSERT INTO json_index_tokens_long_value VALUES
     (1, concat('{"url":"https://example.com/', repeat('a', 100), 'x","sparse_a":"one"}')),
     (2, concat('{"url":"https://example.com/', repeat('a', 100), 'y","sparse_b":"two"}')),
     (3, concat('{"url":"HTTPS://EXAMPLE.COM/', repeat('A', 100), 'Z","sparse_c":"three"}')),
-    (4, '{"url":"https://example.com/other"}');
+    (4, '{"url":"https://example.org/other"}');
 
 SELECT 'long equality';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
