@@ -94,12 +94,10 @@ protected:
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
 
-    /// Parts committed by this sink, to be fsynced in one batch by onFinish(). Only collected
-    /// when the table asks for that (MergeTreeData::shouldFsyncPartsAfterInsert), so that a
-    /// long-running INSERT does not accumulate them for nothing.
-    bool fsync_parts_on_finish = false;
+    /// Parts committed by this sink, to be fsynced in one batch by onFinish(). Only the parts that
+    /// were not synced when written (MergeTreeTemporaryPart::needs_fsync_on_finish) are collected,
+    /// so that a long-running INSERT without batched fsync does not accumulate them for nothing.
     std::vector<MergeTreePartInfo> committed_parts;
-
 
     /// fsync the parts committed so far and forget them. See MergeTreeData::fsyncPartsAfterInsert().
     void fsyncCommittedParts();

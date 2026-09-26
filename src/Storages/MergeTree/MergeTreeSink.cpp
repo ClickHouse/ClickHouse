@@ -79,7 +79,6 @@ MergeTreeSink::MergeTreeSink(
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
-    , fsync_parts_on_finish(storage.shouldFsyncPartsAfterInsert())
 {
     LOG_TEST(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 
@@ -335,7 +334,7 @@ void MergeTreeSink::finishDelayedChunk()
 
             if (conflicts.empty())
             {
-                if (fsync_parts_on_finish)
+                if (partition.temp_part->needs_fsync_on_finish)
                     committed_parts.push_back(part->info);
                 partition.temp_part->prewarmCaches();
 

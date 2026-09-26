@@ -1175,8 +1175,9 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     /// With fsync_after_insert_each_part = 0 the part is not synced here: the INSERT syncs all the
     /// parts it wrote in one batch when it finishes, see MergeTreeData::fsyncPartsAfterInsert().
-    const bool sync_this_part = (*data_settings)[MergeTreeSetting::fsync_after_insert]
-        && (*data_settings)[MergeTreeSetting::fsync_after_insert_each_part];
+    const bool fsync_after_insert = (*data_settings)[MergeTreeSetting::fsync_after_insert];
+    const bool sync_this_part = fsync_after_insert && (*data_settings)[MergeTreeSetting::fsync_after_insert_each_part];
+    temp_part->needs_fsync_on_finish = fsync_after_insert && !sync_this_part;
 
     out->finalizeIndexGranularity();
     auto finalizer = out->finalizePartAsync(

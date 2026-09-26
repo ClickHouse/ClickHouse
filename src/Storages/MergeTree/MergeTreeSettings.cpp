@@ -659,6 +659,11 @@ When the fsync of an `INSERT` happens. Has no effect unless `fsync_after_insert`
   `INSERT` that produces many parts, and is not recommended with wide parts. Use it when every
   part has to be durable at the moment it becomes visible, rather than at the moment the
   `INSERT` completes.
+
+The same applies to the patch parts written by lightweight `UPDATE` and `DELETE`. A streaming
+`INSERT` (with `input_format_max_block_wait_ms` other than 0), which can stay open indefinitely,
+does not wait for the query to finish: with `false` it fsyncs the parts of each flushed block
+right after committing them.
 )", 0) \
     DECLARE(Bool, fsync_part_directory, false, R"(
 Do fsync for part directory after all part operations (writes, renames, etc.).

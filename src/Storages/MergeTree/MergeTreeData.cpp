@@ -310,7 +310,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_mixed_granularity_parts;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsBool fsync_after_insert;
-    extern const MergeTreeSettingsBool fsync_after_insert_each_part;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_delay_insert;
     extern const MergeTreeSettingsUInt64 inactive_parts_to_throw_insert;
@@ -8308,20 +8307,12 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
 }
 
-bool MergeTreeData::shouldFsyncPartsAfterInsert() const
-{
-    const auto settings = getSettings();
-    return (*settings)[MergeTreeSetting::fsync_after_insert]
-        && !(*settings)[MergeTreeSetting::fsync_after_insert_each_part];
-}
-
 void MergeTreeData::fsyncPartsAfterInsert(const std::vector<MergeTreePartInfo> & committed_parts) const
 {
-    /// Deliberately not re-checking shouldFsyncPartsAfterInsert() here: the sink took that decision
-    /// when the query started and has skipped the per-part sync of every part in `committed_parts`
-    /// because of it. If the table settings were changed while the query was running, the batched
-    /// sync is the only one those parts will ever get, so it must happen regardless of what the
-    /// settings say now.
+    /// Deliberately not re-checking the table settings here: every part in `committed_parts` has
+    /// skipped its per-part sync because of the settings in effect when it was written. If the
+    /// table settings were changed while the query was running, the batched sync is the only one
+    /// those parts will ever get, so it must happen regardless of what the settings say now.
     if (committed_parts.empty())
         return;
 

@@ -142,9 +142,6 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     , keeper_retries_info(std::move(keeper_retries_info_))
     , is_async_insert(async_insert_)
 {
-    /// Assigned here rather than in the initializer list: `storage` is declared after this member.
-    fsync_parts_on_finish = storage.shouldFsyncPartsAfterInsert();
-
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (required_quorum_size == 1)
         required_quorum_size = 0;
@@ -504,7 +501,7 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 {
                     // Successfully committed
                     block_ids_for_log = deduplication_blocks_ids;
-                    if (fsync_parts_on_finish)
+                    if (partition.temp_part->needs_fsync_on_finish)
                         committed_parts.push_back(partition.temp_part->part->info);
                     partition.temp_part->prewarmCaches();
                     break;

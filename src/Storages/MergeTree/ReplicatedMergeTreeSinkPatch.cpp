@@ -66,7 +66,7 @@ void ReplicatedMergeTreeSinkPatch::finishDelayed(const ZooKeeperWithFaultInjecti
             /// so it has to be collected here as well, otherwise the lightweight update would be
             /// acknowledged with its patch part not made durable.
             /// See `ReplicatedMergeTreeSink::fsyncCommittedParts`.
-            if (fsync_parts_on_finish)
+            if (partition.temp_part->needs_fsync_on_finish)
                 committed_parts.push_back(part->info);
 
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
