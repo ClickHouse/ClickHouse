@@ -279,3 +279,60 @@ def test_correction_follows_measurement():
     assert gap_after - gap_before > 64 * MiB
     assert gap_after - gap_purged > 64 * MiB
     assert tracking_after - tracking_purged > 64 * MiB
+
+
+def get_metric(metric):
+    return int(
+        http_query(f"SELECT value FROM system.metrics WHERE metric = '{metric}'")
+    )
+
+
+def sample_metrics():
+    # Same as `sample_corrected_metrics`, but for `node`.
+    time.sleep(0.5)
+    return get_metric("MemoryTracking"), get_metric("MemoryTrackingUncorrected")
+
+
+def test_uncorrected_counter_is_refreshed_without_correction():
+    # With the correction disabled, the worker never replaces `MemoryTracking` after its first
+    # tick, so `MemoryTrackingUncorrected` is refreshed only by the snapshot the worker takes on
+    # every tick that does not correct. Both are then the same plain counter up to the constant
+    # that the first tick replaced, and must move together: a snapshot that is not refreshed
+    # would stay at its value from the first tick while `MemoryTracking` moves.
+    if not node.contains_in_log("Starting background memory thread"):
+        pytest.skip("the memory worker has no source of memory usage information")
+
+    query("DROP TABLE IF EXISTS memory_tracking_hold")
+    tracking_before, uncorrected_before = sample_metrics()
+
+    # The data of a `Memory` table stays allocated after the query, and is charged to the
+    # global tracker until the table is dropped: about 200 MiB here.
+    query(
+        "CREATE TABLE memory_tracking_hold ENGINE = Memory AS SELECT repeat('a', 1000) AS s FROM numbers(200000)"
+    )
+    tracking_held, uncorrected_held = sample_metrics()
+
+    query("DROP TABLE memory_tracking_hold SYNC")
+    tracking_dropped, uncorrected_dropped = sample_metrics()
+
+    logging.info(
+        "MemoryTracking: before %s, held %s, dropped %s",
+        tracking_before,
+        tracking_held,
+        tracking_dropped,
+    )
+    logging.info(
+        "MemoryTrackingUncorrected: before %s, held %s, dropped %s",
+        uncorrected_before,
+        uncorrected_held,
+        uncorrected_dropped,
+    )
+
+    assert tracking_held - tracking_before > 100 * MiB
+    assert tracking_held - tracking_dropped > 100 * MiB
+
+    gap_before = tracking_before - uncorrected_before
+    gap_held = tracking_held - uncorrected_held
+    gap_dropped = tracking_dropped - uncorrected_dropped
+    assert abs(gap_held - gap_before) < 16 * MiB
+    assert abs(gap_dropped - gap_before) < 16 * MiB
