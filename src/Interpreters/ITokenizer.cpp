@@ -15,13 +15,6 @@
 #include <algorithm>
 #include <limits>
 
-#if defined(__SSE2__)
-#  include <emmintrin.h>
-#  if defined(__SSE4_2__)
-#    include <nmmintrin.h>
-#  endif
-#endif
-
 #if USE_ICU
 #  include <unicode/ubrk.h>
 #  include <unicode/utext.h>

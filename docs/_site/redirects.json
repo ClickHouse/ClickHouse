@@ -1,5 +1,113 @@
 [
   {
+    "destination": "/ar/integrations/language-clients/java/jdbc",
+    "source": "/ar/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/es/integrations/language-clients/java/jdbc",
+    "source": "/es/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/fr/integrations/language-clients/java/jdbc",
+    "source": "/fr/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/ja/integrations/language-clients/java/jdbc",
+    "source": "/ja/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/ko/integrations/language-clients/java/jdbc",
+    "source": "/ko/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/pt-BR/integrations/language-clients/java/jdbc",
+    "source": "/pt-BR/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/ru/integrations/language-clients/java/jdbc",
+    "source": "/ru/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/zh/integrations/language-clients/java/jdbc",
+    "source": "/zh/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/integrations/language-clients/java/jdbc",
+    "source": "/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/ar/integrations/language-clients/cpp",
+    "source": "/ar/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/es/integrations/language-clients/cpp",
+    "source": "/es/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/fr/integrations/language-clients/cpp",
+    "source": "/fr/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/ja/integrations/language-clients/cpp",
+    "source": "/ja/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/ko/integrations/language-clients/cpp",
+    "source": "/ko/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/pt-BR/integrations/language-clients/cpp",
+    "source": "/pt-BR/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/ru/integrations/language-clients/cpp",
+    "source": "/ru/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/zh/integrations/language-clients/cpp",
+    "source": "/zh/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/integrations/language-clients/cpp",
+    "source": "/concepts/features/interfaces/cpp"
+  },
+  {
+    "destination": "/get-started/sample-datasets/nyc-taxi",
+    "source": "/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ar/get-started/sample-datasets/nyc-taxi",
+    "source": "/ar/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/es/get-started/sample-datasets/nyc-taxi",
+    "source": "/es/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/fr/get-started/sample-datasets/nyc-taxi",
+    "source": "/fr/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "source": "/ja/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "source": "/ko/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/pt-BR/get-started/sample-datasets/nyc-taxi",
+    "source": "/pt-BR/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "source": "/ru/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "source": "/zh/get-started/quickstarts/tutorial"
+  },
+  {
     "destination": "/get-started/setup/cloud",
     "source": "/get-started/quickstarts/create-your-first-service-on-cloud"
   },
@@ -3764,7 +3872,7 @@
     "source": "/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/get-started/sample-datasets/nyc-taxi",
     "source": "/getting-started/tutorial"
   },
   {
@@ -3812,7 +3920,7 @@
     "source": "/getting_started/playground"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/get-started/sample-datasets/nyc-taxi",
     "source": "/getting_started/tutorial"
   },
   {
@@ -5780,7 +5888,7 @@
     "source": "/interfaces/javascript"
   },
   {
-    "destination": "/concepts/features/interfaces/jdbc",
+    "destination": "/integrations/language-clients/java/jdbc",
     "source": "/interfaces/jdbc"
   },
   {
@@ -8616,7 +8724,7 @@
     "source": "/jp/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
     "source": "/jp/getting-started/tutorial"
   },
   {
@@ -8664,7 +8772,7 @@
     "source": "/jp/getting_started/playground"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
     "source": "/jp/getting_started/tutorial"
   },
   {
@@ -10628,7 +10736,7 @@
     "source": "/jp/interfaces/javascript"
   },
   {
-    "destination": "/ja/concepts/features/interfaces/jdbc",
+    "destination": "/ja/integrations/language-clients/java/jdbc",
     "source": "/jp/interfaces/jdbc"
   },
   {
@@ -15304,7 +15412,7 @@
     "source": "/jp/troubleshooting"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
     "source": "/jp/tutorial"
   },
   {
@@ -19380,7 +19488,7 @@
     "source": "/ko/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
     "source": "/ko/getting-started/tutorial"
   },
   {
@@ -19428,7 +19536,7 @@
     "source": "/ko/getting_started/playground"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
     "source": "/ko/getting_started/tutorial"
   },
   {
@@ -21388,7 +21496,7 @@
     "source": "/ko/interfaces/javascript"
   },
   {
-    "destination": "/ko/concepts/features/interfaces/jdbc",
+    "destination": "/ko/integrations/language-clients/java/jdbc",
     "source": "/ko/interfaces/jdbc"
   },
   {
@@ -26064,7 +26172,7 @@
     "source": "/ko/troubleshooting"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
     "source": "/ko/tutorial"
   },
   {
@@ -31496,7 +31604,7 @@
     "source": "/ru/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
     "source": "/ru/getting-started/tutorial"
   },
   {
@@ -31544,7 +31652,7 @@
     "source": "/ru/getting_started/playground"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
     "source": "/ru/getting_started/tutorial"
   },
   {
@@ -33504,7 +33612,7 @@
     "source": "/ru/interfaces/javascript"
   },
   {
-    "destination": "/ru/concepts/features/interfaces/jdbc",
+    "destination": "/ru/integrations/language-clients/java/jdbc",
     "source": "/ru/interfaces/jdbc"
   },
   {
@@ -38180,7 +38288,7 @@
     "source": "/ru/troubleshooting"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
     "source": "/ru/tutorial"
   },
   {
@@ -41480,7 +41588,7 @@
     "source": "/troubleshooting"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/get-started/sample-datasets/nyc-taxi",
     "source": "/tutorial"
   },
   {
@@ -45068,7 +45176,7 @@
     "source": "/zh/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
     "source": "/zh/getting-started/tutorial"
   },
   {
@@ -45116,7 +45224,7 @@
     "source": "/zh/getting_started/playground"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
     "source": "/zh/getting_started/tutorial"
   },
   {
@@ -47076,7 +47184,7 @@
     "source": "/zh/interfaces/javascript"
   },
   {
-    "destination": "/zh/concepts/features/interfaces/jdbc",
+    "destination": "/zh/integrations/language-clients/java/jdbc",
     "source": "/zh/interfaces/jdbc"
   },
   {
@@ -51752,7 +51860,7 @@
     "source": "/zh/troubleshooting"
   },
   {
-    "destination": "/get-started/quickstarts/tutorial",
+    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
     "source": "/zh/tutorial"
   },
   {

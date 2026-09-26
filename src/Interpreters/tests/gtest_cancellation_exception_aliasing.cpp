@@ -34,6 +34,7 @@ QueryStatusPtr makeQueryStatus(const String & query_id)
         "SELECT 1",
         /*normalized_query_hash_*/ 0,
         client_info,
+        /*user_id_*/ std::nullopt,
         /*priority_handle_*/ QueryPriorities::Handle{},
         /*query_slot_*/ nullptr,
         /*memory_reservation_*/ nullptr,
