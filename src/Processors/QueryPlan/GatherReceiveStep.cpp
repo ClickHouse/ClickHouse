@@ -28,7 +28,8 @@ void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// The steps after a gather depend on the streams of the sources: a sorted gather merges them
     /// in order, and the merge of partial aggregation results expects every sender's buckets on one
     /// input, in order. So the receive keeps one stream per source, with the deserializer behind it.
-    pipeline = receiveExchangeStreams(output_header, exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ false);
+    pipeline
+        = receiveExchangeStreams(output_header, exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ false, /*advisory=*/ false);
 
     if (maintain_sort_description && pipeline.getNumStreams() > 1)
     {

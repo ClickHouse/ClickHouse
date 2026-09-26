@@ -25,8 +25,9 @@ SharedHeader runtimeFilterPartialsHeader();
 ///     `__applyFilter` in this task starts pruning.
 ///   - `Mode::ForwardUnion`: re-serialized and emitted as a single row on the output, for an
 ///     intermediate task of the runtime filter merge tree.
-/// If some input finishes without delivering (e.g. the stream was cancelled), or any state exceeds
-/// `max_received_state_bytes`, nothing is published and rows keep passing unfiltered (fail-open).
+/// If some input finishes without delivering (e.g. the stream was cancelled or its producer was
+/// lost), or any state exceeds `max_received_state_bytes`, nothing is published and rows keep
+/// passing unfiltered (fail-open).
 /// An oversized state is rejected before it is copied or parsed. Malformed or duplicate states
 /// still throw: they indicate a bug, not a benign delivery failure.
 /// In `RegisterUnion` mode the output never produces rows; it exists so the receiving branch can

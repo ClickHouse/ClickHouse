@@ -135,9 +135,9 @@ void MergeRuntimeFiltersTransform::consume()
         /// re-run: `sendTask` in `StatelessWorkerClient.cpp` does not retry a task start, and
         /// `StatelessTaskExecutor::startTask` ignores a duplicate one. A stream pairs one producer
         /// with one consumer, because `ExchangeConnections` drops a duplicate producer and refuses
-        /// a duplicate consumer. A broken stream fails the whole query rather than reconnect and
-        /// replay (`StreamingExchangeSource`). A second state from the same source therefore
-        /// indicates a bug, not a benign redelivery.
+        /// a duplicate consumer. `StreamingExchangeSource` never reconnects or replays a broken
+        /// stream: it ends the input early or fails the query. A second state from the same source
+        /// therefore indicates a bug, not a benign redelivery.
         if (received[current_input])
             throw Exception(
                 ErrorCodes::INCORRECT_DATA, "Received more than one partial runtime filter '{}' from the same source", filter_name);
@@ -186,8 +186,9 @@ void MergeRuntimeFiltersTransform::finalize()
 {
     finalized = true;
 
-    /// A missing state (e.g. a cancelled stream) means the union would be incomplete and must not
-    /// be used for filtering: without it rows keep passing unfiltered, which is always correct.
+    /// A missing state (e.g. a cancelled stream, or one whose producer was lost) means the union
+    /// would be incomplete and must not be used for filtering: without it rows keep passing
+    /// unfiltered, which is always correct.
     if (states_received != inputs.size())
     {
         accumulated.reset();

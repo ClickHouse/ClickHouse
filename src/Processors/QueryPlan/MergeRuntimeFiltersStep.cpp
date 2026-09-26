@@ -83,8 +83,8 @@ MergeRuntimeFiltersStep::updatePipeline(QueryPipelineBuilders pipelines, const B
     }
 
     /// One stream per child: the merge counts the states it receives per input.
-    auto pipeline = std::make_unique<QueryPipelineBuilder>(
-        receiveExchangeStreams(partials_header, input_exchange_id, input_streams, settings, /*spread_over_max_threads*/ false));
+    auto pipeline = std::make_unique<QueryPipelineBuilder>(receiveExchangeStreams(
+        partials_header, input_exchange_id, input_streams, settings, /*spread_over_max_threads*/ false, /*advisory*/ true));
 
     pipeline->addTransform(
         std::make_shared<MergeRuntimeFiltersTransform>(

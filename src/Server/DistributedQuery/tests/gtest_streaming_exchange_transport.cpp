@@ -16,6 +16,7 @@
 #include <Common/assert_cast.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -25,14 +26,17 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ISink.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/receiveExchangeStreams.h>
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Server/DistributedQuery/ExchangeServer.h>
 #include <Server/DistributedQuery/StreamingExchangeDeserializingTransform.h>
+#include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 #include <Server/DistributedQuery/StreamingExchangeSerializingTransform.h>
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
@@ -47,6 +51,7 @@ namespace ProfileEvents
     extern const Event StreamingExchangePacketsReceived;
     extern const Event StreamingExchangeSendQueueFullMicroseconds;
     extern const Event StreamingExchangeEarlyCloses;
+    extern const Event RuntimeFilterReceivesAbandoned;
 }
 
 namespace CurrentMetrics
@@ -178,10 +183,19 @@ QueryPipeline makeReceivingPipeline(
     UInt16 port,
     bool source_hands_packets,
     std::shared_ptr<CollectingSink> sink,
-    std::optional<UInt64> limit_rows = {})
+    std::optional<UInt64> limit_rows = {},
+    bool advisory = false)
 {
     auto source = std::make_shared<StreamingExchangeSource>(
-        header, "query", "stream", "127.0.0.1", port, /*cancellation_=*/ nullptr, /*auth_token_=*/ String{}, source_hands_packets);
+        header,
+        "query",
+        "stream",
+        "127.0.0.1",
+        port,
+        /*cancellation_=*/ nullptr,
+        /*auth_token_=*/ String{},
+        source_hands_packets,
+        advisory);
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(source));
@@ -549,29 +563,35 @@ std::string rawHeader(UInt64 packet_type, UInt64 bytes_size)
     return std::string(reinterpret_cast<const char *>(&header), sizeof(header));
 }
 
-/// A peer that completes the handshake and then sends `bytes`; with `then_reset` it cuts the
-/// connection right after, otherwise it keeps it open until the test ends.
-std::function<void(Poco::Net::StreamSocket &)> sendAfterHandshake(std::string bytes, bool then_reset = false)
+/// What the peer of `sendAfterHandshake` does with the connection after it sent its bytes.
+enum class ThenPeer
 {
-    return [packet_bytes = std::move(bytes), then_reset](Poco::Net::StreamSocket & socket)
+    KeepsOpen, /// Until the test ends.
+    Closes,
+    Resets,
+};
+
+/// A peer that completes the handshake and then sends `bytes`.
+std::function<void(Poco::Net::StreamSocket &)> sendAfterHandshake(std::string bytes, ThenPeer then = ThenPeer::KeepsOpen)
+{
+    return [packet_bytes = std::move(bytes), then](Poco::Net::StreamSocket & socket)
     {
         ExchangeTest::completeSinkHandshake(socket);
         StreamingExchangeProtocol::sendAll(socket, packet_bytes.data(), packet_bytes.size(), "test packet");
-        if (then_reset)
-        {
+        if (then == ThenPeer::Resets)
             socket.setLinger(true, 0);
+        if (then != ThenPeer::KeepsOpen)
             socket.close();
-        }
     };
 }
 
 /// Runs a real source in the given mode against `peer`; returns the code the pipeline threw with,
 /// and the rows that arrived.
-std::pair<std::optional<int>, size_t> receiveFrom(const ExchangeTest::FakePeer & peer, bool source_hands_packets)
+std::pair<std::optional<int>, size_t> receiveFrom(const ExchangeTest::FakePeer & peer, bool source_hands_packets, bool advisory = false)
 {
     auto header = makeHeader();
     auto sink = std::make_shared<CollectingSink>(header);
-    auto receiving = makeReceivingPipeline(header, peer.port(), source_hands_packets, sink);
+    auto receiving = makeReceivingPipeline(header, peer.port(), source_hands_packets, sink, /*limit_rows=*/ {}, advisory);
     auto code = run(receiving, 2);
     size_t rows = 0;
     for (const auto & chunk : sink->chunks)
@@ -616,7 +636,8 @@ TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
             EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT) << "an oversized body";
         }
         {
-            ExchangeTest::FakePeer peer(sendAfterHandshake(rawHeader(StreamingExchangeProtocol::PacketType::Data, 100) + std::string(10, 'x'), /*then_reset=*/ true));
+            ExchangeTest::FakePeer peer(
+                sendAfterHandshake(rawHeader(StreamingExchangeProtocol::PacketType::Data, 100) + std::string(10, 'x'), ThenPeer::Resets));
             EXPECT_EQ(receiveFrom(peer, source_hands_packets).first, ErrorCodes::EXCHANGE_PEER_DISCONNECTED) << "a connection cut in the middle of a packet";
         }
         {
@@ -632,6 +653,124 @@ TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
             const auto [code, rows] = receiveFrom(peer, source_hands_packets);
             EXPECT_EQ(code, std::nullopt) << "a proper packet and the marker";
             EXPECT_EQ(rows, 3u);
+        }
+    }
+}
+
+/// When the peer is lost after the handshake, an advisory source ends the stream without data and
+/// never emits a partial packet. The peer closes or resets the connection, between packets or
+/// inside one. A source that is not advisory fails on the same peer.
+TEST(StreamingExchangeTransport, AdvisorySourceEndsWhenThePeerIsLostAfterTheHandshake)
+{
+    MainThreadStatus::getInstance();
+
+    struct Loss
+    {
+        std::string bytes;
+        ThenPeer then;
+        const char * what;
+    };
+    const std::vector<Loss> losses = {
+        {"", ThenPeer::Closes, "a close between packets"},
+        {"", ThenPeer::Resets, "a reset between packets"},
+        {rawHeader(StreamingExchangeProtocol::PacketType::Data, 100) + std::string(10, 'x'),
+         ThenPeer::Closes,
+         "a close in the middle of a packet"},
+        {rawHeader(StreamingExchangeProtocol::PacketType::Data, 100) + std::string(10, 'x'),
+         ThenPeer::Resets,
+         "a reset in the middle of a packet"},
+    };
+
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+        for (const auto & loss : losses)
+        {
+            SCOPED_TRACE(loss.what);
+            {
+                const UInt64 abandoned_before = eventCount(ProfileEvents::RuntimeFilterReceivesAbandoned);
+                ExchangeTest::FakePeer peer(sendAfterHandshake(loss.bytes, loss.then));
+                const auto [code, rows] = receiveFrom(peer, source_hands_packets, /*advisory=*/ true);
+                EXPECT_EQ(code, std::nullopt);
+                EXPECT_EQ(rows, 0u);
+                EXPECT_EQ(eventCount(ProfileEvents::RuntimeFilterReceivesAbandoned) - abandoned_before, 1u);
+            }
+            {
+                ExchangeTest::FakePeer peer(sendAfterHandshake(loss.bytes, loss.then));
+                EXPECT_EQ(receiveFrom(peer, source_hands_packets, /*advisory=*/ false).first, ErrorCodes::EXCHANGE_PEER_DISCONNECTED);
+            }
+        }
+    }
+}
+
+/// An advisory source still throws when the peer hangs up during the handshake or sends a packet
+/// of an unknown type; only a peer lost after the handshake ends the stream quietly.
+TEST(StreamingExchangeTransport, AdvisorySourceStillFailsOnHandshakeAndProtocolErrors)
+{
+    MainThreadStatus::getInstance();
+
+    for (bool source_hands_packets : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("source_hands_packets={}", source_hands_packets));
+        const UInt64 abandoned_before = eventCount(ProfileEvents::RuntimeFilterReceivesAbandoned);
+        {
+            /// Only the sending direction is shut down: the peer still takes in the SourceHello.
+            ExchangeTest::FakePeer peer([](Poco::Net::StreamSocket & socket) { socket.shutdownSend(); });
+            EXPECT_EQ(receiveFrom(peer, source_hands_packets, /*advisory=*/ true).first, ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+                << "a peer that hangs up before the SinkHello";
+        }
+        {
+            ExchangeTest::FakePeer peer(sendAfterHandshake(rawHeader(/*packet_type=*/ 0xbad, /*bytes_size=*/ 0), ThenPeer::Closes));
+            EXPECT_EQ(receiveFrom(peer, source_hands_packets, /*advisory=*/ true).first, ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT)
+                << "an unknown packet type";
+        }
+        EXPECT_EQ(eventCount(ProfileEvents::RuntimeFilterReceivesAbandoned), abandoned_before);
+    }
+}
+
+/// `receiveExchangeStreams` and the streaming lookup hand `advisory` on to the source: with it, a
+/// peer lost after the handshake ends the receive quietly; without it, the same peer fails it.
+TEST(StreamingExchangeTransport, ReceiveHandsAdvisoryToTheSource)
+{
+    MainThreadStatus::getInstance();
+
+    for (bool advisory : {false, true})
+    {
+        SCOPED_TRACE(fmt::format("advisory={}", advisory));
+        ExchangeTest::FakePeer peer(sendAfterHandshake("", ThenPeer::Closes));
+
+        const ExchangeStreamId stream_id("exchange", 0, 0);
+        ExchangeStreamSources sources;
+        sources.stream_hosts[stream_id.toString()] = StreamSourceAddress{.host = "127.0.0.1", .port = peer.port()};
+        BuildQueryPipelineSettings settings(getContext().context);
+        settings.exchange_lookup = createStreamingExchangeLookup(
+            "query",
+            std::make_shared<ExchangeConnections>(),
+            sources,
+            /*cancellation=*/ nullptr,
+            /*auth_token=*/ String{},
+            CompressionCodecFactory::instance().getDefaultCodec());
+
+        const auto header = makeHeader();
+        const VectorWithMemoryTracking<ExchangeStreamId> stream_ids{stream_id};
+        auto builder
+            = receiveExchangeStreams(header, stream_id.exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ false, advisory);
+        auto sink = std::make_shared<CollectingSink>(header);
+        builder.setSinks([&](const SharedHeader &, Pipe::StreamType) { return sink; });
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+
+        const UInt64 abandoned_before = eventCount(ProfileEvents::RuntimeFilterReceivesAbandoned);
+        const auto code = run(pipeline, 2);
+        const UInt64 abandoned = eventCount(ProfileEvents::RuntimeFilterReceivesAbandoned) - abandoned_before;
+        if (advisory)
+        {
+            EXPECT_EQ(code, std::nullopt);
+            EXPECT_EQ(abandoned, 1u);
+        }
+        else
+        {
+            EXPECT_EQ(code, ErrorCodes::EXCHANGE_PEER_DISCONNECTED);
+            EXPECT_EQ(abandoned, 0u);
         }
     }
 }

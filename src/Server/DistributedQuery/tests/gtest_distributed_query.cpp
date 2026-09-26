@@ -621,7 +621,8 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
 
     size_t total_rows = 0;
     {
-        QueryPipeline pipeline(Pipe(exchange_lookup->createSource(header, stream_id, /*output_is_serialized=*/ false)));
+        QueryPipeline pipeline(
+            Pipe(exchange_lookup->createSource(header, stream_id, /*output_is_serialized=*/ false, /*advisory=*/ false)));
         PullingPipelineExecutor executor(pipeline);
         Chunk chunk;
         while (executor.pull(chunk))

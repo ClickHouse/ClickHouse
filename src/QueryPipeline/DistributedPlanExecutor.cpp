@@ -205,7 +205,10 @@ public:
         return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name), file_name);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
+    /// `advisory` is ignored: a persisted stream is read only after its producer finished, and a
+    /// missing file means a failed producer, which already fails the query.
+    std::shared_ptr<ISource> createSource(
+        SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool /*advisory*/) override
     {
         if (!temporary_files)
             throw Exception(
@@ -421,7 +424,10 @@ public:
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
+    /// `advisory` is ignored: an in-memory source has no peer to lose and fails only when the
+    /// query is cancelled.
+    std::shared_ptr<ISource> createSource(
+        SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool /*advisory*/) override
     {
         if (output_is_serialized)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "In-memory exchange {} has no deserializer, its source gives data chunks", exchange_stream_id.toString());
@@ -586,9 +592,11 @@ public:
         return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id, advisory);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
+    std::shared_ptr<ISource>
+    createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized, bool advisory) override
     {
-        return lookupFor(exchange_stream_id.exchange_id).createSource(std::move(output_header), exchange_stream_id, output_is_serialized);
+        return lookupFor(exchange_stream_id.exchange_id)
+            .createSource(std::move(output_header), exchange_stream_id, output_is_serialized, advisory);
     }
 
     std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String & exchange_id) override
@@ -980,7 +988,12 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         chassert(!descriptor.streams.empty());
         VectorWithMemoryTracking<ExchangeStreamId> streams(descriptor.streams.begin(), descriptor.streams.end());
         auto partials = receiveExchangeStreams(
-            partials_header, descriptor.streams.front().exchange_id, streams, pipeline_settings, /*spread_over_max_threads*/ false);
+            partials_header,
+            descriptor.streams.front().exchange_id,
+            streams,
+            pipeline_settings,
+            /*spread_over_max_threads*/ false,
+            /*advisory*/ true);
         auto merge = std::make_shared<MergeRuntimeFiltersTransform>(
             partials_header,
             descriptor.streams.size(),
