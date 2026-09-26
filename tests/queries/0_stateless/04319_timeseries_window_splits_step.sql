@@ -12,7 +12,7 @@ INSERT INTO ts_split VALUES
 
 -- window=25, step=10: window % step = 5 (!= 0) and window > step -> each step cell is split into two buckets.
 SELECT 'window splits step (window=25, step=10):';
-SELECT timeSeriesResampleToGridWithStaleness(0, 80, 10, 25)(timestamp, value) FROM ts_split;
+SELECT timeSeriesLastToGrid(0, 80, 10, 25)(timestamp, value) FROM ts_split;
 SELECT timeSeriesChangesToGrid(0, 80, 10, 25)(timestamp, value) FROM ts_split;
 SELECT timeSeriesResetsToGrid(0, 80, 10, 25)(timestamp, value) FROM ts_split;
 SELECT timeSeriesRateToGrid(0, 80, 10, 25)(timestamp, value) FROM ts_split;
@@ -27,7 +27,7 @@ SELECT 'window splits step (window=31, step=10):';
 SELECT timeSeriesChangesToGrid(0, 80, 10, 31)(timestamp, value) FROM ts_split;
 SELECT timeSeriesResetsToGrid(0, 80, 10, 31)(timestamp, value) FROM ts_split;
 SELECT timeSeriesDeltaToGrid(0, 80, 10, 31)(timestamp, value) FROM ts_split;
-SELECT timeSeriesResampleToGridWithStaleness(0, 80, 10, 31)(timestamp, value) FROM ts_split;
+SELECT timeSeriesLastToGrid(0, 80, 10, 31)(timestamp, value) FROM ts_split;
 
 -- Contrast regimes that do NOT split a step:
 SELECT 'window multiple of step (window=20, step=10):';
@@ -36,10 +36,10 @@ SELECT timeSeriesDeltaToGrid(0, 80, 10, 20)(timestamp, value) FROM ts_split;
 
 SELECT 'window == step (window=10, step=10):';
 SELECT timeSeriesChangesToGrid(0, 80, 10, 10)(timestamp, value) FROM ts_split;
-SELECT timeSeriesResampleToGridWithStaleness(0, 80, 10, 10)(timestamp, value) FROM ts_split;
+SELECT timeSeriesLastToGrid(0, 80, 10, 10)(timestamp, value) FROM ts_split;
 
 SELECT 'window < step (window=7, step=10):';
 SELECT timeSeriesChangesToGrid(0, 80, 10, 7)(timestamp, value) FROM ts_split;
-SELECT timeSeriesResampleToGridWithStaleness(0, 80, 10, 7)(timestamp, value) FROM ts_split;
+SELECT timeSeriesLastToGrid(0, 80, 10, 7)(timestamp, value) FROM ts_split;
 
 DROP TABLE ts_split;

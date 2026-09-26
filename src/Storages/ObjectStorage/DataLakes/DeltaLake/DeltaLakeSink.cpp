@@ -6,6 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
@@ -151,8 +152,17 @@ void DeltaLakeSink::onFinish()
         {
             /// FIXME: this should be just removeObject,
             /// but IObjectStorage does not have such method.
-           object_storage->removeObjectIfExists(StoredObject(sink->getPath()));
-
+            const auto & path = sink->getPath();
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(path));
+            }
+            catch (...)
+            {
+                /// Building the message allocates, and the memory tracker can throw inside an active handler.
+                LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+                tryLogCurrentException("DeltaLakeSink", "Failed to remove uncommitted data file after a failed commit: " + path);
+            }
         }
         throw;
     }
