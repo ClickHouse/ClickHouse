@@ -5876,10 +5876,12 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Text index feature is not enabled (turn on setting 'enable_full_text_index')");
 
-    /// Only indexes added by this `ALTER`, so other changes to existing tables keep working.
+    /// Only indexes added by this `ALTER`, so other changes to existing tables keep working. Look at the `ADD INDEX`
+    /// commands rather than the old index names: `DROP INDEX idx, ADD INDEX idx ...` reuses the name of an existing index.
     if (!settings[Setting::allow_experimental_json_bloom_filter_index])
-        for (const auto & index : new_metadata.secondary_indices)
-            if (index.type == "jsonbf_v1" && !old_metadata.secondary_indices.has(index.name))
+        for (const auto & command : commands)
+            if (command.type == AlterCommand::ADD_INDEX && new_metadata.secondary_indices.has(command.index_name)
+                && new_metadata.secondary_indices.getByName(command.index_name).type == "jsonbf_v1")
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "The `jsonbf_v1` index is experimental. Enable the setting `allow_experimental_json_bloom_filter_index` to use it");

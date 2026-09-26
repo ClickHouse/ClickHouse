@@ -91,5 +91,10 @@ CREATE TABLE json_bf_experimental (id UInt64, j JSON) ENGINE = MergeTree ORDER B
 ALTER TABLE json_bf_experimental ADD INDEX bf j TYPE jsonbf_v1 GRANULARITY 1; -- { serverError SUPPORT_IS_DISABLED }
 ALTER TABLE json_bf_experimental ADD INDEX bf j TYPE jsonbf_v1 GRANULARITY 1 SETTINGS allow_experimental_json_bloom_filter_index = 1;
 ALTER TABLE json_bf_experimental ADD COLUMN c UInt8;
+-- Reusing the name of an existing index in one `ALTER` still adds a new index.
+ALTER TABLE json_bf_experimental ADD INDEX other id TYPE minmax GRANULARITY 1;
+ALTER TABLE json_bf_experimental DROP INDEX other, ADD INDEX other j TYPE jsonbf_v1 GRANULARITY 1; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE json_bf_experimental DROP INDEX bf, ADD INDEX bf j TYPE jsonbf_v1 GRANULARITY 1; -- { serverError SUPPORT_IS_DISABLED }
+ALTER TABLE json_bf_experimental DROP INDEX other;
 SELECT 'experimental', name, type FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 'json_bf_experimental';
 DROP TABLE json_bf_experimental;
