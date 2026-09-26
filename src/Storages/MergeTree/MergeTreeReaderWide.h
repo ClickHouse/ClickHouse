@@ -247,6 +247,9 @@ private:
     /// COLUMNS CACHE`, after the read began. See getInvalidationGeneration.
     UInt64 cache_table_generation = 0;
 
+    /// Whether `startColumnsCacheRange` has begun a range of this reader already.
+    bool columns_cache_range_started = false;
+
     /// The contiguous mark range being read, [range_first_mark, range_end_mark), the stripe it
     /// starts in, and the position of the next row to produce: the granule and the offset in it.
     size_t range_first_mark = 0;

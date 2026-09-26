@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 #include <Core/UUID.h>
@@ -30,6 +31,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char columns_cache_reader_pause_before_later_range[];
+}
 
 namespace
 {
@@ -455,6 +461,11 @@ void MergeTreeReaderWide::lookupColumnsCache(
 
 void MergeTreeReaderWide::startColumnsCacheRange(size_t from_mark, size_t end_mark, size_t num_columns)
 {
+    /// Lets a test invalidate the cache between two ranges of one reader.
+    if (columns_cache_range_started)
+        FailPointInjection::pauseFailPoint(FailPoints::columns_cache_reader_pause_before_later_range);
+    columns_cache_range_started = true;
+
     /// The previous range is over. The granules of it that were read to their end but not
     /// written yet - the range ended inside a stripe - are written now.
     finishAccumulatedGranules();
