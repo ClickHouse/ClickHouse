@@ -1,5 +1,9 @@
 #include <Storages/StorageFactory.h>
+#include <AggregateFunctions/IAggregateFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -7,6 +11,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/StorageID.h>
@@ -44,6 +49,59 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 }
 
 
+/// A check that depends on this server's configuration must skip a replayed definition, which its author already judged.
+static bool isReplayedDefinition(const ContextPtr & context)
+{
+    const auto metadata_txn = context->getZooKeeperMetadataTransaction();
+    if (metadata_txn && !metadata_txn->isInitialQuery())
+        return true;
+#if CLICKHOUSE_CLOUD
+    if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
+        return true;
+#endif
+    return context->isRecoveryFromStoredMetadata();
+}
+
+
+/// A `Memory` database, including the one that holds temporary tables, keeps definitions in memory only.
+static bool definitionIsRebuiltOnStartup(const String & database_name)
+{
+    auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+    return !database || database->getEngineName() != "Memory";
+}
+
+
+static void checkAggregateFunctionStatesInType(const DataTypePtr & type)
+{
+    auto check = [](const IDataType & node)
+    {
+        const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&node);
+        if (!aggregate_type)
+            return;
+
+        aggregate_type->getFunction()->checkCanBeStoredInTable();
+
+        /// `DataTypeAggregateFunction` does not implement `forEachChild`, so a state's argument types are walked here.
+        for (const auto & argument_type : aggregate_type->getArgumentsDataTypes())
+            checkAggregateFunctionStatesInType(argument_type);
+    };
+
+    check(*type);
+    type->forEachChild(check);
+}
+
+
+void checkAggregateFunctionStatesCanBeStored(
+    const NamesAndTypesList & names_and_types, const String & database_name, const ContextPtr & context)
+{
+    if (isReplayedDefinition(context) || !definitionIsRebuiltOnStartup(database_name))
+        return;
+
+    for (const auto & elem : names_and_types)
+        checkAggregateFunctionStatesInType(elem.type);
+}
+
+
 void checkStorageSettingNames(const StorageFactory::Arguments & args)
 {
     if (!args.storage_def || !args.storage_def->settings)
@@ -54,16 +112,7 @@ void checkStorageSettingNames(const StorageFactory::Arguments & args)
     /// Each term marks a definition this server did not judge: `attach` outranks `secondary` in
     /// `LoadingStrictnessLevel`, Keeper recovery carries no metadata transaction, and Shared Catalog
     /// secondaries re-execute the initiator's DDL. A secondary refusing one retries its queue entry forever.
-    const auto metadata_txn = local_context->getZooKeeperMetadataTransaction();
-    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
-#if CLICKHOUSE_CLOUD
-    const bool is_shared_catalog_replay
-        = local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context);
-#else
-    const bool is_shared_catalog_replay = false;
-#endif
-    if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || is_ddl_replay
-        || local_context->isRecoveryFromStoredMetadata() || is_shared_catalog_replay)
+    if (!isFreshTableDefinition(args.mode, args.query.attach_short_syntax) || isReplayedDefinition(local_context))
         return;
 
     /// A name that is neither a setting of this engine nor a query setting of this context is no setting at
@@ -133,6 +182,10 @@ StoragePtr StorageFactory::get(
     ASTStorage * storage_def = query.storage;
 
     bool has_engine_args = false;
+
+    /// Judges a fresh or restored definition, which this server rebuilds. A temporary CREATE carries no database name.
+    if (!query.isTemporary() && (isFreshTableDefinition(mode, query.attach_short_syntax) || is_restore_from_backup))
+        checkAggregateFunctionStatesCanBeStored(columns.getAll(), query.getDatabase(), local_context);
 
     if (query.is_ordinary_view)
     {

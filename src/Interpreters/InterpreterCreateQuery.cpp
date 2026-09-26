@@ -2366,11 +2366,19 @@ void validateVirtualColumns(IStorage & storage, ContextPtr context)
     }
 }
 
-void validateStorage(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
+void validateStorage(
+    IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary, bool check_inferred_aggregate_states = false)
 try
 {
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
+
+    if (check_inferred_aggregate_states)
+    {
+        auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
+        checkAggregateFunctionStatesCanBeStored(
+            metadata_snapshot->getColumns().getAll(), storage.getStorageID().database_name, context);
+    }
 }
 catch (...)
 {
@@ -2596,6 +2604,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// checked here.
         throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
+        if (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup)
+            checkAggregateFunctionStatesCanBeStored(properties.columns.getAll(), create.getDatabase(), getContext());
+
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
         /// and because storage lifetime is bigger than query context lifetime.
@@ -2634,7 +2645,9 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->addInferredEngineArgsToCreateQuery(*engine_args, getContext());
     }
 
-    validateStorage(*res, mode, getContext(), create.isTemporary());
+    validateStorage(*res, mode, getContext(), create.isTemporary(),
+        /*check_inferred_aggregate_states=*/ properties.columns.empty()
+            && (isFreshTableDefinition(mode, create.attach_short_syntax) || is_restore_from_backup));
 
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {

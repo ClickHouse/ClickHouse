@@ -486,6 +486,13 @@ public:
         return true;
     }
 
+    /// Throws if a state of this function cannot be stored in a table: a stored state is rebuilt at startup, with no session.
+    virtual void checkCanBeStoredInTable() const
+    {
+        if (auto nested = getNestedFunction())
+            nested->checkCanBeStoredInTable();
+    }
+
     const DataTypePtr & getResultType() const override { return result_type; }
     const DataTypes & getArgumentTypes() const override { return argument_types; }
 

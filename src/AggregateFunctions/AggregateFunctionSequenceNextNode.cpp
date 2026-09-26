@@ -174,6 +174,16 @@ struct SequenceNextNodeGeneralData
     }
 };
 
+/// Null settings mean the calling thread has no query context, as in asynchronous table loading, not that the gate is off.
+bool isFunnelFunctionsEnabled(const Settings * settings)
+{
+    if (settings)
+        return (*settings)[Setting::enable_funnel_functions];
+
+    auto context = Context::getGlobalContextInstance();
+    return context && context->getSettingsRef()[Setting::enable_funnel_functions];
+}
+
 /// Implementation of sequenceFirstNode
 template <typename T, typename Node>
 class SequenceNextNodeImpl final
@@ -215,6 +225,15 @@ public:
     }
 
     String getName() const override { return "sequenceNextNode"; }
+
+    void checkCanBeStoredInTable() const override
+    {
+        if (!isFunnelFunctionsEnabled(nullptr))
+            throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION,
+                "Aggregate function {} is experimental. Set `enable_funnel_functions` setting for the "
+                "server to enable it: a stored state is read back when the server starts, where a "
+                "session-level value is not visible", getName());
+    }
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
@@ -460,7 +479,7 @@ inline AggregateFunctionPtr createAggregateFunctionSequenceNodeImpl(
 AggregateFunctionPtr
 createAggregateFunctionSequenceNode(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings)
 {
-    if (settings == nullptr || !(*settings)[Setting::enable_funnel_functions])
+    if (!isFunnelFunctionsEnabled(settings))
     {
         throw Exception(ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION, "Aggregate function {} is experimental. "
             "Set `enable_funnel_functions` setting to enable it", name);

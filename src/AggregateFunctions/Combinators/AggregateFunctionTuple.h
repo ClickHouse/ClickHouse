@@ -159,6 +159,7 @@ public:
 
     bool shouldPrintParametersWithTypes() const override;
     bool isOnlyWindowFunction() const override;
+    void checkCanBeStoredInTable() const override;
 
     AggregateFunctionStateVariant getStateVariant() const override;
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override;
