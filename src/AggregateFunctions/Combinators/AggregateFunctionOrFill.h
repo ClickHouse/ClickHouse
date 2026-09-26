@@ -164,6 +164,33 @@ public:
         }
     }
 
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (flags[i])
+                    add(places[i] + place_offset, columns, i, arena);
+            }
+        }
+        else
+        {
+            nested_function->addBatchWithNonNullPlaces(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            for (size_t i = row_begin; i < row_end; ++i)
+                (places[i] + place_offset)[size_of_data] = 1;
+        }
+    }
+
     void addBatchSinglePlace( /// NOLINT
         size_t row_begin,
         size_t row_end,
@@ -255,7 +282,8 @@ public:
     {
         nested_function->mergeBatch(row_begin, row_end, places, place_offset, rhs, thread_pool, is_cancelled, arena);
         for (size_t i = row_begin; i < row_end; ++i)
-            (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
+            if (places[i])
+                (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
@@ -318,10 +346,20 @@ public:
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
 
                     col.getNullMapColumn().insertDefault();
-                    if constexpr (merge)
-                        nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
-                    else
-                        nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                    /// The null map entry is this call's own, and the nested transfer restores the nested
+                    /// column itself when it throws, so only the entry has to go.
+                    try
+                    {
+                        if constexpr (merge)
+                            nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
+                        else
+                            nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                    }
+                    catch (...)
+                    {
+                        col.getNullMapColumn().getData().pop_back();
+                        throw;
+                    }
                 }
             }
             else
@@ -355,10 +393,18 @@ public:
                 {
                     ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
                     col.getNullMapColumn().getData().push_back(static_cast<UInt8>(1));
-                    if constexpr (merge)
-                        nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
-                    else
-                        nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                    try
+                    {
+                        if constexpr (merge)
+                            nested_function->insertMergeResultInto(place, col.getNestedColumn(), arena);
+                        else
+                            nested_function->insertResultInto(place, col.getNestedColumn(), arena);
+                    }
+                    catch (...)
+                    {
+                        col.getNullMapColumn().getData().pop_back();
+                        throw;
+                    }
                 }
             }
             else
@@ -383,12 +429,36 @@ public:
         insertResultIntoImpl<true>(place, to, arena);
     }
 
-    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
     {
-        return nested_function->getArgumentsThatCanBeOnlyNull();
+        /// The flag-unset branches are indistinguishable from the appended row alone: with a state-nested
+        /// function they alias like the flag-set branch, otherwise they append a default `to` owns.
+        if (!place[size_of_data] && !nested_function->isState())
+        {
+            to.popBack(1);
+            return;
+        }
+
+        if constexpr (UseNull)
+        {
+            if (!result_is_nullable || inner_nullable)
+            {
+                nested_function->rollbackInsertResult(place, to);
+            }
+            else
+            {
+                ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
+                col.getNullMapColumn().getData().pop_back();
+                nested_function->rollbackInsertResult(place, col.getNestedColumn());
+            }
+        }
+        else
+        {
+            nested_function->rollbackInsertResult(place, to);
+        }
     }
+
+    AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
     /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,
     /// which changed the default null adapter for Tuple-returning functions:

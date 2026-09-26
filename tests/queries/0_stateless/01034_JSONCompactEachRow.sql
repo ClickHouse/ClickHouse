@@ -21,7 +21,9 @@ DROP TABLE IF EXISTS test_table;
 SELECT 5;
 /* Check JSONCompactEachRow Input */
 CREATE TABLE test_table (v1 String, v2 UInt8, v3 DEFAULT v2 * 16, v4 UInt8 DEFAULT 8) ENGINE = MergeTree() ORDER BY v2;
-INSERT INTO test_table FORMAT JSONCompactEachRow ["first", 1, "2", null] ["second", 2, null, 6];
+INSERT INTO test_table FORMAT JSONCompactEachRow ["first", 1, "2", null] ["second", 2, null, 6]; -- { error CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+
+INSERT INTO test_table FORMAT JSONCompactEachRow ["first", 1, "2", 3] ["second", 2, 4, 6];
 
 SELECT * FROM test_table FORMAT JSONCompactEachRow;
 TRUNCATE TABLE test_table;
@@ -42,9 +44,13 @@ TRUNCATE TABLE test_table_2;
 SELECT 8;
 /* Check JSONCompactEachRowWithNamesAndTypes and JSONCompactEachRowWithNamesAndTypes Input */
 SET input_format_null_as_default = 0;
-INSERT INTO test_table FORMAT JSONCompactEachRowWithNamesAndTypes ["v1", "v2", "v3", "v4"]["String","UInt8","UInt16","UInt8"]["first", 1, "2", null]["second", 2, null, 6];
+INSERT INTO test_table FORMAT JSONCompactEachRowWithNamesAndTypes ["v1", "v2", "v3", "v4"]["String","UInt8","UInt16","UInt8"]["first", 1, "2", null]["second", 2, null, 6]; -- { error CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
 
-INSERT INTO test_table FORMAT JSONCompactEachRowWithNames ["v1", "v2", "v3", "v4"]["first", 1, "2", null]["second", 2, null, 6];
+INSERT INTO test_table FORMAT JSONCompactEachRowWithNamesAndTypes ["v1", "v2", "v3", "v4"]["String","UInt8","UInt16","UInt8"]["first", 1, "2", 3]["second", 2, 4, 6];
+
+INSERT INTO test_table FORMAT JSONCompactEachRowWithNames ["v1", "v2", "v3", "v4"]["first", 1, "2", null]["second", 2, null, 6]; -- { error CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+
+INSERT INTO test_table FORMAT JSONCompactEachRowWithNames ["v1", "v2", "v3", "v4"]["first", 1, "2", 3]["second", 2, 4, 6];
 
 SELECT * FROM test_table FORMAT JSONCompactEachRow;
 TRUNCATE TABLE test_table;

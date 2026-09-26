@@ -85,7 +85,7 @@ namespace DB
 class KeeperRequestDispatcher
 {
 public:
-    explicit KeeperRequestDispatcher(KeeperServer * server_);
+    KeeperRequestDispatcher(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_);
 
     /// Start response draining before Raft startup. NuRaft can commit catch-up
     /// entries during `KeeperServer::startup`, before request dispatch is safe.
@@ -124,6 +124,12 @@ public:
     void onResponseDeallocated(const Coordination::ZooKeeperResponse & response);
 
 private:
+    friend class KeeperRequestDispatcherTestAccessor;
+
+    static void initializeWaitForWriteSpan(
+        const KeeperRequestForSession & read_request, UInt64 wait_start_us = ZooKeeperOpentelemetrySpans::now());
+    static void finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads);
+
     /// Suppose we get a write request from some session and put it in batch B and send that
     /// batch to leader. While B is still in flight, we get a read request from the same session.
     /// We'd like to execute that read as soon as B is committed. So we want a list of such
@@ -136,8 +142,14 @@ private:
         /// do the read right there.
         bool add(KeeperRequestForSession & request_for_session)
         {
+            /// The wait starts when the read arrives, not when the lock is acquired, so read the
+            /// clock here - it also keeps it out of a critical section that `dispatchThread` and
+            /// `onCommit` contend for.
+            const UInt64 wait_start_us = ZooKeeperOpentelemetrySpans::now();
+
             if (!lock())
                 return false;
+            initializeWaitForWriteSpan(request_for_session, wait_start_us);
             reads.push_back(std::move(request_for_session));
             unlock(Status::Available);
             return true;
@@ -252,6 +264,7 @@ private:
         {
             committed_requests = 0;
             intermediate_reads_idx = 0;
+
             late_reads.activate(std::move(initial_late_reads));
             active.store(true);
         }
@@ -279,6 +292,8 @@ private:
 
     KeeperServer * server;
     KeeperContextPtr keeper_context;
+    /// Consulted before responses_queue; see KeeperSpecialResponseRouter.
+    KeeperSpecialResponseRouter special_response_router;
     LoggerPtr log;
 
     ThreadFromGlobalPool dispatch_thread;

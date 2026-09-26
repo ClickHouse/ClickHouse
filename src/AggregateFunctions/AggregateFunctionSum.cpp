@@ -60,6 +60,21 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
     const DataTypePtr & data_type = argument_types[0];
     if (isDecimal(data_type))
         res.reset(createWithDecimalType<Function>(*data_type, *data_type, argument_types));
+    else if (isInterval(data_type))
+    {
+        /// `Interval` is backed by `Int64` and is not a numeric type, so it is not part of the
+        /// dispatch above. The sum of a set of intervals of one unit is an interval of the same
+        /// unit, so only the underlying number of units is summed and the unit of the argument is
+        /// kept: values of different units are already brought to their common unit, where one
+        /// exists, before the aggregation.
+        /// Kahan compensation applies to floating point values only, so, as for `Decimal`, the
+        /// exact integer summation is used instead of degrading the count of units to `Float64`.
+        using IntervalFunction = std::conditional_t<
+            std::is_same_v<typename Function<Int64>::ResultType, Int64>,
+            Function<Int64>,
+            typename SumSimple<Int64>::Function>;
+        res = std::make_shared<IntervalFunction>(argument_types, data_type);
+    }
     else
         res.reset(createWithNumericType<Function>(*data_type, argument_types));
 
@@ -75,16 +90,16 @@ void registerAggregateFunctionSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSum(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
-Calculates the sum of numeric values.
+Calculates the sum of numeric values or of intervals.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 sum(num)
     )";
     FunctionDocumentation::Arguments arguments = {
-        {"num", "Column of numeric values.", {"(U)Int*", "Float*", "Decimal*"}}
+        {"num", "Column of numeric values or of intervals.", {"(U)Int*", "Float*", "Decimal*", "Interval"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the sum of the values.", {"(U)Int*", "Float*", "Decimal*"}
+        "Returns the sum of the values. For an `Interval` argument the result is an interval of the same unit, and an empty input gives a zero-length interval.", {"(U)Int*", "Float*", "Decimal*", "Interval"}
     };
     FunctionDocumentation::Examples examples = {
     {
@@ -111,6 +126,26 @@ SELECT sum(salary) FROM employees;
 │      266140 │
 └─────────────┘
         )"
+    },
+    {
+        "Total time spent on requests",
+        R"(
+CREATE TABLE requests
+(
+    req_id UInt32,
+    duration IntervalMillisecond
+)
+ENGINE = Memory;
+
+INSERT INTO requests VALUES (1, 100), (2, 200), (3, 300);
+
+SELECT sum(duration) AS total_duration, toTypeName(total_duration) FROM requests;
+        )",
+        R"(
+┌─total_duration─┬─toTypeName(total_duration)─┐
+│            600 │ IntervalMillisecond        │
+└────────────────┴────────────────────────────┘
+        )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
@@ -127,10 +162,10 @@ If the sum exceeds the maximum value for this data type, it is calculated with o
 sumWithOverflow(num)
     )";
     FunctionDocumentation::Arguments arguments_overflow = {
-        {"num", "Column of numeric values.", {"(U)Int*", "Float*", "Decimal*"}}
+        {"num", "Column of numeric values or of intervals.", {"(U)Int*", "Float*", "Decimal*", "Interval"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_overflow = {
-        "The sum of the values.", {"(U)Int*", "Float*", "Decimal*"}
+        "The sum of the values.", {"(U)Int*", "Float*", "Decimal*", "Interval"}
     };
     FunctionDocumentation::Examples examples_overflow = {
     {
@@ -176,17 +211,18 @@ FROM employees;
 
     FunctionDocumentation::Description description_kahan = R"(
 Calculates the sum of the numbers with [Kahan compensated summation algorithm](https://en.wikipedia.org/wiki/Kahan_summation_algorithm).
-Slower than [`sum`](/sql-reference/aggregate-functions/reference/sum) function.
-The compensation works only for [Float](/sql-reference/data-types/float) types.
+Slower than [`sum`](/reference/functions/aggregate-functions/sum) function.
+The compensation works only for [Float](/reference/data-types/float) types.
+For the [Decimal](/reference/data-types/decimal) and [Interval](/reference/data-types/special-data-types/interval) types, which are backed by integers, the exact summation of `sum` is used instead.
     )";
     FunctionDocumentation::Syntax syntax_kahan = R"(
 sumKahan(x)
     )";
     FunctionDocumentation::Arguments arguments_kahan = {
-        {"x", "Input value.", {"Integer", "Float", "Decimal"}}
+        {"x", "Input value.", {"Integer", "Float", "Decimal", "Interval"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_kahan = {
-        "Returns the sum of numbers.", {"(U)Int*", "Float*", "Decimal"}
+        "Returns the sum of numbers.", {"(U)Int*", "Float*", "Decimal", "Interval"}
     };
     FunctionDocumentation::Examples examples_kahan = {
     {

@@ -1,12 +1,13 @@
 {
   "icon": "/images/icons/icon-concepts.svg",
-  "item": "概念",
+  "item": "Concepts",
   "pages": [
     "ja/concepts/index",
     {
       "expanded": true,
-      "group": "基礎",
+      "group": "Fundamentals",
       "pages": [
+        "ja/concepts/core-concepts/index",
         "ja/concepts/core-concepts/glossary",
         "ja/concepts/core-concepts/parts",
         "ja/concepts/core-concepts/partitions",
@@ -14,44 +15,45 @@
         "ja/concepts/core-concepts/primary-indexes",
         "ja/concepts/core-concepts/query-parallelism",
         "ja/concepts/core-concepts/academic-overview"
-      ],
-      "root": "ja/concepts/core-concepts/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "ClickHouseの基本概念",
+      "group": "ClickHouse concepts",
       "pages": [
+        "ja/concepts/features/index",
         {
-          "group": "materialized view",
+          "group": "Materialized views",
           "pages": [
+            "ja/concepts/features/materialized-views/index",
             "ja/concepts/features/materialized-views/incremental-materialized-view",
             "ja/concepts/features/materialized-views/refreshable-materialized-view",
             "ja/concepts/features/materialized-views/cascading-materialized-views"
-          ],
-          "root": "ja/concepts/features/materialized-views/index"
+          ]
         },
         {
           "group": "Dictionaries",
           "pages": [
+            "ja/concepts/features/dictionaries/index",
             "ja/concepts/features/dictionaries/best-practices"
-          ],
-          "root": "ja/concepts/features/dictionaries/index"
+          ]
         },
         {
-          "group": "プロジェクション",
+          "group": "Projections",
           "pages": [
             "ja/concepts/features/projections/projections",
             "ja/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "パフォーマンス",
+          "group": "Performance",
           "pages": [
+            "ja/concepts/features/performance/index",
             "ja/concepts/features/performance/prewhere",
             "ja/concepts/features/performance/allocation-profiling",
             "ja/concepts/features/performance/allocation-profiling-old",
             {
-              "group": "キャッシュ",
+              "group": "Caches",
               "pages": [
                 "ja/concepts/features/performance/caches/caches",
                 "ja/concepts/features/performance/caches/query-cache",
@@ -60,7 +62,7 @@
               ]
             },
             {
-              "group": "スキッピングインデックス",
+              "group": "Skipping-indexes",
               "pages": [
                 "ja/concepts/features/performance/skip-indexes/skipping-indexes",
                 "ja/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -68,7 +70,7 @@
             },
             "ja/concepts/features/performance/lazy-materialization",
             {
-              "group": "トラブルシューティング",
+              "group": "Troubleshooting",
               "pages": [
                 "ja/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "ja/concepts/features/performance/troubleshoot/oom-canary",
@@ -76,14 +78,13 @@
                 "ja/concepts/features/performance/troubleshoot/sampling-query-profiler"
               ]
             }
-          ],
-          "root": "ja/concepts/features/performance/index"
+          ]
         },
         {
-          "group": "操作",
+          "group": "Operations",
           "pages": [
             {
-              "group": "挿入",
+              "group": "Insert",
               "pages": [
                 "ja/concepts/features/operations/insert/inserting-data",
                 "ja/concepts/features/operations/insert/asyncinserts",
@@ -94,39 +95,37 @@
               ]
             },
             {
-              "group": "選択",
+              "group": "Select",
               "pages": [
                 "ja/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "更新",
+              "group": "Update",
               "pages": [
+                "ja/concepts/features/operations/update/index",
                 "ja/concepts/features/operations/update/overview",
-                "ja/concepts/features/operations/update/on-fly-mutations",
                 "ja/concepts/features/operations/update/replacing-merge-tree"
-              ],
-              "root": "ja/concepts/features/operations/update/index"
+              ]
             },
             {
-              "group": "削除",
+              "group": "Delete",
               "pages": [
+                "ja/concepts/features/operations/delete/index",
                 "ja/concepts/features/operations/delete/overview",
-                "ja/concepts/features/operations/delete/delete-mutations",
                 "ja/concepts/features/operations/delete/drop-partition",
                 "ja/concepts/features/operations/delete/lightweight-delete",
                 "ja/concepts/features/operations/delete/truncate",
                 "ja/concepts/features/operations/delete/ttl"
-              ],
-              "root": "ja/concepts/features/operations/delete/index"
+              ]
             }
           ]
         },
         {
-          "group": "設定",
+          "group": "Configuration",
           "pages": [
             {
-              "group": "設定",
+              "group": "Settings",
               "pages": [
                 "ja/concepts/features/configuration/settings/overview",
                 "ja/concepts/features/configuration/settings/settings-query-level",
@@ -142,7 +141,7 @@
               ]
             },
             {
-              "group": "サーバー設定",
+              "group": "Server config",
               "pages": [
                 "ja/concepts/features/configuration/server-config/configuration-files",
                 "ja/concepts/features/configuration/server-config/storing-data",
@@ -150,27 +149,30 @@
                 "ja/concepts/features/configuration/server-config/workload-scheduling",
                 "ja/concepts/features/configuration/server-config/quotas",
                 "ja/concepts/features/configuration/server-config/composable-protocols",
-                "ja/concepts/features/configuration/server-config/startup-scripts"
+                "ja/concepts/features/configuration/server-config/startup-scripts",
+                "ja/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]
         },
         {
-          "group": "セキュリティと認証",
+          "group": "Security and auth",
           "pages": [
+            "ja/concepts/features/security/index",
             "ja/concepts/features/security/access-rights",
             "ja/concepts/features/security/network-ports",
             {
               "group": "TLS",
               "pages": [
+                "ja/concepts/features/security/tls/index",
                 "ja/concepts/features/security/tls/configuring-tls",
                 "ja/concepts/features/security/tls/configuring-tls-acme-client"
-              ],
-              "root": "ja/concepts/features/security/tls/index"
+              ]
             },
             {
-              "group": "外部認証",
+              "group": "External authenticators",
               "pages": [
+                "ja/concepts/features/security/external-authenticators/index",
                 {
                   "group": "SSL",
                   "pages": [
@@ -188,16 +190,15 @@
                 "ja/concepts/features/security/external-authenticators/http",
                 "ja/concepts/features/security/external-authenticators/kerberos",
                 "ja/concepts/features/security/external-authenticators/jwt"
-              ],
-              "root": "ja/concepts/features/security/external-authenticators/index"
+              ]
             }
-          ],
-          "root": "ja/concepts/features/security/index"
+          ]
         },
         {
-          "group": "バックアップと復元",
+          "group": "Backup and restore",
           "pages": [
             "ja/concepts/features/backup-restore/overview",
+            "ja/concepts/features/backup-restore/restore-settings",
             "ja/concepts/features/backup-restore/local-disk",
             "ja/concepts/features/backup-restore/s3-endpoint",
             "ja/concepts/features/backup-restore/azure-blob-storage",
@@ -206,25 +207,31 @@
           ]
         },
         {
-          "group": "インターフェイス",
+          "group": "Interfaces",
           "pages": [
+            "ja/concepts/features/interfaces/native-clients-interfaces-index",
             "ja/concepts/features/interfaces/cli",
             "ja/concepts/features/interfaces/client",
+            "ja/concepts/features/interfaces/mcp",
             {
-              "group": "ドライバーとインターフェイス",
+              "group": "Drivers and interfaces",
               "pages": [
+                "ja/concepts/features/interfaces/overview",
                 "ja/concepts/features/interfaces/http",
+                "ja/concepts/features/interfaces/framing-formats",
                 "ja/concepts/features/interfaces/tcp",
+                "ja/concepts/features/interfaces/adbc",
                 "ja/concepts/features/interfaces/jdbc",
                 "ja/concepts/features/interfaces/mysql",
-                "ja/concepts/features/interfaces/odbc",
+                {
+                  "$ref": "features/interfaces/odbc/navigation.json"
+                },
                 "ja/concepts/features/interfaces/postgresql",
                 "ja/concepts/features/interfaces/prometheus",
                 "ja/concepts/features/interfaces/ssh",
                 "ja/concepts/features/interfaces/grpc",
                 "ja/concepts/features/interfaces/arrowflight"
-              ],
-              "root": "ja/concepts/features/interfaces/overview"
+              ]
             },
             "ja/concepts/features/interfaces/cpp",
             "ja/concepts/features/interfaces/schema-inference",
@@ -232,18 +239,20 @@
             "ja/concepts/features/interfaces/web-sql",
             "ja/concepts/features/interfaces/web-ui-color-coding",
             "ja/concepts/features/interfaces/web-ui-pinned-columns",
+            "ja/concepts/features/interfaces/web-ui-result-shaping",
             "ja/concepts/features/interfaces/web-terminal",
             {
-              "group": "サードパーティクライアント",
-              "pages": [],
-              "root": "ja/concepts/features/interfaces/third-party/index"
+              "group": "Third-party clients",
+              "pages": [
+                "ja/concepts/features/interfaces/third-party/index"
+              ]
             }
-          ],
-          "root": "ja/concepts/features/interfaces/native-clients-interfaces-index"
+          ]
         },
         {
-          "group": "ツールとユーティリティ",
+          "group": "Tools and utilities",
           "pages": [
+            "ja/concepts/features/tools-and-utilities/index",
             "ja/concepts/features/tools-and-utilities/backupview",
             "ja/concepts/features/tools-and-utilities/clickhouse-benchmark",
             "ja/concepts/features/tools-and-utilities/clickhouse-compressor",
@@ -255,16 +264,15 @@
             "ja/concepts/features/tools-and-utilities/clickhouse-obfuscator",
             "ja/concepts/features/tools-and-utilities/odbc-bridge",
             "ja/concepts/features/tools-and-utilities/static-files-disk-uploader"
-          ],
-          "root": "ja/concepts/features/tools-and-utilities/index"
+          ]
         }
-      ],
-      "root": "ja/concepts/features/index"
+      ]
     },
     {
       "expanded": true,
-      "group": "ベストプラクティス",
+      "group": "Best practices",
       "pages": [
+        "ja/concepts/best-practices/index",
         "ja/concepts/best-practices/choosing-a-primary-key",
         "ja/concepts/best-practices/select-data-type",
         "ja/concepts/best-practices/use-materialized-views",
@@ -276,9 +284,7 @@
         "ja/concepts/best-practices/avoid-optimize-final",
         "ja/concepts/best-practices/avoidnullablecolumns",
         "ja/concepts/best-practices/json-type"
-      ],
-      "root": "ja/concepts/best-practices/index"
+      ]
     }
-  ],
-  "root": "ja/concepts/index"
+  ]
 }

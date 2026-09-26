@@ -248,10 +248,25 @@ public:
             if (getFlag(place))
             {
                 if constexpr (merge)
+                {
                     nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                    to_concrete.getNullMapData().push_back(false);
+                }
                 else
+                {
                     nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(false);
+
+                    /// A nested call that threw has already restored the nested column itself.
+                    try
+                    {
+                        to_concrete.getNullMapData().push_back(false);
+                    }
+                    catch (...)
+                    {
+                        nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+                        throw;
+                    }
+                }
             }
             else
             {
@@ -277,14 +292,31 @@ public:
         insertResultIntoImpl<true>(place, to, arena);
     }
 
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        if constexpr (result_is_nullable)
+        {
+            ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
+            if (getFlag(place))
+            {
+                to_concrete.getNullMapData().pop_back();
+                nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+            }
+            else
+            {
+                /// insertResultInto appended a state the column itself owns, so this pop must destroy it.
+                to_concrete.popBack(1);
+            }
+        }
+        else
+        {
+            nested_function->rollbackInsertResult(nestedPlace(place), to);
+        }
+    }
+
     bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
-    }
-
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
-    {
-        return nested_function->getArgumentsThatCanBeOnlyNull();
     }
 
     bool isState() const override
@@ -635,7 +667,8 @@ public:
 
         if (if_argument_pos >= 0)
         {
-            final_flags = std::make_unique<UInt8[]>(row_end);
+            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
+            final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
             final_flags_ptr = final_flags.get();
 
             size_t included_elements = 0;
@@ -688,12 +721,18 @@ public:
         {
             if (!final_flags)
             {
-                final_flags = std::make_unique<UInt8[]>(row_end);
+                final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
                 final_flags_ptr = final_flags.get();
             }
 
-            const size_t filter_start = nullable_filters[0] == final_flags_ptr ? 1 : 0;
-            for (size_t filter = filter_start; filter < nullable_filters.size(); filter++)
+            /// The span holds a merged filter only when the buffer already is one of `nullable_filters`.
+            if (nullable_filters[0] != final_flags_ptr)
+            {
+                for (size_t i = row_begin; i < row_end; i++)
+                    final_flags[i] = nullable_filters[0][i];
+            }
+
+            for (size_t filter = 1; filter < nullable_filters.size(); filter++)
             {
                 for (size_t i = row_begin; i < row_end; i++)
                     final_flags[i] |= nullable_filters[filter][i];

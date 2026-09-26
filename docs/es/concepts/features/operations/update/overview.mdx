@@ -308,7 +308,9 @@ La desventaja es que las consultas `SELECT` añaden sobrecarga al aplicar parche
 
 Más información: [Lightweight UPDATE](/es/reference/statements/update)
 
-### Mutaciones sobre la marcha
+<div id="on-the-fly-mutations-summary">
+  ### Mutaciones sobre la marcha
+</div>
 
 Las mutaciones sobre la marcha proporcionan un mecanismo para actualizar filas de forma que las consultas `SELECT` posteriores devuelvan automáticamente los valores modificados sin tener que esperar al procesamiento en segundo plano. Esto resuelve eficazmente la limitación de atomicidad de las mutaciones normales.
 
@@ -325,10 +327,10 @@ SELECT ViewCount FROM posts WHERE Id = 404346
 ```
 
 ```sql
--- Incrementar el contador
+-- Increment the count
 ALTER TABLE posts UPDATE ViewCount = ViewCount + 1 WHERE Id = 404346
 
--- El valor actualizado es inmediatamente visible
+-- The updated value is immediately visible
 SELECT ViewCount FROM posts WHERE Id = 404346
 ```
 

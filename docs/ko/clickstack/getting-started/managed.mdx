@@ -9,46 +9,418 @@ keywords: ['Managed ClickStack', '시작하기', 'ClickHouse Cloud']
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-import SetupManagedIngestion from '/snippets/ko/clickstack/_setup_managed_ingestion.mdx';
-import ProviderSelection from '/snippets/ko/clickstack/_select_provider.mdx';
-import NavigateClickStackUI from '/snippets/ko/clickstack/_navigate_managed.mdx';
+import ExampleOTelConfig from '/snippets/ko/clickstack/_config_example_otel.mdx';
 
-가장 쉽게 시작하는 방법은 **ClickHouse Cloud**에 **Managed ClickStack**을 배포하는 것입니다. 이렇게 하면 완전 관리형의 안전한 백엔드를 제공받으면서도 수집, 스키마(schema), 관측성 워크플로에 대한 완전한 제어를 유지할 수 있습니다. 따라서 ClickHouse를 직접 운영할 필요가 없으며, 다음과 같은 다양한 이점을 제공합니다:
+ClickHouse Cloud에 Managed ClickStack을 배포하고, 수집 파이프라인을 통해 테스트 이벤트를 전송한 다음, 해당 이벤트가 ClickStack UI에서 사용 가능한지 확인하십시오.
+
+ClickHouse Cloud는 ClickHouse 백엔드를 운영하지만, 수집 파이프라인과 스키마에 대한 제어는 유지할 수 있습니다. Managed ClickStack은 다음을 제공합니다:
 
 * 스토리지와 독립적으로 컴퓨트를 자동 스케일링
 * 객체 스토리지를 기반으로 한 저비용의 사실상 무제한 보존
-* warehouses를 사용하여 읽기 및 쓰기 워크로드를 독립적으로 격리할 수 있는 기능
+* [warehouses](/ko/products/cloud/features/infrastructure/warehouses)를 사용한 읽기 및 쓰기 워크로드의 독립적 격리
 * 통합 인증
 * 자동화된 백업
 * 보안 및 컴플라이언스 기능
 * 원활한 업그레이드
 
-<Steps>
-  <Step title="ClickHouse Cloud 가입" id="signup-to-clickhouse-cloud">
-    [ClickHouse Cloud](https://console.clickhouse.cloud)에서 Managed ClickStack 서비스를 생성하려면 먼저 [ClickHouse Cloud 빠른 시작 가이드](/ko/get-started/setup/cloud)의 **첫 번째 단계**를 완료하십시오.
+<div id="before-you-begin">
+  ## 시작하기 전에
+</div>
 
-    <ProviderSelection />
-  </Step>
+[지원되는 통합](/ko/integrations/home)과 자체 스키마를 사용하여 데이터를 ClickHouse로 직접 전송할 수도 있습니다.
 
-  <Step title="수집 설정" id="setup-ingestion">
-    서비스 프로비저닝이 완료되면 해당 서비스가 선택되어 있는지 확인한 다음, 왼쪽 메뉴에서 &quot;ClickStack&quot;을 클릭하십시오.
+<div id="create-a-managed-clickstack-service">
+  ### ClickHouse Cloud 서비스 만들기
+</div>
 
-    <SetupManagedIngestion />
-  </Step>
+ClickHouse Cloud 빠른 시작 가이드의 [ClickHouse 서비스 만들기](/ko/get-started/setup/cloud#1-create-a-clickhouse-service)를 완료하십시오. 계속하기 전에 서비스가 실행 중인지 확인하십시오.
 
-  <Step title="ClickStack UI로 이동" id="navigate-to-clickstack-ui-cloud">
-    <NavigateClickStackUI />
-  </Step>
+<View title="OpenTelemetry">
+  <Tip>
+    이 페이지에는 **OpenTelemetry** 경로가 표시됩니다. 가이드 상단의 셀렉터에서 **OpenTelemetry**(권장)와 **Vector** 간에 전환할 수 있습니다.
+  </Tip>
 
-  <Step title="다음 단계" id="next-steps">
-    <Warning>
-      **기본 자격 증명 기록**
+  ### 수집 환경 준비하기
 
-      위 단계에서 기본 자격 증명을 기록하지 않았다면 서비스로 이동하여 `Connect`를 선택한 뒤 비밀번호와 HTTP/네이티브 엔드포인트를 기록하십시오. 이 관리자 자격 증명은 안전하게 보관해야 하며, 이후 가이드에서 다시 사용할 수 있습니다.
-    </Warning>
+  * 새 [OpenTelemetry Collector](/ko/clickstack/ingesting-data/collector)를 시작하려면 [Docker](https://docs.docker.com/get-docker/)를 설치하십시오. Kubernetes에서는 [Helm](/ko/clickstack/ingesting-data/collector#configuring-the-collector)을 사용하여 collector를 배포하십시오.
+  * 기존 collector를 사용하려면 [gateway 역할](/ko/clickstack/ingesting-data/collector#collector-roles)로 실행하고, 해당 배포판에 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)가 포함되어 있는지 확인하십시오. 이 가이드에서 필요한 구성을 추가합니다.
 
-    <Image img="/images/_snippets/service_connect.webp" size="lg" alt="서비스 연결" border />
+  ## 관리형 ClickStack 설정하기
 
-    새 사용자를 프로비저닝하거나 추가 데이터 소스를 더하는 등의 작업을 수행하려면 [Managed ClickStack 배포 가이드](/ko/clickstack/deployment/managed#additional-tasks)를 참조하십시오.
-  </Step>
-</Steps>
+  <Steps titleSize="h3">
+    <Step title="수집 소스 및 collector 설정 선택" id="choose-an-ingestion-source">
+      ClickHouse Cloud 서비스에서 ClickStack을 시작합니다. ClickStack **시작하기** 페이지에서 **수집 시작**을 선택합니다.
+
+      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="수집 시작" border />
+
+      **수집 소스 선택** 페이지에서 [OpenTelemetry](https://opentelemetry.io/)를 선택합니다.
+
+      <Info>
+        **OpenTelemetry 권장**
+
+        OpenTelemetry는 로그, 트레이스, 메트릭, 세션을 위한 사전 구성된 스키마를 제공합니다.
+      </Info>
+
+      <Image img="/images/clickstack/getting-started/select_source_toggle.webp" size="lg" alt="수집 소스로 OpenTelemetry 선택" border />
+
+      <Tabs>
+        <Tab title="새 collector 시작">
+          ClickStack은 `default` 관리자 자격 증명을 사용해 collector 명령을 생성합니다. 수집 액세스를 관리 작업과 분리하고 관리자 비밀번호에 의존하지 않도록 전용 수집 자격 증명을 사용하는 것이 좋습니다.
+
+          <Accordion title="전용 수집 자격 증명 생성(권장)">
+            ClickHouse Cloud에서 서비스의 SQL 콘솔을 열고 다음을 실행합니다.
+
+            ```sql
+            CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+            GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON default.* TO `clickstack-ingest`;
+            ```
+
+            생성된 명령에서 `CLICKHOUSE_USER="default"`를 `CLICKHOUSE_USER="clickstack-ingest"`로 바꾸고, `CLICKHOUSE_PASSWORD`를 전용 사용자의 비밀번호로 설정합니다.
+          </Accordion>
+
+          `default` 관리자 자격 증명을 계속 사용하려면 **Collector 시작** 탭에서 명령을 복사합니다. ClickStack은 서비스 endpoint를 미리 채웁니다. 비밀번호 자리 표시자를 서비스 비밀번호로 바꿉니다. 비밀번호를 더 이상 가지고 있지 않다면 [연결 정보를 확인하거나 재설정합니다](/ko/products/cloud/guides/sql-console/connection-details).
+
+          명령 형식은 다음과 같습니다.
+
+          ```shell
+          docker run -e CLICKHOUSE_ENDPOINT="https://<host>:8443" \
+              -e CLICKHOUSE_USER="default" \
+              -e CLICKHOUSE_PASSWORD="<your_password_here>" \
+              -p 4317:4317 -p 4318:4318 \
+              clickhouse/clickstack-otel-collector:latest
+          ```
+
+          `<host>`와 `<your_password_here>`를 ClickHouse Cloud 서비스에 맞는 값으로 바꾼 후 명령을 실행합니다.
+
+          collector는 포그라운드에서 실행됩니다. 이 terminal은 열어 둔 채로, 이 가이드의 나머지 명령은 두 번째 terminal에서 실행합니다.
+
+          <Note>
+            이 명령은 인증 없이 OTLP 포트를 노출하므로 로컬 평가용으로만 사용해야 합니다. 프로덕션 트래픽을 전송하기 전에 [collector를 보호하십시오](/ko/clickstack/ingesting-data/collector#securing-the-collector).
+          </Note>
+        </Tab>
+
+        <Tab title="기존 collector 사용">
+          **기존 collector 구성**을 선택한 후 collector 구성을 조정합니다.
+
+          애플리케이션과 ClickHouse Cloud 사이의 게이트웨이로 collector를 실행합니다. 아래 구성은 필요한 ClickHouse exporter와 신호 pipeline을 추가합니다.
+
+          이 예시에서는 ClickStack이 생성한 `default` 자격 증명을 사용합니다. 전용 수집 자격 증명을 사용하려면 **새 collector 시작** 탭의 선택적 설정을 따릅니다. 두 ClickHouse exporter 블록에서 `username: default`를 `username: clickstack-ingest`로 바꾸고, `password`를 전용 사용자의 비밀번호로 설정합니다.
+
+          관련 없는 수신기, processor, exporter 또는 확장을 대체하지 말고 다음 component를 기존 구성에 병합합니다.
+
+          <Info>
+            **필수 collector component**
+
+            collector 배포판에는 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)와 [routing connector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/routingconnector)가 포함되어야 합니다. OpenTelemetry Collector Contrib 배포판에는 두 component가 모두 포함되어 있습니다.
+          </Info>
+
+          이 예시는 OTLP 수신기, 배치 처리, 메모리 제한, 세션 리플레이 라우팅, ClickHouse exporter를 추가합니다.
+
+          <ExampleOTelConfig />
+
+          기존 OTLP 수신기를 재사용하고 인증 및 TLS 설정을 유지합니다. 구성에서 이미 예시의 component 또는 pipeline ID를 사용하고 있다면 중복 ID를 만들지 말고 병합하거나 이름을 변경합니다. 포트 `4317`과 `4318`에서 두 수신기를 실행하면 포트 충돌이 발생합니다.
+
+          구성을 병합한 후 기존 배포 프로세스를 사용하여 collector를 다시 로드하거나 재시작합니다.
+
+          OpenTelemetry collector 구성에 관한 자세한 내용은 [OpenTelemetry로 수집](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
+        </Tab>
+      </Tabs>
+    </Step>
+
+    <Step title="테스트 데이터 전송" id="send-test-data">
+      현재 타임스탬프가 포함된 테스트 로그를 전송합니다:
+
+      ```shell
+      NOW_NANO="$(date +%s)000000000"
+
+      curl -i "http://localhost:4318/v1/logs" \
+        -H "Content-Type: application/json" \
+        --data-binary @- <<EOF
+      {
+        "resourceLogs": [{
+          "resource": {
+            "attributes": [{
+              "key": "service.name",
+              "value": {"stringValue": "clickstack-docs-test"}
+            }]
+          },
+          "scopeLogs": [{
+            "scope": {"name": "clickstack-docs-test"},
+            "logRecords": [{
+              "timeUnixNano": "${NOW_NANO}",
+              "severityText": "INFO",
+              "body": {"stringValue": "ClickStack ingestion test"}
+            }]
+          }]
+        }]
+      }
+      EOF
+      ```
+
+      기존 collector를 사용하는 경우 `http://localhost:4318`을 해당 OTLP HTTP 엔드포인트로 바꾸십시오. 수신기에 인증이 필요한 경우 `curl` 명령에 필요한 헤더를 추가하십시오.
+
+      요청이 성공하면 `HTTP/1.1 200 OK`가 반환됩니다.
+    </Step>
+
+    <Step title="탐색을 시작하고 수집을 확인합니다" id="open-clickstack-and-confirm-ingestion">
+      ClickStack이 OpenTelemetry 데이터 소스를 감지하면 **탐색 시작**을 선택해 **검색** 보기를 엽니다. `ClickStack ingestion test`를 검색합니다.
+
+      결과에 서비스 이름이 `clickstack-docs-test`인 테스트 이벤트가 표시됩니다.
+
+      <Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="ClickStack 수집 테스트 이벤트가 표시된 ClickStack 로그 보기" border />
+    </Step>
+  </Steps>
+</View>
+
+<View title="벡터">
+  ### 수집 환경 준비하기
+
+  ClickHouse로 데이터를 전송할 수 있는 [기존 Vector 파이프라인](/ko/clickstack/ingesting-data/vector)부터 준비하십시오.
+
+  ## 관리형 ClickStack 설정하기
+
+  <Steps titleSize="h3">
+    <Step title="Vector 선택 및 수집 구성" id="choose-an-ingestion-source-vector">
+      ClickHouse Cloud 서비스에서 ClickStack을 실행합니다. ClickStack **시작하기** 페이지에서 **Start ingestion**을 선택합니다.
+
+      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="수집 시작" border />
+
+      **Choose an ingestion source** 페이지에서 [Vector](https://vector.dev/)를 선택하십시오.
+
+      <Image img="/images/clickstack/getting-started/select_source_vector_toggle.webp" size="lg" alt="수집 소스로 Vector를 선택합니다" border />
+
+      [Vector](https://vector.dev)는 고성능의 벤더 중립적인 관측성 데이터 파이프라인으로, 유연성과 낮은 리소스 사용량 덕분에 특히 로그 수집 용도로 널리 사용됩니다.
+
+      ClickStack에서 Vector를 사용할 때는 스키마(schema)를 직접 정의합니다. 이 스키마는 OpenTelemetry 규약을 따를 수도 있고, 사용자의 이벤트에 특화된 필드를 사용할 수도 있습니다.
+
+      <Info>
+        **기존 Vector 파이프라인 필요**
+
+        입력 파이프라인을 사용하는 Vector를 이미 실행 중인 경우 이 가이드를 계속 진행하십시오. 파이프라인을 통해 전송되는 데이터에는 **타임스탬프 컬럼** 또는 이에 상응하는 시간 필드가 포함되어야 합니다. 이 필드는 ClickStack UI에서 데이터 소스를 구성할 때 선택합니다.
+
+        아래 단계에서는 기존 파이프라인에 ClickHouse 싱크를 추가합니다.
+      </Info>
+
+      #### 데이터베이스와 테이블 생성
+
+      Vector 싱크를 구성하기 전에 데이터베이스와 테이블을 생성하십시오.
+
+      ClickHouse Cloud에서 해당 서비스의 SQL 콘솔을 열고 데이터베이스를 생성하세요:
+
+      예를 들어, 로그용 데이터베이스를 생성합니다:
+
+      ```sql
+      CREATE DATABASE IF NOT EXISTS logs
+      ```
+
+      그런 다음 로그 데이터의 구조에 맞는 스키마로 테이블을 생성합니다. 아래 예시는 일반적인 Nginx 액세스 로그 포맷을 가정합니다:
+
+      ```sql
+      CREATE TABLE logs.nginx_logs
+      (
+          `time_local` DateTime,
+          `remote_addr` IPv4,
+          `remote_user` LowCardinality(String),
+          `request` String,
+          `status` UInt16,
+          `body_bytes_sent` UInt64,
+          `http_referer` String,
+          `http_user_agent` String,
+          `http_x_forwarded_for` LowCardinality(String),
+          `request_time` Float32,
+          `upstream_response_time` Float32,
+          `http_host` String
+      )
+      ENGINE = MergeTree
+      ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+      ```
+
+      테이블은 Vector가 생성하는 출력 스키마와 일치해야 합니다. 권장 [스키마 모범 사례](/ko/concepts/best-practices/select-data-type)에 따라 데이터에 맞게 스키마를 조정하십시오.
+
+      ClickHouse에서 [기본 키(Primary key)](/ko/concepts/core-concepts/primary-indexes)가 어떻게 동작하는지 이해한 후 액세스 패턴에 맞는 정렬 키를 선택할 것을 강력히 권장합니다. 기본 키 선택에 대해서는 [ClickStack 전용](/ko/clickstack/managing/performance-tuning#choosing-a-primary-key) 가이드를 참고하십시오.
+
+      #### ClickHouse 싱크 구성하기
+
+      테이블이 준비되면 Vector 구성에 ClickHouse 싱크를 추가하십시오:
+
+      ```yaml
+      sinks:
+        clickhouse:
+          type: clickhouse
+          inputs:
+            - your_input
+          endpoint: "https://<host>:8443"
+          database: logs
+          table: nginx_logs
+          format: json_each_row
+          skip_unknown_fields: true
+          auth:
+            strategy: basic
+            user: default
+            password: "<your_password_here>"
+      ```
+
+      `your_input`은 기존 파이프라인의 입력으로 대체하십시오. `<host>`와 `<your_password_here>`는 사용 중인 ClickHouse Cloud 서비스의 값으로 대체하십시오. 필요한 경우 대상 데이터베이스 또는 테이블을 변경하십시오.
+
+      <Accordion title="전용 수집 자격 증명 사용(권장)">
+        프로덕션 환경에서는 전용 사용자를 생성하고 Vector 대상 테이블에 대한 권한을 부여하십시오. ClickHouse Cloud에서 서비스의 SQL 콘솔을 열고 다음을 실행하십시오:
+
+        ```sql
+        CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+        GRANT SELECT, INSERT ON logs.nginx_logs TO `clickstack-ingest`;
+        ```
+
+        Vector 싱크에서 `default`를 `clickstack-ingest`로 바꾸고 `password`를 전용 사용자의 비밀번호로 설정합니다.
+      </Accordion>
+
+      변경한 구성을 저장한 다음, 기존 배포 프로세스를 사용해 Vector를 다시 로드하거나 재시작하십시오.
+
+      Vector로 데이터를 수집하는 더 많은 예시는 [Vector로 수집하기](/ko/clickstack/ingesting-data/vector)를, 고급 옵션은 [Vector ClickHouse 싱크 문서](https://vector.dev/docs/reference/configuration/sinks/clickhouse/)를 참고하십시오.
+
+      #### ClickStack 데이터 소스 생성
+
+      Vector 파이프라인이 데이터를 적재한 테이블에 대한 데이터 소스를 생성하십시오. ClickStack은 최초 로그인 시 데이터 소스를 생성하도록 안내합니다.
+
+      이 폼에는 기본 OpenTelemetry 스키마에 맞는 표현식이 미리 채워집니다. 이 가이드에서 생성한 Nginx 테이블에 대해서는 다음 값으로 소스를 구성하십시오:
+
+      | 설정               | 값                                                                                                               |
+      | ---------------- | --------------------------------------------------------------------------------------------------------------- |
+      | **이름**           | `Nginx 로그`                                                                                                      |
+      | **소스 데이터 유형**    | 로그                                                                                                              |
+      | **서버 연결**        | `Default`                                                                                                       |
+      | **데이터베이스**       | `logs`                                                                                                          |
+      | **테이블**          | `nginx_logs`                                                                                                    |
+      | **타임스탬프 컬럼**     | `time_local`                                                                                                    |
+      | **기본 SELECT 쿼리** | `time_local, remote_addr, status, request`                                                                      |
+      | **서비스 이름 표현식**   | `'nginx'`                                                                                                       |
+      | **로그 레벨 표현식**    | `multiIf(status >= 500, 'ERROR', status >= 400, 'WARN', 'INFO')`                                                |
+      | **로그 속성 표현식**    | `map('http.remote_addr', toString(remote_addr), 'http.status_code', toString(status), 'http.request', request)` |
+      | **리소스 속성 표현식**   | `map('service.name', 'nginx')`                                                                                  |
+      | **표시할 타임스탬프 컬럼** | `time_local`                                                                                                    |
+      | **트레이스 ID 표현식**  | `''`                                                                                                            |
+      | **스팬 ID 표현식**    | `''`                                                                                                            |
+      | **암시적 컬럼 표현식**   | `request`                                                                                                       |
+
+      Nginx 테이블에는 `Body` 컬럼이 없습니다. **Body Expression**을 다음과 같이 설정하십시오:
+
+      ```sql
+      concat(
+        remote_addr, ' ',
+        remote_user, ' ',
+        '[', formatDateTime(time_local, '%d/%b/%Y:%H:%i:%S %z'), '] ',
+        '"', request, '" ',
+        toString(status), ' ',
+        toString(body_bytes_sent), ' ',
+        '"', http_referer, '" ',
+        '"', http_user_agent, '" ',
+        '"', http_x_forwarded_for, '" ',
+        toString(request_time), ' ',
+        toString(upstream_response_time), ' ',
+        '"', http_host, '"'
+      )
+      ```
+
+      그 밖의 source 설정은 [ClickStack 구성 참고](/ko/clickstack/managing/config)를 확인하십시오.
+    </Step>
+
+    <Step title="테스트 데이터 전송" id="send-test-data-vector">
+      기존 Vector 파이프라인의 입력으로 대표 이벤트를 전송합니다.
+
+      Vector 소스 및 변환에 관한 더 많은 예시는 [Vector를 사용한 수집](/ko/clickstack/ingesting-data/vector)을 참조하십시오.
+    </Step>
+
+    <Step title="탐색을 시작하고 수집을 확인합니다" id="open-clickstack-and-confirm-ingestion-vector">
+      데이터 소스를 만든 후 **탐색 시작**을 선택하여 **검색** 보기로 이동합니다. 테이블의 데이터 소스를 선택한 다음, 전송한 이벤트가 포함되어 있는지 확인합니다.
+
+      <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI의 로그" />
+    </Step>
+  </Steps>
+</View>
+
+이제 Managed ClickStack 서비스와 정상 작동하는 수집 경로가 준비되었으며, ClickStack에서 테스트 이벤트를 확인할 수 있습니다.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+다른 가이드에서 ClickHouse Cloud 엔드포인트 또는 비밀번호가 필요한 경우, 계속하기 전에 [연결 정보를 확인하거나 재설정하십시오](/ko/products/cloud/guides/sql-console/connection-details).
+
+<div id="send-application-and-infrastructure-data">
+  ### 애플리케이션 및 인프라 데이터 전송
+</div>
+
+ClickStack으로 전송할 데이터에 맞는 가이드를 선택하십시오.
+
+<CardGroup cols={2}>
+  <Card title="애플리케이션 계측" icon="code" href="/ko/clickstack/ingesting-data/sdks/index">
+    지원되는 OpenTelemetry SDK를 사용하여 애플리케이션 트레이스와 로그를 전송합니다.
+  </Card>
+
+  <Card title="호스트 로그 수집" icon="server" href="/ko/clickstack/integration-examples/host-logs">
+    agent 역할로 실행되는 OpenTelemetry Collector에서 호스트 로그를 전달합니다.
+  </Card>
+
+  <Card title="Kubernetes 모니터링" icon="cubes" href="/ko/clickstack/integration-examples/kubernetes">
+    Kubernetes 클러스터에서 로그, 메트릭 및 트레이스를 수집합니다.
+  </Card>
+
+  <Card title="기타 통합 살펴보기" icon="plug" href="/ko/clickstack/integration-examples/index">
+    추가 애플리케이션 및 텔레메트리 소스에 대한 가이드를 찾아보십시오.
+  </Card>
+</CardGroup>
+
+<div id="explore-sample-data">
+  ### 샘플 데이터 살펴보기
+</div>
+
+샘플 데이터셋을 사용해 더 풍부한 텔레메트리로 ClickStack을 살펴보십시오.
+
+<CardGroup cols={2}>
+  <Card title="샘플 로그, 트레이스 및 메트릭" href="/ko/clickstack/example-datasets/sample-data">
+    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
+
+    공개 데모에서 데이터를 로드하고 문제를 진단하십시오. 이 가이드에서는 새 로컬 OpenTelemetry Collector를 시작한 것으로 가정합니다. 기존 collector를 구성한 경우 엔드포인트 및 인증 설정을 배포 환경에 맞게 조정하십시오.
+  </Card>
+
+  <Card title="로컬 로그 및 메트릭" href="/ko/clickstack/example-datasets/local-data">
+    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
+
+    macOS 또는 Linux에서 로컬 파일과 시스템 메트릭을 수집하십시오.
+  </Card>
+</CardGroup>
+
+<div id="generate-synthetic-data">
+  ### 합성 데이터 생성
+</div>
+
+기존 애플리케이션이나 데이터셋 없이 데이터 수집을 테스트하려면 생성기를 사용하십시오.
+
+<CardGroup cols={2}>
+  <Card title="otelgen으로 데이터 생성" icon="terminal" href="/ko/clickstack/example-datasets/otelgen">
+    합성 OTLP 로그, 트레이스, 메트릭을 짧은 시간 동안 전송합니다.
+  </Card>
+
+  <Card title="telemetrygen으로 데이터 생성" icon="terminal" href="/ko/clickstack/example-datasets/telemetrygen">
+    여러 서비스에서 구성 가능한 OpenTelemetry 신호를 생성합니다.
+  </Card>
+</CardGroup>
+
+[ClickStack의 모든 샘플 데이터와 데모](/ko/clickstack/example-datasets/index)를 참조하십시오.
+
+<div id="prepare-for-production">
+  ### 프로덕션 환경 준비
+</div>
+
+지속적인 워크로드에 ClickStack을 사용하기 전에 프로덕션 환경 및 용량 산정 가이드를 검토하십시오.
+
+<CardGroup cols={2}>
+  <Card title="프로덕션 환경으로 전환" icon="shield" href="/ko/clickstack/managing/production">
+    수집 자격 증명, 보안, 보존 기간 및 운영 관련 가이드를 검토하십시오.
+  </Card>
+
+  <Card title="리소스 산정" icon="chart-line" href="/ko/clickstack/managing/estimating-resources">
+    예상 수집량에 맞게 필요한 컴퓨트 용량을 산정하십시오.
+  </Card>
+</CardGroup>
+
+배포 작업은 [Managed ClickStack 배포 가이드](/ko/clickstack/deployment/managed#additional-tasks)를 참조하십시오.
