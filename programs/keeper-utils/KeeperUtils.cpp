@@ -703,15 +703,19 @@ int dumpStateMachine(
                 if (debug_mode)
                 {
                     LOG_INFO(logger, "Current digest of state machine: {}", state_machine->getNodesDigest().value);
-                    auto req = state_machine->parseRequest(entry.get_buf(), true);
-                    LOG_INFO(
-                        logger,
-                        "Applying log entry {}: term={}, zxid={}, session_id={}\nrequest:\n{}",
-                        i,
-                        entry.get_term(),
-                        req->zxid,
-                        req->session_id,
-                        req->request->toString());
+                    auto batch = state_machine->parseRequestBatch(entry.get_buf(), true);
+                    for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
+                    {
+                        const auto & req = batch->requests[request_idx];
+                        LOG_INFO(
+                            logger,
+                            "Applying log entry {}: term={}, zxid={}, session_id={}\nrequest:\n{}",
+                            i,
+                            entry.get_term(),
+                            batch->getZxid(request_idx),
+                            req.session_id,
+                            req.request->toString());
+                    }
                 }
                 state_machine->pre_commit(i, entry.get_buf());
                 state_machine->commit(i, entry.get_buf());
@@ -860,71 +864,82 @@ int deserializeChangelog(
                         continue;
                     }
 
-                    auto req = state_machine->parseRequest(entry->get_buf(), true);
-                    auto digest = req->digest.value_or(KeeperDigest{KeeperDigestVersion::NO_DIGEST, 0});
+                    auto batch = state_machine->parseRequestBatch(entry->get_buf(), true);
+                    /// The digest is per batch (of the state after the whole batch); show it on every row of the batch.
+                    const auto & digest = batch->digest;
 
-                    const auto add_request_general_info = [&]()
+                    for (size_t batch_request_idx = 0; batch_request_idx < batch->requests.size(); ++batch_request_idx)
                     {
-                        res_columns[col_idx++]->insert(req->session_id);
-                        res_columns[col_idx++]->insert(req->zxid);
-                        res_columns[col_idx++]->insert(static_cast<Decimal64>(req->time));
-                        res_columns[col_idx++]->insert(digest.value);
-                        res_columns[col_idx++]->insert(digest.version);
-                    };
+                        const auto & req = batch->requests[batch_request_idx];
 
-                    add_request_general_info();
-
-                    const auto xid = req->request->xid;
-                    const auto add_request_info = [&](const ZooKeeperRequestPtr & request, size_t request_idx)
-                    {
-                        res_columns[col_idx++]->insert(request->getOpNum());
-                        res_columns[col_idx++]->insert(xid);
-                        res_columns[col_idx++]->insert(request_idx);
-                        res_columns[col_idx++]->insert(request->getPath());
-                        res_columns[col_idx++]->insert(request->has_watch);
-
-                        /// add version
-                        if (const auto * remove_request = dynamic_cast<ZooKeeperRemoveRequest *>(request.get()))
-                            res_columns[col_idx++]->insert(remove_request->version);
-                        else if (const auto * set_request = dynamic_cast<ZooKeeperSetRequest *>(request.get()))
-                            res_columns[col_idx++]->insert(set_request->version);
-                        else if (const auto * check_request = dynamic_cast<ZooKeeperCheckRequest *>(request.get()))
-                            res_columns[col_idx++]->insert(check_request->version);
-                        else
-                            res_columns[col_idx++]->insert(0);
-
-                        /// add create info
-                        if (const auto * create_request = dynamic_cast<ZooKeeperCreateRequest *>(request.get()))
+                        const auto add_request_general_info = [&]()
                         {
-                            res_columns[col_idx++]->insert(create_request->is_ephemeral);
-                            res_columns[col_idx++]->insert(create_request->is_sequential);
-                        }
-                        else
-                        {
-                            res_columns[col_idx++]->insert(0);
-                            res_columns[col_idx++]->insert(0);
-                        }
+                            res_columns[col_idx++]->insert(req.session_id);
+                            res_columns[col_idx++]->insert(batch->getZxid(batch_request_idx));
+                            res_columns[col_idx++]->insert(static_cast<Decimal64>(req.time));
+                            res_columns[col_idx++]->insert(digest.value);
+                            res_columns[col_idx++]->insert(digest.version);
+                        };
 
-                        /// add data
-                        if (const auto * create_request = dynamic_cast<ZooKeeperCreateRequest *>(request.get()))
-                            res_columns[col_idx++]->insert(create_request->data);
-                        else if (const auto * set_request = dynamic_cast<ZooKeeperSetRequest *>(request.get()))
-                            res_columns[col_idx++]->insert(set_request->data);
-                        else
-                            res_columns[col_idx++]->insert("");
-                    };
-
-                    add_request_info(req->request, 0);
-
-                    if (const auto * multi_request = dynamic_cast<ZooKeeperMultiRequest *>(req->request.get()))
-                    {
-                        for (size_t sub_request_idx = 0; sub_request_idx < multi_request->requests.size(); ++sub_request_idx)
+                        if (batch_request_idx != 0)
                         {
                             col_idx = 0;
                             add_log_entry_info();
-                            add_request_general_info();
-                            add_request_info(multi_request->requests[sub_request_idx], sub_request_idx + 1);
                         }
+                        add_request_general_info();
+
+                        const auto xid = req.request->xid;
+                        const auto add_request_info = [&](const ZooKeeperRequestPtr & request, size_t request_idx)
+                        {
+                            res_columns[col_idx++]->insert(request->getOpNum());
+                            res_columns[col_idx++]->insert(xid);
+                            res_columns[col_idx++]->insert(request_idx);
+                            res_columns[col_idx++]->insert(request->getPath());
+                            res_columns[col_idx++]->insert(request->has_watch);
+
+                            /// add version
+                            if (const auto * remove_request = dynamic_cast<ZooKeeperRemoveRequest *>(request.get()))
+                                res_columns[col_idx++]->insert(remove_request->version);
+                            else if (const auto * set_request = dynamic_cast<ZooKeeperSetRequest *>(request.get()))
+                                res_columns[col_idx++]->insert(set_request->version);
+                            else if (const auto * check_request = dynamic_cast<ZooKeeperCheckRequest *>(request.get()))
+                                res_columns[col_idx++]->insert(check_request->version);
+                            else
+                                res_columns[col_idx++]->insert(0);
+
+                            /// add create info
+                            if (const auto * create_request = dynamic_cast<ZooKeeperCreateRequest *>(request.get()))
+                            {
+                                res_columns[col_idx++]->insert(create_request->is_ephemeral);
+                                res_columns[col_idx++]->insert(create_request->is_sequential);
+                            }
+                            else
+                            {
+                                res_columns[col_idx++]->insert(0);
+                                res_columns[col_idx++]->insert(0);
+                            }
+
+                            /// add data
+                            if (const auto * create_request = dynamic_cast<ZooKeeperCreateRequest *>(request.get()))
+                                res_columns[col_idx++]->insert(create_request->data);
+                            else if (const auto * set_request = dynamic_cast<ZooKeeperSetRequest *>(request.get()))
+                                res_columns[col_idx++]->insert(set_request->data);
+                            else
+                                res_columns[col_idx++]->insert("");
+                        };
+
+                        add_request_info(req.request, 0);
+
+                        if (const auto * multi_request = dynamic_cast<ZooKeeperMultiRequest *>(req.request.get()))
+                        {
+                            for (size_t sub_request_idx = 0; sub_request_idx < multi_request->requests.size(); ++sub_request_idx)
+                            {
+                                col_idx = 0;
+                                add_log_entry_info();
+                                add_request_general_info();
+                                add_request_info(multi_request->requests[sub_request_idx], sub_request_idx + 1);
+                            }
+                    }
                     }
                 }
             }
@@ -953,14 +968,22 @@ int deserializeChangelog(
                 {
                     if (auto buffer = entry->get_buf_ptr(); buffer)
                     {
-                        auto request = state_machine->parseRequest(*buffer, true);
-                        std::cout << "Session ID: " << request->session_id << "\n"
-                                  << "ZXID: " << request->zxid << "\n"
-                                  << "Request timestamp: " << request->time << "\n";
-                        if (request->digest)
-                            std::cout << fmt::format("Digest: {} ({})\n", request->digest->value, request->digest->version);
-                        std::cout << "Uses XID64: " << request->use_xid_64 << "\n"
-                                  << "Request: " << request->request->toString() << "\n";
+                        auto batch = state_machine->parseRequestBatch(*buffer, true);
+                        if (batch->digest.version != KeeperDigestVersion::NO_DIGEST)
+                            std::cout << fmt::format("Digest: {} ({})\n", batch->digest.value, batch->digest.version);
+                        if (batch->dispatcher_server_id != -1)
+                            std::cout << "Dispatcher server ID: " << batch->dispatcher_server_id << "\n";
+                        if (batch->committed_log_idx != 0)
+                            std::cout << "Committed log index: " << batch->committed_log_idx << "\n";
+                        for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
+                        {
+                            const auto & request = batch->requests[request_idx];
+                            std::cout << "Session ID: " << request.session_id << "\n"
+                                      << "ZXID: " << batch->getZxid(request_idx) << "\n"
+                                      << "Request timestamp: " << request.time << "\n"
+                                      << "Uses XID64: " << request.use_xid_64 << "\n"
+                                      << "Request: " << request.request->toString() << "\n";
+                        }
                     }
                 }
                 catch (const std::exception & e)

@@ -134,7 +134,7 @@ struct KeeperDelta
     Operation operation;
 };
 
-/// For the duration of a preprocessRequest call, these fields accumulate changes made by the
+/// For the duration of a preprocessOneRequest call, these fields accumulate changes made by the
 /// transaction that's being preprocessed. These deltas are already applied to uncommitted stats;
 /// if the transaction fails, they must be rolled back.
 struct KeeperStagingTransaction
