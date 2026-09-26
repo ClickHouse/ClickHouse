@@ -69,7 +69,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/replaceLegacyToTime.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
@@ -126,7 +125,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
@@ -431,7 +429,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
     DatabasePtr database = DatabaseFactory::instance().get(
-        create, metadata_path / "", getContext(), mode, internal, is_metadata_replay);
+        create, metadata_path / "", getContext(), mode, internal, is_metadata_replay, is_restore_from_backup);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -1145,31 +1143,16 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// For refreshable materialized views, use the MV's database as context for the view's SELECT analysis.
         /// This ensures unqualified table/view references resolve in the MV's database, not the session's database.
         ContextPtr select_context = getContext();
-        bool is_refreshable_mv = create.is_materialized_view && create.refresh_strategy;
-        if (is_refreshable_mv)
+        if (create.is_materialized_view && create.refresh_strategy)
         {
             auto mv_context = Context::createCopy(getContext());
             mv_context->setCurrentDatabase(create.getDatabase());
             select_context = mv_context;
         }
 
-        SharedHeader as_select_sample;
-
-        if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
-        {
-            as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
-                select_context,
-                SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
-        }
-        else
-        {
-            /// For refreshable materialized views, allow parameterized views in the query.
-            /// This prevents the old analyzer from trying to execute table functions during analysis.
-            as_select_sample = InterpreterSelectWithUnionQuery::getSampleBlock(create.select->clone(),
-                select_context,
-                false /* is_subquery */,
-                is_refreshable_mv /* is_create_parameterized_view */);
-        }
+        SharedHeader as_select_sample = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
+            select_context,
+            SelectQueryOptions{}.analyze().checkSubqueryTableAccess());
 
         auto columns_from_select = as_select_sample->getNamesAndTypesList();
         if (mode < LoadingStrictnessLevel::ATTACH)
@@ -1270,7 +1253,7 @@ void InterpreterCreateQuery::validateTableStructure(const ASTCreateQuery & creat
     }
 }
 
-void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties, const DatabasePtr & database)
+void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTCreateQuery & create, const TableProperties & properties)
 {
     /// This is not strict validation, just catches common errors that would make the view not work.
     /// It's possible to circumvent these checks by ALTERing the view or target table after creation;
@@ -1305,25 +1288,12 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
         check_columns = true;
     }
 
-    if (create.refresh_strategy && !create.refresh_strategy->isAppend())
-    {
-        if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} has engine {}", create.getDatabase(), database->getEngineName());
-
-        std::string message;
-        if (!supportsAtomicRename(&message))
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
-    }
-
     SharedHeader input_block;
 
     if (check_columns)
     {
         try
         {
-            if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
                 /// We should treat SELECT as an initial query in order to properly analyze it.
                 auto context = Context::createCopy(getContext());
@@ -1337,28 +1307,6 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
                 input_block = InterpreterSelectQueryAnalyzer::getSampleBlock(create.select->clone(),
                     context,
                     SelectQueryOptions{}.analyze().createView().checkSubqueryTableAccess());
-            }
-            else
-            {
-                /// For refreshable materialized views with old analyzer, use MV's database context.
-                ContextPtr select_context = getContext();
-                bool is_refreshable_mv = create.refresh_strategy != nullptr;
-                if (is_refreshable_mv)
-                {
-                    auto mv_context = Context::createCopy(getContext());
-                    mv_context->setCurrentDatabaseUnchecked(create.getDatabase());
-                    select_context = mv_context;
-                }
-
-                /// For refreshable materialized views, allow parameterized views in the query.
-                /// This prevents the old analyzer from trying to execute table functions during analysis.
-                auto options = SelectQueryOptions().analyze();
-                if (is_refreshable_mv)
-                    options = options.createParameterizedView();
-
-                input_block = InterpreterSelectWithUnionQuery(create.select->clone(),
-                    select_context,
-                    options).getSampleBlock();
             }
         }
         catch (Exception & e)
@@ -2128,13 +2076,30 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
+    /// A `RESTORE` that drops the view's UUID supplies a definition too: restore overwrites
+    /// `create.uuid` but not `create.has_uuid`, so `has_uuid` still reports the backup's own metadata
+    /// and separates a view that had a UUID (about to lose it here) from one that never had one.
+    const bool is_uuid_losing_restore = is_restore_from_backup && create.has_uuid;
+    if (create.refresh_strategy && !create.refresh_strategy->isAppend()
+        && (isFreshTableDefinition(mode, create.attach_short_syntax) || is_uuid_losing_restore))
+    {
+        if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+
+        std::string message;
+        if (!supportsAtomicRename(&message))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
+    }
+
     /// Check type compatible for materialized dest table and select columns
     if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
     {
         // An MV with a flattened nested column in an inner table can never be filled
         if (create.is_materialized_view_with_inner_table())
             getContext()->setSetting("flatten_nested", false);
-        validateMaterializedViewColumnsAndEngine(create, properties, database);
+        validateMaterializedViewColumnsAndEngine(create, properties);
     }
 
     bool is_storage_replicated = false;
@@ -3944,6 +3909,19 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     }
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
+
+    /// `table_readonly` is not supported for `ReplicatedMergeTree` and the conversion keeps the
+    /// settings of the table it converts, so it would produce a table in that unsupported state.
+    /// The startup `convert_to_replicated` flag only logs and leaves such a table alone, because
+    /// throwing there would take the whole database load down; here the conversion is a query of
+    /// its own, so it is refused outright, before any of the side effects below.
+    if (to_replicated && DatabaseOrdinary::isTableReadonlyAsReplicated(create, getContext()))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot attach table {} as replicated: it would have `table_readonly = 1` (from its definition or the server's "
+            "`merge_tree` / `replicated_merge_tree` defaults), which is not supported for "
+            "ReplicatedMergeTree. Turn it off with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` first.",
+            backQuoteIfNeed(create.getTable()));
 
     /// Must precede every side effect below: neither the transaction metadata removal nor the
     /// metadata rewrite can be rolled back. The other direction takes no Keeper path at all.

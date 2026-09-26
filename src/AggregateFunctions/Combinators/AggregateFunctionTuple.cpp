@@ -518,6 +518,13 @@ void AggregateFunctionTuple::insertMergeResultInto(AggregateDataPtr __restrict p
     insertResultIntoImpl<true>(place, to, arena);
 }
 
+void AggregateFunctionTuple::rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept
+{
+    auto & tuple_to = assert_cast<ColumnTuple &>(to);
+    for (size_t i = nested_functions.size(); i-- > 0;)
+        nested_functions[i]->rollbackInsertResult(place + state_offsets[i], tuple_to.getColumn(i));
+}
+
 bool AggregateFunctionTuple::allocatesMemoryInArena() const
 {
     for (const auto & func : nested_functions)
@@ -591,6 +598,11 @@ bool AggregateFunctionTuple::shouldPrintParametersWithTypes() const
     /// the singular `getNestedFunction()`, which this combinator has no single answer for.
     return std::ranges::any_of(
         nested_functions, [](const auto & nested) { return nested->shouldPrintParametersWithTypes(); });
+}
+
+bool AggregateFunctionTuple::isOnlyWindowFunction() const
+{
+    return std::ranges::any_of(nested_functions, [](const auto & nested) { return nested->isOnlyWindowFunction(); });
 }
 
 AggregateFunctionStateVariant AggregateFunctionTuple::getStateVariant() const
