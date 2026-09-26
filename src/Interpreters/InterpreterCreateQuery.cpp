@@ -1817,6 +1817,23 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
+bool isStorageReplicated(const ASTCreateQuery & create)
+{
+    if (create.storage && isReplicated(*create.storage))
+        return true;
+
+    if (create.targets)
+    {
+        for (const auto & inner_table_engine : create.targets->getInnerEngines())
+        {
+            if (isReplicated(*inner_table_engine))
+                return true;
+        }
+    }
+
+    return false;
+}
+
 void checkProjectionColumnListReplicationCompatibility(
     const ASTCreateQuery & create, const ContextPtr & context, const DatabasePtr & database, bool is_fresh_definition)
 {
@@ -1838,14 +1855,7 @@ void checkProjectionColumnListReplicationCompatibility(
         return;
 #endif
 
-    bool is_storage_replicated = create.storage && isReplicated(*create.storage);
-    if (create.targets)
-    {
-        for (const auto & inner_table_engine : create.targets->getInnerEngines())
-            is_storage_replicated |= isReplicated(*inner_table_engine);
-    }
-
-    if (!is_storage_replicated && create.cluster.empty()
+    if (!isStorageReplicated(create) && create.cluster.empty()
         && !(database && (database->getEngineName() == "Replicated" || database->getEngineName() == "Shared")))
         return;
 
@@ -2159,6 +2169,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties, database);
     }
+
+    const bool is_storage_replicated = isStorageReplicated(create);
 
     /// Older replicas cannot parse the column-list syntax at all. Check before the CREATE
     /// enters a Replicated database or distributed DDL log, or a replicated table's metadata.
