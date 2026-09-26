@@ -93,6 +93,7 @@ public:
     bool addTokenToPatterns(std::string_view token);
     /// Number of tokens that matched a hasAnyTokenPrefix/Like, hasAllTokenLike or hasAnyTokenRegexp pattern.
     size_t getNumPerTokenPatternTokens() const { return num_per_token_pattern_tokens; }
+    bool hasPerTokenPatterns() const { return !per_token_patterns.empty(); }
     /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
     std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
     bool canFilterTokensByLiterals() const;

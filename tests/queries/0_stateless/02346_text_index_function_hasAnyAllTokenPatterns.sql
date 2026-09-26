@@ -295,7 +295,8 @@ ORDER BY id
 SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 
 -- Every row has its own token, so all postings are small and embedded.
-INSERT INTO tab SELECT number, concat('req id', toString(number), ' ok') FROM numbers(2000);
+-- Half the rows have no id token, so the dictionary is small enough to be scanned as a whole (see the next section).
+INSERT INTO tab SELECT number, if(number < 2000, concat('req id', toString(number), ' ok'), 'req ok') FROM numbers(4000);
 
 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_matched_tokens_prefix';
 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'id1%') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_matched_tokens_token_like';

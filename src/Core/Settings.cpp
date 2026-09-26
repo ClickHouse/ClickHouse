@@ -9245,6 +9245,7 @@ in the text index dictionary scan of a data part, counting the tokens with small
 A token matched by several patterns counts once. Tokens matched only by `LIKE`, `ILIKE`, `startsWith` and `endsWith` are not counted.
 If more tokens match, the scan of the part is abandoned and every pattern predicate on the index (a `LIKE` next to these functions included)
 is evaluated on the column, which is faster than collecting the postings of that many tokens. 0 means no limit.
+The scan is also skipped if it would read the whole dictionary of a part, and that holds more tokens than this number and than half the rows of the part.
 The default is the measured break-even: on a part of 10 million rows, the dictionary scan and the postings of about 20000 matching tokens
 cost as much as evaluating the predicate on the column with several threads, and a pattern that matches 1 million tokens is more than 30 times slower than the column scan.
 
