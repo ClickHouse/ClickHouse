@@ -169,6 +169,12 @@ static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
     std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
     for (size_t i = 0; i < primary_key.column_names.size(); ++i)
     {
+        /// `forAnyHyperrectangle` uses these bounds as the column universe, so a bound that can hide a
+        /// NaN is not usable here: `containsRange` would be true where the NaN falsifies it. Such a
+        /// column falls back to the whole universe.
+        if (i < primary_key.data_types.size() && KeyCondition::typeMayHideNaN(primary_key.data_types[i]))
+            continue;
+
         auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);
         if (it != minmax_names.end())
             mapping[i] = static_cast<size_t>(it - minmax_names.begin());
@@ -1617,9 +1623,9 @@ static bool isTopKFilterFunction(const ActionsDAG::Node * node)
         && node->function_base->getName() == "__topKFilter";
 }
 
-/// TopK dynamic filtering can push `__topKFilter` into the WHERE `ActionsDAG` as
-/// `and(__topKFilter(...), <predicate>)`. Plain `SELECT ... WHERE <predicate>` entries
-/// are keyed on `<predicate>` alone, so strip internal TopK nodes before probing reuse.
+/// Plain `SELECT ... WHERE <predicate>` entries are keyed on `<predicate>` alone, so strip internal
+/// TopK nodes before probing reuse. `__topKFilter` is merged into the PREWHERE after the pass that
+/// builds this DAG, so the shapes stripped here no longer originate from that optimizer path.
 static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const ActionsDAG::Node * node)
 {
     if (!node)
@@ -1638,6 +1644,11 @@ static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const Action
 
         if (where_children.empty())
             return std::nullopt;
+
+        /// Nothing was stripped, so this root is already the node a plain
+        /// `SELECT ... WHERE <predicate>` keys on.
+        if (where_children.size() == node->children.size())
+            return node->getHash();
 
         /// The common TopK shape is `and(__topKFilter(...), <WHERE-root>)`, where the WHERE root is a
         /// single (possibly nested `and`) node, so stripping the internal `__topKFilter` leaves exactly
