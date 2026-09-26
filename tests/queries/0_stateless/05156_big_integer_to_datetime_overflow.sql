@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS t_big_int_datetime;
 SET session_timezone = 'UTC';
 
 -- A 128- or 256-bit integer source converts to `DateTime`, `DateTime64` and `Time64` with the same
@@ -5,6 +6,9 @@ SET session_timezone = 'UTC';
 
 SELECT toDateTime(toUInt128(4294967301)), toDateTime(toUInt64(4294967301));
 SELECT toDateTime(toUInt256(4294967301)), toDateTime(toInt128(-1)), toDateTime(toInt64(-1)), toDateTime(toInt256(-1));
+
+-- A value beyond 64 bits saturates as well: its low 64 bits are a small timestamp.
+SELECT toDateTime(toInt128('18446744073709551621')), toDateTime(materialize(toInt256('18446744073709551621')));
 
 SELECT toInt64(toDateTime64(toUInt128(99999999999999), 0)), toInt64(toDateTime64(toUInt64(99999999999999), 0));
 SELECT toInt64(toDateTime64(toInt128(-99999999999999), 0)), toInt64(toDateTime64(toInt64(-99999999999999), 0));
