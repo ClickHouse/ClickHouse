@@ -9524,6 +9524,15 @@ Specifies the name of a TimeSeries table used by the 'promql' dialect.
     DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
 Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
 )", PRIVATE_PREVIEW, evaluation_time) \
+    \
+    DECLARE(Bool, promql_exact_rate, false, R"(
+Calculate PromQL `rate`, `increase`, and `delta` functions without extrapolation to the boundaries of the range.
+
+The setting only affects the translation of PromQL queries (the `promql` dialect, the `prometheusQuery` and
+`prometheusQueryRange` table functions and the Prometheus HTTP API): the generated `timeSeriesRateToGrid`,
+`timeSeriesIncreaseToGrid` and `timeSeriesDeltaToGrid` get the fifth parameter `exact_rate = 1`.
+It does not affect these aggregate functions used directly in SQL, pass the fifth parameter to them explicitly.
+)", IMPORTANT | SettingsTierType::PRIVATE_PREVIEW) \
     DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
 Allow to create tables with Paimon* table engines.
 )", EXPERIMENTAL) \

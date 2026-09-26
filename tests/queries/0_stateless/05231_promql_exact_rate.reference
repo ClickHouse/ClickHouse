@@ -1,0 +1,36 @@
+--- Default extrapolation ---
+[20]
+[20]
+[0.5]
+[0.5]
+--- Exact mode ---
+[10]
+[10]
+[0.25]
+[0.25]
+--- Single sample returns NULL ---
+[NULL]
+--- Counter reset ---
+[5]
+[20]
+[0.5]
+--- Sliding window carries the previous sample ---
+[NULL,10,10]
+[NULL,10,10]
+--- Counter reset across window boundaries ---
+[NULL,10,15]
+--- DateTime64 timestamps ---
+[0.25]
+--- The setting promql_exact_rate does not affect the aggregate functions used directly ---
+[0.5]
+[0.25]
+AggregateFunction(timeSeriesRateToGrid(120, 120, 1, 40), Array(UInt32), Array(Float64))
+AggregateFunction(timeSeriesRateToGrid(120, 120, 1, 40, 1), Array(UInt32), Array(Float64))
+--- Invalid parameters ---
+--- States keep the mode in their type: stored, detached, attached and merged ---
+[0.5,1,0.5]	[0.5,1,NULL]
+[NULL,NULL,0.75]	[NULL,NULL,1.125]
+[0.5,1,1.5]	[0.5,1,1.25]
+1
+[0.5,1,1.5]	[0.5,1,1.25]
+[0.5,1,1.5]	[0.5,1,1.25]
