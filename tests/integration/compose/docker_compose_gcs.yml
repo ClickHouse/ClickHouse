@@ -1,0 +1,21 @@
+services:
+  fake-gcs1:
+    # fake-gcs-server speaks the native GCS JSON/XML API, so it exercises the native
+    # google-cloud-cpp backend (unlike minio, which only speaks the S3-compatible API).
+    # Docker Hub image, so it is served through the CI dockerhub-proxy cache without a
+    # mirror-images.sh entry.
+    image: fsouza/fake-gcs-server:1.52.2
+    hostname: fake-gcs1
+    ports:
+      - "${GCS_PORT}:${GCS_PORT}"
+    # `-external-url` / `-public-host` must be the address the ClickHouse container uses to
+    # reach this service (the docker-network hostname), otherwise the Location header of a
+    # resumable upload points somewhere unreachable and writes fail.
+    command: >
+      -scheme http
+      -host 0.0.0.0
+      -port ${GCS_PORT}
+      -external-url http://fake-gcs1:${GCS_PORT}
+      -public-host fake-gcs1:${GCS_PORT}
+      -backend memory
+    stop_grace_period: 5s

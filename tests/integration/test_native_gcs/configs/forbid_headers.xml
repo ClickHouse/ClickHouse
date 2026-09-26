@@ -1,0 +1,5 @@
+<clickhouse>
+    <http_forbid_headers>
+        <header>X-ClickHouse-Native-GCS-Forbidden</header>
+    </http_forbid_headers>
+</clickhouse>
