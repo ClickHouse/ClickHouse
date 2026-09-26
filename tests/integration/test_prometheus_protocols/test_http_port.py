@@ -1,6 +1,5 @@
 import pytest
 
-from .pb2.prompb import types_pb2
 from helpers.cluster import ClickHouseCluster
 from .prometheus_test_utils import (
     convert_metrics_metadata_to_protobuf,
@@ -11,6 +10,7 @@ from .prometheus_test_utils import (
     get_response_to_http_api,
     receive_protobuf_from_remote_read,
     send_protobuf_to_remote_write,
+    types_pb2,
 )
 
 
