@@ -29,6 +29,7 @@
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLTask.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageMaterializedView.h>
@@ -102,6 +103,23 @@ namespace MergeTreeSetting
 
 namespace
 {
+
+bool shouldValidateProjectionCodecs(const ContextPtr & context)
+{
+    /// A `Replicated` database and Shared Catalog execute an `ALTER` again on secondary replicas.
+    /// The initiator already accepted session-gated declarations, and a secondary may not have the
+    /// same session settings.
+    const auto metadata_txn = context->getZooKeeperMetadataTransaction();
+    if (metadata_txn && !metadata_txn->isInitialQuery())
+        return false;
+
+#if CLICKHOUSE_CLOUD
+    if (context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context))
+        return false;
+#endif
+
+    return true;
+}
 
 /// Whether the two names name one setting: a `MergeTree` setting can have two names.
 bool isSameSetting(const String & left, const String & right)
@@ -1194,6 +1212,8 @@ void AlterCommand::apply(
     }
     else if (type == ADD_PROJECTION)
     {
+        if (!metadata.projections.checkCanAdd(projection_name, if_not_exists))
+            return;
         auto projection = ProjectionDescription::getProjectionFromAST(
             projection_decl, metadata.columns, &metadata.partition_key, context, LoadingStrictnessLevel::CREATE);
         metadata.projections.add(std::move(projection), after_projection_name, first, if_not_exists);
@@ -1886,12 +1906,21 @@ void AlterCommands::apply(
 
     /// Changes in columns may lead to changes in projections
     ProjectionsDescription new_projections;
+    const bool validate_projection_codecs = shouldValidateProjectionCodecs(context);
     for (const auto & projection : metadata_copy.projections)
     {
         try
         {
             /// Check if we can still build projection from new metadata.
             auto new_projection = ProjectionDescription::getProjectionFromAST(projection.definition_ast, metadata_copy.columns, &metadata_copy.partition_key, context);
+            if (validate_projection_codecs)
+            {
+                const ProjectionDescription * previous_projection = nullptr;
+                if (metadata.projections.has(projection.name))
+                    previous_projection = &metadata.projections.get(projection.name);
+                ProjectionDescription::validateDeclaredColumnCodecs(
+                    new_projection, context, LoadingStrictnessLevel::CREATE, true, previous_projection);
+            }
             /// Check if new metadata has the same keys as the old one.
             if (!blocksHaveEqualStructure(projection.sample_block_for_keys, new_projection.sample_block_for_keys))
                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN, "Cannot ALTER column");
@@ -1958,6 +1987,11 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
 {
     auto columns = metadata.columns;
     std::unordered_set<String> columns_with_full_type_modify;
+    NameSet projection_names;
+    for (const auto & projection : metadata.projections)
+        projection_names.insert(projection.name);
+    for (const auto & projection_name : metadata.projections.getUnavailableNames())
+        projection_names.insert(projection_name);
 
     /// Used to tell whether a command restates the definition the table already has, so it must not
     /// depend on whether the redundant parentheses were written on one side and not on the other.
@@ -2091,6 +2125,14 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
             if (has_column && command.if_not_exists)
                 command.ignore = true;
         }
+        else if (command.type == AlterCommand::ADD_PROJECTION)
+        {
+            if (command.if_not_exists && projection_names.contains(command.projection_name))
+                command.ignore = true;
+            projection_names.insert(command.projection_name);
+        }
+        else if (command.type == AlterCommand::DROP_PROJECTION && !command.partition && !command.clear)
+            projection_names.erase(command.projection_name);
         else if (command.type == AlterCommand::DROP_COLUMN
                 || command.type == AlterCommand::COMMENT_COLUMN
                 || command.type == AlterCommand::RENAME_COLUMN)
@@ -2137,7 +2179,18 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     NameSet constraint_names;
     for (const auto & constraint : metadata->constraints.getConstraints())
         constraint_names.insert(constraint->as<const ASTConstraintDeclaration &>().name);
+    /// Projection names need the same statement-local snapshot. In particular, an
+    /// `ADD PROJECTION IF NOT EXISTS` whose name is already taken is a no-op, while
+    /// a plain duplicate must report the name conflict before its codec is validated.
+    NameSet projection_names;
+    for (const auto & projection : metadata->projections)
+        projection_names.insert(projection.name);
+    for (const auto & projection_name : metadata->projections.getUnavailableNames())
+        projection_names.insert(projection_name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
+
+    const bool validate_projection_codecs = shouldValidateProjectionCodecs(context);
+
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
@@ -2340,6 +2393,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         backQuote(column_name));
             }
 
+            /// Later commands in this ALTER are applied after this type change. Validate them
+            /// against the same ordered column snapshot that apply() will see.
+            if (command.data_type)
+                all_columns.modify(column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
+
             modified_columns.emplace(column_name);
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -2502,6 +2560,26 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table doesn't have SAMPLE BY, cannot remove");
         }
+        else if (command.type == AlterCommand::ADD_PROJECTION)
+        {
+            /// Building the projection here would otherwise move failures for every other
+            /// `ADD PROJECTION` from `apply` to this point.
+            if (validate_projection_codecs
+                && !projection_names.contains(command.projection_name)
+                && command.projection_decl->as<const ASTProjectionDeclaration &>().columns)
+            {
+                auto projection = ProjectionDescription::getProjectionFromAST(
+                    command.projection_decl,
+                    all_columns,
+                    &metadata->partition_key,
+                    context,
+                    LoadingStrictnessLevel::CREATE);
+                ProjectionDescription::validateDeclaredColumnCodecs(projection, context, LoadingStrictnessLevel::CREATE);
+            }
+            projection_names.insert(command.projection_name);
+        }
+        else if (command.type == AlterCommand::DROP_PROJECTION && !command.partition && !command.clear)
+            projection_names.erase(command.projection_name);
 
         /// Collect default expressions for MODIFY and ADD commands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)

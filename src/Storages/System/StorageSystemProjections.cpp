@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemProjections.h>
+#include <Storages/ProjectionColumnNames.h>
 #include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
@@ -50,6 +51,10 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
         {"settings",
          std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
          "Projection settings."},
+        {"codecs",
+         std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
+         "Compression codecs of the projection's columns, by column name. Only columns with a codec of "
+         "their own are listed; the rest use the table's default compression codec."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -160,7 +165,11 @@ protected:
                     // 'query' column
                     if (column_mask[src_index++])
                     {
-                        res_columns[res_index++]->insert(projection.definition_ast->children.at(0)->formatForLogging());
+                        /// By member, not child position: a declaration can have a column list too.
+                        /// A projection index has no query of its own.
+                        const auto & declaration = projection.definition_ast->as<ASTProjectionDeclaration &>();
+                        res_columns[res_index++]->insert(
+                            declaration.query ? declaration.query->formatForLogging() : String{});
                     }
                     // 'settings' column
                     if (column_mask[src_index++])
@@ -178,6 +187,23 @@ protected:
                             }
                         }
                         res_columns[res_index++]->insert(settings_map);
+                    }
+                    // 'codecs' column
+                    if (column_mask[src_index++])
+                    {
+                        /// From the resolved columns, not the declaration, so this reports what is applied.
+                        Map codecs_map;
+                        for (const auto & column : projection.metadata->getColumns())
+                        {
+                            if (!column.codec)
+                                continue;
+
+                            Tuple pair;
+                            pair.push_back(getProjectionSelectColumnName(column.name, projection.with_parent_part_offset));
+                            pair.push_back(column.codec->formatForLogging());
+                            codecs_map.push_back(std::move(pair));
+                        }
+                        res_columns[res_index++]->insert(codecs_map);
                     }
                 }
             }

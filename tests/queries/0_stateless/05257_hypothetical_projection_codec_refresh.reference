@@ -1,0 +1,8 @@
+--- a disabled codec gate makes the candidate inapplicable ---
+With p_gate (normal projection, hypothetical):
+status: not_applicable
+reason: Hypothetical projection can no longer be added to this table
+--- a changed resolved type makes the candidate inapplicable ---
+With p_type (normal projection, hypothetical):
+status: not_applicable
+reason: Hypothetical projection can no longer be added to this table
