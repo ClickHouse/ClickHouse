@@ -89,23 +89,29 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 
 ## Aggregation {#aggregation}
 
-`avg`, `min`, `max` and `any` over an `Interval` column return an interval of the same type.
-`avg` averages the number of units and rounds the result to a whole number of them:
+`sum`, `avg`, `min`, `max` and `any` over an `Interval` column return an interval of the same type.
+`sum` adds up the number of units, and `avg` averages them and rounds the result to a whole number
+of them:
 
 ```sql
-SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+SELECT
+    sum(duration) AS total_duration,
+    avg(duration) AS avg_duration,
+    toTypeName(total_duration)
 FROM VALUES('duration IntervalMillisecond',
     toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
 ```
 
 ```text
-┌─avg_duration─┬─toTypeName(avg_duration)─┐
-│          200 │ IntervalMillisecond      │
-└──────────────┴──────────────────────────┘
+┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
+│            600 │          200 │ IntervalMillisecond        │
+└────────────────┴──────────────┴────────────────────────────┘
 ```
 
-Intervals of different units are not commensurable - a month is not a fixed number of days - so
-there is no conversion between them and every interval type is aggregated on its own.
+Values of different units are brought to their common unit before they are aggregated, so
+summing a minute and a second gives 61 seconds. `Month`, `Quarter` and `Year` have no common
+unit with the smaller ones - a month is not a fixed number of days - and cannot be mixed with
+them at all.
 
 ## Mixed-type Intervals {#mixed-type-intervals}
 
@@ -155,3 +161,4 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 - [INTERVAL](/reference/operators/index#interval) operator
 - [toInterval](/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) type conversion functions
 - [avg](/reference/functions/aggregate-functions/avg) aggregate function
+- [sum](/reference/functions/aggregate-functions/sum) aggregate function

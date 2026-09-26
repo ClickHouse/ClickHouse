@@ -5,7 +5,7 @@
 -- aborting with `Block structure mismatch in JoinStep` in debug/sanitizer builds.
 
 SET enable_analyzer = 1;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 -- The runtime filter is only built for hash-family algorithms (supportsRuntimeFilter),
