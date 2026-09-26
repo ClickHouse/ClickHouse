@@ -14,6 +14,8 @@ SELECT [toUInt8(44)] = '[1157920892373161954235709850086879078532699846656405640
 
 -- an equality has an answer, an ordering comparison is refused: the literal is rejected as a whole
 SELECT [toUInt8(44)] != '[300]';
+SELECT (toUInt8(44), toNullable(toUInt8(1))) = '(300,1)';
+SELECT x != '(300,1)' FROM (SELECT (toUInt8(number + 44), toNullable(toUInt8(1))) AS x FROM numbers(1));
 SELECT [toUInt8(43)] < '[300]'; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT (toUInt8(43), toUInt8(1)) >= '(300,1)'; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT '[300]' > [toUInt8(43)]; -- { serverError ARGUMENT_OUT_OF_BOUND }

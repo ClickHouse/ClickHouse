@@ -1236,7 +1236,7 @@ private:
                         string_value.safeGet<String>(), type_to_compare->getName());
             }
 
-            return DataTypeUInt8().createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
+            return result_type->createColumnConst(input_rows_count, IsOperation<Op>::not_equals);
         }
 
         ColumnPtr column_converted = type_to_compare->createColumnConst(input_rows_count, converted);
