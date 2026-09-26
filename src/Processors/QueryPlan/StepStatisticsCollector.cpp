@@ -21,7 +21,7 @@
 namespace DB
 {
 
-StepStatisticsCollector::StepStatisticsCollector(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
+StepStatisticsCollector::StepStatisticsCollector(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
 : max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
@@ -31,6 +31,17 @@ StepStatisticsCollector::StepStatisticsCollector(const QueryPipeline & pipeline,
     const auto elapsed_per_step_group = collectTimingStats(pipeline, processors);
     computeDistribution(elapsed_per_step_group);
     computeJoinBranchCosts(plan);
+
+    /// Work intervals are collected only when EXPLAIN ANALYZE requests the `time` setting.
+    if (const auto work_intervals = pipeline.takeWorkIntervals(); !work_intervals.empty())
+        interval_timings.emplace(work_intervals, plan);
+}
+
+std::optional<ExecutionTimeBreakdown> StepStatisticsCollector::executionTimeBreakdown() const
+{
+    if (!interval_timings)
+        return std::nullopt;
+    return interval_timings->executionTimeBreakdown(execution_query_time_ns);
 }
 
 void StepStatisticsCollector::collectIOStats(const Processors & processors)
@@ -176,6 +187,9 @@ StepStatisticsContext StepStatisticsCollector::makeContext(const IQueryPlanStep 
     for (size_t group : step->getStepGroups())
         if (const auto group_stats_it = stats_by_step_group.find(std::make_pair(step, group)); group_stats_it != stats_by_step_group.end())
             context.group_stats[group] = group_stats_it->second;
+
+    if (interval_timings)
+        context.time_and_conc_stats = interval_timings->findTiming(step);
 
     return context;
 }

@@ -17,6 +17,7 @@ struct StepStatisticsContext
     StepIOStats io;
     UInt64 execution_query_time_ns = 0;
     UInt64 max_num_threads_per_query = 0;
+    const StepTimeAndConcurrency * time_and_conc_stats = nullptr;
     StepGroupStatsByGroupId group_stats;
 };
 

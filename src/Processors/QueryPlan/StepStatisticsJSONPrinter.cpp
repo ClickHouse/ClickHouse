@@ -23,6 +23,8 @@ std::string_view jsonKey(MetricGroupKey key)
     switch (key)
     {
         case MetricGroupKey::IO: return "IO";
+        case MetricGroupKey::Time: return "Time";
+        case MetricGroupKey::Concurrency: return "Concurrency";
         case MetricGroupKey::Left: return "Left";
         case MetricGroupKey::Right: return "Right";
         case MetricGroupKey::HashTable: return "HashTable";
@@ -50,6 +52,11 @@ std::string_view jsonKey(MetricKey key)
         case MetricKey::OutputRows: return "OutputRows";
         case MetricKey::InputBytes: return "InputBytes";
         case MetricKey::OutputBytes: return "OutputBytes";
+
+        case MetricKey::Time: return "Time";
+        case MetricKey::TimeShare: return "TimeShare";
+
+        case MetricKey::Concurrency: return "Concurrency";
 
         case MetricKey::Rows: return "Rows";
         case MetricKey::RowsEstimated: return "RowsEstimated";
@@ -79,7 +86,7 @@ std::string_view jsonKey(MetricKey key)
         case MetricKey::Storage: return "Storage";
 
         case MetricKey::SortTime: return "SortTime";
-        case MetricKey::SortShare: return "SortShare";
+        case MetricKey::SortTimeShare: return "SortShare";
 
         case MetricKey::Min: return "Min";
         case MetricKey::Median: return "Median";
@@ -100,6 +107,13 @@ JSONBuilder::ItemPtr metricValueToJSON(const MetricValue & value)
             return std::make_unique<JSONBuilder::JSONNull>();
         else if constexpr (std::is_same_v<T, std::string>)
             return std::make_unique<JSONBuilder::JSONString>(concrete);
+        else if constexpr (std::is_same_v<T, Fraction>)
+        {
+            auto fraction = std::make_unique<JSONBuilder::JSONMap>();
+            fraction->add("Numerator", concrete.numerator);
+            fraction->add("Denominator", concrete.denominator);
+            return fraction;
+        }
         else
             return std::make_unique<JSONBuilder::JSONNumber<T>>(concrete);
     }, value);
@@ -115,6 +129,36 @@ std::unique_ptr<JSONBuilder::JSONMap> metricsToJSON(const MetricList & metrics)
     return map;
 }
 
+/// The Time and Concurrency groups hold one value for the step and then one for its branch, under
+/// repeating metric keys; a JSON object cannot repeat a key, so they are written with their own layout.
+/// All values are empty when the work intervals were not collected; such a group is left out.
+std::unique_ptr<JSONBuilder::JSONMap> stepAndBranchGroupToJSON(const MetricGroup & group)
+{
+    bool collected = false;
+    for (const auto & metric : group.metrics)
+        if (!std::holds_alternative<std::monostate>(metric.value))
+            collected = true;
+    if (!collected)
+        return nullptr;
+
+    auto map = std::make_unique<JSONBuilder::JSONMap>();
+    if (group.key == MetricGroupKey::Time)
+    {
+        chassert(group.metrics.size() == 4, "unexpected layout of the Time group");
+        map->add("StepTimeNs", metricValueToJSON(group.metrics[0].value));
+        map->add("StepTimeShare", metricValueToJSON(group.metrics[1].value));
+        map->add("BranchTimeNs", metricValueToJSON(group.metrics[2].value));
+        map->add("BranchTimeShare", metricValueToJSON(group.metrics[3].value));
+    }
+    else
+    {
+        chassert(group.metrics.size() == 2, "unexpected layout of the Concurrency group");
+        map->add("Step", metricValueToJSON(group.metrics[0].value));
+        map->add("Branch", metricValueToJSON(group.metrics[1].value));
+    }
+    return map;
+}
+
 }
 
 std::unique_ptr<JSONBuilder::JSONMap> StepStatisticsJSONPrinter::toJSON(const AnalyzedStepData & step_data)
@@ -125,7 +169,15 @@ std::unique_ptr<JSONBuilder::JSONMap> StepStatisticsJSONPrinter::toJSON(const An
     /// reports its sides, only a hash join its table. Absent groups are left out rather than
     /// written empty.
     for (const auto & group : step_data.step_metric_groups)
+    {
+        if (group.key == MetricGroupKey::Time || group.key == MetricGroupKey::Concurrency)
+        {
+            if (auto group_map = stepAndBranchGroupToJSON(group))
+                map->add(String(jsonKey(group.key)), std::move(group_map));
+            continue;
+        }
         map->add(String(jsonKey(group.key)), metricsToJSON(group.metrics));
+    }
 
     /// Always present, so that a query over the column can index into it without checking. A step
     /// whose processors never ran reports no stages.

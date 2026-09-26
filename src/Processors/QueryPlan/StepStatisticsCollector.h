@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <set>
 #include <unordered_map>
 #include <utility>
@@ -7,6 +8,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/StepStatisticsAnalyzer.h>
+#include <Processors/QueryPlan/StepIntervalTimings.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <base/types.h>
 #include <boost/container_hash/hash.hpp>
@@ -35,7 +37,7 @@ class StepStatisticsCollector
     using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
 
 public:
-    StepStatisticsCollector(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
+    StepStatisticsCollector(QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
 
     /// Must run while the pipeline is still alive.
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
@@ -45,6 +47,9 @@ public:
 
     /// The pipeline's thread count, which caps how parallel any stage could have been.
     UInt64 getMaxThreads() const { return max_num_threads_per_query; }
+
+    /// Empty when the work intervals were not collected, that is without the `time` setting.
+    std::optional<ExecutionTimeBreakdown> executionTimeBreakdown() const;
 
 private:
     void collectIOStats(const Processors & processors);
@@ -61,6 +66,8 @@ private:
     /// Reports for join steps, produced up front by computeJoinBranchCosts because a branch cost
     /// needs the whole plan, not one step. analyzeStep prefers these over asking the step again.
     ReportsByStep join_raw_reports;
+
+    std::optional<StepIntervalTimings> interval_timings;
 
     UInt64 max_num_threads_per_query = 0;
     UInt64 execution_query_time_ns = 0;
