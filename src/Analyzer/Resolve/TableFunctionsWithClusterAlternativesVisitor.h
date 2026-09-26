@@ -25,16 +25,23 @@ public:
             has_join = true;
         else if (const auto * function_node = node->as<FunctionNode>(); function_node && isNameOfInFunction(function_node->getFunctionName()))
         {
+            /// The tree is not resolved yet, so `x IN t` and `x IN cte` are only identifiers here. Count every identifier:
+            /// it can also be an alias of a constant set, but then the read merely stays local.
             const auto & arguments = function_node->getArguments().getNodes();
-            if (arguments.size() == 2
-                && (arguments[1]->getNodeType() == QueryTreeNodeType::QUERY || arguments[1]->getNodeType() == QueryTreeNodeType::UNION))
-                has_in_with_subquery = true;
+            if (arguments.size() == 2)
+            {
+                const auto set_type = arguments[1]->getNodeType();
+                if (set_type == QueryTreeNodeType::QUERY || set_type == QueryTreeNodeType::UNION
+                    || set_type == QueryTreeNodeType::IDENTIFIER || set_type == QueryTreeNodeType::TABLE_FUNCTION)
+                    has_in_with_subquery = true;
+            }
         }
     }
 
     bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr &) { return true; }
 
-    /// Whether the query has `IN` with a subquery (`x IN (SELECT ...)`), which a cluster engine would execute on every replica.
+    /// Whether the query may have `IN` with a subquery (`x IN (SELECT ...)`, `x IN t`, `x IN cte`), which a cluster engine would
+    /// execute on every replica.
     bool hasInWithSubquery() const { return has_in_with_subquery; }
 
     bool shouldReplaceWithClusterAlternatives() const

@@ -1,4 +1,6 @@
 IN subquery allowed: ReadFromCluster 4
 IN subquery not allowed: ReadFromURL 4
+IN table not allowed: ReadFromURL 4
+IN CTE not allowed: ReadFromURL 4
 IN subquery not allowed, force mode: SUPPORT_IS_DISABLED SUPPORT_IS_DISABLED
 IN constants, not allowed: ReadFromCluster 4

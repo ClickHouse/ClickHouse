@@ -27,6 +27,11 @@ function run()
 
 echo "IN subquery allowed: $(run "$QUERY" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 1")"
 echo "IN subquery not allowed: $(run "$QUERY" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+
+# `IN` a table or a CTE builds the set from a subquery too.
+$CLICKHOUSE_CLIENT -q "CREATE TABLE in_set (x UInt64) ENGINE = MergeTree ORDER BY x; INSERT INTO in_set VALUES (1), (3);" --multiquery
+echo "IN table not allowed: $(run "SELECT sum(n) FROM $URL WHERE n IN in_set" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
+echo "IN CTE not allowed: $(run "WITH c AS (SELECT x FROM in_set) SELECT sum(n) FROM $URL WHERE n IN c" "enable_parallel_replicas = 1, parallel_replicas_allow_in_with_subquery = 0")"
 # In force mode the combination is still rejected.
 echo "IN subquery not allowed, force mode: $(run "$QUERY" "enable_parallel_replicas = 2, parallel_replicas_allow_in_with_subquery = 0")"
 # `IN` with a set of constants is not a subquery.
