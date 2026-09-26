@@ -1,14 +1,15 @@
 """Executable regression test for the Web UI's password-manager round trip.
 
 The `/play` page offers the login to the browser's password manager after a run
-(`storeCredentials`). An empty `user` field authenticates implicitly - as the server's
-`default` user, or as the user embedded in the server URL's userinfo - and the login is
-remembered under that effective name (`effectiveConnectionUser`). When the password manager
-refills that name into the field on the next visit, the connection must not change: the
-request URL (`userUrlParam`) must be the same as for an empty field, with no forced
-`user=default` that would override the URL userinfo, and the connection identity used by
-the history / database-panel gates must compare equal. A field naming a different user
-still takes precedence.
+(`storeCredentials`). An empty `user` field authenticates implicitly - as the user embedded
+in the server URL's userinfo, or else as the server's `default_session_user` (not
+necessarily `default`) - and the login is remembered under that real name: the userinfo
+user, or `currentUser` as reported by the server for a request without a `user` parameter.
+When the password manager refills that name into the field on the next visit, it must
+select the same account: for a userinfo login the request URL (`userUrlParam`) must be the
+same as for an empty field, with no forced `user=` that would override the URL userinfo,
+and the connection identity used by the history / database-panel gates must compare equal.
+A field naming a different user, `default` included, still takes precedence.
 
 The stateless suite has no JavaScript runtime, so the contract is driven by a Node.js
 harness (`credentials_harness.js`) executed inside the `clickhouse/mysql-js-client`
@@ -89,6 +90,8 @@ def test_play_credentials_store(started_cluster, nodejs_container):
     # cannot pass as "all scenarios passed".
     for scenario in (
         "implicit-default-round-trip",
+        "implicit-non-default-session-user",
+        "explicit-default-sent-without-userinfo",
         "userinfo-round-trip",
         "explicit-default-overrides-userinfo",
         "no-password-credential-api-skips",
