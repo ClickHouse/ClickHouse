@@ -21,6 +21,8 @@ SET enable_join_runtime_filters = 1, join_algorithm = 'parallel_hash', collect_h
     query_plan_join_swap_table = 0;
 -- Pinned (randomized in CI): a threshold above the probe side's 100000 rows skips the filter altogether.
 SET join_runtime_filter_min_probe_rows = 1000;
+-- Pinned (randomized in CI): the predicted fill ratio depends on the filter's size and hash count.
+SET join_runtime_bloom_filter_bytes = 524288, join_runtime_bloom_filter_hash_functions = 3;
 -- The hash table statistics are keyed by the join order optimization, which assigns no key when it is disabled.
 SET query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_randomize = 0;
 

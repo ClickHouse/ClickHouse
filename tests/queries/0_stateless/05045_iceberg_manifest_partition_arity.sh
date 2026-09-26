@@ -6,6 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Pinned (randomized in CI): the min/max and partition pruning probes need pruning on.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --use_iceberg_partition_pruning=1"
+
 ROOT="${CLICKHOUSE_USER_FILES}/${CLICKHOUSE_DATABASE}_ibp"
 rm -rf "${ROOT}"
 trap 'rm -rf "${ROOT}"' EXIT

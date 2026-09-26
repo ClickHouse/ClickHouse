@@ -15,6 +15,9 @@ SET query_plan_join_swap_table = 'false';
 -- Left-side join pruning is intentionally disabled under parallel replicas, so pin PR off to
 -- exercise the feature (the ParallelReplicas CI job otherwise forces it on).
 SET enable_parallel_replicas = 0;
+-- Pinned (randomized in CI): an exact set of join keys is what index analysis prunes by; a bloom
+-- filter (tiny limit or byte budget) prunes nothing.
+SET join_runtime_filter_exact_values_limit = 10000, join_runtime_bloom_filter_bytes = 524288;
 
 -- Bloom filter in skip index
 DROP TABLE IF EXISTS bf_fact;
