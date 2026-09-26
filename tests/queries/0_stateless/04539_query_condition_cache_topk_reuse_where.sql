@@ -58,6 +58,34 @@ ORDER BY event_time_microseconds;
 SELECT '--- TopK still returns the planted row';
 SELECT v1 FROM tab WHERE v2 = 10000 ORDER BY v1 ASC LIMIT 5;
 
+-- Here the filter root is a two-conjunct `and` holding no internal TopK node, so the predicate-only
+-- lookup has nothing to strip and must hash the whole root: that is the key a plain
+-- `SELECT ... WHERE a AND b` writes.
+SELECT '--- Forward, multi-conjunct: the TopK read reuses an entry primed by a two-conjunct WHERE';
+SYSTEM CLEAR QUERY CONDITION CACHE;
+
+-- Prime the cache with a plain WHERE. First touch of this predicate: cache miss, all granules read.
+SELECT v1 FROM tab WHERE v2 = 10000 AND v1 < 1000000 FORMAT Null SETTINGS log_comment = '04539_fwd_multi_prime';
+-- TopK read of the same predicate: reuses the predicate-only entry, so it hits and drops granules.
+SELECT v1 FROM tab WHERE v2 = 10000 AND v1 < 1000000 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04539_fwd_multi_topk';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- Columns: (any QCC hit), (granules skipped). Expected: prime = 0 0, topk-reuse = 1 1.
+SELECT
+    log_comment,
+    ProfileEvents['QueryConditionCacheHits'] > 0,
+    toInt32(ProfileEvents['SelectedMarks']) < toInt32(ProfileEvents['SelectedMarksTotal'])
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND type = 'QueryFinish'
+    AND current_database = currentDatabase()
+    AND log_comment IN ('04539_fwd_multi_prime', '04539_fwd_multi_topk')
+ORDER BY event_time_microseconds;
+
+SELECT '--- Multi-conjunct TopK still returns the planted row';
+SELECT v1 FROM tab WHERE v2 = 10000 AND v1 < 1000000 ORDER BY v1 ASC LIMIT 5;
+
 SELECT '--- Reverse: a TopK-salted entry must not be read by a plain WHERE';
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
