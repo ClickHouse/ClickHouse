@@ -305,6 +305,15 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
 
     StorageID storage_id(database_name, table_name);
     storage_id = context->resolveStorageID(storage_id);
+
+    /// The view source carries the inserted block and its types. Resolving the catalog table
+    /// instead and swapping the storage after the passes (`replaceStorageInQueryTree`) types the
+    /// tree by the table's current metadata, which differs from the block after a concurrent
+    /// `ALTER ... MODIFY COLUMN`.
+    if (auto view_source = context->getViewSource();
+        view_source && view_source->getStorageID().getFullNameNotQuoted() == storage_id.getFullNameNotQuoted())
+        return std::make_shared<TableNode>(view_source, context);
+
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
     StoragePtr storage;
