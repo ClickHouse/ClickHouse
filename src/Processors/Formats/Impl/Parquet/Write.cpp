@@ -1198,32 +1198,42 @@ void writeColumnImpl(
     /// Cuts the batch at the first record boundary at or after the budget. A record is never split,
     /// and neither is a value, so a batch can still exceed it by one of them. Returns the byte size
     /// of the batch it kept.
+    ///
+    /// The cut is measured by what the encoding writes: `overhead_per_value` covers the 4-byte length
+    /// prefix plain `BYTE_ARRAY` puts in front of every value. The returned size is the payload alone,
+    /// because that is what `unencoded_byte_array_data_bytes` reports.
     static constexpr size_t max_batch_bytes = 64uz << 20;
 
     static constexpr size_t max_record_bytes = (2uz << 30) - (64uz << 20);
 
-    auto limit_batch_by_bytes = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, auto && value_size)
+    auto limit_batch_by_bytes
+        = [&](size_t batch_def_offset, size_t & def_count, size_t & data_count, size_t overhead_per_value, auto && value_size)
     {
         size_t bytes = 0;
+        size_t encoded_bytes = 0;
         size_t data_idx = 0;
 
         for (size_t i = 0; i < def_count; ++i)
         {
             if (s.max_def == 0 || s.def[batch_def_offset + i] == s.max_def)
-                bytes += value_size(data_idx++);
+            {
+                const size_t value_bytes = value_size(data_idx++);
+                bytes += value_bytes;
+                encoded_bytes += value_bytes + overhead_per_value;
+            }
 
             bool record_ends = !pages_change_on_record_boundaries
                 || batch_def_offset + i + 1 == num_values
                 || s.rep[batch_def_offset + i + 1] == 0;
 
-            if (!record_ends && bytes >= max_record_bytes)
+            if (!record_ends && encoded_bytes >= max_record_bytes)
             {
                 s.indexes.column_index_valid = false;
                 s.indexes.offset_index_valid = false;
                 record_ends = true;
             }
 
-            if (record_ends && bytes >= max_batch_bytes)
+            if (record_ends && encoded_bytes >= max_batch_bytes)
             {
                 def_count = i + 1;
                 data_count = data_idx;
@@ -1267,12 +1277,25 @@ void writeColumnImpl(
             if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
             {
                 batch_byte_size = limit_batch_by_bytes(
-                    next_def_offset, def_count, data_count, [&](size_t i) { return static_cast<size_t>(converted[i].len); });
+                    next_def_offset, def_count, data_count, sizeof(uint32_t),
+                    [&](size_t i) { return static_cast<size_t>(converted[i].len); });
             }
             else if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
             {
                 batch_byte_size = limit_batch_by_bytes(
-                    next_def_offset, def_count, data_count, [&](size_t) { return converter.fixedStringSize(); });
+                    next_def_offset, def_count, data_count, 0, [&](size_t) { return converter.fixedStringSize(); });
+            }
+            else
+            {
+                /// Fixed-width values are written back to back (booleans are bit-packed, so this only
+                /// over-counts). A batch of `write_batch_size` of them is far below the budget, so only
+                /// a very long repeated record needs to be walked.
+                static constexpr size_t value_bytes = sizeof(typename ParquetDType::c_type);
+                if (def_count * value_bytes < max_batch_bytes)
+                    batch_byte_size = data_count * value_bytes;
+                else
+                    batch_byte_size = limit_batch_by_bytes(
+                        next_def_offset, def_count, data_count, 0, [](size_t) { return value_bytes; });
             }
 
             if (!use_dictionary && next_def_offset > def_offset)
