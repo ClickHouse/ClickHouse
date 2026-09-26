@@ -463,11 +463,17 @@ size_t MergeTreeReaderStreamMultipleColumns::getRightOffsetOneColumn(size_t righ
     size_t right_mark_included = getRightMarkIncluded(right_mark_non_included, column_position);
     auto next_stripe_right_mark_in_file = getStartOfNextStripeMark(right_mark_included, column_position);
 
-    /// Columns can share a compressed block. Include the whole block at the right boundary.
-    size_t boundary_column = column_position;
-    while (next_stripe_right_mark_in_file.offset_in_decompressed_block != 0
-        && boundary_column + 1 < marks_loader->getNumColumns())
-        next_stripe_right_mark_in_file = getStartOfNextStripeMark(right_mark_included, ++boundary_column);
+    /// The next column continues the compressed block of this one. It happens in parts written with
+    /// `compress_per_column_in_compact_parts` = false, where columns of a granule share compressed blocks.
+    /// A column boundary does not end a compressed block there, so bound the read by the last column,
+    /// the same as when all columns are read.
+    const size_t last_position = marks_loader->getNumColumns() - 1;
+    if (next_stripe_right_mark_in_file.offset_in_decompressed_block != 0 && column_position != last_position)
+    {
+        column_position = last_position;
+        right_mark_included = getRightMarkIncluded(right_mark_non_included, column_position);
+        next_stripe_right_mark_in_file = getStartOfNextStripeMark(right_mark_included, column_position);
+    }
 
     return getRightOffsetInStripe(right_mark_included, column_position, next_stripe_right_mark_in_file);
 }

@@ -1,5 +1,5 @@
 <test run_all_queries="1" requires_s3="1">
-    <!-- `0` writes the shared-block layout used before 26.4; `1` writes per-column blocks.
+    <!-- `0` writes the shared-block layout (`compress_per_column_in_compact_parts` = 0); `1` writes per-column blocks.
          Both layouts are created by each tested binary, independently of its defaults.
          Performance CI starts a local SeaweedFS endpoint for this benchmark. -->
     <settings>
