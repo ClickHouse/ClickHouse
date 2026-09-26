@@ -15,12 +15,14 @@
 
 #include <array>
 #include <condition_variable>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <optional>
 
 namespace arrow
 {
+class Array;
 class Schema;
 }
 namespace arrow::io
@@ -93,10 +95,21 @@ public:
     void onScanFinish(const char * error) noexcept;
 
 private:
-    struct DeliveredChunk
+    /// A chunk whose rows are far apart in the file is cut into pieces, so that the filter its
+    /// `ChunkInfoRowNumbers` carries stays small.
+    struct DeliveredPiece
     {
         Chunk chunk;
         BlockMissingValues missing_values;
+        /// The row numbers of the piece, only turned into a `ChunkInfoRowNumbers` when `read`
+        /// returns it, so that the filters of all the pieces of a chunk never exist at once. Null
+        /// when nobody needs the row numbers.
+        std::shared_ptr<arrow::Array> row_numbers;
+    };
+
+    struct DeliveredChunk
+    {
+        std::vector<DeliveredPiece> pieces;
         /// There is nothing to return, but the index still has to be consumed to keep file order.
         bool empty = false;
         /// The scan counts this chunk against its in-flight limit until `read` releases it.
@@ -121,6 +134,9 @@ private:
     /// The row numbers of `num_rows` rows of a scanless read, starting at the `first_delivered`-th
     /// row that read produces.
     std::shared_ptr<ChunkInfoRowNumbers> rowNumbersWithoutColumns(UInt64 first_delivered, size_t num_rows) const;
+
+    /// Returns the first of `pending_pieces`.
+    Chunk takePendingPiece();
 
     /// Runs the queued tasks of `queue`, and of the other queue too when both share a thread pool,
     /// until nothing is left to run. This is the body of a driver task. `shutdown_` is passed by
@@ -183,6 +199,8 @@ private:
     bool scan_finished TSA_GUARDED_BY(delivery_mutex) = false;
     /// Only the first failure is kept; `read` rethrows it.
     std::exception_ptr background_exception TSA_GUARDED_BY(delivery_mutex);
+    /// The pieces of the chunk `read` took last that it has not returned yet. Only `read` uses it.
+    std::deque<DeliveredPiece> pending_pieces;
 
     std::mutex converters_mutex;
     std::vector<std::unique_ptr<ArrowColumnToCHColumn>> converters TSA_GUARDED_BY(converters_mutex);

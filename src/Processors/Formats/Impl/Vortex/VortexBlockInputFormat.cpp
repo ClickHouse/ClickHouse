@@ -12,6 +12,7 @@
 #include <Processors/Formats/Impl/Vortex/VortexScanPlanner.h>
 #include <Processors/Port.h>
 #include <base/scope_guard.h>
+#include <base/unit.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -53,23 +54,43 @@ using namespace Vortex;
 static constexpr auto PROGRESS_CHECK_PERIOD = std::chrono::seconds(1);
 static constexpr size_t IDLE_CHECKS_BEFORE_STUCK = 3;
 
-// Convert Vortex's row_idx() column into ChunkInfoRowNumbers
-static std::shared_ptr<ChunkInfoRowNumbers> convertToRowNumbers(const arrow::Array & row_index_column)
+/// `ChunkInfoRowNumbers` stores the row numbers of a chunk as an offset and a filter over every row
+/// from there to the last one, selected or not, so it costs a byte per row of the file it spans.
+/// Rows further apart than this go to different chunks: a selective read must not allocate memory
+/// in proportion to the gaps between the rows it keeps. A run of consecutive rows needs no filter,
+/// so it is never cut.
+static constexpr size_t MAX_ROW_NUMBERS_FILTER_SIZE = 1_MiB;
+
+/// How many of the first `size` of the sorted, unique `row_numbers` can share one chunk.
+static size_t rowNumbersPieceLength(const UInt64 * row_numbers, size_t size)
 {
-    const auto & values = assert_cast<const arrow::UInt64Array &>(row_index_column);
-    const size_t num_rows = values.length();
-    if (num_rows == 0)
+    if (size == 0)
+        return 0;
+    size_t length = 1;
+    while (length < size)
+    {
+        const UInt64 span = row_numbers[length] - row_numbers[0] + 1;
+        if (span > MAX_ROW_NUMBERS_FILTER_SIZE && span != length + 1)
+            break;
+        ++length;
+    }
+    return length;
+}
+
+static std::shared_ptr<ChunkInfoRowNumbers> makeRowNumbers(const UInt64 * row_numbers, size_t size)
+{
+    if (size == 0)
         return std::make_shared<ChunkInfoRowNumbers>(0);
 
-    const UInt64 first = values.Value(0);
-    const UInt64 last = values.Value(num_rows - 1);
-    if (last - first + 1 == num_rows)
+    const UInt64 first = row_numbers[0];
+    const UInt64 last = row_numbers[size - 1];
+    if (last - first + 1 == size)
         return std::make_shared<ChunkInfoRowNumbers>(first);
 
-    // TODO(myrrc): this is very inefficient
+    chassert(last - first + 1 <= MAX_ROW_NUMBERS_FILTER_SIZE);
     auto info = std::make_shared<ChunkInfoRowNumbers>(first, IColumnFilter(last - first + 1, 0));
-    for (size_t i = 0; i < num_rows; ++i)
-        (*info->applied_filter)[values.Value(i) - first] = 1;
+    for (size_t i = 0; i < size; ++i)
+        (*info->applied_filter)[row_numbers[i] - first] = 1;
     return info;
 }
 
@@ -263,28 +284,40 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
 
             ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(**batch);
 
-            std::shared_ptr<ChunkInfoRowNumbers> row_numbers_info;
+            std::shared_ptr<arrow::Array> row_index;
             auto data_batch = *batch;
             if (row_index_column)
             {
-                row_numbers_info = convertToRowNumbers(*data_batch->column(0));
+                row_index = data_batch->column(0);
                 auto removed = data_batch->RemoveColumn(0);
                 throwFromArrowStatusIfFailed(removed.status());
                 data_batch = *removed;
             }
 
-            auto table = arrow::Table::FromRecordBatches({data_batch});
-            throwFromArrowStatusIfFailed(table.status());
-
             auto converter = takeConverter();
             SCOPE_EXIT({ returnConverter(std::move(converter)); });
 
-            delivered_chunk.missing_values = BlockMissingValues(getPort().getHeader().columns());
-            BlockMissingValues * missing_values_ptr
-                = format_settings.defaults_for_omitted_fields ? &delivered_chunk.missing_values : nullptr;
-            delivered_chunk.chunk = converter->arrowTableToCHChunk(*table, (*table)->num_rows(), nullptr, missing_values_ptr);
-            if (row_numbers_info)
-                delivered_chunk.chunk.getChunkInfos().add(std::move(row_numbers_info));
+            /// One piece unless the row numbers are too far apart to share a chunk.
+            const size_t num_rows = data_batch->num_rows();
+            size_t begin = 0;
+            do
+            {
+                const size_t length = row_index
+                    ? rowNumbersPieceLength(assert_cast<const arrow::UInt64Array &>(*row_index).raw_values() + begin, num_rows - begin)
+                    : num_rows - begin;
+
+                auto table = arrow::Table::FromRecordBatches({data_batch->Slice(begin, length)});
+                throwFromArrowStatusIfFailed(table.status());
+
+                DeliveredPiece & piece = delivered_chunk.pieces.emplace_back();
+                piece.missing_values = BlockMissingValues(getPort().getHeader().columns());
+                BlockMissingValues * missing_values_ptr = format_settings.defaults_for_omitted_fields ? &piece.missing_values : nullptr;
+                piece.chunk = converter->arrowTableToCHChunk(*table, (*table)->num_rows(), nullptr, missing_values_ptr);
+                if (row_index)
+                    piece.row_numbers = row_index->Slice(begin, length);
+
+                begin += length;
+            } while (begin < num_rows);
         }
 
         {
@@ -376,6 +409,7 @@ void VortexBlockInputFormat::closeReader()
         scan_finished = false;
         background_exception = nullptr;
     }
+    pending_pieces.clear();
     {
         std::lock_guard lock(converters_mutex);
         converters.clear();
@@ -582,16 +616,20 @@ std::shared_ptr<ChunkInfoRowNumbers> VortexBlockInputFormat::rowNumbersWithoutCo
     if (num_rows == 0)
         return std::make_shared<ChunkInfoRowNumbers>(0);
 
-    const auto & selection = *rows_without_columns_selection;
-    const UInt64 first = selection[first_delivered];
-    const UInt64 last = selection[first_delivered + num_rows - 1];
-    if (last - first + 1 == num_rows)
-        return std::make_shared<ChunkInfoRowNumbers>(first);
+    return makeRowNumbers(rows_without_columns_selection->data() + first_delivered, num_rows);
+}
 
-    auto info = std::make_shared<ChunkInfoRowNumbers>(first, IColumnFilter(last - first + 1, 0));
-    for (size_t i = 0; i < num_rows; ++i)
-        (*info->applied_filter)[selection[first_delivered + i] - first] = 1;
-    return info;
+Chunk VortexBlockInputFormat::takePendingPiece()
+{
+    DeliveredPiece piece = std::move(pending_pieces.front());
+    pending_pieces.pop_front();
+    block_missing_values = std::move(piece.missing_values);
+    if (piece.row_numbers)
+    {
+        const auto & row_numbers = assert_cast<const arrow::UInt64Array &>(*piece.row_numbers);
+        piece.chunk.getChunkInfos().add(makeRowNumbers(row_numbers.raw_values(), row_numbers.length()));
+    }
+    return std::move(piece.chunk);
 }
 
 Chunk VortexBlockInputFormat::readWithoutColumns()
@@ -600,6 +638,9 @@ Chunk VortexBlockInputFormat::readWithoutColumns()
         return {};
 
     size_t num_rows = std::min<UInt64>(pending_rows_without_columns, DEFAULT_BLOCK_SIZE);
+    /// Selected rows that are too far apart to share a chunk go to the next one.
+    if (row_index_column && rows_without_columns_selection)
+        num_rows = rowNumbersPieceLength(rows_without_columns_selection->data() + rows_without_columns_delivered, num_rows);
     pending_rows_without_columns -= num_rows;
     const UInt64 first_delivered = rows_without_columns_delivered;
     rows_without_columns_delivered += num_rows;
@@ -637,6 +678,13 @@ Chunk VortexBlockInputFormat::read()
     }
 
     block_missing_values.clear();
+
+    if (!pending_pieces.empty())
+    {
+        /// The bytes were attributed to the first piece of the chunk already.
+        approx_bytes_read_for_chunk = 0;
+        return takePendingPiece();
+    }
 
     if (!scan)
         return readWithoutColumns();
@@ -682,12 +730,13 @@ Chunk VortexBlockInputFormat::read()
                     continue;
                 }
 
-                block_missing_values = std::move(delivered_chunk.missing_values);
+                for (auto & piece : delivered_chunk.pieces)
+                    pending_pieces.push_back(std::move(piece));
                 /// The bytes read since the previous chunk was returned are attributed to this one.
                 size_t bytes_read = read_context->bytes_read.load(std::memory_order_relaxed);
                 approx_bytes_read_for_chunk = bytes_read - previous_approx_bytes_read;
                 previous_approx_bytes_read = bytes_read;
-                return std::move(delivered_chunk.chunk);
+                return takePendingPiece();
             }
 
             /// The split due next in file order has not arrived yet. Splits are delivered in the
