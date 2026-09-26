@@ -7,6 +7,7 @@
 #include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Interpreters/Context_fwd.h>
 #include <filesystem>
 #include <unordered_set>
@@ -20,18 +21,8 @@ class ReadBuffer;
 namespace DataLake
 {
 
-struct AccessToken
-{
-    std::string token;
-    std::optional<std::chrono::system_clock::time_point> expires_at;
-
-    bool isExpired() const
-    {
-        if (!expires_at.has_value())
-            return false;
-        return std::chrono::system_clock::now() >= expires_at.value();
-    }
-};
+/// Parses "Name: value" into a header entry.
+DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
 
 class RestCatalog : public ICatalog, public DB::WithContext
 {
@@ -74,6 +65,9 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
     }
 
+    /// Inherited by every catalog based on the Iceberg REST protocol.
+    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
+
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
@@ -89,7 +83,8 @@ public:
 
     void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
+        const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
 
     struct Config
     {

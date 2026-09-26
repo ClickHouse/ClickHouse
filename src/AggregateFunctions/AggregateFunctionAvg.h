@@ -302,6 +302,19 @@ public:
         }))
             return;
 
+        /// `Interval` is backed by `Int64` and is not one of the basic types dispatched above.
+        /// The average of a set of intervals is an interval of the same unit, so the result keeps
+        /// the type of the argument and only the number of units is averaged.
+        if (result_which.isInterval())
+        {
+            auto & col = assert_cast<ColumnVector<Int64> &>(to);
+            if constexpr (std::is_integral_v<Numerator> && std::is_integral_v<Denominator>)
+                col.getData().push_back(avgResultToValueExact<Int64>(this->data(place).numerator, this->data(place).denominator));
+            else
+                col.getData().push_back(avgResultToValue<Int64>(compute_avg()));
+            return;
+        }
+
         assert_cast<ColumnVector<Float64> &>(to).getData().push_back(compute_avg());
     }
 

@@ -145,6 +145,13 @@ struct IdentifierResolveScope
     /// Argument can be expression like constant, column, function or table expression
     std::unordered_map<std::string, QueryTreeNodePtr> expression_argument_name_to_node;
 
+    /** Names from `expression_argument_name_to_node` that are temporarily invisible.
+      * Set while an expression bound to an alias of an outer scope is resolved through this
+      * lambda scope, so that a lambda argument does not capture an identifier of an expression
+      * that is written outside of the lambda. See `tryResolveIdentifierFromAliases`.
+      */
+    std::unordered_set<std::string> hidden_expression_arguments;
+
     ScopeAliases aliases;
 
     /// Store current scope aliases defined in WITH clause if `enable_scopes_for_with_statement` setting is disabled.
@@ -167,8 +174,8 @@ struct IdentifierResolveScope
 
     std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
 
-    /// CTE name to query node
-    std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
+    /// CTE name to its definitions in declaration order (several only with `analyzer_compatibility_allow_cte_redefinition`)
+    std::unordered_map<std::string, QueryTreeNodes> cte_name_to_query_node;
 
     /// Window name to window node
     std::unordered_map<std::string, QueryTreeNodePtr> window_name_to_window_node;

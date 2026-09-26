@@ -58,6 +58,13 @@ FROM
 )
 SETTINGS log_comment = 'external_distinct_equality/nans_across';
 
+-- The settings above are sized for the four-row inputs. `system.query_log` also holds the queries of
+-- every other test running in parallel, and reading tens of thousands of such rows in two-row blocks
+-- costs minutes of CPU, so restore the defaults before the check.
+SET max_block_size = DEFAULT;
+SET max_threads = DEFAULT;
+SET max_untracked_memory = DEFAULT;
+
 -- Every input placement uses spill files and a final merge.
 SYSTEM FLUSH LOGS query_log;
 SELECT
