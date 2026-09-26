@@ -1068,6 +1068,16 @@ ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
     return ret;
 }
 
+void ColumnsDescription::clearColumnTTLs()
+{
+    /// Deliberately not through `ColumnsDescription::modify`: that also rebuilds the column's
+    /// subcolumns, which `add` does not register for an ALIAS column.
+    for (auto it = columns.begin(); it != columns.end(); ++it)
+        if (it->ttl)
+            columns.modify(it, [](ColumnDescription & column) { column.ttl.reset(); });
+    invalidateGetCache();
+}
+
 void ColumnsDescription::resetColumnTTLs()
 {
     std::vector<ColumnDescription> old_columns;
