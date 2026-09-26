@@ -104,7 +104,7 @@ PlainRewritableRemoteLayout readPlainRewritableSnapshot(ReadBuffer & in)
             std::string name;
             readStringBinary(name, compressed);
 
-            FileRemoteInfo file_info;
+            FileRemoteInfo file_info{};
             readVarUInt(file_info.bytes_size, compressed);
             Int64 file_last_modified = 0;
             readIntBinary(file_last_modified, compressed);
