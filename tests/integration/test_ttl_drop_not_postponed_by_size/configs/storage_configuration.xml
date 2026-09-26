@@ -9,6 +9,18 @@
                 <type>local</type>
                 <path>/ttl_drop_gate_b/</path>
             </gate_b>
+            <gate_c>
+                <type>local</type>
+                <path>/ttl_drop_gate_c/</path>
+            </gate_c>
+            <gate_d>
+                <type>local</type>
+                <path>/ttl_drop_gate_d/</path>
+            </gate_d>
+            <gate_e>
+                <type>local</type>
+                <path>/ttl_drop_gate_e/</path>
+            </gate_e>
         </disks>
         <policies>
             <only_a>
@@ -25,6 +37,27 @@
                     </main>
                 </volumes>
             </only_b>
+            <only_c>
+                <volumes>
+                    <main>
+                        <disk>gate_c</disk>
+                    </main>
+                </volumes>
+            </only_c>
+            <only_d>
+                <volumes>
+                    <main>
+                        <disk>gate_d</disk>
+                    </main>
+                </volumes>
+            </only_d>
+            <only_e>
+                <volumes>
+                    <main>
+                        <disk>gate_e</disk>
+                    </main>
+                </volumes>
+            </only_e>
         </policies>
     </storage_configuration>
 </clickhouse>
