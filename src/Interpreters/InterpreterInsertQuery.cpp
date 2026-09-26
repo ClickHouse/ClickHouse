@@ -43,8 +43,11 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -683,6 +686,37 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
 }
 
 
+static StoragePtr unwrapStorageProxy(const StoragePtr & storage)
+{
+    static constexpr size_t max_proxy_depth = 16;
+
+    StoragePtr nested_storage = storage;
+    for (size_t i = 0; i < max_proxy_depth && nested_storage; ++i)
+    {
+        const auto * proxy = dynamic_cast<const StorageProxy *>(nested_storage.get());
+        if (!proxy)
+            break;
+        nested_storage = proxy->getNested();
+    }
+    return nested_storage;
+}
+
+
+/// Every node of a distributed write runs the whole INSERT over its own slice of the read, so the writes
+/// add up to a single logical INSERT only where each node's write becomes visible on all of them. Two
+/// target shapes break that even where the engine itself replicates.
+static bool targetAbsorbsDistributedWrite(const StoragePtr & table)
+{
+    /// `Alias` answers the engine predicates from the table it points at, and an insert into it also pushes
+    /// the views attached to the alias itself, which the walk below skips at that hop.
+    if (dynamic_cast<const StorageAlias *>(unwrapStorageProxy(table).get()))
+        return false;
+
+    /// A dependent view whose target does not replicate keeps a different subset of the rows on each node.
+    return !InsertDependenciesBuilder::forwardedInsertReachesDependentView(table);
+}
+
+
 std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
     const Settings & settings = getContext()->getSettingsRef();
@@ -705,8 +739,13 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!context->canUseParallelReplicasOnInitiator())
         return {};
 
-    // NOTE: should we limit it more here?
-    if (auto storage = getTable(query); storage->isMergeTree() && !storage->supportsReplication())
+    /// `StorageProxy`, the stand-in a `lazy_load_tables` database keeps in the catalog until a table is
+    /// first accessed, does not forward `isMergeTree()`, so the classification resolves it first.
+    auto target = unwrapStorageProxy(table);
+    if (!target || !target->isMergeTree() || !target->supportsReplication())
+        return {};
+
+    if (!targetAbsorbsDistributedWrite(table))
         return {};
 
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
@@ -1067,7 +1106,15 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         return {};
 
     StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
-    if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
+    /// A data lake answers `supportsReplication()` with `isDataLakeConfiguration()`, which says nothing about
+    /// concurrent writers. The Iceberg sink re-reads the metadata and retries a conflicting commit; the Delta
+    /// one does not, so its per-node commits race for a single log version.
+    const auto * object_storage = dynamic_cast<const StorageObjectStorage *>(dst_storage.get());
+    const bool lake_retries_conflicting_commits = object_storage && object_storage->isIcebergStorage();
+    if (!(dst_storage->isMergeTree() || lake_retries_conflicting_commits) || !dst_storage->supportsReplication())
+        return {};
+
+    if (!targetAbsorbsDistributedWrite(dst_storage))
         return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();
