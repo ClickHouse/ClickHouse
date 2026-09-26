@@ -48,7 +48,7 @@ namespace
     }
 
 
-class FunctionFuzzBits : public IFunction
+class FunctionFuzzBits final : public IFunction
 {
 public:
     static constexpr auto name = "fuzzBits";
@@ -63,7 +63,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    /// `useDefaultImplementationForConstants` is deliberately not enabled: it would execute the
+    /// function on a single row and stamp that one fuzzed value onto every row of the result.
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; } // indexing from 0
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -95,10 +96,8 @@ public:
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Second argument of function {} must be from `0.0` to `1.0`", getName());
         }
 
-        if (const ColumnConst * col_in_untyped_const = checkAndGetColumnConstStringOrFixedString(col_in_untyped.get()))
-        {
-            col_in_untyped = col_in_untyped_const->getDataColumnPtr();
-        }
+        /// Expanded, not unwrapped to its single row: each row is fuzzed independently.
+        col_in_untyped = col_in_untyped->convertToFullColumnIfConst();
 
         if (const ColumnString * col_in = checkAndGetColumn<ColumnString>(col_in_untyped.get()))
         {
@@ -121,7 +120,7 @@ public:
             auto col_to = ColumnFixedString::create(n);
             ColumnFixedString::Chars & chars_to = col_to->getChars();
 
-            size_t total_size;
+            size_t total_size = 0;
             if (common::mulOverflow(input_rows_count, n, total_size))
                 throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
 

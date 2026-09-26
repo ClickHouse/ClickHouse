@@ -3,7 +3,6 @@
 #include <Common/SharedMutex.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/HashTable/Hash.h>
-#include <Common/PODArray.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
 #include <IO/SharedThreadPools.h>

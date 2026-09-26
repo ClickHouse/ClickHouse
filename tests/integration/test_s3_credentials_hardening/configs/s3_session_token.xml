@@ -1,0 +1,8 @@
+<clickhouse>
+    <s3>
+        <session_token_endpoint>
+            <endpoint>http://minio1:9001/root/sessiontoken/</endpoint>
+            <session_token>bogus-server-session-token</session_token>
+        </session_token_endpoint>
+    </s3>
+</clickhouse>

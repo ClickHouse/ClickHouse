@@ -1,0 +1,6 @@
+unfinished	2	2	2
+finished	4	4	4
+after_restart	2	2	1	1
+kept_on_other_replica	2	2
+data_r1	40
+data_r2	40

@@ -23,6 +23,7 @@ create table t (id UInt64, m Map(String, UInt64))
 engine = MergeTree order by id
 settings
     map_serialization_version = 'basic',
+    map_serialization_version_for_zero_level_parts = 'basic',
     min_bytes_for_wide_part = '200G',
     min_rows_for_wide_part = 1000000,
     write_marks_for_substreams_in_compact_parts = 1,
@@ -140,6 +141,7 @@ create table t (id UInt64, data Tuple(m Map(String, UInt64)))
 engine = MergeTree order by id
 settings
     map_serialization_version = 'basic',
+    map_serialization_version_for_zero_level_parts = 'basic',
     min_bytes_for_wide_part = '200G',
     min_rows_for_wide_part = 1000000,
     write_marks_for_substreams_in_compact_parts = 1,

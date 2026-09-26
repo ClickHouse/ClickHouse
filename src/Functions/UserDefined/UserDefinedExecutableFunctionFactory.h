@@ -6,8 +6,10 @@
 #include <unordered_map>
 
 #include <Core/Field.h>
+#include <Core/Types.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -26,7 +28,7 @@ public:
 
     static bool has(const String & function_name, ContextPtr context);
 
-    static std::vector<String> getRegisteredNames(ContextPtr context);
+    static VectorWithMemoryTracking<String> getRegisteredNames(ContextPtr context);
 
 };
 

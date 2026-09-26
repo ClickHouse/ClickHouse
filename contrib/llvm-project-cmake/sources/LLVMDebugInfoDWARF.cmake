@@ -1,0 +1,36 @@
+# Source files for LLVMDebugInfoDWARF
+set(LLVMDEBUGINFODWARF_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFAbbreviationDeclaration.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFAcceleratorTable.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFAddressRange.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFCFIPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFCompileUnit.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFContext.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugAbbrev.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugAddr.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugAranges.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugArangeSet.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugFrame.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugInfoEntry.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugLine.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugLoc.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugMacro.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugPubTable.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugRangeList.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDebugRnglists.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFDie.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFExpressionPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFFormValue.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFGdbIndex.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFListTable.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFLocationExpression.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFTypeUnit.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFUnit.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFUnitIndex.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFUnwindTablePrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/DWARFVerifier.cpp
+    # LowLevel subdirectory
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/LowLevel/DWARFCFIProgram.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/LowLevel/DWARFExpression.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/DWARF/LowLevel/DWARFUnwindTable.cpp
+)

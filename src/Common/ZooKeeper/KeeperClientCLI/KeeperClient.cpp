@@ -9,6 +9,8 @@
 namespace DB
 {
 
+std::map<String, Command> KeeperClientBase::commands;
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -172,6 +174,7 @@ KeeperClientBase::KeeperClientBase(std::ostream & cout_, std::ostream & cerr_)
 {
     loadCommands({
         std::make_shared<LSCommand>(),
+        std::make_shared<LSRCommand>(),
         std::make_shared<CDCommand>(),
         std::make_shared<SetCommand>(),
         std::make_shared<CreateCommand>(),

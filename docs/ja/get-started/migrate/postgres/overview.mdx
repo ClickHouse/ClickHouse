@@ -1,0 +1,56 @@
+---
+slug: /migrations/postgresql/overview
+title: 'PostgreSQLとClickHouseの比較'
+description: 'PostgreSQLからClickHouseへの移行ガイド'
+keywords: ['postgres', 'postgresql', '移行', '移行']
+sidebarTitle: '概要'
+doc_type: 'guide'
+---
+
+<div id="why-use-clickhouse-over-postgres">
+  ## なぜ Postgres ではなく ClickHouse を使うのですか？
+</div>
+
+要するに、ClickHouse は高速な分析、特に `GROUP BY` クエリ向けに設計された OLAP データベースである一方、Postgres はトランザクションワークロード向けに設計された OLTP データベースだからです。
+
+OLTP、すなわちオンライン・トランザクション処理データベースは、トランザクション情報を管理するために設計されています。これらのデータベースの主な目的は、Postgres がその代表例ですが、エンジニアがデータベースに一連の更新を送信したとき、それが全体として必ず成功するか失敗するかのいずれかになることを保証することです。こうした ACID 特性を備えたトランザクション保証は、OLTP データベースの中心的な特長であり、Postgres の大きな強みでもあります。こうした要件があるため、OLTP データベースは大規模なデータセットに対する分析クエリに使うと、一般にパフォーマンス上の限界にぶつかります。
+
+OLAP、すなわちオンライン分析処理データベースは、そうしたニーズ、つまり分析ワークロードを扱うために設計されています。これらのデータベースの主な目的は、エンジニアが膨大なデータセットに対して効率的にクエリを実行し、集計できるようにすることです。ClickHouse のようなリアルタイム OLAP システムでは、データがリアルタイムに取り込まれるのと同時に、この分析を行えます。
+
+ClickHouse と PostgreSQL のより詳しい比較については、[こちら](/ja/get-started/migrate/postgres/appendix#postgres-vs-clickhouse-equivalent-and-different-concepts)を参照してください。
+
+分析クエリにおける ClickHouse と Postgres の性能差の可能性を確認するには、[Rewriting PostgreSQL Queries in ClickHouse](/ja/get-started/migrate/postgres/migration-guide/migration-guide-part2)を参照してください。
+
+<div id="migration-strategies">
+  ## 移行戦略
+</div>
+
+PostgreSQL から ClickHouse に移行する際の適切な戦略は、ユースケース、インフラストラクチャ、データ要件によって異なります。一般に、現代的なユースケースの多くでは、リアルタイム CDC (変更データキャプチャ)  (変更データキャプチャ) が最適なアプローチです。一方、手動で一括ロードした後に定期的に更新する方法は、よりシンプルなシナリオや一回限りの移行に適しています。
+
+以下では、移行における 2 つの主要な戦略、**リアルタイム CDC (変更データキャプチャ)&#x20;**&#x20;と **手動一括ロード + 定期更新** について説明します。
+
+<div id="real-time-replication-cdc">
+  ### リアルタイムレプリケーション (CDC (変更データキャプチャ) )
+</div>
+
+変更データキャプチャ (CDC (変更データキャプチャ) ) は、2 つのデータベース間でテーブルの同期を維持する仕組みです。これは PostgreSQL からの移行の多くで最も効率的なアプローチですが、PostgreSQL から ClickHouse への挿入、更新、削除をほぼリアルタイムで処理するため、そのぶん複雑になります。リアルタイム分析が重要なユースケースに最適です。
+
+リアルタイムの変更データキャプチャ (CDC (変更データキャプチャ) ) は、ClickHouse Cloud を使用している場合は [ClickPipes](/ja/integrations/clickpipes/postgres/deduplication)、オンプレミスで ClickHouse を実行している場合は [PeerDB](https://github.com/PeerDB-io/peerdb) を使用して ClickHouse で実現できます。これらのソリューションは、PostgreSQL から挿入、更新、削除をキャプチャして ClickHouse にレプリケートすることで、初期ロードを含むリアルタイムデータ同期の複雑さに対応します。このアプローチにより、手動で介入しなくても、ClickHouse 内のデータを常に最新かつ正確な状態に保てます。
+
+<div id="manual-bulk-load-periodic-updates">
+  ### 手動による一括ロード + 定期的な更新
+</div>
+
+状況によっては、手動で一括ロードを行い、その後に定期的に更新するという、よりシンプルな方法で十分な場合があります。この戦略は、一回限りの移行や、リアルタイムのレプリケーションが不要なケースに適しています。具体的には、SQL の `INSERT` コマンドを直接実行するか、CSVファイルをエクスポートしてインポートすることで、PostgreSQL から ClickHouse へデータを一括でロードします。初回の移行後は、一定間隔で PostgreSQL から変更を同期することで、ClickHouse 内のデータを定期的に更新できます。
+
+一括ロードのプロセスはシンプルで柔軟ですが、リアルタイムで更新されないという欠点があります。初期データを ClickHouse に取り込んだ後も、更新内容はすぐには反映されないため、PostgreSQL からの変更を同期する定期更新をスケジュールする必要があります。この方法は、時間の厳密さがそれほど求められないユースケースには適していますが、PostgreSQL でデータが変更されてから、その変更が ClickHouse に反映されるまでに遅延が生じます。
+
+<div id="which-strategy-to-choose">
+  ### どの戦略を選ぶべきですか？
+</div>
+
+ClickHouse で鮮度の高い最新データを必要とするほとんどのアプリケーションでは、ClickPipes を使用したリアルタイム CDC (変更データキャプチャ)  が推奨されます。最小限のセットアップとメンテナンスで、継続的なデータ同期を実現できます。一方、手動による一括ロードと定期的な更新の組み合わせは、よりシンプルな一度限りの移行や、リアルタイム更新が重要でないワークロードでは有効な選択肢です。
+
+***
+
+**[PostgreSQL 移行ガイドはこちらから開始します](/ja/get-started/migrate/postgres/migration-guide/migration-guide-part1).**

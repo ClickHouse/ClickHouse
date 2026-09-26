@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_FILE="${CLICKHOUSE_TEST_UNIQUE_NAME}.parquet"
 
-$CLICKHOUSE_LOCAL --output_format_parquet_use_custom_encoder=0 -q "
+$CLICKHOUSE_LOCAL -q "
     SELECT toUUID('4dfdc6b0-e3f2-4649-ad36-6598aff9c482') AS id
     INTO OUTFILE '${DATA_FILE}' FORMAT Parquet;
 "

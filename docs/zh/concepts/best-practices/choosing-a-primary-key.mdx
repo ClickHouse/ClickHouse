@@ -1,0 +1,181 @@
+---
+slug: /best-practices/choosing-a-primary-key
+sidebarTitle: '选择主键'
+title: '选择主键'
+description: '介绍如何在 ClickHouse 中选择主键'
+keywords: ['主键']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+> 在本页中，我们会交替使用 &quot;排序键&quot; 和 &quot;主键&quot; 这两个术语。严格来说，[它们在 ClickHouse 中有所区别](/zh/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key)，但在本文语境下，读者可以将两者视为同义；其中，排序键指的是表 `ORDER BY` 中指定的列。
+
+请注意，ClickHouse 的主键与 Postgres 等 OLTP 数据库中同名概念的工作方式[非常不同](/zh/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse)。
+
+在 ClickHouse 中选择合适的主键，对于查询性能和存储效率至关重要。ClickHouse 会将数据组织成多个 parts，每个 part 都包含自己的稀疏主索引。该索引通过减少需要扫描的数据量，能够显著提升查询速度。此外，由于主键决定了数据在磁盘上的物理排列顺序，因此也会直接影响压缩效率。数据排列越合理，压缩效果通常越好，从而通过减少 I/O 进一步提升性能。
+
+1. 选择排序键时，应优先考虑那些经常用于查询过滤条件 (即 `WHERE` 子句) 的列，尤其是能够过滤掉大量行的列。
+2. 与表中其他数据高度关联的列也很有帮助，因为连续存储可以在执行 `GROUP BY` 和 `ORDER BY` 操作时提升压缩率和内存效率。
+
+<br />
+
+可以遵循一些简单规则来帮助选择排序键。下面这些原则有时会相互冲突，因此请按顺序权衡。**通过这一过程，你可以确定若干个候选键，通常 4–5 个就足够了**：
+
+<Info>
+  **重要**
+
+  排序键必须在创建表时定义，之后无法再添加。不过，可以通过一种称为投影的功能，在插入数据之后 (或之前) 为表增加额外的排序方式。请注意，这会导致数据重复。更多详情见[这里](/zh/reference/statements/alter/projection)。
+</Info>
+
+<div id="example">
+  ## 示例
+</div>
+
+请看下面的 `posts_unordered` 表。该表中每一行对应一条 Stack Overflow 帖子。
+
+该表没有主键，这一点可由 `ORDER BY tuple()` 看出。
+
+```sql
+CREATE TABLE posts_unordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 
+  'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime,
+  `Score` Int32,
+  `ViewCount` UInt32,
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime,
+  `LastActivityDate` DateTime,
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16,
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense`LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime,
+  `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+假设某个用户想计算 2024 年之后提交的问题数量，而这正是其最常见的访问模式。
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.055 sec. Processed 59.82 million rows, 361.34 MB (1.09 billion rows/s., 6.61 GB/s.)
+```
+
+请注意该查询读取的行数和字节数。没有主键时，查询必须扫描整个数据集。
+
+使用 `EXPLAIN indexes=1` 可以确认，由于缺少索引，发生了全表扫描。
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain───────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                 │
+│   Aggregating                                             │
+│     Expression (Before GROUP BY)                          │
+│       Expression                                          │
+│         ReadFromMergeTree (stackoverflow.posts_unordered) │
+└───────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.003 sec.
+```
+
+假设有一个表 `posts_ordered`，包含相同的数据，其 `ORDER BY` 设置为 `(PostTypeId, toDate(CreationDate))`，即
+
+```sql
+CREATE TABLE posts_ordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 
+  'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+...
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+`PostTypeId` 的基数为 8，因此很适合作为排序键中的第一个条目。考虑到按日期粒度过滤很可能就已足够 (同时对 datetime 过滤仍然有帮助) ，因此我们使用 `toDate(CreationDate)` 作为键的第 2 个组成部分。这样还会生成更小的索引，因为日期可用 16 位表示，从而加快过滤速度。
+
+下面的动画展示了如何为 Stack Overflow 的 posts 表创建优化后的稀疏主索引。索引针对的不是单独的行，而是行块：
+
+<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="主键" />
+
+如果在使用此排序键的表上重复执行相同的查询：
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.013 sec. Processed 196.53 thousand rows, 1.77 MB (14.64 million rows/s., 131.78 MB/s.)
+```
+
+该查询现已利用稀疏索引，显著减少读取的数据量，并将执行速度提升到 4 倍——请注意读取的行数和字节数都有所减少。
+
+可使用 `EXPLAIN indexes=1` 确认该索引已被使用。
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain─────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                                                   │
+│   Aggregating                                                                               │
+│     Expression (Before GROUP BY)                                                            │
+│       Expression                                                                            │
+│         ReadFromMergeTree (stackoverflow.posts_ordered)                                     │
+│         Indexes:                                                                            │
+│           PrimaryKey                                                                        │
+│             Keys:                                                                           │
+│               PostTypeId                                                                    │
+│               toDate(CreationDate)                                                          │
+│             Condition: and((PostTypeId in [1, 1]), (toDate(CreationDate) in [19723, +Inf))) │
+│             Parts: 14/14                                                                    │
+│             Granules: 39/7578                                                               │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.004 sec.
+```
+
+此外，我们还用图示展示了稀疏索引如何剪枝掉所有不可能包含示例查询匹配结果的行块：
+
+<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="主键" />
+
+<Note>
+  表中的所有列都会按指定排序键的值进行排序，无论这些列本身是否包含在该键中。例如，如果将 `CreationDate` 用作键，那么其他所有列中的值顺序都会与 `CreationDate` 列中的值顺序保持一致。也可以指定多个排序键——其排序语义与 `SELECT` 查询中的 `ORDER BY` 子句相同。
+</Note>
+
+有关如何选择主键的完整进阶指南，请参阅[此处](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
+
+如果想进一步了解排序键如何提升压缩效果并进一步优化存储，请参阅官方指南 [ClickHouse 中的压缩](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) 和 [列压缩编解码器](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)。
