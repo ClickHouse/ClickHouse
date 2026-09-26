@@ -2574,17 +2574,22 @@ h5#sidebar-title {
     gap: 0.375rem !important;
 }
 
-/* Beta pill styling - blue colors (light and dark mode) */
-.nav-tag-pill-text {
+/* Sidebar tag colors by release status. */
+.nav-tag-pill-text[data-nav-tag="Beta"] {
     background-color: #1e3a8a !important;
     color: #93c5fd !important;
 }
 
-/* Ensure same blue colors in dark mode */
-.dark .nav-tag-pill-text,
-:is(.dark) .nav-tag-pill-text {
-    background-color: #1e3a8a !important;
-    color: #93c5fd !important;
+.nav-tag-pill-text[data-nav-tag="Private preview"],
+.nav-tag-pill-text[data-nav-tag="Preview"] {
+    background-color: #FEF3C7 !important;
+    color: #B45309 !important;
+}
+
+.dark .nav-tag-pill-text[data-nav-tag="Private preview"],
+.dark .nav-tag-pill-text[data-nav-tag="Preview"] {
+    background-color: #4B3410 !important;
+    color: #FCD34D !important;
 }
 
 /* ============================================

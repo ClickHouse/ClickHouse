@@ -42,6 +42,7 @@
 #include <Parsers/ParserQuery.h>
 #include <fmt/format.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -92,6 +93,72 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A `ReadBuffer` over the `COPY_DATA` messages of one `COPY ... FROM STDIN`.
+///
+/// The data of a `COPY` is a single stream, which the client is free to split into `COPY_DATA`
+/// messages at any byte - in the middle of a row as well - and whose header, when `HEADER` was asked
+/// for, stands at the beginning of that whole stream and nowhere else. Reading one message at a time
+/// would therefore cut rows in half and take the first row of every message for a header, so the
+/// input format is handed one buffer that spans the stream instead.
+class ReadBufferFromCopyData : public ReadBuffer
+{
+public:
+    explicit ReadBufferFromCopyData(PostgreSQLProtocol::Messaging::MessageTransport & message_transport_)
+        : ReadBuffer(nullptr, 0)
+        , message_transport(message_transport_)
+    {
+    }
+
+private:
+    bool nextImpl() override
+    {
+        /// `CopyDone` ends the stream, and nothing of this `COPY` is read after it.
+        if (is_done)
+            return false;
+
+        while (true)
+        {
+            /// The client waits for what has been written for this statement so far before it sends
+            /// the rest of the data, so everything buffered has to go out before we block on reading.
+            message_transport.flush();
+
+            const PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport.receiveMessageType();
+
+            if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA)
+            {
+                message = message_transport.receive<PostgreSQLProtocol::Messaging::CopyInData>();
+
+                /// A `COPY_DATA` message is allowed to carry no data at all, and an empty working
+                /// buffer would be read as the end of the stream.
+                if (message->query.empty())
+                    continue;
+
+                BufferBase::set(message->query.data(), message->query.size(), 0);
+                return true;
+            }
+
+            if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION)
+            {
+                message_transport.receive<PostgreSQLProtocol::Messaging::CopyDone>();
+                is_done = true;
+                return false;
+            }
+
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Received incorrect message type - expected {} or {}, got {}",
+                PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA,
+                PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION,
+                message_type);
+        }
+    }
+
+    PostgreSQLProtocol::Messaging::MessageTransport & message_transport;
+    /// The message the working buffer points into, kept alive for as long as it is read.
+    std::unique_ptr<PostgreSQLProtocol::Messaging::CopyInData> message;
+    bool is_done = false;
+};
 
 UInt32 generateRandomUInt32()
 {
@@ -438,7 +505,10 @@ void PostgreSQLHandler::run()
             switch (message_type)
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:
-                    /// A simple query is a complete protocol cycle.
+                    /// A simple query is a complete protocol cycle, and it also destroys the
+                    /// unnamed prepared statement and the unnamed portal.
+                    in_extended_query_cycle = false;
+                    prepared_statements_manager.dropUnnamedStatementAndPortal();
                     processQuery();
                     need_ready_for_query = true;
                     message_transport->flush();
@@ -447,25 +517,30 @@ void PostgreSQLHandler::run()
                     LOG_DEBUG(log, "Client closed the connection");
                     return;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::PARSE:
-                    /// Extended-query cycles end only at `Sync`.
+                    /// An extended-query cycle ends at its `Sync` or at a simple query.
+                    in_extended_query_cycle = true;
                     processParseQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::BIND:
+                    in_extended_query_cycle = true;
                     processBindQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::EXECUTE:
+                    in_extended_query_cycle = true;
                     processExecuteQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::SYNC:
                     /// `Sync` ends the cycle and produces one `ReadyForQuery`.
+                    in_extended_query_cycle = false;
                     processSyncQuery();
                     need_ready_for_query = true;
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::DESCRIBE:
+                    in_extended_query_cycle = true;
                     processDescribeQuery();
                     message_transport->flush();
                     break;
@@ -478,10 +553,10 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Client tried to access via extended query protocol");
                     message_transport->dropMessage();
-                    /// Discard the rest of this extended-query cycle.
-                    ignore_until_sync = true;
+                    recoverFromRejectedMessage();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE:
+                    in_extended_query_cycle = true;
                     processCloseQuery();
                     message_transport->flush();
                     break;
@@ -494,8 +569,7 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Command is not supported. Command code {:d}", static_cast<Int32>(message_type));
                     message_transport->dropMessage();
-                    /// Treat unsupported messages as extended-query errors.
-                    ignore_until_sync = true;
+                    recoverFromRejectedMessage();
             }
         }
     }
@@ -504,6 +578,17 @@ void PostgreSQLHandler::run()
         log->log(exc);
     }
 
+}
+
+void PostgreSQLHandler::recoverFromRejectedMessage()
+{
+    /// A rejected message belonging to an extended-query cycle is recovered at that
+    /// cycle's `Sync`, which is where its `ReadyForQuery` comes from. Without an open
+    /// cycle there is no `Sync` to wait for, so the client is owed one right away.
+    if (in_extended_query_cycle)
+        ignore_until_sync = true;
+    else
+        need_ready_for_query = true;
 }
 
 bool PostgreSQLHandler::startup()
@@ -581,8 +666,16 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
 {
     bool was_secure_connection = false;
     bool was_encryption_req = true;
-    readBinaryBigEndian(payload_size, *in);
-    readBinaryBigEndian(info, *in);
+    auto receive_first_message_header = [&]
+    {
+        readBinaryBigEndian(payload_size, *in);
+        if (payload_size < 8)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong PostgreSQL initial message length {}, it must be at least 8", payload_size);
+        readBinaryBigEndian(info, *in);
+    };
+
+    receive_first_message_header();
 
     switch (static_cast<PostgreSQLProtocol::Messaging::FrontMessageType>(info))
     {
@@ -604,10 +697,7 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
             was_encryption_req = false;
     }
     if (was_encryption_req)
-    {
-        readBinaryBigEndian(payload_size, *in);
-        readBinaryBigEndian(info, *in);
-    }
+        receive_first_message_header();
 
     if (secure_required && !was_secure_connection)
     {
@@ -713,9 +803,9 @@ inline std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> PostgreSQL
     std::unique_ptr<PostgreSQLProtocol::Messaging::StartupMessage> message;
     try
     {
-        if (payload_size < 8 || payload_size > max_startup_message_size)
+        if (payload_size < 9 || payload_size > max_startup_message_size)
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
-                "Startup message declares a size of {} bytes, while it must be between 8 and {} bytes",
+                "Startup message declares a size of {} bytes, while it must be between 9 and {} bytes",
                 payload_size, max_startup_message_size);
 
         message = message_transport->receiveWithPayloadSize<PostgreSQLProtocol::Messaging::StartupMessage>(payload_size - 8);
@@ -802,6 +892,32 @@ static String removePgCatalogQualifier(const String & query)
     return result;
 }
 
+namespace
+{
+
+/// The option list of a `COPY` command is accepted only when it asks for the shape the PostgreSQL
+/// protocol transfers anyway - see `checkDataShapeOptions` in the parser. That check compares the
+/// requested values against the defaults of the formats, so the format settings of the session must
+/// not be able to move them: a session that did `SET format_csv_delimiter = ';'` would otherwise get
+/// its `COPY ... WITH (FORMAT csv, DELIMITER ',')` accepted and then served with `;`, which is the
+/// silent shape mismatch the option list is there to prevent.
+void pinCopyFormatSettings(const ContextMutablePtr & query_context)
+{
+    query_context->setSetting("format_csv_delimiter", String(","));
+    query_context->setSetting("format_csv_null_representation", String("\\N"));
+    query_context->setSetting("format_tsv_null_representation", String("\\N"));
+    query_context->setSetting("format_csv_allow_single_quotes", false);
+    query_context->setSetting("format_csv_allow_double_quotes", true);
+    query_context->setSetting("input_format_csv_allow_whitespace_or_tab_as_delimiter", false);
+
+    /// The rows of a `COPY` are separated by a single line feed on the wire.
+    query_context->setSetting("input_format_tsv_crlf_end_of_line", false);
+    query_context->setSetting("output_format_tsv_crlf_end_of_line", false);
+    query_context->setSetting("output_format_csv_crlf_end_of_line", false);
+}
+
+}
+
 bool PostgreSQLHandler::processCopyQuery(const String & query)
 {
     ParserCopyQuery parser_copy;
@@ -811,8 +927,15 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     {
         copy_query_parsed = parseQuery(parser_copy, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     }
-    catch (const Exception &)
+    catch (const Exception & e)
     {
+        /// `BAD_ARGUMENTS` is raised by `ParserCopyQuery` only once it has recognized a `COPY`
+        /// command and got as far as its options, so it says "this `COPY` asks for something this
+        /// protocol cannot serve" rather than "this was not a `COPY` command at all". Handing such a
+        /// query to the generic SQL parser would replace the targeted message with a plain syntax
+        /// error, so let it reach the client.
+        if (e.code() == ErrorCodes::BAD_ARGUMENTS)
+            throw;
         copy_query_parsed.reset();
     }
 
@@ -830,6 +953,8 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         assignStatementQueryId(query_context);
         QueryScope query_scope = QueryScope::create(query_context);
 
+        pinCopyFormatSettings(query_context);
+
         String columns_to_insert;
         if (!copy_query->column_names.empty())
         {
@@ -845,70 +970,59 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 
-        String format;
-        switch (copy_query->format)
-        {
-        case ASTCopyQuery::Formats::TSV:
-            format = "TSV";
-            break;
-        case ASTCopyQuery::Formats::CSV:
-            format = "CSV";
-            break;
-        case ASTCopyQuery::Formats::Binary:
-            format = "RowBinary";
-            break;
-        }
+        const String format = getFormatName(*copy_query);
+
+        /// `COPY ... FROM` data carries the column names only when `HEADER` was asked for, which the
+        /// format name above already accounts for. Header auto-detection would otherwise take a first
+        /// data row that happens to look like the column names for a header and drop it.
+        query_context->setSetting("input_format_tsv_detect_header", false);
+        query_context->setSetting("input_format_csv_detect_header", false);
+
+        /// The `HEADER` of a PostgreSQL `COPY ... FROM` says that the first line of the data is the
+        /// column names, and says nothing else: the fields are still bound to the columns of the
+        /// command by position, and the names on that line are not looked at. The ClickHouse
+        /// `*WithNames` formats that read the line would otherwise match the fields to columns by
+        /// those names and default the columns no name was given for, so a header naming the same
+        /// columns in another order would load them the other way round.
+        query_context->setSetting("input_format_with_names_use_header", false);
 
         const Settings & settings = query_context->getSettingsRef();
 
         message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
+
+        /// One buffer over the whole stream, and so one input format for it: a header belongs to the
+        /// stream rather than to a message of it, and a row may be split across two messages.
+        ReadBufferFromCopyData buf(*message_transport);
+        auto format_ptr = FormatFactory::instance().getInput(
+            format,
+            buf,
+            io.pipeline.getHeader(),
+            query_context,
+            settings[Setting::max_insert_block_size],
+            std::nullopt,
+            /// The data is read from the connection this thread owns, so it is parsed on this thread
+            /// as well: a parsing pool thread would be blocked on the socket for as long as the
+            /// client takes to send the rest of the `COPY`, which it is free to do at any pace.
+            FormatParserSharedResources::singleThreaded(settings),
+            nullptr,
+            false,
+            CompressionMethod::None,
+            false,
+            settings[Setting::max_insert_block_size_bytes],
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes]);
+
         executor->start();
         while (true)
         {
-            message_transport->flush();
-            PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport->receiveMessageType();
-            if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA)
-            {
-                std::unique_ptr<PostgreSQLProtocol::Messaging::CopyInData> data_query =
-                    message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
-
-                ReadBufferFromString buf(data_query->query);
-                auto format_ptr = FormatFactory::instance().getInput(
-                    format,
-                    buf,
-                    io.pipeline.getHeader(),
-                    query_context,
-                    settings[Setting::max_insert_block_size],
-                    std::nullopt,
-                    nullptr,
-                    nullptr,
-                    false,
-                    CompressionMethod::None,
-                    false,
-                    settings[Setting::max_insert_block_size_bytes],
-                    settings[Setting::min_insert_block_size_rows],
-                    settings[Setting::min_insert_block_size_bytes]);
-                while (true)
-                {
-                    auto chunk = format_ptr->generate();
-                    if (chunk.empty())
-                        break;
-
-                    executor->push(std::move(chunk));
-                }
-            }
-            else if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION)
-            {
-                message_transport->receive<PostgreSQLProtocol::Messaging::CopyDone>();
-                executor->finish();
+            /// An empty chunk means the end of the stream, which is the `CopyDone` message.
+            auto chunk = format_ptr->generate();
+            if (chunk.empty())
                 break;
-            }
-            else
-            {
-                executor->cancel();
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Received incorrect message type - expected {} or {}, got {}", PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA, PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION, message_type);
-            }
+
+            executor->push(std::move(chunk));
         }
+        executor->finish();
 
         auto command = PostgreSQLProtocol::Messaging::CommandComplete::Command::COPY;
         message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(command, 0), true);
@@ -927,6 +1041,8 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
 
         QueryScope query_scope = QueryScope::create(query_context);
 
+        pinCopyFormatSettings(query_context);
+
         String columns_to_select = "*";
         if (!copy_query->column_names.empty())
         {
@@ -943,7 +1059,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));
         VectorWithMemoryTracking<char> result_buf;
         WriteBufferFromVectorImpl<decltype(result_buf)> output_buffer(result_buf);
-        auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, io.pipeline.getHeader(), query_context);
+        auto format_ptr = FormatFactory::instance().getOutputFormat(getFormatName(*copy_query), output_buffer, io.pipeline.getHeader(), query_context);
         auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
         Block block;
         while (executor->pull(block))

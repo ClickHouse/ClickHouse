@@ -4,7 +4,6 @@
 #include <base/EnumReflection.h>
 
 #include <string_view>
-#include <unordered_map>
 
 
 namespace DB
@@ -12,6 +11,15 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
+}
+
+IntervalKind IntervalKind::fromBinary(UInt8 value)
+{
+    auto kind = magic_enum::enum_cast<Kind>(value);
+    if (!kind)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown IntervalKind during Interval type decoding: {0:#04x}", UInt64(value));
+    return *kind;
 }
 
 std::string_view IntervalKind::toString() const
@@ -81,7 +89,9 @@ Float64 IntervalKind::toSeconds() const
             return 86400;
         case IntervalKind::Kind::Week:
             return 604800;
-        default:
+        case IntervalKind::Kind::Month:
+        case IntervalKind::Kind::Quarter:
+        case IntervalKind::Kind::Year:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not possible to get precise number of seconds in non-precise interval");
     }
 }
@@ -255,49 +265,33 @@ const char * IntervalKind::toNameOfFunctionExtractTimePart() const
 }
 
 
-bool IntervalKind::tryParseFromNameOfFunctionExtractTimePart(std::string_view name, IntervalKind::Kind & result)
+namespace
 {
-    /// Mirrors `toNameOfFunctionExtractTimePart`.
-    static const std::unordered_map<std::string_view, IntervalKind::Kind> lookup = {
-        {"toNanosecond",  IntervalKind::Kind::Nanosecond},
-        {"toMicrosecond", IntervalKind::Kind::Microsecond},
-        {"toMillisecond", IntervalKind::Kind::Millisecond},
-        {"toSecond",      IntervalKind::Kind::Second},
-        {"toMinute",      IntervalKind::Kind::Minute},
-        {"toHour",        IntervalKind::Kind::Hour},
-        {"toDayOfMonth",  IntervalKind::Kind::Day},
-        {"toISOWeek",     IntervalKind::Kind::Week},
-        {"toMonth",       IntervalKind::Kind::Month},
-        {"toQuarter",     IntervalKind::Kind::Quarter},
-        {"toYear",        IntervalKind::Kind::Year},
-    };
-    auto it = lookup.find(name);
-    if (it == lookup.end())
-        return false;
-    result = it->second;
-    return true;
+
+/// Finds the kind whose name, as returned by `getter`, is `name`.
+bool tryParseByName(std::string_view name, const char * (IntervalKind::*getter)() const, IntervalKind & result)
+{
+    for (auto kind : magic_enum::enum_values<IntervalKind::Kind>())
+    {
+        if (name == (IntervalKind(kind).*getter)())
+        {
+            result = kind;
+            return true;
+        }
+    }
+    return false;
 }
 
-
-bool IntervalKind::tryParseString(const std::string & kind, IntervalKind::Kind & result)
-{
-    static const std::unordered_map<std::string_view, IntervalKind::Kind> lookup = {
-        {"nanosecond",  IntervalKind::Kind::Nanosecond},
-        {"microsecond", IntervalKind::Kind::Microsecond},
-        {"millisecond", IntervalKind::Kind::Millisecond},
-        {"second",      IntervalKind::Kind::Second},
-        {"minute",      IntervalKind::Kind::Minute},
-        {"hour",        IntervalKind::Kind::Hour},
-        {"day",         IntervalKind::Kind::Day},
-        {"week",        IntervalKind::Kind::Week},
-        {"month",       IntervalKind::Kind::Month},
-        {"quarter",     IntervalKind::Kind::Quarter},
-        {"year",        IntervalKind::Kind::Year},
-    };
-    auto it = lookup.find(kind);
-    if (it == lookup.end())
-        return false;
-    result = it->second;
-    return true;
 }
+
+bool IntervalKind::tryParseFromNameOfFunctionExtractTimePart(std::string_view name, IntervalKind & result)
+{
+    return tryParseByName(name, &IntervalKind::toNameOfFunctionExtractTimePart, result);
+}
+
+bool IntervalKind::tryParseString(std::string_view name, IntervalKind & result)
+{
+    return tryParseByName(name, &IntervalKind::toLowercasedKeyword, result);
+}
+
 }

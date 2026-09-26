@@ -75,18 +75,18 @@ struct Impl
         PaddedPODArray<Float64> & col_gini_normalized)
     {
         size_t size = col_gini_predicted.size();
-        size_t array_size = size > 0 ? array_predicted_offsets[0] - array_predicted_offsets[-1] : 0;
-
-        if (array_size > MAX_ARRAY_SIZE)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in arrayNormalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array1_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
+            size_t array_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
             size_t array2_size = array_labels_offsets[i] - array_labels_offsets[i - 1];
-            if (array1_size != array_size || array2_size != array_size)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
+
+            if (array_size > MAX_ARRAY_SIZE)
+                throw Exception(
+                    ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in arrayNormalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
+
+            if (array2_size != array_size)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Prediction and label arrays in function arrayNormalizedGini should have same size for each row");
 
             PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[i - 1], array_labels_data.data() + array_labels_offsets[i]);
 

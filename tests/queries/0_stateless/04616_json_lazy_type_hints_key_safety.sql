@@ -1,6 +1,6 @@
 -- Tags: no-fasttest
 
--- Safety checks for lazy JSON type-hint ALTERs (allow_experimental_json_lazy_type_hints).
+-- Safety checks for lazy JSON type-hint ALTERs (enable_json_lazy_type_hints).
 -- A lazy metadata-only type-hint change skips the mutation branch, so it must be refused when it
 -- changes the on-disk serialization of a value persisted positionally in the primary/partition
 -- key or a secondary index (those are read back with the current type without per-part CAST).
@@ -15,7 +15,7 @@
 -- (`PROJECTION_NOT_USED`), so the series disables it: plan shape is not its subject.
 SET optimize_read_in_order = 0;
 SET enable_json_type = 1;
-SET allow_experimental_json_lazy_type_hints = 1;
+SET enable_json_lazy_type_hints = 1;
 SET allow_suspicious_types_in_order_by = 1;
 
 DROP TABLE IF EXISTS t_json_key_safety;
