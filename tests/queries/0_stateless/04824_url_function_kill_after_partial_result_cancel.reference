@@ -1,0 +1,3 @@
+the killed query failed with the cancellation error
+the next failover option was not probed after the kill
+the cancellation error of the killed query was not discarded
