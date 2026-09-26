@@ -60,6 +60,9 @@ public:
         /// On success, returns the number of rows/bytes actually written.
         std::future<ResultProgress> future{};
 
+        /// Size of the data accepted into the buffer.
+        size_t accepted_bytes = 0;
+
         /// Read buffer that contains extracted
         /// from query data in case of too much data.
         std::unique_ptr<ReadBuffer> insert_data_buffer{};
