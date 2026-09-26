@@ -45,7 +45,7 @@ public:
     /// filtered out and which are therefore unknown to the collector.
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
-    /// timeSeriesStoreTags() skips NULL identifiers, so the value behind a NULL is unknown to the collector.
+    /// `timeSeriesStoreTags` skips NULL identifiers, so the value behind a NULL is unknown to the collector.
     bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }

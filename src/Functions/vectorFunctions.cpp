@@ -65,7 +65,7 @@ struct PositiveModuloName { static constexpr auto name = "positiveModulo"; };
 struct IntDivName { static constexpr auto name = "intDiv"; };
 struct IntDivOrZeroName { static constexpr auto name = "intDivOrZero"; };
 
-/// intDiv, modulo and positiveModulo throw on a zero divisor, and so does divide on decimals.
+/// `intDiv`, `modulo` and `positiveModulo` throw on a zero divisor, and so does `divide` on decimals.
 template <class FuncName>
 constexpr bool throws_on_zero_divisor = std::is_same_v<FuncName, DivideName> || std::is_same_v<FuncName, ModuloName>
     || std::is_same_v<FuncName, PositiveModuloName> || std::is_same_v<FuncName, IntDivName>;
