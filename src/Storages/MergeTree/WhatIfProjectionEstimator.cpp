@@ -691,6 +691,16 @@ std::optional<ProjectionDescription> refreshHypotheticalProjection(
     /// are not the ones stored at CREATE time, and a denial here must not read as drift
     if (!fresh->required_columns.empty())
         context->checkAccess(AccessType::SELECT, data.getStorageID(), fresh->required_columns);
+
+    try
+    {
+        ProjectionDescription::validateDeclaredColumnCodecs(*fresh, context, LoadingStrictnessLevel::CREATE);
+    }
+    catch (const Exception &)
+    {
+        reason = "Hypothetical projection can no longer be added to this table: " + getCurrentExceptionMessage(false);
+        return std::nullopt;
+    }
     return fresh;
 }
 
