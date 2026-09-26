@@ -5,10 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -35,7 +32,6 @@ namespace DB
 namespace ErrorCodes
 {
 
-extern const int ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER;
 extern const int LOGICAL_ERROR;
 
 }
@@ -50,10 +46,11 @@ struct MemorySourceFilter
     {
         ExpressionActionsPtr actions;
         String filter_column_name;
+        /// A filter column that is kept holds its own values for the passing rows, as in
+        /// `MergeTreeRangeReader`. It must not be replaced by a constant, like the header in
+        /// `SourceStepWithFilter::applyPrewhereActions` is: for `PREWHERE k` it is the column `k`
+        /// itself, which is not read again.
         bool remove_filter_column = false;
-        /// Mirrors the header-side constant replacement in `SourceStepWithFilter::applyPrewhereActions`:
-        /// set for a PREWHERE step that filters but keeps its filter column.
-        bool replace_filter_to_constant = false;
     };
 
     std::vector<Step> steps;
@@ -302,12 +299,8 @@ private:
                 num_rows = num_passed_rows;
             }
 
-            /// Mirror `SourceStepWithFilter::applyPrewhereActions`, which shaped the output header.
             if (step.remove_filter_column)
                 block.erase(filter_column_position);
-            else if (step.replace_filter_to_constant)
-                block.getByPosition(filter_column_position).column
-                    = makeConstantFilterColumn(block.getByPosition(filter_column_position).type, num_rows);
         }
 
         if (has_deferred_columns)
@@ -339,16 +332,6 @@ private:
 
         progress(num_src_rows, num_read_bytes);
         return Chunk(block.getColumns(), num_rows);
-    }
-
-    static ColumnPtr makeConstantFilterColumn(const DataTypePtr & type, size_t num_rows)
-    {
-        WhichDataType which(removeNullable(recursiveRemoveLowCardinality(type)));
-        if (which.isNativeInt() || which.isNativeUInt())
-            return type->createColumnConst(num_rows, 1u)->convertToFullColumnIfConst();
-        if (which.isFloat())
-            return type->createColumnConst(num_rows, 1.0f)->convertToFullColumnIfConst();
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Illegal type {} of column for filter", type->getName());
     }
 
     void fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
@@ -465,7 +448,6 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
             .actions = std::make_shared<ExpressionActions>(row_level_filter.actions.clone(), actions_settings),
             .filter_column_name = row_level_filter.column_name,
             .remove_filter_column = row_level_filter.do_remove_column,
-            .replace_filter_to_constant = false,
         });
     }
 
@@ -476,7 +458,6 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
             .actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone(), actions_settings),
             .filter_column_name = prewhere_info.prewhere_column_name,
             .remove_filter_column = prewhere_info.remove_prewhere_column,
-            .replace_filter_to_constant = !prewhere_info.remove_prewhere_column && prewhere_info.need_filter,
         });
     }
 
