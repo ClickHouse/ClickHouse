@@ -18,6 +18,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool exact_rows_before_limit;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool optimize_trivial_group_by_limit_query;
 }
@@ -87,6 +88,12 @@ bool hasArrayJoinFunctionNode(const QueryTreeNodePtr & node)
 std::optional<UInt64> getTrivialGroupByLimit(const QueryNode & query, const Settings & settings)
 {
     if (!settings[Setting::optimize_trivial_group_by_limit_query])
+        return std::nullopt;
+
+    /// `exact_rows_before_limit` promises the exact number of rows before `LIMIT` in
+    /// `rows_before_limit_at_least`, which is the number of groups. Capping the aggregation at
+    /// `LIMIT + OFFSET` groups would report at most that many.
+    if (settings[Setting::exact_rows_before_limit])
         return std::nullopt;
 
     if (!query.hasGroupBy() || !query.hasLimit() || query.hasHaving() || query.hasOrderBy() || query.hasWindow()
