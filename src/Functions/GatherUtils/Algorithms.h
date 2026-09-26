@@ -11,6 +11,8 @@
 #include <Functions/GatherUtils/sliceEqualElements.h>
 #include <Functions/GatherUtils/sliceHasImplAnyAll.h>
 
+#include <limits>
+
 
 namespace DB::ErrorCodes
 {
@@ -197,6 +199,97 @@ void NO_INLINE concat(SourceA && src_a, SourceB && src_b, Sink && sink)
         src_a.next();
         src_b.next();
     }
+}
+
+template <typename Position>
+[[noreturn]] [[gnu::cold]] NO_INLINE void throwInsertPositionOutOfBounds(Position position, size_t array_size)
+{
+    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "Array insertion position {} is out of bounds for an array of size {}", position, array_size);
+}
+
+inline UInt64 getMaxInsertPosition(size_t array_size)
+{
+    if (array_size == std::numeric_limits<UInt64>::max())
+        return std::numeric_limits<UInt64>::max();
+    return static_cast<UInt64>(array_size) + 1;
+}
+
+inline size_t normalizeInsertPosition(Int64 position, size_t array_size)
+{
+    if (position < 0)
+    {
+        const UInt64 from_end = static_cast<UInt64>(-(position + 1));
+        if (unlikely(from_end > array_size))
+            throwInsertPositionOutOfBounds(position, array_size);
+        return array_size - static_cast<size_t>(from_end);
+    }
+
+    if (unlikely(position == 0 || static_cast<UInt64>(position) > getMaxInsertPosition(array_size)))
+        throwInsertPositionOutOfBounds(position, array_size);
+
+    return static_cast<size_t>(position - 1);
+}
+
+inline size_t normalizeInsertPosition(UInt64 position, size_t array_size)
+{
+    if (unlikely(position == 0 || position > getMaxInsertPosition(array_size)))
+        throwInsertPositionOutOfBounds(position, array_size);
+
+    return static_cast<size_t>(position - 1);
+}
+
+template <typename Position, typename Source, typename ValueSource, typename Sink>
+void NO_INLINE insertConstantPositionImpl(Source && array_source, ValueSource && value_source, Sink && sink, Position position)
+{
+    sink.reserve(array_source.getSizeForReserve() + value_source.getSizeForReserve());
+
+    while (!array_source.isEnd())
+    {
+        const size_t insert_position = normalizeInsertPosition(position, array_source.getElementSize());
+        writeSlice(array_source.getSliceFromLeft(0, insert_position), sink);
+        writeSlice(value_source.getWhole(), sink);
+        writeSlice(array_source.getSliceFromLeft(insert_position), sink);
+
+        sink.next();
+        array_source.next();
+        value_source.next();
+    }
+}
+
+template <bool position_is_unsigned, typename Source, typename ValueSource, typename Sink>
+void insertDynamicPositionImpl(Source && array_source, ValueSource && value_source, Sink && sink, const IColumn & position_column)
+{
+    sink.reserve(array_source.getSizeForReserve() + value_source.getSizeForReserve());
+
+    while (!array_source.isEnd())
+    {
+        const auto row_num = array_source.rowNum();
+        const auto array_size = array_source.getElementSize();
+        size_t insert_position = 0;
+        if constexpr (position_is_unsigned)
+            insert_position = normalizeInsertPosition(position_column.getUInt(row_num), array_size);
+        else
+            insert_position = normalizeInsertPosition(position_column.getInt(row_num), array_size);
+
+        writeSlice(array_source.getSliceFromLeft(0, insert_position), sink);
+        writeSlice(value_source.getWhole(), sink);
+        writeSlice(array_source.getSliceFromLeft(insert_position), sink);
+
+        sink.next();
+        array_source.next();
+        value_source.next();
+    }
+}
+
+template <typename Source, typename ValueSource, typename Sink>
+void NO_INLINE insertDynamicPositionImpl(
+    Source && array_source, ValueSource && value_source, Sink && sink, const IColumn & position_column, bool position_is_unsigned)
+{
+    if (position_is_unsigned)
+        insertDynamicPositionImpl<true>(array_source, value_source, sink, position_column);
+    else
+        insertDynamicPositionImpl<false>(array_source, value_source, sink, position_column);
 }
 
 template <typename Source, typename Sink>
