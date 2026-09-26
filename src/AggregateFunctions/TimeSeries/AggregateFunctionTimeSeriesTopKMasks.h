@@ -40,16 +40,28 @@ enum class TimeSeriesTopKMasksKind : UInt8
     LimitK,  /// At each time step keep the k series with the smallest sampling keys among those having a value.
 };
 
-/// State of the `timeSeries{TopK,BottomK,LimitK}Masks` aggregate functions: one bounded heap per time step, O(number_of_time_steps * k) in total.
+/// A candidate series at one time step: `rank` is what candidates are compared by, `key` identifies the series,
+/// and `sampling_key` breaks a tie between equal ranks; it is a field of its own only where it is not already `rank`.
+template <typename RankType, bool store_sampling_key>
+struct TimeSeriesTopKMasksEntry
+{
+    RankType rank;
+    UInt64 key;
+    UInt64 sampling_key;
+};
+
 template <typename RankType>
+struct TimeSeriesTopKMasksEntry<RankType, false>
+{
+    RankType rank;
+    UInt64 key;
+};
+
+/// State of the `timeSeries{TopK,BottomK,LimitK}Masks` aggregate functions: one bounded heap per time step, O(number_of_time_steps * k) in total.
+template <typename RankType, bool store_sampling_key>
 struct AggregateFunctionTimeSeriesTopKMasksData
 {
-    /// A candidate series at one time step: `rank` is what candidates are compared by, `key` identifies the series.
-    struct Entry
-    {
-        RankType rank;
-        UInt64 key;
-    };
+    using Entry = TimeSeriesTopKMasksEntry<RankType, store_sampling_key>;
 
     /// A binary heap of at most k entries with the worst kept entry at the front (see `better()` in the aggregate function).
     using Heap = VectorWithMemoryTracking<Entry>;
@@ -65,25 +77,33 @@ struct AggregateFunctionTimeSeriesTopKMasksData
 };
 
 /// Implements timeSeries{TopK,BottomK,LimitK}Masks(k, key[, sampling_key], values): bounded per-step selection of series for PromQL topk/bottomk/limitk (the semantics are documented with the factory registration in the .cpp file).
-template <TimeSeriesTopKMasksKind kind, typename ValueType>
+/// `store_sampling_key` is set only for the 4-argument `topk`/`bottomk`, the one variant whose entries need the sampling key as a field of their own.
+template <TimeSeriesTopKMasksKind kind, typename ValueType, bool store_sampling_key>
 class AggregateFunctionTimeSeriesTopKMasks final :
     public IAggregateFunctionDataHelper<
-        AggregateFunctionTimeSeriesTopKMasksData<std::conditional_t<kind == TimeSeriesTopKMasksKind::LimitK, UInt64, Float64>>,
-        AggregateFunctionTimeSeriesTopKMasks<kind, ValueType>>
+        AggregateFunctionTimeSeriesTopKMasksData<std::conditional_t<kind == TimeSeriesTopKMasksKind::LimitK, UInt64, Float64>, store_sampling_key>,
+        AggregateFunctionTimeSeriesTopKMasks<kind, ValueType, store_sampling_key>>
 {
 public:
     /// For `topk` and `bottomk` candidates are ranked by their Float64 value, for `limitk` by their UInt64 sampling key.
     using RankType = std::conditional_t<kind == TimeSeriesTopKMasksKind::LimitK, UInt64, Float64>;
 
-    using Data = AggregateFunctionTimeSeriesTopKMasksData<RankType>;
+    using Data = AggregateFunctionTimeSeriesTopKMasksData<RankType, store_sampling_key>;
     using Entry = typename Data::Entry;
     using Heap = typename Data::Heap;
-    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionTimeSeriesTopKMasks<kind, ValueType>>;
+    using Base = IAggregateFunctionDataHelper<Data, AggregateFunctionTimeSeriesTopKMasks<kind, ValueType, store_sampling_key>>;
+
+    static_assert(!(store_sampling_key && kind == TimeSeriesTopKMasksKind::LimitK), "`limitk` ranks by the sampling key, so its `rank` already is it");
+    /// The state is O(number_of_time_steps * k) entries, so only the variant which needs the sampling key may pay for it.
+    static_assert(sizeof(Entry) == (store_sampling_key ? 24 : 16), "the entries of the bounded heaps must not grow");
 
     static constexpr UInt8 FORMAT_VERSION = 1;
 
-    /// The arguments are (k, key, values) for `topk` and `bottomk`, and (k, key, sampling_key, values) for `limitk`.
-    static constexpr size_t values_argument_index = (kind == TimeSeriesTopKMasksKind::LimitK) ? 3 : 2;
+    /// `sampling_key` is required for `limitk`, which ranks by it, and optional for `topk` and `bottomk`,
+    /// which rank by value and use it only to break a tie.
+    static constexpr bool has_sampling_key = store_sampling_key || kind == TimeSeriesTopKMasksKind::LimitK;
+    static constexpr size_t sampling_key_argument_index = 2;
+    static constexpr size_t values_argument_index = has_sampling_key ? 3 : 2;
 
     static constexpr const char * getNameImpl()
     {
@@ -112,6 +132,9 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    /// Only `topk` and `bottomk` keep the sampling key of their own; see `serialize`.
+    static constexpr bool writesSamplingKey() { return store_sampling_key; }
+
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         const UInt64 key = columns[1]->getUInt(row_num);
@@ -137,8 +160,8 @@ public:
             checkStateMatchesRow(state, num_steps, columns, row_num);
 
         [[maybe_unused]] UInt64 sampling_key = 0;
-        if constexpr (kind == TimeSeriesTopKMasksKind::LimitK)
-            sampling_key = columns[2]->getUInt(row_num);
+        if constexpr (has_sampling_key)
+            sampling_key = columns[sampling_key_argument_index]->getUInt(row_num);
 
         for (size_t t = 0; t != num_steps; ++t)
         {
@@ -148,6 +171,8 @@ public:
 
             Entry entry;
             entry.key = key;
+            if constexpr (store_sampling_key)
+                entry.sampling_key = sampling_key;
             if constexpr (kind == TimeSeriesTopKMasksKind::LimitK)
                 entry.rank = sampling_key;
             else
@@ -202,6 +227,9 @@ public:
             {
                 writeBinaryLittleEndian(entry.rank, buf);
                 writeBinaryLittleEndian(entry.key, buf);
+                /// `limitk` ranks by the sampling key, so its state already carries it in `rank`.
+                if constexpr (writesSamplingKey())
+                    writeBinaryLittleEndian(entry.sampling_key, buf);
             }
         }
     }
@@ -254,6 +282,8 @@ public:
                 Entry entry;
                 readBinaryLittleEndian(entry.rank, buf);
                 readBinaryLittleEndian(entry.key, buf);
+                if constexpr (writesSamplingKey())
+                    readBinaryLittleEndian(entry.sampling_key, buf);
                 heap.push_back(entry);
             }
         }
@@ -324,7 +354,13 @@ private:
                 return (kind == TimeSeriesTopKMasksKind::TopK) ? (a.rank > b.rank) : (a.rank < b.rank);
             }
         }
-        /// Deterministic tie-breaking: prefer the series with the smaller key.
+        /// A tie is broken by the sampling key, a hash of the series' tags, so the winner does not depend
+        /// on the order the rows were read in; `key` is the group number, which is assigned in that order.
+        if constexpr (store_sampling_key)
+        {
+            if (a.sampling_key != b.sampling_key)
+                return a.sampling_key < b.sampling_key;
+        }
         return a.key < b.key;
     }
 
