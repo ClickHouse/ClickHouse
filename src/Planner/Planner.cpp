@@ -121,7 +121,6 @@ namespace Setting
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool query_cache_for_subqueries;
-    extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_group_by_top_k_optimization;
@@ -3262,7 +3261,7 @@ void Planner::buildPlanForQueryNode()
         }
         else
         {
-            const bool write_to_memory_cache = settings[Setting::enable_writes_to_query_cache];
+            const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(query_context);
             QueryResultCacheOnDiskPtr write_to_on_disk_cache
                 = (query_result_cache_on_disk && query_result_cache_on_disk->writesEnabled()) ? query_result_cache_on_disk : nullptr;
 

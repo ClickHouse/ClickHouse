@@ -187,7 +187,6 @@ namespace Setting
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool enable_reads_from_query_cache;
-    extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsString framing_output_format;
     extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
@@ -3070,8 +3069,9 @@ static BlockIO executeQueryImpl(
         /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
         /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
         /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
-        /// another overflow mode.
-        if (settings[Setting::use_query_cache] && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
+        /// another overflow mode. This is only needed if some backend can actually store the result (e.g. not in `clickhouse-local` with
+        /// `enable_writes_to_query_cache_on_disk = 0`, where the in-memory cache is disabled).
+        if (settings[Setting::use_query_cache] && hasQueryResultCacheWriteBackend(context, query_result_cache_on_disk) && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
             || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
             || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
             || settings[Setting::sort_overflow_mode] != OverflowMode::THROW
@@ -3260,7 +3260,7 @@ static BlockIO executeQueryImpl(
                                 settings[Setting::query_cache_compress_entries],
                                 /* is_subquery = */ false);
 
-                            const bool write_to_memory_cache = settings[Setting::enable_writes_to_query_cache];
+                            const bool write_to_memory_cache = canWriteToQueryResultCacheInMemory(context);
                             QueryResultCacheOnDiskPtr write_to_on_disk_cache
                                 = (query_result_cache_on_disk && query_result_cache_on_disk->writesEnabled()) ? query_result_cache_on_disk : nullptr;
 

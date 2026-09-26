@@ -24,11 +24,18 @@ class QueryResultCacheReader;
 class QueryResultCacheOnDisk;
 using QueryResultCacheOnDiskPtr = std::shared_ptr<const QueryResultCacheOnDisk>;
 
+/// Is the in-memory query result cache enabled for writes by the settings and able to store entries under the server configuration?
+bool canWriteToQueryResultCacheInMemory(ContextPtr context);
+
+/// Can any backend of the query result cache store the result of the query? A configured but unavailable on-disk backend does not count,
+/// and neither does an in-memory cache with zero limits.
+bool hasQueryResultCacheWriteBackend(ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache);
+
 /// Checks that query cache can be used for query.
 /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
 /// Throws if ast contains non-deterministic functions or system tables and appropriate handling setting is set to throw.
 /// `on_disk_cache` is the on-disk query result cache backend resolved for the query (nullptr if there is none): the checks must apply
-/// only if some backend actually accepts writes, and a configured but unavailable on-disk backend does not count.
+/// only if some backend actually accepts writes (see `hasQueryResultCacheWriteBackend`).
 /// When skip_context_check is true, the context's canUseQueryResultCache flag is not checked.
 /// This is used for explicit per-subquery opt-in where the subquery has SETTINGS use_query_cache = true
 /// but the outer query context may not have the flag set.
@@ -172,6 +179,10 @@ public:
         QueryResultCacheOnDiskPtr on_disk_cache = nullptr);
 
     void clear(const std::optional<String> & tag);
+
+    /// Can the in-memory cache store an entry at all under the current server configuration? It can not if one of its limits is 0,
+    /// e.g. in `clickhouse-local` or with `query_cache.max_size_in_bytes = 0`.
+    bool canStoreEntries() const;
 
     size_t maxSizeInBytes() const;
     size_t sizeInBytes() const;

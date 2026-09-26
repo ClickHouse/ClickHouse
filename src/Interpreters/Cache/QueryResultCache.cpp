@@ -230,16 +230,27 @@ static bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
     return finder_data.has_system_tables;
 }
 
+bool canWriteToQueryResultCacheInMemory(ContextPtr context)
+{
+    if (!context->getSettingsRef()[Setting::enable_writes_to_query_cache])
+        return false;
+    QueryResultCachePtr query_result_cache = context->getQueryResultCache();
+    return query_result_cache && query_result_cache->canStoreEntries();
+}
+
+bool hasQueryResultCacheWriteBackend(ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache)
+{
+    /// Judge both backends by what can actually receive a write, not by the raw settings: an in-memory cache with zero limits
+    /// (e.g. in `clickhouse-local`) or a configured but unavailable on-disk backend (e.g. a filesystem cache which is not initialized
+    /// yet) never stores anything, so it must not trigger the checks which protect against storing wrong results.
+    return canWriteToQueryResultCacheInMemory(context) || (on_disk_cache && on_disk_cache->writesEnabled());
+}
+
 bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, QueryResultCacheOnDiskPtr on_disk_cache, bool skip_context_check)
 {
     const Settings & settings = context->getSettingsRef();
 
-    const bool writes_to_memory_cache_enabled = settings[Setting::enable_writes_to_query_cache];
-    /// Judge the on-disk backend by the resolved object, not by the raw settings: a configured but unavailable backend
-    /// (e.g. a filesystem cache which is not initialized yet) never receives a write, so it must not trigger the checks below.
-    const bool writes_to_on_disk_cache_enabled = on_disk_cache && on_disk_cache->writesEnabled();
-
-    if ((skip_context_check || context->getCanUseQueryResultCache()) && (writes_to_memory_cache_enabled || writes_to_on_disk_cache_enabled))
+    if ((skip_context_check || context->getCanUseQueryResultCache()) && hasQueryResultCacheWriteBackend(context, on_disk_cache))
     {
         const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
         const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
@@ -1094,6 +1105,16 @@ void QueryResultCache::clear(const std::optional<String> & tag)
 
     std::lock_guard lock(mutex);
     times_executed.clear();
+}
+
+bool QueryResultCache::canStoreEntries() const
+{
+    {
+        std::lock_guard lock(mutex);
+        if (max_entry_size_in_bytes == 0)
+            return false;
+    }
+    return cache.maxSizeInBytes() != 0 && cache.maxCount() != 0;
 }
 
 size_t QueryResultCache::maxSizeInBytes() const

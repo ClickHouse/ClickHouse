@@ -275,7 +275,9 @@ SETTINGS use_query_cache = true, query_cache_on_disk_cache_name = 'query_results
 The query cache on disk works independently of the in-memory query cache and can separately be enabled for reads and/or writes using
 settings `enable_reads_from_query_cache_on_disk` and `enable_writes_to_query_cache_on_disk` (both `true`
 by default). If reads are enabled for both caches, the lookup is attempted first from memory and only on a miss from disk. If writes
-are enabled for both caches, the result is stored in both. Entries on disk are compressed with the codec specified by setting
+are enabled for both caches, the result is stored in both. If no cache can store the result (e.g. in `clickhouse-local`, which has no
+in-memory query cache, with `enable_writes_to_query_cache_on_disk = false`), the query is not rejected because of non-deterministic
+functions, system tables, or a non-`throw` overflow mode: these checks only protect against storing wrong results. Entries on disk are compressed with the codec specified by setting
 `query_cache_on_disk_codec` (`ZSTD(3)` by default). The server settings `max_entry_size_in_bytes` and `max_entry_size_in_rows` of the
 query cache limit the entries of both backends; each backend measures an entry the way it stores it, so on disk the byte limit applies to
 the serialized, compressed entry. All
