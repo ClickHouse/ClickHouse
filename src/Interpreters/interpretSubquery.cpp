@@ -13,6 +13,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/interpretSubquery.h>
 
 namespace DB
@@ -30,15 +31,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
-    const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns)
+namespace
 {
-    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth);
-    return interpretSubquery(table_expression, context, required_source_columns, subquery_options);
-}
 
-std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
-    const ASTPtr & table_expression, ContextPtr context, const Names & required_source_columns, const SelectQueryOptions & options)
+/// The subquery, the context it is interpreted in and the options to interpret it with,
+/// shared by every interpreter below.
+struct PreparedSubquery
+{
+    ASTPtr query;
+    ContextMutablePtr context;
+    SelectQueryOptions options;
+};
+
+PreparedSubquery prepareSubquery(
+    const ASTPtr & table_expression, const ContextPtr & context, const SelectQueryOptions & options)
 {
     if (auto * expr = table_expression->as<ASTTableExpression>())
     {
@@ -50,7 +56,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         else if (expr->database_and_table_name)
             table = expr->database_and_table_name;
 
-        return interpretSubquery(table, context, required_source_columns, options);
+        return prepareSubquery(table, context, options);
     }
 
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
@@ -124,7 +130,33 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         subquery_options.removeDuplicates();
     }
 
-    return std::make_shared<InterpreterSelectWithUnionQuery>(query, subquery_context, subquery_options, required_source_columns);
+    return PreparedSubquery{std::move(query), std::move(subquery_context), std::move(subquery_options)};
+}
+
+}
+
+std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+    const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns)
+{
+    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth);
+    return interpretSubquery(table_expression, context, required_source_columns, subquery_options);
+}
+
+std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+    const ASTPtr & table_expression, ContextPtr context, const Names & required_source_columns, const SelectQueryOptions & options)
+{
+    auto prepared = prepareSubquery(table_expression, context, options);
+    return std::make_shared<InterpreterSelectWithUnionQuery>(
+        prepared.query, prepared.context, prepared.options, required_source_columns);
+}
+
+std::shared_ptr<InterpreterSelectQueryAnalyzer> interpretSubqueryWithAnalyzer(
+    const ASTPtr & table_expression, ContextPtr context, size_t subquery_depth, const Names & required_source_columns)
+{
+    auto prepared = prepareSubquery(
+        table_expression, context, SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth));
+    return std::make_shared<InterpreterSelectQueryAnalyzer>(
+        prepared.query, prepared.context, prepared.options, required_source_columns);
 }
 
 }
