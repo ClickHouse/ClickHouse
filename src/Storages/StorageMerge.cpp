@@ -364,7 +364,10 @@ bool tryReduceNeutralSumChild(
     const auto & header = candidate_plan.getCurrentHeader();
     candidate_plan.addStep(std::make_unique<ExpressionStep>(header, ActionsDAG(header->getNamesAndTypesList())));
     DistinctStep::Settings distinct_settings(context->getSettingsRef());
-    distinct_settings.set_size_limits.overflow_mode = OverflowMode::THROW;
+    /// This query has no user-requested `DISTINCT`. Its row/byte limits must
+    /// not introduce failures or truncate the grouping keys. Keep the spill
+    /// settings and query-wide memory limits, but remove the distinct-set caps.
+    distinct_settings.set_size_limits = SizeLimits(0, 0, OverflowMode::THROW);
     candidate_plan.addStep(std::make_unique<DistinctStep>(
         candidate_plan.getCurrentHeader(), distinct_settings, 0, info.keys, false));
 
