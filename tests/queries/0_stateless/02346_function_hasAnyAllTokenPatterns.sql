@@ -116,6 +116,18 @@ SELECT
     countIf(hasAllTokenLike(s, ['a%c', 'b%']))
 FROM (SELECT arrayStringConcat(arrayMap(x -> ['ab', 'abc', 'bac', 'ca', 'aac', ' ', '-'][(x * 3 + number) % 7 + 1], range(number % 6)), '') AS s FROM numbers(1000));
 
+SELECT '-- same as arrayExists over tokens for LIKE patterns compared as bytes';
+SELECT
+    countIf(hasAnyTokenLike(s, '%\\%', 'splitByString([\' \'])') != arrayExists(t -> like(t, '%\\%'), tokens(s, 'splitByString([\' \'])'))),
+    countIf(hasAnyTokenLike(s, 'a\\_%', 'splitByString([\' \'])') != arrayExists(t -> like(t, 'a\\_%'), tokens(s, 'splitByString([\' \'])'))),
+    countIf(hasAnyTokenLike(s, '%%\\\\%%', 'splitByString([\' \'])') != arrayExists(t -> like(t, '%%\\\\%%'), tokens(s, 'splitByString([\' \'])'))),
+    countIf(hasAnyTokenLike(s, '%é', 'splitByString([\' \'])') != arrayExists(t -> like(t, '%é'), tokens(s, 'splitByString([\' \'])'))),
+    countIf(hasAllTokenLike(s, ['x', '%\\%'], 'splitByString([\' \'])') != (arrayExists(t -> like(t, 'x'), tokens(s, 'splitByString([\' \'])')) AND arrayExists(t -> like(t, '%\\%'), tokens(s, 'splitByString([\' \'])')))),
+    countIf(hasAnyTokenLike(s, '%\\%', 'splitByString([\' \'])')),
+    countIf(hasAllTokenLike(s, ['x', '%\\%'], 'splitByString([\' \'])'))
+FROM (SELECT arrayStringConcat(arrayMap(x -> ['a%', '%a', 'a_', 'a\\', '\\', 'a%b', 'é', 'aé', 'x'][(x * 5 + number * 2) % 9 + 1], range(number % 5)), ' ') AS s FROM numbers(1000));
+SELECT hasAnyTokenLike('ab', 'a\\'); -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
+
 SELECT '-- many blocks and threads with a stateful tokenizer';
 SELECT
     countIf(hasAnyTokenPrefix(s, '12', 'sparseGrams(3, 5)') != arrayExists(t -> startsWith(t, '12'), tokens(s, 'sparseGrams', 3, 5))),

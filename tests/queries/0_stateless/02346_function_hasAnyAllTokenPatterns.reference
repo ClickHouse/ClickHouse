@@ -90,6 +90,8 @@
 -- same as arrayExists over tokens
 0	0	0	800
 0	0	0	0	118
+-- same as arrayExists over tokens for LIKE patterns compared as bytes
+0	0	0	0	0	223	67
 -- many blocks and threads with a stateful tokenizer
 0	0	0	7110	7122	7122
 0	0	13880	3037
