@@ -10,6 +10,8 @@ ClickHouse Cloud supports taking backups to your own cloud service provider (CSP
 For details of how ClickHouse Cloud backups work, including "full" vs. "incremental" backups, see the [backups](/products/cloud/guides/backups/review-and-restore-backups) docs. Note that
 backups to your own cloud account behave differently from in-place Cloud backups in one important way: they cannot use native copy (see the note below).
 
+Exporting backups to your own account does not normally disable ClickHouse-managed backups. ClickHouse-managed backups cannot be disabled through self-service. Any exception requires ClickHouse approval and contractual changes; contact [ClickHouse Support](https://clickhouse.com/support/program) to discuss your requirements.
+
 In this guide, we show examples of how to take full and incremental backups to AWS, GCP, Azure object storage as well as how to restore from the backups.
 
 <Note>
