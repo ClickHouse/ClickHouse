@@ -111,7 +111,6 @@ MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilterText::getGranuleAndR
         index_name, index_columns.size(), params);
     new_granule.swap(granule);
 
-    /// The remembered tokens were added to the bloom filters of the granule given away.
     added_tokens.clear();
     repeated_tokens += remembered_hits;
     if (repeated_tokens)
@@ -129,8 +128,6 @@ void MergeTreeIndexAggregatorBloomFilterText::addTokens(std::string_view documen
 {
     auto & bloom_filter = granule->bloom_filters[col];
 
-    /// The first tokens of a granule are added directly: remembering tokens pays off only in a granule
-    /// big enough for them to repeat.
     static constexpr size_t min_tokens_to_remember = 1024;
     if (tokens_in_granule < min_tokens_to_remember || !remember_tokens)
     {
@@ -150,8 +147,6 @@ void MergeTreeIndexAggregatorBloomFilterText::addTokens(std::string_view documen
     const char * begin = document.data();
     const char * end = begin + document.size();
 
-    /// A lookup costs a fraction of hashing a token. If fewer tokens repeat, e.g. in a large vocabulary,
-    /// the rest of the granule is added directly.
     static constexpr size_t lookups_per_check = 4096;
     static constexpr size_t min_hits_per_check = lookups_per_check / 4;
 

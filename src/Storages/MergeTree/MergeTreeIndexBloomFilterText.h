@@ -40,24 +40,19 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
 
 using MergeTreeIndexGranuleBloomFilterTextPtr = std::shared_ptr<MergeTreeIndexGranuleBloomFilterText>;
 
-/// Short tokens already added to one bloom filter. Adding a token again sets the same bits,
-/// so a repeated token can be skipped without hashing it. Tokens repeat heavily within a granule
-/// (the same words and n-grams recur in most rows), and hashing dominates building the filter.
-/// Only tokens of 1 to 7 bytes are remembered: such a token and its size fit into one 64-bit key,
-/// so the lookup is exact. A slot keeps the last token hashed to it; a miss only means adding again.
+/// Short tokens already added to one bloom filter. Adding a token again sets the same bits, so a repeat can be skipped.
+/// A key holds a token of 1 to 7 bytes and its size, so a hit is exact.
 class BloomFilterAddedTokens
 {
 public:
     static constexpr size_t max_token_size = 7;
-    /// A key holds the token bytes below the size, so a token must be shorter than the key.
     static_assert(max_token_size < sizeof(UInt64));
 
-    /// Remembers the token, which lies within [begin, end). Returns whether it was remembered already.
+    /// Returns true if the token is already remembered, otherwise remembers it and returns false.
     ALWAYS_INLINE bool checkAndRemember(const char * token, size_t size, const char * begin, const char * end)
     {
         chassert(size >= 1 && size <= max_token_size);
 
-        /// A whole word is loaded when it lies within the document, otherwise the token is copied.
         const auto token_address = reinterpret_cast<uintptr_t>(token);
         const auto begin_address = reinterpret_cast<uintptr_t>(begin);
         const auto end_address = reinterpret_cast<uintptr_t>(end);
@@ -106,7 +101,6 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
 
     void update(const Block & block, size_t * pos, size_t limit) override;
 
-    /// Adds the tokens of the document to the bloom filter of the index column in the current granule.
     void addTokens(std::string_view document, size_t col);
 
     Names index_columns;
@@ -118,9 +112,7 @@ struct MergeTreeIndexAggregatorBloomFilterText final : IMergeTreeIndexAggregator
 
     MergeTreeIndexGranuleBloomFilterTextPtr granule;
 
-    /// Tokens added to the bloom filters of the current granule, per index column. They are remembered only
-    /// after a granule has taken a thousand tokens, so a small granule does not use them, and
-    /// only while enough of them repeat to pay for the lookups.
+    /// Tokens added to the bloom filters of the current granule, per index column.
     std::vector<BloomFilterAddedTokens> added_tokens;
     size_t tokens_in_granule = 0;
     bool remember_tokens = true;
