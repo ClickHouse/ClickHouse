@@ -676,7 +676,7 @@ private:
 
     /// Lookup the part for the entry in the detached/ folder.
     /// returns nullptr if the part is corrupt or missing.
-    MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry& entry, PartsTemporaryRename & rename_parts) const;
+    MutableDataPartPtr attachPartHelperFoundValidPart(const LogEntry & entry, PartsTemporaryRename & rename_parts, bool exact_part_name = false) const;
 
     void executeDropRange(const LogEntry & entry);
 
@@ -784,6 +784,7 @@ private:
     /** Download the specified part from the specified replica.
       * If `to_detached`, the part is placed in the `detached` directory.
       * If quorum != 0, then the node for tracking the quorum is updated.
+      * If `try_attach_from_detached`, a matching local part is attached instead of downloaded.
       * Returns false if part is already fetching right now.
       */
     bool fetchPart(
@@ -794,7 +795,8 @@ private:
         bool to_detached,
         size_t quorum,
         zkutil::ZooKeeper::Ptr zookeeper_ = nullptr,
-        bool try_fetch_shared = true);
+        bool try_fetch_shared = true,
+        bool try_attach_from_detached = false);
 
     /** Download the specified part from the specified replica.
       * Used for replace local part on the same s3-shared part in hybrid storage.
