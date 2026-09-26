@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-ClickPipes prend en charge l’intégration à un registre de schémas afin de décoder des topics encodés en Avro et en Protobuf.
+ClickPipes prend en charge l’intégration à un registre de schémas afin de décoder des valeurs d’enregistrement encodées en Avro et en Protobuf ainsi que des [clés Kafka structurées](/fr/integrations/clickpipes/kafka/reference#structured-message-keys).
 
 <div id="supported-schema-registries">
   ## Registres pris en charge pour les Kafka ClickPipes
@@ -59,11 +59,13 @@ Gardez les points suivants à l’esprit :
 
 ClickPipes récupère et applique dynamiquement le schéma à partir du registre de schémas configuré.
 
-* Si un ID de schéma est inclus dans le message, il sera utilisé pour récupérer le schéma.
-* Si aucun ID de schéma n&#39;est inclus dans le message, l&#39;ID de schéma ou le nom du sujet spécifié dans la configuration du ClickPipe sera utilisé pour récupérer le schéma.
-* Si le message est écrit sans ID de schéma inclus et qu&#39;aucun ID de schéma ni nom du sujet n&#39;est spécifié dans la configuration du ClickPipe, le schéma ne sera pas récupéré et le message sera ignoré, avec une `SOURCE_SCHEMA_ERROR` consignée dans la table d’erreurs de ClickPipes.
-* Si le message n&#39;est pas conforme au schéma, il sera ignoré, avec une `DATA_PARSING_ERROR` consignée dans la table d’erreurs de ClickPipes.
+* Si un ID de schéma est inclus dans la valeur de l’enregistrement, il sera utilisé pour récupérer le schéma.
+* Si aucun ID de schéma n&#39;est inclus dans la valeur de l’enregistrement, l&#39;ID de schéma ou le nom du sujet spécifié dans la configuration du ClickPipe sera utilisé pour récupérer le schéma.
+* Si la valeur de l’enregistrement est écrite sans ID de schéma inclus et qu&#39;aucun ID de schéma ni nom du sujet n&#39;est spécifié dans la configuration du ClickPipe, le schéma ne sera pas récupéré et le message sera ignoré, avec une `SOURCE_SCHEMA_ERROR` consignée dans la table d’erreurs de ClickPipes.
+* Si la valeur de l’enregistrement n&#39;est pas conforme au schéma, il sera ignoré, avec une `DATA_PARSING_ERROR` consignée dans la table d’erreurs de ClickPipes.
 * Pour les schémas Protobuf uniquement : ClickPipes chargera tous les schémas importés définis comme dépendances. Les schémas Avro avec des références externes ne sont pas encore pris en charge.
+
+Lorsque des correspondances pour des champs tels que `_key.id` sont configurées, ClickPipes résout l’ID de schéma inclus dans la clé Kafka indépendamment de la valeur de l’enregistrement. La clé peut utiliser un ID de schéma différent, mais elle doit utiliser la même famille de registres et le même format de sérialisation que la valeur. Les schémas de clé résolus sont mis en cache et les changements de schéma sont détectés automatiquement.
 
 <div id="aws-glue-schema-registry">
   ## AWS Glue Schema Registry
@@ -213,7 +215,7 @@ Utilisez cette option lorsque votre broker ne s’authentifie pas via IAM (SASL/
   ## Mappage de schéma
 </div>
 
-Les règles suivantes s&#39;appliquent aux registres compatibles avec Confluent ainsi qu&#39;à AWS Glue Schema Registry. Elles régissent le mappage entre le schéma récupéré et la table de destination ClickHouse :
+Les règles suivantes s&#39;appliquent aux registres compatibles avec Confluent ainsi qu&#39;à AWS Glue Schema Registry. Elles régissent le mappage entre le schéma de valeur récupéré et la table de destination ClickHouse, et s&#39;appliquent également aux champs d&#39;enregistrement ou de message mappés à partir de clés structurées portant le préfixe `_key.` :
 
 * Si le schéma contient un champ qui n&#39;est pas inclus dans le mappage de destination ClickHouse, ce champ est ignoré.
 * S&#39;il manque au schéma un champ défini dans le mappage de destination ClickHouse, la colonne ClickHouse sera renseignée avec une valeur « zéro », telle que 0 ou une chaîne vide. Notez que les expressions `DEFAULT` ne sont pas prises en charge.

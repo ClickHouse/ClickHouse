@@ -86,11 +86,15 @@ engine = create_engine(
 
 在此模式下，每个绑定值都必须具有与 ClickHouse 兼容的 SQLAlchemy 类型。受支持的 `IN` 列表会变为带类型的 ClickHouse `Array` 参数。如果编译器无法推导出兼容的类型，或无法安全地处理绑定值，就会引发 `CompileError`。
 
+绑定名称必须是 ClickHouse ASCII BareWord 名称。以 `$` 开头和结尾的名称会被拒绝，因为核心驱动程序将其保留用于原始二进制查询参数。
+
 <div id="sqlalchemy-core-queries">
   ## Core 查询
 </div>
 
-该方言支持 SQLAlchemy Core `SELECT` 查询，可使用 JOIN、过滤器、排序、LIMIT 和 OFFSET 以及 `DISTINCT`。
+该方言支持 SQLAlchemy Core `SELECT` 查询，可使用 JOIN、过滤器、排序、LIMIT 和 OFFSET 以及 `DISTINCT` 和复合 SELECT。
+
+SQLAlchemy `union()`、`intersect()` 和 `except_()` 会编译为 ClickHouse `UNION DISTINCT`、`INTERSECT DISTINCT` 和 `EXCEPT DISTINCT`。对应的 `union_all()`、`intersect_all()` 和 `except_all()` 会编译为相应的 `ALL` 运算符。此显式映射可保留 SQLAlchemy 的重复项语义，而不受 ClickHouse 集合操作默认设置的影响。
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -120,6 +124,12 @@ stmt = delete(users).where(users.c.name.like("%temporary%"))
 with engine.connect() as conn:
     conn.execute(stmt)
 ```
+
+<div id="sqlalchemy-literal-rendering">
+  ### 字面量渲染
+</div>
+
+当 SQLAlchemy 通过 `literal_binds` 或 `literal_execute` 内联绑定值时，方言会针对通用 String 类型和 ClickHouse 类型采用 ClickHouse 的引用规则。这同样适用于 `TypeDecorator` 包装器以及 `with_variant()` 选择。即使其他绑定参数保持不变，String 值中的百分号和反斜杠仍会保留。
 
 <div id="sqlalchemy-json-subcolumns">
   ### JSON 子列
@@ -199,6 +209,20 @@ ClickHouse `Select` 方法如下：
 | `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                       |
 | `.ch_join(...)`                          | 带有 `strictness`、`distribution`、`using` 和 `cross` 选项的 ClickHouse JOIN 操作 |
 | `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                       |
+
+SQLAlchemy&#39;s `Select.with_hint()` 是表提示 API。ClickHouse 方言不会渲染表提示。适用的通配符提示或 `clickhousedb` 提示会发出 `SAWarning`，并保持生成的 SQL 不变。对于这些 ClickHouse 子句，请使用 `final()`、`sample()`、`prewhere()` 或 `limit_by()`。
+
+`Select.with_statement_hint()` 是原始尾部指令 API。它会将提供的文本附加到 `SELECT` 末尾，而不进行 ClickHouse 特有的验证。它仍可用于受信任的静态 SQL，例如 `SETTINGS max_threads=1`：
+
+```python
+stmt = select(events.c.id).with_statement_hint("SETTINGS max_threads=1")
+```
+
+对于 ClickHouse 设置，建议优先使用执行选项，以便驱动程序将设置与 SQL 文本分开处理：
+
+```python
+stmt = select(events.c.id).execution_options(settings={"max_threads": 1})
+```
 
 例如，ClickHouse `GLOBAL ANY LEFT JOIN` 可以链式调用，无需嵌套自定义 `FromClause`：
 
@@ -310,6 +334,8 @@ with engine.connect() as conn:
 ```
 
 反射出的列会为 `DEFAULT` 表达式带上 `server_default`，并在存在时包含方言特有的属性，例如 `clickhouse_codec`、`clickhouse_ttl`、`clickhouse_materialized` 和 `clickhouse_alias`。
+
+`DEFAULT`、`MATERIALIZED`、`ALIAS` 和 `TTL` 子句中的 String 值使用 ClickHouse 字符串转义。相同的转义规则也适用于表、字典和列注释，包括 Alembic 生成的注释。
 
 MergeTree 键参数 (如 `order_by`、`partition_by`、`primary_key`、`sample_by` 和 `ttl`) 既接受 SQLAlchemy 列和 SQL 表达式，也接受普通字符串。
 

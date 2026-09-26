@@ -1,0 +1,4 @@
+<test>
+    <query>SELECT sum(length(formatDateTime(toDateTime(1700000000) + number, '%F %T', if(number % 2 = 0, 'Europe/London', 'Europe/Berlin')))) FROM numbers_mt(20000000) SETTINGS max_threads = 1</query>
+    <query>SELECT sum(length(formatDateTime(toDateTime(1700000000) + number, '%F %T', if(number % 2 = 0, 'Europe/London', 'Europe/Berlin')))) FROM numbers_mt(20000000) SETTINGS max_threads = 8</query>
+</test>

@@ -30,27 +30,3 @@ SELECT nullIn(1, materialize(CAST(NULL, 'Nullable(String)')));
 SELECT notNullIn(1, materialize(CAST(NULL, 'Nullable(String)')));
 SELECT nullIn(CAST(materialize(NULL), 'Nullable(UInt8)'), materialize(CAST(NULL, 'Nullable(String)')));
 SELECT nullIn(toNullable(1), materialize(CAST(NULL, 'Nullable(String)')));
-
-SET enable_analyzer = 0;
-
-SET transform_null_in = 1;
-SELECT nullIn(1, materialize('x')); -- { serverError CANNOT_PARSE_TEXT }
-SELECT notNullIn(1, materialize('x')); -- { serverError CANNOT_PARSE_TEXT }
-SELECT nullIn(1, (materialize('x'), materialize('y'))); -- { serverError CANNOT_PARSE_TEXT }
-SELECT nullIn(1, materialize('1'));
-SELECT notNullIn(1, materialize('1'));
-SELECT nullIn(1, materialize(CAST(NULL, 'Nullable(String)')));
-SELECT notNullIn(1, materialize(CAST(NULL, 'Nullable(String)')));
-SELECT nullIn(CAST(materialize(NULL), 'Nullable(UInt8)'), materialize(CAST(NULL, 'Nullable(String)')));
-SELECT nullIn(toNullable(1), materialize(CAST(NULL, 'Nullable(String)')));
-
-SET transform_null_in = 0;
-SELECT nullIn(1, materialize('x')); -- { serverError CANNOT_PARSE_TEXT }
-SELECT notNullIn(1, materialize('x')); -- { serverError CANNOT_PARSE_TEXT }
-SELECT nullIn(1, (materialize('x'), materialize('y'))); -- { serverError CANNOT_PARSE_TEXT }
-SELECT nullIn(1, materialize('1'));
-SELECT notNullIn(1, materialize('1'));
-SELECT nullIn(1, materialize(CAST(NULL, 'Nullable(String)')));
-SELECT notNullIn(1, materialize(CAST(NULL, 'Nullable(String)')));
-SELECT nullIn(CAST(materialize(NULL), 'Nullable(UInt8)'), materialize(CAST(NULL, 'Nullable(String)')));
-SELECT nullIn(toNullable(1), materialize(CAST(NULL, 'Nullable(String)')));

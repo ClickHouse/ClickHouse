@@ -231,8 +231,8 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             {
                 auto type = decodeDataType(in, max_type_complexity);
                 auto serialization = type->getDefaultSerialization();
-                ColumnPtr column = type->createColumn();
-                NativeReader::readData(*serialization, column, in, &format_settings, num_rows, nullptr, nullptr);
+                auto column = type->createColumn();
+                NativeReader::readData(*serialization, *column, in, &format_settings, num_rows, nullptr, nullptr);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }
@@ -265,7 +265,9 @@ static void makeSetsFromStorage(std::list<QueryPlanAndSets::SetFromStorage> sets
         if (!storage_set)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Table {} is not a StorageSet", set.storage_name);
 
-        auto future_set = std::make_shared<FutureSetFromStorage>(set.hash, nullptr, storage_set->getSet(), table_node->getStorageID());
+        /// The `StorageSet` this replica resolved the name to, so its set is mutable like any other.
+        auto future_set = std::make_shared<FutureSetFromStorage>(
+            set.hash, nullptr, storage_set->getSet(), table_node->getStorageID(), /*is_mutable_during_query_=*/ true);
         for (auto * column : set.columns)
             column->setData(future_set);
     }

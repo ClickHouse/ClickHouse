@@ -16,9 +16,25 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnQBit.h>
+#include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeQBit.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -26,6 +42,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageDummy.h>
 #include <Common/checkStackSize.h>
+#include <Common/quoteString.h>
 
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
@@ -39,7 +56,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -139,6 +155,7 @@ void addDefaultRequiredExpressionsRecursively(
     }
 }
 
+
 ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, bool null_as_default)
 {
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
@@ -203,31 +220,18 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
     return conversion_expr_list;
 }
 
-std::optional<ActionsDAG> createExpressions(
-    const Block & header,
-    ASTPtr expr_list,
-    bool save_unneeded_columns,
-    ContextPtr context)
+/// The expression list resolved against a table made of `header`'s columns, with the context the resolution ran in
+/// (the planner needs the same one afterwards) and the table itself: the column nodes of the expression point at it
+/// and it has to outlive them.
+struct ResolvedExpressionList
 {
-    if (!expr_list)
-        return {};
+    QueryTreeNodePtr expression;
+    ContextMutablePtr context;
+    std::shared_ptr<TableNode> table;
+};
 
-    auto syntax_result = TreeRewriter(context).analyze(expr_list, header.getNamesAndTypesList());
-    auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
-    ActionsDAG dag(header.getNamesAndTypesList());
-    auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
-    return ActionsDAG::merge(std::move(dag), std::move(actions));
-}
-
-std::optional<ActionsDAG> createExpressionsAnalyzer(
-    const Block & header,
-    ASTPtr expr_list,
-    bool save_unneeded_columns,
-    ContextPtr context)
+ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
 {
-    if (!expr_list)
-        return {};
-
     auto execution_context = Context::createCopy(context);
     auto expression = buildQueryTree(expr_list, execution_context);
 
@@ -240,6 +244,22 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 
     QueryAnalyzer analyzer(false);
     analyzer.resolve(expression, fake_table_expression, execution_context);
+
+    return {std::move(expression), std::move(execution_context), std::move(fake_table_expression)};
+}
+
+std::optional<ActionsDAG> createExpressionsAnalyzer(
+    const Block & header,
+    ASTPtr expr_list,
+    bool save_unneeded_columns,
+    ContextPtr context)
+{
+    if (!expr_list)
+        return {};
+
+    auto resolved = resolveExpressionList(header, expr_list, context);
+    auto & expression = resolved.expression;
+    auto & execution_context = resolved.context;
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
@@ -276,11 +296,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     if (conversion_expr_list->children.empty())
         return;
 
-    std::optional<ActionsDAG> dag;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
-    else
-        dag = createExpressions(block, conversion_expr_list, true, context);
+    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
 
     if (dag)
     {
@@ -299,6 +315,19 @@ static bool needConvertAnyNullToDefault(const Block & header, const NamesAndType
     return false;
 }
 
+QueryTreeNodePtr resolveMissingDefaults(
+    const Block & header,
+    const NamesAndTypesList & required_columns,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    bool null_as_default)
+{
+    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
+    if (!expr_list)
+        return nullptr;
+    return resolveExpressionList(header, expr_list, context).expression;
+}
+
 std::optional<ActionsDAG> evaluateMissingDefaults(
     const Block & header,
     const NamesAndTypesList & required_columns,
@@ -311,10 +340,120 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
+    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
+}
 
-    return createExpressions(header, expr_list, save_unneeded_columns, context);
+/// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class
+/// it does not expect. It descends exactly the levels whose serializations `assert_cast` the
+/// column (`Array`, `Nullable`, `Tuple`, `Map`, `Variant`, the typed paths of `Object`, and the
+/// class-only `Dynamic`) and accepts everything else: serializations of scalars do not type-check
+/// the column, and leaf divergence (e.g. a part storing `UInt32` for a column widened to
+/// `UInt64`) is legitimate.
+/// A wrapper mismatch means the type and the column were resolved from different sources
+/// (the table's metadata vs a data part with an older type), which the walk itself would report
+/// only as a `Bad cast` between two column classes, with no indication of which column it was.
+static bool columnMatchesTypeStructure(const IColumn & column, const IDataType & type)
+{
+    /// A lazily replicated column describes data of its nested column.
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(&column))
+        return columnMatchesTypeStructure(*column_replicated->getNestedColumn(), type);
+
+    /// A column may be stored sparse at any nesting level (e.g. an element of a `Tuple`):
+    /// the serialization is built from the column's own serialization info, so
+    /// `SerializationSparse::enumerateStreams` pairs the same type with the values column.
+    if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(&column))
+        return columnMatchesTypeStructure(column_sparse->getValuesColumn(), type);
+
+    if (const auto * type_array = typeid_cast<const DataTypeArray *>(&type))
+    {
+        const auto * column_array = typeid_cast<const ColumnArray *>(&column);
+        return column_array && columnMatchesTypeStructure(column_array->getData(), *type_array->getNestedType());
+    }
+
+    if (const auto * type_nullable = typeid_cast<const DataTypeNullable *>(&type))
+    {
+        const auto * column_nullable = typeid_cast<const ColumnNullable *>(&column);
+        return column_nullable && columnMatchesTypeStructure(column_nullable->getNestedColumn(), *type_nullable->getNestedType());
+    }
+
+    /// `SerializationLowCardinality::enumerateStreams` descends into the dictionary's nested
+    /// column using the type's dictionary type.
+    if (const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type))
+    {
+        const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column);
+        return column_low_cardinality && columnMatchesTypeStructure(
+            *column_low_cardinality->getDictionary().getNestedColumn(), *type_low_cardinality->getDictionaryType());
+    }
+
+    if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        const auto * column_tuple = typeid_cast<const ColumnTuple *>(&column);
+        if (!column_tuple || column_tuple->tupleSize() != type_tuple->getElements().size())
+            return false;
+
+        for (size_t i = 0; i < column_tuple->tupleSize(); ++i)
+            if (!columnMatchesTypeStructure(column_tuple->getColumn(i), *type_tuple->getElement(i)))
+                return false;
+
+        return true;
+    }
+
+    if (const auto * type_map = typeid_cast<const DataTypeMap *>(&type))
+    {
+        const auto * column_map = typeid_cast<const ColumnMap *>(&column);
+        return column_map && columnMatchesTypeStructure(column_map->getNestedColumn(), *type_map->getNestedType());
+    }
+
+    /// `SerializationVariant::enumerateStreams` walks every alternative declared by the type and
+    /// pairs it with the column's variant of the same global discriminator, so the whole
+    /// alternative list has to match, not only the outer class.
+    if (const auto * type_variant = typeid_cast<const DataTypeVariant *>(&type))
+    {
+        const auto * column_variant = typeid_cast<const ColumnVariant *>(&column);
+        if (!column_variant || column_variant->getNumVariants() != type_variant->getVariants().size())
+            return false;
+
+        for (size_t i = 0; i < type_variant->getVariants().size(); ++i)
+            if (!columnMatchesTypeStructure(column_variant->getVariantByGlobalDiscriminator(i), *type_variant->getVariant(i)))
+                return false;
+
+        return true;
+    }
+
+    /// `SerializationObject::enumerateStreams` walks every typed path declared by the type and
+    /// looks it up in the column, so the typed paths have to match. Dynamic paths and shared data
+    /// are taken from the column itself, hence they need no check.
+    if (const auto * type_object = typeid_cast<const DataTypeObject *>(&type))
+    {
+        const auto * column_object = typeid_cast<const ColumnObject *>(&column);
+        if (!column_object || column_object->getTypedPaths().size() != type_object->getTypedPaths().size())
+            return false;
+
+        for (const auto & [path, path_type] : type_object->getTypedPaths())
+        {
+            auto it = column_object->getTypedPaths().find(path);
+            if (it == column_object->getTypedPaths().end() || !columnMatchesTypeStructure(*it->second, *path_type))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// `SerializationQBit::enumerateStreams` pairs the type's nested tuple with the column's
+    /// nested tuple, so they have to match structurally.
+    if (const auto * type_qbit = typeid_cast<const DataTypeQBit *>(&type))
+    {
+        const auto * column_qbit = typeid_cast<const ColumnQBit *>(&column);
+        return column_qbit && columnMatchesTypeStructure(*column_qbit->getTuple(), *type_qbit->getNestedType());
+    }
+
+    /// The internal structure of a `Dynamic` column is data-dependent: `enumerateStreams` takes
+    /// both the type and the column of its variant from the column itself, so only the class is
+    /// checked here.
+    if (typeid_cast<const DataTypeDynamic *>(&type))
+        return typeid_cast<const ColumnDynamic *>(&column) != nullptr;
+
+    return true;
 }
 
 static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
@@ -334,6 +473,13 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
         /// Small hack. Currently sparse serialization is not supported with Arrays.
         if (res_columns[i]->isSparse())
             continue;
+
+        if (!columnMatchesTypeStructure(*res_columns[i], *available_column->type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column {} is listed with type {} among available columns, but its data has "
+                "incompatible structure {}. It is likely that a type resolved from the table's "
+                "metadata was combined with a column read from a data part with an older type",
+                backQuote(available_column->name), available_column->type->getName(), res_columns[i]->dumpStructure());
 
         auto serialization = available_column->type->getSerialization(*available_column->type->getSerializationInfo(*res_columns[i]));
         serialization->enumerateStreams([&](const auto & subpath)
@@ -420,7 +566,7 @@ static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAn
 static bool isSubcolumnOfAvailableColumn(
     const StorageSnapshotPtr & storage_snapshot,
     const NameAndTypePair & column,
-    const NamesAndTypesList & available_columns,
+    const NamesAndTypesList & requested_columns,
     const NameSet & additional_available_columns)
 {
     if (!column.isSubcolumn())
@@ -433,8 +579,10 @@ static bool isSubcolumnOfAvailableColumn(
     if (!column_in_storage || !column_in_storage->isSubcolumn())
         return false;
 
+    /// Both names must come from the table's metadata: a part's own column list can still hold the
+    /// pre-rename name, while evaluateMissingDefaults looks the parent up by its metadata name.
     auto parent_name = column_in_storage->getNameInStorage();
-    return available_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
+    return requested_columns.contains(parent_name) || additional_available_columns.contains(parent_name);
 }
 
 static String removeTupleElementsFromSubcolumn(String subcolumn_name, const Names & tuple_elements)
@@ -461,6 +609,7 @@ void fillMissingColumns(
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
     StorageSnapshotPtr storage_snapshot,
+    const NameSet & missing_columns,
     bool share_nested_offsets,
     const NameSet & additional_available_columns)
 {
@@ -488,13 +637,15 @@ void fillMissingColumns(
             res_columns[i] = nullptr;
 
         /// Nothing to fill or default should be filled in evaluateMissingDefaults.
-        if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
+        /// But if the column was explicitly marked as missing (frozen default at
+        /// write time), fill with type-defaults even if a DEFAULT expression exists.
+        if (res_columns[i] || (hasDefault(storage_snapshot, *requested_column) && !missing_columns.contains(requested_column->getNameInStorage())))
             continue;
 
         /// Subcolumn missing from the part's (older) type but whose parent is available (read here
         /// or produced by an earlier step): defer to evaluateMissingDefaults instead of default-
         /// filling. Needs a storage_snapshot, i.e. a caller that runs that pass (not Memory engine).
-        if (isSubcolumnOfAvailableColumn(storage_snapshot, *requested_column, available_columns, additional_available_columns))
+        if (isSubcolumnOfAvailableColumn(storage_snapshot, *requested_column, requested_columns, additional_available_columns))
             continue;
 
         std::vector<ColumnPtr> current_offsets;

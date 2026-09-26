@@ -673,6 +673,8 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
         }
     }
 
+    /// `std::string` ordering is lexicographical, so files from each merge directory are processed by name.
+    /// Sorting the complete paths also makes the order deterministic if multiple merge directories are present.
     ::sort(files.begin(), files.end());
 
     return files;

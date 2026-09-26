@@ -60,19 +60,19 @@ doc_type: 'reference'
 * `exception_code` ([Int32](/ru/reference/data-types/int-uint)) — Код исключения.
 * `exception` ([String](/ru/reference/data-types/string)) — Сообщение исключения.
 * `stack_trace` ([String](/ru/reference/data-types/string)) — Трассировка стека. Пустая строка, если запрос успешно выполнен.
-* `is_initial_query` ([UInt8](/ru/reference/data-types/int-uint)) — Тип запроса. Возможные значения: 1 — запрос инициирован клиентом, 0 — запрос инициирован другим запросом в рамках выполнения распределённого запроса.
+* `is_initial_query` ([UInt8](/ru/reference/data-types/int-uint)) — Является ли запрос исходным. Возможные значения: 1 — исходный (верхнеуровневый) запрос, 0 — дочерний запрос, инициированный другим запросом, включая запросы для распределённого выполнения и внутренние подзапросы.
 * `connection_address` ([IPv6](/ru/reference/data-types/ipv6)) — IP-адрес клиента, с которого установлено соединение. При подключении через прокси это адрес прокси.
 * `connection_port` ([UInt16](/ru/reference/data-types/int-uint)) — Порт клиента, с которого установлено соединение. При подключении через прокси это порт прокси.
 * `user` ([String](/ru/reference/data-types/string)) — Имя пользователя, инициировавшего текущий запрос.
 * `query_id` ([String](/ru/reference/data-types/string)) — ID запроса.
 * `address` ([IPv6](/ru/reference/data-types/ipv6)) — IP-адрес, с которого выполнен запрос. При подключении через прокси и включённой настройке `auth_use_forwarded_address` это адрес клиента, а не прокси.
 * `port` ([UInt16](/ru/reference/data-types/int-uint)) — Порт клиента, с которого выполнен запрос. При подключении через прокси и включённой настройке `auth_use_forwarded_address` это порт клиента, а не прокси.
-* `initial_user` ([String](/ru/reference/data-types/string)) — Имя пользователя, выполнившего исходный запрос (для выполнения распределённого запроса).
-* `initial_query_id` ([String](/ru/reference/data-types/string)) — ID исходного запроса (для выполнения распределённого запроса).
-* `initial_address` ([IPv6](/ru/reference/data-types/ipv6)) — IP-адрес, с которого запущен родительский запрос.
-* `initial_port` ([UInt16](/ru/reference/data-types/int-uint)) — Порт клиента, с которого выполнен родительский запрос.
-* `initial_query_start_time` ([DateTime](/ru/reference/data-types/datetime)) — Время запуска исходного запроса (для выполнения распределённого запроса).
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ru/reference/data-types/datetime64)) — Время запуска исходного запроса с точностью до микросекунд (для выполнения распределённого запроса).
+* `initial_user` ([String](/ru/reference/data-types/string)) — Имя пользователя, выполнившего исходный запрос в той же цепочке запросов.
+* `initial_query_id` ([String](/ru/reference/data-types/string)) — ID исходного запроса в той же цепочке запросов.
+* `initial_address` ([IPv6](/ru/reference/data-types/ipv6)) — IP-адрес, с которого был запущен исходный запрос в той же цепочке запросов.
+* `initial_port` ([UInt16](/ru/reference/data-types/int-uint)) — Порт клиента, с которого был запущен исходный запрос в той же цепочке запросов.
+* `initial_query_start_time` ([DateTime](/ru/reference/data-types/datetime)) — Время запуска исходного запроса в той же цепочке запросов.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ru/reference/data-types/datetime64)) — Время запуска исходного запроса в той же цепочке запросов с точностью до микросекунд.
 * `authenticated_user` ([String](/ru/reference/data-types/string)) — Имя пользователя, прошедшего аутентификацию в сеансе.
 * `interface` ([UInt8](/ru/reference/data-types/int-uint)) — Интерфейс, через который был инициирован запрос. Возможные значения: 1 — TCP, 2 — HTTP.
 * `is_secure` ([UInt8](/ru/reference/data-types/int-uint)) — Флаг, указывающий, был ли запрос выполнен через защищённый интерфейс
