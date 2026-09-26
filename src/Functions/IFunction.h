@@ -58,6 +58,9 @@ public:
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
 
+    /// Returns indexes of arguments that must be `ColumnConst`.
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
 protected:
     friend struct ::FunctionsStressTestThread;
 
@@ -111,10 +114,6 @@ protected:
       */
     virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
 
-    /** Some arguments could remain constant during this implementation.
-      */
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
-
     /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
       *
@@ -159,6 +158,9 @@ private:
 
     ColumnPtr executeWithoutLowCardinalityColumns(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+
+    /// The function and every lambda passed to it are deterministic in the scope of the query.
+    bool isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const;
 
     ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
