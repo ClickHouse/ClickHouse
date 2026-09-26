@@ -1,0 +1,94 @@
+---
+slug: /operations/utilities/static-files-disk-uploader
+title: 'clickhouse-static-files-disk-uploader'
+keywords: ['clickhouse-static-files-disk-uploader', 'utility', 'disk', 'uploader']
+description: 'clickhouse-static-files-disk-uploader 유틸리티에 대한 설명을 제공합니다'
+doc_type: 'guide'
+---
+
+지정한 ClickHouse 테이블의 메타데이터가 포함된 데이터 디렉터리를 생성합니다. 이 메타데이터를 사용하면 `web` 디스크를 기반으로 하는 읽기 전용 데이터셋용 ClickHouse 테이블을 다른 서버에 생성할 수 있습니다.
+
+이 도구를 데이터 마이그레이션에 사용하지 마십시오. 대신 [`BACKUP` 및 `RESTORE` 명령](/ko/concepts/features/backup-restore/overview)을 사용하십시오.
+
+<div id="usage">
+  ## 사용법
+</div>
+
+```bash
+$ clickhouse static-files-disk-uploader [args]
+```
+
+<div id="commands">
+  ## 명령어
+</div>
+
+| Command                  | Description                                                    |
+| ------------------------ | -------------------------------------------------------------- |
+| `-h`, `--help`           | 도움말 정보를 출력합니다                                                  |
+| `--metadata-path [path]` | 지정된 테이블의 메타데이터가 들어 있는 경로                                       |
+| `--test-mode`            | `test` 모드를 활성화합니다. 이 모드에서는 테이블 메타데이터와 함께 지정된 URL로 PUT 요청을 보냅니다 |
+| `--link`                 | 파일을 출력 디렉터리로 복사하는 대신 심볼릭 링크를 생성합니다                             |
+| `--url [url]`            | `test` 모드에서 사용할 웹 서버 URL                                       |
+| `--output-dir [dir]`     | `non-test` 모드에서 파일을 출력할 디렉터리                                   |
+
+<div id="retrieve-metadata-path-for-the-specified-table">
+  ## 지정한 테이블의 메타데이터 경로 가져오기
+</div>
+
+`clickhouse-static-files-disk-uploader`를 사용할 때는 원하는 테이블의 메타데이터 경로를 확인해야 합니다.
+
+1. 대상 테이블과 데이터베이스를 지정해 다음 쿼리를 실행하십시오:
+
+<br />
+
+```sql
+SELECT data_paths
+  FROM system.tables
+  WHERE name = 'mytable' AND database = 'default';
+```
+
+2. 그러면 지정한 테이블의 데이터 디렉터리 경로가 반환됩니다:
+
+<br />
+
+```response
+┌─data_paths────────────────────────────────────────────┐
+│ ['./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/'] │
+└───────────────────────────────────────────────────────┘
+```
+
+<div id="output-table-metadata-directory-to-the-local-filesystem">
+  ## 테이블 메타데이터 디렉터리를 로컬 파일 시스템에 출력
+</div>
+
+대상 출력 디렉터리 `output`과 지정된 메타데이터 경로를 사용해 다음 명령을 실행하십시오.
+
+```bash
+$ clickhouse static-files-disk-uploader --output-dir output --metadata-path ./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/
+```
+
+성공적으로 완료되면 다음 메시지가 표시되고, `output` 디렉터리에는 지정한 테이블의 메타데이터가 들어 있어야 합니다:
+
+```repsonse
+Data path: "/Users/john/store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee", destination path: "output"
+```
+
+<div id="output-table-metadata-directory-to-an-external-url">
+  ## 테이블 메타데이터 디렉터리를 외부 URL로 내보내기
+</div>
+
+이 단계는 `--test-mode` 플래그가 추가된다는 점만 제외하면 데이터 디렉터리를 로컬 파일 시스템으로 내보내는 것과 비슷합니다. 출력 디렉터리를 지정하는 대신 `--url` 플래그로 대상 URL을 지정해야 합니다.
+
+`test` 모드가 활성화되면 테이블 메타데이터 디렉터리가 PUT 요청을 통해 지정한 URL로 업로드됩니다.
+
+```bash
+$ clickhouse static-files-disk-uploader --test-mode --url http://nginx:80/test1 --metadata-path ./store/bcc/bccc1cfd-d43d-43cf-a5b6-1cda8178f1ee/
+```
+
+<div id="using-the-table-metadata-directory-to-create-a-clickhouse-table">
+  ## 테이블 메타데이터 디렉터리를 사용하여 ClickHouse 테이블 생성하기
+</div>
+
+테이블 메타데이터 디렉터리가 있으면 이를 사용해 다른 서버에서 ClickHouse 테이블을 생성할 수 있습니다.
+
+데모는 [이 GitHub 리포지토리](https://github.com/ClickHouse/web-tables-demo)에서 확인하십시오. 이 예시에서는 `web` 디스크를 사용해 테이블을 생성하며, 이를 통해 테이블을 다른 서버의 데이터셋에 ATTACH할 수 있습니다.

@@ -19,8 +19,9 @@ node = cluster.add_instance(
 def start_cluster():
     try:
         cluster.start()
+        node.query("DROP DATABASE IF EXISTS test")
         node.query(
-            "CREATE DATABASE IF NOT EXISTS test ENGINE=Ordinary",
+            "CREATE DATABASE test ENGINE=Ordinary",
             settings={"allow_deprecated_database_ordinary": 1},
         )  # Different paths with Atomic
         yield cluster
@@ -44,6 +45,7 @@ def _files_in_dist_mon(node, root, table):
 
 
 def test_insert(start_cluster):
+    node.query("DROP TABLE IF EXISTS test.foo")
     node.query("CREATE TABLE test.foo (key Int) Engine=Memory()")
     node.query(
         """

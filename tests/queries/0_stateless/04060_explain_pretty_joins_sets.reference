@@ -1,0 +1,109 @@
+--- Join single condition ---
+Output: a, b, x, y
+
+Join (JOIN FillRightFirst)
+│  t1 ⋈ t2
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Cost: estimated no stats
+│  Selectivity: estimated (NDV) no stats
+│  Output rows: estimated no stats
+│  Left: rows estimated no stats
+│  Right: rows estimated no stats
+│  Join conditions: a = x
+│  Input (left): a, b
+│  Input (right): x, y
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: a, b
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: x, y
+--- Join null-safe ---
+Output: a, b, x, y
+
+Join (JOIN FillRightFirst)
+│  t1 ⋈ t2
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Cost: estimated no stats
+│  Selectivity: estimated (NDV) no stats
+│  Output rows: estimated no stats
+│  Left: rows estimated no stats
+│  Right: rows estimated no stats
+│  Join conditions: a <=> x
+│  Input (left): a, b
+│  Input (right): x, y
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: a, b
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: x, y
+--- IN small tuple set ---
+Output: a, b
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a, b
+   Prewhere filter
+   Prewhere filter column:  a IN (1, 2, 3)
+--- IN large tuple set with truncation ---
+Output: a, b
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a, b
+   Prewhere filter
+   Prewhere filter column:  a IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, ... 2 more)
+--- NOT IN ---
+Output: a, b
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a, b
+   Prewhere filter
+   Prewhere filter column:  a NOT IN (1, 2, 3)
+--- Multi-key IN ---
+Output: a, b
+
+Filter ((WHERE + Change column names to column identifiers))
+│  Filter column: tuple(a, b) IN ((1, \'x\'), (2, \'y\'))
+└──ReadFromMergeTree (default.t1)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: a, b
+--- IN subquery ---
+Output: a, b
+
+CreatingSets (Create sets before main query execution)
+└──ReadFromMergeTree (default.t1)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: a, b
+      Prewhere filter
+      Prewhere filter column:  a IN subquery1
+--- Multiple subquery sets ---
+Output: a, b
+
+CreatingSets (Create sets before main query execution)
+└──ReadFromMergeTree (default.t1)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: a, b
+      Prewhere filter
+      Prewhere filter column:  b IN subquery1 AND a IN subquery2
+--- IN with Set engine ---
+Output: a, b
+
+ReadFromMergeTree (default.t1)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: a, b
+   Prewhere filter
+   Prewhere filter column:  a IN default.s

@@ -75,18 +75,18 @@ struct Impl
         PaddedPODArray<Float64> & col_gini_normalized)
     {
         size_t size = col_gini_predicted.size();
-        size_t array_size = size > 0 ? array_predicted_offsets[0] - array_predicted_offsets[-1] : 0;
-
-        if (array_size > MAX_ARRAY_SIZE)
-            throw Exception(
-                ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in arrayNormalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
 
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array1_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
+            size_t array_size = array_predicted_offsets[i] - array_predicted_offsets[i - 1];
             size_t array2_size = array_labels_offsets[i] - array_labels_offsets[i - 1];
-            if (array1_size != array_size || array2_size != array_size)
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "All arrays in function arrayNormalizedGini should have same size");
+
+            if (array_size > MAX_ARRAY_SIZE)
+                throw Exception(
+                    ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size in arrayNormalizedGini: {}, maximum: {}", array_size, MAX_ARRAY_SIZE);
+
+            if (array2_size != array_size)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Prediction and label arrays in function arrayNormalizedGini should have same size for each row");
 
             PODArrayWithStackMemory<T2, 1024> array2(array_labels_data.data() + array_labels_offsets[i - 1], array_labels_data.data() + array_labels_offsets[i]);
 
@@ -149,7 +149,7 @@ private:
         Float64 pred_cumsum = 0;
         for (size_t i = 0; i < array_size; ++i)
         {
-            pred_cumsum += sorted_array2[i] / total_sum;
+            pred_cumsum += static_cast<Float64>(sorted_array2[i]) / total_sum;
             pred_cumsum_ratio[i] = pred_cumsum;
         }
 
@@ -159,16 +159,16 @@ private:
         Float64 ltv_cumsum = 0;
         for (size_t i = 0; i < array_size; ++i)
         {
-            ltv_cumsum += array2[i] / total_sum;
+            ltv_cumsum += static_cast<Float64>(array2[i]) / total_sum;
             ltv_cumsum_ratio[i] = ltv_cumsum;
         }
 
-        Float64 random_gain_cumsum_ratio = 0.5 * (array_size + 1);
+        Float64 random_gain_cumsum_ratio = 0.5 * static_cast<Float64>(array_size + 1);
         Float64 accumulate_pred_ratio = std::accumulate(pred_cumsum_ratio.begin(), pred_cumsum_ratio.end(), 0.0);
         Float64 accumulate_ltv_ratio = std::accumulate(ltv_cumsum_ratio.begin(), ltv_cumsum_ratio.end(), 0.0);
 
-        Float64 pred_gini = (random_gain_cumsum_ratio - accumulate_pred_ratio) / array_size;
-        Float64 gini_labels = (random_gain_cumsum_ratio - accumulate_ltv_ratio) / array_size;
+        Float64 pred_gini = (random_gain_cumsum_ratio - accumulate_pred_ratio) / static_cast<Float64>(array_size);
+        Float64 gini_labels = (random_gain_cumsum_ratio - accumulate_ltv_ratio) / static_cast<Float64>(array_size);
 
         return std::make_tuple(pred_gini, gini_labels, pred_gini / gini_labels);
     }
@@ -186,7 +186,7 @@ private:
 /**
  * Calculate the normalized Gini coefficient. See https://arxiv.org/pdf/1912.07753
  */
-class FunctionArrayNormalizedGini : public IFunction
+class FunctionArrayNormalizedGini final : public IFunction
 {
 public:
     static constexpr auto name = "arrayNormalizedGini";
@@ -406,7 +406,7 @@ REGISTER_FUNCTION(NormalizedGini)
     };
     FunctionDocumentation::ReturnedValue doc_returned_value = {"A tuple containing the Gini coefficients of the predicted values, the Gini coefficient of the normalized values, and the normalized Gini coefficient (= the ratio of the former two Gini coefficients)", {"Tuple(Float64, Float64, Float64)"}};
     FunctionDocumentation::Examples doc_examples = {
-        {"Usage example", "SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);", "(0.18055555555555558, 0.2638888888888889, 0.6842105263157896)"}
+        {"Usage example", "SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);", "(0.18055555555555558,0.2638888888888889,0.6842105263157896)"}
     };
     FunctionDocumentation::IntroducedIn doc_introduced_in = {25, 1};
     FunctionDocumentation::Category doc_category = FunctionDocumentation::Category::Array;

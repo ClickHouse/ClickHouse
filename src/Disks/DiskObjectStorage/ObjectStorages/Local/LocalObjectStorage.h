@@ -1,6 +1,5 @@
 #pragma once
 
-#include "config.h"
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
@@ -15,11 +14,12 @@ namespace DB
 
 struct LocalObjectStorageSettings
 {
-    LocalObjectStorageSettings(String key_prefix_, bool read_only_)
-        : key_prefix(key_prefix_), read_only(read_only_)
+    LocalObjectStorageSettings(String disk_name_, String key_prefix_, bool read_only_)
+        : disk_name(disk_name_), key_prefix(key_prefix_), read_only(read_only_)
     {
     }
 
+    String disk_name;
     String key_prefix;
     bool read_only = false;
 };
@@ -30,7 +30,9 @@ class LocalObjectStorage : public IObjectStorage
 public:
     explicit LocalObjectStorage(LocalObjectStorageSettings settings_);
 
-    std::string getName() const override { return "LocalObjectStorage"; }
+    std::string getName() const override { return "Local"; }
+
+    std::string getDiskName() const override { return settings.disk_name; }
 
     ObjectStorageType getType() const override { return ObjectStorageType::Local; }
 
@@ -45,6 +47,14 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const override;
+
+    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        size_t max_size_bytes,
         std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
@@ -57,7 +67,9 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -86,15 +98,19 @@ public:
 
     ReadSettings patchSettings(const ReadSettings & read_settings) const override;
 
+    ObjectStoragePtr cloneImpl() const override;
+
 private:
     void removeObject(const StoredObject & object) const;
     void removeObjects(const StoredObjects &  objects) const;
 
     void throwIfReadonly() const;
+    String resolvePathRelativelyToKeyPrefix(const String & path) const;
 
     LocalObjectStorageSettings settings;
     LoggerPtr log;
     std::string description;
 };
 
+String resolvePathRelativelyToBase(const String & path, const String & base_path);
 }

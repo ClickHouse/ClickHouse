@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 CREATE TABLE t0 (c0 Int, c1 Int) ENGINE = Memory;
 
 INSERT INTO t0 VALUES (1, 2);
@@ -6,8 +7,10 @@ INSERT INTO t0 VALUES (2, 3);
 SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET enable_join_runtime_filters=1;
+SET join_runtime_filter_min_probe_rows=0;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 
-SELECT REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')
+SELECT explain
 FROM (
    EXPLAIN header=1, keep_logical_steps=1
    SELECT 1 FROM t0 JOIN (SELECT 1 a) tx ON t0.c0 = tx.a
@@ -16,7 +19,7 @@ FROM (
 SELECT 1 FROM t0 JOIN (SELECT 1 a) tx ON t0.c0 = tx.a;
 
 
-SELECT REGEXP_REPLACE(explain, '_runtime_filter_\\d+', '_runtime_filter_UNIQ_ID')
+SELECT explain
 FROM (
    EXPLAIN header=1, keep_logical_steps=1
    SELECT 1 FROM t0 JOIN (SELECT 1 AS a, 2 AS b) tx ON t0.c0 = tx.a AND t0.c1 = tx.b

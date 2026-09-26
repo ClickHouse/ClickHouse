@@ -13,13 +13,13 @@ struct AtomicBitSet
 
     bool set(size_t i, std::memory_order memory_order)
     {
-        UInt64 mask = 1ul << (i & 63);
+        UInt64 mask = 1ull << (i & 63);
         UInt64 x = a[i >> 6].fetch_or(mask, memory_order);
         return (x & mask) == 0;
     }
     bool unset(size_t i, std::memory_order memory_order)
     {
-        UInt64 mask = 1ul << (i & 63);
+        UInt64 mask = 1ull << (i & 63);
         UInt64 x = a[i >> 6].fetch_and(~mask, memory_order);
         return (x & mask) != 0;
     }
@@ -44,6 +44,11 @@ public:
 
     ~ReadManager();
 
+    /// Same handshake as the destructor, but keeps `reader` and its metadata intact. After this
+    /// returns, no decode task runs anymore, so nothing can re-enter the prefetcher. Idempotent.
+    /// Drain this before the prefetcher: decode tasks read ranges through it.
+    void shutdownTasks();
+
     struct ReadResult
     {
         Chunk chunk;
@@ -66,8 +71,9 @@ private:
 
     struct Task
     {
-        ReadStage stage;
-        size_t row_group_idx;
+        ReadStage stage{};
+        size_t step_idx = 0; /// 0 = main step, (>=1) = prewhere steps
+        size_t row_group_idx{};
         size_t row_subgroup_idx = UINT64_MAX;
         size_t column_idx = UINT64_MAX;
         size_t cost_estimate_bytes = 0;
@@ -115,18 +121,28 @@ private:
 
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
+    /// A live reservation handle on the memory the dictionary-filter pruning path may still use: the
+    /// reader's memory high watermark minus what the `BloomFilterBlocksOrDictionary` stage already holds
+    /// (the decoded dictionaries and value sets other row groups are holding right now, plus this batch's
+    /// in-flight `diff`). Both the decoded dictionaries (`Reader::decodeDictionaryPage`) and the value
+    /// sets built while evaluating a row-group filter (`Reader::hashDictionaryValues`) reserve through it,
+    /// charging the shared stage counter directly, so the pruning memory stays within the watermark
+    /// across all row groups pruning in parallel (see `PruningMemoryReservation` and
+    /// `Reader::applyBloomAndDictionaryFilters`).
+    PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
     void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
     void finishRowGroupStage(size_t row_group_idx, ReadStage stage, MemoryUsageDiff & diff);
-    void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, MemoryUsageDiff & diff);
+    void finishRowSubgroupStage(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     /// Free some memory ColumnChunk that's not needed after decoding is done in all row sugroups.
     /// Call sites should be careful to not call it from multiple threads in parallel.
     void clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff);
     void clearRowSubgroup(RowSubgroup & row_subgroup, MemoryUsageDiff & diff);
     void setTasksToSchedule(size_t row_group_idx, ReadStage stage, std::vector<Task> add_tasks, MemoryUsageDiff & diff);
-    void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, MemoryUsageDiff & diff);
+    void addTasksToReadColumns(size_t row_group_idx, size_t row_subgroup_idx, ReadStage stage, size_t step_idx, MemoryUsageDiff & diff);
     void advanceDeliveryPtrIfNeeded(size_t row_group_idx, MemoryUsageDiff & diff);
     void flushMemoryUsageDiff(MemoryUsageDiff && diff);
+    std::string collectDeadlockDiagnostics();
 };
 
 }

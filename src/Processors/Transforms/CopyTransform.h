@@ -11,7 +11,7 @@ class Block;
 
 /// Transform which has single input and num_outputs outputs.
 /// Read chunk from input and copy it to all outputs.
-class CopyTransform : public IProcessor
+class CopyTransform final : public IProcessor
 {
 public:
     CopyTransform(SharedHeader header, size_t num_outputs);

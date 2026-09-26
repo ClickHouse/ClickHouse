@@ -8,7 +8,8 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers, start_s3_mock
-from helpers.utility import SafeThread, generate_values, replace_config
+from helpers.utility import generate_values, replace_config
+from helpers.blobs import wait_blobs_count_synchronization
 from helpers.wait_for_helpers import (
     wait_for_delete_empty_parts,
     wait_for_delete_inactive_parts,
@@ -72,6 +73,9 @@ FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
 FILES_OVERHEAD_METADATA_VERSION = 1
 FILES_OVERHEAD_COLUMNS_SUBSTREAMS = 1
+# The minmax skip index goes into a single skp_idx.packed archive instead of a
+# separate .idx2 + .mrk2 pair, because packed_skip_index_max_bytes is 1 MiB by default.
+FILES_SAVED_BY_PACKED_SKIP_INDEX = 1
 FILES_OVERHEAD_PER_PART_WIDE = (
     FILES_OVERHEAD_PER_COLUMN * 3
     + 2
@@ -79,13 +83,16 @@ FILES_OVERHEAD_PER_PART_WIDE = (
     + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
     + FILES_OVERHEAD_METADATA_VERSION
     + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
+    - FILES_SAVED_BY_PACKED_SKIP_INDEX
 )
 FILES_OVERHEAD_PER_PART_COMPACT = (
     10
     + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
     + FILES_OVERHEAD_METADATA_VERSION
     + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
+    - FILES_SAVED_BY_PACKED_SKIP_INDEX
 )
+FILES_OVERHEAD_PER_INVALIDATED_COLUMN = 1
 
 
 def create_table(node, table_name, **additional_settings):
@@ -95,6 +102,10 @@ def create_table(node, table_name, **additional_settings):
         "index_granularity": 512,
         "temporary_directories_lifetime": 1,
         "write_marks_for_substreams_in_compact_parts": 1,
+        "cleanup_delay_period": 1,
+        "cleanup_delay_period_random_add": 0,
+        "cleanup_thread_preferred_points_per_iteration": 0,
+        "auto_statistics_types": "",
     }
     settings.update(additional_settings)
 
@@ -115,7 +126,7 @@ def create_table(node, table_name, **additional_settings):
 
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
-    yield start_s3_mock(cluster, "broken_s3", "8083")
+    yield start_s3_mock(cluster, "broken_s3", "8085")
 
 
 @pytest.fixture(scope="function")
@@ -179,7 +190,7 @@ def clear_minio(cluster):
 def check_no_objects_after_drop(cluster, table_name="s3_test", node_name="node"):
     node = cluster.instances[node_name]
     node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")
-    return wait_for_delete_s3_objects(cluster, 0, timeout=0)
+    return wait_for_delete_s3_objects(cluster, 0, timeout=30)
 
 
 @pytest.mark.parametrize(
@@ -203,7 +214,7 @@ def test_simple_insert_select(
         "INSERT INTO s3_test VALUES {}".format(values1), query_id=insert_query_id
     )
     assert node.query("SELECT * FROM s3_test order by dt, id FORMAT Values") == values1
-    assert len(list_objects(cluster, "data/")) == FILES_OVERHEAD + files_per_part
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + files_per_part)
 
     node.query("SYSTEM FLUSH LOGS")
     blob_storage_log = node.query(
@@ -229,7 +240,7 @@ def test_simple_insert_select(
         node.query("SELECT * FROM s3_test ORDER BY dt, id FORMAT Values")
         == values1 + "," + values2
     )
-    assert len(list_objects(cluster, "data/")) == FILES_OVERHEAD + files_per_part * 2
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + files_per_part * 2)
 
     assert (
         node.query("SELECT count(*) FROM s3_test where id = 1 FORMAT Values") == "(2)"
@@ -247,6 +258,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
 
     node = cluster.instances[node_name]
     create_table(node, "s3_test", **settings)
+    minio = cluster.minio_client
 
     node.query("SYSTEM STOP MERGES s3_test")
     node.query(
@@ -271,10 +283,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     assert (
         node.query("SELECT count(distinct(id)) FROM s3_test FORMAT Values") == "(8192)"
     )
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD_PER_PART_WIDE * 6 + FILES_OVERHEAD
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD_PER_PART_WIDE * 6 + FILES_OVERHEAD)
 
     node.query("SYSTEM START MERGES s3_test")
 
@@ -323,7 +332,7 @@ def test_alter_table_columns(cluster, node_name):
         )
         deleted_in_log = set(
             node.query(
-                f"SELECT remote_path FROM system.blob_storage_log WHERE error == '' AND event_type == 'Delete'"
+                "SELECT remote_path FROM system.blob_storage_log WHERE error == '' AND event_type == 'Delete'"
             )
             .strip()
             .split()
@@ -333,7 +342,7 @@ def test_alter_table_columns(cluster, node_name):
         assert all(obj in deleted_in_log for obj in deleted_objects), (
             deleted_objects,
             node.query(
-                f"SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
+                "SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
             ),
         )
 
@@ -390,6 +399,7 @@ def test_alter_table_columns(cluster, node_name):
 def test_attach_detach_partition(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
+    minio = cluster.minio_client
 
     node.query(
         "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -398,57 +408,36 @@ def test_attach_detach_partition(cluster, node_name):
         "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096))
     )
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("ALTER TABLE s3_test DETACH PARTITION '2020-01-03'")
     wait_for_delete_empty_parts(node, "s3_test")
     wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(4096)"
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 2
-        - FILES_OVERHEAD_METADATA_VERSION
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("ALTER TABLE s3_test ATTACH PARTITION '2020-01-03'")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2 + FILES_OVERHEAD_PER_INVALIDATED_COLUMN)
 
     node.query("ALTER TABLE s3_test DROP PARTITION '2020-01-03'")
     wait_for_delete_empty_parts(node, "s3_test")
     wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(4096)"
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 1
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 1)
 
     node.query("ALTER TABLE s3_test DETACH PARTITION '2020-01-04'")
     wait_for_delete_empty_parts(node, "s3_test")
     wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD
-        + FILES_OVERHEAD_PER_PART_WIDE * 1
-        - FILES_OVERHEAD_METADATA_VERSION
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 1)
+
     node.query(
         "ALTER TABLE s3_test DROP DETACHED PARTITION '2020-01-04'",
         settings={"allow_drop_detached": 1},
     )
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 0
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD)
 
     check_no_objects_after_drop(cluster)
 
@@ -457,6 +446,7 @@ def test_attach_detach_partition(cluster, node_name):
 def test_move_partition_to_another_disk(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
+    minio = cluster.minio_client
 
     node.query(
         "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -465,24 +455,15 @@ def test_move_partition_to_another_disk(cluster, node_name):
         "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096))
     )
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-04' TO DISK 'hdd'")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE)
 
     node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-04' TO DISK 's3'")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     check_no_objects_after_drop(cluster)
 
@@ -491,6 +472,7 @@ def test_move_partition_to_another_disk(cluster, node_name):
 def test_table_manipulations(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
+    minio = cluster.minio_client
 
     node.query(
         "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -501,10 +483,7 @@ def test_table_manipulations(cluster, node_name):
 
     node.query("RENAME TABLE s3_test TO s3_renamed")
     assert node.query("SELECT count(*) FROM s3_renamed FORMAT Values") == "(8192)"
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("RENAME TABLE s3_renamed TO s3_test")
 
@@ -513,16 +492,13 @@ def test_table_manipulations(cluster, node_name):
     node.query("DETACH TABLE s3_test")
     node.query("ATTACH TABLE s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(8192)"
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2)
 
     node.query("TRUNCATE TABLE s3_test")
     wait_for_delete_empty_parts(node, "s3_test")
     wait_for_delete_inactive_parts(node, "s3_test")
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
-    assert len(list_objects(cluster, "data/")) == FILES_OVERHEAD
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD)
 
     check_no_objects_after_drop(cluster)
 
@@ -531,6 +507,7 @@ def test_table_manipulations(cluster, node_name):
 def test_move_replace_partition_to_another_table(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
+    minio = cluster.minio_client
 
     node.query(
         "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -547,10 +524,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(16384)"
 
-    assert (
-        len(list_objects(cluster, "data/", "Objects at start"))
-        == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4)
     create_table(node, "s3_clone")
 
     node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-03' TO TABLE s3_clone")
@@ -566,7 +540,8 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     # Add new partitions to source table, but with different values and replace them from copied table.
@@ -584,7 +559,8 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 6
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     node.query("ALTER TABLE s3_test REPLACE PARTITION '2020-01-03' FROM s3_clone")
@@ -599,7 +575,8 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD * 2
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 4,
     )
 
     node.query("DROP TABLE s3_clone SYNC")
@@ -611,7 +588,8 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     node.query("ALTER TABLE s3_test FREEZE")
@@ -621,14 +599,19 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         cluster,
         FILES_OVERHEAD
         + FILES_OVERHEAD_PER_PART_WIDE * 4
-        - FILES_OVERHEAD_METADATA_VERSION * 2,
+        - FILES_OVERHEAD_METADATA_VERSION * 2
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     node.query("DROP TABLE s3_test SYNC")
     # Backup data should remain in S3.
+    # The frozen copies of the two adopted parts keep their `invalidated_system_columns.txt`.
 
     wait_for_delete_s3_objects(
-        cluster, FILES_OVERHEAD_PER_PART_WIDE * 4 - FILES_OVERHEAD_METADATA_VERSION * 4
+        cluster,
+        FILES_OVERHEAD_PER_PART_WIDE * 4
+        - FILES_OVERHEAD_METADATA_VERSION * 4
+        + FILES_OVERHEAD_PER_INVALIDATED_COLUMN * 2,
     )
 
     remove_all_s3_objects(cluster)
@@ -638,6 +621,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
 def test_freeze_unfreeze(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
+    minio = cluster.minio_client
 
     node.query(
         "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-03", 4096))
@@ -651,11 +635,7 @@ def test_freeze_unfreeze(cluster, node_name):
     node.query("TRUNCATE TABLE s3_test")
     wait_for_delete_empty_parts(node, "s3_test")
     wait_for_delete_inactive_parts(node, "s3_test")
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD
-        + (FILES_OVERHEAD_PER_PART_WIDE - FILES_OVERHEAD_METADATA_VERSION) * 2
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + (FILES_OVERHEAD_PER_PART_WIDE - FILES_OVERHEAD_METADATA_VERSION) * 2)
 
     # Unfreeze single partition from backup1.
     node.query(
@@ -675,6 +655,7 @@ def test_freeze_system_unfreeze(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
     create_table(node, "s3_test_removed")
+    minio = cluster.minio_client
 
     node.query(
         "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096))
@@ -689,11 +670,7 @@ def test_freeze_system_unfreeze(cluster, node_name):
     wait_for_delete_empty_parts(node, "s3_test")
     wait_for_delete_inactive_parts(node, "s3_test")
     node.query("DROP TABLE s3_test_removed SYNC")
-    assert (
-        len(list_objects(cluster, "data/"))
-        == FILES_OVERHEAD
-        + (FILES_OVERHEAD_PER_PART_WIDE - FILES_OVERHEAD_METADATA_VERSION) * 2
-    )
+    wait_blobs_count_synchronization(minio, FILES_OVERHEAD + (FILES_OVERHEAD_PER_PART_WIDE - FILES_OVERHEAD_METADATA_VERSION) * 2)
 
     # Unfreeze all data from backup3.
     node.query("SYSTEM UNFREEZE WITH NAME 'backup3'")
@@ -739,24 +716,26 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
 
     node.query("SYSTEM RELOAD CONFIG")
 
-    s3_requests_before = get_s3_requests()
-    node.query(
-        "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096, -1))
-    )
+    try:
+        s3_requests_before = get_s3_requests()
+        node.query(
+            "INSERT INTO s3_test VALUES {}".format(generate_values("2020-01-04", 4096, -1))
+        )
 
-    # There should be 3 times more S3 requests because multi-part upload mode uses 3 requests to upload object.
-    assert get_s3_requests() - s3_requests_before == s3_requests_to_write_partition * 3
+        # There should be 3 times more S3 requests because multi-part upload mode uses 3 requests to upload object.
+        assert get_s3_requests() - s3_requests_before == s3_requests_to_write_partition * 3
 
-    check_no_objects_after_drop(cluster)
+        check_no_objects_after_drop(cluster)
 
-    # Restore
-    replace_config(
-        config_path,
-        "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
-        "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
-    )
+    finally:
+        # Restore
+        replace_config(
+            config_path,
+            "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>",
+            "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
+        )
 
-    node.query("SYSTEM RELOAD CONFIG")
+        node.query("SYSTEM RELOAD CONFIG")
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -765,8 +744,7 @@ def test_s3_no_delete_objects(cluster, node_name):
     create_table(
         node, "s3_test_no_delete_objects", storage_policy="no_delete_objects_s3"
     )
-    node.query("DROP TABLE s3_test_no_delete_objects SYNC")
-    remove_all_s3_objects(cluster)
+    check_no_objects_after_drop(cluster, 's3_test_no_delete_objects')
 
 
 @pytest.mark.parametrize("node_name", ["node"])
@@ -804,7 +782,7 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
 def test_cache_with_full_disk_space(cluster, node_name):
     node = cluster.instances[node_name]
     # Create a dummy file of 2M size to fill the disk space of cache disk
-    out = node.exec_in_container(
+    node.exec_in_container(
         [
             "/usr/bin/dd",
             "if=/dev/zero",
@@ -821,7 +799,7 @@ def test_cache_with_full_disk_space(cluster, node_name):
     node.query(
         "INSERT INTO s3_test SELECT number, toString(number) FROM numbers(100000000)"
     )
-    out = node.exec_in_container(
+    node.exec_in_container(
         [
             "/usr/bin/clickhouse",
             "benchmark",
@@ -881,8 +859,9 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     node.query(
         "INSERT INTO test_merge_canceled_by_s3_errors SELECT 2*number, toString(number) FROM numbers(10000)"
     )
-    min_key = node.query("SELECT min(key) FROM test_merge_canceled_by_s3_errors")
-    assert int(min_key) == 0, min_key
+
+    rows_count = node.query("SELECT count(key) FROM test_merge_canceled_by_s3_errors")
+    assert int(rows_count) == 20000, rows_count
 
     broken_s3.setup_at_object_upload()
     broken_s3.setup_fake_multpartuploads()
@@ -981,7 +960,7 @@ def test_s3_engine_heavy_write_check_mem(
         " ("
         "   key UInt32 CODEC(NONE), value String CODEC(NONE)"
         " )"
-        " ENGINE S3('http://resolver:8083/root/data/test-upload.csv', 'minio', '{minio_secret_key}', 'CSV')",
+        " ENGINE S3('http://resolver:8085/root/data/test-upload.csv', 'minio', '{minio_secret_key}', 'CSV')",
     )
 
     broken_s3.setup_fake_multpartuploads()
@@ -1036,7 +1015,7 @@ def test_s3_disk_heavy_write_check_mem(cluster, broken_s3, node_name):
         " storage_policy='broken_s3'",
     )
 
-    uuid = node.query("SELECT uuid FROM system.tables WHERE name='s3_test'")
+    uuid = node.query("SELECT uuid FROM system.tables WHERE name='s3_test'").strip()
 
     node.query("SYSTEM STOP MERGES s3_test")
 
@@ -1085,3 +1064,116 @@ def test_metadata_path_works_correctly(cluster, node_name):
         found = found or "/custom_path/" in path
     assert found, data_paths
     node.query(f"DROP TABLE IF EXISTS {table}")
+
+
+def test_no_object_storage_read_when_evicting_index_marks(cluster):
+    # A part whose skip indices are bundled into `skp_idx.packed` must not make mark-cache
+    # eviction ask the object storage what the part holds: eviction runs from the part
+    # destructor and only needs key strings. When the blob is gone but its metadata entry
+    # survives, that read raises `Code: 499` and the exception escapes into
+    # `IMergeTreeDataPart::removeIfNeeded`'s catch, which logs it at `<Error>` level.
+    node = cluster.instances["node"]
+    table = "s3_index_mark_eviction"
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    # `columns_and_secondary_indices_sizes_lazy_calculation = 0` is load-bearing: it makes
+    # loading the part probe the archive, so the part is detached as broken and destroyed and
+    # the eviction path under test runs. Without it the only probe is the one under
+    # `#ifndef NDEBUG` in `loadRowsCount`, so on a release or sanitizer build the part loads fine
+    # and both assertions below read 0 whether the fix is present or not.
+    node.query(
+        f"""
+        CREATE TABLE {table} (k UInt64, v UInt64, INDEX mm v TYPE minmax GRANULARITY 1)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS storage_policy = 's3', packed_skip_index_max_bytes = 1048576,
+                 index_granularity = 8, min_bytes_for_wide_part = 0,
+                 columns_and_secondary_indices_sizes_lazy_calculation = 0
+        """
+    )
+    node.query(f"INSERT INTO {table} SELECT number, number * 7 FROM numbers(64)")
+
+    uuid = node.query(
+        f"SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = '{table}'"
+    ).strip()
+    assert uuid
+
+    # Several disks in this module share the same MinIO endpoint, so the same blob is
+    # reported once per disk -- select the one this table's policy actually writes to.
+    rows = node.query(
+        f"""
+        SELECT DISTINCT disk_name, remote_path FROM system.remote_data_paths
+        WHERE local_path LIKE '%{uuid}%' AND local_path LIKE '%skp_idx.packed%'
+        ORDER BY ALL
+        """
+    ).strip()
+    packed_paths = sorted(
+        {line.split("\t")[1] for line in rows.splitlines() if line.strip()}
+    )
+    # An empty selector would make the whole test vacuously green: the index has to be
+    # packed for the archive probe to exist at all.
+    assert len(packed_paths) == 1, rows
+
+    # Delete the archive OBJECT and keep its metadata entry, so the packed probe's
+    # metadata-only `existsFile` re-check still answers "present" and rethrows the 404.
+    for path in packed_paths:
+        assert cluster.minio_client.stat_object(cluster.minio_bucket, path).size > 0
+        cluster.minio_client.remove_object(cluster.minio_bucket, path)
+        with pytest.raises(Exception) as exc_info:
+            cluster.minio_client.stat_object(cluster.minio_bucket, path)
+        assert "code: NoSuchKey" in str(exc_info.value)
+
+    node.query("SYSTEM DROP FILESYSTEM CACHE")
+    node.query("SYSTEM DROP MARK CACHE")
+    node.query(f"DETACH TABLE {table}")
+
+    # The archive reader is seeded by the writer, so it must be unseeded before the probe
+    # can run -- hence the `DETACH`/`ATTACH`. Ordering is load-bearing: deleting the object
+    # after the reattach leaves the probe resolved and reproduces nothing.
+    # Anchor the log window here: the failing eviction happens while `ATTACH` loads the
+    # (now broken) part and destroys it, i.e. BEFORE the `DROP` below.
+    log_anchor = node.count_log_lines()
+
+    node.query(f"ATTACH TABLE {table}")
+    node.query(f"DROP TABLE {table} SYNC")
+
+    window = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"tail -n +{log_anchor + 1} /var/log/clickhouse-server/clickhouse-server.log"
+            " > /tmp/index_mark_eviction_window.log; wc -l < /tmp/index_mark_eviction_window.log",
+        ]
+    )
+    assert int(window.strip()) > 0, window
+
+    def count_in_window(pattern):
+        return int(
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f'grep -a "{pattern}" /tmp/index_mark_eviction_window.log | wc -l',
+                ]
+            ).strip()
+        )
+
+    # Positive control: the part-LOAD path legitimately reads `skp_idx.packed` and is
+    # unaffected by eviction, so it reports the missing key in both directions. Without
+    # this a fixture that silently failed to delete the blob would pass.
+    assert count_in_window("Code: 499") > 0
+
+    # The finding: no `Code: 499` may escape part destruction. Keying on the `removeIfNeeded`
+    # frame rather than the error code is required -- a bare count is non-zero either way.
+    assert (
+        int(
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    'grep -a "removeIfNeeded" /tmp/index_mark_eviction_window.log'
+                    ' | grep -a -c "Code: 499" || true',
+                ]
+            ).strip()
+        )
+        == 0
+    )

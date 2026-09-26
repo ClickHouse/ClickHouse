@@ -9,12 +9,12 @@ Header: c0 UInt8
       Header: __join_result_dummy UInt8
         Expression ((Change column names to column identifiers + (Compute alias columns + (Project names + (Projection + Change column names to column identifiers)))))
         Header: 
-          ReadFromStorage (SystemOne)
+          ReadFromSystemOne
           Header: dummy UInt8
       Expression (Right Pre Join Actions)
       Header: __table3.c0 UInt8
         Expression ((Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers))))
         Header: __table3.c0 UInt8
-          ReadFromStorage (SystemOne)
+          ReadFromSystemOne
           Header: dummy UInt8
 1

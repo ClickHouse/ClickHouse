@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 
 #include <Interpreters/ObjectStorageQueueLog.h>
 #include <Processors/ISource.h>
@@ -9,6 +8,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <base/defines.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 
@@ -17,9 +17,10 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class IStreamingStorage;
 struct ObjectMetadata;
 
-class ObjectStorageQueueSource : public ISource, WithContext
+class ObjectStorageQueueSource final : public ISource, WithContext
 {
 public:
     using Storage = StorageObjectStorage;
@@ -28,7 +29,7 @@ public:
     using BucketHolderPtr = ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr;
     using BucketHolders = std::vector<BucketHolderPtr>;
     using FileMetadataPtr = ObjectStorageQueueMetadata::FileMetadataPtr;
-    using HiveLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::HiveLastProcessedFileInfoMap;
+    using PartitionLastProcessedFileInfoMap = ObjectStorageQueueIFileMetadata::PartitionLastProcessedFileInfoMap;
     using LastProcessedFileInfoMapPtr = ObjectStorageQueueIFileMetadata::LastProcessedFileInfoMapPtr;
 
     struct ObjectStorageQueueObjectInfo : public ObjectInfo
@@ -74,6 +75,13 @@ public:
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseFinishedBuckets();
 
+        /// Refresh bucket locks which were not refreshed for more than a quarter of
+        /// the TTL, after which the cleanup removes them as abandoned (the TTL is
+        /// meant to remove locks of dead servers).
+        void refreshExpiringBucketLocks();
+
+        bool useBucketsForProcessing() const { return use_buckets_for_processing; }
+
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;
@@ -87,7 +95,8 @@ public:
         const ObjectStorageQueueMode mode;
         const bool enable_hash_ring_filtering;
         const StorageID storage_id;
-        size_t buckets_num = 0;
+        const bool use_buckets_for_processing;
+        const size_t buckets_num = 0;
 
         ObjectStorageIteratorPtr object_storage_iterator;
         std::unique_ptr<re2::RE2> matcher;
@@ -122,6 +131,10 @@ public:
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
 
+        /// Set when a bucket lock refresh or release fails (e.g. lost ownership):
+        /// next() stops returning keys, isFinished returns true.
+        std::atomic_bool iterator_invalidated = false;
+
         bool is_path_with_hive_partitioning = false;
 
         /// Only for processing without buckets.
@@ -135,6 +148,7 @@ public:
         };
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
         std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
+
         BucketHolderPtr tryAcquireBucket(
             size_t bucket,
             BucketInfo & bucket_info,
@@ -180,15 +194,19 @@ public:
         std::shared_ptr<ObjectStorageQueueLog> system_queue_log_,
         const StorageID & storage_id_,
         LoggerPtr log_,
-        bool commit_once_processed_);
+        bool commit_once_processed_,
+        bool is_direct_select_,
+        bool add_deduplication_info_,
+        bool is_deduplication_v2_,
+        IStreamingStorage & streaming_storage_);
 
-    static Block getHeader(Block sample_block, const std::vector<NameAndTypePair> & requested_virtual_columns);
+    static Block getHeader(Block sample_block, const NamesAndTypes & requested_virtual_columns);
 
     String getName() const override;
 
     Chunk generate() override;
 
-    void onFinish() override { parser_shared_resources->finishStream(); }
+    void onFinish() override;
 
     /// Commit files after insertion into storage finished.
     /// `success` defines whether insertion was successful or not.
@@ -196,14 +214,20 @@ public:
         Coordination::Requests & requests,
         bool insert_succeeded,
         StoredObjects & successful_files,
-        HiveLastProcessedFileInfoMap & file_map,
+        PartitionLastProcessedFileInfoMap & file_map,
         LastProcessedFileInfoMapPtr created_nodes = nullptr,
         const std::string & exception_message = {},
         int error_code = 0);
 
-    static void prepareHiveProcessedRequests(
+    static void preparePartitionProcessedRequests(
         Coordination::Requests & requests,
-        const HiveLastProcessedFileInfoMap & file_map);
+        const PartitionLastProcessedFileInfoMap & last_processed_file_per_partition);
+
+    /// Mark all processed files' metadata so that their destructors check ownership
+    /// before removing the processing node (rather than asserting).
+    /// Called when a commit may have succeeded in ZK but the connection was lost before
+    /// we received the response ("failed after operation").
+    void setUncertainCommit();
 
     /// Do some work after Processed/Failed files were successfully committed to keeper.
     void finalizeCommit(
@@ -211,7 +235,8 @@ public:
         UInt64 commit_id,
         time_t commit_time,
         time_t transaction_start_time_,
-        const std::string & exception_message = {});
+        const std::string & exception_message = {},
+        const UnorderedSetWithMemoryTracking<String> & post_processing_failed_paths = {});
 
 private:
     Chunk generateImpl();
@@ -225,7 +250,7 @@ private:
     /// Commit processed files.
     /// This method is only used for SELECT query, not for streaming to materialized views.
     /// Which is defined by passing a flag commit_once_processed.
-    void commit(bool insert_succeeded, const std::string & exception_message = {});
+    void commit(bool insert_succeeded, const std::string & exception_message = {}, int error_code = 0);
 
     const String name;
     const size_t processor_id;
@@ -247,6 +272,12 @@ private:
     const std::shared_ptr<ObjectStorageQueueLog> system_queue_log;
     const StorageID storage_id;
     const bool commit_once_processed;
+    const bool is_direct_select;
+    IStreamingStorage & streaming_storage;
+    const UInt64 cancel_epoch;
+    const bool add_deduplication_info;
+    /// Effective dedup: gates whether shutdown can abort mid-file.
+    const bool is_deduplication_v2;
     time_t transaction_start_time;
 
     LoggerPtr log;
@@ -266,6 +297,10 @@ private:
         FileState state;
         FileMetadataPtr metadata;
         std::string exception_during_read;
+        int exception_during_read_code = 0;
+        /// The object's own last-modified time, if object storage reported one.
+        /// Used to update the "newest object committed" pipeline-lag watermark.
+        time_t last_modified = 0;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;

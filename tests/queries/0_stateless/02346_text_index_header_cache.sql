@@ -4,7 +4,6 @@
 --- These tests verify the caching of a deserialized text index header in the consecutive executions.
 
 SET enable_analyzer = 1;
-SET enable_full_text_index = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_header_cache = 1;
@@ -36,7 +35,7 @@ CREATE VIEW text_index_cache_stats AS (
   SELECT
     concat('cache_hits = ', toString(ProfileEvents['TextIndexHeaderCacheHits']), ', cache_misses = ', toString(ProfileEvents['TextIndexHeaderCacheMisses']))
   FROM system.query_log
-  WHERE query_kind ='Select'
+  WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_kind ='Select'
       AND current_database = currentDatabase()
       AND endsWith(trimRight(query), concat('hasAnyTokens(message, \'', {filter:String}, '\');'))
       AND type='QueryFinish'
@@ -57,7 +56,7 @@ SELECT * FROM text_index_cache_stats(filter = 'text_511');
 
 SELECT 'Clear text index header cache';
 
-SYSTEM DROP TEXT INDEX HEADER CACHE;
+SYSTEM CLEAR TEXT INDEX HEADER CACHE;
 
 SELECT '--- cache miss on the first run.';
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_001');
@@ -71,6 +70,6 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_510');
 SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_510');
 
-SYSTEM DROP TEXT INDEX HEADER CACHE;
+SYSTEM CLEAR TEXT INDEX HEADER CACHE;
 DROP VIEW text_index_cache_stats;
 DROP TABLE tab;

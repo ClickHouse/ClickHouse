@@ -1,3 +1,4 @@
+import os
 import os.path as p
 import random
 
@@ -9,6 +10,7 @@ import pyspark
 
 from helpers.cluster import ClickHouseCluster
 from helpers.s3_tools import (
+    AzureDownloader,
     AzureUploader,
     LocalUploader,
     S3Downloader,
@@ -16,9 +18,10 @@ from helpers.s3_tools import (
     LocalDownloader,
     prepare_s3_bucket,
 )
+from helpers.spark_tools import ResilientSparkSession, write_spark_log_config
 
 
-def get_spark():
+def get_spark(log_dir=None):
     builder = (
         pyspark.sql.SparkSession.builder.appName("test_storage_iceberg_with_spark")
         .config(
@@ -30,10 +33,19 @@ def get_spark():
         .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files/iceberg_data")
         .config(
             "spark.sql.extensions",
-            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,"
+            "org.apache.sedona.spark.SedonaSparkSessionExtension",
         )
         .master("local")
     )
+
+    if log_dir:
+        props_path = write_spark_log_config(log_dir)
+        builder = builder.config(
+            "spark.driver.extraJavaOptions",
+            f"-Dlog4j2.configurationFile=file:{props_path}",
+        )
+
     return builder.getOrCreate()
 
 
@@ -103,7 +115,9 @@ def started_cluster_iceberg_with_spark():
         prepare_s3_bucket(cluster)
         logging.info("S3 bucket created")
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
         cluster.default_s3_uploader = S3Uploader(
             cluster.minio_client, cluster.minio_bucket
         )
@@ -125,8 +139,13 @@ def started_cluster_iceberg_with_spark():
         cluster.default_local_uploader = LocalUploader(cluster.instances["node1"])
         cluster.default_local_downloader = LocalDownloader(cluster.instances["node1"])
         cluster.default_s3_downloader = S3Downloader(cluster.minio_client, cluster.minio_bucket)
+        cluster.default_azure_downloader = AzureDownloader(
+            cluster.blob_service_client, cluster.azure_container_name
+        )
 
         yield cluster
 
     finally:
         cluster.shutdown()
+        if p.exists(filesystem_cache_config_path):
+            os.remove(filesystem_cache_config_path)

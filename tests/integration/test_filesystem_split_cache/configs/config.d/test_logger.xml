@@ -1,0 +1,6 @@
+<clickhouse>
+    <logger>
+        <level>test</level>
+        <rotateOnOpen>false</rotateOnOpen>
+    </logger>
+</clickhouse>

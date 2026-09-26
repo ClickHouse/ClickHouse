@@ -1,4 +1,4 @@
--- Test SELECT * REPLACE with all SQL clauses using new analyzer
+-- Test SELECT * REPLACE with all SQL clauses using the analyzer
 -- This test verifies comprehensive fix for SELECT * REPLACE in all applicable clauses
 -- See issue: https://github.com/ClickHouse/ClickHouse/issues/85313
 -- See PR: https://github.com/ClickHouse/ClickHouse/pull/87630

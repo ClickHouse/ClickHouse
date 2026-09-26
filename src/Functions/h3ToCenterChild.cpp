@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -12,10 +12,6 @@
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 
-#include <constants.h>
-#include <h3api.h>
-
-
 namespace DB
 {
 namespace ErrorCodes
@@ -27,17 +23,25 @@ namespace ErrorCodes
 
 namespace
 {
-    class FunctionH3ToCenterChild : public IFunction
+    class FunctionH3ToCenterChild final : public IFunction
     {
     public:
         static constexpr auto name = "h3ToCenterChild";
 
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToCenterChild>(); }
+        H3Validator validator;
+
+        explicit FunctionH3ToCenterChild(const ContextPtr & context) : validator(context) {}
+
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToCenterChild>(context); }
 
         std::string getName() const override { return name; }
 
         size_t getNumberOfArguments() const override { return 2; }
         bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -104,7 +108,13 @@ namespace
                     getName(),
                     toString(MAX_H3_RES));
 
-            UInt64 res = cellToCenterChild(data_hindex[row], data_resolution[row]);
+            UInt64 res = 0;
+            if (validator.validateCell(data_hindex[row]))
+            {
+                H3Index child = 0;
+                if (!cellToCenterChild(data_hindex[row], data_resolution[row], &child))
+                    res = child;
+            }
 
             dst_data[row] = res;
         }

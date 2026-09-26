@@ -81,29 +81,32 @@ bool FillingRow::isNull() const
     return true;
 }
 
-std::optional<Field> FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to)
+Field FillingRow::doLongJump(const FillColumnDescription & descr, size_t column_ind, const Field & to)
 {
     Field shifted_value = row[column_ind];
 
-    if (less(to, shifted_value, getDirection(column_ind)))
-        return std::nullopt;
-
-    for (int32_t step_len = 1, step_no = 0; step_no < 100 && step_len > 0; ++step_no)
+    int64_t step_len = 1;
+    int64_t step_no = 0;
+    for (; step_no < 500 && step_len > 0; ++step_no)
     {
         Field next_value = shifted_value;
         descr.step_func(next_value, step_len);
 
-        if (less(to, next_value, getDirection(0)))
+        int direction = getDirection(column_ind);
+        bool overflowed = less(next_value, shifted_value, direction);
+        logDebug("doLongJump: shifted_value: {}, next_value: {}, to: {}, step_no: {}, step_len: {}", shifted_value, next_value, to, step_no, step_len);
+        if (overflowed || less(to, next_value, direction))
         {
             step_len /= 2;
         }
         else
         {
             shifted_value = std::move(next_value);
-            step_len *= 2;
+            step_len = step_len <= INT64_MAX/2 ? step_len * 2 : step_len;
         }
     }
 
+    logDebug("doLongJump: {} (step_no: {}, step_len: {})", shifted_value, step_no, step_len);
     return shifted_value;
 }
 
@@ -161,6 +164,9 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (pos == row_size)
         return false;
 
+    if (row[pos].isNaN() || row[pos].isInf())
+        return false;
+
     if (next_original_row[pos].isNaN() || next_original_row[pos].isInf())
         return false;
 
@@ -185,6 +191,11 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         Field next_value = row[i];
         fill_column_desc.step_func(next_value, 1);
 
+        /// A step below the precision of the value leaves it unchanged (`1e17 + 0.25 == 1e17` for
+        /// `Float64`), so this column cannot advance any further.
+        if (equals(next_value, row[i]))
+            continue;
+
         if (!less(next_value, constraints[i], getDirection(i)))
             continue;
 
@@ -197,6 +208,12 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
 
     auto next_value = row[pos];
     getFillDescription(pos).step_func(next_value, 1);
+
+    /// A step below the precision of the cursor leaves it unchanged (`1e17 + 0.25 == 1e17` for
+    /// `Float64`), so the fill cannot make progress and must stop here. Without this the same row
+    /// would be generated until the query is killed, because a step is never zero by itself.
+    if (equals(next_value, row[pos]))
+        return false;
 
     if (!next_original_row[pos].isNull() && less(next_original_row[pos], next_value, getDirection(pos)))
         return false;
@@ -244,10 +261,9 @@ bool FillingRow::shift(const FillingRow & next_original_row, bool& value_changed
         if (less(next_original_row[pos], row[pos], getDirection(pos)))
             return false;
 
-        std::optional<Field> next_value = doLongJump(getFillDescription(pos), pos, next_original_row[pos]);
-        logDebug("jumped to next value: {}", next_value.value_or("Did not complete"));
+        Field next_value = doLongJump(getFillDescription(pos), pos, next_original_row[pos]);
 
-        row[pos] = std::move(next_value.value());
+        row[pos] = std::move(next_value);
 
         if (equals(row[pos], next_original_row[pos]))
         {

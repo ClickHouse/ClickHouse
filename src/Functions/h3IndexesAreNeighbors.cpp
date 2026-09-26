@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -8,9 +8,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <base/range.h>
-
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -23,17 +20,25 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3IndexesAreNeighbors : public IFunction
+class FunctionH3IndexesAreNeighbors final : public IFunction
 {
 public:
     static constexpr auto name = "h3IndexesAreNeighbors";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3IndexesAreNeighbors>(); }
+    H3Validator validator;
+
+    explicit FunctionH3IndexesAreNeighbors(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3IndexesAreNeighbors>(context); }
 
     std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -96,8 +101,14 @@ public:
         {
             const UInt64 hindex_origin = data_hindex_origin[row];
             const UInt64 hindex_dest = data_hindex_dest[row];
+            UInt8 res = 0;
 
-            UInt8 res = areNeighborCells(hindex_origin, hindex_dest);
+            if (validator.validateCell(hindex_origin) && validator.validateCell(hindex_dest))
+            {
+                int are_neighbors = 0;
+                if (!areNeighborCells(hindex_origin, hindex_dest, &are_neighbors))
+                    res = static_cast<UInt8>(are_neighbors);
+            }
 
             dst_data[row] = res;
         }

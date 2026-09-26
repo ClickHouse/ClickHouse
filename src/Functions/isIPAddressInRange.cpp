@@ -13,7 +13,6 @@
 #include <charconv>
 
 
-#include <Common/logger_useful.h>
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -74,7 +73,7 @@ public:
 
     explicit IPAddressVariant(std::string_view addr_)
     {
-        UInt32 v4;
+        UInt32 v4 = 0;
         if (DB::parseIPv4whole(addr_.data(), addr_.data() + addr_.size(), reinterpret_cast<unsigned char *>(&v4)))
         {
             addr = v4;
@@ -159,12 +158,17 @@ inline bool isAddressInRange(const IPAddressVariant & address, const IPAddressCI
 
 namespace DB
 {
-    class FunctionIsIPAddressContainedIn : public IFunction
+    class FunctionIsIPAddressContainedIn final : public IFunction
     {
     public:
         static constexpr auto name = "isIPAddressInRange";
         String getName() const override { return name; }
         static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsIPAddressContainedIn>(); }
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so a function that throws on the default value must not be executed on
+        /// the whole dictionary - it would fail on entirely valid data.
+        bool canBeExecutedOnDefaultArguments() const override { return false; }
+
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
         template <IPKind kind>
@@ -278,7 +282,7 @@ namespace DB
         {
             const auto addr = parseConstantIP(col_addr_const);
             if (!addr.has_value())
-                return ColumnUInt8::create(input_rows_count, 0);
+                return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
 
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();

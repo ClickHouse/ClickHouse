@@ -1,6 +1,7 @@
 #include <Storages/ReadInOrderOptimizer.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -82,7 +83,7 @@ NameSet getFixedSortingColumns(
         return {};
 
     /// Convert condition to CNF for more convenient analysis.
-    auto cnf = TreeCNFConverter::tryConvertToCNF(condition);
+    auto cnf = TreeCNFConverter::tryConvertToCNF(condition.get());
     if (!cnf)
         return {};
 
@@ -120,9 +121,10 @@ struct MatchResult
 /// Optimize in case of exact match with order key element
 /// or in some simple cases when order key element is wrapped into monotonic function.
 MatchResult matchSortDescriptionAndKey(
-    const ExpressionActions::Actions & actions,
+    const ExpressionActions & elements_actions,
     const SortColumnDescription & sort_column,
-    const String & sorting_key_column)
+    const String & sorting_key_column,
+    const DataTypePtr & sorting_key_type)
 {
     /// If required order depend on collation, it cannot be matched with primary key order.
     /// Because primary keys cannot have collations.
@@ -133,14 +135,22 @@ MatchResult matchSortDescriptionAndKey(
 
     /// For the path: order by (sort_column, ...)
     if (sort_column.column_name == sorting_key_column)
+    {
+        /// The key is resolved twice, by the table and by the query, and the settings in force can
+        /// give the two resolutions different result types; equal names then denote different
+        /// calculations, with different NULL handling, and so different orders.
+        const auto * node = elements_actions.getActionsDAG().tryFindInOutputs(sort_column.column_name);
+        if (node && !node->result_type->equals(*sorting_key_type))
+            return {};
         return result;
+    }
 
     /// For the path: order by (function(sort_column), ...)
     /// Allow only one simple monotonic functions with one argument
     /// Why not allow multi monotonic functions?
     bool found_function = false;
 
-    for (const auto & action : actions)
+    for (const auto & action : elements_actions.getActions())
     {
         if (action.node->type != ActionsDAG::ActionType::FUNCTION)
             continue;
@@ -150,6 +160,9 @@ MatchResult matchSortDescriptionAndKey(
 
         found_function = true;
         if (action.node->children.size() != 1 || action.node->children.at(0)->result_name != sorting_key_column)
+            return {};
+
+        if (!action.node->children.at(0)->result_type->equals(*sorting_key_type))
             return {};
 
         const auto & func = *action.node->function_base;
@@ -207,8 +220,12 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     const ContextPtr & context,
     UInt64 limit) const
 {
-    const Names & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
-    int read_direction = description.at(0).direction;
+    const auto & sorting_key = metadata_snapshot->getSortingKey();
+    /// data_types is built from the key's own sample block, so it is parallel to column_names.
+    const Names & sorting_key_columns = sorting_key.column_names;
+    const DataTypes & sorting_key_types = sorting_key.data_types;
+    /// read_direction will be set from the first non-constant ORDER BY column
+    int read_direction = 0;
 
     auto fixed_sorting_columns = getFixedSortingColumns(query, sorting_key_columns, context);
 
@@ -223,8 +240,23 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
         if (forbidden_columns.contains(description[desc_pos].column_name))
             break;
 
-        auto match = matchSortDescriptionAndKey(actions[desc_pos]->getActions(), description[desc_pos], sorting_key_columns[key_pos]);
-        bool is_matched = match.direction && (desc_pos == 0 || match.direction == read_direction);
+        auto match = matchSortDescriptionAndKey(
+            *actions[desc_pos], description[desc_pos], sorting_key_columns[key_pos], sorting_key_types[key_pos]);
+
+        /// If the ORDER BY column matches a fixed (constant) key column,
+        /// add it to the sort description but don't let it set read_direction.
+        /// Example: ORDER BY tenant, event_time DESC with WHERE tenant='42'
+        /// The 'tenant' column is constant, so read direction should come from event_time DESC.
+        if (match.direction && fixed_sorting_columns.contains(sorting_key_columns[key_pos]))
+        {
+            /// Still add to sort description - the column matches, it's just constant
+            sort_description_for_merging.push_back(description[desc_pos]);
+            ++desc_pos;
+            ++key_pos;
+            continue;
+        }
+
+        bool is_matched = match.direction && (read_direction == 0 || match.direction == read_direction);
 
         if (!is_matched)
         {
@@ -239,7 +271,7 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             break;
         }
 
-        if (desc_pos == 0)
+        if (read_direction == 0)
             read_direction = match.direction;
 
         sort_description_for_merging.push_back(description[desc_pos]);
@@ -253,6 +285,18 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
 
     if (sort_description_for_merging.empty())
         return {};
+
+    /// If all ORDER BY columns were fixed (constant), read_direction is still 0.
+    /// Default to ascending (1) since the data is trivially sorted when all columns are constant.
+    /// But only if we actually matched some key columns (key_pos > 0).
+    /// If key_pos == 0, the ORDER BY doesn't match the key prefix at all.
+    if (read_direction == 0)
+    {
+        if (key_pos > 0)
+            read_direction = 1;
+        else
+            return {};
+    }
 
     return std::make_shared<InputOrderInfo>(std::move(sort_description_for_merging), key_pos, read_direction, limit);
 }

@@ -1,13 +1,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/geometryConverters.h>
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-
-#include <Columns/ColumnTuple.h>
 
 #include <memory>
-#include <string>
 
 namespace DB
 {
@@ -21,7 +16,7 @@ namespace
 {
 
 template <typename Point>
-class FunctionPolygonConvexHull : public IFunction
+class FunctionPolygonConvexHull final : public IFunction
 {
 public:
     static const char * name;

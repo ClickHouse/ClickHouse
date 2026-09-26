@@ -1,5 +1,6 @@
 #pragma once
 #include <Core/Types.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -11,12 +12,14 @@ struct VectorSearchParameters
     String column;
     String distance_function;
     size_t limit;
-    std::vector<Float64> reference_vector;
+    VectorWithMemoryTracking<Float64> reference_vector;
 
     /// Other metadata
     bool additional_filters_present; /// SELECT contains a WHERE or PREWHERE clause
     bool return_distances;
 };
+
+using OptionalVectorSearchParameters = std::optional<VectorSearchParameters>;
 
 struct NearestNeighbours
 {

@@ -1,0 +1,438 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-upgrade
+title: 'Helm 업그레이드 가이드'
+description: 'v1.x 인라인 템플릿 ClickStack Helm 차트에서 v2.x 서브차트 아키텍처로 마이그레이션'
+doc_type: 'guide'
+keywords: ['ClickStack 업그레이드', 'Helm 마이그레이션', 'v1.x에서 v2.x로', '서브차트 아키텍처', 'ClickStack 마이그레이션']
+---
+
+이 가이드는 인라인 템플릿 ClickStack Helm 차트(v1.x)에서 서브차트 기반 아키텍처(v2.x)로 마이그레이션하는 방법을 설명합니다. 이는 MongoDB와 ClickHouse에 사용하는 수동 구성 Kubernetes 리소스를 오퍼레이터가 관리하는 사용자 지정 리소스로 대체하고, 공식 OpenTelemetry Collector Helm 차트를 사용하는 **호환성이 깨지는 변경 사항**입니다.
+
+<Warning>
+  **호환성이 깨지는 변경 사항**
+
+  v2.x 차트는 v1.x와 **하위 호환되지 않습니다**. 현재 배포에 직접 `helm upgrade`를 수행하는 방식은 지원되지 않습니다. 인플레이스 업그레이드를 시도하기보다는 기존 배포와 함께 새로 설치한 후 데이터를 마이그레이션하는 것을 권장합니다.
+</Warning>
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* 업그레이드하기 전에 데이터를 백업하세요 (MongoDB, ClickHouse PVC)
+* 현재 `values.yaml` override 설정을 검토하세요 — 대부분의 키가 다른 위치로 이동했거나 이름이 변경되었습니다
+
+<div id="two-phase-installation">
+  ## 2단계 설치
+</div>
+
+v2.x chart는 2단계 방식으로 설치됩니다. Operators(CRD를 등록함)를 먼저 설치한 후 메인 chart(CR을 생성함)를 설치해야 합니다:
+
+```bash
+# 단계 1: 연산자 및 CRD 설치
+helm install clickstack-operators clickstack/clickstack-operators
+
+# 단계 2: ClickStack 설치
+helm install my-clickstack clickstack/clickstack
+```
+
+설치한 순서의 반대로 제거하십시오:
+
+```bash
+helm uninstall my-clickstack
+helm uninstall clickstack-operators
+```
+
+<div id="data-persistence">
+  ### 데이터 영속성
+</div>
+
+MongoDB 및 ClickHouse Operator가 생성한 PersistentVolumeClaims는 `helm uninstall`로 **삭제되지 않습니다**. 이는 실수로 데이터가 손실되는 것을 방지하기 위한 설계입니다. 제거 후 PVC를 정리하려면 다음을 참조하십시오.
+
+* [MongoDB Kubernetes Operator 문서](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)
+
+<div id="storage-class">
+  ### 스토리지 클래스
+</div>
+
+`global.storageClassName` 및 `global.keepPVC`가 제거되었습니다. 이제 스토리지 클래스는 각 operator의 CR spec에 직접 설정합니다:
+
+```yaml
+mongodb:
+  spec:
+    statefulSet:
+      spec:
+        volumeClaimTemplates:
+          - spec:
+              storageClassName: "fast-ssd"
+
+clickhouse:
+  keeper:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "fast-ssd"
+  cluster:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "fast-ssd"
+```
+
+<div id="what-changed">
+  ## 변경 사항
+</div>
+
+| 구성 요소          | 이전 (v1.x)                                      | 이후 (v2.x)                                                                                                                  |
+| -------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| MongoDB        | 인라인 배포 + 서비스 + PVC                             | `MongoDBCommunity` CR을 관리하는 [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes)             |
+| ClickHouse     | 인라인 배포 + 서비스 + ConfigMaps + PVCs               | `ClickHouseCluster` + `KeeperCluster` CR을 관리하는 [ClickHouse Operator](/ko/products/kubernetes-operator/overview)               |
+| OTel collector | 인라인 배포 + 서비스 (`otel.*` 블록)                     | [공식 OpenTelemetry Collector Helm 차트](https://github.com/open-telemetry/opentelemetry-helm-charts) (`otel-collector:` 서브차트) |
+| HyperDX values | `hyperdx.*` 아래의 평면형 키와 최상위 `tasks:` 및 `appUrl` | `hyperdx.*` 아래에서 K8s 리소스 유형별로 재구성됨 (아래 참조)                                                                                 |
+| hdx-oss-v2     | 지원 중단된 레거시 차트                                  | 완전히 제거됨                                                                                                                    |
+
+<div id="hyperdx-values-reorganization">
+  ## HyperDX values 재구성
+</div>
+
+이제 `hyperdx:` 블록은 Kubernetes 리소스 유형별로 정리되었습니다.
+
+```yaml
+hyperdx:
+  ports:          # 공유 포트 번호 (Deployment, Service, ConfigMap, Ingress)
+    api: 8000
+    app: 3000
+    opamp: 4320
+
+  frontendUrl: "http://localhost:3000"   # 제거된 appUrl을 대체합니다
+
+  config:         # → clickstack-config ConfigMap (민감하지 않은 환경 변수)
+    APP_PORT: "3000"
+    HYPERDX_LOG_LEVEL: "info"
+
+  secrets:        # → clickstack-secret 시크릿 (민감한 환경 변수)
+    HYPERDX_API_KEY: "..."
+    CLICKHOUSE_PASSWORD: "otelcollectorpass"
+    CLICKHOUSE_APP_PASSWORD: "hyperdx"
+    MONGODB_PASSWORD: "hyperdx"
+
+  deployment:     # K8s Deployment 스펙 (이미지, 레플리카, 프로브 등)
+  service:        # K8s Service 스펙 (유형, 어노테이션)
+  ingress:        # K8s 인그레스 스펙 (호스트, tls, 어노테이션)
+  podDisruptionBudget:  # K8s PDB 스펙
+  tasks:          # K8s CronJob 스펙 (기존 최상위 tasks:)
+```
+
+<div id="key-moves">
+  ### 주요 변경 사항
+</div>
+
+| 이전 (v1.x)                                  | 이후 (v2.x)                                                        |
+| ------------------------------------------ | ---------------------------------------------------------------- |
+| `appUrl`                                   | 제거됨. `hyperdx.frontendUrl`을 사용하십시오(기본값: `http://localhost:3000`) |
+| `tasks.*` (최상위)                            | `hyperdx.tasks.*`                                                |
+| `mongodb.password`                         | `hyperdx.secrets.MONGODB_PASSWORD`                               |
+| `clickhouse.config.users.appUserPassword`  | `hyperdx.secrets.CLICKHOUSE_APP_PASSWORD`                        |
+| `clickhouse.config.users.otelUserPassword` | `hyperdx.secrets.CLICKHOUSE_PASSWORD`                            |
+| `otel.*` 환경 변수 재정의                         | `hyperdx.config.*`(비민감 정보) 및 `hyperdx.secrets.*`(민감 정보)          |
+
+<div id="unified-configmap-and-secret">
+  ### 통합 ConfigMap 및 시크릿
+</div>
+
+이제 모든 환경 변수는 `envFrom`을 통해 HyperDX 배포 **및** OTel collector가 공유하는, 이름이 고정된 두 리소스를 통해 전달됩니다.
+
+* **`clickstack-config`** ConfigMap — `hyperdx.config`를 기반으로 채워집니다
+* **`clickstack-secret`** 시크릿 — `hyperdx.secrets`를 기반으로 채워집니다
+
+이제 더 이상 OTel 전용 ConfigMap은 없습니다. 두 워크로드 모두 동일한 소스에서 값을 읽습니다.
+
+<div id="mongodb-migration">
+  ## MongoDB 마이그레이션
+</div>
+
+<div id="mongodb-removed-values">
+  ### 제거된 값
+</div>
+
+다음 `mongodb.*` 값은 더 이상 존재하지 않습니다:
+
+```yaml
+# 제거됨 — 사용하지 마십시오
+mongodb:
+  image: "..."
+  port: 27017
+  strategy: ...
+  nodeSelector: {}
+  tolerations: []
+  livenessProbe: ...
+  readinessProbe: ...
+  persistence:
+    enabled: true
+    dataSize: 10Gi
+```
+
+<div id="mongodb-new-values">
+  ### 새로 추가된 값
+</div>
+
+이제 MongoDB는 `MongoDBCommunity` 사용자 지정 리소스를 통해 MCK operator에서 관리됩니다. CR spec은 `mongodb.spec`의 내용을 그대로 반영해 렌더링됩니다:
+
+```yaml
+mongodb:
+  enabled: true
+  spec:
+    members: 1
+    type: ReplicaSet
+    version: "5.0.32"
+    security:
+      authentication:
+        modes: ["SCRAM"]
+    users:
+      - name: hyperdx
+        db: hyperdx
+        passwordSecretRef:
+          name: '{{ include "clickstack.mongodb.fullname" . }}-password'
+        roles:
+          - name: dbOwner
+            db: hyperdx
+          - name: clusterMonitor
+            db: admin
+        scramCredentialsSecretName: '{{ include "clickstack.mongodb.fullname" . }}-scram'
+    additionalMongodConfig:
+      storage.wiredTiger.engineConfig.journalCompressor: zlib
+```
+
+MongoDB 비밀번호는 `hyperdx.secrets.MONGODB_PASSWORD`에 설정합니다(`mongodb.password`가 아님). 이 값은 비밀번호 시크릿과 `mongoUri` 템플릿에서 자동으로 참조됩니다.
+
+데이터 지속성을 추가하려면 `mongodb.spec` 내부에 `statefulSet` 블록을 추가하세요:
+
+```yaml
+mongodb:
+  spec:
+    statefulSet:
+      spec:
+        volumeClaimTemplates:
+          - metadata:
+              name: data-volume
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: "your-storage-class"
+              resources:
+                requests:
+                  storage: 10Gi
+```
+
+MCK 오퍼레이터 서브차트는 `mongodb-operator:` 아래에서 구성합니다(`mongodb-kubernetes:`가 아님). 사용 가능한 모든 CRD 필드는 [MCK 문서](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)에서 확인하십시오.
+
+<div id="clickhouse-migration">
+  ## ClickHouse 마이그레이션
+</div>
+
+<div id="mongodb-removed-values">
+  ### 제거된 값
+</div>
+
+다음 `clickhouse.*` 값은 더 이상 존재하지 않습니다:
+
+```yaml
+# 제거됨 — 사용하지 마십시오
+clickhouse:
+  image: "..."
+  terminationGracePeriodSeconds: 90
+  resources: {}
+  livenessProbe: ...
+  readinessProbe: ...
+  startupProbe: ...
+  nodeSelector: {}
+  tolerations: []
+  service:
+    type: ClusterIP
+    annotations: {}
+  persistence:
+    enabled: true
+    dataSize: 10Gi
+    logSize: 5Gi
+  config:
+    clusterCidrs: [...]
+    users:
+      appUserPassword: "..."
+      otelUserPassword: "..."
+      otelUserName: "..."
+```
+
+<div id="clickhouse-new-values">
+  ### 새로운 값
+</div>
+
+이제 ClickHouse는 `ClickHouseCluster` 및 `KeeperCluster` 사용자 지정 리소스를 통해 ClickHouse Operator로 관리됩니다. 두 CR spec은 values에 정의된 내용이 그대로 반영됩니다:
+
+```yaml
+clickhouse:
+  enabled: true
+  port: 8123
+  nativePort: 9000
+  prometheus:
+    enabled: true
+    port: 9363
+  keeper:
+    spec:
+      replicas: 1
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      replicas: 1
+      shards: 1
+      keeperClusterRef:
+        name: '{{ include "clickstack.clickhouse.keeper" . }}'
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+      settings:
+        extraUsersConfig:
+          users:
+            app:
+              password: '{{ .Values.hyperdx.secrets.CLICKHOUSE_APP_PASSWORD }}'
+            otelcollector:
+              password: '{{ .Values.hyperdx.secrets.CLICKHOUSE_PASSWORD }}'
+        extraConfig:
+          max_connections: 4096
+          keep_alive_timeout: 64
+          max_concurrent_queries: 100
+```
+
+ClickHouse 사용자 자격 증명은 이제 `clickhouse.config.users`가 아니라 `hyperdx.secrets`에서 가져옵니다. 클러스터 사양에서는 템플릿 표현식을 사용해 이를 참조합니다.
+
+ClickHouse Operator 서브차트는 `clickhouse-operator:` 아래에서 구성됩니다. 웹훅과 cert-manager는 기본적으로 비활성화되어 있습니다. 사용 가능한 모든 CRD 필드는 [operator 구성 가이드](/ko/products/kubernetes-operator/guides/configuration)를 참조하십시오.
+
+<div id="otel-collector-migration">
+  ## OTEL Collector 마이그레이션
+</div>
+
+<div id="otel-removed-values">
+  ### 삭제된 값
+</div>
+
+`otel:` 블록 전체가 더 이상 존재하지 않습니다:
+
+```yaml
+# 제거됨 — 사용하지 마십시오
+otel:
+  enabled: true
+  image: ...
+  replicas: 1
+  resources: {}
+  clickhouseEndpoint: ...
+  clickhouseUser: ...
+  clickhousePassword: ...
+  clickhouseDatabase: "default"
+  opampServerUrl: ...
+  port: 13133
+  nativePort: 24225
+  grpcPort: 4317
+  httpPort: 4318
+  healthPort: 8888
+  env: []
+  customConfig: ...
+```
+
+<div id="clickhouse-new-values">
+  ### 새로운 값
+</div>
+
+이제 OTel collector는 공식 OpenTelemetry Collector Helm 차트의 `otel-collector:` 서브차트로 배포됩니다. 상위 차트 `otel:` 래퍼는 없으므로 서브차트를 직접 구성하십시오.
+
+환경 변수(ClickHouse 엔드포인트, OpAMP URL 등)는 통합된 `clickstack-config` ConfigMap과 `clickstack-secret` 시크릿을 통해 공유됩니다. 서브차트의 `extraEnvsFrom`은 이미 연결되어 있습니다:
+
+```yaml
+otel-collector:
+  enabled: true
+  mode: deployment
+  image:
+    repository: docker.clickhouse.com/clickhouse/clickstack-otel-collector
+    tag: ""
+  extraEnvsFrom:
+    - configMapRef:
+        name: clickstack-config
+    - secretRef:
+        name: clickstack-secret
+  ports:
+    otlp:
+      enabled: true
+      containerPort: 4317
+      servicePort: 4317
+    otlp-http:
+      enabled: true
+      containerPort: 4318
+      servicePort: 4318
+```
+
+리소스를 설정하려면(기존 `otel.resources`):
+
+```yaml
+otel-collector:
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+```
+
+레플리카를 설정하려면(이전에는 `otel.replicas` 사용):
+
+```yaml
+otel-collector:
+  replicaCount: 3
+```
+
+nodeSelector/tolerations를 설정하려면(이전 명칭: `otel.nodeSelector`/`otel.tolerations`):
+
+```yaml
+otel-collector:
+  nodeSelector:
+    node-role: monitoring
+  tolerations:
+    - key: monitoring
+      operator: Equal
+      value: otel
+      effect: NoSchedule
+```
+
+[OpenTelemetry Collector Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)에서 사용 가능한 모든 서브차트 값을 확인하십시오.
+
+<div id="unchanged-values">
+  ## 변경되지 않는 값
+</div>
+
+다음 섹션은 이번 마이그레이션의 **영향을 받지 않습니다**:
+
+* `global.*` (imageRegistry, imagePullSecrets)
+
+<div id="fresh-install-vs-in-place-upgrade">
+  ## 신규 설치와 인플레이스 업그레이드
+</div>
+
+**신규 설치**에는 특별한 단계가 필요하지 않습니다. 기본값으로 바로 사용할 수 있습니다.
+
+기존 릴리스를 **인플레이스 업그레이드**하는 경우에는 다음 사항에 유의하십시오.
+
+1. 오퍼레이터(MCK, ClickHouse Operator)는 네임스페이스에 새 배포로 설치됩니다
+2. 기존 MongoDB 배포와 ClickHouse 배포는 Helm에 의해 삭제됩니다(더 이상 chart의 templates에 포함되지 않음)
+3. 오퍼레이터가 MongoDB와 ClickHouse를 관리하기 위해 새로운 StatefulSet을 생성합니다
+4. **이전 chart의 PVC는** 오퍼레이터가 관리하는 StatefulSet에서 **자동으로 재사용되지 않습니다**
+
+인플레이스 업그레이드보다는 기존 배포와 별도로 신규 설치를 수행한 후 데이터를 마이그레이션하는 방식을 권장합니다.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* [기본 Helm 가이드](/ko/clickstack/deployment/helm) - v2.x를 사용한 기본 설치
+* [구성 가이드](/ko/clickstack/deployment/helm-configuration) - API Key, 시크릿 및 인그레스
+* [추가 매니페스트](/ko/clickstack/deployment/helm-additional-manifests) - 사용자 정의 Kubernetes 객체
+* [ClickStack Helm 차트 리포지토리](https://github.com/ClickHouse/ClickStack-helm-charts) - 차트 소스 코드 및 values 참고

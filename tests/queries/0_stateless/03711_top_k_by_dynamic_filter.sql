@@ -20,3 +20,28 @@ SELECT v1, v2 FROM tab1 WHERE v2 > 100000 ORDER BY v1 DESC LIMIT 10 SETTINGS use
 SELECT v1, v2 FROM tab1 ORDER BY v1 ASC LIMIT 5 SETTINGS use_top_k_dynamic_filtering=1;
 SELECT v1, v2 FROM tab1 ORDER BY v1 ASC LIMIT 20 SETTINGS use_top_k_dynamic_filtering=1;
 SELECT v1, v2 FROM tab1 WHERE v2 > 100000 ORDER BY v1 ASC LIMIT 10 SETTINGS use_top_k_dynamic_filtering=1;
+
+DROP TABLE tab1;
+
+SELECT 'Tests with multiple columns in ORDER BY';
+
+DROP TABLE IF EXISTS tab2;
+CREATE TABLE tab2
+(
+    id UInt32,
+    v1 UInt32,
+    v2 UInt32
+) Engine = MergeTree ORDER BY id SETTINGS index_granularity = 64, min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, max_bytes_to_merge_at_max_space_in_pool = 1, use_const_adaptive_granularity = 1, index_granularity_bytes = 0;
+
+-- v1 has 10 distinct values (0-9) with ties, v2 is unique (1..1000000)
+INSERT INTO tab2 SELECT rand(), (number + 1) % 10, number + 1 FROM numbers(1000000);
+
+SELECT v1, v2 FROM tab2 ORDER BY v1 DESC, v2 DESC LIMIT 5 SETTINGS use_top_k_dynamic_filtering=1;
+SELECT v1, v2 FROM tab2 ORDER BY v1 DESC, v2 DESC LIMIT 20 SETTINGS use_top_k_dynamic_filtering=1;
+SELECT v1, v2 FROM tab2 WHERE v2 > 100000 ORDER BY v1 DESC, v2 DESC LIMIT 10 SETTINGS use_top_k_dynamic_filtering=1;
+
+SELECT v1, v2 FROM tab2 ORDER BY v1 ASC, v2 ASC LIMIT 5 SETTINGS use_top_k_dynamic_filtering=1;
+SELECT v1, v2 FROM tab2 ORDER BY v1 ASC, v2 ASC LIMIT 20 SETTINGS use_top_k_dynamic_filtering=1;
+SELECT v1, v2 FROM tab2 WHERE v2 > 100000 ORDER BY v1 ASC, v2 ASC LIMIT 10 SETTINGS use_top_k_dynamic_filtering=1;
+
+DROP TABLE tab2;

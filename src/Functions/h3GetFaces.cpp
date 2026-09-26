@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -9,9 +9,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/range.h>
-
-#include <h3api.h>
 
 
 namespace DB
@@ -25,17 +24,25 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3GetFaces : public IFunction
+class FunctionH3GetFaces final : public IFunction
 {
 public:
     static constexpr auto name = "h3GetFaces";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3GetFaces>(); }
+    H3Validator validator;
+
+    explicit FunctionH3GetFaces(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3GetFaces>(context); }
 
     std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -75,15 +82,21 @@ public:
         result_offsets.resize(input_rows_count);
 
         auto current_offset = 0;
-        std::vector<int> faces;
+        VectorWithMemoryTracking<int> faces;
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            int max_faces = maxFaceCount(data[row]);
+            if (!validator.validateCell(data[row]))
+            {
+                result_offsets[row] = current_offset;
+                continue;
+            }
+
+            int max_faces = 0;
+            maxFaceCount(data[row], &max_faces);
 
             faces.resize(max_faces);
 
-            // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
             getIcosahedronFaces(data[row], faces.data());
 
             for (int i = 0; i < max_faces; ++i)
@@ -92,7 +105,7 @@ public:
                 if (faces[i] >= 0 && faces[i] <= 19)
                 {
                     ++current_offset;
-                    result_data.emplace_back(faces[i]);
+                    result_data.emplace_back(static_cast<UInt8>(faces[i]));
                 }
             }
 
