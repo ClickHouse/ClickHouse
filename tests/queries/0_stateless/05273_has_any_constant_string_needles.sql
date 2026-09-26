@@ -1,5 +1,5 @@
--- hasAny with a constant array of strings must give the same answer as with the same array passed
--- as a non-constant argument, for String, LowCardinality(String) and FixedString elements, and for long strings:
+-- `hasAny` with a constant array of strings must give the same answer as with the same array passed
+-- as a non-constant argument, for `String`, `LowCardinality(String)` and `FixedString` elements, and for long strings:
 -- needles of up to 256 bytes, a needle longer than that, and elements longer than every needle.
 DROP TABLE IF EXISTS t_has_any_const_strings;
 CREATE TABLE t_has_any_const_strings (id UInt64, s Array(String), lc Array(LowCardinality(String)), fs Array(FixedString(20)))
