@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 #include <memory>
 #include <mutex>
@@ -37,6 +38,10 @@ public:
 
     std::optional<size_t> getSnapshotReplicaNum() const { return snapshot_replica_num; }
 
+    /// The fixed number of replicas the coordinator was sized for. Replica numbers in announcements
+    /// must stay below it, so a reused coordinator must keep being fed the same set of replicas.
+    size_t getReplicasCount() const { return replicas_count; }
+
     /// Pin the snapshot replica to a specific replica_num before any announcement arrives.
     /// Called by the initiator-local replica during pipeline build (synchronously, before any
     /// follower announcement can reach the coordinator).
@@ -66,6 +71,9 @@ private:
 
     /// Authoritative parts for each stream, captured from the snapshot replica's announcement.
     std::unordered_map<String, RangesInDataPartsDescription> stream_to_registered_parts;
+
+    /// Summarizes the whole coordination when the coordinator is destroyed
+    OpenTelemetry::ManualSpan summary_span{"ParallelReplicasReadingCoordinator"};
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;

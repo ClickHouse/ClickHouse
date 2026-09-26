@@ -1,0 +1,5 @@
+1	1
+1
+1	1
+allow_experimental_analyzer	Bool	1	1	Obsolete	
+enable_analyzer	Bool	1	1	Obsolete	allow_experimental_analyzer

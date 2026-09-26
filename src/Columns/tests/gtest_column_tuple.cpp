@@ -100,7 +100,8 @@ TEST(ColumnTuple, InsertDefaultIsExceptionSafe)
     auto tuple = ColumnTuple::create(std::move(elements));
 
     {
-        ThreadStatus thread_status;
+        /// Drain deferred allocations so the clamp below is exact; a no-op with no thread status.
+        CurrentThread::flushUntrackedMemory();
         const Int64 prev_hard_limit = total_memory_tracker.getHardLimit();
         SCOPE_EXIT_SAFE(total_memory_tracker.setHardLimit(prev_hard_limit));
         total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);

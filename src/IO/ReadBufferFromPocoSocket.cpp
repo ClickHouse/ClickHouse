@@ -157,7 +157,7 @@ bool ReadBufferFromPocoSocketBase::poll(size_t timeout_microseconds)
 
 void ReadBufferFromPocoSocketBase::setReceiveTimeout(size_t receive_timeout_microseconds)
 {
-    socket.setReceiveTimeout(Poco::Timespan(receive_timeout_microseconds, 0));
+    socket.setReceiveTimeout(Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(receive_timeout_microseconds)));
 }
 
 void ReadBufferFromPocoSocketBase::setHandshakeTimeout(size_t timeout_milliseconds)

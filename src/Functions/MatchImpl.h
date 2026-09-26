@@ -4,6 +4,7 @@
 #include <type_traits>
 #include <base/types.h>
 #include <Common/Volnitsky.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/isValidUTF8.h>
 #include <Columns/ColumnString.h>
@@ -24,56 +25,30 @@ inline bool likePatternMatchesEverything(std::string_view pattern)
     return !pattern.empty() && pattern.find_first_not_of('%') == std::string_view::npos;
 }
 
-/// Is the [I]LIKE expression equivalent to a substring search?
-inline bool likePatternIsSubstring(std::string_view pattern, String & res)
+/// `likePatternIsSubstring` lives in `Common/likePatternToRegexp.h` so it can be shared with the
+/// `optimize_or_like_chain` rewrite passes; it is declared in namespace `DB` and used unqualified below.
+
+/// Matches an anchored literal within one row, given the leftmost occurrence the column-wide search found in
+/// it. A case-insensitive pattern never gets an anchored kind, so comparing bytes is enough.
+inline bool matchesAnchoredLiteral(
+    RegexpMatchKind kind, std::string_view literal, const UInt8 * row_begin, const UInt8 * row_end, const UInt8 * occurrence)
 {
-    /// TODO: ignore multiple leading or trailing %
-    if (pattern.size() < 2 || !pattern.starts_with('%') || !pattern.ends_with('%'))
-        return false;
+    const size_t row_size = row_end - row_begin;
 
-    res.clear();
-    res.reserve(pattern.size() - 2);
-
-    const char * pos = pattern.data() + 1;
-    const char * const end = pattern.data() + pattern.size() - 1;
-
-    while (pos < end)
+    switch (kind)
     {
-        switch (*pos)
-        {
-            case '%':
-            case '_':
-                return false;
-            case '\\':
-                ++pos;
-                if (pos == end)
-                    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
-                    return false;
-
-                switch (*pos)
-                {
-                    /// Known LIKE escape sequences:
-                    case '%':
-                    case '_':
-                    case '\\':
-                        res += *pos;
-                        break;
-                    /// For all other escape sequences, the backslash loses its special meaning
-                    default:
-                        res += '\\';
-                        res += *pos;
-                        break;
-                }
-
-                break;
-            default:
-                res += *pos;
-                break;
-        }
-        ++pos;
+        case RegexpMatchKind::Prefix:
+            return occurrence == row_begin;
+        case RegexpMatchKind::Suffix:
+            /// The leftmost occurrence says nothing about the tail, so compare the tail itself.
+            return row_size >= literal.size() && 0 == memcmp(row_end - literal.size(), literal.data(), literal.size());
+        case RegexpMatchKind::Exact:
+            return row_size == literal.size();
+        case RegexpMatchKind::General:
+        case RegexpMatchKind::Substring:
+            chassert(false); /// The caller checks the kind.
+            return false;
     }
-
-    return true;
 }
 
 }
@@ -212,7 +187,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like && likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -258,6 +233,7 @@ struct MatchImpl
         bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
 
         regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+        const RegexpMatchKind match_kind = regexp.getMatchKind();
 
         if (required_substring.empty())
         {
@@ -283,7 +259,7 @@ struct MatchImpl
         }
         else
         {
-            /// NOTE This almost matches with the case of impl::likePatternIsSubstring.
+            /// NOTE This almost matches with the case of likePatternIsSubstring.
 
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.begin() + haystack_data.size();
@@ -309,7 +285,16 @@ struct MatchImpl
                 {
                     /// And if it does not, if necessary, we check the regexp.
                     if (is_trivial)
+                    {
                         res[i] = !negate;
+                    }
+                    else if (isAnchoredLiteralMatchKind(match_kind))
+                    {
+                        const UInt8 * const row_begin = begin + haystack_offsets[i - 1];
+                        const UInt8 * const row_end = begin + haystack_offsets[i];
+
+                        res[i] = negate ^ impl::matchesAnchoredLiteral(match_kind, required_substring, row_begin, row_end, pos);
+                    }
                     else
                     {
                         const char * str_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i - 1]]);
@@ -319,7 +304,7 @@ struct MatchImpl
                           *  so that it can match when `required_substring` occurs into the string several times,
                           *  and at the first occurrence, the regexp is not a match.
                           */
-                        const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
+                        const size_t start_pos = required_substring_is_prefix ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
                         const size_t end_pos = str_size;
 
                         const bool match = regexp.getRE2()->Match(
@@ -375,7 +360,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like && likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack.data();
             const UInt8 * const end = haystack.data() + haystack.size();
@@ -426,6 +411,7 @@ struct MatchImpl
         bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
 
         regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+        const RegexpMatchKind match_kind = regexp.getMatchKind();
 
         if (required_substring.empty())
         {
@@ -482,6 +468,12 @@ struct MatchImpl
                         /// And if it does not, if necessary, we check the regexp.
                         if (is_trivial)
                             res[i] = !negate;
+                        else if (isAnchoredLiteralMatchKind(match_kind))
+                        {
+                            const UInt8 * const row_begin = next_pos - N;
+
+                            res[i] = negate ^ impl::matchesAnchoredLiteral(match_kind, required_substring, row_begin, next_pos, pos);
+                        }
                         else
                         {
                             const char * str_data = reinterpret_cast<const char *>(next_pos - N);
@@ -490,7 +482,7 @@ struct MatchImpl
                             *  so that it can match when `required_substring` occurs into the string several times,
                             *  and at the first occurrence, the regexp is not a match.
                             */
-                            const size_t start_pos = (required_substring_is_prefix) ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
+                            const size_t start_pos = required_substring_is_prefix ? (reinterpret_cast<const char *>(pos) - str_data) : 0;
                             const size_t end_pos = N;
 
                             const bool match = regexp.getRE2()->Match(
@@ -538,7 +530,7 @@ struct MatchImpl
             || (!is_like && (needle == ".*" || needle == ".*?")))
             return !negate;
 
-        if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+        if (is_like && likePatternIsSubstring(needle, required_substr))
         {
             if (required_substr.size() > haystack_length)
                 return negate;
@@ -572,6 +564,9 @@ struct MatchImpl
 
         if (is_trivial)
             return !negate; /// no wildcards in pattern
+
+        if (isAnchoredLiteralMatchKind(regexp->getMatchKind()))
+            return negate ^ impl::matchesAnchoredLiteral(regexp->getMatchKind(), required_substr, haystack_begin, haystack_end, match);
 
         const size_t start_pos = required_substring_is_prefix ? (match - haystack_begin) : 0;
         const size_t end_pos = haystack_length;

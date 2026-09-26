@@ -1,0 +1,105 @@
+---
+title: 'OpenAPI를 통한 MySQL ClickPipes 스케일링'
+description: 'OpenAPI를 통해 MySQL ClickPipes를 스케일링하는 방법'
+slug: /integrations/clickpipes/mysql/scaling
+sidebarTitle: '스케일링'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', '데이터 수집', '실시간 동기화', '스케일링']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Warning>
+  **대부분의 사용자에게는 이 API가 필요하지 않습니다**
+
+  DB ClickPipes의 기본 구성은 대부분의 워크로드를 별도 설정 없이 처리할 수 있도록 설계되었습니다. 워크로드에 스케일링이 필요하다고 판단되면 [지원 요청](https://clickhouse.com/support/program)을 열어 주십시오. 사용 사례에 맞는 최적의 설정을 안내해 드립니다.
+</Warning>
+
+다음과 같은 경우에는 스케일링 API가 유용할 수 있습니다:
+
+* 대규모 초기 적재(4 TB 초과)
+* 중간 규모의 데이터를 가능한 한 빠르게 마이그레이션해야 하는 경우
+* 동일한 서비스에서 8개를 초과하는 CDC ClickPipes를 지원해야 하는 경우
+
+스케일 업을 시도하기 전에 다음 사항을 고려하십시오:
+
+* 소스 DB에 충분한 가용 용량이 있는지 확인
+* ClickPipe를 생성할 때 먼저 [초기 적재 병렬성과 파티셔닝](/ko/integrations/clickpipes/mysql/parallel-initial-load)을 조정
+* CDC 지연을 유발할 수 있는 소스의 [장시간 실행 트랜잭션](/ko/integrations/clickpipes/mysql/controlling-sync#transactions)이 있는지 확인
+
+**스케일을 늘리면 ClickPipes 컴퓨트 비용도 비례하여 증가합니다.** 초기 적재만을 위해 스케일 업하는 경우, 스냅샷이 완료된 후에는 예기치 않은 청구를 방지하기 위해 반드시 스케일 다운해야 합니다. 가격에 대한 자세한 내용은 [ClickPipes pricing](/ko/products/cloud/reference/billing/clickpipes/index)을 참조하십시오.
+
+<div id="prerequisites">
+  ## 이 프로세스의 사전 요구 사항
+</div>
+
+시작하기 전에 다음이 필요합니다:
+
+1. 대상 ClickHouse Cloud 서비스에 대해 관리자 권한이 부여된 [ClickHouse API Key](/ko/products/cloud/features/admin-features/api/openapi)
+2. 서비스에 이전에 한 번 이상 프로비저닝된 DB ClickPipe(Postgres, MySQL 또는 MongoDB). CDC 인프라는 첫 번째 ClickPipe가 생성될 때 함께 생성되며, 스케일링 엔드포인트는 그 시점부터 사용할 수 있습니다.
+
+<div id="cdc-scaling-steps">
+  ## DB ClickPipes 확장 단계
+</div>
+
+명령을 실행하기 전에 다음 환경 변수를 설정하세요:
+
+```bash
+ORG_ID=<Your ClickHouse organization ID>
+SERVICE_ID=<Your ClickHouse service ID>
+KEY_ID=<Your ClickHouse key ID>
+KEY_SECRET=<Your ClickHouse key secret>
+```
+
+현재 스케일링 구성을 조회하세요(선택 사항):
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# 예시 결과:
+{
+  "result": {
+    "replicaCpuMillicores": 2000,
+    "replicaMemoryGb": 8
+  },
+  "requestId": "04310d9e-1126-4c03-9b05-2aa884dbecb7",
+  "status": 200
+}
+```
+
+원하는 스케일링을 설정하세요. 지원되는 구성은 메모리(GB)를 CPU 코어 수의 4배로 설정한 1~24개의 CPU 코어입니다:
+
+```bash
+cat <<EOF | tee cdc_scaling.json
+{
+  "replicaCpuMillicores": 24000,
+  "replicaMemoryGb": 96
+}
+EOF
+
+curl --silent --user $KEY_ID:$KEY_SECRET \
+-X PATCH -H "Content-Type: application/json" \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+-d @cdc_scaling.json | jq
+```
+
+구성 변경 사항이 전파될 때까지 기다리십시오(일반적으로 3~5분 소요). 스케일링이 완료되면 GET 엔드포인트에 새 값이 반영됩니다:
+
+```bash
+curl --silent --user $KEY_ID:$KEY_SECRET \
+https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/clickpipesCdcScaling \
+| jq
+
+# 예시 결과:
+{
+  "result": {
+    "replicaCpuMillicores": 24000,
+    "replicaMemoryGb": 96
+  },
+  "requestId": "5a76d642-d29f-45af-a857-8c4d4b947bf0",
+  "status": 200
+}
+```

@@ -1,4 +1,4 @@
--- The crash path only exists in the new analyzer; the old analyzer rejects this query
+-- The crash path only exists in the analyzer; the old analyzer rejects this query
 -- earlier with NO_COMMON_TYPE, so it cannot exercise the regression.
 SET enable_analyzer = 1;
 
