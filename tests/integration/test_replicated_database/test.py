@@ -333,7 +333,10 @@ def test_projection_codec_alter_replay_uses_initiator_settings(started_cluster):
     main_node.query(
         f"ALTER TABLE {database}.t ADD PROJECTION p "
         "(x CODEC(Delta, Delta)) AS (SELECT x ORDER BY x)",
-        settings={"allow_suspicious_codecs": 1},
+        settings={
+            "allow_projection_column_list_in_replicated_metadata": 1,
+            "allow_suspicious_codecs": 1,
+        },
     )
 
     # The secondary uses its profile default (allow_suspicious_codecs = 0). It must replay metadata
@@ -365,7 +368,8 @@ def test_projection_codec_type_change_replay_uses_initiator_settings(started_clu
     )
     main_node.query(
         f"ALTER TABLE {database}.t ADD PROJECTION p "
-        "(x CODEC(Gorilla)) AS (SELECT k, x ORDER BY k)"
+        "(x CODEC(Gorilla)) AS (SELECT k, x ORDER BY k)",
+        settings={"allow_projection_column_list_in_replicated_metadata": 1},
     )
     main_node.query(
         f"ALTER TABLE {database}.t MODIFY COLUMN x UInt64",
@@ -401,7 +405,10 @@ def test_projection_codec_full_attach_replay_uses_initiator_settings(started_clu
         "(k UInt64, x UInt64, "
         "PROJECTION p (x CODEC(Gorilla)) AS (SELECT k, x ORDER BY k)) "
         "ENGINE = MergeTree ORDER BY k",
-        settings={"allow_suspicious_codecs": 1},
+        settings={
+            "allow_projection_column_list_in_replicated_metadata": 1,
+            "allow_suspicious_codecs": 1,
+        },
     )
 
     # Full ATTACH retains ATTACH loading mode when replayed. Neither an existing secondary nor a
