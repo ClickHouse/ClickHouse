@@ -1,0 +1,11 @@
+-- initial
+1
+2
+3
+-- append
+4
+-- renamed during a scan, then appended
+5
+-- moved out, new file
+10
+20

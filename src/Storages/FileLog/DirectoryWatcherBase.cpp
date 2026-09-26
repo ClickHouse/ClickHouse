@@ -16,6 +16,7 @@
 #if defined(OS_LINUX)
 #include <sys/inotify.h>
 #elif defined(OS_DARWIN)
+#include <Common/FailPoint.h>
 #include <map>
 #include <set>
 #include <vector>
@@ -39,6 +40,13 @@ namespace FileLogSetting
     extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_init;
     extern const FileLogSettingsMilliseconds poll_directory_watch_events_backoff_max;
 }
+
+#if defined(OS_DARWIN)
+namespace FailPoints
+{
+    extern const char file_log_directory_watcher_pause_after_listing[];
+}
+#endif
 
 #if defined(OS_LINUX)
 static constexpr int buffer_size = 4096;
@@ -191,20 +199,34 @@ void DirectoryWatcherBase::watchFunc()
     auto scan = [this](std::map<std::string, FileState> & out)
     {
         out.clear();
+        std::vector<std::string> names;
         for (const auto & entry : std::filesystem::directory_iterator(path))
         {
-            if (!entry.is_regular_file())
-                continue;
+            if (entry.is_regular_file())
+                names.push_back(entry.path().filename().string());
+        }
+
+        FailPointInjection::pauseFailPoint(FailPoints::file_log_directory_watcher_pause_after_listing);
+
+        bool complete = true;
+        for (const auto & name : names)
+        {
+            const auto file_path = std::filesystem::path(path) / name;
             struct stat st{};
-            if (::stat(entry.path().c_str(), &st) != 0)
+            if (::stat(file_path.c_str(), &st) != 0)
+            {
+                if (errno == ENOENT)
+                    complete = false;
                 continue;
+            }
             out.emplace(
-                entry.path().filename().string(),
+                name,
                 FileState{
                     static_cast<UInt64>(st.st_ino),
                     static_cast<Int64>(st.st_mtimespec.tv_sec) * 1'000'000'000 + st.st_mtimespec.tv_nsec,
                     static_cast<Int64>(st.st_size)});
         }
+        return complete;
     };
 
     /// A kqueue wakes the loop promptly. The directory fd fires on structural changes (an entry
@@ -351,10 +373,56 @@ void DirectoryWatcherBase::watchFunc()
     /// deletes it already drained - EV_CLEAR makes the kqueue events edge-triggered, so a dropped
     /// NOTE_DELETE would never be re-reported and a same-inode recreate would slip through as MODIFIED.
     std::set<std::string> deleted;
+
+    struct DrainedEvents
+    {
+        bool any = false;
+        bool structural = false;
+    };
+    auto drain_events = [&]
+    {
+        DrainedEvents result;
+        struct kevent evs[16];
+        struct timespec no_wait{0, 0};
+        int drained = 0;
+        while ((drained = kevent(kq, nullptr, 0, evs, 16, &no_wait)) > 0)
+        {
+            result.any = true;
+            for (int i = 0; i < drained; ++i)
+            {
+                const int event_fd = static_cast<int>(evs[i].ident);
+                if (event_fd == dir_fd)
+                {
+                    if (evs[i].fflags & (NOTE_WRITE | NOTE_LINK | NOTE_RENAME | NOTE_DELETE))
+                        result.structural = true;
+                    continue;
+                }
+                if (evs[i].fflags & NOTE_RENAME)
+                    result.structural = true;
+                if (!(evs[i].fflags & NOTE_DELETE))
+                    continue;
+                for (auto it = watched_fds.begin(); it != watched_fds.end(); ++it)
+                {
+                    if (it->second.fd != event_fd)
+                        continue;
+                    deleted.insert(it->first);
+                    /// The name's identity ended; drop its now-stale fd so sync_file_watches
+                    /// reopens a fresh one if the name is recreated.
+                    closeFileDescriptor(it->second.fd);
+                    watched_fds.erase(it);
+                    break;
+                }
+            }
+        }
+        return result;
+    };
+
+    bool rescan_without_waiting = false;
     while (!stopped)
     {
-        if (poll(pfds, 2, static_cast<int>(milliseconds_to_wait)) < 0 && errno != EINTR)
+        if (poll(pfds, 2, rescan_without_waiting ? 0 : static_cast<int>(milliseconds_to_wait)) < 0 && errno != EINTR)
             break;
+        rescan_without_waiting = false;
         if (stopped)
             break;
 
@@ -364,38 +432,21 @@ void DirectoryWatcherBase::watchFunc()
         /// NOTE_DELETE to force an identity reset (REMOVED + ADDED) instead of MODIFIED, which would
         /// otherwise keep a stale read offset - matching what inotify's IN_DELETE + IN_CREATE gives.
         if (pfds[1].revents & POLLIN)
-        {
-            struct kevent evs[16];
-            struct timespec no_wait{0, 0};
-            int drained = 0;
-            while ((drained = kevent(kq, nullptr, 0, evs, 16, &no_wait)) > 0)
-            {
-                for (int i = 0; i < drained; ++i)
-                {
-                    if (!(evs[i].fflags & NOTE_DELETE))
-                        continue;
-                    const int event_fd = static_cast<int>(evs[i].ident);
-                    for (auto it = watched_fds.begin(); it != watched_fds.end(); ++it)
-                    {
-                        if (it->second.fd != event_fd)
-                            continue;
-                        deleted.insert(it->first);
-                        /// The name's identity ended; drop its now-stale fd so sync_file_watches
-                        /// reopens a fresh one if the name is recreated.
-                        closeFileDescriptor(it->second.fd);
-                        watched_fds.erase(it);
-                        break;
-                    }
-                }
-            }
-        }
+            drain_events();
 
         const auto & settings = owner.storage.getFileLogSettings();
 
         std::map<std::string, FileState> current;
         try
         {
-            scan(current);
+            const bool complete = scan(current);
+            /// A rename landing inside `scan` can list the file under neither of its names or under both, which the
+            /// diff reports as REMOVED + ADDED (re-read from offset 0), so a scan the directory changed under is not diffed.
+            const auto drained = drain_events();
+            /// The drain consumed wakeups that the scan may not reflect.
+            rescan_without_waiting = drained.any || !complete;
+            if (!complete || drained.structural)
+                continue;
             /// Install/refresh the per-file watches for the new set BEFORE emitting any events. A
             /// transient failure here (e.g. EMFILE) then just retries the whole pass with nothing
             /// queued and StorageFileLog left untouched, instead of stranding a half-emitted batch
