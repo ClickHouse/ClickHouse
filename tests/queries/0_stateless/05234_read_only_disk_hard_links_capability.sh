@@ -15,8 +15,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-disk_path="disks/05234/${CLICKHOUSE_DATABASE}/"
-disk_path_with_hard_links="disks/05234_hard_links/${CLICKHOUSE_DATABASE}/"
+disk_path="${CLICKHOUSE_DISKS_FILES}/05234/${CLICKHOUSE_DATABASE}/"
+disk_path_with_hard_links="${CLICKHOUSE_DISKS_FILES}/05234_hard_links/${CLICKHOUSE_DATABASE}/"
 
 ${CLICKHOUSE_CLIENT} -m --query "
 DROP TABLE IF EXISTS writer SYNC;
