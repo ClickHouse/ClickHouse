@@ -11,26 +11,29 @@ SET enable_analyzer = 1;
 SET allow_experimental_analyzer = true;
 SELECT toUInt8(getSetting('enable_analyzer')), toUInt8(getSetting('allow_experimental_analyzer'));
 
--- Disabling it is refused, under either name and in every form. A `SET` is refused by the server; a
--- `SETTINGS` clause of a query is refused before the query is sent, because the client applies such a
--- clause to its own session first (`InterpreterSetQuery::applySettingsFromQuery`) - hence
--- `clientError` for those. Both raise `SETTING_CONSTRAINT_VIOLATION`.
-SET enable_analyzer = 0; -- { serverError SETTING_CONSTRAINT_VIOLATION }
-SET allow_experimental_analyzer = 0; -- { serverError SETTING_CONSTRAINT_VIOLATION }
-SET enable_analyzer = false; -- { serverError SETTING_CONSTRAINT_VIOLATION }
-SELECT 1 SETTINGS enable_analyzer = 0; -- { clientError SETTING_CONSTRAINT_VIOLATION }
-SELECT 1 SETTINGS allow_experimental_analyzer = 0; -- { clientError SETTING_CONSTRAINT_VIOLATION }
-INSERT INTO FUNCTION null('x UInt8') SETTINGS enable_analyzer = 0 SELECT 1; -- { clientError SETTING_CONSTRAINT_VIOLATION }
-CREATE VIEW v_05136 AS SELECT 1 SETTINGS enable_analyzer = 0; -- { clientError SETTING_CONSTRAINT_VIOLATION }
+-- Disabling it is accepted and replaced with `1`, under either name and in every form, so that
+-- queries, sessions, settings profiles and client configurations that still carry
+-- `enable_analyzer = 0` keep working after an upgrade.
+SET enable_analyzer = 0;
+SET allow_experimental_analyzer = 0;
+SET enable_analyzer = false;
+SELECT toUInt8(getSetting('enable_analyzer')), toUInt8(getSetting('allow_experimental_analyzer'));
+SELECT toUInt8(getSetting('enable_analyzer')) SETTINGS enable_analyzer = 0;
+SELECT toUInt8(getSetting('allow_experimental_analyzer')) SETTINGS allow_experimental_analyzer = 0;
+INSERT INTO FUNCTION null('x UInt8') SETTINGS enable_analyzer = 0 SELECT 1;
 
--- A refused change leaves the setting alone.
-SELECT toUInt8(getSetting('enable_analyzer'));
+-- A view keeps working too, and its stored definition does not carry the disabling value.
+DROP VIEW IF EXISTS v_05136;
+CREATE VIEW v_05136 AS SELECT toUInt8(getSetting('enable_analyzer')) AS x SETTINGS enable_analyzer = 0;
+SELECT x FROM v_05136;
+SELECT position(create_table_query, 'enable_analyzer = 0') = 0 FROM system.tables WHERE database = currentDatabase() AND name = 'v_05136';
+DROP VIEW v_05136;
 
--- An access entity cannot carry the disabled value either.
+-- An access entity can be created with the disabling value, too.
 DROP SETTINGS PROFILE IF EXISTS profile_05136;
-CREATE SETTINGS PROFILE profile_05136 SETTINGS enable_analyzer = 0; -- { serverError SETTING_CONSTRAINT_VIOLATION }
-CREATE SETTINGS PROFILE profile_05136 SETTINGS allow_experimental_analyzer = 0; -- { serverError SETTING_CONSTRAINT_VIOLATION }
-CREATE SETTINGS PROFILE profile_05136 SETTINGS enable_analyzer = 1;
+CREATE SETTINGS PROFILE profile_05136 SETTINGS enable_analyzer = 0;
+ALTER SETTINGS PROFILE profile_05136 SETTINGS allow_experimental_analyzer = 0;
+ALTER SETTINGS PROFILE profile_05136 SETTINGS enable_analyzer = 1;
 DROP SETTINGS PROFILE profile_05136;
 
 -- `compatibility` with a version older than the one that made the analyzer the default used to revert
