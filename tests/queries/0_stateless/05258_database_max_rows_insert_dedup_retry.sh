@@ -10,7 +10,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DB="${CLICKHOUSE_DATABASE}_dedup"
-CH="${CLICKHOUSE_CLIENT} --insert_deduplicate=1 --async_insert=0 --max_insert_block_size=1000000 --min_insert_block_size_rows=0 --min_insert_block_size_bytes=0"
+ROWS="(0), (1), (2), (3), (4), (5), (6), (7), (8), (9)"
+CH="${CLICKHOUSE_CLIENT} --deduplicate_insert=enable --async_insert=0 --max_insert_block_size=1000000 --min_insert_block_size_rows=0 --min_insert_block_size_bytes=0"
 
 $CH -q "DROP DATABASE IF EXISTS ${DB}"
 $CH -q "CREATE DATABASE ${DB} ENGINE = Atomic SETTINGS max_rows = 10"
@@ -22,18 +23,18 @@ do
     echo "-- ${table}: fill the database to the limit"
     $CH -q "TRUNCATE TABLE ${DB}.r"
     $CH -q "TRUNCATE TABLE ${DB}.m"
-    $CH -q "INSERT INTO ${DB}.${table} SELECT number FROM numbers(10)"
+    $CH -q "INSERT INTO ${DB}.${table} VALUES ${ROWS}"
     $CH -q "SELECT rows FROM system.databases WHERE name = '${DB}'"
 
     echo "-- ${table}: retrying the same INSERT is deduplicated, not rejected"
-    $CH -q "INSERT INTO ${DB}.${table} SELECT number FROM numbers(10)"
+    $CH -q "INSERT INTO ${DB}.${table} VALUES ${ROWS}"
     $CH -q "SELECT count() FROM ${DB}.${table}"
 
     echo "-- ${table}: an INSERT of new rows is rejected"
-    $CH -q "INSERT INTO ${DB}.${table} SELECT number + 100 FROM numbers(10)" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
+    $CH -q "INSERT INTO ${DB}.${table} VALUES (100), (101)" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
 
     echo "-- ${table}: so is a repeated INSERT with deduplication disabled"
-    $CH -q "INSERT INTO ${DB}.${table} SETTINGS insert_deduplicate = 0 SELECT number FROM numbers(10)" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
+    $CH -q "INSERT INTO ${DB}.${table} SETTINGS deduplicate_insert = 'disable' VALUES ${ROWS}" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
     $CH -q "SELECT count() FROM ${DB}.${table}"
 done
 
