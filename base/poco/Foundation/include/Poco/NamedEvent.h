@@ -21,7 +21,9 @@
 #include "Poco/Foundation.h"
 
 
-#if   POCO_OS == POCO_OS_ANDROID
+#if   defined(POCO_OS_FAMILY_WINDOWS)
+#    include "Poco/NamedEvent_WIN32U.h"
+#elif POCO_OS == POCO_OS_ANDROID
 #    include "Poco/NamedEvent_Android.h"
 #elif defined(POCO_OS_FAMILY_UNIX)
 #    include "Poco/NamedEvent_UNIX.h"

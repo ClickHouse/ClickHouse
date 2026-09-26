@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageSet.h>
@@ -168,7 +169,7 @@ void StorageJoin::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPt
         LOG_INFO(getLogger("StorageJoin"), "Path {} is already removed from disk {}", path, disk->getName());
 
     disk->createDirectories(path);
-    disk->createDirectories(fs::path(path) / "tmp/");
+    disk->createDirectories(pathToGenericString(fs::path(path) / "tmp/"));
 
     increment = 0;
     join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);

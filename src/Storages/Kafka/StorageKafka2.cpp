@@ -126,7 +126,6 @@ namespace KafkaSetting
     extern const KafkaSettingsString kafka_topic_list;
 }
 
-namespace fs = std::filesystem;
 
 namespace FailPoints
 {
@@ -296,7 +295,7 @@ bool StorageKafka2::activate()
         {
             auto zookeeper = getZooKeeper();
 
-            String is_active_path = fs::path(replica_path) / "is_active";
+            String is_active_path = zkutil::joinZooKeeperPath(replica_path, "is_active");
             zookeeper->deleteEphemeralNodeIfContentMatches(is_active_path, active_node_identifier);
 
             try

@@ -13,7 +13,15 @@
 # define OSSL_CRYPTO_DSO_CONF_H
 # pragma once
 
-# define DSO_DLFCN
-# define HAVE_DLFCN_H
-# define DSO_EXTENSION ".so"
+/* ClickHouse: this header is shared by all the platforms we build for. Windows has no
+ * `dlfcn.h`; the equivalent `LoadLibrary`-based loader lives in `crypto/dso/dso_win32.c`,
+ * which is already in the source list and is selected by `DSO_WIN32`. */
+# if defined(_WIN32)
+#  define DSO_WIN32
+#  define DSO_EXTENSION ".dll"
+# else
+#  define DSO_DLFCN
+#  define HAVE_DLFCN_H
+#  define DSO_EXTENSION ".so"
+# endif
 #endif

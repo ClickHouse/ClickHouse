@@ -1,3 +1,8 @@
+/// Waits for a child process. Not built on Windows: process creation there is
+/// `CreateProcess`/`WaitForSingleObject`, and the only caller, `ShellCommand`, is not built
+/// either. See docs/en/development/build-cross-windows.md.
+#if !defined(OS_WINDOWS)
+
 #include <Common/waitForPid.h>
 #include <Common/VersionNumber.h>
 #include <Poco/Environment.h>
@@ -290,3 +295,5 @@ bool waitForPid(pid_t pid, size_t timeout_in_seconds)
 
 }
 #pragma clang diagnostic pop
+
+#endif

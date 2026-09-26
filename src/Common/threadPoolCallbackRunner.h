@@ -533,8 +533,11 @@ public:
     void shutdown();
 
 private:
-    static constexpr Int64 SHUTDOWN_START = 1l << 42; // shutdown requested
-    static constexpr Int64 SHUTDOWN_END = 1l << 52; // no shared locks remain
+    /// `1ll`, not `1l`: the constants are `Int64` and the shifts go well past 31, but `long` is
+    /// only 64 bits wide on LP64 platforms - on an LLP64 one it is 32, and shifting a 32-bit type
+    /// that far is undefined behaviour rather than merely a truncated constant.
+    static constexpr Int64 SHUTDOWN_START = 1ll << 42; // shutdown requested
+    static constexpr Int64 SHUTDOWN_END = 1ll << 52; // no shared locks remain
 
     /// If >= SHUTDOWN_START, no new try_lock_shared() calls will succeed.
     /// Whoever changes the value to exactly SHUTDOWN_START (i.e. shutdown requested, no shared locks)

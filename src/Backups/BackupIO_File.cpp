@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Backups/BackupIO_File.h>
 #include <Common/checkStackSize.h>
 #include <Disks/DiskLocal.h>
@@ -17,10 +18,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-BackupReaderFile::BackupReaderFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
+BackupReaderFile::BackupReaderFile(const std::filesystem::path & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderFile"))
     , root_path(root_path_)
-    , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
+    , data_source_description(DiskLocal::getLocalDataSourceDescription(pathToGenericString(root_path)))
 {
 }
 
@@ -36,7 +37,7 @@ UInt64 BackupReaderFile::getFileSize(const String & file_name)
 
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderFile::readFile(const String & file_name)
 {
-    return createReadBufferFromFileBase(root_path / file_name, read_settings);
+    return createReadBufferFromFileBase(pathToGenericString(root_path / file_name), read_settings);
 }
 
 void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
@@ -75,10 +76,10 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file
 }
 
 
-BackupWriterFile::BackupWriterFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
+BackupWriterFile::BackupWriterFile(const std::filesystem::path & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterFile"))
     , root_path(root_path_)
-    , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
+    , data_source_description(DiskLocal::getLocalDataSourceDescription(pathToGenericString(root_path)))
 {
 }
 
@@ -94,14 +95,14 @@ UInt64 BackupWriterFile::getFileSize(const String & file_name)
 
 std::unique_ptr<ReadBuffer> BackupWriterFile::readFile(const String & file_name, size_t expected_file_size)
 {
-    return createReadBufferFromFileBase(root_path / file_name, read_settings.adjustBufferSize(expected_file_size));
+    return createReadBufferFromFileBase(pathToGenericString(root_path / file_name), read_settings.adjustBufferSize(expected_file_size));
 }
 
 std::unique_ptr<WriteBuffer> BackupWriterFile::writeFile(const String & file_name)
 {
     auto file_path = root_path / file_name;
     fs::create_directories(file_path.parent_path());
-    return std::make_unique<WriteBufferFromFile>(file_path, write_buffer_size, -1, write_settings.local_throttler);
+    return std::make_unique<WriteBufferFromFile>(pathToGenericString(file_path), write_buffer_size, -1, write_settings.local_throttler);
 }
 
 void BackupWriterFile::removeFile(const String & file_name)

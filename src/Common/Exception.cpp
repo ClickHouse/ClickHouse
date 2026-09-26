@@ -1,4 +1,5 @@
 #include <base/MemorySanitizer.h>
+#include <base/pathToString.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -351,8 +352,8 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
     while (!std::filesystem::exists(path) && path.has_relative_path())
         path = path.parent_path();
 
-    auto fs = getStatVFS(path);
-    auto mount_point = getMountPoint(path).string();
+    auto fs = getStatVFS(pathToString(path));
+    auto mount_point = pathToString(getMountPoint(path));
 
     fmt::format_to(std::back_inserter(msg),
         "\nTotal space: {}\nAvailable space: {}\nTotal inodes: {}\nAvailable inodes: {}\nMount point: {}",

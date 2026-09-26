@@ -33,8 +33,9 @@
 /// Whether the platform delivers POSIX signals to the process: handlers installed with
 /// `sigaction`, masked with `pthread_sigmask`, raised with `raise`. A WebAssembly sandbox has no
 /// signals at all - nothing can fault into one and nothing can send one - so arming a handler
-/// there is a no-op rather than an error.
-#if !defined(OS_WASM)
+/// there is a no-op rather than an error. Windows has no POSIX signal delivery either: mingw-w64
+/// provides no `sigaction`, and faults are reported through SEH rather than signals.
+#if !defined(OS_WASM) && !defined(OS_WINDOWS)
 #    define OS_HAS_SIGNAL_HANDLERS 1
 #endif
 

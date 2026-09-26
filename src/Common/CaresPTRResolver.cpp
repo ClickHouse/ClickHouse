@@ -3,11 +3,18 @@
 #include <Common/logger_useful.h>
 
 #include <cstdlib>
+#if defined(OS_WINDOWS)
+/// `ws2tcpip.h` covers what <arpa/inet.h> and <netdb.h> provide here (`inet_ntop`,
+/// `getnameinfo`), and the descriptor sets that <sys/select.h> would come from are in
+/// `winsock2.h`, pulled in by the header.
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <sys/select.h>
+#endif
 
 #include <ares.h>
-#include <netdb.h>
 
 namespace DB
 {
@@ -229,7 +236,11 @@ bool CaresPTRResolver::wait_and_process(AresChannelRAII & channel_raii)
     {
         auto timeout = calculate_timeout(channel);
 
+#if defined(OS_WINDOWS)
+        int number_of_fds_ready = WSAPoll(dns_state.poll_fds, static_cast<ULONG>(dns_state.poll_nfds), static_cast<int>(timeout));
+#else
         int number_of_fds_ready = poll(dns_state.poll_fds, static_cast<nfds_t>(dns_state.poll_nfds), static_cast<int>(timeout));
+#endif
 
         if (number_of_fds_ready < 0)
         {
@@ -247,8 +258,11 @@ bool CaresPTRResolver::wait_and_process(AresChannelRAII & channel_raii)
         for (size_t i = 0; i < dns_state.poll_nfds; ++i)
         {
             const struct pollfd & pfd = dns_state.poll_fds[i];
-            const int rfd = (pfd.revents & POLLIN) ? pfd.fd : ARES_SOCKET_BAD;
-            const int wfd = (pfd.revents & POLLOUT) ? pfd.fd : ARES_SOCKET_BAD;
+            /// `ares_socket_t`, not `int`: on Windows it is a `SOCKET`, which is pointer-sized
+            /// and unsigned, and `ARES_SOCKET_BAD` is `INVALID_SOCKET` - neither survives a
+            /// round trip through `int`. It is what `ares_process_fd` takes in any case.
+            const ares_socket_t rfd = (pfd.revents & POLLIN) ? pfd.fd : ARES_SOCKET_BAD;
+            const ares_socket_t wfd = (pfd.revents & POLLOUT) ? pfd.fd : ARES_SOCKET_BAD;
 
             if (rfd != ARES_SOCKET_BAD || wfd != ARES_SOCKET_BAD)
             {

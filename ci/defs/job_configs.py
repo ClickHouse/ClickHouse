@@ -617,6 +617,18 @@ class JobConfigs:
             # last targets. Only the job that *runs* the binaries needs an amd64 host.
             runs_on=RunnerLabels.ARM_LARGE,
         ),
+        Job.ParamSet(
+            # No artifact: `clickhouse.exe` is not something to hand to anyone yet. See
+            # docs/resources/develop-contribute/build/build-cross-windows.mdx.
+            #
+            # An `amd64` runner, unlike every other cross-build here, because this job also runs
+            # the binary it produced (see `build_clickhouse.py`): an `x86_64` PE needs an
+            # `x86_64` host, and Wine on ARM ships no `x86` emulator. Cross-compiling is
+            # arch-independent, so nothing else about the job changes.
+            parameter=BuildTypes.AMD_WINDOWS,
+            provides=[],
+            runs_on=RunnerLabels.AMD_LARGE,
+        ),
     )
     # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
     # stages the .options files, a source-derived fallback all.dict, and seed

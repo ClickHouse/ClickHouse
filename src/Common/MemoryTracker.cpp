@@ -15,7 +15,12 @@
 #include <Common/PageCache.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#if !defined(OS_WINDOWS)
+/// The memory profiler's samples travel to `trace_log` through `TraceSender`, which rides on the
+/// signal-handler pipe and is not built on Windows. There is nothing to send them to there, so
+/// the sends below are left out rather than routed somewhere that discards them.
 #include <Common/TraceSender.h>
+#endif
 #include <Common/UntrackedMemoryRegistry.h>
 #include <Common/VariableContext.h>
 #include <Common/formatReadable.h>
@@ -107,32 +112,36 @@ bool shouldTrackAllocation(Float64 probability, void * ptr)
 
 }
 
-void AllocationTrace::onAllocImpl(void * ptr, size_t size) const
+void AllocationTrace::onAllocImpl(void * ptr, [[maybe_unused]] size_t size) const
 {
     if (sample_probability < 1 && !shouldTrackAllocation(sample_probability, ptr))
         return;
 
-    auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
+    [[maybe_unused]] auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+#if !defined(OS_WINDOWS)
     DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {
         .size = Int64(size),
         .ptr = ptr,
         .memory_blocked_context = memory_blocked_context,
     });
+#endif
 }
 
-void AllocationTrace::onFreeImpl(void * ptr, size_t size) const
+void AllocationTrace::onFreeImpl(void * ptr, [[maybe_unused]] size_t size) const
 {
     if (sample_probability < 1 && !shouldTrackAllocation(sample_probability, ptr))
         return;
 
-    auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
+    [[maybe_unused]] auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
     MemoryTrackerBlockerInThread untrack_lock(VariableContext::Global);
+#if !defined(OS_WINDOWS)
     DB::TraceSender::send(DB::TraceType::MemorySample, StackTrace(), {
         .size = -Int64(size),
         .ptr = ptr,
         .memory_blocked_context = memory_blocked_context,
     });
+#endif
 }
 
 namespace ProfileEvents
@@ -269,10 +278,12 @@ static void incrementAllocationWithoutCheck(Int64 size) noexcept
 
     if (size > threshold)
     {
+#if !defined(OS_WINDOWS)
         DB::TraceSender::send(DB::TraceType::MemoryAllocatedWithoutCheck, StackTrace(), DB::TraceSender::Extras{
             .size = size,
             .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
         });
+#endif
     }
 }
 
@@ -280,7 +291,13 @@ void MemoryTracker::setMinAllocationSizeToLogStackTrace(UInt64 value)
 {
     /// Capturing a stack costs an unwind and the trace is delivered through the TraceCollector
     /// pipe, so without a collector the setting could only throw work away.
-    if (value && !DB::TraceSender::isCollecting())
+#if defined(OS_WINDOWS)
+    /// There is no `TraceSender` on Windows, hence never a collector to deliver the trace to.
+    const bool collecting = false;
+#else
+    const bool collecting = DB::TraceSender::isCollecting();
+#endif
+    if (value && !collecting)
     {
         static std::once_flag warned;
         std::call_once(warned, []
@@ -307,7 +324,7 @@ UInt64 MemoryTracker::getMinAllocationSizeToLogStackTrace()
     return min_allocation_size_to_log_stack_trace.load(std::memory_order_relaxed);
 }
 
-void MemoryTracker::traceLargeAllocation(Int64 size) noexcept
+void MemoryTracker::traceLargeAllocation([[maybe_unused]] Int64 size) noexcept
 {
     /// Tracing the collector's own allocations would feed the diagnostic with itself. Deliberately
     /// narrower than MemoryTrackerUntrackedAllocationsBlockerInThread, which also covers system-log
@@ -322,11 +339,13 @@ void MemoryTracker::traceLargeAllocation(Int64 size) noexcept
 
     /// Unsymbolized: StackTrace::toString takes the symbolizer cache mutex and allocates, neither of
     /// which may happen inside an allocation. TraceCollector symbolizes instead.
+#if !defined(OS_WINDOWS)
     DB::TraceSender::send(DB::TraceType::MemoryLargeAllocation, StackTrace(), DB::TraceSender::Extras{
         .size = size,
         .memory_context = level,
         .memory_blocked_context = MemoryTrackerBlockerInThread::getLevel(),
     });
+#endif
 }
 
 AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker, double _sample_probability)
@@ -610,12 +629,14 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
     bool allocation_traced = false;
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
-        auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
+        [[maybe_unused]] auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
+#if !defined(OS_WINDOWS)
         DB::TraceSender::send(DB::TraceType::Memory, StackTrace(), {
             .size = size,
             .memory_context = level,
             .memory_blocked_context = memory_blocked_context,
         });
+#endif
         const auto step = profiler_step.load(std::memory_order_relaxed);
         setOrRaiseProfilerLimit((will_be + step - 1) / step * step);
         allocation_traced = true;
@@ -634,12 +655,14 @@ void MemoryTracker::commitAllocation(Int64 size, Int64 will_be, bool memory_limi
 
     if (peak_updated && allocation_traced)
     {
-        auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
+        [[maybe_unused]] auto memory_blocked_context = MemoryTrackerBlockerInThread::getLevel();
+#if !defined(OS_WINDOWS)
         DB::TraceSender::send(DB::TraceType::MemoryPeak, StackTrace(), {
             .size = will_be,
             .memory_context = level,
             .memory_blocked_context = memory_blocked_context,
         });
+#endif
     }
 }
 

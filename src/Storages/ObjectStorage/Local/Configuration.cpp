@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -135,7 +136,7 @@ void StorageLocalConfiguration::fromDisk(const String & disk_name_, ASTs & args,
     fs::path root = disk->getPath();
     fs::path suffix = parsed_arguments.path_suffix;
     initializeFromParsedArguments(parsed_arguments);
-    path = String(root / suffix);
+    path = pathToGenericString(root / suffix);
     setPathForRead(path);
     setPaths({path});
 }

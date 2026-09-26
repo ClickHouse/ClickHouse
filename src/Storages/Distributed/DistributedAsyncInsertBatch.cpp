@@ -1,3 +1,4 @@
+#include <base/pathToString.h>
 #include <Storages/Distributed/DistributedAsyncInsertBatch.h>
 #include <Storages/Distributed/DistributedAsyncInsertHelpers.h>
 #include <Storages/Distributed/DistributedAsyncInsertHeader.h>
@@ -176,7 +177,7 @@ void DistributedAsyncInsertBatch::serialize()
         WriteBufferFromFile out{tmp_file, O_WRONLY | O_TRUNC | O_CREAT};
         for (const auto & file : files)
         {
-            UInt64 file_index = parse<UInt64>(std::filesystem::path(file).stem());
+            UInt64 file_index = parse<UInt64>(pathToGenericString(std::filesystem::path(file).stem()));
             out << file_index << '\n';
         }
 
