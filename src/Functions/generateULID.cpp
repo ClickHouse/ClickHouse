@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionGenerateULID : public IFunction
+class FunctionGenerateULID final : public IFunction
 {
 public:
     static constexpr size_t ULID_LENGTH = 26;
@@ -52,7 +52,13 @@ public:
         return std::make_shared<DataTypeFixedString>(ULID_LENGTH);
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    /// `useDefaultImplementationForConstants` is deliberately not enabled: with a constant argument
+    /// it would generate one identifier and stamp it onto every row, which is the opposite of what
+    /// the argument is for - it exists to get an independent identifier per call.
+    ///
+    /// The argument is ignored, so it does not take part in null propagation either: `generateULID(NULL)`
+    /// generates an identifier, the way `generateUUIDv4(NULL)` and `generateSnowflakeID(NULL)` do.
+    bool useDefaultImplementationForNulls() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr &, size_t input_rows_count) const override
     {
@@ -61,7 +67,7 @@ public:
 
         vec_res.resize(input_rows_count * ULID_LENGTH);
 
-        ulid_generator generator;
+        ulid_generator generator{};
         ulid_generator_init(&generator, 0);
 
         for (size_t offset = 0, size = vec_res.size(); offset < size; offset += ULID_LENGTH)
@@ -75,15 +81,15 @@ public:
 REGISTER_FUNCTION(GenerateULID)
 {
     /// generateULID documentation
-    FunctionDocumentation::Description description_generateULID = R"(
+    FunctionDocumentation::Description description = R"(
 Generates a [Universally Unique Lexicographically Sortable Identifier (ULID)](https://github.com/ulid/spec).
     )";
-    FunctionDocumentation::Syntax syntax_generateULID = "generateULID([x])";
-    FunctionDocumentation::Arguments arguments_generateULID = {
-        {"x", "Optional. An expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in one query.", {"Any"}}
+    FunctionDocumentation::Syntax syntax = "generateULID([x])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Optional. An expression resulting in any of the supported data types. The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) if the function is called multiple times in one query.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_generateULID = {"Returns a ULID.", {"FixedString(26)"}};
-    FunctionDocumentation::Examples examples_generateULID = {
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a ULID.", {"FixedString(26)"}};
+    FunctionDocumentation::Examples examples = {
     {
         "Usage example",
         R"(
@@ -107,11 +113,11 @@ SELECT generateULID(1), generateULID(2)
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_generateULID = {23, 2};
-    FunctionDocumentation::Category category_generateULID = FunctionDocumentation::Category::ULID;
-    FunctionDocumentation documentation_generateULID = {description_generateULID, syntax_generateULID, arguments_generateULID, {}, returned_value_generateULID, examples_generateULID, introduced_in_generateULID, category_generateULID};
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::ULID;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionGenerateULID>(documentation_generateULID);
+    factory.registerFunction<FunctionGenerateULID>(documentation);
 }
 
 }

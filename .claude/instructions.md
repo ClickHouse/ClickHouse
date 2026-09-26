@@ -5,7 +5,7 @@
 Stateless tests are located in `tests/queries/0_stateless/`.
 
 ### Prerequisites
-1. Build ClickHouse: `cd build && ninja clickhouse-server`
+1. Build ClickHouse: `cd build && ninja clickhouse`
 2. Start the server: `./build/programs/clickhouse server --config-file ./programs/server/config.xml`
 3. Wait for server to be ready: `./build/programs/clickhouse client -q "SELECT 1"`
 

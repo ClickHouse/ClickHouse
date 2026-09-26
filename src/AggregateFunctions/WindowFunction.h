@@ -2,7 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Interpreters/WindowDescription.h>
 #include <Common/AlignedBuffer.h>
-#include <Common/ContainersWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -29,8 +29,6 @@ public:
 
     virtual std::optional<WindowFrame> getDefaultFrame() const { return {}; }
 
-    virtual ColumnPtr castColumn(const Columns &, const std::vector<size_t> &) { return nullptr; }
-
     /// Is the frame type supported by this function.
     virtual bool checkWindowFrameType(const WindowTransform * /*transform*/) const { return true; }
 };
@@ -48,7 +46,7 @@ struct WindowFunctionWorkspace
     // instead.
     IWindowFunction * window_function_impl = nullptr;
 
-    std::vector<size_t> argument_column_indices;
+    VectorWithMemoryTracking<size_t> argument_column_indices;
 
     // Will not be initialized for a pure window function.
     mutable AlignedBuffer aggregate_function_state;
@@ -80,7 +78,7 @@ struct WindowFunction : public IAggregateFunctionHelper<WindowFunction>, public 
 
     String getName() const override { return name; }
     void add(AggregateDataPtr __restrict, const IColumn **, size_t, Arena *) const override { fail(); }
-    void merge(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override { fail(); }
+    void mergeImpl(AggregateDataPtr __restrict, ConstAggregateDataPtr, Arena *) const override { fail(); }
     void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t>) const override { fail(); }
     void deserialize(AggregateDataPtr __restrict, ReadBuffer &, std::optional<size_t>, Arena *) const override { fail(); }
     void insertResultInto(AggregateDataPtr __restrict, IColumn &, Arena *) const override { fail(); }

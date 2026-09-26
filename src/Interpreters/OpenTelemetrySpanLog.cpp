@@ -1,6 +1,13 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <base/getFQDNOrHostName.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -29,11 +36,22 @@ ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
         }
     );
 
+    auto status_code_type = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"UNSET",   static_cast<Int8>(OpenTelemetry::SpanStatus::UNSET)},
+            {"OK",      static_cast<Int8>(OpenTelemetry::SpanStatus::OK)},
+            {"ERROR",   static_cast<Int8>(OpenTelemetry::SpanStatus::ERROR)}
+        }
+    );
+
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
     return ColumnsDescription
     {
         {"hostname", low_cardinality_string, "The hostname where this span was captured."},
+        {"clickhouse_version", low_cardinality_string, "Version of the ClickHouse server that produced the row."},
+        {"system_processor", low_cardinality_string, "CPU architecture of the ClickHouse server that produced the row."},
         {"trace_id", std::make_shared<DataTypeUUID>(), "ID of the trace for executed query."},
         {"span_id", std::make_shared<DataTypeUInt64>(), "ID of the trace span."},
         {"parent_span_id", std::make_shared<DataTypeUInt64>(), "ID of the parent trace span."},
@@ -57,6 +75,8 @@ ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
         {"start_time_us", std::make_shared<DataTypeUInt64>(), "The start time of the trace span (in microseconds)."},
         {"finish_time_us", std::make_shared<DataTypeUInt64>(), "The finish time of the trace span (in microseconds)."},
         {"finish_date", std::make_shared<DataTypeDate>(), "The finish date of the trace span."},
+        {"status_code", std::move(status_code_type), "The status code of the span."},
+        {"status_message", low_cardinality_string, "Error message."},
         {"attribute", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>()), "Attribute depending on the trace span. They are filled in according to the recommendations in the OpenTelemetry standard."},
     };
 }
@@ -76,19 +96,51 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t i = 0;
 
-    columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(trace_id);
-    columns[i++]->insert(span_id);
-    columns[i++]->insert(parent_span_id);
-    columns[i++]->insert(operation_name);
-    columns[i++]->insert(kind);
-    columns[i++]->insert(start_time_us);
-    columns[i++]->insert(finish_time_us);
-    columns[i++]->insert(DateLUT::instance().toDayNum(finish_time_us / 1000000).toUnderType());
-    // The user might add some ints values, and we will have Int Field, and the
-    // insert will fail because the column requires Strings. Convert the fields
-    // here, because it's hard to remember to convert them in all other places.
-    columns[i++]->insert(attributes);
+    /// Write into the columns directly instead of boxing every value into a `Field`.
+    /// `IColumn::insert(Field)` on a `LowCardinality` column reaches `ColumnUnique::uniqueInsert`,
+    /// which allocates a throw-away `ColumnString` per value, and the `attribute` map additionally
+    /// materializes a `Map` of `Tuple`s of `Field`s - about seven allocations per attribute.
+    /// This is the dominant cost of a span log flush: in a Memory Sanitizer CI run, where the
+    /// stateless tests are executed with `opentelemetry_start_trace_probability = 0.1`, building
+    /// the block for a batch of 325865 spans took 99 s while the `INSERT` itself took 2.3 s. Once
+    /// a flush is slower than the rate at which spans are produced the queue keeps growing, and
+    /// `SYSTEM FLUSH LOGS opentelemetry_span_log` starts to exceed its 180 s timeout.
+    const auto & hostname = getFQDNOrHostName();
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(hostname.data(), hostname.size());
+    const std::string_view clickhouse_version = VERSION_STRING;
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(clickhouse_version.data(), clickhouse_version.size());
+    const std::string_view system_processor = SYSTEM_PROCESSOR;
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(system_processor.data(), system_processor.size());
+    typeid_cast<ColumnUUID &>(*columns[i++]).getData().push_back(span.trace_id);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(span.span_id);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(span.parent_span_id);
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(span.operation_name.data(), span.operation_name.size());
+    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(span.kind));
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(span.start_time_us);
+    typeid_cast<ColumnUInt64 &>(*columns[i++]).getData().push_back(span.finish_time_us);
+    typeid_cast<ColumnUInt16 &>(*columns[i++]).getData().push_back(
+        DateLUT::instance().toDayNum(span.finish_time_us / 1000000).toUnderType());
+    typeid_cast<ColumnInt8 &>(*columns[i++]).getData().push_back(static_cast<Int8>(span.status_code));
+    typeid_cast<ColumnLowCardinality &>(*columns[i++]).insertData(span.status_message.data(), span.status_message.size());
+
+    {
+        auto & column_map = typeid_cast<ColumnMap &>(*columns[i++]);
+        auto & offsets = column_map.getNestedColumn().getOffsets();
+        auto & tuple_column = column_map.getNestedData();
+        auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
+        auto & value_column = typeid_cast<ColumnString &>(tuple_column.getColumn(1));
+
+        for (const auto & attribute : span.attributes)
+        {
+            const auto & key = attribute.getKey();
+            key_column.insertData(key.data(), key.size());
+
+            const auto value = attribute.getValue();
+            value_column.insertData(value.data(), value.size());
+        }
+
+        offsets.push_back(offsets.back() + span.attributes.size());
+    }
 }
 
 }

@@ -46,4 +46,4 @@ $CLICKHOUSE_CLIENT --query "ATTACH TABLE table_with_gap;"
 
 $CLICKHOUSE_CLIENT --query "SELECT 'parts after detach/attach';"
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT LOADING PARTS table_with_gap;"
-$CLICKHOUSE_CLIENT --query "SELECT name, rows, active FROM system.parts WHERE table = 'table_with_gap' AND database = currentDatabase();"
+$CLICKHOUSE_CLIENT --query "SELECT name, rows, active FROM system.parts WHERE table = 'table_with_gap' AND database = currentDatabase() AND rows > 0;"

@@ -1,8 +1,8 @@
-mutation_4.txt	(UPDATE num = num + 1 WHERE 1)	['all_1_1_0','all_2_2_0','all_3_3_0']	[]	{'all_parts':'No free threads in pool'}	0
-mutation_4.txt	(UPDATE num = num + 1 WHERE 1)	[]	[]	{}	1
-mutation_5.txt	(UPDATE num = num + 2 WHERE 1)	['all_1_1_0_4','all_2_2_0_4','all_3_3_0_4']	[]	{'all_parts':'No free threads in pool'}	0
-mutation_6.txt	(UPDATE num = num + 3 WHERE 1)	['all_1_1_0_4','all_2_2_0_4','all_3_3_0_4']	[]	{'all_parts':'No free threads in pool'}	0
-mutation_4.txt	(UPDATE num = num + 1 WHERE 1)	['all_1_1_0','all_2_2_0','all_3_3_0']	[]	{'all_1_1_0':'Exceed max source part size','all_2_2_0':'Exceed max source part size','all_3_3_0':'Exceed max source part size'}	0
-mutation_4.txt	(UPDATE num = num + 1 WHERE 1)	[]	[]	{}	1
-mutation_5.txt	(UPDATE num = num + 2 WHERE 1)	['all_1_1_0_4','all_2_2_0_4','all_3_3_0_4']	[]	{'all_1_1_0_4':'Exceed max source part size','all_2_2_0_4':'Exceed max source part size','all_3_3_0_4':'Exceed max source part size'}	0
-mutation_6.txt	(UPDATE num = num + 3 WHERE 1)	['all_1_1_0_4','all_2_2_0_4','all_3_3_0_4']	[]	{'all_1_1_0_4':'Exceed max source part size','all_2_2_0_4':'Exceed max source part size','all_3_3_0_4':'Exceed max source part size'}	0
+mutation_2.txt	(UPDATE num = num + 1 WHERE 1)	['all_1_1_0']	[]	{'all_parts':'No free threads in pool'}	0
+mutation_2.txt	(UPDATE num = num + 1 WHERE 1)	[]	[]	{}	1
+mutation_3.txt	(UPDATE num = num + 2 WHERE 1)	['all_1_1_0_2']	[]	{'all_parts':'No free threads in pool'}	0
+mutation_4.txt	(UPDATE num = num + 3 WHERE 1)	['all_1_1_0_2']	[]	{'all_parts':'No free threads in pool'}	0
+mutation_2.txt	(UPDATE num = num + 1 WHERE 1)	['all_1_1_0']	[]	{'all_1_1_0':'Exceed max source part size'}	0
+mutation_2.txt	(UPDATE num = num + 1 WHERE 1)	[]	[]	{}	1
+mutation_3.txt	(UPDATE num = num + 2 WHERE 1)	['all_1_1_0_2']	[]	{'all_1_1_0_2':'Exceed max source part size'}	0
+mutation_4.txt	(UPDATE num = num + 3 WHERE 1)	['all_1_1_0_2']	[]	{'all_1_1_0_2':'Exceed max source part size'}	0

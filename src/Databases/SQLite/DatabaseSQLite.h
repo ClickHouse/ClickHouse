@@ -5,7 +5,6 @@
 #if USE_SQLITE
 #include <Core/Names.h>
 #include <Databases/DatabasesCommon.h>
-#include <Parsers/ASTCreateQuery.h>
 
 #include <sqlite3.h>
 
@@ -13,6 +12,7 @@
 namespace DB
 {
 struct AlterCommand;
+class ASTStorage;
 
 class DatabaseSQLite final : public DatabaseWithAltersOnDiskBase, WithContext
 {

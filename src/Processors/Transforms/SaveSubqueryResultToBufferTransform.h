@@ -15,7 +15,7 @@ using ChunkBufferPtr = std::shared_ptr<ChunkBuffer>;
 /** Save data to ChunkBuffer to be read later by ReadFromCommonBufferSource.
   * Used to implement result buffering for common subplan.
   */
-class SaveSubqueryResultToBufferTransform : public ISimpleTransform
+class SaveSubqueryResultToBufferTransform final : public ISimpleTransform
 {
 public:
     SaveSubqueryResultToBufferTransform(
@@ -32,6 +32,7 @@ public:
 private:
     ChunkBufferPtr chunk_buffer;
     std::vector<size_t> columns_to_save_indices;
+    bool finished = false;
 };
 
 }

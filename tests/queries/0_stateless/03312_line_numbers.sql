@@ -8,7 +8,7 @@ SELECT 'This is the first query, and it is located on line 4',
 SELECT 'This is the second query, and it is located on line 8';
 
 SYSTEM FLUSH LOGS query_log, text_log;
-SELECT type, script_query_number, script_line_number, query FROM system.query_log WHERE current_database = currentDatabase() AND event_date >= yesterday() ORDER BY event_time_microseconds, type;
+SELECT type, script_query_number, script_line_number, query FROM system.query_log WHERE current_database = currentDatabase() AND event_date >= yesterday() AND event_time >= now() - 600 ORDER BY event_time_microseconds, type SETTINGS max_rows_to_read = 0; -- system.query_log can be really big
 
-SELECT 'Ok' FROM system.text_log WHERE event_date >= yesterday() AND message LIKE '%(query 1, line 4)%' AND message LIKE '%This is the first query%' LIMIT 1;
-SELECT 'Ok' FROM system.text_log WHERE event_date >= yesterday() AND message LIKE '%(query 2, line 8)%' AND message LIKE '%This is the second query%' LIMIT 1;
+SELECT 'Ok' FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND message LIKE '%(query 1, line 4)%' AND message LIKE '%This is the first query%' LIMIT 1 SETTINGS max_rows_to_read = 0; -- system.text_log can be really big
+SELECT 'Ok' FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND message LIKE '%(query 2, line 8)%' AND message LIKE '%This is the second query%' LIMIT 1 SETTINGS max_rows_to_read = 0; -- system.text_log can be really big

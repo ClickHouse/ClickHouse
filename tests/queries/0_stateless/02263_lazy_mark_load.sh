@@ -24,7 +24,9 @@ CREATE TABLE lazy_mark_test
   n9 UInt64
 )
 ENGINE = MergeTree
-ORDER BY n0 SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1;
+-- auto_statistics_types = '': otherwise basic column statistics prune the n3 == 11 query (n3 is number % 10, so 11 is out of range),
+-- the query reads nothing and this test no longer measures lazy mark loading.
+ORDER BY n0 SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization = 1, auto_statistics_types = '';
 EOF
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP MERGES lazy_mark_test"
@@ -37,4 +39,4 @@ ${CLICKHOUSE_CLIENT} --log_queries=1 --query_id "${QUERY_ID}" -q "SELECT * FROM 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 # Expect 2 open files: n3 marks and n3 data.
-${CLICKHOUSE_CLIENT} -q "select ProfileEvents['FileOpen'] from system.query_log where query_id = '${QUERY_ID}' and type = 'QueryFinish' and current_database = currentDatabase()"
+${CLICKHOUSE_CLIENT} -q "select ProfileEvents['FileOpen'] from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '${QUERY_ID}' and type = 'QueryFinish' and current_database = currentDatabase()"

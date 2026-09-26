@@ -76,7 +76,7 @@ namespace
 
     size_t partBlockSize(size_t size, size_t off)
     {
-        assert(off < kBlockSize);
+        chassert(off < kBlockSize);
         /// write the part as usual block
         if (off == 0)
             return 0;
@@ -116,7 +116,7 @@ namespace
 
     size_t encryptBlockWithPadding(EVP_CIPHER_CTX * evp_ctx, const char * data, size_t size, size_t pad_left, WriteBuffer & out)
     {
-        assert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
+        chassert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
         uint8_t padded_data[kBlockSize] = {};
         memcpy(&padded_data[pad_left], data, size);
         size_t padded_data_size = pad_left + size;
@@ -153,6 +153,9 @@ namespace
 
     size_t decryptBlocks(EVP_CIPHER_CTX * evp_ctx, const char * data, size_t size, char * out)
     {
+        chassert(data != nullptr);
+        chassert(out != nullptr);
+        chassert(size != 0);
         const uint8_t * in = reinterpret_cast<const uint8_t *>(data);
         uint8_t * plaintext = reinterpret_cast<uint8_t *>(out);
         int plaintext_size = 0;
@@ -164,7 +167,9 @@ namespace
 
     size_t decryptBlockWithPadding(EVP_CIPHER_CTX * evp_ctx, const char * data, size_t size, size_t pad_left, char * out)
     {
-        assert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
+        chassert(data != nullptr);
+        chassert(out != nullptr);
+        chassert((size <= kBlockSize) && (size + pad_left <= kBlockSize));
         uint8_t padded_data[kBlockSize] = {};
         memcpy(&padded_data[pad_left], data, size);
         size_t padded_data_size = pad_left + size;
@@ -294,6 +299,8 @@ void Encryptor::encrypt(const char * data, size_t size, WriteBuffer & out)
     auto current_iv = (init_vector + blocks(offset)).toString();
 
     auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
+    if (!evp_ctx_ptr)
+        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (EVP_EncryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
@@ -335,9 +342,15 @@ void Encryptor::decrypt(const char * data, size_t size, char * out)
     if (!size)
         return;
 
+    chassert(data != nullptr);
+    chassert(out != nullptr);
+    chassert(size != 0);
+
     auto current_iv = (init_vector + blocks(offset)).toString();
 
     auto evp_ctx_ptr = std::unique_ptr<EVP_CIPHER_CTX, decltype(&::EVP_CIPHER_CTX_free)>(EVP_CIPHER_CTX_new(), &EVP_CIPHER_CTX_free);
+    if (!evp_ctx_ptr)
+        throw Exception(DB::ErrorCodes::OPENSSL_ERROR, "EVP_CIPHER_CTX_new failed: {}", getOpenSSLErrors());
     auto * evp_ctx = evp_ctx_ptr.get();
 
     if (EVP_DecryptInit_ex(evp_ctx, evp_cipher, nullptr, nullptr, nullptr) != 1)
@@ -399,7 +412,7 @@ void Header::read(ReadBuffer & in)
     if (version < 1 || version > kCurrentVersion)
         throw Exception(ErrorCodes::DATA_ENCRYPTION_ERROR, "Version {} of the header is not supported", version);
 
-    UInt16 algorithm_u16;
+    UInt16 algorithm_u16 = 0;
     readPODBinary(algorithm_u16, in);
     if (std::endian::native != endian)
         algorithm_u16 = std::byteswap(algorithm_u16);
@@ -411,8 +424,8 @@ void Header::read(ReadBuffer & in)
 
     if (version < 2)
     {
-        UInt64 key_id;
-        UInt8 small_key_hash;
+        UInt64 key_id = 0;
+        UInt8 small_key_hash = 0;
         readPODBinary(key_id, in);
         readPODBinary(small_key_hash, in);
         bytes_to_skip -= sizeof(key_id) + sizeof(small_key_hash);

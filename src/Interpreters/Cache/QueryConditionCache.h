@@ -1,12 +1,27 @@
 #pragma once
 
 #include <Common/CacheBase.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Common/SharedMutex.h>
 
 namespace DB
 {
+
+struct Settings;
+
+/// Settings that change how a function inside a condition evaluates without leaving any trace in the
+/// condition's `ActionsDAG` (the `formatDateTime`/`parseDateTime` family, `locate`, `least`/`greatest` and a few more
+/// read them while they run; the registration rule is in the definition).
+/// Two queries whose conditions differ only in those settings must not share a cache entry: a mark verdict
+/// computed under one value is wrong under the other. Fold the returned salt into the condition hash.
+UInt64 queryConditionCacheSettingsSalt(const Settings & settings);
+
+/// Combines the hash of a condition's `ActionsDAG` with that salt. Every producer of a query condition
+/// cache key has to use it, or a verdict written by one query is never found by the next one.
+UInt64 queryConditionCacheHash(UInt64 condition_dag_hash, UInt64 settings_salt);
+
 
 /// An implementation of predicate caching a la https://doi.org/10.1145/3626246.3653395
 ///
@@ -28,26 +43,30 @@ public:
     using MatchingMarks = std::vector<bool>;
 
 private:
-    /// Key + entry represent a mark range result.
-    struct Key
-    {
-        const UUID table_id;
-        const String part_name;
-        const UInt64 condition_hash;
-
-        /// -- Additional members, conceptually not part of the key. Only included for pretty-printing
-        ///    in system.query_condition_cache:
-        const String condition;
-
-        bool operator==(const Key & other) const;
-    };
+    /// A hash of the table id, part name and condition id.
+    /// CityHash128 is enough to use for practical applications as the probability of collisions is very low.
+    /// https://github.com/ClickHouse/ClickHouse/issues/9506
+    using Key = UInt128;
 
     struct Entry
     {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        /// Store extended information only in Debug builds.
+        /// Having them in release builds is too costly.
+        const UUID table_id;
+        const String part_name;
+        const UInt64 condition_hash = 42;
+        const String condition;
+#endif
+
         MatchingMarks matching_marks;
         SharedMutex mutex; /// (*)
 
         explicit Entry(size_t mark_count); /// (**)
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+        Entry(size_t mark_count_, const UUID & table_id_, const String & part_name_, UInt64 condition_hash_, const String & condition_);
+#endif
 
         /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already. The reason is that
         ///     ClickHouse scans ranges within the same part in parallel. The first scan creates and inserts a new Key + Entry into the cache,
@@ -59,11 +78,6 @@ private:
         ///     initialize all marks of each entry as non-matching. In case of an exception, future scans will then not skip them.
     };
 
-    struct KeyHasher
-    {
-        size_t operator()(const Key & key) const;
-    };
-
     struct EntryWeight
     {
         size_t operator()(const Entry & entry) const;
@@ -71,7 +85,20 @@ private:
 
 
 public:
-    using Cache = CacheBase<Key, Entry, KeyHasher, EntryWeight>;
+    using Cache = CacheBase<Key, Entry, UInt128TrivialHash, EntryWeight>;
+
+    /// Compute cache key from table UUID, part name and condition hash
+    static Key makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash);
+
+    /// Compose the `part_name` component of a cache key for a file-backed table (e.g. `File`, `S3`,
+    /// object storage). Uses the full path (not just the base name) so files that share a name in
+    /// different directories do not collide, and folds in a content-version token so an in-place
+    /// rewrite of the file yields a different key rather than a stale hit. The token is the ETag for
+    /// remote objects, or a local identity (modification time + inode + size) for local files. For
+    /// immutable files (e.g. data-lake data files) the path alone is a stable identity and the token
+    /// may be left empty. The path and the token are separated by a NUL byte, which cannot occur in
+    /// either, so the mapping is unambiguous.
+    static String makeFilePartName(const String & path, std::string_view version_token);
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
@@ -81,7 +108,10 @@ public:
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
-    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash);
+    /// A single logical consultation may probe more than one key (e.g. the bare condition hash and
+    /// a skip-index-profiled hash); pass increment_profile_events = false on the extra probes so the
+    /// QueryConditionCacheHits/Misses events count consultations, not internal key lookups.
+    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events = true);
 
     /// For debugging and system tables
     std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;

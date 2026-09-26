@@ -1,0 +1,4 @@
+--- inferred schema ---
+m	Map(LowCardinality(String), Nullable(Int64))					
+--- read back ---
+100	1617

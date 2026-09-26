@@ -21,7 +21,14 @@ public:
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    QueryPlanStepPtr clone() const override;
+
+    /// `OFFSET` skips a prefix of the whole result and cannot be evaluated per replica, so it runs on
+    /// the initiator; where the planner does put one on a shard (under a negative limit) it is never the
+    /// topmost replica step.
+    bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     void updateOutputHeader() override

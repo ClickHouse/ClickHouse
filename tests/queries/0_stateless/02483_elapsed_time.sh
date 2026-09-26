@@ -29,7 +29,7 @@ for _ in {1..100}
 do
     ${CLICKHOUSE_CLIENT} --query "$EXCEPTION_BEFORE_START_QUERY" --query_id="$QUERY_ID" >/dev/null 2>&1
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-    [[ "1" == "$(${CLICKHOUSE_CLIENT} --query "SELECT type == 'ExceptionBeforeStart' AND query_duration_ms <= 1000 FROM system.query_log WHERE current_database = '$CLICKHOUSE_DATABASE' AND query_id='$QUERY_ID' ORDER BY event_time_microseconds DESC LIMIT 1")" ]] && echo 'Ok' && break
+    [[ "1" == "$(${CLICKHOUSE_CLIENT} --query "SELECT type == 'ExceptionBeforeStart' AND query_duration_ms <= 1000 FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND query_id='$QUERY_ID' ORDER BY event_time_microseconds DESC LIMIT 1")" ]] && echo 'Ok' && break
     sleep 0.1
 done
 
@@ -71,5 +71,5 @@ ${CLICKHOUSE_CLIENT} --query "
     query_duration_ms >= 1000 as elapsed_more_than_one_second,
     (toDecimal64(event_time_microseconds, 6) - toDecimal64(query_start_time_microseconds, 6)) > 1.0 AS end_minus_start_more_than_a_second
   FROM system.query_log
-  WHERE type='QueryFinish' AND (query_id='$QUERY_ID_2' OR query_id='${QUERY_ID_3}')
+  WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type='QueryFinish' AND (query_id='$QUERY_ID_2' OR query_id='${QUERY_ID_3}')
   FORMAT Vertical"

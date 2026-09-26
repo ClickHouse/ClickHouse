@@ -1,7 +1,10 @@
-1	current size is non-zero
-1	max size is changed
-1	current size is still non-zero
-1	current size is less than max size
-1	max size is reloaded
-1	current size is still non-zero
-1	current size is less than max size
+written cache is bigger than 2000
+current size after insert is bigger than 2000
+written cache is bigger than 708
+current size is bigger than 708
+max size is changed
+current size is still non-zero
+current size is less than max size
+max size is reloaded
+current size is still non-zero
+current size is less than max size

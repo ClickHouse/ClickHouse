@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstring>
 #include <memory>
 
@@ -7,11 +8,15 @@
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnConst.h>
 
@@ -20,6 +25,7 @@
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -27,6 +33,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
     extern const int SIZES_OF_ARRAYS_DONT_MATCH;
     extern const int BAD_ARGUMENTS;
 }
@@ -121,6 +128,76 @@ std::string extractTableName(const std::string & nested_name)
 }
 
 
+ColumnWithTypeAndName unwrapNullableTuple(const ColumnWithTypeAndName & column)
+{
+    const auto * type_nullable = typeid_cast<const DataTypeNullable *>(column.type.get());
+    if (!type_nullable)
+        return column;
+
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type_nullable->getNestedType().get());
+    if (!tuple_type)
+        return column;
+
+    const auto & col_nullable = assert_cast<const ColumnNullable &>(*column.column);
+
+    const auto & null_map_data = col_nullable.getNullMapData();
+    bool has_nulls = !memoryIsZero(null_map_data.data(), 0, null_map_data.size());
+
+    if (!has_nulls)
+    {
+        /// No actual nulls — just strip the Nullable wrapper.
+        return {col_nullable.getNestedColumnPtr(), type_nullable->getNestedType(), column.name};
+    }
+
+    /// Propagate the struct null map to each Tuple element.
+    const auto & inner_tuple = assert_cast<const ColumnTuple &>(col_nullable.getNestedColumn());
+    const auto & null_map_ptr = col_nullable.getNullMapColumnPtr();
+    Columns new_elements;
+    DataTypes new_types;
+    for (size_t i = 0; i < tuple_type->getElements().size(); ++i)
+    {
+        auto elem_col = inner_tuple.getColumnPtr(i);
+        auto elem_type = tuple_type->getElement(i);
+        if (elem_type->isNullable())
+        {
+            /// Element already Nullable — merge null maps (struct null OR element null).
+            const auto & existing = assert_cast<const ColumnNullable &>(*elem_col);
+            auto merged = ColumnUInt8::create(null_map_ptr->size());
+            const auto & s = assert_cast<const ColumnUInt8 &>(*null_map_ptr).getData();
+            const auto & e = existing.getNullMapData();
+            auto & m = merged->getData();
+            for (size_t j = 0; j < s.size(); ++j)
+                m[j] = s[j] | e[j];
+            new_elements.push_back(ColumnNullable::create(existing.getNestedColumnPtr(), std::move(merged)));
+            new_types.push_back(elem_type);
+        }
+        else if (elem_type->canBeInsideNullable())
+        {
+            new_elements.push_back(ColumnNullable::create(elem_col, null_map_ptr));
+            new_types.push_back(std::make_shared<DataTypeNullable>(elem_type));
+        }
+        else
+        {
+            /// Array, Map, etc. — replace values at null positions with type defaults.
+            const auto & nm = col_nullable.getNullMapData();
+            auto mutable_col = elem_col->cloneEmpty();
+            for (size_t j = 0; j < elem_col->size(); ++j)
+            {
+                if (nm[j])
+                    mutable_col->insertDefault();
+                else
+                    mutable_col->insertFrom(*elem_col, j);
+            }
+            new_elements.push_back(std::move(mutable_col));
+            new_types.push_back(elem_type);
+        }
+    }
+
+    auto result_type = tuple_type->hasExplicitNames() ? std::make_shared<DataTypeTuple>(std::move(new_types), tuple_type->getElementNames())
+                                                      : std::make_shared<DataTypeTuple>(std::move(new_types));
+    return {ColumnTuple::create(std::move(new_elements)), result_type, column.name};
+}
+
 static Block flattenImpl(const Block & block, bool flatten_named_tuple)
 {
     Block res;
@@ -138,7 +215,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
                 size_t tuple_size = element_types.size();
 
                 bool is_const = isColumnConst(*elem.column);
-                const ColumnArray * column_array;
+                const ColumnArray * column_array = nullptr;
                 if (is_const)
                     column_array = typeid_cast<const ColumnArray *>(&assert_cast<const ColumnConst &>(*elem.column).getDataColumn());
                 else
@@ -171,7 +248,7 @@ static Block flattenImpl(const Block & block, bool flatten_named_tuple)
             {
                 const DataTypes & element_types = type_tuple->getElements();
                 const Strings & names = type_tuple->getElementNames();
-                const ColumnTuple * column_tuple;
+                const ColumnTuple * column_tuple = nullptr;
                 if (isColumnConst(*elem.column))
                     column_tuple = typeid_cast<const ColumnTuple *>(&assert_cast<const ColumnConst &>(*elem.column).getDataColumn());
                 else
@@ -205,6 +282,183 @@ Block flattenNested(const Block & block)
     return flattenImpl(block, false);
 }
 
+const DataTypeTuple * tryGetFlattenableTuple(const DataTypePtr & type)
+{
+    const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+    if (tuple_type && !tuple_type->getElements().empty() && !type->hasCustomName())
+        return tuple_type;
+    return nullptr;
+}
+
+/// Recursively flattens one (column, type) into its leaf columns, calling
+/// `emit_leaf(column, type, name, ancestors)` once per leaf. A leaf is anything
+/// `tryGetFlattenableTuple` does not expand (a non-tuple, or an empty/custom-named tuple);
+/// flattenable tuples are descended into. `name` is the leaf's full dotted path; `ancestors`
+/// are the tuple paths it descends from (the root column plus every intermediate tuple node).
+///
+/// Example — a column `t` of type `Tuple(a UInt64, inner Tuple(c UInt64, d UInt64))`, called with
+/// name_prefix = "t", emits three leaves:
+///   emit_leaf(col, UInt64, "t.a",       ["t"])
+///   emit_leaf(col, UInt64, "t.inner.c", ["t", "t.inner"])
+///   emit_leaf(col, UInt64, "t.inner.d", ["t", "t.inner"])
+///
+/// Names and ancestors are built from real element boundaries, so an element whose own name
+/// contains a dot (e.g. `p.x` in tuple `t`) is not a problem and gives the single leaf `t.p.x`
+/// with the sole ancestor `t`, never the unrelated path `t.p`.
+template <typename LeafCallback>
+static void flattenTupleRecursiveImpl(
+    const ColumnPtr & column,
+    const DataTypePtr & data_type,
+    LeafCallback && emit_leaf,
+    const String & name_prefix,
+    const Strings & ancestors)
+{
+    const auto * tuple_type = tryGetFlattenableTuple(data_type);
+    if (!tuple_type)
+    {
+        emit_leaf(column, data_type, name_prefix, ancestors);
+        return;
+    }
+
+    /// If the column is ColumnConst, expand it to a full column first,
+    /// so that all leaf columns are always non-const after flattening.
+    ColumnPtr materialized_column = column->convertToFullColumnIfConst();
+    const auto * column_tuple = assert_cast<const ColumnTuple *>(materialized_column.get());
+
+    const DataTypes & element_types = tuple_type->getElements();
+    const Strings & element_names = tuple_type->getElementNames();
+    const auto & sub_columns = column_tuple->getColumns();
+
+    /// `name_prefix` is empty only on the column-only flattening path (flattenTupleColumnsRecursive),
+    /// where leaf names and ancestors are unused, so skip building them there.
+    const bool build_metadata = !name_prefix.empty();
+
+    Strings element_ancestors = ancestors;
+    if (build_metadata)
+        element_ancestors.push_back(name_prefix);
+
+    for (size_t i = 0; i < element_types.size(); ++i)
+    {
+        String element_name = build_metadata ? concatenateName(name_prefix, element_names[i]) : String{};
+        flattenTupleRecursiveImpl(sub_columns[i], element_types[i], emit_leaf, element_name, element_ancestors);
+    }
+}
+
+Block flattenTupleRecursive(const Block & block, std::vector<Strings> * flattened_ancestors)
+{
+    Block result;
+    if (flattened_ancestors)
+        flattened_ancestors->clear();
+    for (const auto & elem : block)
+    {
+        flattenTupleRecursiveImpl(
+            elem.column, elem.type,
+            [&](const ColumnPtr & col, const DataTypePtr & type, const String & name, const Strings & ancestors)
+            {
+                result.insert(ColumnWithTypeAndName(col, type, name));
+                if (flattened_ancestors)
+                    flattened_ancestors->push_back(ancestors);
+            },
+            elem.name, {});
+    }
+    return result;
+}
+
+void flattenTupleLeafNames(const String & name, const DataTypePtr & type, Names & out)
+{
+    /// Mirrors the name generation of `flattenTupleRecursiveImpl`: descend only into flattenable
+    /// tuples, joining each element name onto the prefix, and emit non-tuple types as leaves.
+    const auto * tuple_type = tryGetFlattenableTuple(type);
+    if (!tuple_type)
+    {
+        out.push_back(name);
+        return;
+    }
+
+    const DataTypes & element_types = tuple_type->getElements();
+    const Strings & element_names = tuple_type->getElementNames();
+    for (size_t i = 0; i < element_types.size(); ++i)
+        flattenTupleLeafNames(concatenateName(name, element_names[i]), element_types[i], out);
+}
+
+/// Flatten tuple columns: input a vector of columns, return a new vector with all tuples expanded
+/// All tuples are flattened recursively
+Columns flattenTupleColumnsRecursive(const Block & header, const Columns & columns)
+{
+    if (header.columns() != columns.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Header columns count ({}) does not match columns count ({}) in flattenTupleColumns",
+            header.columns(),
+            columns.size());
+    }
+
+    Columns result;
+    result.reserve(columns.size()); /// Lower bound: every column flattens to at least one leaf.
+
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        const auto & header_col = header.getByPosition(i);
+        flattenTupleRecursiveImpl(
+            columns[i], header_col.type,
+            [&result](const ColumnPtr & col, const DataTypePtr &, const String &, const Strings &)
+            {
+                result.push_back(col);
+            },
+            {}, {});
+    }
+
+    return result;
+}
+
+static ColumnPtr reconstructTupleColumnImpl(const DataTypePtr & data_type, const Columns & flattened_columns, size_t & flattened_idx)
+{
+    if (const auto * tuple_type = tryGetFlattenableTuple(data_type))
+    {
+        const auto & element_types = tuple_type->getElements();
+        Columns tuple_columns;
+        tuple_columns.reserve(element_types.size());
+
+        for (const auto & element_type : element_types)
+            tuple_columns.push_back(reconstructTupleColumnImpl(element_type, flattened_columns, flattened_idx));
+
+        return ColumnTuple::create(tuple_columns);
+    }
+
+    /// For non-tuple types, take as-is from flattened columns
+    if (flattened_idx >= flattened_columns.size())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "flattened_idx out of range in reconstructTupleColumns");
+    }
+    return flattened_columns[flattened_idx++];
+}
+
+/// Reconstruct tuple columns: input header and flattened columns, return a new vector with tuples reconstructed
+Columns reconstructTupleColumnsRecursive(const Block & header, const Columns & flattened_columns)
+{
+    Columns result;
+    result.reserve(header.columns());
+    size_t flattened_idx = 0;
+
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        const auto & header_col = header.getByPosition(i);
+        result.push_back(reconstructTupleColumnImpl(header_col.type, flattened_columns, flattened_idx));
+    }
+
+    if (flattened_idx != flattened_columns.size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "reconstructTupleColumnsRecursive: consumed {} flattened columns, but total flattened columns count is {}",
+            flattened_idx,
+            flattened_columns.size());
+    }
+
+    return result;
+}
+
 namespace
 {
 
@@ -213,16 +467,46 @@ using NameToDataType = std::map<String, DataTypePtr>;
 NameToDataType getSubcolumnsOfNested(const NamesAndTypesList & names_and_types)
 {
     std::unordered_map<String, NamesAndTypesList> nested;
+    /// A subcolumn entry's `type_in_storage` is the type in metadata, while a plain entry carries the
+    /// type its caller resolved, which for a part being read is the part's own (possibly older) type.
+    std::unordered_map<String, NameSet> contributed_by_subcolumn;
     for (const auto & name_type : names_and_types)
     {
-        const auto * type_arr = typeid_cast<const DataTypeArray *>(name_type.type.get());
+        /// Group by the column in storage so a subcolumn contributes its member and never itself:
+        /// `c2.null` as an element name would build an invalid Nested type.
+        auto name_in_storage = name_type.getNameInStorage();
+        const auto & type_in_storage = name_type.getTypeInStorage();
+
+        const auto * type_arr = typeid_cast<const DataTypeArray *>(type_in_storage.get());
 
         /// Ignore true Nested type, but try to unite flatten arrays to Nested type.
-        if (!isNested(name_type.type) && type_arr)
+        if (!isNested(type_in_storage) && type_arr)
         {
-            auto split = splitName(name_type.name);
-            if (!split.second.empty())
-                nested[split.first].emplace_back(split.second, type_arr->getNestedType());
+            auto split = splitName(name_in_storage);
+            if (split.second.empty())
+                continue;
+
+            auto & elems = nested[split.first];
+            /// A member is contributed once even if both it and its subcolumns are requested.
+            if (!elems.contains(split.second))
+            {
+                elems.emplace_back(split.second, type_arr->getNestedType());
+                if (name_type.isSubcolumn())
+                    contributed_by_subcolumn[split.first].insert(split.second);
+            }
+            /// A plain entry replaces a subcolumn entry's contribution, never the other way round, so
+            /// the element type describes the same data the columns in this list carry.
+            else if (!name_type.isSubcolumn() && contributed_by_subcolumn[split.first].erase(split.second))
+            {
+                for (auto & elem : elems)
+                {
+                    if (elem.name == split.second)
+                    {
+                        elem = NameAndTypePair{split.second, type_arr->getNestedType()};
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -265,8 +549,29 @@ NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types)
             continue;
 
         auto split = splitName(name_type.name);
-        if (name_type.isSubcolumn() || split.second.empty())
+        if (split.second.empty())
             continue;
+
+        if (name_type.isSubcolumn())
+        {
+            /// If this is a subcolumn (e.g. `c0.c2.null` — subcolumn `null` of `c0.c2`)
+            /// and its parent column is part of a Nested group, remap it to be a subcolumn
+            /// of the Nested type (e.g. subcolumn `c2.null` of Nested `c0`).
+            /// This ensures the Nested serialization is used, which handles shared offsets correctly.
+            auto name_in_storage = name_type.getNameInStorage();
+            auto storage_split = splitName(name_in_storage);
+            if (!storage_split.second.empty())
+            {
+                auto it = nested_types.find(storage_split.first);
+                if (it != nested_types.end())
+                {
+                    auto new_subcolumn = concatenateName(storage_split.second, name_type.getSubcolumnName());
+                    if (auto subcolumn_type = it->second->tryGetSubcolumnType(new_subcolumn))
+                        name_type = NameAndTypePair{storage_split.first, new_subcolumn, it->second, subcolumn_type};
+                }
+            }
+            continue;
+        }
 
         auto it = nested_types.find(split.first);
         if (it != nested_types.end())
@@ -357,63 +662,110 @@ NestedColumnExtractHelper::NestedColumnExtractHelper(const Block & block_, bool 
     , case_insentive(case_insentive_)
 {}
 
+const NestedColumnExtractHelper::Subcolumns & NestedColumnExtractHelper::subcolumnsOf(const ColumnWithTypeAndName & root)
+{
+    auto [it, inserted] = subcolumns_by_root.try_emplace(root.name);
+    auto & subcolumns = it->second;
+    if (!inserted)
+        return subcolumns;
+
+    /// A dynamic subcolumn (a JSON path, a Dynamic variant) is materialized from the requested name,
+    /// and a constant column is resolved through the column it wraps, so neither set can be listed here.
+    if (root.type->hasDynamicSubcolumns() || isColumnConst(*root.column))
+        return subcolumns;
+
+    const auto root_data = ISerialization::SubstreamData(root.type->getSerialization(*root.type->getSerializationInfo(*root.column)))
+                               .withType(root.type)
+                               .withColumn(root.column);
+
+    /// Same walk `IDataType::getSubcolumnData` makes for one name, stopping at each subcolumn's path.
+    ISerialization::EnumerateStreamsSettings settings;
+    settings.position_independent_encoding = false;
+    settings.enumerate_dynamic_streams = false;
+    settings.enumerate_virtual_streams = true;
+    root_data.serialization->enumerateStreams(
+        settings,
+        [&](const auto & substream_path)
+        {
+            for (size_t i = 0; i < substream_path.size(); ++i)
+            {
+                const size_t prefix_len = i + 1;
+                if (!substream_path[i].visited && ISerialization::hasSubcolumnForPath(substream_path, prefix_len))
+                {
+                    auto name = ISerialization::getSubcolumnNameForStream(substream_path, prefix_len);
+                    auto path = substream_path;
+                    path.resize(prefix_len);
+                    /// The first spelling wins, as it does in `IDataType::getSubcolumnData`.
+                    subcolumns.path_by_name.try_emplace(name, std::move(path));
+                    if (case_insentive)
+                        subcolumns.name_by_lowercase.try_emplace(boost::to_lower_copy(name), name);
+                }
+                substream_path[i].visited = true;
+            }
+        },
+        root_data);
+
+    subcolumns.complete = true;
+    return subcolumns;
+}
+
+std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::resolveSubcolumn(
+    const ColumnWithTypeAndName & root, const String & subcolumn_name, const String & result_name) const
+{
+    String declared_name = subcolumn_name;
+    if (case_insentive)
+    {
+        /// Match the listed spellings before resolving the request itself, since a root that accepts
+        /// any path answers every spelling: a JSON path absent from the listing is a `Dynamic` of
+        /// NULLs, which would shadow a declared path differing only by case. A declared spelling is
+        /// its own match; anything else folds onto one in listing order.
+        const auto declared_names = root.type->getSubcolumnNames();
+        if (std::find(declared_names.begin(), declared_names.end(), subcolumn_name) == declared_names.end())
+        {
+            const auto declared_it = std::find_if(
+                declared_names.begin(),
+                declared_names.end(),
+                [&](const auto & candidate) { return boost::iequals(candidate, subcolumn_name); });
+            if (declared_it != declared_names.end())
+                declared_name = *declared_it;
+        }
+    }
+
+    const auto subcolumn_type = root.type->tryGetSubcolumnType(declared_name);
+    if (!subcolumn_type)
+        return {};
+
+    return ColumnWithTypeAndName{root.type->getSubcolumn(declared_name, root.column), subcolumn_type, result_name};
+}
+
 std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(const String & column_name)
 {
     if (block.has(column_name, case_insentive))
         return {block.getByName(column_name, case_insentive)};
 
-    auto nested_names = Nested::splitName(column_name);
-    if (case_insentive)
-    {
-        boost::to_lower(nested_names.first);
-        boost::to_lower(nested_names.second);
-    }
-    if (!block.has(nested_names.first, case_insentive))
+    const auto nested_names = Nested::splitName(column_name);
+    const auto * root = block.findByName(nested_names.first, case_insentive);
+    if (!root)
         return {};
 
-    if (!nested_tables.contains(nested_names.first))
+    const auto & subcolumns = subcolumnsOf(*root);
+    if (!subcolumns.complete)
+        return resolveSubcolumn(*root, nested_names.second, column_name);
+
+    /// A spelling that is itself a subcolumn name resolves to it, as it does in
+    /// `IDataType::getSubcolumnData`; only one that names none is matched case-insensitively.
+    auto it = subcolumns.path_by_name.find(nested_names.second);
+    if (it == subcolumns.path_by_name.end() && case_insentive)
     {
-        ColumnsWithTypeAndName columns = {block.getByName(nested_names.first, case_insentive)};
-        nested_tables[nested_names.first] = std::make_shared<Block>(Nested::flatten(columns));
+        const auto folded = subcolumns.name_by_lowercase.find(boost::to_lower_copy(nested_names.second));
+        if (folded != subcolumns.name_by_lowercase.end())
+            it = subcolumns.path_by_name.find(folded->second);
     }
-
-    return extractColumn(column_name, nested_names.first, nested_names.second);
-}
-
-std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(
-    const String & original_column_name, const String & column_name_prefix, const String & column_name_suffix)
-{
-    auto table_iter = nested_tables.find(column_name_prefix);
-    if (table_iter == nested_tables.end())
-    {
+    if (it == subcolumns.path_by_name.end())
         return {};
-    }
 
-    auto & nested_table = table_iter->second;
-    auto nested_names = Nested::splitName(column_name_suffix);
-    auto new_column_name_prefix = Nested::concatenateName(column_name_prefix, nested_names.first);
-    if (nested_names.second.empty())
-    {
-        if (auto * column_ref = nested_table->findByName(new_column_name_prefix, case_insentive))
-        {
-            ColumnWithTypeAndName column = *column_ref;
-            if (case_insentive)
-                column.name = original_column_name;
-            return {std::move(column)};
-        }
-
-        return {};
-    }
-
-    if (!nested_table->has(new_column_name_prefix, case_insentive))
-    {
-        return {};
-    }
-
-    ColumnsWithTypeAndName columns = {nested_table->getByName(new_column_name_prefix, case_insentive)};
-    Block sub_block(columns);
-    nested_tables[new_column_name_prefix] = std::make_shared<Block>(Nested::flatten(sub_block));
-    return extractColumn(original_column_name, new_column_name_prefix, nested_names.second);
+    const auto subcolumn_data = ISerialization::createFromPath(it->second, it->second.size());
+    return ColumnWithTypeAndName{subcolumn_data.column, subcolumn_data.type, column_name};
 }
 
 DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
@@ -443,6 +795,21 @@ DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
             ++it;
 
             type = type_tuple->getElement(*pos);
+        }
+        else if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()))
+        {
+            /// `keys` and `values` are tuple elements of the Map's nested type, so they are on the
+            /// path like any other tuple element. Their array level is re-created by the caller.
+            if (it == tuple_elements.end())
+                break;
+
+            const auto & nested_tuple = assert_cast<const DataTypeTuple &>(*type_map->getNestedDataType());
+            auto pos = nested_tuple.tryGetPositionByName(*it);
+            if (!pos)
+                break;
+            ++it;
+
+            type = nested_tuple.getElement(*pos);
         }
         else
             break;

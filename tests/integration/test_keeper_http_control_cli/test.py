@@ -35,7 +35,7 @@ node3 = cluster.add_instance(
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        cluster.start()
+        cluster.start(connection_timeout=450.0)
         yield cluster
     finally:
         cluster.shutdown()

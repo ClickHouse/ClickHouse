@@ -74,8 +74,8 @@ struct ExtractSubstringImpl
         size_t res_offset = 0;
 
         /// Matched part.
-        Pos start;
-        size_t length;
+        Pos start = nullptr;
+        size_t length = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -92,8 +92,8 @@ struct ExtractSubstringImpl
     static void constant(const std::string & data,
         std::string & res_data)
     {
-        Pos start;
-        size_t length;
+        Pos start = nullptr;
+        size_t length = 0;
         Extractor::execute(data.data(), data.size(), start, length);
         res_data.assign(start, length);
     }
@@ -122,8 +122,8 @@ struct CutSubstringImpl
         size_t res_offset = 0;
 
         /// Matched part.
-        Pos start;
-        size_t length;
+        Pos start = nullptr;
+        size_t length = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -146,8 +146,8 @@ struct CutSubstringImpl
     static void constant(const std::string & data,
         std::string & res_data)
     {
-        Pos start;
-        size_t length;
+        Pos start = nullptr;
+        size_t length = 0;
         Extractor::execute(data.data(), data.size(), start, length);
         res_data.reserve(data.size() - length);
         res_data.append(data.data(), start);

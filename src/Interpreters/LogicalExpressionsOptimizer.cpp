@@ -120,7 +120,7 @@ void LogicalExpressionsOptimizer::collectDisjunctiveEqualityChains()
 
         auto * function = to_node->as<ASTFunction>();
         /// Optimization does not respect aliases properly, which can lead to MULTIPLE_EXPRESSION_FOR_ALIAS error.
-        /// Disable it if an expression has an alias. Proper implementation is done with the new analyzer.
+        /// Disable it if an expression has an alias. Proper implementation is done with the analyzer.
         if (function && function->alias.empty() && function->name == "or" && function->children.size() == 1)
         {
             const auto * expression_list = function->children[0]->as<ASTExpressionList>();

@@ -1,0 +1,65 @@
+-- Test text index with preprocessor on expression-based index
+-- hasToken on concat(s1, s2)
+1
+1
+1
+1
+1
+1
+0
+-- hasAllTokens on concat(s1, s2)
+1
+1
+1
+1
+1
+1
+0
+-- hasAnyTokens on concat(s1, s2)
+1
+1
+1
+1
+1
+1
+0
+-- hasToken on toValidUTF8(s3)
+1
+1
+1
+1
+1
+1
+0
+-- hasAllTokens on toValidUTF8(s3)
+1
+1
+1
+1
+1
+1
+0
+-- hasAnyTokens on toValidUTF8(s3)
+1
+1
+1
+1
+1
+1
+0
+-- hasAllTokens on mapKeys(m)
+1
+1
+1
+1
+1
+1
+0
+-- hasAnyTokens on mapKeys(m)
+1
+1
+1
+1
+1
+1
+0

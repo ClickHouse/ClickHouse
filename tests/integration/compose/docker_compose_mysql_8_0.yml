@@ -20,6 +20,12 @@ services:
             --ssl-ca=/etc/mysql/certs/ca.pem
             --ssl-cert=/etc/mysql/certs/server-cert.pem
             --ssl-key=/etc/mysql/certs/server-key.pem
+            --sha256_password_auto_generate_rsa_keys=OFF
+            --caching_sha2_password_auto_generate_rsa_keys=OFF
+            --sha256_password_private_key_path=/etc/mysql/certs/private_key.pem
+            --sha256_password_public_key_path=/etc/mysql/certs/public_key.pem
+            --caching_sha2_password_private_key_path=/etc/mysql/certs/private_key.pem
+            --caching_sha2_password_public_key_path=/etc/mysql/certs/public_key.pem
         volumes:
             - type: ${MYSQL8_LOGS_FS:-tmpfs}
               source: ${MYSQL8_LOGS:-}

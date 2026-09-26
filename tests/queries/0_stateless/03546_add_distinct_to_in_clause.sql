@@ -6,6 +6,11 @@ drop table if exists distributed_table_1;
 drop table if exists distributed_table_2;
 
 SET prefer_localhost_replica = 0;
+-- Pin the network codec to `LZ4`: this test compares compressed `NetworkReceiveBytes` between the
+-- with-`DISTINCT` and without-`DISTINCT` queries. Under the `ZSTD(3)` network default the highly
+-- repetitive without-`DISTINCT` stream is entropy-coded almost as small as the tiny with-`DISTINCT`
+-- payload, so the strict comparison becomes flaky. `LZ4` restores the deterministic margin.
+SET network_compression_method = 'LZ4';
 SET allow_experimental_analyzer = 1;
 SET distributed_product_mode = 'allow';
 SET prefer_global_in_and_join = 1;
@@ -35,7 +40,7 @@ WITH
     -- Get the value for with_distinct
     (SELECT read_rows, ProfileEvents
      FROM system.query_log
-     WHERE current_database = currentDatabase()
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
        AND query LIKE '%select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 1%'
        AND type = 'QueryFinish'
        AND is_initial_query
@@ -44,7 +49,7 @@ WITH
     -- Get the value for without_distinct
     (SELECT read_rows, ProfileEvents
      FROM system.query_log
-     WHERE current_database = currentDatabase()
+     WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
        AND query LIKE '%select id from distributed_table_1 where id in (select id from distributed_table_2) settings enable_add_distinct_to_in_subqueries = 0%'
        AND type = 'QueryFinish'
        AND is_initial_query

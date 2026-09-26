@@ -9,4 +9,4 @@ query_id="$RANDOM-$CLICKHOUSE_DATABASE"
 ${CLICKHOUSE_CLIENT} --query_id $query_id --query "SELECT 1 FORMAT Null SETTINGS trace_profile_events = 1, trace_profile_events_list = 'Query,SelectQuery'"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS trace_log"
-${CLICKHOUSE_CLIENT} --query "SELECT event, count(), sum(empty(trace)) = 0 FROM system.trace_log WHERE query_id = '$query_id' AND trace_type = 'ProfileEvent' GROUP BY event ORDER BY count(), event"
+${CLICKHOUSE_CLIENT} --query "SELECT event, count(), sum(empty(trace)) = 0 FROM system.trace_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id' AND trace_type = 'ProfileEvent' GROUP BY event ORDER BY count(), event"
