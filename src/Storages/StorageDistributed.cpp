@@ -155,6 +155,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool async_query_sending_for_remote;
@@ -1371,9 +1372,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
-            if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
-                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
-            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
+            if (settings[Setting::enable_global_with_statement])
+                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0), settings[Setting::max_expanded_ast_elements]);
+            ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0), settings[Setting::max_expanded_ast_elements]);
 
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
 

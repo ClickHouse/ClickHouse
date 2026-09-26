@@ -1,0 +1,13 @@
+-- Every element of a `WITH` list is copied into the subqueries of the elements after it, together with the
+-- copies it carries itself, so the propagation doubles the query with each element. The same holds for a
+-- chain of common table expressions each reading the previous one twice. The expansion must stop at
+-- `max_expanded_ast_elements` instead of exhausting the memory.
+
+EXPLAIN AST optimize = 1 WITH (SELECT 1) AS v0, (SELECT v0) AS v1, (SELECT v1) AS v2, (SELECT v2) AS v3, (SELECT v3) AS v4, (SELECT v4) AS v5, (SELECT v5) AS v6, (SELECT v6) AS v7, (SELECT v7) AS v8, (SELECT v8) AS v9, (SELECT v9) AS v10, (SELECT v10) AS v11, (SELECT v11) AS v12, (SELECT v12) AS v13, (SELECT v13) AS v14, (SELECT v14) AS v15, (SELECT v15) AS v16, (SELECT v16) AS v17, (SELECT v17) AS v18, (SELECT v18) AS v19, (SELECT v19) AS v20, (SELECT v20) AS v21, (SELECT v21) AS v22, (SELECT v22) AS v23, (SELECT v23) AS v24, (SELECT v24) AS v25, (SELECT v25) AS v26, (SELECT v26) AS v27, (SELECT v27) AS v28, (SELECT v28) AS v29 SELECT v29; -- { serverError TOO_BIG_AST }
+
+CREATE VIEW v_expansion AS WITH c0 AS (SELECT 1 AS x), c1 AS (SELECT a.x FROM c0 AS a, c0 AS b), c2 AS (SELECT a.x FROM c1 AS a, c1 AS b), c3 AS (SELECT a.x FROM c2 AS a, c2 AS b), c4 AS (SELECT a.x FROM c3 AS a, c3 AS b), c5 AS (SELECT a.x FROM c4 AS a, c4 AS b), c6 AS (SELECT a.x FROM c5 AS a, c5 AS b), c7 AS (SELECT a.x FROM c6 AS a, c6 AS b), c8 AS (SELECT a.x FROM c7 AS a, c7 AS b), c9 AS (SELECT a.x FROM c8 AS a, c8 AS b), c10 AS (SELECT a.x FROM c9 AS a, c9 AS b), c11 AS (SELECT a.x FROM c10 AS a, c10 AS b), c12 AS (SELECT a.x FROM c11 AS a, c11 AS b), c13 AS (SELECT a.x FROM c12 AS a, c12 AS b), c14 AS (SELECT a.x FROM c13 AS a, c13 AS b), c15 AS (SELECT a.x FROM c14 AS a, c14 AS b), c16 AS (SELECT a.x FROM c15 AS a, c15 AS b), c17 AS (SELECT a.x FROM c16 AS a, c16 AS b), c18 AS (SELECT a.x FROM c17 AS a, c17 AS b), c19 AS (SELECT a.x FROM c18 AS a, c18 AS b), c20 AS (SELECT a.x FROM c19 AS a, c19 AS b), c21 AS (SELECT a.x FROM c20 AS a, c20 AS b), c22 AS (SELECT a.x FROM c21 AS a, c21 AS b), c23 AS (SELECT a.x FROM c22 AS a, c22 AS b), c24 AS (SELECT a.x FROM c23 AS a, c23 AS b), c25 AS (SELECT a.x FROM c24 AS a, c24 AS b), c26 AS (SELECT a.x FROM c25 AS a, c25 AS b), c27 AS (SELECT a.x FROM c26 AS a, c26 AS b), c28 AS (SELECT a.x FROM c27 AS a, c27 AS b), c29 AS (SELECT a.x FROM c28 AS a, c28 AS b) SELECT x FROM c29; -- { serverError TOO_BIG_AST }
+
+-- A short chain still works.
+CREATE VIEW v_expansion AS WITH c0 AS (SELECT 1 AS x), c1 AS (SELECT a.x FROM c0 AS a, c0 AS b), c2 AS (SELECT a.x FROM c1 AS a, c1 AS b) SELECT x FROM c2;
+SELECT count() FROM v_expansion;
+DROP VIEW v_expansion;

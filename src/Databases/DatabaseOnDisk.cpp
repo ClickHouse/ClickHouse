@@ -132,7 +132,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())
-        ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
+        ApplyWithSubqueryVisitor::visit(*ast_create_query.select, /*max_expanded_ast_elements=*/ 0); /// Bounded when it was created.
 
     /// The dependency graphs were built out of exactly the same repaired names, see
     /// `TablesLoader::buildDependencyGraph`.

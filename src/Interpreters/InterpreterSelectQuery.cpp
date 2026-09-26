@@ -141,6 +141,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsMap additional_table_filters;
     extern const SettingsUInt64 aggregation_in_order_max_block_bytes;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
@@ -642,9 +643,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     // Only propagate WITH elements to subqueries if we're not a subquery
     if (!options.is_subquery)
     {
-        if (context->getSettingsRef()[Setting::enable_global_with_statement])
-            ApplyWithAliasVisitor::visit(query_ptr);
-        ApplyWithSubqueryVisitor::visit(query_ptr);
+        if (settings[Setting::enable_global_with_statement])
+            ApplyWithAliasVisitor::visit(query_ptr, settings[Setting::max_expanded_ast_elements]);
+        ApplyWithSubqueryVisitor::visit(query_ptr, settings[Setting::max_expanded_ast_elements]);
     }
 
     query_info.query = query_ptr->clone();

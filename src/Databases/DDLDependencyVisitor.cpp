@@ -30,6 +30,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -171,7 +172,9 @@ namespace
                     if (create.is_materialized_view)
                     {
                         auto select_copy = create.select->clone();
-                        ApplyWithSubqueryVisitor::visit(select_copy);
+                        /// A definition loaded from metadata (`can_throw` unset) was bounded when it was created.
+                        ApplyWithSubqueryVisitor::visit(
+                            select_copy, can_throw ? global_context->getSettingsRef()[Setting::max_expanded_ast_elements].value : 0);
 
                         /// Use the database where the materialized view is created to resolve nested views.
                         /// The database name can be empty when the AST has been mutated by SharedDatabaseCatalog::serializeCreateQuery

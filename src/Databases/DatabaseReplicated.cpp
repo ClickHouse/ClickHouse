@@ -2365,7 +2365,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadata(
         create.attach = true;
 
     if (create.select && create.isView())
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        ApplyWithSubqueryVisitor::visit(*create.select, /*max_expanded_ast_elements=*/ 0); /// Bounded when it was created.
 
     return ast;
 }

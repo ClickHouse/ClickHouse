@@ -125,6 +125,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_statistics;
@@ -2004,7 +2005,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
 
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor::visit(*create.select);
+        /// A definition loaded from metadata was bounded when it was created.
+        ApplyWithSubqueryVisitor::visit(
+            *create.select,
+            mode <= LoadingStrictnessLevel::CREATE ? getContext()->getSettingsRef()[Setting::max_expanded_ast_elements].value : 0);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
     }
