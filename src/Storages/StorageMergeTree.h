@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <string>
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
@@ -111,7 +112,7 @@ public:
     void drop() override;
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
-    void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -121,6 +122,7 @@ public:
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
     bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
+    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
 
     std::map<std::string, MutationCommands> getUnfinishedMutationCommands() const override;
 
@@ -206,7 +208,13 @@ private:
             PreformattedMessage & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
-    void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
+    /// Returns the parts that the new empty parts covered, i.e. the parts this call removed.
+    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
+
+    /// Copy the parts to `detached/`. Must run after the removal is committed: cloning first would
+    /// leave an orphan copy behind whenever the removal is still refused, and every retry of the
+    /// statement would add another `_tryN` directory next to it.
+    void clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context);
 
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
@@ -273,12 +281,33 @@ private:
     UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
     UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
-    /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
-    /// Merges have to be aware of the outdated part's levels inside designated merge range.
+    /// A merge writes its result with the column names of the current metadata, so it materializes
+    /// every pending metadata mutation (`RENAME COLUMN`, `DROP COLUMN`) by itself. Returns the
+    /// mutation version the result part has to carry so that those mutations are not applied to it a
+    /// second time, or `nullopt` when the merge must not run at all. `partition_id` is the partition
+    /// of the result part: a pending command scoped to another partition is never applied to it and
+    /// so does not stand in the way. See #111001.
+    std::optional<Int64> getMutationVersionForMergedPart(
+        Int64 sources_data_version,
+        const String & partition_id,
+        std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+
+    /// Returns the maximum level and the maximum mutation version of the outdated parts in a range
+    /// (left; right) whose creation was not rolled back, or zeros in case if empty range.
+    /// Merges have to be aware of the outdated part's levels and mutation versions inside designated merge range.
     /// When two parts all_1_1_0, all_3_3_0 are merged into all_1_3_1, the gap between those parts have to be verified.
-    /// There should not be an unactive part all_1_1_1. Otherwise it is impossible to load parts after restart, they intersects.
-    /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with high level outdated parts.
-    UInt32 getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const;
+    /// There should not be an unactive part all_1_1_1 or all_1_1_0_9. Otherwise it is impossible to load parts after restart, they intersects.
+    /// Therefore this function is used in merge predicate in order to prevent merges over such gaps.
+    std::pair<UInt32, Int64> getMaxLevelMutationInBetween(const PartProperties & left, const PartProperties & right) const;
+
+    /// Marks leading non-transactional mutations that have no parts left to process as done and
+    /// returns their count. Mutations with version >= `first_just_completed_version` were completed
+    /// by the calling event itself, so the current time is stamped as their `finish_time`; with the
+    /// default argument nothing is stamped — the caller observed the mutations as done without
+    /// knowing their actual completion moment, and `finish_time` stays zero (unknown).
+    /// Must be called under `currently_processing_in_background_mutex` (except in the constructor,
+    /// where locking is unnecessary — see `loadMutations`).
+    size_t markFinishedMutations(UInt64 first_just_completed_version = std::numeric_limits<UInt64>::max());
 
     size_t clearOldMutations(bool truncate = false);
 
@@ -317,6 +346,8 @@ private:
     std::unique_ptr<PlainCommittingBlockHolder> fillNewPartNameAndResetLevel(MutableDataPartPtr & part, DataPartsLock & lock);
 
     void startBackgroundMovesIfNeeded() override;
+    bool areBackgroundWorkersEnabled() const override { return background_workers_enabled; }
+    bool isReadonlyCommitInFlight() const override { return readonly_commit_in_flight; }
 
     BackupEntries backupMutations(UInt64 version, const String & data_path_in_backup) const;
 
@@ -329,6 +360,77 @@ private:
 
     bool isTableReadonly() const;
     void assertNotReadonly() const;
+
+    /// The `table_readonly` setting as it is currently visible in memory, which a settings `ALTER`
+    /// changes before the commit. Only the `ALTER` itself, which decides what the transition is,
+    /// uses this; everything else must use `isTableReadonly`, which reports the durable value.
+    bool isReadonlySettingSet() const;
+
+    /// Starts every background worker that only a writable table runs. Called on startup of a writable
+    /// table and again when `table_readonly` is turned back off, so that a table that was attached
+    /// read-only regains merges, moves, cleanup, and outdated part loading without a restart.
+    /// The statistics refresh and the streaming assignee only read parts; `startup` starts them for
+    /// every table, read-only or not, so they are not part of this set.
+    ///
+    /// Starting allocates and enqueues the scheduling tasks, so it may throw. A started worker
+    /// runs nothing while `background_workers_enabled` is unset, which lets the `table_readonly`
+    /// 1 -> 0 `ALTER` be exception-safe as a unit: `startBackgroundWorkers` runs before the
+    /// metadata commit inside its rollback unit, and `enableBackgroundWorkers` is the only step
+    /// after the commit, a plain flag flip that cannot fail. Starting is idempotent.
+    ///
+    /// `started` receives which assignees the call created, as opposed to found already running,
+    /// updated after each one so that it is accurate even when the call throws partway through.
+    /// `BackgroundJobsAssignee::start` itself is all or nothing, so an assignee whose activation
+    /// threw has no task left behind and is correctly not recorded here.
+    /// The rollback of the `ALTER` passes it to `finishBackgroundWorkers`, which tears down exactly
+    /// those assignees: a table that had no workers before the failed `ALTER` has none after it,
+    /// while the workers of a table that started writable are left as they were.
+    struct StartedBackgroundWorkers
+    {
+        bool operations = false;
+        bool moves = false;
+    };
+    void startBackgroundWorkers(StartedBackgroundWorkers * started = nullptr);
+    void finishBackgroundWorkers(const StartedBackgroundWorkers & started) noexcept;
+    void enableBackgroundWorkers() noexcept;
+    void disableBackgroundWorkers() noexcept;
+    /// Schedules the merge/mutate and move assignees, the cleanup thread, and the outdated and
+    /// unexpected part loaders to run now instead of after their backoff. Used after a
+    /// `table_readonly` 1 -> 0 commit, and after the rollback of a failed 0 -> 1 commit, whose
+    /// temporary `table_readonly = 1` may have sent a worker that woke up in the commit window into
+    /// its backoff with work pending, or a part loader into staying idle. Best effort, never throws.
+    void wakeupBackgroundWorkers() noexcept;
+
+    /// Whether the started background workers may do work. Every worker entry point
+    /// (`scheduleDataProcessingJob`, `scheduleDataMovingJob`, the cleanup iteration, the outdated and
+    /// unexpected part loaders) checks it in addition to `isTableReadonly`, so a worker that wakes up
+    /// while a settings `ALTER` has made the table writable in memory but not yet durably cannot queue
+    /// a merge, mutation, move, disk cleanup, or part detach/removal that would survive a rolled-back
+    /// commit. `startBackgroundMovesIfNeeded` starts nothing while it is unset: the toggle starts the
+    /// move assignee itself.
+    ///
+    /// Set exactly when the table is durably writable and no `table_readonly` commit is in flight:
+    /// on the startup of a writable table and after the commit of a `table_readonly` 1 -> 0 `ALTER`;
+    /// unset for the whole commit of a 0 -> 1 `ALTER`, from the moment the new value is visible in
+    /// memory, and set again only if that commit fails. So the cleanup thread and the outdated part
+    /// loader of a table that started writable, whose only guard this is, never start modifying the
+    /// disk once the table is durably read-only.
+    std::atomic<bool> background_workers_enabled {false};
+
+    /// Whether a settings `ALTER` that turns `table_readonly` off is between making the new value
+    /// visible in memory and committing it durably. `changeSettings` publishes the new settings
+    /// immediately, but the table becomes durably writable only when `alterTable` returns, and the
+    /// `ALTER` holds `alter_lock`, which does not serialize with the `lockForShare` that the write
+    /// paths take. Without this flag a concurrent `INSERT`, mutation, `TRUNCATE`, `MOVE PARTITION TO
+    /// TABLE` or `REPLACE PARTITION` would pass `assertNotReadonly` inside that window and modify a
+    /// table whose failed commit leaves it read-only. `isTableReadonly` therefore reports the old,
+    /// durable value while it is set, and the `ALTER` itself uses `isReadonlySettingSet` where it
+    /// means the new in-memory value.
+    ///
+    /// Only the 1 -> 0 direction needs this. A 0 -> 1 `ALTER` makes the table look read-only before
+    /// the commit, which merely rejects a concurrent write that a rolled-back commit would have
+    /// allowed: conservative, and never a write to a read-only table.
+    std::atomic<bool> readonly_commit_in_flight {false};
 
     friend class MergeTreeSink;
     friend class MergeTreeSinkPatch;

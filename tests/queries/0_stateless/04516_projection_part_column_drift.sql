@@ -9,6 +9,10 @@
 -- pin the setting away from the randomized value.
 -- Random settings limits: optimize_respect_aliases=(1, 1)
 
+-- Read-in-order on the base table would decline the forced projections in this test
+-- (`PROJECTION_NOT_USED`), so disable it: plan shape is not this test's subject.
+SET optimize_read_in_order = 0;
+
 DROP TABLE IF EXISTS t_proj_column_drift;
 
 CREATE TABLE t_proj_column_drift

@@ -1,7 +1,0 @@
-position: 1
-label: 'SQL Reference'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  slug: /sql-reference

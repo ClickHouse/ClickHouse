@@ -227,7 +227,7 @@ SELECT CAST('2024-01-15', 'Date') AS d
 
 `1970-01-01`을 기준으로 ***이전 또는 이후***&#xC758; 날짜 수를 나타내는 `Int32`(4바이트)로 저장됩니다.
 
-지원되는 값 범위: `[1900-01-01, 2299-12-31]`.
+지원되는 값 범위: `[0000-01-01, 9999-12-31]`.
 
 `Date32`의 내부 저장 값 예시:
 
@@ -236,7 +236,7 @@ SELECT CAST('2024-01-15', 'Date32') AS d
 ```
 
 ```text
-0x19, 0x4D, 0x00, 0x00, // Int32(리틀 엔디언)로 19737 = 1970-01-01 이후 19737일
+0x19, 0x4D, 0x00, 0x00, // 19737 as Int32 (little-endian) = 19737 days since 1970-01-01
 ```
 
 epoch 이전 날짜:
@@ -246,7 +246,7 @@ SELECT CAST('1900-01-01', 'Date32') AS d
 ```
 
 ```text
-0x21, 0x9C, 0xFF, 0xFF, // Int32(리틀 엔디언)로 -25567 = 1970-01-01 기준 25567일 이전
+0x21, 0x9C, 0xFF, 0xFF, // -25567 as Int32 (little-endian) = 25567 days before 1970-01-01
 ```
 
 <div id="datetime">
@@ -580,7 +580,7 @@ RowBinary format에서는 low-cardinality 마커가 wire 형식에 영향을 주
   컬럼은 `LowCardinality(Nullable(T))`로 정의할 수 있지만 `Nullable(LowCardinality(T))`로는 정의할 수 없습니다. 이렇게 정의하면 항상 서버에서 오류가 발생합니다.
 </Note>
 
-테스트 중에는 더 폭넓게 검증할 수 있도록 [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ko/reference/settings/session-settings#allow_suspicious_low_cardinality_types)를 `1`로 설정하여 `LowCardinality` 내부에서 대부분의 데이터 타입을 허용할 수 있습니다.
+테스트 중에는 더 폭넓게 검증할 수 있도록 [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ko/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types)를 `1`로 설정하여 `LowCardinality` 내부에서 대부분의 데이터 타입을 허용할 수 있습니다.
 
 <div id="array">
   ### 배열
@@ -735,8 +735,8 @@ SET allow_experimental_variant_type = 1,
     allow_suspicious_variant_types = 1;
 CREATE OR REPLACE TABLE foo
 (
-  -- 사용자 입력에서 타입의 순서는 중요하지 않습니다;
-  -- 타입은 wire 형식에서 항상 알파벳순으로 정렬됩니다.
+  -- It does not matter what is the order of types in the user input;
+  -- the types are always sorted alphabetically in the wire format.
   `var` Variant(
            Array(Int16),
            Bool,
@@ -755,23 +755,23 @@ SELECT * FROM foo FORMAT RowBinary;
 ```
 
 ```text
-0x01,                               // 유형 인덱스 -> Bool
+0x01,                               // type index -> Bool
  0x01,                               // true
- 0x03,                               // 유형 인덱스 -> FixedString(6)
+ 0x03,                               // type index -> FixedString(6)
  0x66, 0x6F, 0x6F, 0x62, 0x61, 0x72, // 'foobar' 
- 0x05,                               // 유형 인덱스 -> Float64
+ 0x05,                               // type index -> Float64
  0x00, 0x00, 0x00, 0x00, 
- 0x00, 0x20, 0x59, 0x40,             // Float64로 표현한 100.5
- 0x06,                               // 유형 인덱스 -> Int128
+ 0x00, 0x20, 0x59, 0x40,             // 100.5 as Float64
+ 0x06,                               // type index -> Int128
  0x64, 0x00, 0x00, 0x00, 
  0x00, 0x00, 0x00, 0x00, 
  0x00, 0x00, 0x00, 0x00, 
- 0x00, 0x00, 0x00, 0x00,             // Int128로 표현한 100
- 0x00,                               // 유형 인덱스 -> Array(Int16)
- 0x03,                               // LEB128 - 배열 원소 3개
- 0x01, 0x00,                         // Int16로 표현한 1
- 0x02, 0x00,                         // Int16로 표현한 2
- 0x03, 0x00,                         // Int16로 표현한 3
+ 0x00, 0x00, 0x00, 0x00,             // 100 as Int128
+ 0x00,                               // type index -> Array(Int16)
+ 0x03,                               // LEB128 - the array has 3 elements
+ 0x01, 0x00,                         // 1 as Int16
+ 0x02, 0x00,                         // 2 as Int16
+ 0x03, 0x00,                         // 3 as Int16
 ```
 
 `NULL` 값은 `0xFF` 판별자 바이트로 인코딩됩니다:
@@ -781,10 +781,10 @@ SELECT NULL :: Variant(UInt32, String)
 ```
 
 ```text
-0xFF, // 판별자 = NULL
+0xFF, // discriminant = NULL
 ```
 
-[allow&#95;suspicious&#95;variant&#95;types](/ko/reference/settings/session-settings#allow_suspicious_variant_types) 설정을 사용하면 `Variant` 타입을 더 철저하게 테스트할 수 있습니다.
+[allow&#95;suspicious&#95;variant&#95;types](/ko/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) 설정을 사용하면 `Variant` 타입을 더 철저하게 테스트할 수 있습니다.
 
 <div id="dynamic">
   ### Dynamic
@@ -992,14 +992,15 @@ Schema: `JSON(id UInt64)`
 
 Geo는 지리 데이터를 나타내는 데이터 타입 범주입니다. 여기에는 다음이 포함됩니다.
 
-* `Point` - `Tuple(Float64, Float64)`로 표현됩니다.
-* `Ring` - `Array(Point)` 또는 `Array(Tuple(Float64, Float64))`로 표현됩니다.
-* `Polygon` - `Array(Ring)` 또는 `Array(Array(Tuple(Float64, Float64)))`로 표현됩니다.
-* `MultiPolygon` - `Array(Polygon)` 또는 `Array(Array(Array(Tuple(Float64, Float64))))`로 표현됩니다.
-* `LineString` - `Array(Point)` 또는 `Array(Tuple(Float64, Float64))`로 표현됩니다.
-* `MultiLineString` - `Array(LineString)` 또는 `Array(Array(Tuple(Float64, Float64)))`로 표현됩니다.
+* `Point` - `튜플(Float64, Float64)`로 표현됩니다.
+* `MultiPoint` - `Array(Point)` 또는 `Array(튜플(Float64, Float64))`로 표현됩니다.
+* `Ring` - `Array(Point)` 또는 `Array(튜플(Float64, Float64))`로 표현됩니다.
+* `Polygon` - `Array(Ring)` 또는 `Array(Array(튜플(Float64, Float64)))`로 표현됩니다.
+* `MultiPolygon` - `Array(Polygon)` 또는 `Array(Array(Array(튜플(Float64, Float64))))`로 표현됩니다.
+* `LineString` - `Array(Point)` 또는 `Array(튜플(Float64, Float64))`로 표현됩니다.
+* `MultiLineString` - `Array(LineString)` 또는 `Array(Array(튜플(Float64, Float64)))`로 표현됩니다.
 
-Geo 값의 wire 형식은 Tuple 및 배열의 wire 형식과 완전히 동일합니다. `RowBinaryWithNamesAndTypes` 포맷 헤더에는 예를 들어 `Point`, `Ring`, `Polygon`, `MultiPolygon`, `LineString`, `MultiLineString`과 같은 이들 타입의 별칭이 포함됩니다.
+Geo 값의 wire 형식은 튜플 및 배열의 wire 형식과 완전히 동일합니다. `RowBinaryWithNamesAndTypes` 포맷 헤더에는 예를 들어 `Point`, `MultiPoint`, `Ring`, `Polygon`, `MultiPolygon`, `LineString`, `MultiLineString`과 같은 이들 타입의 별칭이 포함됩니다.
 
 ```sql
 SELECT    (1.0, 2.0)                                       :: Point           AS point,
@@ -1088,12 +1089,13 @@ Geometry의 판별자 인덱스는 다음과 같습니다:
 | 3   | Point           |
 | 4   | Polygon         |
 | 5   | Ring            |
+| 6   | MultiPoint      |
 
 wire 형식 구조:
 
 ```text
-// 1바이트 판별자 (0-5)
-// 이후 해당 지오 유형 데이터가 이어집니다
+// 1 byte discriminant (0-6)
+// followed by the corresponding geo type data
 ```
 
 `Point`를 `Geometry`로 인코딩한 예:
@@ -1103,16 +1105,16 @@ SELECT ((1.0, 2.0)::Point)::Geometry
 ```
 
 ```text
-0x03,                                           // 판별자 = 3 (Point)
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // Point.X = 1.0 (Float64)
-0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // Point.Y = 2.0 (Float64)
+0x03,                                           // discriminant = 3 (Point)
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F, // Point.X = 1.0 as Float64
+0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, // Point.Y = 2.0 as Float64
 ```
 
 `Ring`을 `Geometry`로 인코딩한 예입니다:
 
 ```text
-0x05,       // 판별자 = 5 (Ring)
-0x02,       // LEB128 - 배열에 포인트 2개 포함
+0x05,       // discriminant = 5 (Ring)
+0x02,       // LEB128 - array has 2 points
 // Point #1
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x40, // X = 3.0
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x40, // Y = 4.0

@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 ClickHouse в целом использует [те же правила, что и программы на C++](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-Функции `to<type>` и [cast](#CAST) в некоторых случаях ведут себя по-разному, например для [LowCardinality](/ru/reference/data-types/lowcardinality): [cast](#CAST) удаляет признак [LowCardinality](/ru/reference/data-types/lowcardinality), а функции `to<type>` — нет. То же самое и с [Nullable](/ru/reference/data-types/nullable): такое поведение несовместимо со стандартом SQL, и его можно изменить с помощью настройки [cast&#95;keep&#95;nullable](/ru/reference/settings/session-settings#cast_keep_nullable).
+Функции `to<type>` и [cast](#CAST) в некоторых случаях ведут себя по-разному, например для [LowCardinality](/ru/reference/data-types/lowcardinality): [cast](#CAST) удаляет признак [LowCardinality](/ru/reference/data-types/lowcardinality), а функции `to<type>` — нет. То же самое и с [Nullable](/ru/reference/data-types/nullable): такое поведение несовместимо со стандартом SQL, и его можно изменить с помощью настройки [cast&#95;keep&#95;nullable](/ru/reference/settings/session-settings/cast#cast_keep_nullable).
 
 <Note>
   Учитывайте возможную потерю данных, если значения одного типа преобразуются в тип меньшего размера (например, из `Int64` в `Int32`) или между
@@ -317,9 +317,9 @@ SELECT accurateCastOrDefault('abc', 'UInt32', 999::UInt32)
 ```
 
 ```response title=Response
-┌─accurateCastOrDefault('abc', 'UInt32', 999)─┐
-│                                         999 │
-└─────────────────────────────────────────────┘
+┌─accurateCastOrDefault('abc', 'UInt32', CAST('999', 'UInt32'))─┐
+│                                                           999 │
+└───────────────────────────────────────────────────────────────┘
 ```
 
 **Сбой преобразования с неявным значением по умолчанию**
@@ -760,7 +760,7 @@ AS parseDateTime32BestEffort
 
 ```response title=Response
 ┌─parseDateTime32BestEffort─┐
-│       2015-07-07 12:04:41 │
+│       2010-09-10 06:51:25 │
 └───────────────────────────┘
 ```
 
@@ -798,7 +798,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -837,7 +837,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -965,7 +965,7 @@ SELECT parseDateTime64BestEffortOrNull('2025-01-01 01:01:00.123') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────────┬─invalid─┐
+┌───────────────────valid─┬─invalid─┐
 │ 2025-01-01 01:01:00.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
 ```
@@ -1004,7 +1004,7 @@ SELECT parseDateTime64BestEffortOrZero('2025-01-01 01:01:00.123') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────────┬─invalid─────────────────┐
+┌───────────────────valid─┬─────────────────invalid─┐
 │ 2025-01-01 01:01:00.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1043,7 +1043,7 @@ SELECT parseDateTime64BestEffortUS('02/10/2025 12:30:45.123') AS us_format,
 ```
 
 ```response title=Response
-┌─us_format───────────────┬─fallback_to_standard────┐
+┌───────────────us_format─┬────fallback_to_standard─┐
 │ 2025-02-10 12:30:45.123 │ 2025-08-15 10:15:30.456 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1070,7 +1070,7 @@ parseDateTime64BestEffortUSOrNull(time_string[, precision[, time_zone]])
 
 **Возвращаемое значение**
 
-Возвращает `time_string`, преобразованную в [`DateTime64`](/ru/reference/data-types/datetime64) с приоритетом формата US, или `NULL`, если входное значение не удаётся разобрать. [`DateTime64`](/ru/reference/data-types/datetime64) или [`NULL`](/ru/reference/syntax#null)
+Возвращает `time_string`, преобразованную в [`DateTime64`](/ru/reference/data-types/datetime64) с приоритетом американского формата даты, или `NULL`, если входное значение не удаётся разобрать. [`DateTime64`](/ru/reference/data-types/datetime64) или [`NULL`](/ru/reference/syntax#null)
 
 **Примеры**
 
@@ -1082,7 +1082,7 @@ SELECT parseDateTime64BestEffortUSOrNull('02/10/2025 12:30:45.123') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────────┬─invalid─┐
+┌────────────────valid_us─┬─invalid─┐
 │ 2025-02-10 12:30:45.123 │    ᴺᵁᴸᴸ │
 └─────────────────────────┴─────────┘
 ```
@@ -1109,7 +1109,7 @@ parseDateTime64BestEffortUSOrZero(time_string [, precision [, time_zone]])
 
 **Возвращаемое значение**
 
-Возвращает `time_string`, преобразованную в [`DateTime64`](/ru/reference/data-types/datetime64) с предпочтением американского формата, или нулевую дату/дату и время (`1970-01-01 00:00:00.000`), если входное значение не удаётся разобрать. [`DateTime64`](/ru/reference/data-types/datetime64)
+Возвращает `time_string`, преобразованную в [`DateTime64`](/ru/reference/data-types/datetime64) с предпочтением американского формата даты, или нулевую дату/дату и время (`1970-01-01 00:00:00.000`), если входное значение не удаётся разобрать. [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Примеры**
 
@@ -1121,7 +1121,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────────┬─invalid─────────────────┐
+┌────────────────valid_us─┬─────────────────invalid─┐
 │ 2025-02-10 12:30:45.123 │ 1970-01-01 00:00:00.000 │
 └─────────────────────────┴─────────────────────────┘
 ```
@@ -1411,7 +1411,7 @@ SELECT parseDateTimeBestEffort('1735689600') AS parseDateTimeBestEffort
 * Строка с датой, но без компонента времени: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` и т. д.
 * Строка с днем и временем: `DD`, `DD hh`, `DD hh:mm`. В этом случае `MM` заменяется на `01`.
 * Строка, включающая дату и время вместе с информацией о смещении часового пояса: `YYYY-MM-DD hh:mm:ss ±h:mm` и т. д.
-* Syslog-временная метка: `Mmm dd hh:mm:ss`. Например, `Jun  9 14:20:32`.
+* Временная метка syslog: `Mmm dd hh:mm:ss`. Например, `Jun  9 14:20:32`.
 
 Для всех форматов с разделителями функция разбирает названия месяцев, записанные полностью или по первым трем буквам.
 Если год не указан, считается, что он равен текущему году.
@@ -1441,7 +1441,7 @@ SELECT parseDateTimeBestEffortOrNull('23/10/2025 12:12:57') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─┐
+┌───────────────valid─┬─invalid─┐
 │ 2025-10-23 12:12:57 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -1492,7 +1492,7 @@ SELECT parseDateTimeBestEffortOrZero('23/10/2025 12:12:57') AS valid,
 ```
 
 ```response title=Response
-┌─valid───────────────┬─invalid─────────────┐
+┌───────────────valid─┬─────────────invalid─┐
 │ 2025-10-23 12:12:57 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -1532,7 +1532,7 @@ SELECT parseDateTimeBestEffortUS('02/10/2025') AS us_format,
 ```
 
 ```response title=Response
-┌─us_format───────────┬─fallback_to_standard─┐
+┌───────────us_format─┬─fallback_to_standard─┐
 │ 2025-02-10 00:00:00 │  2025-08-15 00:00:00 │
 └─────────────────────┴──────────────────────┘
 ```
@@ -1560,7 +1560,7 @@ parseDateTimeBestEffortUSOrNull(time_string[, time_zone])
 
 **Возвращаемое значение**
 
-Возвращает `time_string` как DateTime с приоритетом формата US или `NULL`, если входное значение не удаётся разобрать. [`DateTime`](/ru/reference/data-types/datetime) или [`NULL`](/ru/reference/syntax#null)
+Возвращает `time_string` как DateTime с приоритетом американского формата даты или `NULL`, если входное значение не удаётся разобрать. [`DateTime`](/ru/reference/data-types/datetime) или [`NULL`](/ru/reference/syntax#null)
 
 **Примеры**
 
@@ -1572,7 +1572,7 @@ SELECT parseDateTimeBestEffortUSOrNull('02/10/2025') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────┬─invalid─┐
+┌────────────valid_us─┬─invalid─┐
 │ 2025-02-10 00:00:00 │    ᴺᵁᴸᴸ │
 └─────────────────────┴─────────┘
 ```
@@ -1612,7 +1612,7 @@ SELECT parseDateTimeBestEffortUSOrZero('02/10/2025') AS valid_us,
 ```
 
 ```response title=Response
-┌─valid_us────────────┬─invalid─────────────┐
+┌────────────valid_us─┬─────────────invalid─┐
 │ 2025-02-10 00:00:00 │ 1970-01-01 00:00:00 │
 └─────────────────────┴─────────────────────┘
 ```
@@ -1772,7 +1772,7 @@ SELECT parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 
 ```response title=Response
 ┌─parseDateTimeOrNull('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')─┐
-│                                            2025-01-04 23:00:00  │
+│                                             2025-01-04 23:00:00 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1946,7 +1946,7 @@ SELECT reinterpretAsDateTime(65), reinterpretAsDateTime('A')
 
 ```response title=Response
 ┌─reinterpretAsDateTime(65)─┬─reinterpretAsDateTime('A')─┐
-│       1970-01-01 01:01:05 │        1970-01-01 01:01:05 │
+│       1970-01-01 00:01:05 │        1970-01-01 00:01:05 │
 └───────────────────────────┴────────────────────────────┘
 ```
 
@@ -1978,15 +1978,16 @@ reinterpretAsFixedString(x)
 **Пример использования**
 
 ```sql title=Query
+-- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')),
-    reinterpretAsFixedString(toDate('1970-03-07'))
+    hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))),
+    hex(reinterpretAsFixedString(toDate('1970-03-07')))
 ```
 
 ```response title=Response
-┌─reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsFixedString(toDate('1970-03-07'))─┐
-│ A                                                           │ A                                              │
-└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+┌─hex(reinterpretAsFixedString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsFixedString(toDate('1970-03-07')))─┐
+│ 510E0000                                                         │ 4100                                                │
+└──────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────┘
 ```
 
 <div id="reinterpretAsFloat32">
@@ -2338,15 +2339,16 @@ reinterpretAsString(x)
 **Пример использования**
 
 ```sql title=Query
+-- The result is a sequence of bytes, so it is shown with `hex`.
 SELECT
-    reinterpretAsString(toDateTime('1970-01-01 01:01:05')),
-    reinterpretAsString(toDate('1970-03-07'))
+    hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05'))),
+    hex(reinterpretAsString(toDate('1970-03-07')))
 ```
 
 ```response title=Response
-┌─reinterpretAsString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsString(toDate('1970-03-07'))─┐
-│ A                                                      │ A                                         │
-└────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
+┌─hex(reinterpretAsString(toDateTime('1970-01-01 01:01:05')))─┬─hex(reinterpretAsString(toDate('1970-03-07')))─┐
+│ 510E                                                        │ 41                                             │
+└─────────────────────────────────────────────────────────────┴────────────────────────────────────────────────┘
 ```
 
 **Пример преобразования из Array в String**
@@ -2639,7 +2641,7 @@ SELECT reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))
 
 ```response title=Response
 ┌─reinterpretAsUUID(reverse(unhex('000102030405060708090a0b0c0d0e0f')))─┐
-│                                  08090a0b-0c0d-0e0f-0001-020304050607 │
+│ 08090a0b-0c0d-0e0f-0001-020304050607                                  │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2665,7 +2667,7 @@ toBFloat16(expr)
 
 **Аргументы**
 
-* `expr` — выражение, возвращающее число или строковое представление числа. [`Выражение`](/ru/reference/data-types/special-data-types/expression)
+* `expr` — выражение, возвращающее число или строковое представление числа. [`Expression`](/ru/reference/data-types/special-data-types/expression)
 
 **Возвращаемое значение**
 
@@ -2684,9 +2686,11 @@ FORMAT Vertical;
 ```
 
 ```response title=Response
-toBFloat16(toFloat32(42.7)): 42.5
-toBFloat16(t⋯32('42.7')):    42.5
-toBFloat16('42.7'):          42.5
+Row 1:
+──────
+toBFloat16(toFloat32(42.7)):   42.5
+toBFloat16(toFloat32('42.7')): 42.5
+toBFloat16('42.7'):            42.5
 ```
 
 <div id="toBFloat16OrNull">
@@ -2741,9 +2745,7 @@ SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
 ```
 
 ```response title=Response
-\N
-12.25
-12.3125
+\N	12.25	12.3125
 ```
 
 <div id="toBFloat16OrZero">
@@ -2798,9 +2800,7 @@ SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
 ```
 
 ```response title=Response
-0
-12.25
-12.3125
+0	12.25	12.3125
 ```
 
 <div id="toBool">
@@ -2841,6 +2841,8 @@ FORMAT Vertical
 ```
 
 ```response title=Response
+Row 1:
+──────
 toBool(toUInt8(1)):      true
 toBool(toInt8(-1)):      true
 toBool(toFloat32(1.01)): true
@@ -2911,7 +2913,7 @@ SELECT toDate(20297)
 Добавленный в: v21.9.0
 
 Преобразует аргумент в тип данных [Date32](/ru/reference/data-types/date32).
-Если значение выходит за пределы диапазона, `toDate32` возвращает граничные значения, поддерживаемые [Date32](/ru/reference/data-types/date32).
+Если значение выходит за пределы диапазона `[0000-01-01, 9999-12-31]`, `toDate32` возвращает граничные значения, поддерживаемые [Date32](/ru/reference/data-types/date32).
 Если аргумент имеет тип [`Date`](/ru/reference/data-types/date), учитываются его границы.
 
 **Синтаксис**
@@ -2938,13 +2940,13 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Строка 1:
+Row 1:
 ──────
-value:           2025-01-01
+value:             2025-01-01
 toTypeName(value): Date32
 ```
 
-**Вне допустимого диапазона**
+**До 1900 года**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2952,9 +2954,9 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Строка 1:
+Row 1:
 ──────
-value:           1900-01-01
+value:             1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2964,7 +2966,9 @@ toTypeName(value): Date32
 
 Добавленный в: v21.11.0
 
-Преобразует аргумент в тип данных [Date32](/ru/reference/data-types/date32). Если значение выходит за пределы диапазона, `toDate32OrDefault` возвращает значение нижней границы, поддерживаемое типом [Date32](/ru/reference/data-types/date32). Если аргумент имеет тип [Date](/ru/reference/data-types/date), учитываются его границы. Возвращает значение по умолчанию, если получен некорректный аргумент.
+Преобразует аргумент в тип данных [Date32](/ru/reference/data-types/date32). Если аргумент невозможно преобразовать, в том числе если числовое значение выходит за пределы диапазона [Date32](/ru/reference/data-types/date32), функция возвращает значение по умолчанию: второй аргумент (если указан) или, в противном случае, `1900-01-01` — историческое значение по умолчанию для [Date32](/ru/reference/data-types/date32) (а не его нижнюю границу, которой является `0000-01-01`). Если аргумент имеет тип [Date](/ru/reference/data-types/date), учитываются его границы.
+
+Обратите внимание: в отличие от [toDate32](#toDate32), эта функция не ограничивает числовой аргумент, выходящий за пределы диапазона, границами [Date32](/ru/reference/data-types/date32); такой аргумент считается непреобразуемым.
 
 **Синтаксис**
 
@@ -2993,10 +2997,20 @@ SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))
 1930-01-01
 ```
 
-**Преобразование не удалось**
+**ошибка преобразования**
 
 ```sql title=Query
 SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))
+```
+
+```response title=Response
+2020-01-01
+```
+
+**Число вне диапазона**
+
+```sql title=Query
+SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))
 ```
 
 ```response title=Response
@@ -3046,8 +3060,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 Добавленный в: v21.9.0
 
-Преобразует входное значение в значение типа [Date32](/ru/reference/data-types/date32), но при получении некорректного аргумента возвращает нижнюю границу [Date32](/ru/reference/data-types/date32).
-То же, что и [toDate32](#toDate32), но при получении некорректного аргумента возвращает нижнюю границу [Date32](/ru/reference/data-types/date32).
+Преобразует входное значение в значение типа [Date32](/ru/reference/data-types/date32), но при получении некорректного аргумента возвращает значение по умолчанию `1900-01-01`.
+То же, что и [toDate32](#toDate32), но при получении некорректного аргумента возвращает `1900-01-01`.
+Обратите внимание, что `1900-01-01` — это историческое значение по умолчанию для некорректного входного значения, а не нижняя граница [Date32](/ru/reference/data-types/date32), которой является `0000-01-01`.
 
 См. также:
 
@@ -3067,7 +3082,7 @@ toDate32OrZero(x)
 
 **Возвращаемое значение**
 
-Возвращает значение Date32 в случае успеха, в противном случае — нижнюю границу Date32 (`1900-01-01`). [`Date32`](/ru/reference/data-types/date32)
+Возвращает значение Date32 в случае успеха, в противном случае — историческое значение по умолчанию для некорректного ввода (`1900-01-01`). [`Date32`](/ru/reference/data-types/date32)
 
 **Примеры**
 
@@ -3261,8 +3276,10 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 Добавленный в: v20.9.0
 
 Преобразует входное значение в тип `DateTime`.
-Поддерживает преобразование из `String`, `FixedString`, `Date`, `Date32`, `DateTime` и числовых типов (`(U)Int*`, `Float*`, `Decimal`).
-`DateTime32` имеет расширенный диапазон по сравнению с `DateTime` и поддерживает даты от `1900-01-01` до `2299-12-31`.
+Поддерживает преобразование из `String`, `FixedString`, `Date`, `Date32`, `Time`, `DateTime`, `DateTime64` или числовых типов (`(U)Int8`, `(U)Int16`, `(U)Int32`, `(U)Int64`, `BFloat16`, `Float32`, `Float64`). Значения `Decimal` и `Time64` не поддерживаются и приводят к исключению; тип `Time` и широкие целочисленные типы, такие как `(U)Int128`/`(U)Int256`, выполняют циклическое переполнение вместо насыщения.
+`DateTime32` — псевдоним `DateTime`; он поддерживает даты от `1970-01-01 00:00:00` до `2106-02-07 06:28:15`.
+При преобразовании из строки или одного из перечисленных выше числовых типов с насыщением значения за пределами этого диапазона насыщаются до его границ. Неконечные значения с плавающей точкой (`NaN`, `inf`, `-inf`) нельзя преобразовать — они приводят к исключению.
+Преобразования из других типов даты и времени, таких как `Date32` или `DateTime64`, выполняются в соответствии с настройкой `date_time_overflow_behavior`: режим `ignore` по умолчанию может приводить к циклическому переполнению, `saturate` ограничивает значения границами диапазона, а `throw` генерирует исключение.
 
 **Синтаксис**
 
@@ -3272,54 +3289,49 @@ toDateTime32(x[, timezone])
 
 **Аргументы**
 
-* `x` — Входное значение, которое нужно преобразовать. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`UInt*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
-* `timezone` — Необязательно. Часовой пояс для возвращаемого значения `DateTime`. [`String`](/ru/reference/data-types/string)
+* `x` — Входное значение для преобразования. [`String`](/ru/reference/data-types/string), [`FixedString`](/ru/reference/data-types/fixedstring), [`(U)Int*`](/ru/reference/data-types/int-uint), [`Float*`](/ru/reference/data-types/float), [`BFloat16`](/ru/reference/data-types/float), [`Date`](/ru/reference/data-types/date), [`Date32`](/ru/reference/data-types/date32), [`Time`](/ru/reference/data-types/time), [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
+* `timezone` — Необязательный часовой пояс для возвращаемого значения `DateTime`. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
-Преобразованное входное значение. [`DateTime`](/ru/reference/data-types/datetime)
+Возвращает преобразованное входное значение. [`DateTime`](/ru/reference/data-types/datetime)
 
 **Примеры**
 
-**Значение находится в допустимом диапазоне**
+**Из строки**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime          │
+└─────────────────────┴───────────────────┘
 ```
 
-**В виде десятичного числа с точностью**
+**Из Unix-временной метки**
 
 ```sql title=Query
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
+└─────────────────────┴───────────────────┘
 ```
 
-**С часовым поясом**
+**С указанием часового пояса**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─────────┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
 ```
 
 <div id="toDateTime64">
@@ -3339,7 +3351,7 @@ toDateTime64(expr, scale[, timezone])
 **Аргументы**
 
 * `expr` — Выражение, возвращающее число или строковое представление числа. [`Выражение`](/ru/reference/data-types/special-data-types/expression)
-* `scale` — Размер тика (precision): 10^(-scale) секунд. [`UInt8`](/ru/reference/data-types/int-uint)
+* `scale` — Размер тика (точность): 10^(-scale) секунд. [`UInt8`](/ru/reference/data-types/int-uint)
 * `timezone` — Необязательно. Часовой пояс для указанного объекта `DateTime64`. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
@@ -3355,23 +3367,26 @@ SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00.000', 3))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
-└─────────────────────────┴────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **В формате десятичного числа с точностью**
 
 ```sql title=Query
 SELECT toDateTime64(1546300800.000, 3) AS value, toTypeName(value);
--- Без десятичной точки значение по-прежнему интерпретируется как Unix-временная метка в секундах
+-- Without the decimal point the value is still treated as Unix Timestamp in seconds
 SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
-│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
-└─────────────────────────┴────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(value)─┐
+│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+└─────────────────────────┴───────────────────┘
 ```
 
 **С указанием часового пояса**
@@ -3381,9 +3396,9 @@ SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeN
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(value)──────────────┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul') │
+└─────────────────────────┴────────────────────────────────┘
 ```
 
 <div id="toDateTime64OrDefault">
@@ -3405,9 +3420,9 @@ toDateTime64OrDefault(expr, scale[, timezone, default])
 **Аргументы**
 
 * `expr` — Выражение, возвращающее число или строковое представление числа. [`String`](/ru/reference/data-types/string) или [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float)
-* `scale` — Размер тика (precision): 10^-precision секунд. [`UInt8`](/ru/reference/data-types/int-uint)
+* `scale` — Размер тика (точность): 10^-точность секунд. [`UInt8`](/ru/reference/data-types/int-uint)
 * `timezone` — Необязательно. Часовой пояс. [`String`](/ru/reference/data-types/string)
-* `default` — Необязательно. Значение по умолчанию, которое возвращается, если разбор завершился неудачно. [`DateTime64`](/ru/reference/data-types/datetime64)
+* `default` — Необязательно. Значение по умолчанию, которое возвращается, если разбор неуспешен. [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Возвращаемое значение**
 
@@ -3432,7 +3447,7 @@ SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2
 ```
 
 ```response title=Response
-2000-12-31 23:00:00.000
+2001-01-01 00:00:00.000
 ```
 
 <div id="toDateTime64OrNull">
@@ -3818,7 +3833,7 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal128OrNull('42.7', 2)─┬─toDecimal128OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -3870,7 +3885,7 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal128OrZero('42.7', 2)─┬─toDecimal128OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4022,7 +4037,7 @@ toDecimal256OrNull(expr, S)
 
 **Аргументы**
 
-* `expr` — выражение, возвращающее число или строковое представление числа. [`Выражение`](/ru/reference/data-types/special-data-types/expression)
+* `expr` — выражение, возвращающее число или строковое представление числа. [`Expression`](/ru/reference/data-types/special-data-types/expression)
 * `S` — параметр scale в диапазоне от 0 до 76, задающий, сколько цифр может быть в дробной части числа. [`UInt8`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
@@ -4039,7 +4054,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal256OrNull('42.7', 2)─┬─toDecimal256OrNull('invalid', 2)─┐
-│                         42.70 │                             ᴺᵁᴸᴸ │
+│                          42.7 │                             ᴺᵁᴸᴸ │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4063,7 +4078,7 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 * Строковые представления двоичных и шестнадцатеричных значений.
 
 <Note>
-  Если входное значение выходит за пределы допустимого диапазона `Decimal256`: `(-1*10^(76 - S), 1*10^(76 - S))`, функция возвращает `0`.
+  Если входное значение выходит за пределы `Decimal256`: `(-1*10^(76 - S), 1*10^(76 - S))`, функция возвращает `0`.
 </Note>
 
 См. также:
@@ -4097,7 +4112,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal256OrZero('42.7', 2)─┬─toDecimal256OrZero('invalid', 2)─┐
-│                         42.70 │                             0.00 │
+│                          42.7 │                                0 │
 └───────────────────────────────┴──────────────────────────────────┘
 ```
 
@@ -4266,7 +4281,7 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal32OrNull('42.7', 2)─┬─toDecimal32OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4318,7 +4333,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal32OrZero('42.7', 2)─┬─toDecimal32OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4383,11 +4398,11 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-a:      2.0
+a:      2
 type_a: Decimal(18, 1)
-b:      4.20
+b:      4.2
 type_b: Decimal(18, 2)
-c:      4.200
+c:      4.2
 type_c: Decimal(18, 3)
 ```
 
@@ -4488,7 +4503,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal64OrNull('42.7', 2)─┬─toDecimal64OrNull('invalid', 2)─┐
-│                        42.70 │                            ᴺᵁᴸᴸ │
+│                         42.7 │                            ᴺᵁᴸᴸ │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4546,7 +4561,7 @@ SELECT toDecimal64OrZero('42.7', 2), toDecimal64OrZero('invalid', 2)
 
 ```response title=Response
 ┌─toDecimal64OrZero('42.7', 2)─┬─toDecimal64OrZero('invalid', 2)─┐
-│                        42.70 │                            0.00 │
+│                         42.7 │                               0 │
 └──────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -4645,13 +4660,14 @@ toFixedString(s, N)
 **Пример использования**
 
 ```sql title=Query
-SELECT toFixedString('foo', 8) AS s;
+-- The padding is made of null bytes, so the result is shown with `hex`.
+SELECT hex(toFixedString('foo', 8)) AS s;
 ```
 
 ```response title=Response
-┌─s─────────────┐
-│ foo\0\0\0\0\0 │
-└───────────────┘
+┌─s────────────────┐
+│ 666F6F0000000000 │
+└──────────────────┘
 ```
 
 <div id="toFloat32">
@@ -4814,11 +4830,11 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Строка 1:
+Row 1:
 ──────
 toFloat32OrNull('42.7'): 42.7
 toFloat32OrNull('NaN'):  nan
-toFloat32OrNull('abc'):  \N
+toFloat32OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toFloat32OrZero">
@@ -5028,11 +5044,11 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-строка 1:
+Row 1:
 ──────
 toFloat64OrNull('42.7'): 42.7
 toFloat64OrNull('NaN'):  nan
-toFloat64OrNull('abc'):  \N
+toFloat64OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toFloat64OrZero">
@@ -5208,7 +5224,7 @@ SELECT toInt128OrDefault('abc', CAST('-1', 'Int128'))
 Неподдерживаемые аргументы (возвращают `NULL`):
 
 * Строковые представления значений Float*, включая `NaN` и `Inf`.
-* Строковые представления двоичных и шестнадцатеричных чисел, например `SELECT toInt128OrNull('0xc0fe');`.
+* Строковые представления двоичного и шестнадцатеричного значения, например `SELECT toInt128OrNull('0xc0fe');`.
 
 <Note>
   Если входное значение не укладывается в диапазон [Int128](/ru/reference/data-types/int-uint), происходит переполнение или выход за нижнюю границу диапазона результата.
@@ -5250,7 +5266,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt128OrNull('-128'): -128
-toInt128OrNull('abc'):  \N
+toInt128OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toInt128OrZero">
@@ -5476,7 +5492,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt16OrNull('-16'): -16
-toInt16OrNull('abc'): \N
+toInt16OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt16OrZero">
@@ -5535,7 +5551,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt16OrZero('16'): 16
+toInt16OrZero('16'):  16
 toInt16OrZero('abc'): 0
 ```
 
@@ -5707,7 +5723,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt256OrNull('-256'): -256
-toInt256OrNull('abc'):  \N
+toInt256OrNull('abc'):  ᴺᵁᴸᴸ
 ```
 
 <div id="toInt256OrZero">
@@ -5933,7 +5949,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt32OrNull('-32'): -32
-toInt32OrNull('abc'): \N
+toInt32OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt32OrZero">
@@ -5992,7 +6008,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt32OrZero('32'): 32
+toInt32OrZero('32'):  32
 toInt32OrZero('abc'): 0
 ```
 
@@ -6168,7 +6184,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt64OrNull('-64'): -64
-toInt64OrNull('abc'): \N
+toInt64OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt64OrZero">
@@ -6394,7 +6410,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toInt8OrNull('-8'):  -8
-toInt8OrNull('abc'): \N
+toInt8OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toInt8OrZero">
@@ -6453,7 +6469,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-toInt8OrZero('8'): 8
+toInt8OrZero('8'):   8
 toInt8OrZero('abc'): 0
 ```
 
@@ -6499,7 +6515,7 @@ SELECT
 
 ```response title=Response
 ┌─seconds─┬─days─┬─months─┐
-│ 5       │ 3    │ 2      │
+│       5 │    3 │      2 │
 └─────────┴──────┴────────┘
 ```
 
@@ -7098,10 +7114,23 @@ SELECT
   ## toTime
 </div>
 
-Добавленный в: v1.1.0
+Добавленный в: v25.5.0
 
 Преобразует входное значение в тип [Time](/ru/reference/data-types/time).
 Поддерживает преобразование из String, FixedString, DateTime, DateTime64 или числовых типов, обозначающих количество секунд с полуночи.
+Числовые значения за пределами диапазона типа (от `-999:59:59` до `999:59:59`, то есть от `-3599999` до `3599999` секунд) ограничиваются границами диапазона, а неконечные значения с плавающей запятой (`NaN`, `inf`, `-inf`) не могут быть преобразованы и приводят к исключению.
+
+<Info>
+  **Устаревшая `toTime`**
+
+  До v25.5 `toTime` была другой функцией, которая преобразовывала дату и время в фиксированную дату (`1970-01-02`), сохраняя
+  компонент времени. Эта функция по-прежнему доступна под именем [`toTimeWithFixedDate`](/ru/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
+
+  Установка [`use_legacy_to_time`](/ru/reference/settings/session-settings#use_legacy_to_time) в значение `1` также сохраняет привязку имени `toTime` к устаревшей
+  функции, то есть вызовы `toTime` разрешаются в `toTimeWithFixedDate` вместо описанной здесь функции преобразования.
+  Пока настройка включена, используйте `CAST(x AS Time)` или `x::Time` для преобразования в тип `Time`.
+  Значение настройки по умолчанию равно `0` начиная с v26.7, но с v25.6 по v26.6 оно было равно `1`, поэтому в приведённых ниже примерах оно задаётся явно.
+</Info>
 
 **Синтаксис**
 
@@ -7111,7 +7140,7 @@ toTime(x)
 
 **Аргументы**
 
-* `x` — Входное значение для преобразования. [`String`](/ru/reference/data-types/string) or [`FixedString`](/ru/reference/data-types/fixedstring) or [`DateTime`](/ru/reference/data-types/datetime) or [`DateTime64`](/ru/reference/data-types/datetime64) or [`(U)Int*`](/ru/reference/data-types/int-uint) or [`Float*`](/ru/reference/data-types/float)
+* `x` — Входное значение для преобразования. [`String`](/ru/reference/data-types/string) or [`FixedString`](/ru/reference/data-types/fixedstring) or [`DateTime`](/ru/reference/data-types/datetime) or [`DateTime64`](/ru/reference/data-types/datetime64) or [`(U)Int*`](/ru/reference/data-types/int-uint) or [`BFloat16`](/ru/reference/data-types/float) or [`Float*`](/ru/reference/data-types/float)
 
 **Возвращаемое значение**
 
@@ -7298,7 +7327,7 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
   ## toTimeOrNull
 </div>
 
-Добавленный в: v1.1.0
+Добавленный в: v25.5.0
 
 Преобразует входное значение в значение типа Time, но в случае ошибки возвращает `NULL`.
 Аналогично [`toTime`](#toTime), но при ошибках преобразования возвращает `NULL` вместо генерации исключения.
@@ -7340,7 +7369,7 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
   ## toTimeOrZero
 </div>
 
-Добавленный в: v1.1.0
+Добавленный в: v25.5.0
 
 Преобразует входное значение в значение типа Time, а в случае ошибки возвращает `00:00:00`.
 Как и toTime, при ошибках преобразования возвращает `00:00:00` вместо того, чтобы генерировать исключение.
@@ -7541,7 +7570,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt128OrNull('128'): 128
-toUInt128OrNull('abc'): \N
+toUInt128OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt128OrZero">
@@ -7776,7 +7805,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt16OrNull('16'):  16
-toUInt16OrNull('abc'): \N
+toUInt16OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt16OrZero">
@@ -8007,7 +8036,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt256OrNull('256'): 256
-toUInt256OrNull('abc'): \N
+toUInt256OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt256OrZero">
@@ -8242,7 +8271,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt32OrNull('32'):  32
-toUInt32OrNull('abc'): \N
+toUInt32OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt32OrZero">
@@ -8477,7 +8506,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt64OrNull('64'):  64
-toUInt64OrNull('abc'): \N
+toUInt64OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt64OrZero">
@@ -8712,7 +8741,7 @@ FORMAT Vertical
 Row 1:
 ──────
 toUInt8OrNull('42'):  42
-toUInt8OrNull('abc'): \N
+toUInt8OrNull('abc'): ᴺᵁᴸᴸ
 ```
 
 <div id="toUInt8OrZero">
@@ -8806,7 +8835,7 @@ SELECT toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid
 ```
 
 ```response title=Response
-┌─────────────────────────────────uuid─┐
+┌─uuid─────────────────────────────────┐
 │ 61f0c404-5cb3-11e7-907b-a6006ad3dba0 │
 └──────────────────────────────────────┘
 ```
@@ -8981,9 +9010,9 @@ SELECT toUnixTimestamp64Nano(dt64);
 ```
 
 ```response title=Response
-┌─toUnixTimestamp64Nano(dt64)────┐
-│            1739489491011123456 │
-└────────────────────────────────┘
+┌─toUnixTimestamp64Nano(dt64)─┐
+│         1739489491011123456 │
+└─────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp64Second">

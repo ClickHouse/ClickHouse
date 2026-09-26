@@ -181,11 +181,29 @@ struct Reader
         UInt8 max_array_def = 0;
 
         bool use_bloom_filter = false;
-        const KeyCondition * column_index_condition = nullptr;
+
+        /// A single-column `KeyCondition` used for page-level pruning through the column index.
+        struct ColumnIndexCondition
+        {
+            const KeyCondition * condition = nullptr;
+
+            /// Index into `spatial_key_conditions` when this condition was extracted from a
+            /// GeoParquet `covering.bbox` spatial predicate, `SIZE_MAX` otherwise. A NULL bbox
+            /// means the row's spatial extent is unknown, so such a condition may prune a page
+            /// only under the same four-column zero-nulls guarantee the row-group path requires
+            /// (see `spatialBboxStatsHaveNoNulls`).
+            size_t spatial_key_condition_idx = SIZE_MAX;
+        };
+
+        /// Multiple conjunctive predicates on the same column (e.g. two `pointInPolygon` calls
+        /// on the same geometry, or a regular WHERE condition plus a spatial one on the same bbox
+        /// column) each contribute their own KeyCondition here; a page must pass all of them.
+        std::vector<ColumnIndexCondition> column_index_conditions;
         size_t first_step_to_calculate = 0;
         bool only_for_prewhere = false; // can remove this column after applying prewhere
 
         bool used_by_key_condition = false;
+        bool is_spatial_bbox_column = false; // one of the four covering.bbox primitives
 
         /// The hashes to look up in the bloom filter (a subset of the query constants hashed for this
         /// column). Values from an `IN` set larger than `bloom_filter_max_set_size` are deliberately
@@ -324,6 +342,10 @@ struct Reader
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
         PrefetchHandle bloom_filter_header_prefetch;
         PrefetchHandle bloom_filter_data_prefetch;
+        /// Length of bloom_filter_data_prefetch, i.e. how many bytes of bloom filter (header +
+        /// bitset) the file claims to have. Upper bound if the file didn't say (see
+        /// need_to_find_bloom_filter_lengths_the_hard_way).
+        size_t bloom_filter_data_bytes = 0;
         PrefetchHandle dictionary_page_prefetch;
         PrefetchHandle column_index_prefetch;
         PrefetchHandle offset_index_prefetch;
@@ -443,11 +465,23 @@ struct Reader
         size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
         bool need_to_process = false;
+
+        /// Lazy materialization: set iff FormatFilterInfo::rows_to_read is set.
+        /// Half-open range of indexes in `rows_to_read` that fall into this row group.
+        std::pair<size_t, size_t> requested_rows_slice {0, 0};
+
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
         std::vector<ColumnChunk> columns;
 
         Hyperrectangle hyperrectangle; // min/max for each column; parallel to extended_sample_block
+
+        /// TopN dynamic filtering: min/max of the sort column in this row group, set only when the
+        /// statistics are complete and prove the chunk has no nulls (see getTopKSortColumnRange).
+        /// Compared against the running top-K threshold right before column data is read, to skip
+        /// the row group when it provably contains no row that can enter the top-K
+        /// (see topKShouldSkipRowGroup).
+        std::optional<Range> top_k_sort_column_range;
 
         std::deque<RowSubgroup> subgroups;
 
@@ -516,10 +550,32 @@ struct Reader
 
     /// Per-column KeyConditions for page-level filter push-down (column index).
     /// Stored here to keep the shared_ptrs alive, since raw pointers from them
-    /// are referenced by PrimitiveColumnInfo::column_index_condition.
+    /// are referenced by PrimitiveColumnInfo::column_index_conditions.
     std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> column_conditions;
 
+    /// KeyConditions built from GeoParquet covering.bbox spatial filters.
+    /// One per spatial predicate; checked against the hyperrectangle of bbox column stats.
+    std::vector<std::shared_ptr<KeyCondition>> spatial_key_conditions;
+    /// For each spatial_key_conditions[i], the primitive_columns indices of its four bbox
+    /// columns (xmin, ymin, xmax, ymax). SIZE_MAX means not found. Used to check null_count
+    /// before applying row-group and page pruning: NULL bbox means unknown extent, must not prune.
+    std::vector<std::array<size_t, 4>> spatial_key_condition_bbox_col_indices;
+
+    /// Per-column KeyConditions extracted from spatial_key_conditions for page-level
+    /// spatial bbox pruning. Stored here (not as a local variable) to keep the shared_ptrs
+    /// alive, since raw pointers from them are referenced by
+    /// PrimitiveColumnInfo::column_index_conditions.
+    std::vector<std::pair<size_t, std::shared_ptr<KeyCondition>>> spatial_column_conditions;
+
     std::optional<KeyCondition> bloom_filter_condition;
+
+    /// TopN dynamic filtering: index in `primitive_columns` of the sort column, when eligible for
+    /// row-group skipping by min/max statistics (see FormatFilterInfo::top_k_filter).
+    std::optional<size_t> top_k_primitive_idx;
+    /// TopN dynamic filtering: whether this file physically stores the sort column. If it doesn't,
+    /// the reader only produces type defaults for it while the threshold comes from the values the
+    /// pipeline puts in their place, so the filter must not be applied at all.
+    bool top_k_column_is_read = false;
 
     /// These methods are listed in the order in which they're used, matching ReadStage order.
 
@@ -560,6 +616,16 @@ struct Reader
     /// group and several row groups pruning in parallel on other threads cannot collectively overshoot
     /// the reader's memory high watermark. See `ReadManager::pruningMemoryReservation`.
     bool applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryReservation reservation);
+
+    /// TopN dynamic filtering: min/max of the sort column decoded from row-group statistics, or
+    /// nullopt when the statistics are missing or don't prove the absence of nulls (statistics
+    /// describe only the non-null values, and null rows may belong to the top-K). Statistics that
+    /// are present but cannot be decoded throw, as in the static min/max pruning path.
+    std::optional<Range> getTopKSortColumnRange(const parq::RowGroup & meta) const;
+    /// True if the running top-K threshold proves that no row of this row group can enter the
+    /// top-K heap, so the row group can be skipped without reading its column data. The threshold
+    /// only ever tightens, so a `false` result is safely revisited by the row filter later.
+    bool topKShouldSkipRowGroup(const RowGroup & row_group) const;
 
     void applyColumnIndex(ColumnChunk & column, const PrimitiveColumnInfo & column_info, const RowGroup & row_group);
     void intersectColumnIndexResultsAndInitSubgroups(RowGroup & row_group);
@@ -603,7 +669,13 @@ private:
     /// headers (and their transitive includes) into every translation unit that includes Reader.h.
     struct DictionaryLookup;
 
-    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
+    void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle, bool only_spatial_bbox = false) const;
+    /// Whether all four `covering.bbox` columns of `spatial_key_conditions[spatial_key_condition_idx]`
+    /// report a known `null_count` of zero in this row group. Spatial pruning (both row-group and
+    /// page level) is only allowed then: a NULL in any bbox column means the row's spatial extent is
+    /// unknown, and min/max statistics summarize the non-null values only, so a bbox predicate can
+    /// look false for the row group or page while a NULL-bbox row inside it still matches.
+    bool spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const;
     void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;
     void prepareBloomFilterCondition();
     void initializePrefetches();

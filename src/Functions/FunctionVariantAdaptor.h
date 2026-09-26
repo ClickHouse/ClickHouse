@@ -27,6 +27,7 @@ protected:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForSparseColumns() const override { return false; }
     bool canBeExecutedOnDefaultArguments() const override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return function_overload_resolver->isDeterministicInScopeOfQuery(); }
 
 private:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
@@ -36,7 +37,8 @@ private:
     size_t variant_argument_index;
     /// When true (default), throw an exception if a variant type is incompatible with the function.
     /// When false, return NULL for incompatible rows instead.
-    /// Read from `variant_throw_on_type_mismatch` setting via CurrentThread at construction time.
+    /// Resolved at construction time from the `variant_throw_on_type_mismatch` setting or the strictness
+    /// override pinned by the caller, see `TypeMismatchStrictness.h`.
     bool throw_on_type_mismatch = true;
 };
 
@@ -74,6 +76,8 @@ public:
     bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override { return function_overload_resolver->isShortCircuit(settings, number_of_arguments); }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+
+    bool isSpatialPredicate() const override { return function_overload_resolver->isSpatialPredicate(); }
 
 private:
     /// We remember the original IFunctionOverloadResolver to be able to build function for types inside Variant column.

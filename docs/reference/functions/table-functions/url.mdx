@@ -29,7 +29,7 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified format and structure and with data from the defined `URL`.
 
@@ -74,6 +74,8 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 
 Scheme dispatch is not yet wired through [`urlCluster`](/reference/functions/table-functions/urlCluster): a non-`http(s)` scheme passed to `urlCluster` is rejected with an error. Use the corresponding cluster function (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) for those backends instead.
 
+For the same reason, a dispatched `url` call is read on the node that received the query: the [parallel_replicas_for_cluster_engines](/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) fan-out is not applied to it. Use the corresponding cluster function directly when you want the read distributed across replicas.
+
 ## Globs in URL {#globs-in-url}
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](/reference/functions/table-functions/remote#globs-in-addresses) function.
@@ -99,7 +101,7 @@ Example:
 ```sql
 SELECT count()
 FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
-SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
+SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 ```
 
 ## Virtual Columns {#virtual-columns}
@@ -134,7 +136,8 @@ The resolution rules are:
 - **Query-only** (e.g. `?x=1`): appended to the full base path, replacing any existing query or fragment.
 - **Fragment-only** (e.g. `#frag`): appended to the base URL, preserving the query, replacing any existing fragment.
 - **Empty**: returns the base URL without fragment.
-- **Absolute URL**: passed through unchanged; `url_base` is ignored.
+- **Absolute URL**: passed through unchanged; `url_base` is ignored. A URL is considered absolute only when it starts with `scheme://`: a name whose first path segment contains a colon (e.g. `report:2026.csv`), which RFC 3986 would parse as an absolute URI with the scheme `report`, is resolved as a path-relative reference instead, because such a name is not a usable URL.
+- **Scheme-only base** (e.g. `file://`): a path-relative URL is appended to the base directly: `file://` + `data.csv` = `file://data.csv`, which for the `file://` scheme means a path relative to the [user_files](/reference/settings/server-settings/settings/user#user_files_path) directory (the current directory for clickhouse-local). Dot segments are kept as-is in this case.
 
 **Example**
 

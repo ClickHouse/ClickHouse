@@ -14,7 +14,7 @@ doc_type: 'guide'
 
 ClickHouse 接受 W3C [Trace Context 建议](https://www.w3.org/TR/trace-context/)中定义的 trace 上下文 HTTP 请求头。它也接受通过原生协议传递的 trace 上下文，该协议用于 ClickHouse 服务器之间或客户端与服务器之间的通信。进行手动测试时，可以使用 `--opentelemetry-traceparent` 和 `--opentelemetry-tracestate` 标志，向 `clickhouse-client` 传入符合 Trace Context 建议的 trace 上下文请求头。
 
-如果未提供父 trace 上下文，或者提供的 trace 上下文不符合上述 W3C 标准，ClickHouse 可以启动一个新的 trace，其概率由 [opentelemetry&#95;start&#95;trace&#95;probability](/zh/reference/settings/session-settings#opentelemetry_start_trace_probability) 设置控制。
+如果未提供父 trace 上下文，或者提供的 trace 上下文不符合上述 W3C 标准，ClickHouse 可以启动一个新的 trace，其概率由 [opentelemetry&#95;start&#95;trace&#95;probability](/zh/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) 设置控制。
 
 <div id="propagating-the-trace-context">
   ## 传播 trace 上下文
@@ -101,7 +101,7 @@ ClickHouse 会为每个查询以及查询执行的某些阶段 (例如查询计�
   ## 日志查询设置
 </div>
 
-设置 [log&#95;query&#95;settings](/zh/reference/settings/session-settings) 允许记录查询执行期间对查询设置所做的更改。启用后，对查询设置进行的任何修改都会记录到 OpenTelemetry span 日志中。此功能在生产环境中尤其有用，可用于跟踪可能影响查询性能的配置变更。
+设置 [log&#95;query&#95;settings](/zh/reference/settings/session-settings/log-query#log_query_settings) 允许记录查询执行期间对查询设置所做的更改。启用后，对查询设置进行的任何修改都会记录到 OpenTelemetry span 日志中。此功能在生产环境中尤其有用，可用于跟踪可能影响查询性能的配置变更。
 
 <div id="integration-with-monitoring-systems">
   ## 与监控系统集成

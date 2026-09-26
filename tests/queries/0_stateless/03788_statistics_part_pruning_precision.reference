@@ -23,7 +23,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -50,7 +50,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -77,7 +77,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -104,7 +104,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -152,7 +152,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -179,7 +179,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -206,7 +206,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -254,7 +254,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -323,7 +323,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -350,7 +350,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -377,7 +377,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -404,7 +404,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max
@@ -431,7 +431,7 @@ Expression ((Project names + Projection))
 Expression ((Project names + Projection))
   Aggregating
     Expression (Before GROUP BY)
-      Expression ((WHERE + Change column names to column identifiers))
+      Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_stats_exceeds)
         Indexes:
           Min-Max

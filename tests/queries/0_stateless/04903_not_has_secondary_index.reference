@@ -1,0 +1,142 @@
+-- bloom_filter index on Array(UInt64)
+-- { echo }
+
+SELECT count() FROM t_not_has_bloom_filter WHERE has(arr, 3);
+8
+SELECT count() FROM t_not_has_bloom_filter WHERE NOT has(arr, 3);
+56
+SELECT count() FROM t_not_has_bloom_filter WHERE NOT has(arr, 3) SETTINGS use_skip_indexes = 0;
+56
+SELECT count() FROM t_not_has_bloom_filter WHERE notHas(arr, 3);
+56
+SELECT count() FROM t_not_has_bloom_filter WHERE notHas(arr, 3) SETTINGS use_skip_indexes = 0;
+56
+SELECT count() FROM t_not_has_bloom_filter WHERE NOT has(arr, 3) AND has(arr, 5);
+8
+SELECT count() FROM t_not_has_bloom_filter WHERE notHas(arr, 3) AND has(arr, 5);
+8
+SELECT count() FROM t_not_has_bloom_filter WHERE notHas(arr, 3) AND has(arr, 5) SETTINGS use_skip_indexes = 0;
+8
+SELECT count() FROM t_not_has_bloom_filter WHERE notHas(arr, 3) OR has(arr, 5);
+56
+SELECT count() FROM t_not_has_bloom_filter WHERE notHas(arr, 3) OR has(arr, 5) SETTINGS use_skip_indexes = 0;
+56
+-- The positive atom prunes half of the granules.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_not_has_bloom_filter WHERE has(arr, 3)) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+Granules: 16/16
+Name: idx
+Granules: 8/16
+-- `NOT has` keeps the atom, so the index is still analyzed. It prunes nothing: a bloom filter only answers "the needle
+-- may be present in this granule", so the negation of that answer is always "may be true".
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_not_has_bloom_filter WHERE NOT has(arr, 3)) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+Granules: 16/16
+Name: idx
+Granules: 16/16
+-- A positive sibling in the same conjunction prunes next to the negated atom.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_not_has_bloom_filter WHERE NOT has(arr, 3) AND has(arr, 5)) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+Granules: 16/16
+Name: idx
+Granules: 8/16
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_not_has_bloom_filter WHERE notHas(arr, 3) AND has(arr, 5)) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+Granules: 16/16
+Name: idx
+Granules: 8/16
+DROP TABLE t_not_has_bloom_filter;
+SELECT '-- tokenbf_v1 index on Array(String)';
+-- tokenbf_v1 index on Array(String)
+DROP TABLE IF EXISTS t_not_has_tokenbf;
+CREATE TABLE t_not_has_tokenbf (id UInt64, arr Array(String), INDEX idx arr TYPE tokenbf_v1(256, 2, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_not_has_tokenbf SELECT number, [concat('w', toString(number % 8))] FROM numbers(64);
+SELECT count() FROM t_not_has_tokenbf WHERE has(arr, 'w3');
+8
+SELECT count() FROM t_not_has_tokenbf WHERE NOT has(arr, 'w3');
+56
+SELECT count() FROM t_not_has_tokenbf WHERE NOT has(arr, 'w3') SETTINGS use_skip_indexes = 0;
+56
+SELECT count() FROM t_not_has_tokenbf WHERE notHas(arr, 'w3');
+56
+SELECT count() FROM t_not_has_tokenbf WHERE notHas(arr, 'w3') SETTINGS use_skip_indexes = 0;
+56
+SELECT count() FROM t_not_has_tokenbf WHERE NOT has(arr, 'w3') AND has(arr, 'w5');
+8
+SELECT count() FROM t_not_has_tokenbf WHERE notHas(arr, 'w3') AND has(arr, 'w5');
+8
+SELECT count() FROM t_not_has_tokenbf WHERE notHas(arr, 'w3') AND has(arr, 'w5') SETTINGS use_skip_indexes = 0;
+8
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_not_has_tokenbf WHERE has(arr, 'w3')) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+Granules: 16/16
+Name: idx
+Granules: 8/16
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_not_has_tokenbf WHERE NOT has(arr, 'w3')) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+Granules: 16/16
+Name: idx
+Granules: 16/16
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_not_has_tokenbf WHERE NOT has(arr, 'w3') AND has(arr, 'w5')) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+Granules: 16/16
+Name: idx
+Granules: 8/16
+DROP TABLE t_not_has_tokenbf;
+SELECT '-- text index with the array tokenizer on Array(String)';
+-- text index with the array tokenizer on Array(String)
+DROP TABLE IF EXISTS t_not_has_text;
+CREATE TABLE t_not_has_text (id UInt64, arr Array(String), INDEX idx arr TYPE text(tokenizer = 'array') GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
+INSERT INTO t_not_has_text SELECT number, [concat('w', toString(number % 8))] FROM numbers(64);
+SELECT count() FROM t_not_has_text WHERE has(arr, 'w3');
+8
+SELECT count() FROM t_not_has_text WHERE NOT has(arr, 'w3');
+56
+SELECT count() FROM t_not_has_text WHERE NOT has(arr, 'w3') SETTINGS use_skip_indexes = 0;
+56
+SELECT count() FROM t_not_has_text WHERE notHas(arr, 'w3');
+56
+SELECT count() FROM t_not_has_text WHERE notHas(arr, 'w3') SETTINGS use_skip_indexes = 0;
+56
+SELECT count() FROM t_not_has_text WHERE NOT has(arr, 'w3') AND has(arr, 'w5');
+8
+SELECT count() FROM t_not_has_text WHERE notHas(arr, 'w3') AND has(arr, 'w5');
+8
+SELECT count() FROM t_not_has_text WHERE notHas(arr, 'w3') AND has(arr, 'w5') SETTINGS use_skip_indexes = 0;
+8
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_not_has_text WHERE has(arr, 'w3')) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+Granules: 16/16
+Name: idx
+Granules: 8/16
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_not_has_text WHERE NOT has(arr, 'w3')) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+Granules: 16/16
+Name: idx
+Granules: 16/16
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_not_has_text WHERE NOT has(arr, 'w3') AND has(arr, 'w5')) WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+Granules: 16/16
+Name: idx
+Granules: 8/16
+-- The direct read from the text index reads `has` through a virtual column, and `NOT has` negates that column.
+-- Folding `NOT has(column, needle)` into `notHas` would have taken this away.
+SET query_plan_direct_read_from_text_index = 1;
+SELECT max(id) FROM t_not_has_text WHERE has(arr, 'w3');
+59
+SELECT max(id) FROM t_not_has_text WHERE NOT has(arr, 'w3');
+63
+SELECT max(id) FROM t_not_has_text WHERE notHas(arr, 'w3');
+63
+SELECT max(id) FROM t_not_has_text WHERE notHas(arr, 'w3') SETTINGS use_skip_indexes = 0;
+63
+SELECT max(id) FROM t_not_has_text WHERE NOT has(arr, 'w3') AND has(arr, 'w5');
+61
+SELECT max(id) FROM t_not_has_text WHERE notHas(arr, 'w3') AND has(arr, 'w5');
+61
+-- `max(id)` rather than `count()` because a bare `count()` over `has` is answered by the text index alone
+-- (`ReadFromTextIndexCount`) and never materializes the virtual column. Both `has` and `NOT has` read it;
+-- the `notHas` leaf is only understood by `KeyCondition`, so a directly written `notHas` does not.
+SELECT countIf(position(explain, '__text_index_idx_has_') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT max(id) FROM t_not_has_text WHERE has(arr, 'w3'));
+1
+SELECT countIf(position(explain, '__text_index_idx_has_') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT max(id) FROM t_not_has_text WHERE NOT has(arr, 'w3'));
+1
+SELECT countIf(position(explain, '__text_index_idx_has_') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT max(id) FROM t_not_has_text WHERE notHas(arr, 'w3'));
+0
+SELECT countIf(position(explain, '__text_index_idx_has_') > 0) > 0 FROM (EXPLAIN actions = 1 SELECT max(id) FROM t_not_has_text WHERE NOT notHas(arr, 'w3'));
+1
+DROP TABLE t_not_has_text;
