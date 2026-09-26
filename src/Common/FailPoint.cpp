@@ -262,6 +262,7 @@ static struct InitFiu
     REGULAR(slowdown_system_parts_enumeration) \
     REGULAR(parallel_replicas_delay_announcement) \
     REGULAR(slowdown_skip_index_read_result_build) \
+    REGULAR(slowdown_index_analysis_per_part) \
     ONCE(iceberg_writes_cleanup) \
     REGULAR(iceberg_slow_manifest_read) \
     PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
