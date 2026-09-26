@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 #if defined(OS_LINUX)
 
-Epoll::Epoll() : events_count(0)
+Epoll::Epoll(EpollNesting) : events_count(0)
 {
     epoll_fd = epoll_create1(0);
     if (epoll_fd == -1)
@@ -126,11 +126,74 @@ size_t Epoll::getManyReady(int max_events, epoll_event * events_out, int timeout
 /// on whichever filter is registered. The `epoll_event.data` union is round-tripped through the
 /// kevent `udata` field, so callers read back the same `.fd`/`.ptr` they registered with.
 
-Epoll::Epoll() : events_count(0)
+namespace
+{
+
+void closeKqueue(int kq)
+{
+    [[maybe_unused]] const int err = ::close(kq);
+    chassert(!err || errno == EINTR);
+}
+
+/// Not Epoll::add: `events_count` and `registered_fds` must only ever describe what a caller added.
+void nestKqueue(int parent, int child)
+{
+    struct kevent change;
+    EV_SET(&change, child, EVFILT_READ, EV_ADD, 0, 0, nullptr);
+    if (kevent(parent, &change, 1, nullptr, 0, nullptr) == -1)
+        throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot nest kqueue {} in kqueue {}", child, parent);
+}
+
+/// Only a level-0 parent can adopt a level, so this must run before anything else nests `kq`.
+void reserveKqueueNestingLevel(int kq, int level)
+{
+    std::vector<int> chain;
+    chain.reserve(level - 1);
+    try
+    {
+        for (int i = 0; i + 1 < level; ++i)
+        {
+            const int throwaway = kqueue();
+            if (throwaway == -1)
+                throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot create kqueue to reserve nesting level {}", level);
+            chain.push_back(throwaway);
+            if (i > 0)
+                nestKqueue(chain[i], chain[i - 1]);
+        }
+        nestKqueue(kq, chain.back());
+    }
+    catch (...)
+    {
+        for (auto it = chain.rbegin(); it != chain.rend(); ++it)
+            closeKqueue(*it);
+        throw;
+    }
+
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it)
+        closeKqueue(*it);
+}
+
+}
+
+Epoll::Epoll(EpollNesting nesting) : events_count(0)
 {
     epoll_fd = kqueue();
     if (epoll_fd == -1)
         throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot create kqueue descriptor");
+
+    const int level = static_cast<int>(nesting);
+    if (level > 1)
+    {
+        try
+        {
+            reserveKqueueNestingLevel(epoll_fd, level);
+        }
+        catch (...)
+        {
+            closeKqueue(epoll_fd);
+            throw;
+        }
+    }
 }
 
 Epoll::Epoll(Epoll && other) noexcept
