@@ -1,0 +1,8 @@
+keeper_cluster	src/Storages/System/attachSystemTables.cpp	1	1
+transactions	src/Storages/System/attachSystemTables.cpp	1	1
+zookeeper	src/Storages/System/attachSystemTables.cpp	1	1
+zookeeper_info	src/Storages/System/attachSystemTables.cpp	1	1
+zookeeper_watches	src/Storages/System/attachSystemTables.cpp	1	1
+0
+1
+0
