@@ -1,0 +1,16 @@
+---
+slug: /integrations/postgresql/inserting-data
+title: 'PostgreSQL에서 데이터를 삽입하는 방법'
+keywords: ['postgres', 'postgresql', 'inserts']
+description: 'ClickPipes, PeerDB 또는 Postgres 테이블 함수를 사용해 PostgreSQL에서 데이터를 삽입하는 방법을 설명하는 페이지'
+doc_type: 'guide'
+---
+
+삽입 성능을 최적화하기 위해 ClickHouse에 데이터를 삽입할 때의 모범 사례를 알아보려면 [이 가이드](/ko/concepts/features/operations/insert/inserting-data)를 먼저 읽어보는 것이 좋습니다.
+
+PostgreSQL에서 데이터를 대량 적재하려면 다음 방법을 사용할 수 있습니다:
+
+* ClickHouse Cloud용 관리형 통합 서비스인 [ClickPipes](/ko/integrations/clickpipes/postgres/index)
+* 자체 호스팅 ClickHouse와 ClickHouse Cloud 모두에 PostgreSQL DB를 복제하도록 특별히 설계된 ETL 도구 `PeerDB by ClickHouse`
+* 데이터를 직접 읽기 위한 [Postgres 테이블 함수](/ko/reference/functions/table-functions/postgresql). 이 방법은 일반적으로 알려진 워터마크(예: 타임스탬프)를 기준으로 한 Batch 복제로 충분하거나, 일회성 migration인 경우에 적합합니다. 이 접근 방식은 수천만 개의 행까지 확장할 수 있습니다. 더 큰 데이터셋을 마이그레이션하려면 데이터 청크를 각각 처리하는 여러 요청을 고려해야 합니다. 각 청크에 대해 파티션을 최종 테이블로 이동하기 전에 스테이징 테이블을 사용할 수 있습니다. 이렇게 하면 실패한 요청을 재시도할 수 있습니다. 이 대량 적재 전략에 대한 자세한 내용은 여기에서 확인하십시오.
+* Postgres 데이터를 CSV 형식으로 내보낼 수도 있습니다. 그런 다음 로컬 파일에서 또는 테이블 함수를 사용해 객체 스토리지를 통해 ClickHouse에 삽입할 수 있습니다.

@@ -7,6 +7,7 @@
 #include <Poco/AutoPtr.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/randomSeed.h>
 
@@ -14,7 +15,7 @@
 
 #include <Interpreters/TableJoin.h>
 
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/SourceFromChunks.h>
@@ -126,7 +127,7 @@ public:
     void setBreakProbability(pcg64 & rng_)
     {
         /// random probability with possibility to have exact 0.0 and 1.0 values
-        break_prob = std::uniform_int_distribution<size_t>(0, 5)(rng_) / static_cast<double>(5);
+        break_prob = static_cast<double>(std::uniform_int_distribution<size_t>(0, 5)(rng_)) / static_cast<double>(5);
         rng = &rng_;
     }
 

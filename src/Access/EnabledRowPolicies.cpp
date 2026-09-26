@@ -3,14 +3,22 @@
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
+#include <utility>
+
 
 namespace DB
 {
 
-bool RowPolicyFilter::empty() const
+bool RowPolicyFilter::isAlwaysTrue() const
 {
-    bool value;
+    bool value = false;
     return !expression || (tryGetLiteralBool(expression.get(), value) && value);
+}
+
+bool RowPolicyFilter::isAlwaysFalse() const
+{
+    bool value = false;
+    return expression && (tryGetLiteralBool(expression.get(), value) && !value);
 }
 
 size_t EnabledRowPolicies::Hash::operator()(const MixedFiltersKey & key) const
@@ -48,16 +56,20 @@ RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const 
 
 RowPolicyFilterPtr EnabledRowPolicies::getFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, RowPolicyFilterPtr combine_with_filter) const
 {
-    RowPolicyFilterPtr filter = getFilter(database, table_name, filter_type);
+    return combineRowPolicyFilters(getFilter(database, table_name, filter_type), std::move(combine_with_filter));
+}
+
+RowPolicyFilterPtr combineRowPolicyFilters(RowPolicyFilterPtr filter, RowPolicyFilterPtr combine_with_filter)
+{
     if (filter && combine_with_filter)
     {
         auto new_filter = std::make_shared<RowPolicyFilter>(*filter);
 
-        if (filter->empty())
+        if (filter->isAlwaysTrue())
         {
             new_filter->expression = combine_with_filter->expression;
         }
-        else if (combine_with_filter->empty())
+        else if (combine_with_filter->isAlwaysTrue())
         {
             new_filter->expression = filter->expression;
         }

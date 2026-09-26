@@ -1,0 +1,18 @@
+exchange kind: default, execute locally: 1
+query started: 1
+client error: QUERY_WAS_CANCELLED
+lingering queries: 0
+exchange kind: Persisted, execute locally: 1
+query started: 1
+client error: QUERY_WAS_CANCELLED
+lingering queries: 0
+exchange kind: default, execute locally: 0
+query started: 1
+workers reading: 1
+client error: QUERY_WAS_CANCELLED
+lingering queries: 0
+exchange kind: Persisted, execute locally: 0
+query started: 1
+workers reading: 1
+client error: QUERY_WAS_CANCELLED
+lingering queries: 0

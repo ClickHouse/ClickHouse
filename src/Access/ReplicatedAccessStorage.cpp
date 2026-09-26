@@ -28,10 +28,11 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     const String & zookeeper_path_,
     zkutil::GetZooKeeper get_zookeeper_,
     AccessChangesNotifier & changes_notifier_,
-    bool allow_backup_)
+    bool allow_backup_,
+    bool throw_on_invalid_entities_)
     : IAccessStorage(storage_name_)
     , memory_storage(storage_name_, changes_notifier_, false)
-    , replicator(storage_name_, zookeeper_path_, get_zookeeper_, changes_notifier_, memory_storage)
+    , replicator(storage_name_, zookeeper_path_, get_zookeeper_, changes_notifier_, memory_storage, throw_on_invalid_entities_)
     , backup_allowed(allow_backup_)
 {
     if (zookeeper_path_.empty())

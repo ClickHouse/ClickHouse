@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -7,12 +7,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
-#include <base/range.h>
-
-#include <constants.h>
-#include <h3api.h>
-
 
 namespace DB
 {
@@ -31,12 +25,20 @@ class FunctionH3CellAreaM2 final : public IFunction
 public:
     static constexpr auto name = "h3CellAreaM2";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3CellAreaM2>(); }
+    H3Validator validator;
+
+    explicit FunctionH3CellAreaM2(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3CellAreaM2>(context); }
 
     std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -80,13 +82,18 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
+            Float64 res = 0;
 
-            CellBoundary boundary{};
-            auto err = cellToBoundary(index, &boundary);
-            if (err)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
+            if (validator.validateCell(index))
+            {
+                CellBoundary boundary{};
+                auto err = cellToBoundary(index, &boundary);
+                if (err)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
 
-            Float64 res = cellAreaM2(index);
+                cellAreaM2(index, &res);
+            }
+
             dst_data[row] = res;
         }
 
@@ -115,7 +122,7 @@ Returns the exact area of a specific cell in square meters corresponding to the 
             "SELECT h3CellAreaM2(579205133326352383) AS area",
             R"(
 ┌───────────────area─┐
-│ 4106166334463.9233 │
+│ 4106166334463.9214 │
 └────────────────────┘
             )"
         }

@@ -1,3 +1,5 @@
+SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
+
 SELECT toDateTime64('-123', 3, 'UTC');    -- Allowed: no year starts with '-'
 SELECT toDateTime64('23.9', 3, 'UTC');    -- Allowed: no year has a dot in notation
 SELECT toDateTime64('-23.9', 3, 'UTC');   -- Allowed

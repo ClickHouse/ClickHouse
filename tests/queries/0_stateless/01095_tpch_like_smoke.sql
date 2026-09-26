@@ -7,8 +7,8 @@ DROP TABLE IF EXISTS lineitem;
 DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS region;
 
+SET enable_analyzer = 1;
 SET cross_to_inner_join_rewrite = 1;
-SET allow_experimental_correlated_subqueries = 1;
 
 CREATE TABLE part
 (
@@ -181,8 +181,7 @@ order by
     n_name,
     s_name,
     p_partkey
-limit 100
-SETTINGS enable_analyzer=1;
+limit 100;
 
 select 3;
 select
@@ -230,8 +229,7 @@ where
 group by
     o_orderpriority
 order by
-    o_orderpriority
-SETTINGS enable_analyzer=1;
+    o_orderpriority;
 
 select 5;
 select
@@ -518,19 +516,18 @@ where
     and l_shipdate >= date '1995-09-01'
     and l_shipdate < date '1995-09-01' + interval '1' month;
 
-select 15, 'fail: correlated subquery'; -- TODO: Missing columns: 'total_revenue'
-drop view if exists revenue0;
-create view revenue0 as
+select 15;
+with revenue_view as (
     select
-        l_suppkey,
-        sum(l_extendedprice * (1 - l_discount))
+        l_suppkey as supplier_no,
+        sum(l_extendedprice * (1 - l_discount)) as total_revenue
     from
         lineitem
     where
-        l_shipdate >= date '1996-01-01'
-        and l_shipdate < date '1996-01-01' + interval '3' month
+        l_shipdate >= '1996-01-01'
+      and l_shipdate < '1996-04-01'
     group by
-        l_suppkey;
+        l_suppkey)
 select
     s_suppkey,
     s_name,
@@ -539,18 +536,17 @@ select
     total_revenue
 from
     supplier,
-    revenue0
+    revenue_view
 where
     s_suppkey = supplier_no
     and total_revenue = (
         select
             max(total_revenue)
         from
-            revenue0
+            revenue_view
     )
 order by
-    s_suppkey; -- { serverError UNKNOWN_IDENTIFIER }
-drop view revenue0;
+    s_suppkey;
 
 select 16;
 select
@@ -601,8 +597,7 @@ where
             lineitem
         where
             l_partkey = p_partkey
-    )
-SETTINGS enable_analyzer=1;
+    );
 
 select 18;
 select
@@ -713,8 +708,7 @@ where
     and s_nationkey = n_nationkey
     and n_name = 'CANADA'
 order by
-    s_name
-SETTINGS enable_analyzer=1;
+    s_name;
 
 select 21;
 select
@@ -756,8 +750,7 @@ group by
 order by
     numwait desc,
     s_name
-limit 100
-SETTINGS enable_analyzer=1;
+limit 100;
 
 select 22;
 select
@@ -796,8 +789,7 @@ from
 group by
     cntrycode
 order by
-    cntrycode
-SETTINGS enable_analyzer=1;
+    cntrycode;
 
 DROP TABLE part;
 DROP TABLE supplier;

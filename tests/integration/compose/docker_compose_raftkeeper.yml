@@ -1,0 +1,40 @@
+# RaftKeeper (JDRaftKeeper) 3-node cluster for keeper stress tests.
+# Uses RAFTKEEPER_IMAGE (default: raftkeeper:test) and per-node config dirs.
+# Host ports via RAFTKEEPER_HOST_PORT_1/2/3 (defaults 18101, 18102, 18103) for host access.
+services:
+    raftkeeper1:
+        image: ${RAFTKEEPER_IMAGE:-raftkeeper:test}
+        stop_grace_period: 5s
+        restart: always
+        volumes:
+            - ${RAFTKEEPER_CONFIG_DIR1:-/tmp/rk1}/config.xml:/etc/raftkeeper/config.xml
+            - ${RAFTKEEPER_DATA_DIR1:-/tmp/rk1/data}:/var/lib/raftkeeper
+            - ${RAFTKEEPER_LOG_DIR1:-/tmp/rk1/log}:/var/log/raftkeeper
+        ports:
+            - "${RAFTKEEPER_HOST_PORT_1:-18101}:8101"
+        entrypoint: ["/usr/bin/raftkeeper", "server", "--config", "/etc/raftkeeper/config.xml"]
+        cpus: 2
+    raftkeeper2:
+        image: ${RAFTKEEPER_IMAGE:-raftkeeper:test}
+        stop_grace_period: 5s
+        restart: always
+        volumes:
+            - ${RAFTKEEPER_CONFIG_DIR2:-/tmp/rk2}/config.xml:/etc/raftkeeper/config.xml
+            - ${RAFTKEEPER_DATA_DIR2:-/tmp/rk2/data}:/var/lib/raftkeeper
+            - ${RAFTKEEPER_LOG_DIR2:-/tmp/rk2/log}:/var/log/raftkeeper
+        ports:
+            - "${RAFTKEEPER_HOST_PORT_2:-18102}:8101"
+        entrypoint: ["/usr/bin/raftkeeper", "server", "--config", "/etc/raftkeeper/config.xml"]
+        cpus: 2
+    raftkeeper3:
+        image: ${RAFTKEEPER_IMAGE:-raftkeeper:test}
+        stop_grace_period: 5s
+        restart: always
+        volumes:
+            - ${RAFTKEEPER_CONFIG_DIR3:-/tmp/rk3}/config.xml:/etc/raftkeeper/config.xml
+            - ${RAFTKEEPER_DATA_DIR3:-/tmp/rk3/data}:/var/lib/raftkeeper
+            - ${RAFTKEEPER_LOG_DIR3:-/tmp/rk3/log}:/var/log/raftkeeper
+        ports:
+            - "${RAFTKEEPER_HOST_PORT_3:-18103}:8101"
+        entrypoint: ["/usr/bin/raftkeeper", "server", "--config", "/etc/raftkeeper/config.xml"]
+        cpus: 2

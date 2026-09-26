@@ -41,6 +41,8 @@ public:
 
     Status prepare() override;
     void work() override;
+    void cancel(CancelReason reason) noexcept override;
+    using IProcessor::cancel;
 
     OutputPort & getPort() { return output; }
     const OutputPort & getPort() const { return output; }

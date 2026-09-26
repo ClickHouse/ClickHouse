@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <limits>
+#include <set>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/ISimpleTransform.h>
@@ -24,6 +25,27 @@ GroupingAggregatedTransform::GroupingAggregatedTransform(const Block & header_, 
 {
 }
 
+std::vector<Int32> GroupingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
+{
+    /// A bucket with a smaller id can be pushed after `bucket` if either we already have its data buffered,
+    /// or some of the inputs told us that it delayed that bucket and it still can arrive.
+    std::set<Int32> delayed;
+
+    for (const auto & [delayed_bucket, num_inputs_delayed_that_bucket] : out_of_order_buckets)
+        if (delayed_bucket < bucket && num_inputs_delayed_that_bucket > 0)
+            delayed.insert(delayed_bucket);
+
+    for (const auto & [buffered_bucket, buffered_chunks] : chunks_map)
+    {
+        if (buffered_bucket >= bucket)
+            break;
+        if (!buffered_chunks.empty())
+            delayed.insert(buffered_bucket);
+    }
+
+    return {delayed.begin(), delayed.end()};
+}
+
 void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_overflows)
 {
     auto & output = outputs.front();
@@ -32,10 +54,28 @@ void GroupingAggregatedTransform::pushData(Chunks chunks, Int32 bucket, bool is_
     info->bucket_num = bucket;
     info->is_overflows = is_overflows;
     info->chunks = std::make_shared<Chunks>(std::move(chunks));
+    if (!is_overflows)
+        info->out_of_order_buckets = getDelayedBucketsBefore(bucket);
+
+    /// Pushing the same bucket twice means it is merged twice and the same keys are returned twice.
+    /// This is the failure mode of a producer which sends buckets out of order without reporting them as delayed.
+    if (bucket >= 0 && !pushed_buckets.insert(bucket).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "GroupingAggregatedTransform pushed bucket {} twice", bucket);
 
     Chunk chunk;
     chunk.getChunkInfos().add(std::move(info));
     output.push(std::move(chunk));
+}
+
+/// An input which has finished cannot send anything else, so it does not hold a bucket back. An input
+/// port reports itself finished only when it has no data left on it, so nothing of the bucket is lost.
+bool GroupingAggregatedTransform::everyLiveInputIsPastBucket(Int32 bucket)
+{
+    for (size_t input = 0; input < num_inputs; ++input)
+        if (last_bucket_number[input] <= bucket && !index_to_input[input]->isFinished())
+            return false;
+
+    return true;
 }
 
 bool GroupingAggregatedTransform::tryPushTwoLevelData()
@@ -71,7 +111,14 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
             /// The bucket is no longer delayed by any of the inputs.
             /// Either we received it from all sources (where it was not empty),
             /// or we received buckets with higher id-s and no delayed bucket information.
-            if (inputs_delayed_that_bucket == 0 && std::ranges::min(last_bucket_number) >= bucket)
+            ///
+            /// Every input which can still send something has to be strictly past the bucket, not at it:
+            /// an input whose last chunk is of this bucket can send more chunks of the same bucket, they
+            /// would be merged and pushed a second time, and the keys of the bucket would be returned
+            /// twice. The in order push below relies on the same: it pushes the buckets before
+            /// `current_bucket`, and `current_bucket` only moves on when every input has read a bucket
+            /// after it.
+            if (inputs_delayed_that_bucket == 0 && everyLiveInputIsPastBucket(bucket))
             {
                 if (try_push_by_iter(chunks_map.find(bucket)))
                 {
@@ -113,7 +160,7 @@ bool GroupingAggregatedTransform::tryPushOverflowData()
     return true;
 }
 
-IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & updated_input_ports, const PortNumbers &)
+IProcessor::Status GroupingAggregatedTransform::prepare(const UpdatedInputPorts & updated_input_ports, const UpdatedOutputPorts &)
 {
     /// Check can output.
     auto & output = outputs.front();
@@ -135,15 +182,19 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
         index_to_input.resize(num_inputs);
 
         for (size_t i = 0; i < num_inputs; ++i, ++in)
+        {
             index_to_input[i] = in;
+            input_port_to_index[&*in] = i;
+        }
     }
 
     auto need_input = [this](size_t input_num) { return last_bucket_number[input_num] <= current_bucket; };
 
     if (!wait_input_ports_numbers.empty())
     {
-        for (const auto & updated_input_port_number : updated_input_ports)
+        for (const auto * updated_input_port : updated_input_ports)
         {
+            const auto updated_input_port_number = input_port_to_index.at(updated_input_port);
             if (!wait_input_ports_numbers.contains(updated_input_port_number))
                 continue;
 
@@ -195,7 +246,10 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
         for (size_t input_num = 0; input_num < num_inputs; ++input_num, ++in)
         {
             if (in->isFinished())
+            {
+                forgetOutOfOrderBucketsOfInput(input_num);
                 continue;
+            }
 
             finished = false;
 
@@ -269,6 +323,14 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
     return Status::Finished;
 }
 
+void GroupingAggregatedTransform::forgetOutOfOrderBucketsOfInput(size_t input)
+{
+    for (const auto ooo_bucket : input_out_of_order_buckets[input])
+        out_of_order_buckets[ooo_bucket]--;
+
+    input_out_of_order_buckets[input].clear();
+}
+
 void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
 {
     if (!chunk.hasRows())
@@ -291,8 +353,7 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             chunks_map[bucket].emplace_back(std::move(chunk));
             has_two_level = true;
             last_bucket_number[input] = bucket;
-            for (const auto ooo_bucket : input_out_of_order_buckets[input])
-                out_of_order_buckets[ooo_bucket]--;
+            forgetOutOfOrderBucketsOfInput(input);
             input_out_of_order_buckets[input] = agg_info->out_of_order_buckets;
             for (const auto ooo_bucket : input_out_of_order_buckets[input])
                 out_of_order_buckets[ooo_bucket]++;
@@ -314,32 +375,37 @@ void GroupingAggregatedTransform::work()
     /// Convert single level data to two level.
     if (!single_level_chunks.empty())
     {
-        const auto & header = getInputs().front().getHeader();  /// Take header from input port. Output header is empty.
-        auto block = header.cloneWithColumns(single_level_chunks.back().detachColumns());
+        auto & src_chunk = single_level_chunks.back();
+        auto rows = src_chunk.getNumRows();
+        auto columns = src_chunk.detachColumns();
         single_level_chunks.pop_back();
-        auto blocks = params->aggregator.convertBlockToTwoLevel(block);
+        auto split_chunks = params->aggregator.convertBlockToTwoLevel(columns, rows);
 
-        for (auto & cur_block : blocks)
+        for (auto & agg_chunk : split_chunks)
         {
-            if (cur_block.empty())
+            if (agg_chunk.chunk.empty())
                 continue;
 
-            Int32 bucket = cur_block.info.bucket_num;
+            Int32 bucket = agg_chunk.bucket_num;
             auto chunk_info = std::make_shared<AggregatedChunkInfo>();
             chunk_info->bucket_num = bucket;
 
-            auto chunk = Chunk(cur_block.getColumns(), cur_block.rows());
-            chunk.getChunkInfos().add(std::move(chunk_info));
+            agg_chunk.chunk.getChunkInfos().add(std::move(chunk_info));
 
-            chunks_map[bucket].emplace_back(std::move(chunk));
+            chunks_map[bucket].emplace_back(std::move(agg_chunk.chunk));
         }
     }
 }
 
 
 MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(
-    AggregatingTransformParamsPtr params_, const SortDescription & required_sort_description_)
-    : ISimpleTransform({}, params_->getHeader(), false), params(std::move(params_)), required_sort_description(required_sort_description_)
+    AggregatingTransformParamsPtr params_,
+    const SortDescription & required_sort_description_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr dataflow_cache_updater_)
+    : ISimpleTransform({}, params_->getHeader(), false)
+    , params(std::move(params_))
+    , required_sort_description(required_sort_description_)
+    , dataflow_cache_updater(std::move(dataflow_cache_updater_))
 {
     setInputNotNeededAfterRead(true);
 }
@@ -350,9 +416,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     if (!chunks_to_merge)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MergingAggregatedSimpleTransform chunk must have ChunkInfo with type ChunksToMerge.");
 
-    auto header = params->aggregator.getHeader(false);
-
-    BlocksList blocks_list;
+    Aggregator::AggregatedChunks chunks_list;
     for (auto & cur_chunk : *chunks_to_merge->chunks)
     {
         if (cur_chunk.getChunkInfos().empty())
@@ -360,20 +424,16 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
 
         if (auto agg_info = cur_chunk.getChunkInfos().get<AggregatedChunkInfo>())
         {
-            Block block = header.cloneWithColumns(cur_chunk.detachColumns());
-            block.info.is_overflows = agg_info->is_overflows;
-            block.info.bucket_num = agg_info->bucket_num;
-            block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
-
-            blocks_list.emplace_back(std::move(block));
+            auto num_rows = cur_chunk.getNumRows();
+            chunks_list.emplace_back(
+                Chunk(cur_chunk.detachColumns(), num_rows),
+                agg_info->bucket_num,
+                agg_info->is_overflows);
         }
         else if (cur_chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
         {
-            Block block = header.cloneWithColumns(cur_chunk.detachColumns());
-            block.info.is_overflows = false;
-            block.info.bucket_num = -1;
-
-            blocks_list.emplace_back(std::move(block));
+            auto num_rows = cur_chunk.getNumRows();
+            chunks_list.emplace_back(Chunk(cur_chunk.detachColumns(), num_rows));
         }
         else
         {
@@ -386,15 +446,21 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     res_info->is_overflows = chunks_to_merge->is_overflows;
     res_info->bucket_num = chunks_to_merge->bucket_num;
     res_info->chunk_num = chunks_to_merge->chunk_num;
+    res_info->out_of_order_buckets = chunks_to_merge->out_of_order_buckets;
     chunk.getChunkInfos().add(std::move(res_info));
 
-    auto block = params->aggregator.mergeBlocks(blocks_list, params->final, is_cancelled);
+    auto agg_chunk = params->aggregator.mergeBlocks(chunks_list, params->final, is_cancelled, dataflow_cache_updater);
 
-    if (!required_sort_description.empty())
+    if (!required_sort_description.empty() && agg_chunk.chunk)
+    {
+        auto header = params->params.getHeader(params->header, params->final);
+        auto block = header.cloneWithColumns(agg_chunk.chunk.detachColumns());
         sortBlock(block, required_sort_description);
+        agg_chunk.chunk = Chunk(block.getColumns(), block.rows());
+    }
 
-    size_t num_rows = block.rows();
-    chunk.setColumns(block.getColumns(), num_rows);
+    size_t num_rows = agg_chunk.chunk.getNumRows();
+    chunk.setColumns(agg_chunk.chunk.detachColumns(), num_rows);
 }
 
 
@@ -404,7 +470,23 @@ SortingAggregatedTransform::SortingAggregatedTransform(size_t num_inputs_, Aggre
     , params(std::move(params_))
     , last_bucket_number(num_inputs, std::numeric_limits<Int32>::min())
     , is_input_finished(num_inputs, false)
+    , input_out_of_order_buckets(num_inputs)
 {
+}
+
+std::vector<Int32> SortingAggregatedTransform::getDelayedBucketsBefore(Int32 bucket) const
+{
+    /// This transform never delays a bucket on its own: it always pushes the smallest bucket it has.
+    /// Hence a bucket with a smaller id can be pushed after `bucket` only if it hasn't arrived yet,
+    /// and in that case the input which will deliver it has already reported it as delayed.
+    std::set<Int32> delayed;
+
+    for (const auto & buckets_of_input : input_out_of_order_buckets)
+        for (const auto delayed_bucket : buckets_of_input)
+            if (delayed_bucket < bucket && !pushed_buckets.contains(delayed_bucket))
+                delayed.insert(delayed_bucket);
+
+    return {delayed.begin(), delayed.end()};
 }
 
 bool SortingAggregatedTransform::tryPushChunk()
@@ -422,6 +504,9 @@ bool SortingAggregatedTransform::tryPushChunk()
     for (size_t input = 0; input < num_inputs; ++input)
         if (!is_input_finished[input] && last_bucket_number[input] < cur_bucket)
             return false;
+
+    it->second.getChunkInfos().get<AggregatedChunkInfo>()->out_of_order_buckets = getDelayedBucketsBefore(cur_bucket);
+    pushed_buckets.insert(cur_bucket);
 
     output.push(std::move(it->second));
     chunks.erase(it);
@@ -448,6 +533,7 @@ void SortingAggregatedTransform::addChunk(Chunk chunk, size_t from_input)
                 "SortingAggregatedTransform already got bucket with number {}", bucket);
         }
 
+        input_out_of_order_buckets[from_input] = agg_info->out_of_order_buckets;
         chunks[bucket] = std::move(chunk);
         last_bucket_number[from_input] = bucket;
     }
@@ -490,6 +576,8 @@ IProcessor::Status SortingAggregatedTransform::prepare()
         if (in->isFinished())
         {
             is_input_finished[input_num] = true;
+            /// The buckets delayed by this input cannot arrive anymore.
+            input_out_of_order_buckets[input_num].clear();
             continue;
         }
 
@@ -516,6 +604,8 @@ IProcessor::Status SortingAggregatedTransform::prepare()
         if (in->isFinished())
         {
             is_input_finished[input_num] = true;
+            /// The buckets delayed by this input cannot arrive anymore.
+            input_out_of_order_buckets[input_num].clear();
         }
         else
         {

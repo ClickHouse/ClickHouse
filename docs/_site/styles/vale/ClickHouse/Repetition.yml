@@ -1,0 +1,11 @@
+---
+name: gitlab_base.Repetition
+description: |
+  Checks for duplicate words, like `the the` or `and and`.
+extends: repetition
+message: "Remove this duplicate word: '%s'."
+vocab: false
+level: warning
+alpha: true
+tokens:
+  - '[^\s]+'

@@ -6,8 +6,8 @@ digraph
     n1[label="ExpressionTransform_1"];
     n2[label="ExpressionTransform_2"];
     n3[label="CountingTransform_3"];
-    n4[label="PlanSquashingTransform_4"];
-    n5[label="DeduplicationToken::AddTokenInfoTransform_5"];
+    n4[label="AddDeduplicationInfoTransform_4"];
+    n5[label="PlanSquashingTransform_5"];
     n6[label="ApplySquashingTransform_21"];
     n7[label="ConvertingTransform_6"];
     n8[label="RemovingReplicatedColumnsTransform_7"];

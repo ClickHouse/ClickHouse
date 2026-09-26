@@ -1,10 +1,12 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <exception>
 #include <memory>
 
 #include <IO/BufferBase.h>
+#include <base/defines.h>
 
 
 namespace DB
@@ -51,6 +53,7 @@ public:
         try
         {
             nextImpl();
+            ++flush_count;
         }
         catch (CurrentBufferExhausted &)
         {
@@ -105,6 +108,9 @@ public:
     bool isFinalized() const { return finalized; }
     bool isCanceled() const { return canceled; }
 
+    /// Get number of times next() has been called (number of flushes)
+    size_t getFlushCount() const { return flush_count.load(std::memory_order_relaxed); }
+
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.
     virtual void sync()
@@ -145,7 +151,16 @@ private:
         return exception_level < std::uncaught_exceptions();
     }
 
+    /// Out of line, like `ReadBuffer::throwReadAfterEOF`: an inlined `throw` would put a
+    /// `-fstack-protector-strong` canary on `write`, which runs per byte. `NO_INLINE` because they sit
+    /// in the same translation unit as `write`.
+    [[noreturn]] NO_INLINE static void throwWriteToFinalizedBuffer();
+    [[noreturn]] NO_INLINE static void throwWriteToCanceledBuffer(int code);
+
     int exception_level = std::uncaught_exceptions();
+
+    /// Number of flushes for debugging/assertions
+    std::atomic<size_t> flush_count = 0;
 };
 
 

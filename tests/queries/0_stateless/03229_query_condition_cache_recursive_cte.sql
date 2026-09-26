@@ -6,7 +6,7 @@
 SET allow_experimental_analyzer = 1; -- needed by recursive CTEs
 
 -- Start from a clean query condition cache
-SYSTEM DROP QUERY CONDITION CACHE;
+SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT '-- Prepare data';
 

@@ -22,11 +22,6 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_sort_description;
 }
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 namespace
 {
 
@@ -88,10 +83,6 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
         auto & window_function_node_typed = window_function_node->as<FunctionNode &>();
 
         auto function_window_description = extractWindowDescriptionFromWindowNode(window_function_node, planner_context);
-
-        auto frame_type = function_window_description.frame.type;
-        if (frame_type != WindowFrame::FrameType::ROWS && frame_type != WindowFrame::FrameType::RANGE)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Window frame '{}' is not implemented", frame_type);
 
         auto window_name = function_window_description.window_name;
 
@@ -171,7 +162,7 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
                     return false;
             }
 
-            assert(left[i] == right[i]);
+            chassert(left[i] == right[i]);
         }
 
         /** Note that we check the length last, because we want to put together the

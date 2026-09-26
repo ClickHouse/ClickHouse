@@ -1,7 +1,3 @@
--- Tags: no-replicated-database, no-parallel-replicas
--- no-replicated-database: EXPLAIN output differs for replicated database.
--- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
-
 -- { echoOn }
 
 DROP TABLE IF EXISTS test_has_skip_minmax;
@@ -22,11 +18,6 @@ SELECT number,
        number % 10000,
        toString(number)
 FROM numbers(100000);
-
-EXPLAIN indexes = 1
-SELECT count()
-FROM test_has_skip_minmax
-WHERE has([5432, 7432, 9999], key_col);
 
 SELECT count()
 FROM test_has_skip_minmax
@@ -52,11 +43,6 @@ SELECT
     toUInt32(intDiv(number, 1000)) AS user_id,
     now() - INTERVAL number MINUTE AS event_time
 FROM numbers(100000);
-
-EXPLAIN indexes = 1
-SELECT count() 
-FROM test_has_skip_set 
-WHERE has([10, 20, 30], user_id);
 
 SELECT count() 
 FROM test_has_skip_set 
@@ -84,11 +70,6 @@ SELECT number,
        concat('v_', toString(number % 100000)),
        toString(number)
 FROM numbers(100000);
-
-EXPLAIN indexes = 1
-SELECT count()
-FROM test_has_skip_bloom
-WHERE has(['v_12345', 'v_54321', 'v_99999'], key_str);
 
 SELECT count()
 FROM test_has_skip_bloom

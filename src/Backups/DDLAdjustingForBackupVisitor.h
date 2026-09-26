@@ -1,13 +1,12 @@
 #pragma once
 
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/IAST_fwd.h>
 #include <memory>
 
 
 namespace DB
 {
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 

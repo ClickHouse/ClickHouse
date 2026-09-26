@@ -22,18 +22,14 @@ def cluster_without_dns_cache_update():
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/listen_host.xml"],
     user_configs=["configs/enable_hedged.xml"],
     with_zookeeper=True,
-    ipv4_address="10.5.95.11",
 )
 
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/listen_host.xml"],
     user_configs=["configs/enable_hedged.xml"],
     with_zookeeper=True,
-    ipv4_address="10.5.95.12",
 )
 
 
@@ -56,17 +52,21 @@ def test(cluster_without_dns_cache_update):
             [
                 "bash",
                 "-c",
-                "echo '{} {}' >> /etc/hosts".format(node1.ipv4_address, node1.name),
+                "echo '{} {}' >> /etc/hosts".format(node1.ip_address, node1.name),
             ]
         )
     )
 
     assert node1.query("SELECT count(*) from test") == "1\n"
-    node2.query("SYSTEM DROP DNS CACHE")
-    node1.query("SYSTEM DROP DNS CACHE")
+    node2.query("SYSTEM CLEAR DNS CACHE")
+    node1.query("SYSTEM CLEAR DNS CACHE")
     assert (
         node2.query(
             f"SELECT count(*) FROM remote('{node1.name}', default.test) limit 1 settings serialize_query_plan=0;"
         )
         == "1\n"
+    )
+
+    node1.query(
+        "DROP TABLE test"
     )

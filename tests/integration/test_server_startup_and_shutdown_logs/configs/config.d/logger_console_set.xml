@@ -1,0 +1,7 @@
+<clickhouse>
+    <logger>
+        <level>information</level>
+        <console_log_level>warning</console_log_level>
+        <startup_console_log_level>trace</startup_console_log_level>
+    </logger>
+</clickhouse>

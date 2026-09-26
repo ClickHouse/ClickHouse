@@ -1,0 +1,182 @@
+---
+title: 'Rust용 chDB 설치'
+sidebarTitle: 'Rust'
+slug: /chdb/install/rust
+description: 'chDB Rust 바인딩 설치 및 사용 방법'
+keywords: ['chdb', '내장', 'clickhouse-lite', 'rust', '설치', 'ffi', '바인딩']
+doc_type: 'guide'
+---
+
+chDB-rust는 chDB용 실험적 FFI(Foreign Function Interface) 바인딩을 제공하며, 이를 통해 외부 의존성 없이 Rust 애플리케이션에서 ClickHouse 쿼리를 직접 실행할 수 있습니다.
+
+<div id="installation">
+  ## 설치
+</div>
+
+<div id="install-libchdb">
+  ### libchdb 설치
+</div>
+
+chDB 라이브러리를 설치하세요:
+
+```bash
+curl -sL https://lib.chdb.io | bash
+```
+
+<div id="usage">
+  ## 사용법
+</div>
+
+chDB Rust는 stateless 모드와 stateful 모드 모두에서 쿼리 실행을 지원합니다.
+
+<div id="stateless-usage">
+  ### Stateless 사용
+</div>
+
+상태를 유지하지 않는 간단한 쿼리의 경우:
+
+```rust
+use chdb_rust::{execute, arg::Arg, format::OutputFormat};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 간단한 쿼리 실행
+    let result = execute(
+        "SELECT version()",
+        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)])
+    )?;
+    println!("ClickHouse version: {}", result.data_utf8()?);
+    
+    // CSV 파일로 쿼리 실행
+    let result = execute(
+        "SELECT * FROM file('data.csv', 'CSV')",
+        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)])
+    )?;
+    println!("CSV data: {}", result.data_utf8()?);
+    
+    Ok(())
+}
+```
+
+<div id="stateful-usage-sessions">
+  ### Stateful 사용(Sessions)
+</div>
+
+데이터베이스와 테이블처럼 상태를 유지해야 하는 쿼리에는:
+
+```rust
+use chdb_rust::{
+    session::SessionBuilder,
+    arg::Arg,
+    format::OutputFormat,
+    log_level::LogLevel
+};
+use tempdir::TempDir;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 데이터베이스 저장을 위한 임시 디렉터리 생성
+    let tmp = TempDir::new("chdb-rust")?;
+    
+    // 구성을 적용하여 세션 빌드
+    let session = SessionBuilder::new()
+        .with_data_path(tmp.path())
+        .with_arg(Arg::LogLevel(LogLevel::Debug))
+        .with_auto_cleanup(true)  // 삭제 시 자동 정리
+        .build()?;
+
+    // 데이터베이스 및 테이블 생성
+    session.execute(
+        "CREATE DATABASE demo; USE demo", 
+        Some(&[Arg::MultiQuery])
+    )?;
+
+    session.execute(
+        "CREATE TABLE logs (id UInt64, msg String) ENGINE = MergeTree() ORDER BY id",
+        None,
+    )?;
+
+    // 데이터 삽입
+    session.execute(
+        "INSERT INTO logs (id, msg) VALUES (1, 'Hello'), (2, 'World')",
+        None,
+    )?;
+
+    // 데이터 조회
+    let result = session.execute(
+        "SELECT * FROM logs ORDER BY id",
+        Some(&[Arg::OutputFormat(OutputFormat::JSONEachRow)]),
+    )?;
+
+    println!("Query results:\n{}", result.data_utf8()?);
+    
+    // 쿼리 통계 조회
+    println!("Rows read: {}", result.rows_read());
+    println!("Bytes read: {}", result.bytes_read());
+    println!("Query time: {:?}", result.elapsed());
+
+    Ok(())
+}
+```
+
+<div id="building-testing">
+  ## 빌드 및 테스트
+</div>
+
+<div id="build-the-project">
+  ### 프로젝트 빌드
+</div>
+
+```bash
+cargo build
+```
+
+<div id="run-tests">
+  ### 테스트 실행
+</div>
+
+```bash
+cargo test
+```
+
+<div id="development-dependencies">
+  ### 개발 의존성
+</div>
+
+프로젝트에는 다음 개발 의존성이 포함됩니다:
+
+* `bindgen` (v0.70.1) - C 헤더에서 FFI 바인딩을 생성
+* `tempdir` (v0.3.7) - 테스트에서 임시 디렉터리 처리
+* `thiserror` (v1) - 오류 처리 유틸리티
+
+<div id="error-handling">
+  ## 오류 처리
+</div>
+
+chDB Rust는 `Error` enum을 통해 폭넓은 오류 처리 기능을 제공합니다:
+
+```rust
+use chdb_rust::{execute, error::Error};
+
+match execute("SELECT 1", None) {
+    Ok(result) => {
+        println!("Success: {}", result.data_utf8()?);
+    },
+    Err(Error::QueryError(msg)) => {
+        eprintln!("Query failed: {}", msg);
+    },
+    Err(Error::NoResult) => {
+        eprintln!("No result returned");
+    },
+    Err(Error::NonUtf8Sequence(e)) => {
+        eprintln!("Invalid UTF-8: {}", e);
+    },
+    Err(e) => {
+        eprintln!("Other error: {}", e);
+    }
+}
+```
+
+<div id="github-repository">
+  ## GitHub 리포지토리
+</div>
+
+프로젝트의 GitHub 리포지토리는 [chdb-io/chdb-rust](https://github.com/chdb-io/chdb-rust)에서 찾을 수 있습니다.

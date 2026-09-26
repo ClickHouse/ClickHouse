@@ -3,7 +3,7 @@ import os
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.test_tools import TSV
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 cluster = ClickHouseCluster(__file__)
@@ -11,7 +11,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/remote_servers.xml", "configs/storage.xml"],
-    tmpfs=["/disk:size=100M"],
+    tmpfs=["/test_replicated_mt_encrypted_disk:size=100M"],
     macros={"replica": "node1"},
     with_zookeeper=True,
 )
@@ -19,7 +19,7 @@ node1 = cluster.add_instance(
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/remote_servers.xml", "configs/storage.xml"],
-    tmpfs=["/disk:size=100M"],
+    tmpfs=["/test_replicated_mt_encrypted_disk:size=100M"],
     macros={"replica": "node2"},
     with_zookeeper=True,
 )

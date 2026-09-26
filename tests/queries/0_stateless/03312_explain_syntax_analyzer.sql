@@ -1,3 +1,4 @@
+SET enable_analyzer = 1;
 SET optimize_min_equality_disjunction_chain_length = 3;
 
 
