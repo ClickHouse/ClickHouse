@@ -625,6 +625,7 @@ AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster
                     | AccessType::ALTER_MATERIALIZE_COLUMN
                     | AccessType::ALTER_MATERIALIZE_TTL
                     | AccessType::ALTER_REWRITE_PARTS
+                    | AccessType::ALTER_RECOMPRESS_COLUMN
                 );
             break;
         case ASTKillQueryQuery::Type::PartMoveToShard:
