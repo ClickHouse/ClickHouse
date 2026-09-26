@@ -290,3 +290,73 @@ def test_drop_role_cascades_to_disk():
         DROP QUOTA    IF EXISTS q_104298;
         """
     )
+
+
+def test_recovery_when_sql_file_is_missing():
+    # A `.list` file that references an entity whose `<uuid>.sql` file is gone must not keep the
+    # server from starting: `readLists` rejects the index and the pre-existing
+    # `reloadAllAndRebuildLists` recovery rebuilds it from the directory contents.
+    # A settings profile is the fatal carrier: every profile is read during startup, in
+    # `Context::setDefaultProfiles`, so before the fix the server could not start at all.
+    instance.query("DROP SETTINGS PROFILE IF EXISTS sp_recover")
+    instance.query("DROP USER IF EXISTS u_keep")
+
+    instance.query("CREATE USER u_keep IDENTIFIED WITH no_password")
+    instance.query(
+        "CREATE SETTINGS PROFILE sp_recover SETTINGS max_memory_usage = 111222333"
+    )
+
+    profile_id = instance.query(
+        "SELECT id FROM system.settings_profiles WHERE name = 'sp_recover'"
+    ).strip()
+    assert profile_id
+
+    # Write the `.list` index and drop `need_rebuild_lists.mark` now, so the damaged state below
+    # does not depend on how the server stops.
+    instance.query("SYSTEM RELOAD USERS")
+
+    instance.stop_clickhouse()
+    try:
+        instance.exec_in_container(
+            ["rm", "/var/lib/clickhouse/access/{}.sql".format(profile_id)]
+        )
+    finally:
+        instance.start_clickhouse()
+
+    # The server came up, and the entity whose file is gone is gone from the index.
+    assert (
+        instance.query(
+            "SELECT count() FROM system.settings_profiles WHERE name = 'sp_recover'"
+        ).strip()
+        == "0"
+    )
+    # The rebuild kept every entity that was intact.
+    assert (
+        instance.query("SELECT count() FROM system.users WHERE name = 'u_keep'").strip()
+        == "1"
+    )
+    # The index was repaired on disk, not only in memory: no file under the access directory
+    # mentions the dropped id any more.
+    assert (
+        instance.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "grep -alr '{}' /var/lib/clickhouse/access/ || true".format(profile_id),
+            ]
+        ).strip()
+        == ""
+    )
+
+    # The storage still works after the recovery.
+    instance.query(
+        "CREATE SETTINGS PROFILE sp_recover SETTINGS max_memory_usage = 111222333"
+    )
+    assert (
+        instance.query(
+            "SELECT count() FROM system.settings_profiles WHERE name = 'sp_recover'"
+        ).strip()
+        == "1"
+    )
+    instance.query("DROP SETTINGS PROFILE sp_recover")
+    instance.query("DROP USER u_keep")
