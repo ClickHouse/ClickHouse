@@ -1126,7 +1126,7 @@ static bool tryNormalizeNeedlePadding(String & needle, bool needle_is_fixed_stri
         /// The column stores its values padded to N and compares them without the padding.
         if (both_stripped || needle_is_fixed_string)
             needle.resize(stripped_size);
-        /// A `String` needle keeps its zero bytes for these functions and then matches nothing.
+        /// A `String` needle keeps its zero bytes in `hasAny` and `hasAll` and then matches nothing; declining is also sound for the rest.
         else if (needle.ends_with('\0'))
             return false;
 
