@@ -20,6 +20,7 @@ node = cluster.add_instance(
         "/ttl_drop_gate_b:size=64M",
         "/ttl_drop_gate_c:size=64M",
         "/ttl_drop_gate_d:size=64M",
+        "/ttl_drop_gate_e:size=64M",
     ],
     with_zookeeper=True,
 )
@@ -36,7 +37,7 @@ FILLER_ROWS = 34000
 
 # Each case gets its own disk and policy so that dropping one table's data cannot raise the
 # other table's threshold.
-CASES = {"t_a": "gate_a", "t_b": "gate_b", "t_c": "gate_c", "t_d": "gate_d"}
+CASES = {"t_a": "gate_a", "t_b": "gate_b", "t_c": "gate_c", "t_d": "gate_d", "t_e": "gate_e"}
 
 SIZE_UNITS = {"B": 1, "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30}
 
@@ -334,9 +335,9 @@ def test_row_retaining_drop_waits_for_free_space(started_cluster, ttl):
 
     Same GROUP BY TTL as above on a non-replicated table, also next to a DELETE TTL that has
     no value for any row. With less free space than the expired part holds, the merge must
-    not be attempted: neither started, nor selected and then refused for lack of space. Once
-    there is room, the rollup runs, reserves at least what the part holds and keeps every
-    row, since all ids are distinct.
+    not be attempted: neither started, nor selected and then refused for lack of space, and
+    a dry run of it is refused. Once there is room, the rollup runs, reserves at least what
+    the part holds and keeps every row, since all ids are distinct.
     """
     node.query("DROP TABLE IF EXISTS t_c SYNC")
     node.query("DROP TABLE IF EXISTS filler SYNC")
@@ -442,3 +443,45 @@ def test_drop_under_delete_ttl_ignores_free_space(started_cluster):
 
     node.query("DROP TABLE filler SYNC")
     node.query("DROP TABLE t_d SYNC")
+
+
+def test_dry_run_after_remove_ttl_counts_expired_part(started_cluster):
+    """A fully expired part keeps its rows once the table's TTL is removed.
+
+    The part still records its expired DELETE TTL values, but no merge deletes the rows any more,
+    so while the disk cannot hold them a dry run of it must be refused for lack of space.
+    """
+    node.query("DROP TABLE IF EXISTS t_e SYNC")
+    node.query("DROP TABLE IF EXISTS filler SYNC")
+    node.query(
+        """
+        CREATE TABLE t_e (id UInt64, s String, event_time DateTime)
+        ENGINE = MergeTree
+        ORDER BY id
+        TTL event_time + INTERVAL 1 DAY
+        SETTINGS storage_policy = 'only_e', min_bytes_for_wide_part = 1
+        """
+    )
+    # Keeps the expired part from being dropped before the TTL is removed.
+    node.query("SYSTEM STOP TTL MERGES t_e")
+    node.query(
+        "INSERT INTO t_e SELECT number, randomString(1024), now() - INTERVAL 10 DAY "
+        f"FROM numbers({ROWS_PER_INSERT})"
+    )
+    node.query("ALTER TABLE t_e REMOVE TTL")
+    insert_filler("only_e")
+    assert_gate_would_fire("t_e", "all")
+
+    part_name = node.query(
+        "SELECT name FROM system.parts WHERE active "
+        "AND database = currentDatabase() AND table = 't_e'"
+    ).strip()
+    error = node.query_and_get_error(f"OPTIMIZE TABLE t_e DRY RUN PARTS '{part_name}'")
+    assert "NOT_ENOUGH_SPACE" in error, (
+        "the dry run of t_e was not refused at reservation although the disk cannot hold "
+        f"its rows:\n{error}"
+    )
+    assert query_int("SELECT count() FROM t_e") == ROWS_PER_INSERT
+
+    node.query("DROP TABLE filler SYNC")
+    node.query("DROP TABLE t_e SYNC")
