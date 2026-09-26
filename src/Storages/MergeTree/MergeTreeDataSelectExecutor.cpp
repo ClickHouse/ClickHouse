@@ -114,7 +114,6 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
@@ -171,6 +170,12 @@ static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
     std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
     for (size_t i = 0; i < primary_key.column_names.size(); ++i)
     {
+        /// `forAnyHyperrectangle` uses these bounds as the column universe, so a bound that can hide a
+        /// NaN is not usable here: `containsRange` would be true where the NaN falsifies it. Such a
+        /// column falls back to the whole universe.
+        if (i < primary_key.data_types.size() && KeyCondition::typeMayHideNaN(primary_key.data_types[i]))
+            continue;
+
         auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);
         if (it != minmax_names.end())
             mapping[i] = static_cast<size_t>(it - minmax_names.begin());
@@ -682,6 +687,13 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     auto start_time = std::chrono::steady_clock::now();
 
     auto virtual_columns_block = data.getBlockWithVirtualsForFilter(metadata_snapshot, parts);
+
+    /// The surviving parts are identified by name, so a physical column named `_part` shadowing the
+    /// virtual one - which leaves it out of the block - makes this filtering unavailable. Keep every
+    /// part; the predicate is still applied to the rows themselves.
+    if (!virtual_columns_block.has("_part"))
+        return {};
+
     VirtualColumnUtils::filterBlockWithExpression(VirtualColumnUtils::buildFilterExpression(std::move(*dag), context), virtual_columns_block);
     auto result = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
 
@@ -1615,9 +1627,9 @@ static bool isTopKFilterFunction(const ActionsDAG::Node * node)
         && node->function_base->getName() == "__topKFilter";
 }
 
-/// TopK dynamic filtering can push `__topKFilter` into the WHERE `ActionsDAG` as
-/// `and(__topKFilter(...), <predicate>)`. Plain `SELECT ... WHERE <predicate>` entries
-/// are keyed on `<predicate>` alone, so strip internal TopK nodes before probing reuse.
+/// Plain `SELECT ... WHERE <predicate>` entries are keyed on `<predicate>` alone, so strip internal
+/// TopK nodes before probing reuse. `__topKFilter` is merged into the PREWHERE after the pass that
+/// builds this DAG, so the shapes stripped here no longer originate from that optimizer path.
 static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const ActionsDAG::Node * node)
 {
     if (!node)
@@ -1636,6 +1648,11 @@ static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const Action
 
         if (where_children.empty())
             return std::nullopt;
+
+        /// Nothing was stripped, so this root is already the node a plain
+        /// `SELECT ... WHERE <predicate>` keys on.
+        if (where_children.size() == node->children.size())
+            return node->getHash();
 
         /// The common TopK shape is `and(__topKFilter(...), <WHERE-root>)`, where the WHERE root is a
         /// single (possibly nested `and`) node, so stripping the internal `__topKFilter` leaves exactly
@@ -1667,7 +1684,6 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 {
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_query_condition_cache]
-            || !settings[Setting::allow_experimental_analyzer]
             /// `apply_deleted_mask = 0` must return deleted rows, so it cannot reuse entries written
             /// by normal reads: those may exclude a granule whose only matching rows are deleted.
             || !settings[Setting::apply_deleted_mask]
@@ -2734,7 +2750,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         mark_cache,
         uncompressed_cache,
         vector_similarity_index_cache,
-        reader_settings);
+        reader_settings,
+        /*interruptible_marks_read=*/ true);
 
     MarkRanges res;
     size_t ranges_size = ranges.size();
@@ -3094,7 +3111,8 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
             mark_cache,
             uncompressed_cache,
             vector_similarity_index_cache,
-            reader_settings);
+            reader_settings,
+            /*interruptible_marks_read=*/ true);
 
     auto min_max_granules = std::make_shared<MergeTreeIndexBulkGranulesMinMax>(skip_index_minmax->index.name,
                                     skip_index_minmax->index.sample_block, skip_index_granularity, direction,

@@ -34,7 +34,8 @@ The external aggregation settings (`max_bytes_before_external_group_by`, `max_by
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "New setting. Enable spill memory data into external storage adaptively."}]}]}/>
 
-Trigger processor to spill data into external storage adpatively. grace join is supported at present.
+Trigger processor to spill data into external storage adaptively. Hash joins that can spill are supported at present, both
+`grace_hash` and the adaptive `hash` / `parallel_hash` path.
 
 ## enable_add_distinct_to_in_subqueries {#enable_add_distinct_to_in_subqueries}
 
