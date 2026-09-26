@@ -105,13 +105,9 @@ public:
             array_column = const_array_column->getDataColumnPtr();
         }
 
-        if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
-            array_source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
-        else
+        const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get());
+        if (!argument_column_array)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "First argument for function {} must be an array.", getName());
-
-        auto result_column = array_column->cloneEmpty();
-        auto & result_array = typeid_cast<ColumnArray &>(*result_column);
 
         bool is_inserted_const = false;
         if (const auto * const_inserted_column = typeid_cast<const ColumnConst *>(inserted_column.get()))
@@ -122,9 +118,21 @@ public:
 
         /// GatherUtils requires the source, value, and sink nested columns to have identical structures.
         /// LowCardinality dictionary index widths can differ even when the logical data types are equal.
-        inserted_column = convertToStructure(inserted_column, result_array.getData());
+        inserted_column = convertToStructure(inserted_column, argument_column_array->getData());
+        if (!inserted_column->structureEquals(argument_column_array->getData()))
+        {
+            /// Copying inserted values can widen the LowCardinality indexes. Normalize the array source
+            /// to that wider structure too, so the source and sink still match the value source.
+            auto normalized_array_data = convertToStructure(argument_column_array->getDataPtr(), *inserted_column);
+            array_column = ColumnArray::create(normalized_array_data, argument_column_array->getOffsetsPtr());
+            argument_column_array = typeid_cast<const ColumnArray *>(array_column.get());
+        }
+
+        array_source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
         value_source = GatherUtils::createValueSource(*inserted_column, is_inserted_const, size);
 
+        auto result_column = ColumnArray::create(inserted_column->cloneEmpty());
+        auto & result_array = typeid_cast<ColumnArray &>(*result_column);
         auto sink = GatherUtils::createArraySink(result_array, size);
 
         const bool position_is_unsigned = WhichDataType(arguments[1].type).isNativeUInt();

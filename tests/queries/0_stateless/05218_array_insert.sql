@@ -55,6 +55,15 @@ FROM
     FROM numbers(1)
 );
 
+SELECT count(), sum(length(inserted)), countIf(inserted[1] = 'array'), countIf(inserted[2] = toString(number))
+FROM
+(
+    SELECT
+        number,
+        arrayInsert([toLowCardinality('array')], 2, toLowCardinality(toString(number))) AS inserted
+    FROM numbers(300)
+);
+
 SELECT arrayInsert([1, 2, 3], 0, 9); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT arrayInsert([1, 2, 3], 5, 9); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT arrayInsert([1, 2, 3], -5, 9); -- { serverError ARGUMENT_OUT_OF_BOUND }
