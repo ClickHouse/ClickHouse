@@ -221,7 +221,6 @@
                 "zh/concepts/features/interfaces/framing-formats",
                 "zh/concepts/features/interfaces/tcp",
                 "zh/concepts/features/interfaces/adbc",
-                "zh/concepts/features/interfaces/jdbc",
                 "zh/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"

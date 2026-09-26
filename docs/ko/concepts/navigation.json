@@ -221,7 +221,6 @@
                 "ko/concepts/features/interfaces/framing-formats",
                 "ko/concepts/features/interfaces/tcp",
                 "ko/concepts/features/interfaces/adbc",
-                "ko/concepts/features/interfaces/jdbc",
                 "ko/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"

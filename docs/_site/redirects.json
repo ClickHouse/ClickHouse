@@ -1,5 +1,37 @@
 [
   {
+    "destination": "/ar/integrations/language-clients/java/jdbc",
+    "source": "/ar/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/es/integrations/language-clients/java/jdbc",
+    "source": "/es/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/fr/integrations/language-clients/java/jdbc",
+    "source": "/fr/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/ja/integrations/language-clients/java/jdbc",
+    "source": "/ja/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/ko/integrations/language-clients/java/jdbc",
+    "source": "/ko/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/pt-BR/integrations/language-clients/java/jdbc",
+    "source": "/pt-BR/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/ru/integrations/language-clients/java/jdbc",
+    "source": "/ru/concepts/features/interfaces/jdbc"
+  },
+  {
+    "destination": "/zh/integrations/language-clients/java/jdbc",
+    "source": "/zh/concepts/features/interfaces/jdbc"
+  },
+  {
     "destination": "/integrations/language-clients/java/jdbc",
     "source": "/concepts/features/interfaces/jdbc"
   },
@@ -10704,7 +10736,7 @@
     "source": "/jp/interfaces/javascript"
   },
   {
-    "destination": "/ja/concepts/features/interfaces/jdbc",
+    "destination": "/ja/integrations/language-clients/java/jdbc",
     "source": "/jp/interfaces/jdbc"
   },
   {
@@ -21464,7 +21496,7 @@
     "source": "/ko/interfaces/javascript"
   },
   {
-    "destination": "/ko/concepts/features/interfaces/jdbc",
+    "destination": "/ko/integrations/language-clients/java/jdbc",
     "source": "/ko/interfaces/jdbc"
   },
   {
@@ -33580,7 +33612,7 @@
     "source": "/ru/interfaces/javascript"
   },
   {
-    "destination": "/ru/concepts/features/interfaces/jdbc",
+    "destination": "/ru/integrations/language-clients/java/jdbc",
     "source": "/ru/interfaces/jdbc"
   },
   {
@@ -47152,7 +47184,7 @@
     "source": "/zh/interfaces/javascript"
   },
   {
-    "destination": "/zh/concepts/features/interfaces/jdbc",
+    "destination": "/zh/integrations/language-clients/java/jdbc",
     "source": "/zh/interfaces/jdbc"
   },
   {
