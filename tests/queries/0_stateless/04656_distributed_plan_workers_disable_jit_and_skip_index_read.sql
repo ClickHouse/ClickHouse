@@ -19,33 +19,38 @@ SET make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     enable_join_runtime_filters = 0;
 
 SET use_skip_indexes_on_data_read = 1, compile_expressions = 1, min_count_to_compile_expression = 0;
-SET log_comment = '04656_distributed_plan_auto_switch';
+-- A server-side fuzzed re-run repeats the statement under the same session settings, so it would
+-- carry the marker below and, being later, would win the lookup.
+SET ast_fuzzer_runs = 0;
 
 SELECT 'join with a skip-index filter and a JIT-eligible expression matches single-node';
 SELECT count(), sum(b.v + 1) FROM t_dp_big AS b INNER JOIN t_dp_small AS s ON b.v = s.id
-    WHERE b.v < 50000;
+    WHERE b.v < 50000
+    SETTINGS log_comment = '04656_distributed_plan_auto_switch';
 SELECT count(), sum(b.v + 1) FROM t_dp_big AS b INNER JOIN t_dp_small AS s ON b.v = s.id
     WHERE b.v < 50000
     SETTINGS make_distributed_plan = 0;
 
 SELECT 'worker tasks run with the unsupported settings disabled';
 SYSTEM FLUSH LOGS query_log;
--- Worker task entries log the task id ('main', 'stage_N_M' - not SQL) as the query text and share
--- the initiator's query_id; their Settings column shows the task context, where the overrides
--- appear as changed settings. Scoping to the query_id of the latest 'main' task makes the probe
--- immune to earlier runs of this test in the same database, and the task-id filter excludes the
--- initiator row itself (logged before the auto-switch, so it keeps the user-set values). The probe
--- runs with make_distributed_plan = 0 so it does not spawn 'main' tasks of its own.
+-- Worker task entries log the task id ('main', 'stage_N_M' - not SQL) as the query text and carry a
+-- query_id of their own ('<plan uuid>::<task id>'), rooted at the initiator through initial_query_id;
+-- their Settings column shows the task context, where the overrides appear as changed settings.
+-- query_log rows outlive the database that wrote them and a fixed `--database` repeats it, so the
+-- family is rooted at the initiator row of the statement under test, which every execution writes; a
+-- task row is not a sound anchor, since its absence is what this probe has to report. The task-id
+-- filter excludes that initiator row (logged before the auto-switch, so it keeps the user-set
+-- values), and the probe runs with make_distributed_plan = 0 so it does not spawn 'main' tasks.
 SELECT DISTINCT Settings['use_skip_indexes_on_data_read'], Settings['compile_expressions']
 FROM system.query_log
 WHERE event_date >= yesterday() AND type = 'QueryStart'
   AND query NOT ILIKE '%SELECT%'
-  AND query_id = (
+  AND initial_query_id = (
       SELECT query_id FROM system.query_log
       WHERE event_date >= yesterday() AND type = 'QueryStart'
         AND current_database = currentDatabase()
+        AND is_initial_query
         AND Settings['log_comment'] = '04656_distributed_plan_auto_switch'
-        AND query = 'main'
       ORDER BY event_time_microseconds DESC
       LIMIT 1)
 SETTINGS make_distributed_plan = 0;
