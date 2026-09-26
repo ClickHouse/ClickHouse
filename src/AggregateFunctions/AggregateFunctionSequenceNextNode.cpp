@@ -174,8 +174,7 @@ struct SequenceNextNodeGeneralData
     }
 };
 
-/// The factory passes null settings when the calling thread has no query context, which is the case
-/// for asynchronous table loading: it means "no session to read the setting from", not "the gate is off".
+/// Null settings mean the calling thread has no query context, as in asynchronous table loading, not that the gate is off.
 bool isFunnelFunctionsEnabled(const Settings * settings)
 {
     if (settings)

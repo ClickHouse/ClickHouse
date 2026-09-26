@@ -49,9 +49,7 @@ void checkAllTypesAreAllowedInTable(const NamesAndTypesList & names_and_types)
 }
 
 
-/// Whether the definition being validated is replayed rather than judged here. A check whose answer
-/// depends on this server's configuration must not run on a replay: the answer can differ from the
-/// author's, and a secondary refusing one retries its queue entry forever.
+/// A check that depends on this server's configuration must skip a replayed definition, which its author already judged.
 static bool isReplayedDefinition(const ContextPtr & context)
 {
     const auto metadata_txn = context->getZooKeeperMetadataTransaction();
@@ -65,9 +63,7 @@ static bool isReplayedDefinition(const ContextPtr & context)
 }
 
 
-/// An object whose definition is never written to disk is never rebuilt, so a gate that asks what a
-/// future server startup could reconstruct does not apply to it. `DatabaseMemory` keeps definitions in
-/// memory only, and the database that holds temporary tables is one of those.
+/// A `Memory` database, including the one that holds temporary tables, keeps definitions in memory only.
 static bool definitionIsRebuiltOnStartup(const String & database_name)
 {
     auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
@@ -85,8 +81,7 @@ static void checkAggregateFunctionStatesInType(const DataTypePtr & type)
 
         aggregate_type->getFunction()->checkCanBeStoredInTable();
 
-        /// `DataTypeAggregateFunction` does not implement `forEachChild`, so the argument types of a
-        /// state are reached only from here.
+        /// `DataTypeAggregateFunction` does not implement `forEachChild`, so a state's argument types are walked here.
         for (const auto & argument_type : aggregate_type->getArgumentsDataTypes())
             checkAggregateFunctionStatesInType(argument_type);
     };
@@ -188,8 +183,7 @@ StoragePtr StorageFactory::get(
 
     bool has_engine_args = false;
 
-    /// A temporary CREATE carries no database name at all, so it cannot be classified by database.
-    /// A definition given to this server now or restored onto it is judged, because this server rebuilds it.
+    /// Judges a fresh or restored definition, which this server rebuilds. A temporary CREATE carries no database name.
     if (!query.isTemporary() && (isFreshTableDefinition(mode, query.attach_short_syntax) || is_restore_from_backup))
         checkAggregateFunctionStatesCanBeStored(columns.getAll(), query.getDatabase(), local_context);
 

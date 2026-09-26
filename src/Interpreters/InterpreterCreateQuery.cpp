@@ -2368,7 +2368,6 @@ try
     validateVirtualColumns(storage, context);
     checkForUnsupportedColumns(storage, mode, context, is_temporary);
 
-    /// Columns an engine infers are known only once it is built.
     if (check_inferred_aggregate_states)
     {
         auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);

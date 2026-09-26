@@ -486,10 +486,7 @@ public:
         return true;
     }
 
-    /** A stored state is rebuilt when the server starts, on a thread that has no session, so a feature
-      * gate that only a session answered would leave the column unreadable. A function whose gate
-      * refuses without a session rejects storage here instead.
-      */
+    /// Throws if a state of this function cannot be stored in a table: a stored state is rebuilt at startup, with no session.
     virtual void checkCanBeStoredInTable() const
     {
         if (auto nested = getNestedFunction())
