@@ -20,14 +20,19 @@ $CLICKHOUSE_LOCAL --query_kind secondary_query --enable_analyzer 0 --query "SELE
 $CLICKHOUSE_CLIENT --query_kind secondary_query --allow_experimental_analyzer 0 --query "SELECT toUInt8(getSetting('allow_experimental_analyzer'))"
 $CLICKHOUSE_CLIENT --query_kind secondary_query --enable_analyzer 0 --query "SELECT toUInt8(getSetting('enable_analyzer'))"
 
-# A change sent to the server as an ordinary query is refused rather than ignored, a command-line one
-# included.
+# A change sent to the server as an ordinary query is accepted and replaced with `1`, a command-line
+# one included.
 echo "-- clickhouse-client"
-$CLICKHOUSE_CLIENT --allow_experimental_analyzer 0 --query "SELECT 1" 2>&1 | grep -o -m1 'SETTING_CONSTRAINT_VIOLATION'
+$CLICKHOUSE_CLIENT --allow_experimental_analyzer 0 --query "SELECT toUInt8(getSetting('allow_experimental_analyzer'))"
+$CLICKHOUSE_CLIENT --enable_analyzer 0 --query "SELECT toUInt8(getSetting('enable_analyzer'))"
 
-# A `SETTINGS` clause nested in a subquery is not seen by the constraints either - the client applies
-# only the top-level one to its own session - so the server refuses it when it parses the query.
+# A `SETTINGS` clause nested in a subquery is not seen by the constraints - the client applies only the
+# top-level one to its own session - so the server replaces the value when it parses the query.
 echo "-- nested SETTINGS clause"
-$CLICKHOUSE_CLIENT --query "SELECT * FROM (SELECT 1 SETTINGS enable_analyzer = 0)" 2>&1 | grep -o -m1 'INCORRECT_QUERY'
-$CLICKHOUSE_CLIENT --query "SELECT * FROM (SELECT 1 SETTINGS allow_experimental_analyzer = 0)" 2>&1 | grep -o -m1 'INCORRECT_QUERY'
+$CLICKHOUSE_CLIENT --query "SELECT * FROM (SELECT toUInt8(getSetting('enable_analyzer')) SETTINGS enable_analyzer = 0)"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM (SELECT toUInt8(getSetting('allow_experimental_analyzer')) SETTINGS allow_experimental_analyzer = 0)"
 $CLICKHOUSE_CLIENT --query "SELECT * FROM (SELECT 1 SETTINGS enable_analyzer = 1)"
+
+# The same over HTTP, as a URL parameter.
+echo "-- HTTP"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&enable_analyzer=0" -d "SELECT toUInt8(getSetting('enable_analyzer'))"
