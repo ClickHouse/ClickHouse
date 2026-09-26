@@ -9,7 +9,6 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/assert_cast.h>
 #include <base/types.h>
-#include <base/sort.h>
 #include <base/scope_guard.h>
 
 
@@ -457,54 +456,65 @@ void ColumnLowCardinality::getPermutationImpl(IColumn::PermutationSortDirection 
     else
         getDictionary().getNestedColumn()->getPermutation(direction, stability, unique_limit, nan_direction_hint, unique_perm);
 
-    /// TODO: optimize with sse.
-
-    /// Get indexes per row in column_unique.
-    VectorWithMemoryTracking<VectorWithMemoryTracking<size_t>> indexes_per_row(getDictionary().size());
-    size_t indexes_size = getIndexes().size();
-    for (size_t row = 0; row < indexes_size; ++row)
-        indexes_per_row[getIndexes().getUInt(row)].push_back(row);
+    const IColumnUnique & dict = getDictionary();
+    if (unique_perm.size() != dict.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary permutation size {} does not match dictionary size {}",
+            unique_perm.size(), dict.size());
 
     /// A float dictionary is not canonicalized, so -0.0 can sit next to +0.0, and one NaN payload next to
     /// another, while comparing equal. Rows of value-equal entries form one equal range, so a stable sort
     /// has to emit them in row order rather than one dictionary entry at a time.
-    const IColumnUnique & dict = getDictionary();
     const bool merge_value_equal_entries = stability == IColumn::PermutationSortStability::Stable
         && WhichDataType(dict.getNestedNotNullableColumn()->getDataType()).isFloat();
 
-    /// Replicate permutation.
-    size_t perm_size = std::min(indexes_size, limit);
-    res.resize(perm_size);
-    size_t perm_index = 0;
-    VectorWithMemoryTracking<size_t> merged_rows;
-    for (size_t row = 0; row < unique_perm.size() && perm_index < perm_size;)
+    /// Rank of every dictionary index in the sorted dictionary. Ranks are dense, so they double as bucket numbers.
+    PaddedPODArray<UInt64> rank_by_index(dict.size());
+    size_t num_ranks = 0;
+    for (size_t i = 0; i < unique_perm.size(); ++i)
     {
-        size_t next = row + 1;
-        if (merge_value_equal_entries)
-            while (next < unique_perm.size()
-                && dict.compareAt(unique_perm[next - 1], unique_perm[next], dict, nan_direction_hint) == 0)
-                ++next;
+        const bool equal_to_previous = i != 0 && merge_value_equal_entries
+            && dict.compareAt(unique_perm[i - 1], unique_perm[i], dict, nan_direction_hint) == 0;
+        if (!equal_to_previous)
+            ++num_ranks;
+        rank_by_index[unique_perm[i]] = num_ranks - 1;
+    }
 
-        const auto * row_indexes = &indexes_per_row[unique_perm[row]];
-        if (next != row + 1)
+    const size_t indexes_size = getIndexes().size();
+    const size_t perm_size = std::min(indexes_size, limit);
+    PaddedPODArray<UInt64> offsets(num_ranks, 0);
+    res.resize(perm_size);
+
+    auto scatter = [&](const auto & positions)
+    {
+        for (size_t row = 0; row < indexes_size; ++row)
+            ++offsets[rank_by_index[positions[row]]];
+
+        /// Exclusive prefix sums in rank order give each bucket its start position.
+        size_t sum = 0;
+        for (auto & offset : offsets)
         {
-            merged_rows.clear();
-            for (size_t i = row; i < next; ++i)
-                merged_rows.insert(merged_rows.end(), indexes_per_row[unique_perm[i]].begin(), indexes_per_row[unique_perm[i]].end());
-            ::sort(merged_rows.begin(), merged_rows.end());
-            row_indexes = &merged_rows;
+            const size_t count = offset;
+            offset = sum;
+            sum += count;
         }
 
-        for (auto row_index : *row_indexes)
+        /// Rows are visited in ascending order, so the rows of one bucket keep their original order (stable), and a
+        /// limit that cuts a bucket keeps its lowest rows.
+        for (size_t row = 0; row < indexes_size; ++row)
         {
-            res[perm_index] = row_index;
-            ++perm_index;
-
-            if (perm_index == perm_size)
-                break;
+            const size_t pos = offsets[rank_by_index[positions[row]]]++;
+            if (pos < perm_size)
+                res[pos] = row;
         }
+    };
 
-        row = next;
+    switch (idx.getSizeOfIndexType())
+    {
+        case sizeof(UInt8): scatter(assert_cast<const ColumnUInt8 &>(getIndexes()).getData()); break;
+        case sizeof(UInt16): scatter(assert_cast<const ColumnUInt16 &>(getIndexes()).getData()); break;
+        case sizeof(UInt32): scatter(assert_cast<const ColumnUInt32 &>(getIndexes()).getData()); break;
+        case sizeof(UInt64): scatter(assert_cast<const ColumnUInt64 &>(getIndexes()).getData()); break;
+        default: throwUnexpectedLowCardinalityIndexType(idx.getSizeOfIndexType());
     }
 }
 
