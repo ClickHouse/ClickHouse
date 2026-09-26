@@ -1370,7 +1370,7 @@ Its size can be configured using the server-level setting [`uncompressed_cache_s
 ## SYSTEM CLEAR|DROP COLUMNS CACHE {#drop-columns-cache}
 
 Clears the columns cache (deserialized columns kept in memory).
-Queries that started before the clear cannot put their data back into the cache, so the cache stays cleared even under load.
+Reads that are already in progress when the cache is cleared cannot put their data back into the cache, also from the parts of the data they reach only after the clear, so the cache stays cleared even under load.
 The columns cache is enabled/disabled with the query/user/profile-level setting `use_columns_cache`.
 Its size can be configured using the server-level setting `columns_cache_size`.
 Use [`system.columns_cache`](/reference/system-tables/columns_cache) to introspect cache contents.
