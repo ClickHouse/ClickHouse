@@ -141,6 +141,11 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
 {
     for (const auto & command : commands)
     {
+        /// `DROP COLUMN` and `CLEAR COLUMN` write nothing of the column, they only remove its files, which
+        /// `columns_substreams.txt` lists (see `hasDynamicColumnsWithoutRecordedSubstreams`).
+        if (command.type == MutationCommand::DROP_COLUMN)
+            continue;
+
         if (!command.column_name.empty())
         {
             auto column = data_part->tryGetColumn(command.column_name);
@@ -1193,58 +1198,65 @@ static std::set<ProjectionDescriptionRawPtr> getProjectionsToRecalculate(
     return projections_to_recalc;
 }
 
+/// Calls `callback` with the name of every stream of the column `column_name` in `data_part`.
+static void forEachColumnStream(
+    const MergeTreeDataPartPtr & data_part,
+    const MergeTreeDataPartChecksums & source_part_checksums,
+    const String & column_name,
+    const std::function<void(const String &)> & callback)
+{
+    /// When columns_substreams.txt is available, prefer its recorded substreams over
+    /// enumerateStreams. The file is the ground truth of what streams exist on disk, and
+    /// for columns with a data-dependent dynamic structure (Dynamic, JSON) a state-less
+    /// enumerateStreams is incomplete: it stops after `dynamic_structure` and never reports
+    /// data-dependent substreams like `variant_discr`.
+    const auto * recorded_substreams = data_part->getColumnsSubstreams().tryGetColumnSubstreams(column_name);
+
+    /// A not-yet-written column in a new part carries only a single placeholder substream
+    /// (see getColumnsForNewDataPart). It has no real streams on disk yet, so we fall back
+    /// to enumerateStreams to preserve correct shared-stream accounting for regular columns
+    /// (e.g. Nested array sizes).
+    if (recorded_substreams && !(recorded_substreams->size() == 1 && (*recorded_substreams)[0] == NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER))
+    {
+        for (const auto & substream : *recorded_substreams)
+        {
+            if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part_checksums))
+                callback(*stream_name);
+        }
+        return;
+    }
+
+    /// Only a column the part physically holds has streams to count. The name of an absent
+    /// column must not be looked up in the part's serializations: a column named like a
+    /// subcolumn of another column (`a.size0` next to an `Array` column `a`) resolves to that
+    /// subcolumn's serialization, and the streams enumerated from it are the other column's.
+    /// Counting them here would mark the array's offsets as rewritten by the mutation and
+    /// skip hardlinking them, leaving the new part without them.
+    if (!data_part->getColumns().contains(column_name))
+        return;
+
+    if (auto serialization = data_part->tryGetSerialization(column_name))
+    {
+        auto stream_callback = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
+            if (stream_name)
+                callback(*stream_name);
+        };
+
+        serialization->enumerateStreams(stream_callback);
+    }
+}
+
 static std::unordered_map<String, size_t> getStreamCounts(
     const MergeTreeDataPartPtr & data_part,
     const MergeTreeDataPartChecksums & source_part_checksums,
     const Names & column_names)
 {
     std::unordered_map<String, size_t> stream_counts;
-    const auto & columns_substreams = data_part->getColumnsSubstreams();
 
     for (const auto & column_name : column_names)
-    {
-        /// When columns_substreams.txt is available, prefer its recorded substreams over
-        /// enumerateStreams. The file is the ground truth of what streams exist on disk, and
-        /// for columns with a data-dependent dynamic structure (Dynamic, JSON) a state-less
-        /// enumerateStreams is incomplete: it stops after `dynamic_structure` and never reports
-        /// data-dependent substreams like `variant_discr`.
-        const auto * recorded_substreams = columns_substreams.tryGetColumnSubstreams(column_name);
-
-        /// A not-yet-written column in a new part carries only a single placeholder substream
-        /// (see getColumnsForNewDataPart). It has no real streams on disk yet, so we fall back
-        /// to enumerateStreams to preserve correct shared-stream accounting for regular columns
-        /// (e.g. Nested array sizes).
-        if (recorded_substreams && !(recorded_substreams->size() == 1 && (*recorded_substreams)[0] == NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER))
-        {
-            for (const auto & substream : *recorded_substreams)
-            {
-                if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part_checksums))
-                    ++stream_counts[*stream_name];
-            }
-            continue;
-        }
-
-        /// Only a column the part physically holds has streams to count. The name of an absent
-        /// column must not be looked up in the part's serializations: a column named like a
-        /// subcolumn of another column (`a.size0` next to an `Array` column `a`) resolves to that
-        /// subcolumn's serialization, and the streams enumerated from it are the other column's.
-        /// Counting them here would mark the array's offsets as rewritten by the mutation and
-        /// skip hardlinking them, leaving the new part without them.
-        if (!data_part->getColumns().contains(column_name))
-            continue;
-
-        if (auto serialization = data_part->tryGetSerialization(column_name))
-        {
-            auto callback = [&](const ISerialization::SubstreamPath & substream_path)
-            {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
-                if (stream_name)
-                    ++stream_counts[*stream_name];
-            };
-
-            serialization->enumerateStreams(callback);
-        }
-    }
+        forEachColumnStream(data_part, source_part_checksums, column_name, [&](const String & stream_name) { ++stream_counts[stream_name]; });
 
     return stream_counts;
 }
@@ -1470,20 +1482,15 @@ static NameToNameVector collectFilesForRenames(
         {
             if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+                forEachColumnStream(source_part, source_part->checksums, command.column_name, [&](const String & stream_name)
                 {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
-
                     /// Delete files if they are no longer shared with another column.
-                    if (stream_name && --stream_counts[*stream_name] == 0)
+                    if (--stream_counts[stream_name] == 0)
                     {
-                        add_rename(*stream_name + ".bin", "");
-                        add_rename(*stream_name + mrk_extension, "");
+                        add_rename(stream_name + ".bin", "");
+                        add_rename(stream_name + mrk_extension, "");
                     }
-                };
-
-                if (auto serialization = try_get_serialization_of_stored_column(command.column_name))
-                    serialization->enumerateStreams(callback);
+                });
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
@@ -1665,7 +1672,7 @@ static void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
     const IMergedBlockOutputStream::GatheredData & all_gathered_data,
-    ExecuteTTLType execute_ttl_type,
+    bool write_ttl_infos,
     const CompressionCodecPtr & codec,
     ContextPtr context,
     StorageMetadataPtr metadata_snapshot,
@@ -1684,7 +1691,7 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out));
     }
 
-    if (execute_ttl_type != ExecuteTTLType::NONE)
+    if (write_ttl_infos)
     {
         /// Write a file with ttl infos in json format.
         auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
@@ -1966,6 +1973,8 @@ struct MutationContext
 
     bool need_sync{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+    /// The TTL infos of the new part differ from the source part even without executing TTL.
+    bool ttl_infos_changed{false};
 
     MergeTreeTransactionPtr txn;
 
@@ -3010,7 +3019,7 @@ private:
                 ctx->statistics_to_build.emplace(stat_name, it->second);
         }
 
-        if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
+        if (ctx->execute_ttl_type != ExecuteTTLType::NONE || ctx->ttl_infos_changed)
             ctx->files_to_skip.insert("ttl.txt");
 
         ctx->new_data_part->getDataPartStorage().createDirectories();
@@ -3405,7 +3414,7 @@ private:
             ctx->source_part,
             ctx->new_data_part,
             ctx->all_gathered_data,
-            ctx->execute_ttl_type,
+            ctx->execute_ttl_type != ExecuteTTLType::NONE || ctx->ttl_infos_changed,
             ctx->compression_codec,
             ctx->context,
             ctx->metadata_snapshot,
@@ -4206,6 +4215,13 @@ bool MutateTask::prepare()
     ctx->new_data_part->uuid = ctx->future_part->uuid;
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
+
+    /// A column that `DROP COLUMN` or `CLEAR COLUMN` removes from the part has no values left to expire.
+    for (const auto & command : ctx->for_file_renames)
+    {
+        if (command.type == MutationCommand::DROP_COLUMN && ctx->new_data_part->ttl_infos.removeColumnTTL(command.column_name))
+            ctx->ttl_infos_changed = true;
+    }
 
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;

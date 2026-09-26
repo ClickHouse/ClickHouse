@@ -257,13 +257,18 @@ bool TTLRowDeleteMergeSelector::canConsiderPart(const PartProperties & part) con
     return part.general_ttl_info->has_any_non_finished_row_ttls;
 }
 
-TTLColumnDeleteMergeSelector::TTLColumnDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
-    : ITTLMergeSelector(&merge_due_times_, current_time_)
+TTLColumnDeleteMergeSelector::TTLColumnDeleteMergeSelector(
+    const PartitionIdToTTLs & merge_due_times_, time_t current_time_, bool only_fully_expired_columns_)
+    : ITTLMergeSelector(&merge_due_times_, current_time_, /*max_parts_to_merge_at_once_=*/ only_fully_expired_columns_ ? 1 : 0)
+    , only_fully_expired_columns(only_fully_expired_columns_)
 {
 }
 
 time_t TTLColumnDeleteMergeSelector::getTTLForPart(const PartProperties & part) const
 {
+    if (only_fully_expired_columns)
+        return part.general_ttl_info->column_min_max_ttl;
+
     return part.general_ttl_info->column_min_ttl;
 }
 

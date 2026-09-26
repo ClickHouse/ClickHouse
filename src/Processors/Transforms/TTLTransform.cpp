@@ -122,7 +122,14 @@ TTLTransform::TTLTransform(
         auto expired_columns_map = expired_columns.getNameToTypeMap();
         for (const auto & [name, description] : metadata_snapshot_->getColumnTTLs())
         {
-            if (!expired_columns_map.contains(name))
+            /// A column that is not in the input (e.g. it is gathered separately in a vertical merge) cannot be
+            /// checked here, so it keeps its TTL info rather than being considered empty.
+            if (!expired_columns_map.contains(name) && !header_->has(name))
+            {
+                if (auto it = old_ttl_infos.columns_ttl.find(name); it != old_ttl_infos.columns_ttl.end())
+                    unchanged_columns_ttl.emplace(name, it->second);
+            }
+            else if (!expired_columns_map.contains(name))
             {
                 auto [default_expression, default_column_name] = build_default_expr(name);
                 algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
@@ -217,6 +224,12 @@ void TTLTransform::finalize()
     data_part->ttl_infos = {};
     for (const auto & algorithm : algorithms)
         algorithm->finalize(data_part);
+
+    for (const auto & [name, ttl_info] : unchanged_columns_ttl)
+    {
+        data_part->ttl_infos.columns_ttl[name] = ttl_info;
+        data_part->ttl_infos.updatePartMinMaxTTL(ttl_info);
+    }
 
     if (delete_algorithm)
     {

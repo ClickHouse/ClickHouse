@@ -57,6 +57,9 @@ using BuildTextIndexTransformPtr = std::shared_ptr<BuildTextIndexTransform>;
 
 class BuildStatisticsTransform;
 using BuildStatisticsTransformPtr = std::shared_ptr<BuildStatisticsTransform>;
+
+class MutateTask;
+using MutateTaskPtr = std::shared_ptr<MutateTask>;
 using BuildStatisticsTransformMap = std::unordered_map<String, BuildStatisticsTransformPtr>;
 
 /**
@@ -302,6 +305,13 @@ private:
         /// Current merge may or may not reduce number of rows. It's not known until the horizontal stage is finished.
         bool merge_may_reduce_rows{false};
 
+        /// Columns whose every value has expired by TTL in every source part.
+        NameSet columns_fully_expired_by_ttl;
+
+        /// Executes the merge instead of the stages when dropping the columns fully expired by TTL
+        /// is all the merge has to do (see `createTaskToClearExpiredColumns`).
+        MutateTaskPtr clear_expired_columns_task;
+
         // will throw an exception if merge was cancelled in any way.
         void checkOperationIsNotCanceled() const;
         bool isCancelled() const;
@@ -390,6 +400,7 @@ private:
         bool executeMergeProjections() const;
 
         MergeAlgorithm chooseMergeAlgorithm() const;
+        MutateTaskPtr createTaskToClearExpiredColumns() const;
         void createMergedStream() const;
         void extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const;
 
@@ -614,6 +625,8 @@ private:
     static bool hasLightweightDelete(const FutureMergedMutatedPartPtr & future_part);
     static bool isVerticalLightweightDelete(const GlobalRuntimeContext & global_ctx);
     static bool canVerticalTTLDelete(const GlobalRuntimeContext & global_ctx);
+    static NameSet getColumnsFullyExpiredByTTL(const GlobalRuntimeContext & global_ctx);
+    static bool isAnyTTLDue(const GlobalRuntimeContext & global_ctx, const MergeTreeDataPartTTLInfos & ttl_infos);
     static bool isVerticalTTLDelete(const GlobalRuntimeContext & global_ctx, const ExecuteAndFinalizeHorizontalPartRuntimeContext & ctx);
     static void addSkipIndexesExpressionSteps(QueryPlan & plan, const IndicesDescription & indices_description, const GlobalRuntimeContextPtr & global_ctx);
     static void addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPart & data_part, const GlobalRuntimeContextPtr & global_ctx);

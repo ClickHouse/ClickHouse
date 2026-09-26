@@ -62,6 +62,10 @@ private:
         String default_column_name;
     };
     std::unordered_map<String, ExpiredColumnData> expired_columns_data;
+
+    /// TTL infos of the columns that do not pass through the transform, which are kept as they are.
+    TTLInfoMap unchanged_columns_ttl;
+
     LoggerPtr log;
 };
 

@@ -28,6 +28,7 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
         .part_min_ttl = part->ttl_infos.part_min_ttl,
         .part_max_ttl = part->ttl_infos.part_max_ttl,
         .column_min_ttl = part->ttl_infos.getMinimalNonFinishedColumnTTL(),
+        .column_min_max_ttl = part->ttl_infos.getMinimalMaxNonFinishedColumnTTL(),
     };
 }
 
