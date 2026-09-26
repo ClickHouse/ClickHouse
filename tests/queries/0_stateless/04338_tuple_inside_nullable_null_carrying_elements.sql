@@ -5,7 +5,7 @@ SET enable_analyzer = 1;
 -- Nullable: Dynamic, Variant and LowCardinality(Nullable(...)). Rows where the outer tuple is NULL must
 -- read as NULL through such subcolumns.
 
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 -- Expression path: the ternary operator evaluates both branches, so the extracted subcolumns contain
 -- non-NULL leftovers in rows where the outer tuple is NULL.
