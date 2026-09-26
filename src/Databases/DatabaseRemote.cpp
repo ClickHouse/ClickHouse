@@ -53,7 +53,6 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int NO_REMOTE_SHARD_AVAILABLE;
     extern const int NOT_IMPLEMENTED;
-    extern const int THERE_IS_NO_QUERY;
     extern const int UNKNOWN_TABLE;
 }
 
@@ -972,21 +971,6 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
     /// rejects a multi-shard `INSERT` (`STORAGE_REQUIRES_PARAMETER`), while the live proxy accepts it.
     const bool has_implicit_sharding_key = distributed && distributed->getCluster()->getShardsInfo().size() > 1;
 
-    /// The implicit key is insert-only for a database proxy, whereas a standalone `Remote` table
-    /// uses an explicit key for read shard pruning too. There is no CREATE syntax that preserves
-    /// the proxy behavior, so do not emit a misleading definition.
-    if (has_implicit_sharding_key)
-    {
-        if (throw_on_error)
-            throw Exception(
-                ErrorCodes::THERE_IS_NO_QUERY,
-                "Table {}.{} is a multi-shard `Remote` database proxy whose implicit `rand()` sharding key is used only for INSERT, "
-                "but a standalone `Remote` table would also use it for read shard pruning, so there is no equivalent re-executable CREATE query for it",
-                backQuoteIfNeed(remote_database),
-                backQuoteIfNeed(table_name));
-        return nullptr;
-    }
-
     /// The table is exposed as the `Remote`/`RemoteSecure` table engine, which is the persistent
     /// counterpart of the `remote`/`remoteSecure` table functions. Turn the database engine
     /// definition (`Remote('addresses', 'remote_db'[, 'user'[, 'password']])`) into a table engine by
@@ -1315,7 +1299,7 @@ ENGINE = RemoteSecure('addresses_expr', 'database'[, 'user'[, 'password']]);
 
 The addresses and credentials are stored in the database definition, so the password is hidden in `SHOW CREATE DATABASE`. As with the `remote` table function, an address that points to the current server is treated as a local shard: `SELECT` and `INSERT` are executed directly under the current user — who therefore needs the corresponding privileges on the underlying database and its tables — and the stored credentials are used only for genuinely remote servers. If the local replica of a shard does not have the database or a table, the lookup falls back to the remote replicas of the shard, like a [`Distributed`](/reference/engines/table-engines/special/distributed) table does. In that case `SHOW CREATE TABLE` prints the effective fallback addresses (the local replicas stripped from their shards) instead of the configured ones, so the emitted `Remote(...)` table definition reconstructs the object that actually serves the queries.
 
-When the address expression describes several shards, each proxy table reads from all of them, but the metadata — the list of the tables and their structure — is taken from an arbitrary shard (a local one is preferred), just like the [`remote`](/reference/functions/table-functions/remote) table function does, so that a listing costs a single query instead of one per shard. The shards of a cluster are therefore expected to serve the same set of tables; a table that only some of them have is served by a proxy whose queries then fail on the shards that do not have it. An `INSERT` into a table of a multi-shard database sends each row to a random shard (the proxy `Distributed` tables carry an implicit `rand()` sharding key); to pin the shard for a query, set [`insert_shard_id`](/reference/settings/session-settings/insert#insert_shard_id). The implicit key only distributes the inserted rows: for reading, the table behaves like a `Distributed` table without a sharding key (in particular, [`optimize_skip_unused_shards`](/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards) and [`force_optimize_skip_unused_shards`](/reference/settings/session-settings/force-optimize#force_optimize_skip_unused_shards) do not treat it as a shard-pruning key). `SHOW CREATE TABLE` reports `THERE_IS_NO_QUERY` for a multi-shard proxy: a standalone `Remote(...)` table would use the key for read shard pruning too, and no table definition can preserve the proxy's insert-only behavior.
+When the address expression describes several shards, each proxy table reads from all of them, but the metadata — the list of the tables and their structure — is taken from an arbitrary shard (a local one is preferred), just like the [`remote`](/reference/functions/table-functions/remote) table function does, so that a listing costs a single query instead of one per shard. The shards of a cluster are therefore expected to serve the same set of tables; a table that only some of them have is served by a proxy whose queries then fail on the shards that do not have it. An `INSERT` into a table of a multi-shard database sends each row to a random shard (the proxy `Distributed` tables carry an implicit `rand()` sharding key); to pin the shard for a query, set [`insert_shard_id`](/reference/settings/session-settings/insert#insert_shard_id). The implicit key only distributes the inserted rows: for reading, the table behaves like a `Distributed` table without a sharding key (in particular, [`optimize_skip_unused_shards`](/reference/settings/session-settings/optimize-skip#optimize_skip_unused_shards) and [`force_optimize_skip_unused_shards`](/reference/settings/session-settings/force-optimize#force_optimize_skip_unused_shards) do not treat it as a shard-pruning key). `SHOW CREATE TABLE` includes the key in the emitted `Remote(...)` table definition, so a table recreated from it accepts multi-shard `INSERT` queries as well.
 
 Named collections are supported as well:
 
