@@ -1,0 +1,195 @@
+-- 1. LEFT JOIN, matcher in lambda, must match the explicit-column oracle
+1	[17188187972825434471]	Array(Nullable(UInt64))
+9	[NULL]	Array(Nullable(UInt64))
+1	[17188187972825434471]	Array(Nullable(UInt64))
+9	[NULL]	Array(Nullable(UInt64))
+-- 2. FULL JOIN, plain table and derived table
+1	[17188187972825434471]	Array(Nullable(UInt64))
+9	[NULL]	Array(Nullable(UInt64))
+1	[17188187972825434471]	Array(Nullable(UInt64))
+9	[NULL]	Array(Nullable(UInt64))
+-- 3. other capture-producing higher-order functions
+1	[1]
+9	[]
+1	[(1,2)]	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+9	[(NULL,NULL)]	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+-- 4. matcher flavours: unqualified *, COLUMNS, EXCEPT, unaliased table name
+1	[(1,1,2)]	Array(Tuple(UInt64, Nullable(UInt64), Nullable(UInt64)))
+9	[(9,NULL,NULL)]	Array(Tuple(UInt64, Nullable(UInt64), Nullable(UInt64)))
+1	[9224715256000962398]
+9	[NULL]
+1	[9224715256000962398]
+9	[NULL]
+1	[17188187972825434471]
+9	[NULL]
+-- 5. nested lambdas
+1	[[17188187972825434471]]
+9	[[NULL]]
+-- 6. matcher in lambda inside a subquery that owns the join
+1	[17188187972825434471]
+9	[NULL]
+1
+1
+-- 6b. an inner subquery must NOT adopt the outer query join promotion
+1	[(1)]	Array(Tuple(UInt64))
+9	[(1)]	Array(Tuple(UInt64))
+1	[(1)]	Array(Tuple(UInt64))
+9	[(1)]	Array(Tuple(UInt64))
+-- 7. type wrappers: LowCardinality promoted, Array left alone
+1	[('p')]	Array(Tuple(LowCardinality(Nullable(String))))
+9	[(NULL)]	Array(Tuple(LowCardinality(Nullable(String))))
+1	[('p')]	Array(Tuple(LowCardinality(Nullable(String))))
+9	[(NULL)]	Array(Tuple(LowCardinality(Nullable(String))))
+1	[([7])]	Array(Tuple(Array(UInt64)))
+9	[([])]	Array(Tuple(Array(UInt64)))
+1	[([7])]	Array(Tuple(Array(UInt64)))
+9	[([])]	Array(Tuple(Array(UInt64)))
+-- 9. controls: unpromoted sides and settings must be unchanged
+1	[17188187972825434471]	Array(UInt64)
+1	[17188187972825434471]	Array(UInt64)
+1	[17188187972825434471]	Array(UInt64)
+9	[17188187972825434471]	Array(UInt64)
+1	[17188187972825434471]	Array(UInt64)
+9	[15809136644679388943]	Array(UInt64)
+1	17188187972825434471	Nullable(UInt64)
+9	\N	Nullable(UInt64)
+-- 9b. USING join is reconciled by its own mechanism, must not regress
+1	[(1,11)]	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+9	[(NULL,NULL)]	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+1	[(1,11)]	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+9	[(NULL,NULL)]	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+-- 10. group_by_use_nulls with ROLLUP / CUBE / GROUPING SETS
+1	2	[17188187972825434471]
+1	\N	[NULL]
+3	4	[14279606230266698114]
+3	\N	[NULL]
+\N	\N	[NULL]
+1	2	[17188187972825434471]
+1	\N	[NULL]
+3	4	[14279606230266698114]
+3	\N	[NULL]
+\N	\N	[NULL]
+1	2	[17188187972825434471]
+1	\N	[NULL]
+3	4	[14279606230266698114]
+3	\N	[NULL]
+\N	2	[NULL]
+\N	4	[NULL]
+\N	\N	[NULL]
+1	2	[17188187972825434471]
+1	\N	[NULL]
+3	4	[14279606230266698114]
+3	\N	[NULL]
+-- 10b. APPLY carve-out: aggregate created by APPLY must not be promoted
+1	1	2
+3	3	4
+\N	3	4
+-- 11. aggregate context: group_by_use_nulls keys must NOT reach into an aggregate argument
+1	2	17188187972825434471
+1	\N	17188187972825434471
+3	4	14279606230266698114
+3	\N	14279606230266698114
+\N	\N	13021050129382580969
+1	2	17188187972825434471
+1	\N	17188187972825434471
+3	4	14279606230266698114
+3	\N	14279606230266698114
+\N	\N	13021050129382580969
+1	2	17188187972825434471
+1	\N	17188187972825434471
+3	4	14279606230266698114
+3	\N	14279606230266698114
+\N	\N	13021050129382580969
+1	2	[17188187972825434471]
+1	\N	[17188187972825434471]
+3	4	[14279606230266698114]
+3	\N	[14279606230266698114]
+\N	\N	[14279606230266698114,17188187972825434471]
+-- 11b. join_use_nulls IS pre-aggregation, so it MUST reach into an aggregate argument
+17188187972825434471
+17188187972825434471
+17188187972825434471	Nullable(UInt64)
+1	17188187972825434471
+9	17188187972825434471
+1	17188187972825434471
+9	17188187972825434471
+-- 12. PREWHERE expressions must keep pre-join types
+1
+2
+1
+1
+9224715256000962398	Nullable(UInt64)
+9224715256000962398	Nullable(UInt64)
+-- 12b. WHERE runs after the join, so it MUST still be promoted
+1	[17188187972825434471]	Array(Nullable(UInt64))
+9	[NULL]	Array(Nullable(UInt64))
+1	[17188187972825434471]	Array(Nullable(UInt64))
+9	[NULL]	Array(Nullable(UInt64))
+-- 12c. a subquery nested in PREWHERE keeps its own join_use_nulls handling
+1
+1
+-- 12d. USING join, unqualified matcher in a lambda, RIGHT/FULL: with and without PREWHERE
+[(1,10)]	Array(Tuple(UInt8, Nullable(UInt64)))
+[(1,10)]	Array(Tuple(UInt8, Nullable(UInt64)))
+[(1,10)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(9,90)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(1,10)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(9,90)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(1,10)]	Array(Tuple(UInt8, Nullable(UInt64)))
+[(1,10)]	Array(Tuple(UInt8, Nullable(UInt64)))
+[(1,10)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(9,90)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(1,10)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(9,90)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(1,10)]	Array(Tuple(UInt8, UInt64))
+[(1,10)]	Array(Tuple(UInt8, UInt64))
+[(9,90)]	Array(Tuple(UInt8, UInt64))
+-- 12e. USING, matcher inside the PREWHERE predicate: pre-join type, and the rows it selects
+1	10	11
+9	90	\N
+1	10	11
+9	90	\N
+1	10	11
+9	90	\N
+1	\N	11
+9	90	\N
+1	\N	11
+9	90	\N
+1	10	11
+1	10	11
+1	10	11
+9	90	0
+1	10	11
+9	90	\N
+1	10	11
+9	90	\N
+--- 13: USING key sourced from the SELECT projection, matcher inside a lambda
+2	[(2)]
+10	[(NULL)]
+2	2
+10	\N
+2	[(2)]
+10	[(0)]
+2	2
+10	0
+1	[(5,1)]
+9	[(7,9)]
+1	5	1
+9	7	9
+--- 14: nullable side is a subquery containing ARRAY JOIN
+[(NULL,NULL)]	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+[(NULL,NULL)]	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+\N	\N
+1	[(NULL,NULL)]	[(NULL,NULL)]
+2	[(2,7)]	[(2,7)]
+2	[(2,7)]	[(2,7)]
+Array(Tuple(Nullable(UInt64), Nullable(UInt64)))	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+--- 15: ARRAY JOIN below the join, matcher columns sourced through it
+k	arr
+Nullable(UInt64)	Array(UInt64)
+\N	[]
+Array(Tuple(Nullable(UInt64), Array(UInt64)))
+Array(Tuple(Nullable(UInt64), Nullable(UInt64)))	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+Array(Tuple(Nullable(UInt64), Nullable(UInt64)))	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+[(NULL,NULL)]	[(NULL,NULL)]
+[(NULL,NULL)]	[(NULL,NULL)]
