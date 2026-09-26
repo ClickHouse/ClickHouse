@@ -86,6 +86,7 @@ struct QueryPlanOptimizationSettings
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
     bool top_k_through_join;
+    bool top_k_through_array_join;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
     UInt64 top_k_optimization_observation_rows = 65536;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/SortDescription.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -10,6 +11,9 @@ namespace DB
 {
 
 class ActionsDAG;
+class ArrayJoinStep;
+class ReadFromMergeTree;
+class SortingStep;
 
 struct IDescriptionHolder
 {
@@ -90,6 +94,56 @@ enum class FilterResult
     ActionsDAG pre_actions_dag,
     const ActionsDAG & filter_dag,
     const String & filter_column_name);
+
+/// Walk down a chain of `ExpressionStep`s below a sort, rewriting `description` so that its
+/// column names refer to the input level of the deepest step reached. `node` is advanced past
+/// every peeled step.
+///
+/// For each sort column we look up the output node by name and walk through any `ALIAS` chain -
+/// if it ends at an `INPUT` node, the column is a pure pass-through and we replace its name with
+/// the input's name. Anything else (FUNCTION, COLUMN, ARRAY_JOIN, ...) means the sort key was
+/// computed in this step rather than carried over, so pushing the sort below it would be unsound
+/// and we return `false`. An `arrayJoin` anywhere in the expression also returns `false`, because
+/// it changes the number of rows per input row (see `#82279`).
+///
+/// `max_peel` bounds the walk. A cap of 4 is generous: in current plans the only steps between
+/// `Sorting` and a row-multiplying step after `mergeExpressions` are `Before ORDER BY +
+/// Projection` and `Post Join Actions`, occasionally with one more wrapper.
+///
+/// Returns `false` when the caller must abandon the rewrite; `node` and `description` may then
+/// have been partially advanced and must not be used.
+[[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
+
+/// Walk down a single-child chain looking for a `ReadFromMergeTree` step. Used by top-K
+/// pushdowns that must cooperate with parallel replicas and `optimizeReadInOrder`.
+const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node);
+
+/// True when inserting a materializing `Sort + Limit` above `input_node` must be abandoned:
+/// parallel-replica coordination would conflict with a local top-n, or (when
+/// `defer_to_read_in_order`) the second-pass `optimizeReadInOrder` can already stream the
+/// requested order - including the `FINAL` + descending-key case that pass 2 rejects even
+/// when `wouldReadInOrderBeUseful` says yes.
+[[nodiscard]] bool shouldSkipTopKAboveMergeTreeInput(
+    const QueryPlan::Node & input_node,
+    const SortingStep & sort_step,
+    const SortDescription & description,
+    size_t limit,
+    bool defer_to_read_in_order);
+
+/// Add a filter that removes rows for which all columns expanded by an inner `ARRAY JOIN` are empty.
+/// The condition is `length(c1) > 0 OR ... OR length(cn) > 0`, so rows with unequal non-zero array
+/// sizes still reach an aligned `ARRAY JOIN` and raise `SIZES_OF_ARRAYS_DONT_MATCH`.
+///
+/// Must be built on the immediate input of `array_join`: joined columns are present there under
+/// the names in `array_join.getColumns()`, and constant arrays are folded by `ActionsDAG` itself.
+///
+/// `input_node` is updated to point to the inserted filter. If the condition is constant, no node
+/// is added because limiting the input cannot change whether a constant `ARRAY JOIN` emits rows.
+/// Returns false only if the condition cannot be constructed.
+[[nodiscard]] bool addArrayJoinEmptinessFilter(
+    ArrayJoinStep & array_join,
+    QueryPlan::Node *& input_node,
+    QueryPlan::Nodes & nodes);
 
 struct NoOp
 {
