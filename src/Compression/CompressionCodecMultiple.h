@@ -40,6 +40,7 @@ protected:
 
 private:
     std::optional<Codecs> codecs;
+    mutable Codecs decompression_codecs_cache;
 };
 
 }

@@ -167,11 +167,14 @@ UInt32 CompressionCodecMultiple::doDecompressData(const char * source, UInt32 so
     /// A last stage that needs no padding decodes into `dest` directly, skipping the last one.
     PODArray<char> compressed_buf;
     PODArray<char> uncompressed_buf;
+    decompression_codecs_cache.resize(compression_methods_size);
 
     for (int idx = compression_methods_size - 1; idx >= 0; --idx)
     {
         UInt8 compression_method = source[idx + 1];
-        const auto codec = CompressionCodecFactory::instance().get(compression_method);
+        auto & codec = decompression_codecs_cache[idx];
+        if (!codec || codec->getMethodByte() != compression_method)
+            codec = CompressionCodecFactory::instance().get(compression_method);
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
         const bool is_first_stage = idx == compression_methods_size - 1;
         const bool is_last_stage = idx == 0;
