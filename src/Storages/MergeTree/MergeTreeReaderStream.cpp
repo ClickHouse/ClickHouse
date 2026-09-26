@@ -284,6 +284,32 @@ void MergeTreeReaderStream::adjustRightMark(size_t right_mark)
     }
 }
 
+void MergeTreeReaderStream::setReadUntilMark(const MarkInCompressedFile & mark)
+{
+    init();
+
+    size_t right_offset = mark.offset_in_compressed_file;
+    if (last_right_offset && right_offset <= *last_right_offset)
+        return;
+
+    last_right_offset = right_offset;
+    data_buffer->setReadUntilPosition(right_offset);
+}
+
+size_t MergeTreeReaderStream::getCompressedBlockEnd(const MarkInCompressedFile & mark)
+{
+    /// The block end is derived from the compressed block header, which only exists for a compressed stream.
+    if (!settings.is_compressed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "getCompressedBlockEnd is called for a non-compressed stream");
+
+    /// Peek the block header from an independent buffer so the main read buffer's position and read-until stay
+    /// untouched: re-seeking and re-bounding it for a peek is unsafe on some buffers. The buffer uses the same
+    /// read settings as the main reads, so it goes through the filesystem cache the same way.
+    auto buffer = data_part_storage->readFile(
+        path_prefix + data_file_extension, settings.read_settings, CompressedReadBufferBase::CHECKSUM_AND_HEADER_SIZE);
+    return CompressedReadBufferBase::getCompressedBlockEnd(*buffer, mark.offset_in_compressed_file);
+}
+
 ReadBuffer * MergeTreeReaderStream::getDataBuffer()
 {
     init();

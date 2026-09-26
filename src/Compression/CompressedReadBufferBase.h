@@ -10,6 +10,7 @@ namespace DB
 
 class Exception;
 class ReadBuffer;
+class ReadBufferFromFileBase;
 
 /** Basic functionality for implementation of
   *  CompressedReadBuffer, CompressedReadBufferFromFile and CachedCompressedReadBuffer.
@@ -74,6 +75,14 @@ public:
     /// Some compressed read buffer can do useful seek operation
     virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */);
     virtual off_t getPosition() const;
+
+    /// Size of the checksum plus block header that precede a compressed block's body on disk.
+    static constexpr size_t CHECKSUM_SIZE = 16;
+    static constexpr size_t CHECKSUM_AND_HEADER_SIZE = CHECKSUM_SIZE + ICompressionCodec::getHeaderSize();
+
+    /// Read only the header of the compressed block at block_start_offset from file_in (bounding the read to the
+    /// header so the block body is not fetched) and return the offset just past that block.
+    static size_t getCompressedBlockEnd(ReadBufferFromFileBase & file_in, size_t block_start_offset);
 
     CompressionCodecPtr codec;
 };

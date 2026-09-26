@@ -422,6 +422,12 @@ ReadBuffer * MergeTreeReaderWide::getStream(
     /// It may happen during reading of columns with dynamic subcolumns, because all streams are known
     /// only after deserializing of binary bulk prefix.
     auto * stream = getOrAddStream(substream_path, *stream_name);
+
+    /// Some substreams are read by the serialization seeking to marks and bounding reads itself; skip the
+    /// range-wide bound and seek here so we don't over-read.
+    if (ISerialization::isSubstreamReadBySeekingToMarks(substream_path, substream_path.size(), settings.bound_json_shared_data_path_reads))
+        return stream->getDataBuffer();
+
     stream->adjustRightMark(last_mark_to_read);
 
     if (seek_to_start)
@@ -626,7 +632,7 @@ void MergeTreeReaderWide::prefetchForColumn(
             return;
 
         /// Skip substreams that don't need to be prefetched.
-        if (!ISerialization::isPrefetchNeededForSubstream(substream_path, substream_path.size(), settings.prefetch_json_shared_data_substreams))
+        if (!ISerialization::isPrefetchNeededForSubstream(substream_path, substream_path.size(), settings.bound_json_shared_data_path_reads, settings.prefetch_json_shared_data_substreams))
             return;
 
         /// Metadata streams (for example, the structure of `Dynamic` or `JSON`) are read only while deserializing
@@ -711,6 +717,40 @@ void MergeTreeReaderWide::readData(
 
         stream->seekToMark(mark);
     };
+
+    /// Bound a single shared data path read to its end. Wide only: in Compact all columns share one
+    /// buffer, so tightening its read-until would truncate other columns of the same granule.
+    if (settings.bound_json_shared_data_path_reads)
+    {
+        deserialize_settings.set_stream_read_until_mark_callback = [&](const ISerialization::SubstreamPath & substream_path, const MarkInCompressedFile & mark)
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            if (!stream_name)
+                return;
+
+            if (auto * stream = streams.find(*stream_name))
+                stream->setReadUntilMark(mark);
+        };
+
+        deserialize_settings.set_stream_read_until_to_range_end_callback = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            if (!stream_name)
+                return;
+
+            if (auto * stream = streams.find(*stream_name))
+                stream->adjustRightMark(last_mark_to_read);
+        };
+
+        deserialize_settings.get_compressed_block_end_callback = [&](const ISerialization::SubstreamPath & substream_path, const MarkInCompressedFile & mark) -> size_t
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            if (!stream_name)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find stream for substream of column {} to get compressed block end", name_and_type.name);
+
+            return getOrAddStream(substream_path, *stream_name)->getCompressedBlockEnd(mark);
+        };
+    }
 
     /// Seek a substream's stream to the current granule's mark. Needed by serializations that read a
     /// value not implied by the ongoing range position (e.g. a per-part value broadcast to every
