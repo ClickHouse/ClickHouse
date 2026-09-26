@@ -36,8 +36,12 @@ namespace ErrorCodes
 }
 
 
-NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_, std::optional<FormatSettings> format_settings_)
-    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_)
+NativeReader::NativeReader(
+    ReadBuffer & istr_,
+    UInt64 server_revision_,
+    std::optional<FormatSettings> format_settings_,
+    ISerialization::KindSet allowed_kinds_)
+    : istr(istr_), server_revision(server_revision_), format_settings(format_settings_), allowed_kinds(allowed_kinds_)
 {
 }
 
@@ -225,7 +229,7 @@ Block NativeReader::read()
             UInt8 has_custom = 0;
             readBinary(has_custom, istr);
             if (has_custom)
-                info->deserializeFromKindsBinary(istr);
+                info->deserializeFromKindsBinary(istr, allowed_kinds);
 
             serialization = column.type->getSerialization(*info);
             auto new_column = column.type->createColumn(*serialization);
