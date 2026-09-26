@@ -19,6 +19,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/tests/gtest_global_register.h>
 
@@ -130,4 +131,47 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("JSON"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10)"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, SKIP a.c, b.g String, SKIP l.d.f)"));
+    check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, SHARED REGEXP '^a', SHARED REGEXP 'z')"));
+    check(DataTypeFactory::instance().get("Array(Tuple(j JSON(SHARED REGEXP '^nested[.]'), n UInt64))"));
+}
+
+GTEST_TEST(DataTypesBinaryEncoding, JSONSharedRegexpVersioning)
+{
+    const auto without_rules = encodeDataType(DataTypeFactory::instance().get("JSON"));
+    const auto with_rules = encodeDataType(DataTypeFactory::instance().get("JSON(SHARED REGEXP '^a')"));
+
+    const String expected_v0{"\x30\x00\x80\x08\x20\x00\x00\x00", 8};
+    EXPECT_EQ(without_rules, expected_v0);
+    ASSERT_GE(with_rules.size(), 2);
+    EXPECT_EQ(static_cast<UInt8>(with_rules[1]), 1);
+
+    /// Version 0 is promised for every rule-free JSON, not only the bare default one.
+    const auto typed_paths_without_rules = encodeDataType(DataTypeFactory::instance().get(
+        "JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, SKIP a.c, b.g String, SKIP l.d.f)"));
+    ASSERT_GE(typed_paths_without_rules.size(), 2);
+    EXPECT_EQ(static_cast<UInt8>(typed_paths_without_rules[1]), 0);
+}
+
+GTEST_TEST(DataTypesBinaryEncoding, RejectsMalformedJSONSharedRegexpV1)
+{
+    WriteBufferFromOwnString out;
+    writeBinary(static_cast<UInt8>(BinaryTypeIndex::JSON), out);
+    writeBinary(UInt8(1), out);
+    writeVarUInt(1024, out);
+    writeBinary(UInt8(DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES), out);
+    writeVarUInt(0, out); /// typed paths
+    writeVarUInt(0, out); /// skipped paths
+    writeVarUInt(0, out); /// skipped regexps
+    writeVarUInt(1000001, out); /// shared regexps, more than MAX_ARRAY_SIZE
+
+    ReadBufferFromString in(out.str());
+    try
+    {
+        decodeDataType(in);
+        FAIL() << "Expected an exception";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_NE(e.message().find("Too many shared data path regexps"), std::string::npos) << e.message();
+    }
 }

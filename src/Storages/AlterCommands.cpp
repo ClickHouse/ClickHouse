@@ -1452,6 +1452,10 @@ bool isTrueMetadataOnlyConversion(const IDataType * from, const IDataType * to)
         if (from->equals(*to))
             return true;
 
+        /// SHARED REGEXP changes only where new paths are placed, not the stored data.
+        if (isJSONSharedDataPathRegexpsOnlyChange(*from, *to))
+            return true;
+
         /// We just adding something to enum, nothing changed on disk
         if (is_compatible_enum_types_conversion(from, to))
             return true;

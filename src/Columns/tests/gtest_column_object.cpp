@@ -625,3 +625,24 @@ TEST(ColumnObject, PrepareForSquashingScalesDynamicPathsByFactor)
     ASSERT_TRUE(target_object.getDynamicPathsPtrs().contains("a"));
     ASSERT_GE(target_object.getDynamicPathsPtrs().at("a")->capacity(), 100u * factor);
 }
+
+TEST(ColumnObject, CompressDecompressPreservesSharedDataPathMatcherAcrossRepeatedCalls)
+{
+    /// ColumnCompressed::decompress() calls the same lambda every time, so its captured matcher must not be moved from.
+    auto type = DataTypeFactory::instance().get("JSON(max_dynamic_types=10, max_dynamic_paths=10, SHARED REGEXP '^force')");
+
+    auto source = type->createColumn();
+    auto & source_object = assert_cast<ColumnObject &>(*source);
+    source_object.insert(Object{{"forced", Field{UInt64(1)}}, {"kept", Field{UInt64(2)}}});
+    ASSERT_TRUE(source_object.getSharedDataPathMatcher());
+    ASSERT_FALSE(source_object.getDynamicPaths().contains("forced"));
+    ASSERT_TRUE(source_object.getDynamicPaths().contains("kept"));
+
+    auto compressed = source_object.compress(/*force_compression=*/ true);
+
+    auto decompressed_first = compressed->decompress();
+    ASSERT_EQ(assert_cast<const ColumnObject &>(*decompressed_first).getSharedDataPathMatcher(), source_object.getSharedDataPathMatcher());
+
+    auto decompressed_second = compressed->decompress();
+    ASSERT_EQ(assert_cast<const ColumnObject &>(*decompressed_second).getSharedDataPathMatcher(), source_object.getSharedDataPathMatcher());
+}

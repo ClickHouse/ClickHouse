@@ -1,0 +1,8 @@
+JSONEachRow partial
+['keep']	['foo','foobar']
+RowBinary partial
+['keep']	['foo','foobar']
+Native flattened partial
+['keep']	['foo','foobar']
+Native flattened conversion
+['keep']	['foo','foobar']

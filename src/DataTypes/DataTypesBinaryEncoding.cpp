@@ -66,7 +66,8 @@ constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
-const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 0;
+/// Version 1 adds SHARED REGEXP rules. Types without them are still written with version 0.
+const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 1;
 
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
 {
@@ -519,8 +520,9 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
                 break;
 
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+            const auto & shared_data_path_regexps = object_type.getSharedDataPathRegexps();
             /// Write version of the serialization because we can add new arguments in the JSON type.
-            writeBinary(TYPE_JSON_SERIALIZATION_VERSION, buf);
+            writeBinary(shared_data_path_regexps.empty() ? UInt8(0) : TYPE_JSON_SERIALIZATION_VERSION, buf);
             writeVarUInt(object_type.getMaxDynamicPaths(), buf);
             writeBinary(UInt8(object_type.getMaxDynamicTypes()), buf);
             const auto & typed_paths = object_type.getTypedPaths();
@@ -538,6 +540,12 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             writeVarUInt(path_regexps_to_skip.size(), buf);
             for (const auto & regexp : path_regexps_to_skip)
                 writeStringBinary(regexp, buf);
+            if (!shared_data_path_regexps.empty())
+            {
+                writeVarUInt(shared_data_path_regexps.size(), buf);
+                for (const auto & regexp : shared_data_path_regexps)
+                    writeStringBinary(regexp, buf);
+            }
             break;
         }
         default:
@@ -861,13 +869,32 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
                 readStringBinary(regexp, buf);
                 path_regexps_to_skip.push_back(regexp);
             }
+
+            std::vector<String> shared_data_path_regexps;
+            if (serialization_version >= 1)
+            {
+                size_t shared_data_path_regexps_size = 0;
+                readVarUInt(shared_data_path_regexps_size, buf);
+                if (shared_data_path_regexps_size > MAX_ARRAY_SIZE)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Too many shared data path regexps during JSON type decoding: {}. Maximum: {}", shared_data_path_regexps_size, MAX_ARRAY_SIZE);
+
+                shared_data_path_regexps.reserve(shared_data_path_regexps_size);
+                for (size_t i = 0; i != shared_data_path_regexps_size; ++i)
+                {
+                    String regexp;
+                    readStringBinary(regexp, buf);
+                    shared_data_path_regexps.push_back(regexp);
+                }
+            }
+
             return std::make_shared<DataTypeObject>(
                 DataTypeObject::SchemaFormat::JSON,
                 typed_paths,
                 paths_to_skip,
                 path_regexps_to_skip,
                 max_dynamic_paths,
-                max_dynamic_types);
+                max_dynamic_types,
+                shared_data_path_regexps);
         }
     }
 
