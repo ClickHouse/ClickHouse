@@ -8,11 +8,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 user="user05257_${CLICKHOUSE_DATABASE}_$RANDOM"
+definer="definer05257_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
 
 ${CLICKHOUSE_CLIENT} <<EOF
-DROP USER IF EXISTS $user;
+DROP USER IF EXISTS $user, $definer;
 CREATE USER $user;
+CREATE USER $definer;
 
 CREATE TABLE $db.secrets (owner String, secret String) ENGINE = MergeTree ORDER BY secret SETTINGS index_granularity = 1;
 INSERT INTO $db.secrets VALUES ('alice', 'visible'), ('bob', 'HIDDEN');
@@ -22,12 +24,20 @@ CREATE VIEW $db.none_view SQL SECURITY NONE AS SELECT * FROM $db.secrets WHERE o
 CREATE VIEW $db.invoker_view SQL SECURITY INVOKER AS SELECT * FROM $db.secrets WHERE owner = 'alice';
 CREATE VIEW $db.projection_view DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.secrets;
 
+-- A plain projection still hides rows if the definer has a row policy on the table.
+CREATE TABLE $db.policy_secrets (owner String, secret String) ENGINE = MergeTree ORDER BY secret SETTINGS index_granularity = 1;
+INSERT INTO $db.policy_secrets VALUES ('alice', 'visible'), ('bob', 'HIDDEN');
+CREATE ROW POLICY policy05257 ON $db.policy_secrets USING owner = 'alice' TO $definer;
+GRANT SELECT ON $db.policy_secrets TO $definer;
+CREATE VIEW $db.policy_view DEFINER = $definer SQL SECURITY DEFINER AS SELECT owner, secret FROM $db.policy_secrets;
+
 GRANT SELECT ON $db.definer_view TO $user;
 GRANT SELECT ON $db.none_view TO $user;
+GRANT SELECT ON $db.policy_view TO $user;
 EOF
 
 echo "--- an outer expression is not evaluated on the hidden rows"
-for view in definer_view none_view; do
+for view in definer_view none_view policy_view; do
     for inline in 0 1; do
         ${CLICKHOUSE_CLIENT} --user "$user" --analyzer_inline_views "$inline" --query "
             SELECT secret FROM $db.$view WHERE throwIf(secret = 'HIDDEN', 'LEAKED') = 0" 2>&1
@@ -43,13 +53,15 @@ done
 
 echo "--- an outer predicate does not skip data by the values of the hidden rows"
 # The table is sorted by `secret`, so a predicate on it would skip granules by the primary key.
-for secret in HIDDEN nonexistent; do
-    ${CLICKHOUSE_CLIENT} --user "$user" --use_query_condition_cache 0 --query_id "05257_${CLICKHOUSE_DATABASE}_$secret" --query "
-        SELECT count() FROM $db.definer_view WHERE secret = '$secret'"
+for view in definer_view policy_view; do
+    for secret in HIDDEN nonexistent; do
+        ${CLICKHOUSE_CLIENT} --user "$user" --use_query_condition_cache 0 --query_id "05257_${CLICKHOUSE_DATABASE}_${view}_$secret" --query "
+            SELECT count() FROM $db.$view WHERE secret = '$secret'"
+    done
 done
 ${CLICKHOUSE_CLIENT} --query "
     SYSTEM FLUSH LOGS query_log;
-    SELECT read_rows FROM system.query_log
+    SELECT query_id LIKE '%policy_view%', read_rows FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id LIKE '05257_${CLICKHOUSE_DATABASE}_%'
     ORDER BY query_id"
 
@@ -60,9 +72,9 @@ ${CLICKHOUSE_CLIENT} --user "$user" --query "
     SELECT secret FROM $db.definer_view WHERE secret LIKE 'vis%';"
 
 echo "--- only a view that runs with other privileges and can hide rows is sealed"
-for view in definer_view none_view invoker_view projection_view; do
+for view in definer_view none_view invoker_view projection_view policy_view; do
     echo -n "$view: "
     ${CLICKHOUSE_CLIENT} --query "SELECT countIf(explain LIKE '%ReadFromSealedView%') FROM (EXPLAIN SELECT * FROM $db.$view WHERE secret = 'x')"
 done
 
-${CLICKHOUSE_CLIENT} --query "DROP USER $user"
+${CLICKHOUSE_CLIENT} --query "DROP VIEW $db.policy_view; DROP ROW POLICY policy05257 ON $db.policy_secrets; DROP USER $user, $definer"

@@ -19,6 +19,7 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Storages/SelectQueryDescription.h>
 
 #include <Common/CurrentThread.h>
@@ -580,8 +581,12 @@ bool StorageView::isSealed(const StorageInMemoryMetadata & metadata, const Conte
 
     const auto & inner_query = metadata.getSelectQuery().inner_query;
     auto storage = tryGetTrivialViewUnderlyingStorage(inner_query, context);
-    return !storage || !storage->isMergeTree()
-        || inner_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front()->as<ASTSelectQuery &>().where();
+    if (!storage || !storage->isMergeTree()
+        || inner_query->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front()->as<ASTSelectQuery &>().where())
+        return true;
+
+    /// A row policy of the view's context on the table is applied inside the read, so the projection still hides rows.
+    return getEffectiveRowPolicyFilter(*storage, metadata.getSQLSecurityOverriddenContext(context)) != nullptr;
 }
 
 StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const
