@@ -783,6 +783,17 @@ QueryPlan decorrelateQueryPlan(
         decorrelated_query_plan.addStep(std::move(node->step));
         return decorrelated_query_plan;
     }
+    if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+    {
+        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+
+        /// The step is a placeholder whose output header equals its input, and the sets it carries
+        /// cannot reference the correlated columns, so only the header has to be refreshed.
+        node->step->updateInputHeader(decorrelated_query_plan.getCurrentHeader());
+
+        decorrelated_query_plan.addStep(std::move(node->step));
+        return decorrelated_query_plan;
+    }
     if (auto * union_step = typeid_cast<UnionStep *>(node->step.get()))
     {
         /// Subplans must be decorrelated separately, because every subquery in the UNION step
