@@ -1,0 +1,6 @@
+-- the table's blobs are reported
+1
+-- an empty metadata file, as an interrupted write leaves behind, is skipped
+1
+-- a file that is not object metadata fails the read, naming the file
+1

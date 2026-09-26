@@ -12,10 +12,10 @@ from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
 
-# `S3Helper` (boto3) lives under `tests/ci`; it lists the release artifacts in
+# `S3Helper` (boto3) lives under `ci/tools`; it lists the release artifacts in
 # S3 for the artifact-readiness gate. Mirror `create_release.py`'s path setup so
 # the gate talks to S3 through the exact same client CreateRelease uploads with.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../tests/ci"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../tools"))
 from s3_helper import S3Helper  # noqa: E402
 
 # Default branch releases are cut from, and the ref the dispatched CreateRelease
@@ -298,7 +298,7 @@ def _dispatch_and_wait(branch: str, sha: str, dry_run: bool) -> bool:
     print(f"Dispatch CreateRelease for [{branch}] at commit [{sha}] (dry-run={dry})")
     Shell.check(
         f"gh workflow run {CREATE_RELEASE_WORKFLOW} --ref {MAIN_BRANCH}"
-        f" -f ref={shlex.quote(sha)} -f type=patch -f dry-run={dry}",
+        f" -f ref={shlex.quote(sha)} -f dry-run={dry}",
         strict=True,
         verbose=True,
     )

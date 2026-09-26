@@ -854,6 +854,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         .supports_settings = true,
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::MYSQL,
+        .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -955,9 +956,9 @@ These variables are supported:
 - `version`
 - `max_allowed_packet`
 
-:::note
+<Note>
 By now these variables are stubs and don't correspond to anything.
-:::
+</Note>
 
 Example:
 

@@ -74,16 +74,24 @@ static SortingProperty applyOrder(
             (properties->sort_scope == SortingProperty::SortScope::Global
             || (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)))
         {
-            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
+            distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(
+                properties->sort_description, distinct_step->getColumnNames(), *distinct_step->getInputHeaders().front()));
         }
 
         if (can_convert_distinct && properties->sort_scope != SortingProperty::SortScope::Global
             && tryConvertDistinctToAggregation(*parent, nodes, optimization_settings))
             return {};
 
-        /// Distinct never breaks global order
+        /// Distinct never breaks global order: the steps above may rely on it, so the final `DISTINCT`,
+        /// which may spill, has to restore the order after the spill (see
+        /// `DistinctStep::preserveInputOrder`). The preliminary `DISTINCT` never spills, and an empty
+        /// description carries no order to preserve.
         if (properties->sort_scope == SortingProperty::SortScope::Global)
+        {
+            if (!distinct_step->isPreliminary() && !properties->sort_description.empty())
+                distinct_step->preserveInputOrder();
             return *properties;
+        }
 
         /// Preliminary Distinct also does not break stream order
         if (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)
@@ -135,7 +143,8 @@ static SortingProperty applyOrder(
         if (properties->sort_scope != SortingProperty::SortScope::Global)
             return {};
 
-        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
+        auto prefix = getCollationAwareSortPrefixInColumns(
+            properties->sort_description, limit_by_step->getColumns(), *limit_by_step->getInputHeaders().front());
         if (prefix.size() == limit_by_step->getColumns().size())
             limit_by_step->applyOrder(prefix);
 
@@ -147,7 +156,8 @@ static SortingProperty applyOrder(
         if (properties->sort_scope != SortingProperty::SortScope::Global)
             return {};
 
-        auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
+        auto prefix = getCollationAwareSortPrefixInColumns(
+            properties->sort_description, negative_limit_by_step->getColumns(), *negative_limit_by_step->getInputHeaders().front());
         if (prefix.size() == negative_limit_by_step->getColumns().size())
             negative_limit_by_step->applyOrder(prefix);
 

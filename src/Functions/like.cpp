@@ -25,9 +25,9 @@ No automatic Unicode normalization is performed, you can use the `normalizeUTF8*
 To match against literal `%`, `_` and `\` (which are `LIKE` metacharacters), prepend them with a backslash: `\%`, `\_` and `\\`.
 The backslash loses its special meaning (i.e. is interpreted literally) if it prepends a character different than `%`, `_` or `\`.
 
-:::note
+<Note>
 ClickHouse requires backslashes in strings [to be quoted as well](/reference/syntax#string), so you would actually need to write `\\%`, `\\_` and `\\\\`.
-:::
+</Note>
 
 For `LIKE` expressions of the form `%needle%`, the function is as fast as the `position` function.
 All other LIKE expressions are internally converted to a regular expression and executed with a performance similar to function `match`.
