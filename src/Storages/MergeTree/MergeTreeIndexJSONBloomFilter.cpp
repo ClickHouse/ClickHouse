@@ -1151,8 +1151,8 @@ private:
                 if (lc_values)
                 {
                     const UInt64 pair = (UInt64(key_index) << 32) | lc_values->getIndexAt(element);
-                    HashSet<UInt64>::LookupResult it;
-                    bool inserted;
+                    HashSet<UInt64>::LookupResult it = nullptr;
+                    bool inserted = false;
                     seen_map_pairs.emplace(pair, it, inserted);
                     if (!inserted)
                         continue;
