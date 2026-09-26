@@ -455,8 +455,26 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
     if (delayed_parts.empty())
         return;
 
+    auto process_list_element = context->getProcessListElement();
+
+    /// Start uploads for the delayed batch before waiting for individual parts.
     for (auto & partition : delayed_parts)
     {
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
+        Stopwatch watch;
+        ProfileEventsScope profile_events_scope(&partition.part_counters);
+        if (partition.temp_part->part->getDataPartStorage().getType() == MergeTreeDataPartStorageType::Packed)
+            partition.temp_part->startFinalization();
+        partition.elapsed_ns += watch.elapsed();
+    }
+
+    for (auto & partition : delayed_parts)
+    {
+        if (process_list_element)
+            process_list_element->checkTimeLimit();
+
         ExecutionStatus status;
         std::vector<std::string> block_ids_for_log;
 
