@@ -128,11 +128,17 @@ private:
 
         /// For FUNCTION_IN and FUNCTION_NOT_IN
         std::vector<size_t> set_key_position;
+
+        /// No granule filter can fail to contain this element's filters, so it is may-be-true everywhere.
+        bool cannot_reject_granule = false;
     };
 
     using RPN = std::vector<RPNElement>;
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
+
+    /// Mutates `out`: drops the `hasAll` needles that no granule filter can fail to contain.
+    static bool canRejectSomeGranule(RPNElement & out);
 
     bool traverseTreeEquals(
         const String & function_name,
