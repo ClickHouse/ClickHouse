@@ -549,6 +549,8 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
     /// once we decide a flat range cannot be usefully split, we paginate it serially without probing
     /// again on every page (which would otherwise issue one wasted probe request per page).
     bool may_split = range.split_budget > 0;
+    /// Whether this worker holds a `listings_in_flight` reservation that must be released.
+    bool reserved = false;
 
     try
     {
@@ -556,15 +558,11 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
         {
             {
                 std::unique_lock lock(mutex);
-                space_available.wait(
-                    lock,
-                    [this]
-                    {
-                        return (buffered_objects < max_buffered_objects && buffered_object_bytes < max_buffered_object_bytes)
-                            || finished || stop;
-                    });
+                space_available.wait(lock, [this] { return canStartListingLocked() || finished || stop; });
                 if (stop || finished)
                     return true;
+                ++listings_in_flight;
+                reserved = true;
             }
 
             /// A `resume_by_relisting` range must not send `start_after` at all (the storage rejects it): it
@@ -682,6 +680,13 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
 
             {
                 std::unique_lock lock(mutex);
+                /// Release the reservation: from now on this page is accounted in `buffered_object_bytes`.
+                --listings_in_flight;
+                reserved = false;
+                /// A page of only common prefixes buffers nothing, and must not seed a tiny estimate.
+                if (!batch.empty())
+                    max_page_bytes = std::max(max_page_bytes, batchBytes(batch));
+                space_available.notify_all();
                 if (stop || finished)
                     return true;
                 /// Enforce the hard pending-range byte budget before materializing this page's fan-out.
@@ -697,6 +702,8 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
     {
         {
             std::lock_guard lock(mutex);
+            if (reserved)
+                --listings_in_flight;
             if (!first_exception)
                 first_exception = std::current_exception();
             finished = true;
@@ -706,6 +713,17 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
         space_available.notify_all();
         return false;
     }
+}
+
+bool ObjectStorageParallelListingIterator::canStartListingLocked() const
+{
+    if (buffered_objects >= max_buffered_objects || buffered_object_bytes >= max_buffered_object_bytes)
+        return false;
+    if (listings_in_flight == 0)
+        return true;
+    if (max_page_bytes == 0)
+        return false;
+    return buffered_object_bytes + (listings_in_flight + 1) * max_page_bytes <= max_buffered_object_bytes;
 }
 
 std::optional<RelativePathsWithMetadata> ObjectStorageParallelListingIterator::popBatch(std::unique_lock<std::mutex> & lock)

@@ -79,7 +79,9 @@ namespace DB
 /// The listed objects buffered ahead of the consumer (`ready_batches`) are bounded the same way, by a hard
 /// byte budget (`max_buffered_object_bytes`) in addition to the caller's count cap — see
 /// `DEFAULT_MAX_BUFFERED_OBJECT_BYTES`. Here blocking the producers is safe (the consumer drains the buffer
-/// independently of the worker pool), so workers simply wait for space before listing another page.
+/// independently of the worker pool), so workers wait for space before listing another page — and reserve
+/// that space for the page they are about to list, so concurrent workers cannot all pass the check against
+/// the same free space and overshoot the budget by one page each.
 ///
 /// The iterator is storage-agnostic: it drives a caller-provided `list_level` callback (one delimited
 /// page of one prefix per call, optionally resuming after a key) and a `should_descend` callback.
@@ -97,8 +99,11 @@ public:
     /// page size, so at extreme settings it alone would admit millions of buffered `RelativePathWithMetadata`
     /// entries; this byte budget bounds the buffered-object memory independently of those settings. Unlike
     /// pending ranges, buffered objects are drained by the external consumer, so workers can safely *block*
-    /// on this budget (no deadlock): a worker publishes its already-listed page (the budget is checked
-    /// before listing the next one), which keeps the overshoot to at most one in-flight page per worker.
+    /// on this budget (no deadlock). Before listing a page a worker reserves room for it (estimated as the
+    /// largest page listed so far), so the number of concurrent listing requests is capped to what the
+    /// budget can absorb, independently of `num_threads`: the overshoot is at most one page (a lone listing
+    /// is always admitted while the buffer is below the budget, so a page bigger than the budget still
+    /// flows through) plus the estimate's error on pages bigger than any listed before them.
     static constexpr size_t DEFAULT_MAX_BUFFERED_OBJECT_BYTES = 32 * 1024 * 1024;
 
     /// Lists a single delimited page. `start_after` (honored only on the first call of a listing, i.e.
@@ -188,8 +193,8 @@ public:
     size_t getPeakPendingRangeBytes() const;
 
     /// For tests/observability: the high-water mark of the total bytes of listed objects buffered ahead of
-    /// the consumer. Stays within `max_buffered_object_bytes` plus at most one in-flight page per worker
-    /// (the budget is checked before a worker lists its next page, never blocking an already-listed one).
+    /// the consumer. Stays within `max_buffered_object_bytes` plus about one page, whatever `num_threads`
+    /// (workers reserve room for a page before listing it; see `DEFAULT_MAX_BUFFERED_OBJECT_BYTES`).
     size_t getPeakBufferedObjectBytes() const;
 
     /// Approximate heap + struct footprint of one buffered batch of listed objects, the unit of the
@@ -283,6 +288,11 @@ private:
     /// pool grows on demand instead of eagerly reserving `num_threads` workers up front. Requires lock.
     void maybeSpawnWorkers(std::unique_lock<std::mutex> & lock);
     void advanceLocked(std::unique_lock<std::mutex> & lock);
+    /// Whether a worker may list its next page now: the buffered objects are below both caps and the
+    /// buffer can absorb one more page on top of those already being listed (`listings_in_flight`), each
+    /// estimated as `max_page_bytes`. A lone listing is admitted whenever the buffer is below the budget,
+    /// and while no page size is known yet (`max_page_bytes == 0`) only a lone listing is. Requires lock.
+    bool canStartListingLocked() const;
     /// Account newly discovered ranges (updating the outstanding-range counter) onto `local_frontier`, emit
     /// a batch, and donate the shallowest local ranges to the shared queue. Requires lock.
     void enqueueLocked(
@@ -362,6 +372,11 @@ private:
     /// by worker backpressure, and its high-water mark, for tests.
     size_t buffered_object_bytes = 0;
     size_t peak_buffered_object_bytes = 0;
+    /// Listing requests admitted by `canStartListingLocked` whose page is not yet published; each holds a
+    /// reservation of `max_page_bytes` against `max_buffered_object_bytes`.
+    size_t listings_in_flight = 0;
+    /// The largest page (in `batchBytes`) listed so far, the estimate of a page not yet listed.
+    size_t max_page_bytes = 0;
 
     bool started = false;
     bool finished = false;

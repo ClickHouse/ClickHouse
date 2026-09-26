@@ -616,8 +616,8 @@ TEST(ObjectStorageParallelListing, BufferedObjectByteBudgetBoundsSlowConsumer)
     /// `list_object_keys_size * parallelism * 2`, so at extreme settings it alone would admit millions of
     /// buffered keys (hundreds of MB); here the count cap is made deliberately inert (huge) so any bound on
     /// the buffered bytes can only come from the byte budget. Workers may safely block on it because the
-    /// buffer is drained by the external consumer, and the budget is checked before a worker lists its next
-    /// page, so the only overshoot is one already-listed in-flight page per worker.
+    /// buffer is drained by the external consumer, and a worker reserves room for its next page before
+    /// listing it, so the only overshoot is about one page, whatever the number of threads.
     FakeS3 s3;
     s3.page_size = 50;
     constexpr size_t num_keys = 20000;
@@ -628,7 +628,7 @@ TEST(ObjectStorageParallelListing, BufferedObjectByteBudgetBoundsSlowConsumer)
 
     constexpr size_t budget = 4096; /// far below the ~MBs the full key set would occupy if buffered at once
     /// One page is 50 keys; a buffered entry (shared_ptr + struct + ~25-char key) is well under 600 bytes,
-    /// so one in-flight page per worker stays under this per-thread slack.
+    /// so one page stays under this slack.
     constexpr size_t page_slack = 50 * 600;
     for (size_t threads : {1, 4, 16})
     {
@@ -642,7 +642,47 @@ TEST(ObjectStorageParallelListing, BufferedObjectByteBudgetBoundsSlowConsumer)
         EXPECT_EQ(got, expected) << "threads=" << threads;
 
         const size_t peak = iterator.getPeakBufferedObjectBytes();
-        EXPECT_LE(peak, budget + threads * page_slack)
+        EXPECT_LE(peak, budget + page_slack)
+            << "buffered-object bytes grew to " << peak << " despite a budget of " << budget
+            << " (threads=" << threads << ")";
+    }
+}
+
+TEST(ObjectStorageParallelListing, BufferedObjectByteBudgetIndependentOfFanOut)
+{
+    /// Regression test: the buffered-object byte budget must hold at the maximum fan-out
+    /// (`s3_list_object_parallelism` = 1000), not only at a handful of threads. A wide hierarchical layout
+    /// lets every worker list a page at once; if the budget were only *checked* before a request (and the
+    /// page charged afterwards), all workers would pass the check against the same free space and the
+    /// buffer would grow to one page per worker. Workers reserve room for their page before listing it, so
+    /// the peak stays within the budget plus about one page.
+    FakeS3 s3;
+    s3.page_size = 50;
+    constexpr size_t num_dirs = 1000;
+    constexpr size_t keys_per_dir = 60;
+    for (size_t d = 0; d < num_dirs; ++d)
+        for (size_t k = 0; k < keys_per_dir; ++k)
+            s3.add(fmt::format("wide/d{:04}/{:04}.parquet", d, k));
+    s3.finalize();
+    const auto expected = expectedUnder(s3, "wide/");
+
+    /// Room for a few pages, so several listings are admitted concurrently, but far below 1000 pages.
+    constexpr size_t budget = 64 * 1024;
+    /// One page is 50 keys; a buffered entry (shared_ptr + struct + ~25-char key) is well under 600 bytes.
+    constexpr size_t page_slack = 50 * 600;
+    for (size_t threads : {16, 1000})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "wide/", threads, /* max_buffered_keys */ std::numeric_limits<size_t>::max(),
+            makeListLevel(s3), makeProbeLevel(s3), descendAll,
+            /* allow_keyspace_split */ true, /* check_cancellation */ {},
+            ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES, budget);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+
+        const size_t peak = iterator.getPeakBufferedObjectBytes();
+        EXPECT_LE(peak, budget + page_slack)
             << "buffered-object bytes grew to " << peak << " despite a budget of " << budget
             << " (threads=" << threads << ")";
     }
@@ -681,7 +721,7 @@ TEST(ObjectStorageParallelListing, BufferedObjectByteBudgetBoundsMetadataHeavyLi
 {
     /// End-to-end counterpart of the accounting test above, modeling a `_tags` scan: every listed object
     /// carries an `etag` and a tag set an order of magnitude bigger than its path. The reported buffered
-    /// high-water mark must stay within the budget plus one in-flight page per worker *measured including
+    /// high-water mark must stay within the budget plus one page *measured including
     /// the metadata payload*, and a single page bigger than the whole budget must still flow through
     /// (workers never block an already-listed page, and the consumer drains it) rather than deadlock.
     FakeS3 s3;
@@ -716,7 +756,7 @@ TEST(ObjectStorageParallelListing, BufferedObjectByteBudgetBoundsMetadataHeavyLi
         EXPECT_EQ(got, expected) << "threads=" << threads;
 
         const size_t peak = iterator.getPeakBufferedObjectBytes();
-        EXPECT_LE(peak, budget + threads * s3.page_size * per_object_bound)
+        EXPECT_LE(peak, budget + s3.page_size * per_object_bound)
             << "buffered-object bytes grew to " << peak << " despite a budget of " << budget
             << " (threads=" << threads << ")";
         /// The bound above must not be trivially satisfiable by ignoring the metadata: even a lone page
