@@ -63,9 +63,9 @@ DROP TABLE tab;
 
 -- A preprocessor must not prune those granules either. The index takes its required tokens from
 -- `preprocessor(needle)`, which bounds the tokens of `preprocessor(value)` only when the preprocessor maps
--- each character independently. The two cases below sit here rather than in the preprocessor test file
--- because `lowerUTF8` needs ICU and `multiMatchAny` needs Vectorscan, and that file runs in Fast test,
--- which is built with neither.
+-- each character independently. The cases below sit here rather than in
+-- 05258_text_index_preprocessor_substring_predicates because they need ICU (`lowerUTF8`, `upperUTF8`) or
+-- Vectorscan (`multiMatchAny`), and that file runs in Fast test, which is built with neither.
 
 -- ICU case mapping is context sensitive: a Greek capital sigma lowercases to the final form only at the end
 -- of a word, so the value 'ΣΟΣΑ' becomes 'σοσα' while the needle 'ΣΟΣ' becomes 'σος', whose gram 'ος' is
