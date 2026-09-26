@@ -7,6 +7,7 @@
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnLazy.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <base/range.h>
@@ -33,6 +34,25 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
     extern const int TOO_LARGE_ARRAY_SIZE;
+}
+
+namespace
+{
+
+/// The state versions of all `AggregateFunction` types in `type` (including nested ones), in a fixed traversal order.
+std::vector<size_t> getAggregateStateVersions(const IDataType & type)
+{
+    std::vector<size_t> versions;
+    auto collect = [&](const IDataType & child)
+    {
+        if (const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&child))
+            versions.push_back(aggregate_type->getVersion());
+    };
+    collect(type);
+    type.forEachChild(collect);
+    return versions;
+}
+
 }
 
 
@@ -305,6 +325,18 @@ Block NativeReader::read()
                         column.column = recursiveLowCardinalityTypeConversion(column.column, column.type, header_column.type);
                     }
 
+                    column.type = header_column.type;
+                }
+                else if (getAggregateStateVersions(*header_column.type) != getAggregateStateVersions(*column.type))
+                {
+                    /// `equals` ignores the state version of `AggregateFunction` types, e.g. a version `0` state
+                    /// from an older writer read into a `AggregateFunction(1, uniq, UInt64)` header. The states in memory
+                    /// do not depend on the version, but a column keeps the version it was created with and uses it
+                    /// when its states pass through an arena (e.g. in `groupArray`), where the query expects the version
+                    /// of the header. So relabel the column with the header type; the states are shared, not copied.
+                    auto relabelled_column = header_column.type->createColumn();
+                    relabelled_column->insertRangeFrom(*recursiveRemoveSparse(column.column), 0, column.column->size());
+                    column.column = std::move(relabelled_column);
                     column.type = header_column.type;
                 }
             }
