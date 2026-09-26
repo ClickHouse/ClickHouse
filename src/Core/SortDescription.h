@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
+
 
 #include <Core/Field.h>
 #include <Common/IntervalKind.h>
@@ -187,8 +189,14 @@ class WriteBuffer;
 class ReadBuffer;
 
 /// `version` is the query-plan serialization version of the stream: a `WITH FILL` column carries its
-/// bounds only since DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP.
-void serializeSortDescription(const SortDescription & sort_description, WriteBuffer & out, UInt64 version);
+/// bounds only since DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP. `for_cache_key` and
+/// `input_header` make the sort columns build-independent; see `writeCacheKeyColumnName`.
+void serializeSortDescription(
+    const SortDescription & sort_description,
+    WriteBuffer & out,
+    UInt64 version,
+    bool for_cache_key = false,
+    const Block * input_header = nullptr);
 void deserializeSortDescription(
     SortDescription & sort_description, ReadBuffer & in, UInt64 version, size_t max_type_complexity = 0);
 

@@ -159,12 +159,12 @@ void CubeStep::serialize(Serialization & ctx) const
 
     writeVarUInt(params.keys.size(), ctx.out);
     for (const auto & key : params.keys)
-        writeStringBinary(key, ctx.out);
+        ctx.writeColumnName(key);
 
     /// The planner builds the cube aggregates without argument names (the transform only merges
     /// states, so the argument columns do not exist in its input), which the generic
     /// `serializeAggregateDescriptions` rejects.
-    serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out);
+    serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out, ctx.for_cache_key, ctx.input_header);
 }
 
 QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)

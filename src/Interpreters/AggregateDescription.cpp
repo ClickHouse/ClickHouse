@@ -2,6 +2,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/AggregateDescription.h>
+#include <Analyzer/TableQualifiers.h>
+#include <Core/Block.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/JSONBuilder.h>
@@ -161,12 +163,18 @@ void AggregateDescription::explain(JSONBuilder::JSONMap & map) const
     map.add("Arguments", std::move(args_array));
 }
 
-void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, WriteBuffer & out)
+void serializeAggregateDescriptions(
+    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * input_header)
 {
     writeVarUInt(aggregates.size(), out);
     for (const auto & aggregate : aggregates)
     {
-        writeStringBinary(aggregate.column_name, out);
+        /// The aggregate's own name and its argument names are plan-build-local in a cache key;
+        /// see `writeCacheKeyColumnName`.
+        if (for_cache_key)
+            writeCacheKeyColumnName(aggregate.column_name, input_header, out);
+        else
+            writeStringBinary(aggregate.column_name, out);
 
         UInt64 num_args = aggregate.argument_names.size();
         const auto & argument_types = aggregate.function->getArgumentTypes();
@@ -183,7 +191,10 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
         writeVarUInt(num_args, out);
         for (size_t i = 0; i < num_args; ++i)
         {
-            writeStringBinary(aggregate.argument_names[i], out);
+            if (for_cache_key)
+                writeCacheKeyColumnName(aggregate.argument_names[i], input_header, out);
+            else
+                writeStringBinary(aggregate.argument_names[i], out);
             encodeDataType(argument_types[i], out);
         }
 
@@ -234,12 +245,16 @@ void deserializeAggregateDescriptions(AggregateDescriptions & aggregates, ReadBu
 
 }
 
-void serializeAggregateDescriptionsWithoutArguments(const AggregateDescriptions & aggregates, WriteBuffer & out)
+void serializeAggregateDescriptionsWithoutArguments(
+    const AggregateDescriptions & aggregates, WriteBuffer & out, bool for_cache_key, const Block * input_header)
 {
     writeVarUInt(aggregates.size(), out);
     for (const auto & aggregate : aggregates)
     {
-        writeStringBinary(aggregate.column_name, out);
+        if (for_cache_key)
+            writeCacheKeyColumnName(aggregate.column_name, input_header, out);
+        else
+            writeStringBinary(aggregate.column_name, out);
         writeStringBinary(aggregate.function->getName(), out);
 
         const auto & argument_types = aggregate.function->getArgumentTypes();
