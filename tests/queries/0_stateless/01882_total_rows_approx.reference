@@ -1,1 +1,6 @@
 "total_rows_to_read":"10"
+first report has the total
+first report has no read progress
+first in-order report has the total
+in-order limit is counted once
+trivial limit is counted once
