@@ -1730,6 +1730,32 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             if (!merge_column)
                 continue;
 
+            /// A subcolumn of a column the child has under a different type is not missing: the child
+            /// cannot resolve it only because its type lacks it (see `getColumnToReadInsteadOfSubcolumn`).
+            /// A child that runs the query above `FetchColumns` (e.g. `Distributed`) evaluates this
+            /// query tree itself, so the subcolumn is derived there from the whole column cast to the
+            /// `Merge` type, as `convertAndFilterSourceStream` does for a child read at `FetchColumns`.
+            if (auto column_to_read = getColumnToReadInsteadOfSubcolumn(column_name, storage_columns, merge_storage_snapshot->metadata->getColumns()))
+            {
+                auto child_column = storage_snapshot_->tryGetColumn(get_column_options, *column_to_read);
+                auto merge_root_column = merge_storage_snapshot->metadata->getColumns().tryGetColumn(GetColumnsOptions::All, *column_to_read);
+                if (child_column && merge_root_column)
+                {
+                    auto column_node = std::make_shared<ColumnNode>(*child_column, modified_query_info.table_expression);
+                    auto cast_node = buildCastFunction(column_node, merge_root_column->type, modified_context);
+
+                    auto get_subcolumn_node = std::make_shared<FunctionNode>("getSubcolumn");
+                    auto & arguments = get_subcolumn_node->getArguments().getNodes();
+                    arguments.push_back(std::move(cast_node));
+                    arguments.push_back(std::make_shared<ConstantNode>(column_name.substr(column_to_read->size() + 1)));
+                    get_subcolumn_node->resolveAsFunction(
+                        FunctionFactory::instance().get("getSubcolumn", modified_context)->build(get_subcolumn_node->getArgumentColumns()));
+
+                    column_name_to_node.emplace(column_name, std::move(get_subcolumn_node));
+                    continue;
+                }
+            }
+
             column_name_to_node.emplace(column_name,
                 std::make_shared<ConstantNode>(merge_column->type->getDefault(), merge_column->type));
         }
