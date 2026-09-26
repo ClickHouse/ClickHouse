@@ -2,12 +2,9 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Common/UTF8Helpers.h>
-#include <Common/isValidUTF8.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
-#include <base/hex.h>
 #include <fmt/ranges.h>
 
 
@@ -24,62 +21,6 @@ namespace ErrorCodes
 namespace
 {
     using Node = PrometheusQueryTree::Node;
-
-    String quotePromQLString(std::string_view str)
-    {
-        String result;
-        result.reserve(str.size() + 2);
-        result.push_back('"');
-
-        for (size_t i = 0; i < str.size();)
-        {
-            const auto c = static_cast<UInt8>(str[i]);
-
-            if (c >= 0x80)
-            {
-                const size_t sequence_length = UTF8::seqLength(c);
-                if (sequence_length <= str.size() - i
-                    && UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(str.data() + i), sequence_length))
-                {
-                    result.append(str.data() + i, sequence_length);
-                    i += sequence_length;
-                    continue;
-                }
-            }
-
-            switch (c)
-            {
-                case '"':
-                case '\\':
-                    result.push_back('\\');
-                    result.push_back(static_cast<char>(c));
-                    break;
-                case '\a': result.append("\\a"); break;
-                case '\b': result.append("\\b"); break;
-                case '\f': result.append("\\f"); break;
-                case '\n': result.append("\\n"); break;
-                case '\r': result.append("\\r"); break;
-                case '\t': result.append("\\t"); break;
-                case '\v': result.append("\\v"); break;
-                default:
-                    if (c < 0x20 || c == 0x7F || c >= 0x80)
-                    {
-                        result.append("\\x");
-                        result += getHexUIntLowercase(c);
-                    }
-                    else
-                    {
-                        result.push_back(static_cast<char>(c));
-                    }
-                    break;
-            }
-
-            ++i;
-        }
-
-        result.push_back('"');
-        return result;
-    }
 
     bool isLegacyLabelName(std::string_view label)
     {
@@ -150,12 +91,12 @@ namespace
 
     String formatLabelName(const String & label)
     {
-        return canPrintLabelNameUnquoted(label) ? label : quotePromQLString(label);
+        return canPrintLabelNameUnquoted(label) ? label : PrometheusQueryParsingUtil::quoteStringLiteral(label);
     }
 
     String formatMetricName(const String & metric)
     {
-        return canPrintMetricNameUnquoted(metric) ? metric : quotePromQLString(metric);
+        return canPrintMetricNameUnquoted(metric) ? metric : PrometheusQueryParsingUtil::quoteStringLiteral(metric);
     }
 
     template <typename NodeType>
@@ -443,7 +384,7 @@ String PrometheusQueryTree::Scalar::toString(const PrometheusQueryTree &) const
 
 String PrometheusQueryTree::StringLiteral::toString(const PrometheusQueryTree &) const
 {
-    return quotePromQLString(string);
+    return PrometheusQueryParsingUtil::quoteStringLiteral(string);
 }
 
 String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree &) const
@@ -488,7 +429,7 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
                 && !matcher.label_value.empty();
             if (is_quoted_metric_name)
             {
-                str += quotePromQLString(matcher.label_value);
+                str += PrometheusQueryParsingUtil::quoteStringLiteral(matcher.label_value);
             }
             else
             {
@@ -506,7 +447,7 @@ String PrometheusQueryTree::InstantSelector::toString(const PrometheusQueryTree 
             if (!is_quoted_metric_name)
             {
                 str += matcher_type_str;
-                str += quotePromQLString(matcher.label_value);
+                str += PrometheusQueryParsingUtil::quoteStringLiteral(matcher.label_value);
             }
             need_comma = true;
         }
