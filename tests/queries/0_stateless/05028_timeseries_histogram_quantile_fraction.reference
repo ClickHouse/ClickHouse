@@ -1,0 +1,94 @@
+-- exponential schema 0, buckets [1,2]x2 and [2,4]x2, count 4
+-- q=0.5: reverse walk, rank (1-0.5)*4 = 2 lands on [2,4] with fraction 0 -> exp2(log2(2)) = 2 exactly
+2
+-- q=0.25: forward walk, rank 1 lands on [1,2] with fraction 1/2 -> exp2(0 + (1-0)*1/2) = sqrt(2)
+-- (upstream Go prints 0x1.6a09e667f3bccp+0 here: its math.Exp2(0.5) is 1 ulp below the correctly-rounded sqrt(2))
+1.4142135623730951
+-- q=0.5 on buckets [1,2]x3 and [2,4]x1: reverse walk ends in [1,2], fraction 2/3 -> exp2(2/3)
+1.5874010519681994
+-- q=0 and q=1: the extreme fractions 0 and 1 of the first/last bucket -> 1 and 4 exactly
+1	4
+-- negative buckets [-2,-1]x1 and [-4,-2]x3, count 4
+-- q=0.75: reverse walk, rank (1-0.75)*4 = 1 lands on [-2,-1] with fraction 0 -> -exp2(log2(2)) = -2 exactly
+-- q=0.5: reverse walk ends in [-4,-2], fraction 2/3 -> -exp2(1 + (2-1)*1/3) = -exp2(4/3)
+-- (upstream Go prints -0x1.428a2f98d728cp+1 for the second: its math.Exp2(4/3) is 1 ulp higher)
+-2	-2.5198420997897464
+-- zero bucket, positive buckets only: the natural lower bound 0 is assumed
+-- zt 0.5, zero bucket [-0.5,0.5]x2, [1,2]x2, count 4; q=0.25: rank 1 in the zero bucket -> [0,0.5], fraction 1/2 -> 0.25 exactly
+0.25
+-- zero bucket, negative buckets only: the natural upper bound 0 is assumed
+-- zt 0.5, [-1,-0.5]x2, zero bucket x2, count 4; q=0.75: reverse rank 1 in the zero bucket -> [-0.5,0], fraction 1/2 -> -0.25 exactly
+-0.25
+-- zero bucket with BOTH sides present: no natural-bound adjustment, linear interpolation over [-0.6,0.6]
+-- zt 0.6, [-1,-0.5]x1 (clamped to [-1,-0.6]), zero x1, [0.5,1]x1 (clamped to [0.6,1]), count 3; q=0.5: reverse rank 1.5 in the zero bucket, fraction 0.5 -> -0.6 + 1.2*0.5 = 0 exactly
+0
+-- zero-threshold clamping of the quantile bucket itself: zt 0.6, buckets [0.5,1]x2 -> [0.6,1]x2 and [1,2]x2
+-- q=0.25: rank 1 in [0.6,1], fraction 1/2 -> exp2(log2(0.6)/2) = sqrt(0.6)
+0.7745966692414834
+-- schema 1, buckets (0.7071,1]x2 and (1,1.4142]x2 (the schema-1 table entries 0.5 and 0.7071067811865475), count 4
+-- q=0.5: reverse rank 2 lands on (1,1.4142] with fraction 0 -> 1 exactly
+-- q=0.25: forward rank 1 lands on (0.7071,1] with fraction 1/2 -> exp2(log2(0.7071067811865475)*1/2)
+1	0.8408964152537145
+-- custom buckets (schema -53), bounds [1,2,4], buckets [-Inf,1]x0, [1,2]x2, [2,4]x6, count 8
+-- q=0.5: reverse rank 4 lands on [2,4], fraction 2/6 = 1/3, linear -> 2 + 2*1/3
+2.6666666666666665
+-- custom buckets [-2,-1], buckets [-Inf,-2]x3 and [-2,-1]x1, count 4
+-- q=0.5: reverse rank 2 lands on the -Inf bucket whose upper bound <= 0 -> the upper bound -2 exactly
+-2
+-- custom buckets [1,2,4], buckets [-Inf,1]x0, [1,2]x0, [2,4]x3, [4,+Inf]x2, count 5
+-- q=0.9: reverse rank 0.5 lands on the +Inf bucket -> its lower bound 4 exactly
+4
+-- out-of-range phi: q < 0 -> -Inf, q > 1 -> +Inf, q NaN -> NaN (constant per the PromQL semantics)
+-inf	inf	nan
+-- count = 0 -> NaN (upstream behavior, no special-casing)
+nan	nan
+-- NaN observations (sum is NaN, count 5 > the 4 bucketed observations): q=0.9 forces the forward walk,
+-- the accumulated count 4 never reaches the rank 4.5 -> NaN (upstream issue 16578)
+nan
+-- NULL in -> NULL out (default null handling)
+\N	\N
+-- row-wise NULLs inside a Nullable column are kept per row (second row: the q9 custom-bucket histogram)
+\N	\N
+2.6666666666666665	0.5
+-- an invalid exponential schema (9 > 8) is rejected
+-- a non-constant phi is rejected (the PromQL converter enforces a constant phi; this is defense in depth)
+-- a non-numeric phi is rejected
+-- fraction: exponential schema 0, buckets [1,2]x2 and [2,4]x2, count 4
+-- (1, 2): both bounds hit bucket lower boundaries -> lowerRank 0, upperRank 2 -> 0.5; (-Inf, +Inf) -> 1
+0.5	1
+-- fraction (1, 3): the doc example; upperRank = 2 + 2*(log2(3)-1), so (2 + 2*(log2(3)-1))/4
+-- (upstream Go prints 0x1.95c01a39fbd69p-1 here: its math.Log2(3) is 1 ulp above the correctly-rounded value)
+0.792481250360578
+-- fraction (1.5, 3): log-scale interpolation in both buckets: lowerRank = 2*log2(1.5), upperRank = 2 + 2*(log2(3)-1)
+-- (with a correctly-rounded log2, log2(3)-1 is 1 ulp below log2(1.5), so the ranks do not cancel to 2;
+--  upstream Go whose math.Log2(3) is 1 ulp high returns exactly 0.5 here)
+0.49999999999999994
+-- fraction with lower >= upper -> 0; NaN bounds -> NaN
+0	nan	nan
+-- fraction (5, 100): both bounds above all buckets -> 0
+0
+-- fraction with NaN observations (sum NaN, count 5 > 4 bucketed): NaN observations are in no bucket,
+-- so (-Inf, +Inf) yields the walked count 4 over count 5 -> 0.8
+0.8
+-- fraction over the zero bucket (linear): zt 0.5, zero bucket x2, [1,2]x2, count 4
+-- (0.25, 1.5): lowerRank = 2*(0.25/0.5) = 1 in the zero bucket [0,0.5]; upperRank = 2 + 2*log2(1.5) in [1,2]
+-- -> (2 + 2*log2(1.5) - 1)/4 (upstream Go agrees bit-for-bit)
+0.542481250360578
+-- fraction over a negative-only zero-bucket histogram: zt 0.5, [-1,-0.5]x2, zero x2, count 4
+-- (-0.25, 0.25): the zero bucket becomes [-0.5,0]; lowerRank = 2 + 2*(0.25/0.5) = 3; upperRank -> count -> (4-3)/4 = 0.25
+0.25
+-- fraction over negative exponential buckets [-2,-1]x2, [-4,-2]x2, count 4
+-- (-3, -1): lowerRank = 2*(1 - (log2(3)-1)/(log2(4)-log2(2))) in [-4,-2]; upperRank -> count
+-- (upstream Go prints 0x1.95c01a39fbd69p-1 here: its math.Log2(3) is 1 ulp above the correctly-rounded value)
+0.792481250360578
+-- fraction over custom buckets [1,2,4] with counts [0,2,6], count 8
+-- (1.5, 3): linear in [1,2] -> lowerRank 2*0.5 = 1; linear in [2,4] -> upperRank 2 + 6*0.5 = 5 -> 0.5
+0.5
+-- fraction over custom buckets [1,2] with counts [4,4], count 8
+-- (0, 1.5): the [-Inf,1] bucket spans zero, so the zero-bucket adjustment makes it [0,1] and lowerRank = 0
+-- (mirroring upstream, which applies the adjustment to custom buckets too); upperRank = 4 + 4*0.5 = 6 -> 0.75
+0.75
+-- fraction over custom buckets [-2,-1] with counts [3,1], count 4
+-- (-3, -1): the -Inf bucket contributes its whole count 3 as lowerRank (upstream skips interpolation there)
+-- (-1.5, 1): lowerRank = 3 + 1*0.5 = 3.5, upperRank -> count -> (4-3.5)/4 = 0.125
+0.25	0.125
