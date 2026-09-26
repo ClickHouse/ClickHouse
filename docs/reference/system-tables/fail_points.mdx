@@ -13,8 +13,6 @@ Contains a list of all available failpoints registered in the server, along with
 
 In builds with failpoint support (`USE_LIBFIU=1`), failpoints can be enabled and disabled at runtime using the `SYSTEM ENABLE FAILPOINT` and `SYSTEM DISABLE FAILPOINT` statements. These statements are not available in builds without failpoint support, although the table remains available.
 
-`SYSTEM DISABLE ALL FAILPOINTS` disables every failpoint at once and resumes any thread blocked on a pauseable one, which is useful for returning a server to a clean state without having to know what is currently enabled.
-
 ## Columns {#columns}
 
 - `name` ([String](/reference/data-types/string)) — Name of the failpoint.

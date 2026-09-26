@@ -512,7 +512,12 @@ public:
     // aggregate functions implement IWindowFunction interface and so on. This
     // would be more logically correct, but more complex. We only have a handful
     // of true window functions, so this hack-ish interface suffices.
-    virtual bool isOnlyWindowFunction() const { return false; }
+    virtual bool isOnlyWindowFunction() const
+    {
+        if (auto nested = getNestedFunction())
+            return nested->isOnlyWindowFunction();
+        return false;
+    }
 
     /// Description of AggregateFunction in form of name(parameters)(argument_types).
     String getDescription() const;
