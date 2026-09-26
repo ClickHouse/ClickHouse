@@ -4504,6 +4504,8 @@ void MergeTreeData::rollbackDeletingParts(const MergeTreeData::DataPartsVector &
     }
 }
 
+static void writePartRemovalLog(const MergeTreeData & storage, const MergeTreeData::DataPartsVector & parts, const LoggerPtr & log);
+
 void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & parts, MergeTreeData::DataPartsVector * removed_parts)
 {
     if (parts.empty())
@@ -4535,11 +4537,19 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     LOG_DEBUG(log, "Removing {} parts from memory: Parts: [{}]", parts.size(), fmt::join(parts, ", "));
 
-    /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
-    /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
+    /// Parts removed by DROP TABLE do not pass through here; dropAllData() logs them itself.
+    writePartRemovalLog(*this, parts, log.load());
+}
 
-    auto table_id = getStorageID();
-    if (auto part_log = getContext()->getPartLog())
+/// Writes a RemovePart event to system.part_log for each of the parts. Best-effort: a failed
+/// write is logged, never thrown, so it cannot fail the removal or, in dropAllData(), replace
+/// the exception the drop itself is reporting.
+static void writePartRemovalLog(const MergeTreeData & storage, const MergeTreeData::DataPartsVector & parts, const LoggerPtr & log)
+try
+{
+    /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
+    auto table_id = storage.getStorageID();
+    if (auto part_log = storage.getContext()->getPartLog())
     {
         PartLogElement part_log_elem;
 
@@ -4568,6 +4578,10 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
             part_log->add([&](PartLogElement & element) { element = part_log_elem; });
         }
     }
+}
+catch (...)
+{
+    tryLogCurrentException(log, __PRETTY_FUNCTION__);
 }
 
 
@@ -5083,14 +5097,22 @@ void MergeTreeData::dropAllData()
         /// Parts removal process can be important and on the next try it's better to try to remove
         /// them instead of remove recursive call.
         LOG_WARNING(log, "dropAllData: got exception removing parts from disk, removing successfully removed parts from memory.");
+        DataPartsVector removed_parts;
         for (const auto & part : all_parts)
         {
             if (!part_names_failed.contains(part->name))
+            {
                 data_parts_indexes.erase(part->info);
+                removed_parts.push_back(part);
+            }
         }
+        writePartRemovalLog(*this, removed_parts, log.load());
 
         throw;
     }
+
+    /// The parts of a dropped table never reach removePartsFinally(), so log their removal here.
+    writePartRemovalLog(*this, all_parts, log.load());
 
     LOG_INFO(log, "dropAllData: clearing temporary directories");
     clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
