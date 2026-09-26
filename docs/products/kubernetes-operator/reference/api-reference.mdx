@@ -137,7 +137,7 @@ ClickHouseSettings defines ClickHouse server settings options.
 |-------|------|-------------|----------|---------|
 | `defaultUserPassword` | [DefaultPasswordSelector](#defaultpasswordselector) | Specifies source and type of the password for `default` ClickHouse user. | false |  |
 | `logger` | [LoggerConfig](#loggerconfig) | Configuration of ClickHouse server logging. | false |  |
-| `systemLogsTTLDays` | integer | Retention in days for the system log tables (`query_log`, `part_log`, `text_log`, `metric_log`,<br />`asynchronous_metric_log`), applied as a table TTL on the next server restart. Defaults to 30 days,<br />0 disables the TTL. | false |  |
+| `systemLogsTTLDays` | integer | Retention in days for the system log tables (`query_log`, `part_log`, `text_log`, `metric_log`,<br />`asynchronous_metric_log`), applied as a table TTL on the next server restart. Defaults to 30 days<br />on new clusters only; clusters created before this field existed keep unbounded tables until it is set.<br />0 disables the TTL. | false |  |
 | `tls` | [ClusterTLSSpec](#clustertlsspec) | TLS settings, allows to configure secure endpoints and certificate verification for ClickHouse server. | false |  |
 | `encryption` | [EncryptionSettings](#encryptionsettings) | Encryption, when set, enables at-rest encryption of table data through a dedicated storage policy.<br />Opt in per table with `SETTINGS storage_policy = '<policyName>'`. | false |  |
 | `enableDatabaseSync` | boolean | Enables synchronization of ClickHouse databases to the newly created replicas and cleanup of stale replicas<br />after scale down.<br />Supports only Replicated and integration databases. | false | true |

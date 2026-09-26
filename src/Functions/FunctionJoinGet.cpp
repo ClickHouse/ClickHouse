@@ -82,6 +82,12 @@ public:
 
     String getName() const override { return function_name; }
 
+    /// A `Join` table is local to the server that holds it and is not kept in sync with anything, so
+    /// the same call answers differently on another node. The overload resolver says so already, but
+    /// whoever asks the built function - a predicate on its way to a shard, an index analysis - asks
+    /// this one, and `IFunctionBase` answers `true` by default. `dictGet` overrides it here as well.
+    bool isDeterministic() const override { return false; }
+
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }

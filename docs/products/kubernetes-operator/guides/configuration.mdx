@@ -866,7 +866,7 @@ logger:
   count: 10
 ```
 
-The same `spec.settings.logger` block applies to a `KeeperCluster`; the operator writes its files under `/var/log/clickhouse-keeper/` instead.
+The same `spec.settings.logger` block applies to a `KeeperCluster`; the operator writes its files under `/var/log/clickhouse-keeper/` instead, and sets the Raft logger (`raft_logs_level`) to the same `level`.
 
 <Note>
 Console logging stays on regardless of `logToFile`, so `kubectl logs` keeps working even when you disable file logging. Set `jsonLogs: true` when you ship logs to a structured log store that parses JSON.
@@ -874,13 +874,17 @@ Console logging stays on regardless of `logToFile`, so `kubectl logs` keeps work
 
 ### System log tables {#system-log-tables}
 
-The operator enables the `query_log`, `part_log`, `text_log`, `metric_log` and `asynchronous_metric_log` system tables. Because they live on the same volume as your data, `spec.settings.systemLogsTTLDays` bounds them with a table TTL, 30 days by default. Set `0` to disable the TTL explicitly.
+The operator enables the `query_log`, `part_log`, `text_log`, `metric_log` and `asynchronous_metric_log` system tables. Because they live on the same volume as your data, `spec.settings.systemLogsTTLDays` bounds them with a table TTL. The defaulting webhook sets it to `30` when you create a cluster without the field. Set `0` to disable the TTL explicitly.
 
 ```yaml
 spec:
   settings:
     systemLogsTTLDays: 14
 ```
+
+<Note>
+The default applies only to new clusters. A cluster created before `systemLogsTTLDays` existed keeps unbounded system log tables until you set the field yourself.
+</Note>
 
 The TTL takes effect on the next server restart. Override it per table, tune any other system log setting, or disable a table entirely with the `@remove` attribute — all through `extraConfig`:
 
