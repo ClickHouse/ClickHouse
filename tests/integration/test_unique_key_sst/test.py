@@ -20,7 +20,7 @@ node = cluster.add_instance(
     with_remote_database_disk=False,
 )
 
-UK_SETTINGS = {"allow_experimental_unique_key": "1"}
+UK_SETTINGS = {"enable_unique_key": "1"}
 
 EXPECTED_ROWS = "10\ta\n20\tb\n30\tc\n"
 
@@ -345,3 +345,42 @@ def test_unique_key_sst_checksums(started_cluster):
 
     node.query("ALTER TABLE uk_sst_ro MODIFY SETTING table_readonly = 0")
     node.query("DROP TABLE uk_sst_ro SYNC")
+
+
+def test_unique_key_sst_roundtrip_on_encrypted_disk(started_cluster):
+    # UNIQUE KEY on an encrypted local disk: the load-time SST validation reads
+    # `unique_key_index.sst` through `ReadBufferFromEncryptedFile`, whose
+    # readBigAt decrypts ciphertext fetched via positional reads.
+    node.query("DROP TABLE IF EXISTS uk_encrypted SYNC")
+    node.query(
+        """
+        CREATE TABLE uk_encrypted (id UInt64, v String)
+        ENGINE = MergeTree
+        UNIQUE KEY (id)
+        ORDER BY (id)
+        SETTINGS disk = 'encrypted_disk', min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1
+        """,
+        settings=UK_SETTINGS,
+    )
+    node.query(
+        "INSERT INTO uk_encrypted VALUES (10, 'a'), (20, 'b'), (30, 'c')",
+        settings=UK_SETTINGS,
+    )
+    assert node.query("SELECT id, v FROM uk_encrypted ORDER BY id") == EXPECTED_ROWS
+
+    # DETACH + ATTACH: load-time validation opens and checksum-verifies the
+    # encrypted SST through positional reads.
+    node.query("DETACH TABLE uk_encrypted SYNC")
+    node.query("ATTACH TABLE uk_encrypted", settings=UK_SETTINGS)
+    assert (
+        node.query(
+            """
+            SELECT count() FROM system.parts
+            WHERE database = currentDatabase() AND table = 'uk_encrypted' AND active
+            """
+        )
+        == "1\n"
+    )
+    assert node.query("SELECT id, v FROM uk_encrypted ORDER BY id") == EXPECTED_ROWS
+
+    node.query("DROP TABLE uk_encrypted SYNC")
