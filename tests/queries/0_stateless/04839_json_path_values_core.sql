@@ -69,11 +69,11 @@ ORDER BY id
 SETTINGS index_granularity = 2;
 
 INSERT INTO json_index_tokens VALUES
-    (1, '{"email":"alice@example.com","url":"https://posthog.com/docs","count":42,"flag":true}'),
-    (2, concat('{"email":"Bob@Example.com","url":"https://posthog.com/', repeat('a', 160), '"}')),
+    (1, '{"email":"alice@example.com","url":"https://example.com/docs","count":42,"flag":true}'),
+    (2, concat('{"email":"Bob@Example.com","url":"https://example.com/', repeat('a', 160), '"}')),
     (3, '{"email":null,"url":"http://example.org","other":"alice@example.com"}'),
     (4, '{"email":"carol@example.com"}'),
-    (5, concat('{"url":"https://posthog.com/', repeat('a', 50), 'b"}'));
+    (5, concat('{"url":"https://example.com/', repeat('a', 50), 'b"}'));
 
 SELECT 'equality direct read off';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens WHERE data.email = 'alice@example.com'
@@ -104,7 +104,7 @@ SELECT arraySort(groupArray(id)) FROM json_index_tokens WHERE data.flag = true;
 
 SELECT 'equality truncated';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens
-WHERE data.url = concat('https://posthog.com/', repeat('a', 160));
+WHERE data.url = concat('https://example.com/', repeat('a', 160));
 
 SELECT 'in';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens
@@ -112,20 +112,20 @@ WHERE data.email IN ('alice@example.com', 'carol@example.com');
 
 SELECT 'startsWith bounded prefix';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens
-WHERE startsWith(data.url, 'https://posthog.com/');
+WHERE startsWith(data.url, 'https://example.com/');
 
 SELECT 'like prefix';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens
-WHERE data.url LIKE 'https://posthog.com/%';
+WHERE data.url LIKE 'https://example.com/%';
 
 SELECT 'startsWith fallback';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens
-WHERE startsWith(data.url, 'https://posthog.com/')
+WHERE startsWith(data.url, 'https://example.com/')
 SETTINGS text_index_like_max_postings_to_read = 0;
 
 SELECT 'startsWith beyond stored prefix';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens
-WHERE startsWith(data.url, concat('https://posthog.com/', repeat('a', 80)));
+WHERE startsWith(data.url, concat('https://example.com/', repeat('a', 80)));
 
 SELECT 'like';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens

@@ -94,33 +94,33 @@ ORDER BY id
 SETTINGS index_granularity = 1;
 
 INSERT INTO json_index_tokens_long_value VALUES
-    (1, concat('{"url":"https://posthog.com/', repeat('a', 100), 'x","sparse_a":"one"}')),
-    (2, concat('{"url":"https://posthog.com/', repeat('a', 100), 'y","sparse_b":"two"}')),
-    (3, concat('{"url":"HTTPS://POSTHOG.COM/', repeat('A', 100), 'Z","sparse_c":"three"}')),
+    (1, concat('{"url":"https://example.com/', repeat('a', 100), 'x","sparse_a":"one"}')),
+    (2, concat('{"url":"https://example.com/', repeat('a', 100), 'y","sparse_b":"two"}')),
+    (3, concat('{"url":"HTTPS://EXAMPLE.COM/', repeat('A', 100), 'Z","sparse_c":"three"}')),
     (4, '{"url":"https://example.com/other"}');
 
 SELECT 'long equality';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
-WHERE data.url = concat('https://posthog.com/', repeat('a', 100), 'x')
+WHERE data.url = concat('https://example.com/', repeat('a', 100), 'x')
 SETTINGS force_data_skipping_indices = 'tokens';
 
 SELECT 'exact bounded prefixes';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
-WHERE startsWith(data.url, 'https://posthog.com/')
+WHERE startsWith(data.url, 'https://example.com/')
 SETTINGS force_data_skipping_indices = 'tokens';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
-WHERE data.url LIKE 'https://posthog.com/%'
+WHERE data.url LIKE 'https://example.com/%'
 SETTINGS force_data_skipping_indices = 'tokens';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
-WHERE data.url ILIKE 'https://posthog.com/%'
+WHERE data.url ILIKE 'https://example.com/%'
 SETTINGS force_data_skipping_indices = 'tokens';
 
 SELECT 'validated prefixes beyond retained bytes';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
-WHERE startsWith(data.url, concat('https://posthog.com/', repeat('a', 80)))
+WHERE startsWith(data.url, concat('https://example.com/', repeat('a', 80)))
 SETTINGS force_data_skipping_indices = 'tokens';
 SELECT arraySort(groupArray(id)) FROM json_index_tokens_long_value
-WHERE data.url ILIKE concat('https://posthog.com/', repeat('a', 80), '%')
+WHERE data.url ILIKE concat('https://example.com/', repeat('a', 80), '%')
 SETTINGS force_data_skipping_indices = 'tokens';
 
 SELECT 'case-insensitive prefix direct read';
@@ -129,7 +129,7 @@ FROM
 (
     EXPLAIN actions = 1
     SELECT count() FROM json_index_tokens_long_value
-    WHERE data.url ILIKE 'https://posthog.com/%'
+    WHERE data.url ILIKE 'https://example.com/%'
 )
 WHERE position(explain, '__text_index') > 0;
 
@@ -193,13 +193,13 @@ ORDER BY id
 SETTINGS index_granularity = 1;
 
 INSERT INTO json_path_values_match_exactness VALUES
-    (1, '{"url":"https://posthog.com/project/123/web"}'),
-    (2, '{"url":"https://posthog.com/project/not-a-number/web"}');
+    (1, '{"url":"https://example.com/project/123/web"}'),
+    (2, '{"url":"https://example.com/project/not-a-number/web"}');
 
 SELECT 'direct read with hint';
 SELECT groupArray(data.url)
 FROM json_path_values_match_exactness
-WHERE match(data.url, '^https://posthog[.]com/project/[0-9]+/web$')
+WHERE match(data.url, '^https://example[.]com/project/[0-9]+/web$')
 SETTINGS query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1;
 
 SELECT count() > 0
@@ -208,7 +208,7 @@ FROM
     EXPLAIN actions = 1
     SELECT count()
     FROM json_path_values_match_exactness
-    WHERE match(data.url, '^https://posthog[.]com/project/[0-9]+/web$')
+    WHERE match(data.url, '^https://example[.]com/project/[0-9]+/web$')
     SETTINGS query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 1
 )
 WHERE position(explain, '__text_index') > 0;
@@ -216,13 +216,13 @@ WHERE position(explain, '__text_index') > 0;
 SELECT 'direct read without hint';
 SELECT groupArray(data.url)
 FROM json_path_values_match_exactness
-WHERE match(data.url, '^https://posthog[.]com/project/[0-9]+/web$')
+WHERE match(data.url, '^https://example[.]com/project/[0-9]+/web$')
 SETTINGS query_plan_direct_read_from_text_index = 1, query_plan_text_index_add_hint = 0;
 
 SELECT 'direct read disabled';
 SELECT groupArray(data.url)
 FROM json_path_values_match_exactness
-WHERE match(data.url, '^https://posthog[.]com/project/[0-9]+/web$')
+WHERE match(data.url, '^https://example[.]com/project/[0-9]+/web$')
 SETTINGS query_plan_direct_read_from_text_index = 0, query_plan_text_index_add_hint = 1;
 
 DROP TABLE json_path_values_match_exactness;
