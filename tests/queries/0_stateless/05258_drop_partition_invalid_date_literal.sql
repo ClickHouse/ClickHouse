@@ -78,6 +78,35 @@ ALTER TABLE t_datetime64 DROP PARTITION '1970-01-01';
 SELECT 'datetime64, valid literals', groupArray(x) FROM (SELECT x FROM t_datetime64 ORDER BY x);
 DROP TABLE t_datetime64;
 
+-- A non-digit in a digit position used to be read as a digit: `'2024-02-2/'` named `2024-02-19`.
+DROP TABLE IF EXISTS t_digits_datetime;
+DROP TABLE IF EXISTS t_digits_datetime64;
+DROP TABLE IF EXISTS t_digits_date;
+CREATE TABLE t_digits_datetime (d DateTime('UTC'), x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+CREATE TABLE t_digits_datetime64 (d DateTime64(3, 'UTC'), x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+CREATE TABLE t_digits_date (d Date, x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+INSERT INTO t_digits_datetime VALUES ('2024-02-19 00:00:00', 1), ('2024-02-19 00:00:09', 2);
+INSERT INTO t_digits_datetime64 VALUES ('2024-02-19 00:00:00', 1);
+INSERT INTO t_digits_date VALUES ('2024-02-19', 1), ('2024-02-02', 2);
+ALTER TABLE t_digits_datetime DROP PARTITION '2024-02-2/'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_digits_datetime DROP PARTITION '2024-02-19 00:00:1/'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_digits_datetime64 DROP PARTITION '2024-02-2/'; -- { serverError INVALID_PARTITION_VALUE }
+ALTER TABLE t_digits_date DROP PARTITION '2024-02-2/'; -- { serverError TYPE_MISMATCH }
+SELECT 'digits, nothing dropped', (SELECT groupArray(x) FROM (SELECT x FROM t_digits_datetime ORDER BY x)), (SELECT groupArray(x) FROM t_digits_datetime64), (SELECT groupArray(x) FROM (SELECT x FROM t_digits_date ORDER BY x));
+DROP TABLE t_digits_datetime;
+DROP TABLE t_digits_datetime64;
+DROP TABLE t_digits_date;
+
+-- A local time skipped by a daylight saving time shift is not a value of the type: it used to be read as `01:30:00`.
+DROP TABLE IF EXISTS t_datetime_dst;
+CREATE TABLE t_datetime_dst (d DateTime('Europe/Berlin'), x UInt8) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+INSERT INTO t_datetime_dst VALUES ('2024-03-31 01:30:00', 1), ('2024-03-31 03:30:00', 2);
+ALTER TABLE t_datetime_dst DROP PARTITION '2024-03-31 02:30:00'; -- { serverError INVALID_PARTITION_VALUE }
+SELECT 'dst, nothing dropped', groupArray(x) FROM (SELECT x FROM t_datetime_dst ORDER BY x);
+ALTER TABLE t_datetime_dst DROP PARTITION '2024-03-31 03:30:00';
+SELECT 'dst, valid literal', groupArray(x) FROM (SELECT x FROM t_datetime_dst ORDER BY x);
+DROP TABLE t_datetime_dst;
+
 -- Each element of a tuple partition key is checked.
 DROP TABLE IF EXISTS t_tuple;
 CREATE TABLE t_tuple (d Date, k UInt8, x UInt8) ENGINE = MergeTree PARTITION BY (d, k) ORDER BY x;

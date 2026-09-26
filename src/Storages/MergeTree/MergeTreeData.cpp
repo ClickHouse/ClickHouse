@@ -10048,6 +10048,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(cons
 /// the range of the type is clamped to its boundary or replaced with the zero date. Such a string would name another
 /// partition, which a statement like `DROP PARTITION` would then remove. So it is parsed with the range checks of
 /// `date_time_overflow_behavior = 'throw'`, and the date and time it spells must be the ones of the parsed value.
+/// This also rejects a local time that does not exist in the time zone of a `DateTime` key because of a daylight
+/// saving time shift (`'2024-03-31 02:30:00'` in `Europe/Berlin` is read as `01:30:00`): no row can have that value.
 static Field convertPartitionFieldToType(const Field & value, const DataTypePtr & type)
 {
     const DataTypePtr nested_type = removeLowCardinalityAndNullable(type);
@@ -10079,14 +10081,24 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     }
     else
     {
-        /// `DateTime` text parsing reads a broken-down `YYYY-MM-DD[ hh:mm:ss]` if the fifth character is not a digit,
+        /// `DateTime` text parsing reads a broken-down `YYYY-MM-DD[ hh:mm:ss]` if four digits are followed by a non-digit,
         /// and a Unix timestamp otherwise, which is read as an integer and cannot roll over.
-        const bool is_broken_down = literal.size() >= 10
-            && isNumericASCII(literal[0]) && isNumericASCII(literal[1]) && isNumericASCII(literal[2]) && isNumericASCII(literal[3])
-            && !isNumericASCII(literal[4]) && isNumericASCII(literal[5]) && isNumericASCII(literal[6])
-            && !isNumericASCII(literal[7]) && isNumericASCII(literal[8]) && isNumericASCII(literal[9]);
+        auto is_digit_at = [&](size_t pos) { return pos < literal.size() && isNumericASCII(literal[pos]); };
+        const bool is_broken_down = is_digit_at(0) && is_digit_at(1) && is_digit_at(2) && is_digit_at(3)
+            && literal.size() > 4 && !isNumericASCII(literal[4]);
         if (is_broken_down)
         {
+            /// The broken-down reader takes the characters at the digit positions without checking them,
+            /// so `'2024-02-2/'` would be read as `2024-02-19`, and the comparison below would agree with it.
+            const bool has_time = literal.size() > 10 && (literal[10] == ' ' || literal[10] == 'T');
+            if (!is_digit_at(5) || !is_digit_at(6) || !is_digit_at(8) || !is_digit_at(9)
+                || (has_time && (!is_digit_at(11) || !is_digit_at(12) || !is_digit_at(14) || !is_digit_at(15)
+                    || !is_digit_at(17) || !is_digit_at(18))))
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                                "Partition value '{}' is not a valid value of type {}: expected a date and time "
+                                "in the YYYY-MM-DD hh:mm:ss format",
+                                literal, type->getName());
+
             /// Reads the date and the optional time of day; the fractional part of `DateTime64` is not compared.
             LocalDateTime spelled;
             LocalDateTime parsed;
