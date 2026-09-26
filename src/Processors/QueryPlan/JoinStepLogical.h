@@ -204,6 +204,12 @@ public:
     bool isDisjunctionsOptimizationApplied() const { return disjunctions_optimization_applied; }
     void setDisjunctionsOptimizationApplied(bool v) { disjunctions_optimization_applied = v; }
 
+    /// A join whose relations are numbered by their own `__tableN` sequence, independently of the enclosing
+    /// query's, so both can produce the same qualified column name. Such a join still reorders internally,
+    /// but an enclosing graph must keep it whole: `JoinExpressionActions` rejects two relations of one name.
+    bool isJoinReorderBoundary() const { return join_reorder_boundary; }
+    void setJoinReorderBoundary(bool value = true) { join_reorder_boundary = value; }
+
     /// Swap left and right sides
     void swapInputs();
 
@@ -232,6 +238,9 @@ protected:
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
+
+    /// Travels by `clone` and over the wire: a receiver cannot re-derive it, no view read runs there.
+    bool join_reorder_boundary = false;
 
     /// Whether the join order was already chosen. A copy of this step, whether made by `clone` or taken
     /// over the wire, carries it, so that whoever receives the copy does not choose an order again.
