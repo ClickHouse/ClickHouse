@@ -1,9 +1,6 @@
--- The `alias(col1, ...)` column alias list needs the analyzer, and a session SET survives the
--- `compatibility` randomization that a no-old-analyzer tag would not.
-SET enable_analyzer = 1;
 -- `rewrite_in_to_join` below requires this setting, which the 25.8 block of
 -- SettingsChangesHistory.cpp turns on, so a randomized older `compatibility` reverts it.
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 
 -- The `view` table function argument is deliberately excluded from analysis, so the query tree
 -- is converted back to AST with no resolved projection column names. The column alias list has

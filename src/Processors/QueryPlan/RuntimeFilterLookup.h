@@ -71,6 +71,49 @@ private:
     bool inserts_are_finished = false;
 };
 
+/// Build-side key range collected for storage index analysis.
+/// Access is synchronized by the owning RuntimeFilter.
+class RuntimeFilterIndexAnalysis
+{
+public:
+    RuntimeFilterIndexAnalysis(const DataTypePtr & data_type, bool positive_filter_);
+
+    void enable() { enabled = true; }
+    bool canUseExactValues() const { return enabled && positive_filter; }
+    void insert(const IColumn & values);
+    void mergeFrom(const RuntimeFilterIndexAnalysis & source);
+    void setRanges(const std::vector<Range> & ranges);
+
+    /// Disjoint closed intervals covering the recorded keys, by left bound; empty if none.
+    /// Must only be called after the build finished: the result is memoized.
+    std::vector<Range> getRanges() const;
+    /// The memoized result of `getRanges`, if it was computed already.
+    std::optional<std::vector<Range>> getCachedRanges() const { return cached_ranges; }
+
+private:
+    static bool supportsDataType(const DataTypePtr & data_type);
+    static bool supportsHistogram(const DataTypePtr & data_type);
+    void extendRange(const Field & new_min, const Field & new_max);
+    /// Everything recorded so far, unreduced: histogram runs, merged-in intervals, and the envelope.
+    void appendRangeCover(std::vector<std::pair<Field, Field>> & out) const;
+
+    const bool range_supported;
+    const bool positive_filter;
+    /// Whether the histogram can bucket this key type; if not, the envelope is used.
+    const bool histogram_supported;
+    bool enabled = false;
+    /// Envelope, for key types the histogram cannot bucket.
+    bool has_range = false;
+    Field range_min{};
+    Field range_max{};
+    /// Closed intervals, carried over from a replaced filter or merged in from other streams.
+    std::vector<std::pair<Field, Field>> range_cover;
+    /// Keys as bits over a bucketed domain; order-independent (see `KeyRangeHistogram`).
+    std::shared_ptr<KeyRangeHistogram> range_histogram;
+    /// Memoized `getRanges`; mutable for the const getter, guarded by the owning RuntimeFilter's mutex.
+    mutable std::optional<std::vector<Range>> cached_ranges;
+};
+
 /// Thread-safe, nonnegative row budget used to throttle runtime-filter evaluation.
 class RuntimeFilterSkipBudget
 {
@@ -290,39 +333,25 @@ private:
 
     struct Data
     {
-        Data(detail::RuntimeFilterBuildState build_state_, Filter filter_)
-            : build_state(std::move(build_state_)), filter(std::move(filter_))
-        {
-        }
-
         detail::RuntimeFilterBuildState build_state;
         Filter filter;
-        bool index_analysis_enabled = false;
-        /// Envelope, for key types the histogram cannot bucket.
-        bool has_range = false;
-        Field range_min{};
-        Field range_max{};
-        /// Disjoint closed intervals, sorted by left bound.
-        std::vector<std::pair<Field, Field>> range_cover;
-        /// Keys as bits over a bucketed domain; order-independent (see `KeyRangeHistogram`).
-        std::shared_ptr<KeyRangeHistogram> range_histogram;
-        /// Memoized `getRecordedKeyRanges`; mutable for the const getter, still mutex-guarded.
-        mutable std::optional<std::vector<Range>> recorded_key_ranges;
+        detail::RuntimeFilterIndexAnalysis index_analysis;
     };
 
     template <typename FilterImpl>
     static Data makeData(size_t filters_to_merge, FilterImpl && filter)
     {
         using FilterType = std::decay_t<FilterImpl>;
+        auto target_type = filter.getTargetType();
         Data result{
             detail::RuntimeFilterBuildState(FilterType::is_prebuilt ? 0 : filters_to_merge, FilterType::is_prebuilt),
-            Filter(std::forward<FilterImpl>(filter))};
+            Filter(std::forward<FilterImpl>(filter)),
+            detail::RuntimeFilterIndexAnalysis(target_type, !std::is_same_v<FilterType, ExactNotContains>)};
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {
-            result.index_analysis_enabled = true;
+            result.index_analysis.enable();
             /// Carry over the replaced filter's cover so left-side pruning survives the switch.
-            for (const auto & range : std::get<SharedFixedHashTable>(result.filter).getInitialKeyRanges())
-                result.range_cover.emplace_back(range.left, range.right);
+            result.index_analysis.setRanges(std::get<SharedFixedHashTable>(result.filter).getInitialKeyRanges());
         }
         return result;
     }
@@ -371,13 +400,6 @@ public:
 
 private:
     const DataTypePtr filter_column_target_type;
-    const bool range_supported;
-    const bool range_positive;
-    /// Whether the histogram can bucket this key type; if not, the envelope is used.
-    const bool range_histogram_supported;
-
-    std::vector<std::pair<Field, Field>> effectiveRangeCover() const TSA_REQUIRES_SHARED(mutex);
-    void appendRangeCover(std::vector<std::pair<Field, Field>> & out) const;
 
     RuntimeFilterEvaluationState evaluation_state;
     mutable SharedMutex mutex;
