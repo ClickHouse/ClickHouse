@@ -1,0 +1,72 @@
+---
+slug: '/examples/aggregate-function-combinators/argMinIf'
+title: 'argMinIf'
+description: 'argMinIf 조합자를 사용하는 예시'
+keywords: ['argMin', 'if', '조합자', '예시', 'argMinIf']
+sidebarTitle: 'argMinIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`If`](/ko/reference/functions/aggregate-functions/combinators#-if) 조합자는 [`argMin`](/ko/reference/functions/aggregate-functions/argMin)
+함수에 적용할 수 있으며, `argMinIf` 집계 조합자 함수를 사용하면 조건이 참인 행에 대해
+`val`의 최솟값에 대응하는 `arg` 값을 찾을 수 있습니다.
+
+`argMinIf` 함수는 데이터셋에서 최솟값에 해당하는 값을 찾아야 하지만, 특정
+조건을 만족하는 행에 대해서만 찾아야 할 때 유용합니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+이 예시에서는 제품 가격과 해당 타임스탬프를 저장하는 테이블을 생성하고,
+재고가 있는 경우 각 제품의 최저 가격을 찾기 위해 `argMinIf`를 사용합니다.
+
+```sql title="Query"
+CREATE TABLE product_prices(
+    product_id UInt32,
+    price Decimal(10,2),
+    timestamp DateTime,
+    in_stock UInt8
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO product_prices VALUES
+    (1, 10.99, '2024-01-01 10:00:00', 1),
+    (1, 9.99, '2024-01-01 10:05:00', 1),
+    (1, 11.99, '2024-01-01 10:10:00', 0),
+    (2, 20.99, '2024-01-01 11:00:00', 1),
+    (2, 19.99, '2024-01-01 11:05:00', 1),
+    (2, 21.99, '2024-01-01 11:10:00', 1);
+
+SELECT
+    product_id,
+    argMinIf(price, timestamp, in_stock = 1) AS lowest_price_when_in_stock
+FROM product_prices
+GROUP BY product_id;
+```
+
+`argMinIf` 함수는 각 제품별로 가장 이른 timestamp에 해당하는 가격을 찾되,
+`in_stock = 1`인 행만 대상으로 합니다. 예시:
+
+* 제품 1: 재고가 있는 행 중에서는 10.99의 timestamp(10:00:00)가 가장 이릅니다
+* 제품 2: 재고가 있는 행 중에서는 20.99의 timestamp(11:00:00)가 가장 이릅니다
+
+```response title="Response"
+   ┌─product_id─┬─lowest_price_when_in_stock─┐
+1. │          1 │                      10.99 │
+2. │          2 │                      20.99 │
+   └────────────┴────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`argMin`](/ko/reference/functions/aggregate-functions/argMin)
+* [`argMax`](/ko/reference/functions/aggregate-functions/argMax)
+* [`argMaxIf`](/ko/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf)
+* [`If 조합자`](/ko/reference/functions/aggregate-functions/combinators#-if)

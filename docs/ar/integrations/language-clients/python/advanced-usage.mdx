@@ -1,0 +1,200 @@
+---
+sidebarTitle: 'الاستخدام المتقدم'
+keywords: ['ClickHouse', 'بايثون', 'متقدم', 'خام', 'غير متزامن', 'تعدد الخيوط']
+description: 'الاستخدام المتقدم مع ClickHouse Connect'
+slug: /integrations/language-clients/python/advanced-usage
+title: 'الاستخدام المتقدم'
+doc_type: 'مرجع'
+---
+
+<div id="raw-api">
+  ## واجهة برمجة التطبيقات الخام
+</div>
+
+لحالات الاستخدام التي لا تتطلب تحويلًا بين بيانات ClickHouse وأنواع البيانات والبُنى الأصلية أو الخاصة بجهات خارجية، يوفّر عميل ClickHouse Connect طرقًا لاستخدام اتصال ClickHouse مباشرةً.
+
+<div id="client-rawquery-method">
+  ### الطريقة `raw_query` في `Client`
+</div>
+
+تتيح الطريقة `Client.raw_query` استخدام واجهة استعلام HTTP الخاصة بـ ClickHouse مباشرةً عبر اتصال العميل. وتكون القيمة المُعادة كائن `bytes` غير مُعالَج. كما توفّر طبقة تغليف ملائمة مع ربط المعلمات، ومعالجة الأخطاء، وإعادات المحاولة، وإدارة الإعدادات من خلال واجهة مبسطة:
+
+| المعلمة              | النوع            | الافتراضي | الوصف                                                                                                                        |
+| -------------------- | ---------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `query`              | str              | مطلوب     | أي استعلام ClickHouse صالح.                                                                                                  |
+| `parameters`         | dict or sequence | `None`    | راجع [وسيطة المعلمات](/ar/integrations/language-clients/python/driver-api#parameters-argument).                                 |
+| `settings`           | dict             | `None`    | راجع [وسيطة الإعدادات](/ar/integrations/language-clients/python/driver-api#settings-argument-1).                                |
+| `fmt`                | str              | `None`    | تنسيق الإخراج في ClickHouse. يستخدم ClickHouse تنسيق TSV عند عدم تحديد أي تنسيق.                                             |
+| `use_database`       | bool             | `True`    | أدرج قاعدة البيانات المُعدّة على العميل.                                                                                     |
+| `external_data`      | `ExternalData`   | `None`    | ملف خارجي أو بيانات ثنائية. راجع [البيانات الخارجية](/ar/integrations/language-clients/python/advanced-querying#external-data). |
+| `transport_settings` | dict             | `None`    | ترويسات HTTP المُضافة إلى هذا الطلب.                                                                                         |
+
+تقع على عاتق المستدعي مسؤولية التعامل مع كائن `bytes` الناتج. لاحظ أن `Client.query_arrow` ليس سوى طبقة تغليف خفيفة حول هذه الطريقة باستخدام تنسيق الإخراج `Arrow` في ClickHouse.
+
+<div id="client-rawstream-method">
+  ### طريقة `raw_stream` في Client
+</div>
+
+للطريقة المتزامنة `Client.raw_stream` واجهة برمجة تطبيقات مماثلة لـ `raw_query`، لكنها تُرجع تدفق `io.IOBase` من مقاطع بايت. أغلِق التدفق عند انتهاء المعالجة. ويُنتظر `AsyncClient.raw_stream` ويُرجع `StreamContext` غير متزامن لاستخدامه مع `async with` و`async for`.
+
+<div id="client-rawinsert-method">
+  ### طريقة `raw_insert` في `Client`
+</div>
+
+تتيح الطريقة `Client.raw_insert` إجراء عمليات إدراج مباشرة لكائنات `bytes` أو مولدات كائنات `bytes` باستخدام اتصال العميل. ونظرًا لأنها لا تجري أي معالجة لحمولة الإدراج، فهي عالية الكفاءة جدًا. كما توفّر الطريقة خيارات لتحديد الإعدادات وتنسيق الإدراج:
+
+| Parameter            | Type                                 | Default  | Description                                                                                   |
+| -------------------- | ------------------------------------ | -------- | --------------------------------------------------------------------------------------------- |
+| `table`              | str                                  | Required | الجدول الهدف البسيط أو المؤهل باسم قاعدة البيانات.                                            |
+| `column_names`       | Sequence[str]                        | `None`   | أسماء الأعمدة الخاصة بكتلة الإدراج. وهي مطلوبة عندما لا يتضمن `fmt` الأسماء.                  |
+| `insert_block`       | str, bytes, generator, or `BinaryIO` | Required | البيانات المطلوب إدراجها. تُرمَّز السلاسل النصية باستخدام ترميز العميل.                       |
+| `settings`           | dict                                 | `None`   | راجع [وسيطة الإعدادات](/ar/integrations/language-clients/python/driver-api#settings-argument-1).  |
+| `fmt`                | str                                  | `None`   | تنسيق الإدخال في ClickHouse لحمولة `insert_block`. يُستخدم `Native` عندما لا يتم تحديد تنسيق. |
+| `compression`        | str                                  | `None`   | الضغط المُطبَّق مسبقًا على `insert_block`، مثل `"gzip"` أو `"lz4"` أو `"zstd"`.               |
+| `transport_settings` | dict                                 | `None`   | ترويسات HTTP المضافة إلى هذا الطلب.                                                           |
+
+تقع على عاتق المستدعي مسؤولية التأكد من أن `insert_block` بالتنسيق المحدد ويستخدم طريقة الضغط المحددة. ويستخدم ClickHouse Connect عمليات الإدراج الخام هذه لرفع الملفات وجداول PyArrow، مع تفويض التحليل إلى خادم ClickHouse.
+
+<div id="saving-query-results-as-files">
+  ## حفظ نتائج الاستعلامات كملفات
+</div>
+
+يمكنك بث الملفات مباشرةً من ClickHouse إلى نظام الملفات المحلي باستخدام الطريقة `raw_stream`. على سبيل المثال، إذا كنت ترغب في حفظ نتائج استعلام في ملف CSV، فيمكنك استخدام مقتطف الشيفرة التالي:
+
+```python
+import clickhouse_connect
+
+if __name__ == "__main__":
+    client = clickhouse_connect.get_client()
+    query = (
+        "SELECT number, toString(number) AS number_as_str "
+        "FROM system.numbers LIMIT 5"
+    )
+    stream = client.raw_stream(query=query, fmt="CSVWithNames")
+    try:
+        with open("output.csv", "wb") as file:
+            for chunk in stream:
+                file.write(chunk)
+    finally:
+        stream.close()
+        client.close()
+```
+
+ينتج عن الشيفرة أعلاه ملف `output.csv` بالمحتوى التالي:
+
+```csv
+"number","number_as_str"
+0,"0"
+1,"1"
+2,"2"
+3,"3"
+4,"4"
+```
+
+وبالمثل، يمكنك حفظ البيانات بتنسيق [TabSeparated](/ar/reference/formats/TabSeparated/TabSeparated) وبتنسيقات أخرى. راجع [تنسيقات بيانات الإدخال والإخراج](/ar/reference/formats) للاطلاع على نظرة عامة على جميع خيارات التنسيق المتاحة.
+
+<div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
+  ## حالات الاستخدام متعددة الخيوط، ومتعددة العمليات، وغير المتزامنة/القائمة على حلقة الأحداث
+</div>
+
+يعمل ClickHouse Connect بكفاءة في التطبيقات متعددة الخيوط، ومتعددة العمليات، والتطبيقات غير المتزامنة/القائمة على حلقة الأحداث. تتم جميع عمليات معالجة الاستعلامات والإدراج ضمن خيط واحد، لذا تكون العمليات آمنة على مستوى الخيوط بشكل عام. (قد تُضاف مستقبلًا إمكانية المعالجة المتوازية لبعض العمليات على مستوى منخفض لتجاوز أثر الأداء المترتب على الاعتماد على خيط واحد، ولكن حتى في هذه الحالة ستظل السلامة على مستوى الخيوط محفوظة.)
+
+ولأن كل استعلام أو عملية إدراج يتم تنفيذها يحتفظ كلٌّ منها بحالته داخل الكائن `QueryContext` أو `InsertContext` الخاص به، على التوالي، فإن هذه الكائنات المساعدة ليست آمنة على مستوى الخيوط، ولا ينبغي مشاركتها بين عدة تدفقات معالجة. راجع أيضًا المناقشة الإضافية حول كائنات السياق في قسمي [QueryContexts](/ar/integrations/language-clients/python/advanced-querying#querycontexts) و[InsertContexts](/ar/integrations/language-clients/python/advanced-inserting#insertcontexts).
+
+إضافةً إلى ذلك، في التطبيق الذي توجد فيه استعلامات و/أو عمليات إدراج، اثنتان أو أكثر، &quot;قيد التنفيذ&quot; في الوقت نفسه، هناك اعتباران إضافيان ينبغي أخذهما في الحسبان. الأول هو &quot;الجلسة&quot; في ClickHouse المرتبطة بالاستعلام/الإدراج، والثاني هو تجمع اتصالات HTTP الذي تستخدمه مثيلات ClickHouse Connect Client.
+
+<div id="asyncclient">
+  ## AsyncClient
+</div>
+
+يوفّر ClickHouse Connect عميلًا أصليًا يعتمد على aiohttp لتطبيقات asyncio. ثبّت التبعية الاختيارية قبل استخدامه:
+
+```bash
+pip install "clickhouse-connect[async]"
+```
+
+استخدم `await` مع `get_async_client` لإنشاء العميل وتهيئته. طرائق الإدخال/الإخراج مثل `query` و`command` و`insert` هي روتينات تعاونية:
+
+```python
+import asyncio
+
+import clickhouse_connect
+
+
+async def main():
+    async with await clickhouse_connect.get_async_client() as client:
+        result = await client.query(
+            "SELECT name FROM system.databases ORDER BY name LIMIT 1"
+        )
+        print(result.result_rows)
+
+
+asyncio.run(main())
+```
+
+يتبع العميل غير المتزامن نفس واجهة query وinsert وraw وArrow وstreaming التي يتبعها العميل المتزامن. ويستخدم aiohttp لعمليات I/O على الشبكة. وقد يُشغَّل تحليل تنسيق Native كثيف الاعتماد على CPU داخل executor حتى لا يحجب حلقة الأحداث.
+
+تُنتظر طرق البث غير المتزامنة قبل الدخول إلى السياق المُعاد:
+
+```python
+async with await client.query_rows_stream(
+    "SELECT number FROM numbers(100000)"
+) as stream:
+    async for row in stream:
+        process(row)
+```
+
+على عكس المصنع المتزامن، يعطّل `get_async_client` مُعرّفات الجلسات التلقائية افتراضيًا لكي تتمكن coroutines المتزامنة من مشاركة عميل واحد. مرّر `session_id` محددًا صراحةً أو استخدم `autogenerate_session_id=True` فقط عند الحاجة إلى حالة الجلسة، مع تجنّب الاستعلامات المتزامنة ضمن تلك الجلسة.
+
+<div id="managing-clickhouse-session-ids">
+  ## إدارة معرّفات الجلسات في ClickHouse
+</div>
+
+يُنفَّذ كل استعلام في ClickHouse ضمن سياق &quot;جلسة&quot; في ClickHouse. وتُستخدم الجلسات حاليًا لغرضين:
+
+* ربط إعدادات ClickHouse محددة بعدة استعلامات (راجع [إعدادات المستخدم](/ar/reference/settings/session-settings)). ويُستخدم الأمر `SET` في ClickHouse لتغيير الإعدادات ضمن نطاق جلسة المستخدم.
+* تتبّع [الجداول المؤقتة.](/ar/reference/statements/create/table#temporary-tables)
+
+بشكل افتراضي، يستخدم `Client` المتزامن معرّف جلسة يتم إنشاؤه تلقائيًا. لذلك، تستمر عبارات `SET` والجداول المؤقتة عبر الطلبات الصادرة من ذلك العميل. ولا تُنشئ الدالة المصنعية غير المتزامنة معرّف جلسة بشكل افتراضي. ولا يسمح ClickHouse بتنفيذ استعلامات متزامنة ضمن الجلسة نفسها، ويرفع العميل الخطأ `ProgrammingError` إذا جرت محاولة ذلك، لذا استخدم أحد الأنماط التالية:
+
+1. أنشئ مثيل `Client` منفصلًا لكل thread/process/event handler يحتاج إلى عزل للجلسة. يحافظ ذلك على حالة الجلسة الخاصة بكل عميل (الجداول المؤقتة وقيم `SET`).
+2. استخدم `session_id` فريدًا لكل استعلام عبر الوسيط `settings` عند استدعاء `query` أو `command` أو `insert`، إذا لم تكن بحاجة إلى حالة جلسة مشتركة.
+3. عطّل الجلسات على عميل مشترك عبر تعيين `autogenerate_session_id=False` قبل إنشاء العميل (أو مرّره مباشرةً إلى `get_client`).
+
+```python
+import clickhouse_connect
+from clickhouse_connect import common
+
+common.set_setting("autogenerate_session_id", False)
+client = clickhouse_connect.get_client(
+    host="somehost.com",
+    username="dbuser",
+    password="password",
+)
+```
+
+بدلًا من ذلك، مرّر `autogenerate_session_id=False` مباشرةً إلى `get_client(...)`.
+
+في هذه الحالة، لا يرسل ClickHouse Connect قيمة `session_id`؛ ولا يعتبر الخادم الطلبات المنفصلة جزءًا من الجلسة نفسها. ولن تستمر الجداول المؤقتة وإعدادات مستوى الجلسة عبر الطلبات.
+
+<div id="customizing-the-http-connection-pool">
+  ## تخصيص تجمع اتصالات HTTP
+</div>
+
+يستخدم ClickHouse Connect تجمعات اتصالات HTTP `urllib3` لإدارة اتصال HTTP الأساسي مع الخادم. افتراضيًا، تشترك جميع مثيلات العميل في تجمع اتصالات HTTP نفسه، وهو كافٍ لمعظم حالات الاستخدام. ويحافظ هذا التجمع الافتراضي على ما يصل إلى 8 اتصالات HTTP Keep Alive مع كل خادم ClickHouse يستخدمه التطبيق.
+
+بالنسبة إلى التطبيقات الكبيرة متعددة الخيوط، قد يكون من الأنسب استخدام تجمعات اتصالات HTTP منفصلة. ويمكن توفير تجمعات اتصالات HTTP مخصّصة عبر وسيط الكلمة المفتاحية `pool_mgr` للدالة الرئيسية `clickhouse_connect.get_client`:
+
+```python
+import clickhouse_connect
+from clickhouse_connect.driver import httputil
+
+big_pool_mgr = httputil.get_pool_manager(maxsize=16, num_pools=12)
+
+client1 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
+client2 = clickhouse_connect.get_client(pool_mgr=big_pool_mgr)
+```
+
+يمكن لعدة عملاء مشاركة مدير تجمع واحد، أو يمكن لكل عميل استخدام مدير منفصل. لمزيد من التفاصيل، راجع [وثائق `urllib3` الخاصة بـ `PoolManager`](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#customizing-pool-behavior).
+
+يمتلك العميل غير المتزامن تجمع `aiohttp` بدلًا من استخدام `urllib3`. قم بتكوينه من خلال `connector_limit` و`connector_limit_per_host` و`keepalive_timeout` في `get_async_client`. يؤدي استدعاء `await async_client.close_connections()` إلى تبديل التجمع دوريًا دون مقاطعة الطلبات قيد التنفيذ.

@@ -24,5 +24,18 @@
                 <port>2181</port>
             </node>
         </zookeeper2>
+        <!-- Chrooted auxiliary keeper: its namespace (/aux_root/...) is physically
+             distinct from the default keeper, so routing a command to it is observable. -->
+        <zookeeper_aux>
+            <node index="1">
+                <host>zoo1</host>
+                <port>2181</port>
+            </node>
+            <node index="2">
+                <host>zoo2</host>
+                <port>2181</port>
+            </node>
+            <root>/aux_root</root>
+        </zookeeper_aux>
     </auxiliary_zookeepers>
 </clickhouse>

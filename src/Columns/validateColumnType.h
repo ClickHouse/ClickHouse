@@ -14,8 +14,8 @@ namespace DB
 /// With strict_decimal_scale, a Decimal/DateTime64/Time64 column must also have the
 /// same scale as the type (getDataType() alone is scale-blind: every scale maps to the
 /// same physical TypeIndex). Off by default because a scale-divergent column behaves
-/// correctly almost everywhere; the property fuzzer enables it to reject such a column at
-/// the producing function's gate before stashing and reusing it.
+/// correctly almost everywhere; the property fuzzer enables it to detect such a column at
+/// the producing function's gate before stashing and reusing it as another function's input.
 bool columnMatchesType(const IColumn & column, const IDataType & type, bool strict_decimal_scale = false);
 
 }

@@ -38,7 +38,10 @@ $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_hypo_no_stat;
     CREATE TABLE t_hypo_no_stat (a UInt64, b UInt64)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    -- auto_statistics_types = '': this table must have no column statistics so the statistical
+    -- path falls back to applicability_only. Without it the default auto-statistics (minmax, uniq),
+    -- once materialized on INSERT (randomized in CI), would make the source 'statistical'.
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, auto_statistics_types = '';
     INSERT INTO t_hypo_no_stat SELECT number, number % 100 FROM numbers(10000);
 
     CREATE HYPOTHETICAL INDEX idx_b ON t_hypo_no_stat (b) TYPE minmax GRANULARITY 1;

@@ -42,7 +42,12 @@ if [ -z "$elapsed" ] || ! awk "BEGIN{exit !($elapsed > 1)}" 2>/dev/null; then
     cat "$err"
 # On the fixed server the cancel is observed inside the generate loop and `KILL QUERY` returns
 # quickly; bound it so a regression (cancel ignored while spinning) fails the test instead of hanging.
-elif timeout 10 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
+# The bound only has to separate "returns" from "spins forever", so it is deliberately generous: the
+# regression never returns (`generate` skips ~1e17 primes), while on a slow, heavily loaded sanitizer
+# build the bounded `KILL` still has to pay a fresh `clickhouse-client` startup plus the cancel + the
+# 100ms-granularity sync wait. A tight bound (10s) flaked on `amd_msan` under load, where a single
+# client invocation alone can take ~8s; 60s keeps the regression caught while removing the flake.
+elif timeout 60 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null"
 then
     echo "killed promptly"
 else

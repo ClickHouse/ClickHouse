@@ -131,7 +131,6 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
 
         S3::ClientSettings client_settings{
             .use_virtual_addressing = new_uri.is_virtual_hosted_style,
-            .disable_checksum = false,
             .gcs_issue_compose_request = false,
             .is_s3express_bucket = S3::isS3ExpressEndpoint(new_uri.endpoint),
         };
@@ -155,7 +154,10 @@ void KeeperSnapshotManagerS3::updateS3Configuration(const Poco::Util::AbstractCo
                 auth_settings[S3AuthSetting::role_arn],
                 auth_settings[S3AuthSetting::role_session_name],
                 auth_settings[S3AuthSetting::external_id],
-                /*sts_endpoint_override=*/""
+                /*sts_endpoint_override=*/"",
+                /*kms_role_arn=*/"",
+                /// Keeper snapshot upload is a server-internal operation; it uses the server's own credentials.
+                /*forbid_implicit_credentials=*/false
             },
             credentials.GetSessionToken(),
             shared_cache);

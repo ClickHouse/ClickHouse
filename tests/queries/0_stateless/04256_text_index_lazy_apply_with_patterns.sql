@@ -8,7 +8,6 @@
 -- See https://github.com/ClickHouse/ClickHouse/pull/100035#discussion_r3267067617
 
 SET enable_full_text_index = 1;
-SET allow_experimental_text_index_lazy_apply = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
 

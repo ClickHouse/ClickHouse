@@ -1,0 +1,19 @@
+---
+title: 'ClickHouse prend-il en charge les mises à jour en temps réel ?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/updates
+description: 'ClickHouse prend en charge les mises à jour légères en temps réel'
+doc_type: 'reference'
+keywords: ['mises à jour', 'temps réel']
+---
+
+ClickHouse prend en charge l&#39;instruction UPDATE et peut exécuter des mises à jour en temps réel aussi rapidement que des INSERT.
+
+Cela est possible grâce à la [structure de données patch parts](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#stage-3-patch-parts--updates-the-clickhouse-way), qui permet d&#39;appliquer rapidement les modifications sans impact significatif sur les performances des SELECT.
+
+De plus, grâce au MVCC (contrôle de concurrence multiversion) et à l&#39;isolation par instantané, les mises à jour offrent des propriétés ACID.
+
+<Info>
+  Les mises à jour légères ont été introduites dans ClickHouse version 25.7.
+</Info>
