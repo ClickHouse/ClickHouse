@@ -241,6 +241,12 @@ namespace CurrentMetrics
 }
 
 
+namespace
+{
+    constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; /// 1MB
+}
+
+
 namespace DB
 {
 

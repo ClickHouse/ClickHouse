@@ -551,10 +551,9 @@ Merges initiated by [OPTIMIZE](/reference/statements/optimize) with `FINAL` or
 with an explicit `PARTITION` ignore this setting. Merges that only drop wholly
 expired parts are not limited by their source size: they write an empty part
 and reserve only the 1 MiB minimum every reservation is clamped to, so they are
-selected whenever the limit is above zero and, on `ReplicatedMergeTree`, the
-executing replica's queue checks them against its limit as a 1 MiB merge. TTL
-merges that rewrite data (`TTL ... DELETE`, recompression) are not exempt and
-are postponed while the headroom binds. At a limit of zero nothing is selected,
+selected whenever the limit is above zero. TTL merges that rewrite data
+(`TTL ... DELETE`, recompression) are not exempt and are postponed while the
+headroom binds. At a limit of zero nothing is selected,
 expired-part drops included.
 
 Once the limit is zero a plain `OPTIMIZE` assigns nothing: it is a no-op, or
