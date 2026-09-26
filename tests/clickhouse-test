@@ -2342,7 +2342,8 @@ class MergeTreeSettingsRandomizer:
         # The master switch for the three knobs above, which could only ever force vertical merges
         # on. A vertical merge must produce the same part as a horizontal one. Rarely off: drawing
         # it off makes those three inert, and the thresholds already reach horizontal merges.
-        "enable_vertical_merge_algorithm": lambda: random.random() > 0.05,
+        # UInt64, not Bool, so it must draw an int: the server rejects `True` for a UInt64 setting.
+        "enable_vertical_merge_algorithm": lambda: 0 if random.random() < 0.05 else 1,
         "min_merge_bytes_to_use_direct_io": threshold_generator(
             0.25, 0.25, 1, 10 * 1024 * 1024 * 1024
         ),
