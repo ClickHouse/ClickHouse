@@ -11,26 +11,29 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
 
-ALL_FUNCTIONAL_TESTS = [job.name for job in JobConfigs.functional_tests_jobs]
+# PR sanitizer jobs repeat tests related to the change to find intermittent failures.
+# Debug and plain binary jobs run the full suite. Master keeps the full suite in
+# every configuration; coverage-based targeting is specific to pull requests.
+FUNCTIONAL_TESTS_JOBS = JobConfigs.functional_tests_pr_jobs
+
+ALL_FUNCTIONAL_TESTS = [job.name for job in FUNCTIONAL_TESTS_JOBS]
 
 CORE_BLOCKING_JOB_NAMES = [
     job.name
-    for job in JobConfigs.functional_tests_jobs
+    for job in FUNCTIONAL_TESTS_JOBS
     if any(
         substr in job.name
         for substr in (
             "_debug, parallel",
             "_binary, parallel",
             "_binary, sequential",
-            "_asan_ubsan, distributed plan, parallel",
-            "_asan_ubsan, db disk, distributed plan, sequential",
-            "_tsan, parallel",
+            "_asan_ubsan, db disk, distributed plan, targeted",
         )
     )
 ] + [
     job.name
     for job in JobConfigs.integration_test_jobs_required
-    if "_asan_ubsan, db disk, old analyzer" in job.name
+    if "_asan_ubsan, db disk," in job.name
 ] + [
     job.name
     for job in JobConfigs.unittest_jobs
@@ -57,12 +60,12 @@ workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
+    engine=Workflow.Engine.GH_ACTIONS,
     jobs=[
         JobConfigs.style_check,
         JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
-        JobConfigs.ci_tests.set_run_after(CORE_BLOCKING_JOB_NAMES),
         *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
@@ -78,7 +81,17 @@ workflow = Workflow.Config(
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
-        *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
+        # Gated like the regular builds rather than like the special ones: it is the only job
+        # that compiles the standalone parser at all, and it needs no build artifact, so there
+        # is nothing to gain by deferring it behind the functional tests.
+        *[
+            job.set_run_after(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.wasm_parser_build_jobs
+        ],
+        *[
+            job.set_run_after(STYLE_AND_FAST_TESTS)
+            for job in JobConfigs.build_llvm_coverage_job
+        ],
         # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
         *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
@@ -88,11 +101,8 @@ workflow = Workflow.Config(
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         # The merge queue's non-sanitizer flaky check also runs here, so a test
         # that is only too slow (or only flaky) without a sanitizer is reported
-        # in the PR rather than first bouncing it from the merge queue. It is
-        # the same job config as in `ci/workflows/merge_queue.py` on purpose,
-        # and it still gets its own cache key here, so the merge queue keeps
-        # rechecking the merge group state - see the comment at
-        # `stateless_tests_flaky_mq_jobs`.
+        # in the PR rather than first bouncing it from the merge queue. Same job
+        # config as in `ci/workflows/merge_queue.py`.
         *JobConfigs.stateless_tests_flaky_mq_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         # Per-arch Bugfix Validation Checks (functional + integration tests on
@@ -117,11 +127,9 @@ workflow = Workflow.Config(
         JobConfigs.bugfix_validation_ut_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
         *[
             j.set_run_after(
-                CORE_BLOCKING_JOB_NAMES
-                if j.name not in CORE_BLOCKING_JOB_NAMES
-                else []
+                CORE_BLOCKING_JOB_NAMES if j.name not in CORE_BLOCKING_JOB_NAMES else []
             )
-            for j in JobConfigs.functional_tests_jobs
+            for j in FUNCTIONAL_TESTS_JOBS
         ],
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
@@ -137,7 +145,9 @@ workflow = Workflow.Config(
         ],
         *[
             job.set_run_after(
-                CORE_BLOCKING_JOB_NAMES if job.name not in CORE_BLOCKING_JOB_NAMES else []
+                CORE_BLOCKING_JOB_NAMES
+                if job.name not in CORE_BLOCKING_JOB_NAMES
+                else []
             )
             for job in JobConfigs.integration_test_jobs_required[:]
         ],
@@ -158,12 +168,8 @@ workflow = Workflow.Config(
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.unittest_llvm_coverage_job
         ],
-        JobConfigs.docker_server.set_run_after(
-            CORE_BLOCKING_JOB_NAMES
-        ),
-        JobConfigs.docker_keeper.set_run_after(
-            CORE_BLOCKING_JOB_NAMES
-        ),
+        JobConfigs.docker_server.set_run_after(CORE_BLOCKING_JOB_NAMES),
+        JobConfigs.docker_keeper.set_run_after(CORE_BLOCKING_JOB_NAMES),
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.install_check_jobs
@@ -192,6 +198,8 @@ workflow = Workflow.Config(
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
+        JobConfigs.parser_memory_check_job,
+        JobConfigs.storage_memory_check_job,
         # ClickBench runs on PRs only when files in its digest change
         # (see `clickbench_jobs.digest_config`), so the cost is bounded.
         *[
@@ -199,28 +207,28 @@ workflow = Workflow.Config(
             for job in JobConfigs.clickbench_jobs
         ],
         JobConfigs.llvm_coverage_job,
+        JobConfigs.promql_compliance_job,
         # TODO: stabilize and remove set_allow_failure
         JobConfigs.build_profile_diff_job.set_allow_failure(),
-        JobConfigs.sqllogic_test_master_job.set_run_after(
-            CORE_BLOCKING_JOB_NAMES
-        ),
-        JobConfigs.sqlstorm_test_job.set_run_after(
-            CORE_BLOCKING_JOB_NAMES
-        ),
+        JobConfigs.sqllogic_test_master_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
+        JobConfigs.sqlstorm_test_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
+        JobConfigs.docs_examples_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
         # default backend only, 15 min each. Runs when src/Coordination or stress test files change.
-        JobConfigs.keeper_stress_job
-            .set_name("Keeper Stress Tests (PR)")
-            .set_timeout(3 * 3600),
+        JobConfigs.keeper_stress_job.set_name("Keeper Stress Tests (PR)").set_timeout(
+            3 * 3600
+        ),
         *JobConfigs.toolchain_build_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
+        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.clickhouse_wasm,
+        ArtifactConfigs.wasm_parser,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
         ArtifactConfigs.clickhouse_examples,
@@ -243,6 +251,7 @@ workflow = Workflow.Config(
     enable_slack_feed=True,
     pre_hooks=[
         can_be_tested,
+        "python3 ./ci/jobs/scripts/workflow_hooks/ci_links.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/pr_labels_and_category.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
@@ -259,13 +268,18 @@ workflow = Workflow.Config(
     job_aliases={
         "integration": JobConfigs.integration_test_jobs_non_required[
             0
-        ].name,  # plain integration test job, no old analyzer, no dist plan
+        ].name,  # plain integration test job, no dist plan
         "fast": "Fast test",
         "functional": PLAIN_FUNCTIONAL_TEST_JOB.name,
         "build_debug": "Build (amd_debug)",
         "build": "Build (amd_binary)",
     },
     runs_on_label_prefix="pr-",
+    ai_orchestrator=Workflow.OrchestratorAI.Config(
+        enabled=False,
+        provider="bedrock",
+        model="global.anthropic.claude-sonnet-5",
+    ),
 )
 
 WORKFLOWS = [

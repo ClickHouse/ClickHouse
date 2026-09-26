@@ -83,9 +83,9 @@ SELECT hex(HMAC('sha256', 'The quick brown fox jumps over the lazy dog', 'secret
 ```
 
 ```response title=Response
-┌─hex(HMAC('sha256', 'The quick brown fox jumps over the lazy dog', 'secret_key'))─┐
-│ 31FD15FA0F61FD40DC09D919D4AA5B4141A0B27C1D51E74A6789A890AAAA187C                 │
-└──────────────────────────────────────────────────────────────────────────────────┘
+┌─hex(HMAC('sha256', 'The quick brown fox jumps over the lazy dog', [HIDDEN id: 1]))─┐
+│ 31FD15FA0F61FD40DC09D919D4AA5B4141A0B27C1D51E74A6789A890AAAA187C                   │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Diferentes algoritmos de hash**
@@ -150,24 +150,24 @@ aes_decrypt_mysql(mode, ciphertext, key[, iv])
 
 **Valor devuelto**
 
-Devuelve una String descifrada. [`String`](/es/reference/data-types/string)
+Devuelve una cadena descifrada. [`String`](/es/reference/data-types/string)
 
 **Ejemplos**
 
 **Descifrar datos de MySQL**
 
 ```sql title=Query
--- Descifremos los datos que hemos cifrado previamente con MySQL:
-mysql> SET  block_encryption_mode='aes-256-ofb';
-Query OK, 0 rows affected (0.00 sec)
-
-mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456') as ciphertext;
-+------------------------+
-| ciphertext             |
-+------------------------+
-| 0x24E9E4966469         |
-+------------------------+
-1 row in set (0.00 sec)
+-- Let's decrypt data we've previously encrypted with MySQL:
+-- mysql> SET  block_encryption_mode='aes-256-ofb';
+-- Query OK, 0 rows affected (0.00 sec)
+--
+-- mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviviviviviviv123456') as ciphertext;
+-- +------------------------+
+-- | ciphertext             |
+-- +------------------------+
+-- | 0x24E9E4966469         |
+-- +------------------------+
+-- 1 row in set (0.00 sec)
 
 SELECT aes_decrypt_mysql('aes-256-ofb', unhex('24E9E4966469'), '123456789101213141516171819202122', 'iviviviviviviviv123456') AS plaintext
 ```
@@ -303,15 +303,24 @@ Devuelve el texto plano descifrado. [`String`](/es/reference/data-types/string)
 **Descifrado correcto de datos cifrados**
 
 ```sql title=Query
--- Reutilizando la tabla del ejemplo de la función encrypt
+CREATE TABLE encryption_test
+(
+    `comment` String,
+    `secret` String
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO encryption_test VALUES
+('aes-256-ofb no IV', encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212')),
+('aes-256-ofb no IV, different key', encrypt('aes-256-ofb', 'Secret', 'keykeykeykeykeykeykeykeykeykeyke')),
+('aes-256-ofb with IV', encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'iviviviviviviviv')),
+('aes-256-cbc no IV', encrypt('aes-256-cbc', 'Secret', '12345678910121314151617181920212'));
+
 SELECT comment, hex(secret) FROM encryption_test;
 ```
 
 ```response title=Response
-┌─comment──────────────┬─hex(secret)──────────────────────────────────┐
-│ aes-256-gcm          │ A8A3CCBC6426CFEEB60E4EAE03D3E94204C1B09E0254 │
-│ aes-256-gcm with AAD │ A8A3CCBC6426D9A1017A0A932322F1852260A4AD6837 │
-└──────────────────────┴──────────────────────────────────────────────┘
 ┌─comment──────────────────────────┬─hex(secret)──────────────────────┐
 │ aes-256-ofb no IV                │ B4972BDC4459                     │
 │ aes-256-ofb no IV, different key │ 2FF57C092DC9                     │
@@ -323,24 +332,14 @@ SELECT comment, hex(secret) FROM encryption_test;
 **Descifrado incorrecto de datos cifrados**
 
 ```sql title=Query
-SELECT comment, decrypt('aes-256-cfb128', secret, '12345678910121314151617181920212') AS plaintext FROM encryption_test
+SELECT comment, hex(decrypt('aes-256-cfb8', secret, '12345678910121314151617181920212')) AS plaintext FROM encryption_test
 ```
 
 ```response title=Response
--- Observe cómo solo una parte de los datos fue descifrada correctamente, y el resto es texto ilegible, ya que `mode`, `key` o `iv` eran distintos durante el cifrado.
-┌─comment──────────────┬─plaintext──┐
-│ aes-256-gcm          │ OQ�E
-                             �t�7T�\\���\\�   │
-│ aes-256-gcm with AAD │ OQ�E
-                             �\\��si����;�o�� │
-└──────────────────────┴────────────┘
-┌─comment──────────────────────────┬─plaintext─┐
-│ aes-256-ofb no IV                │ Secret    │
-│ aes-256-ofb no IV, different key │ �4�
-                                        �         │
-│ aes-256-ofb with IV              │ ���6�~        │
-│aes-256-cbc no IV                │ �2*4�h3c�4w��@
-└──────────────────────────────────┴───────────┘
+aes-256-ofb no IV	53A69A28E815
+aes-256-ofb no IV, different key	C86BD2404D8A
+aes-256-ofb with IV	B9658159142A
+aes-256-cbc no IV	FC552E5096F1455997B2732FB31DCFEB
 ```
 
 <div id="encrypt">

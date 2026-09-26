@@ -31,11 +31,20 @@
 namespace
 {
 
+/// Identifies which replica a span belongs to: the callbacks of the initiator-local replica run
+/// on the initiator, so the host of the span alone is not enough.
+struct ReplicaSpanIdentity
+{
+    size_t replica_num = 0;
+    size_t replicas_count = 0;
+    String stream_id;
+};
+
 template <typename Func>
 struct TelemetryWrapper
 {
-    TelemetryWrapper(Func callback_, ProfileEvents::Event event_, std::string span_name_)
-        : callback(std::move(callback_)), event(event_), span_name(std::move(span_name_))
+    TelemetryWrapper(Func callback_, ProfileEvents::Event event_, std::string span_name_, ReplicaSpanIdentity identity_)
+        : callback(std::move(callback_)), event(event_), span_name(std::move(span_name_)), identity(std::move(identity_))
     {
     }
 
@@ -43,6 +52,13 @@ struct TelemetryWrapper
     auto operator()(Args &&... args)
     {
         DB::OpenTelemetry::SpanHolder span(span_name);
+        /// Attributes are built only for a traced query.
+        if (span.isTraceEnabled())
+        {
+            span.addAttribute("clickhouse.replica_num", identity.replica_num);
+            span.addAttribute("clickhouse.replicas_count", identity.replicas_count);
+            span.addAttributeIfNotEmpty("clickhouse.stream_id", identity.stream_id);
+        }
         DB::ProfileEventTimeIncrement<DB::Time::Microseconds> increment(event);
         return callback(std::forward<Args>(args)...);
     }
@@ -51,6 +67,7 @@ private:
     Func callback;
     ProfileEvents::Event event;
     std::string span_name;
+    ReplicaSpanIdentity identity;
 };
 
 }
@@ -85,11 +102,13 @@ ParallelReadingExtension::ParallelReadingExtension(
     , total_nodes_count(total_nodes_count_)
     , stream_id(std::move(stream_id_))
 {
+    ReplicaSpanIdentity identity{.replica_num = number_of_current_replica, .replicas_count = total_nodes_count, .stream_id = stream_id};
+
     all_callback = TelemetryWrapper<MergeTreeAllRangesCallback>{
-        std::move(all_callback_), ProfileEvents::ParallelReplicasAnnouncementMicroseconds, "ParallelReplicasAnnouncement"};
+        std::move(all_callback_), ProfileEvents::ParallelReplicasAnnouncementMicroseconds, "ParallelReplicasAnnouncement", identity};
 
     callback = TelemetryWrapper<MergeTreeReadTaskCallback>{
-        std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest"};
+        std::move(callback_), ProfileEvents::ParallelReplicasReadRequestMicroseconds, "ParallelReplicasReadRequest", std::move(identity)};
 }
 
 std::optional<InitialAllRangesAnnouncementResponse> ParallelReadingExtension::sendInitialRequest(
@@ -126,15 +145,17 @@ MergeTreeIndexBuildContext::MergeTreeIndexBuildContext(
 
 MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResult(const MergeTreeReadTask & task) const
 {
-    const auto & part_ranges = read_ranges.at(task.getInfo().part_index_in_query);
-    auto it = projection_read_ranges.find(task.getInfo().part_index_in_query);
+    const size_t part_index = task.getInfo().part_index_in_query;
+    const auto & skip_input = read_ranges.at(part_index);
+    auto it = projection_read_ranges.find(part_index);
     static RangesInDataParts empty_parts_ranges;
     const auto & projection_parts_ranges = it != projection_read_ranges.end() ? it->second : empty_parts_ranges;
-    auto & remaining_marks = part_remaining_marks.at(task.getInfo().part_index_in_query).value;
+    auto & remaining_marks = part_remaining_marks.at(part_index).value;
 
     auto storage_snapshot = task.getMainReader().getStorageSnapshot();
     const auto & all_updated_columns = task.getInfo().alter_conversions->getAllUpdatedColumns();
-    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(part_ranges, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns);
+    auto index_read_result = index_reader_pool->getOrBuildIndexReadResult(
+        part_index, task.getInfo().data_part_info, skip_input, projection_parts_ranges, storage_snapshot->metadata, all_updated_columns);
 
     /// Atomically subtract the number of marks this task will read from the total remaining marks. If the
     /// remaining marks after subtraction reach zero, this is the last task for the part, and we can trigger
@@ -143,13 +164,7 @@ MergeTreeIndexReadResultPtr MergeTreeIndexBuildContext::getPreparedIndexReadResu
     bool part_last_task = remaining_marks.fetch_sub(task_marks, std::memory_order_acq_rel) == task_marks;
 
     if (part_last_task)
-    {
-        /// The index-read-result pool is a coordinator-only (skip-index-on-data-read) feature,
-        /// so the concrete part is present here. Assert it so a future misuse that routes a borrowed
-        /// part through this path fails loudly instead of passing nullptr to the pool.
-        chassert(task.getInfo().data_part_info->getDataPart());
-        index_reader_pool->clear(task.getInfo().data_part_info->getDataPart());
-    }
+        index_reader_pool->clear(part_index);
 
     return index_read_result;
 }
@@ -443,7 +458,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                                 /// QueryConditionCache is a coordinator feature; concrete part present here.
                                 data_part_info->getDataPart()->storage.getStorageID().uuid,
                                 part_name,
-                                output->getHash(),
+                                queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt),
                                 prewhere_info->prewhere_actions.getNames()[0],
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part_info->getIndexGranularity().getMarksCount(),

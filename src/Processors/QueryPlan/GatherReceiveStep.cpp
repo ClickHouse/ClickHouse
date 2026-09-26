@@ -7,7 +7,7 @@
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/receiveExchangeStreams.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Core/SortDescription.h>
@@ -21,15 +21,14 @@ namespace DB
 
 void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    Pipes pipes;
-
-    /// Read from all buckets
+    VectorWithMemoryTracking<ExchangeStreamId> stream_ids;
     for (size_t i = 0; i < num_buckets; ++i)
-    {
-        pipes.push_back(Pipe(settings.exchange_lookup->createSource(output_header, ExchangeStreamId(exchange_id, i, 0))));
-    }
+        stream_ids.emplace_back(exchange_id, i, 0);
 
-    pipeline.init(Pipe::unitePipes(std::move(pipes)));
+    /// The steps after a gather depend on the streams of the sources: a sorted gather merges them
+    /// in order, and the merge of partial aggregation results expects every sender's buckets on one
+    /// input, in order. So the receive keeps one stream per source, with the deserializer behind it.
+    pipeline = receiveExchangeStreams(output_header, exchange_id, stream_ids, settings, /*spread_over_max_threads=*/ false);
 
     if (maintain_sort_description && pipeline.getNumStreams() > 1)
     {
@@ -56,7 +55,7 @@ void GatherReceiveStep::serialize(Serialization & ctx) const
     writeVarUInt(num_buckets, ctx.out);
     writeVarUInt(maintain_sort_description.has_value(), ctx.out);
     if (maintain_sort_description.has_value())
-        serializeSortDescription(*maintain_sort_description, ctx.out);
+        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version);
 }
 
 std::unique_ptr<IQueryPlanStep> GatherReceiveStep::deserialize(Deserialization & ctx)
@@ -73,7 +72,7 @@ std::unique_ptr<IQueryPlanStep> GatherReceiveStep::deserialize(Deserialization &
     if (has_maintain_sort_description)
     {
         maintain_sort_description.emplace();
-        deserializeSortDescription(*maintain_sort_description, ctx.in);
+        deserializeSortDescription(*maintain_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
     }
 
     return std::make_unique<GatherReceiveStep>(ctx.output_header, exchange_id, num_buckets, std::move(maintain_sort_description));

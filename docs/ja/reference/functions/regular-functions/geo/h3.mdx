@@ -901,7 +901,7 @@ SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
   ## h3ExactEdgeLengthM
 </div>
 
-入力されたH3 インデックスが表す単方向エッジの正確な長さを、メートル単位で返します。
+入力されたH3 インデックスが表す単方向エッジの正確な辺の長さを、メートル単位で返します。
 
 **構文**
 
@@ -915,25 +915,25 @@ h3ExactEdgeLengthM(index)
 
 **戻り値**
 
-* 辺の長さ (メートル単位) の正確な値。[Float64](/ja/reference/data-types/float)
+* 正確な辺の長さ (メートル単位) の値。[Float64](/ja/reference/data-types/float)
 
 **例**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
+SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
 ```
 
 ```text title="Response"
-┌───exactEdgeLengthM─┐
-│ 195449.63163407316 │
-└────────────────────┘
+┌─exactEdgeLengthM─┐
+│    195449.631634 │
+└──────────────────┘
 ```
 
 <div id="h3exactedgelengthkm">
   ## h3ExactEdgeLengthKm
 </div>
 
-入力された h3 index が表す単方向エッジの厳密な長さを、キロメートル単位で返します。
+入力された h3 index が表す単方向エッジの正確な辺の長さを、キロメートル単位で返します。
 
 **構文**
 
@@ -947,25 +947,25 @@ h3ExactEdgeLengthKm(index)
 
 **戻り値**
 
-* キロメートル単位の辺の正確な長さ。[Float64](/ja/reference/data-types/float)
+* キロメートル単位の正確な辺の長さ。[Float64](/ja/reference/data-types/float)
 
 **例**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
+SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
 ```
 
 ```text title="Response"
-┌──exactEdgeLengthKm─┐
-│ 195.44963163407317 │
-└────────────────────┘
+┌─exactEdgeLengthKm─┐
+│      195.44963163 │
+└───────────────────┘
 ```
 
 <div id="h3exactedgelengthrads">
   ## h3ExactEdgeLengthRads
 </div>
 
-入力された H3 インデックス が表す単方向エッジの正確な長さを、ラジアン単位で返します。
+入力された H3 インデックス が表す単方向エッジの正確な辺の長さを、ラジアン単位で返します。
 
 **構文**
 
@@ -984,13 +984,13 @@ h3ExactEdgeLengthRads(index)
 **例**
 
 ```sql title="Query"
-SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
+SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthRads;
 ```
 
 ```text title="Response"
-┌──exactEdgeLengthRads─┐
-│ 0.030677980118976447 │
-└──────────────────────┘
+┌─exactEdgeLengthRads─┐
+│      0.030677980119 │
+└─────────────────────┘
 ```
 
 <div id="h3numhexagons">
@@ -1053,9 +1053,9 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 ```
 
 ```text title="Response"
-┌──────h3PointDistM─┐
-│ 2223901.039504589 │
-└───────────────────┘
+┌───────h3PointDistM─┐
+│ 2223901.0395045886 │
+└────────────────────┘
 ```
 
 <div id="h3pointdistkm">
@@ -1086,9 +1086,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 ```
 
 ```text title="Response"
-┌─────h3PointDistKm─┐
-│ 2223.901039504589 │
-└───────────────────┘
+┌──────h3PointDistKm─┐
+│ 2223.9010395045884 │
+└────────────────────┘
 ```
 
 <div id="h3pointdistrads">
@@ -1231,8 +1231,8 @@ h3Distance(start,end)
 
 **パラメータ**
 
-* `start` — 開始点を表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)
-* `end` — 終了点を表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)
+* `start` — 始点を表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)
+* `end` — 終点を表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
@@ -1248,7 +1248,7 @@ h3Distance(start,end)
 
 ```text title="Response"
 ┌─distance─┐
-│        7 │
+│        6 │
 └──────────┘
 ```
 
@@ -1291,7 +1291,7 @@ h3HexRing(index, k)
   ## h3GetUnidirectionalEdge
 </div>
 
-指定された始点と宛先に基づいて単方向エッジの H3 インデックスを返します。エラー時には 0 を返します。
+隣接する 2 つの H3 セルインデックス (始点と宛先) の単方向エッジ H3 インデックスを返します。いずれかの入力が有効な H3 セルでない場合は例外をスローします (`functions_h3_default_if_invalid` 設定で制御されます) 。隣接していない有効なセル (同じセルを 2 回指定した場合を含む) の場合は、`0` を返します。
 
 **構文**
 
@@ -1329,7 +1329,7 @@ h3GetUnidirectionalEdge(originIndex, destinationIndex)
 **構文**
 
 ```sql
-h3UnidirectionalEdgeisValid(index)
+h3UnidirectionalEdgeIsValid(index)
 ```
 
 **パラメータ**
@@ -1357,7 +1357,7 @@ h3UnidirectionalEdgeisValid(index)
   ## h3GetOriginIndexFromUnidirectionalEdge
 </div>
 
-単方向エッジ H3Index から始点の六角形インデックスを返します。
+単方向エッジ H3Index から始点の六角形インデックスを返します。入力が有効な有向エッジでない場合は例外をスローします (`functions_h3_default_if_invalid` 設定で制御されます) 。この設定が有効な場合にのみ `0` を返します。
 
 **構文**
 
@@ -1367,21 +1367,22 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 
 **パラメータ**
 
-* `edge` — 一方向エッジを表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)。
+* `edge` — 単方向エッジを表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)。
 
 **戻り値**
 
 * 始点の六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)。
+* デフォルトでは、無効な有向エッジに対して `INCORRECT_DATA` をスローします。`functions_h3_default_if_invalid = 1` の場合は `0` を返します。
 
 **例**
 
 ```sql title="Query"
- SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin;
+ SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707199) AS origin;
 ```
 
 ```text title="Response"
 ┌─────────────origin─┐
-│ 599686042433355773 │
+│ 599686042433355775 │
 └────────────────────┘
 ```
 
@@ -1389,7 +1390,7 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
   ## h3GetDestinationIndexFromUnidirectionalEdge
 </div>
 
-単方向エッジの H3Index から、宛先の六角形インデックスを返します。
+単方向エッジの H3Index から、宛先の六角形インデックスを返します。入力が有効な有向エッジでない場合は例外をスローします (`functions_h3_default_if_invalid` 設定で制御されます) 。この設定が有効な場合にのみ `0` を返します。
 
 **構文**
 
@@ -1404,16 +1405,17 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 **戻り値**
 
 * 宛先の六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)。
+* デフォルトでは、無効な有向エッジに対して `INCORRECT_DATA` をスローします。`functions_h3_default_if_invalid = 1` の場合は `0` を返します。
 
 **例**
 
 ```sql title="Query"
- SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination;
+ SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707199) AS destination;
 ```
 
 ```text title="Response"
 ┌────────destination─┐
-│ 599686043507097597 │
+│ 599686043507097599 │
 └────────────────────┘
 ```
 
@@ -1440,7 +1442,7 @@ h3GetIndexesFromUnidirectionalEdge(edge)
 * `origin` — 始点の六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)。
 * `destination` — 宛先の六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)。
 
-与えられた入力が無効な場合は `(0,0)` を返します。
+指定された入力が有効な有向エッジでない場合は例外をスローします (`functions_h3_default_if_invalid` 設定で制御されます) 。その設定が有効な場合にのみ `(0,0)` を返します。
 
 **例**
 
@@ -1458,7 +1460,7 @@ h3GetIndexesFromUnidirectionalEdge(edge)
   ## h3GetUnidirectionalEdgesFromHexagon
 </div>
 
-指定された H3Index から伸びるすべての単方向エッジを返します。
+指定された H3Index から伸びるすべての単方向エッジを返します。入力が H3 セルでない場合は例外をスローします (`functions_h3_default_if_invalid` 設定で制御) 。この設定が有効な場合にのみ、空の Array を返します。
 
 **構文**
 
@@ -1468,16 +1470,17 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 
 **パラメータ**
 
-* `index` — 一方向エッジを表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)
+* `index` — cell を表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-各一方向エッジを表す H3 index の Array。[Array](/ja/reference/data-types/array)([UInt64](/ja/reference/data-types/int-uint))。
+* 各一方向エッジを表す H3 index の Array。[Array](/ja/reference/data-types/array)([UInt64](/ja/reference/data-types/int-uint))。
+* デフォルトでは無効な cell に対して `INCORRECT_DATA` をスローします。`functions_h3_default_if_invalid = 1` の場合は `[]` を返します。
 
 **例**
 
 ```sql title="Query"
- SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199) AS edges;
+ SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355775) AS edges;
 ```
 
 ```text title="Response"
@@ -1490,7 +1493,7 @@ h3GetUnidirectionalEdgesFromHexagon(index)
   ## h3GetUnidirectionalEdgeBoundary
 </div>
 
-単方向エッジを構成する座標を返します。
+単方向エッジを構成する座標を返します。入力が有効な有向エッジでない場合は例外をスローします (`functions_h3_default_if_invalid` 設定で制御されます) 。空の Array を返すのは、その設定が有効な場合のみです。
 
 **構文**
 
@@ -1500,11 +1503,12 @@ h3GetUnidirectionalEdgeBoundary(index)
 
 **パラメータ**
 
-* `index` — 一方向エッジを表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)。
+* `index` — 単方向エッジを表す六角形インデックス番号。[UInt64](/ja/reference/data-types/int-uint)。
 
 **戻り値**
 
-* &#39;(lon, lat)&#39; のペアからなる Array。[Array](/ja/reference/data-types/array)([Float64](/ja/reference/data-types/float), [Float64](/ja/reference/data-types/float))。
+* &#39;(lat, lon)&#39; のペアからなる Array。[Array](/ja/reference/data-types/array)([Float64](/ja/reference/data-types/float), [Float64](/ja/reference/data-types/float))。
+* デフォルトでは無効な有向エッジに対して `INCORRECT_DATA` をスローします。`functions_h3_default_if_invalid = 1` の場合は `[]` を返します。
 
 **例**
 

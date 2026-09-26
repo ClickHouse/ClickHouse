@@ -8,13 +8,15 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromTextIndexCount.h>
 
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Core/Settings.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ITokenizer.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -241,14 +243,12 @@ bool guardsHold(const ReadFromMergeTree & reading)
         if (!useful.index->isTextIndex())
             return false;
 
-    /// Row policy filters rows the cardinality ignores; without a database name it can't be resolved, so fail closed.
-    auto storage_id = reading.getStorageID();
-    if (!storage_id.hasDatabase())
+    /// The effective row policy may belong to a wrapper such as `Alias`.
+    if (reading.getRowLevelFilter())
         return false;
 
-    if (auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    /// Row policy filters rows the cardinality ignores; without a database name it can't be resolved, so fail closed.
+    if (!reading.getStorageID().hasDatabase() || getEffectiveRowPolicyFilter(reading.getMergeTreeData(), context))
         return false;
 
     if (const auto & mutations = reading.getMutationsSnapshot();
@@ -301,22 +301,24 @@ std::optional<ResolvedQuery> recoverSearchQuery(const ReadFromMergeTree & readin
     return {};
 }
 
-/// E.g. "Trivial count from text index (idx, token = 'alpha')" or "... (idx, tokens = ['alpha', 'zeta'])".
+/// E.g. "Trivial count from text index (idx, token = "alpha")" or "... (idx, tokens = ["alpha", "zeta"])".
 String makeStepDescription(const ResolvedQuery & resolved)
 {
     const auto & query_tokens = resolved.query->getTokens();
+    const auto & tokenizer = *resolved.condition->getTokenizer();
 
     WriteBufferFromOwnString description;
     description << "Trivial count from text index (" << resolved.index.index->index.name << ", ";
+
     if (query_tokens.size() == 1)
     {
-        description << "token = '" << query_tokens.front() << "'";
+        description << "token = " << tokenizer.formatTokenForLogs(query_tokens.front());
     }
     else
     {
         description << "tokens = [";
         for (size_t i = 0; i < query_tokens.size(); ++i)
-            description << (i == 0 ? "'" : ", '") << query_tokens[i] << "'";
+            description << (i == 0 ? "" : ", ") << tokenizer.formatTokenForLogs(query_tokens[i]);
         description << "]";
     }
     description << ")";
@@ -328,6 +330,8 @@ String makeStepDescription(const ResolvedQuery & resolved)
 
 bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
+    auto component_guard = Coordination::setCurrentComponent("optimizeTrivialCountFromTextIndex");
+
     /// `ReadFromTextIndexCount` is not serializable, so it must not end up in a distributed plan fragment.
     /// `applyParallelReplicas` runs first and builds such fragments around the `ReadFromMergeTree` we would
     /// replace, so bail and let the reader be distributed across replicas as before.
@@ -364,7 +368,7 @@ bool optimizeTrivialCountFromTextIndex(QueryPlan::Node & node, QueryPlan::Nodes 
         return false;
     }
 
-    /// Split the parts by index materialization (checksum lookups, no I/O).
+    /// Split the parts by index materialization (checksum lookups if materialized)
     const auto & text_index = *search_query->index.index;
     auto is_materialized_part = [&](const RangesInDataPart & part_with_ranges)
     {

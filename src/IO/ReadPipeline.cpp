@@ -14,10 +14,12 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReaderExecutor.h>
 #include <IO/DiskCacheProvider.h>
+#include <IO/PageCacheProvider.h>
 #include <IO/PipelineReadBuffer.h>
 #include <IO/LocalSourceReader.h>
 #include <IO/ObjectStorageSourceReader.h>
 #include <IO/FileEncryptionCommon.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Common/CurrentThread.h>
@@ -33,6 +35,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+LoggerPtr getReadPipelineLogger()
+{
+    static LoggerPtr log = getLogger("ReadPipeline");
+    return log;
 }
 
 namespace
@@ -187,9 +195,17 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     /// context, so calling `CurrentThread::getQueryId` there would return "".
     const std::string query_id(CurrentThread::getQueryId());
 
+    /// Resolved on this thread for the same reason as `query_id` above.
+    QueryStatusPtr query_status;
+    if (source->read_settings.remote_fs_settings.interruptible_reads)
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+    }
+
     auto impl = gather
-        ? buildGatherStage(query_id)        // Stages 1+2+3 (+3.5 DC)
-        : buildSingleObjectStage(query_id); // Stages 1+2 (+2.5 DC)
+        ? buildGatherStage(query_id, query_status) // Stages 1+2+3 (+3.5 DC)
+        : buildSingleObjectStage(query_id);        // Stages 1+2 (+2.5 DC)
 
     impl = wrapMemoryCache(std::move(impl));   // Stage 4
     impl = wrapAsyncPrefetch(std::move(impl)); // Stage 5
@@ -204,14 +220,14 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     if (!settings.reader_executor.enabled)
         return nullptr;
 
-    /// The executor implements neither async prefetch, the distributed cache, nor the page cache,
-    /// so fall back rather than silently drop those stages. Decryption and the filesystem cache ARE
-    /// supported (fed below).
-    if (distributed_cache || memory_cache || async_prefetch)
+    /// The executor implements neither async prefetch nor the distributed cache, so fall back rather
+    /// than silently drop those stages. Decryption, the filesystem cache, and the page (memory) cache
+    /// ARE supported (fed below).
+    if (distributed_cache || async_prefetch)
     {
         LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path "
-            "(distributed cache, page cache, or async prefetch not supported by the executor)");
+            "(distributed cache or async prefetch not supported by the executor)");
         return nullptr;
     }
 
@@ -229,6 +245,16 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     }
     else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
     {
+        /// The executor has no interruption point, so serving this read would silently drop
+        /// the caller's opt-in. Fall back to the gather path, which honors it.
+        if (settings.remote_fs_settings.interruptible_reads)
+        {
+            LOG_DEBUG(log,
+                "use_reader_executor: falling back to the legacy read path "
+                "(interruptible reads not yet supported by the executor)");
+            return nullptr;
+        }
+
         /// An object of unknown size (HEAD without Content-Length) arrives with
         /// `bytes_size` 0 — indistinguishable from a genuinely empty object — and
         /// the executor cannot stream to EOF yet, so fall back rather than read it
@@ -253,6 +279,39 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path (source kind not supported by the executor)");
         return nullptr;
+    }
+
+    /// PageCache (memory) goes first in the chain (fastest). It's file-level: one `PageCacheFile`
+    /// derived from the front object serves every lookup. Skipped when any object has unknown size —
+    /// cells are sized to the file's real byte length (so the tail block has no past-EOF region),
+    /// which needs the total size up front. Object storage with an unknown-size object already fell
+    /// back above; this guard also covers any future unknown-size source.
+    bool any_unknown_size = false;
+    size_t total_file_size = 0;
+    for (const auto & object : source->objects)
+    {
+        if (object.bytes_size == StoredObject::UnknownSize)
+        {
+            any_unknown_size = true;
+            break;
+        }
+        total_file_size += object.bytes_size;
+    }
+
+    if (memory_cache && memory_cache->page_cache_settings.cache && !any_unknown_size)
+    {
+        const auto & page_cache_settings = memory_cache->page_cache_settings;
+        PageCacheFile cache_file;
+        cache_file.path = memory_cache->custom_cache_path.value_or(
+            memory_cache->cache_path_prefix + source->objects.front().remote_path);
+        cache_file.file_version = memory_cache->custom_file_version.value_or("");
+        cache_chain.push_back(std::make_shared<PageCacheProvider>(
+            page_cache_settings.cache,
+            std::move(cache_file),
+            page_cache_settings.block_size,
+            page_cache_settings.random_eviction_for_tests,
+            page_cache_settings.read_if_exists_otherwise_bypass,
+            total_file_size));
     }
 
     /// Cache chain of the filesystem cache(s). `filesystem_caches` is inner-to-outer; the executor
@@ -286,7 +345,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     return std::make_unique<PipelineReadBuffer>(std::move(executor));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std::string & query_id) const
+std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(
+    const std::string & query_id, const QueryStatusPtr & query_status) const
 {
     /// -- Stages 1+2+3: Source + FilesystemCache + Gather --
     /// Object storage path: wrap per-object buffers with optional filesystem cache,
@@ -405,7 +465,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
         /// Copy, not move: fallback may be called multiple times (e.g. after
         /// connection pool exhaustion on different read ranges).
         auto fallback_creator = [gather_creator, objects = source->objects,
-                                 captured_settings = settings]() mutable
+                                 captured_settings = settings, query_status]() mutable
             -> std::unique_ptr<ReadBufferFromFileBase>
         {
             auto creator_copy = gather_creator;
@@ -414,7 +474,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
                 objects,
                 captured_settings.remote_fs_settings.min_bytes_for_seek,
                 /* use_external_buffer */ true,
-                /* buffer_size */ 0);
+                /* buffer_size */ 0,
+                query_status);
         };
 
         auto impl = DistributedCache::readWithDistributedCache(
@@ -435,7 +496,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
         source->objects,
         settings.remote_fs_settings.min_bytes_for_seek,
         use_external_buffer,
-        buffer_size);
+        buffer_size,
+        query_status);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(const std::string & query_id) const

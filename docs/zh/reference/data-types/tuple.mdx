@@ -68,7 +68,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
   ## 数据类型检测
 </div>
 
-在动态创建Tuple时，ClickHouse 会将Tuple参数的类型推断为能够容纳给定参数值的最小类型。如果该值为 [NULL](/zh/reference/settings/formats#input_format_null_as_default)，则推断出的类型为 [Nullable](/zh/reference/data-types/nullable)。
+在动态创建Tuple时，ClickHouse 会将Tuple参数的类型推断为能够容纳给定参数值的最小类型。如果该值为 [NULL](/zh/reference/settings/formats/input-format#input_format_null_as_default)，则推断出的类型为 [Nullable](/zh/reference/data-types/nullable)。
 
 自动检测数据类型的示例：
 

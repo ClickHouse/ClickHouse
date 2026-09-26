@@ -30,6 +30,8 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.t (x UInt64) ENGINE = MergeTree ORDER 
 # A lengthless non-chunked body ends only when the connection closes, so a server that waits for it deadlocks
 # against a client that waits for the response. Bound these requests well below the test timeout, so that such
 # a regression shows up as a diff here instead of killing the whole test run.
+# Keep them silent and turn a nonzero exit into a stdout line: the harness fails on any stderr before it
+# compares the reference, so an error line there would take the place of that diff.
 CURL_BOUNDED="${CLICKHOUSE_CURL_COMMAND} -q -s --max-time 30"
 
 echo "=== an INSERT ... SELECT handler may mix read-only and body-carrying methods ==="
@@ -41,10 +43,10 @@ $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HSEL\` URL '${P}/sel' METHODS (GET) AS 
 
 echo "=== a lengthless bodyless PUT to an INSERT ... SELECT handler works ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HSEL\` URL '${P}/sel' METHODS (PUT, DELETE) AS INSERT INTO ${DB}.t SELECT 3"
-${CURL_BOUNDED} -sS -o /dev/null -w '%{http_code}\n' -X PUT "${BASE}${P}/sel"
+${CURL_BOUNDED} -o /dev/null -w '%{http_code}\n' -X PUT "${BASE}${P}/sel" || echo "curl failed: $?"
 
 echo "=== a lengthless bodyless DELETE to an INSERT ... SELECT handler works ==="
-${CURL_BOUNDED} -sS -o /dev/null -w '%{http_code}\n' -X DELETE "${BASE}${P}/sel"
+${CURL_BOUNDED} -o /dev/null -w '%{http_code}\n' -X DELETE "${BASE}${P}/sel" || echo "curl failed: $?"
 
 echo "=== both requests inserted their row ==="
 $CLICKHOUSE_CLIENT -q "SELECT count(), min(x), max(x) FROM ${DB}.t"

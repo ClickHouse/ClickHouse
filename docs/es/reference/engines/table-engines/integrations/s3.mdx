@@ -52,7 +52,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `format` — El [formato](/es/reference/formats/index#formats-overview) del archivo.
 * `aws_access_key_id`, `aws_secret_access_key` - Credenciales de larga duración para el usuario de la cuenta de [AWS](https://aws.amazon.com/). Puede usarlas para autenticar sus solicitudes. El parámetro es opcional. Si no se especifican credenciales, se usarán las del archivo de configuración. Para obtener más información, consulte [Using S3 for Data Storage](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 * `compression` — Tipo de compresión. Valores admitidos: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. El parámetro es opcional. De forma predeterminada, la compresión se detecta automáticamente según la extensión del archivo.
-* `partition_strategy` – Opciones: `wildcard` o `hive`. `wildcard` requiere un `{_partition_id}` en la ruta, que se sustituye por la clave de partición. `hive` no permite comodines, asume que la ruta es la raíz de la tabla y genera directorios particionados al estilo de Hive con IDs de Snowflake como nombres de archivo y el formato de archivo como extensión. El valor predeterminado es la configuración `file_like_engine_default_partition_strategy` (`wildcard` en configuraciones `compatibility` anteriores a `26.6`; `hive` en caso contrario).
+* `partition_strategy` – Opciones: `wildcard` o `hive`. `wildcard` requiere un `{_partition_id}` en la ruta, que se sustituye por la clave de partición. `hive` no permite comodines, asume que la ruta es la raíz de la tabla y genera directorios particionados al estilo de Hive con IDs de Snowflake como nombres de archivo y el formato de archivo como extensión. Sin una estrategia explícita, una ruta con `{_partition_id}` usa `wildcard`. Una ruta con otro glob no usa estrategia de partición e ignora `PARTITION BY`. Una ruta sin glob usa `hive` cuando `file_like_engine_default_partition_strategy` es `hive`; de lo contrario, no usa ninguna estrategia de partición.
 * `partition_columns_in_data_file` - Solo se usa con la estrategia de partición `hive`. Indica a ClickHouse si debe esperar que las columnas de partición se escriban en el archivo de datos. El valor predeterminado es `false`.
 * `storage_class_name` - Opciones: `STANDARD`, `REDUCED_REDUNDANCY`, `STANDARD_IA`, `ONEZONE_IA`, `INTELLIGENT_TIERING`, `GLACIER_IR`, `EXPRESS_ONEZONE`. Solo se admiten las storage classes de S3 que permiten la recuperación inmediata (las clases de archivado como `GLACIER` y `DEEP_ARCHIVE` no se admiten). Permite especificar [AWS S3 Intelligent Tiering](https://aws.amazon.com/s3/storage-classes/intelligent-tiering/).
 * `extra_credentials` - Opcional. Se usa para pasar un `role_arn` para el acceso basado en roles en ClickHouse Cloud. Consulte [Secure S3](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver los pasos de configuración.
@@ -99,17 +99,19 @@ Hay dos formas de definir la caché en el archivo de configuración.
 Para particionar por mes, use la expresión `toYYYYMM(date_column)`, donde `date_column` es una columna con una fecha del tipo [Date](/es/reference/data-types/date). Aquí, los nombres de las particiones tienen el formato `"YYYYMM"`.
 
 <div id="partition-strategy">
-  #### Estrategia de particionado
+  #### Estrategia de partición
 </div>
 
-`wildcard`: Reemplaza el comodín `{_partition_id}` en la ruta del archivo por la clave de partición real. La lectura no es compatible. Se selecciona de forma predeterminada solo cuando `compatibility` es anterior a `26.6`; de lo contrario, el valor predeterminado es `hive` (consulta la configuración `file_like_engine_default_partition_strategy`).
+`wildcard`: Reemplaza el comodín `{_partition_id}` en la ruta del archivo por la clave de partición real. La lectura no es compatible. Se selecciona de forma predeterminada cuando la ruta contiene `{_partition_id}`.
+
+Cuando no se establece `partition_strategy`, una ruta con otro glob no usa ninguna estrategia de partición e ignora `PARTITION BY`. Una ruta sin glob usa `hive` cuando `file_like_engine_default_partition_strategy` es `hive`; de lo contrario, no usa ninguna estrategia de partición.
 
 `hive` implementa el particionado de estilo Hive para lecturas y escrituras. La lectura se implementa mediante un patrón glob recursivo; es equivalente a `SELECT * FROM s3('table_root/**.parquet')`.
 La escritura genera archivos con el siguiente formato: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
-Nota: Al usar la estrategia de particionado `hive`, la configuración `use_hive_partitioning` no tiene efecto.
+Nota: Al usar la estrategia de partición `hive`, la configuración `use_hive_partitioning` no tiene efecto.
 
-Ejemplo de estrategia de particionado `hive`:
+Ejemplo de estrategia de partición `hive`:
 
 ```sql
 CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
@@ -357,13 +359,26 @@ CREATE TABLE table_with_asterisk (name String, value UInt32)
     ENGINE = S3('https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/{some,another}_folder/*', 'CSV');
 ```
 
+<div id="resolving-relative-urls">
+  ## Resolución de URL relativas
+</div>
+
+La configuración [s3&#95;base](/es/reference/settings/session-settings/s3#s3_base) permite usar una URL relativa en el motor `S3`. Cuando se establece `s3_base` y la ruta no tiene esquema, se resuelve con respecto a la URL base según [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). Para ver una descripción completa de las reglas de resolución, consulte la [documentación de la función de tabla S3](/es/reference/functions/table-functions/s3#resolving-relative-urls). La URL resultante se materializa en la definición de tabla almacenada, por lo que la tabla no depende del valor de `s3_base` después de su creación.
+
+```sql
+SET s3_base = 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/';
+CREATE TABLE aapl_stock (Date Date, Open Float32, High Float32, Low Float32, Close Float32, Volume Float32, OpenInt Int32)
+    ENGINE = S3('aapl_stock.csv', NOSIGN, 'CSVWithNames');
+```
+
 <div id="storage-settings">
   ## Configuración de almacenamiento
 </div>
 
-* [s3&#95;truncate&#95;on&#95;insert](/es/reference/settings/session-settings#s3_truncate_on_insert) - permite truncar el archivo antes de insertar en él. Deshabilitado de forma predeterminada.
-* [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/es/reference/settings/session-settings#s3_create_new_file_on_insert) - permite crear un archivo nuevo en cada inserción si el formato tiene sufijo. Deshabilitado de forma predeterminada.
-* [s3&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings#s3_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Habilitado de forma predeterminada.
+* [s3&#95;truncate&#95;on&#95;insert](/es/reference/settings/session-settings/s3#s3_truncate_on_insert) - permite truncar el archivo antes de insertar en él. Deshabilitado de forma predeterminada.
+* [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/es/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - permite crear un archivo nuevo en cada inserción si el formato tiene sufijo. Deshabilitado de forma predeterminada.
+* [s3&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings/s3#s3_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Habilitado de forma predeterminada.
+* [s3&#95;base](/es/reference/settings/session-settings/s3#s3_base) - URL base para resolver las URL relativas pasadas al motor. Vacía (deshabilitada) de forma predeterminada.
 
 <div id="settings">
   ## Configuración relacionada con S3
@@ -445,7 +460,8 @@ Es posible extraer datos de estos archivos comprimidos mediante ::. Se pueden us
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 

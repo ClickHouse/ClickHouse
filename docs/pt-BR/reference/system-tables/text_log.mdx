@@ -28,7 +28,7 @@ Contém registros de logging. O nível de logging enviado para esta tabela pode 
 * `event_time_microseconds` ([DateTime64(6)](/pt-BR/reference/data-types/datetime64)) — Hora do registro com precisão de microssegundos.
 * `thread_name` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Nome da thread em que o logging foi gerado.
 * `thread_id` ([UInt64](/pt-BR/reference/data-types/int-uint)) — ID da thread do SO.
-* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/pt-BR/reference/data-types/enum)) — Nível do registro. Valores possíveis: 1 ou &#39;Fatal&#39;, 2 ou &#39;Critical&#39;, 3 ou &#39;Error&#39;, 4 ou &#39;Warning&#39;, 5 ou &#39;Notice&#39;, 6 ou &#39;Information&#39;, 7 ou &#39;Debug&#39;, 8 ou &#39;Trace&#39;.
+* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/pt-BR/reference/data-types/enum)) — Nível do registro. Valores possíveis: 1 ou &#39;Fatal&#39;, 2 ou &#39;Critical&#39;, 3 ou &#39;Error&#39;, 4 ou &#39;Warning&#39;, 5 ou &#39;Notice&#39;, 6 ou &#39;Information&#39;, 7 ou &#39;Debug&#39;, 8 ou &#39;Trace&#39;, 9 ou &#39;Test&#39;.
 * `query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta.
 * `logger_name` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Nome do logger (por exemplo, DDLWorker).
 * `message` ([String](/pt-BR/reference/data-types/string)) — A própria mensagem.
@@ -64,17 +64,16 @@ hostname:                clickhouse.eu-central1.internal
 event_date:              2020-09-10
 event_time:              2020-09-10 11:23:07
 event_time_microseconds: 2020-09-10 11:23:07.871397
-microseconds:            871397
 thread_name:             clickhouse-serv
 thread_id:               564917
-level:                   Informação
+level:                   Information
 query_id:
 logger_name:             DNSCacheUpdater
-message:                 Período de atualização: 15 segundos
+message:                 Update period 15 seconds
 revision:                54440
 source_file:             /ClickHouse/src/Interpreters/DNSCacheUpdater.cpp; void DB::DNSCacheUpdater::start()
 source_line:             45
-message_format_string:   Período de atualização: {} segundos
+message_format_string:   Update period {} seconds
 value1:                  15
 value2:                  
 value3:                  

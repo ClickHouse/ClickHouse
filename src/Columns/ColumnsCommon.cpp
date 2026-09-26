@@ -11,47 +11,61 @@
 namespace DB
 {
 
-#if defined(__SSE2__)
-/// Transform 64-byte mask to 64-bit mask.
-static UInt64 toBits64(const Int8 * bytes64)
+namespace
 {
-    static const __m128i zero16 = _mm_setzero_si128();
-    UInt64 res =
-        static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64)), zero16)))
-        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 16)), zero16))) << 16)
-        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 32)), zero16))) << 32)
-        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpeq_epi8(
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48);
+    /// One counter per byte of a 64-byte block, so the loops below keep four accumulators in
+    /// registers and touch no scalar code per block: `vpcmpeqb` plus `vpaddb` on x86, `cmtst`
+    /// plus `sub` on NEON.
+    using ByteCounters = UInt8 __attribute__((ext_vector_type(64)));
+    using WideCounters = UInt16 __attribute__((ext_vector_type(64)));
+    using LaneMask = bool __attribute__((ext_vector_type(64)));
 
-    return ~res;
+    /// Converting to `bool` lanes is `!= 0`; a comparison would depend on `-faltivec-src-compat` on PowerPC.
+    ALWAYS_INLINE LaneMask isNonZero(ByteCounters bytes)
+    {
+        return __builtin_convertvector(bytes, LaneMask);
+    }
+
+    /// A counter is one byte, so it has to be widened before it can overflow.
+    constexpr size_t max_blocks_before_widening = 255;
+
+    /// At most 64 * 255 = 16320, so the 16-bit sum cannot overflow either.
+    ALWAYS_INLINE size_t sumCounters(ByteCounters counters)
+    {
+        return __builtin_reduce_add(__builtin_convertvector(counters, WideCounters));
+    }
 }
-#endif
 
 size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
 {
+    if (start == end)
+        return 0;
+
+    chassert(start <= end);
+    chassert(filt != nullptr);
+
     size_t count = 0;
 
-    /** NOTE: In theory, `filt` should only contain zeros and ones.
-      * But, just in case, here the condition > 0 (to signed bytes) is used.
-      * It would be better to use != 0, then this does not allow SSE2.
-      */
+    /// In theory, `filt` should only contain zeros and ones, but every byte that is not zero
+    /// counts as set, so a filter holding other values is still counted consistently.
 
-    const Int8 * pos = reinterpret_cast<const Int8 *>(filt);
-    pos += start;
+    const UInt8 * pos = filt + start;
+    const UInt8 * end_pos = filt + end;
 
-    const Int8 * end_pos = pos + (end - start);
+    while (static_cast<size_t>(end_pos - pos) >= 64)
+    {
+        const size_t blocks = std::min(max_blocks_before_widening, static_cast<size_t>(end_pos - pos) / 64);
 
-#if defined(__SSE2__)
-    const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
+        ByteCounters counters = {};
+        for (size_t i = 0; i < blocks; ++i, pos += 64)
+        {
+            ByteCounters bytes;
+            memcpy(&bytes, pos, sizeof(bytes));
+            counters += __builtin_convertvector(isNonZero(bytes), ByteCounters);
+        }
 
-    for (; pos < end_pos64; pos += 64)
-        count += std::popcount(toBits64(pos));
-
-    /// TODO Add duff device for tail?
-#endif
+        count += sumCounters(counters);
+    }
 
     for (; pos < end_pos; ++pos)
         count += *pos != 0;
@@ -66,28 +80,40 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 
 size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map, size_t start, size_t end)
 {
+    if (start == end)
+        return 0;
+
+    chassert(start <= end);
+    chassert(filt.data() != nullptr);
+    chassert(null_map != nullptr);
+
     size_t count = 0;
 
-    /** NOTE: In theory, `filt` should only contain zeros and ones.
-      * But, just in case, here the condition > 0 (to signed bytes) is used.
-      * It would be better to use != 0, then this does not allow SSE2.
-      */
+    /// As above, any byte of `filt` that is not zero counts as set.
 
-    const Int8 * pos = reinterpret_cast<const Int8 *>(filt.data()) + start;
-    const Int8 * pos2 = reinterpret_cast<const Int8 *>(null_map) + start;
-    const Int8 * end_pos = pos + (end - start);
+    const UInt8 * pos = filt.data() + start;
+    const UInt8 * null_pos = null_map + start;
+    const UInt8 * end_pos = filt.data() + end;
 
-#if defined(__SSE2__)
-    const Int8 * end_pos64 = pos + (end - start) / 64 * 64;
+    while (static_cast<size_t>(end_pos - pos) >= 64)
+    {
+        const size_t blocks = std::min(max_blocks_before_widening, static_cast<size_t>(end_pos - pos) / 64);
 
-    for (; pos < end_pos64; pos += 64, pos2 += 64)
-        count += std::popcount(toBits64(pos) & ~toBits64(pos2));
+        ByteCounters counters = {};
+        for (size_t i = 0; i < blocks; ++i, pos += 64, null_pos += 64)
+        {
+            ByteCounters bytes;
+            ByteCounters nulls;
+            memcpy(&bytes, pos, sizeof(bytes));
+            memcpy(&nulls, null_pos, sizeof(nulls));
+            counters += __builtin_convertvector(isNonZero(bytes) & ~isNonZero(nulls), ByteCounters);
+        }
 
-        /// TODO Add duff device for tail?
-#endif
+        count += sumCounters(counters);
+    }
 
-    for (; pos < end_pos; ++pos, ++pos2)
-        count += (*pos & ~*pos2) != 0;
+    for (; pos < end_pos; ++pos, ++null_pos)
+        count += (*pos != 0 && *null_pos == 0);
 
     return count;
 }
@@ -313,11 +339,7 @@ namespace
                 {
                     size_t index = std::countr_zero(mask);
                     copy_array(offsets_pos + index);
-                #ifdef __BMI__
-                    mask = _blsr_u64(mask);
-                #else
-                    mask = mask & (mask-1);
-                #endif
+                    mask = mask & (mask - 1);
                 }
             }
 
@@ -407,11 +429,7 @@ void filterArraysImplInPlace(
             {
                 size_t index = std::countr_zero(mask);
                 copy_array_inplace(offsets_pos + index);
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
+                mask = mask & (mask - 1);
             }
         }
 
