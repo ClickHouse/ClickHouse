@@ -205,9 +205,8 @@ SELECT description FROM system.documentation WHERE type = 'Setting' AND name = '
 
 -- A setting that was renamed with its old name kept as an alias has, under the old name, both the history of that
 -- name from before the rename and the rename itself, which is recorded under the new name:
--- `text_index_density_threshold` appeared in 26.6 and became an alias of
--- `text_index_lazy_intersection_density_threshold` in 26.7.
-SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'text_index_density_threshold';
+-- `evaluation_time` appeared in 25.8 and became an alias of `promql_evaluation_time` in 25.9.
+SELECT description FROM system.documentation WHERE type = 'Setting' AND name = 'evaluation_time';
 
 -- The record that renames a setting does not claim to introduce the old name when that name is older than it:
 -- `evaluation_time` appeared in 25.8 and became an alias of `promql_evaluation_time` in 25.9, so the version it

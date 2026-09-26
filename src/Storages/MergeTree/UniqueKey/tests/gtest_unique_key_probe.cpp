@@ -133,13 +133,9 @@ protected:
         std::filesystem::remove_all(base);
     }
 
-    /// Build an SST-backed probe target from `(key -> row)` entries (written via
-    /// the real `SSTIndexWriter`), with `dead_rows` marked dead in the part's
-    /// delete bitmap.
-    ProbeTargetPartPtr makeTarget(
-        std::vector<std::pair<UInt64, UInt32>> kv, std::vector<UInt64> dead_rows = {})
+    /// Write `kv` to an SST via the real `SSTIndexWriter` and open a reader on it.
+    SSTFileReaderPtr makeReader(const String & part_dir, std::vector<std::pair<UInt64, UInt32>> kv)
     {
-        const String part_dir = "part_" + std::to_string(counter++);
         std::filesystem::create_directories(base / part_dir);
         auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", part_dir);
 
@@ -157,7 +153,16 @@ protected:
         MergeTreeDataPartChecksums sst_checksums;
         writer.finish(sst_checksums, /*fsync=*/false);
 
-        auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
+        return openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
+    }
+
+    /// Build an SST-backed probe target from `(key -> row)` entries (written via
+    /// the real `SSTIndexWriter`), with `dead_rows` marked dead in the part's
+    /// delete bitmap.
+    ProbeTargetPartPtr makeTarget(
+        std::vector<std::pair<UInt64, UInt32>> kv, std::vector<UInt64> dead_rows = {})
+    {
+        auto reader = makeReader("part_" + std::to_string(counter++), std::move(kv));
         auto bitmap = std::make_shared<DeleteBitmap>();
         for (UInt64 r : dead_rows)
             bitmap->add(r);
@@ -206,6 +211,7 @@ TEST_F(UniqueKeyProbeTest, SinglePartAllDead)
 
 TEST_F(UniqueKeyProbeTest, NewestLiveWinsOverOlder)
 {
+#ifdef NDEBUG
     auto newest = makeTarget({{5, 9}});
     auto older = makeTarget({{5, 1}});
     ASSERT_NE(newest, nullptr);
@@ -215,6 +221,11 @@ TEST_F(UniqueKeyProbeTest, NewestLiveWinsOverOlder)
     auto r = probeKey(probe, 5);
     EXPECT_EQ(r.outcome, ProbeOutcome::FOUND_LIVE);
     EXPECT_EQ(r.row_number, 9u);
+#else
+    /// Two live copies of one key violate the single-live-part invariant that
+    /// debug builds validate (and abort on) - newest-wins is release behavior.
+    GTEST_SKIP() << "debug builds enforce the single-live-part invariant";
+#endif
 }
 
 TEST_F(UniqueKeyProbeTest, SkipNewerDeadFindOlderLive)
@@ -265,6 +276,25 @@ TEST_F(UniqueKeyProbeTest, ProbeBatchMixedOutcomes)
     EXPECT_EQ(batch[2].outcome, ProbeOutcome::NOT_FOUND);
 }
 
+/// Results must map back to the input row order regardless of input key order.
+TEST_F(UniqueKeyProbeTest, ProbeBatchMapsUnsortedRowsBack)
+{
+    auto t = makeTarget({{1, 10}, {2, 20}, {50, 30}});
+    ASSERT_NE(t, nullptr);
+    auto probe = probeOver({t});
+
+    std::vector<UInt64> keys{99, 1, 50, 2}; /// not in key order
+    auto batch = probe.probeBatch(makeKeyBlock(keys), "p0");
+    ASSERT_EQ(batch.size(), keys.size());
+    EXPECT_EQ(batch[0].outcome, ProbeOutcome::NOT_FOUND);
+    EXPECT_EQ(batch[1].outcome, ProbeOutcome::FOUND_LIVE);
+    EXPECT_EQ(batch[1].row_number, 10u);
+    EXPECT_EQ(batch[2].outcome, ProbeOutcome::FOUND_LIVE);
+    EXPECT_EQ(batch[2].row_number, 30u);
+    EXPECT_EQ(batch[3].outcome, ProbeOutcome::FOUND_LIVE);
+    EXPECT_EQ(batch[3].row_number, 20u);
+}
+
 /// ---------- SST backend specifics ----------
 
 TEST_F(UniqueKeyProbeTest, OpenMissingFileThrows)
@@ -278,8 +308,7 @@ TEST_F(UniqueKeyProbeTest, FindRowIndexBatchHitsExactKeyOnly)
     auto t = makeTarget({{10, 0}, {30, 2}});
     ASSERT_NE(t, nullptr);
 
-    /// 20 lies between stored keys 10 and 30 — Seek lands on 30 but the exact
-    /// compare must reject it.
+    /// 20 lies between stored keys 10 and 30 and must simply miss.
     const String e20 = encodeKey(20);
     const String e30 = encodeKey(30);
     std::vector<std::string_view> views{
@@ -290,6 +319,88 @@ TEST_F(UniqueKeyProbeTest, FindRowIndexBatchHitsExactKeyOnly)
     ASSERT_EQ(out.size(), 2u);
     EXPECT_FALSE(out[0].has_value());
     EXPECT_EQ(out[1], std::optional<UInt64>(2));
+}
+
+/// Keys beyond the SST's min/max keys simply miss via the lookup; boundary
+/// keys themselves hit.
+TEST_F(UniqueKeyProbeTest, FindRowIndexBatchOutOfRangeKeysMiss)
+{
+    auto t = makeTarget({{10, 0}, {20, 1}, {30, 2}});
+    ASSERT_NE(t, nullptr);
+
+    const String e5 = encodeKey(5);
+    const String e10 = encodeKey(10);
+    const String e30 = encodeKey(30);
+    const String e99 = encodeKey(99);
+    std::vector<std::string_view> views{
+        {e5.data(), e5.size()}, {e10.data(), e10.size()},
+        {e30.data(), e30.size()}, {e99.data(), e99.size()}};
+
+    std::vector<std::optional<UInt64>> out;
+    t->findRowIndexBatch(views, out);
+
+    ASSERT_EQ(out.size(), 4u);
+    EXPECT_FALSE(out[0].has_value()) << "below-min key must miss";
+    EXPECT_EQ(out[1], std::optional<UInt64>(0)) << "min boundary key hits";
+    EXPECT_EQ(out[2], std::optional<UInt64>(2)) << "max boundary key hits";
+    EXPECT_FALSE(out[3].has_value()) << "above-max key must miss";
+}
+
+/// A batch past the 32-key `MultiGet` cap is chunked internally; every key
+/// still maps to its own row, misses interleaved. Input order is arbitrary
+/// (descending here) - results must stay aligned with it.
+TEST_F(UniqueKeyProbeTest, FindRowIndexBatchExceedsMultiGetBatchLimit)
+{
+    constexpr UInt64 N = 100; /// past the 32-key limit
+    std::vector<std::pair<UInt64, UInt32>> kv;
+    kv.reserve(N);
+    for (UInt64 i = 0; i < N; ++i)
+        kv.emplace_back(100 + i * 10, static_cast<UInt32>(i));
+    auto t = makeTarget(std::move(kv));
+    ASSERT_NE(t, nullptr);
+
+    /// Descending input: above-max miss first, hits and in-range misses
+    /// descending, below-min miss last.
+    std::vector<String> storage;
+    std::vector<std::optional<UInt64>> expected;
+    storage.reserve(2 * N + 2);
+    expected.reserve(2 * N + 2);
+    storage.push_back(encodeKey(2000)); /// above max, misses
+    expected.push_back(std::nullopt);
+    for (UInt64 i = N; i-- > 0;)
+    {
+        storage.push_back(encodeKey(100 + i * 10 + 5));
+        expected.push_back(std::nullopt);
+        storage.push_back(encodeKey(100 + i * 10));
+        expected.emplace_back(i);
+    }
+    storage.push_back(encodeKey(50));   /// below min, misses
+    expected.push_back(std::nullopt);
+
+    std::vector<std::string_view> views;
+    views.reserve(storage.size());
+    for (const auto & e : storage)
+        views.emplace_back(e.data(), e.size());
+
+    std::vector<std::optional<UInt64>> out;
+    t->findRowIndexBatch(views, out);
+
+    ASSERT_EQ(out.size(), expected.size());
+    for (size_t i = 0; i < expected.size(); ++i)
+        EXPECT_EQ(out[i], expected[i]) << "mismatch at batch row " << i;
+}
+
+/// `BlockBasedTable::MultiGet` asserts on an empty range - an empty batch
+/// must short-circuit as a no-op instead.
+TEST_F(UniqueKeyProbeTest, MultiGetEmptyBatchIsNoOp)
+{
+    auto reader = makeReader("multiget_empty_part", {{1, 0}});
+
+    std::vector<String> values{"stale"};
+    std::vector<rocksdb::Slice> keys;
+    const auto statuses = reader->multiGet(keys, values);
+    EXPECT_TRUE(statuses.empty());
+    EXPECT_TRUE(values.empty());
 }
 
 TEST_F(UniqueKeyProbeTest, InvalidReaderHandleFailsClosed)
