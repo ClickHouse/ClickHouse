@@ -237,9 +237,9 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [max_processing_time_sec_before_commit = 0,]
 ```
 
-:::warning
+<Warning>
 Before `24.7`, it is required to use `s3queue_` prefix for all settings apart from `mode`, `after_processing` and `keeper_path`.
-:::
+</Warning>
 
 **Engine parameters**
 
@@ -279,13 +279,13 @@ SETTINGS
 
 To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
 
-:::note Setting Names (24.7+)
+<Note title="Setting Names (24.7+)">
 Starting from version 24.7, S3Queue settings can be specified with or without the `s3queue_` prefix:
 - **Modern syntax** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec`, etc.
 - **Legacy syntax** (all versions): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, etc.
 
 Both forms are supported in 24.7+. The examples on this page use the modern syntax with no prefix.
-:::
+</Note>
 
 ### Mode {#mode}
 
@@ -447,9 +447,9 @@ Default value: Number of CPUs or 16.
 By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
 But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
 
-:::note
+<Note>
 `INSERT`s will be spawned with respect to `max_process*_before_commit` settings.
-:::
+</Note>
 
 Default value: `false`.
 
@@ -538,6 +538,14 @@ This setting is deprecated and its value is ignored: persistent processing nodes
 In case of non-graceful server termination, it is possible that we can have not removed processing nodes. This setting defines a period of time when these processing nodes can safely be cleaned up. The same TTL is also used for the bucket lock in `Ordered` mode, which can be held for a longer time than a single processing node, so the value should account for that as well.
 
 Default value: `21600` (6 hours).
+
+### `processing_state_cache_ttl_seconds` {#processing_state_cache_ttl_seconds}
+
+A file whose `processing` node in keeper is held by another server is remembered as `Processing` in the in-memory file status cache, so that the following listing passes skip it without asking keeper again.
+
+Unlike `Processed` and `Failed`, this state is not final: the other processor can release the file without committing it, for instance if it dies. This setting defines for how long the cached `Processing` state is trusted; after that the file is rechecked in keeper and processed if it is free again. Zero means to always recheck keeper.
+
+Default value: `300` (5 minutes).
 
 ## S3-related settings {#s3-settings}
 

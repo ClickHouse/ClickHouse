@@ -3,11 +3,10 @@
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
-SET allow_experimental_correlated_subqueries = 1;
+SET allow_correlated_subqueries = 1;
 SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_join_swap_table = 'false'; -- Ensure join conditions appear in the same order as the query
 SET enable_join_runtime_filters = 0; -- Ensure all filters in the plan are from the query
-SET query_plan_derive_not_null_filters_from_joins = 0; -- Same, the merged condition rejects NULLs of `b`
 SET query_plan_optimize_join_order_limit = 10;
 
 CREATE TABLE t1 (a Int32) ENGINE = MergeTree ORDER BY tuple();

@@ -9,6 +9,7 @@
 #include <memory>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
+#include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <IO/ReadBufferFromS3.h>
@@ -102,6 +103,8 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const override;
 
+    bool supportsPrefixListing() const override { return true; }
+
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 
@@ -163,6 +166,9 @@ public:
 
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
+
+    ObjectStoragePtr cloneImpl() const override;
+
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects = nullptr);

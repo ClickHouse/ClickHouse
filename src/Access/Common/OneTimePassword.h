@@ -36,6 +36,13 @@ struct OneTimePasswordSecret
 };
 
 String getOneTimePasswordSecretLink(const OneTimePasswordSecret & secret);
+
+/// Checks the code against the current time step, with a tolerance of one time step in both directions.
 bool checkOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret);
+
+/// Same as `checkOneTimePassword`, but also marks the accepted code as used (RFC 6238, Section 5.2):
+/// codes for time steps at or before the last accepted one are rejected. Call it once per successful
+/// authentication, after all other credentials are verified. The used-codes state is local to the server process.
+bool checkAndConsumeOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret);
 
 }
