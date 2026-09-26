@@ -4,8 +4,11 @@
 -- The exchange between the tasks of a distributed plan compresses its packets with the codec of
 -- `network_compression_method`. The setting reaches the sending tasks on the workers, not only the
 -- initiator. A serializer on every stream ahead of the sinks makes the packets, also on the one
--- stream left after the merge of a sorted gather. The checks compare the bytes the serializers
--- produce: with `NONE` the packets are bigger than with `LZ4` or `ZSTD`.
+-- stream left after the merge of a sorted gather.
+-- The exchange counts the bytes of its Native blocks before compression and the bytes it writes to the
+-- sockets, and their relation is the compression ratio of a shuffle or a gather. The checks read both of a
+-- run, so every check is about the data that run sent: a total on its own also moves with where the
+-- compression frames fall and with which tasks reached the log, neither of which is the codec.
 
 DROP TABLE IF EXISTS t_exchange_codec;
 CREATE TABLE t_exchange_codec (k String, v UInt64) ENGINE = MergeTree ORDER BY tuple();
@@ -61,23 +64,56 @@ WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE
       AND type = 'QueryFinish')
 GROUP BY run, task;
 
-SELECT 'serializers: uncompressed packets are bigger than LZ4 and ZSTD:',
-    (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_none') > (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_lz4'),
-    (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_none') > (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_zstd');
+-- The compression of every run, from the two counters of the exchange: the Native bytes before compression
+-- and the bytes written to the sockets. Both come from the same tasks, so a task the log does not have yet
+-- drops out of both.
+CREATE VIEW v_exchange_codec_bytes AS
+SELECT tasks.run AS run,
+    sum(task_log.ProfileEvents['StreamingExchangeSerializedBytes']) AS serialized_bytes,
+    sum(task_log.ProfileEvents['StreamingExchangeSendBytes']) AS sent_bytes
+FROM system.query_log AS task_log
+INNER JOIN v_exchange_codec AS tasks ON task_log.query_id = tasks.task
+WHERE task_log.event_date >= yesterday() AND task_log.event_time >= now() - INTERVAL 10 MINUTE
+  AND task_log.type = 'QueryFinish'
+GROUP BY run;
 
-SELECT 'sorted gather: every task with a sink has a serializer, and uncompressed is bigger than LZ4:',
+SELECT 'serializers: every run is measured, NONE does not shrink the packets and LZ4 and ZSTD do:',
+    (SELECT countIf(serialized_bytes > 0 AND sent_bytes > 0) FROM v_exchange_codec_bytes) = 7,
+    (SELECT sent_bytes >= serialized_bytes FROM v_exchange_codec_bytes WHERE run = '05218_codec_none'),
+    (SELECT sent_bytes < serialized_bytes FROM v_exchange_codec_bytes WHERE run = '05218_codec_lz4'),
+    (SELECT sent_bytes < serialized_bytes FROM v_exchange_codec_bytes WHERE run = '05218_codec_zstd');
+
+SELECT 'sorted gather: every task with a sink has a serializer, NONE does not shrink the packets and LZ4 does:',
     (SELECT countIf(sinks > 0 AND serializers = 0) FROM v_exchange_codec) = 0,
-    (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_sink_none') > (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_sink_lz4');
+    (SELECT sent_bytes >= serialized_bytes FROM v_exchange_codec_bytes WHERE run = '05218_codec_sink_none'),
+    (SELECT sent_bytes < serialized_bytes FROM v_exchange_codec_bytes WHERE run = '05218_codec_sink_lz4');
 
 -- The tasks run with the codec settings of the initiator, so the level is applied on every sending
 -- task: level 19 packs the same packets tighter than level 1.
-SELECT 'zstd level: the tasks run with the level of the initiator, and level 19 packs tighter than level 1:',
+SELECT 'zstd level: the tasks run with the level of the initiator, both levels shrink the packets, and level 19 packs tighter than level 1:',
     (SELECT countIf(Settings['network_zstd_compression_level'] != '1') FROM system.query_log AS task_log INNER JOIN v_exchange_codec AS tasks ON task_log.query_id = tasks.task
      WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND type = 'QueryFinish' AND tasks.run = '05218_codec_sink_zstd1') = 0,
     (SELECT countIf(Settings['network_zstd_compression_level'] != '19') FROM system.query_log AS task_log INNER JOIN v_exchange_codec AS tasks ON task_log.query_id = tasks.task
      WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND type = 'QueryFinish' AND tasks.run = '05218_codec_sink_zstd19') = 0,
     (SELECT count() FROM v_exchange_codec WHERE run = '05218_codec_sink_zstd19') > 0,
-    (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_sink_zstd1') > (SELECT sum(serializer_bytes) FROM v_exchange_codec WHERE run = '05218_codec_sink_zstd19');
+    (SELECT countIf(sent_bytes < serialized_bytes) FROM v_exchange_codec_bytes
+       WHERE run IN ('05218_codec_sink_zstd1', '05218_codec_sink_zstd19')) = 2,
+    (SELECT sent_bytes / serialized_bytes FROM v_exchange_codec_bytes WHERE run = '05218_codec_sink_zstd1')
+      > (SELECT sent_bytes / serialized_bytes FROM v_exchange_codec_bytes WHERE run = '05218_codec_sink_zstd19');
 
+-- Empty when the checks above pass. Otherwise what every run compressed, so a failing report shows the two
+-- counters behind the verdict instead of only a `0`.
+SELECT format('{}: serialized_bytes={} sent_bytes={} ratio={}',
+        run, toString(serialized_bytes), toString(sent_bytes), toString(sent_bytes / serialized_bytes))
+FROM v_exchange_codec_bytes
+WHERE (SELECT countIf(serialized_bytes > 0 AND sent_bytes > 0) != 7
+        OR minIf(sent_bytes < serialized_bytes, run NOT IN ('05218_codec_none', '05218_codec_sink_none')) = 0
+        OR maxIf(sent_bytes < serialized_bytes, run IN ('05218_codec_none', '05218_codec_sink_none')) = 1
+        OR minIf(sent_bytes / serialized_bytes, run = '05218_codec_sink_zstd1') <= maxIf(sent_bytes / serialized_bytes, run = '05218_codec_sink_zstd19')
+       FROM v_exchange_codec_bytes)
+   OR (SELECT countIf(sinks > 0 AND serializers = 0) FROM v_exchange_codec) > 0
+ORDER BY run;
+
+DROP VIEW v_exchange_codec_bytes;
 DROP VIEW v_exchange_codec;
 DROP TABLE t_exchange_codec;
