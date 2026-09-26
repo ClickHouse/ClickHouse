@@ -23,7 +23,6 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/TemporaryReplaceTableName.h>
@@ -60,7 +59,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 log_queries_cut_to_length;
 }
@@ -508,16 +506,6 @@ void StorageMaterializedView::readImpl(
     auto view_metadata = getInMemoryMetadataPtr(local_context, false);
     auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
 
-    /// When this view is being read by the old interpreter, query_info has no query tree and the
-    /// analyzer-only code paths in the target storage would dereference it. The old interpreter
-    /// keeps allow_experimental_analyzer off on local_context, but for DEFINER/NONE views the
-    /// SQL security override rebuilds the context from the global one (and clamps the caller's
-    /// settings against the definer's constraints), which can silently turn the analyzer back on.
-    /// Preserve the interpreter mode so the target storage takes the same (old) code path; reading
-    /// a materialized view over a Distributed table otherwise crashes on a null planner context.
-    if (!local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        context->setSetting("allow_experimental_analyzer", false);
-
     StoragePtr storage;
     TableLockHolder lock;
 
@@ -786,7 +774,6 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
 
         /// Re-assert after applySettingsFromQuery so a view's own SETTINGS cannot disable what the STREAM source needs.
         refresh_context->setSetting("enable_streaming_queries", Field(UInt64{1}));
-        refresh_context->setSetting("enable_analyzer", Field(UInt64{1}));
         refresh_context->setSetting("enable_parallel_replicas", Field(UInt64{0}));
         refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
         refresh_context->setSetting("allow_insert_into_iceberg", Field(UInt64{1}));
@@ -845,11 +832,7 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
     insert_query->setDatabase(target_table.database_name);
     insert_query->table_id = target_table;
 
-    SharedHeader header;
-    if (refresh_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
-    else
-        header = InterpreterSelectWithUnionQuery(insert_query->select, refresh_context, SelectQueryOptions()).getSampleBlock();
+    SharedHeader header = InterpreterSelectQueryAnalyzer::getSampleBlock(insert_query->select, refresh_context);
 
     auto columns = make_intrusive<ASTExpressionList>(',');
     for (const String & name : header->getNames())
