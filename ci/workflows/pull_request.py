@@ -58,7 +58,7 @@ PLAIN_FUNCTIONAL_TEST_JOB = [
 
 # Pull requests run the integration tests only in targeted jobs (the changed tests, the
 # tests covering the changed lines and the tests that failed in the PR before, each run
-# once), except for the full LLVM coverage run.
+# once), except for the full LLVM coverage run and the tests excluded from it.
 INTEGRATION_TARGETED_JOBS = JobConfigs.integration_test_targeted_pr_jobs
 
 PLAIN_INTEGRATION_TEST_JOB = [
@@ -160,6 +160,10 @@ workflow = Workflow.Config(
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_llvm_coverage_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.integration_test_excluded_from_llvm_job
         ],
         *JobConfigs.unittest_jobs,
         *[
