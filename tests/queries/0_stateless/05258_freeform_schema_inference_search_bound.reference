@@ -1,0 +1,8 @@
+A wide row of numbers is inferred
+24
+A narrow row of strings is inferred
+8
+A wide row of tab-separated strings is refused
+BAD_ARGUMENTS
+A wide row of quoted strings is refused
+BAD_ARGUMENTS
