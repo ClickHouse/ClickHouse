@@ -3182,6 +3182,49 @@ bool ReadFromMergeTree::isPrewhereDeferredAfterFinal() const
     return context->getSettingsRef()[Setting::apply_prewhere_after_final] || isRowPolicyDeferredAfterFinal();
 }
 
+/// A PREWHERE read step may read the columns of later steps over the same storage column ahead of their
+/// evaluation (see `tryBuildPrewhereSteps`). The reader converts a column from the type a part stores and
+/// fills a column a part lacks from its default expression on the whole block it reads, before any step
+/// filter, and either may throw on the rows an earlier condition rejects. So read ahead only when no part
+/// needs that for a column PREWHERE reads, and no on-the-fly mutation or masking policy rewrites columns at
+/// read time. The decision is per query because the steps are built once for all parts.
+bool ReadFromMergeTree::canReadPrewhereColumnsAhead(const RangesInDataParts & parts) const
+{
+    if (!query_info.prewhere_info)
+        return false;
+
+    if (mutations_snapshot
+        && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasMetadataMutations()))
+        return false;
+
+    if (data.hasEnabledMaskingPolicies(context))
+        return false;
+
+    const auto & columns = storage_snapshot->metadata->getColumns();
+    std::vector<NameAndTypePair> storage_columns;
+    NameSet seen_storage_columns;
+    for (const auto & name : query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames())
+    {
+        auto column = columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+        if (!column || !seen_storage_columns.insert(column->getNameInStorage()).second)
+            continue;
+        storage_columns.push_back(columns.getPhysical(column->getNameInStorage()));
+    }
+
+    for (const auto & part : parts)
+    {
+        const auto & part_columns = part.data_part->getColumnsDescription();
+        for (const auto & storage_column : storage_columns)
+        {
+            const auto * part_column = part_columns.tryGet(storage_column.name);
+            if (!part_column || !part_column->type->equals(*storage_column.type))
+                return false;
+        }
+    }
+
+    return true;
+}
+
 void ReadFromMergeTree::deferFiltersAfterFinalIfNeeded()
 {
     if (!isQueryWithFinal())
@@ -4939,6 +4982,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 {
     auto & result = getAnalysisResult();
 
+    /// Before any pool or processor copies the settings: both build the PREWHERE steps and must agree on them.
+    reader_settings.read_ahead_prewhere_columns = canReadPrewhereColumnsAhead(result.parts_with_ranges);
+
     /// `spreadMarkRanges` consumes `result.split_parts`, so remember the number of ports the plan expects
     /// before it is moved from.
     const size_t num_streams_when_nothing_to_read = getNumStreamsWhenNothingToRead(result);
@@ -5354,6 +5400,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         ProjectionIndexReaderByName readers;
 
+        /// The projection parts are not covered by `canReadPrewhereColumnsAhead`.
+        auto projection_reader_settings = reader_settings;
+        projection_reader_settings.read_ahead_prewhere_columns = false;
+
         /// Create a reader for each projection index based on its metadata and prewhere info.
         for (const auto & read_info : projection_index_read_desc.read_infos)
         {
@@ -5365,14 +5415,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                         std::make_shared<StorageSnapshot>(storage_snapshot->storage, read_info.projection->metadata),
                         read_info.prewhere_info,
                         actions_settings,
-                        reader_settings,
+                        projection_reader_settings,
                         read_info.prewhere_info->prewhere_actions.getRequiredColumnsNames(),
                         pool_settings,
                         block_size,
                         context),
                     read_info.prewhere_info,
                     actions_settings,
-                    reader_settings));
+                    projection_reader_settings));
         }
 
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));

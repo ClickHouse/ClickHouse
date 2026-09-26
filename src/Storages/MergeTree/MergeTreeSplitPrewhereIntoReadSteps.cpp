@@ -255,7 +255,8 @@ bool tryBuildPrewhereSteps(
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution,
-    const ColumnsDescription * columns)
+    const ColumnsDescription * columns,
+    bool read_ahead_columns)
 {
     if (!prewhere_info)
         return true;
@@ -308,10 +309,12 @@ bool tryBuildPrewhereSteps(
     /// two steps read, because a step never filters the block it hands over on its own.
     std::unordered_set<size_t> groups_requiring_filtered_input;
     /// For every group, the index of the group whose step reads its columns. A group that was split
-    /// from the previous one only because it may throw reads the same storage columns, so its columns
-    /// are read by the first step of that run: reading is safe, only the evaluation must wait for the
-    /// filter. Otherwise every such step would deserialize the same storage column again (for example a
-    /// whole `Map` for each of its keys).
+    /// from the previous one only because it may throw reads the same storage columns, so with
+    /// `read_ahead_columns` its columns are read by the first step of that run and only the evaluation
+    /// waits for the filter. Otherwise every such step would deserialize the same storage column again
+    /// (for example a whole `Map` for each of its keys). Reading is safe only when the reader does not
+    /// convert the column or fill it from a default expression, because that runs on the whole block
+    /// before any filter, so the caller decides (see `MergeTreeReaderSettings::read_ahead_prewhere_columns`).
     std::vector<size_t> group_read_step;
     for (const auto & node : condition_nodes)
     {
@@ -328,7 +331,7 @@ bool tryBuildPrewhereSteps(
         if (!condition_groups.empty() && node_info.may_throw)
             groups_requiring_filtered_input.insert(condition_groups.size());
 
-        group_read_step.push_back(same_storage_columns ? group_read_step.back() : condition_groups.size());
+        group_read_step.push_back(same_storage_columns && read_ahead_columns ? group_read_step.back() : condition_groups.size());
         condition_groups.push_back({node});
     }
 

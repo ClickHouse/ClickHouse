@@ -363,3 +363,20 @@ SELECT count() = 1 FROM (
 
 DROP TABLE t_prewhere_guard_rf_parse_build;
 DROP TABLE t_prewhere_guard_rf_parse_probe;
+
+-- A later step's columns over the same storage column are read ahead by the first step of the run, but
+-- not while a part stores a column with another type: the reader converts it on the whole block before
+-- any step filter, so the conversion would see the rows the guard rejects. The failing conversion keeps
+-- the mutation pending, so the part keeps its old type for the query below.
+DROP TABLE IF EXISTS t_prewhere_guard_alter;
+CREATE TABLE t_prewhere_guard_alter (id UInt64, payload Tuple(safe String, val String))
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_prewhere_guard_alter
+SELECT number, tuple(if(number % 3 = 0, '', 'y'), if(number % 3 = 0, 'bad', toString(number % 100))) FROM numbers(10000);
+ALTER TABLE t_prewhere_guard_alter MODIFY COLUMN payload Tuple(safe String, val UInt64) SETTINGS mutations_sync = 0;
+
+SELECT 'pending MODIFY COLUMN, guard over the same storage column';
+SELECT count() FROM t_prewhere_guard_alter PREWHERE payload.safe != '' AND toUInt64(payload.val) > 50;
+
+DROP TABLE t_prewhere_guard_alter;
