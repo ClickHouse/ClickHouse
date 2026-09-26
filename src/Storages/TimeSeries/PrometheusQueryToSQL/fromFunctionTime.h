@@ -12,4 +12,7 @@ inline bool isFunctionTime(std::string_view function_name) { return function_nam
 SQLQueryPiece fromFunctionTime(
     const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
+/// Makes a query piece returning the evaluation time of the specified node, the same as the function time() would return.
+SQLQueryPiece fromEvaluationTime(const PrometheusQueryTree::Node * node, ConverterContext & context);
+
 }

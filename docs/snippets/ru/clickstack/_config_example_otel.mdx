@@ -2,7 +2,7 @@
 title: Пример конфигурации OTel
 ---
 
-Ниже показан пример этой конфигурации (при копировании из интерфейса переменные среды будут заполнены автоматически):
+Замените плейсхолдеры конечной точки и пароля учётными данными, сгенерированными ClickStack:
 
 ```yaml
 receivers:
@@ -20,9 +20,9 @@ receivers:
 processors:
   batch:
   memory_limiter:
-    # 80% максимальной памяти до 2G, скорректируйте для сред с ограниченным объёмом памяти
+    # 80% of maximum memory up to 2G, adjust for low memory environments
     limit_mib: 1500
-    # 25% от лимита до 2G, скорректируйте для сред с ограниченным объёмом памяти
+    # 25% of limit up to 2G, adjust for low memory environments
     spike_limit_mib: 512
     check_interval: 5s
 connectors:
@@ -34,10 +34,6 @@ connectors:
         statement: route() where IsMatch(attributes["rr-web.event"], ".*")
         pipelines: [logs/out-rrweb]
 exporters:
-  debug:
-    verbosity: detailed
-    sampling_initial: 5
-    sampling_thereafter: 200
   clickhouse/rrweb:
     database: default
     endpoint: <clickhouse_cloud_endpoint>

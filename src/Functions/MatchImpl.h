@@ -28,6 +28,29 @@ inline bool likePatternMatchesEverything(std::string_view pattern)
 /// `likePatternIsSubstring` lives in `Common/likePatternToRegexp.h` so it can be shared with the
 /// `optimize_or_like_chain` rewrite passes; it is declared in namespace `DB` and used unqualified below.
 
+/// Matches an anchored literal within one row, given the leftmost occurrence the column-wide search found in
+/// it. A case-insensitive pattern never gets an anchored kind, so comparing bytes is enough.
+inline bool matchesAnchoredLiteral(
+    RegexpMatchKind kind, std::string_view literal, const UInt8 * row_begin, const UInt8 * row_end, const UInt8 * occurrence)
+{
+    const size_t row_size = row_end - row_begin;
+
+    switch (kind)
+    {
+        case RegexpMatchKind::Prefix:
+            return occurrence == row_begin;
+        case RegexpMatchKind::Suffix:
+            /// The leftmost occurrence says nothing about the tail, so compare the tail itself.
+            return row_size >= literal.size() && 0 == memcmp(row_end - literal.size(), literal.data(), literal.size());
+        case RegexpMatchKind::Exact:
+            return row_size == literal.size();
+        case RegexpMatchKind::General:
+        case RegexpMatchKind::Substring:
+            chassert(false); /// The caller checks the kind.
+            return false;
+    }
+}
+
 }
 
 // For more readable instantiations of MatchImpl<>
@@ -210,6 +233,7 @@ struct MatchImpl
         bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
 
         regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+        const RegexpMatchKind match_kind = regexp.getMatchKind();
 
         if (required_substring.empty())
         {
@@ -261,7 +285,16 @@ struct MatchImpl
                 {
                     /// And if it does not, if necessary, we check the regexp.
                     if (is_trivial)
+                    {
                         res[i] = !negate;
+                    }
+                    else if (isAnchoredLiteralMatchKind(match_kind))
+                    {
+                        const UInt8 * const row_begin = begin + haystack_offsets[i - 1];
+                        const UInt8 * const row_end = begin + haystack_offsets[i];
+
+                        res[i] = negate ^ impl::matchesAnchoredLiteral(match_kind, required_substring, row_begin, row_end, pos);
+                    }
                     else
                     {
                         const char * str_data = reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i - 1]]);
@@ -378,6 +411,7 @@ struct MatchImpl
         bool required_substring_is_prefix = false; /// for `anchored` execution of the regexp.
 
         regexp.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+        const RegexpMatchKind match_kind = regexp.getMatchKind();
 
         if (required_substring.empty())
         {
@@ -434,6 +468,12 @@ struct MatchImpl
                         /// And if it does not, if necessary, we check the regexp.
                         if (is_trivial)
                             res[i] = !negate;
+                        else if (isAnchoredLiteralMatchKind(match_kind))
+                        {
+                            const UInt8 * const row_begin = next_pos - N;
+
+                            res[i] = negate ^ impl::matchesAnchoredLiteral(match_kind, required_substring, row_begin, next_pos, pos);
+                        }
                         else
                         {
                             const char * str_data = reinterpret_cast<const char *>(next_pos - N);
@@ -524,6 +564,9 @@ struct MatchImpl
 
         if (is_trivial)
             return !negate; /// no wildcards in pattern
+
+        if (isAnchoredLiteralMatchKind(regexp->getMatchKind()))
+            return negate ^ impl::matchesAnchoredLiteral(regexp->getMatchKind(), required_substr, haystack_begin, haystack_end, match);
 
         const size_t start_pos = required_substring_is_prefix ? (match - haystack_begin) : 0;
         const size_t end_pos = haystack_length;

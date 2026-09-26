@@ -208,10 +208,7 @@ public:
                 format.nullAtom();
                 break;
             }
-            /// `simdjson` only produces `BIGINT` when the parser is configured to store integers
-            /// that do not fit in 64 bits as raw digit strings. We do not enable that option, so
-            /// `simdjson` reports `BIGINT_ERROR` for such numbers instead and this case is
-            /// unreachable; it is handled to keep the switch exhaustive.
+            /// Big integers are stored as raw digit strings; emit them quoted.
             case simdjson::dom::element_type::BIGINT: {
                 format.string(value.get_bigint().value_unsafe());
                 break;
@@ -277,6 +274,11 @@ struct SimdJSONParser
     class Array;
     class Object;
 
+    /// Store integers that do not fit in 64 bits as raw digit strings on the tape instead of
+    /// failing the whole document with `BIGINT_ERROR`, so they can be parsed into wider integer
+    /// types (Int128/UInt128/Int256/UInt256).
+    SimdJSONParser() { parser.number_as_string(true); }
+
     /// References an element in a JSON document, representing a JSON null, boolean, string, number,
     /// array or object.
     class Element
@@ -297,9 +299,8 @@ struct SimdJSONParser
                 case simdjson::dom::element_type::OBJECT: return ElementType::OBJECT;
                 case simdjson::dom::element_type::BOOL: return ElementType::BOOL;
                 case simdjson::dom::element_type::NULL_VALUE: return ElementType::NULL_VALUE;
-                /// Unreachable unless the parser is told to store big integers as raw digit
-                /// strings, which we do not do. Reported as a string because that is how
-                /// `simdjson` exposes the value (`element::get_bigint`).
+                /// Big integers are stored as raw digit strings; report as String so the numeric
+                /// extraction path parses them into wider integer types.
                 case simdjson::dom::element_type::BIGINT: return ElementType::STRING;
             }
         }
@@ -307,7 +308,12 @@ struct SimdJSONParser
         ALWAYS_INLINE bool isInt64() const { return element.type() == simdjson::dom::element_type::INT64; }
         ALWAYS_INLINE bool isUInt64() const { return element.type() == simdjson::dom::element_type::UINT64; }
         ALWAYS_INLINE bool isDouble() const { return element.type() == simdjson::dom::element_type::DOUBLE; }
-        ALWAYS_INLINE bool isString() const { return element.type() == simdjson::dom::element_type::STRING; }
+        /// Expose a big integer as a string so `isString`-gated callers parse it into wider types.
+        ALWAYS_INLINE bool isString() const
+        {
+            return element.type() == simdjson::dom::element_type::STRING
+                || element.type() == simdjson::dom::element_type::BIGINT;
+        }
         ALWAYS_INLINE bool isArray() const { return element.type() == simdjson::dom::element_type::ARRAY; }
         ALWAYS_INLINE bool isObject() const { return element.type() == simdjson::dom::element_type::OBJECT; }
         ALWAYS_INLINE bool isBool() const { return element.type() == simdjson::dom::element_type::BOOL; }
@@ -317,7 +323,14 @@ struct SimdJSONParser
         ALWAYS_INLINE UInt64 getUInt64() const { return element.get_uint64().value_unsafe(); }
         ALWAYS_INLINE double getDouble() const { return element.get_double().value_unsafe(); }
         ALWAYS_INLINE bool getBool() const { return element.get_bool().value_unsafe(); }
-        ALWAYS_INLINE std::string_view getString() const { return element.get_string().value_unsafe(); }
+        ALWAYS_INLINE std::string_view getString() const
+        {
+            /// A big integer is stored on the tape as a raw digit string and must be read via
+            /// `get_bigint`; `get_string` works only for real JSON strings.
+            if (element.type() == simdjson::dom::element_type::BIGINT)
+                return element.get_bigint().value_unsafe();
+            return element.get_string().value_unsafe();
+        }
         ALWAYS_INLINE Array getArray() const;
         ALWAYS_INLINE Object getObject() const;
 

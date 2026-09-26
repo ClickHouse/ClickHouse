@@ -3,6 +3,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 #include <Common/memory.h>
 #include <base/arithmeticOverflow.h>
@@ -15,6 +16,12 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
+
+namespace FailPoints
+{
+extern const char aggregate_function_state_transfer_throw[];
 }
 
 template <typename Key>
@@ -23,6 +30,12 @@ class AggregateFunctionResample final : public IAggregateFunctionHelper<Aggregat
 private:
     /// Sanity threshold to avoid creation of too large arrays. The choice of this number is arbitrary.
     static constexpr size_t max_elements = 1048576;
+
+    /// Sanity threshold for the total size of the state. Nested Resample combinators multiply
+    /// the sizes, and a product that avoids the overflow check can still be absurdly large:
+    /// the allocator treats sizes of 2^63 and more as a logical error, and anything close
+    /// to this threshold could never be allocated anyway.
+    static constexpr size_t max_state_size = 1ULL << 40;
 
     AggregateFunctionPtr nested_function;
 
@@ -73,6 +86,11 @@ public:
 
             total = (sum - 1) / step; // total = (end - begin + step - 1) / step
         }
+
+        /// A state of an empty range holds no nested state and serializes to zero bytes, and a column of
+        /// states is read back one state at a time with no length in front of any of them.
+        if (total == 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The range given in function {} is empty", getName());
 
         if (total > max_elements)
             throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "The range given in function {} contains too many elements",
@@ -140,7 +158,13 @@ public:
 
     size_t sizeOfData() const override
     {
-        return total * size_of_data;
+        /// Nested Resample combinators multiply the sizes, and every layer is only checked against
+        /// `max_elements` on its own, so the product can wrap around or exceed any sane allocation.
+        size_t result = 0;
+        if (common::mulOverflow(total, size_of_data, result) || result > max_state_size)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                "Overflow in internal computations in function {}. The state is too large", getName());
+        return result;
     }
 
     size_t alignOfData() const override
@@ -217,21 +241,61 @@ public:
         return std::make_shared<DataTypeArray>(nested_function_->getResultType());
     }
 
+    /// `transferred` counts the buckets whose transfer returned, so a caller that catches can undo those.
+    template <bool merge>
+    void transferBuckets(AggregateDataPtr __restrict place, ColumnArray & col, size_t & transferred, Arena * arena) const
+    {
+        for (; transferred < total; ++transferred)
+        {
+            if constexpr (merge)
+                nested_function->insertMergeResultInto(place + transferred * size_of_data, col.getData(), arena);
+            else
+                nested_function->insertResultInto(place + transferred * size_of_data, col.getData(), arena);
+        }
+
+        if constexpr (!merge)
+        {
+            fiu_do_on(FailPoints::aggregate_function_state_transfer_throw,
+            {
+                throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected failure in AggregateFunctionResample::insertResultInto");
+            });
+        }
+
+        auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
+        col_offsets.getData().push_back(col.getData().size());
+    }
+
     template <bool merge>
     void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         auto & col = assert_cast<ColumnArray &>(to);
-        auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
+        size_t transferred = 0;
 
-        for (size_t i = 0; i < total; ++i)
+        if constexpr (!merge)
         {
-            if constexpr (merge)
-                nested_function->insertMergeResultInto(place + i * size_of_data, col.getData(), arena);
-            else
-                nested_function->insertResultInto(place + i * size_of_data, col.getData(), arena);
+            /// A nested function that is not a state aliases nothing and need not be atomic.
+            if (nested_function->isState())
+            {
+                const size_t offsets_before = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn()).size();
+
+                try
+                {
+                    transferBuckets<false>(place, col, transferred, arena);
+                }
+                catch (...)
+                {
+                    auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
+                    col_offsets.getData().resize_assume_reserved(offsets_before);
+                    for (size_t i = transferred; i-- > 0;)
+                        nested_function->rollbackInsertResult(place + i * size_of_data, col.getData());
+                    throw;
+                }
+
+                return;
+            }
         }
 
-        col_offsets.getData().push_back(col.getData().size());
+        transferBuckets<merge>(place, col, transferred, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
@@ -244,11 +308,14 @@ public:
         insertResultIntoImpl<true>(place, to, arena);
     }
 
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
     {
-        auto arguments = nested_function->getArgumentsThatCanBeOnlyNull();
-        arguments.insert(last_col);
-        return arguments;
+        auto & col = assert_cast<ColumnArray &>(to);
+        auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
+
+        col_offsets.getData().resize_assume_reserved(col_offsets.size() - 1);
+        for (size_t i = total; i-- > 0;)
+            nested_function->rollbackInsertResult(place + i * size_of_data, col.getData());
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

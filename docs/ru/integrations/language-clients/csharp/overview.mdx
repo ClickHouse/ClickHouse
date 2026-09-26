@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'C#'
+sidebarTitle: 'Обзор'
 keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'connect', 'integrate']
 slug: /integrations/csharp
 description: 'Официальный клиент C# для подключения к ClickHouse.'
@@ -869,7 +869,7 @@ public class FixedDecimalFormatter : IParameterFormatter
   ### Пользовательское преобразование значений при чтении
 </div>
 
-`IReadValueConverter` позволяет преобразовывать значения, возвращаемые средством чтения данных после десериализации, не меняя их CLR-тип. Типичные сценарии использования: установка `DateTime.Kind = Utc` для столбца `DateTime` без timezone, обрезка или нормализация строк, а также постобработка JSON-столбца перед передачей в прикладной код.
+`IReadValueConverter` позволяет преобразовывать значения, возвращаемые средством чтения данных после десериализации, не меняя их CLR-тип. Типичные сценарии использования: установка `DateTime.Kind = Utc` для столбца `DateTime` без часового пояса, обрезка или нормализация строк, а также постобработка JSON-столбца перед передачей в прикладной код.
 
 Задайте `ReadValueConverter` в `ClickHouseClientSettings`, чтобы установить преобразователь для всех операций чтения. Преобразователь вызывается один раз для каждого столбца в каждой строке как через boxed-путь (`GetValue`), так и через обобщённый путь (`GetFieldValue<T>`). Если преобразователь не задан, дополнительная нагрузка отсутствует — средство чтения возвращает значения напрямую.
 
@@ -898,16 +898,16 @@ using var client = new ClickHouseClient(settings);
 ```csharp
 public class UtcKindForNoTzDateTimeConverter : IReadValueConverter
 {
-    public object ConvertValue(object value, string columnName, string clickHouseType)
+    public object ConvertValue(object value, string columnName, string clickhouseType)
     {
-        if (value is DateTime dt && clickHouseType == "DateTime")
+        if (value is DateTime dt && clickhouseType == "DateTime")
             return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
 
-    public T ConvertValue<T>(T value, string columnName, string clickHouseType)
+    public T ConvertValue<T>(T value, string columnName, string clickhouseType)
     {
-        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickHouseType == "DateTime")
+        if (typeof(T) == typeof(DateTime) && value is DateTime dt && clickhouseType == "DateTime")
             return (T)(object)DateTime.SpecifyKind(dt, DateTimeKind.Utc);
         return value;
     }
