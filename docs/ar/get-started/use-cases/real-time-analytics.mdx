@@ -1,0 +1,71 @@
+---
+slug: /cloud/get-started/cloud/use-cases/real-time-analytics
+title: 'التحليلات في الوقت الفعلي'
+description: 'تعرّف على كيفية بناء تطبيقات التحليلات في الوقت الفعلي باستخدام ClickHouse Cloud للحصول على رؤى فورية واتخاذ قرارات قائمة على البيانات'
+keywords: ['حالات الاستخدام', 'التحليلات في الوقت الفعلي']
+sidebarTitle: 'التحليلات في الوقت الفعلي'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+في مجال التحليلات، تعني عبارة &quot;في الوقت الفعلي&quot; عادةً أن تبدو تجربة المستخدم نفسها مباشرة.
+يقوم العميل بتحديث لوحة معلومات، أو فتح لوحة المتصدرين، أو التحقيق في مشكلة، ويتوقع أن تعكس البيانات ما حدث للتو.
+ومن الناحية التقنية، لا يعني هذا مجرد تقديم استعلامات تحليلية منخفضة زمن الاستجابة، بل تحقيق ذلك مع إدخال البيانات باستمرار وبأحجام كبيرة.
+
+<div id="system-properties">
+  ## خصائص نظام للتحليلات في الوقت الفعلي
+</div>
+
+عندما يقيّم العملاء منصة للتحليلات في الوقت الفعلي، فإنهم غالبًا ما يركّزون فقط على زمن استجابة الاستعلام. وسؤال &quot;هل يمكنه إرجاع إجابة خلال 50ms؟&quot; سؤالٌ منطقي، ويمكن لمعظم محركات التحليلات الإجابة عنه بصورة مقنعة إذا وفّرت لها موارد حوسبة كافية على مجموعة بيانات ثابتة.
+
+لكن السؤال الذي يحدّد ما يلمسه المستخدمون فعليًا أصعب من ذلك. وهو ما إذا كان النظام يستطيع إرجاع إجابة خلال 50ms **على بيانات وصلت قبل ثانية واحدة**، بينما لا تزال عملية استيعاب البيانات جارية، وفي الوقت نفسه يرسل مستخدمون آخرون استعلاماتهم أيضًا.
+
+يتطلّب إتاحة البيانات التفكير في الزمن الإجمالي اللازم للوصول إلى الرؤى، وهو يتكوّن من ثلاثة مكوّنات.
+
+* **الوقت اللازم لاستيعاب البيانات**: كم يستغرق وصول البيانات المُنشأة حديثًا إلى المنصة وتخزينها فيها بشكل دائم؟
+* **الوقت اللازم للتحويل والإعداد**: كم يستغرق تنظيف البيانات وإثراؤها وربطها وتجميعها مسبقًا أو تحديث البُنى المستخدمة لخدمة الاستعلامات (العروض المادية، والتجميعات التراكمية، والفهارس) التي تُنفَّذ عليها الاستعلامات فعليًا؟
+* **الوقت اللازم للاستعلام**: كم يستغرق تخطيط القراءة وتنفيذها بمجرد أن تصبح البيانات متاحة؟
+
+<Image img="/images/use-cases/rta-considerations.webp" alt="التحليلات في الوقت الفعلي: الوقت اللازم لاستيعاب البيانات وتحويلها والاستعلام عنها" />
+
+<div id="clickhouse-rta">
+  ## كيف يُمكّن ClickHouse التحليلات في الوقت الفعلي
+</div>
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="كيف يُمكّن ClickHouse التحليلات في الوقت الفعلي" />
+  </div>
+
+  <ExclusiveGroup name="rta-arch">
+    <AccordionGroup>
+      <Accordion title="إدخال البيانات" defaultOpen>
+        مع [ClickPipes](/ar/integrations/clickpipes/home)، المتوفرة حصريًا في ClickHouse Cloud، تحصل على integration engine جاهز للاستخدام يجعل إدخال كميات كبيرة من البيانات أمرًا سهلًا. اختر data source الوارد وformat، واضبط schema، ثم دع pipeline يعمل.
+
+        تدعم مكتبة ClickHouse الواسعة من [table engines](/ar/reference/engines/table-engines) إدخال البيانات من Kafka topics وS3 buckets وقواعد بيانات OLTP وغيرها. وعلى عكس قواعد بيانات OLAP الأخرى التي تتطلب منك إجراء Batch inserts لتحقيق high throughput، يتعامل ClickHouse بالكفاءة نفسها مع الحمولات الأصغر — إذ تقوم [asynchronous inserts](/ar/concepts/features/operations/insert/asyncinserts) بتجميعها تلقائيًا على دفعات للحصول على أفضل أداء للكتابة.
+      </Accordion>
+
+      <Accordion title="تحويلات البيانات والاستعلامات">
+        تجعل [Materialized views](/ar/concepts/features/materialized-views) التحويلات سلسة — إذ تُفعَّل تلقائيًا عند insert بيانات جديدة، فتستخرج البيانات وتجمّعها وتعدّلها فور وصولها من دون pipelines مخصصة. كما أن ربطها معًا يضيف مرونة معيارية.
+
+        تكون queries على Materialized views سريعة للغاية لأن النتائج تُخزَّن في tables مخصصة. ويتضمن ClickHouse Cloud [query cache](/ar/concepts/features/performance/caches/query-cache) و[sparse indexes](/ar/concepts/features/performance/skip-indexes/skipping-indexes) و[projections](/ar/concepts/features/projections/projections) من دون أي تكلفة إضافية.
+      </Accordion>
+
+      <Accordion title="التطبيقات ولوحات المعلومات">
+        يوفّر ClickHouse تحليلات موجّهة للمستخدمين في الخدمات المالية والألعاب والتجارة الإلكترونية وغيرها. كما يدعم واجهة REST بحيث يمكن لمطوري الويب بناء تطبيقات خفيفة من دون بروتوكولات ثنائية معقدة.
+
+        تتوفر موصلات أصلية لأدوات BI مثل [Grafana](/ar/integrations/connectors/data-visualization/grafana) و[Tableau](/ar/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) و[Looker](/ar/integrations/connectors/data-visualization/looker-and-clickhouse)، بالإضافة إلى language clients وSQL clients و[MySQL wire protocol](/ar/concepts/features/interfaces/mysql) للأدوات التي لا تتوفر لها موصلات أصلية.
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>

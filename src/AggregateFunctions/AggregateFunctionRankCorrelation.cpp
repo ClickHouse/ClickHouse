@@ -73,7 +73,7 @@ public:
         data(place).addY(new_y, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & a = data(place);
         const auto & b = data(rhs);

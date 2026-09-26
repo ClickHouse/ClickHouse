@@ -26,6 +26,24 @@ GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t 
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_levenshtein_distance is not initialized");
             get_priority = [this](size_t i) { return Priority{static_cast<Int64>(hostname_levenshtein_distance[i])}; };
             break;
+        case LoadBalancing::HOSTNAME_LONGEST_COMMON_PREFIX:
+            if (hostname_longest_common_prefix.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_longest_common_prefix is not initialized");
+            /// `Priority` is "lower value means higher priority", and the other hostname strategies store a
+            /// *distance* (smaller == more similar == preferred) that is returned verbatim. Here we instead
+            /// store a *similarity* (the common prefix length, where larger == more similar == preferred), so
+            /// we negate it to turn it into a priority. We deliberately do not store a synthetic distance such
+            /// as `BIG - length`: negating here keeps the stored vector semantically honest (it really is the
+            /// common prefix length) and avoids an arbitrary magic constant.
+            get_priority = [this](size_t i) { return Priority{-static_cast<Int64>(hostname_longest_common_prefix[i])}; };
+            break;
+        case LoadBalancing::HOSTNAME_LONGEST_COMMON_SUFFIX:
+            if (hostname_longest_common_suffix.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: hostname_longest_common_suffix is not initialized");
+            /// See the comment for HOSTNAME_LONGEST_COMMON_PREFIX: the stored value is a similarity (common
+            /// suffix length, larger == preferred), so we negate it to obtain a priority (lower == preferred).
+            get_priority = [this](size_t i) { return Priority{-static_cast<Int64>(hostname_longest_common_suffix[i])}; };
+            break;
         case LoadBalancing::IN_ORDER:
             get_priority = [](size_t i) { return Priority{static_cast<Int64>(i)}; };
             break;
@@ -75,6 +93,10 @@ bool GetPriorityForLoadBalancing::hasOptimalNode() const
         case LoadBalancing::NEAREST_HOSTNAME:
             return true;
         case LoadBalancing::HOSTNAME_LEVENSHTEIN_DISTANCE:
+            return true;
+        case LoadBalancing::HOSTNAME_LONGEST_COMMON_PREFIX:
+            return true;
+        case LoadBalancing::HOSTNAME_LONGEST_COMMON_SUFFIX:
             return true;
         case LoadBalancing::IN_ORDER:
             return false;

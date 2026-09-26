@@ -1,0 +1,20 @@
+plan	1
+<  >	1	396
+<= >=	1	621
+>  <=	1	548
+>= <	1	495
+no nan pairs	0
+nullable nan	1	205
+left	1	426
+semi	1	34
+anti	1	30
+bf16 plan	1
+bf16 <  >	1	144
+bf16 <= >=	1	242
+bf16 >  <=	1	296
+bf16 >= <	1	252
+bf16 no nan pairs	0
+bf16 nullable nan	1	120
+bf16 left	1	176
+bf16 semi	1	16
+bf16 anti	1	32

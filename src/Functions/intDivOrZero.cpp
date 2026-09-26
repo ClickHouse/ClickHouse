@@ -17,7 +17,11 @@ struct DivideIntegralOrZeroImpl
     template <typename Result = ResultType>
     static Result apply(A a, B b)
     {
-        if (unlikely(divisionLeadsToFPE(a, b)))
+        /// Use `integerDivisionLeadsToFPE` (not `divisionLeadsToFPE`) so the FPE precheck accounts for
+        /// the same operand casts that `DivideIntegralImpl::apply` performs. Otherwise mixed
+        /// signed/unsigned operands such as `intDivOrZero(Int8(-128), UInt8(255))` (evaluated as
+        /// `Int8(-128) / Int8(-1)`) would raise `ILLEGAL_DIVISION` instead of returning zero.
+        if (unlikely(integerDivisionLeadsToFPE(a, b)))
             return 0;
 
         return DivideIntegralImpl<A, B>::template apply<Result>(a, b);

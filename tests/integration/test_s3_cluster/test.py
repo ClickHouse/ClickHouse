@@ -2,10 +2,7 @@ import csv
 import logging
 import os
 import shutil
-import threading
-import time
 import uuid
-from email.errors import HeaderParseError
 
 import pytest
 
@@ -554,12 +551,11 @@ def test_cluster_default_expression(started_cluster):
     assert result == expected_result
 
 
-@pytest.mark.parametrize("allow_experimental_analyzer", [0, 1])
 @pytest.mark.parametrize("use_partition_strategy", [False, True])
-def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_partition_strategy):
+def test_hive_partitioning(started_cluster, use_partition_strategy):
     node = started_cluster.instances["s0_0_0"]
 
-    data_path = f"root/data/hive_{allow_experimental_analyzer}/{random_string(6)}"
+    data_path = f"root/data/hive/{random_string(6)}"
 
     if use_partition_strategy:
         node.query(
@@ -597,7 +593,7 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_par
                 FROM s3('http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
                 WHERE key <= 2
                 FORMAT TSV
-                SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 0, allow_experimental_analyzer={allow_experimental_analyzer}
+                SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 0
             """,
             query_id=query_id_full,
         )
@@ -611,7 +607,7 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_par
             FROM s3('http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
             WHERE key <= 2
             FORMAT TSV
-            SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 1, allow_experimental_analyzer={allow_experimental_analyzer}
+            SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 1
         """,
         query_id=query_id_optimized,
     )
@@ -626,7 +622,7 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_par
                 FROM s3Cluster(cluster_simple, 'http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
                 WHERE key <= 2
                 FORMAT TSV
-                SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 0, allow_experimental_analyzer={allow_experimental_analyzer}
+                SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 0
             """,
             query_id=query_id_cluster_full,
         )
@@ -640,7 +636,7 @@ def test_hive_partitioning(started_cluster, allow_experimental_analyzer, use_par
             FROM s3Cluster(cluster_simple, 'http://minio1:9001/{data_path}/key=**.parquet', 'minio', '{minio_secret_key}', 'Parquet', 'key Int32, value Int32')
             WHERE key <= 2
             FORMAT TSV
-            SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 1, allow_experimental_analyzer={allow_experimental_analyzer}
+            SETTINGS enable_filesystem_cache = 0, use_query_cache = 0, use_cache_for_count_from_files = 0, use_hive_partitioning = 1
         """,
         query_id=query_id_cluster_optimized,
     )
@@ -734,6 +730,11 @@ def test_iceberg_s3_cluster_read_task_failpoint(started_cluster):
                 "SYSTEM ENABLE FAILPOINT storage_cluster_read_sleep"
             )
 
+        # The failpoint sleeps 10s uninterruptibly before max_execution_time can
+        # fire, so the server's legitimate abort lands well after 5s. The client
+        # timeout must outlast that abort (plus sanitizer/runner slowdown), not
+        # the 5s execution limit, otherwise a slow runner raises a false
+        # "Client timed out!".
         _, error = node.query_and_get_answer_with_error(
             f"""
             INSERT INTO {dst_table}
@@ -743,7 +744,7 @@ def test_iceberg_s3_cluster_read_task_failpoint(started_cluster):
                 '{minio_access_key}', '{minio_secret_key}')
             SETTINGS max_execution_time = 5
             """,
-            timeout=30,
+            timeout=120,
         )
 
         assert error, (

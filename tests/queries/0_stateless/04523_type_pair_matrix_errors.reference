@@ -1,0 +1,19 @@
+-- comparison overflow during scale conversion
+-- the same comparisons with the overflow check disabled, vector/vector
+0	0	0
+-- the same in the left-const shape
+0	0	0
+-- the same in the right-const shape
+0	0	0
+-- the same in the both-const shape
+0	0	0
+-- extreme values that must compare without overflow, vector/vector
+1	1
+-- the same in the left-const shape
+1	1
+-- the same in the right-const shape
+1	1
+-- the same in the both-const shape
+1	1
+-- the reverse operand order overflows during scale conversion
+-- division by zero in every width direction

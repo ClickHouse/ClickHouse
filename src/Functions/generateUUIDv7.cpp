@@ -33,6 +33,8 @@ public:
     size_t getNumberOfArguments() const final { return 0; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const final { return false; }
+    /// The optional argument only defeats common subexpression elimination; `executeImpl` never reads it.
+    bool useDefaultImplementationForSparseColumns() const final { return false; }
     bool useDefaultImplementationForNulls() const final { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const final { return false; }
     bool isVariadic() const final { return true; }
@@ -77,17 +79,13 @@ REGISTER_FUNCTION(GenerateUUIDv7)
 {
     /// generateUUIDv7 documentation
     FunctionDocumentation::Description description = R"(
-Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](../data-types/uuid.md).
+Generates a [version 7](https://www.rfc-editor.org/rfc/rfc9562) [UUID](/reference/data-types/uuid) as defined by [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
-
-:::note
-As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
-:::
     )";
     FunctionDocumentation::Syntax syntax = "generateUUIDv7([expr])";
     FunctionDocumentation::Arguments arguments = {
-        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
+        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/reference/functions/regular-functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a UUIDv7.", {"UUID"}};
     FunctionDocumentation::Examples examples = {

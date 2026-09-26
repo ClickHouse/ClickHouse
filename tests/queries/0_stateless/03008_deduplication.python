@@ -126,6 +126,53 @@ def get_logs_statement(args):
     return ""
 
 
+def get_settings_statements(args, extra_settings=""):
+    """Session settings shared by the main script and the diagnostics-only script.
+
+    Single source of truth: get_system_debug_statements probes system.settings for these
+    very names, so a diagnostics-only run that did not apply them would report defaults
+    (max_block_size 65409, max_insert_threads auto(N), the token setting 0) instead of the
+    values the failing run actually used.
+    """
+    return f"""
+            SET enable_analyzer=1;
+
+            SET max_insert_threads={1 if args.single_thread else 10};
+            SET update_insert_deduplication_token_in_dependent_materialized_views=1;
+            SET deduplicate_blocks_in_dependent_materialized_views=1;
+{extra_settings}
+            SET max_block_size=1;
+            SET min_insert_block_size_rows=0;
+            SET min_insert_block_size_bytes=0;
+"""
+
+
+def get_emit_debug_only_script(args, debug_statements, extra_settings=""):
+    """Diagnostics-only script for one already-failed phase.
+
+    Contains no DROP/CREATE/INSERT and no assertion, so it reports on the state left
+    behind by the failing run instead of destroying it. The drivers invoke this only
+    after a case has failed.
+    """
+    return f"""
+            {get_logs_statement(args)}
+            {get_settings_statements(args, extra_settings)}
+            {debug_statements}
+            """
+
+
+def assert_count_statement(table, expected, phase):
+    """Assertion that names its phase, so a driver can tell which one failed.
+
+    The message is only ever produced when the assertion fires, so this costs nothing on
+    the success path.
+    """
+    return f"""
+            SELECT throwIf( count() != {expected}, 'DEDUP_ASSERT_FAILED phase={phase} table={table}' )
+                FROM {table};
+            """
+
+
 def get_basic_debug_statements(phase, src_table, dst_table, expected_src, expected_dst):
     """Generate basic debug statements for source and destination tables"""
     return f"""
@@ -307,6 +354,12 @@ class ArgsFactory:
         self.__parser.add_argument(
             "--debug-on-fail", type=str2bool, nargs="?", const=True, default=False
         )
+        # Print only the diagnostics for the named phase, against the state a failing run
+        # left behind. Used by the drivers on the failure path, so the success path does
+        # not execute the diagnostic statements at all.
+        self.__parser.add_argument(
+            "--emit-debug-only", choices=["first", "second"], default=None
+        )
 
 
 def test_insert_several_blocks(parser):
@@ -367,65 +420,57 @@ def test_insert_several_blocks(parser):
             expected_second_src = 10 if args.deduplicate_src_table else 20
             expected_second_dst = 5 if args.deduplicate_dst_table else 10
         else:
-            if args.use_insert_token:
-                expected_first_src = 10
-                expected_first_dst = 10
-                expected_second_src = 10 if args.deduplicate_src_table else 20
-                expected_second_dst = 10 if args.deduplicate_dst_table else 20
-            else:
-                expected_first_src = 1 if args.deduplicate_src_table else 10
-                expected_first_dst = 1 if args.deduplicate_dst_table else 10
-                expected_second_src = 1 if args.deduplicate_src_table else 20
-                expected_second_dst = 1 if args.deduplicate_dst_table else 20
+            # new_unified_hash: identical blocks within one insert are kept (distinct source
+            # numbers), so these counts no longer depend on insert_deduplication_token.
+            expected_first_src = 10
+            expected_first_dst = 10
+            expected_second_src = 10 if args.deduplicate_src_table else 20
+            expected_second_dst = 10 if args.deduplicate_dst_table else 20
 
         # Use the computed values in assertions
-        assert_first_insert_statements = f"""
-            SELECT throwIf( count() != {expected_first_src} )
-                FROM table_a_b;
-            SELECT throwIf( count() != {expected_first_dst} )
-                FROM table_when_b_even;
-            """
-        
-        assert_second_insert_statements = f"""
-           SELECT throwIf( count() != {expected_second_src} )
-               FROM table_a_b;
-           SELECT throwIf( count() != {expected_second_dst} )
-               FROM table_when_b_even;
-           """
+        assert_first_insert_statements = assert_count_statement(
+            "table_a_b", expected_first_src, "first"
+        ) + assert_count_statement("table_when_b_even", expected_first_dst, "first")
+
+        assert_second_insert_statements = assert_count_statement(
+            "table_a_b", expected_second_src, "second"
+        ) + assert_count_statement("table_when_b_even", expected_second_dst, "second")
+
+        def debug_statements(phase):
+            expected_src = (
+                expected_first_src if phase == "first" else expected_second_src
+            )
+            expected_dst = (
+                expected_first_dst if phase == "first" else expected_second_dst
+            )
+            return (
+                get_basic_debug_statements(phase, "table_a_b", "table_when_b_even",
+                                          expected_src, expected_dst) +
+                get_table_data_debug("table_when_b_even", expected_dst, ["a", "b"]) +
+                get_system_debug_statements("table_when_b_even", expected_dst,
+                                           ["table_a_b", "table_when_b_even"])
+            )
+
+        # Diagnostics-only mode: the drivers use this on the failure path, so the success
+        # path never executes these statements.
+        if args.emit_debug_only:
+            print(
+                get_emit_debug_only_script(
+                    args, debug_statements(args.emit_debug_only)
+                )
+            )
+            return
 
         # Debug statements only when debug_on_fail is enabled
         debug_before_first = ""
         debug_before_second = ""
         if args.debug_on_fail:
-            debug_before_first = (
-                get_basic_debug_statements("first", "table_a_b", "table_when_b_even", 
-                                          expected_first_src, expected_first_dst) +
-                get_table_data_debug("table_when_b_even", expected_first_dst, ["a", "b"]) +
-                get_system_debug_statements("table_when_b_even", expected_first_dst, 
-                                           ["table_a_b", "table_when_b_even"])
-            )
-            
-            debug_before_second = (
-                get_basic_debug_statements("second", "table_a_b", "table_when_b_even",
-                                          expected_second_src, expected_second_dst) +
-                get_table_data_debug("table_when_b_even", expected_second_dst, ["a", "b"]) +
-                get_system_debug_statements("table_when_b_even", expected_second_dst,
-                                           ["table_a_b", "table_when_b_even"])
-            )
+            debug_before_first = debug_statements("first")
+            debug_before_second = debug_statements("second")
 
         script = f"""
             {get_logs_statement(args)}
-
-            SET enable_analyzer=1;
-
-            SET max_insert_threads={1 if args.single_thread else 10};
-            SET update_insert_deduplication_token_in_dependent_materialized_views=1;
-            SET deduplicate_blocks_in_dependent_materialized_views=1;
-
-            SET max_block_size=1;
-            SET min_insert_block_size_rows=0;
-            SET min_insert_block_size_bytes=0;
-
+            {get_settings_statements(args)}
             {drop_tables_statements}
 
             {create_table_a_b_statement}
@@ -519,74 +564,70 @@ def test_mv_generates_several_blocks(parser):
             expected_second_src = 5 if args.deduplicate_src_table else 10
             expected_second_dst = 9 if args.deduplicate_dst_table else 18
         else:
-            if args.use_insert_token:
-                expected_first_src = 5
-                expected_first_dst = 10
-                expected_second_src = 5 if args.deduplicate_src_table else 10
-                expected_second_dst = 10 if args.deduplicate_dst_table else 20
-            else:
-                expected_first_src = 1 if args.deduplicate_src_table else 5
-                expected_first_dst = 2 if args.deduplicate_dst_table else 10
-                expected_second_src = 1 if args.deduplicate_src_table else 10
-                expected_second_dst = 2 if args.deduplicate_dst_table else 20
+            # new_unified_hash: identical blocks within one insert are kept (distinct source
+            # numbers), so these counts no longer depend on insert_deduplication_token.
+            expected_first_src = 5
+            expected_first_dst = 10
+            expected_second_src = 5 if args.deduplicate_src_table else 10
+            expected_second_dst = 10 if args.deduplicate_dst_table else 20
 
         # Always create assert statements using the computed values
-        assert_first_insert_statements = f"""
-            SELECT throwIf( count() != {expected_first_src} )
-                FROM table_a_b;
+        assert_first_insert_statements = assert_count_statement(
+            "table_a_b", expected_first_src, "first"
+        ) + assert_count_statement(
+            "table_when_b_even_and_joined", expected_first_dst, "first"
+        )
 
-            SELECT throwIf( count() != {expected_first_dst} )
-                FROM table_when_b_even_and_joined;
-            """
-        
-        assert_second_insert_statements = f"""
-            SELECT throwIf( count() != {expected_second_src} )
-                FROM table_a_b;
+        assert_second_insert_statements = assert_count_statement(
+            "table_a_b", expected_second_src, "second"
+        ) + assert_count_statement(
+            "table_when_b_even_and_joined", expected_second_dst, "second"
+        )
 
-            SELECT throwIf( count() != {expected_second_dst} )
-                FROM table_when_b_even_and_joined;
-            """
+        # This subcommand needs two extra join settings; both the main script and the
+        # diagnostics-only script emit them from here.
+        extra_settings = """
+            SET min_joined_block_size_rows = 1;
+            SET max_joined_block_size_rows = 1;
+"""
+
+        def debug_statements(phase):
+            expected_src = (
+                expected_first_src if phase == "first" else expected_second_src
+            )
+            expected_dst = (
+                expected_first_dst if phase == "first" else expected_second_dst
+            )
+            return (
+                get_basic_debug_statements(phase, "table_a_b", "table_when_b_even_and_joined",
+                                          expected_src, expected_dst) +
+                get_table_data_debug("table_when_b_even_and_joined", expected_dst,
+                                   ["a_src", "a_join", "b"]) +
+                get_system_debug_statements("table_when_b_even_and_joined", expected_dst,
+                                           ["table_a_b", "table_for_join_with", "table_when_b_even_and_joined"],
+                                           ["mv_b_even"])
+            )
+
+        # Diagnostics-only mode: the drivers use this on the failure path, so the success
+        # path never executes these statements.
+        if args.emit_debug_only:
+            print(
+                get_emit_debug_only_script(
+                    args, debug_statements(args.emit_debug_only), extra_settings
+                )
+            )
+            return
 
         # Debug statements only when debug_on_fail is enabled
         debug_before_first = ""
         debug_before_second = ""
         if args.debug_on_fail:
-            debug_before_first = (
-                get_basic_debug_statements("first", "table_a_b", "table_when_b_even_and_joined",
-                                          expected_first_src, expected_first_dst) +
-                get_table_data_debug("table_when_b_even_and_joined", expected_first_dst, 
-                                   ["a_src", "a_join", "b"]) +
-                get_system_debug_statements("table_when_b_even_and_joined", expected_first_dst,
-                                           ["table_a_b", "table_for_join_with", "table_when_b_even_and_joined"],
-                                           ["mv_b_even"])
-            )
-            
-            debug_before_second = (
-                get_basic_debug_statements("second", "table_a_b", "table_when_b_even_and_joined",
-                                          expected_second_src, expected_second_dst) +
-                get_table_data_debug("table_when_b_even_and_joined", expected_second_dst,
-                                   ["a_src", "a_join", "b"]) +
-                get_system_debug_statements("table_when_b_even_and_joined", expected_second_dst,
-                                           ["table_a_b", "table_for_join_with", "table_when_b_even_and_joined"],
-                                           ["mv_b_even"])
-            )
+            debug_before_first = debug_statements("first")
+            debug_before_second = debug_statements("second")
 
         script = f"""
             {get_logs_statement(args)}
-
-            SET enable_analyzer=1;
-
-            SET max_insert_threads={1 if args.single_thread else 10};
-            SET update_insert_deduplication_token_in_dependent_materialized_views=1;
-            SET deduplicate_blocks_in_dependent_materialized_views=1;
-
-            SET min_joined_block_size_rows = 1;
-            SET max_joined_block_size_rows = 1;
-
-            SET max_block_size=1;
-            SET min_insert_block_size_rows=0;
-            SET min_insert_block_size_bytes=0;
-
+            {get_settings_statements(args, extra_settings)}
             {drop_tables_statements}
 
             CREATE TABLE table_for_join_with
@@ -686,69 +727,58 @@ def test_several_mv_into_one_table(parser):
             expected_second_src = 8 if args.deduplicate_src_table else 16
             expected_second_dst = 6 if args.deduplicate_dst_table else 12
         else:
-            if args.use_insert_token:
-                expected_first_src = 8
-                expected_first_dst = 16
-                expected_second_src = 8 if args.deduplicate_src_table else 16
-                expected_second_dst = 16 if args.deduplicate_dst_table else 32
-            else:
-                expected_first_src = 1 if args.deduplicate_src_table else 8
-                expected_first_dst = 2 if args.deduplicate_dst_table else 16
-                expected_second_src = 1 if args.deduplicate_src_table else 16
-                expected_second_dst = 2 if args.deduplicate_dst_table else 32
+            # new_unified_hash: identical blocks within one insert are kept (distinct source
+            # numbers), so these counts no longer depend on insert_deduplication_token.
+            expected_first_src = 8
+            expected_first_dst = 16
+            expected_second_src = 8 if args.deduplicate_src_table else 16
+            expected_second_dst = 16 if args.deduplicate_dst_table else 32
 
         # Use the computed values in assertions
-        assert_first_insert_statements = f"""
-            SELECT throwIf( count() != {expected_first_src} )
-                FROM table_src;
+        assert_first_insert_statements = assert_count_statement(
+            "table_src", expected_first_src, "first"
+        ) + assert_count_statement("table_dst", expected_first_dst, "first")
 
-            SELECT throwIf( count() != {expected_first_dst} )
-                FROM table_dst;
-            """
-        
-        assert_second_insert_statements = f"""
-            SELECT throwIf( count() != {expected_second_src} )
-                FROM table_src;
+        assert_second_insert_statements = assert_count_statement(
+            "table_src", expected_second_src, "second"
+        ) + assert_count_statement("table_dst", expected_second_dst, "second")
 
-            SELECT throwIf( count() != {expected_second_dst} )
-                FROM table_dst;
-            """
+        def debug_statements(phase):
+            expected_src = (
+                expected_first_src if phase == "first" else expected_second_src
+            )
+            expected_dst = (
+                expected_first_dst if phase == "first" else expected_second_dst
+            )
+            return (
+                get_basic_debug_statements(phase, "table_src", "table_dst",
+                                          expected_src, expected_dst) +
+                get_table_data_debug("table_dst", expected_dst, ["a", "b"]) +
+                get_system_debug_statements("table_dst", expected_dst,
+                                           ["table_src", "table_dst"],
+                                           ["mv_b_even", "mv_b_even_even"])
+            )
+
+        # Diagnostics-only mode: the drivers use this on the failure path, so the success
+        # path never executes these statements.
+        if args.emit_debug_only:
+            print(
+                get_emit_debug_only_script(
+                    args, debug_statements(args.emit_debug_only)
+                )
+            )
+            return
 
         # Debug statements only when debug_on_fail is enabled
         debug_before_first = ""
         debug_before_second = ""
         if args.debug_on_fail:
-            debug_before_first = (
-                get_basic_debug_statements("first", "table_src", "table_dst",
-                                          expected_first_src, expected_first_dst) +
-                get_table_data_debug("table_dst", expected_first_dst, ["a", "b"]) +
-                get_system_debug_statements("table_dst", expected_first_dst,
-                                           ["table_src", "table_dst"],
-                                           ["mv_b_even", "mv_b_even_even"])
-            )
-            
-            debug_before_second = (
-                get_basic_debug_statements("second", "table_src", "table_dst",
-                                          expected_second_src, expected_second_dst) +
-                get_table_data_debug("table_dst", expected_second_dst, ["a", "b"]) +
-                get_system_debug_statements("table_dst", expected_second_dst,
-                                           ["table_src", "table_dst"],
-                                           ["mv_b_even", "mv_b_even_even"])
-            )
+            debug_before_first = debug_statements("first")
+            debug_before_second = debug_statements("second")
 
         script = f"""
             {get_logs_statement(args)}
-
-            SET enable_analyzer=1;
-
-            SET max_insert_threads={1 if args.single_thread else 10};
-            SET update_insert_deduplication_token_in_dependent_materialized_views=1;
-            SET deduplicate_blocks_in_dependent_materialized_views=1;
-
-            SET max_block_size=1;
-            SET min_insert_block_size_rows=0;
-            SET min_insert_block_size_bytes=0;
-
+            {get_settings_statements(args)}
             {drop_tables_statements}
 
             {create_table_src_statement}

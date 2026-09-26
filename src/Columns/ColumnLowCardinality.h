@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnUnique.h>
 #include <Columns/ColumnIndex.h>
@@ -73,6 +74,8 @@ public:
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override
     {
+        if (start == 0 && length == size())
+            return getPtr();
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length), isSharedDictionary());
     }
 
@@ -84,6 +87,11 @@ public:
     void insertFrom(const IColumn & src, size_t n) override;
 #else
     void doInsertFrom(const IColumn & src, size_t n) override;
+#endif
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
+#else
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #endif
     void insertFromFullColumn(const IColumn & src, size_t n);
 
@@ -107,8 +115,6 @@ public:
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null, const IColumn::SerializationSettings * settings) const override;
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
-
-    void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
@@ -152,6 +158,8 @@ public:
 #endif
 
     int compareAtWithCollation(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator &) const override;
+
+    size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const override;
 
     bool hasEqualValues() const override;
 
@@ -262,6 +270,11 @@ public:
         return getIndexes().getNumberOfDefaultRows();
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        return getIndexes().hasOnlyTypeDefaults();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
@@ -279,10 +292,20 @@ public:
      * So LC(Nullable(T)) would return true, LC(U) -- false.
      */
     bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
+
+    /// When `offset` is given, only the rows in `[offset, offset + map.size())` are affected and `map`
+    /// covers just that range; otherwise it must cover the whole column.
+    void applyNegatedNullMap(const NullMap & map, size_t offset = 0);
     bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
     MutableColumnPtr cloneNullable() const;
+
+    /// Promote a non-nullable dictionary to `Nullable(T)` in place, rebuilding it with a NULL placeholder
+    /// and remapping the indexes accordingly. Unlike `nestedToNullable()`, this keeps existing values valid.
+    void convertDictionaryToNullableInplace() { compactInplaceToNullable(); }
+
+    void compactDictionaryInplace() { compactInplace(); }
 
     ColumnPtr cloneWithDefaultOnNull() const;
 
@@ -383,8 +406,8 @@ private:
 
     template <typename IndexColumn>
     void updatePermutationWithIndexType(
-        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
-        IColumn::Permutation & res, EqualRanges & equal_ranges) const;
+        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & rank_by_index,
+        bool has_value_equal_entries, IColumn::Permutation & res, EqualRanges & equal_ranges) const;
 };
 
 bool isColumnLowCardinalityNullable(const IColumn & column);

@@ -1,0 +1,134 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nestjs
+description: 'SDK لـ NestJS من أجل ClickStack - مكدس observability من ClickHouse'
+title: 'NestJS'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'logging', 'تكامل', 'مراقبة التطبيقات']
+---
+
+يتيح لك تكامل NestJS مع ClickStack إنشاء مسجّل أو استخدام
+المسجّل الافتراضي لإرسال السجلات إلى ClickStack (بالاعتماد على [nest-winston](https://www.npmjs.com/package/nest-winston?activeTab=readme)).
+
+**يدمج هذا الدليل ما يلي:**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ السجلات</td>
+      <td className="pe-2">✖️ المقاييس</td>
+      <td className="pe-2">✖️ التتبعات</td>
+    </tr>
+  </tbody>
+</table>
+
+*لإرسال المقاييس أو APM/التتبعات، ستحتاج أيضًا إلى إضافة
+التكامل الخاص باللغة المقابلة إلى تطبيقك.*
+
+<div id="getting-started">
+  ## البدء
+</div>
+
+استورد `HyperDXNestLoggerModule` إلى `AppModule` الرئيسي، واستخدم الطريقة `forRoot()`
+لتهيئته.
+
+```javascript
+import { Module } from '@nestjs/common';
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+@Module({
+  imports: [
+    HyperDXNestLoggerModule.forRoot({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // Not need for Managed ClickStack
+      maxLevel: 'info',
+      service: 'my-app',
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+بعد ذلك، سيصبح مثيل winston متاحًا للحقن على مستوى
+المشروع بأكمله باستخدام رمز الحقن `HDX_LOGGER_MODULE_PROVIDER`:
+
+```javascript
+import { Controller, Inject } from '@nestjs/common';
+import { HyperDXNestLoggerModule, HyperDXNestLogger } from '@hyperdx/node-logger';
+
+@Controller('cats')
+export class CatsController {
+  constructor(
+    @Inject(HyperDXNestLoggerModule.HDX_LOGGER_MODULE_PROVIDER)
+    private readonly logger: HyperDXNestLogger,
+  ) { }
+
+  meow() {
+    this.logger.info({ message: '🐱' });
+  }
+}
+```
+
+<div id="replacing-the-nest-logger">
+  ### استبدال المسجّل في Nest (أيضًا أثناء التمهيد)
+</div>
+
+<Info>
+  **مهم**
+
+  عند القيام بذلك، ستتخلى عن حقن التبعيات، ما يعني أن `forRoot` و`forRootAsync` لن يعودا مطلوبين ولا ينبغي استخدامهما. أزِلهما من الوحدة الرئيسية.
+</Info>
+
+لاستخدام حقن التبعيات عيبٌ بسيط. إذ يتعين على Nest أولًا تمهيد
+التطبيق (إنشاء مثيلات الوحدات والموفّرات، وحقن التبعيات،
+وما إلى ذلك)، وخلال هذه العملية لا يكون مثيل `HyperDXNestLogger` متاحًا
+بعد، ما يعني أن Nest يعود إلى المسجّل الداخلي.
+
+أحد الحلول هو إنشاء المسجّل خارج دورة حياة التطبيق، باستخدام
+الدالة `createLogger`، ثم تمريره إلى `NestFactory.create`. عندها سيقوم Nest
+بتغليف المسجّل المخصص لدينا (وهو نفس المثيل الذي تعيده الدالة `createLogger`)
+داخل الفئة Logger، مع إعادة توجيه جميع الاستدعاءات إليه:
+
+أنشئ المسجّل في ملف `main.ts`
+
+```javascript
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, {
+    logger: HyperDXNestLoggerModule.createLogger({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // Not needed for Managed ClickStack
+      maxLevel: 'info',
+      service: 'my-app',
+    })
+  });
+  await app.listen(3000);
+}
+bootstrap();
+```
+
+غيّر وحدتك الرئيسية بحيث توفّر خدمة Logger:
+
+```javascript
+import { Logger, Module } from '@nestjs/common';
+
+@Module({
+  providers: [Logger],
+})
+export class AppModule {}
+```
+
+ثم احقن المسجّل ببساطة عبر تلميح النوع باستخدام Logger من `@nestjs/common`:
+
+```javascript
+import { Controller, Logger } from '@nestjs/common';
+
+@Controller('cats')
+export class CatsController {
+  constructor(private readonly logger: Logger) {}
+
+  meow() {
+    this.logger.log({ message: '🐱' });
+  }
+}
+```

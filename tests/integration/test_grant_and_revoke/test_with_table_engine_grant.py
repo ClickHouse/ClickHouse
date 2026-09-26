@@ -193,7 +193,7 @@ def test_grant_all_on_table():
     instance.query("GRANT ALL ON test.table TO B", user="A")
     assert (
         instance.query("SHOW GRANTS FOR B")
-        == "GRANT CHECK, SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM VIEWS, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM RESTORE DATABASE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM FLUSH DISTRIBUTED, SYSTEM FLUSH OBJECT STORAGE QUEUE, SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, dictGet ON test.`table` TO B\n"
+        == "GRANT CHECK, SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, CREATE ROW POLICY, ALTER ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM PULLING REPLICATION LOG, SYSTEM CLEANUP, SYSTEM BACKGROUND, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM VIRTUAL PARTS UPDATE, SYSTEM REDUCE BLOCKING PARTS, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM RESTORE DATABASE REPLICA, SYSTEM WAIT LOADING PARTS, SYSTEM WAIT QUERY RUNNER, SYSTEM FLUSH DISTRIBUTED, SYSTEM FLUSH OBJECT STORAGE QUEUE, SYSTEM LOAD PRIMARY KEY, SYSTEM UNLOAD PRIMARY KEY, dictGet ON test.`table` TO B\n"
     )
     instance.query("REVOKE ALL ON test.table FROM B", user="A")
     assert instance.query("SHOW GRANTS FOR B") == ""
@@ -538,8 +538,8 @@ def test_introspection():
         "SELECT * from system.grants WHERE user_name IN ('A', 'B') ORDER BY user_name, access_type, grant_option"
     ) == TSV(
         [
-            ["A", "\\N", "SELECT", "", "test", "table", "\\N", 0, 0],
-            ["B", "\\N", "CREATE", "", "\\N", "\\N", "\\N", 0, 1],
+            ["A", "\\N", "SELECT", "", "test", "table", "\\N", 0, 0, 0],
+            ["B", "\\N", "CREATE", "", "\\N", "\\N", "\\N", 0, 1, 0],
         ]
     )
 
@@ -874,3 +874,80 @@ def test_source_grant_bridges_to_database_engine():
 
     instance.query("CREATE DATABASE test_fs_db ENGINE = Filesystem", user="A")
     instance.query("DROP DATABASE test_fs_db")
+
+
+def test_executable_table_function_engine_grant():
+    # The `executable` table function runs a server-side script under the server's OS user with no
+    # other access gate, so it must enforce the `TABLE ENGINE` grant of its `Executable` engine
+    # exactly like `CREATE TABLE ... ENGINE = Executable` does. Otherwise it bypasses the denial
+    # of that `CREATE TABLE` and runs a script without `GRANT TABLE ENGINE ON Executable`.
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TABLE ON test.* TO A")
+
+    # ENGINE=Executable is denied without the grant (baseline that must be mirrored).
+    assert "TABLE ENGINE ON Executable" in instance.query_and_get_error(
+        "CREATE TABLE test.te (x String) ENGINE = Executable('nonexistent', 'TabSeparated')",
+        user="A",
+    )
+
+    # The executable() table function must be denied on the SAME axis (SELECT and DESCRIBE).
+    assert "TABLE ENGINE ON Executable" in instance.query_and_get_error(
+        "SELECT * FROM executable('nonexistent', 'TabSeparated', 'x String')",
+        user="A",
+    )
+    assert "TABLE ENGINE ON Executable" in instance.query_and_get_error(
+        "DESCRIBE executable('nonexistent', 'TabSeparated', 'x String')",
+        user="A",
+    )
+
+    # With the grant it passes the access check (then fails on the missing script, not on access).
+    instance.query("GRANT TABLE ENGINE ON Executable TO A")
+    error = instance.query_and_get_error(
+        "SELECT * FROM executable('nonexistent', 'TabSeparated', 'x String')",
+        user="A",
+    )
+    assert "Not enough privileges" not in error
+    instance.query("REVOKE TABLE ENGINE ON Executable FROM A")
+
+
+def test_table_function_engine_grant_does_not_regress_wrappers_pseudo_and_source():
+    # The engine-grant check is scoped to capability engines (Executable/ExecutablePool). It must
+    # NOT apply to:
+    #  - wrapper/proxy engine table functions (merge/loop/dictionary/view/distributed), which are
+    #    gated by their delegated data access (SELECT/SHOW COLUMNS on the wrapped object), not by a
+    #    TABLE ENGINE grant on the wrapper engine;
+    #  - pseudo-engine table functions (empty engine name: numbers/values/...);
+    #  - source table functions (gated by source READ/WRITE, not TABLE ENGINE).
+    # An unconditional TABLE ENGINE check would deny all of these.
+    instance.query("DROP USER IF EXISTS A")
+    instance.query("CREATE USER A")
+    instance.query("GRANT CREATE TEMPORARY TABLE ON *.* TO A")
+
+    # Pseudo-engine table functions work with no engine grant at all.
+    assert instance.query("SELECT count() FROM numbers(10)", user="A") == "10\n"
+    assert instance.query("SELECT sum(x) FROM values('x UInt8', 1, 2, 3)", user="A") == "6\n"
+
+    # Wrapper engine table functions are NOT gated on TABLE ENGINE (regression guard for the
+    # over-broad gate). null() has no underlying object and must just work; merge() is gated by
+    # SELECT on the matched tables, never by TABLE ENGINE ON Merge.
+    assert instance.query("SELECT count() FROM null('x UInt8')", user="A") == "0\n"
+    merge_error = instance.query_and_get_error(
+        "SELECT * FROM merge(currentDatabase(), 'nonexistent_.*')", user="A"
+    )
+    assert "TABLE ENGINE" not in merge_error
+
+    # Source table functions are still gated on the SOURCE axis, not TABLE ENGINE.
+    assert "READ ON URL" in instance.query_and_get_error(
+        "SELECT * FROM url('http://127.0.0.1:65500/x', 'CSV', 'a UInt8')", user="A"
+    )
+
+    # With the source grant, url() passes the access checks (fails later on connection, not
+    # on access, and never on TABLE ENGINE).
+    instance.query("GRANT READ ON URL TO A")
+    error = instance.query_and_get_error(
+        "SELECT * FROM url('http://127.0.0.1:65500/x', 'CSV', 'a UInt8')", user="A"
+    )
+    assert "Not enough privileges" not in error
+    assert "TABLE ENGINE" not in error
+    instance.query("REVOKE READ ON URL FROM A")
