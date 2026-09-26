@@ -334,6 +334,7 @@ enum class Dialect : uint8_t
     clickhouse,
     kusto,
     prql,
+    mongo,
     promql,
     polyglot,
     clickhouse_json,
