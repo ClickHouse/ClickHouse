@@ -104,6 +104,18 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         for (const auto & name : requested_column_names)
             column_identities.push_back(getColumnsCacheColumnIdentity(
                 data_part_info_for_read->getTableUUID(), data_part_info_for_read->getPartName(), name, settings.columns_cache_schema_identity));
+
+        /// Capture the invalidation generation once, before anything is read, so that any
+        /// invalidation racing with this reader is observed. It is passed to `setMany` by every
+        /// deferred write of the reader: the write is dropped if the table was invalidated or the
+        /// whole cache dropped after this point. It is not refreshed when a later mark range
+        /// starts, otherwise a reader that began before `SYSTEM DROP COLUMNS CACHE` would
+        /// repopulate the cache from its next range. The schema token of the cache keys is not
+        /// taken from here but from the metadata snapshot of the query
+        /// (`settings.columns_cache_schema_identity`), so that it cannot disagree with the
+        /// schema this read actually uses, see `getColumnsCacheColumnIdentity`.
+        if (columns_cache_writes_possible)
+            cache_table_generation = columns_cache->getInvalidationGeneration(data_part_info_for_read->getTableUUID());
     }
 
     try
@@ -458,15 +470,6 @@ void MergeTreeReaderWide::startColumnsCacheRange(size_t from_mark, size_t end_ma
 
     cached_entries.clear();
     granule_served_from_cache.clear();
-
-    /// Capture the invalidation generation before anything is read, so that any
-    /// invalidation racing with this read is observed. It is passed to `setMany` by the
-    /// deferred write below: the write is dropped if the table was invalidated or the
-    /// whole cache dropped after this point. The schema token of the cache keys is not
-    /// taken from here but from the metadata snapshot of the query
-    /// (`settings.columns_cache_schema_identity`), so that it cannot disagree with the
-    /// schema this read actually uses, see `getColumnsCacheColumnIdentity`.
-    cache_table_generation = columns_cache->getInvalidationGeneration(data_part_info_for_read->getTableUUID());
 
     if (columns_cache_reads_possible)
     {

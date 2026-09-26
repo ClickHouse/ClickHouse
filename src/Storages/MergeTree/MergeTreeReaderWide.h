@@ -241,7 +241,7 @@ private:
     ColumnsCacheStripes stripes;
     std::vector<UInt128> column_identities;
 
-    /// Invalidation generation captured when the read of the range started.
+    /// Invalidation generation captured once when the reader was created, not per mark range.
     /// Passed to ColumnsCache::setMany so a deferred write is dropped if the table was
     /// invalidated (e.g. RENAME COLUMN), or the whole cache dropped by `SYSTEM DROP
     /// COLUMNS CACHE`, after the read began. See getInvalidationGeneration.
