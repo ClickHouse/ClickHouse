@@ -45,7 +45,6 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     auto & pipeline = *pipelines.front();
 
     const String bucket = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
-    bool input_is_serialized = false;
 
     /// Cannot have multiple sinks writing to the same file concurrently. Merge-sort rather than plain
     /// resize(1) when order must be preserved, since `GatherReceiveStep` merge-sorts assuming each bucket's
@@ -73,21 +72,13 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     }
     else
     {
-        /// Serialize on every stream ahead of the merge into the single sink; otherwise the sink
-        /// would serialize everything alone. The sink is told whether it gets packets.
-        pipeline.addSimpleTransform([&](const SharedHeader & header) -> ProcessorPtr
-        {
-            auto transform = settings.exchange_lookup->createSerializer(header, exchange_id);
-            input_is_serialized |= transform != nullptr;
-            return transform;
-        });
         pipeline.resize(1);
     }
 
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type) -> ProcessorPtr
     {
         chassert(stream_type == Pipe::StreamType::Main);
-        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"), input_is_serialized);
+        return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, bucket, "0"));
     });
 
     return std::move(pipelines.front());
@@ -113,7 +104,7 @@ void GatherSendStep::serialize(Serialization & ctx) const
 
     writeVarUInt(maintain_sort_description.has_value(), ctx.out);
     if (maintain_sort_description.has_value())
-        serializeSortDescription(*maintain_sort_description, ctx.out, ctx.version);
+        serializeSortDescription(*maintain_sort_description, ctx.out);
 }
 
 std::unique_ptr<IQueryPlanStep> GatherSendStep::deserialize(Deserialization & ctx)
@@ -129,7 +120,7 @@ std::unique_ptr<IQueryPlanStep> GatherSendStep::deserialize(Deserialization & ct
         if (has_maintain_sort_description)
         {
             maintain_sort_description.emplace();
-            deserializeSortDescription(*maintain_sort_description, ctx.in, ctx.version, ctx.max_type_complexity);
+            deserializeSortDescription(*maintain_sort_description, ctx.in);
         }
     }
 

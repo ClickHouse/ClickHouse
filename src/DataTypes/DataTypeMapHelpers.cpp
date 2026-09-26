@@ -444,30 +444,16 @@ void extractKeyValueFromMap(
     extractValuesDispatch(values_column, result, matched_positions);
 }
 
-namespace
+std::optional<std::pair<String, String>> tryParseMapSubcolumnName(const String & column_name)
 {
+    static constexpr std::string_view key_marker = ".key_";
 
-constexpr std::string_view map_key_marker = ".key_";
-
-}
-
-bool looksLikeMapSubcolumnName(const String & column_name)
-{
-    return column_name.contains(map_key_marker);
-}
-
-std::optional<std::pair<String, String>> tryParseMapSubcolumnName(
-    const String & column_name, const NameSet & shadowing_columns)
-{
-    auto pos = column_name.find(map_key_marker);
+    auto pos = column_name.find(key_marker);
     if (pos == String::npos)
         return std::nullopt;
 
-    if (shadowing_columns.contains(column_name))
-        return std::nullopt;
-
     auto map_column_name = column_name.substr(0, pos);
-    auto serialized_key = column_name.substr(pos + map_key_marker.size());
+    auto serialized_key = column_name.substr(pos + key_marker.size());
     return std::pair{std::move(map_column_name), std::move(serialized_key)};
 }
 

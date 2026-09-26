@@ -48,7 +48,6 @@ namespace ErrorCodes
     extern const int READONLY;
     extern const int FAULT_INJECTED;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_LINK;
     extern const int CANNOT_STAT;
@@ -139,6 +138,14 @@ LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
 
 String resolvePathRelativelyToBase(const String & path, const String & base_path)
 {
+    /// A path with an embedded NUL cannot be validated: `std::string` and `fs::path` compare the whole
+    /// value, while every syscall the resolved path is later passed to (`open`, `mkdir`, `stat`) stops at
+    /// the NUL. A path shaped as `<target>\0/<traversal back into the base directory>` would therefore
+    /// pass the containment check below and still make the kernel operate on `<target>`, anywhere on the
+    /// filesystem. `listObjects` rejects such a path for its own reason - keep both checks.
+    if (path.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path contains an embedded NUL byte");
+
     auto configured_base = fs::path(base_path).lexically_normal();
 
     auto is_inside = [&](const String & candidate)
@@ -710,18 +717,11 @@ void LocalObjectStorage::removeObjectIfExists(const StoredObject & object)
     });
 }
 
-void LocalObjectStorage::removeObjectsIfExist( /// NOLINT
-    const StoredObjects & objects,
-    StoredObjects * successful_objects)
+void LocalObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
 {
     throwIfReadonly();
     for (const auto & object : objects)
-    {
         removeObjectIfExists(object);
-
-        if (successful_objects)
-            successful_objects->emplace_back(object);
-    }
 }
 
 std::optional<ObjectMetadata> LocalObjectStorage::tryGetObjectMetadata(const std::string & path, bool) const
@@ -793,16 +793,8 @@ ObjectMetadata LocalObjectStorage::getObjectMetadata(const std::string & path, b
     /// `PreconditionFailed`.
     struct stat file_stat{};
     if (0 != ::stat(resolved_path.c_str(), &file_stat))
-    {
-        const int stat_errno = errno;
-        const bool does_not_exist = isVanishedEntryError(std::error_code(stat_errno, std::generic_category()));
-        ErrnoException::throwFromPathWithErrno(
-            does_not_exist ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_STAT,
-            resolved_path,
-            stat_errno,
-            "Cannot get metadata of file {}",
-            resolved_path);
-    }
+        throw fs::filesystem_error(
+            "Got unexpected error while getting file metadata", resolved_path, std::error_code(errno, std::generic_category()));
 
     return makeObjectMetadata(file_stat);
 }
@@ -924,7 +916,7 @@ bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
     return exists(StoredObject(resolved_path));
 }
 
-String LocalObjectStorage::copyObject( // NOLINT
+void LocalObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -936,8 +928,6 @@ String LocalObjectStorage::copyObject( // NOLINT
     auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
-    /// The local file system names no generations.
-    return {};
 }
 
 void LocalObjectStorage::shutdown()
