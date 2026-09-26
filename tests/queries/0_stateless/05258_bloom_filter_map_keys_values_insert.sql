@@ -14,6 +14,9 @@ DROP TABLE IF EXISTS t_mixed;
 DROP TABLE IF EXISTS t_nested;
 DROP TABLE IF EXISTS t_text;
 DROP TABLE IF EXISTS t_named;
+DROP TABLE IF EXISTS t_src;
+DROP TABLE IF EXISTS t_mem_none;
+DROP TABLE IF EXISTS t_mem_idx;
 
 CREATE TABLE t_lc (id UInt64, m Map(LowCardinality(String), LowCardinality(String)),
     INDEX ik mapKeys(m) TYPE bloom_filter GRANULARITY 1, INDEX iv mapValues(m) TYPE bloom_filter GRANULARITY 1)
@@ -100,6 +103,20 @@ INSERT INTO t_named (id, m) SELECT id, m FROM t_lc SETTINGS max_block_size = 100
 SELECT (SELECT count() FROM t_named WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_named WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 0);
 SELECT (SELECT count() FROM t_named WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_named WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 0);
 
+-- The index input is the map's own column: an INSERT with such indexes takes about the memory of the same INSERT without them.
+CREATE TABLE t_src (m Map(LowCardinality(String), LowCardinality(String))) ENGINE = Memory;
+INSERT INTO t_src SELECT mapFromArrays(arrayMap(i -> concat(repeat('k', 40), toString(i)), range(20)), arrayMap(i -> toString(number % 1000 + i), range(20))) FROM numbers(100000);
+CREATE TABLE t_mem_none (id UInt64, m Map(LowCardinality(String), LowCardinality(String)))
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
+CREATE TABLE t_mem_idx (id UInt64, m Map(LowCardinality(String), LowCardinality(String)),
+    INDEX ik mapKeys(m) TYPE bloom_filter GRANULARITY 1, INDEX iv mapValues(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, map_serialization_version = 'basic', map_serialization_version_for_zero_level_parts = 'basic';
+INSERT INTO t_mem_none SELECT rowNumberInAllBlocks(), m FROM t_src SETTINGS max_threads = 1, max_block_size = 100000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0, max_insert_threads = 1, max_compress_block_size = 1048576, min_compress_block_size = 65536, materialize_skip_indexes_on_insert = 1;
+INSERT INTO t_mem_idx SELECT rowNumberInAllBlocks(), m FROM t_src SETTINGS max_threads = 1, max_block_size = 100000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0, max_insert_threads = 1, max_compress_block_size = 1048576, min_compress_block_size = 65536, materialize_skip_indexes_on_insert = 1;
+SYSTEM FLUSH LOGS query_log;
+SELECT maxIf(memory_usage, query LIKE 'INSERT INTO t_mem_idx %') < 1.5 * maxIf(memory_usage, query LIKE 'INSERT INTO t_mem_none %')
+FROM system.query_log WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND query_kind = 'Insert';
+
 DROP TABLE t_lc;
 DROP TABLE t_plain;
 DROP TABLE t_mut;
@@ -108,3 +125,6 @@ DROP TABLE t_mixed;
 DROP TABLE t_nested;
 DROP TABLE t_text;
 DROP TABLE t_named;
+DROP TABLE t_src;
+DROP TABLE t_mem_none;
+DROP TABLE t_mem_idx;
