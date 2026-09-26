@@ -1,7 +1,6 @@
 #include <Functions/FunctionTopKFilter.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -43,19 +42,16 @@ bool hasEmptyTuple(const DataTypePtr & type)
 
 /// `lessOrEquals` and `greaterOrEquals` are false for NaN, while the sort places NaN first or last by
 /// `nulls_direction`, so the comparison functions would drop NaN rows that rank before the threshold.
-/// The column comparison path places NaN the way the sort does.
+/// The column comparison path places NaN the way the sort does. Container types (`Tuple`, `Array`,
+/// `Map`) compare their elements lexicographically, so a float anywhere inside them matters too.
 bool hasFloatingPoint(const DataTypePtr & type)
 {
-    const auto nested_type = removeNullable(removeLowCardinality(type));
-    if (isFloat(nested_type))
+    if (isFloat(type))
         return true;
 
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_type.get()))
-        for (const auto & element_type : tuple_type->getElements())
-            if (hasFloatingPoint(element_type))
-                return true;
-
-    return false;
+    bool found = false;
+    type->forEachChild([&](const IDataType & child) { found = found || isFloat(child); });
+    return found;
 }
 
 }
