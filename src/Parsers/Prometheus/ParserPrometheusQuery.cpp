@@ -8,7 +8,9 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/Access/ParserSetRoleQuery.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -17,6 +19,64 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_SETTING_VALUE;
+    extern const int SYNTAX_ERROR;
+}
+
+namespace
+{
+
+/// Returns the position of the `;` ending the PromQL statement in [begin, end), or `end`.
+/// The raw text is scanned with the PromQL lexical rules (see `PromQLLexer.g4`), because the SQL lexer
+/// does not know that `#` starts a comment unless a space follows it, so a `;` in `up #keep ; x`
+/// would read as the statement end. A `;` inside a string literal doesn't end the statement either.
+class PromQLStatementEndFinder
+{
+public:
+    explicit PromQLStatementEndFinder(const char * begin) : pos(begin) {}
+
+    /// Resumes where the previous call stopped, so each byte is read once. `end` must not decrease.
+    const char * find(const char * end)
+    {
+        while (pos < end)
+        {
+            if (open == '#')
+            {
+                pos = find_first_symbols<'\n'>(pos, end);
+                if (pos < end)
+                    open = 0;
+            }
+            else if (open)
+            {
+                /// Backquoted strings are raw, the others have backslash escapes.
+                if (*pos == '\\' && open != '`')
+                {
+                    /// The escaped char is past `end`, so it is read on the next call.
+                    if (pos + 1 == end)
+                        return end;
+                    ++pos;
+                }
+                else if (*pos == open)
+                    open = 0;
+                ++pos;
+            }
+            else
+            {
+                if (*pos == ';')
+                    return pos;
+                if (*pos == '#' || *pos == '"' || *pos == '\'' || *pos == '`')
+                    open = *pos;
+                ++pos;
+            }
+        }
+        return end;
+    }
+
+private:
+    const char * pos;
+    /// `#` inside a comment, the opening quote inside a string, 0 otherwise.
+    char open = 0;
+};
+
 }
 
 
@@ -28,10 +88,18 @@ ParserPrometheusQuery::ParserPrometheusQuery(const String & database_name_, cons
 
 bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserSetQuery set_p;
-
-    if (set_p.parse(pos, node, expected))
-        return true;
+    /// The `SET <setting>` shorthand would swallow PromQL queries over a metric named `set`
+    /// (e.g. `set or up`), so SET is parsed only when the input unambiguously starts one.
+    if (isCommittedToSetQuery(pos))
+    {
+        /// SET ROLE / SET DEFAULT ROLE are role statements: ParserSetQuery would take the leading
+        /// ROLE / DEFAULT as a setting-name shorthand, so they go first, as in ParserQuery.
+        ParserSetRoleQuery set_role_p;
+        if (set_role_p.parse(pos, node, expected))
+            return true;
+        ParserSetQuery set_p;
+        return set_p.parse(pos, node, expected);
+    }
 
     if (table_name.empty())
     {
@@ -42,10 +110,41 @@ bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     const auto * begin = pos->begin;
 
     // The same parsers are used in the client and the server, so the parser have to detect the end of a single query in case of multiquery queries
-    while (!pos->isEnd() && pos->type != TokenType::Semicolon)
+    /// The PromQL scan is bounded by the SQL tokens seen so far: the text up to the next SQL `;` (or the
+    /// end of input) is scanned, and the lookahead goes on only if that `;` is inside a PromQL comment
+    /// or string. The lookahead must not run to the end of input, because it advances the maximum
+    /// parsed position, which `tryParseQuery` reports as the end of the query, so the rest of a
+    /// multi-statement input would be skipped.
+    const char * end = nullptr;
+    PromQLStatementEndFinder end_finder(begin);
+    for (Pos lookahead = pos; !end; ++lookahead)
+    {
+        /// The lexer returns this token forever once the input crosses `max_query_size`, so it is
+        /// terminal. The SQL prescan in `tryParseQuery` stops at a `;`, which may be inside a PromQL
+        /// comment, so it doesn't see it. The lookahead has advanced the maximum parsed position
+        /// to this token, and `tryParseQuery` reports it as the lexical error.
+        if (lookahead->type == TokenType::ErrorMaxQuerySizeExceeded)
+            return false;
+
+        if (lookahead->isEnd())
+            end = end_finder.find(lookahead->begin);
+        else if (lookahead->type == TokenType::Semicolon)
+        {
+            const char * found = end_finder.find(lookahead->end);
+            if (found != lookahead->end)
+                end = found;
+        }
+    }
+
+    /// Move to the SQL token at the statement end. The SQL tokens of a PromQL comment or string can
+    /// differ from the PromQL ones, e.g. an apostrophe in a comment opens a SQL string literal which
+    /// may run past the end. The position is then ambiguous, so fail instead of guessing.
+    while (!pos->isEnd() && pos->end <= end)
         ++pos;
 
-    const auto * end = pos->begin;
+    if (pos->begin != end || !(pos->isEnd() || pos->type == TokenType::Semicolon))
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "Cannot find the end of the PromQL statement: a comment or a string literal in it confuses the SQL lexer");
 
     /// We call PrometheusQueryTree here to check for syntax errors earlier.
     PrometheusQueryTree promql_query{std::string_view{begin, end}};

@@ -1,0 +1,25 @@
+-- a semicolon in a comment without a space after #
+[('__name__','up'),('instance','host1')]	30
+-- a semicolon in a comment with a space after #
+[('__name__','up'),('instance','host1')]	30
+-- an apostrophe in a comment
+[]	40
+-- a semicolon in a string literal
+[('__name__','up'),('instance','host2')]	10
+-- a comment followed by the rest of the query
+[]	40
+-- a comment the SQL lexer reads past the end of the statement is an error, not a wrong split
+Cannot find the end of the PromQL statement
+-- max_query_size crossed only after a semicolon in a comment
+Max query size exceeded
+-- multiple statements: each one runs, the parse of one does not skip the rest
+[('__name__','up'),('instance','host1')]	30
+[('__name__','up'),('instance','host2')]	10
+[]	40
+-- several semicolons in one comment, then another statement
+[('__name__','up'),('instance','host1')]	30
+[]	40
+-- multiple statements in clickhouse-local, with SET statements between them
+[('__name__','up'),('instance','host1')]	5
+[('instance','host1')]	10
+done
