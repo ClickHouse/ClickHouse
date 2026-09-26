@@ -6,6 +6,7 @@
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -184,6 +185,14 @@ bool SpillingHashJoin::emitsSizedOutputBlocks() const
     return state.load(std::memory_order_acquire) == State::IN_MEMORY_JOIN && chosen_join && chosen_join->emitsSizedOutputBlocks();
 }
 
+std::string SpillingHashJoin::getAlgorithm() const
+{
+    if (state.load(std::memory_order_acquire) == State::GRACE_HASH_JOIN)
+        return toString(JoinAlgorithm::GRACE_HASH);
+
+    return toString(partitioned_join ? JoinAlgorithm::PARALLEL_HASH : JoinAlgorithm::HASH);
+}
+
 bool SpillingHashJoin::addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits)
 {
     /// Fast path: already switched to GraceHashJoin (no lock needed).
@@ -238,6 +247,8 @@ void SpillingHashJoin::createGraceJoin(size_t initial_buckets_hint)
 
     grace_join->initialize(*left_sample_block);
     chosen_join = grace_join;
+
+    QueryExecutionCounters::addUsedJoinAlgorithm(JoinAlgorithm::GRACE_HASH);
 }
 
 void SpillingHashJoin::switchToGraceHashJoin(size_t worker_id, bool spill_immediately)

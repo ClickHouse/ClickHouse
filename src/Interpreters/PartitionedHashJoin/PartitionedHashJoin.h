@@ -85,6 +85,7 @@ public:
     static bool isSupported(const TableJoin & table_join);
 
     std::string getName() const override { return "PartitionedHashJoin"; }
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::PARALLEL_HASH); }
     const TableJoin & getTableJoin() const override;
 
     /// `worker_id` indexes the fill lanes; an id past the lane table takes the thread-keyed lane.
