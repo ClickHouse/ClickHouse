@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Common/OpenTelemetryTraceContext.h>
 
 #include <memory>
 #include <mutex>
@@ -90,6 +91,9 @@ private:
     /// Per-table part-name identity classes derived on the initiator from its own `MergeTreeData`,
     /// keyed by full table name. See `setAuthoritativePartNameIdentity`.
     std::unordered_map<String, RangesInDataPartDescription::PartNameIdentity> table_to_part_name_identity;
+
+    /// Summarizes the whole coordination when the coordinator is destroyed
+    OpenTelemetry::ManualSpan summary_span{"ParallelReplicasReadingCoordinator"};
 };
 
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
