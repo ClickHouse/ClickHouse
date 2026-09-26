@@ -1,0 +1,24 @@
+--- labels
+station	String
+temp	Int32
+AAA	10
+BB	20
+C	30
+--- shared
+station_index	UInt64
+nchar	UInt64
+station	String
+temp	Int32
+code	Int32
+0	0	A	10	1
+0	1	A	10	2
+0	2	A	10	3
+0	3	\0	10	4
+1	0	B	20	1
+1	1	B	20	2
+1	2	\0	20	3
+1	3	\0	20	4
+2	0	C	30	1
+2	1	\0	30	2
+2	2	\0	30	3
+2	3	\0	30	4

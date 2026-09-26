@@ -1,0 +1,27 @@
+--- a value equal to the default fill value stays a value
+n	Nullable(Int32)					
+\N
+-2147483647
+--- the same for a Float64 column
+\N
+9.969209968386869e36
+--- a name that the classic format cannot store
+1
+1
+1
+a valid name is accepted
+--- a name has to be NFC-normalized
+a non-NFC name is rejected
+NFC validation is enforced
+--- a streaming file with a whole number of records
+0
+1
+2
+--- a streaming file that is truncated in the middle of a record
+1
+--- a variable that shares the name of a dimension without being its coordinate variable
+x_index	UInt64					
+v	Int32					
+x	Int32					
+0	10	7
+1	20	7

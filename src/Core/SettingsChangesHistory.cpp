@@ -61,6 +61,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_mutation_query", true, true, "Obsolete setting: mutation queries are always validated before being accepted. The recorded value does not change, because validation was already enabled by default and `compatibility` must not turn it back off."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
             {"parallel_replicas_for_queries_with_multiple_tables", true, true, "New setting to control whether parallel replicas are used for queries joining multiple tables (queries with JOIN). It does not affect a UNION query without a JOIN, nor ARRAY JOIN."},
+            {"input_format_netcdf_fill_value_as_null", false, false, "New setting that makes the NetCDF format read the values equal to the `_FillValue` or `missing_value` attribute of a variable as NULL"},
+            {"input_format_netcdf_add_dimension_columns", false, false, "New setting that makes the NetCDF format add a column with the index along every dimension that has no coordinate variable of the same name"},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
