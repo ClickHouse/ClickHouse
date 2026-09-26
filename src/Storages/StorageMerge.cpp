@@ -890,24 +890,30 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     pushed_down_filters.push_back(std::move(filter));
 }
 
-/// Equalizes top-level constness across the sibling pipelines `ReadFromMerge` is about to unite.
-static void reconcileSiblingPipelineHeaders(std::span<const std::unique_ptr<QueryPipelineBuilder>> pipelines)
+/// Converts the sibling pipelines `ReadFromMerge` is about to unite to one header with the declared columns.
+static void reconcileSiblingPipelineHeaders(
+    std::span<const std::unique_ptr<QueryPipelineBuilder>> pipelines, const Block & declared_header)
 {
     if (pipelines.size() < 2)
         return;
 
     /// Children are converted to the common Merge header before being optimized, and are optimized
-    /// independently afterwards, so constant folding can leave a column Const in one sibling and not
-    /// in another. This is the only point at which every sibling's final header is known.
-    /// Siblings are matched by name, which is the rule the conversion below resolves columns with.
+    /// independently afterwards, so a sibling can carry a column the step does not declare, and constant
+    /// folding can leave a column Const in one sibling and not in another. The target has the declared
+    /// columns, typed as in the first sibling. Siblings are matched by name, as in the conversion below.
+    const auto & first = pipelines.front()->getHeader();
+    ColumnsWithTypeAndName reference = declared_header.getColumnsWithTypeAndName();
+    for (auto & column : reference)
+        if (const auto * sibling_column = first.findByName(column.name))
+            column = *sibling_column;
+
     ColumnsWithTypeAndName common = reconcileConstness(
-        pipelines.front()->getHeader().getColumnsWithTypeAndName(),
+        reference,
         pipelines.size(),
         [&](size_t sibling, size_t, const String & name) { return pipelines[sibling]->getHeader().findByName(name); });
 
-    /// Every sibling needs comparing even when nothing was materialized above: the target is the
-    /// first sibling's header, and a later sibling may hold a Const exactly where the first holds a
-    /// full column.
+    /// Every sibling needs comparing even when nothing was materialized above: a sibling may hold an
+    /// undeclared column, or a Const exactly where the first holds a full column.
     auto target = std::make_shared<const Block>(std::move(common));
     for (const auto & cur_pipeline : pipelines)
     {
@@ -964,7 +970,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
         return;
     }
 
-    reconcileSiblingPipelineHeaders(pipelines);
+    reconcileSiblingPipelineHeaders(pipelines, *output_header);
 
     pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
 
