@@ -35,6 +35,7 @@ static struct InitFiu
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
     ONCE(replicated_queue_fail_next_entry) \
     REGULAR(replicated_queue_unfail_entries) \
+    REGULAR(executing_graph_add_node_fail) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
@@ -49,7 +50,6 @@ static struct InitFiu
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
-    REGULAR(remote_query_executor_local_packet_processing_error) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
@@ -82,6 +82,7 @@ static struct InitFiu
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(merge_tree_refresh_parts_throw_once) \
+    REGULAR(patch_part_index_write_empty) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
@@ -118,6 +119,7 @@ static struct InitFiu
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     PAUSEABLE(file_segment_pause_before_write) \
+    PAUSEABLE(remote_fs_gather_pause_in_read) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
@@ -207,6 +209,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(refresh_mv_pause_after_executor_published) \
     PAUSEABLE(refresh_mv_pause_before_exchange) \
     PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
+    REGULAR(refresh_mv_fail_znodes_read) \
     REGULAR(refresh_mv_skip_execution) \
     REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
@@ -220,6 +223,7 @@ static struct InitFiu
     REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
+    PAUSEABLE(async_insert_pause_before_schedule) \
     PAUSEABLE_ONCE(completed_pipeline_pause_before_teardown) \
     PAUSEABLE(system_replicas_schedule_requests_pause) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
@@ -260,6 +264,7 @@ static struct InitFiu
     REGULAR(slowdown_skip_index_read_result_build) \
     ONCE(iceberg_writes_cleanup) \
     REGULAR(iceberg_slow_manifest_read) \
+    PAUSEABLE_ONCE(iceberg_drop_partition_pause_after_discovery) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
     ONCE(backup_from_snapshot_fail_after_batch) \
@@ -303,6 +308,13 @@ static struct InitFiu
     REGULAR(mt_select_parts_to_mutate_no_free_threads) \
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
     ONCE(mt_alter_throw_in_start_mutation) \
+    ONCE(mt_alter_settings_throw_before_metadata_commit) \
+    PAUSEABLE_ONCE(mt_alter_settings_pause_before_metadata_commit) \
+    PAUSEABLE_ONCE(mt_alter_readonly_pause_after_metadata_commit) \
+    PAUSEABLE_ONCE(mt_pause_before_loading_outdated_part) \
+    PAUSEABLE(mt_pause_before_loading_queued_outdated_part) \
+    ONCE(mt_alter_readonly_throw_in_start_background_workers) \
+    ONCE(mt_background_jobs_assignee_throw_after_task_created) \
     ONCE(mt_alter_throw_after_mutation_registered) \
     ONCE(mt_throw_after_mutation_commit) \
     ONCE(mt_alter_throw_in_durable_rollback) \
@@ -311,6 +323,7 @@ static struct InitFiu
     REGULAR(merge_tree_load_statistics_throw) \
     REGULAR(merge_tree_load_outdated_parts_retryable_error) \
     PAUSEABLE(merge_tree_load_outdated_parts_pause) \
+    REGULAR(restore_part_inject_no_space_error) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \
     PAUSEABLE(smt_merge_selecting_task_pause_when_scheduled) \
     REGULAR(smt_merge_selecting_task_reach_memory_limit) \
@@ -338,6 +351,7 @@ static struct InitFiu
     REGULAR(datalake_try_get_table_return_nullptr) \
     REGULAR(datalake_try_get_table_throw) \
     REGULAR(datalake_get_tables_throw) \
+    REGULAR(datalake_paimon_list_page_size_one) \
     REGULAR(datalake_simulate_missing_table_state) \
     PAUSEABLE_ONCE(drop_database_before_exclusive_ddl_lock) \
     PAUSEABLE_ONCE(create_or_replace_before_rename) \
@@ -401,7 +415,10 @@ static struct InitFiu
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
     PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
     PAUSEABLE_ONCE(intersect_or_except_transform_pause) \
-    PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause)
+    PAUSEABLE_ONCE(intersect_or_except_transform_counts_pause) \
+    REGULAR(aggregate_function_state_transfer_throw) \
+    REGULAR(aggregate_function_state_transfer_throw_after_child) \
+    REGULAR(marks_loader_hold_task_until_canceled)
 
 namespace FailPoints
 {
@@ -506,6 +523,28 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
         fail_point_wait_channels.erase(iter);
     }
     fiu_disable(fail_point_name.c_str());
+}
+
+void FailPointInjection::disableAllFailPoints()
+{
+    std::lock_guard lock(mu);
+
+    /// Wake whoever is blocked on a pauseable failpoint first, the same way
+    /// `disableFailPoint` does: after this call nothing may still be parked.
+    for (auto & [_, channel] : fail_point_wait_channels)
+    {
+        ++channel->resume_epoch;
+        channel->disabled = true;
+        channel->resume_cv.notify_all();
+        channel->pause_cv.notify_all();
+    }
+    fail_point_wait_channels.clear();
+
+    /// `fiu_disable` on a failpoint that is not enabled is a no-op, so walk the whole
+    /// registry rather than asking `fiu_status` which of them to skip.
+#define M(NAME) fiu_disable(FailPoints::NAME);
+    APPLY_FOR_FAILPOINTS(M, M, M, M)
+#undef M
 }
 
 void FailPointInjection::notifyFailPoint(const String & fail_point_name)
@@ -629,6 +668,10 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String &)
 }
 
 void FailPointInjection::disableFailPoint(const String &)
+{
+}
+
+void FailPointInjection::disableAllFailPoints()
 {
 }
 
