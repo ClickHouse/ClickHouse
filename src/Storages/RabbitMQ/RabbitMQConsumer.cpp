@@ -49,8 +49,31 @@ void RabbitMQConsumer::wakeUp()
 
 void RabbitMQConsumer::closeConnections()
 {
-    if (consumer_channel)
-        consumer_channel->close();
+    if (!consumer_channel)
+        return;
+
+    auto closing = std::make_shared<ChannelCloseState>();
+    close_state = closing;
+
+    consumer_channel->close()
+    .onSuccess([this, closing]()
+    {
+        if (closing->abandoned)
+            return;
+        LOG_TRACE(log, "Consumer channel {} is closed", channel_id);
+        closing->completed = true;
+        event_handler.stopBlockingLoop();
+    })
+    .onError([this, closing](const char * message)
+    {
+        if (closing->abandoned)
+            return;
+        LOG_ERROR(log, "Failed to close consumer channel {}: {}", channel_id, message);
+        /// An error also completes the wait: a channel that could not be closed is not going to
+        /// keep holding the queue, and treating it as outstanding would burn the whole timeout.
+        closing->completed = true;
+        event_handler.stopBlockingLoop();
+    });
 }
 
 void RabbitMQConsumer::subscribe()
