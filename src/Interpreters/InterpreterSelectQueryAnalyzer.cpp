@@ -37,6 +37,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
+#include <Storages/buildQueryTreeForShard.h>
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
@@ -223,7 +224,34 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
         std::string_view{"force_primary_key"},
     };
     removeSettingsFromQuery(ast, settings_overridden_for_this_plan);
+
     InterpreterSelectQueryAnalyzer interpreter(ast, ctx, select_options, std::forward<Args>(interpreter_args)...);
+
+    /// This plan exists to be costed and is usually thrown away. Shipping a `GLOBAL IN` / `GLOBAL JOIN`
+    /// would execute its subquery into a temporary table while the plan is built, and those rows would
+    /// be discarded with it - on TPC-H q15 the probe's copy of the `revenue0` view was a third of every
+    /// mark the query read. Such a plan could not be adopted anyway: it names its sets after the
+    /// temporary tables that replaced the subqueries, so it never hashes equal to the single-node plan
+    /// and the match that gates the cost model always fails. Do not build it.
+    ///
+    /// Deliberately coarse. It asks about the whole query, while only one chosen node is shipped, so
+    /// a `GLOBAL IN` outside that node skips the optimization for a query it would never have
+    /// materialized anything for. That costs reach - such a query would otherwise match, since only a
+    /// shipped `_data_` table breaks the hash match - but the answer is not known before planning,
+    /// which is what this exists to skip. Erring towards skipping loses an optimization; erring the
+    /// other way pays for rows that are thrown away.
+    ///
+    /// This has to stay below the interpreter. The answer turns on `distributed_product_mode`,
+    /// `prefer_global_in_and_join` and `parallel_replicas_prefer_local_join`, and a query carries its
+    /// own `SETTINGS` for those. `QueryTreeBuilder::buildSelectExpression` applies them to the context
+    /// it is handed - `ctx` - while building the tree above, which is the same mechanism
+    /// `removeSettingsFromQuery` had to counteract. Asking before that would read pre-query settings
+    /// and could answer no for a query that does materialize.
+    if (shippingQueryMaterializesSubqueries(interpreter.getQueryTree(), ctx))
+    {
+        LOG_DEBUG(logger, "Shipping this query would materialize its subqueries. Skipping building a plan to cost");
+        return QueryPlanPtr{};
+    }
     auto plan = std::move(interpreter).extractQueryPlan();
     auto optimization_settings = QueryPlanOptimizationSettings(ctx);
     // We should build sets and create `CreatingSetsStep` only in the original plan. The automatic parallel replicas optimization happens before building sets,
@@ -273,26 +301,6 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
 /// The plan steps captured the query tree node contexts by pointer at build time, so the
 /// distributed-to-local fallback must flip the setting in place on those same objects
 /// as some optimization steps (Second-pass index analysis) read settings directly from the context tree.
-static void disableDistributedPlanInQueryTreeContexts(const QueryTreeNodePtr & query_tree)
-{
-    std::vector<IQueryTreeNode *> stack;
-    stack.push_back(query_tree.get());
-    while (!stack.empty())
-    {
-        auto * node = stack.back();
-        stack.pop_back();
-
-        if (auto * query_node = node->as<QueryNode>())
-            query_node->getMutableContext()->setSetting("make_distributed_plan", false);
-        else if (auto * union_node = node->as<UnionNode>())
-            union_node->getMutableContext()->setSetting("make_distributed_plan", false);
-
-        for (const auto & child : node->getChildren())
-            if (child)
-                stack.push_back(child.get());
-    }
-}
-
 static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)
 {
     for (const auto & node : extractAllTableReferences(query_tree))
@@ -469,15 +477,13 @@ void InterpreterSelectQueryAnalyzer::applyDistributedPlanFallbackIfNeeded()
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
 
-    QueryPlanOptimizationSettings probe_settings(context);
-    if (!query_plan.applyDistributedPlanFallbackToLocal(probe_settings))
-        return;
+    /// The interpreter context is a different object from the root query node's; later settings
+    /// snapshots are built from it, so it follows the decision too. The query-tree node contexts
+    /// were registered by the planners that built the plan (`extendQueryContextAndStoragesLifetime`).
+    query_plan.addDistributedPlanDecisionContext(context);
 
-    /// The decision must land on the context objects, not only on settings snapshots: consumers
-    /// such as `FutureSetFromSubquery::buildSetInplace` read `make_distributed_plan` live from
-    /// the contexts the plan steps captured at build time.
-    context->setSetting("make_distributed_plan", false);
-    disableDistributedPlanInQueryTreeContexts(query_tree);
+    QueryPlanOptimizationSettings probe_settings(context);
+    query_plan.applyDistributedPlanFallbackToLocal(probe_settings);
 }
 
 QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()

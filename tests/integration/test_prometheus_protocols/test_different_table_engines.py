@@ -349,7 +349,7 @@ def test_inner_engines():
         "CREATE TABLE prometheus ENGINE=TimeSeries "
         "SAMPLES ENGINE=MergeTree ORDER BY (id, timestamp) "
         "TAGS ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
-        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     check()
 
@@ -409,8 +409,8 @@ def test_external_tables():
     )
 
     node.query(
-        "CREATE TABLE mymetrics (metric_family_name String, type LowCardinality(String), unit LowCardinality(String), help String) "
-        "ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "CREATE TABLE mymetrics (metric_family String, type LowCardinality(String), unit LowCardinality(String), help String) "
+        "ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
@@ -426,7 +426,7 @@ def test_data_keyword():
         "CREATE TABLE prometheus ENGINE=TimeSeries "
         "DATA ENGINE=MergeTree ORDER BY (id, timestamp) "
         "TAGS ENGINE=AggregatingMergeTree ORDER BY (metric_name, id) "
-        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "METRICS ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     check()
 
@@ -447,8 +447,8 @@ def test_data_keyword():
         "SETTINGS allow_dimensions_outside_sorting_key = 1"
     )
     node.query(
-        "CREATE TABLE mymetrics (metric_family_name String, type String, unit String, help String) "
-        "ENGINE=ReplacingMergeTree ORDER BY metric_family_name"
+        "CREATE TABLE mymetrics (metric_family String, type String, unit String, help String) "
+        "ENGINE=ReplacingMergeTree ORDER BY metric_family"
     )
     node.query(
         "CREATE TABLE prometheus ENGINE=TimeSeries "
