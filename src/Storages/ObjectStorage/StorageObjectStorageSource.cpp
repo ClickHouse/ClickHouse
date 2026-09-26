@@ -395,9 +395,26 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 /// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
 /// are immutable, so the path is a stable identity on its own and no ETag is required (this also
 /// avoids disabling the cache for data lakes whose object metadata does not carry an ETag).
+/// The path is relative to the storage, which the table UUID identifies. Without a table UUID the
+/// entries of all such tables share one namespace (see `QueryConditionCache::getTableIdForFileEntries`),
+/// so the path is qualified by the storage it is in (endpoint, bucket, container, ...) instead.
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
+    const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, const UUID & table_uuid)
+{
+    String identifier = table_uuid != UUIDHelpers::Nil
+        ? object_info.getIdentifier(/*include_file_bucket_info=*/false)
+        : getUniqueStoragePathIdentifier(configuration, object_info, /*include_connection_info=*/true);
+    return makeQueryConditionCacheKey(identifier, object_info, configuration.isDataLakeConfiguration());
+}
+
 std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
 {
-    String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
+    return makeQueryConditionCacheKey(object_info.getIdentifier(/*include_file_bucket_info=*/false), object_info, is_data_lake);
+}
+
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(
+    const String & identifier, const ObjectInfo & object_info, bool is_data_lake)
+{
     if (is_data_lake)
         return identifier;
     const auto & metadata = object_info.getObjectMetadata();
@@ -1006,7 +1023,7 @@ Chunk StorageObjectStorageSource::generate()
         else if (format_filter_info->condition_hash)
         {
             const auto & object_info = reader.getObjectInfo();
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
             try
             {
                 const auto * input_format = reader.getInputFormat();
@@ -1040,11 +1057,15 @@ Chunk StorageObjectStorageSource::generate()
                             format_filter_info->filter_actions_dag->dumpNames(),
                             object_info->getFileName());
 
-                        if (!unmatched_ranges.empty() && query_condition_cache_key)
+                        /// A reader of one bucket of a split file reports the row groups of the other
+                        /// buckets as not matching, although it never read them.
+                        const bool read_whole_file
+                            = !object_info->file_bucket_info || object_info->file_bucket_info_from_query_condition_cache;
+                        if (!unmatched_ranges.empty() && query_condition_cache_key && read_whole_file)
                         {
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
                             query_condition_cache->write(
-                                storage_id.uuid,
+                                QueryConditionCache::getTableIdForFileEntries(storage_id.uuid),
                                 *query_condition_cache_key,
                                 *format_filter_info->condition_hash,
                                 format_filter_info->filter_actions_dag->dumpNames(),
@@ -1173,11 +1194,13 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (query_condition_cache && !object_info->file_bucket_info)
         {
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
+            const auto query_condition_cache_key = makeQueryConditionCacheKey(*configuration, *object_info, storage_id.uuid);
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
             if (query_condition_cache_key)
                 matching_marks = query_condition_cache->read(
-                    storage_id.uuid, *query_condition_cache_key, *format_filter_info->condition_hash);
+                    QueryConditionCache::getTableIdForFileEntries(storage_id.uuid),
+                    *query_condition_cache_key,
+                    *format_filter_info->condition_hash);
             if (matching_marks.has_value())
             {
                 const auto & marks = *matching_marks;
@@ -1206,6 +1229,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                     if (!filtered)
                         continue;
                     object_info->file_bucket_info = std::move(filtered);
+                    object_info->file_bucket_info_from_query_condition_cache = true;
                 }
             }
         }

@@ -54,6 +54,10 @@ struct ObjectInfo
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 
     FileBucketInfoPtr file_bucket_info;
+    /// Whether `file_bucket_info` only leaves out row groups the query condition cache proved to have no
+    /// match, rather than splitting the file between readers: only then does reading the buckets tell
+    /// which row groups of the whole file match.
+    bool file_bucket_info_from_query_condition_cache = false;
 
     /// Lazy materialization: if set, read only these rows of the file.
     /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
