@@ -62,7 +62,7 @@ wait
 
 $CLICKHOUSE_CLIENT --query="SYSTEM FLUSH LOGS part_log"
 $CLICKHOUSE_CLIENT --query="SELECT name FROM system.parts WHERE table='parallel_q2' and database='${CLICKHOUSE_DATABASE}' and active=1 ORDER BY name"
-$CLICKHOUSE_CLIENT --query="SELECT event_type FROM system.part_log WHERE table='parallel_q2' and database='${CLICKHOUSE_DATABASE}' and part_name='all_0_1_1'"
+$CLICKHOUSE_CLIENT --query="SELECT event_type FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND table='parallel_q2' and database='${CLICKHOUSE_DATABASE}' and part_name='all_0_1_1'"
 $CLICKHOUSE_CLIENT --query="SELECT COUNT() FROM parallel_q2"
 $CLICKHOUSE_CLIENT --query="SELECT COUNT() FROM parallel_q1"
 

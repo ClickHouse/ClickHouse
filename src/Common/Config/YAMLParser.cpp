@@ -1,5 +1,12 @@
 #include "config.h"
 #include <Common/Config/YAMLParser.h>
+#include <Common/Exception.h>
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_PARSE_YAML;
+}
 
 #if USE_YAML_CPP
 
@@ -9,7 +16,6 @@
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/NamedNodeMap.h>
 #include <Poco/DOM/Text.h>
-#include <Common/Exception.h>
 
 #include <yaml-cpp/yaml.h>
 
@@ -17,12 +23,6 @@ using namespace Poco::XML;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_OPEN_FILE;
-    extern const int CANNOT_PARSE_YAML;
-}
 
 namespace
 {
@@ -178,15 +178,8 @@ Poco::AutoPtr<Poco::XML::Document> YAMLParser::parse(const String& path)
 }
 #else
 
-#include <Common/Exception.h>
-
 namespace DB
 {
-
-namespace ErrorCodes
-{
-extern const int CANNOT_PARSE_YAML;
-}
 
 Poco::AutoPtr<Poco::XML::Document> DummyYAMLParser::parse(const String & path)
 {

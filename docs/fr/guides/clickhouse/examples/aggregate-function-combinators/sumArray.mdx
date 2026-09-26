@@ -1,0 +1,62 @@
+---
+slug: '/examples/aggregate-function-combinators/sumArray'
+title: 'sumArray'
+description: "Exemple d’utilisation du combinateur sumArray"
+keywords: ['sum', 'array', 'combinateur', 'exemples', 'sumArray']
+sidebarTitle: 'sumArray'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le combinateur [`Array`](/fr/reference/functions/aggregate-functions/combinators#-array)
+peut être appliqué à la fonction [`sum`](/fr/reference/functions/aggregate-functions/sum)
+pour calculer la somme de tous les éléments d&#39;un tableau, à l&#39;aide de la fonction de
+combinateur d&#39;agrégation `sumArray`.
+
+La fonction `sumArray` est utile lorsque vous devez calculer la somme totale de
+tous les éléments répartis sur plusieurs tableaux dans un ensemble de données.
+
+<div id="example-usage">
+  ## Exemple d&#39;utilisation
+</div>
+
+Dans cet exemple, nous utiliserons un échantillon de données sur les ventes quotidiennes dans différentes
+catégories de produits pour montrer le fonctionnement de `sumArray`. Nous calculerons le total des
+ventes de toutes les catégories pour chaque jour.
+
+```sql title="Query"
+CREATE TABLE daily_category_sales
+(
+    date Date,
+    category_sales Array(UInt32)
+) ENGINE = Memory;
+
+INSERT INTO daily_category_sales VALUES
+    ('2024-01-01', [100, 200, 150]),
+    ('2024-01-02', [120, 180, 160]),
+    ('2024-01-03', [90, 220, 140]);
+
+SELECT 
+    date,
+    category_sales,
+    sumArray(category_sales) AS total_sales_sumArray,
+    sum(arraySum(category_sales)) AS total_sales_arraySum
+FROM daily_category_sales
+GROUP BY date, category_sales;
+```
+
+La fonction `sumArray` additionne tous les éléments de chaque tableau `category_sales`.
+Par exemple, pour le `2024-01-01`, elle calcule `100 + 200 + 150 = 450`. Cela donne le
+même résultat que `arraySum`.
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`sum`](/fr/reference/functions/aggregate-functions/sum)
+* [`arraySum`](/fr/reference/functions/regular-functions/array-functions#arraySum)
+* [`combinateur Array`](/fr/reference/functions/aggregate-functions/combinators#-array)
+* [`sumMap`](/fr/guides/clickhouse/examples/aggregate-function-combinators/sumMap)

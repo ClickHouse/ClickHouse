@@ -1,0 +1,15 @@
+--- counts and per-column checksums ---
+20000	13944	12127	13797416816157427210	3033427648566893994	2452113502122351312	13053189563422343154	3834000753071610705
+--- distinct dictionary cardinalities ---
+300	500	3
+--- sample rows ---
+0	26000	item_0015_x	30	\N	\N
+1	137000	item_0266_	30	\N	\N
+2	44000	item_0394_xx	20	-5	\N
+3	208000	item_0427_	20	-2	item_0400_x
+4	136000	item_0472_xxx	30	\N	\N
+5	55000	item_0387_xx	30	-1	item_0299_xxxxx
+6	19000	item_0169_x	30	\N	\N
+7	194000	item_0026_xxxxx	10	\N	item_0223_xxxxxx
+--- filtered read (exercises partial decode) ---
+2858	3282076303299251861

@@ -1,5 +1,4 @@
 #pragma once
-#include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 
@@ -8,10 +7,6 @@
 #include <cstring>
 #include <memory>
 #include <utility>
-
-#ifdef __SSE4_2__
-#    include <nmmintrin.h>
-#endif
 
 namespace DB
 {

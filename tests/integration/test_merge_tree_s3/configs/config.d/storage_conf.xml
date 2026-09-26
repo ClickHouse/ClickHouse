@@ -8,6 +8,7 @@
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
                 <metadata_path>/var/lib/clickhouse/disks/custom_path</metadata_path>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3>
             <unstable_s3>
                 <type>s3</type>
@@ -15,6 +16,7 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_read_retries>10</s3_max_single_read_retries>
+                <persistent_removal_log>true</persistent_removal_log>
             </unstable_s3>
             <no_delete_objects_s3>
                 <type>s3</type>
@@ -22,6 +24,7 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_read_retries>10</s3_max_single_read_retries>
+                <persistent_removal_log>true</persistent_removal_log>
             </no_delete_objects_s3>
             <broken_s3>
                 <type>s3</type>
@@ -34,6 +37,7 @@
                 <connect_timeout_ms>20000</connect_timeout_ms>
                 <request_timeout_ms>20000</request_timeout_ms>
                 <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
+                <persistent_removal_log>true</persistent_removal_log>
             </broken_s3>
             <broken_s3_always_multi_part>
                 <type>s3</type>
@@ -47,6 +51,7 @@
                 <request_timeout_ms>20000</request_timeout_ms>
                 <s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>
                 <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
+                <persistent_removal_log>true</persistent_removal_log>
             </broken_s3_always_multi_part>
             <hdd>
                 <type>local</type>
@@ -76,6 +81,7 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>
+                <persistent_removal_log>true</persistent_removal_log>
             </s3_r>
             <s3_cache_r>
                 <type>cache</type>

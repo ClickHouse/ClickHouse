@@ -27,12 +27,20 @@ class FunctionH3CellAreaRads2 final : public IFunction
 public:
     static constexpr auto name = "h3CellAreaRads2";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3CellAreaRads2>(); }
+    H3Validator validator;
+
+    explicit FunctionH3CellAreaRads2(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3CellAreaRads2>(context); }
 
     std::string getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -75,15 +83,17 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
+            Float64 res = 0;
 
-            validateH3Cell(index);
+            if (validator.validateCell(index))
+            {
+                CellBoundary boundary{};
+                auto err = cellToBoundary(index, &boundary);
+                if (err)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
 
-            CellBoundary boundary{};
-            auto err = cellToBoundary(index, &boundary);
-            if (err)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect H3 index: {}, error: {}", index, err);
-
-            Float64 res = cellAreaRads2(index);
+                cellAreaRads2(index, &res);
+            }
             dst_data[row] = res;
         }
 
@@ -112,7 +122,7 @@ Returns the exact area of a specific cell in square radians corresponding to the
             "SELECT h3CellAreaRads2(579205133326352383) AS area",
             R"(
 ┌────────────────area─┐
-│ 0.10116268528089567 │
+│ 0.10116268528089563 │
 └─────────────────────┘
             )"
         }

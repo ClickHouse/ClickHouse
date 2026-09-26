@@ -11,6 +11,7 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils.h>
@@ -34,6 +35,11 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredClusterDiscovery;
+}
 
 namespace DB
 {
@@ -301,7 +307,10 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
             auto res = get_nodes_callbacks.insert(std::make_pair(cluster_name, watch_dynamic_callback));
             callback = res.first;
         }
-        nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, callback->second);
+        nodes = zk->getChildrenWatch(
+            getShardsListPath(zk_root),
+            &stat,
+            Coordination::WatchCallbackPtrOrEventPtr{callback->second, ProfileEvents::ZooKeeperWatchTriggeredClusterDiscovery});
     }
     else
         nodes = zk->getChildren(getShardsListPath(zk_root), &stat);
@@ -371,6 +380,11 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
 ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 {
     std::vector<Strings> shards;
+    /// The shard ids the shards are grouped by, in the order the shards end up numbered. `Cluster`
+    /// renumbers them `1..N`, so these are what a shard number of the resulting cluster actually means:
+    /// once the last node of some shard is gone from the visible set, every later shard shifts down
+    /// while the cluster name stays the same.
+    Strings shard_ids;
     {
         std::map<size_t, Strings> replica_addresses;
 
@@ -385,8 +399,12 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         }
 
         shards.reserve(replica_addresses.size());
-        for (auto & [_, replicas] : replica_addresses)
+        shard_ids.reserve(replica_addresses.size());
+        for (auto & [shard_id, replicas] : replica_addresses)
+        {
             shards.emplace_back(std::move(replicas));
+            shard_ids.emplace_back(toString(shard_id));
+        }
     }
 
     bool secure = cluster_info.current_node.secure;
@@ -401,10 +419,18 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
         /* priority= */ Priority{1},
         /* cluster_name= */ cluster_info.name,
         /* cluster_secret= */ cluster_info.cluster_secret};
+    /// The nodes register at `<zk_root>/shards/<server uuid>` with no component for the name the cluster
+    /// is configured under, so two `remote_servers` entries over one discovery path read the same znodes
+    /// and agree on which shard a node belongs to. Keying the identity by the discovery path rather than
+    /// by the entry's name therefore keeps parallel replicas through either name, while two discovery
+    /// paths whose nodes happen to carry the same `discovery.shard` numbers stay foreign to each other.
+    const String shard_scope_key = Cluster::makeKeeperScopeKey(cluster_info.zk_name, cluster_info.zk_root);
     auto cluster = std::make_shared<Cluster>(
         context->getSettingsRef(),
         shards,
-        params);
+        params,
+        shard_ids,
+        shard_scope_key);
     return cluster;
 }
 
@@ -422,13 +448,13 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 
     auto zk = context->getDefaultOrAuxiliaryZooKeeper(cluster_info.zk_name);
 
-    int start_version;
+    int start_version = 0;
     Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false, cluster_info.zk_root_index);
     auto & nodes_info = cluster_info.nodes_info;
     auto on_exit = [this, start_version, &zk, &cluster_info, &nodes_info]()
     {
         /// in case of successful update we still need to check if configuration of cluster still valid and also set watch callback
-        int current_version;
+        int current_version = 0;
         getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true, cluster_info.zk_root_index);
 
         if (current_version != start_version)
@@ -469,9 +495,7 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
 
     if (nodes_info.empty())
     {
-        String name = cluster_info.name;
-        /// cluster_info removed inside removeCluster, can't use reference to name.
-        removeCluster(name);
+        removeCluster(cluster_info.name, /* is_dynamic_cluster */cluster_info.zk_root_index != 0);
         return true;
     }
 
@@ -482,15 +506,21 @@ bool ClusterDiscovery::upsertCluster(ClusterInfo & cluster_info)
     return true;
 }
 
-void ClusterDiscovery::removeCluster(const String & name)
+void ClusterDiscovery::removeCluster(const String & name, bool is_dynamic)
 {
     {
         std::lock_guard lock(mutex);
         cluster_impls.erase(name);
     }
-    clusters_to_update->remove(name);
-    get_nodes_callbacks.erase(name);
-    LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
+    /// For static clusters (defined in config), `clusters_to_update` and `get_nodes_callbacks`
+    /// are initialized once at startup and must persist so the cluster can be re-registered after
+    /// a ZooKeeper session loss. Dynamic clusters own their entries and must clean them up.
+    if (is_dynamic)
+    {
+        clusters_to_update->remove(name);
+        get_nodes_callbacks.erase(name);
+        LOG_DEBUG(log, "Dynamic cluster '{}' removed successfully", name);
+    }
 }
 
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
@@ -583,7 +613,10 @@ void ClusterDiscovery::findDynamicClusters(
 
         auto zk = context->getDefaultOrAuxiliaryZooKeeper(path.zk_name);
 
-        auto clusters = zk->getChildrenWatch(path.zk_path, nullptr, path.watch_callback);
+        auto clusters = zk->getChildrenWatch(
+            path.zk_path,
+            nullptr,
+            Coordination::WatchCallbackPtrOrEventPtr{path.watch_callback, ProfileEvents::ZooKeeperWatchTriggeredClusterDiscovery});
 
         for (const auto & cluster : clusters)
         {
@@ -637,6 +670,7 @@ void ClusterDiscovery::start()
 
     try
     {
+        auto component_guard = Coordination::setCurrentComponent("ClusterDiscovery::start");
         initialUpdate();
     }
     catch (...)
@@ -679,6 +713,8 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     DB::setThreadName(ThreadName::CLUSTER_DISCOVERY);
     LOG_DEBUG(log, "Worker thread started");
 
+    auto component_guard = Coordination::setCurrentComponent("ClusterDiscovery::runMainThread");
+
     using namespace std::chrono_literals;
 
     constexpr auto force_update_interval = 2min;
@@ -715,7 +751,7 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
             clusters_to_insert.insert(cluster_name);
 
         for (const auto & cluster_name : clusters_to_remove)
-            removeCluster(cluster_name);
+            removeCluster(cluster_name, /* is_dynamic_cluster */true);
 
         clusters_info.merge(new_dynamic_clusters_info);
 

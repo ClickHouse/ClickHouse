@@ -43,7 +43,10 @@ select key from dist_idx_pk_size settings distributed_index_analysis=1 format Nu
 drop table dist_idx_pk_size;
 
 drop table if exists dist_idx_skipping_idx_size;
-create table dist_idx_skipping_idx_size (key String, value String, index key_val_idx (key, value) type set(100000)) engine=MergeTree() settings index_granularity=100000, min_bytes_for_wide_part=0, index_granularity_bytes=10e6, distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_bytes_to_activate='10M';
+-- Asserts an absolute data_uncompressed_bytes for the skip index and uses it to gate
+-- distributed-index-analysis activation; pin packed_skip_index_max_bytes=0 so the index
+-- always lives in its own per-file substream and the assertion stays layout-independent.
+create table dist_idx_skipping_idx_size (key String, value String, index key_val_idx (key, value) type set(100000)) engine=MergeTree() settings index_granularity=100000, min_bytes_for_wide_part=0, index_granularity_bytes=10e6, distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_bytes_to_activate='10M', packed_skip_index_max_bytes=0;
 system stop merges dist_idx_skipping_idx_size;
 insert into dist_idx_skipping_idx_size select number::String, repeat('a', 100) from numbers(1e6);
 select table, sum(data_uncompressed_bytes) from system.data_skipping_indices where database = currentDatabase() AND table = 'dist_idx_skipping_idx_size' group by 1;
@@ -55,7 +58,7 @@ select tables, ProfileEvents['DistributedIndexAnalysisMicroseconds'] > 0
 from system.query_log
 where
   current_database = currentDatabase()
-  and event_date >= yesterday()
+  and event_date >= yesterday() AND event_time >= now() - 600
   and type = 'QueryFinish'
   and query_kind = 'Select'
   and is_initial_query

@@ -8,6 +8,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 
 
@@ -24,6 +25,18 @@ ColumnsDescription AsynchronousMetricLogElement::getColumnsDescription()
             std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
             parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
             "Hostname of the server executing the query."
+        },
+        {
+            "clickhouse_version",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "Version of the ClickHouse server that produced the row."
+        },
+        {
+            "system_processor",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "CPU architecture of the ClickHouse server that produced the row."
         },
         {
             "event_date",
@@ -44,6 +57,12 @@ ColumnsDescription AsynchronousMetricLogElement::getColumnsDescription()
             "Metric name."
         },
         {
+            "key",
+            std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            parseQuery(codec_parser, "(ZSTD(1))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
+            "The key of a key-value metric, e.g. the CPU core number or the block device name. Empty for scalar metrics."
+        },
+        {
             "value",
             std::make_shared<DataTypeFloat64>(),
             parseQuery(codec_parser, "(ZSTD(3))", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS),
@@ -57,9 +76,12 @@ void AsynchronousMetricLogElement::appendToBlock(MutableColumns & columns) const
     size_t column_idx = 0;
 
     columns[column_idx++]->insert(getFQDNOrHostName());
+    columns[column_idx++]->insert(VERSION_STRING);
+    columns[column_idx++]->insert(SYSTEM_PROCESSOR);
     columns[column_idx++]->insert(event_date);
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(metric_name);
+    columns[column_idx++]->insert(key);
     columns[column_idx++]->insert(value);
 }
 
@@ -75,12 +97,30 @@ void AsynchronousMetricLog::addValues(const AsynchronousMetricValues & values)
     /// but we need to store up to UINT64_MAX sometimes.
     static constexpr double precision = 1000.0;
 
-    for (const auto & [key, value] : values)
-    {
-        element.metric_name = key;
-        element.value = round(value.value * precision) / precision;
+    auto round_value = [](double value) { return round(value * precision) / precision; };
 
-        add(element);
+    for (const auto & [name, value] : values)
+    {
+        element.metric_name = name;
+
+        if (value.isMap())
+        {
+            /// A key-value metric is logged as one row per key.
+            for (const auto & [key, key_value] : value.key_values)
+            {
+                element.key = key;
+                element.value = round_value(key_value);
+
+                add([&](AsynchronousMetricLogElement & log_element) { log_element = element; });
+            }
+        }
+        else
+        {
+            element.key.clear();
+            element.value = round_value(value.value);
+
+            add([&](AsynchronousMetricLogElement & log_element) { log_element = element; });
+        }
     }
 }
 

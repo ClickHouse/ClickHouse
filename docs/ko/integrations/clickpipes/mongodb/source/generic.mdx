@@ -1,0 +1,63 @@
+---
+sidebarTitle: '범용 MongoDB'
+description: '모든 MongoDB 인스턴스를 ClickPipes 소스로 설정합니다'
+slug: /integrations/clickpipes/mongodb/source/generic
+title: '범용 MongoDB 소스 설정 가이드'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<Info>
+  MongoDB Atlas를 사용하는 경우 [여기](/ko/integrations/clickpipes/mongodb/source/atlas)의 전용 가이드를 참조하십시오.
+</Info>
+
+<div id="enable-oplog-retention">
+  ## oplog retention 활성화
+</div>
+
+복제를 위해서는 최소 24시간의 oplog retention이 필요합니다. 초기 snapshot이 완료되기 전에 oplog가 잘리지 않도록 oplog retention을 72시간 이상으로 설정하는 것이 좋습니다.
+
+현재 oplog retention은 MongoDB shell에서 다음 명령을 실행해 확인할 수 있습니다(이 명령을 실행하려면 `clusterMonitor` role이 있어야 합니다):
+
+```javascript
+db.getSiblingDB("admin").serverStatus().oplogTruncation.oplogMinRetentionHours
+```
+
+oplog 보존 기간을 72시간으로 설정하려면, 레플리카 세트의 각 노드에서 관리자 사용자로 다음 명령을 실행하십시오:
+
+```javascript
+db.adminCommand({
+    "replSetResizeOplog" : 1,
+    "minRetentionHours": 72
+})
+```
+
+`replSetResizeOplog` 명령과 oplog 보존 설정에 대한 자세한 내용은 [MongoDB 문서](https://www.mongodb.com/docs/manual/reference/command/replSetResizeOplog/)를 참조하십시오.
+
+<div id="configure-database-user">
+  ## 데이터베이스 사용자 구성
+</div>
+
+관리자 권한 사용자로 MongoDB 인스턴스에 연결한 다음, MongoDB CDC ClickPipes용 사용자를 생성하려면 다음 명령을 실행하십시오:
+
+```javascript
+db.getSiblingDB("admin").createUser({
+    user: "clickpipes_user",
+    pwd: "some_secure_password",
+    roles: ["readAnyDatabase", "clusterMonitor"],
+})
+```
+
+<Note>
+  `clickpipes_user` 및 `some_secure_password`를 원하는 사용자 이름과 비밀번호로 바꾸었는지 확인하세요.
+</Note>
+
+<div id="whats-next">
+  ## 다음 단계
+</div>
+
+이제 [ClickPipe를 생성](/ko/integrations/clickpipes/mongodb/index)하고 MongoDB 인스턴스의 데이터를 ClickHouse Cloud로 수집하기 시작할 수 있습니다.
+ClickPipe 생성 과정에서 이 정보가 필요하므로 MongoDB 인스턴스를 설정할 때 사용한 연결 정보를 반드시 기록해 두십시오.

@@ -1,14 +1,17 @@
 #include <Storages/System/StorageSystemQuotas.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/Quota.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -61,7 +64,15 @@ ColumnsDescription StorageSystemQuotas::getColumnsDescription()
             "1 — The quota applies to all users except those listed in apply_to_except."
         },
         {"apply_to_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "List of user names/roles that the quota should be applied to."},
-        {"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "List of user names/roles that the quota should not apply to."}
+        {"apply_to_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "List of user names/roles that the quota should not apply to."},
+        {"ipv4_prefix_bits", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+            "Number of prefix bits for IPv4 address masking. "
+            "Connections from the same subnet share the same quota. Only used when key is `ip_address` or `forwarded_ip_address`."
+        },
+        {"ipv6_prefix_bits", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()),
+            "Number of prefix bits for IPv6 address masking. "
+            "Connections from the same subnet share the same quota. Only used when key is `ip_address` or `forwarded_ip_address`."
+        }
     };
 }
 
@@ -88,36 +99,40 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
     auto & column_apply_to_list_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_apply_to_except = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_apply_to_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
+    auto & column_ipv4_prefix_bits = assert_cast<ColumnNullable &>(*res_columns[column_index++]);
+    auto & column_ipv6_prefix_bits = assert_cast<ColumnNullable &>(*res_columns[column_index++]);
 
-    auto add_row = [&](const String & name,
-                       const UUID & id,
-                       const String & storage_name,
-                       const std::vector<Quota::Limits> & all_limits,
-                       QuotaKeyType key_type,
-                       const RolesOrUsersSet & apply_to)
+    for (const auto & id : ids)
     {
-        column_name.insertData(name.data(), name.length());
-        column_id.push_back(id.toUnderType());
-        column_storage.insertData(storage_name.data(), storage_name.length());
+        auto quota = access_control.tryRead<Quota>(id);
+        if (!quota)
+            continue;
+        auto storage = access_control.findStorage(id);
+        if (!storage)
+            continue;
 
-        if (key_type != QuotaKeyType::NONE)
+        column_name.insertData(quota->getName().data(), quota->getName().length());
+        column_id.push_back(id.toUnderType());
+        column_storage.insertData(storage->getStorageName().data(), storage->getStorageName().length());
+
+        if (quota->key_type != QuotaKeyType::NONE)
         {
-            const auto & type_info = QuotaKeyTypeInfo::get(key_type);
+            const auto & type_info = QuotaKeyTypeInfo::get(quota->key_type);
             for (auto base_type : type_info.base_types)
                 column_key_types.push_back(static_cast<Int8>(base_type));
             if (type_info.base_types.empty())
-                column_key_types.push_back(static_cast<Int8>(key_type));
+                column_key_types.push_back(static_cast<Int8>(quota->key_type));
         }
         column_key_types_offsets.push_back(column_key_types.size());
 
-        for (const auto & limits : all_limits)
+        for (const auto & limits : quota->all_limits)
         {
             column_durations.push_back(
                 static_cast<UInt32>(std::chrono::duration_cast<std::chrono::seconds>(limits.duration).count()));
         }
         column_durations_offsets.push_back(column_durations.size());
 
-        auto apply_to_ast = apply_to.toASTWithNames(access_control);
+        auto apply_to_ast = quota->to_roles.toASTWithNames(access_control);
         column_apply_to_all.push_back(apply_to_ast->all);
 
         for (const auto & role_name : apply_to_ast->names)
@@ -127,18 +142,16 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
         for (const auto & role_name : apply_to_ast->except_names)
             column_apply_to_except.insertData(role_name.data(), role_name.length());
         column_apply_to_except_offsets.push_back(column_apply_to_except.size());
-    };
 
-    for (const auto & id : access_control.findAll<Quota>())
-    {
-        auto quota = access_control.tryRead<Quota>(id);
-        if (!quota)
-            continue;
-        auto storage = access_control.findStorage(id);
-        if (!storage)
-            continue;
+        if (quota->ipv4_prefix_bits)
+            column_ipv4_prefix_bits.insert(Field(static_cast<UInt64>(*quota->ipv4_prefix_bits)));
+        else
+            column_ipv4_prefix_bits.insertDefault();
 
-        add_row(quota->getName(), id, storage->getStorageName(), quota->all_limits, quota->key_type, quota->to_roles);
+        if (quota->ipv6_prefix_bits)
+            column_ipv6_prefix_bits.insert(Field(static_cast<UInt64>(*quota->ipv6_prefix_bits)));
+        else
+            column_ipv6_prefix_bits.insertDefault();
     }
 }
 
@@ -157,3 +170,6 @@ void StorageSystemQuotas::restoreDataFromBackup(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemQuotas) }

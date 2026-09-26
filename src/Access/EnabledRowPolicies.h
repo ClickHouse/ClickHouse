@@ -22,10 +22,14 @@ struct RowPolicyFilter
     std::shared_ptr<const std::pair<String, String>> database_and_table_name;
     std::vector<RowPolicyPtr> policies;
 
-    bool empty() const;
+    bool isAlwaysTrue() const;
+    bool isAlwaysFalse() const;
 };
 
 using RowPolicyFilterPtr = std::shared_ptr<const RowPolicyFilter>;
+
+/// Combines two prepared row policy filters with a logical AND and retains their contributing policies.
+RowPolicyFilterPtr combineRowPolicyFilters(RowPolicyFilterPtr filter, RowPolicyFilterPtr combine_with_filter);
 
 
 /// Provides fast access to row policies' conditions for a specific user and tables.

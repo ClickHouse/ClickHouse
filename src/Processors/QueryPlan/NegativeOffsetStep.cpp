@@ -2,8 +2,10 @@
 #include <Processors/NegativeOffsetTransform.h>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 
@@ -36,11 +38,16 @@ void NegativeOffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, cons
     auto transform = std::make_shared<NegativeOffsetTransform>(pipeline.getHeader(), offset, pipeline.getNumStreams());
 
     pipeline.addTransform(std::move(transform));
+
+    if (dataflow_cache_updater)
+        pipeline.addSimpleTransform([&](const SharedHeader & header)
+                                    { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
 }
 
 void NegativeOffsetStep::describeActions(FormatSettings & settings) const
 {
-    settings.out << String(settings.offset, ' ') << "Negative Offset " << offset << '\n';
+    const auto & prefix = settings.detail_prefix;
+    settings.out << prefix << "Negative Offset " << offset << '\n';
 }
 
 void NegativeOffsetStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -55,12 +62,13 @@ void NegativeOffsetStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr NegativeOffsetStep::deserialize(Deserialization & ctx)
 {
-    UInt64 offset;
+    UInt64 offset = 0;
     readVarUInt(offset, ctx.in);
 
     return std::make_unique<NegativeOffsetStep>(ctx.input_headers.front(), offset);
 }
 
+void registerNegativeOffsetStep(QueryPlanStepRegistry & registry);
 void registerNegativeOffsetStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("NegativeOffset", NegativeOffsetStep::deserialize);

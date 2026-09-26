@@ -23,6 +23,7 @@
     </logger>
 
     <access_control_improvements>
+        <throw_on_unmatched_row_policies>true</throw_on_unmatched_row_policies>
         <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
         <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
         <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>

@@ -17,6 +17,9 @@ insert into t_pos values (1, 3), (2, 3), (3, 3);
 
 set max_threads=1;
 
+-- For this test we don't want to "promote" `InOrder` reading + `ReplacingSorted` to normal reading without merging, because the test is all about merging
+set split_parts_ranges_into_intersecting_and_non_intersecting_final=0;
+
 select '----    do_not_merge: {{ do_not_merge }}    ----    automatic_decision: {{ automatic_decision }}    ----' as separator;
 
 select trim(explain)

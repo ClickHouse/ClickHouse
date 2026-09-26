@@ -27,6 +27,6 @@ $CLICKHOUSE_CLIENT -q "
   FROM system.query_log
   WHERE
         current_database = currentDatabase()
-    AND event_date >= yesterday()
+    AND event_date >= yesterday() AND event_time >= now() - 600
     AND query LIKE 'SELECT ''test_01194'',$rnd%'
     AND query_id != queryID()"

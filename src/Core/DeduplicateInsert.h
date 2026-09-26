@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 namespace Poco
 {
@@ -17,7 +18,7 @@ namespace DB
     bool isDeduplicationEnabledForInsert(const Settings & settings);
     bool isDeduplicationEnabledForInsert(bool is_async_insert, const Settings & settings);
 
-    bool isDeduplicationEnabledForInsertSelect(bool select_query_sorted, const Settings & settings, LoggerPtr logger = nullptr);
+    bool isDeduplicationEnabledForInsertSelect(bool select_query_sorted, const Settings & settings, const std::string & insert_deduplication_token = {}, LoggerPtr logger = nullptr);
 
     void overrideDeduplicationSetting(bool is_on, ContextMutablePtr context);
 }

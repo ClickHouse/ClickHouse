@@ -27,7 +27,7 @@ format_schema_message_name='StringOrString'
 FORMAT Protobuf;
 " > "${CLICKHOUSE_TMP}/oneof_several_values.bin"
 
-# succesfully read from this Protobuf file
+# successfully read from this Protobuf file
 ${CLICKHOUSE_LOCAL} --logger.console=0 --input-format=Protobuf --structure="string1 String, string2 String" --query "
 SELECT *
 FROM file('stdin', Protobuf)

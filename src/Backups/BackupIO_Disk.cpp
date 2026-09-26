@@ -126,8 +126,8 @@ void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)
         disk->removeDirectory(current_dir);
 }
 
-void BackupWriterDisk::copyFileFromDisk(const String & path_in_backup, DiskPtr src_disk, const String & src_path,
-                                        bool copy_encrypted, UInt64 start_pos, UInt64 length)
+void BackupWriterDisk::copyFileFromDisk(
+    const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
     /// Use IDisk::copyFile() as a more optimal way to copy a file if it's possible.
     /// However IDisk::copyFile() can't use throttling for reading, and can't copy an encrypted file or copy a part of the file.

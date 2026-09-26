@@ -63,7 +63,7 @@ system flush async insert queue src_table;
 
 system flush logs system.query_log;
 select query, type, exception_code from system.query_log
-where
+where event_date >= yesterday() AND event_time >= now() - 600 AND
     has(databases, currentDatabase())
     and has(tables, currentDatabase() || '.src_table')
     and type != 'QueryStart'

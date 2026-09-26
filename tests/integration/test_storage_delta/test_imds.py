@@ -1,28 +1,10 @@
-import glob
-import json
 import logging
 import os
-import random
-import string
-import time
-import uuid
-from datetime import datetime
 
 import pytest
-from delta import *
-from deltalake.writer import write_deltalake
-from minio.deleteobjects import DeleteObject
-from pyspark.sql.functions import (
-    current_timestamp,
-    monotonically_increasing_id,
-    row_number,
-)
 
-import helpers.client
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
-from helpers.config_cluster import minio_access_key
-from helpers.config_cluster import minio_secret_key
 from test_storage_delta.test import (
     get_spark,
     write_delta_from_file,
@@ -33,6 +15,7 @@ from test_storage_delta.test import (
 from helpers.s3_tools import (
     prepare_s3_bucket,
 )
+from helpers.spark_tools import ResilientSparkSession
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 METADATA_SERVER_HOSTNAME = "resolver"
@@ -64,6 +47,9 @@ def started_cluster():
             main_configs=[
                 "configs/config.d/use_environment_credentials.xml",
             ],
+            user_configs=[
+                "configs/allow_server_credentials.xml",
+            ],
             env_variables={
                 "AWS_EC2_METADATA_SERVICE_ENDPOINT": f"{METADATA_SERVER_HOSTNAME}:{METADATA_SERVER_PORT}",
             },
@@ -80,7 +66,9 @@ def started_cluster():
         prepare_s3_bucket(cluster)
         start_metadata_server(cluster)
 
-        cluster.spark_session = get_spark()
+        cluster.spark_session = ResilientSparkSession(
+            lambda: get_spark(cluster.instances_dir)
+        )
         start_metadata_server(cluster)
 
         yield cluster

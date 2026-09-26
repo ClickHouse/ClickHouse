@@ -1,5 +1,6 @@
 <clickhouse>
     <access_control_improvements>
+        <throw_on_unmatched_row_policies>false</throw_on_unmatched_row_policies>
         <users_without_row_policies_can_read_rows>false</users_without_row_policies_can_read_rows>
         <select_from_system_db_requires_grant>false</select_from_system_db_requires_grant>
         <select_from_information_schema_requires_grant>false</select_from_information_schema_requires_grant>
