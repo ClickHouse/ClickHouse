@@ -162,7 +162,9 @@ def test_non_empty_directory_at_old_location_is_kept(started_cluster):
     """Same double failure, but the old location holds a directory that is NOT empty. Its content
     was not created by this table, so it must be kept and the data must not be moved back: the
     table stays attached with no usable handle, and reads refuse while naming the directory that
-    actually holds the rows instead of reporting zero rows."""
+    actually holds the rows instead of reporting zero rows. TRUNCATE is refused too: it would
+    reopen the table at that directory, where a reload does not look, so later inserts would
+    disappear."""
     make_table("t15", 6)
     data_dir = database_data_dir("t15")
 
@@ -176,6 +178,9 @@ def test_non_empty_directory_at_old_location_is_kept(started_cluster):
     assert f"{data_dir}t15_target" in read_error
     assert "ROCKSDB_ERROR" in node.query_and_get_error(
         f"SELECT * FROM {ORDINARY_DB}.t15 WHERE k = 1"
+    )
+    assert "ROCKSDB_ERROR" in node.query_and_get_error(
+        f"TRUNCATE TABLE {ORDINARY_DB}.t15"
     )
 
     assert path_exists(f"{data_dir}t15_target/CURRENT")

@@ -330,6 +330,13 @@ StorageEmbeddedRocksDB::~StorageEmbeddedRocksDB() = default;
 void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     std::lock_guard lock(rocksdb_ptr_mx);
+    /// rocksdb_dir may differ from the metadata path, which is what a reload opens.
+    if (handle_unusable)
+        throw Exception(
+            ErrorCodes::ROCKSDB_ERROR,
+            "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
+            getStorageID().getNameForLogs(), rocksdb_dir);
+
     /// rocksdb_ptr may already be null if a previous truncate() emptied the directory and
     /// the following initDB() threw (e.g. a read_only table whose data was wiped).
     if (rocksdb_ptr)
