@@ -6,6 +6,7 @@ SET allow_suspicious_low_cardinality_types = 1;
 SELECT [toUInt64(0)] = '[18446744073709551616]';
 SELECT [toUInt8(44)] = '[300]';
 SELECT [toInt8(127)] = '[-129]';
+SELECT [toInt8(-128)] = '[128]';
 SELECT (toUInt8(44), toUInt8(1)) = '(300,1)';
 SELECT map('a', toUInt64(0)) = '{''a'':18446744073709551616}';
 SELECT [[toUInt64(0)]] = '[[18446744073709551616]]';
