@@ -377,6 +377,7 @@ Pipe createMergeTreeSequentialSource(
 
         addPatchPartsColumns(
             info->task_columns,
+            info_for_reader,
             storage_snapshot,
             options,
             info->patch_parts,

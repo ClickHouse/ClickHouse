@@ -293,6 +293,7 @@ MergeTreeReadPoolBase::buildReadTaskInfo(const RangesInDataPart & part_with_rang
 
         addPatchPartsColumns(
             read_task_info.task_columns,
+            part_info,
             storage_snapshot,
             options,
             read_task_info.patch_parts,
