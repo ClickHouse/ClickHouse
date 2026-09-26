@@ -56,6 +56,16 @@
         FROM numbers_mt(400 * 10000)
     </fill_query>
 
+    <!-- Merge to one part. The fill above lands in 4 parts that each span every id, and which
+         timestamps go to which part is an insert-scheduling draw, so the two compared servers would
+         otherwise read the same rows in a different order and at a different cost. -->
+    <fill_query>OPTIMIZE TABLE ts_grid FINAL SETTINGS optimize_throw_if_noop = 1</fill_query>
+    <fill_query>
+        SELECT throwIf(count() != 1, 'timeseries_to_grid_aggregation_functions: expected 1 active part in ts_grid; the layout pin is not in effect')
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = 'ts_grid' AND active
+    </fill_query>
+
     <!-- Sparse counterpart: ~1 sample per 100s (10x fewer) while step stays 10, so only ~1 in 10 buckets is
          populated -> density ~0.1 < BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN=0.4 -> exercises the collect-and-sort
          bucket iteration in doInsertResultInto (the dense fill above always range-scans). 400 series, 1000
