@@ -1271,6 +1271,10 @@ class JobConfigs:
                 # upgrade_runner.sh symlinks and runs both of these
                 "./ci/tools/get_previous_release_tag.py",
                 "./ci/tools/download_release_packages.py",
+                # Both entry scripts import this at module level, and it in turn
+                # imports the GitHub API retry policy out of praktika.
+                "./ci/tools/build_download_helper.py",
+                "./ci/praktika/gh.py",
             ]
         ),
         timeout=3600 * 2,
