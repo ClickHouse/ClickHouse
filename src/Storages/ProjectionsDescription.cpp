@@ -7,8 +7,10 @@
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -666,6 +668,164 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     metadata.primary_key = KeyDescription::buildEmptyKey();
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
     return result;
+}
+
+bool ProjectionDescription::isStaleForPartColumns(
+    const NamesAndTypesList & part_columns,
+    const SerializationInfoByName & part_serialization_infos,
+    const NamesAndTypesList & projection_part_columns,
+    const SerializationInfoByName & projection_part_serialization_infos,
+    const ColumnsDescription & table_columns) const
+{
+    Names columns_to_check;
+    Names to_walk;
+    NameSet seen;
+
+    auto projection_recorded = [&](const String & column_name)
+    {
+        if (projection_part_columns.tryGetByName(column_name))
+            return true;
+        const auto * missing = projection_part_serialization_infos.getMissingColumnInfo(column_name);
+        return missing && !missing->type_name.empty();
+    };
+
+    /// An ALIAS never resolves as physical, yet a DEFAULT may read one and the reader expands it anyway.
+    auto add_dependency = [&](const String & dependency_name)
+    {
+        auto dependency = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, dependency_name);
+        const String & key = dependency ? dependency->getNameInStorage() : dependency_name;
+        if (!seen.emplace(key).second)
+            return;
+        if (!dependency)
+        {
+            to_walk.push_back(key);
+            return;
+        }
+        columns_to_check.push_back(key);
+        if (!part_columns.tryGetByName(key) && projection_recorded(key))
+            to_walk.push_back(key);
+    };
+
+    bool narrowed = type == Type::Normal && !index;
+
+    if (narrowed)
+    {
+        for (const auto & output : sample_block)
+        {
+            auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, output.name);
+            if (!column)
+            {
+                narrowed = false;
+                break;
+            }
+
+            if (part_columns.tryGetByName(column->getNameInStorage()))
+                continue;
+
+            if (seen.emplace(column->getNameInStorage()).second)
+            {
+                columns_to_check.push_back(column->getNameInStorage());
+                if (projection_recorded(column->getNameInStorage()))
+                    to_walk.push_back(column->getNameInStorage());
+            }
+        }
+    }
+
+    if (narrowed)
+    {
+        /// A Normal projection's key is built over the parent columns, so these names match @table_columns.
+        for (const auto & key_column : metadata->getColumnsRequiredForPrimaryKey())
+            add_dependency(key_column);
+
+        if (where_clause_ast)
+        {
+            IdentifierNameSet filter_identifiers;
+            where_clause_ast->collectIdentifierNames(filter_identifiers);
+            for (const auto & identifier : filter_identifiers)
+                add_dependency(identifier);
+        }
+    }
+    else
+    {
+        columns_to_check = required_columns;
+
+        for (const auto & required_column : required_columns)
+        {
+            auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required_column);
+            if (!column)
+                continue;
+            const auto & storage_name = column->getNameInStorage();
+            if (part_columns.tryGetByName(storage_name) || !projection_recorded(storage_name))
+                continue;
+            if (seen.emplace(storage_name).second)
+                to_walk.push_back(storage_name);
+        }
+    }
+
+    size_t walked = 0;
+    /// `add_dependency` appends to `to_walk`, so the bound is re-read on every iteration.
+    while (walked < to_walk.size())
+    {
+        const auto column_default = table_columns.getDefault(to_walk[walked++]);
+        if (!column_default)
+            continue;
+
+        IdentifierNameSet identifiers;
+        column_default->expression->collectIdentifierNames(identifiers);
+        for (const auto & identifier : identifiers)
+            add_dependency(identifier);
+    }
+
+    auto is_stale = [&](const Names & names)
+    {
+        for (const auto & required_column : names)
+        {
+            /// A name here may be a subcolumn (`toInt64(t.a)` leaves `t.a`); the type is the storage column's.
+            auto column = table_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, required_column);
+            if (!column)
+                continue;
+            const auto & storage_name = column->getNameInStorage();
+
+            DataTypePtr part_type;
+            /// Not IMergeTreeDataPart::tryGetColumn(): it answers from a storage-wide cache keyed on
+            /// IDataType::equals(), which erases the attributes getName() below asks about.
+            if (auto own = part_columns.tryGetByName(storage_name))
+            {
+                part_type = own->type;
+            }
+            else if (const auto * missing = part_serialization_infos.getMissingColumnInfo(storage_name);
+                     missing && !missing->type_name.empty())
+            {
+                part_type = DataTypeFactory::instance().tryGet(missing->type_name);
+            }
+
+            if (!part_type)
+            {
+                if (auto stored = projection_part_columns.tryGetByName(storage_name))
+                    part_type = stored->type;
+                else if (const auto * missing = projection_part_serialization_infos.getMissingColumnInfo(storage_name);
+                         missing && !missing->type_name.empty())
+                    part_type = DataTypeFactory::instance().tryGet(missing->type_name);
+            }
+
+            if (!part_type)
+            {
+                /// A column this projection OUTPUTS is synthesised from today's declaration either way.
+                if (sample_block.has(storage_name))
+                    continue;
+                return true;
+            }
+
+            const auto & table_type = table_columns.get(storage_name).type;
+            /// equals() compares the on-disk representation; getName() also carries the attributes it
+            /// drops (a time zone, a custom name), which change what an expression computes.
+            if (!part_type->equals(*table_type) || part_type->getName() != table_type->getName())
+                return true;
+        }
+        return false;
+    };
+
+    return is_stale(columns_to_check);
 }
 
 Block ProjectionDescription::calculate(

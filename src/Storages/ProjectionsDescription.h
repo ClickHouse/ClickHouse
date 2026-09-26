@@ -29,6 +29,8 @@ class ASTProjectionSelectQuery;
 
 struct MergeTreeSettings;
 
+class SerializationInfoByName;
+
 /// Description of projections for Storage
 struct ProjectionDescription
 {
@@ -161,6 +163,15 @@ struct ProjectionDescription
     Block calculateByQuery(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
 
     String getDirectoryName() const { return name + ".proj"; }
+
+    /// Does a part on disk record, for a column this projection derived a stored value from, a type
+    /// other than the one @table_columns declares? Renames are not resolved: no value changes.
+    bool isStaleForPartColumns(
+        const NamesAndTypesList & part_columns,
+        const SerializationInfoByName & part_serialization_infos,
+        const NamesAndTypesList & projection_part_columns,
+        const SerializationInfoByName & projection_part_serialization_infos,
+        const ColumnsDescription & table_columns) const;
 };
 
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
