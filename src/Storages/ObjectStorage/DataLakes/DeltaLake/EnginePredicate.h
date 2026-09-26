@@ -4,6 +4,8 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Common/Exception.h>
+#include <Common/Logger.h>
+
 #include <delta_kernel_ffi.hpp>
 
 namespace DB
@@ -23,7 +25,7 @@ class EnginePredicate : public ffi::EnginePredicate
 {
     friend struct EngineIteratorData;
 public:
-    explicit EnginePredicate(
+    explicit EnginePredicate( // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         const DB::ActionsDAG & filter_,
         std::exception_ptr & exception_,
         DB::ContextPtr context_)

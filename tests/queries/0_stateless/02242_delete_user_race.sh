@@ -36,7 +36,7 @@ function create_and_login_user()
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         $CLICKHOUSE_CLIENT -q "CREATE USER IF NOT EXISTS test_user_02242" ||:
-        $CLICKHOUSE_CLIENT -u "test_user_02242" -q "SELECT COUNT(*) FROM system.session_log WHERE user == 'test_user_02242'" > /dev/null ||:
+        $CLICKHOUSE_CLIENT -u "test_user_02242" -q "SELECT COUNT(*) FROM system.session_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND user == 'test_user_02242'" > /dev/null ||:
         sleep 0.$RANDOM;
     done
 }

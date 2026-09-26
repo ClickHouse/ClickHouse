@@ -177,3 +177,24 @@ SELECT '-';
 -
 DROP TABLE IF EXISTS funnel_test2;
 drop table funnel_test_strict_increase;
+drop table if exists funnel_test_reentry;
+create table funnel_test_reentry (uid Int32, dt UInt32, event String) engine = Memory;
+insert into funnel_test_reentry values (1, 10, 'a'), (1, 20, 'a'), (1, 30, 'b'), (1, 40, 'a'), (1, 50, 'c');
+insert into funnel_test_reentry values (2, 10, 'a'), (2, 20, 'c'), (2, 30, 'b'), (2, 40, 'c');
+insert into funnel_test_reentry values (3, 10, 'a'), (3, 20, 'c');
+select uid, windowFunnel(100, 'strict_order')(dt, event='a', event='b', event='a', event='c') as res
+from funnel_test_reentry where uid = 1 group by uid format JSONCompactEachRow;
+[1, 1]
+select uid, windowFunnel(100, 'strict_order', 'allow_reentry')(dt, event='a', event='b', event='a', event='c') as res
+from funnel_test_reentry where uid = 1 group by uid format JSONCompactEachRow;
+[1, 4]
+select uid, windowFunnel(100, 'strict_order')(dt, event='a', event='b', event='c') as res
+from funnel_test_reentry where uid = 2 group by uid format JSONCompactEachRow;
+[2, 1]
+select uid, windowFunnel(100, 'strict_order', 'allow_reentry')(dt, event='a', event='b', event='c') as res
+from funnel_test_reentry where uid = 2 group by uid format JSONCompactEachRow;
+[2, 3]
+select uid, windowFunnel(100, 'strict_order', 'allow_reentry')(dt, event='a', event='b', event='c') as res
+from funnel_test_reentry where uid = 3 group by uid format JSONCompactEachRow;
+[3, 1]
+drop table funnel_test_reentry;

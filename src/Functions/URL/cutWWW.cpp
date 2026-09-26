@@ -22,15 +22,15 @@ struct ExtractWWW
         {
             if (pos != data)
             {
-                Pos tmp;
-                size_t protocol_length;
+                Pos tmp = nullptr;
+                size_t protocol_length = 0;
                 ExtractProtocol::execute(data, size, tmp, protocol_length);
 
                 if (pos != data + protocol_length + 1)
                     return;
             }
 
-            if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
+            if (end - pos < 2 || *pos != '/' || *(pos + 1) != '/')
                 return;
 
             const char *start_of_host = (pos += 2);
@@ -80,7 +80,7 @@ SELECT cutWWW('http://www.example.com/path?query=value#fragment');
     };
     FunctionDocumentation::IntroducedIn introduced_in_cutWWW = {1, 1};
     FunctionDocumentation::Category category_cutWWW = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_cutWWW = {description_cutWWW, syntax_cutWWW, arguments_cutWWW, returned_value_cutWWW, examples_cutWWW, introduced_in_cutWWW, category_cutWWW};
+    FunctionDocumentation documentation_cutWWW = {description_cutWWW, syntax_cutWWW, arguments_cutWWW, {}, returned_value_cutWWW, examples_cutWWW, introduced_in_cutWWW, category_cutWWW};
 
     factory.registerFunction<FunctionCutWWW>(documentation_cutWWW);
 }

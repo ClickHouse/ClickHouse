@@ -26,15 +26,15 @@ Returns the query string and fragment identifier of a URL.
 SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123#section');
         )",
         R"(
-┌─queryStringAnd⋯=123#section')─┐
-│ query=value&param=123#section │
-└───────────────────────────────┘
+┌─queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123#section')─┐
+│ query=value&param=123#section                                                       │
+└─────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_queryStringAndFragment = {1, 1};
     FunctionDocumentation::Category category_queryStringAndFragment = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_queryStringAndFragment = {description_queryStringAndFragment, syntax_queryStringAndFragment, arguments_queryStringAndFragment, returned_value_queryStringAndFragment, examples_queryStringAndFragment, introduced_in_queryStringAndFragment, category_queryStringAndFragment};
+    FunctionDocumentation documentation_queryStringAndFragment = {description_queryStringAndFragment, syntax_queryStringAndFragment, arguments_queryStringAndFragment, {}, returned_value_queryStringAndFragment, examples_queryStringAndFragment, introduced_in_queryStringAndFragment, category_queryStringAndFragment};
 
     factory.registerFunction<FunctionQueryStringAndFragment>(documentation_queryStringAndFragment);
 }

@@ -64,7 +64,7 @@ protected:
 
 /// Implementation of makeDate, makeDate32
 template <typename Traits>
-class FunctionMakeDate : public FunctionWithNumericParamsBase
+class FunctionMakeDate final : public FunctionWithNumericParamsBase
 {
 private:
     static constexpr std::array mandatory_argument_names_year_month_day = {"year", "month", "day"};
@@ -141,7 +141,7 @@ public:
                         day_num = days_since_epoch;
                 }
 
-                result_data[i] = day_num;
+                result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
             }
         }
         else
@@ -156,15 +156,20 @@ public:
 
                 Int32 day_num = 0;
 
-                if (year >= Traits::MIN_YEAR && year <= Traits::MAX_YEAR &&
-                    dayofyear >= 1 && dayofyear <= 365)
+                if (year >= Traits::MIN_YEAR && year <= Traits::MAX_YEAR && dayofyear >= 1)
                 {
-                    Int32 days_since_epoch = date_lut.makeDayNum(static_cast<Int16>(year), 1, 1) + static_cast<Int32>(dayofyear) - 1;
-                    if (days_since_epoch <= max_days_since_epoch)
-                        day_num = days_since_epoch;
+                    const auto year_int = static_cast<Int16>(year);
+                    const auto days_in_year = date_lut.calc_days_in_year(year_int) + (year_int == 0 ? 1 : 0);
+
+                    if (dayofyear <= static_cast<Float32>(days_in_year))
+                    {
+                        Int32 days_since_epoch = date_lut.makeDayNum(year_int, 1, 1) + static_cast<Int32>(dayofyear) - 1;
+                        if (days_since_epoch <= max_days_since_epoch)
+                            day_num = days_since_epoch;
+                    }
                 }
 
-                result_data[i] = day_num;
+                result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
             }
         }
 
@@ -174,7 +179,7 @@ public:
 
 /// Implementation of YYYYMMDDToDate, YYYYMMDDToDate32
 template<typename Traits>
-class FunctionYYYYYMMDDToDate : public FunctionWithNumericParamsBase
+class FunctionYYYYYMMDDToDate final : public FunctionWithNumericParamsBase
 {
 private:
     static constexpr std::array mandatory_argument_names = { "YYYYMMDD" };
@@ -233,7 +238,7 @@ public:
                     day_num = days_since_epoch;
             }
 
-            result_data[i] = day_num;
+            result_data[i] = static_cast<Traits::ReturnDataType::FieldType>(day_num);
         }
 
         return res_column;
@@ -257,8 +262,8 @@ struct Date32Traits
     static constexpr auto YYYYMMDDName = "YYYYMMDDToDate32";
     using ReturnDataType = DataTypeDate32;
 
-    static constexpr auto MIN_YEAR = 1900;
-    static constexpr auto MAX_YEAR = 2299;
+    static constexpr auto MIN_YEAR = 0;
+    static constexpr auto MAX_YEAR = 9999;
     static constexpr std::array MAX_DATE = {MAX_YEAR, 12, 31};
 };
 
@@ -289,12 +294,14 @@ protected:
 
     static Int64 minDateTime(const DateLUTImpl & lut)
     {
-        return lut.makeDateTime(DATE_LUT_MIN_YEAR - 1, 1, 1, 0, 0, 0);
+        /// DateLUTImpl::makeDateTime no longer clamps out-of-range years (DateTime64 supports the extended range),
+        /// so pin the clamp sentinels to explicit in-range dates to keep makeDateTime / makeDateTime64 behaviour.
+        return lut.makeDateTime(DATE_LUT_MIN_YEAR, 1, 1, 0, 0, 0);
     }
 
     static Int64 maxDateTime(const DateLUTImpl & lut)
     {
-        return lut.makeDateTime(DATE_LUT_MAX_YEAR + 1, 1, 1, 23, 59, 59);
+        return lut.makeDateTime(DATE_LUT_MAX_YEAR, 12, 31, 23, 59, 59);
     }
 
     std::string extractTimezone(const ColumnWithTypeAndName & timezone_argument) const
@@ -331,7 +338,7 @@ protected:
 };
 
 /// makeDateTime(year, month, day, hour, minute, second[, timezone])
-class FunctionMakeDateTime : public FunctionMakeDateTimeBase
+class FunctionMakeDateTime final : public FunctionMakeDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = {"timezone"};
@@ -412,7 +419,7 @@ public:
 };
 
 /// makeDateTime64(year, month, day, hour, minute, second[, fraction[, precision[, timezone]]])
-class FunctionMakeDateTime64 : public FunctionMakeDateTimeBase
+class FunctionMakeDateTime64 final : public FunctionMakeDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = {"fraction", "precision", "timezone"};
@@ -551,7 +558,7 @@ protected:
 };
 
 /// YYYYMMDDhhmmssToDateTime
-class FunctionYYYYMMDDhhmmssToDateTime : public FunctionYYYYMMDDhhmmssToDateTimeBase
+class FunctionYYYYMMDDhhmmssToDateTime final : public FunctionYYYYMMDDhhmmssToDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = { "timezone" };
@@ -630,7 +637,7 @@ public:
 };
 
 /// YYYYMMDDhhmmssToDateTime64
-class FunctionYYYYMMDDhhmmssToDateTime64 : public FunctionYYYYMMDDhhmmssToDateTimeBase
+class FunctionYYYYMMDDhhmmssToDateTime64 final : public FunctionYYYYMMDDhhmmssToDateTimeBase
 {
 private:
     static constexpr std::array optional_argument_names = { "precision", "timezone" };
@@ -701,7 +708,7 @@ public:
             const auto yyyymmdd = yyyymmddhhmmss / 1'000'000;
             const auto hhmmss = yyyymmddhhmmss % 1'000'000;
 
-            const auto decimal = float_date - yyyymmddhhmmss;
+            const auto decimal = float_date - static_cast<double>(yyyymmddhhmmss);
 
             const auto year = yyyymmdd / 10'000;
             const auto month = yyyymmdd / 100 % 100;
@@ -714,7 +721,7 @@ public:
 
             auto fraction = std::llround(decimal * fraction_pow);
 
-            result_data[i] = DecimalUtils::decimalFromComponents<DateTime64>(date_time, fraction, precision);
+            result_data[i] = DecimalUtils::dateTimeFromComponents(date_time, fraction, precision);
         }
 
         return res_column;
@@ -739,7 +746,7 @@ makeDate(year, day_of_year)
         {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
         {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
         {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
-        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float*", "Decimal"}}
+        {"day_of_year", "Day of the year (1-365, or 366 in leap years).", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_makeDate = {"Returns a `Date` value constructed from the provided arguments", {"Date"}};
     FunctionDocumentation::Examples examples_makeDate = {
@@ -762,7 +769,7 @@ SELECT makeDate(2023, 42) AS date;
     };
     FunctionDocumentation::IntroducedIn introduced_in_makeDate = {22, 6};
     FunctionDocumentation::Category category_makeDate = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_makeDate = {description_makeDate, syntax_makeDate, arguments_makeDate, returned_value_makeDate, examples_makeDate, introduced_in_makeDate, category_makeDate};
+    FunctionDocumentation documentation_makeDate = {description_makeDate, syntax_makeDate, arguments_makeDate, {}, returned_value_makeDate, examples_makeDate, introduced_in_makeDate, category_makeDate};
 
     factory.registerFunction<FunctionMakeDate<DateTraits>>(documentation_makeDate, FunctionFactory::Case::Insensitive);
 
@@ -780,7 +787,7 @@ makeDate32(year, day_of_year)
         {"year", "Year number.", {"(U)Int*", "Float*", "Decimal"}},
         {"month", "Month number (1-12).", {"(U)Int*", "Float*", "Decimal"}},
         {"day", "Day of the month (1-31).", {"(U)Int*", "Float*", "Decimal"}},
-        {"day_of_year", "Day of the year (1-365).", {"(U)Int*", "Float*", "Decimal"}}
+        {"day_of_year", "Day of the year (1-365, or 366 in leap years).", {"(U)Int*", "Float*", "Decimal"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_makeDate32 = {"Returns a `Date32` value constructed from the provided arguments", {"Date32"}};
     FunctionDocumentation::Examples examples_makeDate32 = {
@@ -803,7 +810,7 @@ SELECT makeDate(2023, 42) AS date;
     };
     FunctionDocumentation::IntroducedIn introduced_in_makeDate32 = {22, 6};
     FunctionDocumentation::Category category_makeDate32 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_makeDate32 = {description_makeDate32, syntax_makeDate32, arguments_makeDate32, returned_value_makeDate32, examples_makeDate32, introduced_in_makeDate32, category_makeDate32};
+    FunctionDocumentation documentation_makeDate32 = {description_makeDate32, syntax_makeDate32, arguments_makeDate32, {}, returned_value_makeDate32, examples_makeDate32, introduced_in_makeDate32, category_makeDate32};
 
     factory.registerFunction<FunctionMakeDate<Date32Traits>>(documentation_makeDate32, FunctionFactory::Case::Insensitive);
 
@@ -836,7 +843,7 @@ SELECT makeDateTime(2023, 2, 28, 17, 12, 33) AS DateTime;
     };
     FunctionDocumentation::IntroducedIn introduced_in_makeDateTime = {22, 6};
     FunctionDocumentation::Category category_makeDateTime = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_makeDateTime = {description_makeDateTime, syntax_makeDateTime, arguments_makeDateTime, returned_value_makeDateTime, examples_makeDateTime, introduced_in_makeDateTime, category_makeDateTime};
+    FunctionDocumentation documentation_makeDateTime = {description_makeDateTime, syntax_makeDateTime, arguments_makeDateTime, {}, returned_value_makeDateTime, examples_makeDateTime, introduced_in_makeDateTime, category_makeDateTime};
 
     factory.registerFunction<FunctionMakeDateTime>(documentation_makeDateTime, FunctionFactory::Case::Insensitive);
 
@@ -870,13 +877,13 @@ SELECT makeDateTime64(2023, 5, 15, 10, 30, 45, 779, 5);
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in_makeDateTime64 = {22, 6};
     FunctionDocumentation::Category category_makeDateTime64 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_makeDateTime64 = {description_makeDateTime64, syntax_makeDateTime64, arguments_makeDateTime64, returned_value_makeDateTime64, examples_makeDateTime64, introduced_in_makeDateTime64, category_makeDateTime64};
+    FunctionDocumentation documentation_makeDateTime64 = {description_makeDateTime64, syntax_makeDateTime64, arguments_makeDateTime64, {}, returned_value_makeDateTime64, examples_makeDateTime64, introduced_in_makeDateTime64, category_makeDateTime64};
 
     factory.registerFunction<FunctionMakeDateTime64>(documentation_makeDateTime64, FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_yyyymmddtodate = R"(
 Converts a number containing the year, month and day number to a `Date`.
-This function is the opposite of function [`toYYYYMMDD()`](/sql-reference/functions/date-time-functions#toYYYYMMDD).
+This function is the opposite of function [`toYYYYMMDD()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDD).
 The output is undefined if the input does not encode a valid Date value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddtodate = R"(
@@ -892,20 +899,20 @@ YYYYMMDDToDate(YYYYMMDD)
 SELECT YYYYMMDDToDate(20230911);
         )",
         R"(
-┌─toYYYYMMDD(20230911)─┐
-│           2023-09-11 │
-└──────────────────────┘
+┌─YYYYMMDDToDate(20230911)─┐
+│               2023-09-11 │
+└──────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddtodate = {23, 9};
     FunctionDocumentation::Category category_yyyymmddtodate = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_yyyymmddtodate = {description_yyyymmddtodate, syntax_yyyymmddtodate, arguments_yyyymmddtodate, returned_value_yyyymmddtodate, examples_yyyymmddtodate, introduced_in_yyyymmddtodate, category_yyyymmddtodate};
+    FunctionDocumentation documentation_yyyymmddtodate = {description_yyyymmddtodate, syntax_yyyymmddtodate, arguments_yyyymmddtodate, {}, returned_value_yyyymmddtodate, examples_yyyymmddtodate, introduced_in_yyyymmddtodate, category_yyyymmddtodate};
 
     factory.registerFunction<FunctionYYYYYMMDDToDate<DateTraits>>(documentation_yyyymmddtodate, FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_yyyymmddtodate32 = R"(
 Converts a number containing the year, month and day number to a `Date32`.
-This function is the opposite of function [`toYYYYMMDD()`](/sql-reference/functions/date-time-functions#toYYYYMMDD).
+This function is the opposite of function [`toYYYYMMDD()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDD).
 The output is undefined if the input does not encode a valid `Date32` value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddtodate32 = R"(
@@ -927,13 +934,13 @@ SELECT YYYYMMDDToDate32(20000507);
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddtodate32 = {23, 9};
     FunctionDocumentation::Category category_yyyymmddtodate32 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_yyyymmddtodate32 = {description_yyyymmddtodate32, syntax_yyyymmddtodate32, arguments_yyyymmddtodate32, returned_value_yyyymmddtodate32, examples_yyyymmddtodate32, introduced_in_yyyymmddtodate32, category_yyyymmddtodate32};
+    FunctionDocumentation documentation_yyyymmddtodate32 = {description_yyyymmddtodate32, syntax_yyyymmddtodate32, arguments_yyyymmddtodate32, {}, returned_value_yyyymmddtodate32, examples_yyyymmddtodate32, introduced_in_yyyymmddtodate32, category_yyyymmddtodate32};
 
     factory.registerFunction<FunctionYYYYYMMDDToDate<Date32Traits>>(documentation_yyyymmddtodate32, FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_yyyymmddhhmmsstodatetime = R"(
 Converts a number containing the year, month, day, hour, minute, and second to a `DateTime`.
-This function is the opposite of function [`toYYYYMMDDhhmmss()`](/sql-reference/functions/date-time-functions#toYYYYMMDDhhmmss).
+This function is the opposite of function [`toYYYYMMDDhhmmss()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDDhhmmss).
 The output is undefined if the input does not encode a valid `DateTime` value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddhhmmsstodatetime = R"(
@@ -947,23 +954,23 @@ YYYYMMDDhhmmssToDateTime(YYYYMMDDhhmmss[, timezone])
     FunctionDocumentation::ReturnedValue returned_value_yyyymmddhhmmsstodatetime = {"Returns a `DateTime` value from the provided arguments", {"DateTime"}};
     FunctionDocumentation::Examples examples_yyyymmddhhmmsstodatetime = {
         {"Example", R"(
-SELECT YYYYMMDDToDateTime(20230911131415);
+SELECT YYYYMMDDhhmmssToDateTime(20230911131415);
         )",
         R"(
-┌──────YYYYMMDDhhmmssToDateTime(20230911131415)─┐
-│                           2023-09-11 13:14:15 │
-└───────────────────────────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime(20230911131415)─┐
+│                      2023-09-11 13:14:15 │
+└──────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddhhmmsstodatetime = {23, 9};
     FunctionDocumentation::Category category_yyyymmddhhmmsstodatetime = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_yyyymmddhhmmsstodatetime = {description_yyyymmddhhmmsstodatetime, syntax_yyyymmddhhmmsstodatetime, arguments_yyyymmddhhmmsstodatetime, returned_value_yyyymmddhhmmsstodatetime, examples_yyyymmddhhmmsstodatetime, introduced_in_yyyymmddhhmmsstodatetime, category_yyyymmddhhmmsstodatetime};
+    FunctionDocumentation documentation_yyyymmddhhmmsstodatetime = {description_yyyymmddhhmmsstodatetime, syntax_yyyymmddhhmmsstodatetime, arguments_yyyymmddhhmmsstodatetime, {}, returned_value_yyyymmddhhmmsstodatetime, examples_yyyymmddhhmmsstodatetime, introduced_in_yyyymmddhhmmsstodatetime, category_yyyymmddhhmmsstodatetime};
 
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime>(documentation_yyyymmddhhmmsstodatetime, FunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_yyyymmddhhmmsstodatetime64 = R"(
 Converts a number containing the year, month, day, hour, minute, and second to a `DateTime64`.
-This function is the opposite of function [`toYYYYMMDDhhmmss()`](/sql-reference/functions/date-time-functions#toYYYYMMDDhhmmss).
+This function is the opposite of function [`toYYYYMMDDhhmmss()`](/reference/functions/regular-functions/date-time-functions#toYYYYMMDDhhmmss).
 The output is undefined if the input does not encode a valid `DateTime64` value.
     )";
     FunctionDocumentation::Syntax syntax_yyyymmddhhmmsstodatetime64 = R"(
@@ -981,14 +988,14 @@ YYYYMMDDhhmmssToDateTime64(YYYYMMDDhhmmss[, precision[, timezone]])
 SELECT YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul');
         )",
         R"(
-┌─YYYYMMDDhhmm⋯/Istanbul')─┐
-│  2023-09-11 13:14:15.000 │
-└──────────────────────────┘
+┌─YYYYMMDDhhmmssToDateTime64(20230911131415, 3, 'Asia/Istanbul')─┐
+│                                        2023-09-11 13:14:15.000 │
+└────────────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_yyyymmddhhmmsstodatetime64 = {23, 9};
     FunctionDocumentation::Category category_yyyymmddhhmmsstodatetime64 = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation_yyyymmddhhmmsstodatetime64 = {description_yyyymmddhhmmsstodatetime64, syntax_yyyymmddhhmmsstodatetime64, arguments_yyyymmddhhmmsstodatetime64, returned_value_yyyymmddhhmmsstodatetime64, examples_yyyymmddhhmmsstodatetime64, introduced_in_yyyymmddhhmmsstodatetime64, category_yyyymmddhhmmsstodatetime64};
+    FunctionDocumentation documentation_yyyymmddhhmmsstodatetime64 = {description_yyyymmddhhmmsstodatetime64, syntax_yyyymmddhhmmsstodatetime64, arguments_yyyymmddhhmmsstodatetime64, {}, returned_value_yyyymmddhhmmsstodatetime64, examples_yyyymmddhhmmsstodatetime64, introduced_in_yyyymmddhhmmsstodatetime64, category_yyyymmddhhmmsstodatetime64};
 
     factory.registerFunction<FunctionYYYYMMDDhhmmssToDateTime64>(documentation_yyyymmddhhmmsstodatetime64);
 }

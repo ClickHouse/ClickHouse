@@ -37,7 +37,17 @@ struct RowPolicy;
 using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 
 
-/** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
+/** Interprets the SELECT query with `TreeRewriter` and `ExpressionAnalyzer`, the query analysis that
+  * preceded the analyzer. Returns the stream of blocks with the results of the query before the
+  * `to_stage` stage.
+  *
+  * A query a user sends is never interpreted this way anymore - the analyzer
+  * (`InterpreterSelectQueryAnalyzer`) has been the only query analysis a query is given since v26.9,
+  * and the code that gave it the other one was removed in v26.10. What is left are the
+  * internal callers that compile a synthetic `SELECT` over a source they construct themselves, and do
+  * not go through query analysis at all: the projection machinery (`ProjectionDescription`,
+  * `optimizeUseAggregateProjection`) and the AST-based arms of `EXPLAIN SYNTAX` / `EXPLAIN AST`. Do not
+  * add a new caller; use `InterpreterSelectQueryAnalyzer`.
   */
 class InterpreterSelectQuery : public IInterpreterUnionOrSelectQuery
 {
@@ -123,8 +133,6 @@ public:
 
     RowPolicyFilterPtr getRowPolicyFilter() const;
 
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context) const override;
-
     static SortDescription getSortDescription(const ASTSelectQuery & query, const ContextPtr & context);
     static UInt64 getLimitForSorting(const ASTSelectQuery & query, const ContextPtr & context);
 
@@ -172,6 +180,9 @@ private:
     void addPrewhereAliasActions();
     void applyFiltersToPrewhereInAnalysis(ExpressionAnalysisResult & analysis) const;
     bool shouldMoveToPrewhere() const;
+    /// Whether the row policy filter can be handed to the storage's read(). Shared by the
+    /// push site and the apply-as-FilterStep fallback, which must stay exact complements.
+    bool shouldPushRowLevelFilterToStorage() const;
 
     Block getSampleBlockImpl();
 

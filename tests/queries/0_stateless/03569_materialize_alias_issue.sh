@@ -32,6 +32,6 @@ $CLICKHOUSE_CLIENT --query "ALTER TABLE customer_dbt_materialize MATERIALIZE COL
 
 $CLICKHOUSE_CLIENT --query "SYSTEM RESTART REPLICA customer_dbt_materialize"
 
-$CLICKHOUSE_CLIENT --query "CHECK TABLE customer_dbt_materialize"
+$CLICKHOUSE_CLIENT --query "CHECK TABLE customer_dbt_materialize SETTINGS check_query_single_value_result = 1"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS customer_dbt_materialize"

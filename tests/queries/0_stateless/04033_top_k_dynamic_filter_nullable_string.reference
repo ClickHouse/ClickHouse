@@ -1,0 +1,66 @@
+Nullable(UInt32) ASC
+2
+3
+4
+5
+6
+Nullable(UInt32) ASC NULLS FIRST
+\N
+\N
+\N
+\N
+\N
+Nullable(UInt32) DESC
+10000
+9999
+9998
+9997
+9996
+Nullable(UInt32) DESC NULLS FIRST
+\N
+\N
+\N
+\N
+\N
+String ASC
+000001
+000002
+000003
+000004
+000005
+String DESC
+010000
+009999
+009998
+009997
+009996
+Nullable(String) ASC
+000002
+000003
+000004
+000005
+000006
+Nullable(String) ASC NULLS FIRST
+\N
+\N
+\N
+\N
+\N
+Nullable(String) DESC
+010000
+009999
+009998
+009997
+009996
+String ASC COLLATE en
+Apple
+banana
+cherry
+Date
+elderberry
+String DESC COLLATE en
+Jackfruit
+icaco
+Honeydew
+grape
+Fig

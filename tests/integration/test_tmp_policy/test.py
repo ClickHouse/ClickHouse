@@ -10,7 +10,7 @@ cluster = ClickHouseCluster(__file__)
 node_local = cluster.add_instance(
     "node_local",
     main_configs=["configs/config.d/storage_configuration.xml"],
-    tmpfs=["/disk1:size=100M", "/disk2:size=100M"],
+    tmpfs=["/test_tmp_policy_disk1:size=100M", "/test_tmp_policy_disk2:size=100M"],
     stay_alive=True,
 )
 
@@ -41,18 +41,37 @@ def test_multiple_local_disk():
     }
 
     assert node_local.contains_in_log(
-        "Setting up .*disk1.* to store temporary data in it"
+        "Setting up temporary data storage at disk 'disk1'"
     )
     assert node_local.contains_in_log(
-        "Setting up .*disk2.* to store temporary data in it"
+        "Setting up temporary data storage at disk 'disk2'"
     )
 
     node_local.query(query, settings=settings)
     assert node_local.contains_in_log(
-        "Writing part of aggregation data into temporary file.*/disk1/"
+        "Writing part of aggregation data into temporary file.*/test_tmp_policy_disk1/"
     )
     assert node_local.contains_in_log(
-        "Writing part of aggregation data into temporary file.*/disk2/"
+        "Writing part of aggregation data into temporary file.*/test_tmp_policy_disk2/"
+    )
+
+
+def test_multiple_local_disk_distinct():
+    # The query has no `ORDER BY` / `GROUP BY`, so the temporary-file log lines below can only come from the
+    # external `DISTINCT` spill.
+    query = "SELECT count() FROM (SELECT DISTINCT number FROM numbers(1e7))"
+    settings = {
+        "max_bytes_ratio_before_external_distinct": 0,
+        "max_bytes_before_external_distinct": 1 << 20,
+        "max_untracked_memory": 0,
+    }
+
+    node_local.query(query, settings=settings)
+    assert node_local.contains_in_log(
+        "Writing part of data into temporary file.*/test_tmp_policy_disk1/"
+    )
+    assert node_local.contains_in_log(
+        "Writing part of data into temporary file.*/test_tmp_policy_disk2/"
     )
 
 
@@ -71,6 +90,22 @@ def test_remote_disk():
     )
     assert node_remote.contains_in_log(
         "Writing part of aggregation data into temporary file.*disk_s3_plain"
+    )
+
+
+def test_remote_disk_distinct():
+    # The query has no `ORDER BY` / `GROUP BY`, so the temporary-file log line below can only come from the
+    # external `DISTINCT` spill.
+    query = "SELECT count() FROM (SELECT DISTINCT number FROM numbers(1e7))"
+    settings = {
+        "max_bytes_ratio_before_external_distinct": 0,
+        "max_bytes_before_external_distinct": 1 << 20,
+        "max_untracked_memory": 0,
+    }
+
+    node_remote.query(query, settings=settings)
+    assert node_remote.contains_in_log(
+        "Writing part of data into temporary file.*disk_s3_plain"
     )
 
 

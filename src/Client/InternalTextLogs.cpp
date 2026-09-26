@@ -155,7 +155,7 @@ void InternalTextLogs::writeProfileEvents(const Block & block)
         writeCString(" (", wb);
         if (color)
             writeString(setColor(intHash64(type)), wb);
-        writeString(toString(ProfileEvents::TypeEnum->castToName(type)), wb);
+        writeString(fieldToString(ProfileEvents::TypeEnum->castToName(type)), wb);
         if (color)
             writeCString(resetColor(), wb);
         writeCString(")", wb);

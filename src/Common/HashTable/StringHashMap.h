@@ -135,7 +135,7 @@ public:
     TMapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;
-        bool inserted;
+        bool inserted = false;
         this->emplace(x, it, inserted);
         if (inserted)
             new (&it->getMapped()) TMapped();
@@ -175,15 +175,46 @@ public:
     template <typename Func>
     void ALWAYS_INLINE forEachMapped(Func && func)
     {
-        if (this->m0.size())
-            func(this->m0.zeroValue()->getMapped());
-        for (auto & v : this->m1)
-            func(v.getMapped());
-        for (auto & v : this->m2)
-            func(v.getMapped());
-        for (auto & v : this->m3)
-            func(v.getMapped());
-        for (auto & v : this->ms)
-            func(v.getMapped());
+        if constexpr (std::is_same_v<decltype(func(this->m0.zeroValue()->getMapped())), bool>)
+        {
+            if (this->m0.size())
+            {
+                if (!func(this->m0.zeroValue()->getMapped()))
+                    return;
+            }
+            for (auto & v : this->m1)
+            {
+                if (!func(v.getMapped()))
+                    break;
+            }
+            for (auto & v : this->m2)
+            {
+                if (!func(v.getMapped()))
+                    break;
+            }
+            for (auto & v : this->m3)
+            {
+                if (!func(v.getMapped()))
+                    break;
+            }
+            for (auto & v : this->ms)
+            {
+                if (!func(v.getMapped()))
+                    break;
+            }
+        }
+        else
+        {
+            if (this->m0.size())
+                func(this->m0.zeroValue()->getMapped());
+            for (auto & v : this->m1)
+                func(v.getMapped());
+            for (auto & v : this->m2)
+                func(v.getMapped());
+            for (auto & v : this->m3)
+                func(v.getMapped());
+            for (auto & v : this->ms)
+                func(v.getMapped());
+        }
     }
 };

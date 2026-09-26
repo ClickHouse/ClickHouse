@@ -21,8 +21,8 @@ Hypot avoids problems that occur when squaring very large or very small numbers.
 )";
     FunctionDocumentation::Syntax syntax = "hypot(x, y)";
     FunctionDocumentation::Arguments arguments = {
-        {"x", "The first cathetus of a right-angle triangle.", {"(U)Int*", "Float*", "Decimal*"}},
-        {"y", "The second cathetus of a right-angle triangle.", {"(U)Int*", "Float*", "Decimal*"}}
+        {"x", "The first cathetus of a right-angle triangle.", {"(U)Int*", "Float*", "BFloat16", "Decimal*"}},
+        {"y", "The second cathetus of a right-angle triangle.", {"(U)Int*", "Float*", "BFloat16", "Decimal*"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the length of the hypotenuse of a right-angle triangle.", {"Float64"}};
     FunctionDocumentation::Examples examples = {
@@ -30,7 +30,7 @@ Hypot avoids problems that occur when squaring very large or very small numbers.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionHypot>(documentation, FunctionFactory::Case::Insensitive);
 }

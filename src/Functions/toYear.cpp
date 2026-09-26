@@ -28,14 +28,14 @@ SELECT toYear(toDateTime('2023-04-21 10:20:30'))
         )",
         R"(
 ┌─toYear(toDateTime('2023-04-21 10:20:30'))─┐
-│                                     2023  │
+│                                      2023 │
 └───────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToYear>(documentation);
 

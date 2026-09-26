@@ -23,6 +23,14 @@ struct ExtractTopLevelDomain
 
         if (!host.empty())
         {
+            if constexpr (conform_rfc)
+            {
+                const auto * host_begin = host.data(); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                const auto * host_end_ptr = host_begin + host.size();
+                if (host_begin > data && host_begin[-1] == '[' && host_end_ptr < data + size && *host_end_ptr == ']')
+                    return;
+            }
+
             if (host[host.size() - 1] == '.')
                 host.remove_suffix(1);
 
@@ -57,7 +65,7 @@ REGISTER_FUNCTION(TopLevelDomain)
     FunctionDocumentation::Description description_topLevelDomain = R"(
 Extracts the the top-level domain from a URL.
 
-:::note
+<Note>
 The URL can be specified with or without a protocol.
 For example:
 
@@ -66,7 +74,7 @@ svn+ssh://some.svn-hosting.com:80/repo/trunk
 some.svn-hosting.com:80/repo/trunk
 https://clickhouse.com/time/
 ```
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_topLevelDomain = "topLevelDomain(url)";
     FunctionDocumentation::Arguments arguments_topLevelDomain = {
@@ -88,7 +96,7 @@ SELECT topLevelDomain('svn+ssh://www.some.svn-hosting.com:80/repo/trunk');
     };
     FunctionDocumentation::IntroducedIn introduced_in_topLevelDomain = {1, 1};
     FunctionDocumentation::Category category_topLevelDomain = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_topLevelDomain = {description_topLevelDomain, syntax_topLevelDomain, arguments_topLevelDomain, returned_value_topLevelDomain, examples_topLevelDomain, introduced_in_topLevelDomain, category_topLevelDomain};
+    FunctionDocumentation documentation_topLevelDomain = {description_topLevelDomain, syntax_topLevelDomain, arguments_topLevelDomain, {}, returned_value_topLevelDomain, examples_topLevelDomain, introduced_in_topLevelDomain, category_topLevelDomain};
 
     factory.registerFunction<FunctionTopLevelDomain>(documentation_topLevelDomain);
 
@@ -117,7 +125,7 @@ SELECT topLevelDomain('http://foo:foo%41bar@foo.com'), topLevelDomainRFC('http:/
     };
     FunctionDocumentation::IntroducedIn introduced_in_topLevelDomainRFC = {22, 10};
     FunctionDocumentation::Category category_topLevelDomainRFC = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_topLevelDomainRFC = {description_topLevelDomainRFC, syntax_topLevelDomainRFC, arguments_topLevelDomainRFC, returned_value_topLevelDomainRFC, examples_topLevelDomainRFC, introduced_in_topLevelDomainRFC, category_topLevelDomainRFC};
+    FunctionDocumentation documentation_topLevelDomainRFC = {description_topLevelDomainRFC, syntax_topLevelDomainRFC, arguments_topLevelDomainRFC, {}, returned_value_topLevelDomainRFC, examples_topLevelDomainRFC, introduced_in_topLevelDomainRFC, category_topLevelDomainRFC};
 
     factory.registerFunction<FunctionTopLevelDomainRFC>(documentation_topLevelDomainRFC);
 }

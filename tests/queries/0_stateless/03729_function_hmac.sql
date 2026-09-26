@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-openssl-fips
 -- The function HMAC requires openssl library disabled in fasttest builds.
 
 -- HMAC basic function, test it's case insensitivity and correctness with known values

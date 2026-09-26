@@ -1,0 +1,3 @@
+background_schedule_pool_log:
+    # duration > 0 will still filter enough for CI
+    duration_threshold_milliseconds: 1

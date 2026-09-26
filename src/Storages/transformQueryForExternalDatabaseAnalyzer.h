@@ -7,6 +7,6 @@
 namespace DB
 {
 
-ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const QueryTreeNodePtr & table_expression);
+ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const TableExpressionNodePtr & table_expression);
 
 }

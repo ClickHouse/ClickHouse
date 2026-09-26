@@ -24,7 +24,7 @@ enum class MergeType : uint8_t
 };
 
 /// Check parsed merge_type from raw int and get enum value.
-MergeType checkAndGetMergeType(UInt32 merge_type);
+MergeType checkAndGetMergeType(std::underlying_type_t<MergeType> merge_type);
 
 /// Check this merge assigned with TTL
 bool isTTLMergeType(MergeType merge_type);

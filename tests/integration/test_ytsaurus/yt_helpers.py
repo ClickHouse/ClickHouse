@@ -132,7 +132,7 @@ class YTsaurusCLI:
 
         if dynamic:
             mount_table_cmd = f"yt mount-table {table_path}"
-            self.exec(mount_table_cmd, 0, time_to_sleep)
+            self.exec(mount_table_cmd, retry_count, time_to_sleep)
 
         if data:
             self.write_table(table_path, data, dynamic)

@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
-#include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -37,7 +36,8 @@ public:
         const Names & column_names_,
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
-        const ContextPtr & context_);
+        const ContextPtr & context_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
 
     ~MergeTreeReadPool() override = default;
 
@@ -88,6 +88,8 @@ private:
         explicit BackoffState(size_t threads) : current_threads(threads) {}
     };
 
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+
     const BackoffSettings backoff_settings;
     BackoffState backoff_state TSA_GUARDED_BY(mutex);
 
@@ -95,7 +97,7 @@ private:
     {
         struct PartIndexAndRange
         {
-            size_t part_idx;
+            size_t part_idx{};
             MarkRanges ranges;
         };
 
@@ -105,6 +107,18 @@ private:
 
     std::vector<ThreadTask> threads_tasks TSA_GUARDED_BY(mutex);
     std::set<size_t> remaining_thread_tasks TSA_GUARDED_BY(mutex);
+
+    /// Cuts the next portion of marks to read from the per-thread queues (possibly stealing from
+    /// another thread's queue when the own one is exhausted). Returns false if there is no more work.
+    /// Outputs the queue and the intended task size so that the caller can continue cutting from
+    /// the same part with cutMoreRangesToRead when the ranges refiner drops a part of the cut.
+    bool cutRangesToRead(size_t task_idx, size_t & part_idx, size_t & thread_idx, size_t & need_marks, MarkRanges & ranges_to_get_from_part);
+
+    /// Cuts up to need_marks more marks of the same part, or returns false if the part
+    /// is not on top of the given thread's queue anymore.
+    bool cutMoreRangesToRead(size_t thread_idx, size_t part_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part);
+
+    void cutFromThreadTask(ThreadTask & thread_tasks, size_t thread_idx, size_t need_marks, MarkRanges & ranges_to_get_from_part) TSA_REQUIRES(mutex);
 
     LoggerPtr log = getLogger("MergeTreeReadPool");
 };

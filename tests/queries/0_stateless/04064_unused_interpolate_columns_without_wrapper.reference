@@ -1,0 +1,88 @@
+Expression ((Project names + (Projection + (Change column names to column identifiers + Project names))))
+Header: group_id Int64
+  Filling
+  Header: intDiv(__table2.open_time, 10_UInt8) Int64
+    Sorting (Sorting for ORDER BY)
+    Header: intDiv(__table2.open_time, 10_UInt8) Int64
+      Expression ((Before ORDER BY + Projection))
+      Header: intDiv(__table2.open_time, 10_UInt8) Int64
+        Aggregating
+        Header: intDiv(__table2.open_time, 10_UInt8) Int64
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+          Header: intDiv(__table2.open_time, 10_UInt8) Int64
+            ReadFromMergeTree (default.foo)
+            Header: open_time Int64
+---
+Expression ((Project names + (Projection + (Change column names to column identifiers + Project names))))
+Header: group_id Int64
+        open Int8
+  Filling
+  Header: intDiv(__table2.open_time, 10_UInt8) Int64
+          argMin(__table2.open_price, __table2.open_time) Int8
+          materialize(intDiv(__table2.open_time, 10_UInt8)) Int64
+          open Int8
+    Expression (Before INTERPOLATE)
+    Header: intDiv(__table2.open_time, 10_UInt8) Int64
+            argMin(__table2.open_price, __table2.open_time) Int8
+            materialize(intDiv(__table2.open_time, 10_UInt8)) Int64
+            open Int8
+      Sorting (Sorting for ORDER BY)
+      Header: intDiv(__table2.open_time, 10_UInt8) Int64
+              argMin(__table2.open_price, __table2.open_time) Int8
+              materialize(intDiv(__table2.open_time, 10_UInt8)) Int64
+        Expression ((Before ORDER BY + Projection))
+        Header: intDiv(__table2.open_time, 10_UInt8) Int64
+                argMin(__table2.open_price, __table2.open_time) Int8
+                materialize(intDiv(__table2.open_time, 10_UInt8)) Int64
+          Aggregating
+          Header: intDiv(__table2.open_time, 10_UInt8) Int64
+                  argMin(__table2.open_price, __table2.open_time) Int8
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+            Header: intDiv(__table2.open_time, 10_UInt8) Int64
+                    __table2.open_price Int8
+                    __table2.open_time Int64
+              ReadFromMergeTree (default.foo)
+              Header: open_time Int64
+                      open_price Int8
+---
+Expression ((Project names + (Projection + (Change column names to column identifiers + Project names))))
+Header: group_id Int64
+        open Int8
+        close Int8
+  Filling
+  Header: intDiv(__table2.open_time, 10_UInt8) Int64
+          argMin(__table2.open_price, __table2.open_time) Int8
+          argMax(__table2.close_price, __table2.open_time) Int8
+          materialize(intDiv(__table2.open_time, 10_UInt8)) Int64
+          open Int8
+          close Int8
+    Expression (Before INTERPOLATE)
+    Header: intDiv(__table2.open_time, 10_UInt8) Int64
+            argMin(__table2.open_price, __table2.open_time) Int8
+            argMax(__table2.close_price, __table2.open_time) Int8
+            materialize(intDiv(__table2.open_time, 10_UInt8)) Int64
+            open Int8
+            close Int8
+      Sorting (Sorting for ORDER BY)
+      Header: intDiv(__table2.open_time, 10_UInt8) Int64
+              argMin(__table2.open_price, __table2.open_time) Int8
+              argMax(__table2.close_price, __table2.open_time) Int8
+              materialize(intDiv(__table2.open_time, 10_UInt8)) Int64
+        Expression ((Before ORDER BY + Projection))
+        Header: intDiv(__table2.open_time, 10_UInt8) Int64
+                argMin(__table2.open_price, __table2.open_time) Int8
+                argMax(__table2.close_price, __table2.open_time) Int8
+                materialize(intDiv(__table2.open_time, 10_UInt8)) Int64
+          Aggregating
+          Header: intDiv(__table2.open_time, 10_UInt8) Int64
+                  argMin(__table2.open_price, __table2.open_time) Int8
+                  argMax(__table2.close_price, __table2.open_time) Int8
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+            Header: intDiv(__table2.open_time, 10_UInt8) Int64
+                    __table2.open_price Int8
+                    __table2.open_time Int64
+                    __table2.close_price Int8
+              ReadFromMergeTree (default.foo)
+              Header: open_time Int64
+                      open_price Int8
+                      close_price Int8

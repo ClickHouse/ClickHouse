@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# Pin date_time_input_format to 'basic' so Date/DateTime/DateTime64 deserialization
+# rejects trailing garbage in the strict way this test verifies.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --date_time_input_format=basic"
+
 DATA_FILE=$USER_FILES_PATH/${CLICKHOUSE_DATABASE}
 FILE=${CLICKHOUSE_DATABASE}
 

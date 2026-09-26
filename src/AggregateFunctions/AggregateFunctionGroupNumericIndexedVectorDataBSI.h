@@ -4,6 +4,9 @@
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBuffer.h>
 #include <Common/JSONBuilder.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <base/demangle.h>
 
@@ -108,7 +111,7 @@ private:
      * data_array stores all indexes and values whose value is not 0 using roaringBitmap and Bit-Sliced Index.
      */
     std::shared_ptr<Roaring> zero_indexes = std::make_shared<Roaring>();
-    std::vector<std::shared_ptr<Roaring>> data_array;
+    VectorWithMemoryTracking<std::shared_ptr<Roaring>> data_array;
 
     /// The only way NaN and Inf values can enter BSI is if user adds them as they cannot appear in BSI by any permitted operation.
     /// Do not allow user to do this as it achieves nothing and is very likely by mistake.
@@ -295,7 +298,33 @@ public:
           * - When value is a Float32/Float64, fraction_bit_num indicates how many bits are used to represent the decimal, Because the
           *   maximum value of total_bit_num(integer_bit_num + fraction_bit_num) is 64, overflow may occur.
           */
-        Int64 scaled_value = Int64(value * (1ULL << fraction_bit_num));
+        Int64 scaled_value = 0;
+        if constexpr (std::is_same_v<ValueType, UInt64>)
+        {
+            if (value > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Value {} does not fit in Int64. It should, even when using UInt64.", value);
+            scaled_value = static_cast<Int64>(value);
+        }
+        else if constexpr (std::is_floating_point_v<ValueType>)
+        {
+            UInt64 scaling = 1ULL << fraction_bit_num;
+            auto scaled = static_cast<Float64>(value * static_cast<ValueType>(scaling));
+            /// 2^63 is exactly representable in Float64; Int64 range is [-2^63, 2^63 - 1].
+            constexpr Float64 int64_upper = static_cast<Float64>(1ULL << 63);
+            if (scaled >= int64_upper || scaled < -int64_upper)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Value {} is out of range for BSI with integer_bit_num={} and fraction_bit_num={}",
+                    Float64(value),
+                    integer_bit_num,
+                    fraction_bit_num);
+            scaled_value = static_cast<Int64>(value * static_cast<ValueType>(scaling));
+        }
+        else
+        {
+            scaled_value = static_cast<Int64>(value * static_cast<UInt64>(1ULL << fraction_bit_num));
+        }
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             if (scaled_value & (1ULL << i))
@@ -321,6 +350,17 @@ public:
         auto bm = getAllNonZeroIndex();
         bm->rb_or(*zero_indexes);
         return bm;
+    }
+
+    /// Whether any bit slice holds the index, that is, whether its value is not zero. `lookup` is the
+    /// index mapped through `make_unsigned`, the domain in which `rb_contains` compares it.
+    bool hasNonZeroValue(UInt64 lookup) const
+    {
+        const UInt32 total_bit_num = getTotalBitNum();
+        for (size_t i = 0; i < total_bit_num; ++i)
+            if (getDataArrayAt(i)->rb_contains(lookup))
+                return true;
+        return false;
     }
 
     void deepCopyFrom(const BSINumericIndexedVector & rhs)
@@ -462,6 +502,19 @@ public:
      */
     void pointwiseAddInplace(const BSINumericIndexedVector & rhs)
     {
+        /// Self-addition requires a deep copy because the full adder logic below
+        /// performs in-place XOR on shared bitmaps (`sum->rb_xor(*addend)` where
+        /// `sum` and `addend` alias the same Roaring bitmap via `shallowCopyFrom`),
+        /// which triggers an assertion in CRoaring (`assert(x1 != x2)`) and would
+        /// produce incorrect results (A XOR A = 0) in release builds.
+        if (this == &rhs)
+        {
+            BSINumericIndexedVector copy;
+            copy.deepCopyFrom(rhs);
+            pointwiseAddInplace(copy);
+            return;
+        }
+
         if (isEmpty())
         {
             deepCopyFrom(rhs);
@@ -538,6 +591,16 @@ public:
      */
     void pointwiseSubtractInplace(const BSINumericIndexedVector & rhs)
     {
+        /// Self-subtraction requires a deep copy for the same reason as
+        /// `pointwiseAddInplace`: in-place XOR on aliased bitmaps is undefined.
+        if (this == &rhs)
+        {
+            BSINumericIndexedVector copy;
+            copy.deepCopyFrom(rhs);
+            pointwiseSubtractInplace(copy);
+            return;
+        }
+
         auto total_indexes = getAllIndex();
         total_indexes->rb_or(*rhs.getAllIndex());
 
@@ -597,6 +660,21 @@ public:
         if (total_bit_num == 0)
             return false;
 
+        /// The value 1 is represented by the single set bit at index `fraction_bit_num`
+        /// (the lowest integer bit). When `integer_bit_num == 0` that bit lies outside
+        /// `data_array` (which has `total_bit_num` entries), so the vector cannot represent
+        /// the value 1, and `getDataArrayAt(fraction_bit_num)` in `pointwiseMultiply` would
+        /// read out of bounds. Such a vector is therefore never all-ones.
+        if (fraction_bit_num >= total_bit_num)
+            return false;
+
+        /// An empty vector carries no values, so it is not all-ones. The value 1 is the single
+        /// bit at index `fraction_bit_num`, hence at least one index must carry that bit. Without
+        /// this check an empty (but initialized) vector would be misclassified as all-ones and the
+        /// fast path in `pointwiseMultiply` would drop the other operand instead of zeroing it.
+        if (getDataArrayAt(fraction_bit_num)->size() == 0)
+            return false;
+
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             if (i == fraction_bit_num)
@@ -623,17 +701,31 @@ public:
         res.zero_indexes->rb_and(bm);
     }
 
+    /// Records an explicit zero for every index the result carries without a non-zero value. Both
+    /// operands keep all of their indexes: `pointwiseRawBinaryOperate` computes only the intersection
+    /// of the non-zero indexes and treats a missing value as zero, while the all-ones fast path uses
+    /// `andBitmap`, which keeps only the intersection. So the indexes left over, together with those
+    /// whose result came out as zero, are explicit zeros - the rule `pointwiseAddInplace` applies as
+    /// well. `res` already holds the (non-zero) results.
+    static void addUnionZeroIndexes(const BSINumericIndexedVector & lhs, const BSINumericIndexedVector & rhs, BSINumericIndexedVector & res)
+    {
+        auto result_zero_indexes = lhs.getAllIndex();
+        result_zero_indexes->rb_or(*rhs.getAllIndex());
+        result_zero_indexes->rb_andnot(*res.getAllNonZeroIndex());
+        res.zero_indexes = result_zero_indexes;
+    }
+
     /// Set Roaring containers to RoaringBitmapWithSmallSet
     static inline void setContainers(
-        std::vector<roaring::internal::container_t *> & ctns,
-        std::vector<UInt8> & types,
+        VectorWithMemoryTracking<roaring::internal::container_t *> & ctns,
+        VectorWithMemoryTracking<UInt8> & types,
         UInt32 container_id,
         BSINumericIndexedVector & vector)
     {
         const UInt32 total_bit_num = vector.getTotalBitNum();
         for (size_t i = 0; i < total_bit_num; ++i)
         {
-            vector.getDataArrayAt(i)->ra_set_container(ctns[i], container_id, types[i]);
+            vector.getDataArrayAt(i)->ra_set_container(ctns[i], static_cast<UInt16>(container_id), types[i]);
         }
     }
 
@@ -673,8 +765,8 @@ public:
                 length,
                 static_cast<UInt32>(roaring::internal::DEFAULT_MAX_SIZE));
 
-        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
-        std::vector<UInt8> types(total_bit_num);
+        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
+        VectorWithMemoryTracking<UInt8> types(total_bit_num);
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             ctns[i] = roaring::internal::array_container_create_given_capacity(length);
@@ -684,7 +776,7 @@ public:
         UInt64 mask = 0xFFFFFFFFFFFFFFFFULL;
         if (total_bit_num < 64)
         {
-            mask = (1ULL << (total_bit_num)) - 1;
+            mask = (1ULL << total_bit_num) - 1;
         }
         Float64 ratio = static_cast<Float64>(1ULL << vector.fraction_bit_num);
         for (size_t i = 0; i < length; ++i)
@@ -694,9 +786,9 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        std::vector<std::vector<UInt16>> bit_buffer(64, std::vector<UInt16>(k_batch_size, 0));
+        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt16>> bit_buffer(64, VectorWithMemoryTracking<UInt16>(k_batch_size, 0));
         /// number of keys in each bitmap of vector.
-        std::vector<UInt16> cnt(64);
+        VectorWithMemoryTracking<UInt16> cnt(64);
 
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
@@ -711,7 +803,7 @@ public:
                     UInt64 t = w & (~w + 1);
                     /// on x64, should compile to TZCNT
                     int i = __builtin_ctzll(w);
-                    bit_buffer[i][cnt[i]++] = indexes[offset + j];
+                    bit_buffer[i][cnt[i]++] = static_cast<UInt16>(indexes[offset + j]);
                     w ^= t;
                 }
             }
@@ -740,7 +832,7 @@ public:
         UInt64 mask = 0xFFFFFFFFFFFFFFFFULL;
         if (total_bit_num < 64)
         {
-            mask = (1ULL << (total_bit_num)) - 1;
+            mask = (1ULL << total_bit_num) - 1;
         }
         Float64 ratio = static_cast<Float64>(1ULL << fraction_bit_num);
         UInt32 number_of_1s = 0;
@@ -781,8 +873,8 @@ public:
 
         const UInt32 total_bit_num = vector.getTotalBitNum();
 
-        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
-        std::vector<UInt8> types(total_bit_num);
+        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
+        VectorWithMemoryTracking<UInt8> types(total_bit_num);
 
         for (size_t i = 0; i < total_bit_num; ++i)
         {
@@ -791,7 +883,7 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        std::vector<UInt32> bit_buffer(64 * k_batch_size, 0);
+        VectorWithMemoryTracking<UInt32> bit_buffer(64 * k_batch_size, 0);
         size_t cnt = 0;
         constexpr UInt64 shift = 6;
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
@@ -808,7 +900,7 @@ public:
             for (size_t i = 0; i < cnt; ++i)
             {
                 UInt64 val = bit_buffer[i];
-                UInt64 row;
+                UInt64 row = 0;
                 UInt64 col = val & 0x3f;
 #if defined(__BMI2__) && !defined(__e2k__)
                 ASM_SHIFT_RIGHT(val, shift, row);
@@ -836,7 +928,7 @@ public:
                     continue;
                 }
                 auto * ctn = reinterpret_cast<roaring::internal::bitset_container_t *>(ctns[col]);
-                roaring::internal::bitset_container_set(ctn, index);
+                roaring::internal::bitset_container_set(ctn, static_cast<UInt16>(index));
             }
         }
 
@@ -865,8 +957,8 @@ public:
 
         const UInt32 total_bit_num = vector.getTotalBitNum();
 
-        std::vector<roaring::internal::container_t *> ctns(total_bit_num);
-        std::vector<UInt8> types(total_bit_num);
+        VectorWithMemoryTracking<roaring::internal::container_t *> ctns(total_bit_num);
+        VectorWithMemoryTracking<UInt8> types(total_bit_num);
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             ctns[i] = array_container_create_given_capacity(roaring::internal::DEFAULT_MAX_SIZE);
@@ -874,8 +966,8 @@ public:
         }
 
         constexpr UInt32 k_batch_size = 256;
-        std::vector<std::vector<UInt16>> bit_buffer(total_bit_num, std::vector<UInt16>(k_batch_size, 0));
-        std::vector<UInt16> cnt(total_bit_num);
+        VectorWithMemoryTracking<VectorWithMemoryTracking<UInt16>> bit_buffer(total_bit_num, VectorWithMemoryTracking<UInt16>(k_batch_size, 0));
+        VectorWithMemoryTracking<UInt16> cnt(total_bit_num);
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
             memset(cnt.data(), 0, sizeof(UInt16) * total_bit_num);
@@ -883,7 +975,7 @@ public:
             for (UInt32 j = 0; j < len; ++j)
             {
                 UInt64 w = buffer[offset + j];
-                UInt16 key = indexes[offset + j];
+                UInt16 key = static_cast<UInt16>(indexes[offset + j]);
                 while (w)
                 {
                     /// on x64, should compile to BLSI (careful: the Intel compiler seems to fail)
@@ -923,7 +1015,7 @@ public:
                 constexpr UInt64 shift = 6;
                 for (int j = 0; j < cnt[i]; ++j)
                 {
-                    UInt64 tmp_offset;
+                    UInt64 tmp_offset = 0;
                     UInt64 p = bit_buffer[i][j];
 #if defined(__BMI2__) && !defined(__e2k__)
                     ASM_SHIFT_RIGHT(p, shift, tmp_offset);
@@ -991,7 +1083,7 @@ public:
     {
         PaddedPODArray<UInt64> buffer(65536);
         PaddedPODArray<UInt32> bit_buffer(65536);
-        UInt16 mask_container_cardinality = mask->ra_get_container_cardinality(container_id);
+        UInt16 mask_container_cardinality = mask->ra_get_container_cardinality(static_cast<UInt16>(container_id));
         if (mask_container_cardinality == 0)
             return 0;
         memset(buffer.data(), 0, buffer.size() * sizeof(UInt64));
@@ -1000,7 +1092,7 @@ public:
         for (size_t i = 0; i < total_bit_num; ++i)
         {
             auto & lhs_bm = vector.getDataArrayAt(i);
-            auto bit_cnt = lhs_bm->container_and_to_uint32_array(mask.get(), container_id, 0, &bit_buffer);
+            auto bit_cnt = lhs_bm->container_and_to_uint32_array(mask.get(), static_cast<UInt16>(container_id), 0, &bit_buffer);
             for (size_t j = 0; j < bit_cnt; ++j)
             {
                 if (bit_buffer[j] >= 65536)
@@ -1008,7 +1100,7 @@ public:
                 buffer[bit_buffer[j]] |= (1ULL << i);
             }
         }
-        auto result_cnt = mask->container_to_uint32_array(container_id, 0, bit_buffer);
+        auto result_cnt = mask->container_to_uint32_array(static_cast<UInt16>(container_id), 0, bit_buffer);
         if (vector.isValueTypeSigned() && total_bit_num < 64)
         {
             UInt64 bit_mask = ~((1ULL << total_bit_num) - 1);
@@ -1022,7 +1114,7 @@ public:
                     buffer[bit_buffer[i]] |= bit_mask;
                 }
                 output[i] = static_cast<Float64>(static_cast<ValueType>(static_cast<Int64>(buffer[bit_buffer[i]])))
-                    / (1ULL << vector.fraction_bit_num);
+                    / static_cast<Float64>(1ULL << vector.fraction_bit_num);
             }
         }
         else
@@ -1032,7 +1124,7 @@ public:
                 if (bit_buffer[i] >= 65536)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "bit_buffer index out of bounds. bit_buffer[i]: {}", bit_buffer[i]);
                 output[i] = static_cast<Float64>(static_cast<ValueType>(static_cast<Int64>(buffer[bit_buffer[i]])))
-                    / (1ULL << vector.fraction_bit_num);
+                    / static_cast<Float64>(1ULL << vector.fraction_bit_num);
             }
         }
         return result_cnt;
@@ -1058,7 +1150,7 @@ public:
         PaddedPODArray<Float64> rhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        std::set<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
+        SetWithMemoryTracking<UInt16> container_ids = and_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = and_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
@@ -1095,12 +1187,11 @@ public:
             }
             toVector(indexes, res_values, indexes_size, container_id, res);
         }
-        /// zero indexes;
-        res.zero_indexes = std::make_shared<Roaring>();
-        res.zero_indexes->rb_or(*lhs_non_zero_indexes);
-        res.zero_indexes->rb_xor(*rhs_non_zero_indexes);
-        res.zero_indexes->rb_or(*lhs.zero_indexes);
-        res.zero_indexes->rb_or(*rhs.zero_indexes);
+        /// Deriving the zero indexes from the result, rather than from the indexes the operands
+        /// disagree on, also keeps an index whose result came out as zero - `1 / 2` in an integer
+        /// type, or `UInt8(128) * 2`, which wraps around. Such an index is present with a value of
+        /// zero, and dropping it made it indistinguishable from an index that was never there.
+        addUnionZeroIndexes(lhs, rhs, res);
     }
 
     /** Performs pointwise multiplication and division of the original vector and a scalar.
@@ -1116,13 +1207,23 @@ public:
         }
         checkValidValue(rhs);
 
+        /// The Float64 conversion below silently clamps to UInt64::max via `float64ToUInt64`.
+        /// Reject UInt64 above Int64::max to stay consistent with `initializeFromVectorAndValue`
+        /// and the other scalar pointwise ops (see PR #102546).
+        if constexpr (std::is_same_v<ValueType, UInt64>)
+        {
+            if (rhs > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Value {} does not fit in Int64. It should, even when using UInt64.", rhs);
+        }
+
         auto lhs_non_zero_indexes = lhs.getAllNonZeroIndex();
 
         PaddedPODArray<UInt32> indexes(65536);
         PaddedPODArray<Float64> lhs_values(65536);
         PaddedPODArray<Float64> res_values(65536);
 
-        std::set<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
+        SetWithMemoryTracking<UInt16> container_ids = lhs_non_zero_indexes->ra_get_all_container_ids();
         for (const auto & container_id : container_ids)
         {
             UInt32 indexes_size = lhs_non_zero_indexes->container_to_uint32_array(container_id, container_id << 16, indexes);
@@ -1141,13 +1242,13 @@ public:
                 case multiply_op_code:
                     for (size_t i = 0; i < indexes_size; ++i)
                     {
-                        res_values[i] = lhs_values[i] * rhs;
+                        res_values[i] = lhs_values[i] * static_cast<Float64>(rhs);
                     }
                     break;
                 case divide_op_code:
                     for (size_t i = 0; i < indexes_size; ++i)
                     {
-                        res_values[i] = lhs_values[i] / rhs;
+                        res_values[i] = lhs_values[i] / static_cast<Float64>(rhs);
                     }
                     break;
                 /// If you want to add other operations such as subtraction, please pay attention to the handling of 0.
@@ -1156,7 +1257,13 @@ public:
             }
             toVector(indexes, res_values, indexes_size, container_id, res);
         }
-        res.zero_indexes->merge(*lhs.zero_indexes);
+
+        /// Every index of `lhs` is still present in the result, so the ones whose result came out as
+        /// zero - `1 / 2` in an integer type, or `UInt8(128) * 2`, which wraps around - are explicit
+        /// zeros and not indexes that dropped out.
+        auto result_zero_indexes = lhs.getAllIndex();
+        result_zero_indexes->rb_andnot(*res.getAllNonZeroIndex());
+        res.zero_indexes = result_zero_indexes;
     }
 
     /** Performs pointwise multiplication of two original vectors.
@@ -1167,11 +1274,13 @@ public:
         if (lhs.allValuesEqualOne())
         {
             rhs.andBitmap(*lhs.getDataArrayAt(lhs.fraction_bit_num), res);
+            addUnionZeroIndexes(lhs, rhs, res);
             return;
         }
         else if (rhs.allValuesEqualOne())
         {
-            lhs.andBitmap(*rhs.getDataArrayAt(lhs.fraction_bit_num), res);
+            lhs.andBitmap(*rhs.getDataArrayAt(rhs.fraction_bit_num), res);
+            addUnionZeroIndexes(lhs, rhs, res);
             return;
         }
         UInt32 max_integer_bit_num = std::max(lhs.integer_bit_num, rhs.integer_bit_num);
@@ -1203,7 +1312,13 @@ public:
     {
         if (rhs.allValuesEqualOne())
         {
-            res.deepCopyFrom(lhs);
+            /// Dividing by one is the identity, but only where `rhs` actually holds a one: a missing
+            /// divisor behaves as a zero and the general path then gives zero, so copying `lhs` whole
+            /// answered with its own value on those indexes. Keep `lhs` on the indexes `rhs` carries
+            /// and record the rest as explicit zeros, the way the all-ones fast path of
+            /// `pointwiseMultiply` just above does.
+            lhs.andBitmap(*rhs.getDataArrayAt(rhs.fraction_bit_num), res);
+            addUnionZeroIndexes(lhs, rhs, res);
             return;
         }
         UInt32 max_integer_bit_num = std::max(lhs.integer_bit_num, rhs.integer_bit_num);
@@ -1270,26 +1385,41 @@ public:
 
         res_bm = lhs.getAllNonZeroIndex();
 
-        UInt64 long_value = UInt64(std::floor(rhs));
-        UInt64 decimal_value = static_cast<UInt64>((rhs - long_value) * (1ULL << lhs.fraction_bit_num));
+        /// Convert the scalar to the same fixed-point two's complement representation
+        /// used by initializeFromVectorAndValue, then compare bit by bit.
+        UInt64 scaling = 1ULL << lhs.fraction_bit_num;
 
-        size_t i = 0;
-        for (; i < lhs.fraction_bit_num; ++i)
+        Int64 scaled_value = 0;
+        if constexpr (std::is_floating_point_v<ValueType>)
         {
-            if ((decimal_value & 1L) == 1)
-            {
-                res_bm->rb_and(*lhs.getDataArrayAt(i));
-            }
-            else
-            {
-                res_bm->rb_andnot(*lhs.getDataArrayAt(i));
-            }
-            decimal_value >>= 1;
+            auto scaled = static_cast<Float64>(rhs * static_cast<ValueType>(scaling));
+            /// 2^63 is exactly representable in Float64; Int64 range is [-2^63, 2^63 - 1].
+            constexpr Float64 int64_upper = static_cast<Float64>(1ULL << 63);
+            if (scaled >= int64_upper || scaled < -int64_upper)
+                return std::make_shared<Roaring>(); /// Out of representable range, no element can match.
+            scaled_value = static_cast<Int64>(rhs * static_cast<ValueType>(scaling));
         }
+        else if constexpr (std::is_same_v<ValueType, UInt64>)
+        {
+            if (rhs > std::numeric_limits<Int64>::max())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Value {} does not fit in Int64. It should, even when using UInt64.", rhs);
+            scaled_value = static_cast<Int64>(rhs);
+        }
+        else
+        {
+            scaled_value = static_cast<Int64>(rhs * scaling);
+        }
+
+        UInt64 bit_pattern = static_cast<UInt64>(scaled_value);
+
         const UInt32 total_bit_num = lhs.getTotalBitNum();
-        for (; i < total_bit_num; ++i)
+        if (total_bit_num == 0)
+            return std::make_shared<Roaring>();
+
+        for (size_t i = 0; i < total_bit_num; ++i)
         {
-            if ((long_value & 1L) == 1)
+            if ((bit_pattern >> i) & 1)
             {
                 res_bm->rb_and(*lhs.getDataArrayAt(i));
             }
@@ -1297,13 +1427,22 @@ public:
             {
                 res_bm->rb_andnot(*lhs.getDataArrayAt(i));
             }
-            long_value >>= 1;
         }
-        if (long_value != 0)
+
+        /// Check if the value has significant bits beyond what BSI stores.
+        /// For signed two's complement, the remaining upper bits must all match the sign bit.
+        if (total_bit_num < 64)
         {
-            Roaring for_clear;
-            res_bm->rb_and(for_clear);
+            UInt64 remaining = bit_pattern >> total_bit_num;
+            bool sign_bit = (bit_pattern >> (total_bit_num - 1)) & 1;
+            UInt64 expected = sign_bit ? (UINT64_MAX >> total_bit_num) : 0;
+            if (remaining != expected)
+            {
+                Roaring for_clear;
+                res_bm->rb_and(for_clear);
+            }
         }
+
         return res_bm;
     }
 
@@ -1607,15 +1746,25 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "IndexType must be at most 32 bits in BSI format");
         }
 
+        /// `rb_contains` compares in the unsigned domain of the bitmap element type, so map the
+        /// index through `make_unsigned` instead of sign-extending it to the storage width.
+        const UInt64 lookup = static_cast<std::make_unsigned_t<IndexType>>(index);
+
         if (value == 0)
         {
-            zero_indexes->add(index);
+            /// Adding zero leaves the value alone, but it does make the index exist. `zero_indexes` is
+            /// exactly the set of present indexes whose value is zero - that is what
+            /// `pointwiseAddInplace` recomputes when it merges two states, and `pointwiseEqual` against
+            /// a zero scalar answers straight out of it - so an index that already carries a non-zero
+            /// value has to stay out of it. Otherwise a `0` row after a `5` row would report the index
+            /// as both `5` and equal to zero, and the answer would again depend on how the rows were
+            /// split between the states.
+            if (!hasNonZeroValue(lookup))
+                zero_indexes->add(index);
             return;
         }
 
         const UInt32 total_bit_num = getTotalBitNum();
-
-        UInt32 ele = static_cast<UInt32>(index);
 
         /** This converts a floating-point value into a fixed-point representation, then store it in data_array using bit-sliced index.
           * - When value is an UInt/Int, fraction_bit_num is usually set to 0. So when integer_bit_num is set to the number of
@@ -1641,9 +1790,10 @@ public:
         }
         else if constexpr (std::is_same_v<ValueType, Float32> || std::is_same_v<ValueType, Float64>)
         {
-            constexpr Float64 lim = static_cast<Float64>(std::numeric_limits<Int64>::max());
-
-            if (fabs(value) > lim / static_cast<Float64>(scaling))
+            auto scaled = static_cast<Float64>(value * static_cast<ValueType>(scaling));
+            /// 2^63 is exactly representable in Float64; Int64 range is [-2^63, 2^63 - 1].
+            constexpr Float64 int64_upper = static_cast<Float64>(1ULL << 63);
+            if (scaled >= int64_upper || scaled < -int64_upper)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Value {} is out of range for BSI with integer_bit_num={} and fraction_bit_num={}",
@@ -1651,7 +1801,7 @@ public:
                     integer_bit_num,
                     fraction_bit_num);
 
-            scaled_value = static_cast<Int64>(value * scaling);
+            scaled_value = static_cast<Int64>(value * static_cast<ValueType>(scaling));
         }
         else
         {
@@ -1659,9 +1809,10 @@ public:
         }
 
         UInt8 cin = 0;
+        bool any_bit_set = false;
         for (size_t j = 0; j < total_bit_num; ++j)
         {
-            UInt8 augend = getDataArrayAt(j)->rb_contains(ele) ? 1 : 0;
+            UInt8 augend = getDataArrayAt(j)->rb_contains(lookup) ? 1 : 0;
             UInt8 addend = (scaled_value & (1LL << j)) != 0 ? 1 : 0;
 
             UInt8 x_xor_y = augend ^ addend;
@@ -1669,21 +1820,43 @@ public:
 
             UInt8 sum = augend ^ addend ^ cin;
 
+            /// The bit of the sum replaces the bit of the augend, so it has to be cleared as well as
+            /// set: leaving a bit that the addition turned off stores `old | (old + new)` instead of
+            /// the sum, and a repeated index then reads back too large a value (5 plus 3 gives 13).
+            /// This is what `pointwiseAddInplace` does with whole bit slices, so the two paths -
+            /// adding rows into one state and merging states - agree, including on the wrap-around of
+            /// a sum that does not fit into `total_bit_num` bits.
             if ((sum & 1) == 1)
             {
-                getDataArrayAt(j)->add(ele);
+                getDataArrayAt(j)->add(index);
+                any_bit_set = true;
+            }
+            else if (augend)
+            {
+                getDataArrayAt(j)->remove(index);
             }
 
             cin = cin & x_xor_y;
             cin = cin | x_and_y;
         }
+
+        /// The accumulated value can reach zero (`5` and then `-5`), and no bit slice holds the index
+        /// then. `pointwiseAddInplace` records such an index in `zero_indexes` so that the merged state
+        /// still reports it with a value of zero; do the same here, so that the result does not depend
+        /// on how the rows were split between the states.
+        if (any_bit_set)
+            zero_indexes->remove(index);
+        else
+            zero_indexes->add(index);
     }
 
     /// return origin_vector(this)[index]
     ValueType getValue(IndexType index) const
     {
-        if (zero_indexes->rb_contains(index))
-            return 0;
+        /// `zero_indexes` is not consulted: an index with no bits set is zero anyway, and the set is
+        /// not cleared when a later update makes the value non-zero. Deriving the value from the bit
+        /// slices alone is what `getAllValueSum` and the map conversion already do.
+        const UInt64 lookup = static_cast<std::make_unsigned_t<IndexType>>(index);
 
         const UInt32 total_bit_num = getTotalBitNum();
         if (total_bit_num == 0)
@@ -1692,12 +1865,12 @@ public:
         UInt64 scaled_value = 0;
         for (size_t i = 0; i < total_bit_num; ++i)
         {
-            if (getDataArrayAt(i)->rb_contains(index))
+            if (getDataArrayAt(i)->rb_contains(lookup))
             {
                 scaled_value |= (1ULL << i);
             }
         }
-        return static_cast<ValueType>(scaled_value) / (1LL << fraction_bit_num);
+        return static_cast<ValueType>(scaled_value) / static_cast<ValueType>(1LL << fraction_bit_num);
     }
 
     /// sum(origin_vector(this))
@@ -1714,7 +1887,7 @@ public:
             for (size_t i = 0; i < total_bit_num; ++i)
             {
                 Float64 bit_contribution = std::pow(2.0, int(i) - int(fraction_bit_num));
-                value += getDataArrayAt(i)->size() * bit_contribution;
+                value += static_cast<Float64>(getDataArrayAt(i)->size()) * bit_contribution;
             }
         }
         else if (which.isInt() || which.isFloat())
@@ -1733,7 +1906,7 @@ public:
                 positive_indexes.rb_or(*getDataArrayAt(i));
 
                 positive_indexes.rb_andnot(negative_indexes);
-                value += positive_indexes.size() * bit_contribution;
+                value += static_cast<Float64>(positive_indexes.size()) * bit_contribution;
             }
 
             /// Handle negative indexes
@@ -1751,7 +1924,7 @@ public:
                 sum.rb_or(augend);
                 sum.rb_xor(cin);
 
-                value -= sum.size() * bit_contribution;
+                value -= static_cast<Float64>(sum.size()) * bit_contribution;
 
                 cin.rb_and(augend);
             }
@@ -1794,7 +1967,7 @@ public:
         if ((which.isUInt() or which.isInt()) and fraction_bit_num > 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "fraction_bit_num should be zero when value type is Int/UInt");
 
-        std::map<IndexType, UInt64> index2value;
+        MapWithMemoryTracking<IndexType, UInt64> index2value;
 
         PaddedPODArray<IndexType> zero_indexes_array;
         zero_indexes->rb_to_array(zero_indexes_array);
@@ -1847,7 +2020,8 @@ public:
                 else
                 {
                     values_pod.emplace_back(
-                        static_cast<ValueType>(static_cast<Int64>(value) / static_cast<Float64>(1ULL << fraction_bit_num)));
+                        static_cast<ValueType>(
+                            static_cast<Float64>(static_cast<Int64>(value)) / static_cast<Float64>(1ULL << fraction_bit_num)));
                 }
             }
         }

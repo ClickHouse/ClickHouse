@@ -133,15 +133,15 @@ The values are not decoded.
 SELECT extractURLParameters('http://example.com/?param1=value1&param2=value2');
         )",
         R"(
-┌─extractURLParame⋯&param2=value2')─┐
-│ ['param1=value1','param2=value2'] │
-└───────────────────────────────────┘
+┌─extractURLParameters('http://example.com/?param1=value1&param2=value2')─┐
+│ ['param1=value1','param2=value2']                                       │
+└─────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
     FunctionDocumentation::IntroducedIn introduced_in_extractURLParameters = {1, 1};
     FunctionDocumentation::Category category_extractURLParameters = FunctionDocumentation::Category::URL;
-    FunctionDocumentation documentation_extractURLParameters = {description_extractURLParameters, syntax_extractURLParameters, arguments_extractURLParameters, returned_value_extractURLParameters, examples_extractURLParameters, introduced_in_extractURLParameters, category_extractURLParameters};
+    FunctionDocumentation documentation_extractURLParameters = {description_extractURLParameters, syntax_extractURLParameters, arguments_extractURLParameters, {}, returned_value_extractURLParameters, examples_extractURLParameters, introduced_in_extractURLParameters, category_extractURLParameters};
 
     factory.registerFunction<FunctionExtractURLParameters>(documentation_extractURLParameters);
 }

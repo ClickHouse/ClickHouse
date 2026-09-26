@@ -1,4 +1,6 @@
 import json
+import os
+import re
 import time
 import traceback
 
@@ -6,46 +8,66 @@ import requests
 
 from ci.praktika.info import Info
 from ci.praktika.settings import Settings
+from ci.settings.settings import SECRET_CI_DB_CONNECTION
 
 
 class CIDBCluster:
-    URL_SECRET = Settings.SECRET_CI_DB_URL
-    PASSWD_SECRET = Settings.SECRET_CI_DB_PASSWORD
-    USER_SECRET = Settings.SECRET_CI_DB_USER
+    # Single JSON connection secret: {"url": ..., "user": ..., "password": ...}
+    CONNECTION_SECRET = SECRET_CI_DB_CONNECTION
+
+    @staticmethod
+    def _get_secret_or_raise(info, secret_name):
+        try:
+            return info.get_secret(secret_name)
+        except Exception as ex:
+            raise RuntimeError(
+                f"Failed to resolve CIDB secret [{secret_name}]"
+            ) from ex
 
     def __init__(self, url=None, user=None, pwd=None):
         info = Info()
         if url and user is not None and pwd is not None:
-            self.url_secret = None
-            self.user_secret = None
-            self.pwd_secret = None
+            self.conn_secret = None
             self.url = url
             self.user = user
             self.pwd = pwd
         else:
-            self.user_secret = info.get_secret(self.USER_SECRET)
-            self.url_secret = info.get_secret(self.URL_SECRET)
-            self.pwd_secret = info.get_secret(self.PASSWD_SECRET)
+            self.conn_secret = self._get_secret_or_raise(info, self.CONNECTION_SECRET)
             self.user = None
             self.url = None
             self.pwd = None
         self._session = None
         self._auth = {}
+        # Why the last `is_ready` or `do_insert_query` call failed, and whether
+        # CIDB answered it with a 4xx other than 408 or 429.
+        self.last_error = ""
+        self.last_rejected = False
 
     def close_session(self):
         if self._session:
             self._session.close()
             self._session = None
 
+    @staticmethod
+    def _prepare_request_body(data):
+        if isinstance(data, str):
+            return data.encode("utf-8")
+        return data
+
+    def _record_http_error(self, response):
+        self.last_error = f"HTTP {response.status_code}: {' '.join(response.text.split())[:200]}"
+        self.last_rejected = response.status_code < 500 and response.status_code not in (408, 429)
+
     def is_ready(self):
+        self.last_error = "LogCluster not ready"
+        self.last_rejected = False
         if not self.url:
-            self.url, self.user, self.pwd = (
-                self.url_secret.join_with(self.user_secret)
-                .join_with(self.pwd_secret)
-                .get_value()
-            )
+            conn = json.loads(self.conn_secret.get_value())
+            self.url = conn.get("url")
+            self.user = conn.get("user")
+            self.pwd = conn.get("password")
             if not self.url:
-                print("ERROR: failed to retrieve password for LogCluster")
+                print("ERROR: failed to retrieve url for LogCluster")
                 return False
             if not self.pwd:
                 print("ERROR: failed to retrieve password for LogCluster")
@@ -56,7 +78,7 @@ class CIDBCluster:
                 "X-ClickHouse-Key": self.pwd,
             }
         params = {
-            "query": f"SELECT 1",
+            "query": "SELECT 1",
         }
         try:
             response = requests.post(
@@ -70,12 +92,14 @@ class CIDBCluster:
                 print(
                     f"ERROR: No connection to cluster [{self.url}]: [{response.text}]"
                 )
+                self._record_http_error(response)
                 return False
             if not response.json() == 1:
                 print("ERROR: LogCluster failure 1 != 1")
                 return False
         except Exception as ex:
             print(f"ERROR: LogCluster connection failed with exception [{ex}]")
+            self.last_error = f"LogCluster connection failed: {type(ex).__name__}"
             return False
         return True
 
@@ -117,7 +141,7 @@ class CIDBCluster:
         print("ERROR: Failed to do select query CIDB")
         return None
 
-    def do_insert_query(self, query, data, db_name="", retries=1, timeout=5):
+    def do_insert_query(self, query, data, db_name="", retries=1, timeout=5, settings=None):
         if not self.is_ready():
             print("ERROR: LogCluster not ready")
             return False
@@ -129,6 +153,7 @@ class CIDBCluster:
             "query": query,
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
+            **(settings or {}),
         }
         if db_name:
             params["database"] = db_name
@@ -138,7 +163,7 @@ class CIDBCluster:
                 response = self._session.post(
                     url=self.url,
                     params=params,
-                    data=data,
+                    data=self._prepare_request_body(data),
                     headers=self._auth,
                     timeout=timeout,
                 )
@@ -148,7 +173,8 @@ class CIDBCluster:
                     print(
                         f"WARNING: CIDB query failed with code {response.status_code}, text {response.text}"
                     )
-                if response.status_code >= 500:
+                    self._record_http_error(response)
+                if not self.last_rejected:
                     # A retryable error
                     time.sleep(1)
                     continue
@@ -160,8 +186,9 @@ class CIDBCluster:
             except Exception as ex:
                 print(f"ERROR: CIDB query failed with exception: {ex}")
                 traceback.print_exc()
+                self.last_error = type(ex).__name__
                 break
-        print(f"ERROR: Failed to query CIDB")
+        print("ERROR: Failed to query CIDB")
         return False
 
     def insert_json(self, table, json_str):
@@ -171,6 +198,68 @@ class CIDBCluster:
             query=f"INSERT INTO {table} FORMAT JSONEachRow", data=json_str
         )
         self.close_session()
+
+    def insert_keeper_metrics_from_file(
+        self,
+        file_path: str,
+        chunk_size: int = 1000,
+        retries: int = 3,
+    ):
+        if not self.is_ready():
+            print("ERROR: CIDBCluster not ready, skipping keeper metrics ingestion")
+            return 0, 0
+        metrics_db = Settings.KEEPER_STRESS_METRICS_DB_NAME
+        table = Settings.KEEPER_STRESS_METRICS_TABLE_NAME
+        for _ident in (metrics_db, table):
+            if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", _ident):
+                raise ValueError(f"Invalid identifier for keeper metrics table: {_ident!r}")
+        if not file_path or not os.path.exists(file_path):
+            return 0, 0
+
+        insert_params = {
+            "database": metrics_db,
+            "query": f"INSERT INTO {metrics_db}.{table} FORMAT JSONEachRow",
+            "date_time_input_format": "best_effort",
+            "send_logs_level": "warning",
+        }
+
+        def _insert_chunk(lines: list) -> int:
+            if not lines:
+                return 0
+            body = "\n".join(lines)
+            last_status = None
+            for attempt in range(retries):
+                response = requests.post(
+                    url=self.url,
+                    params=insert_params,
+                    data=self._prepare_request_body(body),
+                    headers=self._auth,
+                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                )
+                last_status = response.status_code
+                if response.ok:
+                    return len(lines)
+                if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+            raise RuntimeError(
+                f"Failed to write keeper metrics after {retries} attempts, last response code [{last_status}]"
+            )
+
+        inserted = 0
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            chunk = []
+            for line in f:
+                s = line.strip()
+                if not s:
+                    continue
+                chunk.append(s)
+                if len(chunk) >= chunk_size:
+                    inserted += _insert_chunk(chunk)
+                    chunk = []
+            inserted += _insert_chunk(chunk)
+
+        print(f"INFO: keeper metrics inserted: {inserted}")
+        return inserted, 0
 
 
 if __name__ == "__main__":

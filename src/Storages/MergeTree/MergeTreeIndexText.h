@@ -1,18 +1,28 @@
 #pragma once
 
+#include <Core/SettingsEnums.h>
+#include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
+#include <Common/BitPackedStringArray.h>
+#include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
+#include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
+#include <Storages/MergeTree/TextIndexPositionData.h>
+#include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Formats/MarkInCompressedFile.h>
-#include <Interpreters/BloomFilter.h>
-#include <Interpreters/ITokenExtractor.h>
 
+#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
+#include <base/types.h>
+#include <base/PackedStringRef.h>
 
+#include <span>
+#include <variant>
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -23,32 +33,30 @@ namespace DB
 /**
   * Implementation of inverted index for text search.
   *
-  * A text index is a skip index that can have arbitrary granularity.
+  * A text index is a skip index that is always calculated on the whole and has infinite granularity.
   * Granules are aggregated the same way as for other skip indexes
-  * and dumped to the disk when the index reaches the desired granularity.
+  * Unlike other skip indexes, text index can be merged instead of rebuilt on merge of the data parts.
   *
-  * Text index has three streams (files with data and marks for them):
+  * Text index has three streams (files with data and marks for them), plus a fourth with 'support_phrase_search':
   * - File with index granules (.idx)
   * - File with dictionary blocks (.dct)
   * - File with posting lists (.pst)
+  * - File with token positions (.pos), one blob per token (see TextIndexBlockedPositionsCodec)
   *
-  * Text index is supposed to be used with high cardinalities (128 by default).
-  *
-  * Each index granule accumulates tokens from all documents and collects the posting lists
+  * Index granule accumulates tokens from all documents and collects the posting lists
   * (positions in the granule of documents that contain the token) for each token.
   * Tokens are sorted and split into blocks before the granule is finalized.
   * The block size is controlled by the index parameter 'dictionary_block_size'.
   * The first rows of each block form a sparse index (similar to the primary key of MergeTree).
-  * All tokens are added to the bloom filter to have an ability to skip the granule quickly.
   *
   * Then index granule is written in the following way:
-  * 1. Posting lists are dumped, and the offset in the file to the posting list for each token is saved.
-  * 2. Posting lists are built and saved as Roaring Bitmaps. If the cardinality of the posting list is less than a threshold
-  *    (index parameter 'max_cardinality_for_embedded_postings'), it is embedded into the dictionary.
-  * 3. Then, dictionary blocks are dumped, and the offset in the dictionary file to the block is saved into the sparse index.
+  * 1. Posting lists are dumped in blocks of size 'posting_list_block_size'.
+  * 2. Offsets in the file to the posting list blocks along with min-max range of the block for each token are saved.
+  * 3. Posting lists are encoded with the configured posting list codec ('none' (raw Roaring Bitmaps), 'bitpacking').
+  * 4. If the cardinality of the posting list is less than a threshold it is embedded into the dictionary.
+  * 5. Dictionary blocks are dumped, and the offset in the dictionary file to the block is saved into the sparse index.
   *
   * The format of index granule:
-  * - Bloom filter
   * - Sparse index - a mapping (first token in block -> offset in file to the beginning of the block).
   *
   * The format of sparse index:
@@ -56,220 +64,384 @@ namespace DB
   * - A binary serialized ColumnVector with offsets to dictionary blocks (see SerializationNumber::serializeBinaryBulk)
   *
   * Dictionary file consists of blocks. The format of dictionary block:
-  * - Format of tokens (VarUInt). Currently only RawStrings format is supported.
+  * - Format of tokens (VarUInt). Currently raw and front-coded string formats are supported.
   * - Number of tokens (VarUInt) in block.
   * - A binary serialized ColumnString with tokens.
   * - Information about posting lists for each token:
   *    1. Header of posting list (VarUInt) (see PostingsSerialization::Flags).
   *    2. Cardinality of token (VarUInt).
-  *    3. Offset in file to the posting list (VarUInt) or embedded serialized posting list if EmbeddedPostings flag is set.
+  *    3. If HasPositions flag is set, the token's offset and byte length in .pos (VarUInt each).
+  *    4. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
+  *       b) Otherwise, number of blocks of the posting list (VarUInt), if SingleBlock flag is not set.
+  *       c) For each posting list block, offset in file to the block and min-max range of the block. All numbers are encoded as VarUInt.
   *
-  * If size of posting list is less than a threshold, it is serialized as raw values encoded as VarUInt.
-  * Otherwise, the format is:
-  * - Number of uncompressed bytes of the posting list (VarUInt).
-  * - A binary serialized Roaring Bitmap (see Roaring::write and Roaring::read)
+  * If size of posting list is less than a threshold, it is serialized as raw values encoded as VarUInts.
+  * Otherwise, the posting list is split into segments of `posting_list_block_size` row ids and
+  * serialized via the configured `IPostingListCodec`.
+  *  - the `none` codec writes each segment as a portable Roaring Bitmap with a leading VarUInt size
+  *  - the `bitpacking` codec uses a compact bit-packed format with its own segment header.
   */
+
+using PostingListCodecPtr = std::unique_ptr<IPostingListCodec>;
 
 struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
-    size_t dictionary_block_frontcoding_compression = 1; /// enabled by default
-    size_t max_cardinality_for_embedded_postings = 0;
-    size_t bloom_filter_bits_per_row = 0;
-    size_t bloom_filter_num_hashes = 0;
-    String preprocessor;
+    size_t dictionary_block_frontcoding_compression = 1;
+    size_t posting_list_block_size = 1024 * 1024;
+    size_t positions = 0;
+    UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);
+    ASTPtr preprocessor;
+    ASTPtr postprocessor;
+    MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
 };
 
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
 
-/// A struct for building a posting list with optimization for infrequent tokens.
-/// Tokens with cardinality less than max_small_size are stored in a raw array allocated on the stack.
-/// It avoids allocations of Roaring Bitmap for infrequent tokens without increasing the memory usage.
+/// Everything a `PostingListBuilder` needs to add row ids and flush full blocks into the encoder.
+struct PostingListBuildContext
+{
+    const IPostingListCodec & codec;
+    size_t segment_size;
+    bool enable_positions;
+};
+
+/// Builds one token's posting list during the index build.
+/// Up to inline_capacity row ids live inline (no heap allocation for the many rare tokens).
+/// Frequent tokens spill to `Large`, whose raw values flush to an encoder every `append_granularity` row ids.
+/// `Large` is also the extension point for optional per-token payloads that cannot live inline: positions, scoring data.
 struct PostingListBuilder
 {
 public:
-    using PostingListsHolder = std::list<PostingList>;
-    using PostingListWithContext = std::pair<PostingList *, roaring::BulkContext>;
+    /// The maximal capacity that keeps the variant (with its index) within 56 bytes.
+    static constexpr size_t inline_capacity = 11;
 
-    /// sizeof(PostingListWithContext) == 24 bytes.
-    /// Use small container of the same size to reuse this memory.
-    static constexpr size_t max_small_size = 6;
-    using SmallContainer = std::array<UInt32, max_small_size>;
-
-    PostingListBuilder() : small_size(0) {}
-
-    /// Adds a value to small array or to the large Roaring Bitmap.
-    /// If small array is converted to Roaring Bitmap after adding a value,
-    /// posting list is created in the postings_holder and reference to it is saved.
-    void add(UInt32 value, PostingListsHolder & postings_holder);
-
-    size_t size() const { return isSmall() ? small_size : large.first->cardinality(); }
-    bool isSmall() const { return small_size < max_small_size; }
-    SmallContainer & getSmall() { return small; }
-    PostingList & getLarge() const { return *large.first; }
-
-private:
-    union
+    struct Inline
     {
-        SmallContainer small;
-        PostingListWithContext large;
+        std::array<UInt32, inline_capacity> values;
+        UInt8 size;
     };
 
-    UInt8 small_size;
+    struct Large
+    {
+        /// Spills a token from the inline storage to the heap.
+        Large(std::array<UInt32, inline_capacity> values_, UInt8 inline_size_, UInt32 added_value_);
+
+        /// Starts a token on the heap from its first occurrence, with position tracking enabled.
+        Large(UInt32 first_value, UInt32 first_position);
+
+        /// Raw row ids of the current (possibly incomplete) segment.
+        PODArray<UInt32, 64> values;
+        /// Full segments encoded by the codec. Created lazily on the first flush.
+        std::unique_ptr<IPostingListEncoder> encoder;
+        /// Positions of the token for phrase search. Null unless positions are enabled.
+        std::unique_ptr<PositionListBuilder> positions;
+
+        /// Flushes all buffered row ids into the encoder and clears the buffer.
+        /// The caller should control the flush size.
+        void flush(const PostingListBuildContext & context);
+    };
+
+    /// A filtered entry holds no postings and is skipped by `build`.
+    /// See the IN/NOT IN fast path in the postprocessor.
+    struct Filtered
+    {
+    };
+
+    PostingListBuilder() = default;
+
+    /// Constructs the builder directly in the `Filtered` state.
+    explicit PostingListBuilder(Filtered) : state(Filtered{}) {}
+
+    /// The builder is constructed with the first value of a token.
+    /// With positions enabled it starts in the `Large` state right away.
+    PostingListBuilder(UInt32 first_value, UInt32 first_position, const PostingListBuildContext & context);
+
+    /// Adds a value to the inline array or to the large (heap) buffer.
+    /// Flushes full blocks to the encoder as the buffer fills.
+    /// When positions are enabled, records the position of the token within the row.
+    void add(UInt32 value, UInt32 position, const PostingListBuildContext & context);
+
+    bool isLarge() const { return std::holds_alternative<Large>(state); }
+    bool isInline() const { return std::holds_alternative<Inline>(state); }
+    bool isFiltered() const { return std::holds_alternative<Filtered>(state); }
+
+    Large & getLarge() { return std::get<Large>(state); }
+    Inline & getInline() { return std::get<Inline>(state); }
+    PositionListBuilder * getPositions();
+
+private:
+    std::variant<Inline, Large, Filtered> state;
 };
+
+using TokenToPostingsBuilderMap = HashMap<PackedStringRef, PostingListBuilder>;
+
+struct SortedToken
+{
+    std::string_view token;
+    PostingListBuilder * postings = nullptr;
+};
+
+using SortedTokens = std::vector<SortedToken>;
+struct TokenPostingsInfo;
+
+/// Posting lists up to this cardinality are serialized as raw VarUInt values:
+/// the minimal size of a serialized Roaring Bitmap is 48 bytes, so tiny lists don't use it.
+static constexpr UInt64 MAX_CARDINALITY_FOR_RAW_POSTINGS = 12;
+/// Posting lists up to this cardinality are embedded into the dictionary block
+/// to avoid additional random reads from disk.
+static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
+
+static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
+static_assert(PostingListBuilder::inline_capacity <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "inline_capacity must not exceed MAX_CARDINALITY_FOR_RAW_POSTINGS");
 
 struct PostingsSerialization
 {
+    PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeTextIndexSerializationVersion serialization_version_);
+
     enum Flags : UInt64
     {
         /// If set, the posting list is serialized as raw UInt32 values encoded as VarUInt.
-        /// The minimal size of serialized Roaring Bitmap is 48 bytes, it doesn't make sense to use it for cardinality less than 16.
+        /// The minimal size of serialized Roaring Bitmap is 48 bytes,
+        /// it doesn't make sense to use it for cardinality less than MAX_CARDINALITY_FOR_RAW_POSTINGS.
         RawPostings = 1ULL << 0,
         /// If set, the posting list is embedded into the dictionary block to avoid additional random reads from disk.
         EmbeddedPostings = 1ULL << 1,
+        /// If unset, the number of blocks is stored as an additional VarUInt.
+        SingleBlock = 1ULL << 2,
+        /// If set, the posting list is encoded using posting_list_codec.
+        IsCompressed = 1ULL << 3,
+        /// If set, each compressed segment has a V2 Index Section with per-block metadata
+        /// (last_row_id + relative_offset arrays) enabling binary-search in PostingListCursor.
+        HasBlockIndex = 1ULL << 4,
+        /// If set, the token has positional data in the .pos file.
+        HasPositions = 1ULL << 5,
     };
 
-    static UInt64 serialize(UInt64 header, PostingListBuilder && postings, WriteBuffer & ostr);
-    static PostingListPtr deserialize(UInt64 header, UInt32 cardinality, ReadBuffer & istr);
+    /// Reads the `segment_idx`-th segment of the posting list described by `info` and checks it against the metadata:
+    /// a segment cannot hold more row ids than the token or than its row range, and it starts and ends at the range bounds.
+    PostingListPtr deserializeToBitmap(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx);
+    /// The same, but appends the row ids to `row_ids`.
+    void deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids);
+    const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
+
+private:
+    const IPostingListCodec & resolveCodec(UInt64 header);
+
+    PostingListCodecPtr posting_list_codec;
+    MergeTreeTextIndexSerializationVersion serialization_version;
+
+    /// Reusable buffers to avoid repeated heap allocations during serialization/deserialization.
+    PaddedPODArray<UInt32> raw_postings_buffer;
+    PaddedPODArray<char> raw_data_buffer;
+};
+
+/// Closed range of rows.
+struct RowsRange
+{
+    size_t begin;
+    size_t end;
+
+    RowsRange() = default;
+    RowsRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
+
+    bool intersects(const RowsRange & other) const;
+    std::optional<RowsRange> intersectWith(const RowsRange & other) const;
+    RowsRange unionWith(const RowsRange & other) const;
 };
 
 /// Stores information about posting list for a token.
-/// It can be either a future posting list (when the posting list is written in a separate file)
-/// or an embedded posting list (when the posting list is embedded into the dictionary block).
 struct TokenPostingsInfo
 {
-public:
-    /// Information required to read the posting list.
-    struct FuturePostings
-    {
-        UInt64 header = 0;
-        UInt64 offset_in_file = 0;
-        UInt32 cardinality = 0;
-    };
+    UInt64 header = 0;
+    UInt32 cardinality = 0;
 
-    TokenPostingsInfo() : postings(FuturePostings{}) {}
-    explicit TokenPostingsInfo(PostingListPtr postings_) : postings(std::move(postings_)) {}
-    explicit TokenPostingsInfo(FuturePostings postings_) : postings(std::move(postings_)) {}
+    /// The majority of tokens have only one block,
+    /// so use inlined vector to avoid heap allocations.
+    absl::InlinedVector<UInt64, 1> offsets;
+    absl::InlinedVector<RowsRange, 1> ranges;
+    absl::InlinedVector<UInt32, MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS> embedded_postings;
 
-    UInt32 getCardinality() const;
-    bool empty() const { return getCardinality() == 0; }
+    /// Position data offset in the .pos file
+    UInt64 position_offset = 0;
+    /// Byte length of the position blob, so readers bound it by the token's extent, not the file's.
+    UInt64 position_bytes = 0;
 
-    bool hasEmbeddedPostings() const { return std::holds_alternative<PostingListPtr>(postings); }
-    bool hasFuturePostings() const { return std::holds_alternative<FuturePostings>(postings); }
-
-    PostingListPtr getEmbeddedPostings() { return std::get<PostingListPtr>(postings); }
-    FuturePostings & getFuturePostings() { return std::get<FuturePostings>(postings); }
-
-    const PostingListPtr & getEmbeddedPostings() const { return std::get<PostingListPtr>(postings); }
-    const FuturePostings & getFuturePostings() const { return std::get<FuturePostings>(postings); }
-
-private:
-    std::variant<PostingListPtr, FuturePostings> postings;
+    /// Returns indexes of posting list blocks to read for the given range of rows.
+    std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
+    size_t bytesAllocated() const;
 };
 
-struct DictionaryBlockBase
-{
-    ColumnPtr tokens;
+using TokenPostingsInfoPtr = std::shared_ptr<TokenPostingsInfo>;
+using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfoPtr>;
 
-    DictionaryBlockBase() = default;
-    explicit DictionaryBlockBase(ColumnPtr tokens_) : tokens(std::move(tokens_)) {}
+struct DictionaryBlock
+{
+    DictionaryBlock() = default;
+    DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_);
 
     bool empty() const;
     size_t size() const;
 
-    size_t upperBound(std::string_view token) const;
-};
-
-struct DictionaryBlock : public DictionaryBlockBase
-{
-    DictionaryBlock() = default;
-    DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_);
-
+    ColumnPtr tokens;
     std::vector<TokenPostingsInfo> token_infos;
+    UInt64 tokens_format = 0;
 };
 
-class TextIndexHeader
+class DictionarySparseIndex
 {
 public:
-    struct DictionarySparseIndex : public DictionaryBlockBase
-    {
-        DictionarySparseIndex() = default;
-        DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
-        UInt64 getOffsetInFile(size_t idx) const;
+    DictionarySparseIndex() = default;
+    DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
 
-        ColumnPtr offsets_in_file;
-    };
+    bool empty() const { return size() == 0; }
+    size_t size() const;
+    size_t lowerBound(std::string_view token) const;
+    size_t upperBound(std::string_view token) const;
 
-    TextIndexHeader(size_t num_tokens_, BloomFilter bloom_filter_, DictionarySparseIndex sparse_index_)
-        : num_tokens(num_tokens_)
-        , bloom_filter(std::move(bloom_filter_))
-        , sparse_index(std::move(sparse_index_))
-    {
-    }
+    std::string_view getToken(size_t idx) const;
+    UInt64 getOffsetInFile(size_t idx) const;
+    size_t memoryUsageBytes() const;
 
-    size_t numberOfTokens() const { return num_tokens; }
-    const BloomFilter & bloomFilter() const { return bloom_filter; }
-    const DictionarySparseIndex & sparseIndex() const { return sparse_index; }
+    /// Returns the raw tokens column. Throws if tokens were bit-packed by optimize.
+    ColumnPtr getTokensColumn() const;
+    /// Returns the raw offsets column. Throws if offsets were bit-packed by optimize.
+    ColumnPtr getOffsetsColumn() const;
 
-    size_t memoryUsageBytes() const
-    {
-        return sizeof(*this)
-            + bloom_filter.getFilterSizeBytes()
-            + sparse_index.tokens->allocatedBytes()
-            + sparse_index.offsets_in_file->allocatedBytes();
-    }
+    /// Decomposes the tokens column into chars and bit-packed offsets
+    /// and bit-packs the offsets in file to reduce memory usage.
+    void optimize();
 
 private:
-    size_t num_tokens;
-    BloomFilter bloom_filter;
+    /// Tokens and offsets in the dictionary file to the beginning of each block.
+    /// Stored as raw columns after creation and bit-packed after optimize.
+    std::variant<ColumnPtr, BitPackedStringArray> tokens;
+    std::variant<ColumnPtr, BitPackedUInt64Array> offsets_in_file;
+};
+
+using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
+
+
+struct TextIndexHeader
+{
+    MergeTreeTextIndexSerializationVersion version = MergeTreeTextIndexSerializationVersion::V0_Initial;
+    IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
+    /// has_positions and positions_codec are persisted for version >= V2_WithPositions.
+    bool has_positions = false;
+    UInt8 positions_codec = 0;
     DictionarySparseIndex sparse_index;
 };
 
-using TextIndexHeaderPtr = std::shared_ptr<TextIndexHeader>;
+struct TextIndexSerialization
+{
+    enum class TokensFormat : UInt64
+    {
+        RawStrings = 0,
+        FrontCodedStrings = 1
+    };
+
+    static void serializePostingsAndTokenInfo(
+        PostingListBuilder && postings,
+        const PostingListBuildContext & context,
+        MergeTreeIndexWriterStream & dictionary_stream,
+        MergeTreeIndexWriterStream & postings_stream,
+        MergeTreeIndexWriterStream * positions_stream);
+
+    static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
+    static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
+    static void serializeRawPostings(std::span<const UInt32> row_ids, WriteBuffer & ostr);
+    /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
+    static void checkTokenSize(size_t token_size);
+    static void serializeHeader(const TextIndexHeader & header, WriteBuffer & ostr);
+
+    static TextIndexHeader deserializeHeader(ReadBuffer & istr);
+    /// Reads only the version and posting list codec from the start of the header, without the
+    /// (potentially large) sparse index. The returned header has an empty `sparse_index`.
+    static TextIndexHeader deserializeHeaderPrefix(ReadBuffer & istr);
+    /// If skip_postings is true, embedded postings are skipped.
+    static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, bool skip_postings = false);
+    /// Skips a token info without full deserialization and filling the fields.
+    static void skipTokenInfo(ReadBuffer & istr);
+
+    /// Deserializes `TokenPostingsInfo` only for tokens at the given sorted indices,
+    /// skipping postings for others. Returns a vector parallel to `matched_indices`.
+    static std::vector<TokenPostingsInfoPtr> deserializeTokenInfos(ReadBuffer & istr, size_t num_tokens, const std::vector<size_t> & matched_indices);
+
+    /// Deserializes tokens from a dictionary block.
+    /// Returns the tokens column and the tokens format.
+    static std::pair<ColumnPtr, UInt64> deserializeTokens(ReadBuffer & istr);
+
+    /// Deserializes a dictionary block into a new DictionaryBlock.
+    /// If postings_serialization is null, embedded postings are skipped.
+    static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, bool skip_postings = false);
+};
+
+using TokenToPostingsMap = absl::flat_hash_map<String, PostingListPtr>;
+
+class TextIndexAnalyzer;
 
 /// Text index granule created on reading of the index.
 struct MergeTreeIndexGranuleText final : public IMergeTreeIndexGranule
 {
 public:
-    using TokenToPostingsInfosMap = absl::flat_hash_map<std::string_view, TokenPostingsInfo>;
-
     explicit MergeTreeIndexGranuleText(MergeTreeIndexTextParams params_);
-    ~MergeTreeIndexGranuleText() override = default;
+    ~MergeTreeIndexGranuleText() override;
+
+    const MergeTreeIndexTextParams & getParams() const { return params; }
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
     void deserializeBinaryWithMultipleStreams(MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state) override;
 
-    bool empty() const override { return header->numberOfTokens() == 0; }
+    bool empty() const override { return is_empty; }
     size_t memoryUsageBytes() const override;
 
-    bool hasAnyQueryTokens(const TextSearchQuery & query) const;
-    bool hasAllQueryTokens(const TextSearchQuery & query) const;
-    bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
+    const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
 
-    const TokenToPostingsInfosMap & getRemainingTokens() const { return remaining_tokens; }
-    void resetAfterAnalysis();
+    void setCurrentRange(RowsRange range) { current_range = std::move(range); }
+    const std::optional<RowsRange> & getCurrentRange() const { return current_range; }
+    const String & getIndexIdForCaches() const { return index_id_for_caches; }
+    IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
+    MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
+    UInt8 getPositionsCodec() const { return positions_codec; }
+
+    static PostingListPtr readPostingsBlock(
+        MergeTreeIndexReaderStream & stream,
+        MergeTreeIndexDeserializationState & state,
+        const TokenPostingsInfo & token_info,
+        size_t block_idx,
+        PostingsSerialization & postings_serialization,
+        const String & index_id_for_caches);
 
 private:
-    /// Analyzes bloom filters. Removes tokens that are not present in the bloom filter.
-    void analyzeBloomFilter(const IMergeTreeIndexCondition & condition);
-    /// Reads dictionary blocks and analyzes them for tokens remaining after bloom filter analysis.
-    void analyzeDictionary(MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+    /// Reads dictionary blocks and analyzes them for tokens.
+    void analyzeDictionaryForTokens(const DictionarySparseIndex & sparse_index, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    /// Reads dictionary blocks and analyzes them for patterns.
+    void analyzeDictionaryForPatterns(const DictionarySparseIndex & sparse_index, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
+    /// Fills tokens and their infos from the cache.
+    /// Returns tokens that are not in the cache and need to be read from the dictionary file.
+    std::vector<String> fillTokensFromCache(MergeTreeIndexDeserializationState & state);
+    std::pair<std::vector<size_t>, NameSet> matchTokens(const ColumnString & all_tokens, std::vector<std::string_view> needed_tokens);
 
-    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
-    /// ---------------------------------------
+    std::shared_ptr<TextIndexHeader> loadHeader(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state);
+    void analyzePostings(PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & stream, MergeTreeIndexDeserializationState & state);
+
+    bool is_empty = true;
     MergeTreeIndexTextParams params;
-    /// Header of the text index contains the number of tokens, bloom filter and sparse index.
-    TextIndexHeaderPtr header;
-    /// Tokens that are in the index granule after analysis.
-    TokenToPostingsInfosMap remaining_tokens;
-    /// ---------------------------------------
+    /// Analyzer for the text index. Tracks regular tokens, pattern tokens, and per-query state.
+    std::unique_ptr<TextIndexAnalyzer> analyzer;
+    /// Current range of rows that is being processed. If set, mayBeTrueOnGranule returns more precise result.
+    std::optional<RowsRange> current_range;
+    /// Unique identifier for text index in the current data part.
+    String index_id_for_caches;
+    /// Codec type used to serialize postings in this granule.
+    IPostingListCodec::Type postings_codec_type = IPostingListCodec::Type::None;
+    /// On-disk serialization version of the text index header.
+    MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
+    /// Positions on-disk codec persisted in the header.
+    UInt8 positions_codec = 0;
 };
-
-/// Save BulkContext to optimize consecutive insertions into the posting list.
-using TokenToPostingsMap = StringHashMap<PostingListBuilder>;
-using SortedTokensAndPostings = std::vector<std::pair<std::string_view, PostingListBuilder *>>;
 
 /// Text index granule created on writing of the index.
 /// It differs from MergeTreeIndexGranuleText because it
@@ -278,11 +450,10 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 {
     MergeTreeIndexGranuleTextWritable(
         MergeTreeIndexTextParams params_,
-        BloomFilter && bloom_filter_,
-        SortedTokensAndPostings && tokens_and_postings_,
-        TokenToPostingsMap && tokens_map_,
-        std::list<PostingList> && posting_lists_,
-        std::unique_ptr<Arena> && arena_);
+        IPostingListCodec::Type posting_list_codec_type_,
+        TokenToPostingsBuilderMap && tokens_map_,
+        std::unique_ptr<Arena> && arena_,
+        SortedTokens && sorted_tokens_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
@@ -290,100 +461,146 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     void serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
-    bool empty() const override { return tokens_and_postings.empty(); }
+    bool empty() const override { return sorted_tokens.empty(); }
     size_t memoryUsageBytes() const override;
 
-    /// If adding significantly large members here make sure to add them to memoryUsageBytes()
-    /// ---------------------------------------
     MergeTreeIndexTextParams params;
-    BloomFilter bloom_filter;
-    /// Pointers to tokens and posting lists in the granule.
-    SortedTokensAndPostings tokens_and_postings;
-    /// tokens_and_postings has references to data held in the fields below.
-    TokenToPostingsMap tokens_map;
-    std::list<PostingList> posting_lists;
+    IPostingListCodec::Type posting_list_codec_type = IPostingListCodec::Type::None;
+    TokenToPostingsBuilderMap tokens_map;
     std::unique_ptr<Arena> arena;
+    /// Sorted view of tokens with their posting/position builders (non-owning; references the fields above).
+    SortedTokens sorted_tokens;
     LoggerPtr logger;
-    /// ---------------------------------------
 };
+
+struct ITokenizer;
+using TokenizerPtr = const ITokenizer *;
+
+class MergeTreeIndexTextPostprocessor;
+struct MergeTreeIndexTextInlineFilter;
 
 struct MergeTreeIndexTextGranuleBuilder
 {
     MergeTreeIndexTextGranuleBuilder(
         MergeTreeIndexTextParams params_,
-        TokenExtractorPtr token_extractor_);
+        TokenizerPtr tokenizer_,
+        const IPostingListCodec * posting_list_codec_);
 
+    /// The context for `addDocument`/`addToken`; created once per batch of added documents.
+    PostingListBuildContext buildContext() const;
     /// Extracts tokens from the document and adds them to the granule.
-    void addDocument(std::string_view document);
-    void incrementCurrentRow() { ++current_row; }
+    void addDocument(std::string_view document, const PostingListBuildContext & context);
+    // Adds a document to the granule. The document is inserted directly as a single token.
+    void addToken(std::string_view token, UInt32 token_position, const PostingListBuildContext & context);
+
+    void incrementCurrentRow();
+    void setCurrentRow(size_t row) { current_row = row; }
 
     std::unique_ptr<MergeTreeIndexGranuleTextWritable> build();
-    bool empty() const { return current_row == 0; }
+    bool empty() const { return is_empty; }
     void reset();
 
-    MergeTreeIndexTextParams params;
-    TokenExtractorPtr token_extractor;
+    void seedDropFilter();
 
+    MergeTreeIndexTextParams params;
+    TokenizerPtr tokenizer;
+    const IPostingListCodec * posting_list_codec = nullptr;
+
+    bool is_empty = true;
     UInt64 current_row = 0;
-    /// Pointers to posting lists for each token.
-    TokenToPostingsMap tokens_map;
-    /// Holder of posting lists. std::list is used to preserve the stability of pointers to posting lists.
-    std::list<PostingList> posting_lists;
+    UInt64 num_processed_tokens = 0;
+    /// Posting list builders for each token. When positions are enabled,
+    /// the builders also accumulate the positions of the tokens.
+    TokenToPostingsBuilderMap tokens_map;
     /// Keys may be serialized into arena (see ArenaKeyHolder).
     std::unique_ptr<Arena> arena;
+    /// IN/NOT IN filter-only postprocessor fast path: `IN` marks dropped tokens in the map on first
+    /// insertion, `NOT IN` collects postings only for the pre-seeded keep-set tokens. Non-owning.
+    const MergeTreeIndexTextInlineFilter * postprocessor_drop_filter = nullptr;
 };
 
 class MergeTreeIndexTextPreprocessor;
 using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
+
+class MergeTreeIndexTextPostprocessor;
+using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPostprocessor>;
 
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 {
     MergeTreeIndexAggregatorText(
         String index_column_name_,
         MergeTreeIndexTextParams params_,
-        TokenExtractorPtr token_extractor_,
-        MergeTreeIndexTextPreprocessorPtr preprocessor_);
+        TokenizerPtr tokenizer_,
+        const IPostingListCodec * posting_list_codec_,
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        MergeTreeIndexTextPostprocessorPtr postprocessor_);
 
     ~MergeTreeIndexAggregatorText() override = default;
 
     bool empty() const override { return granule_builder.empty(); }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
+    void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
+    UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
+
+private:
+    /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
+    template <bool tokenize>
+    void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
+
+    /// One token per `(key, value)` pair of a ColumnMap slice. `keyValuePairs` only.
+    void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read, const PostingListBuildContext & context);
 
     String index_column_name;
     MergeTreeIndexTextParams params;
-    TokenExtractorPtr token_extractor;
+    /// A private clone of the index tokenizer when it is stateful (e.g. the Japanese or sparse-grams
+    /// tokenizers), so concurrent aggregators do not share mutable parsing state; null otherwise.
+    std::shared_ptr<const ITokenizer> owned_tokenizer;
+    TokenizerPtr tokenizer;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
+    /// True when the postprocessor is an IN/NOT IN filter handled by the per-distinct-token drop fast path.
+    bool use_postprocessor_drop_fast_path = false;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexText(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         MergeTreeIndexTextParams params_,
-        std::unique_ptr<ITokenExtractor> token_extractor_);
+        std::unique_ptr<ITokenizer> tokenizer_,
+        std::unique_ptr<IPostingListCodec> posting_list_codec_);
 
     ~MergeTreeIndexText() override = default;
 
-    bool supportsReadingOnParallelReplicas() const override { return true; }
+    MergeTreeIndexTextParams getParams() const { return params; }
+    bool isTextIndex() const override { return true; }
+
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const override;
+    MergeTreeIndexSubstreams getPotentialSubstreams() const override;
+    using IMergeTreeIndex::getPhysicalFormat;
+    MergeTreeIndexFormat getPhysicalFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const IDataPartStorage & storage,
+        const std::string & relative_path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
-    /// This function parses the arguments of a text index. Text indexes have a special syntax with complex arguments.
-    /// 1. Arguments are named, e.g.: argument = value
-    /// 2. The tokenizer argument can be a string, a function name (literal) or a function-like expression, e.g.: ngram(5)
-    /// 3. The preprocessor argument is a generic expression, e.g. lower(extractTextFromHTML(col))
-    static FieldVector parseArgumentsListFromAST(const ASTPtr & arguments);
+    const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
+    static DataTypePtr getNestedDataType(const DataTypePtr & data_type);
 
     MergeTreeIndexTextParams params;
-    std::unique_ptr<ITokenExtractor> token_extractor;
+    std::unique_ptr<ITokenizer> tokenizer;
+    std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
+    /// Name of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
+    std::optional<String> normalized_index_column_name;
 };
 
 }

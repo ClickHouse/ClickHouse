@@ -1,0 +1,568 @@
+---
+title: 'Работа с массивами в ClickHouse'
+description: 'Краткое руководство по работе с массивами в ClickHouse'
+keywords: ['Массивы']
+sidebarTitle: 'Работа с массивами в ClickHouse'
+slug: /guides/working-with-arrays
+doc_type: 'guide'
+---
+
+import { RunnableCode } from "/snippets/ru/components/RunnableCode/RunnableCode.jsx";
+
+> В этом руководстве вы узнаете, как использовать массивы в ClickHouse, а также некоторые из наиболее часто используемых [функций для работы с массивами](/ru/reference/functions/regular-functions/array-functions).
+
+<div id="array-basics">
+  ## Введение в массивы
+</div>
+
+Массив — это структура данных в памяти, которая объединяет значения.
+Эти значения называются *элементами* массива, и к каждому элементу можно обратиться по индексу, который указывает его положение в массиве.
+
+Массивы в ClickHouse можно создавать с помощью функции [`array`](/ru/reference/data-types/array):
+
+```sql
+array(T)
+```
+
+Или, в качестве альтернативы, используя `[]`:
+
+```sql
+[]
+```
+
+Например, можно создать массив чисел:
+
+```sql
+SELECT array(1, 2, 3) AS numeric_array
+```
+
+```response
+┌─numeric_array─┐
+│ [1,2,3]       │
+└───────────────┘
+```
+
+Или массив строк:
+
+```sql
+SELECT array('hello', 'world') AS string_array
+```
+
+```response
+┌─string_array──────┐
+│ ['hello','world'] │
+└───────────────────┘
+```
+
+Или массив вложенных типов, например [Tuple](/ru/reference/data-types/tuple):
+
+```sql
+SELECT array(tuple(1, 2), tuple(3, 4))
+```
+
+```response
+┌─[(1, 2), (3, 4)]─┐
+│ [(1,2),(3,4)]    │
+└──────────────────┘
+```
+
+У вас может возникнуть соблазн создать массив из значений разных типов вот так:
+
+```sql
+SELECT array('Hello', 'world', 1, 2, 3)
+```
+
+Однако элементы массива всегда должны иметь общий супертип — наименьший тип данных, который может без потерь представлять значения двух или более разных типов, что позволяет использовать их вместе.
+Если общего супертипа нет, при попытке сформировать массив возникнет исключение:
+
+```sql
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types String, String, UInt8, UInt8, UInt8 because some of them are String/FixedString/Enum and some of them are not: In scope SELECT ['Hello', 'world', 1, 2, 3]. (NO_COMMON_TYPE)
+```
+
+при создании массивов на лету ClickHouse выбирает наиболее узкий тип, подходящий для всех элементов.
+Например, если вы создаёте массив из целых чисел и чисел с плавающей точкой, выбирается супертип Float:
+
+```sql
+SELECT [1::UInt8, 2.5::Float32, 3::UInt8] AS mixed_array, toTypeName([1, 2.5, 3]) AS array_type;
+```
+
+```response
+┌─mixed_array─┬─array_type─────┐
+│ [1,2.5,3]   │ Array(Float64) │
+└─────────────┴────────────────┘
+```
+
+<Accordion title="Создание массивов разных типов">
+  Вы можете использовать настройку `use_variant_as_common_type`, чтобы изменить описанное выше поведение по умолчанию.
+  Это позволяет использовать тип [Variant](/ru/reference/data-types/variant) в качестве результирующего типа для функций `if`/`multiIf`/`array`/`map`, когда для типов аргументов нет общего типа.
+
+  Например:
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      toTypeName(array)
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─toTypeName(array)────────────────────────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ Array(Variant(Array(String), String, UInt8)) │
+  └──────────────────────────────────────┴──────────────────────────────────────────────┘
+  ```
+
+  Затем вы также можете извлекать типы из массива по имени типа:
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      array.UInt8,
+      array.String,
+      array.`Array(String)`
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─array.UInt8───┬─array.String─────────────┬─array.Array(String)─────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ [1,NULL,NULL] │ [NULL,'ClickHouse',NULL] │ [[],[],['Another','Array']] │
+  └──────────────────────────────────────┴───────────────┴──────────────────────────┴─────────────────────────────┘
+  ```
+</Accordion>
+
+Использование индекса с `[]` — удобный способ доступа к элементам массива.
+В ClickHouse важно помнить, что индекс массива всегда начинается с **1**.
+Это может отличаться от других языков программирования, к которым вы привыкли, где индексация массивов начинается с нуля.
+
+Например, имея массив, вы можете выбрать его первый элемент, написав:
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[1];
+```
+
+```response
+┌─arrayElement⋯g_array, 1)─┐
+│ hello                    │
+└──────────────────────────┘
+```
+
+Также можно использовать отрицательные индексы.
+Так можно выбирать элементы относительно последнего:
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[-1];
+```
+
+```response
+┌─arrayElement⋯g_array, -1)─┐
+│ world                     │
+└───────────────────────────┘
+```
+
+Несмотря на то что индексация в массивах начинается с 1, вы всё равно можете обратиться к элементу в позиции 0.
+Возвращаемым значением будет *значение по умолчанию* для типа Array.
+В примере ниже возвращается пустая строка, так как это значение по умолчанию для типа данных String:
+
+```sql
+WITH ['hello', 'world', 'arrays are great aren\'t they?'] AS string_array
+SELECT string_array[0]
+```
+
+```response
+┌─arrayElement⋯g_array, 0)─┐
+│                          │
+└──────────────────────────┘
+```
+
+<div id="array-functions">
+  ## Функции для работы с массивами
+</div>
+
+ClickHouse предоставляет множество полезных функций для работы с массивами.
+В этом разделе мы рассмотрим некоторые из самых полезных — от самых простых до более сложных.
+
+<div id="length-arrayEnumerate-indexOf-has-functions">
+  ### функции length, arrayEnumerate, indexOf и has*
+</div>
+
+Функция `length` возвращает количество элементов в массиве:
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT length(string_array);
+```
+
+```response
+┌─length(string_array)─┐
+│                    3 │
+└──────────────────────┘
+```
+
+Вы также можете использовать функцию [`arrayEnumerate`](/ru/reference/functions/regular-functions/array-functions#arrayEnumerate), чтобы получить массив индексов элементов:
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT arrayEnumerate(string_array);
+```
+
+```response
+┌─arrayEnumerate(string_array)─┐
+│ [1,2,3]                      │
+└──────────────────────────────┘
+```
+
+Если вы хотите найти индекс конкретного значения, можно использовать функцию `indexOf`:
+
+```sql
+SELECT indexOf([4, 2, 8, 8, 9], 8);
+```
+
+```response
+┌─indexOf([4, 2, 8, 8, 9], 8)─┐
+│                           3 │
+└─────────────────────────────┘
+```
+
+Обратите внимание, что эта функция вернёт первый найденный индекс, если в массиве есть несколько одинаковых значений.
+Если элементы массива отсортированы по возрастанию, можно использовать функцию [`indexOfAssumeSorted`](/ru/reference/functions/regular-functions/array-functions#indexOfAssumeSorted).
+
+Функции `has`, `hasAll` и `hasAny` полезны, чтобы определить, содержит ли массив заданное значение.
+Рассмотрим следующий пример:
+
+```sql
+WITH ['Airbus A380', 'Airbus A350', 'Airbus A220', 'Boeing 737', 'Boeing 747-400'] AS airplanes
+SELECT
+    has(airplanes, 'Airbus A350') AS has_true,
+    has(airplanes, 'Lockheed Martin F-22 Raptor') AS has_false,
+    hasAny(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAny_true,
+    hasAny(airplanes, ['Lockheed Martin F-22 Raptor', 'Eurofighter Typhoon']) AS hasAny_false,
+    hasAll(airplanes, ['Boeing 737', 'Boeing 747-400']) AS hasAll_true,
+    hasAll(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAll_false
+FORMAT Vertical;
+```
+
+```response
+has_true:     1
+has_false:    0
+hasAny_true:  1
+hasAny_false: 0
+hasAll_true:  1
+hasAll_false: 0
+```
+
+<div id="exploring-flight-data-with-array-functions">
+  ## Анализ данных о рейсах с помощью функций для работы с массивами
+</div>
+
+До сих пор примеры были довольно простыми.
+Полезность массивов по-настоящему раскрывается при работе с реальным набором данных.
+
+Мы будем использовать [набор данных ontime](/ru/get-started/sample-datasets/ontime), который содержит данные о рейсах из Бюро транспортной статистики США.
+Этот набор данных доступен в [Песочнице ClickHouse](https://sql.clickhouse.com/?query_id=M4FSVBVMSHY98NKCQP8N4K).
+
+Мы выбрали этот набор данных, потому что массивы часто хорошо подходят для работы с временными рядами и помогают упростить
+иначе довольно сложные запросы.
+
+<Tip>
+  Нажмите кнопку &quot;play&quot; ниже, чтобы запускать запросы прямо в документации и сразу видеть результат.
+</Tip>
+
+<div id="grouparray">
+  ### groupArray
+</div>
+
+В этом наборе данных много столбцов, но мы сосредоточимся лишь на некоторых из них.
+Выполните запрос ниже, чтобы посмотреть, как выглядят наши данные:
+
+<RunnableCode>
+  ```sql
+  -- SELECT
+  -- *
+  -- FROM ontime.ontime LIMIT 100
+
+  SELECT
+      FlightDate,
+      Origin,
+      OriginCityName,
+      Dest,
+      DestCityName,
+      DepTime,
+      DepDelayMinutes,
+      ArrTime,
+      ArrDelayMinutes
+  FROM ontime.ontime LIMIT 5
+  ```
+</RunnableCode>
+
+Рассмотрим 10 самых загруженных аэропортов США за случайно выбранный день, например &#39;2024-01-01&#39;.
+Нас интересует, сколько рейсов вылетает из каждого аэропорта.
+В наших данных каждой строке соответствует отдельный рейс, но было бы удобно сгруппировать данные по аэропорту вылета и собрать пункты назначения в массив.
+
+Для этого можно использовать агрегатную функцию [`groupArray`](/ru/reference/functions/aggregate-functions/groupArray), которая берет значения указанного столбца из каждой строки и объединяет их в массив.
+
+Выполните запрос ниже, чтобы посмотреть, как это работает:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+  FROM ontime.ontime
+  WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA') AND FlightDate='2024-01-01'
+  GROUP BY FlightDate, Origin
+  ORDER BY length(Destinations)
+  ```
+</RunnableCode>
+
+[`toStringCutToZero`](/ru/reference/functions/regular-functions/type-conversion-functions#toStringCutToZero) в приведенном выше запросе используется для удаления нулевых символов, которые встречаются после трехбуквенного кода некоторых аэропортов.
+
+Когда данные представлены в таком формате, мы можем легко определить порядок самых загруженных аэропортов, вычислив длину собранных массивов &quot;Destinations&quot;:
+
+<RunnableCode>
+  ```sql highlight={7}
+  WITH
+      '2024-01-01' AS date,
+      busy_airports AS (
+      SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+      FROM ontime.ontime
+      WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA')
+      AND FlightDate = date
+      GROUP BY FlightDate, Origin
+      ORDER BY length(Destinations)
+      )
+  SELECT
+      Origin,
+      length(Destinations) AS outward_flights
+  FROM busy_airports
+  ORDER BY outward_flights DESC
+  ```
+</RunnableCode>
+
+<div id="arraymap">
+  ### arrayMap и arrayZip
+</div>
+
+В предыдущем запросе мы увидели, что Denver International Airport был аэропортом с наибольшим числом вылетающих рейсов в выбранный нами день.
+Давайте посмотрим, сколько из этих рейсов вылетели вовремя, сколько задержались на 15–30 минут и сколько — более чем на 30 минут.
+
+Многие функции для работы с массивами в ClickHouse являются так называемыми [&quot;функциями высшего порядка&quot;](/ru/reference/functions/regular-functions/overview#higher-order-functions) и принимают лямбда-функцию в качестве первого параметра.
+Функция [`arrayMap`](/ru/reference/functions/regular-functions/array-functions#arrayMap) — один из примеров такой функции высшего порядка; она возвращает новый массив на основе переданного массива, применяя лямбда-функцию к каждому элементу исходного массива.
+
+Выполните приведённый ниже запрос, который использует функцию `arrayMap`, чтобы увидеть, какие рейсы были задержаны, а какие вылетели вовремя.
+Для пар пунктов отправления/назначения он показывает бортовой номер и статус каждого рейса:
+
+<RunnableCode>
+  ```sql
+  WITH arrayMap(
+                d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME')),
+                groupArray(DepDelayMinutes)
+      ) AS statuses
+
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      arrayZip(groupArray(Tail_Number), statuses) as tailNumberStatuses
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+    AND FlightDate = '2024-01-01'
+    AND DepTime IS NOT NULL
+    AND DepDelayMinutes IS NOT NULL
+  GROUP BY ALL
+  ```
+</RunnableCode>
+
+В приведённом выше запросе функция `arrayMap` принимает одноэлементный массив `[DepDelayMinutes]` и применяет к нему лямбда-функцию `d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME'`, чтобы отнести значение к определённой категории.
+Затем первый элемент результирующего массива извлекается с помощью `[DepDelayMinutes][1]`.
+Функция [`arrayZip`](/ru/reference/functions/regular-functions/array-functions#arrayZip) объединяет массив `Tail_Number` и массив `statuses` в один массив.
+
+<div id="arrayfilter">
+  ### arrayFilter
+</div>
+
+Теперь рассмотрим только количество рейсов с задержкой 30 минут и более для аэропортов `DEN`, `ATL` и `DFW`:
+
+<RunnableCode>
+  ```sql highlight={4}
+  SELECT
+      Origin,
+      OriginCityName,
+      length(arrayFilter(d -> d >= 30, groupArray(ArrDelayMinutes))) AS num_delays_30_min_or_more
+  FROM ontime.ontime
+  WHERE Origin IN ('DEN', 'ATL', 'DFW')
+      AND FlightDate = '2024-01-01'
+  GROUP BY Origin, OriginCityName
+  ORDER BY num_delays_30_min_or_more DESC
+  ```
+</RunnableCode>
+
+В запросе выше мы передаём лямбда-функцию в качестве первого аргумента функции [`arrayFilter`](/ru/reference/functions/regular-functions/array-functions#arrayFilter).
+Эта лямбда-функция принимает значение задержки в минутах (`d`) и возвращает `1`, если условие выполняется, и `0` — в противном случае.
+
+```sql
+d -> d >= 30
+```
+
+<div id="arraysort-and-arrayintersect">
+  ### arraySort и arrayIntersect
+</div>
+
+Далее разберёмся, какие пары крупных аэропортов США имеют больше всего общих пунктов назначения, с помощью функций [`arraySort`](/ru/reference/functions/regular-functions/array-functions#arraySort) и [`arrayIntersect`](/ru/reference/functions/regular-functions/array-functions#arrayIntersect).
+`arraySort` принимает массив и по умолчанию сортирует его элементы по возрастанию, хотя в неё также можно передать лямбда-функцию, чтобы задать порядок сортировки.
+`arrayIntersect` принимает несколько массивов и возвращает массив с элементами, которые присутствуют во всех этих массивах.
+
+Выполните запрос ниже, чтобы увидеть эти две функции для работы с массивами в действии:
+
+<RunnableCode>
+  ```sql highlight={4,12}
+  WITH airport_routes AS (
+      SELECT 
+          Origin,
+          arraySort(groupArray(DISTINCT toStringCutToZero(Dest))) AS destinations
+      FROM ontime.ontime
+      WHERE FlightDate = '2024-01-01'
+      GROUP BY Origin
+  )
+  SELECT 
+      a1.Origin AS airport1,
+      a2.Origin AS airport2,
+      length(arrayIntersect(a1.destinations, a2.destinations)) AS common_destinations
+  FROM airport_routes a1
+  CROSS JOIN airport_routes a2
+  WHERE a1.Origin < a2.Origin
+      AND a1.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+      AND a2.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+  ORDER BY common_destinations DESC
+  LIMIT 10
+  ```
+</RunnableCode>
+
+Запрос работает в два основных этапа.
+Сначала он создаёт временный набор данных `airport_routes` с помощью Common Table Expression (CTE): в нём рассматриваются все рейсы за 1 января 2024 года, и для каждого аэропорта вылета строится отсортированный список всех уникальных пунктов назначения, которые он обслуживает.
+Например, в результирующем наборе `airport_routes` для DEN может быть массив со всеми городами, в которые из него выполняются рейсы, например `['ATL', 'BOS', 'LAX', 'MIA', ...]`, и так далее.
+
+На втором этапе запрос берёт пять крупных узловых аэропортов США (`DEN`, `ATL`, `DFW`, `ORD` и `LAS`) и сравнивает все возможные пары.
+Для этого используется перекрёстное соединение, которое создаёт все комбинации этих аэропортов.
+Затем для каждой пары применяется функция `arrayIntersect`, чтобы найти пункты назначения, присутствующие в списках обоих аэропортов.
+Функция `length` подсчитывает, сколько у них общих пунктов назначения.
+
+Условие `a1.Origin < a2.Origin` гарантирует, что каждая пара появляется только один раз.
+Без него в результатах были бы и JFK-LAX, и LAX-JFK как отдельные строки, хотя это одно и то же сравнение.
+Наконец, запрос сортирует результаты так, чтобы показать пары аэропортов с наибольшим числом общих пунктов назначения, и возвращает только первые 10.
+Это позволяет увидеть, у каких крупных хабов маршрутные сети пересекаются сильнее всего. Это может указывать на конкурентные рынки, где несколько авиакомпаний обслуживают одни и те же пары городов, или на хабы, обслуживающие схожие географические регионы и потенциально подходящие в качестве альтернативных пересадочных узлов для пассажиров.
+
+<div id="arrayReduce">
+  ### arrayReduce
+</div>
+
+Пока мы рассматриваем задержки, давайте используем ещё одну функцию высшего порядка для массивов — `arrayReduce`, чтобы найти среднюю и максимальную задержку
+для каждого маршрута из международного аэропорта Денвера:
+
+<RunnableCode>
+  ```sql highlight={5-6}
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      groupArray(DepDelayMinutes) AS delays,
+      round(arrayReduce('avg', groupArray(DepDelayMinutes)), 2) AS avg_delay,
+      round(arrayReduce('max', groupArray(DepDelayMinutes)), 2) AS worst_delay
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+      AND FlightDate = '2024-01-01'
+      AND DepDelayMinutes IS NOT NULL
+  GROUP BY Origin, Destination
+  ORDER BY avg_delay DESC
+  ```
+</RunnableCode>
+
+В примере выше мы использовали `arrayReduce`, чтобы найти среднюю и максимальную задержки для различных рейсов с вылетом из `DEN`.
+`arrayReduce` применяет агрегатную функцию, указанную в первом параметре функции, к элементам переданного массива, указанного во втором параметре.
+
+<div id="arrayJoin">
+  ### arrayJoin
+</div>
+
+Обычные функции в ClickHouse возвращают столько же строк, сколько получают на вход.
+Однако есть одна интересная и необычная функция, которая нарушает это правило, — `arrayJoin`.
+
+`arrayJoin` «разворачивает» массив, создавая отдельную строку для каждого его элемента.
+Это похоже на SQL-функции `UNNEST` или `EXPLODE` в других базах данных.
+
+В отличие от большинства функций для работы с массивами, которые возвращают массивы или скалярные значения, `arrayJoin` кардинально меняет результирующий набор, увеличивая число строк.
+
+Рассмотрим запрос ниже, который возвращает массив значений от 0 до 100 с шагом 10.
+Этот массив можно интерпретировать как разные значения задержки: 0 минут, 10 минут, 20 минут и так далее.
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay
+  SELECT delay
+  ```
+</RunnableCode>
+
+С помощью `arrayJoin` можно написать запрос, который покажет, сколько было задержек вплоть до указанного числа минут между двумя аэропортами.
+Запрос ниже строит гистограмму распределения задержек рейсов из Denver (DEN) в Miami (MIA) за 1 января 2024 года с использованием накопительных бакетов задержки:
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay,
+      toStringCutToZero(Dest) AS Destination
+
+  SELECT
+      'Up to ' || arrayJoin(delay) || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= arrayJoin(delay)) AS flightsDelayed
+  FROM ontime.ontime
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY delayTime
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+В запросе выше мы возвращаем массив задержек с помощью выражения CTE (выражения `WITH`).
+`Destination` преобразует код пункта назначения в строку.
+
+Мы используем `arrayJoin`, чтобы развернуть массив задержек в отдельные строки.
+Каждое значение из массива `delay` становится отдельной строкой с псевдонимом `del`,
+и в результате мы получаем 10 строк: одну для `del=0`, одну для `del=10`, одну для `del=20` и т. д.
+Для каждого порога задержки (`del`) запрос подсчитывает, сколько рейсов имели задержку, большую или равную этому порогу,
+с помощью `countIf(DepDelayMinutes >= del)`.
+
+У `arrayJoin` также есть SQL-эквивалент — `ARRAY JOIN`.
+Ниже для сравнения приведён тот же запрос, но с использованием этого SQL-эквивалента:
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay, 
+       toStringCutToZero(Dest) AS Destination
+
+  SELECT    
+      'Up to ' || del || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= del) flightsDelayed
+  FROM ontime.ontime
+  ARRAY JOIN delay AS del
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY ALL
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+<div id="next-steps">
+  ## Следующие шаги
+</div>
+
+Поздравляем! Вы узнали, как работать с массивами в ClickHouse: от базового создания массивов и индексирования до мощных функций, таких как `groupArray`, `arrayFilter`, `arrayMap`, `arrayReduce` и `arrayJoin`.
+Чтобы продолжить изучение темы, обратитесь к полному справочнику по функциям для работы с массивами и познакомьтесь с дополнительными функциями, такими как `arrayFlatten`, `arrayReverse` и `arrayDistinct`.
+Также вам может быть полезно узнать о связанных структурах данных, таких как [`Tuple`](/ru/reference/data-types/tuple#creating-tuples), типы [JSON](/ru/reference/data-types/newjson) и [Map](/ru/reference/data-types/map), которые хорошо сочетаются с массивами.
+Потренируйтесь применять эти концепции к собственным наборам данных и поэкспериментируйте с различными запросами в Песочнице ClickHouse или на других демонстрационных наборах данных.
+
+Массивы — одна из ключевых возможностей ClickHouse, позволяющая выполнять эффективные аналитические запросы. Чем увереннее вы будете работать с функциями для массивов, тем сильнее они будут упрощать сложные агрегации и анализ временных рядов.
+Если хотите узнать о массивах еще больше, рекомендуем посмотреть видео ниже на YouTube от Mark, нашего штатного эксперта по данным:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7jaw3J6U_h8?si=6NiEJ7S1odU-VVqX" title="Видеоплеер YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

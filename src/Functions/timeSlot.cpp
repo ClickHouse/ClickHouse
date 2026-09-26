@@ -15,10 +15,10 @@ REGISTER_FUNCTION(TimeSlot)
     FunctionDocumentation::Description description = R"(
 Round the time to the start of a half-an-hour length interval.
 
-:::note
+<Note>
 Although this function can take values of the extended types `Date32` and `DateTime64` as an argument,
 passing it a time outside the normal range (year 1970 to 2149 for `Date` / 2106 for `DateTime`) will produce wrong results.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 timeSlot(time[, time_zone])
@@ -40,7 +40,7 @@ SELECT timeSlot(toDateTime('2000-01-02 03:04:05', 'UTC'))
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTimeSlot>(documentation);
 }

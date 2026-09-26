@@ -1,6 +1,6 @@
 Expression ((Project names + Projection))
   Aggregating
-    Expression (((Before GROUP BY + ) + Discarding unused columns))
+    Expression ((Before GROUP BY + ))
       Expression (Post Join Actions)
         Join (JOIN FillRightFirst)
           Expression (Left Pre Join Actions)

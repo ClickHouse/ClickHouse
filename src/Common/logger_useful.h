@@ -9,9 +9,10 @@
 #include <Common/AtomicLogger.h>
 #include <Common/CurrentThreadHelpers.h>
 #include <Common/Logger.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/LoggingFormatStringHelpers.h>
-#include <Common/ProfileEvents.h>
+#include <Common/LoggingHelpers.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ProfileEventsLogger.h>
 #include <Common/Stopwatch.h>
 
 
@@ -67,7 +68,7 @@ namespace impl
 
 constexpr bool constexprContains(std::string_view haystack, std::string_view needle)
 {
-    return haystack.find(needle) != std::string_view::npos;
+    return haystack.contains(needle);
 }
 
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \

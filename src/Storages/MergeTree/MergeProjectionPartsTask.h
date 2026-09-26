@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/StorageID.h>
-#include <Storages/MergeTree/IExecutableTask.h>
+#include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeProgress.h>
@@ -11,15 +11,9 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-class MergeProjectionPartsTask : public IExecutableTask
+class MergeProjectionPartsTask : public MergeProjectionsIndexesTask
 {
 public:
-
     MergeProjectionPartsTask(
         String name_,
         MergeTreeData::MutableDataPartsVector && parts_,
@@ -31,9 +25,9 @@ public:
         MergeListEntry * merge_entry_,
         time_t time_of_merge_,
         MergeTreeData::MutableDataPartPtr new_data_part_,
-        ReservationSharedPtr space_reservation_)
+        ReservationSharedPtr space_reservation_,
+        MergeListElement * parent_merge_list_element_ = nullptr)
         : name(std::move(name_))
-        , parts(std::move(parts_))
         , projection(projection_)
         , block_num(block_num_)
         , context(context_)
@@ -43,26 +37,28 @@ public:
         , time_of_merge(time_of_merge_)
         , new_data_part(new_data_part_)
         , space_reservation(space_reservation_)
+        , parent_merge_list_element(parent_merge_list_element_)
         , log(getLogger("MergeProjectionPartsTask"))
         {
-            LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts.size(), parts.front()->name, parts.back()->name);
-            level_parts[current_level] = std::move(parts);
+            LOG_DEBUG(log, "Selected {} projection_parts from {} to {}", parts_.size(), parts_.front()->name, parts_.back()->name);
+            level_parts[current_level] = std::move(parts_);
         }
 
-    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    void addToChecksums(MergeTreeDataPartChecksums &) override {}
+    MutableDataPartsVector extractTemporaryParts() override;
+    String getProjectionName() const override { return name; }
+
     void cancel() noexcept override
     {
         /// FIXME: See `executeHere` from MergeTask.h called in executeStep
     }
-    StorageID getStorageID() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    Priority getPriority() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-    String getQueryId() const override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
-
     bool executeStep() override;
 
 private:
+    UInt64 countPartsInAllLevels() const;
+    void updatePartsRemaining(UInt64 in_flight = 0);
+
     String name;
-    MergeTreeData::MutableDataPartsVector parts;
     const ProjectionDescription & projection;
     size_t & block_num;
 
@@ -74,6 +70,7 @@ private:
 
     MergeTreeData::MutableDataPartPtr new_data_part;
     ReservationSharedPtr space_reservation;
+    MergeListElement * parent_merge_list_element;
 
     LoggerPtr log;
 
@@ -84,5 +81,7 @@ private:
     /// TODO(nikitamikhaylov): make this constant a setting
     static constexpr size_t max_parts_to_merge_in_one_level = 10;
 };
+
+using MergeProjectionPartsTaskPtr = std::unique_ptr<MergeProjectionPartsTask>;
 
 }

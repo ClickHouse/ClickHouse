@@ -1,7 +1,7 @@
-if(ARCH_AMD64 AND NOT OS_FREEBSD AND NOT OS_DARWIN)
+if(ARCH_AMD64 OR (ARCH_AARCH64 AND NOT NO_ARMV81_OR_HIGHER))
     option(ENABLE_FASTOPS "Enable fast vectorized mathematical functions library by Mikhail Parakhin" ${ENABLE_LIBRARIES})
 elseif(ENABLE_FASTOPS)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Fastops library is supported on x86_64 only, and not FreeBSD or Darwin")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Fastops library is supported on x86_64 and aarch64 (with NEON) only")
 endif()
 
 if(NOT ENABLE_FASTOPS)
@@ -11,17 +11,33 @@ endif()
 
 set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/fastops")
 
-set(SRCS "")
+set(SRCS
+    "${LIBRARY_DIR}/fastops/fastops.cpp"
+)
 
-if(ARCH_AMD64)
-    set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/avx/ops_avx.cpp")
-    set_source_files_properties("${LIBRARY_DIR}/fastops/avx/ops_avx.cpp" PROPERTIES COMPILE_FLAGS "-mavx -DNO_AVX2")
-
-    set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp")
-    set_source_files_properties("${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp" PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
+if (ARCH_AMD64)
+    list(APPEND SRCS "${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp")
 endif()
 
-set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/plain/ops_plain.cpp" "${LIBRARY_DIR}/fastops/core/avx_id.cpp" "${LIBRARY_DIR}/fastops/fastops.cpp")
+if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_LESS 3)
+    # Below v3: need runtime dispatch with AVX-only and Plain fallbacks.
+    list(APPEND SRCS
+        "${LIBRARY_DIR}/fastops/avx/ops_avx.cpp"
+        "${LIBRARY_DIR}/fastops/plain/ops_plain.cpp"
+        "${LIBRARY_DIR}/fastops/core/avx_id.cpp"
+    )
+    set_source_files_properties("${LIBRARY_DIR}/fastops/avx/ops_avx.cpp" PROPERTIES COMPILE_FLAGS "-mavx -DNO_AVX2")
+    set_source_files_properties("${LIBRARY_DIR}/fastops/avx2/ops_avx2.cpp" PROPERTIES COMPILE_FLAGS "-mavx2 -mfma -DNO_AVX")
+elseif(ARCH_AARCH64)
+    list(APPEND SRCS "${LIBRARY_DIR}/fastops/neon/ops_neon.cpp")
+
+    # SVE requires arm_sve.h which is only available on Linux toolchains (not Darwin/FreeBSD).
+    if(OS_LINUX)
+        list(APPEND SRCS "${LIBRARY_DIR}/fastops/sve/ops_sve.cpp")
+        set_source_files_properties("${LIBRARY_DIR}/fastops/sve/ops_sve.cpp" PROPERTIES COMPILE_FLAGS "-march=armv8-a+sve")
+    endif()
+endif()
+
 
 add_library(_fastops ${SRCS})
 

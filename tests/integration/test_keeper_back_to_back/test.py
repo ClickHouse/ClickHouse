@@ -1,6 +1,7 @@
 import os
 import random
 import string
+import threading
 import time
 from multiprocessing.dummy import Pool
 
@@ -130,12 +131,12 @@ def test_sequential_nodes(started_cluster, request):
         fake_throw = False
         try:
             genuine_zk.create(f"/test_sequential_nodes_{retry}_1/a", sequence=True)
-        except Exception as ex:
+        except Exception:
             genuine_throw = True
 
         try:
             fake_zk.create(f"/test_sequential_nodes_{retry}_1/a", sequence=True)
-        except Exception as ex:
+        except Exception:
             fake_throw = True
 
         assert genuine_throw == True
@@ -254,6 +255,8 @@ def test_watchers(started_cluster, request):
         genuine_data_watch_data = None
 
         def genuine_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Genuine data watch called")
             nonlocal genuine_data_watch_data
             genuine_data_watch_data = event
@@ -261,6 +264,8 @@ def test_watchers(started_cluster, request):
         fake_data_watch_data = None
 
         def fake_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Fake data watch called")
             nonlocal fake_data_watch_data
             fake_data_watch_data = event
@@ -284,6 +289,8 @@ def test_watchers(started_cluster, request):
         genuine_children = None
 
         def genuine_child_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Genuine child watch called")
             nonlocal genuine_children
             genuine_children = event
@@ -291,6 +298,8 @@ def test_watchers(started_cluster, request):
         fake_children = None
 
         def fake_child_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Fake child watch called")
             nonlocal fake_children
             fake_children = event
@@ -327,6 +336,8 @@ def test_watchers(started_cluster, request):
         genuine_children_delete = None
 
         def genuine_child_delete_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Genuine child watch called")
             nonlocal genuine_children_delete
             genuine_children_delete = event
@@ -334,6 +345,8 @@ def test_watchers(started_cluster, request):
         fake_children_delete = None
 
         def fake_child_delete_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Fake child watch called")
             nonlocal fake_children_delete
             fake_children_delete = event
@@ -341,6 +354,8 @@ def test_watchers(started_cluster, request):
         genuine_child_delete = None
 
         def genuine_own_delete_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Genuine child watch called")
             nonlocal genuine_child_delete
             genuine_child_delete = event
@@ -348,6 +363,8 @@ def test_watchers(started_cluster, request):
         fake_child_delete = None
 
         def fake_own_delete_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Fake child watch called")
             nonlocal fake_child_delete
             fake_child_delete = event
@@ -614,6 +631,8 @@ def test_end_of_session(started_cluster, request):
         fake_ephemeral_event = None
 
         def fake_ephemeral_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Fake watch triggered")
             nonlocal fake_ephemeral_event
             fake_ephemeral_event = event
@@ -621,6 +640,8 @@ def test_end_of_session(started_cluster, request):
         genuine_ephemeral_event = None
 
         def genuine_ephemeral_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             print("Genuine watch triggered")
             nonlocal genuine_ephemeral_event
             genuine_ephemeral_event = event
@@ -684,6 +705,8 @@ def test_end_of_watches_session(started_cluster, request):
         dummy_set = 0
 
         def dummy_callback(event):
+            if not keeper_utils.is_znode_watch_event(event):
+                return
             nonlocal dummy_set
             dummy_set += 1
             print(event)
@@ -733,8 +756,18 @@ def test_concurrent_watches(started_cluster, request):
         all_paths_triggered = []
 
         existing_path = []
+        # A watch is one-shot per (path, session), so a mutation only notifies a registration
+        # live at that moment. Claim a token before mutating: mutating without one lets a stale
+        # removal drop the token of a later registration, which then never gets a mutation.
+        existing_path_lock = threading.Lock()
         all_paths_created = []
         watches_created = 0
+
+        def claim_path():
+            with existing_path_lock:
+                if not existing_path:
+                    return None
+                return existing_path.pop(random.randrange(len(existing_path)))
 
         def create_path_and_watch(i):
             nonlocal watches_created
@@ -743,6 +776,8 @@ def test_concurrent_watches(started_cluster, request):
 
             # new function each time
             def dumb_watch(event):
+                if not keeper_utils.is_znode_watch_event(event):
+                    return
                 nonlocal dumb_watch_triggered_counter
                 dumb_watch_triggered_counter += 1
                 nonlocal all_paths_triggered
@@ -751,7 +786,8 @@ def test_concurrent_watches(started_cluster, request):
             fake_zk.get(global_path + "/" + str(i), watch=dumb_watch)
             all_paths_created.append(global_path + "/" + str(i))
             watches_created += 1
-            existing_path.append(i)
+            with existing_path_lock:
+                existing_path.append(i)
 
         trigger_called = 0
 
@@ -759,26 +795,19 @@ def test_concurrent_watches(started_cluster, request):
             nonlocal trigger_called
             trigger_called += 1
             fake_zk.set(global_path + "/" + str(i), b"somevalue")
-            try:
-                existing_path.remove(i)
-            except:
-                pass
 
         def call(total):
             for i in range(total):
                 create_path_and_watch(random.randint(0, 1000))
                 time.sleep(random.random() % 0.5)
-                try:
-                    rand_num = random.choice(existing_path)
+                rand_num = claim_path()
+                if rand_num is not None:
                     trigger_watch(rand_num)
-                except:
-                    pass
-            while existing_path:
-                try:
-                    rand_num = random.choice(existing_path)
-                    trigger_watch(rand_num)
-                except:
-                    pass
+            while True:
+                rand_num = claim_path()
+                if rand_num is None:
+                    break
+                trigger_watch(rand_num)
 
         p = Pool(10)
         arguments = [100] * 10
@@ -796,7 +825,7 @@ def test_concurrent_watches(started_cluster, request):
             time.sleep(0.1)
 
         assert watches_created == watches_must_be_created
-        assert trigger_called >= watches_trigger_must_be_called
+        assert trigger_called == watches_trigger_must_be_called
         assert len(existing_path) == 0
         if dumb_watch_triggered_counter != watches_must_be_triggered:
             print("All created paths", all_paths_created)

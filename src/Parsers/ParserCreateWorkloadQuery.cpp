@@ -131,7 +131,7 @@ bool ParserCreateWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     ASTCreateWorkloadQuery::SettingsChanges changes;
     parseSettings(pos, expected, changes);
 
-    auto create_workload_query = std::make_shared<ASTCreateWorkloadQuery>();
+    auto create_workload_query = make_intrusive<ASTCreateWorkloadQuery>();
     node = create_workload_query;
 
     create_workload_query->workload_name = workload_name;
