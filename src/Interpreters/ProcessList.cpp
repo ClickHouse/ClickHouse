@@ -111,6 +111,29 @@ static bool isUnlimitedQuery(const IAST * ast)
     return false;
 }
 
+bool isDDLQuery(const IAST * ast)
+{
+    if (!ast)
+        return false;
+
+    switch (ast->getQueryKind())
+    {
+        case IAST::QueryKind::Create:
+        case IAST::QueryKind::Drop:
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Alter:
+        case IAST::QueryKind::Optimize:
+        case IAST::QueryKind::Move:
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::System:
+            return true;
+        default:
+            return false;
+    }
+}
+
 ProcessList::EntryPtr ProcessList::insert(
     const String & query_,
     UInt64 normalized_query_hash,

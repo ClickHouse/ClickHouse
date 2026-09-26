@@ -656,6 +656,12 @@ protected:
     /// NOTE: all resource links became invalid after `classifier` destruction
     mutable ClassifierPtr classifier;
 
+    /// When set, getWorkloadClassifier() hands out a classifier that maps every resource to an empty
+    /// link, exempting the query from all workload scheduling (query-slot and memory-reservation
+    /// admission, CPU and IO). Set for DDL when the `use_ddl_workload` server setting is disabled.
+    /// Copied to child contexts so sub-operations of the same query stay exempt.
+    bool workload_exempt = false;
+
     /// Prepared sets that can be shared between different queries. One use case is when is to share prepared sets between
     /// mutation tasks of one mutation executed against different parts of the same table.
     PreparedSetsCachePtr prepared_sets_cache;
@@ -1010,6 +1016,9 @@ public:
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    /// Exempt this query from all workload scheduling (see getWorkloadClassifier and workload_exempt).
+    /// Must be called before the workload classifier is first acquired.
+    void setWorkloadExempt();
     /// Release the query slot early so the client can reuse it for its next query.
     /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
     /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
@@ -1028,6 +1037,8 @@ public:
     UInt64 getCPUSlotQuantum() const;
     UInt64 getCPUSlotPreemptionTimeout() const;
     void setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms);
+    bool getUseDdlWorkload() const;
+    void setUseDdlWorkload(bool use_ddl_workload);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;

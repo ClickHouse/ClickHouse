@@ -169,6 +169,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString ddl_workload;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
@@ -2884,8 +2885,27 @@ static BlockIO executeQueryImpl(
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
+            /// Decide the DDL scheduling mode from the hot-reloadable `use_ddl_workload`, read once so a
+            /// config reload cannot change the mode mid-query, before the workload classifier is acquired
+            /// in insert. Enabled: schedule DDL under `ddl_workload` instead of `workload` (an independent
+            /// setting with its own constraints, intentionally not validated against `workload`'s).
+            /// Disabled (default): exempt DDL from all workload scheduling — query-slot and
+            /// memory-reservation admission, CPU and IO — leaving `workload` untouched so the server-wide
+            /// max_concurrent_queries* limits still apply and nothing is forwarded to distributed workers.
+            if (isDDLQuery(out_ast.get()))
+            {
+                if (context->getUseDdlWorkload())
+                {
+                    const String & ddl_workload = settings[Setting::ddl_workload];
+                    context->setSetting("workload", ddl_workload.empty() ? String("default") : ddl_workload);
+                }
+                else
+                    context->setWorkloadExempt();
+            }
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
-            process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
+            process_list_entry = context->getProcessList().insert(
+                query_for_logging, normalized_query_hash, out_ast.get(), context,
+                start_watch.getStart(), internal);
             context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 

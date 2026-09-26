@@ -617,6 +617,7 @@ struct ContextSharedPart : boost::noncopyable
     bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
+    bool use_ddl_workload TSA_GUARDED_BY(mutex) = false;      /// Route DDL queries through the `ddl_workload` setting instead of `workload`
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
     UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
@@ -1487,6 +1488,7 @@ ContextData::ContextData(const ContextData &o) :
     join_analyze_mode(o.join_analyze_mode),
     temp_data_on_disk(o.temp_data_on_disk),
     classifier(o.classifier),
+    workload_exempt(o.workload_exempt),
     prepared_sets_cache(o.prepared_sets_cache),
     offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
     runtime_filter_lookup(o.runtime_filter_lookup),
@@ -2617,14 +2619,40 @@ ResourceManagerPtr Context::getResourceManager() const
     return shared->resource_manager;
 }
 
+namespace
+{
+    /// Maps every resource to an empty ResourceLink, so a query using it is exempt from all workload
+    /// scheduling (query-slot and memory-reservation admission, CPU and IO) and never throws on an
+    /// unknown workload. Stateless, so a single shared instance serves every exempt query.
+    class ExemptClassifier : public IClassifier
+    {
+    public:
+        ResourceLink get(const String &) override { return {}; }
+    };
+}
+
 ClassifierPtr Context::getWorkloadClassifier() const
 {
     ClassifierSettings settings{.throw_on_unknown_workload = getThrowOnUnknownWorkload()}; // to avoid locking shared mutex under `mutex`
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
+    if (workload_exempt)
+    {
+        /// Takes precedence over a normal classifier without acquiring or resetting it.
+        static const ClassifierPtr exempt_classifier = std::make_shared<ExemptClassifier>();
+        return exempt_classifier;
+    }
     if (!classifier)
         classifier = getResourceManager()->acquire(getSettingsRef()[Setting::workload], settings);
     return classifier;
+}
+
+void Context::setWorkloadExempt()
+{
+    std::lock_guard lock(mutex);
+    /// Set once, before the classifier is acquired in ProcessList::insert; getWorkloadClassifier()
+    /// then hands out the exempt classifier in preference to (and without acquiring) a normal one.
+    workload_exempt = true;
 }
 
 void Context::releaseQuerySlot() const
@@ -2718,6 +2746,18 @@ void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_qua
     shared->cpu_slot_preemption = cpu_slot_preemption;
     shared->cpu_slot_quantum_ns = cpu_slot_quantum_ns;
     shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
+}
+
+bool Context::getUseDdlWorkload() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->use_ddl_workload;
+}
+
+void Context::setUseDdlWorkload(bool use_ddl_workload)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->use_ddl_workload = use_ddl_workload;
 }
 
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const
@@ -4125,6 +4165,7 @@ void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_sett
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    workload_exempt = false; // A background merge runs under the merge workload, never exempt
     (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
 }
 
@@ -4132,6 +4173,7 @@ void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_set
 {
     makeQueryContext();
     classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    workload_exempt = false; // A background mutation runs under the mutation workload, never exempt
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
 
