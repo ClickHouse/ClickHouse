@@ -30,7 +30,6 @@ namespace Setting
     extern const SettingsUInt64 select_sequential_consistency;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_support_projection;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool force_aggregation_in_order;
     extern const SettingsUInt64 max_projection_rows_to_use_projection_index;
@@ -77,6 +76,12 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     if (reading->getDistributedReadBucketCount() > 0)
         return std::unexpected("the read is part of a distributed plan");
 
+    /// A streaming read resolves which rows it returns at runtime, from the subscription bounds and
+    /// the cursor; plan-time part selection is skipped for it. A projection describes the whole
+    /// table, so an answer derived from one ignores those bounds.
+    if (reading->getQueryInfo().isStream())
+        return std::unexpected("the query uses STREAM");
+
     if (reading->isQueryWithFinal())
         return std::unexpected("the query uses FINAL");
 
@@ -90,8 +95,7 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
 
     if (reading->isParallelReadingEnabled())
     {
-        bool support_projection = query_settings[Setting::allow_experimental_analyzer]
-            && query_settings[Setting::parallel_replicas_local_plan]
+        bool support_projection = query_settings[Setting::parallel_replicas_local_plan]
             && query_settings[Setting::parallel_replicas_support_projection];
 
         /// AggregationInOrder may cause local and remote replicas to use different CoordinationModes, which is currently unsupported.
