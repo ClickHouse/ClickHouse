@@ -361,8 +361,9 @@ void flushCoverageToFilesOnExit() noexcept
         {
             reportToStderr("Cannot flush per-test coverage: " + getCurrentExceptionMessage(false));
         }
-        catch (...) // NOLINT(bugprone-empty-catch): stderr is the last resort, the process is exiting anyway
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
+            /// Ok: stderr is the last resort, the process is exiting anyway.
         }
     }
 }
