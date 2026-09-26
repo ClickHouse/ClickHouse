@@ -1,0 +1,23 @@
+stored command
+(UPDATE v = v + 100 IN PARTITION ID \'1\' WHERE 1)
+pending update, read on the fly
+1	1	110
+2	2	20
+after the table is reloaded
+1	1	110
+2	2	20
+0	3	30
+after it materialized
+1	1	110
+2	2	20
+0	3	30
+replicated: stored command
+(UPDATE v = v + 100 IN PARTITION ID \'1\' WHERE 1)
+replicated: pending update on the other replica
+1	1	110
+2	2	20
+0	3	30
+replicated: after it materialized
+1	1	110
+2	2	20
+0	3	30
