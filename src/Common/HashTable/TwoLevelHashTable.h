@@ -1,7 +1,9 @@
 #pragma once
 
+#include <type_traits>
+#include <vector>
+#include <base/defines.h>
 #include <Common/HashTable/HashTable.h>
-#include <array>
 
 
 /** Two-level hash table.
@@ -13,6 +15,14 @@
   * - if you need to merge two hash tables together, then you can easily parallelize it by buckets;
   * - delay during resizes is amortized, since the small hash tables will be resized separately;
   * - in theory, resizes are cache-local in a larger range of sizes.
+  *
+  * With `BITS_FOR_BUCKET = 0` there is a single bucket: routing folds to a constant.
+  * Lookups and inserts compile down to what the single-level table does.
+  * One map type can then serve both a serial fill and a fill from many threads.
+  *
+  * Buckets share no state.
+  * Threads may fill different buckets at the same time when every bucket is written under its own lock.
+  * Call `computeBucketPrefix` before reading `offsetInternal`.
   */
 
 template <size_t initial_size_degree = 8>
@@ -22,20 +32,21 @@ struct TwoLevelHashTableGrower : public HashTableGrowerWithPrecalculation<initia
     void increaseSize() { this->increaseSizeDegree(this->sizeDegree() >= 15 ? 1 : 2); }
 };
 
-template
-<
+constexpr size_t DEFAULT_BITS_FOR_BUCKET = 8;
+
+template <
     typename Key,
     typename Cell,
     typename Hash,
     typename Grower,
     typename Allocator,
     typename ImplTable = HashTable<Key, Cell, Hash, Grower, Allocator>,
-    size_t BITS_FOR_BUCKET = 8
->
-class TwoLevelHashTable :
-    private boost::noncopyable,
-    protected Hash            /// empty base optimization
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
+class TwoLevelHashTable : private boost::noncopyable,
+                          protected Hash /// empty base optimization
 {
+    static_assert(BITS_FOR_BUCKET < 32, "the bucket is taken from the low 32 bits of the hash");
+
 protected:
     friend class const_iterator;
     friend class iterator;
@@ -48,10 +59,19 @@ public:
     static constexpr UInt32 NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
     static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
 
-    size_t hash(const Key & x) const { return Hash::operator()(x); }
+    /// Static so that a caller can route keys to buckets without a table at hand. `Hash` must be stateless.
+    static size_t hash(const Key & x) { return Hash{}(x); }
 
     /// NOTE Bad for hash tables with more than 2^32 cells.
-    static size_t getBucketFromHash(size_t hash_value) { return (hash_value >> (32 - BITS_FOR_BUCKET)) & MAX_BUCKET; }
+    static constexpr UInt32 bucketShift() { return 32 - BITS_FOR_BUCKET; }
+    static size_t getBucketFromHash(size_t hash_value) { return (hash_value >> bucketShift()) & MAX_BUCKET; }
+
+    /// The hash a key is routed to its bucket by is the cell hash. See `BucketPartitionedTable`.
+    template <typename K>
+    static size_t bucketRoutingHash(const K &, size_t hash_value)
+    {
+        return hash_value;
+    }
 
 protected:
     typename Impl::iterator beginOfNextNonEmptyBucket(size_t & bucket)
@@ -89,22 +109,24 @@ public:
 
     Impl impls[NUM_BUCKETS];
 
-    /// Cached prefix sums of bucket capacities in cells to speed up offsetInternal
-    /// bucket_cells_prefix[b] = sum_{i=0..b-1} impls[i].getBufferSizeInCells()
-    mutable std::array<size_t, NUM_BUCKETS> bucket_cells_prefix{};
-    mutable std::once_flag bucket_prefix_once;
+    /// `bucket_cells_prefix[b]` is the number of cells in the buckets before `b`. See `computeBucketPrefix`.
+    std::vector<size_t> bucket_cells_prefix;
 
 
     TwoLevelHashTable() = default;
 
-    explicit TwoLevelHashTable(size_t size_hint)
+    explicit TwoLevelHashTable(size_t size_hint) { reserve(size_hint); }
+
+    void reserve(size_t num_elements)
     {
         for (auto & impl : impls)
-            impl.reserve(size_hint / NUM_BUCKETS);
+            impl.reserve(num_elements / NUM_BUCKETS);
     }
 
     /// Copy the data from another (normal) hash table. It should have the same hash function.
+    /// The constraint keeps an integer size hint from choosing this overload over the one above.
     template <typename Source>
+    requires(!std::is_arithmetic_v<Source>)
     explicit TwoLevelHashTable(const Source & src)
     {
         typename Source::const_iterator it = src.begin();
@@ -335,6 +357,8 @@ public:
 
     ConstLookupResult ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
 
+    bool ALWAYS_INLINE has(const Key & x) const { return impls[getBucketFromHash(hash(x))].has(x); }
+
     bool ALWAYS_INLINE erase(Key x, size_t hash_value)
     {
         size_t buck = getBucketFromHash(hash_value);
@@ -386,9 +410,9 @@ public:
         return res;
     }
 
-    /// Walk the mapped values of every bucket. `TwoLevelHashMapTable` shadows this with its own; defined
-    /// here so that a two-level table over set buckets - which have no mapped values, so this visits
-    /// nothing - also satisfies generic code that iterates mapped values.
+    /// Walk the mapped values of every bucket.
+    /// Defined here so a two-level table over set buckets also satisfies generic mapped-value walks.
+    /// Set buckets have no mapped values, so this visits nothing.
     template <typename Func>
     void ALWAYS_INLINE forEachMapped(Func && func)
     {
@@ -422,23 +446,36 @@ public:
         return res;
     }
 
-    size_t offsetInternal(ConstLookupResult ptr) const
+    /// Prefix sums that `offsetInternal` uses to number cells across all buckets.
+    /// Call this once the table stops growing, and again after it grows.
+    /// An offset read before that is stale. The lookup path does not check.
+    /// Must not run while another thread reads offsets.
+    void computeBucketPrefix()
     {
-        const size_t buck = getBucketFromHash(ptr->getHash(*this));
-        if (ptr->isZero(impls[buck]))
-            return 0;
-
-        // Lazily compute prefix sums across buckets once; subsequent calls are O(1).
-        std::call_once(bucket_prefix_once, [this]()
+        bucket_cells_prefix.assign(NUM_BUCKETS, 0);
+        size_t run = 0;
+        for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
         {
-            size_t run = 0;
-            for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
-            {
-                bucket_cells_prefix[i] = run;
-                run += impls[i].getBufferSizeInCells();
-            }
-        });
+            bucket_cells_prefix[i] = run;
+            run += impls[i].getBufferSizeInCells();
+        }
+    }
 
-        return bucket_cells_prefix[buck] + (ptr - impls[buck].buf) + 1;
+    /// Number of the cell over all buckets.
+    /// 0 for the zero cell, otherwise the position in the concatenated bucket buffers plus one.
+    /// That fits an array of `getBufferSizeInCells() + 1`.
+    /// `computeBucketPrefix` must have run since the last insert; a single bucket needs none.
+    size_t offsetInternal(ConstLookupResult ptr) const { return offsetInternalAtBucket(ptr, getBucketFromHash(ptr->getHash(*this))); }
+
+    /// Cell number when the caller already knows the bucket of `ptr`.
+    size_t ALWAYS_INLINE offsetInternalAtBucket(ConstLookupResult ptr, size_t bucket) const
+    {
+        if (ptr->isZero(impls[bucket]))
+            return 0;
+        if constexpr (NUM_BUCKETS == 1)
+            return static_cast<size_t>(ptr - impls[0].buf) + 1;
+
+        chassert(!bucket_cells_prefix.empty(), "computeBucketPrefix must run before an offset is read");
+        return bucket_cells_prefix[bucket] + static_cast<size_t>(ptr - impls[bucket].buf) + 1;
     }
 };

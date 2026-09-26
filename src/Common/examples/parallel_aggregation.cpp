@@ -1367,7 +1367,7 @@ void aggregate4(Map & local_map, MapTwoLevel & global_map, Mutex * mutexes, Sour
                     ++found->getMapped();
                 else
                 {
-                    size_t hash_value = global_map.hash(*it);
+                    size_t hash_value = MapTwoLevel::hash(*it);
                     size_t bucket = MapTwoLevel::getBucketFromHash(hash_value);
 
                     if (mutexes[bucket].try_lock())

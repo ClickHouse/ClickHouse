@@ -4,31 +4,24 @@
 #include <Common/HashTable/HashMap.h>
 
 
-template
-<
+template <
     typename Key,
     typename Cell,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable
->
-class TwoLevelHashMapTable : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>
+    template <typename...> typename ImplTable = HashMapTable,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
+class TwoLevelHashMapTable
+    : public TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>
 {
 public:
     using Impl = ImplTable<Key, Cell, Hash, Grower, Allocator>;
-    using Base = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>>;
+    using Base = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable<Key, Cell, Hash, Grower, Allocator>, BITS_FOR_BUCKET>;
     using LookupResult = typename Impl::LookupResult;
 
     using Base::Base;
     using Base::prefetch;
-
-    template <typename Func>
-    void ALWAYS_INLINE forEachMapped(Func && func)
-    {
-        for (auto i = 0u; i < this->NUM_BUCKETS; ++i)
-            this->impls[i].forEachMapped(func);
-    }
 
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
@@ -44,25 +37,24 @@ public:
 };
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable
->
-using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable>;
+    template <typename...> typename ImplTable = HashMapTable,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
+using TwoLevelHashMap = TwoLevelHashMapTable<Key, HashMapCell<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>;
 
 
-template
-<
+template <
     typename Key,
     typename Mapped,
     typename Hash = DefaultHash<Key>,
     typename Grower = TwoLevelHashTableGrower<>,
     typename Allocator = HashTableAllocator,
-    template <typename ...> typename ImplTable = HashMapTable
->
-using TwoLevelHashMapWithSavedHash = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable>;
+    template <typename...> typename ImplTable = HashMapTable,
+    size_t BITS_FOR_BUCKET = DEFAULT_BITS_FOR_BUCKET>
+using TwoLevelHashMapWithSavedHash
+    = TwoLevelHashMapTable<Key, HashMapCellWithSavedHash<Key, Mapped, Hash>, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>;

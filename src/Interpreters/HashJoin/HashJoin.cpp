@@ -2879,6 +2879,15 @@ bool HashJoin::recordsRowRefsForStats() const
 
 void HashJoin::onBuildPhaseFinish()
 {
+    /// The buckets are final here (`ConcurrentHashJoin` has merged the slots into one map by now), so
+    /// the cell numbering the used flags are indexed by can be settled.
+    if (twoLevelMapIsUsed())
+    {
+        const auto maps_kind = getMapsKind();
+        for (auto & map : data->maps)
+            joinDispatch(kind, strictness, map, maps_kind, [this](auto, auto, auto & map_) { map_.computeBucketPrefix(data->type); });
+    }
+
     reinitUsedFlags();
 
     /// Two-level maps per-row flags will be finalized by ConcurrentHashJoin.
