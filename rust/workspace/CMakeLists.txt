@@ -26,6 +26,12 @@ if (SANITIZE STREQUAL "memory")
     set (ENABLE_VORTEX OFF)
 endif()
 
+# The same limit is hit by the fuzzers: `clickhouse_fuzzer` links the whole server instrumented for
+# ASan and libFuzzer, and with this library it no longer fits the small code model either.
+if (ENABLE_FUZZING)
+    set (ENABLE_VORTEX OFF)
+endif()
+
 if (NOT ENABLE_PRQL AND NOT ENABLE_SKIM AND NOT ENABLE_POLYGLOT AND NOT ENABLE_VORTEX)
     message(STATUS "prql, skim, polyglot, and vortex are disabled")
     return()
