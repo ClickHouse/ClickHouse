@@ -55,7 +55,7 @@ SET use_skip_indexes = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
 
 SELECT 'Lazy, leapfrog intersection';
-SET text_index_lazy_intersection_density_threshold = 1;
+SET text_index_postings_intersection_algorithm = 'leapfrog';
 SELECT 'third', count(), sum(id) FROM tab_lazy_windows WHERE hasToken(s, 'third');
 SELECT 'third in [100000, 120000)', count(), sum(id) FROM tab_lazy_windows WHERE id >= 100000 AND id < 120000 AND hasToken(s, 'third');
 SELECT 'any third seventh', count(), sum(id) FROM tab_lazy_windows WHERE hasAnyTokens(s, ['third', 'seventh']);
@@ -66,7 +66,7 @@ SELECT 'all third rare', count(), sum(id) FROM tab_lazy_windows WHERE hasAllToke
 SELECT 'all even third seventh', count(), sum(id) FROM tab_lazy_windows WHERE hasAllTokens(s, ['even', 'third', 'seventh']);
 
 SELECT 'Lazy, brute-force intersection';
-SET text_index_lazy_intersection_density_threshold = 0;
+SET text_index_postings_intersection_algorithm = 'bruteforce';
 SELECT 'all third seventh', count(), sum(id) FROM tab_lazy_windows WHERE hasAllTokens(s, ['third', 'seventh']);
 SELECT 'all even third', count(), sum(id) FROM tab_lazy_windows WHERE hasAllTokens(s, ['even', 'third']);
 SELECT 'all third rare', count(), sum(id) FROM tab_lazy_windows WHERE hasAllTokens(s, ['third', 'rare']);

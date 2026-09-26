@@ -30,6 +30,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -694,6 +695,13 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     auto context = Context::createCopy(getContext());
     context->setSetting("automatic_parallel_replicas_mode", Field{0});
 
+    /// A follower executing the shipped INSERT never uses the plan-based implementation of parallel
+    /// replicas: `collaborate_with_initiator` makes `canUseParallelReplicasOnInitiator` false, which is what
+    /// gates `QueryPlanOptimizationSettings::enable_parallel_replicas`. The initiator takes part as one more
+    /// replica, so it has to read the way the followers read. This is not a fallback for a declined
+    /// plan-based query: the feature is defined on top of the query-shipping transport.
+    context->setSetting("parallel_replicas_plan_based", false);
+
     if (!context->canUseParallelReplicasOnInitiator())
         return {};
 
@@ -703,6 +711,13 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
         return {};
+
+    /// Pinning it on the context above is not enough: the nested interpreter re-applies the SELECT's own
+    /// `SETTINGS` clause on top of the context it is handed (`QueryTreeBuilder::buildSelectExpression`),
+    /// bringing the plan-based implementation back for the plans built below. `execute` restores
+    /// `query.select` from its backup once this returns, so the user's query text is not affected.
+    static constexpr std::array settings_overridden_for_this_path{std::string_view{"parallel_replicas_plan_based"}};
+    removeSettingsFromQueryTopLevel(query.select, settings_overridden_for_this_path);
 
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
     if (!ClusterProxy::isSuitableForInsertSelectWithParallelReplicas(select, context))
