@@ -1,3 +1,10 @@
+local, nanoseconds
 1698543000123456789
+remote, nanoseconds
 1698543000123456789
+remote, whole seconds, legacy raw ticks
 1698543000000
+remote, nanoseconds, best_effort
+1698543000123456789
+remote, before 1970, best_effort
+-1500

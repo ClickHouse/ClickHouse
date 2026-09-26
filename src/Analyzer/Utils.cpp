@@ -10,12 +10,16 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/parseDateTimeBestEffort.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -31,9 +35,11 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsDateTime.h>
 #include <Columns/validateColumnType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/DateLUT.h>
 #include <Common/typeid_cast.h>
 
 #include <base/unit.h>
@@ -1431,15 +1437,44 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
 namespace
 {
 
+/// The Unix timestamp of a `DateTime64` leaf as text, for a JSON string that the typed path of the shard parses
+/// exactly, with no `Float64` in between. The text parsers read a string as a timestamp only when it looks like
+/// one (not `5.0`, and the best-effort ones not `-1.5`), so the text is used only if every `date_time_input_format`
+/// reads it back as the same instant; otherwise there is no exact text form and the caller keeps the number.
+std::optional<String> dateTime64AsTimestampText(DateTime64 value, const DataTypeDateTime64 & type)
+{
+    const UInt32 scale = type.getScale();
+    WriteBufferFromOwnString out;
+    writeDateTimeUnixTimestamp(value, scale, out);
+    String text = out.str();
+
+    /// The same parsers and time zone as `DateTime64Node::tryParse`.
+    const auto & time_zone = type.getTimeZone();
+    const auto & utc_time_zone = DateLUT::instance("UTC");
+    auto reads_back = [&](auto && parse)
+    {
+        DateTime64 parsed;
+        ReadBufferFromMemory in(text);
+        return parse(parsed, in) && in.eof() && parsed == value;
+    };
+
+    if (reads_back([&](DateTime64 & parsed, ReadBuffer & in) { return tryReadDateTime64Text(parsed, scale, in, time_zone); })
+        && reads_back([&](DateTime64 & parsed, ReadBuffer & in) { return tryParseDateTime64BestEffort(parsed, scale, in, time_zone, utc_time_zone); })
+        && reads_back([&](DateTime64 & parsed, ReadBuffer & in) { return tryParseDateTime64BestEffortUS(parsed, scale, in, time_zone, utc_time_zone); }))
+        return text;
+
+    return std::nullopt;
+}
+
 /// `datetime64_as_numbers` is only set while building the text of a JSON/Object constant for exact
 /// serialization (columnConstantToExactLiteralAST). When set, typed DateTime64/Time64 leaves are
-/// rendered as a bare number instead of local date-time text, which round-trips losslessly and is
-/// unambiguous across DST overlaps: the shard reads the number back through the leaf's declared type
-/// (`JSONExtractTree`'s `DateTime64Node`/`Time64Node`). The two types read a bare
-/// number differently - a DateTime64 path reads a Unix timestamp in seconds, a Time64 path reads the
-/// raw scaled ticks - so each leaf is written in the form its own parser expects. Reading a DateTime64
-/// number as ticks again is only possible under the legacy `input_format_read_datetime_number_as_raw_value`
-/// (`compatibility` of `26.7` or below), where the JSON leaf of such a constant is off by the scale.
+/// rendered as a Unix timestamp instead of local date-time text, which is ambiguous across DST overlaps
+/// and depends on the time zone of the server that reads it: the shard reads the leaf back through its
+/// declared type (`JSONExtractTree`'s `DateTime64Node`/`Time64Node`). A Time64 path reads a bare integer
+/// as the raw scaled ticks. A DateTime64 leaf is written as a quoted Unix timestamp in seconds (see
+/// `dateTime64AsTimestampText`): a bare number would be read through `Float64`, losing the digits past the
+/// sixteenth, and a bare integer would be read as raw ticks under the legacy
+/// `input_format_read_datetime_number_as_raw_value` (`compatibility` of `26.7` or below).
 /// This must not leak into dynamic JSON paths or Variant/Dynamic, where the value's type is inferred
 /// from the JSON token and a bare number would be read as a number, not a date-time.
 ///
@@ -1465,15 +1500,20 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
         case TypeIndex::Time64:
         {
             /// DateTime64/Time64 are backed by a scaled Int64. Inside a JSON object the exact path renders
-            /// them as a bare number so the typed path parses them back losslessly (see above). The two
-            /// types read a bare number differently: a typed Time64 path reads an integer as the raw ticks,
-            /// while a typed DateTime64 path reads the number as a Unix timestamp in seconds and parses its
-            /// fractional part exactly (`readDateTime64AsNumber`), which is what the scaled decimal value
-            /// already spells out.
+            /// them as a Unix timestamp, in the form the typed path parses back exactly (see above): a typed
+            /// Time64 path reads an integer as the raw ticks, and a typed DateTime64 path reads a quoted
+            /// timestamp in seconds.
             if (datetime64_as_numbers)
             {
                 if (data_type->getTypeId() == TypeIndex::Time64)
                     return Field(static_cast<Int64>((*column)[row].safeGet<DecimalField<Decimal64>>().getValue()));
+
+                const DateTime64 value = assert_cast<const ColumnDateTime64 &>(*column).getElement(row);
+                if (auto text = dateTime64AsTimestampText(value, assert_cast<const DataTypeDateTime64 &>(*data_type)))
+                    return Field(std::move(*text));
+
+                /// A timestamp that no text parser reads back exactly (one near or before 1970) is kept as a
+                /// number: a bare number is still read as seconds, exactly up to the precision of `Float64`.
                 return (*column)[row];
             }
             if (data_type->getTypeId() == TypeIndex::Time64)
