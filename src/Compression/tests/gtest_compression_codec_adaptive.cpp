@@ -111,11 +111,10 @@ TEST(AdaptiveCodecPool, CandidateTypesGetT64)
         expectPool(name, {"T64"});
 }
 
-TEST(AdaptiveCodecPool, FloatTypesGetALPVariants)
+TEST(AdaptiveCodecPool, FloatTypesGetALPAuto)
 {
-    /// STD before RD because STD decompressed faster (we want it in case of tie)
     for (const auto * name : {"Float32", "Float64"})
-        expectPool(name, {"ALP(STD)", "ALP(RD)"});
+        expectPool(name, {"ALP(AUTO)"});
 }
 
 TEST(AdaptiveCodecPool, NonCandidateTypesGetNoneAndDefaultOnly)
