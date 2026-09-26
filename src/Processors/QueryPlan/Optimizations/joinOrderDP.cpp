@@ -15,20 +15,6 @@ bool connects(const JoinActionRef * predicate, const BitSet & left, const BitSet
     return areIntersecting(participating, left) && areIntersecting(participating, right);
 }
 
-bool hasEquiConnection(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right)
-{
-    for (const auto * edge : edges)
-    {
-        auto [op, lhs, rhs] = edge->asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-            continue;
-        const auto & sources = edge->getSourceRelations();
-        if ((sources & left) && (sources & right))
-            return true;
-    }
-    return false;
-}
-
 DPJoinEntryPtr evaluateJoin(
     const QueryGraph & query_graph,
     PlanMemo & dp_table,
@@ -55,8 +41,7 @@ DPJoinEntryPtr evaluateJoin(
     JoinOperator join_operator(
         effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
         std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
-    auto new_entry = std::make_shared<DPJoinEntry>(
-        left, right, new_cost, effectiveSelectivity(left, right, selectivity), cardinality, std::move(join_operator));
+    auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, selectivity, cardinality, std::move(join_operator));
 
     LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
         new_entry->dump(), left->dump(), right->dump(),

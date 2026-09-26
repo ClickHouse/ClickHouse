@@ -27,7 +27,7 @@ INSERT INTO t2 SELECT number % 500, number FROM numbers(1000);
 ] -%}
 
 {% set cases = [
-    ('grace_hash', ', max_bytes_before_external_join = 1',
+    ('grace_hash', ', max_bytes_before_external_join = 16777216',
         all_kinds + [
             'ANY INNER JOIN t2 ON t1.x = t2.x',
             'ANY LEFT JOIN t2 ON t1.x = t2.x',
