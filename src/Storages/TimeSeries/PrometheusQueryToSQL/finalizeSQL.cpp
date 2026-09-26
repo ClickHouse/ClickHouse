@@ -293,11 +293,13 @@ namespace
                 if (result.store_method == StoreMethod::VECTOR_GRID && (aggregation->by || aggregation->without))
                 {
                     bool metric_name_dropped = result.metric_name_dropped;
-                    builder.order_by.push_back(transformGroupASTForAggregationOperator(
+                    /// Group ids follow read order, so order by the bucket tags.
+                    ASTPtr bucket_group = transformGroupASTForAggregationOperator(
                         aggregation,
                         make_intrusive<ASTIdentifier>(ColumnNames::Group),
                         /*drop_metric_name=*/true,
-                        metric_name_dropped));
+                        metric_name_dropped);
+                    builder.order_by.push_back(makeASTFunction("timeSeriesGroupToTags", std::move(bucket_group)));
                 }
                 builder.order_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Value));
                 builder.order_direction = aggregation->operator_name == "topk" ? -1 : 1;
