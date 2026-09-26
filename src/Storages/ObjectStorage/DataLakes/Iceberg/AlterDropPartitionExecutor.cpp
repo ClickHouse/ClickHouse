@@ -246,14 +246,12 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
         state.table_state = std::move(table_state);
     }
 
-    auto compression_method = DB::Iceberg::getCompressionMethodFromMetadataFile(state.table_state.metadata_file_path);
     auto metadata_object = getMetadataJSONObject(
         state.table_state.metadata_file_path,
         object_storage,
         components.metadata_cache,
         context,
         log,
-        compression_method,
         components.table_uuid);
 
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
