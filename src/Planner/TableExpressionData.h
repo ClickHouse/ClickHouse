@@ -260,6 +260,12 @@ public:
         prewhere_filter_actions = std::move(prewhere_filter_actions_value);
     }
 
+    /// Drop initiator-side `PREWHERE` actions after the predicate has been moved onto a subquery.
+    void resetPrewhereFilterActions()
+    {
+        prewhere_filter_actions.reset();
+    }
+
     const std::optional<ActionsDAG> & getFilterActions() const
     {
         return filter_actions;

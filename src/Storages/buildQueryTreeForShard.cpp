@@ -309,6 +309,7 @@ public:
     struct InFunctionOrJoin
     {
         QueryTreeNodePtr query_node;
+        QueryTreeNodePtr parent_query_node;
         size_t subquery_depth = 0;
     };
 
@@ -338,6 +339,8 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (node->as<QueryNode>())
+            query_node_stack.push_back(node);
         if (node->getNodeType() == QueryTreeNodeType::QUERY)
             ++query_node_depth;
 
@@ -349,6 +352,8 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
+            if (!query_node_stack.empty())
+                in_function_or_join_entry.parent_query_node = query_node_stack.back();
             in_function_or_join_entry.subquery_depth = query_node_depth;
             global_in_or_join_nodes.push_back(std::move(in_function_or_join_entry));
             return;
@@ -359,6 +364,8 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
+            if (!query_node_stack.empty())
+                in_function_or_join_entry.parent_query_node = query_node_stack.back();
             in_function_or_join_entry.subquery_depth = query_node_depth;
             in_function_or_join_stack.push_back(in_function_or_join_entry);
             return;
@@ -375,6 +382,9 @@ public:
 
         if (!in_function_or_join_stack.empty() && node.get() == in_function_or_join_stack.back().query_node.get())
             in_function_or_join_stack.pop_back();
+
+        if (node->as<QueryNode>())
+            query_node_stack.pop_back();
     }
 
 private:
@@ -463,6 +473,7 @@ private:
     /// this same count for a plain IN/JOIN, so a GLOBAL subquery recorded here needs no higher limit.
     size_t query_node_depth = 0;
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
+    std::vector<QueryTreeNodePtr> query_node_stack;
     IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
     bool allow_global_join_for_right_table = false;
@@ -978,6 +989,14 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
 
     for (const auto & global_in_or_join_node : global_in_or_join_nodes)
     {
+        /** `PREWHERE` is bound to the broadcast table and is moved into that subquery (below).
+          * Nested `GLOBAL IN` / `GLOBAL JOIN` nodes collected from the original `PREWHERE` then
+          * point at a tree that is no longer attached. Executing them here would materialize the
+          * nested subquery a second time, after `executeSubqueryNode` already ran the moved copy.
+          */
+        if (!isNodePartOfTree(global_in_or_join_node.query_node.get(), query_tree_to_modify.get()))
+            continue;
+
         if (auto * join_node = global_in_or_join_node.query_node->as<JoinNode>())
         {
             TableExpressionNodePtr join_table_expression;
@@ -996,6 +1015,26 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
 
             auto subquery_node = getSubqueryFromTableExpression(join_table_expression, column_source_to_columns, planner_context->getQueryContext());
+
+            auto * parent_query_node = global_in_or_join_node.parent_query_node
+                ? global_in_or_join_node.parent_query_node->as<QueryNode>()
+                : nullptr;
+            if (parent_query_node && parent_query_node->hasPrewhere())
+            {
+                auto prewhere_table_expression = getPrewhereTableExpression(parent_query_node->getPrewhere());
+
+                if (prewhere_table_expression && isNodePartOfTree(prewhere_table_expression.get(), join_table_expression.get()))
+                {
+                    auto * subquery_query_node = subquery_node->as<QueryNode>();
+                    if (!subquery_query_node || subquery_query_node->hasPrewhere())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot move PREWHERE into GLOBAL JOIN subquery");
+
+                    subquery_query_node->getPrewhere() = parent_query_node->getPrewhere()->clone();
+                    parent_query_node->getPrewhere() = {};
+                    if (auto * table_expression_data = planner_context->getTableExpressionDataOrNull(prewhere_table_expression))
+                        table_expression_data->resetPrewhereFilterActions();
+                }
+            }
 
             auto temporary_table_expression_node = executeSubqueryNode(subquery_node,
                 planner_context->getMutableQueryContext(),
