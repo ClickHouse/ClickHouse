@@ -282,7 +282,7 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
         /// condition. Setting `need_parens` makes the generic aliased-expression handling
         /// produce the wrap (and, with `collapse_identical_nodes_to_aliases`, correctly print
         /// just the alias when the expression was already printed earlier in the query).
-        frame.need_parens = !on_expression->tryGetAlias().empty();
+        frame.need_parens = on_expression->hasAlias();
         on_expression->format(ostr, settings, state, frame);
     }
 }

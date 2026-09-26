@@ -31,7 +31,7 @@ void ASTInterpolateElement::formatImpl(WriteBuffer & ostr, const FormatSettings 
     /// to avoid ambiguity with double AS: `col AS expr AS alias` is not parseable,
     /// but `col AS (expr AS alias)` is. Setting `need_parens` makes the generic
     /// aliased-expression handling produce the wrap.
-    frame.need_parens = !expr->tryGetAlias().empty();
+    frame.need_parens = expr->hasAlias();
     expr->format(ostr, settings, state, frame);
 }
 

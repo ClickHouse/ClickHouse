@@ -1,0 +1,5 @@
+SELECT 1 SETTINGS enable_analyzer = 0
+SELECT 1 SETTINGS allow_experimental_analyzer = 0
+SELECT 1 SETTINGS enable_analyzer = 0
+SELECT 1 SETTINGS allow_experimental_analyzer = 0
+SELECT * FROM (SELECT 1 SETTINGS enable_analyzer = 0)

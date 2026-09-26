@@ -162,7 +162,7 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
     if (auto expr = getExpression())
     {
         auto nested_frame = frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expr.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(expr.get()); ast_alias && ast_alias->hasAlias())
             nested_frame.need_parens = true;
 
         if (part_of_create_index_query)

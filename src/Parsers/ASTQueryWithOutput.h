@@ -67,6 +67,9 @@ public:
 
     bool hasOutputOptions() const;
 
+    /// Reorder output-option children in order used by `formatImpl`.
+    void normalizeOutputOptions();
+
     /// NOTE: call this helper at the end of the clone() method of descendant class.
     void cloneOutputOptions(ASTQueryWithOutput & cloned) const;
 
@@ -87,6 +90,11 @@ public:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const final;
 };
 
+/// The node that owns a trailing output option (`FORMAT`, `INTO OUTFILE`, `SETTINGS`), the way
+/// the parser assigns it: the `EXECUTE AS` wrapper (which hoists them from its subquery), the last
+/// statement of `PARALLEL WITH`, otherwise `node` itself. Returns nullptr when the statement that
+/// would receive the option cannot carry output options.
+ASTQueryWithOutput * outputOptionsOwner(IAST * node);
 
 /** Helper template for simple queries like SHOW PROCESSLIST.
   */

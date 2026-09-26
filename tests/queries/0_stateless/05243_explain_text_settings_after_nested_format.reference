@@ -1,0 +1,7 @@
+{"text":"EXPLAIN AST\nINSERT INTO t SELECT 1"}
+{"text":"EXPLAIN SYNTAX\nINSERT INTO t SELECT 1"}
+{"text":"EXPLAIN AST\nINSERT INTO t SELECT 1"}
+{"text":"INSERT INTO t SELECT 1"}
+{"text":"EXPLAIN AST\nSELECT 1"}
+{"text":"SHOW TABLES\nSETTINGS max_threads = 2"}
+{"text":"SHOW TABLES"}

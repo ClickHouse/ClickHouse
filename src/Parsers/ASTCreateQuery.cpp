@@ -208,7 +208,7 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         ostr << s.nl_or_ws << "PARTITION BY ";
         auto nested_frame = modified_frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(partition_by); ast_alias && !ast_alias->tryGetAlias().empty())
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(partition_by); ast_alias && ast_alias->hasAlias())
             nested_frame.need_parens = true;
         partition_by->format(ostr, s, state, nested_frame);
     }
@@ -216,7 +216,7 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         ostr << s.nl_or_ws << "PRIMARY KEY ";
         auto nested_frame = modified_frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(primary_key); ast_alias && !ast_alias->tryGetAlias().empty())
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(primary_key); ast_alias && ast_alias->hasAlias())
             nested_frame.need_parens = true;
         primary_key->format(ostr, s, state, nested_frame);
     }
@@ -224,7 +224,7 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         ostr << s.nl_or_ws << "ORDER BY ";
         auto nested_frame = modified_frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(order_by); ast_alias && !ast_alias->tryGetAlias().empty())
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(order_by); ast_alias && ast_alias->hasAlias())
             nested_frame.need_parens = true;
         order_by->format(ostr, s, state, nested_frame);
     }
@@ -232,7 +232,7 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         ostr << s.nl_or_ws << "UNIQUE KEY ";
         auto nested_frame = modified_frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(unique_key); ast_alias && !ast_alias->tryGetAlias().empty())
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(unique_key); ast_alias && ast_alias->hasAlias())
             nested_frame.need_parens = true;
         unique_key->format(ostr, s, state, nested_frame);
     }
@@ -240,7 +240,7 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
     {
         ostr << s.nl_or_ws << "SAMPLE BY ";
         auto nested_frame = modified_frame;
-        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(sample_by); ast_alias && !ast_alias->tryGetAlias().empty())
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(sample_by); ast_alias && ast_alias->hasAlias())
             nested_frame.need_parens = true;
         sample_by->format(ostr, s, state, nested_frame);
     }

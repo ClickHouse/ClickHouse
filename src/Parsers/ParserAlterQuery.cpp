@@ -940,7 +940,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 /// but it can parse
                 /// (1 AS x)
                 /// which we should not allow as well.
-                if (!command_predicate->tryGetAlias().empty())
+                if (command_predicate->hasAlias())
                     return false;
 
                 command->type = ASTAlterCommand::DELETE;
@@ -980,7 +980,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 /// but it can parse
                 /// (1 AS x)
                 /// which we should not allow as well.
-                if (!command_predicate->tryGetAlias().empty())
+                if (command_predicate->hasAlias())
                     return false;
 
                 command->type = ASTAlterCommand::UPDATE;

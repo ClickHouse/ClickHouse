@@ -1,12 +1,20 @@
+#include <Parsers/ASTParallelWithQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
+#if !defined(CLICKHOUSE_PARSER_NO_DCL)
+#include <Parsers/Access/ASTExecuteAsQuery.h>
+#endif
+
+#include <algorithm>
+#include <string_view>
 
 namespace DB
 {
@@ -39,6 +47,18 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
     /// Validate the concrete node type here so malformed `clickhouse_json` is rejected
     /// with a `BAD_ARGUMENTS` parse error instead of reaching a logical exception later,
     /// and so it cannot build an AST that the SQL parser could never produce.
+
+    /// `ParserQueryWithOutput` reads these with `ParserStringLiteral`, `ParserNumber`, and
+    /// `ParserIdentifier`, none of which accepts an alias. Execution reads only the literal
+    /// value or the identifier name, so an alias would format into SQL the parser can never
+    /// produce while being silently ignored when the query runs.
+    auto reject_alias = [](const ASTPtr & node, std::string_view field)
+    {
+        if (const auto * with_alias = dynamic_cast<const ASTWithAlias *>(node.get());
+            with_alias && with_alias->hasAlias())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Output '{}' cannot carry an alias during AST JSON deserialization", field);
+    };
+
     out_file = r.readChildOfType<ASTLiteral>("out_file");
     if (out_file)
     {
@@ -46,6 +66,7 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
         if (out_file->as<ASTLiteral &>().value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Output 'out_file' must be a string literal during AST JSON deserialization");
+        reject_alias(out_file, "out_file");
         children.push_back(out_file);
     }
 
@@ -56,6 +77,7 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
         if (compression->as<ASTLiteral &>().value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Output 'compression' must be a string literal during AST JSON deserialization");
+        reject_alias(compression, "compression");
         children.push_back(compression);
     }
 
@@ -67,18 +89,30 @@ void ASTQueryWithOutput::readOutputOptionsJSON(JSONObjectReader & r)
         if (type != Field::Types::UInt64 && type != Field::Types::Int64 && type != Field::Types::Float64)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Output 'compression_level' must be a numeric literal during AST JSON deserialization");
+        reject_alias(compression_level, "compression_level");
         children.push_back(compression_level);
     }
 
     /// `format_ast` is parsed by `ParserIdentifier`.
     format_ast = r.readChildOfType<ASTIdentifier>("format_ast");
     if (format_ast)
+    {
+        reject_alias(format_ast, "format_ast");
+        setIdentifierSpecial(format_ast);
         children.push_back(format_ast);
+    }
 
     /// `settings_ast` is parsed by `ParserSetQuery`.
     settings_ast = r.readChildOfType<ASTSetQuery>("settings_ast");
     if (settings_ast)
+    {
+        const auto & settings = settings_ast->as<const ASTSetQuery &>();
+        if (settings.is_standalone
+            || (settings.changes.empty() && settings.default_settings.empty() && settings.query_parameters.empty()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Output 'settings_ast' must be a non-empty settings clause during AST JSON deserialization");
         children.push_back(settings_ast);
+    }
 
     setIsOutfileAppend(r.getBool("is_outfile_append"));
     setIsOutfileTruncate(r.getBool("is_outfile_truncate"));
@@ -200,6 +234,56 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
 bool ASTQueryWithOutput::hasOutputOptions() const
 {
     return out_file || format_ast || settings_ast || compression || compression_level;
+}
+
+void ASTQueryWithOutput::normalizeOutputOptions()
+{
+    auto is_output_option = [&](const ASTPtr & child)
+    {
+        return std::any_of(
+            output_option_members.begin(),
+            output_option_members.end(),
+            [&](auto member)
+            {
+                return (this->*member) && (this->*member).get() == child.get();
+            });
+    };
+
+    children.erase(std::remove_if(children.begin(), children.end(), is_output_option), children.end());
+
+    for (auto member : output_option_members)
+    {
+        if (this->*member)
+            children.push_back(this->*member);
+    }
+}
+
+ASTQueryWithOutput * outputOptionsOwner(IAST * node)
+{
+    while (node)
+    {
+#if !defined(CLICKHOUSE_PARSER_NO_DCL)
+        if (auto * execute_as = node->as<ASTExecuteAsQuery>())
+        {
+            /// `ParserExecuteAsQuery` hoists the subquery's output options onto the wrapper, so the
+            /// wrapper owns them; a subquery that cannot carry them makes them invalid altogether
+            if (dynamic_cast<ASTQueryWithOutput *>(execute_as->subquery.get()))
+                return execute_as;
+            node = execute_as->subquery.get();
+            continue;
+        }
+#endif
+        if (auto * parallel = node->as<ASTParallelWithQuery>())
+        {
+            /// nothing is hoisted here: the last statement owns a trailing option
+            if (parallel->children.empty())
+                return nullptr;
+            node = parallel->children.back().get();
+            continue;
+        }
+        return dynamic_cast<ASTQueryWithOutput *>(node);
+    }
+    return nullptr;
 }
 
 }
