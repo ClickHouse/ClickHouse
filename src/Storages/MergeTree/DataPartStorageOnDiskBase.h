@@ -29,7 +29,8 @@ public:
     UInt64 calculateTotalSizeOnDisk() const override;
 
     /// Returns path to place detached part in or nullopt if we don't need to detach part (if it already exists and has the same content)
-    std::optional<String> getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const override;
+    std::optional<String> getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken,
+                                                   const NameTakenChecker & name_taken_anywhere) const override;
 
     /// Returns true if detached part already exists and has the same content (compares checksums.txt and the list of files)
     bool looksLikeBrokenDetachedPartHasTheSameContent(const String & detached_part_path, std::optional<String> & original_checksums_content,
