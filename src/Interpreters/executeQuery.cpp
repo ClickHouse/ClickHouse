@@ -116,6 +116,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/misc.h>
+#include <Dictionaries/IDictionary.h>
+#include <Core/QualifiedTableName.h>
+#include <Parsers/ASTLiteral.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/IStorage.h>
@@ -1364,6 +1367,18 @@ struct CollectTablesData
     /// (see `mutationExpressionsDatabase`). Empty everywhere else, which keeps the session's current
     /// database.
     String default_database;
+
+    /// The dictionaries a `dictGet`-family function names, as written in the query (the database is empty
+    /// for an unqualified name). `FunctionDictHelper::getDictionary` checks `dictGet` on each of them when
+    /// the function is built, so the access preflight in `reattachTablesUsedInQuery` checks it too.
+    /// Dictionaries are never reattach candidates themselves.
+    std::vector<QualifiedTableName> dictionaries;
+
+    /// Set when the query names an object through a function argument whose value cannot be determined
+    /// from the AST (e.g. `joinGet(concat('j', 'oin'), ...)` or a first argument bound to an alias). Neither
+    /// the access nor the existence of such an object can be preflighted, so the hook is skipped for the
+    /// whole query.
+    bool has_unverifiable_reference = false;
 
     void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, Context::StorageNamespace resolve_namespace, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any)
     {
@@ -2694,7 +2709,7 @@ void collectScopeAliasNames(const ASTPtr & ast, std::unordered_set<String> & ali
 /// so each `ASTSelectQuery`'s WITH names propagate only to its descendants, not to siblings or ancestors.
 ///
 /// Scope — this defines the contract of `reattach_tables_before_query_execution`: tables are extracted
-/// from `SELECT` (FROM/JOIN/IN, with the CTE shadowing rules below), `INSERT`, and the `ASTQueryWithTableAndOutput`
+/// from `SELECT` (FROM/JOIN/IN and the `Join` table of `joinGet`, with the CTE shadowing rules below), `INSERT`, and the `ASTQueryWithTableAndOutput`
 /// family (`SHOW CREATE TABLE`, `EXISTS TABLE`, `CHECK TABLE`, `OPTIMIZE`, `ALTER`, ...) — including the extra
 /// source/destination tables an `ALTER ... REPLACE/ATTACH/MOVE PARTITION` names in its `from_*`/`to_*` fields
 /// the `AS` source of a `CREATE ... AS src` and the external view targets of a `CREATE ... TO dst`
@@ -2980,6 +2995,52 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
                     if (!table_id->getDatabaseName().empty() || !active_aliases.contains(table_id->shortName()))
                         data.addTableIfNotEmpty(table_id->getDatabaseName(), table_id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT);
         }
+        /// `joinGet`/`joinGetOrNull` and the `dictGet` family name an object in their first argument, either
+        /// as an identifier or as a constant string (see `MarkTableIdentifiersVisitor`). The function checks
+        /// the access to that object only when it is built — `SELECT` on the `Join` table in
+        /// `FunctionJoinGet::prepare`, `dictGet` on the dictionary in `FunctionDictHelper::getDictionary` —
+        /// so collect the object here to keep an access-rejected query side-effect free.
+        else if ((functionIsJoinGet(function->name) || functionIsDictGet(function->name))
+            && function->arguments && !function->arguments->children.empty())
+        {
+            std::optional<QualifiedTableName> object_name;
+            const auto & name_argument = function->arguments->children.front();
+            if (const auto * id = name_argument->as<ASTIdentifier>())
+            {
+                /// The analyzer resolves an identifier argument as an expression first, so an identifier
+                /// bound to an alias names whatever the alias evaluates to (`WITH 'j' AS name SELECT
+                /// joinGet(name, ...)`), which is not known here.
+                if (auto table_id = id->createTable(); table_id && (id->compound() || !active_aliases.contains(id->name())))
+                    object_name = QualifiedTableName{table_id->getDatabaseName(), table_id->shortName()};
+            }
+            else if (const auto * literal = name_argument->as<ASTLiteral>(); literal && literal->value.getType() == Field::Types::String)
+            {
+                object_name = QualifiedTableName::tryParseFromString(literal->value.safeGet<String>());
+            }
+
+            if (!object_name || object_name->table.empty())
+            {
+                data.has_unverifiable_reference = true;
+            }
+            else if (functionIsJoinGet(function->name))
+            {
+                /// `getJoin` resolves the name with `Context::resolveStorageID` (`ResolveAll`) against the
+                /// session's current database — also inside mutation expressions, whose default database
+                /// `AddDefaultDatabaseVisitor` does not apply to `joinGet` — and no CTE shadows it.
+                const auto saved_default_database = data.default_database;
+                data.default_database.clear();
+                data.addTableIfNotEmpty(object_name->database, object_name->table, /* active_ctes */ {}, Context::ResolveAll, AccessType::SELECT);
+                data.default_database = saved_default_database;
+            }
+            else
+            {
+                /// Inside mutation expressions `AddDefaultDatabaseVisitor` may qualify an unqualified
+                /// dictionary name with the target table's database.
+                if (object_name->database.empty() && !data.default_database.empty())
+                    data.dictionaries.push_back(QualifiedTableName{data.default_database, object_name->table});
+                data.dictionaries.push_back(std::move(*object_name));
+            }
+        }
     }
 
     for (const auto & child : ast->children)
@@ -3070,10 +3131,29 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
     /// table-level check is conservative with column-level grants (a user granted `SELECT` on a subset of
     /// columns fails it) — in all those cases the preflight errs toward skipping randomization, never
     /// toward producing side effects for a failing query.
+    if (data.has_unverifiable_reference)
+        return;
+
     auto access = context->getAccess();
     for (const auto & table : data.tables)
         if (!access->isGranted(table.required_access, table.id.getDatabaseName(), table.id.getTableName()))
             return;
+
+    /// `FunctionDictHelper::getDictionary` checks `dictGet` on the database of the loaded dictionary, or on
+    /// `IDictionary::NO_DATABASE_TAG` for a dictionary defined in the configuration. An unqualified name
+    /// can resolve to either, so require the access on both — over-requiring only skips the randomization.
+    for (const auto & dictionary : data.dictionaries)
+    {
+        std::vector<String> candidate_databases;
+        if (!dictionary.database.empty())
+            candidate_databases = {dictionary.database};
+        else
+            candidate_databases = {context->getCurrentDatabase(), IDictionary::NO_DATABASE_TAG};
+
+        for (const auto & database : candidate_databases)
+            if (!access->isGranted(AccessType::dictGet, database, dictionary.table))
+                return;
+    }
 
     for (const auto & collected : data.tables)
     {
