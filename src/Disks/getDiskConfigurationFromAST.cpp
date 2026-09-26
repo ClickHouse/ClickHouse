@@ -87,6 +87,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool has_google_adc_client_id = false;
     bool has_google_adc_client_secret = false;
     bool has_google_adc_refresh_token = false;
+    bool has_google_service_account_key = false;
     bool use_environment_credentials_off = false;
     bool has_role_arn = false;
     /// A marker persisted in the stored definition when the disk was created with the credential opt-in (see
@@ -103,6 +104,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             || k == "role_session_name" || k == "external_id" || k == "use_environment_credentials" || k == "http_client"
             || k == "service_account" || k == "metadata_service" || k == "request_token_path"
             || k == "google_adc_client_id" || k == "google_adc_client_secret" || k == "google_adc_refresh_token"
+            || k == "google_service_account_key"
             || k == "server_side_encryption_customer_key_base64" || k == "server_side_encryption_kms_key_id"
             || k == "server_side_encryption_kms_encryption_context" || startsWith(k, "header") || startsWith(k, "access_header");
     };
@@ -171,6 +173,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             has_google_adc_client_secret = !value_str.empty() && !indirect;
         else if (key == "google_adc_refresh_token")
             has_google_adc_refresh_token = !value_str.empty() && !indirect;
+        else if (key == "google_service_account_key")
+            has_google_service_account_key = !value_str.empty() && !indirect;
         else if (key == "use_environment_credentials")
             use_environment_credentials_off = !indirect && (value_str == "0" || boost::iequals(value_str, "false"));
         else if (key == "role_arn")
@@ -223,7 +227,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
 
     const bool has_explicit_credentials = has_access_key_id && has_secret_access_key;
     const bool has_explicit_gcp_adc
-        = has_google_adc_client_id && has_google_adc_client_secret && has_google_adc_refresh_token;
+        = (has_google_adc_client_id && has_google_adc_client_secret && has_google_adc_refresh_token) || has_google_service_account_key;
     /// `use_environment_credentials = 0` without a `role_arn` goes unsigned, so it is a safe anonymous form.
     const bool allowed_anonymous = use_environment_credentials_off && !has_role_arn;
     /// A safe credential form supplied by the AST itself (literal values); a substitution/`include` value does not count.
@@ -284,7 +288,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
                 ErrorCodes::ACCESS_DENIED,
                 "A dynamic S3 disk created from user SQL must provide a complete explicit "
                 "`access_key_id`/`secret_access_key` pair, `no_sign_request`, or `use_environment_credentials = 0` "
-                "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple), with literal values "
+                "(or, for `http_client = gcp_oauth`, a complete explicit Google ADC triple or `google_service_account_key`), with literal values "
                 "and no `include`. It may not fall back to the server's own credentials."
 #if !CLICKHOUSE_CLOUD
                 " Enable the setting `s3_allow_server_credentials_in_user_queries` to allow it."
@@ -454,7 +458,7 @@ void validateResolvedS3DiskCredentials(
             "A dynamic S3 disk created from user SQL that uses `include` must provide its credentials explicitly "
             "in the SQL definition (a complete `access_key_id`/`secret_access_key` pair, `no_sign_request`, or "
             "`use_environment_credentials = 0`; or, for `http_client = gcp_oauth`, a complete explicit Google ADC "
-            "triple). It may not take the S3 type or credentials from the included configuration, which could "
+            "triple or `google_service_account_key`). It may not take the S3 type or credentials from the included configuration, which could "
             "resolve the server's own credentials."
 #if !CLICKHOUSE_CLOUD
             " Enable `s3_allow_server_credentials_in_user_queries` to allow it."

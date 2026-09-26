@@ -25,8 +25,9 @@ As this feature is beta, you will need to enable it using:
 Before creating a connection from ClickHouse to Lakehouse runtime catalog (BigLake Metastore), ensure you have:
 
 - A **Google Cloud project** with Lakehouse runtime catalog enabled
-- **Application Default credentials** (Oauth client ID and client secret) for an application, created via [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc)
-- A **refresh token** obtained by completing the OAuth flow with the appropriate scopes (e.g. `https://www.googleapis.com/auth/bigquery` and storage scope for GCS)
+- Credentials, one of:
+  - A **service account key**: a JSON key file of a service account that has access to the catalog and to the GCS bucket, created via [Google Cloud Console](https://docs.cloud.google.com/iam/docs/keys-create-delete). This is the recommended option for servers, because it does not depend on a user session.
+  - **Application Default credentials** (Oauth client ID and client secret) for an application, created via [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc), and a **refresh token** obtained by completing the OAuth flow with the appropriate scopes (e.g. `https://www.googleapis.com/auth/bigquery` and storage scope for GCS)
 - A **warehouse** path: a GCS bucket (and optional prefix) where your tables are stored, e.g. `gs://your-bucket` or `gs://your-bucket/prefix`
 
 ## Creating a connection between Lakehouse runtime catalog and ClickHouse {#creating-a-connection}
@@ -46,6 +47,20 @@ SETTINGS
     google_adc_quota_project_id = '<gcp-project-id>',
     warehouse = 'gs://<bucket_name>/<optional-prefix>';
 ```
+
+To authenticate with a service account key instead, pass the content of the JSON key file in `google_service_account_key` and the project in `google_project_id`. ClickHouse signs a JWT with the key, exchanges it for an access token, and renews it automatically. The same token is used to read the data files from GCS. The key is masked in `SHOW CREATE DATABASE` and in the logs.
+
+```sql
+CREATE DATABASE lakehouse_runtime_catalog
+ENGINE = DataLakeCatalog('https://biglake.googleapis.com/iceberg/v1/restcatalog')
+SETTINGS
+    catalog_type = 'biglake',
+    google_service_account_key = '{"type": "service_account", "client_email": "...", "private_key": "...", ...}',
+    google_project_id = '<gcp-project-id>',
+    warehouse = 'gs://<bucket_name>/<optional-prefix>';
+```
+
+`google_service_account_key` and the `google_adc_*` settings are mutually exclusive.
 
 ## Querying Lakehouse runtime catalog tables using ClickHouse {#querying-lakehouse-runtime-tables}
 

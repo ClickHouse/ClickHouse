@@ -431,7 +431,8 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
                 return key
                     && (*key == "access_key_id" || *key == "secret_access_key" || *key == "session_token"
                         || *key == "external_id"
-                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token");
+                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token"
+                        || *key == "google_service_account_key");
             }),
         res.kv_args.end());
 

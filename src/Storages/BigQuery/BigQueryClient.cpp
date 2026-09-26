@@ -1,7 +1,5 @@
 #include <Storages/BigQuery/BigQueryClient.h>
 
-#include "config.h"
-
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
 #include <IO/HTTPCommon.h>
@@ -11,14 +9,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <Interpreters/Context.h>
-#include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/RemoteHostFilter.h>
-
-#if USE_SSL
-#    include <Common/Crypto/KeyPair.h>
-#    include <Common/OpenSSLHelpers.h>
-#endif
 
 #include <Poco/JSON/Parser.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -33,15 +25,12 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
 {
 
-#if USE_SSL
 constexpr auto BIGQUERY_OAUTH_SCOPE = "https://www.googleapis.com/auth/bigquery";
-#endif
 constexpr auto GOOGLE_OAUTH2_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
 Poco::JSON::Object::Ptr parseJSONObject(const String & data, const String & what)
@@ -58,57 +47,6 @@ Poco::JSON::Object::Ptr parseJSONObject(const String & data, const String & what
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse {}: {}", what, e.displayText());
     }
-}
-
-/// Build an RS256-signed JWT assertion for the OAuth 2.0 service account flow.
-/// Returns the assertion and the token endpoint to POST it to.
-std::pair<String, String> makeServiceAccountAssertion(const String & service_account_key, const String & token_url_override)
-{
-    auto key_object = parseJSONObject(service_account_key, "BigQuery service account key");
-
-    if (!key_object->has("client_email") || !key_object->has("private_key"))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "BigQuery service account key must be a JSON object with 'client_email' and 'private_key' "
-            "(the content of a key file downloaded from Google Cloud IAM)");
-
-    const auto client_email = key_object->getValue<String>("client_email");
-    const auto private_key = key_object->getValue<String>("private_key");
-    String token_endpoint = GOOGLE_OAUTH2_TOKEN_ENDPOINT;
-    if (key_object->has("token_uri"))
-        token_endpoint = key_object->getValue<String>("token_uri");
-    if (!token_url_override.empty())
-        token_endpoint = token_url_override;
-
-#if USE_SSL
-    const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-
-    Poco::JSON::Object claims;
-    claims.set("iss", client_email);
-    claims.set("scope", String(BIGQUERY_OAUTH_SCOPE));
-    claims.set("aud", token_endpoint);
-    claims.set("iat", now);
-    claims.set("exp", now + 3600);
-
-    std::ostringstream claims_stream;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    claims.stringify(claims_stream);
-
-    static constexpr auto header = R"({"alg":"RS256","typ":"JWT"})";
-    String to_sign = fmt::format(
-        "{}.{}",
-        base64Encode(header, /*url_encoding*/ true, /*no_padding*/ true),
-        base64Encode(claims_stream.str(), /*url_encoding*/ true, /*no_padding*/ true));
-
-    auto key_pair = KeyPair::fromPEMString(private_key);
-    String signature = rsaSHA256Sign(static_cast<EVP_PKEY *>(key_pair), to_sign);
-
-    String assertion = fmt::format("{}.{}", to_sign, base64Encode(signature, /*url_encoding*/ true, /*no_padding*/ true));
-    return {std::move(assertion), std::move(token_endpoint)};
-#else
-    throw Exception(
-        ErrorCodes::SUPPORT_IS_DISABLED,
-        "BigQuery authentication with a service account key requires ClickHouse to be built with SSL support");
-#endif
 }
 
 }
@@ -131,7 +69,8 @@ std::pair<String, Int64> BigQueryTokenProvider::fetchTokenWithExpiration(const C
         }
         case BigQueryConfiguration::CredentialsKind::ServiceAccountKey:
         {
-            auto [assertion, token_endpoint] = makeServiceAccountAssertion(configuration.service_account_key, configuration.token_url);
+            auto [assertion, token_endpoint] = makeGCPServiceAccountAssertion(
+                configuration.service_account_key, BIGQUERY_OAUTH_SCOPE, configuration.token_url);
             /// The token endpoint comes from the user-provided key, validate it against the allowed hosts.
             context->getRemoteHostFilter().checkURL(Poco::URI(token_endpoint));
             auto token = fetchGCPOAuthTokenWithJWTAssertion(assertion, token_endpoint, timeouts);
