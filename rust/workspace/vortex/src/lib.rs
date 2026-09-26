@@ -633,6 +633,16 @@ impl VortexWrite for CallbackWriter {
     }
 }
 
+/// The name of the row index column: `_row_index`, prefixed with more underscores until no column
+/// of `schema` has it. The reader in ClickHouse picks the same name by the same rule.
+fn row_index_column_name(schema: &Schema) -> String {
+    let mut name = String::from("_row_index");
+    while schema.field_with_name(&name).is_ok() {
+        name.insert(0, '_');
+    }
+    name
+}
+
 /// Nothing here is required: zero-initialize to read every row of every column.
 #[repr(C)]
 pub struct FFI_VortexScanOptions {
@@ -651,7 +661,9 @@ pub struct FFI_VortexScanOptions {
     /// Zero means the whole file.
     pub row_selection_len: u64,
 
-    /// Prepends a `row_idx` column to the output.
+    /// Prepends a non-nullable `UInt64` column with the index of each row in the file. It is named
+    /// `_row_index`, with as many more leading underscores as it takes not to collide with a
+    /// projected column, so a file that has a column of that name can still be read with it.
     pub row_index_column: bool,
 
     /// The number of splits that may be in flight at once: being read, being decoded, or already
@@ -857,13 +869,9 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                 }
 
                 if options.row_index_column {
-                    let name = "_row_index";
-                    if schema.field_with_name(name).is_ok() {
-                        return Err(format!(
-                            "the row index column name '{name}' collides with a projected column"
-                        ));
-                    }
-                    let row_idx_struct = pack([(name, row_idx())], Nullability::NonNullable);
+                    let name = row_index_column_name(&schema);
+                    let row_idx_struct =
+                        pack([(name.as_str(), row_idx())], Nullability::NonNullable);
                     projection = Some(merge([row_idx_struct, projection.unwrap_or_else(root)]));
                     let mut fields = Vec::with_capacity(schema.fields.len() + 1);
                     fields.push(Arc::new(Field::new(name, DataType::UInt64, false)));
@@ -2022,7 +2030,8 @@ mod tests {
                 .collect()
         };
         if options.row_index_column {
-            fields.insert(0, Field::new("_row_index", DataType::UInt64, false));
+            let name = row_index_column_name(&Schema::new(fields.clone()));
+            fields.insert(0, Field::new(name, DataType::UInt64, false));
         }
         Arc::new(Schema::new(fields))
     }
@@ -2180,6 +2189,64 @@ mod tests {
             assert!(reader.is_null());
             assert!(!error.is_null());
             vortex_ffi_free_string(error);
+        }
+    }
+
+    /// The row index column gets a name no projected column has, so a file with a column called
+    /// `_row_index` is still readable with row numbers.
+    #[test]
+    fn ffi_row_index_column_name_collision() {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("_row_index", DataType::Int64, false),
+            Field::new("__row_index", DataType::Utf8, true),
+        ]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                Arc::new(Int64Array::from(vec![10, 20, 30])),
+                Arc::new(StringArray::from(vec![Some("a"), None, Some("c")])),
+            ],
+        )
+        .expect("valid batch");
+        let mut file = TestFile::new(unsafe { write_file(vec![batch]) });
+
+        let host = TestHost::new(2);
+        unsafe {
+            let reader = open_reader(host.runtime(), &mut file, &reader_options(1, None));
+            let first = CString::new("_row_index").expect("valid name");
+            let second = CString::new("__row_index").expect("valid name");
+            let columns = [first.as_ptr(), second.as_ptr()];
+            let mut options = scan_options();
+            options.columns = columns.as_ptr();
+            options.num_columns = 2;
+            options.row_index_column = true;
+            let consumer = run_scan(reader, &options, None, true);
+            assert_eq!(consumer.rows(), 3);
+
+            let chunks = consumer.chunks.lock().expect("lock");
+            let batch = &chunks[0].1;
+            let names: Vec<&str> = batch
+                .schema_ref()
+                .fields()
+                .iter()
+                .map(|field| field.name().as_str())
+                .collect();
+            assert_eq!(names, ["___row_index", "_row_index", "__row_index"]);
+            let row_index = batch
+                .column(0)
+                .as_primitive::<arrow_array::types::UInt64Type>()
+                .values()
+                .to_vec();
+            assert_eq!(row_index, [0, 1, 2]);
+            let values = batch
+                .column(1)
+                .as_primitive::<arrow_array::types::Int64Type>()
+                .values()
+                .to_vec();
+            assert_eq!(values, [10, 20, 30]);
+            drop(chunks);
+
+            vortex_ffi_reader_free(reader);
         }
     }
 

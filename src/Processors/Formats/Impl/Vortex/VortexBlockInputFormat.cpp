@@ -530,7 +530,13 @@ void VortexBlockInputFormat::prepareReader()
     arrow::FieldVector scan_fields;
     scan_fields.reserve(plan.column_names.size() + 1);
     if (row_index_column)
-        scan_fields.push_back(arrow::field("_row_index", arrow::uint64(), /* nullable */ false));
+    {
+        /// The library names it by this rule too, so that it cannot collide with a column of the file.
+        String row_index_name = "_row_index";
+        while (std::ranges::find(plan.column_names, row_index_name) != plan.column_names.end())
+            row_index_name.insert(0, "_");
+        scan_fields.push_back(arrow::field(row_index_name, arrow::uint64(), /* nullable */ false));
+    }
     for (const auto & name : plan.column_names)
         scan_fields.push_back(file_schema->GetFieldByName(name));
     scan_schema = arrow::schema(std::move(scan_fields));

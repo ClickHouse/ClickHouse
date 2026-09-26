@@ -165,7 +165,9 @@ struct FFI_VortexScanOptions
     const uint64_t *row_selection_begin;
     /// Zero means the whole file.
     uint64_t row_selection_len;
-    /// Prepends a `row_idx` column to the output.
+    /// Prepends a non-nullable `UInt64` column with the index of each row in the file. It is named
+    /// `_row_index`, with as many more leading underscores as it takes not to collide with a
+    /// projected column, so a file that has a column of that name can still be read with it.
     bool row_index_column;
     /// The number of splits that may be in flight at once: being read, being decoded, or already
     /// handed over and not yet released. 0 selects the default. This is what keeps the scan from
