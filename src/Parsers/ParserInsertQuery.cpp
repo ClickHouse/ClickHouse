@@ -371,10 +371,10 @@ bool ParserInsertElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 {
     /// ParserQualifiedColumnsMatcher must precede ParserCompoundIdentifier, which would otherwise
     /// consume the `<qualifier>.COLUMNS` prefix as a plain identifier and leave `(...)` unparsed.
-    return ParserColumnsMatcher().parse(pos, node, expected)
-        || ParserQualifiedAsterisk().parse(pos, node, expected)
-        || ParserAsterisk().parse(pos, node, expected)
-        || ParserQualifiedColumnsMatcher().parse(pos, node, expected)
+    return ParserColumnsMatcher(ParserColumnsTransformers::InsertTransformers).parse(pos, node, expected)
+        || ParserQualifiedAsterisk(ParserColumnsTransformers::InsertTransformers).parse(pos, node, expected)
+        || ParserAsterisk(ParserColumnsTransformers::InsertTransformers).parse(pos, node, expected)
+        || ParserQualifiedColumnsMatcher(ParserColumnsTransformers::InsertTransformers).parse(pos, node, expected)
         || ParserCompoundIdentifier().parse(pos, node, expected);
 }
 

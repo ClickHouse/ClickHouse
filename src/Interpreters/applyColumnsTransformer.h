@@ -23,6 +23,10 @@ class ASTColumnsExceptTransformer;
   */
 void applyColumnsTransformer(const ASTPtr & transformer, ASTs & nodes);
 
+/// Apply a complete transformer chain while preserving the original matcher column names.
+/// RENAME resolves against those names even after APPLY or REPLACE changed the expressions.
+void applyColumnsTransformers(const ASTs & transformers, ASTs & nodes);
+
 /// Compile the pattern of `EXCEPT('regexp')`. Throws if the pattern does not compile.
 /// Returns nullptr when the transformer lists column names instead of a pattern.
 std::shared_ptr<re2::RE2> getColumnsExceptMatcher(const ASTColumnsExceptTransformer & transformer);

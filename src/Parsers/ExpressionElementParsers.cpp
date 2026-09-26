@@ -2185,6 +2185,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword apply(Keyword::APPLY);
     ParserKeyword except(Keyword::EXCEPT);
     ParserKeyword replace(Keyword::REPLACE);
+    ParserKeyword rename(Keyword::RENAME);
     ParserKeyword as(Keyword::AS);
     ParserKeyword strict(Keyword::STRICT);
 
@@ -2381,6 +2382,55 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         node = std::move(res);
         return true;
     }
+    if (allowed_transformers.isSet(ColumnTransformer::RENAME) && rename.ignore(pos, expected))
+    {
+        ASTs renames;
+        ParserIdentifier source_p;
+        ParserIdentifier target_p;
+        auto parse_rename = [&]
+        {
+            ASTPtr source;
+            if (!source_p.parse(pos, source, expected))
+                return false;
+
+            if (!as.ignore(pos, expected))
+                return false;
+
+            ASTPtr target;
+            if (!target_p.parse(pos, target, expected))
+                return false;
+
+            auto rename_pair = make_intrusive<ASTColumnsRenameTransformer::Rename>();
+            rename_pair->source_name = getIdentifierName(source);
+            rename_pair->target_name = getIdentifierName(target);
+            renames.emplace_back(std::move(rename_pair));
+            return true;
+        };
+
+        if (pos->type == TokenType::OpeningRoundBracket)
+        {
+            ++pos;
+
+            if (!ParserList::parseUtil(pos, expected, parse_rename, false))
+                return false;
+
+            if (pos->type != TokenType::ClosingRoundBracket)
+                return false;
+            ++pos;
+        }
+        else if (!parse_rename())
+        {
+            return false;
+        }
+
+        auto res = make_intrusive<ASTColumnsRenameTransformer>();
+        res->children = std::move(renames);
+        node = std::move(res);
+
+        /// RENAME changes only the final projection name, so no transformer may follow it.
+        allowed_transformers.reset();
+        return true;
+    }
 
     return false;
 }
@@ -2435,7 +2485,7 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         res = make_intrusive<ASTQualifiedAsterisk>();
 
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
-    ParserColumnsTransformers transformers_p;
+    ParserColumnsTransformers transformers_p(allowed_transformers);
     ASTPtr transformer;
     while (transformers_p.parse(pos, transformer, expected))
     {
@@ -3226,6 +3276,35 @@ SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
         .parent = "SELECT",
         .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
     });
+
+    factory.registerStatement("RENAME modifier",
+    {
+        .description = R"DOCS_MD(
+> Changes the output names of columns selected by a column matcher. Values, types, expressions, and order stay unchanged.
+
+## Syntax {#syntax}
+
+```sql
+SELECT <expr> RENAME old_name AS new_name FROM [db.]table_name
+SELECT <expr> RENAME (old_name AS new_name [, old_name AS new_name, ...]) FROM [db.]table_name
+```
+
+The source names refer to the original names of the selected columns. Each source name must match exactly one selected column. `RENAME` must be the last column transformer. Target names must be unique within one `RENAME` modifier.
+
+## Example {#example}
+
+```sql
+SELECT * RENAME (i AS value_i, j AS value_j) FROM columns_transformers;
+```
+)DOCS_MD",
+        .syntax = R"(
+SELECT <expr> RENAME old_name AS new_name FROM [db.]table_name
+SELECT <expr> RENAME (old_name AS new_name [, old_name AS new_name, ...]) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier", "REPLACE modifier"},
+    });
+
 }
 
 }

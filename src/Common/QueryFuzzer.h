@@ -272,7 +272,7 @@ private:
     /// optionally with column transformers, exercising the parser path added in
     /// https://github.com/ClickHouse/ClickHouse/pull/104569.
     ASTPtr makeFuzzedAsteriskLikeMatcher();
-    /// Builds an `ASTColumnsTransformerList` with fuzzed `APPLY` / `EXCEPT` / `REPLACE` transformers.
+    /// Builds an `ASTColumnsTransformerList` with fuzzed `APPLY` / `EXCEPT` / `REPLACE` / `RENAME` transformers.
     ASTPtr makeFuzzedColumnTransformers();
     /// Builds a reference to a virtual column (`_part`, `_row_exists`, `_path`, ...),
     /// occasionally qualified with a known table name.
