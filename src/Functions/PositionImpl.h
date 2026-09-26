@@ -298,12 +298,15 @@ struct PositionImpl
 
         size_t start_byte = Impl::advancePos(data.data(), data.data() + data.size(), start - 1) - data.data();
 
-        /// Use the same searcher as for a column, so a constant gives the same result.
+        /// Search like a column does: a match whose needle bytes run past the end of the string is not a match.
         auto searcher = Impl::createSearcherInSmallHaystack(needle.data(), needle.size());
         const auto * begin = reinterpret_cast<const UInt8 *>(data.data());
         const auto * end = begin + data.size();
         const auto * found = searcher.search(begin + start_byte, end);
-        res = found == end ? 0 : 1 + Impl::countChars(data.data(), reinterpret_cast<const char *>(found));
+        if (found == end || needle.size() > static_cast<size_t>(end - found))
+            res = 0;
+        else
+            res = 1 + Impl::countChars(data.data(), reinterpret_cast<const char *>(found));
     }
 
     /// Search for substring in string starting from different positions.
