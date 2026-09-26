@@ -218,8 +218,8 @@ bool isGeneratedTableAlias(std::string_view name)
 }
 
 /// True when some `additional_table_filters` key would select a different relation on a replica that
-/// replans the query: an alias, or a bare table name. A key equal to a storage's full name, or
-/// matching no table of the query, is stable; an identity without a database is not comparable.
+/// replans the query: an alias, or a table name, bare or, for a table without a database, qualified by
+/// any database. A key equal to a storage's full name, or matching no table of the query, is stable.
 bool hasSessionRelativeAdditionalFilter(const TableExpressionNodePtr & join_tree, const Map & additional_table_filters)
 {
     if (std::ranges::any_of(
@@ -243,12 +243,11 @@ bool hasSessionRelativeAdditionalFilter(const TableExpressionNodePtr & join_tree
                 if (storage)
                 {
                     const auto & storage_id = storage->getStorageID();
-                    if (!storage_id.hasDatabase())
+                    const auto & table_name = storage_id.table_name;
+                    if (key == table_name || (!storage_id.hasDatabase() && key.ends_with("." + table_name)))
                         return true;
-                    if (key == storage_id.getFullNameNotQuoted())
+                    if (storage_id.hasDatabase() && key == storage_id.getFullNameNotQuoted())
                         return false;
-                    if (key == storage_id.getTableName())
-                        return true;
                 }
                 return key == table_expression->getOriginalAlias();
             });
