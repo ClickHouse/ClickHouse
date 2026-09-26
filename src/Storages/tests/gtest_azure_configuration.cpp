@@ -178,6 +178,32 @@ TEST(StorageAzureConfiguration, FromNamedCollectionWithExtraCredentialsAndAccoun
     ASSERT_THROW_ERROR_CODE(conf.fromNamedCollection(*collection, Context::getGlobalContextInstance()), Exception, ErrorCodes::BAD_ARGUMENTS, "Choose only one");
 }
 
+TEST(StorageAzureConfiguration, FromNamedCollectionWithConnectionStringAndExtraCredentials)
+{
+    std::string xml(R"CONFIG(<clickhouse>
+    <named_collections>
+        <FromNamedCollectionWithConnectionStringAndExtraCredentials>
+            <container>test_container</container>
+            <blob_path>test_blob.csv</blob_path>
+            <connection_string>DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=dGVzdGtleQ==;EndpointSuffix=core.windows.net</connection_string>
+            <client_id>test_client_id</client_id>
+            <tenant_id>test_tenant_id</tenant_id>
+        </FromNamedCollectionWithConnectionStringAndExtraCredentials>
+    </named_collections>
+    </clickhouse>)CONFIG");
+
+    loadNamedCollectionConfig(xml);
+
+    StorageAzureConfigurationFriend conf;
+    auto collection = NamedCollectionFactoryFriend::instance().get("FromNamedCollectionWithConnectionStringAndExtraCredentials");
+
+    ASSERT_THROW_ERROR_CODE(
+        conf.fromNamedCollection(*collection, Context::getGlobalContextInstance()),
+        Exception,
+        ErrorCodes::BAD_ARGUMENTS,
+        "connection_string");
+}
+
 TEST(StorageAzureConfiguration, FromNamedCollectionWithPartialExtraCredentials)
 {
     std::string xml(R"CONFIG(<clickhouse>
