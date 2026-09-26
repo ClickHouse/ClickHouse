@@ -1,0 +1,53 @@
+bare key, rollup	true
+bare key, rollup	\N
+if, rollup	true
+if, rollup	\N
+if, cube	true
+if, cube	\N
+if false branch, rollup	true
+if false branch, rollup	\N
+multiIf, rollup	true
+multiIf, rollup	\N
+multiIf kept, rollup	true
+multiIf kept, rollup	\N
+nested if, rollup	true
+nested if, rollup	\N
+multiIf condition, rollup	true
+multiIf condition, rollup	\N
+correlated, collapsed column repeated	true
+correlated, collapsed column repeated	\N
+if, rollup, grouping()	true	0
+if, rollup, grouping()	\N	1
+two if keys, cube	true	false
+two if keys, cube	true	\N
+two if keys, cube	\N	false
+two if keys, cube	\N	\N
+reported query	true	1
+reported query	\N	1
+if, rollup, UInt8	1
+if, rollup, UInt8	\N
+if, rollup, UInt64	1
+if, rollup, UInt64	\N
+if, rollup, String	x
+if, rollup, String	\N
+if, rollup, Nullable	true
+if, rollup, Nullable	\N
+if and bare key, rollup	true
+if and bare key, rollup	\N
+if, totals	true
+
+if, totals	\N
+if, rollup, setting off	false
+if, rollup, setting off	true
+collapsed column repeated	x	1
+collapsed column repeated	\N	1
+collapsed column repeated, written sub-key	x	1
+collapsed column repeated, written sub-key	\N	1
+collapsed column repeated, written sub-key	\N	1
+nested, collapsed column repeated	x	1
+nested, collapsed column repeated	\N	1
+nested, collapsed column repeated	\N	1
+dictionary condition, rollup	true
+dictionary condition, rollup	\N
+nested dictionary condition, rollup	true
+nested dictionary condition, rollup	\N

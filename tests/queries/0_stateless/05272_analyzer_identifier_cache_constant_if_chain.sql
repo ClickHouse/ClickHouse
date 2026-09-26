@@ -32,11 +32,11 @@ SELECT if(0, s, if(0, s, if(0, s, if(0, s, s)))) AS r, r || 'x' AS q FROM t GROU
 
 -- The query tree is the same with and without the cache.
 SELECT
-    (SELECT countIf(explain ILIKE '%function_name: if,%') FROM (EXPLAIN QUERY TREE SELECT if(0, s, if(0, s, if(0, s, if(0, s, s)))) AS r FROM t GROUP BY r ORDER BY r SETTINGS enable_identifier_resolve_cache = 1)),
-    (SELECT countIf(explain ILIKE '%function_name: if,%') FROM (EXPLAIN QUERY TREE SELECT if(0, s, if(0, s, if(0, s, if(0, s, s)))) AS r FROM t GROUP BY r ORDER BY r SETTINGS enable_identifier_resolve_cache = 0));
+    (SELECT countIf(explain ILIKE '%function_name: if,%' OR explain ILIKE '%function_name: multiIf,%') FROM (EXPLAIN QUERY TREE SELECT if(0, s, if(0, s, if(0, s, if(0, s, s)))) AS r FROM t GROUP BY r ORDER BY r SETTINGS enable_identifier_resolve_cache = 1)),
+    (SELECT countIf(explain ILIKE '%function_name: if,%' OR explain ILIKE '%function_name: multiIf,%') FROM (EXPLAIN QUERY TREE SELECT if(0, s, if(0, s, if(0, s, if(0, s, s)))) AS r FROM t GROUP BY r ORDER BY r SETTINGS enable_identifier_resolve_cache = 0));
 
 -- A chain of constant conditions is folded completely.
-SELECT countIf(explain ILIKE '%function_name: if,%') FROM (EXPLAIN QUERY TREE SELECT if(0, number, if(0, number, if(0, number, if(0, number, number)))) FROM numbers(1));
+SELECT countIf(explain ILIKE '%function_name: if,%' OR explain ILIKE '%function_name: multiIf,%') FROM (EXPLAIN QUERY TREE SELECT if(0, number, if(0, number, if(0, number, if(0, number, number)))) FROM numbers(1));
 
 DROP TABLE t;
 DROP TABLE u3;

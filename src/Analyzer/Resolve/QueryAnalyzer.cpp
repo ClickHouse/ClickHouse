@@ -4218,6 +4218,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                     }
                     break;
                 }
+
+                if (is_correlated_column_node && scope_ptr->nullable_collapsed_group_by_key_columns.contains(node))
+                {
+                    node->convertToNullable();
+                    break;
+                }
             }
 
             /// For local references stop at the first surrounding QUERY scope.
@@ -4587,6 +4593,33 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
     }
 }
 
+/// The columns `IfConstantConditionPass` may collapse `node` to: the branches of nested `if`/`multiIf`. The conditions are
+/// not checked, since a pass can make one constant after analysis.
+void registerConstantConditionBranchColumns(const QueryTreeNodePtr & node, IdentifierResolveScope & scope)
+{
+    const auto * function_node = node->as<FunctionNode>();
+    if (!function_node || (function_node->getFunctionName() != "if" && function_node->getFunctionName() != "multiIf"))
+        return;
+
+    const auto & arguments = function_node->getArguments().getNodes();
+    if (arguments.size() != 3)
+        return;
+
+    for (size_t i = 1; i < 3; ++i)
+    {
+        if (arguments[i]->getNodeType() == QueryTreeNodeType::COLUMN)
+            scope.nullable_collapsed_group_by_key_columns.insert(arguments[i]->clone());
+        else
+            registerConstantConditionBranchColumns(arguments[i], scope);
+    }
+}
+
+void registerCollapsedGroupByKeyColumns(const QueryTreeNodes & group_by_keys, IdentifierResolveScope & scope)
+{
+    for (const auto & key : group_by_keys)
+        registerConstantConditionBranchColumns(key, scope);
+}
+
 }
 
 /** Resolve GROUP BY clause.
@@ -4644,7 +4677,10 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     }
 
     if (!nullable_group_by_keys.empty())
+    {
         registerNullableGroupByKeys(nullable_group_by_keys, scope);
+        registerCollapsedGroupByKeyColumns(nullable_group_by_keys, scope);
+    }
 
     /// With group_by_use_nulls the projection (and the other clauses) are re-resolved after GROUP BY
     /// so that expressions equal to a key become Nullable via the scope.nullable_group_by_keys
