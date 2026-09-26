@@ -155,6 +155,7 @@ void addDefaultRequiredExpressionsRecursively(
     }
 }
 
+
 ASTPtr defaultRequiredExpressions(const Block & block, const NamesAndTypesList & required_columns, const ColumnsDescription & columns, bool null_as_default)
 {
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
@@ -219,15 +220,18 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
     return conversion_expr_list;
 }
 
-std::optional<ActionsDAG> createExpressionsAnalyzer(
-    const Block & header,
-    ASTPtr expr_list,
-    bool save_unneeded_columns,
-    ContextPtr context)
+/// The expression list resolved against a table made of `header`'s columns, with the context the resolution ran in
+/// (the planner needs the same one afterwards) and the table itself: the column nodes of the expression point at it
+/// and it has to outlive them.
+struct ResolvedExpressionList
 {
-    if (!expr_list)
-        return {};
+    QueryTreeNodePtr expression;
+    ContextMutablePtr context;
+    std::shared_ptr<TableNode> table;
+};
 
+ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
+{
     auto execution_context = Context::createCopy(context);
     auto expression = buildQueryTree(expr_list, execution_context);
 
@@ -240,6 +244,22 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
 
     QueryAnalyzer analyzer(false);
     analyzer.resolve(expression, fake_table_expression, execution_context);
+
+    return {std::move(expression), std::move(execution_context), std::move(fake_table_expression)};
+}
+
+std::optional<ActionsDAG> createExpressionsAnalyzer(
+    const Block & header,
+    ASTPtr expr_list,
+    bool save_unneeded_columns,
+    ContextPtr context)
+{
+    if (!expr_list)
+        return {};
+
+    auto resolved = resolveExpressionList(header, expr_list, context);
+    auto & expression = resolved.expression;
+    auto & execution_context = resolved.context;
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
@@ -293,6 +313,19 @@ static bool needConvertAnyNullToDefault(const Block & header, const NamesAndType
             return true;
     }
     return false;
+}
+
+QueryTreeNodePtr resolveMissingDefaults(
+    const Block & header,
+    const NamesAndTypesList & required_columns,
+    const ColumnsDescription & columns,
+    ContextPtr context,
+    bool null_as_default)
+{
+    ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default);
+    if (!expr_list)
+        return nullptr;
+    return resolveExpressionList(header, expr_list, context).expression;
 }
 
 std::optional<ActionsDAG> evaluateMissingDefaults(
