@@ -1,0 +1,50 @@
+<test>
+    <!--
+        Test lazy FINAL optimization for ReplacingMergeTree.
+        The optimization builds a set of primary key values from filtered rows
+        and uses it for index analysis to prune parts/granules in the FINAL read.
+        It helps when:
+        - Updates are evenly distributed (defeating split_intersecting optimization)
+        - The filter narrows to a small key range (enabling PK pruning)
+        - The query reads full column data
+    -->
+    <settings>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE lazy_final_perf
+        (
+            part UInt8,
+            key UInt64,
+            version UInt64,
+            category UInt8,
+            payload String
+        )
+        ENGINE = ReplacingMergeTree(version)
+        PARTITION BY part
+        ORDER BY key
+        SETTINGS index_granularity = 256
+    </create_query>
+
+    <!-- 10 partitions, 1M rows each, non-overlapping key ranges.
+         category=1 only for keys 0..49999 (in partition 0). -->
+    <fill_query>INSERT INTO lazy_final_perf SELECT 0, number,            1, if(number &lt; 50000, 1, 0), repeat('x', 200) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO lazy_final_perf SELECT 1, number + 1000000,  1, 0, repeat('x', 200) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO lazy_final_perf SELECT 2, number + 2000000,  1, 0, repeat('x', 200) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO lazy_final_perf SELECT 3, number + 3000000,  1, 0, repeat('x', 200) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO lazy_final_perf SELECT 4, number + 4000000,  1, 0, repeat('x', 200) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO lazy_final_perf SELECT 5, number + 5000000,  1, 0, repeat('x', 200) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO lazy_final_perf SELECT 6, number + 6000000,  1, 0, repeat('x', 200) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO lazy_final_perf SELECT 7, number + 7000000,  1, 0, repeat('x', 200) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO lazy_final_perf SELECT 8, number + 8000000,  1, 0, repeat('x', 200) FROM numbers(1000000)</fill_query>
+    <fill_query>INSERT INTO lazy_final_perf SELECT 9, number + 9000000,  1, 0, repeat('x', 200) FROM numbers(1000000)</fill_query>
+    <!-- Evenly distributed updates across all partitions: every 100th key gets version 2. -->
+    <fill_query>INSERT INTO lazy_final_perf SELECT toUInt8(number * 100 / 1000000), number * 100, 2, if(number * 100 &lt; 50000, 1, 0), repeat('y', 200) FROM numbers(100000)</fill_query>
+
+    <!-- Concentrated filter + full payload read. Optimization should prune to ~2 parts. -->
+    <query>SELECT count(), max(cityHash64(payload)) FROM lazy_final_perf FINAL WHERE category = 1 SETTINGS query_plan_optimize_lazy_final = 0</query>
+    <query>SELECT count(), max(cityHash64(payload)) FROM lazy_final_perf FINAL WHERE category = 1 SETTINGS query_plan_optimize_lazy_final = 1, max_rows_for_lazy_final = 10000000</query>
+
+    <drop_query>DROP TABLE IF EXISTS lazy_final_perf</drop_query>
+</test>

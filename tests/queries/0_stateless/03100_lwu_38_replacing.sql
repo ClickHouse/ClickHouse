@@ -10,7 +10,7 @@ INSERT INTO t_lwu_replacing SELECT number, 'v' || toString(number), now() FROM n
 INSERT INTO t_lwu_replacing SELECT number, 'v' || toString(number), now() FROM numbers(5, 10);
 
 SET apply_patch_parts = 1;
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 SET lightweight_delete_mode = 'lightweight_update_force';
 
 DELETE FROM t_lwu_replacing WHERE id % 2 = 0;

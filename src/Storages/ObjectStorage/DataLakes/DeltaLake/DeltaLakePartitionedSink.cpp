@@ -2,10 +2,16 @@
 
 #if USE_DELTA_KERNEL_RS
 #include <Common/logger_useful.h>
+#include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ArenaUtils.h>
 #include <Common/Arena.h>
 #include <Common/PODArray.h>
+#include <base/hex.h>
 #include <Core/UUID.h>
+#include <Core/Settings.h>
 
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -14,12 +20,12 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSink.h>
-#include <Storages/HivePartitioningUtils.h>
 
 #include <fmt/ranges.h>
 
@@ -28,10 +34,93 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
+}
+
+namespace Setting
+{
+    extern const SettingsNonZeroUInt64 delta_lake_insert_max_rows_in_data_file;
+    extern const SettingsNonZeroUInt64 delta_lake_insert_max_bytes_in_data_file;
+    extern const SettingsBool delta_lake_accurate_write_cast;
+}
+
+namespace FailPoints
+{
+    extern const char delta_lake_write_cancel_in_commit_window[];
 }
 
 namespace
 {
+    /// Delta placeholder for a missing partition value (also committed as a JSON null).
+    constexpr std::string_view HIVE_DEFAULT_PARTITION = "__HIVE_DEFAULT_PARTITION__";
+
+    /// delta-kernel-rs `partition::hive::needs_escaping` (non-Windows set). `-`, space and
+    /// non-ASCII stay unescaped. Controls 0x00-0x1F and 0x7F are covered by the range checks.
+    bool needsHiveEscaping(unsigned char c)
+    {
+        return c <= 0x1F || c == 0x7F
+            || c == '"' || c == '#' || c == '%' || c == '\'' || c == '*' || c == '/'
+            || c == ':' || c == '=' || c == '?' || c == '\\' || c == '{' || c == '[' || c == ']' || c == '^';
+    }
+
+    String hiveEscape(std::string_view s)
+    {
+        String result;
+        result.reserve(s.size());
+        for (char ch : s)
+        {
+            auto c = static_cast<unsigned char>(ch);
+            if (needsHiveEscaping(c))
+            {
+                result += '%';
+                result += hexDigitUppercase(c / 16);
+                result += hexDigitUppercase(c % 16);
+            }
+            else
+                result += ch;
+        }
+        return result;
+    }
+
+    /// Directory component `name=hiveEscape(value)`; a null-equivalent value uses the placeholder.
+    String buildPartitionPathComponent(const DeltaLakePartitionedSink::PartitionValue & pv)
+    {
+        String component = hiveEscape(pv.name);
+        component += '=';
+        component += pv.is_null ? String(HIVE_DEFAULT_PARTITION) : hiveEscape(pv.value);
+        return component;
+    }
+
+    /// delta-kernel-rs `partition::hive::HADOOP_URI_PATH_ENCODE_SET` (Hadoop Path.toUri()).
+    bool needsUriEncoding(unsigned char c)
+    {
+        return c <= 0x1F || c >= 0x80
+            || c == ' ' || c == '"' || c == '#' || c == '%' || c == '<' || c == '>' || c == '?'
+            || c == '[' || c == '\\' || c == ']' || c == '^' || c == '`' || c == '{' || c == '|' || c == '}';
+    }
+
+    /// URI-encode the on-disk relative path for `add.path`. The reader decodes it with a single
+    /// `unescapeForFileName` (which decodes every `%XX`), so one encode round-trips to the exact
+    /// on-disk path. `/` separators are kept so the path structure survives.
+    String uriEncodePath(const String & relative_path)
+    {
+        String result;
+        result.reserve(relative_path.size());
+        for (char ch : relative_path)
+        {
+            auto c = static_cast<unsigned char>(ch);
+            if (c != '/' && needsUriEncoding(c))
+            {
+                result += '%';
+                result += hexDigitUppercase(c / 16);
+                result += hexDigitUppercase(c % 16);
+            }
+            else
+                result += ch;
+        }
+        return result;
+    }
+
     /// Given partition columns list,
     /// create Hive style partition strategy with partition by expression
     /// created as Tuple function containing those columns: (a, b, ..).
@@ -42,12 +131,13 @@ namespace
     {
         ASTs partition_columns_asts;
         for (const auto & column : partition_columns)
-            partition_columns_asts.push_back(std::make_shared<ASTIdentifier>(column));
+            partition_columns_asts.push_back(make_intrusive<ASTIdentifier>(column));
 
         ASTPtr partition_by = makeASTFunction("tuple", partition_columns_asts);
         auto key_description = KeyDescription::getKeyFromAST(
             partition_by,
             ColumnsDescription(header.getNamesAndTypesList()),
+            {},
             context);
 
         return std::make_unique<HiveStylePartitionStrategy>(
@@ -61,28 +151,109 @@ namespace
 
 DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     DeltaLake::WriteTransactionPtr delta_transaction_,
-    StorageObjectStorageConfigurationPtr configuration_,
     const Names & partition_columns_,
     ObjectStoragePtr object_storage_,
     ContextPtr context_,
     SharedHeader sample_block_,
-    const std::optional<FormatSettings> & format_settings_)
+    const std::optional<FormatSettings> & format_settings_,
+    const String & write_format_,
+    const String & write_compression_method_)
     : SinkToStorage(sample_block_)
     , WithContext(context_)
     , log(getLogger("DeltaLakePartitionedSink"))
     , partition_columns(partition_columns_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
-    , configuration(configuration_)
+    , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
+    , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
+    , accurate_write_cast(context_->getSettingsRef()[Setting::delta_lake_accurate_write_cast])
     , partition_strategy(createPartitionStrategy(partition_columns, getHeader(), context_))
     , delta_transaction(delta_transaction_)
+    , format_header(partition_strategy->getFormatHeader())
+    , write_format_header(DeltaLake::makeDeltaWriteHeader(format_header, delta_transaction_->getWriteSchema()))
+    , write_format(write_format_)
+    , write_compression_method(write_compression_method_)
 {
     delta_transaction->validateSchema(getHeader());
+
+    /// Per partition column: `toString(<cast>(<column>))` casts to the Delta write-schema type (like the data columns) so an out-of-range key is rejected (accurate) or truncated (plain) instead of being committed verbatim.
+    const auto & write_schema = delta_transaction->getWriteSchema();
+    partition_value_actions.reserve(partition_columns.size());
+    partition_column_nullable.reserve(partition_columns.size());
+    for (const auto & column : partition_columns)
+    {
+        auto schema_column = write_schema.tryGetByName(column);
+        if (!schema_column)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Partition column '{}' is not present in the DeltaLake table schema", column);
+
+        ASTPtr value_ast = makeASTFunction(
+            accurate_write_cast ? "accurateCast" : "_CAST",
+            make_intrusive<ASTIdentifier>(column),
+            make_intrusive<ASTLiteral>(schema_column->type->getName()));
+        ASTPtr to_string_ast = makeASTFunction("toString", std::move(value_ast));
+        partition_value_actions.push_back(partition_strategy->getPartitionExpressionActions(to_string_ast));
+
+        partition_column_nullable.push_back(schema_column->type->isNullable());
+    }
+}
+
+Columns DeltaLakePartitionedSink::computePartitionValueColumns(const Chunk & chunk) const
+{
+    Columns result;
+    result.reserve(partition_value_actions.size());
+    for (const auto & actions_with_column : partition_value_actions)
+    {
+        Block block = getHeader().cloneWithoutColumns();
+        block.setColumns(chunk.getColumns());
+        actions_with_column.actions->execute(block);
+        result.push_back(block.getByName(actions_with_column.column_name).column->convertToFullColumnIfConst());
+    }
+    return result;
+}
+
+DeltaLakePartitionedSink::~DeltaLakePartitionedSink()
+{
+    if (isCancelled())
+        cancelBuffers();
+}
+
+void DeltaLakePartitionedSink::cancelBuffers()
+{
+    /// The inner sinks are plain members, not pipeline processors, so the
+    /// pipeline-wide cancel does not reach them. Cancel each one explicitly:
+    /// this flips its isCancelled(), so its destructor finalizes/cancels its
+    /// WriteBuffer instead of tripping the "neither finalized nor canceled" assert.
+    /// WriteBuffer::cancel does not unlink an already written data file, so also
+    /// remove each uncommitted object (mirrors the commit-failure cleanup in
+    /// onFinish); otherwise a failed insert leaves orphan parquet files behind.
+    for (auto & [_, partition_info] : partitions_data)
+    {
+        for (auto & data_file : partition_info->data_files)
+        {
+            data_file.sink->cancel();
+            try
+            {
+                object_storage->removeObjectIfExists(StoredObject(data_file.sink->getPath()));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to remove uncommitted data file on cancel");
+            }
+        }
+    }
+}
+
+void DeltaLakePartitionedSink::onException(std::exception_ptr)
+{
+    cancelBuffers();
 }
 
 void DeltaLakePartitionedSink::consume(Chunk & chunk)
 {
-    const ColumnPtr partition_by_result_column = partition_strategy->computePartitionKey(chunk);
+    /// Serialized (toString) value of each partition column, preserving nulls.
+    const Columns partition_value_columns = computePartitionValueColumns(chunk);
 
     /// Not all columns are serialized using the format writer
     /// (e.g, hive partitioning stores partition columns in the file path)
@@ -97,16 +268,54 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
     size_t chunk_rows = chunk.getNumRows();
     chunk_row_index_to_partition_index.resize(chunk_rows);
 
-    HashMapWithSavedHash<StringRef, size_t> partition_id_to_chunk_index;
+    HashMapWithSavedHash<std::string_view, size_t> partition_id_to_chunk_index;
+    std::vector<PartitionValues> partition_index_to_values;
 
     for (size_t row = 0; row < chunk_rows; ++row)
     {
-        auto partition_key = partition_by_result_column->getDataAt(row);
+        /// Grouping key is null-tagged and embeds the escaped value, so a real NULL and the
+        /// literal `__HIVE_DEFAULT_PARTITION__` (same directory) stay distinct, and values that
+        /// differ only by reserved characters do not merge.
+        PartitionValues row_values;
+        row_values.reserve(partition_columns.size());
+        String grouping_key;
+        for (size_t col = 0; col < partition_columns.size(); ++col)
+        {
+            const IColumn & column = *partition_value_columns[col];
+            /// Delta treats both SQL NULL and an empty string as null-equivalent partition values.
+            const bool is_null = column.isNullAt(row);
+            String value = is_null ? String{} : String{column.getDataAt(row)};
+            const bool is_null_equivalent = is_null || value.empty();
+
+            /// A null-equivalent value is committed as a JSON null in `partitionValues`; for a
+            /// non-nullable partition column the reader would then fail with
+            /// CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, so reject it here (delta-rs rejects it too).
+            if (is_null_equivalent && !partition_column_nullable[col])
+                throw Exception(
+                    ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                    "Cannot write {} partition value into non-nullable DeltaLake partition column '{}'",
+                    is_null ? "NULL" : "empty-string", partition_columns[col]);
+
+            PartitionValue pv;
+            pv.name = partition_columns[col];
+            pv.is_null = is_null_equivalent;
+            if (!is_null_equivalent)
+                pv.value = std::move(value);
+
+            grouping_key += pv.is_null ? '\0' : '\1';
+            grouping_key += buildPartitionPathComponent(pv);
+            grouping_key += '/';
+            row_values.push_back(std::move(pv));
+        }
+
         auto [it, inserted] = partition_id_to_chunk_index.insert(
-            makePairNoInit(partition_key, partition_id_to_chunk_index.size()));
+            makePairNoInit(std::string_view(grouping_key), partition_id_to_chunk_index.size()));
 
         if (inserted)
-            it->value.first = copyStringInArena(partition_keys_arena, partition_key);
+        {
+            it->value.first = copyStringInArena(partition_keys_arena, std::string_view(grouping_key));
+            partition_index_to_values.push_back(std::move(row_values));
+        }
 
         chunk_row_index_to_partition_index[row] = it->getMapped();
     }
@@ -120,7 +329,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
         const IColumn * column_to_consume = columns_to_consume[column_index];
-        MutableColumns partition_index_to_column_split = column_to_consume->scatter(
+        auto partition_index_to_column_split = column_to_consume->scatter(
             partitions_size,
             chunk_row_index_to_partition_index);
 
@@ -131,7 +340,7 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
                 partition_index_to_chunk.emplace_back(Columns(), partition_column->size());
         }
 
-        for (size_t partition_index = 0; partition_index  < partitions_size; ++partition_index)
+        for (size_t partition_index = 0; partition_index < partitions_size; ++partition_index)
         {
             auto & partition_chunk = partition_index_to_chunk[partition_index];
             partition_chunk.addColumn(std::move(partition_index_to_column_split[partition_index]));
@@ -140,71 +349,132 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
 
     for (const auto & [partition_key, partition_index] : partition_id_to_chunk_index)
     {
-        auto partition_data = getPartitionDataForPartitionKey(partition_key);
+        auto & data_files = getPartitionDataForPartitionKey(partition_key, partition_index_to_values[partition_index])->data_files;
         auto & partition_chunk = partition_index_to_chunk[partition_index];
-        partition_data->sink->consume(partition_chunk);
-        partition_data->size += partition_chunk.bytes();
+
+        if (data_files.empty()
+            || data_files.back().written_rows >= data_file_max_rows
+            || data_files.back().written_bytes >= data_file_max_bytes)
+        {
+            data_files.emplace_back(createSinkForPartition(partition_key));
+            total_data_files_count += 1;
+        }
+        auto & data_file = data_files.back();
+        /// Cast to the Delta write schema so the data files match the Delta log (e.g. `UInt8` -> `short`).
+        Chunk write_chunk = DeltaLake::castChunkToDeltaWriteSchema(partition_chunk, format_header, *write_format_header, accurate_write_cast);
+        data_file.written_bytes += write_chunk.bytes();
+        data_file.written_rows += write_chunk.getNumRows();
+        data_file.sink->consume(write_chunk);
     }
 }
 
-DeltaLakePartitionedSink::PartitionDataPtr
-DeltaLakePartitionedSink::getPartitionDataForPartitionKey(StringRef partition_key)
+DeltaLakePartitionedSink::PartitionInfoPtr
+DeltaLakePartitionedSink::getPartitionDataForPartitionKey(std::string_view partition_key, const PartitionValues & partition_values)
 {
-    auto it = partition_id_to_sink.find(partition_key);
-    if (it == partition_id_to_sink.end())
-    {
-        auto data = std::make_shared<PartitionData>();
-        auto data_prefix = std::filesystem::path(delta_transaction->getDataPath()) / partition_key.toString();
-        data->path = DeltaLake::generateWritePath(std::move(data_prefix), configuration->format);
-
-        data->sink = std::make_shared<StorageObjectStorageSink>(
-            data->path,
-            object_storage,
-            configuration,
-            format_settings,
-            std::make_shared<Block>(partition_strategy->getFormatHeader()),
-            getContext()
-        );
-        std::tie(it, std::ignore) = partition_id_to_sink.emplace(partition_key, std::move(data));
-    }
+    auto it = partitions_data.find(partition_key);
+    if (it == partitions_data.end())
+        std::tie(it, std::ignore) = partitions_data.emplace(partition_key, std::make_shared<PartitionInfo>(partition_key, partition_values));
     return it->second;
+}
+
+DeltaLakePartitionedSink::StorageSinkPtr
+DeltaLakePartitionedSink::createSinkForPartition(std::string_view partition_key)
+{
+    /// The grouping key is null-tagged and not a filesystem path; build the physical Hive
+    /// directory (`col=escape(value)/...`) from the true partition values instead.
+    const auto & partition_values = partitions_data.at(partition_key)->partition_values;
+    std::filesystem::path data_prefix(delta_transaction->getDataPath());
+    for (const auto & pv : partition_values)
+        data_prefix /= buildPartitionPathComponent(pv);
+
+    return std::make_unique<StorageObjectStorageSink>(
+        DeltaLake::generateWritePath(std::move(data_prefix), write_format),
+        object_storage,
+        format_settings,
+        write_format_header,
+        getContext(),
+        write_format,
+        write_compression_method);
 }
 
 void DeltaLakePartitionedSink::onFinish()
 {
-    if (isCancelled() || partition_id_to_sink.empty())
+    if (isCancelled() || partitions_data.empty())
         return;
 
-    for (auto & [_, data] : partition_id_to_sink)
-        data->sink->onFinish();
+    std::vector<DeltaLake::WriteTransaction::CommitFile> files;
+    files.reserve(total_data_files_count);
+    const auto data_prefix = delta_transaction->getDataPath();
 
-    LOG_TEST(log, "Written to {} sinks", partition_id_to_sink.size());
+    for (auto & [_, partition_info] : partitions_data)
+    {
+        auto & data_files = partition_info->data_files;
+
+        /// Build `partitionValues` from the true logical values, never by parsing them back out
+        /// of the path (which cannot round-trip values containing `/` or `=`). Null-equivalent
+        /// values (SQL NULL and empty string) are committed as a JSON null, per the Delta protocol.
+        Map partition_values;
+        partition_values.reserve(partition_info->partition_values.size());
+        for (const auto & pv : partition_info->partition_values)
+            partition_values.emplace_back(DB::Tuple({Field(pv.name), pv.is_null ? Field() : Field(pv.value)}));
+
+        for (const auto & [sink, written_bytes, written_rows] : data_files)
+        {
+            sink->onFinish();
+            files.emplace_back(
+                /// `add.path` is the URI-encoded on-disk path, so the reader's single
+                /// `unescapeForFileName` (TableSnapshot) recovers the real relative path.
+                uriEncodePath(sink->getPath().substr(data_prefix.size())),
+                /// We use file size from sink to count all file, not just actual data.
+                sink->getFileSize(),
+                written_rows,
+                partition_values);
+        }
+    }
+
+    LOG_TEST(log, "Written {} data files", total_data_files_count);
+
+    /// Test-only hook for the commit window: the data files are finalized and the commit below has
+    /// not run yet. `onFinish` runs inside `IProcessor::work()`, which must only use CPU and never
+    /// wait, so the hook cancels the query the same way `KILL QUERY` does instead of blocking.
+    fiu_do_on(FailPoints::delta_lake_write_cancel_in_commit_window, {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_context->killCurrentQuery();
+    });
 
     try
     {
-        std::vector<DeltaLake::WriteTransaction::CommitFile> files;
-        files.reserve(partition_id_to_sink.size());
-        const auto data_prefix = delta_transaction->getDataPath();
-        for (auto & [_, data] : partition_id_to_sink)
-        {
-            auto keys_and_values = HivePartitioningUtils::parseHivePartitioningKeysAndValues(data->path);
-            Map partition_values;
-            partition_values.reserve(keys_and_values.size());
-            for (const auto & [key, value] : keys_and_values)
-                partition_values.emplace_back(DB::Tuple({key, value}));
-
-            files.emplace_back(data->path.substr(data_prefix.size()), data->size, partition_values);
-        }
         delta_transaction->commit(files);
     }
     catch (...)
     {
-        for (auto & [_, data] : partition_id_to_sink)
+        for (auto & [_, partition_info] : partitions_data)
         {
-            object_storage->removeObjectIfExists(StoredObject(data->path));
+            for (const auto & [sink, written_bytes, written_rows] : partition_info->data_files)
+            {
+                const auto & path = sink->getPath();
+                try
+                {
+                    object_storage->removeObjectIfExists(StoredObject(path));
+                }
+                catch (...)
+                {
+                    /// Building the message allocates, and the memory tracker can throw inside an active handler.
+                    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+                    tryLogCurrentException(log, "Failed to remove uncommitted data file after a failed commit: " + path);
+                }
+            }
         }
         throw;
     }
+
+    /// The commit succeeded: the data files are now referenced by the Delta log.
+    /// Drop the tracked sinks so a cancel that arrives after this point (the
+    /// pipeline executor flips isCancelled() asynchronously, so it can race with
+    /// this commit) does not make ~DeltaLakePartitionedSink -> cancelBuffers()
+    /// unlink the just-committed files and leave the Delta log pointing at
+    /// missing data.
+    partitions_data.clear();
 }
 
 }

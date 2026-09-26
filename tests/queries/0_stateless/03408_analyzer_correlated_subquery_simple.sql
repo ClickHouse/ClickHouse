@@ -7,9 +7,7 @@ INSERT INTO t1 SELECT number, number % 100 FROM numbers(100);
 INSERT INTO t2 SELECT number*number FROM numbers(100);
 
 set enable_analyzer = 1;
-set allow_experimental_correlated_subqueries = 1;
-
-SET enable_parallel_replicas = 0;
+set allow_correlated_subqueries = 1;
 
 -- { echoOn }
 

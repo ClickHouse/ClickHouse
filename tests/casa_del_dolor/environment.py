@@ -52,7 +52,7 @@ def set_environment_variables(logger, args, process_name: str) -> dict[str, str]
 
     if len(test_env_variables) > 0:
         logger.info(
-            f"Setting environment variable(s) for {process_name}: {' '.join([f"{key}={value}" for key, value in test_env_variables.items()])}"
+            f"Setting environment variable(s) for {process_name}: {' '.join([f'{key}={value}' for key, value in test_env_variables.items()])}"
         )
 
     return test_env_variables

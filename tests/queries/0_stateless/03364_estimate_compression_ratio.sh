@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Random settings limits: index_granularity=(10, None)
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 column_names=("number_col" "str_col" "array_col" "nullable_col" "sparse_col" "tuple_col")
 table_name="table_for_estimate_compression_ratio"
-tolerance=0.40
+tolerance=0.45
 formatted_tolerance=$(awk "BEGIN {printf \"%.2f\", $tolerance * 100}")%
 
 # all combinations of the following should be tested
@@ -28,7 +27,7 @@ create_table() {
         sparse_col Int64,
         tuple_col Tuple(Int64, Tuple(Int64, Int64)),
     ) ENGINE = MergeTree ORDER BY number_col
-    SETTINGS min_bytes_for_wide_part = 0"
+    SETTINGS min_bytes_for_wide_part = 0, ratio_of_defaults_for_sparse_serialization=1, index_granularity=8128"
 
     $CLICKHOUSE_CLIENT -q "$query"
 

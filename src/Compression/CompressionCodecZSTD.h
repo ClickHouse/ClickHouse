@@ -15,6 +15,7 @@ public:
     CompressionCodecZSTD(int level_, int window_log);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
@@ -24,14 +25,14 @@ protected:
 
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    UInt32 doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
 
     bool isCompression() const override { return true; }
     bool isGenericCompression() const override { return true; }
 
     String getDescription() const override
     {
-        return "Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 3.";
+        return "Good compression; pretty fast; best for high compression needs. Don’t use levels higher than 6.";
     }
 
 private:

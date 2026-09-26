@@ -25,7 +25,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionS2RectContains : public IFunction
+class FunctionS2RectContains final : public IFunction
 {
 public:
     static constexpr auto name = "s2RectContains";
@@ -43,6 +43,10 @@ public:
     size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid S2 cell id, so executing on the whole dictionary
+    /// would fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -137,7 +141,22 @@ public:
 
 REGISTER_FUNCTION(S2RectContains)
 {
-    factory.registerFunction<FunctionS2RectContains>();
+    FunctionDocumentation::Description description = R"(
+Determines if an S2 latitude-longitude rectangle contains the given S2 point. The rectangle is represented by a pair of S2 cell identifiers for its low and high corners.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2RectContains(s2RectLow, s2RectHigh, s2Point)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s2RectLow", "S2 cell identifier of the low vertex of the rectangle.", {"UInt64"}},
+        {"s2RectHigh", "S2 cell identifier of the high vertex of the rectangle.", {"UInt64"}},
+        {"s2Point", "S2 cell identifier of the point to test.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns 1 if the rectangle contains the point and 0 otherwise.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2RectContains(5178914411069187297, 5177056748191934217, 5177222610104078385)", "1"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2RectContains>(documentation);
 }
 
 

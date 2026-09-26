@@ -1,0 +1,12 @@
+qualified_match_nullable_tuple_direct
+1	1	a	Nullable(Tuple(a Int32, s String))
+2	\N	\N	Nullable(Tuple(a Int32, s String))
+3	3	c	Nullable(Tuple(a Int32, s String))
+qualified_match_full_join_nullable_tuple_key
+1	1	a	Nullable(Tuple(a Int32, s String))
+2	2	b	Nullable(Tuple(a Int32, s String))
+3	3	c	Nullable(Tuple(a Int32, s String))
+qualified_match_array_of_nullable_tuple
+[1,NULL,3]	['a',NULL,'c']	Array(Nullable(Tuple(a Int32, s String)))
+qualified_match_map_of_nullable_tuple
+['k1','k2','k3']	[(1,'a'),NULL,(3,'c')]	Map(String, Nullable(Tuple(a Int32, s String)))

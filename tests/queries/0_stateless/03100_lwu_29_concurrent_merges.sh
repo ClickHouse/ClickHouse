@@ -11,7 +11,7 @@ set -e
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_lwu_block_number SYNC;
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     SET insert_keeper_fault_injection_probability = 0.0;
 
     CREATE TABLE t_lwu_block_number (id UInt64,s String)
@@ -19,7 +19,8 @@ $CLICKHOUSE_CLIENT --query "
     ORDER BY id
     SETTINGS
         enable_block_number_column = 1,
-        enable_block_offset_column = 1;
+        enable_block_offset_column = 1,
+        patch_parts_version = 'v2';
 
     INSERT INTO t_lwu_block_number VALUES (1, 'aa') (2, 'bb') (3, 'cc');
     UPDATE t_lwu_block_number SET s = 'foo' WHERE id = 1;
@@ -32,6 +33,10 @@ if [[ "$storage_policy" == "s3_with_keeper" ]]; then
     failpoint_name="smt_merge_task_sleep_in_prepare"
 fi
 
+# The fail point is server-global, so disarm it however the test ends: the OPTIMIZE below runs in
+# the background and `set -e` can take the test out before it is waited for.
+trap '$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $failpoint_name" ||:' EXIT
+
 $CLICKHOUSE_CLIENT --query "
     SET optimize_throw_if_noop = 1;
     SYSTEM ENABLE FAILPOINT $failpoint_name;
@@ -41,9 +46,9 @@ $CLICKHOUSE_CLIENT --query "
 sleep 1.0
 
 $CLICKHOUSE_CLIENT --query "
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
     UPDATE t_lwu_block_number SET s = 'bar' WHERE id = 2;
-    OPTIMIZE TABLE t_lwu_block_number PARTITION ID 'patch-8feeedf7588c601fd7f38da7fe68712b-all' FINAL;
+    OPTIMIZE TABLE t_lwu_block_number PARTITION ID 'patch-217fed773f8b0f1741d2ccea2e599cdf-all' FINAL;
 "
 
 wait

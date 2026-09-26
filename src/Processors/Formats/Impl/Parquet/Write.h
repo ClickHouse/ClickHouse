@@ -10,6 +10,7 @@
 namespace DB
 {
 class Block;
+class ColumnMapper;
 }
 
 namespace DB::Parquet
@@ -22,10 +23,15 @@ struct WriteOptions
 {
     bool output_string_as_string = false;
     bool output_fixed_string_as_fixed_byte_array = true;
+    bool output_wide_integer_as_decimal = false;
     bool output_datetime_as_uint32 = false;
     bool output_date_as_uint16 = false;
     bool output_enum_as_byte_array = false;
 
+    /// Note: the meaning of some compression methods here is different from
+    /// wrapReadBufferWithCompressionMethod:
+    ///  * Lz4 here lz4 block format, while in Lz4InflatingReadBuffer uses lz4 framed format,
+    ///  * Snappy here doesn't have extra headers, while HadoopSnappyReadBuffer does.
     CompressionMethod compression = CompressionMethod::Lz4;
     int compression_level = 3;
 
@@ -33,15 +39,16 @@ struct WriteOptions
     size_t write_batch_size = 1024;
 
     bool use_dictionary_encoding = true;
-    size_t dictionary_size_limit = 1024 * 1024;
+    size_t max_dictionary_size = 1024 * 1024;
     /// If using dictionary, this encoding is used as a fallback when dictionary gets too big.
     /// Otherwise, this is used for everything.
-    parquet::format::Encoding::type encoding = parquet::format::Encoding::PLAIN;
+    parq::Encoding::type encoding = parq::Encoding::PLAIN;
 
     bool write_column_chunk_statistics = true;
     bool write_page_statistics = true;
     bool write_page_index = true;
     bool write_bloom_filter = true;
+    bool write_checksums = true;
 
     size_t max_statistics_size = 4096;
 
@@ -67,11 +74,29 @@ struct WriteOptions
     bool write_geometadata = true;
 };
 
+/// Iceberg optionality of complex containers, which is not recoverable from the ClickHouse type:
+/// Array/Map are never wrapped in Nullable, so an Iceberg `optional` list/map/struct arrives here as
+/// a plain container. `mapper == nullptr` (or a mapper without this info) means "no Iceberg info",
+/// in which case the writer keeps its type-derived behavior.
+struct IcebergOptionality
+{
+    const ColumnMapper * mapper = nullptr;
+    /// True while an enclosing Nullable already supplies the OPTIONAL level for this exact path.
+    /// Nullable is transparent in Iceberg field naming, so the container below it sees the same
+    /// dotted path and must not add a second OPTIONAL level.
+    bool owned_by_enclosing_nullable = false;
+
+    bool isOptional(const String & path) const;
+};
+
 struct ColumnChunkIndexes
 {
-    parquet::format::ColumnIndex column_index; // if write_page_index
-    parquet::format::OffsetIndex offset_index; // if write_page_index
-    parquet::format::BloomFilterHeader bloom_filter_header;
+    parq::ColumnIndex column_index; // if write_page_index
+    parq::OffsetIndex offset_index; // if write_page_index
+    /// Set to false when a non-null page has stats dropped (e.g. value exceeded max_statistics_size).
+    /// When false, the column index must not be written because it would contain invalid bounds.
+    bool column_index_valid = true;
+    parq::BloomFilterHeader bloom_filter_header;
     PODArray<UInt32> bloom_filter_data; // if write_bloom_filter, and not flushed yet
 };
 
@@ -80,11 +105,11 @@ struct ColumnChunkWriteState
 {
     /// After writeColumnChunkBody(), offsets in this struct are relative to the start of column chunk.
     /// Then finalizeColumnChunkAndWriteFooter fixes them up before writing to file.
-    parquet::format::ColumnChunk column_chunk;
+    parq::ColumnChunk column_chunk;
 
     ColumnPtr primitive_column;
     DataTypePtr type;
-    CompressionMethod compression; // must match what's inside column_chunk
+    CompressionMethod compression{}; // must match what's inside column_chunk
     int compression_level = 3;
     Int64 datetime_multiplier = 1; // for converting e.g. seconds to milliseconds
     bool is_bool = false; // bool vs UInt8 have the same column type but are encoded differently
@@ -112,7 +137,7 @@ struct ColumnChunkWriteState
 
 struct RowGroupWithIndexes
 {
-    parquet::format::RowGroup row_group;
+    parq::RowGroup row_group;
     std::vector<ColumnChunkIndexes> column_indexes;
 };
 
@@ -125,7 +150,7 @@ struct FileWriteState
     size_t offset = 0;
 };
 
-using SchemaElements = std::vector<parquet::format::SchemaElement>;
+using SchemaElements = std::vector<parq::SchemaElement>;
 using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 
 /// Parquet file consists of row groups, which consist of column chunks.
@@ -160,11 +185,15 @@ using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 /// Parquet schema is a tree of SchemaElements, flattened into a list in depth-first order.
 /// Leaf nodes correspond to physical columns of primitive types. Inner nodes describe logical
 /// groupings of those columns, e.g. tuples or structs.
-SchemaElements convertSchema(const Block & sample, const WriteOptions & options);
+SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const IcebergOptionality & iceberg_optionality = {});
 
+/// `iceberg_optionality` must be passed identically on the schema and the data path: the reader
+/// derives its max definition level from the schema while the writer derives the level bit width
+/// from the state produced here, so a schema-only change would desynchronize them.
 void prepareColumnForWrite(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
-    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr);
+    ColumnChunkWriteStates * out_columns_to_write, SchemaElements * out_schema = nullptr, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt,
+    const IcebergOptionality & iceberg_optionality = {});
 
 void writeFileHeader(FileWriteState & file, WriteBuffer & out);
 

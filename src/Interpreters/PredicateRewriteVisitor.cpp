@@ -170,6 +170,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
         || (subquery.with() && (!optimize_with || hasNonRewritableFunction(subquery.with(), getContext())))
         || subquery.withFill()
         || subquery.limitBy() || subquery.limitLength() || subquery.limitByLength() || subquery.limitByOffset()
+        || subquery.limitAfter() || subquery.limitUntil()
         || hasNonRewritableFunction(subquery.select(), getContext())
         || (subquery.orderBy() && subquery.limitOffset()))
         return false;
@@ -213,7 +214,7 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
         /// We only need to push all the predicates to subquery having
         /// The subquery optimizer will move the appropriate predicates from having to where
         subquery.setExpression(ASTSelectQuery::Expression::HAVING,
-            subquery.having() ? makeASTFunction("and", optimize_predicate, subquery.having()) : optimize_predicate);
+            subquery.having() ? makeASTOperator("and", optimize_predicate, subquery.having()) : optimize_predicate);
     }
 
     return is_changed;

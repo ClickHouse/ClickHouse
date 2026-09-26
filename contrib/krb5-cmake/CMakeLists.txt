@@ -132,16 +132,18 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/ser_sctx.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/k5sealv3.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/acquire_cred.c"
-    "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/k5unseal.c"
+    # "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/k5unseal.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/rel_cred.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/util_cksum.c"
+    "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/verify_mic.c"
+    "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/unwrap.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/disp_com_err_status.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/gssapi_generic.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/rel_oid_set.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/oid_ops.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_buffer.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_buffer_set.c"
-    "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_set.c"
+    # "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_set.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_token.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/disp_major_status.c"
     "${KRB5_SOURCE_DIR}/lib/gssapi/generic/util_seqstate.c"
@@ -415,6 +417,7 @@ set(ALL_SRCS
     "${KRB5_SOURCE_DIR}/lib/krb5/os/realm_dom.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/os/dnssrv.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/os/mk_faddr.c"
+    "${KRB5_SOURCE_DIR}/lib/krb5/os/addr.c"
     # "${KRB5_SOURCE_DIR}/lib/krb5/os/dnsglue.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/os/sendto_kdc.c"
     "${KRB5_SOURCE_DIR}/lib/krb5/os/hostrealm_registry.c"
@@ -585,11 +588,11 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
         file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/kcmrpc.hin"
             DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/include_private/"
         )
-        file(RENAME 
+        file(RENAME
             "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.cin"
             "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c"
         )
-        file(RENAME 
+        file(RENAME
             "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.hin"
             "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.h"
         )

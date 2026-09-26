@@ -2,11 +2,13 @@
 
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/AsyncLoader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Storages/IStorage_fwd.h>
+#include <Core/UUID.h>
 
 namespace DB
 {
@@ -17,6 +19,7 @@ namespace ErrorCodes
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 DatabaseOverlay::DatabaseOverlay(const String & name_, ContextPtr context_)
@@ -98,7 +101,7 @@ void DatabaseOverlay::attachTable(
             db->attachTable(context_, table_name, table, relative_table_path);
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -125,6 +128,37 @@ StoragePtr DatabaseOverlay::detachTable(ContextPtr context_, const String & tabl
         table_name,
         getDatabaseName(),
         getEngineName());
+}
+
+DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOverlay::getDetachedTablesIterator(
+    ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
+{
+    SnapshotDetachedTables combined_snapshot;
+    for (const auto & db : databases)
+    {
+        DatabaseDetachedTablesSnapshotIteratorPtr it;
+        try
+        {
+            it = db->getDetachedTablesIterator(context_, filter_by_table_name, skip_not_loaded);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                continue;
+            throw;
+        }
+        for (; it->isValid(); it->next())
+        {
+            SnapshotDetachedTable snapshot_table;
+            snapshot_table.database = getDatabaseName();
+            snapshot_table.table = it->table();
+            snapshot_table.uuid = it->uuid();
+            snapshot_table.metadata_path = it->metadataPath();
+            snapshot_table.is_permanently = it->isPermanently();
+            combined_snapshot.emplace(it->table(), std::move(snapshot_table));
+        }
+    }
+    return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(std::move(combined_snapshot));
 }
 
 void DatabaseOverlay::renameTable(
@@ -183,10 +217,10 @@ ASTPtr DatabaseOverlay::getCreateTableQueryImpl(const String & name, ContextPtr 
  * DatabaseOverlay cannot be constructed by "CREATE DATABASE" query, as it is not a traditional ClickHouse database
  * To use DatabaseOverlay, it must be constructed programmatically in code
  */
-ASTPtr DatabaseOverlay::getCreateDatabaseQuery() const
+ASTPtr DatabaseOverlay::getCreateDatabaseQueryImpl() const
 {
-    auto query = std::make_shared<ASTCreateQuery>();
-    query->setDatabase(getDatabaseName());
+    auto query = make_intrusive<ASTCreateQuery>();
+    query->setDatabase(database_name);
     return query;
 }
 
@@ -244,13 +278,13 @@ void DatabaseOverlay::drop(ContextPtr context_)
         db->drop(context_);
 }
 
-void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseOverlay::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
     for (auto & db : databases)
     {
         if (!db->isReadOnly() && db->isTableExist(table_id.table_name, local_context))
         {
-            db->alterTable(local_context, table_id, metadata);
+            db->alterTable(local_context, table_id, metadata, validate_new_create_query);
             return;
         }
     }
@@ -314,28 +348,12 @@ DatabaseTablesIteratorPtr DatabaseOverlay::getTablesIterator(ContextPtr context_
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(tables), getDatabaseName());
 }
 
-bool DatabaseOverlay::canContainMergeTreeTables() const
+bool DatabaseOverlay::isExternal() const
 {
     for (const auto & db : databases)
-        if (db->canContainMergeTreeTables())
-            return true;
-    return false;
-}
-
-bool DatabaseOverlay::canContainDistributedTables() const
-{
-    for (const auto & db : databases)
-        if (db->canContainDistributedTables())
-            return true;
-    return false;
-}
-
-bool DatabaseOverlay::canContainRocksDBTables() const
-{
-    for (const auto & db : databases)
-        if (db->canContainRocksDBTables())
-            return true;
-    return false;
+        if (!db->isExternal())
+            return false;
+    return true;
 }
 
 void DatabaseOverlay::loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode)
@@ -384,7 +402,7 @@ void DatabaseOverlay::loadTableFromMetadata(
             db->loadTableFromMetadata(local_context, file_path, name, ast, mode);
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -416,7 +434,7 @@ LoadTaskPtr DatabaseOverlay::loadTableFromMetadataAsync(
         {
             return db->loadTableFromMetadataAsync(async_loader, load_after, local_context, file_path, name, ast, mode);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -445,7 +463,7 @@ LoadTaskPtr DatabaseOverlay::startupTableAsync(
         {
             return db->startupTableAsync(async_loader, startup_after, name, mode);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -472,7 +490,7 @@ LoadTaskPtr DatabaseOverlay::startupDatabaseAsync(
         {
             return db->startupDatabaseAsync(async_loader, startup_after, mode);
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -496,7 +514,7 @@ void DatabaseOverlay::waitTableStarted(const String & name) const
             db->waitTableStarted(name);
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -521,7 +539,7 @@ void DatabaseOverlay::waitDatabaseStarted() const
             db->waitDatabaseStarted();
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -545,7 +563,7 @@ void DatabaseOverlay::stopLoading()
             db->stopLoading();
             return;
         }
-        catch (...)
+        catch (const std::exception &)
         {
             continue;
         }
@@ -564,6 +582,18 @@ void DatabaseOverlay::checkMetadataFilenameAvailability(const String & table_nam
         if (db->isReadOnly())
             continue;
         db->checkMetadataFilenameAvailability(table_name);
+        return;
+    }
+}
+
+void DatabaseOverlay::checkTableNameLength(const String & table_name) const
+{
+    /// The limit belongs to the member createTable writes to, which owns the metadata file.
+    for (const auto & db : databases)
+    {
+        if (db->isReadOnly())
+            continue;
+        db->checkTableNameLength(table_name);
         return;
     }
 }

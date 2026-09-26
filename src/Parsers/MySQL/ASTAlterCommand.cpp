@@ -17,7 +17,7 @@ namespace MySQLParser
 
 ASTPtr ASTAlterCommand::clone() const
 {
-    auto res = std::make_shared<ASTAlterCommand>(*this);
+    auto res = make_intrusive<ASTAlterCommand>(*this);
     res->children.clear();
 
     if (index_decl)
@@ -45,7 +45,7 @@ static inline bool parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expected &
     ParserDeclareIndex index_p;
     ParserDeclareColumn column_p;
 
-    auto alter_command = std::make_shared<ASTAlterCommand>();
+    auto alter_command = make_intrusive<ASTAlterCommand>();
 
     if (index_p.parse(pos, declare_index, expected))
     {
@@ -73,7 +73,7 @@ static inline bool parseAddCommand(IParser::Pos & pos, ASTPtr & node, Expected &
             if (!column_p.parse(pos, declare_column, expected))
                 return false;
 
-            additional_columns = std::make_shared<ASTExpressionList>();
+            additional_columns = make_intrusive<ASTExpressionList>();
             additional_columns->children.emplace_back(declare_column);
 
             if (ParserKeyword(Keyword::FIRST).ignore(pos, expected))
@@ -101,7 +101,7 @@ static inline bool parseDropCommand(IParser::Pos & pos, ASTPtr & node, Expected 
     ASTPtr name;
     ParserIdentifier identifier_p;
 
-    auto alter_command = std::make_shared<ASTAlterCommand>();
+    auto alter_command = make_intrusive<ASTAlterCommand>();
 
     if (ParserKeyword(Keyword::PRIMARY_KEY).ignore(pos, expected))
     {
@@ -154,7 +154,7 @@ static inline bool parseAlterCommand(IParser::Pos & pos, ASTPtr & node, Expected
     ASTPtr name;
 
     ParserIdentifier identifier_p;
-    auto alter_command = std::make_shared<ASTAlterCommand>();
+    auto alter_command = make_intrusive<ASTAlterCommand>();
 
     if (ParserKeyword(Keyword::INDEX).ignore(pos, expected))
     {
@@ -223,7 +223,7 @@ static inline bool parseRenameCommand(IParser::Pos & pos, ASTPtr & node, Expecte
     ASTPtr new_name;
 
     ParserIdentifier identifier_p;
-    auto alter_command = std::make_shared<ASTAlterCommand>();
+    auto alter_command = make_intrusive<ASTAlterCommand>();
 
     if (ParserKeyword(Keyword::COLUMN).ignore(pos, expected))
     {
@@ -281,7 +281,7 @@ static inline bool parseRenameCommand(IParser::Pos & pos, ASTPtr & node, Expecte
 
 static inline bool parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto alter_command = std::make_shared<ASTAlterCommand>();
+    auto alter_command = make_intrusive<ASTAlterCommand>();
 
     if (ParserKeyword(Keyword::ORDER_BY).ignore(pos, expected))
     {
@@ -333,7 +333,7 @@ static inline bool parseOtherCommand(IParser::Pos & pos, ASTPtr & node, Expected
 static inline bool parseModifyCommand(IParser::Pos & pos, ASTPtr & node, Expected & expected, bool exists_old_column_name = false)
 {
     ASTPtr old_column_name;
-    auto alter_command = std::make_shared<ASTAlterCommand>();
+    auto alter_command = make_intrusive<ASTAlterCommand>();
 
     ParserKeyword(Keyword::COLUMN).ignore(pos, expected);
     if (exists_old_column_name && !ParserIdentifier().parse(pos, old_column_name, expected))
@@ -357,7 +357,7 @@ static inline bool parseModifyCommand(IParser::Pos & pos, ASTPtr & node, Expecte
 
     node = alter_command;
     alter_command->type = ASTAlterCommand::MODIFY_COLUMN;
-    alter_command->set(alter_command->additional_columns, std::make_shared<ASTExpressionList>());
+    alter_command->set(alter_command->additional_columns, make_intrusive<ASTExpressionList>());
     alter_command->additional_columns->children.emplace_back(additional_column);
 
     if (exists_old_column_name)

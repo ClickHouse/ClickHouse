@@ -21,7 +21,7 @@ public:
 
     void executeImpl(const CommandLineOptions & options, DisksClient & client) override
     {
-        bool recursive = options.count("parents");
+        bool recursive = options.contains("parents");
         const auto & disk = client.getCurrentDiskWithPath();
 
         String path = disk.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path"));

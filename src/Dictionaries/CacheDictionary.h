@@ -2,18 +2,16 @@
 
 #include <atomic>
 #include <chrono>
-#include <cmath>
 #include <mutex>
 #include <utility>
-#include <vector>
 
 #include <pcg_random.hpp>
 
 
-#include <Common/randomSeed.h>
-#include <Common/ThreadPool.h>
-#include <Common/SharedMutex.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/SharedMutex.h>
+#include <Common/ThreadPool.h>
+#include <Common/randomSeed.h>
 
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
@@ -58,7 +56,7 @@ template <DictionaryKeyType dictionary_key_type>
 class CacheDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
 
     CacheDictionary(
         const StorageID & dict_id_,
@@ -85,7 +83,7 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
+        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
     }
 
     double getHitRate() const override
@@ -93,7 +91,7 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return static_cast<double>(hit_count.load()) / queries;
+        return static_cast<double>(hit_count.load()) / static_cast<double>(queries);
     }
 
     bool supportUpdates() const override { return false; }

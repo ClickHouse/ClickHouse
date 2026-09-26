@@ -1,0 +1,193 @@
+#pragma once
+#include "config.h"
+
+#if USE_AZURE_BLOB_STORAGE
+
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Common/BlobStorageLogWriter.h>
+#include <Common/MultiVersion.h>
+#include <base/defines.h>
+#include <azure/storage/blobs.hpp>
+#include <azure/storage/files/datalake/datalake_file_client.hpp>
+#include <azure/core/http/curl_transport.hpp>
+#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
+
+namespace Poco
+{
+class Logger;
+}
+
+namespace DB
+{
+
+class AzureObjectStorage : public IObjectStorage
+{
+public:
+    using ClientPtr = std::unique_ptr<AzureBlobStorage::ContainerClient>;
+    using SettingsPtr = std::unique_ptr<AzureBlobStorage::RequestSettings>;
+
+    AzureObjectStorage(
+        const String & name_,
+        ClientPtr && client_,
+        SettingsPtr && settings_,
+        const AzureBlobStorage::ConnectionParams & connection_params_,
+        const String & object_namespace_,
+        const String & description_,
+        const String & common_key_prefix_);
+
+    void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
+
+    /// Sanitizer build may crash with max_keys=1; this looks like a false positive.
+    ObjectStorageIteratorPtr iterate(
+        const std::string & path_prefix,
+        size_t max_keys,
+        bool with_tags,
+        const std::optional<std::string> & start_after) const override;
+
+    std::string getName() const override { return "Azure"; }
+
+    std::string getDiskName() const override { return name; }
+
+    ObjectStorageType getType() const override { return ObjectStorageType::Azure; }
+
+    std::string getRootPrefix() const override { return object_namespace; }
+
+    /// Object keys are unique within the object namespace (container + prefix).
+    std::string getCommonKeyPrefix() const override { return common_key_prefix; }
+
+    std::string getDescription() const override { return description; }
+
+    bool exists(const StoredObject & object) const override;
+
+    AzureBlobStorage::AuthMethod getAzureBlobStorageAuthMethod() const override { return connection_params.get()->auth_method; }
+
+    std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const override;
+
+    SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        size_t max_size_bytes,
+        std::optional<size_t> read_hint = {}) const override;
+
+    /// Open the file for write and return WriteBufferFromFileBase object.
+    std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
+        const StoredObject & object,
+        WriteMode mode,
+        std::optional<ObjectAttributes> attributes = {},
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        const WriteSettings & write_settings = {}) override;
+
+    void removeObjectIfExists(const StoredObject & object) override;
+
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
+
+    void tagObjects( /// NOLINT
+        const StoredObjects & objects,
+        const std::string & tag_key,
+        const std::string & tag_value,
+        StoredObjects * successful_objects = nullptr) override;
+
+    ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
+
+    std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;
+
+    void copyObject( /// NOLINT
+        const StoredObject & object_from,
+        const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        std::optional<ObjectAttributes> object_to_attributes = {}) override;
+
+    void shutdown() override {}
+
+    void startup() override {}
+
+    void applyNewSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        ContextPtr context,
+        const ApplyNewSettingsOptions & options) override;
+
+    String getObjectsNamespace() const override { return object_namespace ; }
+
+    ObjectStorageKeyGeneratorPtr createKeyGenerator() const override;
+
+    bool isRemote() const override { return true; }
+
+    std::shared_ptr<const AzureBlobStorage::RequestSettings> getSettings() const  { return settings.get(); }
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const override { return client.get(); }
+    std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const override { return connection_params.get(); }
+
+    bool isReadOnly() const override { return settings.get()->read_only; }
+
+    bool supportParallelWrite() const override { return true; }
+
+    AzureBlobStorage::ConnectionParams getConnectionParameters() const
+    {
+        return *connection_params.get();
+    }
+
+    ObjectStoragePtr cloneImpl() const override;
+
+private:
+    void removeObjectImpl(
+        const StoredObject & object,
+        const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
+        bool if_exists,
+        BlobStorageLogWriterPtr blob_storage_log,
+        StoredObjects * successful_objects = nullptr);
+
+    void removeObjectsBatchIfExists(
+        const StoredObjects & objects,
+        const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
+        BlobStorageLogWriterPtr blob_storage_log,
+        StoredObjects * successful_objects = nullptr);
+
+    std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient> buildDataLakeFileClient(const String & blob_path) const;
+
+    const String name;
+    /// client used to access the files in the Blob Storage cloud
+    MultiVersion<AzureBlobStorage::ContainerClient> client;
+    MultiVersion<AzureBlobStorage::RequestSettings> settings;
+    const String object_namespace; /// container + prefix
+
+    /// We use source url without container and prefix as description, because in Azure there are no limitations for operations between different containers.
+    const String description;
+
+    const String common_key_prefix;
+
+    /// The parameters the current `client` was built from (the auth method included). Swapped
+    /// together with the client by `applyNewSettings`, so the ADLS paths, which build a client
+    /// per request from these parameters, never diverge from the rebuilt blob client.
+    MultiVersion<AzureBlobStorage::ConnectionParams> connection_params;
+
+    /// What the container client was built from by `applyNewSettings`: the endpoint, the credentials and the
+    /// SDK retry options. Compared on the next `applyNewSettings` to skip a needless client rebuild. Empty until
+    /// the first rebuild (the constructor gets a ready client and does not know the config it came from).
+    struct ClientInputs
+    {
+        AzureBlobStorage::Endpoint endpoint{};
+        AzureBlobStorage::AuthConfig auth_config{};
+        size_t sdk_max_retries = 0;
+        size_t sdk_retry_initial_backoff_ms = 0;
+        size_t sdk_retry_max_backoff_ms = 0;
+
+        bool operator==(const ClientInputs &) const = default;
+    };
+    mutable std::mutex client_inputs_mutex;
+    std::optional<ClientInputs> client_inputs TSA_GUARDED_BY(client_inputs_mutex);
+
+    LoggerPtr log;
+};
+
+}
+
+#endif

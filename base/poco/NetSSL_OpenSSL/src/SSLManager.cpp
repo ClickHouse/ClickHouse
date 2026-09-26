@@ -246,7 +246,10 @@ void SSLManager::initDefaultContext(bool server)
 	params.certificateFile = config.getString(prefix + CFG_CERTIFICATE_FILE, params.privateKeyFile);
 	params.caLocation = config.getString(prefix + CFG_CA_LOCATION, "");
 
-	if (server && params.certificateFile.empty() && params.privateKeyFile.empty())
+    bool keys_are_explicitly_set = !params.privateKeyFile.empty() && !params.certificateFile.empty();
+    bool acme_certificate_provided = config.has("acme");
+
+	if (server && !keys_are_explicitly_set && !acme_certificate_provided)
 		throw SSLException("Configuration error: no certificate file has been specified");
 
 	// optional options for which we have defaults defined
@@ -311,6 +314,8 @@ void SSLManager::initDefaultContext(bool server)
 			disabledProtocols |= Context::PROTO_TLSV1_1;
 		else if (*it == "tlsv1_2")
 			disabledProtocols |= Context::PROTO_TLSV1_2;
+		else if (*it == "tlsv1_3")
+			disabledProtocols |= Context::PROTO_TLSV1_3;
 	}
 	if (server)
 		_ptrDefaultServerContext->disableProtocols(disabledProtocols);
@@ -337,7 +342,9 @@ void SSLManager::initDefaultContext(bool server)
 	{
 		_ptrDefaultClientContext->enableSessionCache(cacheSessions);
 	}
-	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, false);
+	/// Only an outbound connection has a requested host name to check: on an accepted socket this
+	/// would run against the client's address, which a client certificate does not name.
+	bool extendedVerification = config.getBool(prefix + CFG_EXTENDED_VERIFICATION, !server);
 	if (server)
 		_ptrDefaultServerContext->enableExtendedCertificateVerification(extendedVerification);
 	else

@@ -59,7 +59,7 @@ struct InitcapUTF8Impl
             if (dst_code_point > 0)
             {
                 size_t dst_sequence_length = UTF8::convertCodePointToUTF8(dst_code_point, reinterpret_cast<char *>(dst), src_end - src);
-                assert(dst_sequence_length <= 4);
+                chassert(dst_sequence_length <= 4);
 
                 if (dst_sequence_length == src_sequence_length)
                 {
@@ -106,7 +106,37 @@ using FunctionInitcapUTF8 = FunctionStringToString<InitcapUTF8Impl, NameInitcapU
 
 REGISTER_FUNCTION(InitcapUTF8)
 {
-    factory.registerFunction<FunctionInitcapUTF8>();
+    FunctionDocumentation::Description description = R"(
+Like [`initcap`](#initcap), `initcapUTF8` converts the first letter of each word to upper case and the rest to lower case.
+Assumes that the string contains valid UTF-8 encoded text.
+If this assumption is violated, no exception is thrown and the result is undefined.
+
+<Note>
+This function does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
+If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
+</Note>
+)";
+    FunctionDocumentation::Syntax syntax = "initcapUTF8(s)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s", "Input string.", {"String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns `s` with the first letter of each word converted to upper case.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        "SELECT initcapUTF8('не тормозит')",
+        R"(
+┌─initcapUTF8('не тормозит')─┐
+│ Не Тормозит                │
+└────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {23, 7};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionInitcapUTF8>(documentation);
 }
 
 }

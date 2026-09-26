@@ -1,25 +1,24 @@
-#include <thread>
-#include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
+#include <Common/parseGlobs.h>
+#include <Core/LogsLevel.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Parsers/ASTInsertQuery.h>
 #include <Formats/ReadSchemaUtils.h>
+#include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 
-#include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Transforms/ExtractColumnsTransform.h>
 
 #include <Storages/Cache/SchemaCache.h>
 #include <Storages/NamedCollectionsHelpers.h>
@@ -28,50 +27,134 @@
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageSnapshot.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Common/parseGlobs.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Mutations.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/ReadFromTableChangesStep.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Interpreters/StorageID.h>
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 
-#include <Poco/Logger.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool optimize_count_from_files;
+    extern const SettingsBool throw_on_hive_partitioning_resolution_failure;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsInt64 delta_lake_snapshot_start_version;
+    extern const SettingsInt64 delta_lake_snapshot_end_version;
+    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
+    extern const SettingsBool iceberg_delete_data_on_drop;
 }
 
 namespace ErrorCodes
 {
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
+    extern const int ACCESS_DENIED;
+    extern const int CANNOT_COMPILE_REGEXP;
+}
+
+namespace FailPoints
+{
+    extern const char datalake_simulate_missing_table_state[];
+}
+
+namespace
+{
+
+/// Whether listing the path failed because the reader refuses the path itself - a malformed or an
+/// unbounded glob, or a glob whose regexp RE2 cannot compile - rather than because of the endpoint.
+/// Such a path fails the same way whenever the table is read.
+bool isPathRefusedByReader(int code)
+{
+    return code == ErrorCodes::BAD_ARGUMENTS || code == ErrorCodes::CANNOT_COMPILE_REGEXP;
+}
+
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
 {
+    const auto path = configuration->getRawPath();
+
+    /// When use_hive_partitioning is enabled, we need a real file path even in distributed mode
+    /// (not a path from the distributed task queue), so force distributed_processing to false.
+    bool local_distributed_processing = distributed_processing;
+    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+        local_distributed_processing = false;
+
+    /// An archive entry is exposed as `<archive path>::<path in archive>` (see `ObjectInfoInArchive::getPath`),
+    /// so the sample path can be synthesized the same way as for a plain object as long as the member name is
+    /// known. A glob in the member name requires opening the archive to enumerate its entries, but the sample
+    /// path is needed only to infer hive partitioning, and `parseHivePartitioningKeysAndValues` looks only at
+    /// the directory part of the path - which is fully contained in the outer archive path. So a globbed member
+    /// name is simply omitted from the sample instead of disabling the fast path.
+    const bool is_archive = configuration->isArchive();
+    const bool member_name_is_known = !is_archive || !configuration->isPathInArchiveWithGlobs();
+    const String archive_suffix = member_name_is_known && is_archive ? "::" + configuration->getPathInArchive() : "";
+
+    /// For non-glob paths, return directly without any S3 API calls.
+    /// Besides saving a request, this keeps hive partition inference working for an explicitly
+    /// specified key that does not exist (or is filtered out before reading): the path string
+    /// itself carries the partition columns, so it must not depend on the object being present.
+    if (!path.hasGlobs() && !local_distributed_processing)
+        return path.path + archive_suffix;
+
+    /// For pure brace-expansion globs like {a,b,c}.tsv (no wildcards * or ? involved),
+    /// we can expand the glob locally and return the first path without making any S3 API calls.
+    /// This avoids a redundant HeadObject request that would otherwise be issued by
+    /// creating a file iterator just to get a sample path string.
+    if (containsOnlyEnumGlobs(path.path))
+    {
+        /// Mirror the split in `StorageObjectStorageSource::createFileIterator`: a pattern with
+        /// exactly one brace group is materialized there by `expandSelectionGlob`, so the sample
+        /// path has to obey the same limits. Otherwise analysis would infer hive partitioning -
+        /// and, for a table definition, persist it - from a path that the reader always refuses to
+        /// enumerate. Every other shape is matched by the reader as a regexp, where the product is
+        /// never built, so taking each group's first alternative is enough.
+        if (configuration->getType() != ObjectStorageType::Web && hasExactlyOneBracketsExpansion(path.path))
+        {
+            auto expanded = expandSelectionGlob(path.path);
+            if (!expanded.empty())
+                return expanded.front() + archive_suffix;
+        }
+        /// A regexp is more permissive than a selector glob: a doubled brace like `{{a,b}}` is a
+        /// literal brace around an enum for it, and a comma outside a group is literal text. It is
+        /// also stricter: an empty alternative is literal text for it, and RE2 refuses an alternation
+        /// too large to compile. Such a path is listed instead, the same way the reader lists it, so
+        /// the sample path is never one the reader would not read.
+        else if (auto first = tryExpandSelectionGlobFirstMatchedByRegexp(path.path))
+            return *first + archive_suffix;
+    }
+
     auto query_settings = configuration->getQuerySettings(context);
     /// We don't want to throw an exception if there are no files with specified path.
     query_settings.throw_on_zero_files_match = false;
     query_settings.ignore_non_existent_file = true;
 
-    bool local_distributed_processing = distributed_processing;
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
-        local_distributed_processing = false;
-
     auto file_iterator = StorageObjectStorageSource::createFileIterator(
         configuration,
         query_settings,
         object_storage,
+        nullptr, // storage_metadata
         local_distributed_processing,
         context,
         {}, // predicate
@@ -81,11 +164,9 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
         nullptr, // read_keys
         {} // file_progress_callback
     );
-
-    const auto path = configuration->getRawPath();
-
-    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
-        return path.path;
+    /// This iterator is used only to get a sample path for hive partitioning,
+    /// not for actual data reading, so do not emit ProfileEvents.
+    file_iterator->setEmitProfileEvents(false);
 
     if (auto file = file_iterator->next(0))
         return file->getPath();
@@ -107,36 +188,60 @@ StorageObjectStorage::StorageObjectStorage(
     bool is_datalake_query,
     bool distributed_processing_,
     ASTPtr partition_by_,
-    bool is_table_function,
+    ASTPtr order_by_,
+    bool is_table_function_,
     bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
     , object_storage(object_storage_)
     , format_settings(format_settings_)
     , distributed_processing(distributed_processing_)
+    , is_table_function(is_table_function_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
     , catalog(catalog_)
     , storage_id(table_id_)
+    , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+
+    /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
+    configuration->check(context);
+
+    /// A columnless CREATE in a catalog database must still reach `create(...)` for engines that can attach
+    /// and register an existing table (its schema read from storage); others keep requiring explicit columns.
+    const bool columnless_catalog_create = columns_in_table_or_function_definition.empty() && catalog
+        && configuration->supportsCreateFromExistingTableInCatalog();
+    const bool creating_new_storage = !is_table_function && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE
+        && (!columns_in_table_or_function_definition.empty() || columnless_catalog_create);
 
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
         && !configuration->isDataLakeConfiguration();
-    const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
+    const bool catalog_manages_created_location
+        = catalog_ && catalog_->managesTableLocation() && mode == LoadingStrictnessLevel::CREATE;
+    const bool is_attach = mode >= LoadingStrictnessLevel::ATTACH;
+    const bool do_lazy_init = (lazy_init || catalog_manages_created_location || is_attach)
+        && !need_resolve_columns_or_format && !need_resolve_sample_path;
+    LOG_DEBUG(
+        log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, "
+        "need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
+        lazy_init, need_resolve_columns_or_format, need_resolve_sample_path, is_table_function,
+        is_datalake_query, columns_in_table_or_function_definition.toString(true));
 
-    if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
+    bool is_delta_lake_cdf = context->getSettingsRef()[Setting::delta_lake_snapshot_start_version] != -1
+            || context->getSettingsRef()[Setting::delta_lake_snapshot_end_version] != -1;
+
+    if (!is_table_function && is_delta_lake_cdf)
     {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
+    }
+
+    if (creating_new_storage)
+    {
+        LOG_DEBUG(log, "Creating new storage{}", columns_in_table_or_function_definition.empty() ? "" : " with specified columns");
         configuration->create(
-            object_storage,
-            context,
-            columns_in_table_or_function_definition,
-            partition_by_,
-            if_not_exists_,
-            catalog,
-            storage_id
-        );
+            object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }
 
     bool updated_configuration = false;
@@ -144,11 +249,10 @@ StorageObjectStorage::StorageObjectStorage(
     {
         if (!do_lazy_init)
         {
-            configuration->update(
-                object_storage,
-                context,
-                /* if_not_updated_before */is_table_function,
-                /* check_consistent_with_previous_metadata */true);
+            if (is_table_function)
+                configuration->lazyInitializeIfNeeded(object_storage, context);
+            else
+                configuration->update(object_storage, context);
             updated_configuration = true;
         }
     }
@@ -160,28 +264,45 @@ StorageObjectStorage::StorageObjectStorage(
         {
             throw;
         }
+        // A credential-restriction denial raised while rebuilding the client for the current session must not be
+        // swallowed: otherwise a restricted session would fall through to a client that an earlier opt-in session
+        // left credentialed in the shared object storage. Fail closed and propagate the denial instead.
+        if (getCurrentExceptionCode() == ErrorCodes::ACCESS_DENIED)
+        {
+            throw;
+        }
         tryLogCurrentException(log, /*start of message = */ "", LogsLevel::warning);
     }
-
-    /// We always update configuration on read for table engine,
-    /// but this is not needed for table function,
-    /// which exists only for the duration of a single query
-    /// (e.g. read always follows constructor immediately).
-    update_configuration_on_read_write = !is_table_function || !updated_configuration;
 
     std::string sample_path;
 
     ColumnsDescription columns{columns_in_table_or_function_definition};
+
+    if (configuration->getRawPath().hasSchemaHashWildcard())
+    {
+        if (configuration->isDataLakeConfiguration())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported for DataLake engines");
+
+        if (configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The _schema_hash placeholder is not supported with hive partition strategy");
+
+        if (columns.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot use _schema_hash placeholder without explicitly specifying columns");
+
+        configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
+    }
+
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
     else
         validateSupportedColumns(columns, *configuration);
 
-    configuration->check(context);
+    /// Resolving the sample path requires listing the object storage. Defer it to the first use
+    /// of the table, so that CREATE, ATTACH and server startup do not depend on the endpoint.
+    hive_partitioning_sample_path_deferred = !is_table_function && need_resolve_sample_path && !need_resolve_columns_or_format;
 
-    /// FIXME: We need to call getPathSample() lazily on select
-    /// in case it failed to be initialized in constructor.
-    if (updated_configuration && sample_path.empty() && need_resolve_sample_path && !configuration->partition_strategy)
+    if (updated_configuration && sample_path.empty() && need_resolve_sample_path
+        && !hive_partitioning_sample_path_deferred && !configuration->partition_strategy)
     {
         try
         {
@@ -189,6 +310,13 @@ StorageObjectStorage::StorageObjectStorage(
         }
         catch (...)
         {
+            /// A path the reader refuses - a malformed or an unbounded glob, or one whose regexp
+            /// cannot be compiled - fails the same way whenever the table is read, so it is reported
+            /// here as well instead of being downgraded to a listing failure that only leaves the
+            /// hive columns unresolved.
+            if (isPathRefusedByReader(getCurrentExceptionCode()))
+                throw;
+
             LOG_WARNING(
                 log,
                 "Failed to list object storage, cannot use hive partitioning. "
@@ -197,56 +325,13 @@ StorageObjectStorage::StorageObjectStorage(
         }
     }
 
-    /*
-     * If `partition_strategy=hive`, the partition columns shall be extracted from the `PARTITION BY` expression.
-     * There is no need to read from the file's path.
-     *
-     * Otherwise, in case `use_hive_partitioning=1`, we can keep the old behavior of extracting it from the sample path.
-     * And if the schema was inferred (not specified in the table definition), we need to enrich it with the path partition columns
-     */
-    if (configuration->partition_strategy && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
-    {
-        hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
-    }
-    else if (context->getSettingsRef()[Setting::use_hive_partitioning])
-    {
-        HivePartitioningUtils::extractPartitionColumnsFromPathAndEnrichStorageColumns(
-           columns,
-           hive_partition_columns_to_read_from_file_path,
-           sample_path,
-           columns_in_table_or_function_definition.empty(),
-           format_settings,
-           context);
-    }
-
-    if (hive_partition_columns_to_read_from_file_path.size() == columns.size())
-    {
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "A hive partitioned file can't contain only partition columns. Try reading it with `partition_strategy=wildcard` and `use_hive_partitioning=0`");
-    }
-
-    if (configuration->partition_columns_in_data_file)
-    {
-        file_columns = columns;
-    }
-    else
-    {
-        std::unordered_set<String> hive_partition_columns_to_read_from_file_path_set;
-
-        for (const auto & [name, type] : hive_partition_columns_to_read_from_file_path)
-        {
-            hive_partition_columns_to_read_from_file_path_set.insert(name);
-        }
-
-        for (const auto & [name, type] : columns.getAllPhysical())
-        {
-            if (!hive_partition_columns_to_read_from_file_path_set.contains(name))
-            {
-                file_columns.add({name, type});
-            }
-        }
-    }
+    std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+        columns,
+        configuration,
+        sample_path,
+        columns_in_table_or_function_definition.empty(),
+        format_settings,
+        context);
 
     // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
     if (!columns.empty() && file_columns.empty())
@@ -256,19 +341,92 @@ StorageObjectStorage::StorageObjectStorage(
             sample_path);
     }
 
+    bool format_supports_prewhere = FormatFactory::instance().checkIfFormatSupportsPrewhere(configuration->format, context, format_settings);
+
+    /// TODO: Known problems with datalake prewhere:
+    ///  * If the iceberg table went through schema evolution, columns read from file may need to
+    ///    be renamed or typecast before applying prewhere. There's already a mechanism for
+    ///    telling parquet reader to rename columns: ColumnMapper. And parquet reader already
+    ///    automatically does type casts to requested types. But weirdly the iceberg reader uses
+    ///    those mechanism to request the *old* name and type of the column, then has additional
+    ///    code to do the renaming and casting as a separate step outside parquet reader.
+    ///    We should probably change this and delete that additional code?
+    ///  * Delta Lake can have "partition columns", which are columns with constant value specified
+    ///    in the metadata, not present in parquet file. Like hive partitioning, but in metadata
+    ///    files instead of path. Currently these columns are added to the block outside parquet
+    ///    reader. If they appear in prewhere expression, parquet reader gets a "no column in block"
+    ///    error. Unlike hive partitioning, we can't (?) just return these columns from
+    ///    supportedPrewhereColumns() because at the time of the call the delta lake metadata hasn't
+    ///    been read yet. So we should probably pass these columns to the parquet reader instead of
+    ///    adding them outside.
+    ///  * There's a bug in StorageObjectStorageSource::createReader: it makes a copy of
+    ///    FormatFilterInfo, but for some reason unsets prewhere_info and row_level_filter_info.
+    ///    There's probably no reason for this, and it should just copy those fields like the others.
+    ///  * If the table contains files in different formats, with only some of them supporting
+    ///    prewhere, things break.
+    supports_prewhere = configuration->supportsPrewhere() && format_supports_prewhere;
+    supports_tuple_elements = format_supports_prewhere;
+
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
-    metadata.setConstraints(constraints_);
-    metadata.setComment(comment);
-
-    /// I am not sure this is actually required, but just in case
-    if (configuration->partition_strategy)
+    if (!do_lazy_init && is_table_function && configuration->isDataLakeConfiguration())
     {
-        metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
+        /// For datalake table functions, always pin the current snapshot version so that
+        /// query execution uses the same snapshot as query analysis (logical-race fix).
+        /// Additionally reload columns from the snapshot when the per-format setting is enabled.
+        /// This is done eagerly because select queries for table functions may bypass
+        /// updateExternalDynamicMetadataIfExists.
+        configuration->lazyInitializeIfNeeded(object_storage, context);
+        if (auto state = configuration->getTableStateSnapshot(context))
+        {
+            metadata.setDataLakeTableState(*state);
+
+            /// Reload schema state if needed.
+            /// Schema reload for consistency can be disabled, because
+            /// 1. user can want to define a table with only
+            ///    a subset of columns from remote delta table
+            /// 2. user want to override some data types
+            ///    (for example, LawCardinality<String> instead of just String)
+            if (configuration->shouldReloadSchemaForConsistency(context))
+            {
+                if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, context))
+                    metadata = *metadata_snapshot;
+            }
+        }
     }
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns));
+    metadata.setConstraints(constraints_);
+    metadata.setComment(comment);
+    if (configuration->partition_strategy)
+        metadata.partition_key = configuration->partition_strategy->getPartitionKeyDescription();
+
+    metadata.setVirtuals(createVirtualColumns(metadata.columns, sample_path, context));
+
     setInMemoryMetadata(metadata);
+}
+
+VirtualColumnsDescription StorageObjectStorage::createVirtualColumns(
+    ColumnsDescription & columns, const std::string & sample_path, const ContextPtr & context) const
+{
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        columns,
+        context,
+        format_settings,
+        configuration->partition_strategy_type,
+        sample_path);
+
+    if (configuration->getType() == ObjectStorageType::Web && !columns.has("_headers"))
+    {
+        virtual_columns_desc.addEphemeral(
+            "_headers",
+            std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
+            "",
+            VirtualsMaterializationPlace::Reader);
+    }
+
+    return virtual_columns_desc;
 }
 
 String StorageObjectStorage::getName() const
@@ -286,96 +444,327 @@ bool StorageObjectStorage::parallelizeOutputAfterReading(ContextPtr context) con
     return FormatFactory::instance().checkParallelizeOutputAfterReading(configuration->format, context);
 }
 
+size_t StorageObjectStorage::getMaxReadStreams(size_t num_streams, ContextPtr)
+{
+    /// The key count of a globbed, archive, data lake or distributed read is unknown until the
+    /// storage is listed, which is too expensive at planning time, so report the request as is.
+    if (distributed_processing || configuration->isArchive() || configuration->supportsFileIterator()
+        || configuration->getPathForRead().hasGlobs())
+        return num_streams;
+
+    /// A static list of keys: the read creates at most one source per key.
+    return std::min(num_streams, std::max(1uz, configuration->getPaths().size()));
+}
+
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
 {
     return FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(configuration->format, context, format_settings);
 }
 
-
-IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
+bool StorageObjectStorage::supportsPrewhere() const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */false);
+    return supports_prewhere;
+}
+
+bool StorageObjectStorage::canMoveConditionsToPrewhere() const
+{
+    return supports_prewhere;
+}
+
+std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+}
+
+IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return metadata_snapshot->getFakeColumnSizes();
+}
+
+bool StorageObjectStorage::supportsDelete() const
+{
+    /// Defense in depth. `InterpreterDeleteQuery::execute` now calls
+    /// `updateExternalDynamicMetadataIfExists` before `supportsDelete`, so this lazy-init
+    /// is no longer the path preventing `assertInitialized` for the `DELETE FROM` shape.
+    /// Kept to mirror `supportsParallelInsert` below and to protect any other caller that
+    /// reaches `supportsDelete` with `current_metadata == nullptr`.
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsDelete();
+}
+
+bool StorageObjectStorage::supportsParallelInsert() const
+{
+    /// `InsertDependenciesBuilder` calls this for every non-view sink while building the
+    /// INSERT pipeline. Only the root insert table is pre-initialised by
+    /// `updateExternalDynamicMetadataIfExists`, so a data lake table reached via an MV
+    /// target can arrive here with `current_metadata == nullptr` and hit `assertInitialized`.
+    if (configuration->isDataLakeConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, CurrentThread::tryGetQueryContext());
+    return configuration->supportsParallelInsert();
+}
+
+std::shared_ptr<IDataLakeMetadata> StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
+{
+    if (!configuration->isDataLakeConfiguration())
+    return nullptr;
+
+configuration->update(object_storage, query_context);
 
     return configuration->getExternalMetadata();
 }
 
-bool StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+bool StorageObjectStorage::isTransactionalRefreshTarget()
 {
-    bool updated = configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */true,
-        /* check_consistent_with_previous_metadata */false);
-
-    if (!configuration->hasExternalDynamicMetadata())
+    /// Only Iceberg, and only on a compare-and-swap catalog (REST, or no catalog / `if-none-match`); Glue's overwrite commit is excluded and keeps the Keeper cursor.
+    if (!isIcebergStorage())
         return false;
-
-    if (!updated)
-    {
-        /// Force the update.
-        configuration->update(
-            object_storage,
-            query_context,
-            /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */false);
-    }
-
-    auto columns = configuration->tryGetTableStructureFromMetadata();
-    if (!columns.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No schema in table metadata");
-
-    StorageInMemoryMetadata metadata;
-    metadata.setColumns(std::move(columns.value()));
-    setInMemoryMetadata(metadata);
+    if (catalog && !catalog->isTransactional())
+        return false;
     return true;
 }
 
+CursorTreeNodePtr StorageObjectStorage::loadRefreshCursor(ContextPtr query_context)
+{
+    auto metadata = getExternalMetadata(query_context);
+    if (!metadata)
+        return nullptr;
+    auto stored = metadata->getRefreshCursor(query_context);
+    if (!stored || stored->empty())
+        return nullptr;
+    return refreshCursorFromStorage(*stored);
+}
+
+void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context)
+{
+    if (!hive_partitioning_sample_path_deferred)
+        return;
+
+    std::lock_guard lock(hive_partitioning_resolution_mutex);
+    if (hive_partitioning_sample_path_resolved)
+        return;
+
+    /// Listing the storage happens on behalf of the triggering query, so it must use its context.
+    /// Rebuilding the client with any other one would ignore that session's credential restriction.
+    auto access_context = Context::createCopy(query_context);
+    access_context->setSetting("use_hive_partitioning", true);
+
+    /// The resulting column types are shared by every session, so infer them from the server
+    /// settings instead of the ones of whichever query happens to resolve the table first.
+    auto inference_context = Context::createCopy(Context::getGlobalContextInstance());
+    inference_context->setSetting("use_hive_partitioning", true);
+
+    std::string sample_path;
+    try
+    {
+        configuration->update(object_storage, access_context);
+        sample_path = getPathSample(access_context);
+    }
+    catch (...)
+    {
+        /// A query running without hive partitioning may silently return different results.
+        if (query_context->getSettingsRef()[Setting::throw_on_hive_partitioning_resolution_failure])
+            throw;
+
+        /// A path the reader refuses is not an endpoint failure: reading the table fails the same
+        /// way, so the refusal is reported here rather than retried by every next query.
+        if (isPathRefusedByReader(getCurrentExceptionCode()))
+            throw;
+
+        /// An endpoint failure degrades only the triggering query and is retried by the next one.
+        LOG_WARNING(
+            log,
+            "Failed to list object storage, cannot use hive partitioning. "
+            "Error: {}",
+            getCurrentExceptionMessage(true));
+        return;
+    }
+
+    /// An empty listing is not a resolution: the prefix may simply not have data yet (e.g. the
+    /// table was created before the first file landed). Caching it would permanently disable hive
+    /// partitioning for this storage instance: once files appear, schema-declared partition
+    /// columns would silently read file defaults instead of the path values, and filters on them
+    /// would drop all rows. Stay unresolved, like endpoint failures, so the next query retries.
+    if (sample_path.empty())
+    {
+        LOG_TRACE(log, "An empty listing, hive partitioning resolution stays deferred until files appear");
+        return;
+    }
+
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *current_metadata;
+
+    /// Errors thrown below stay unresolved on purpose, so they are reported until they go away.
+    auto [new_hive_partition_columns, new_file_columns] = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+        new_metadata.columns,
+        configuration,
+        sample_path,
+        /* inferred_schema */ false,
+        format_settings,
+        inference_context);
+
+    if (!new_metadata.columns.empty() && new_file_columns.empty())
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "File without physical columns is not supported. Please try it with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
+            sample_path);
+    }
+
+    hive_partition_columns_to_read_from_file_path = std::move(new_hive_partition_columns);
+    file_columns = std::move(new_file_columns);
+
+    new_metadata.setVirtuals(createVirtualColumns(new_metadata.columns, sample_path, inference_context));
+    setInMemoryMetadata(new_metadata);
+
+    hive_partitioning_sample_path_resolved = true;
+}
+
+void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
+{
+    if (!configuration->isDataLakeConfiguration())
+    {
+        /// Called before query analysis, so the hive virtual columns are visible to the triggering query.
+        resolveHivePartitioningSamplePathIfDeferred(query_context);
+        return;
+    }
+
+    /// Always force an update to pick up the latest snapshot version.
+    /// Using if_not_updated_before=true would leave latest_snapshot_version
+    /// stale from the first query and silently omit new files.
+    configuration->update(object_storage, query_context);
+
+    auto state = configuration->getTableStateSnapshot(query_context);
+    if (!state)
+        return;
+
+    auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+    auto new_metadata = *current_metadata;
+    /// Always pin the current snapshot version to prevent logical races between query
+    /// analysis (which picks the schema) and query execution (which iterates files).
+    new_metadata.setDataLakeTableState(*state);
+
+    /// Optionally also refresh the columns (and other schema-derived fields such as the
+    /// Iceberg sort key) when the per-format reload setting is enabled.
+    if (configuration->shouldReloadSchemaForConsistency(query_context))
+    {
+        if (auto metadata_snapshot = configuration->buildStorageMetadataFromState(*state, query_context))
+            new_metadata = *metadata_snapshot;
+    }
+
+    setInMemoryMetadata(new_metadata.withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+        new_metadata.columns,
+        query_context,
+        format_settings,
+        configuration->partition_strategy_type)));
+}
+
+
 std::optional<UInt64> StorageObjectStorage::totalRows(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+    if (!configuration->supportsTotalRows(query_context, object_storage->getType()))
+        return std::nullopt;
+
+    /// Trivial count optimization can be applied only on initiator replica.
+    /// (distributed_processing=true on non-initiator replicas).
+    /// This is needed only for old analyzer.
+    if (distributed_processing)
+        return std::nullopt;
+
+    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
 
     return configuration->totalRows(query_context);
 }
 
 std::optional<UInt64> StorageObjectStorage::totalBytes(ContextPtr query_context) const
 {
-    configuration->update(
-        object_storage,
-        query_context,
-        /* if_not_updated_before */false,
-        /* check_consistent_with_previous_metadata */true);
+    if (!configuration->supportsTotalBytes(query_context, object_storage->getType()))
+        return std::nullopt;
 
+    if (distributed_processing)
+        return std::nullopt;
+
+    is_table_function ? configuration->lazyInitializeIfNeeded(object_storage, query_context) : configuration->update(object_storage, query_context);
     return configuration->totalBytes(query_context);
 }
 
 void StorageObjectStorage::read(
     QueryPlan & query_plan,
     const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot,
+    const StorageSnapshotPtr & storage_snapshot_,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     size_t num_streams)
 {
-    /// We did configuration->update() in constructor,
-    /// so in case of table function there is no need to do the same here again.
-    if (update_configuration_on_read_write)
+    /// Some paths bypass updateExternalDynamicMetadataIfExists and reach read with the resolution pending.
+    resolveHivePartitioningSamplePathIfDeferred(local_context);
+
+    auto storage_snapshot = storage_snapshot_;
+
+    /// Test-only: emulate a snapshot that reached the read step without the pinned
+    /// datalake_table_state (the concurrent-commit race this PR fixes), so the
+    /// regression test reproduces deterministically.
+    fiu_do_on(FailPoints::datalake_simulate_missing_table_state,
     {
-        configuration->update(
-            object_storage,
-            local_context,
-            /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */true);
+        if (configuration->isDataLakeConfiguration() && storage_snapshot->metadata
+            && storage_snapshot->metadata->datalake_table_state.has_value())
+        {
+            auto stripped = std::make_shared<StorageInMemoryMetadata>(*storage_snapshot->metadata);
+            stripped->datalake_table_state.reset();
+            storage_snapshot = std::make_shared<StorageSnapshot>(*this, std::move(stripped));
+        }
+    });
+
+    /// The read pipeline needs a single, internally consistent metadata snapshot: the requested
+    /// columns (prepareReadingFromFormat below), the field-id mapping used to list/read files, and
+    /// the read-in-order sorting key must all come from the SAME data lake snapshot. Normally
+    /// updateExternalDynamicMetadataIfExists pins datalake_table_state during analysis, but a
+    /// concurrent commit (TOCTOU between setInMemoryMetadata and getInMemoryMetadataPtr) can leave
+    /// it unset here. Pin one coherent snapshot now, before prepareReadingFromFormat, so every
+    /// consumer observes the same state. Mirrors updateExternalDynamicMetadataIfExists.
+    if (configuration->isDataLakeConfiguration() && storage_snapshot->metadata
+        && !storage_snapshot->metadata->datalake_table_state.has_value())
+    {
+        /// Initialize underlying datalake metadata if it has not been yet.
+        /// Cluster table function workers and other paths that bypass the analyzer
+        /// reach `read` without having had `update`/`updateExternalDynamicMetadataIfExists`
+        /// called, so `getTableStateSnapshot` would otherwise hit an "uninitialized" assertion.
+        if (is_table_function)
+            configuration->lazyInitializeIfNeeded(object_storage, local_context);
+        else
+            configuration->update(object_storage, local_context);
+
+        if (auto state = configuration->getTableStateSnapshot(local_context))
+        {
+            StorageInMemoryMetadata pinned = *storage_snapshot->metadata;
+            pinned.setDataLakeTableState(*state);
+
+            /// Reload columns and sorting key from the same state so they cannot diverge.
+            if (configuration->shouldReloadSchemaForConsistency(local_context))
+            {
+                if (auto rebuilt = configuration->buildStorageMetadataFromState(*state, local_context))
+                    pinned = rebuilt->withVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(
+                        rebuilt->columns, local_context, format_settings, configuration->partition_strategy_type));
+            }
+
+            storage_snapshot = std::make_shared<StorageSnapshot>(
+                *this, std::make_shared<StorageInMemoryMetadata>(std::move(pinned)));
+        }
     }
+
+    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
+        num_streams = clampClusterFunctionNumStreams(
+            local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
+
+    /// For data lake we did update in getExternalDynamicMetadata.
+    if (!is_table_function && !configuration->isDataLakeConfiguration())
+    {
+        configuration->update(object_storage, local_context);
+    }
+
 
     if (configuration->partition_strategy && configuration->partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE)
     {
@@ -384,30 +773,79 @@ void StorageObjectStorage::read(
                         getName());
     }
 
-    auto all_file_columns = file_columns.getAll();
+    const auto & settings = local_context->getSettingsRef();
+#if USE_DELTA_KERNEL_RS
+    if (configuration->isDataLakeConfiguration())
+    {
+        if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
+            start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
+        {
+            if (const auto delta_kernel_metadata = std::dynamic_pointer_cast<const DeltaLakeMetadataDeltaKernel>(configuration->getExternalMetadata());
+                delta_kernel_metadata != nullptr)
+            {
+                auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
+                auto version_range = DeltaLake::TableChanges::getVersionRange(
+                    start_version,
+                    settings[Setting::delta_lake_snapshot_end_version].value);
+                auto table_changes = delta_kernel_metadata->getTableChanges(
+                    version_range,
+                    source_header,
+                    format_settings,
+                    local_context);
 
+                auto read_step = std::make_unique<ReadFromDeltaLakeTableChangesStep>(
+                    std::move(table_changes),
+                    source_header,
+                    column_names,
+                    query_info,
+                    storage_snapshot,
+                    num_streams,
+                    local_context);
+                query_plan.addStep(std::move(read_step));
+                return;
+            }
+        }
+        else if (auto end_version = settings[Setting::delta_lake_snapshot_end_version].value;
+                 end_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
+        {
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use delta_lake_snapshot_end_version without delta_lake_snapshot_start_version");
+        }
+    }
+#endif
     auto read_from_format_info = configuration->prepareReadingFromFormat(
         object_storage,
         column_names,
         storage_snapshot,
         supportsSubsetOfColumns(local_context),
+        supports_tuple_elements,
         local_context,
-        PrepareReadingFromFormatHiveParams { all_file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
+        PrepareReadingFromFormatHiveParams{ file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap() });
 
-    const bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
-                                 && local_context->getSettingsRef()[Setting::optimize_count_from_files];
+
+    if (query_info.prewhere_info || query_info.row_level_filter)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+
+    const bool need_only_count = (query_info.optimize_trivial_count
+                                  || (read_from_format_info.requested_columns.empty()
+                                      && !read_from_format_info.prewhere_info
+                                      && !read_from_format_info.row_level_filter))
+        && settings[Setting::optimize_count_from_files]
+        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
     auto modified_format_settings{format_settings};
     if (!modified_format_settings.has_value())
         modified_format_settings.emplace(getFormatSettings(local_context));
 
-    configuration->modifyFormatSettings(modified_format_settings.value());
+    configuration->modifyFormatSettings(modified_format_settings.value(), *local_context);
 
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
+        storage_id,
         object_storage,
         configuration,
         column_names,
-        getVirtualsList(),
+        storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         query_info,
         storage_snapshot,
         modified_format_settings,
@@ -427,15 +865,24 @@ SinkToStoragePtr StorageObjectStorage::write(
     ContextPtr local_context,
     bool /* async_insert */)
 {
-    if (update_configuration_on_read_write)
+    /// For data lake we did update in getExternalDynamicMetadata.
+    if (!is_table_function && !configuration->isDataLakeConfiguration())
     {
-        configuration->update(
-            object_storage,
-            local_context,
-            /* if_not_updated_before */false,
-            /* check_consistent_with_previous_metadata */true);
+        configuration->update(object_storage, local_context);
     }
 
+    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
+}
+
+SinkToStoragePtr StorageObjectStorage::createSink(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStoragePtr & object_storage,
+    const StorageID & storage_id,
+    const std::optional<FormatSettings> & format_settings,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & local_context)
+{
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
 
@@ -448,7 +895,7 @@ SinkToStoragePtr StorageObjectStorage::write(
                         raw_path.path);
     }
 
-    if (raw_path.hasGlobsIgnorePartitionWildcard())
+    if (raw_path.hasGlobsIgnorePlaceholders())
     {
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Non partitioned table with path '{}' that contains globs, the table is in readonly mode",
@@ -478,10 +925,11 @@ SinkToStoragePtr StorageObjectStorage::write(
     return std::make_shared<StorageObjectStorageSink>(
         paths.back().path,
         object_storage,
-        configuration,
         format_settings,
         sample_block,
-        local_context);
+        local_context,
+        configuration->format,
+        configuration->compression_method);
 }
 
 bool StorageObjectStorage::optimize(
@@ -494,7 +942,7 @@ bool StorageObjectStorage::optimize(
     bool /*cleanup*/,
     [[maybe_unused]] ContextPtr context)
 {
-    return configuration->optimize(metadata_snapshot, context, format_settings);
+    return configuration->optimize(object_storage, metadata_snapshot, context, format_settings);
 }
 
 void StorageObjectStorage::truncate(
@@ -512,12 +960,26 @@ void StorageObjectStorage::truncate(
                         path.path);
     }
 
-    if (path.hasGlobs())
+    if (configuration->isDataLakeConfiguration())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Truncate is not supported for data lake engine");
+    }
+
+    if (path.hasGlobsIgnorePlaceholders())
     {
         throw Exception(
             ErrorCodes::DATABASE_ACCESS_DENIED,
             "{} key '{}' contains globs, so the table is in readonly mode and cannot be truncated",
             getName(), path.path);
+    }
+
+    if (path.hasPartitionWildcard())
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Truncate is not supported for partitioned tables, the path is '{}'",
+            path.path);
     }
 
     StoredObjects objects;
@@ -530,11 +992,14 @@ void StorageObjectStorage::truncate(
 
 void StorageObjectStorage::drop()
 {
+    /// We cannot use query context here, because drop is executed in the background.
+    auto drop_context = Context::getGlobalContextInstance();
     if (catalog)
     {
         const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name);
+        catalog->dropTable(namespace_name, table_name, drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop]);
     }
+    configuration->drop(drop_context);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
@@ -548,11 +1013,12 @@ std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterat
         configuration,
         configuration->getQuerySettings(context),
         object_storage,
-        false/* distributed_processing */,
+        nullptr, /* storage_metadata */
+        false, /* distributed_processing */
         context,
-        {}/* predicate */,
+        {}, /* predicate*/
         {},
-        {}/* virtual_columns */,
+        {}, /* virtual_columns */
         {}, /* hive_columns */
         &read_keys);
 
@@ -604,9 +1070,56 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
     return std::pair(columns, format);
 }
 
+namespace
+{
+bool hasPartitionStrategyArgument(const ASTs & args)
+{
+    for (const auto & arg : args)
+    {
+        const auto * function = arg->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments)
+            continue;
+
+        const auto & children = function->arguments->children;
+        if (children.size() == 2 && children[0]->getColumnName() == "partition_strategy")
+            return true;
+    }
+
+    return false;
+}
+}
+
 void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+
+    if (configuration->partition_strategy_was_inferred
+        && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && !configuration->getRawPath().hasGlobsIgnorePlaceholders()
+        && !hasPartitionStrategyArgument(args))
+    {
+        /// An implicit strategy `none` on a non-globbed path (a `CREATE` under
+        /// `file_like_engine_default_partition_strategy = 'wildcard'`) is not recoverable from
+        /// the path shape on reload: `initPartitionStrategy` resolves such a path to `hive` when
+        /// loading from metadata. It must therefore be persisted as an explicit
+        /// `partition_strategy = 'none'` engine argument, which only the S3 and Azure parsers
+        /// accept. For any other backend, refuse the definition instead of creating a table
+        /// that silently switches to the `hive` strategy after a server restart.
+        const auto storage_type = configuration->getType();
+        if (storage_type != ObjectStorageType::S3 && storage_type != ObjectStorageType::Azure)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`PARTITION BY` without an explicit `partition_strategy` resolves to 'none' under "
+                "`file_like_engine_default_partition_strategy = 'wildcard'`, and this engine can not persist "
+                "`partition_strategy = 'none'` in the table metadata, so the table would change to the 'hive' "
+                "strategy after a server restart. Set `file_like_engine_default_partition_strategy = 'hive'` "
+                "or remove `PARTITION BY`");
+
+        ASTs partition_strategy_args{
+            make_intrusive<ASTIdentifier>("partition_strategy"),
+            make_intrusive<ASTLiteral>("none")};
+        args.push_back(makeASTOperator("equals", std::move(partition_strategy_args)));
+    }
 }
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name)
@@ -637,36 +1150,103 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
             context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_local", DEFAULT_SCHEMA_CACHE_ELEMENTS));
         return schema_cache;
     }
+    if (storage_engine_name == "web")
+    {
+        static SchemaCache schema_cache(
+            context->getConfigRef().getUInt("schema_inference_cache_max_elements_for_url", DEFAULT_SCHEMA_CACHE_ELEMENTS));
+        return schema_cache;
+    }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported storage type: {}", storage_engine_name);
 }
 
 void StorageObjectStorage::mutate([[maybe_unused]] const MutationCommands & commands, [[maybe_unused]] ContextPtr context_)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    /// For datalake tables (e.g. Iceberg), refresh external metadata so that the
+    /// storage snapshot contains the `datalake_table_state`. Without this the mutation
+    /// pipeline will hit a `LOGICAL_ERROR` exception in `iterate` when building the read side.
+    /// Normally `updateExternalDynamicMetadataIfExists` is called by the
+    /// analyzer/interpreter for `SELECT` and `INSERT` queries, but `InterpreterAlterQuery`
+    /// does not call it before invoking `mutate`.
+    updateExternalDynamicMetadataIfExists(context_);
+    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
     auto storage = getStorageID();
-    configuration->mutate(commands, context_, storage, metadata_snapshot, catalog, format_settings);
+    configuration->mutate(commands, context_, shared_from_this(), storage, metadata_snapshot, catalog, format_settings);
 }
 
 void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
 {
-    configuration->checkMutationIsPossible(commands);
+    configuration->checkMutationIsPossible(object_storage, CurrentThread::tryGetQueryContext(), commands);
 }
 
-void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
+Pipe StorageObjectStorage::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    auto metadata = getExternalMetadata(context);
+    if (!metadata)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
+    return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
+}
+
+void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
+{
+    /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
+    std::lock_guard lock(hive_partitioning_resolution_mutex);
+
+    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, context);
 
-    configuration->alter(params, context);
+    /// Check that the resulting metadata does not exceed max_query_size before mutating external state.
+    checkMetadataDoesNotExceedMaxQuerySize(storage_id, new_metadata, context);
 
-    DatabaseCatalog::instance().getDatabase(storage_id.database_name)->alterTable(context, storage_id, new_metadata);
+    configuration->alter(object_storage, params, context, getStorageID(), catalog);
+
+    if (catalog)
+        return;
+
+    DatabaseCatalog::instance()
+        .getDatabase(storage_id.database_name)
+        ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
-
-void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /*context*/) const
+Pipe StorageObjectStorage::alterPartition(
+    const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
 {
-    configuration->checkAlterIsPossible(commands);
+    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
 }
 
+
+void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
+{
+    configuration->checkAlterIsPossible(object_storage, context, commands);
+}
+
+void StorageObjectStorage::startup()
+{
+    if (configuration->isBackgroundExecutable())
+        background_operations_assignee.start();
+}
+
+void StorageObjectStorage::shutdown(bool)
+{
+    if (configuration->isBackgroundExecutable())
+    {
+        configuration->finishAllBackgroundJobs();
+        background_operations_assignee.finish();
+    }
+}
+
+bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
+{
+    return configuration->scheduleDataProcessingJob(assignee, *this);
+}
+
+void StorageObjectStorage::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & /*settings*/,
+    ContextPtr context) const
+{
+    configuration->checkAlterPartitionIsPossible(object_storage, context, commands);
+}
 
 }

@@ -1,25 +1,26 @@
 #pragma once
 
 #include <base/types.h>
-#include <base/StringRef.h>
 
 
 namespace DB
 {
 [[nodiscard]] String quoteString(std::string_view x);
 
-// Prefer string_view over StringRef for implicit conversions
-[[nodiscard]] inline String quoteString(std::same_as<StringRef> auto x)
+// Prefer string_view over std::string_view for implicit conversions
+[[nodiscard]] inline String quoteString(std::same_as<std::string_view> auto x)
 {
     return quoteString(std::string_view{x.data, x.size});
 }
 
 [[nodiscard]] String quoteStringSingleQuoteWithSingleQuote(std::string_view x);
 
-[[nodiscard]] inline String quoteStringPostgreSQL(std::string_view x)
-{
-    return quoteStringSingleQuoteWithSingleQuote(x);
-}
+/// Quote a string for embedding in a query sent to a PostgreSQL server: the value is emitted so
+/// that PostgreSQL reads back exactly these bytes on every server configuration
+/// (`writeQuotedStringPostgreSQLLossless`). Prefer this over `quoteString` for PostgreSQL, whose
+/// backslash escaping does not escape the quote under the default `standard_conforming_strings`,
+/// so an embedded `'` still terminates the literal.
+[[nodiscard]] String quoteStringPostgreSQL(std::string_view x);
 
 [[nodiscard]] inline String quoteStringSQLite(std::string_view x)
 {
@@ -27,15 +28,21 @@ namespace DB
 }
 
 /// Double quote the string.
-String doubleQuoteString(StringRef x);
+String doubleQuoteString(std::string_view x);
+
+/// Quote an identifier for a query sent to a PostgreSQL server. Prefer this over `doubleQuoteString`,
+/// whose `\"` does not escape the quote there: the identifier ends and the rest is parsed as SQL.
+String doubleQuoteStringPostgreSQL(std::string_view x);
+
+String doubleQuoteStringSQLite(std::string_view x);
 
 /// Quote the identifier with backquotes.
-String backQuote(StringRef x);
+String backQuote(std::string_view x);
 
 /// Quote the identifier with backquotes, if required.
-String backQuoteIfNeed(StringRef x);
+String backQuoteIfNeed(std::string_view x);
 
 /// Quote the identifier with backquotes, for use in MySQL queries.
-String backQuoteMySQL(StringRef x);
+String backQuoteMySQL(std::string_view x);
 
 }

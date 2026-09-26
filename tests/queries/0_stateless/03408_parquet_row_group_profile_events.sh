@@ -32,6 +32,6 @@ ${CLICKHOUSE_CLIENT} -nq "
 
   SELECT ProfileEvents['ParquetReadRowGroups'], ProfileEvents['ParquetPrunedRowGroups']
     FROM system.query_log
-	WHERE event_date >= yesterday() AND query_id = '$query_id' AND type = 'QueryFinish' and current_database = currentDatabase();
+	WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id = '$query_id' AND type = 'QueryFinish' and current_database = currentDatabase();
 "
 

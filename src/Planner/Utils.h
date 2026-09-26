@@ -33,13 +33,14 @@ String dumpQueryPlan(const QueryPlan & query_plan);
 String dumpQueryPipeline(const QueryPlan & query_plan);
 
 /// Build common header for UNION query
-Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode);
+Block buildCommonHeaderForUnion(const SharedHeaders & queries_headers, SelectUnionMode union_mode, bool use_variant_as_common_type);
 
 /// Add converting to common header actions if needed for each plan
 void addConvertingToCommonHeaderActionsIfNeeded(
     std::vector<std::unique_ptr<QueryPlan>> & query_plans,
     const Block & union_common_header,
-    SharedHeaders & query_plans_headers);
+    SharedHeaders & query_plans_headers,
+    ContextPtr context);
 
 /// Convert query node to ASTSelectQuery
 ASTPtr queryNodeToSelectQuery(const QueryTreeNodePtr & query_node, bool set_subquery_cte_name = true);
@@ -70,6 +71,9 @@ bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescripti
 /// Returns true if query node JOIN TREE contains ARRAY JOIN node, false otherwise
 bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node);
 
+/// Returns true if any query tree children have WITH TOTALS, false otherwise.
+bool queryTreeHasWithTotalsInAnySubqueryInJoinTree(const IQueryTreeNode * node);
+
 /** Returns true if query node JOIN TREE contains QUERY node with WITH TOTALS, false otherwise.
   * Function is applied recursively to subqueries in JOIN TREE.
   */
@@ -82,20 +86,38 @@ QueryTreeNodePtr mergeConditionNodes(const QueryTreeNodes & condition_nodes, con
 using ResultReplacementMap = std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr>;
 QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
     const QueryTreeNodePtr & query_node,
-    const QueryTreeNodes & table_nodes,
+    const TableExpressionNodes & table_nodes,
     const ContextPtr & context,
     ResultReplacementMap * result_replacement_map = nullptr);
 
 SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context);
 
+/// Check if current user has privileges to SELECT columns from table
+/// Throws an exception if access to any column from `column_names` is not granted
+/// If `column_names` is empty, check access to any columns and return names of accessible columns
+NameSet checkAccessRights(
+    const StoragePtr & storage,
+    const StorageID & storage_id,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Names & column_names,
+    const ContextPtr & query_context);
+
+/// Build and resolve a filter against the table expression; `check_access_rights` checks column-level SELECT for the columns it reads.
+QueryTreeNodePtr buildFilterQueryTree(ASTPtr filter_expression,
+        const TableExpressionNodePtr & table_expression,
+        const ContextPtr & query_context,
+        bool check_access_rights = false);
+
 /// Build filter for specific table_expression
+/// `check_access_rights`: check column-level SELECT for the columns the filter reads (for user-supplied filters).
 FilterDAGInfo buildFilterInfo(ASTPtr filter_expression,
-        const QueryTreeNodePtr & table_expression,
+        const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
-        NameSet table_expression_required_names_without_filter = {});
+        NameSet table_expression_required_names_without_filter = {},
+        bool check_access_rights = false);
 
 FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
-        const QueryTreeNodePtr & table_expression,
+        const TableExpressionNodePtr & table_expression,
         PlannerContextPtr & planner_context,
         NameSet table_expression_required_names_without_filter = {});
 
@@ -110,5 +132,14 @@ void appendSetsFromActionsDAG(const ActionsDAG & dag, UsefulSets & useful_sets);
 std::optional<WindowFrame> extractWindowFrame(const FunctionNode & node);
 
 ActionsDAG::NodeRawConstPtrs getConjunctsList(ActionsDAG::Node * predicate);
+
+/// Remove query plan steps that don't affect the number of rows in the result.
+/// Returns true if the query always returns at least 1 row.
+bool optimizePlanForExists(QueryPlan & query_plan);
+
+/// Create ExpressionStep that projects only used columns
+QueryPlanStepPtr projectOnlyUsedColumns(
+    const SharedHeader & stream_header,
+    const ColumnIdentifiers & used_column_identifiers);
 
 }

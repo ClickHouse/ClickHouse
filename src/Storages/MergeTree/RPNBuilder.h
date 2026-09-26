@@ -101,6 +101,9 @@ public:
     /// Is node constant
     bool isConstant() const;
 
+    /// Whether the node's result type is Nullable
+    bool isNullable() const;
+
     bool isSubqueryOrSet() const;
 
     /** Get constant as constant column.
@@ -126,6 +129,11 @@ public:
 
     /// Convert node to function node or null optional
     std::optional<RPNBuilderFunctionTreeNode> toFunctionNodeOrNull() const;
+
+    /** If this node is `arrayJoin(x)`, return its argument node `x`; otherwise std::nullopt.
+      * Handles both the DAG `ARRAY_JOIN` action node and the AST `ASTFunction` named `arrayJoin`.
+      */
+    std::optional<RPNBuilderTreeNode> getArrayJoinArgument() const;
 
     /// Get tree context
     const RPNBuilderTreeContext & getTreeContext() const
@@ -155,6 +163,8 @@ public:
 
     /// Get function name
     std::string getFunctionName() const;
+
+    FunctionBasePtr getFunctionBase() const;
 
     /// Get function arguments size
     size_t getArgumentsSize() const;
@@ -189,6 +199,28 @@ public:
   * In addition client must provide ExtractAtomFromTreeFunction that returns true and RPNElement as output parameter,
   * if it can convert RPNBuilderTree node to RPNElement, false otherwise.
   */
+/// `indexHint` exists so that index analysis can see a condition that is never executed. A consumer
+/// that analyses indexes has to descend into it - that is the whole point of the hint. A consumer
+/// that estimates how selective an expression is must not: the condition removes no rows, since the
+/// function evaluates to 1 for every row, so descending into it applies a selectivity the query does
+/// not have. Where the hint holds a conjunct derived from its siblings (`LogicalExpressionOptimizerPass`
+/// wraps those it derived from a chain of comparisons), it would also apply that conjunct's
+/// selectivity twice, once for the original and once for the copy. Such a consumer specialises this
+/// trait and gets an `ALWAYS_TRUE` leaf for the whole hint.
+///
+/// `ALWAYS_TRUE` bounds the claim to the number of rows the condition removes; a hint is not inert.
+/// It takes part in index analysis and prunes the read set, so a relation under one can yield fewer
+/// rows than a selectivity-based estimate suggests. That is invisible to
+/// `ConditionSelectivityEstimator` for every predicate, not just hints: it estimates
+/// `total_rows * selectivity`, and `total_rows` counts whole parts, mark ranges included whether the
+/// index selected them or not. Pruning is carried by a separate estimate,
+/// `RowEstimateSource::PrimaryIndex`, which is used only when column statistics are missing.
+template <typename RPNElement>
+struct RPNBuilderTraits
+{
+    static constexpr bool expand_index_hint = true;
+};
+
 template <typename RPNElement>
 class RPNBuilder
 {
@@ -196,93 +228,17 @@ public:
     using RPNElements = std::vector<RPNElement>;
     using ExtractAtomFromTreeFunction = std::function<bool (const RPNBuilderTreeNode & node, RPNElement & out)>;
 
-    explicit RPNBuilder(const ActionsDAG::Node * filter_actions_dag_node,
+    explicit RPNBuilder(
+        const ActionsDAG::Node * filter_actions_dag_node,
         ContextPtr query_context_,
-        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
-        : extract_atom_from_tree_function(extract_atom_from_tree_function_)
-    {
-        RPNBuilderTreeContext tree_context(query_context_);
-        traverseTree(RPNBuilderTreeNode(filter_actions_dag_node, tree_context));
-    }
+        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
 
-    explicit RPNBuilder(const RPNBuilderTreeNode & node,
-        const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_)
-        : extract_atom_from_tree_function(extract_atom_from_tree_function_)
-    {
-        traverseTree(node);
-    }
-
-    RPNElements && extractRPN() && { return std::move(rpn_elements); }
+    explicit RPNBuilder(const RPNBuilderTreeNode & node, const ExtractAtomFromTreeFunction & extract_atom_from_tree_function_);
+    RPNElements && extractRPN() &&;
 
 private:
-    void traverseTree(const RPNBuilderTreeNode & node)
-    {
-        RPNElement element;
-
-        if (node.isFunction())
-        {
-            auto function_node = node.toFunctionNode();
-
-            if (extractLogicalOperatorFromTree(function_node, element))
-            {
-                size_t arguments_size = function_node.getArgumentsSize();
-
-                for (size_t argument_index = 0; argument_index < arguments_size; ++argument_index)
-                {
-                    auto function_node_argument = function_node.getArgumentAt(argument_index);
-                    traverseTree(function_node_argument);
-
-                    /** The first part of the condition is for the correct support of `and` and `or` functions of arbitrary arity
-                      * - in this case `n - 1` elements are added (where `n` is the number of arguments).
-                      */
-                    if (argument_index != 0 || element.function == RPNElement::FUNCTION_NOT)
-                        rpn_elements.emplace_back(std::move(element)); /// NOLINT(bugprone-use-after-move,hicpp-invalid-access-moved)
-                }
-
-                if (arguments_size == 0 && function_node.getFunctionName() == "indexHint")
-                {
-                    element.function = RPNElement::ALWAYS_TRUE;
-                    rpn_elements.emplace_back(std::move(element));
-                }
-
-                return;
-            }
-        }
-
-        if (!extract_atom_from_tree_function(node, element))
-            element.function = RPNElement::FUNCTION_UNKNOWN;
-
-        rpn_elements.emplace_back(std::move(element));
-    }
-
-    bool extractLogicalOperatorFromTree(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out)
-    {
-        /** Functions AND, OR, NOT.
-          * Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
-          * (or, the same thing - calling the function `and` from one argument).
-          */
-
-        auto function_name = function_node.getFunctionName();
-        if (function_name == "not")
-        {
-            if (function_node.getArgumentsSize() != 1)
-                return false;
-
-            out.function = RPNElement::FUNCTION_NOT;
-        }
-        else
-        {
-            if (function_name == "and" || function_name == "indexHint")
-                out.function = RPNElement::FUNCTION_AND;
-            else if (function_name == "or")
-                out.function = RPNElement::FUNCTION_OR;
-            else
-                return false;
-        }
-
-        return true;
-    }
-
+    void traverseTree(const RPNBuilderTreeNode & node);
+    bool extractLogicalOperatorFromTree(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out);
     const ExtractAtomFromTreeFunction & extract_atom_from_tree_function;
     RPNElements rpn_elements;
 };

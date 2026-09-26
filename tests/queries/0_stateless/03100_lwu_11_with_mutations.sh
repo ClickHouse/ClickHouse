@@ -13,7 +13,7 @@ set -e
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_lwu_mutations SYNC;
-    SET allow_experimental_lightweight_update = 1;
+    SET enable_lightweight_update = 1;
 
     CREATE TABLE t_lwu_mutations (id UInt64, u UInt64, s String)
     ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_mutations/', '1')

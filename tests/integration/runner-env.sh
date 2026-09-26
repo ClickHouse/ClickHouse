@@ -5,7 +5,7 @@
 # Tip: place a `breakpoint()` somewhere in your integration test python code before run.
 
 _runner-select-node() {
-    RUNNER_ID1=$(docker ps | grep clickhouse_integration_tests | awk '{print $1; exit}')
+    RUNNER_ID1=$(docker ps | grep praktika | awk '{print $1; exit}')
     RUNNER_ID2_DEFAULT=$(docker exec $RUNNER_ID1 docker ps | grep node | awk '{print $1; exit}')
     docker exec $RUNNER_ID1 docker ps
     RUNNER_ID2=

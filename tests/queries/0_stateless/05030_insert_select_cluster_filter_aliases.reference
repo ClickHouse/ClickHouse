@@ -1,0 +1,7 @@
+--- alias from the WITH clause ---
+1
+2
+--- errors logged by the interpreter ---
+0
+--- alias from the SELECT list ---
+20

@@ -19,7 +19,7 @@ struct KostikConsistentHashImpl
 
     static ResultType apply(UInt64 hash, BucketsType n)
     {
-        return ConsistentHashing(hash, n);
+        return static_cast<ResultType>(ConsistentHashing(hash, n));
     }
 };
 
@@ -29,7 +29,7 @@ REGISTER_FUNCTION(KostikConsistentHash)
 {
     FunctionDocumentation::Description description = R"(
 An O(1) time and space consistent hash algorithm by Konstantin 'Kostik' Oblakov.
-Only efficient with n <= 32768.
+Only efficient with `n <= 32768`.
 )";
     FunctionDocumentation::Syntax syntax = "kostikConsistentHash(input, n)";
     FunctionDocumentation::Arguments arguments = {
@@ -50,7 +50,7 @@ Only efficient with n <= 32768.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Hash;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionKostikConsistentHash>(documentation);
     factory.registerAlias("yandexConsistentHash", "kostikConsistentHash");
 }

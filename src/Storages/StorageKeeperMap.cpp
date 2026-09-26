@@ -1,5 +1,8 @@
 #include <memory>
+#include <optional>
+#include <DataTypes/DataTypesNumber.h>
 #include <IO/copyData.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/StorageKeeperMap.h>
 
 #include <Columns/ColumnString.h>
@@ -11,6 +14,7 @@
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Interpreters/DatabaseCatalog.h>
@@ -22,10 +26,16 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
+#include <Core/Defines.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <Processors/ISource.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/NullSource.h>
@@ -66,6 +76,9 @@
 #include <base/types.h>
 
 #include <boost/core/noncopyable.hpp>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 namespace DB
 {
@@ -78,12 +91,14 @@ namespace Setting
     extern const SettingsUInt64 keeper_max_retries;
     extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
     extern const SettingsUInt64 keeper_retry_max_backoff_ms;
-    extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
 namespace FailPoints
 {
     extern const char keepermap_fail_drop_data[];
+    extern const char keeper_map_delete_pause_before_multi[];
+    extern const char keepermap_create_pause_before_drop_lock_version[];
 }
 
 namespace ErrorCodes
@@ -96,6 +111,9 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int INVALID_STATE;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
+    extern const int TABLE_WAS_NOT_DROPPED;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 namespace
@@ -108,6 +126,72 @@ std::string formattedAST(const ASTPtr & ast)
     if (!ast)
         return "";
     return ast->formatWithSecretsOneLine();
+}
+
+/// Some builds persisted a single primary-key expression as `(key)`, while others wrote `key`.
+/// Normalize only outer parentheses that wrap one complete expression. This works with parsers
+/// that either preserve or discard those parentheses and rejects comments or trailing syntax.
+std::optional<std::string> tryCanonicalPrimaryKey(const std::string & primary_key)
+{
+    if (!primary_key.ends_with('\n'))
+        return std::nullopt;
+
+    std::string_view expression(primary_key);
+    expression.remove_suffix(1);
+
+    auto try_parse = [](std::string_view text)
+    {
+        ParserExpression parser;
+        const char * pos = text.data();
+        const char * end = pos + text.size();
+        std::string error_message;
+        return tryParseQuery(
+            parser,
+            pos,
+            end,
+            error_message,
+            /*hilite=*/ false,
+            /*description=*/ "KeeperMap primary key",
+            /*allow_multi_statements=*/ false,
+            text.size(),
+            DBMS_DEFAULT_MAX_PARSER_DEPTH,
+            DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+            /*skip_insignificant=*/ true);
+    };
+
+    ASTPtr ast = try_parse(expression);
+    if (!ast)
+        return std::nullopt;
+
+    while (expression.size() >= 2 && expression.front() == '(' && expression.back() == ')')
+    {
+        auto inner_expression = expression.substr(1, expression.size() - 2);
+        auto inner_ast = try_parse(inner_expression);
+        if (!inner_ast)
+            break;
+
+        expression = inner_expression;
+        ast = std::move(inner_ast);
+    }
+
+    if (expression != ast->formatWithSecretsOneLine())
+        return std::nullopt;
+
+    return std::string(expression);
+}
+
+std::string formatPrimaryKeyForMetadata(const ASTPtr & ast)
+{
+    const auto * expression_list = ast ? ast->as<ASTExpressionList>() : nullptr;
+    if (expression_list && expression_list->children.size() == 1)
+    {
+        auto primary_key = expression_list->children.front()->clone();
+        primary_key->setParenthesized(false);
+        return formattedAST(primary_key);
+    }
+
+    /// Preserve expression-list spelling until every supported reader canonicalizes each element.
+    return formattedAST(ast);
 }
 
 void verifyTableId(const StorageID & table_id)
@@ -125,7 +209,7 @@ void verifyTableId(const StorageID & table_id)
 
 }
 
-class StorageKeeperMapSink : public SinkToStorage
+class StorageKeeperMapSink final : public SinkToStorage
 {
     StorageKeeperMap & storage;
     std::unordered_map<std::string, std::string> new_values;
@@ -186,6 +270,7 @@ public:
     template <bool for_update>
     void finalize(bool strict)
     {
+        auto component_guard = Coordination::setCurrentComponent("StorageKeeperMapSink::finalize");
         const auto & settings = context->getSettingsRef();
 
         ZooKeeperRetriesControl zk_retry{
@@ -273,7 +358,7 @@ public:
 };
 
 template <typename KeyContainer>
-class StorageKeeperMapSource : public ISource, WithContext
+class StorageKeeperMapSource final : public ISource, WithContext
 {
     const StorageKeeperMap & storage;
     size_t max_block_size;
@@ -311,6 +396,7 @@ public:
 
     Chunk generate() override
     {
+        auto component_guard = Coordination::setCurrentComponent("StorageKeeperMapSource::generate");
         if (it >= end)
         {
             it = {};
@@ -346,8 +432,9 @@ StorageKeeperMap::StorageKeeperMap(
     bool attach,
     std::string_view primary_key_,
     const std::string & zk_root_path_,
-    UInt64 keys_limit_)
-    : IStorage(table_id)
+    UInt64 keys_limit_,
+    bool override_metadata)
+    : StorageWithCommonVirtualColumns(table_id)
     , WithContext(context_->getGlobalContext())
     , zk_root_path(zkutil::extractZooKeeperPath(zk_root_path_, false))
     , primary_key(primary_key_)
@@ -355,22 +442,18 @@ StorageKeeperMap::StorageKeeperMap(
     , keys_limit(keys_limit_)
     , log(getLogger(fmt::format("StorageKeeperMap ({})", table_id.getNameForLogs())))
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::StorageKeeperMap");
     std::string path_prefix = context_->getConfigRef().getString("keeper_map_path_prefix", "");
     if (path_prefix.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "KeeperMap is disabled because 'keeper_map_path_prefix' config is not defined");
 
     verifyTableId(table_id);
-
-    setInMemoryMetadata(metadata);
-
-    VirtualColumnsDescription virtuals;
-    virtuals.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "");
-    setVirtuals(std::move(virtuals));
+    setInMemoryMetadata(metadata.withVirtuals(createVirtuals()));
 
     WriteBufferFromOwnString out;
     out << "KeeperMap metadata format version: 1\n"
-        << "columns: " << metadata.columns.toString()
-        << "primary key: " << formattedAST(metadata.getPrimaryKey().expression_list_ast) << "\n";
+        << "columns: " << metadata.columns.toString(true)
+        << "primary key: " << formatPrimaryKeyForMetadata(metadata.getPrimaryKey().expression_list_ast) << "\n";
     metadata_string = out.str();
 
     if (zk_root_path.empty())
@@ -453,7 +536,7 @@ StorageKeeperMap::StorageKeeperMap(
 
                 if (exists)
                 {
-                    isMetadataStringEqual(stored_metadata_string, metadata_string, /*throw_on_error=*/ true);
+                    isMetadataStringCompatible(stored_metadata_string, metadata_string, /*throw_on_error=*/ true);
 
                     auto code = client->tryCreate(zk_table_path, "", zkutil::CreateMode::Persistent);
 
@@ -467,7 +550,7 @@ StorageKeeperMap::StorageKeeperMap(
                     }
 
                     /// We most likely created the path but got a timeout or disconnect
-                    if (code == Coordination::Error::ZNODEEXISTS && zk_retry.isRetry())
+                    if (code == Coordination::Error::ZNODEEXISTS && (zk_retry.isRetry() || override_metadata))
                     {
                         success = true;
                         return;
@@ -511,7 +594,7 @@ StorageKeeperMap::StorageKeeperMap(
                         {
                             metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
                             drop_lock_version = dynamic_cast<const Coordination::SetResponse &>(*drop_lock_responses[0]).stat.version;
-                            if (!dropTable(client, metadata_drop_lock))
+                            if (!dropTableData(client, metadata_drop_lock))
                                 return;
                             drop_finished = true;
                         }
@@ -519,6 +602,13 @@ StorageKeeperMap::StorageKeeperMap(
 
                     if (!drop_finished)
                     {
+                        /// Backward compatibility: tables created before 25.1 don't have
+                        /// the drop_lock_version node. Create it if missing so the set below
+                        /// doesn't fail with ZNONODE (same pattern as drop() uses).
+                        /// A concurrent drop may have removed the parent already; the tryMulti below handles that.
+                        FailPointInjection::pauseFailPoint(FailPoints::keepermap_create_pause_before_drop_lock_version);
+                        client->tryCreate(zk_dropped_lock_version_path, "", zkutil::CreateMode::Persistent);
+
                         Coordination::Requests drop_lock_requests{
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
                             zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1),
@@ -544,10 +634,17 @@ StorageKeeperMap::StorageKeeperMap(
                         {
                             metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
                             drop_lock_version = dynamic_cast<const Coordination::SetResponse &>(*drop_lock_responses[1]).stat.version;
-                            if (!dropTable(client, metadata_drop_lock))
+                            if (!dropTableData(client, metadata_drop_lock))
                                 return;
                         }
                     }
+                }
+
+                /// Root path may have been removed by dropTableData above.
+                if (zk_root_path != "/" && !client->exists(zk_root_path))
+                {
+                    client->createAncestors(zk_root_path);
+                    client->createIfNotExists(zk_root_path, "");
                 }
 
                 Coordination::Requests create_requests{
@@ -629,7 +726,16 @@ private:
     Strings getAllKeys() const;
 };
 
-bool StorageKeeperMap::isMetadataStringEqual(
+VirtualColumnsDescription StorageKeeperMap::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral(String(version_column_name), std::make_shared<DataTypeInt32>(), "", VirtualsMaterializationPlace::Reader);
+    return desc;
+}
+
+bool StorageKeeperMap::isMetadataStringCompatible(
     const std::string & zk_metadata_string,
     const std::string & local_metadata_string,
     bool throw_on_error) const
@@ -638,40 +744,80 @@ bool StorageKeeperMap::isMetadataStringEqual(
         return true;
 
     const std::string_view metadata_format_version_prefix = "KeeperMap metadata format version: 1\ncolumns: ";
-    const std::string_view primary_key_header = "primary key: ";
+    const std::string_view primary_key_header = "\nprimary key: ";
 
-    if (!local_metadata_string.starts_with(metadata_format_version_prefix))
-        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or columns definition in ZK: {}", zk_metadata_string);
+    /// The stored value is untrusted: anything with write access to the Keeper path can leave arbitrary
+    /// bytes there, and a caller that did not ask for errors must still get an answer.
+    bool columns_equal = false;
+    try
+    {
+        if (!zk_metadata_string.starts_with(metadata_format_version_prefix))
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or columns definition in ZK: {}", zk_metadata_string);
 
-    auto zk_pk_pos = zk_metadata_string.rfind(primary_key_header);
-    if (zk_pk_pos == std::string::npos)
-        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or primary key definition in ZK: {}", zk_metadata_string);
+        if (!local_metadata_string.starts_with(metadata_format_version_prefix))
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid local KeeperMap metadata format version or columns definition: {}", local_metadata_string);
 
-    auto local_pk_pos = local_metadata_string.rfind(primary_key_header);
-    if (local_pk_pos == std::string::npos)
-        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid local KeeperMap metadata format version or primary key definition: {}", local_metadata_string);
+        auto zk_pk_pos = zk_metadata_string.find(primary_key_header, metadata_format_version_prefix.size());
+        if (zk_pk_pos == std::string::npos)
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or primary key definition in ZK: {}", zk_metadata_string);
 
-    auto local_columns = ColumnsDescription::parse(local_metadata_string.substr(metadata_format_version_prefix.size(), local_pk_pos - metadata_format_version_prefix.size()));
-    auto zk_columns = ColumnsDescription::parse(zk_metadata_string.substr(metadata_format_version_prefix.size(), zk_pk_pos - metadata_format_version_prefix.size()));
+        auto local_pk_pos = local_metadata_string.find(primary_key_header, metadata_format_version_prefix.size());
+        if (local_pk_pos == std::string::npos)
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid local KeeperMap metadata format version or primary key definition: {}", local_metadata_string);
 
-    /// Comment may be added later with ALTER command, and since we don't update metadata during ALTER, we should not compare comments
-    bool columns_equal = zk_columns.toString(/*include_comments=*/ false) == local_columns.toString(/*include_comments=*/ false);
+        auto local_columns = ColumnsDescription::parse(local_metadata_string.substr(metadata_format_version_prefix.size(), local_pk_pos + 1 - metadata_format_version_prefix.size()));
+        auto zk_columns = ColumnsDescription::parse(zk_metadata_string.substr(metadata_format_version_prefix.size(), zk_pk_pos + 1 - metadata_format_version_prefix.size()));
 
-    auto zk_pk = zk_metadata_string.substr(zk_pk_pos + primary_key_header.size());
-    auto local_pk = local_metadata_string.substr(local_pk_pos + primary_key_header.size());
+        /// Comment may be added later with ALTER command, and since we don't update metadata during ALTER, we should not compare comments
+        columns_equal = zk_columns.toString(/*include_comments=*/ false) == local_columns.toString(/*include_comments=*/ false);
 
-    bool pk_equal = zk_pk == local_pk;
+        auto zk_pk = zk_metadata_string.substr(zk_pk_pos + primary_key_header.size());
+        auto local_pk = local_metadata_string.substr(local_pk_pos + primary_key_header.size());
 
-    if (columns_equal && pk_equal)
-        return true;
+        if (zk_pk == local_pk)
+        {
+            if (columns_equal)
+                return true;
+        }
+        else if (columns_equal)
+        {
+            const auto canonical_zk_pk = tryCanonicalPrimaryKey(zk_pk);
+            const auto canonical_local_pk = tryCanonicalPrimaryKey(local_pk);
+            if (canonical_zk_pk && canonical_local_pk && *canonical_zk_pk == *canonical_local_pk)
+                return true;
+        }
+    }
+    catch (const std::bad_alloc &)
+    {
+        /// `operator new` signals allocation failure by throwing this directly, so it carries no error code.
+        throw;
+    }
+    catch (...)
+    {
+        if (throw_on_error)
+            throw;
+
+        /// A failure to allocate says nothing about the stored bytes, and the invalid-metadata verdict is
+        /// cached for the lifetime of the table, so reporting one as corruption would strand a healthy
+        /// table until restart.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::MEMORY_LIMIT_EXCEEDED || code == ErrorCodes::CANNOT_ALLOCATE_MEMORY)
+            throw;
+
+        tryLogCurrentException(
+            log,
+            fmt::format("Cannot parse metadata of path {}, will treat the table as having invalid metadata", zk_root_path),
+            LogsLevel::warning);
+        return false;
+    }
 
     if (throw_on_error)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Path {} is already used but the stored {} definition doesn't match. Stored metadata: {}, local metadata: {}",
-            columns_equal ? "columns" : "primary key",
             zk_root_path,
+            columns_equal ? "primary key" : "columns",
             zk_metadata_string,
             local_metadata_string);
     }
@@ -680,8 +826,8 @@ bool StorageKeeperMap::isMetadataStringEqual(
         log,
         "Path {} is already used but the stored {} definition doesn't match. Stored metadata: {}, local metadata: {}. "
         "Will use stored metadata",
-        columns_equal ? "columns" : "primary key",
         zk_root_path,
+        columns_equal ? "primary key" : "columns",
         zk_metadata_string,
         local_metadata_string);
 
@@ -689,7 +835,7 @@ bool StorageKeeperMap::isMetadataStringEqual(
 }
 
 
-void StorageKeeperMap::read(
+void StorageKeeperMap::readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -699,6 +845,7 @@ void StorageKeeperMap::read(
         size_t max_block_size,
         size_t num_streams)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::read");
     checkTable<true>(context_);
     storage_snapshot->check(column_names);
     Block sample_block = storage_snapshot->metadata->getSampleBlock();
@@ -725,6 +872,7 @@ void StorageKeeperMap::read(
 
 void ReadFromKeeperMap::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    auto component_guard = Coordination::setCurrentComponent("ReadFromKeeperMap::initializePipeline");
     if (all_scan)
         initializePipelineImpl(pipeline, std::make_shared<Strings>(getAllKeys()));
     else
@@ -798,7 +946,7 @@ Strings ReadFromKeeperMap::getAllKeys() const
 
 void ReadFromKeeperMap::describeActions(FormatSettings & format_settings) const
 {
-    std::string prefix(format_settings.offset, format_settings.indent_char);
+    const std::string & prefix = format_settings.detail_prefix;
     if (!all_scan)
     {
         format_settings.out << prefix << "ReadType: GetKeys\n";
@@ -821,12 +969,14 @@ void ReadFromKeeperMap::describeActions(JSONBuilder::JSONMap & map) const
 
 SinkToStoragePtr StorageKeeperMap::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::write");
     checkTable<true>(local_context);
     return std::make_shared<StorageKeeperMapSink>(*this, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()), local_context);
 }
 
 void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::truncate");
     checkTable<true>(local_context);
     const auto & settings = local_context->getSettingsRef();
     ZooKeeperRetriesControl zk_retry{
@@ -845,21 +995,103 @@ void StorageKeeperMap::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
     });
 }
 
-bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
+void StorageKeeperMap::dropTableFromZooKeeper(zkutil::ZooKeeperPtr zookeeper, String path_prefix_, String zk_root_path_, String uuid, LoggerPtr logger)
+{
+    auto zk_root_path_fs = fs::path(path_prefix_) / std::string_view{zk_root_path_}.substr(1);
+    zk_root_path_ = zk_root_path_fs;
+
+    String zk_data_path_to_remove = zk_root_path_fs / "data";
+
+    auto metadata_path_fs = zk_root_path_fs / "metadata";
+    String zk_metadata_path_to_remove = metadata_path_fs;
+    String zk_tables_path_to_remove = metadata_path_fs / "tables";
+
+    String zk_dropped_path_to_remove = metadata_path_fs / "dropped";
+    String zk_dropped_lock_path_to_remove = fs::path(zk_dropped_path_to_remove) / "lock";
+    String zk_dropped_lock_version_path = metadata_path_fs / "drop_lock_version";
+
+    LOG_INFO(logger, "Removing table data in ZooKeeper at {}", zk_root_path_);
+
+    if (!zookeeper->exists(zk_root_path_))
+    {
+        LOG_INFO(logger, "Table at {} does not exist", zk_root_path_);
+        return;
+    }
+
+    Strings tables;
+    zookeeper->tryGetChildren(zk_tables_path_to_remove, tables);
+    std::sort(tables.begin(), tables.end());
+
+    for (const auto & table : tables)
+    {
+        if (table.starts_with(uuid))
+        {
+            LOG_INFO(logger, "Removing table {} in /tables", table);
+            auto code = zookeeper->tryRemove(fs::path(zk_tables_path_to_remove) / table);
+            if (code == Coordination::Error::ZNONODE)
+                throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table at {} is already started to be removed by another replica right now", zk_root_path_);
+        }
+    }
+
+    Coordination::Requests ops;
+    Coordination::Responses responses;
+
+    /// Previous drop attempts might have failed
+    if (zookeeper->exists(zk_tables_path_to_remove))
+        ops.emplace_back(zkutil::makeRemoveRequest(zk_tables_path_to_remove, -1));
+
+    if (!zookeeper->exists(zk_dropped_path_to_remove))
+        ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_path_to_remove, "", zkutil::CreateMode::Persistent));
+
+    if (!zookeeper->exists(zk_dropped_lock_version_path))
+        ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_version_path, "", zkutil::CreateMode::Persistent));
+
+    ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_path_to_remove, "", zkutil::CreateMode::Ephemeral));
+    auto code = zookeeper->tryMulti(ops, responses);
+
+    if (code == Coordination::Error::ZNOTEMPTY)
+        return;
+
+    if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZNODEEXISTS)
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table at {} is already started to be removed by another replica right now", zk_root_path_);
+
+    zkutil::KeeperMultiException::check(code, ops, responses);
+
+    auto drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path_to_remove, *zookeeper);
+    if (!dropTableData(zookeeper, drop_lock, zk_data_path_to_remove, zk_metadata_path_to_remove, zk_dropped_path_to_remove, zk_dropped_lock_version_path, zk_root_path_, logger))
+        throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Table at {} is already started to be removed by another replica right now", zk_root_path_);
+}
+
+bool StorageKeeperMap::dropTableData(zkutil::ZooKeeperPtr zookeeper, const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock)
+{
+    return dropTableData(zookeeper, metadata_drop_lock, zk_data_path, zk_metadata_path, zk_dropped_path, zk_dropped_lock_version_path, zk_root_path, log);
+}
+
+
+bool StorageKeeperMap::dropTableData(
+    zkutil::ZooKeeperPtr zookeeper,
+    const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock,
+    const String & zk_data_path_,
+    const String & zk_metadata_path_,
+    const String & zk_dropped_path_,
+    const String & zk_dropped_lock_version_path_,
+    const String & zk_root_path_,
+    LoggerPtr logger)
 {
     fiu_do_on(FailPoints::keepermap_fail_drop_data,
     {
         throw zkutil::KeeperException(Coordination::Error::ZOPERATIONTIMEOUT, "Manually triggered operation timeout");
     });
-    zookeeper->removeChildrenRecursive(zk_data_path);
+    zookeeper->removeChildrenRecursive(zk_data_path_);
 
     bool completely_removed = false;
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(metadata_drop_lock->getPath(), -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path, -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path, -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path, -1));
-    ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_data_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_dropped_lock_version_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_metadata_path_, -1));
+    ops.emplace_back(zkutil::makeRemoveRequest(zk_root_path_, -1));
 
     Coordination::Responses responses;
     auto code = zookeeper->tryMulti(ops, responses);
@@ -870,17 +1102,17 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
         {
             metadata_drop_lock->setAlreadyRemoved();
             completely_removed = true;
-            LOG_INFO(log, "Metadata ({}) and data ({}) was successfully removed from ZooKeeper", zk_metadata_path, zk_data_path);
+            LOG_INFO(logger, "Metadata ({}) and data ({}) was successfully removed from ZooKeeper", zk_metadata_path_, zk_data_path_);
             break;
         }
         case ZNONODE:
         {
             size_t failed_op = zkutil::getFailedOpIndex(code, responses);
-            LOG_ERROR(log, "Got ZNONODE code while trying to drop {}", ops[failed_op]->getPath());
+            LOG_ERROR(logger, "Got ZNONODE code while trying to drop {}", ops[failed_op]->getPath());
             throw Exception(ErrorCodes::LOGICAL_ERROR, "There is a race condition between creation and removal of metadata. It's a bug");
         }
         case ZNOTEMPTY:
-            LOG_ERROR(log, "Metadata was not completely removed from ZooKeeper");
+            LOG_ERROR(logger, "Metadata was not completely removed from ZooKeeper");
             break;
         default:
             zkutil::KeeperMultiException::check(code, ops, responses);
@@ -891,6 +1123,7 @@ bool StorageKeeperMap::dropTable(zkutil::ZooKeeperPtr zookeeper, const zkutil::E
 
 void StorageKeeperMap::drop()
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::drop");
     auto current_table_status = getTableStatus(getContext());
     if (current_table_status == TableStatus::UNKNOWN)
     {
@@ -919,13 +1152,27 @@ void StorageKeeperMap::drop()
         code != Coordination::Error::ZOK || !children.empty())
         return;
 
+    // used in private build
+    bool do_not_drop_table_data_in_keeper = false;
+#if CLICKHOUSE_CLOUD
+    /// In case of Shared Catalog, table data in ZooKeeper will be dropped separately
+    do_not_drop_table_data_in_keeper = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::instance().isTableInLocalDropOrDetachQueue(getStorageID().uuid);
+#endif
+    if (do_not_drop_table_data_in_keeper)
+        return;
+
     Coordination::Requests ops;
     Coordination::Responses responses;
 
     ops.emplace_back(zkutil::makeRemoveRequest(zk_tables_path, -1));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_path, "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1));
+
+    /// 'zk_dropped_lock_version_path' node was added in 25.1, so we need to check if it exists
+    if (client->exists(zk_dropped_lock_version_path))
+        ops.emplace_back(zkutil::makeSetRequest(zk_dropped_lock_version_path, table_unique_id, -1));
+    else
+        ops.emplace_back(zkutil::makeCreateRequest(zk_dropped_lock_version_path, table_unique_id, zkutil::CreateMode::Persistent));
 
     auto code = client->tryMulti(ops, responses);
 
@@ -943,7 +1190,7 @@ void StorageKeeperMap::drop()
         zkutil::KeeperMultiException::check(code, ops, responses);
 
     auto metadata_drop_lock = zkutil::EphemeralNodeHolder::existing(zk_dropped_lock_path, *client);
-    dropTable(client, metadata_drop_lock);
+    dropTableData(client, metadata_drop_lock);
 }
 
 namespace
@@ -958,12 +1205,10 @@ public:
     KeeperMapBackup(
         const std::string & data_zookeeper_path_,
         const std::string & data_path_in_backup,
-        const DiskPtr & temp_disk_,
-        UInt64 max_compress_block_size_,
+        const TemporaryDataOnDiskScopePtr & tmp_data_,
         std::shared_ptr<WithRetries> with_retries_)
         : data_zookeeper_path(data_zookeeper_path_)
-        , temp_disk(temp_disk_)
-        , max_compress_block_size(max_compress_block_size_)
+        , tmp_data(tmp_data_)
         , with_retries(std::move(with_retries_))
     {
         file_path = fs::path(data_path_in_backup) / backup_data_filename;
@@ -983,14 +1228,8 @@ private:
 
     BackupEntries generate() override
     {
-        temp_dir_owner.emplace(temp_disk);
-        fs::path temp_dir = temp_dir_owner->getRelativePath();
-        temp_disk->createDirectories(temp_dir);
-
-        auto data_file_path = temp_dir / fs::path{file_path}.filename();
-        auto data_out_compressed = temp_disk->writeFile(data_file_path);
-        auto data_out = std::make_unique<CompressedWriteBuffer>(
-            *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size);
+        auto component_guard = Coordination::setCurrentComponent("KeeperMapBackup::generate");
+        auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
         std::vector<std::string> data_children;
         {
             auto holder = with_retries->createRetriesControlHolder("getKeeperMapDataKeys");
@@ -1041,18 +1280,12 @@ private:
             keys_it = keys_it + step;
         }
 
-        data_out->finalize();
-        data_out.reset();
-        data_out_compressed->finalize();
-        data_out_compressed.reset();
-
-        return {{file_path, std::make_shared<BackupEntryFromAppendOnlyFile>(temp_disk, data_file_path)}};
+        data_out->finishWriting();
+        return {{file_path, std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(data_out))}};
     }
 
     fs::path data_zookeeper_path;
-    DiskPtr temp_disk;
-    std::optional<TemporaryFileOnDisk> temp_dir_owner;
-    UInt64 max_compress_block_size;
+    TemporaryDataOnDiskScopePtr tmp_data;
     String file_path;
     std::shared_ptr<WithRetries> with_retries;
 };
@@ -1060,6 +1293,7 @@ private:
 
 void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::backupData");
     auto coordination = backup_entries_collector.getBackupCoordination();
     coordination->addKeeperMapTable(zk_root_path, table_unique_id, data_path_in_backup);
 
@@ -1067,6 +1301,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
     /// assign each path to a single table only.
     auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
     {
+        auto local_component_guard = Coordination::setCurrentComponent("StorageKeeperMap::post_collecting_task");
         auto path_with_data = coordination->getKeeperMapDataPath(zk_root_path);
         if (path_with_data != my_data_path_in_backup)
         {
@@ -1076,20 +1311,23 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
             return;
         }
 
-        auto temp_disk = backup_entries_collector.getContext()->getGlobalTemporaryVolume()->getDisk(0);
-        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
+        TemporaryDataOnDiskSettings tmp_data_settings;
+        tmp_data_settings.buffer_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::temporary_files_buffer_size];
 
+        auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
+
+        auto self = std::static_pointer_cast<StorageKeeperMap>(shared_from_this());
         auto with_retries = std::make_shared<WithRetries>
         (
             getLogger(fmt::format("StorageKeeperMapBackup ({})", getStorageID().getNameForLogs())),
-            [&] { return getClient(); },
+            [self] { return self->getClient(); },
             BackupKeeperSettings(backup_entries_collector.getContext()),
             backup_entries_collector.getContext()->getProcessListElement()
         );
 
         backup_entries_collector.addBackupEntries(
             std::make_shared<KeeperMapBackup>(
-                this->zk_data_path, path_with_data, temp_disk, max_compress_block_size, std::move(with_retries))
+                this->zk_data_path, path_with_data, tmp_data, std::move(with_retries))
                 ->getBackupEntries());
     };
 
@@ -1098,6 +1336,7 @@ void StorageKeeperMap::backupData(BackupEntriesCollector & backup_entries_collec
 
 void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::restoreDataFromBackup");
     auto backup = restorer.getBackup();
     if (!backup->hasFiles(data_path_in_backup))
         return;
@@ -1134,25 +1373,22 @@ void StorageKeeperMap::restoreDataFromBackup(RestorerFromBackup & restorer, cons
             RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
     }
 
-    auto temp_disk = restorer.getContext()->getGlobalTemporaryVolume()->getDisk(0);
-
     /// only 1 table should restore data for a single path
     restorer.addDataRestoreTask(
         [storage = std::static_pointer_cast<StorageKeeperMap>(shared_from_this()),
          backup,
          data_path_in_backup,
          with_retries,
-         allow_non_empty_tables,
-         temp_disk] { storage->restoreDataImpl(backup, data_path_in_backup, with_retries, allow_non_empty_tables, temp_disk); });
+         allow_non_empty_tables] { storage->restoreDataImpl(backup, data_path_in_backup, with_retries, allow_non_empty_tables); });
 }
 
 void StorageKeeperMap::restoreDataImpl(
     const BackupPtr & backup,
     const String & data_path_in_backup,
     std::shared_ptr<WithRetries> with_retries,
-    bool allow_non_empty_tables,
-    const DiskPtr & temporary_disk)
+    bool allow_non_empty_tables)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::restoreDataImpl");
     const auto & table_id = toString(getStorageID().uuid);
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
@@ -1162,19 +1398,7 @@ void StorageKeeperMap::restoreDataImpl(
     if (!backup->fileExists(data_file))
         throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file);
 
-    /// should we store locally in temp file?
-    auto in = backup->readFile(data_file);
-    std::optional<TemporaryFileOnDisk> temp_data_file;
-    if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
-    {
-        temp_data_file.emplace(temporary_disk);
-        auto out = WriteBufferFromFile(temp_data_file->getAbsolutePath());
-        copyData(*in, out);
-        out.finalize();
-        in = createReadBufferFromFileBase(temp_data_file->getAbsolutePath(), {});
-    }
-    std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
-    CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
+    CompressedReadBufferFromFile compressed_in{backup->readFile(data_file)};
     fs::path data_path_fs(zk_data_path);
 
     auto max_multi_size = with_retries->getKeeperSettings().batch_size_for_multi;
@@ -1233,6 +1457,7 @@ void StorageKeeperMap::restoreDataImpl(
 
 zkutil::ZooKeeperPtr StorageKeeperMap::getClient() const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::getClient");
     std::lock_guard lock{zookeeper_mutex};
     if (!zookeeper_client || zookeeper_client->expired())
     {
@@ -1296,7 +1521,7 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
                     return;
                 }
 
-                if (!isMetadataStringEqual(stored_metadata_string, metadata_string, /*throw_on_error=*/ false))
+                if (!isMetadataStringCompatible(stored_metadata_string, metadata_string, /*throw_on_error=*/ false))
                 {
                     table_status = TableStatus::INVALID_METADATA;
                     return;
@@ -1345,15 +1570,28 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
     return table_status;
 }
 
-Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPODArray<UInt8> & null_map, const Names &) const
+Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::getByKeys");
+
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageKeeperMap supports only one key, got: {}", keys.size());
 
-    auto raw_keys = serializeKeysToRawString(keys[0]);
+    /// `StorageMetadataHandle` owns the snapshot, so it has to be bound to a named local:
+    /// `operator->` is deleted on a temporary.
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto pk_type = metadata_snapshot->getSampleBlock().getByName(primary_key).type;
+    /// `null_map` is an output parameter, so start from a clean state: `resize_fill` alone would keep
+    /// pre-existing values if the caller passed an already sized array.
+    null_map.clear();
+    null_map.resize_fill(keys[0].column->size(), 1);
+    auto raw_keys = serializeKeysToRawString(keys[0], pk_type, &null_map);
 
     if (raw_keys.size() != keys[0].column->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Assertion failed: {} != {}", raw_keys.size(), keys[0].column->size());
+
+    for (auto & raw_key : raw_keys)
+        raw_key = base64Encode(raw_key, /* url_encoding */ true);
 
     return getBySerializedKeys(raw_keys, &null_map, /* version_column */ false, getContext());
 }
@@ -1361,7 +1599,8 @@ Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, PaddedPOD
 Chunk StorageKeeperMap::getBySerializedKeys(
     const std::span<const std::string> keys, PaddedPODArray<UInt8> * null_map, bool with_version, const ContextPtr & local_context) const
 {
-    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    Block sample_block = metadata_snapshot->getSampleBlock();
     MutableColumns columns = sample_block.cloneEmptyColumns();
     MutableColumnPtr version_column = nullptr;
 
@@ -1370,17 +1609,24 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
 
-    if (null_map)
-    {
-        null_map->clear();
-        null_map->resize_fill(keys.size(), 1);
-    }
+    if (null_map && null_map->size() != keys.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "StorageKeeperMap::getBySerializedKeys: null_map size {} does not match keys size {}",
+            null_map->size(), keys.size());
 
     Strings full_key_paths;
     full_key_paths.reserve(keys.size());
 
-    for (const auto & key : keys)
-        full_key_paths.emplace_back(fullPathForKey(key));
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        if (null_map && !(*null_map)[i])
+        {
+            /// Use a placeholder path; the result will be discarded below.
+            full_key_paths.emplace_back(fullPathForKey({}));
+            continue;
+        }
+        full_key_paths.emplace_back(fullPathForKey(keys[i]));
+    }
 
     const auto & settings = local_context->getSettingsRef();
     ZooKeeperRetriesControl zk_retry{
@@ -1400,6 +1646,16 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
     for (size_t i = 0; i < keys.size(); ++i)
     {
+        if (null_map && !(*null_map)[i])
+        {
+            for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
+                columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());
+
+            if (version_column)
+                version_column->insert(-1);
+            continue;
+        }
+
         auto response = values[i];
 
         Coordination::Error code = response.error;
@@ -1439,7 +1695,7 @@ Chunk StorageKeeperMap::getBySerializedKeys(
 
 Block StorageKeeperMap::getSampleBlock(const Names &) const
 {
-    auto metadata = getInMemoryMetadataPtr();
+    auto metadata = getInMemoryMetadataPtr(getContext(), false);
     return metadata->getSampleBlock();
 }
 
@@ -1469,6 +1725,7 @@ void StorageKeeperMap::checkMutationIsPossible(const MutationCommands & commands
 
 void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr local_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::mutate");
     checkTable<true>(local_context);
 
     if (commands.empty())
@@ -1478,9 +1735,12 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
 
     chassert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr();
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, local_context);
+
+    auto mutation_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
+    mutation_columns.push_back(String(version_column_name));
 
     if (commands.front().type == MutationCommand::Type::DELETE)
     {
@@ -1492,6 +1752,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             storage_ptr,
             metadata_snapshot,
             commands,
+            mutation_columns,
             local_context,
             mutation_settings);
 
@@ -1501,6 +1762,18 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         auto header = interpreter->getUpdatedHeader();
         auto primary_key_pos = header.getPositionByName(primary_key);
         auto version_position = header.getPositionByName(std::string{version_column_name});
+
+        const auto & settings = local_context->getSettingsRef();
+        ZooKeeperRetriesInfo retries_info{
+            settings[Setting::keeper_max_retries],
+            settings[Setting::keeper_retry_initial_backoff_ms],
+            settings[Setting::keeper_retry_max_backoff_ms],
+            local_context->getProcessListElement()};
+
+        /// In strict mode the delete has to be atomic with respect to the versions read by the mutation scan, so the
+        /// requests of every block are accumulated here and sent as a single `multi` request once the scan is over.
+        /// Committing block by block would leave the earlier blocks deleted when a later block hits a conflict.
+        Coordination::Requests strict_delete_requests;
 
         Block block;
         while (executor.pull(block))
@@ -1528,19 +1801,23 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                 delete_requests.emplace_back(zkutil::makeRemoveRequest(fullPathForKey(base64Encode(wb_key.str(), true)), version));
             }
 
+            if (strict)
+            {
+                strict_delete_requests.insert(
+                    strict_delete_requests.end(),
+                    std::make_move_iterator(delete_requests.begin()),
+                    std::make_move_iterator(delete_requests.end()));
+                continue;
+            }
+
             Coordination::Responses responses;
+            ZooKeeperRetriesControl zk_retry{getName(), getLogger(getName()), retries_info};
 
-            const auto & settings = local_context->getSettingsRef();
-            ZooKeeperRetriesControl zk_retry{
-                getName(),
-                getLogger(getName()),
-                ZooKeeperRetriesInfo{
-                    settings[Setting::keeper_max_retries],
-                    settings[Setting::keeper_retry_initial_backoff_ms],
-                    settings[Setting::keeper_retry_max_backoff_ms],
-                    local_context->getProcessListElement()}};
+            Coordination::Error status = {};
 
-            Coordination::Error status;
+            /// Lets a test modify the keys behind our back after the block has been read.
+            FailPointInjection::pauseFailPoint(FailPoints::keeper_map_delete_pause_before_multi);
+
             zk_retry.retryLoop([&]
             {
                 auto client = getClient();
@@ -1548,7 +1825,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             });
 
             if (status == Coordination::Error::ZOK)
-                return;
+                continue;
 
             if (status != Coordination::Error::ZNONODE)
                 throw zkutil::KeeperMultiException(status, delete_requests, responses);
@@ -1568,11 +1845,35 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
             }
         }
 
+        if (!strict_delete_requests.empty())
+        {
+            Coordination::Responses responses;
+            ZooKeeperRetriesControl zk_retry{getName(), getLogger(getName()), retries_info};
+
+            Coordination::Error status = {};
+
+            /// Lets a test modify the keys behind our back after every block (and its versions) has been read.
+            FailPointInjection::pauseFailPoint(FailPoints::keeper_map_delete_pause_before_multi);
+
+            zk_retry.retryLoop([&]
+            {
+                auto client = getClient();
+                status = client->tryMulti(strict_delete_requests, responses, /* check_session_valid */ true);
+            });
+
+            /// Any failure, including `ZNONODE`, is surfaced as is. Retrying key by key would drop the version checks
+            /// and could remove a row that another session has updated in the meantime, and skipping the failed keys
+            /// would apply the delete partially - both contradict the documented strict mode guarantee.
+            if (status != Coordination::Error::ZOK)
+                throw zkutil::KeeperMultiException(status, strict_delete_requests, responses);
+        }
+
         return;
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
-    if (commands.front().column_to_update_expression.contains(primary_key))
+    auto alter = commands.front().ast();
+    if (getColumnToUpdateExpression(*alter).contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     MutationsInterpreter::Settings settings(true);
@@ -1583,6 +1884,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
         storage_ptr,
         metadata_snapshot,
         commands,
+        mutation_columns,
         local_context,
         settings);
 
@@ -1629,17 +1931,26 @@ StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     if (primary_key_names.size() != 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
+    // used in private build
+#if CLICKHOUSE_CLOUD
+    const auto & client_info = args.getLocalContext()->getClientInfo();
+    bool override_metadata = client_info.is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
+#else
+    bool override_metadata = false;
+#endif
+
     return std::make_shared<StorageKeeperMap>(
-        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], zk_root_path, keys_limit);
+        args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], zk_root_path, keys_limit, override_metadata);
 }
 
 }
 
+void registerStorageKeeperMap(StorageFactory & factory);
 void registerStorageKeeperMap(StorageFactory & factory)
 {
     factory.registerStorage(
@@ -1648,6 +1959,120 @@ void registerStorageKeeperMap(StorageFactory & factory)
         {
             .supports_sort_order = true,
             .supports_parallel_insert = true,
+        },
+        Documentation{
+            .description = R"DOCS_MD(
+This engine allows you to use Keeper/ZooKeeper cluster as consistent key-value store with linearizable writes and sequentially consistent reads.
+
+To enable KeeperMap storage engine, you need to define a ZooKeeper path where the tables will be stored using `<keeper_map_path_prefix>` config.
+
+For example:
+
+```xml
+<clickhouse>
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+</clickhouse>
+```
+
+where path can be any other valid ZooKeeper path.
+
+## Creating a table {#creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = KeeperMap(root_path, [keys_limit]) PRIMARY KEY(primary_key_name)
+```
+
+Engine parameters:
+
+- `root_path` - ZooKeeper path where the `table_name` will be stored.
+This path should not contain the prefix defined by `<keeper_map_path_prefix>` config because the prefix will be automatically appended to the `root_path`.
+Additionally, format of `auxiliary_zookeeper_cluster_name:/some/path` is also supported where `auxiliary_zookeeper_cluster` is a ZooKeeper cluster defined inside `<auxiliary_zookeepers>` config.
+By default, ZooKeeper cluster defined inside `<zookeeper>` config is used.
+- `keys_limit` - number of keys allowed inside the table.
+This limit is a soft limit and it can be possible that more keys will end up in the table for some edge cases.
+- `primary_key_name` – any column name in the column list.
+- `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `node name` inside ZooKeeper.
+- columns other than the primary key will be serialized to binary in corresponding order and stored as a value of the resulting node defined by the serialized key.
+- queries with key `equals` or `in` filtering will be optimized to multi keys lookup from `Keeper`, otherwise all values will be fetched.
+
+Example:
+
+```sql
+CREATE TABLE keeper_map_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = KeeperMap('/keeper_map_table', 4)
+PRIMARY KEY key
+```
+
+with
+
+```xml
+<clickhouse>
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+</clickhouse>
+```
+
+Each value, which is binary serialization of `(v1, v2, v3)`, will be stored inside `/keeper_map_tables/keeper_map_table/data/serialized_key` in `Keeper`.
+Additionally, number of keys will have a soft limit of 4 for the number of keys.
+
+If multiple tables are created on the same ZooKeeper path, the values are persisted until there exists at least 1 table using it.
+As a result, it is possible to use `ON CLUSTER` clause when creating the table and sharing the data from multiple ClickHouse instances.
+Of course, it's possible to manually run `CREATE TABLE` with same path on unrelated ClickHouse instances to have same data sharing effect.
+
+## Supported operations {#supported-operations}
+
+### Inserts {#inserts}
+
+When new rows are inserted into `KeeperMap`, if the key does not exist, a new entry for the key is created.
+If the key exists, and setting `keeper_map_strict_mode` is set to `true`, an exception is thrown, otherwise, the value for the key is overwritten.
+
+Example:
+
+```sql
+INSERT INTO keeper_map_table VALUES ('some key', 1, 'value', 3.2);
+```
+
+### Deletes {#deletes}
+
+Rows can be deleted using `DELETE` query or `TRUNCATE`.
+If the key exists, and setting `keeper_map_strict_mode` is set to `true`, fetching and deleting data will succeed only if it can be executed atomically.
+
+```sql
+DELETE FROM keeper_map_table WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+ALTER TABLE keeper_map_table DELETE WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+TRUNCATE TABLE keeper_map_table;
+```
+
+### Updates {#updates}
+
+Values can be updated using `ALTER TABLE` query. Primary key cannot be updated.
+If setting `keeper_map_strict_mode` is set to `true`, fetching and updating data will succeed only if it's executed atomically.
+
+```sql
+ALTER TABLE keeper_map_table UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
+```
+
+## Related content {#related-content}
+
+- Blog: [Building a Real-time Analytics Apps with ClickHouse and Hex](https://clickhouse.com/blog/building-real-time-applications-with-clickhouse-and-hex-notebook-keeper-engine)
+)DOCS_MD",
+            .syntax = "ENGINE = KeeperMap(root_path[, keys_limit]) PRIMARY KEY(primary_key_name)",
         });
 }
 

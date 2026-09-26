@@ -1,5 +1,5 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -82,6 +82,7 @@ bool PullingPipelineExecutor::pull(Block & block)
     {
         block.info.bucket_num = agg_info->bucket_num;
         block.info.is_overflows = agg_info->is_overflows;
+        block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
     }
 
     return true;

@@ -1,0 +1,70 @@
+43
+0
+0
+\N
+true
+[1,2,3]
+foo	Nullable(String)
+42	UInt32
+42	Int32
+42	UInt128
+42	Int128
+42	Int16
+42	Int64
+42.5	Float64
+42	Float64
+0	Nullable(Int32)
+42	Nullable(Int32)
+0	String
+0	String
+[0]	Array(Int32)
+['']	Array(String)
+42	Nullable(UInt8)
+0	Nullable(String)
+\N	Nullable(Nothing)
+0	UInt8
+	String
+[]	Array(UInt8)
+0
+1
+2
+0	0	0	Nullable(Int32)
+0	0	0	Nullable(Int32)
+0	0	0	Nullable(Int32)
+0	2	0	Nullable(Int32)
+0	\N	0	Nullable(Int32)
+1	0	1	Nullable(Int32)
+\N	0	0	Nullable(Int32)
+\N	\N	\N	Nullable(Int32)
+		Nullable(String)
+		Nullable(String)
+		Nullable(String)
+		Nullable(String)
+		Nullable(String)
+hello	hello	Nullable(String)
+\N	default	Nullable(String)
+\N	default	Nullable(String)
+[]	[99,100]	Array(Int32)
+[]	[99,100]	Array(Int32)
+[]	[99,100]	Array(Int32)
+[]	[99,100]	Array(Int32)
+[]	[99,100]	Array(Int32)
+[]	[99,100]	Array(Int32)
+[]	[99,100]	Array(Int32)
+[1,2,3]	[1,2,3]	Array(Int32)
+0	0	0	Nullable(Int64)
+0	0	0	Nullable(Int64)
+0	0	0	Nullable(Int64)
+0	2	2	Nullable(Int64)
+0	\N	\N	Nullable(Int64)
+1	0	1	Nullable(Int64)
+\N	0	\N	Nullable(Int64)
+\N	\N	\N	Nullable(Int64)
+0	0	42	0	0
+0	0	42	0	0
+0	0	42	0	0
+0	2	42	0	0
+0	\N	42	0	0
+1	0	42	1	1
+\N	0	42	0	0
+\N	\N	42	\N	\N

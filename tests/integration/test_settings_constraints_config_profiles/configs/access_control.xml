@@ -1,0 +1,7 @@
+<clickhouse>
+    <access_control_improvements>
+        <!-- Cloud default: lets a higher-precedence profile replace constraints from a lower one,
+             so the `sql-console` profile can relax `default`'s readonly constraint. -->
+        <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+    </access_control_improvements>
+</clickhouse>

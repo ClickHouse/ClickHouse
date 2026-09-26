@@ -21,6 +21,6 @@ OPTIMIZE TABLE 02725_memory_for_merges FINAL;
 
 SYSTEM FLUSH LOGS part_log;
 
-SELECT (sum(peak_memory_usage) < 1024 * 1024 * 200 AS x) ? x : sum(peak_memory_usage) from system.part_log where database=currentDatabase() and table='02725_memory_for_merges' and event_type='MergeParts';
+SELECT (sum(peak_memory_usage) < 1024 * 1024 * 200 AS x) ? x : sum(peak_memory_usage) from system.part_log where event_date >= yesterday() AND event_time >= now() - 600 AND database=currentDatabase() and table='02725_memory_for_merges' and event_type='MergeParts';
 
 DROP TABLE IF EXISTS 02725_memory_for_merges SYNC;

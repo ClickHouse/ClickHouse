@@ -23,7 +23,6 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Logger.h>
 
 #include <filesystem>
 
@@ -92,6 +91,7 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
         {
             case UserDefinedSQLObjectType::Function:
             {
+                auto context = getContext();
                 ParserCreateFunctionQuery parser;
                 ASTPtr ast = parseQuery(
                     parser,
@@ -99,8 +99,8 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
                     object_create_query.data() + object_create_query.size(),
                     "",
                     0,
-                    global_context->getSettingsRef()[Setting::max_parser_depth],
-                    global_context->getSettingsRef()[Setting::max_parser_backtracks]);
+                    context->getSettingsRef()[Setting::max_parser_depth],
+                    context->getSettingsRef()[Setting::max_parser_backtracks]);
                 return ast;
             }
         }
@@ -136,7 +136,7 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
         return;
     }
 
-    std::vector<std::pair<String, ASTPtr>> function_names_and_queries;
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>> function_names_and_queries;
 
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
@@ -203,7 +203,8 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     if (fs::exists(file_path))
     {
         if (throw_if_exists)
-            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "User-defined function '{}' already exists", object_name);
+            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "File {} for user-defined function '{}' already exists", file_path, object_name);
+
         if (!replace_if_exists)
             return false;
     }

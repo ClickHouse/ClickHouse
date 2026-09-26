@@ -5,7 +5,7 @@ import os
 import pytest
 
 import helpers.client
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 
@@ -96,7 +96,11 @@ def started_cluster():
                 "configs/named_collections.xml",
                 "configs/s3_no_sign_request.xml",
             ],
-            user_configs=["configs/users.xml"],
+            user_configs=[
+                "configs/users.xml",
+                "configs/sync_insert.xml",
+                "configs/allow_server_credentials.xml",
+            ],
         )
 
         logging.info("Starting cluster...")
@@ -146,7 +150,7 @@ def test_no_sign_named_collections(started_cluster):
     bucket = started_cluster.minio_bucket
 
     instance.query(
-        f"insert into function s3(s3_json_no_sign) select * from numbers(100) settings s3_truncate_on_insert=1"
+        "insert into function s3(s3_json_no_sign) select * from numbers(100) settings s3_truncate_on_insert=1"
     )
 
     with pytest.raises(helpers.client.QueryRuntimeException) as ei:
@@ -157,7 +161,7 @@ def test_no_sign_named_collections(started_cluster):
         assert ei.value.returncode == 243
         assert "HTTP response code: 403" in ei.value.stderr
 
-    assert "100" == instance.query(f"select count() from s3(s3_json_no_sign)").strip()
+    assert "100" == instance.query("select count() from s3(s3_json_no_sign)").strip()
 
 
 def test_no_sign_config(started_cluster):
@@ -217,3 +221,27 @@ def test_no_sign_config(started_cluster):
         assert_nosign_works()
 
     instance.restart_clickhouse()
+
+
+def test_error_message_includes_auth_hint(started_cluster):
+    """Test that authentication errors include a hint to check credentials."""
+    instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
+    bucket = started_cluster.minio_restricted_bucket
+
+    # First, insert some data with valid credentials
+    instance.query(
+        f"insert into function s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_error_msg.jsonl', 'minio', '{minio_secret_key}') select * from numbers(10) settings s3_truncate_on_insert=1"
+    )
+
+    # Try to read without valid credentials - should fail with improved error message
+    with pytest.raises(helpers.client.QueryRuntimeException) as ei:
+        instance.query(
+            f"select count() from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_error_msg.jsonl')"
+        )
+
+    assert ei.value.returncode == 243
+    error_message = ei.value.stderr
+
+    # Check that the error message contains the authentication error hint
+    assert "HTTP response code: 403" in error_message
+    assert "Please check your AWS credentials and permissions" in error_message

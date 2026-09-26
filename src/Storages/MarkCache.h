@@ -51,13 +51,23 @@ public:
     /// Calculate key from path to file.
     static UInt128 hash(const String & path_to_file);
 
-    MappedPtr get(const Key & key)
+    MappedPtr get(const Key & key) = delete;
+
+    MappedPtr getForAsyncLoading(const Key & key)
     {
         auto result = Base::get(key);
         if (result)
             ProfileEvents::increment(ProfileEvents::MarkCacheHits);
-        else
-            ProfileEvents::increment(ProfileEvents::MarkCacheMisses);
+        /// Note: MarkCacheMisses is not incremented for async marks loading since cache misses will be handled by getOrSet()
+        return result;
+    }
+
+    /// Use this method when you do not need to update MarkCacheMisses/MarkCacheHits, i.e.:
+    /// - merges/mutations - they do not affect queries and marks are typically not cached for them.
+    /// - parts loading
+    MappedPtr getWithoutMetrics(const Key & key)
+    {
+        auto result = Base::get(key);
         return result;
     }
 

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database
+# Tags: no-replicated-database, no-parallel
 # no-replicated-database: failpoint is enabled only on one replica.
+# no-parallel: the `*_lightweight_update_sleep_after_block_allocation` failpoint fires exactly
+#   once globally; a concurrent run of a sibling 03100_lwu_* test could steal the pause or
+#   disable the failpoint before this test's UPDATE reaches the injection site.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -18,6 +21,17 @@ if [[ "$storage_policy" == "s3_with_keeper" ]]; then
     failpoint_name="smt_lightweight_update_sleep_after_block_allocation"
 fi
 
+# Disable the process-global ONCE failpoint, reap the background client and drop the
+# replicated table on any exit path, so a wait_for_block_allocated timeout can't leave the
+# failpoint armed or an orphaned zookeeper path behind for a later test.
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $failpoint_name" 2>/dev/null || true
+    wait || true
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_lwu_block_number SYNC" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 $CLICKHOUSE_CLIENT --query "
     SET insert_keeper_fault_injection_probability = 0.0;
     DROP TABLE IF EXISTS t_lwu_block_number SYNC;
@@ -33,7 +47,7 @@ $CLICKHOUSE_CLIENT --query "
     SYSTEM ENABLE FAILPOINT $failpoint_name;
 "
 
-$CLICKHOUSE_CLIENT --query "UPDATE t_lwu_block_number SET s = 'foo' WHERE id >= 500" --allow_experimental_lightweight_update 1 &
+$CLICKHOUSE_CLIENT --query "UPDATE t_lwu_block_number SET s = 'foo' WHERE id >= 500" --enable_lightweight_update 1 &
 
 wait_for_block_allocated "/zookeeper/$CLICKHOUSE_DATABASE/t_lwu_block_number/block_numbers/all" "block-0000000001"
 

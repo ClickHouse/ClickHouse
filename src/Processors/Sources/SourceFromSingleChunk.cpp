@@ -9,7 +9,9 @@ SourceFromSingleChunk::SourceFromSingleChunk(SharedHeader header, Chunk chunk_) 
 {
 }
 
-SourceFromSingleChunk::SourceFromSingleChunk(SharedHeader data) : ISource(std::make_shared<const Block>(data->cloneEmpty())), chunk(data->getColumns(), data->rows())
+SourceFromSingleChunk::SourceFromSingleChunk(SharedHeader data, bool enable_auto_progress)
+    : ISource(std::make_shared<const Block>(data->cloneEmpty()), enable_auto_progress)
+    , chunk(data->getColumns(), data->rows())
 {
     const auto & sample = getPort().getHeader();
     bool has_aggregate_functions = false;
@@ -22,6 +24,7 @@ SourceFromSingleChunk::SourceFromSingleChunk(SharedHeader data) : ISource(std::m
         auto info = std::make_shared<AggregatedChunkInfo>();
         info->bucket_num = data->info.bucket_num;
         info->is_overflows = data->info.is_overflows;
+        info->out_of_order_buckets = data->info.out_of_order_buckets;
         chunk.getChunkInfos().add(std::move(info));
     }
 }

@@ -1,0 +1,7 @@
+--- Direct SELECT (row policy should filter to one row) ---
+1	flag1
+--- loop() must also respect row policy ---
+1	flag1
+1	flag1
+1	flag1
+1	flag1

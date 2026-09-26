@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+# add_minmax_index_for_numeric_columns=0: Different rows read
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,7 +22,7 @@ CREATE TABLE set_idx
     INDEX idx_2 (u64 + toYear(dt), substring(s, 2, 4)) TYPE set(6) GRANULARITY 3
 ) ENGINE = MergeTree()
 ORDER BY u64
-SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi';"
+SETTINGS index_granularity = 2, index_granularity_bytes = '10Mi', add_minmax_index_for_numeric_columns=0;"
 
 $CLICKHOUSE_CLIENT --query="INSERT INTO set_idx VALUES
 (0, 5, 4.7, 6.5, 'cba', 'b', '2014-01-04'),

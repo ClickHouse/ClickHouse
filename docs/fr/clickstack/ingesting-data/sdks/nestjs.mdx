@@ -1,0 +1,134 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nestjs
+description: 'SDK NestJS pour ClickStack - la stack d’observabilité ClickHouse'
+title: 'NestJS'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'logging', 'intégration', 'supervision des applications']
+---
+
+L’intégration NestJS de ClickStack vous permet de créer un logger ou d’utiliser le
+logger par défaut pour envoyer des logs vers ClickStack (basé sur [nest-winston](https://www.npmjs.com/package/nest-winston?activeTab=readme)).
+
+**Ce guide intègre :**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ Logs</td>
+      <td className="pe-2">✖️ Métriques</td>
+      <td className="pe-2">✖️ Traces</td>
+    </tr>
+  </tbody>
+</table>
+
+*Pour envoyer également des métriques ou des traces/APM, vous devrez aussi ajouter
+à votre application l’intégration de langage correspondante.*
+
+<div id="getting-started">
+  ## Prise en main
+</div>
+
+Importez `HyperDXNestLoggerModule` dans l’`AppModule` racine et utilisez la méthode `forRoot()`
+pour le configurer.
+
+```javascript
+import { Module } from '@nestjs/common';
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+@Module({
+  imports: [
+    HyperDXNestLoggerModule.forRoot({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // Not need for Managed ClickStack
+      maxLevel: 'info',
+      service: 'my-app',
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+Par la suite, l’instance winston pourra être injectée dans tout le
+projet à l’aide du jeton d’injection `HDX_LOGGER_MODULE_PROVIDER` :
+
+```javascript
+import { Controller, Inject } from '@nestjs/common';
+import { HyperDXNestLoggerModule, HyperDXNestLogger } from '@hyperdx/node-logger';
+
+@Controller('cats')
+export class CatsController {
+  constructor(
+    @Inject(HyperDXNestLoggerModule.HDX_LOGGER_MODULE_PROVIDER)
+    private readonly logger: HyperDXNestLogger,
+  ) { }
+
+  meow() {
+    this.logger.info({ message: '🐱' });
+  }
+}
+```
+
+<div id="replacing-the-nest-logger">
+  ### Remplacer le logger de Nest (y compris pour l’amorçage)
+</div>
+
+<Info>
+  **Important**
+
+  En procédant ainsi, vous renoncez à l’injection de dépendances, ce qui signifie que `forRoot` et `forRootAsync` ne sont pas nécessaires et ne doivent pas être utilisés. Supprimez-les de votre module principal.
+</Info>
+
+L’utilisation de l’injection de dépendances présente un léger inconvénient. Nest doit d’abord amorcer l’application
+(instancier les modules et les providers, injecter les dépendances,
+etc.) et, pendant ce processus, l’instance de `HyperDXNestLogger` n’est pas encore
+disponible, ce qui signifie que Nest se rabat sur le logger interne.
+
+Une solution consiste à créer le logger en dehors du cycle de vie de l’application, à l’aide de
+la fonction `createLogger`, puis à le passer à `NestFactory.create`. Nest va alors
+encapsuler notre logger personnalisé (la même instance renvoyée par la méthode `createLogger`)
+dans la classe Logger, en lui redirigeant tous les appels :
+
+Créez le logger dans le fichier `main.ts`
+
+```javascript
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, {
+    logger: HyperDXNestLoggerModule.createLogger({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // Not needed for Managed ClickStack
+      maxLevel: 'info',
+      service: 'my-app',
+    })
+  });
+  await app.listen(3000);
+}
+bootstrap();
+```
+
+Modifiez votre module principal pour qu’il fournisse le service Logger :
+
+```javascript
+import { Logger, Module } from '@nestjs/common';
+
+@Module({
+  providers: [Logger],
+})
+export class AppModule {}
+```
+
+Injectez ensuite simplement le logger en le typant avec le Logger de `@nestjs/common` :
+
+```javascript
+import { Controller, Logger } from '@nestjs/common';
+
+@Controller('cats')
+export class CatsController {
+  constructor(private readonly logger: Logger) {}
+
+  meow() {
+    this.logger.log({ message: '🐱' });
+  }
+}
+```

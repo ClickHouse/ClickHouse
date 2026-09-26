@@ -32,10 +32,12 @@ public:
         const ActionsDAG::Node * predicate,
         const ActionsDAG * /* filter */,
         const ContextPtr & context,
-        ClusterPtr) const override;
+        ClusterPtr,
+        StorageMetadataPtr) const override;
 
 private:
     void updateQueryToSendIfNeeded(ASTPtr & query, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) override;
+    void updateBeforeRead(const ContextPtr & context) override;
 
     Strings paths;
     String filename;

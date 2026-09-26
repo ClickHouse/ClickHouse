@@ -1,13 +1,16 @@
 #include <Storages/IStorage.h>
 
 #include <Disks/IStoragePolicy.h>
+#include <Common/CurrentThread.h>
 #include <Common/StringUtils.h>
+#include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -16,6 +19,10 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/IBackup.h>
+#include <Planner/collectSelectedColumnsFromTable.h>
+#include <Common/MemoryTrackerUtils.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -24,6 +31,10 @@ namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsBool async_socket_for_remote;
+    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
 }
 
 namespace ErrorCodes
@@ -31,15 +42,13 @@ namespace ErrorCodes
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
     extern const int DEADLOCK_AVOIDED;
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int TABLE_IS_BEING_RESTARTED;
 }
 
-const VirtualColumnsDescription IStorage::common_virtuals = IStorage::createCommonVirtuals();
-
 IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadata> metadata_)
     : storage_id(std::move(storage_id_))
-    , virtuals(std::make_unique<VirtualColumnsDescription>())
 {
     if (metadata_)
         metadata.set(std::move(metadata_));
@@ -47,36 +56,63 @@ IStorage::IStorage(StorageID storage_id_, std::unique_ptr<StorageInMemoryMetadat
         metadata.set(std::make_unique<StorageInMemoryMetadata>());
 }
 
-bool IStorage::isVirtualColumn(const String & column_name, const StorageMetadataPtr & metadata_snapshot) const
+[[noreturn]] void IStorage::throwLockTimedOut(const RWLock & rwlock, RWLockImpl::Type type, const Poco::Timespan & acquire_timeout) const
 {
-    /// Virtual column maybe overridden by real column
-    return !metadata_snapshot->getColumns().has(column_name) && (virtuals.get()->has(column_name) || common_virtuals.has(column_name));
-}
-
-VirtualColumnsDescription IStorage::createCommonVirtuals()
-{
-    VirtualColumnsDescription desc;
-
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "The name of table which the row comes from");
-
-    return desc;
+    const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
+    throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+        "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry. Owner query ids: {}",
+        type_str, getStorageID(), acquire_timeout.totalMilliseconds(), rwlock->getOwnerQueryIdsDescription());
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
-    const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const
+    const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const Poco::Timespan & acquire_timeout) const
 {
-    auto lock_holder = rwlock->getLock(type, query_id, acquire_timeout);
+    auto lock_holder = rwlock->getLock(type, query_id, std::chrono::milliseconds(acquire_timeout.totalMilliseconds()));
     if (!lock_holder)
-    {
-        const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
-        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
-            "{} locking attempt on \"{}\" has timed out! ({}ms) Possible deadlock avoided. Client should retry. Owner query ids: {}",
-            type_str, getStorageID(), acquire_timeout.count(), rwlock->getOwnerQueryIdsDescription());
-    }
+        throwLockTimedOut(rwlock, type, acquire_timeout);
     return lock_holder;
 }
 
-TableLockHolder IStorage::lockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
+RWLockImpl::LockHolder IStorage::tryLockTimedSliced(
+    const RWLock & rwlock,
+    RWLockImpl::Type type,
+    const String & query_id,
+    const Poco::Timespan & acquire_timeout,
+    const std::function<bool()> & need_stop,
+    const Poco::Timespan & check_period) const
+{
+    const auto total_timeout = std::chrono::milliseconds(acquire_timeout.totalMilliseconds());
+    const auto slice = std::chrono::milliseconds(check_period.totalMilliseconds());
+    const bool infinite_timeout = total_timeout == std::chrono::milliseconds::zero();
+
+    if (slice <= std::chrono::milliseconds::zero())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The lock acquisition check period must be positive, got {} ms", slice.count());
+
+    auto remaining = total_timeout;
+    while (true)
+    {
+        /// `getLock` treats a zero timeout as an infinite wait, so the slice is never zero here:
+        /// it is `slice` in the infinite case and at least 1 ms otherwise (`remaining` is positive).
+        const auto attempt_timeout = infinite_timeout ? slice : std::min(remaining, slice);
+
+        /// Unlike `tryLockTimed`, an expired slice is not an exception here: `getLock` returns a nullptr
+        /// on a timeout, and the loop retries after polling `need_stop`.
+        if (auto lock_holder = rwlock->getLock(type, query_id, attempt_timeout))
+            return lock_holder;
+
+        if (!infinite_timeout)
+        {
+            remaining -= attempt_timeout;
+            if (remaining <= std::chrono::milliseconds::zero())
+                throwLockTimedOut(rwlock, type, acquire_timeout);
+        }
+
+        if (need_stop())
+            return nullptr;
+    }
+}
+
+TableLockHolder IStorage::lockForShare(const String & query_id, const Poco::Timespan & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
     auto table_id = getStorageID();
@@ -89,7 +125,7 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
     return result;
 }
 
-TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
+TableLockHolder IStorage::tryLockForShare(const String & query_id, const Poco::Timespan & acquire_timeout)
 {
     TableLockHolder result = tryLockTimed(drop_lock, RWLockImpl::Read, query_id, acquire_timeout);
 
@@ -100,11 +136,28 @@ TableLockHolder IStorage::tryLockForShare(const String & query_id, const std::ch
     return result;
 }
 
-std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::chrono::milliseconds & acquire_timeout)
+TableLockHolder IStorage::tryLockForShare(
+    const String & query_id,
+    const Poco::Timespan & acquire_timeout,
+    const std::function<bool()> & need_stop,
+    const Poco::Timespan & check_period)
+{
+    TableLockHolder result = tryLockTimedSliced(drop_lock, RWLockImpl::Read, query_id, acquire_timeout, need_stop, check_period);
+    if (!result)
+        return nullptr;
+
+    auto table_id = getStorageID();
+    if (is_being_restarted || (!table_id.hasUUID() && (is_dropped || is_detached)))
+        // Table was dropped or is being restarted while acquiring the lock
+        result = nullptr;
+    return result;
+}
+
+std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const Poco::Timespan & acquire_timeout)
 {
     AlterLockHolder lock{alter_lock, std::defer_lock};
 
-    if (!lock.try_lock_for(acquire_timeout))
+    if (!lock.try_lock_for(saturatedMilliseconds(acquire_timeout.totalMilliseconds())))
         return {};
 
     if (is_dropped || is_detached)
@@ -113,19 +166,19 @@ std::optional<IStorage::AlterLockHolder> IStorage::tryLockForAlter(const std::ch
     return lock;
 }
 
-IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
+IStorage::AlterLockHolder IStorage::lockForAlter(const Poco::Timespan & acquire_timeout)
 {
     auto lock = tryLockForAlter(acquire_timeout);
     if (lock == std::nullopt)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
                         "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
                         "Possible deadlock avoided. Client should retry.",
-                        getStorageID().getFullTableName(), acquire_timeout.count());
+                        getStorageID().getFullTableName(), acquire_timeout.totalMilliseconds());
     return std::move(*lock);
 }
 
 
-TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
+TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const Poco::Timespan & acquire_timeout)
 {
     TableExclusiveLockHolder result;
     result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);
@@ -134,17 +187,6 @@ TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, cons
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
 
     return result;
-}
-
-Pipe IStorage::watch(
-    const Names & /*column_names*/,
-    const SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
-    QueryProcessingStage::Enum & /*processed_stage*/,
-    size_t /*max_block_size*/,
-    size_t /*num_streams*/)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method watch is not supported by storage {}", getName());
 }
 
 Pipe IStorage::read(
@@ -199,9 +241,27 @@ void IStorage::read(
     const bool should_not_resize = context->getSettingsRef()[Setting::distributed_aggregation_memory_efficient]
         && processed_stage == QueryProcessingStage::Enum::WithMergeableState;
 
+    /// `num_streams` is a read-parallelism request, not a thread budget: the resize must not create more
+    /// output ports than there are threads to consume them. That budget is the one the plan runs with, which
+    /// `InterpreterSelectQuery` and `PlannerJoinTree` compute as `max_threads` - except for a synchronous
+    /// remote read, where a thread blocks on a socket instead of running and they raise it to
+    /// `max_distributed_connections` (and pass it to `QueryPlan::setMaxThreads`). Make the same choice here,
+    /// so that such a read keeps the fan-out it asked for.
+    ///
+    /// This resize is picked while the query plan is being built, where there is no
+    /// `BuildQueryPipelineSettings` to take the budget from, hence the direct call to
+    /// `getMaxThreadsForAvailableMemory`. The other three post-read resizes are picked in
+    /// `initializePipeline` and read `BuildQueryPipelineSettings::max_threads`, which is this same helper
+    /// applied to the same two settings.
+    const auto & settings = context->getSettingsRef();
+    const size_t max_threads_execute_query = isRemote() && !settings[Setting::async_socket_for_remote]
+        ? settings[Setting::max_distributed_connections]
+        : getMaxThreadsForAvailableMemory(settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
+    const size_t resize_to = std::min(num_streams, max_threads_execute_query);
+
     if (!should_not_resize && parallelize_output && parallelizeOutputAfterReading(context) && output_ports > 0
-        && output_ports < num_streams)
-        pipe.resize(num_streams);
+        && output_ports < resize_to)
+        pipe.resize(resize_to);
 
     readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, shared_from_this());
 }
@@ -227,9 +287,7 @@ void IStorage::readFromPipe(
     }
 }
 
-std::optional<QueryPipeline> IStorage::distributedWrite(
-    const ASTInsertQuery & /*query*/,
-    ContextPtr /*context*/)
+std::optional<QueryPipeline> IStorage::distributedWrite(const ASTInsertQuery & /*query*/, ContextPtr /*context*/)
 {
     return {};
 }
@@ -240,12 +298,13 @@ Pipe IStorage::alterPartition(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Partition operations are not supported by storage {}", getName());
 }
 
-void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
+void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
-    StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
+    auto storage_metadata_snapshot = getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
     params.apply(new_metadata, context);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
 
@@ -301,6 +360,11 @@ void IStorage::mutate(const MutationCommands &, ContextPtr)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
 }
 
+Pipe IStorage::executeCommand(const String & command_name, const ASTPtr & /*args*/, ContextPtr /*context*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by storage {}", command_name, getName());
+}
+
 CancellationCode IStorage::killMutation(const String & /*mutation_id*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Mutations are not supported by storage {}", getName());
@@ -327,9 +391,15 @@ StorageID IStorage::getStorageID() const
     return storage_id;
 }
 
-ConditionSelectivityEstimator IStorage::getConditionSelectivityEstimatorByPredicate(const StorageSnapshotPtr &, const ActionsDAG *, ContextPtr) const
+bool IStorage::supportsSampling() const
 {
-    return {};
+    auto storage_metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    return storage_metadata_snapshot->hasSamplingKey();
+}
+
+ConditionSelectivityEstimatorPtr IStorage::getConditionSelectivityEstimator(const RangesInDataParts &, const Names &, ContextPtr) const
+{
+    return nullptr;
 }
 
 void IStorage::renameInMemory(const StorageID & new_table_id)
@@ -338,11 +408,12 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
     storage_id = new_table_id;
 }
 
-Names IStorage::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> IStorage::getAllRegisteredNames() const
 {
-    Names result;
+    VectorWithMemoryTracking<String> result;
     auto getter = [](const auto & column) { return column.name; };
-    const NamesAndTypesList & available_columns = getInMemoryMetadata().getColumns().getAllPhysical();
+    const auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    const auto & available_columns = metadata_snapshot->getColumns().getAllPhysical();
     std::transform(available_columns.begin(), available_columns.end(), std::back_inserter(result), getter);
     return result;
 }
@@ -350,14 +421,19 @@ Names IStorage::getAllRegisteredNames() const
 NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
 {
     NameDependencies name_deps;
-    auto view_ids = DatabaseCatalog::instance().getDependentViews(storage_id);
+    auto current_storage_id = getStorageID();
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(current_storage_id);
     for (const auto & view_id : view_ids)
     {
         auto view = DatabaseCatalog::instance().getTable(view_id, context);
-        if (view->getInMemoryMetadataPtr()->select.inner_query)
+        auto view_metadata = view->getInMemoryMetadataPtr(context, false);
+        if (view_metadata->select.inner_query)
         {
-            const auto & select_query = view->getInMemoryMetadataPtr()->select.inner_query;
-            auto required_columns = InterpreterSelectQuery(select_query, context, SelectQueryOptions{}.noModify()).getRequiredColumns();
+            const auto & select_query = view_metadata->select.inner_query;
+            auto interpreter = InterpreterSelectQueryAnalyzer(select_query, context, SelectQueryOptions{}.noModify());
+            auto query_tree = interpreter.getQueryTree();
+            Names required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
+
             for (const auto & col_name : required_columns)
                 name_deps[col_name].push_back(view_id.table_name);
         }
@@ -388,7 +464,7 @@ std::optional<CheckResult> IStorage::checkDataNext(DataValidationTasksPtr & /* c
     return {};
 }
 
-void IStorage::applyMetadataChangesToCreateQueryForBackup(ASTPtr &) const
+void IStorage::applyMetadataChangesToCreateQueryForBackup(const ASTPtr &) const
 {
 }
 
@@ -409,11 +485,6 @@ std::string PrewhereInfo::dump() const
 {
     WriteBufferFromOwnString ss;
     ss << "PrewhereDagInfo\n";
-
-    if (row_level_filter)
-    {
-        ss << "row_level_filter " << row_level_filter->dumpDAG() << "\n";
-    }
 
     {
         ss << "prewhere_actions " << prewhere_actions.dumpDAG() << "\n";

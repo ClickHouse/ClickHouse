@@ -44,13 +44,14 @@ If rounding causes an overflow (for example, `floor(-128, -1)`), the result is u
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionFloor>(documentation, FunctionFactory::Case::Insensitive);
     }
 
     {
         FunctionDocumentation::Description description = R"(
 Like [`floor`](#floor) but returns the smallest rounded number greater than or equal to `x`.
+If rounding causes an overflow (for example, `ceiling(255, -1)`), the result is undefined.
 )";
         FunctionDocumentation::Syntax syntax = "ceiling(x[, N])";
         FunctionDocumentation::Arguments arguments = {
@@ -80,7 +81,7 @@ Like [`floor`](#floor) but returns the smallest rounded number greater than or e
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionCeil>(documentation, FunctionFactory::Case::Insensitive);
     }
 
@@ -99,7 +100,7 @@ Like [`floor`](#floor) but returns the rounded number with the largest absolute 
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionTrunc>(documentation, FunctionFactory::Case::Insensitive);
     }
 
@@ -113,6 +114,8 @@ Rounds a value to a specified number of decimal places `N`.
 
 The function returns the nearest number of the specified order.
 If the input value has equal distance to two neighboring numbers, the function uses banker's rounding for `Float*` inputs and rounds away from zero for the other number types (`Decimal*`).
+
+If rounding causes an overflow (for example, `round(255, -1)`), the result is undefined.
 )";
         FunctionDocumentation::Syntax syntax = "round(x[, N])";
         FunctionDocumentation::Arguments arguments = {
@@ -134,7 +137,7 @@ If the input value has equal distance to two neighboring numbers, the function u
         },
         {
             "Decimal inputs",
-            "SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;",
+            "SELECT cast(number / 2 AS Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3;",
             R"(
 ┌───x─┬─round(x)─┐
 │   0 │        0 │
@@ -146,7 +149,7 @@ If the input value has equal distance to two neighboring numbers, the function u
         };
         FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionRound>(documentation, FunctionFactory::Case::Insensitive);
     }
 
@@ -159,22 +162,22 @@ If the rounding number is halfway between two numbers, the function uses a metho
 - If `N < 0`, the function rounds to the left of the decimal point
 - If `N = 0`, the function rounds to the next integer
 
-:::info Notes
+<Info title="Notes">
 - When the rounding number is halfway between two numbers, it's rounded to the nearest even digit at the specified decimal position.
 For example: `3.5` rounds up to `4`, `2.5` rounds down to `2`.
 - The `round` function performs the same rounding for floating point numbers.
 - The `roundBankers` function also rounds integers the same way, for example, `roundBankers(45, -1) = 40`.
 - In other cases, the function rounds numbers to the nearest integer.
-:::
+</Info>
 
-:::tip Use banker's rounding for summation or subtraction of numbers
+<Tip title="Use banker's rounding for summation or subtraction of numbers">
 Using banker's rounding, you can reduce the effect that rounding numbers has on the results of summing or subtracting these numbers.
 
 For example, sum numbers `1.5, 2.5, 3.5, 4.5` with different rounding:
 - No rounding: `1.5 + 2.5 + 3.5 + 4.5 = 12`.
 - Banker's rounding: `2 + 2 + 4 + 4 = 12`.
 - Rounding to the nearest integer: `2 + 3 + 4 + 5 = 14`.
-:::
+</Tip>
 )";
         FunctionDocumentation::Syntax syntax = "roundBankers(x[, N])";
         FunctionDocumentation::Arguments arguments = {
@@ -187,7 +190,7 @@ For example, sum numbers `1.5, 2.5, 3.5, 4.5` with different rounding:
         };
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionRoundBankers>(documentation, FunctionFactory::Case::Sensitive);
     }
 
@@ -220,7 +223,7 @@ If the value is less than the lower bound, the lower bound is returned.
         };
         FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
         FunctionDocumentation::Category category = FunctionDocumentation::Category::Rounding;
-        FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+        FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
         factory.registerFunction<FunctionRoundDown>(documentation);
     }
 

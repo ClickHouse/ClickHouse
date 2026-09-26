@@ -110,7 +110,7 @@ struct TranslateImpl
         if (map_from.size() != map_to.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second and third arguments must be the same length");
 
-        std::array<UInt8, 128> map;
+        std::array<UInt8, 128> map{};
         fillMapWithValues(map, map_from, map_to);
 
         res_data.resize(data.size());
@@ -237,7 +237,7 @@ struct TranslateUTF8Impl
                     }
 
                     size_t dst_len = UTF8::convertCodePointToUTF8(map_ascii[*src], reinterpret_cast<char *>(dst), 4);
-                    assert(0 < dst_len && dst_len <= 4);
+                    chassert(0 < dst_len && dst_len <= 4);
 
                     src += 1;
                     dst += dst_len;
@@ -246,7 +246,7 @@ struct TranslateUTF8Impl
                 }
 
                 size_t src_len = UTF8::seqLength(*src);
-                assert(0 < src_len && src_len <= 4);
+                chassert(0 < src_len && src_len <= 4);
 
                 if (src + src_len <= src_end)
                 {
@@ -262,7 +262,7 @@ struct TranslateUTF8Impl
                                 continue;
 
                             size_t dst_len = UTF8::convertCodePointToUTF8(it->getMapped(), reinterpret_cast<char *>(dst), 4);
-                            assert(0 < dst_len && dst_len <= 4);
+                            chassert(0 < dst_len && dst_len <= 4);
 
                             dst += dst_len;
                             data_size += dst_len;
@@ -304,7 +304,7 @@ private:
 
 
 template <typename Impl, typename Name>
-class FunctionTranslate : public IFunction
+class FunctionTranslate final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -352,8 +352,8 @@ public:
         String map_from = c1_const->getValue<String>();
         String map_to = c2_const->getValue<String>();
 
-        size_t map_from_size;
-        size_t map_to_size;
+        size_t map_from_size = 0;
+        size_t map_to_size = 0;
         if constexpr (std::is_same_v<Impl, TranslateUTF8Impl>)
         {
             map_from_size = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(map_from.data()), map_from.size());
@@ -365,7 +365,7 @@ public:
             map_to_size = map_to.size();
         }
         if (map_from_size < map_to_size)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from.size(), map_to.size());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Second argument of function {} must not be shorter than the third argument. Size of the second argument: {}, size of the third argument: {}", getName(), map_from_size, map_to_size);
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
         {
@@ -405,8 +405,70 @@ using FunctionTranslateUTF8 = FunctionTranslate<TranslateUTF8Impl, NameTranslate
 
 REGISTER_FUNCTION(Translate)
 {
-    factory.registerFunction<FunctionTranslateASCII>();
-    factory.registerFunction<FunctionTranslateUTF8>();
+    FunctionDocumentation::Description translate_description = R"(
+Replaces characters in the string `s` using a one-to-one character mapping defined by `from` and `to` strings.
+`from` and `to` must be constant ASCII strings.
+If `from` and `to` have equal sizes, each occurrence of the first character of `first` in `s` is replaced by the first character of `to`, the second character of `first` in `s` is replaced by the second character of `to`, etc.
+If `from` contains more characters than `to`, all occurrences of the characters at the end of `from` that have no corresponding character in `to` are deleted from `s`.
+Non-ASCII characters in `s` are not modified by the function.
+)";
+    FunctionDocumentation::Syntax translate_syntax = "translate(s, from, to)";
+    FunctionDocumentation::Arguments translate_arguments = {
+        {"s", "The input string to translate.", {"String"}},
+        {"from", "A constant ASCII string containing characters to replace.", {"const String"}},
+        {"to", "A constant ASCII string containing replacement characters.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue translate_returned_value = {"Returns a string with character translations applied.", {"String"}};
+    FunctionDocumentation::Examples translate_examples = {
+    {
+        "Character mapping",
+        "SELECT translate('Hello, World!', 'delor', 'DELOR') AS res",
+        R"(
+┌─res───────────┐
+│ HELLO, WORLD! │
+└───────────────┘
+        )"
+    },
+    {
+        "Different lengths",
+        "SELECT translate('clickhouse', 'clickhouse', 'CLICK') AS res",
+        R"(
+┌─res───┐
+│ CLICK │
+└───────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn translate_introduced_in = {22, 7};
+    FunctionDocumentation::Category translate_category = FunctionDocumentation::Category::StringReplacement;
+    FunctionDocumentation translate_documentation = {translate_description, translate_syntax, translate_arguments, {}, translate_returned_value, translate_examples, translate_introduced_in, translate_category};
+
+    factory.registerFunction<FunctionTranslateASCII>(translate_documentation);
+
+    FunctionDocumentation::Description utf8_description = R"(
+Like [`translate`](#translate) but assumes `s`, `from` and `to` are UTF-8 encoded strings.
+)";
+    FunctionDocumentation::Syntax utf8_syntax = "translateUTF8(s, from, to)";
+    FunctionDocumentation::Arguments utf8_arguments = {
+        {"s", "UTF-8 input string to translate.", {"String"}},
+        {"from", "A constant UTF-8 string containing characters to replace.", {"const String"}},
+        {"to", "A constant UTF-8 string containing replacement characters.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue utf8_returned_value = {"Returns a `String` data type value.", {"String"}};
+    FunctionDocumentation::Examples utf8_examples = {
+    {
+        "UTF-8 character translation",
+        "SELECT translateUTF8('Münchener Straße', 'üß', 'us') AS res;",
+        R"(
+┌─res──────────────┐
+│ Munchener Strase │
+└──────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation utf8_documentation = {utf8_description, utf8_syntax, utf8_arguments, {}, utf8_returned_value, utf8_examples, translate_introduced_in, translate_category};
+
+    factory.registerFunction<FunctionTranslateUTF8>(utf8_documentation);
 }
 
 }

@@ -204,7 +204,7 @@ protected:
             return;
 
         auto data_size = offset();
-        assert(data_size <= buf_size);
+        chassert(data_size <= buf_size);
 
         memory.resize(buf_size);
         set(memory.data(), memory.size(), data_size);
@@ -280,7 +280,7 @@ public:
     void allowKeepAliveIFFRequestIsFullyRead();
 
 private:
-    /// The semantic is changed dramaticly, hide this function to avoid wrong ussage
+    /// The semantic is changed dramaticly, hide this function to avoid wrong usage
     /// Even more, HTTPResponse::beginWrite is not a virtual
     using HTTPResponse::write;
     using HTTPResponse::beginWrite;

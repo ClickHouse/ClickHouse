@@ -1,4 +1,4 @@
-#include "config.h"
+#include <Functions/h3Common.h>
 
 #if USE_H3
 
@@ -12,10 +12,6 @@
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
 
-#include <constants.h>
-#include <h3api.h>
-
-
 namespace DB
 {
 namespace ErrorCodes
@@ -27,17 +23,25 @@ namespace ErrorCodes
 
 namespace
 {
-    class FunctionH3ToCenterChild : public IFunction
+    class FunctionH3ToCenterChild final : public IFunction
     {
     public:
         static constexpr auto name = "h3ToCenterChild";
 
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToCenterChild>(); }
+        H3Validator validator;
+
+        explicit FunctionH3ToCenterChild(const ContextPtr & context) : validator(context) {}
+
+        static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToCenterChild>(context); }
 
         std::string getName() const override { return name; }
 
         size_t getNumberOfArguments() const override { return 2; }
         bool useDefaultImplementationForConstants() const override { return true; }
+    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
+    /// fail on entirely valid data.
+    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -104,7 +108,13 @@ namespace
                     getName(),
                     toString(MAX_H3_RES));
 
-            UInt64 res = cellToCenterChild(data_hindex[row], data_resolution[row]);
+            UInt64 res = 0;
+            if (validator.validateCell(data_hindex[row]))
+            {
+                H3Index child = 0;
+                if (!cellToCenterChild(data_hindex[row], data_resolution[row], &child))
+                    res = child;
+            }
 
             dst_data[row] = res;
         }
@@ -116,7 +126,35 @@ namespace
 
 REGISTER_FUNCTION(H3ToCenterChild)
 {
-    factory.registerFunction<FunctionH3ToCenterChild>();
+    FunctionDocumentation::Description description = R"(
+Returns the center child (finer) [H3](#h3-index) index contained by the given H3 index at the given resolution.
+
+This function finds the center child of an H3 index at a specified finer resolution. The resolution must be greater than the resolution of the input index.
+    )";
+    FunctionDocumentation::Syntax syntax = "h3ToCenterChild(index, resolution)";
+    FunctionDocumentation::Arguments arguments = {
+        {"index", "Parent H3 index.", {"UInt64"}},
+        {"resolution", "Resolution of the center child with range `[0, 15]`.", {"UInt8"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {
+        "Returns the H3 index of the center child at the specified resolution.",
+        {"UInt64"}
+    };
+    FunctionDocumentation::Examples examples = {
+        {
+            "Get center child at resolution 1",
+            "SELECT h3ToCenterChild(577023702256844799, 1) AS centerToChild",
+            R"(
+┌──────centerToChild─┐
+│ 581496515558637567 │
+└────────────────────┘
+            )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionH3ToCenterChild>(documentation);
 }
 
 }

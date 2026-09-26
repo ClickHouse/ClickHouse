@@ -90,10 +90,13 @@ fn skim_impl(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String,
         return Ok("".to_string());
     }
 
-    if output.selected_items.is_empty() {
-        return Err("No items had been selected".to_string());
+    if !output.selected_items.is_empty() {
+        return Ok(output.selected_items[0].output().to_string());
     }
-    Ok(output.selected_items[0].output().to_string())
+    if !output.query.is_empty() {
+        return Ok(output.query);
+    }
+    return Err("No items had been selected".to_string());
 }
 
 fn skim(prefix: &CxxString, words: &CxxVector<CxxString>) -> Result<String, String> {

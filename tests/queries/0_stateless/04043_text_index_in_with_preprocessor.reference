@@ -1,0 +1,5 @@
+Test 1 IN with preprocessor:	2
+Test 2 equals:	1
+Test 3 IN multiple groups:	2
+Test 4 NOT IN:	298
+Test 5 IN tuple:	2

@@ -1,0 +1,14 @@
+baseline isNull(n)=	3000
+baseline isNotNull(n)=	2000
+baseline n=0=	1000
+baseline n!=0=	1000
+baseline empty(s)=	1000
+baseline notEmpty(s)=	1000
+rewrite  isNull(n)=	3000
+rewrite  isNotNull(n)=	2000
+rewrite  empty(s)=	1000
+rewrite  notEmpty(s)=	1000
+rewrite  n=0=	1000
+rewrite  n!=0=	1000
+rewrite  s=empty=	1000
+rewrite  s!=empty=	1000

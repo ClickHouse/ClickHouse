@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS t_lwu_merges SYNC;
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 
 CREATE TABLE t_lwu_merges (id UInt64, u UInt64, s String)
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_lwu_merges/', '1')
@@ -29,8 +29,8 @@ SELECT sum(u), countIf(endsWith(s, '_foo')) FROM t_lwu_merges SETTINGS apply_pat
 SELECT sum(u), countIf(endsWith(s, '_foo')) FROM t_lwu_merges SETTINGS apply_patch_parts = 1;
 
 UPDATE t_lwu_merges SET u = 0 WHERE id % 3 = 1;
--- Add a barrier mutation between patch parts.
-ALTER TABLE t_lwu_merges DELETE WHERE id = 0 SETTINGS mutations_sync = 0;
+-- Add a barrier mutation between patch parts (must affect all partitions).
+ALTER TABLE t_lwu_merges DELETE WHERE id = 0 OR id = 1 SETTINGS mutations_sync = 0;
 -- The second patch shouldn't be applied on merge until mutation is done.
 UPDATE t_lwu_merges SET u = 0 WHERE id % 3 = 2;
 

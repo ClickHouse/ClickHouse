@@ -6,5 +6,6 @@
         <collection_name>postgres1</collection_name>
         <check_consistency>false</check_consistency>
         <max_retries_before_automatic_recovery>5</max_retries_before_automatic_recovery>
+        <logs_to_keep>200</logs_to_keep>
     </database_replicated>
 </clickhouse>

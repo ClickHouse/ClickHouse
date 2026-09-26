@@ -8,6 +8,9 @@
 namespace DB
 {
 
+struct FormatTopKFilterInfo;
+using FormatTopKFilterInfoPtr = std::shared_ptr<const FormatTopKFilterInfo>;
+
 class SourceStepWithFilterBase : public ISourceStep
 {
 public:
@@ -62,7 +65,18 @@ public:
     }
 
     virtual void applyFilters(ActionDAGNodes added_filter_nodes);
+    virtual FilterDAGInfoPtr getRowLevelFilter() const { return nullptr; }
     virtual PrewhereInfoPtr getPrewhereInfo() const { return nullptr; }
+
+    /// TopN dynamic filtering (`tryOptimizeTopK`): a source that can filter rows and skip data
+    /// using the running threshold of the query's top-K heap (e.g. a Parquet reader) opts in by
+    /// overriding both. `supportsTopKDynamicFilter` receives the resolved sort column (in terms of
+    /// this step's output header) and must return true only if the source itself physically reads
+    /// that column with that type - not when it is appended after the read (a virtual column such
+    /// as `_path`, or a Hive partition column taken from the file path), since the reader could
+    /// not evaluate the threshold against it. `column_name` in the info is that column's name.
+    virtual bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & /*sort_column*/) const { return false; }
+    virtual void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> /*info*/) {}
 
     const std::shared_ptr<const ActionsDAG> & getFilterActionsDAG() const { return filter_actions_dag; }
     std::shared_ptr<const ActionsDAG> detachFilterActionsDAG() { return std::move(filter_actions_dag); }
@@ -103,7 +117,6 @@ public:
         : SourceStepWithFilterBase(std::move(output_header_))
         , required_source_columns(column_names_)
         , query_info(query_info_)
-        , prewhere_info(query_info.prewhere_info)
         , storage_snapshot(storage_snapshot_)
         , context(context_)
     {
@@ -112,7 +125,8 @@ public:
     SourceStepWithFilter(const SourceStepWithFilter &) = default;
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
-    PrewhereInfoPtr getPrewhereInfo() const override { return prewhere_info; }
+    FilterDAGInfoPtr getRowLevelFilter() const override { return query_info.row_level_filter; }
+    PrewhereInfoPtr getPrewhereInfo() const override { return query_info.prewhere_info; }
     ContextPtr getContext() const { return context; }
     const StorageSnapshotPtr & getStorageSnapshot() const { return storage_snapshot; }
 
@@ -124,16 +138,22 @@ public:
 
     virtual void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value);
 
+    /// Whether updatePrewhereInfo() may be invoked more than once on this step.
+    /// The base implementation rebuilds the output header from the full sample block, so it is
+    /// idempotent. Format-based steps (file/url/object storage) shrink their header incrementally
+    /// and can only accept a single prewhere update, so they return false to opt out of the
+    /// optimize_prewhere_after_pushdown second pass.
+    virtual bool canUpdatePrewhereInfoMultipleTimes() const { return true; }
+
     void describeActions(FormatSettings & format_settings) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
-    static Block applyPrewhereActions(Block block, const PrewhereInfoPtr & prewhere_info);
+    static Block applyPrewhereActions(Block block, const FilterDAGInfoPtr & row_level_filter, const PrewhereInfoPtr & prewhere_info);
 
 protected:
     Names required_source_columns;
     SelectQueryInfo query_info;
-    PrewhereInfoPtr prewhere_info;
     StorageSnapshotPtr storage_snapshot;
     ContextPtr context;
 };

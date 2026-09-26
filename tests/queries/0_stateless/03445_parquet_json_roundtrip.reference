@@ -1,9 +1,9 @@
 diff_roundtrip:
 JSON
-Nullable(String)
+String
 diff_roundtrip:
 JSON
-Nullable(String)
+String
 BYTE_ARRAY	JSON
 Nullable(String)	{"user":{"name":"Alice","age":31},"scores":[10,20]}
 Nullable(String)	{"user":{"name":"Bob","age":27},"flags":["dev","chess"]}

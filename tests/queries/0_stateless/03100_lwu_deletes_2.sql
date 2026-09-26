@@ -1,6 +1,6 @@
 DROP TABLE IF EXISTS lwd_test;
 
-SET allow_experimental_lightweight_update = 1;
+SET enable_lightweight_update = 1;
 SET lightweight_delete_mode = 'lightweight_update_force';
 
 CREATE TABLE lwd_test (id UInt64 , value String) ENGINE MergeTree() ORDER BY id

@@ -1,12 +1,83 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <chrono>
+#include <optional>
+#include <thread>
+#include <vector>
+
 #include <IO/S3/Credentials.h>
 #include "config.h"
 
 #if USE_AWS_S3
 
+#include <Core/ServerUUID.h>
 #include <IO/ReadBufferFromS3.h>
 #include <Poco/Net/HTTPBasicStreamBuf.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/IO/CachedOnDiskReadBufferFromFile.h>
+#include <Interpreters/FileCache/FileCache.h>
+#include <Interpreters/FileCache/FileCacheFactory.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Common/Priority.h>
+#include <Poco/ConsoleChannel.h>
+#include <Core/Settings.h>
+
+static constexpr auto TEST_LOG_LEVEL = "debug";
+static fs::path caches_dir = fs::current_path() / "readbuffer_s3";
+static std::string cache_base_path = caches_dir / "cache1" / "";
+
+namespace DB::Setting
+{
+    extern const SettingsUInt64 max_read_buffer_size_remote_fs;
+    extern const SettingsString filesystem_cache_name;
+    extern const SettingsBool filesystem_cache_prefer_bigger_buffer_size;
+    extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
+    extern const SettingsUInt64 remote_read_min_bytes_for_seek;
+}
+
+namespace DB::FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
+    extern const FileCacheSettingsUInt64 max_size;
+    extern const FileCacheSettingsUInt64 max_elements;
+    extern const FileCacheSettingsUInt64 max_file_segment_size;
+    extern const FileCacheSettingsUInt64 boundary_alignment;
+    extern const FileCacheSettingsUInt64 background_download_threads;
+}
+
+class ReadBufferFromS3Test : public ::testing::Test
+{
+public:
+    static void setupLogs(const std::string & level)
+    {
+        Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+        Poco::Logger::root().setChannel(channel);
+        Poco::Logger::root().setLevel(level);
+    }
+
+    void SetUp() override
+    {
+        if (const char * test_log_level = std::getenv("TEST_LOG_LEVEL")) // NOLINT(concurrency-mt-unsafe)
+            setupLogs(test_log_level);
+        else
+            setupLogs(TEST_LOG_LEVEL);
+
+        if (fs::exists(cache_base_path))
+            fs::remove_all(cache_base_path);
+        fs::create_directories(cache_base_path);
+    }
+
+    void TearDown() override
+    {
+        if (fs::exists(cache_base_path))
+            fs::remove_all(cache_base_path);
+    }
+};
 
 class CountedSession
 {
@@ -18,10 +89,10 @@ public:
     static int OustandingObjects() { return total; }
 
 private:
-    static int total;
+    static std::atomic<int> total;
 };
 
-int CountedSession::total = 0;
+std::atomic<int> CountedSession::total = 0;
 
 using CountedSessionPtr = std::shared_ptr<CountedSession>;
 
@@ -40,6 +111,26 @@ private:
     {
         bodyStream.read(buf, n);
         return static_cast<int>(bodyStream.gcount());
+    }
+};
+
+/// Fails the response body on the very first read, so that `readBigAt` takes its retry path
+/// while the session of the failed request is still owned by the response stream.
+class ThrowingHTTPBasicStreamBuf : public Poco::Net::HTTPBasicStreamBuf
+{
+public:
+    explicit ThrowingHTTPBasicStreamBuf(std::atomic<bool> & read_attempted_)
+        : BasicBufferedStreamBuf(1, IOS::in), read_attempted(read_attempted_)
+    {
+    }
+
+private:
+    std::atomic<bool> & read_attempted;
+
+    int readFromDevice(char_type *, std::streamsize) override
+    {
+        read_attempted = true;
+        throw std::runtime_error("injected response body failure");
     }
 };
 
@@ -62,7 +153,7 @@ struct ClientFake : DB::S3::Client
                   true,
                   false,
                   {},
-                  {},
+                  /* request_throttler = */ {},
                   "http"),
               Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
               DB::S3::ClientSettings())
@@ -70,6 +161,16 @@ struct ClientFake : DB::S3::Client
     }
 
     std::optional<GetObjectFn> getObjectImpl;
+    using ListObjectsV2Fn = std::function<Aws::S3::Model::ListObjectsV2Outcome(const Aws::S3::Model::ListObjectsV2Request &)>;
+    std::optional<ListObjectsV2Fn> listObjectsV2Impl;
+    mutable std::optional<std::string> last_start_after;
+    struct ListRequest
+    {
+        std::string start_after;
+        std::string continuation_token;
+        bool start_after_has_been_set{false};
+    };
+    mutable std::vector<ListRequest> list_requests;
 
     void setGetObjectSuccess(const std::shared_ptr<CountedSession> & session, std::streambuf * sb)
     {
@@ -87,8 +188,24 @@ struct ClientFake : DB::S3::Client
 
     Aws::S3::Model::GetObjectOutcome GetObject([[maybe_unused]] const Aws::S3::Model::GetObjectRequest & request) const override
     {
-        assert(getObjectImpl);
+        chassert(getObjectImpl);
         return (*getObjectImpl)(request);
+    }
+
+    Aws::S3::Model::ListObjectsV2Outcome ListObjectsV2(const Aws::S3::Model::ListObjectsV2Request & request) const override
+    {
+        last_start_after = request.GetStartAfter().c_str();
+        list_requests.emplace_back(ListRequest{
+            .start_after = request.GetStartAfter(),
+            .continuation_token = request.GetContinuationToken(),
+            .start_after_has_been_set = request.StartAfterHasBeenSet()});
+
+        if (listObjectsV2Impl)
+            return (*listObjectsV2Impl)(request);
+
+        Aws::S3::Model::ListObjectsV2Result result;
+        result.SetIsTruncated(false);
+        return Aws::S3::Model::ListObjectsV2Outcome(std::move(result));
     }
 };
 
@@ -100,12 +217,12 @@ static void readAndAssert(DB::ReadBuffer & buf, const char * str)
     ASSERT_EQ(strncmp(tmp.data(), str, n), 0);
 }
 
-TEST(ReadBufferFromS3Test, RetainsSessionWhenPending)
+TEST_F(ReadBufferFromS3Test, RetainsSessionWhenPending)
 {
     const auto client = std::make_shared<ClientFake>();
-    DB::ReadSettings readSettings;
-    readSettings.remote_fs_buffer_size = 2;
-    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), readSettings);
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 2;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();
     auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("123456789");
@@ -120,12 +237,12 @@ TEST(ReadBufferFromS3Test, RetainsSessionWhenPending)
     ASSERT_EQ(CountedSession::OustandingObjects(), 1);
 }
 
-TEST(ReadBufferFromS3Test, ReleaseSessionWhenStreamEof)
+TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenStreamEof)
 {
     const auto client = std::make_shared<ClientFake>();
-    DB::ReadSettings readSettings;
-    readSettings.remote_fs_buffer_size = 10;
-    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), readSettings);
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 10;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();
     const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("1234");
@@ -140,12 +257,12 @@ TEST(ReadBufferFromS3Test, ReleaseSessionWhenStreamEof)
     ASSERT_FALSE(subject.nextImpl());
 }
 
-TEST(ReadBufferFromS3Test, ReleaseSessionWhenReadUntilPosition)
+TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenReadUntilPosition)
 {
     const auto client = std::make_shared<ClientFake>();
-    DB::ReadSettings readSettings;
-    readSettings.remote_fs_buffer_size = 2;
-    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), readSettings);
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 2;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();
     const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("123456");
@@ -161,4 +278,255 @@ TEST(ReadBufferFromS3Test, ReleaseSessionWhenReadUntilPosition)
     ASSERT_FALSE(subject.nextImpl());
 }
 
+TEST_F(ReadBufferFromS3Test, ReadBigAtReleasesSessionBeforeRetryBackoff)
+{
+    /// Contract: when a `readBigAt` request fails mid-read and is going to be retried, its pooled
+    /// session must be given up before the back-off pause, not kept for its whole duration. The
+    /// `supportsReadAt` readers (Parquet, ORC) issue many such requests in parallel, and holding a
+    /// session per sleeping retry takes connections away from the rest of the same group.
+    const int baseline = CountedSession::OustandingObjects();
+
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
+
+    std::atomic<bool> first_request_failed = false;
+    std::atomic<bool> retry_request_sent = false;
+    std::atomic<bool> released_before_retry = false;
+
+    const auto failing_stream_buf = std::make_shared<ThrowingHTTPBasicStreamBuf>(first_request_failed);
+    const auto good_stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("1234567890");
+
+    size_t requests = 0;
+    client->getObjectImpl = [&](const Aws::S3::Model::GetObjectRequest &) -> Aws::S3::Model::GetObjectOutcome
+    {
+        const bool is_first = requests++ == 0;
+        if (!is_first)
+            retry_request_sent = true;
+
+        std::streambuf * sb = is_first
+            ? static_cast<std::streambuf *>(failing_stream_buf.get())
+            : static_cast<std::streambuf *>(good_stream_buf.get());
+
+        /// Owned by the response stream, exactly as a pooled session is.
+        auto session = std::make_shared<CountedSession>();
+        auto response_stream = Aws::Utils::Stream::ResponseStream(
+            Aws::New<DB::SessionAwareIOStream<CountedSessionPtr>>("test response stream", std::move(session), sb));
+        Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
+            std::move(response_stream), Aws::Http::HeaderValueCollection());
+        return DB::S3::Model::GetObjectOutcome(DB::S3::Model::GetObjectResult(std::move(aws_result)));
+    };
+
+    /// Watches the window between the failure and the retry request. Sampling cannot miss the
+    /// release when it happens before the back-off, because the whole pause is inside the window.
+    std::thread watcher([&]
+    {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (!first_request_failed.load() && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+        while (!retry_request_sent.load() && std::chrono::steady_clock::now() < deadline)
+        {
+            if (CountedSession::OustandingObjects() == baseline)
+            {
+                released_before_retry = true;
+                return;
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
+        }
+    });
+
+    std::vector<char> data(10);
+    const size_t read = subject.readBigAt(data.data(), data.size(), /*range_begin=*/0, /*progress_callback=*/{});
+    watcher.join();
+
+    ASSERT_EQ(read, data.size());
+    ASSERT_EQ(std::string(data.data(), data.size()), "1234567890");
+    ASSERT_EQ(requests, 2u);
+    ASSERT_TRUE(released_before_retry.load());
+    ASSERT_EQ(CountedSession::OustandingObjects(), baseline);
+}
+
+TEST_F(ReadBufferFromS3Test, MissingResponseETagIsNotRejected)
+{
+    /// Contract: a GET whose response omits the ETag header must NOT be rejected even when a non-empty
+    /// expected_etag was requested. Some S3-compatible backends (and zero-byte reads) omit the header;
+    /// the read must succeed rather than raise S3_OBJECT_CHANGED_DURING_READ. Guards the `!response_etag.empty()`
+    /// clause in ReadBufferFromS3::initialize so this compatibility path cannot regress silently.
+    const auto client = std::make_shared<ClientFake>();
+    DB::ReadSettings read_settings;
+    read_settings.remote_fs_settings.buffer_size = 10;
+    auto subject = DB::ReadBufferFromS3(
+        client,
+        "test_bucket",
+        "test_key",
+        /*version_id_=*/"",
+        DB::S3::S3RequestSettings(),
+        read_settings,
+        /*use_external_buffer=*/false,
+        /*offset_=*/0,
+        /*read_until_position_=*/0,
+        /*restricted_seek_=*/false,
+        /*file_size=*/std::nullopt,
+        /*credentials_refresh_callback_=*/[] { return nullptr; },
+        /*blob_storage_log_=*/{},
+        /*expected_etag_=*/"expected-tag-1");
+
+    auto session = std::make_shared<CountedSession>();
+    const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("1234");
+    /// setGetObjectSuccess builds the GetObjectResult with an empty header collection, i.e. no ETag.
+    client->setGetObjectSuccess(session, stream_buf.get());
+
+    readAndAssert(subject, "1234");
+    ASSERT_TRUE(subject.eof());
+}
+
+TEST_F(ReadBufferFromS3Test, IterateUsesStartAfter)
+{
+    std::unique_ptr<DB::S3::Client> client = std::make_unique<ClientFake>();
+    DB::S3::URI uri;
+    uri.bucket = "test_bucket";
+    DB::S3Capabilities cap;
+    String disk_name = "s3";
+    DB::ObjectStorageKeyGeneratorPtr gen;
+    auto object_storage = std::make_shared<DB::S3ObjectStorage>(
+        std::move(client), std::make_unique<DB::S3Settings>(), std::move(uri), cap, gen, disk_name);
+
+    const std::optional<std::string> start_after = "prefix/file_010";
+    auto iterator = object_storage->iterate("prefix/", /*max_keys=*/1000, /*with_tags=*/false, start_after);
+    iterator->getCurrentBatchAndScheduleNext();
+
+    auto storage_client = object_storage->getS3StorageClient();
+    auto * fake = dynamic_cast<ClientFake *>(const_cast<DB::S3::Client *>(storage_client.get()));
+    ASSERT_TRUE(fake);
+    ASSERT_TRUE(fake->last_start_after.has_value());
+    ASSERT_EQ(*fake->last_start_after, "prefix/file_010");
+}
+
+TEST_F(ReadBufferFromS3Test, IterateUsesStartAfterOnlyForFirstPage)
+{
+    auto client = std::make_unique<ClientFake>();
+    auto * fake = client.get();
+    fake->listObjectsV2Impl = [call = 0](const Aws::S3::Model::ListObjectsV2Request &) mutable
+    {
+        Aws::S3::Model::ListObjectsV2Result result;
+        if (call == 0)
+        {
+            Aws::S3::Model::Object object;
+            object.SetKey("prefix/file_011");
+            result.AddContents(object);
+            result.SetIsTruncated(true);
+            result.SetNextContinuationToken("next-page-token");
+        }
+        else
+        {
+            Aws::S3::Model::Object object;
+            object.SetKey("prefix/file_012");
+            result.AddContents(object);
+            result.SetIsTruncated(false);
+        }
+        ++call;
+        return Aws::S3::Model::ListObjectsV2Outcome(std::move(result));
+    };
+
+    DB::S3::URI uri;
+    uri.bucket = "test_bucket";
+    DB::S3Capabilities cap;
+    String disk_name = "s3";
+    DB::ObjectStorageKeyGeneratorPtr gen;
+    auto object_storage = std::make_shared<DB::S3ObjectStorage>(
+        std::move(client), std::make_unique<DB::S3Settings>(), std::move(uri), cap, gen, disk_name);
+
+    const std::optional<std::string> start_after = "prefix/file_010";
+    auto iterator = object_storage->iterate("prefix/", /*max_keys=*/1, /*with_tags=*/false, start_after);
+    while (iterator->getCurrentBatchAndScheduleNext())
+    {
+    }
+
+    ASSERT_EQ(fake->list_requests.size(), 2);
+    ASSERT_EQ(fake->list_requests[0].start_after, "prefix/file_010");
+    ASSERT_TRUE(fake->list_requests[0].start_after_has_been_set);
+    ASSERT_TRUE(fake->list_requests[0].continuation_token.empty());
+    ASSERT_TRUE(fake->list_requests[1].start_after.empty());
+    ASSERT_FALSE(fake->list_requests[1].start_after_has_been_set);
+    ASSERT_EQ(fake->list_requests[1].continuation_token, "next-page-token");
+}
+
+TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
+{
+    /// This test fails to reproduce "Having zero bytes..." exception,
+    /// but let's leave it here anyway as an example how to write tests with S3 engine source reader with enabled cache,
+    /// as it takes time to set up.
+
+    DB::ServerUUID::setRandomForUnitTests();
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    std::string query_id = "query_id";
+    query_context->setCurrentQueryId(query_id);
+    const auto & settings = query_context->getSettingsRef();
+    const_cast<DB::Settings &>(settings)[DB::Setting::max_read_buffer_size_remote_fs] = 4;
+    const_cast<DB::Settings &>(settings)[DB::Setting::filesystem_cache_name] = "cache1";
+    const_cast<DB::Settings &>(settings)[DB::Setting::filesystem_cache_prefer_bigger_buffer_size] = false;
+    //const_cast<DB::Settings &>(settings)[DB::Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache] = true;
+    const_cast<DB::Settings &>(settings)[DB::Setting::remote_read_min_bytes_for_seek] = 0;
+
+    DB::FileCacheSettings cache_settings;
+    cache_settings[DB::FileCacheSetting::path] = cache_base_path;
+    cache_settings[DB::FileCacheSetting::max_size] = 100;
+    cache_settings[DB::FileCacheSetting::max_elements] = 5;
+    cache_settings[DB::FileCacheSetting::boundary_alignment] = 5;
+    cache_settings[DB::FileCacheSetting::max_file_segment_size] = 100;
+    cache_settings[DB::FileCacheSetting::background_download_threads] = 0;
+    auto cache = DB::FileCacheFactory::instance().getOrCreate("cache1", cache_settings, "");
+    cache->initialize();
+    cache.reset();
+
+    std::unique_ptr<DB::S3::Client> client = std::make_unique<ClientFake>();
+    DB::S3::URI uri;
+    uri.bucket = "test_bucket";
+    DB::S3Capabilities cap;
+    String disk_name = "s3";
+    DB::ObjectStorageKeyGeneratorPtr gen;
+    auto object_storage = std::make_shared<DB::S3ObjectStorage>(
+        std::move(client), std::make_unique<DB::S3Settings>(), std::move(uri), cap, gen, disk_name);
+
+    auto log = getLogger("test");
+    DB::ObjectMetadata object_metadata;
+    std::string data = "12345678901234567890";
+    object_metadata.size_bytes = data.size();
+    object_metadata.etag = "tag1";
+    DB::RelativePathWithMetadata relative_path_with_metadata("test_key", object_metadata);
+    /// Configure the fake GET stub before createReadBuffer: for a small object it issues the
+    /// initial prefetch eagerly (also over the filesystem cache), so the data must already be
+    /// servable when that background read runs.
+    auto session = std::make_shared<CountedSession>();
+    const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>(data);
+    auto storage_client = object_storage->getS3StorageClient();
+    dynamic_cast<ClientFake *>(const_cast<DB::S3::Client *>(storage_client.get()))->setGetObjectSuccess(session, stream_buf.get());
+
+    auto buf = DB::createReadBuffer(relative_path_with_metadata, object_storage, query_context, log);
+
+    auto * async_buf = dynamic_cast<DB::AsynchronousBoundedReadBuffer *>(buf.get());
+    ASSERT_TRUE(async_buf);
+    auto * cached_buf = dynamic_cast<DB::CachedOnDiskReadBufferFromFile *>(async_buf->getImpl().get());
+    ASSERT_TRUE(cached_buf);
+
+    /// The initial small-object prefetch is already in flight, so this manual prefetch is a no-op
+    /// on the pending future; the driven read/seek sequence below is unchanged.
+    async_buf->prefetch(Priority{0});
+    async_buf->next();
+    ASSERT_EQ(async_buf->available(), 4);
+    async_buf->position() = async_buf->buffer().end();
+    async_buf->prefetch(Priority{0});
+    async_buf->seek(16, SEEK_SET);
+    ASSERT_EQ(async_buf->available(), 0);
+    async_buf->prefetch(Priority{0});
+    async_buf->next();
+    ASSERT_EQ(async_buf->available(), 4);
+    async_buf->position() = async_buf->buffer().end();
+    async_buf->prefetch(Priority{0});
+    async_buf->next();
+    ASSERT_EQ(async_buf->available(), 0);
+
+    DB::FileCacheFactory::instance().clear();
+}
 #endif
