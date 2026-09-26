@@ -221,7 +221,6 @@
                 "ar/concepts/features/interfaces/framing-formats",
                 "ar/concepts/features/interfaces/tcp",
                 "ar/concepts/features/interfaces/adbc",
-                "ar/concepts/features/interfaces/jdbc",
                 "ar/concepts/features/interfaces/mysql",
                 {
                   "$ref": "features/interfaces/odbc/navigation.json"
@@ -233,7 +232,6 @@
                 "ar/concepts/features/interfaces/arrowflight"
               ]
             },
-            "ar/concepts/features/interfaces/cpp",
             "ar/concepts/features/interfaces/schema-inference",
             "ar/concepts/features/interfaces/documentation-search",
             "ar/concepts/features/interfaces/web-sql",
