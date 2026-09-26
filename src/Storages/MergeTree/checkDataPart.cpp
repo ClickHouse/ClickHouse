@@ -154,6 +154,37 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
+bool isObjectStorageNotFoundException(std::exception_ptr exception_ptr)
+{
+    try
+    {
+        rethrow_exception(exception_ptr);
+    }
+#if USE_AWS_S3
+    catch (const S3Exception & s3_exception)
+    {
+        /// Only the codes `unretryable_errors` (S3Common.cpp) actually classifies as
+        /// non-retryable: `RESOURCE_NOT_FOUND` is retryable there and already gets the
+        /// budget, and `NO_SUCH_BUCKET` is a whole-storage condition, not a per-object one.
+        return s3_exception.getS3ErrorCode() == Aws::S3::S3Errors::NO_SUCH_KEY;
+    }
+#endif
+#if USE_AZURE_BLOB_STORAGE
+    catch (const Azure::Core::RequestFailedException & e)
+    {
+        /// Azure answers 404 for a missing container too, which is a whole-storage condition
+        /// rather than a per-object one, so exclude it just like S3's `NO_SUCH_BUCKET`.
+        return e.StatusCode == Azure::Core::Http::HttpStatusCode::NotFound && e.ErrorCode != "ContainerNotFound";
+    }
+#endif
+    catch (...)
+    {
+        /// Ok to answer "not a not-found" here: this only classifies, the caller keeps the
+        /// exception and decides what to do with it.
+        return false;
+    }
+}
+
 static IMergeTreeDataPart::Checksums checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
