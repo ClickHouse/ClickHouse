@@ -9,7 +9,6 @@
 #include <Access/AccessControl.h>
 #include <Access/Common/AllowedClientHosts.h>
 #include <Access/ContextAccess.h>
-#include <BridgeHelper/CatBoostLibraryBridgeHelper.h>
 #include <Columns/ColumnString.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
@@ -48,7 +47,7 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SessionLog.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -350,6 +349,29 @@ void InterpreterSystemQuery::startStopActionInDatabase(StorageActionBlockType ac
 }
 
 
+static void reloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
+{
+    if (query.database)
+    {
+        loader.reloadDictionary({query.getDatabase(), query.getTable()}, context);
+        return;
+    }
+
+    loader.reloadDictionary(query.getTable(), context);
+}
+
+static void unloadDictionaryFromSystemQuery(ExternalDictionariesLoader & loader, const ASTSystemQuery & query, ContextPtr context)
+{
+    if (query.database)
+    {
+        loader.unloadDictionary({query.getDatabase(), query.getTable()}, context);
+        return;
+    }
+
+    loader.unloadDictionary(query.getTable(), context);
+}
+
+
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
         : WithMutableContext(context_), query_ptr(query_ptr_->clone()), log(getLogger("InterpreterSystemQuery"))
 {
@@ -377,12 +399,7 @@ BlockIO InterpreterSystemQuery::execute()
     system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
 
     /// Make canonical query for simpler processing
-    if (query.type == Type::RELOAD_DICTIONARY || query.type == Type::UNLOAD_DICTIONARY)
-    {
-        if (query.database)
-            query.setTable(query.getDatabase() + "." + query.getTable());
-    }
-    else if (query.table)
+    if (query.type != Type::RELOAD_DICTIONARY && query.type != Type::UNLOAD_DICTIONARY && query.table)
     {
         StorageID id_in_query(query.getDatabase(), query.getTable());
         /// `IF EXISTS` (currently parsed for `SYSTEM SYNC REPLICA`) must suppress
@@ -780,7 +797,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            external_dictionaries_loader.reloadDictionary(query.getTable(), getContext());
+            reloadDictionaryFromSystemQuery(external_dictionaries_loader, query, getContext());
 
             ExternalDictionariesLoader::resetAll();
             break;
@@ -800,7 +817,7 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            external_dictionaries_loader.unloadDictionary(query.getTable(), getContext());
+            unloadDictionaryFromSystemQuery(external_dictionaries_loader, query, getContext());
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -810,20 +827,6 @@ BlockIO InterpreterSystemQuery::execute()
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
             external_dictionaries_loader.unloadAllDictionaries();
             ExternalDictionariesLoader::resetAll();
-            break;
-        }
-        case Type::RELOAD_MODEL:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext(), query.target_model);
-            bridge_helper->removeModel();
-            break;
-        }
-        case Type::RELOAD_MODELS:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_MODEL);
-            auto bridge_helper = std::make_unique<CatBoostLibraryBridgeHelper>(getContext());
-            bridge_helper->removeAllModels();
             break;
         }
         case Type::RELOAD_FUNCTION:
@@ -1168,6 +1171,16 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
+        case Type::DISABLE_ALL_FAILPOINTS:
+        {
+            /// Outside the `USE_LIBFIU` guard below on purpose: this statement asks for a
+            /// server that injects nothing, which a build without libfiu already is. Failing
+            /// it would only make every caller - a test harness, above all - special-case a
+            /// build flag to ask for a state that already holds.
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            FailPointInjection::disableAllFailPoints();
+            break;
+        }
 #if USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         {
@@ -1495,6 +1508,10 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
     auto & create = create_ast->as<ASTCreateQuery &>();
     create.attach = true;
+    /// The definition comes from metadata stored on this server, not from a user, so it must load the
+    /// same way a short `ATTACH TABLE t` does: storage creators read this flag to skip the validation
+    /// that only a freshly introduced definition needs.
+    create.attach_short_syntax = true;
 
     auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context, LoadingStrictnessLevel::ATTACH);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
@@ -2545,7 +2562,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 void InterpreterSystemQuery::syncTransactionLog()
 {
     getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
-    TransactionLog::instance().sync();
+    TransactionManager::instance().sync();
 }
 
 
@@ -2887,12 +2904,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
             break;
         }
-        case Type::RELOAD_MODEL:
-        case Type::RELOAD_MODELS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
-            break;
-        }
         case Type::RELOAD_FUNCTION:
         case Type::RELOAD_FUNCTIONS:
         {
@@ -3229,11 +3240,23 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_THREAD_FUZZER);
+            break;
+        }
+        case Type::RESET_COVERAGE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM);
+            break;
+        }
+        /// The parser cases of the failpoint statements and of SYSTEM SET COVERAGE TEST never read an
+        /// ON CLUSTER clause, so those cluster spellings do not parse and reach no host. UNKNOWN and
+        /// END are not statements.
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
-        case Type::RESET_COVERAGE:
+        case Type::DISABLE_ALL_FAILPOINTS:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
         case Type::END: break;

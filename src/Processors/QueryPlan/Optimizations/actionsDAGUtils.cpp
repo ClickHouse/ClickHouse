@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Core/Field.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -176,7 +177,10 @@ MatchedTrees::Matches matchTrees(
                         for (const auto * parent : *intersection)
                         {
                             //std::cerr << ".. candidate " << parent->result_name << std::endl;
-                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName())
+                            /// One function name resolves to different result types depending on the settings
+                            /// the DAG was built with, and differently-typed results are not one calculation.
+                            if (parent->type == ActionsDAG::ActionType::FUNCTION && func_name == parent->function_base->getName()
+                                && parent->result_type->equals(*frame.node->result_type))
                             {
                                 const auto & children = parent->children;
                                 if (children.size() == num_children)
@@ -656,12 +660,14 @@ bool isInjectiveFunction(const ActionsDAG::Node * node)
     if (node->function_base->isInjective({}))
         return true;
 
-    size_t fixed_args = 0;
-    for (const auto & child : node->children)
-        if (child->type == ActionsDAG::ActionType::COLUMN)
-            ++fixed_args;
-    static const std::vector<String> injective = {"plus", "minus", "negate", "tuple"};
-    return (fixed_args + 1 >= node->children.size()) && (std::ranges::find(injective, node->function_base->getName()) != injective.end());
+    const auto & name = node->function_base->getName();
+    if (node->children.size() != 2 || (name != "plus" && name != "minus"))
+        return false;
+
+    const auto & left = *node->children[0];
+    const auto & right = *node->children[1];
+    return plusMinusWithConstantsIsInjective(
+        {left.column, left.result_type, left.result_name}, {right.column, right.result_type, right.result_name}, node->result_type);
 }
 
 NodeSet removeInjectiveFunctionsFromResultsRecursively(const ActionsDAG & actions)
