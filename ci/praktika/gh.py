@@ -1833,8 +1833,13 @@ class GH:
                 else:
                     return 2
 
+            # A skipped job that explains itself in a comment is listed too, so
+            # that a job skipped for a transient reason is not silently green.
             subresults = [
-                r for r in result.results if (r.is_completed() and not r.is_ok())
+                r
+                for r in result.results
+                if r.is_completed()
+                and (not r.is_ok() or (r.is_skipped() and r.ext.get("comment")))
             ]
             subresults = sorted(subresults, key=get_status_priority)
 

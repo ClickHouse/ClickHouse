@@ -28,11 +28,11 @@ CREATE TABLE tags_table
 
 CREATE TABLE metrics_table
 (
-    metric_family_name String,
+    metric_family String,
     type String,
     unit String,
     help String
-) ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+) ENGINE = ReplacingMergeTree ORDER BY metric_family;
 
 CREATE TABLE ts ENGINE = TimeSeries
 DATA samples_table TAGS tags_table METRICS metrics_table;

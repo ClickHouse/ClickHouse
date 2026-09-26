@@ -228,6 +228,8 @@ private:
     ASTPtr parseQueryFromMetadataOnDisk(const String & table_name) const;
     String readMetadataFile(const String & table_name) const;
 
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
+
     Shards fetchClusterTopology(bool all_groups) const TSA_REQUIRES(cluster_update_mutex);
     ClusterPtr updateCluster(bool all_groups, bool force_overwrite) const;
     void setClusterLocked(ClusterPtr && new_cluster, bool all_groups = false) TSA_REQUIRES(mutex);

@@ -25,7 +25,8 @@ static size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
         auto filter_dag = join_step->getFilterActions(side, lhs_header, rhs_header);
         if (!filter_dag)
             continue;
-        const auto & filter_column_name = filter_dag->dag.getOutputs()[filter_dag->filter_pos]->result_name;
+        /// Copy the name: the FilterStep constructor may fold and prune the node it belongs to
+        const String filter_column_name = filter_dag->dag.getOutputs()[filter_dag->filter_pos]->result_name;
         QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(filter_dag->dag), filter_column_name, filter_dag->remove_filter);
         step->setStepDescription("Join filter");
 
