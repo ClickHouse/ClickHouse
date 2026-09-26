@@ -221,6 +221,14 @@ def test_label_values_time_range():
     assert get_json_from_api("/api/v1/label/region/values?end=1000")["data"] == ["eu"]
 
 
+def test_label_values_time_range_without_metric_name_matcher():
+    data = get_json_from_api(
+        "/api/v1/label/__name__/values",
+        params={"match[]": '{host="server1"}', "start": "1030", "end": "1040"},
+    )["data"]
+    assert data == ["cpu_usage"]
+
+
 def test_label_values_rejects_inverted_time_range():
     get_bad_data_from_api("/api/v1/label/host/values?start=1030&end=1000")
 

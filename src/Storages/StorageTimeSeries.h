@@ -11,6 +11,8 @@ namespace DB
 {
 struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
+class TimeSeriesActiveSeriesCache;
+using TimeSeriesActiveSeriesCachePtr = std::shared_ptr<const TimeSeriesActiveSeriesCache>;
 
 /// Represents a table engine to keep time series received by Prometheus protocols.
 /// Examples of using this table engine:
@@ -42,6 +44,7 @@ public:
     std::string getName() const override { return "TimeSeries"; }
 
     std::shared_ptr<const TimeSeriesSettings> getStorageSettings() const { return storage_settings.get(); }
+    TimeSeriesActiveSeriesCachePtr getActiveSeriesCache() const { return active_series_cache.get(); }
 
     /// Returns the schema version of this table (the `version` setting, see TimeSeriesVersion.h).
     UInt64 getVersion() const;
@@ -55,14 +58,14 @@ public:
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
-    /// Whether this table has a target of the given kind (the RecentSamples target is optional).
+    /// Whether this table has a target of the given kind (the RecentSamples and TagsMinMax targets are optional).
     bool hasTarget(ViewTarget::Kind target_kind) const;
 
-    /// Returns all possible target kinds: Samples, RecentSamples, Tags, and MetricFamilies.
-    /// A concrete table can have no RecentSamples target (see hasTarget).
-    static constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
+    /// Returns all possible target kinds: Samples, RecentSamples, Tags, TagsMinMax, and MetricFamilies.
+    /// A concrete table can have no RecentSamples and no TagsMinMax target (see hasTarget).
+    static constexpr std::array<ViewTarget::Kind, 5> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TagsMinMax, ViewTarget::MetricFamilies};
     }
 
     void readImpl(
@@ -146,6 +149,7 @@ private:
 
     std::vector<Target> targets;
     bool has_inner_tables = false;
+    MultiVersion<TimeSeriesActiveSeriesCache> active_series_cache;
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);

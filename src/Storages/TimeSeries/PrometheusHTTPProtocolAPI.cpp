@@ -542,12 +542,19 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
 
     /// Like the query path, filter by the [min_time, max_time] stored in the tags table; without stored bounds the range is ignored (a superset is allowed).
     auto time_series_settings = time_series_storage->getStorageSettings();
+    /// Set when the time bounds live in a separate target table instead of the tags table itself.
+    std::optional<StorageID> tags_min_max_table_id;
     if (!(*time_series_settings)[TimeSeriesSetting::filter_by_min_time_and_max_time]
         || !(*time_series_settings)[TimeSeriesSetting::store_min_time_and_max_time])
     {
         min_time.reset();
         max_time.reset();
     }
+    else if (time_series_storage->hasTarget(ViewTarget::TagsMinMax))
+    {
+        tags_min_max_table_id = time_series_storage->getTargetTableID(ViewTarget::TagsMinMax, getContext());
+    }
+    /// Without a separate target, the bounds remain in the tags table, including external tags at version 7.
 
     auto tags_table_id = tags_table->getStorageID();
 
@@ -575,7 +582,8 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
                             quoteString(match_param));
 
         auto select_ids_query = StorageTimeSeriesSelector::makeSelectIDsQuery(
-            tags_table_id, *time_series_settings, table_timestamp_type, table_id_type, matchers, min_time, max_time, time_scale);
+            tags_table_id, *time_series_settings, table_timestamp_type, table_id_type, matchers, min_time, max_time,
+            time_scale, tags_min_max_table_id);
         const auto & select_ids = typeid_cast<const ASTSelectWithUnionQuery &>(*select_ids_query);
         list_of_selects->children.push_back(select_ids.list_of_selects->children.at(0));
     }

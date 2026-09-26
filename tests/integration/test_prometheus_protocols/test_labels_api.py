@@ -164,6 +164,14 @@ def test_labels_time_range_is_inclusive_and_supports_one_sided_bounds():
     assert get_json_from_api("/api/v1/labels?end=999")["data"] == []
 
 
+def test_labels_time_range_without_metric_name_matcher():
+    data = get_json_from_api(
+        "/api/v1/labels",
+        params={"match[]": '{host="server1"}', "start": "1030", "end": "1040"},
+    )["data"]
+    assert data == ["__name__", "datacenter", "host"]
+
+
 def test_labels_rejects_inverted_time_range():
     get_bad_data_from_api("/api/v1/labels?start=1030&end=1000")
 

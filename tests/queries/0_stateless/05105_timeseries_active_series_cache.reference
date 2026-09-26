@@ -1,0 +1,45 @@
+after first insert (cached):
+1
+1
+after second insert (skipped tags):
+1
+2
+after mixed insert (one cached, one new):
+2
+4
+after intra-batch duplicate insert (only one tag row written):
+3
+6
+the skipped series is still selectable:
+3
+cache disabled: both inserts write tags:
+2
+2
+missing cache setting after attach:
+2
+after truncate and insert:
+1
+1
+after alter to disable cache:
+2
+2
+after alter to re-enable cache (first insert caches):
+3
+3
+after alter ttl on live cache (second insert skips tags):
+3
+4
+after reset to defaults (tags insert resumes):
+4
+5
+bounds stored: the cached series skips its second tags insert:
+1
+2
+max_time advanced to the latest sample:
+1
+external tags: both inserts write tags:
+2
+2
+multi-block insert, second block repeats the series: tags rows written, samples rows written:
+1
+2

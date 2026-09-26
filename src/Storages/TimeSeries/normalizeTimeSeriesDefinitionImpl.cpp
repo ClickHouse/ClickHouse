@@ -80,9 +80,10 @@ namespace
 {
     /// All target kinds of a TimeSeries table.
     /// The RecentSamples target is optional: it's enabled by the `recent_samples_ttl_seconds` setting.
-    constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
+    /// The TagsMinMax target exists from version 7 and only while `store_min_time_and_max_time` is enabled.
+    constexpr std::array<ViewTarget::Kind, 5> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies};
+        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::TagsMinMax, ViewTarget::MetricFamilies};
     }
 
     /// Whether the create query defines inner columns for the specified target.
@@ -565,8 +566,10 @@ namespace
         if (inner_table_kind != ViewTarget::Tags)
             return;
 
-        /// The columns "min_time" and "max_time" are not stored.
-        if (!new_settings[TimeSeriesSetting::store_min_time_and_max_time])
+        /// The columns "min_time" and "max_time" are not stored, or (from version 7) are stored in the
+        /// separate "tags min max" table instead.
+        if (!new_settings[TimeSeriesSetting::store_min_time_and_max_time]
+            || (new_settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX))
         {
             remove_column(TimeSeriesColumnNames::MinTime);
             remove_column(TimeSeriesColumnNames::MaxTime);
@@ -720,6 +723,33 @@ namespace
                     const auto & column_name = tag_name_and_column_name.safeGet<Tuple>().at(1).safeGet<String>();
                     if (name == column_name)
                         return type_name == "String";
+                }
+
+                return false;
+            }
+
+            case ViewTarget::TagsMinMax:
+            {
+                if (has_default || codec)
+                    return false;
+
+                /// Any type counts because the type is also resolved from the old table (see `resolveTimeSeriesTypes`).
+                if (name == TimeSeriesColumnNames::ID)
+                    return true;
+
+                if (name == TimeSeriesColumnNames::MetricName)
+                    return type_name == "LowCardinality(String)";
+
+                if ((name == TimeSeriesColumnNames::MinTime) || (name == TimeSeriesColumnNames::MaxTime))
+                {
+                    /// The columns are always aggregated in this table: `SimpleAggregateFunction(min|max, Nullable(<timestamp type>))`.
+                    const auto * simple_aggregate = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
+                    if (!simple_aggregate)
+                        return false;
+                    std::string_view expected_function = (name == TimeSeriesColumnNames::MinTime) ? "min" : "max";
+                    const auto & argument_types = simple_aggregate->getArgumentsDataTypes();
+                    return (simple_aggregate->getFunctionName() == expected_function) && (argument_types.size() == 1)
+                        && is_nullable_timestamp(argument_types[0]);
                 }
 
                 return false;
@@ -913,7 +943,11 @@ namespace
             case ViewTarget::Tags:
             {
                 /// The generated engine kind follows the `aggregate_min_time_and_max_time` setting of the old table.
-                std::string_view generated_engine_name = settings[TimeSeriesSetting::aggregate_min_time_and_max_time]
+                /// From version 7 the aggregated columns live in the separate "tags min max" table.
+                const bool separate_tags_min_max
+                    = settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX;
+                std::string_view generated_engine_name
+                    = (!separate_tags_min_max && settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
                     ? "AggregatingMergeTree"
                     : "ReplacingMergeTree";
                 if (engine_name != generated_engine_name)
@@ -925,7 +959,8 @@ namespace
 
                 /// The generated sorting key contains `min_time` and `max_time` if they are stored but not aggregated.
                 /// Version 0 tables were also generated with the short key regardless of these settings.
-                bool min_time_and_max_time_in_sorting_key = settings[TimeSeriesSetting::store_min_time_and_max_time]
+                bool min_time_and_max_time_in_sorting_key = !separate_tags_min_max
+                    && settings[TimeSeriesSetting::store_min_time_and_max_time]
                     && !settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
                 bool sorting_key_is_generated = sorting_key_equals(
                     min_time_and_max_time_in_sorting_key ? "metric_name, id, min_time, max_time" : "metric_name, id");
@@ -945,6 +980,25 @@ namespace
                 remove_settings({
                     {"index_granularity", settings[TimeSeriesSetting::tags_index_granularity].value},
                     {"allow_dimensions_outside_sorting_key", static_cast<UInt64>(1)}});
+                break;
+            }
+
+            case ViewTarget::TagsMinMax:
+            {
+                /// The generated engine always aggregates the bounds, `aggregate_min_time_and_max_time` doesn't apply here.
+                if (engine_name != "AggregatingMergeTree")
+                    return;
+
+                /// The primary key and the sorting key are connected, so they are considered together.
+                bool primary_key_is_generated = !inner_engine.primary_key
+                    || (inner_engine.primary_key->formatWithSecretsOneLine() == "metric_name");
+                if (primary_key_is_generated && sorting_key_equals("metric_name, id"))
+                {
+                    inner_engine.reset(inner_engine.primary_key);
+                    inner_engine.reset(inner_engine.order_by);
+                }
+
+                remove_settings({{"index_granularity", settings[TimeSeriesSetting::tags_index_granularity].value}});
                 break;
             }
 
@@ -1063,8 +1117,9 @@ namespace
                 add_column_if_missing(TimeSeriesColumnNames::Tags,
                     makeASTDataType("Map", makeASTDataType("LowCardinality", makeASTDataType("String")), makeASTDataType("String")));
 
-                /// Columns "min_time" and "max_time".
-                if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
+                /// Columns "min_time" and "max_time". From version 7 they live in the "tags min max" table.
+                if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time]
+                    && (time_series_settings[TimeSeriesSetting::version] < TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX))
                 {
                     if (time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
                     {
@@ -1091,6 +1146,31 @@ namespace
                     }
                 }
 
+                break;
+            }
+
+            case ViewTarget::TagsMinMax:
+            {
+                /// Column "id" - no DEFAULT here: the identifier is computed in the "tags" inner table.
+                add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
+
+                add_column_if_missing(TimeSeriesColumnNames::MetricName,
+                    makeASTDataType("LowCardinality", makeASTDataType("String")));
+
+                /// The rows of a time series are always collapsed into one interval by the engine, so the columns
+                /// need a custom SimpleAggregateFunction type (`aggregate_min_time_and_max_time` doesn't apply here).
+                auto make_agg_type = [&](const String & func_name) -> ASTPtr
+                {
+                    DataTypePtr ts_type = makeNullable(resolved_types.timestamp_type);
+                    AggregateFunctionProperties properties;
+                    auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {ts_type}, {}, properties);
+                    auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(func, DataTypes{ts_type}, Array{});
+                    auto type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
+                    return dataTypeToAST(type);
+                };
+
+                add_column_if_missing(TimeSeriesColumnNames::MinTime, make_agg_type("min"));
+                add_column_if_missing(TimeSeriesColumnNames::MaxTime, make_agg_type("max"));
                 break;
             }
 
@@ -1215,9 +1295,9 @@ namespace
 
         for (auto inner_table_kind : getTargetKinds())
         {
-            /// Prealpha tables predate the recent samples table, so there is nothing to convert for it,
-            /// and no RECENT SAMPLES target should be added to an old table's definition.
-            if (inner_table_kind == ViewTarget::RecentSamples)
+            /// Prealpha tables predate the recent samples and tags min max tables, so there is nothing to convert
+            /// for them, and no such target should be added to an old table's definition.
+            if ((inner_table_kind == ViewTarget::RecentSamples) || (inner_table_kind == ViewTarget::TagsMinMax))
                 continue;
             if (hasTargetTableID(create_query, inner_table_kind))
                 continue;
@@ -1419,6 +1499,18 @@ namespace
         }
     }
 
+    void checkTagsMinMaxEngine(std::string_view engine_name, const StorageID & table_id)
+    {
+        if (engine_name != "AggregatingMergeTree" && engine_name != "ReplicatedAggregatingMergeTree"
+            && engine_name != "SharedAggregatingMergeTree")
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "{}: The tags min max target requires an AggregatingMergeTree engine "
+                "(including its Replicated and Shared variants) to preserve the union of time ranges, got {}",
+                table_id.getNameForLogs(), engine_name);
+        }
+    }
+
     /// Generates the engine of an inner table if it's not specified, and applies the TimeSeries settings to it,
     /// whether the engine was generated or specified by the user.
     /// The replication type of a generated engine (`MergeTree`, `ReplicatedMergeTree` or `SharedMergeTree`) is taken
@@ -1565,7 +1657,12 @@ namespace
 
             case ViewTarget::Tags:
             {
-                const bool aggregate_min_time_and_max_time = settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
+                /// From version 7 `min_time` and `max_time` live in the separate "tags min max" table, so the tags
+                /// table stores no aggregate states and `aggregate_min_time_and_max_time` doesn't apply to it.
+                const bool separate_tags_min_max
+                    = settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX;
+                const bool aggregate_min_time_and_max_time
+                    = !separate_tags_min_max && settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
                 if (!inner_engine.engine)
                     set_engine(aggregate_min_time_and_max_time ? "AggregatingMergeTree" : "ReplacingMergeTree");
 
@@ -1576,7 +1673,8 @@ namespace
                     ASTs key_columns;
                     key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
                     key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-                    if (settings[TimeSeriesSetting::store_min_time_and_max_time] && !aggregate_min_time_and_max_time)
+                    if (!separate_tags_min_max && settings[TimeSeriesSetting::store_min_time_and_max_time]
+                        && !aggregate_min_time_and_max_time)
                     {
                         key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
                         key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
@@ -1596,11 +1694,36 @@ namespace
                 /// by default (see the `allow_dimensions_outside_sorting_key` setting and
                 /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
                 /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
-                if (inner_engine.engine->name.contains("Aggregating")
+                /// From version 7 the tags table has no aggregate states, so the setting is not needed there.
+                if (!separate_tags_min_max && inner_engine.engine->name.contains("Aggregating")
                     && !has_engine_setting("allow_dimensions_outside_sorting_key"))
                 {
                     set_engine_setting("allow_dimensions_outside_sorting_key", 1);
                 }
+                break;
+            }
+
+            case ViewTarget::TagsMinMax:
+            {
+                /// The bounds of a time series are always merged into one row, so `aggregate_min_time_and_max_time`
+                /// doesn't apply here.
+                if (!inner_engine.engine)
+                    set_engine("AggregatingMergeTree");
+
+                checkTagsMinMaxEngine(inner_engine.engine->name, table_id);
+
+                if (needs_sorting_key())
+                {
+                    set_primary_key(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+
+                    ASTs key_columns;
+                    key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
+                    key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+                    set_sorting_key(std::move(key_columns));
+                }
+
+                /// The table has a row per time series, the same as the tags table, so it uses the same setting.
+                set_index_granularity(settings[TimeSeriesSetting::tags_index_granularity]);
                 break;
             }
 
@@ -1642,6 +1765,7 @@ namespace
         ViewTarget::Kind target_kind,
         const TimeSeriesSettings & time_series_settings,
         const ResolvedTimeSeriesTypes & resolved_types,
+        bool tags_min_max_target_exists,
         const StorageID & table_id)
     {
         auto check_column = [&](std::string_view column_name)
@@ -1778,11 +1902,46 @@ namespace
                 check_column_is_string_map(TimeSeriesColumnNames::Tags);
                 check_column_is_string_map(TimeSeriesColumnNames::AllTags, /*if_exists=*/ true);
 
-                if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
+                /// The columns are required here unless a separate "tags min max" target holds them instead.
+                if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time] && !tags_min_max_target_exists)
                 {
                     check_column_min_max_time(TimeSeriesColumnNames::MinTime);
                     check_column_min_max_time(TimeSeriesColumnNames::MaxTime);
                 }
+                break;
+            }
+
+            case ViewTarget::TagsMinMax:
+            {
+                check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
+                check_column_is_string(TimeSeriesColumnNames::MetricName);
+
+                /// `AggregatingMergeTree` keeps an arbitrary value for plain columns. The bounds must use
+                /// simple min/max aggregates over the nullable sample timestamp type, including when the
+                /// engine is generated later. Full aggregate states cannot be compared by the selector.
+                auto check_column_aggregated_by = [&](std::string_view column_name, std::string_view expected_function)
+                {
+                    check_column(column_name);
+                    const auto & type = target_table_columns.get(String(column_name)).type;
+                    const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
+                    auto expected_argument_type = makeNullable(resolved_types.timestamp_type);
+                    if (!simple || simple->getFunctionName() != expected_function || simple->getArgumentsDataTypes().size() != 1
+                        || !simple->getArgumentsDataTypes().front()->equals(*expected_argument_type))
+                    {
+                        throw Exception(
+                            ErrorCodes::BAD_TYPE_OF_FIELD,
+                            "{}: Column {} in the {} table has type {}, but expected SimpleAggregateFunction({}, {})",
+                            table_id.getNameForLogs(),
+                            column_name,
+                            target_kind,
+                            type->getName(),
+                            expected_function,
+                            expected_argument_type->getName());
+                    }
+                };
+
+                check_column_aggregated_by(TimeSeriesColumnNames::MinTime, "min");
+                check_column_aggregated_by(TimeSeriesColumnNames::MaxTime, "max");
                 break;
             }
 
@@ -1937,6 +2096,12 @@ namespace
             if ((kind == ViewTarget::RecentSamples) && (new_settings[TimeSeriesSetting::recent_samples_ttl_seconds] == 0))
                 continue;
 
+            /// The same for a disabled tags min max target.
+            if ((kind == ViewTarget::TagsMinMax)
+                && ((new_settings[TimeSeriesSetting::version] < TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX)
+                    || !new_settings[TimeSeriesSetting::store_min_time_and_max_time]))
+                continue;
+
             if (!hasTargetTableID(create_query, kind) && !hasInnerColumns(create_query, kind))
             {
                 if (auto * old_inner_columns = old_create_query.getTargetInnerColumns(kind))
@@ -2049,6 +2214,11 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
         = hasInnerColumns(create_query, ViewTarget::RecentSamples) || hasInnerEngine(create_query, ViewTarget::RecentSamples)
         || hasTargetTableID(create_query, ViewTarget::RecentSamples);
 
+    /// The same for a TAGS MIN MAX target declared by the query itself.
+    bool has_tags_min_max_definition
+        = hasInnerColumns(create_query, ViewTarget::TagsMinMax) || hasInnerEngine(create_query, ViewTarget::TagsMinMax)
+        || hasTargetTableID(create_query, ViewTarget::TagsMinMax);
+
     /// The definition of the table from the clause `AS <other_table>` if any, and its resolved types.
     /// The clause is used only for a new table: the stored definition of an existing table has no such clause.
     boost::intrusive_ptr<const ASTCreateQuery> old_create_query;
@@ -2127,6 +2297,14 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 Field(settings[TimeSeriesSetting::recent_samples_ttl_seconds].value));
         }
 
+        /// Pin `store_min_time_and_max_time`, so that the table keeps its layout if a future version changes
+        /// the default: from version 7 the setting decides whether the "tags min max" target table exists.
+        if (!settings[TimeSeriesSetting::store_min_time_and_max_time].isChanged() && create_query.storage)
+        {
+            setEngineSettings(*create_query.storage, "store_min_time_and_max_time",
+                Field(settings[TimeSeriesSetting::store_min_time_and_max_time].value));
+        }
+
         const bool recent_samples_enabled = settings[TimeSeriesSetting::recent_samples_ttl_seconds] != 0;
 
         /// A RECENT SAMPLES declaration can't be used with `recent_samples_ttl_seconds = 0`
@@ -2141,16 +2319,47 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 create_query.targets->removeTarget(ViewTarget::RecentSamples);
         }
 
+        /// The tags min max target exists from version 7 and only while `store_min_time_and_max_time` is enabled.
+        /// An external tags table is supplied by the user and keeps carrying `min_time` and `max_time` itself,
+        /// so the split applies only to a table whose tags target is an inner one.
+        const bool tags_min_max_enabled
+            = (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX)
+            && settings[TimeSeriesSetting::store_min_time_and_max_time]
+            && !hasTargetTableID(create_query, ViewTarget::Tags);
+
+        if (!tags_min_max_enabled)
+        {
+            if (has_tags_min_max_definition)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "The TAGS MIN MAX target requires the setting `store_min_time_and_max_time` to be enabled "
+                    "and the setting `version` to be at least {}", TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX);
+            /// A TAGS MIN MAX definition inherited from the `AS <other_table>` clause is just removed when it's disabled.
+            if (create_query.targets)
+                create_query.targets->removeTarget(ViewTarget::TagsMinMax);
+        }
+
         for (auto kind : getTargetKinds())
         {
             /// The recent samples target is on by default and disabled by an explicit `recent_samples_ttl_seconds = 0`.
             if ((kind == ViewTarget::RecentSamples) && !recent_samples_enabled)
                 continue;
 
+            if ((kind == ViewTarget::TagsMinMax) && !tags_min_max_enabled)
+                continue;
+
             if (hasTargetTableID(create_query, kind))
             {
                 /// An external target table is specified - check it has all the required columns.
-                checkTargetTable(get_external_target_columns(kind), kind, settings, resolved_types, create_query.getTargetTableID(kind));
+                checkTargetTable(get_external_target_columns(kind), kind, settings, resolved_types, tags_min_max_enabled,
+                    create_query.getTargetTableID(kind));
+                if (kind == ViewTarget::TagsMinMax)
+                {
+                    auto engine = params.external_target_engines.find(kind);
+                    if (engine == params.external_target_engines.end())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "The engine of the external tags min max table is required to normalize a new TimeSeries table");
+                    checkTagsMinMaxEngine(engine->second, create_query.getTargetTableID(kind));
+                }
             }
             else
             {
@@ -2162,7 +2371,8 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
                 /// Validate the user-provided types of the inner columns the same way external targets are validated.
-                checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, settings, resolved_types, table_id);
+                checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, settings, resolved_types,
+                    tags_min_max_enabled, table_id);
 
                 auto inner_engine = create_query.getTargetInnerEngine(kind)
                     ? boost::static_pointer_cast<ASTStorage>(create_query.getTargetInnerEngine(kind)->clone())

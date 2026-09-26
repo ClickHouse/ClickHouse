@@ -127,6 +127,18 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 }
                 if (recent_samples_enabled)
                     generate_target_uuid(ViewTarget::RecentSamples);
+
+                bool tags_min_max_enabled = (*time_series_version >= TimeSeriesVersion::MIN_WITH_SEPARATE_TAGS_MIN_MAX)
+                    && getTimeSeriesSettingStoreMinTimeAndMaxTime(query)
+                    && query.getTargetTableID(ViewTarget::Tags).empty();
+                if (for_restore && !hasExplicitTimeSeriesSettingVersion(query))
+                {
+                    /// A query restored from a backup can come from a version before the `version` setting existed,
+                    /// where the absent setting means version 0, which keeps min_time and max_time in the tags table.
+                    tags_min_max_enabled = false;
+                }
+                if (tags_min_max_enabled)
+                    generate_target_uuid(ViewTarget::TagsMinMax);
             }
         }
     }

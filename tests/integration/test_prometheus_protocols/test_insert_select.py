@@ -401,9 +401,11 @@ def test_select_with_row_policy():
 
 
 def test_select_final():
-    """The tags inner table is AggregatingMergeTree; until its parts merge, repeated inserts of one series
+    """The tags inner table is a ReplacingMergeTree; until its parts merge, repeated inserts of one series
     leave duplicate rows. Without FINAL the read returns them as is (cheaper); with FINAL the series is
-    returned exactly once. After the parts are merged both reads agree."""
+    returned exactly once. After the parts are merged both reads agree. The active series cache is
+    switched off first, so the second insert really does write a second tags row."""
+    node.query("ALTER TABLE prometheus MODIFY SETTING tags_cache_max_series = 0")
     node.query("SYSTEM STOP MERGES")
     try:
         # Two separate inserts of the SAME series -> two unmerged tags parts sharing one id.
@@ -428,6 +430,7 @@ def test_select_final():
         )
     finally:
         node.query("SYSTEM START MERGES")
+        node.query("ALTER TABLE prometheus RESET SETTING tags_cache_max_series")
 
     # Merged: both reads agree.
     node.query("OPTIMIZE TABLE prometheus FINAL")

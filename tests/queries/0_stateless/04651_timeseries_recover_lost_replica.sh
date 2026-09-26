@@ -172,7 +172,8 @@ count_inner_drop_rejections ts_ext
 
 ${CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${DB}.ts ENGINE = TimeSeries"
 
-# The outer TimeSeries table plus its 3 inner tables (data, tags, metrics).
+# The outer TimeSeries table plus its 5 inner tables, and the one inner table of the table with
+# external targets (its recent samples target is the only one not declared externally).
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
 
 # Fill one inner table, so that afterwards the inner tables can be shown to be genuinely NEW rather

@@ -926,7 +926,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies}).parse(pos, targets, expected);
+            /// `TagsMinMax` is listed before `Tags` because the keyword `TAGS` is a prefix of `TAGS MIN MAX`:
+            /// trying `Tags` first would consume `TAGS` and read `MIN` as the name of an external tags table.
+            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::TagsMinMax, ViewTarget::Tags, ViewTarget::MetricFamilies}).parse(pos, targets, expected);
         }
 
         return true;

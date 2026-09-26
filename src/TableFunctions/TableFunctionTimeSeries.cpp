@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -69,6 +70,7 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Couldn't get a table name from the arguments of the {} table function", name);
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
     target_table_type_name = getTargetTable(context)->getName();
 }
 
@@ -76,6 +78,7 @@ void TableFunctionTimeSeriesTarget<target_kind>::parseArguments(const ASTPtr & a
 template <ViewTarget::Kind target_kind>
 StoragePtr TableFunctionTimeSeriesTarget<target_kind>::getTargetTable(const ContextPtr & context) const
 {
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     return time_series_storage->getTargetTable(target_kind, context);
 }
@@ -160,6 +163,21 @@ The following queries are equivalent:
 SELECT * FROM timeSeriesTags(db_name.time_series_table);
 SELECT * FROM timeSeriesTags('db_name.time_series_table');
 SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
+```
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
+
+    factory.registerFunction<TableFunctionTimeSeriesTarget<ViewTarget::TagsMinMax>>(
+        {.description = R"DOCS_MD(
+`timeSeriesTagsMinMax(db_name.time_series_table)` - Returns the [tags min max](/reference/engines/table-engines/integrations/time-series#tags-min-max-table) table
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](/reference/engines/table-engines/integrations/time-series) engine.
+That table exists from [version](/reference/engines/table-engines/integrations/time-series#schema-versioning) 7 and only while
+`store_min_time_and_max_time` is enabled; an earlier table keeps `min_time` and `max_time` in its tags table, where
+[timeSeriesTags](/reference/table-functions/timeSeriesTags) returns them.
+
+```sql
+SELECT * FROM timeSeriesTagsMinMax(db_name.time_series_table);
+SELECT * FROM timeSeriesTagsMinMax('db_name.time_series_table');
+SELECT * FROM timeSeriesTagsMinMax('db_name', 'time_series_table');
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 

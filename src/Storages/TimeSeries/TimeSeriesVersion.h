@@ -30,13 +30,17 @@ class StorageTimeSeries;
 ///   6 - The column `metric_family_name` of the "metric families" target table was renamed to `metric_family`, the name of
 ///       the corresponding outer column. Tables of earlier versions keep the old name of the column
 ///       (see `TimeSeriesColumnNames::getInnerMetricFamily`).
+///   7 - The columns `min_time` and `max_time` moved from the tags table into a separate "tags min max" target table
+///       (the inner table `.inner_id.tagsminmax.<uuid>`, written with the keyword `TAGS MIN MAX`). The tags table of
+///       such a table has a `ReplacingMergeTree` family engine. Tables of earlier versions keep the columns in the
+///       tags table, so an older server can read them.
 namespace TimeSeriesVersion
 {
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 6;
+    constexpr UInt64 LATEST = 7;
 
     /// The first version recording the `id_type` setting (see the version history above).
     /// A table of an earlier version must not have the setting: an older server wouldn't understand it.
@@ -51,6 +55,11 @@ namespace TimeSeriesVersion
     /// The first version naming the column of the "metric families" target table with the name of a metric family
     /// `metric_family` instead of `metric_family_name` (see the version history above).
     constexpr UInt64 MIN_WITH_METRIC_FAMILY_INNER_COLUMN = 6;
+
+    /// The first version keeping `min_time` and `max_time` in a separate "tags min max" target table
+    /// instead of the tags table (see the version history above). The target exists only while
+    /// the `store_min_time_and_max_time` setting is enabled.
+    constexpr UInt64 MIN_WITH_SEPARATE_TAGS_MIN_MAX = 7;
 
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
     /// A table with an older version can still be attached, inspected with SHOW CREATE TABLE and dropped.
@@ -75,6 +84,7 @@ namespace TimeSeriesVersion
     static_assert(MIN_WITH_SAMPLES_OUTER_COLUMN <= LATEST);
     static_assert(MIN_WITH_TAGS_TEXT_INDEX <= LATEST);
     static_assert(MIN_WITH_METRIC_FAMILY_INNER_COLUMN <= LATEST);
+    static_assert(MIN_WITH_SEPARATE_TAGS_MIN_MAX <= LATEST);
     static_assert(MIN_WRITABLE <= LATEST);
     static_assert(MIN_SUPPORTED <= MIN_SUPPORTED_BY_PROMQL);
     static_assert(MIN_SUPPORTED_BY_PROMQL <= LATEST);

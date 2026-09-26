@@ -67,6 +67,12 @@ bool hasExplicitTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
 /// A non-zero result means the query enables the optional "recent samples" target table.
 UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
 
+/// Returns the value of `store_min_time_and_max_time` from the SETTINGS clause of a
+/// CREATE TABLE ... ENGINE=TimeSeries query, or the setting's default value if the query
+/// doesn't specify it. From version MIN_WITH_SEPARATE_TAGS_MIN_MAX it decides whether the
+/// optional "tags min max" target table exists.
+bool getTimeSeriesSettingStoreMinTimeAndMaxTime(const ASTCreateQuery & query);
+
 /// The similar function for `version` is `getTimeSeriesSettingVersion` in Parsers/getTimeSeriesSettingVersion.h,
 /// because it's used while formatting a CREATE query.
 
