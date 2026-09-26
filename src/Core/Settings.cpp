@@ -3352,6 +3352,11 @@ If it is set to true, then a user is allowed to executed distributed DDL queries
 If it is set to true, allow to specify meaningless compression codecs.
 )", 0, \
         {"20.5", true, false, "Don't allow to specify meaningless compression codecs"}) \
+    DECLARE(Bool, allow_frame_of_reference_in_t64, false, R"(
+If true, the T64 codec (e.g. `T64(true)` or `T64('bit', true)`) stores each value as its distance from the block
+minimum, so values that are large but close together compress as if they were small. Disabled by default until proven stable.
+)", 0, \
+        {"26.10", false, false, "New setting to allow the T64 codec frame-of-reference mode."}) \
     DECLARE(UInt64, query_profiler_real_time_period_ns, default_query_profiler_period_ns, R"(
 Sets the period for a real clock timer of the [query profiler](/concepts/features/performance/troubleshoot/sampling-query-profiler). Real clock timer counts wall-clock time.
 

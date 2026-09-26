@@ -40,6 +40,7 @@ extern const int LOGICAL_ERROR;
 
 namespace Setting
 {
+extern const SettingsBool allow_frame_of_reference_in_t64;
 extern const SettingsBool allow_suspicious_codecs;
 }
 
@@ -268,6 +269,19 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedASTImpl(
                         "nullables of them); it cannot be used as a marks, primary key, default or TTL recompression "
                         "codec, or in any other context where the column data type is unknown",
                         codec_family_name);
+
+                /// Trusted paths (`settings == nullptr`) accept an already stored frame-of-reference codec.
+                if (settings && !(*settings)[Setting::allow_frame_of_reference_in_t64] && codec_family_name == "T64" && codec_arguments)
+                {
+                    for (const auto & arg : codec_arguments->children)
+                    {
+                        const auto * literal = arg->as<ASTLiteral>();
+                        if (literal && literal->value.getType() == Field::Types::Bool && literal->value.safeGet<bool>())
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "T64 codec frame-of-reference mode (`T64(true)`) requires the "
+                                "`allow_frame_of_reference_in_t64` setting to be enabled.");
+                    }
+                }
 
                 codecs_descriptions->children.emplace_back(result_codec->getCodecDescription());
             }
