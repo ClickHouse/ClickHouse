@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 }
 
@@ -126,8 +127,6 @@ private:
 
     /// The value is divided by 2 ^ skip_degree
     bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
-
-    HashValue hash(Value key) const { return static_cast<HashValue>(Hash()(key)); }
 
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
     void rehash()
@@ -342,9 +341,20 @@ public:
         free();
     }
 
+    static HashValue hash(Value key) { return static_cast<HashValue>(Hash()(key)); }
+
+    void ALWAYS_INLINE prefetch(HashValue hash_value) const
+    {
+        __builtin_prefetch(&buf[place(hash_value)]);
+    }
+
     void ALWAYS_INLINE insert(Value x)
     {
-        const HashValue hash_value = hash(x);
+        insertHash(hash(x));
+    }
+
+    void ALWAYS_INLINE insertHash(HashValue hash_value)
+    {
         if (!good(hash_value))
             return;
 
@@ -520,7 +530,9 @@ public:
         DB::readVarUInt(m_size, rb);
 
         if (m_size > UNIQUES_HASH_MAX_SIZE)
-            throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
+            throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Cannot read UniquesHashSet: the element count is {}, which exceeds the maximum value of {}",
+                static_cast<size_t>(m_size), static_cast<size_t>(UNIQUES_HASH_MAX_SIZE));
 
         free();
 
