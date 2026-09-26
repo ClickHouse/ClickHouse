@@ -21,13 +21,13 @@ CommittingBlocks getCommittingBlocks(zkutil::ZooKeeperPtr & zookeeper, const std
 template<typename VirtualPartsT, typename MutationsStateT>
 class DistributedMergePredicate : public IMergePredicate
 {
-    std::expected<void, PreformattedMessage> checkCanMergePartsPreconditions(const std::string & name, const MergeTreePartInfo & info) const
+    std::expected<void, LazyPreformattedMessage> checkCanMergePartsPreconditions(const std::string & name, const MergeTreePartInfo & info) const
     {
         if (prev_virtual_parts_ptr && prev_virtual_parts_ptr->getContainingPart(info).empty())
-            return std::unexpected(PreformattedMessage::create("Part {} does not contain in snapshot of previous virtual parts", name));
+            return std::unexpected(createLazyMessage("Part {} does not contain in snapshot of previous virtual parts", refArg(name)));
 
         if (partition_ids_hint && !partition_ids_hint->contains(info.getPartitionId()))
-            return std::unexpected(PreformattedMessage::create("Uncommitted blocks were not loaded for partition {}", info.getPartitionId()));
+            return std::unexpected(createLazyMessage("Uncommitted blocks were not loaded for partition {}", refArg(info.getPartitionId())));
 
         return {};
     }
@@ -38,7 +38,7 @@ public:
     {
     }
 
-    std::expected<void, PreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override
+    std::expected<void, LazyPreformattedMessage> canMergeParts(const PartProperties & left, const PartProperties & right) const override
     {
         /// A sketch of a proof of why this method actually works:
         ///
@@ -77,13 +77,13 @@ public:
         chassert(checkCanMergePartsPreconditions(left.name, left.info) && checkCanMergePartsPreconditions(right.name, right.info));
 
         if (left.info.getPartitionId() != right.info.getPartitionId())
-            return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left.name, right.name));
+            return std::unexpected(createLazyMessage("Parts {} and {} belong to different partitions", refArg(left.name), refArg(right.name)));
 
         if (left.info.isPatch() != right.info.isPatch())
-            return std::unexpected(PreformattedMessage::create("One of parts ({}, {}) is patch part and another is regular part", left.name, right.name));
+            return std::unexpected(createLazyMessage("One of parts ({}, {}) is patch part and another is regular part", refArg(left.name), refArg(right.name)));
 
         if (left.is_in_volume_where_merges_avoid || right.is_in_volume_where_merges_avoid)
-            return std::unexpected(PreformattedMessage::create("One of parts ({}, {}) lies on volume where merges should be avoided", left.name, right.name));
+            return std::unexpected(createLazyMessage("One of parts ({}, {}) lies on volume where merges should be avoided", refArg(left.name), refArg(right.name)));
 
         int64_t left_max_block = left.info.max_block;
         int64_t right_min_block = right.info.min_block;
@@ -98,7 +98,7 @@ public:
 
                 auto block_it = block_numbers.upper_bound(left_max_block);
                 if (block_it != block_numbers.end() && block_it->number < right_min_block)
-                    return std::unexpected(PreformattedMessage::create("Block number {} is still being inserted between parts {} and {}", block_it->number, left.name, right.name));
+                    return std::unexpected(createLazyMessage("Block number {} is still being inserted between parts {} and {}", copyArg(block_it->number), refArg(left.name), refArg(right.name)));
             }
         }
 
@@ -113,9 +113,9 @@ public:
             /// processing replication log up to log_pointer.
             Strings covered = virtual_parts_ptr->getPartsCoveredBy(gap_part_info);
             if (!covered.empty())
-                return std::unexpected(PreformattedMessage::create(
+                return std::unexpected(createLazyMessage(
                             "There are {} parts (from {} to {}) that are still not present or being processed by other background process on this replica between {} and {}",
-                            covered.size(), covered.front(), covered.back(), left.name, right.name));
+                            copyArg(covered.size()), copyArg(covered.front()), copyArg(covered.back()), refArg(left.name), refArg(right.name)));
         }
 
         if (mutations_state_ptr)
@@ -127,9 +127,9 @@ public:
                 left.info.getOriginalPartitionId(), right.info.getDataVersion());
 
             if (left_mutation_version != right_mutation_version)
-                return std::unexpected(PreformattedMessage::create(
+                return std::unexpected(createLazyMessage(
                             "Current mutation versions of parts {} and {} differ: {} and {} respectively",
-                            left.name, right.name, left_mutation_version, right_mutation_version));
+                            refArg(left.name), refArg(right.name), copyArg(left_mutation_version), copyArg(right_mutation_version)));
         }
 
         if (left.info.isPatch())
@@ -144,20 +144,20 @@ public:
                 data_versions_by_partition, original_partition_id, left.info.getDataVersion(), right.info.getDataVersion());
 
             if (spanned_version.has_value())
-                return std::unexpected(PreformattedMessage::create(
+                return std::unexpected(createLazyMessage(
                             "Merge of patch parts {} and {} would span data version {} of a part in partition {}",
-                            left.name, right.name, *spanned_version, original_partition_id));
+                            refArg(left.name), refArg(right.name), copyArg(*spanned_version), copyArg(original_partition_id)));
         }
 
         if (left.projection_names != right.projection_names)
-            return std::unexpected(PreformattedMessage::create(
+            return std::unexpected(createLazyMessage(
                     "Parts have different projection sets: {} in '{}' and {} in '{}'",
-                    left.projection_names, left.name, right.projection_names, right.name));
+                    refArg(left.projection_names), refArg(left.name), refArg(right.projection_names), refArg(right.name)));
 
         return {};
     }
 
-    std::expected<void, PreformattedMessage> canUsePartInMerges(const std::string & name, const MergeTreePartInfo & info) const
+    std::expected<void, LazyPreformattedMessage> canUsePartInMerges(const std::string & name, const MergeTreePartInfo & info) const
     {
         if (auto result = checkCanMergePartsPreconditions(name, info); !result)
             return result;
@@ -165,7 +165,7 @@ public:
         /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
         /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
         if (String containing_part = virtual_parts_ptr->getContainingPart(info); containing_part != name)
-            return std::unexpected(PreformattedMessage::create("Part {} has already been assigned a merge into {}", name, containing_part));
+            return std::unexpected(createLazyMessage("Part {} has already been assigned a merge into {}", refArg(name), copyArg(containing_part)));
 
         if (info.isPatch() && committing_blocks_ptr)
         {
@@ -174,9 +174,9 @@ public:
 
             if (it != committing_blocks_ptr->end() && !it->second.empty() && data_version > it->second.begin()->number)
             {
-                return std::unexpected(PreformattedMessage::create(
+                return std::unexpected(createLazyMessage(
                     "Patch part {} with data version {} cannot be used in merges because patches with lower data version are still being processed",
-                    name, data_version));
+                    refArg(name), copyArg(data_version)));
             }
         }
 
