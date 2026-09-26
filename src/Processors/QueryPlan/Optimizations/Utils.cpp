@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 
+#include <unordered_set>
 #include <utility>
 
 namespace DB::ErrorCodes
@@ -128,8 +129,7 @@ bool dagContainsNonDeterministicFunction(const ActionsDAG & dag)
 namespace
 {
 
-/// True when the function does not read the value stored under a null map. This is the predicate
-/// `dagReadsUnspecifiedValueUnderNull` applies to every function of the DAG.
+/// True when the function does not read the value stored under a null map.
 bool valueUnderNullMapIsNotRead(const IFunctionBase & function)
 {
     /// `allNodeFunctions` carries a predicate to a lambda's wrapper but not into its body.
@@ -145,6 +145,23 @@ bool valueUnderNullMapIsNotRead(const IFunctionBase & function)
     /// so there the value is the same one a constant fold produces; only plain `Nullable(T)` can differ.
     const auto & argument_types = function.getArgumentTypes();
     return argument_types.empty() || !argument_types.front()->isNullable();
+}
+
+bool nodeReadsUnspecifiedValueUnderNull(const ActionsDAG::Node * root)
+{
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    std::vector<const ActionsDAG::Node *> stack{root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.insert(node).second)
+            continue;
+        if (!allNodeFunctions(*node, valueUnderNullMapIsNotRead))
+            return true;
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+    return false;
 }
 
 }
@@ -190,12 +207,6 @@ FilterResult filterResultForNotMatchedRows(
     if (dagContainsNonDeterministicFunction(filter_dag))
         return FilterResult::UNKNOWN;
 
-    /// The dry run below models this side's inputs as constants, so a subexpression that is per-row at
-    /// runtime becomes constant and takes `IFunction`'s constant-NULL short circuit, which never computes
-    /// the value under the null map that `assumeNotNull` goes on to return.
-    if (dagReadsUnspecifiedValueUnderNull(filter_dag))
-        return FilterResult::UNKNOWN;
-
     ActionsDAG::IntermediateExecutionResult filter_input;
 
     /// Create constant columns with default values for inputs of the filter DAG
@@ -233,6 +244,14 @@ FilterResult filterResultForNotMatchedRows(
     if (conjunction_atoms.size() > 1)
         targets.insert(targets.end(), conjunction_atoms.begin(), conjunction_atoms.end());
 
+    /// The dry run below models this side's inputs as constants, so a subexpression that is per-row at
+    /// runtime becomes constant and takes `IFunction`'s constant-NULL short circuit, which never computes
+    /// the value under the null map that `assumeNotNull` goes on to return.
+    std::erase_if(targets, nodeReadsUnspecifiedValueUnderNull);
+    if (targets.empty())
+        return FilterResult::UNKNOWN;
+    const bool whole_filter_evaluated = targets.front() == filter_node;
+
     ColumnsWithTypeAndName filter_output;
     try
     {
@@ -249,14 +268,17 @@ FilterResult filterResultForNotMatchedRows(
         return FilterResult::UNKNOWN;
     }
 
-    if (auto result = getFilterResult(filter_output[0]); result != FilterResult::UNKNOWN)
-        return result;
+    if (whole_filter_evaluated)
+    {
+        if (auto result = getFilterResult(filter_output[0]); result != FilterResult::UNKNOWN)
+            return result;
+    }
 
     /// In filter context NULL is equivalent to false, but `and` with a constant NULL argument
     /// does not fold to a constant: the result is 0 or NULL depending on the other arguments
     /// (e.g. `NULL = 42 AND <unknown>`).
     /// Both are falsy, so if any conjunction atom is a falsy constant, the filter cannot pass.
-    for (size_t i = 1; i < filter_output.size(); ++i)
+    for (size_t i = whole_filter_evaluated ? 1 : 0; i < filter_output.size(); ++i)
     {
         if (getFilterResult(filter_output[i]) == FilterResult::FALSE)
             return FilterResult::FALSE;

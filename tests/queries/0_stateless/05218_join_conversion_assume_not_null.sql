@@ -51,5 +51,16 @@ SELECT count() > 0 FROM (
     WHERE assumeNotNull(t_ann_right.val2) = 12345
 ) WHERE explain ILIKE '%Strictness: semi%';
 
+-- With several conjuncts only those free of the hazard decide. One that is TRUE proves nothing, so the
+-- hazard next to it must not turn the join into an INNER one...
+SELECT count() FROM t_ann_left RIGHT JOIN t_ann_right ON t_ann_left.id = t_ann_right.id
+WHERE t_ann_left.id = 0 AND assumeNotNull(nullIf(t_ann_left.val, 0) + 42);
+
+-- ...while one that is FALSE still proves the whole filter FALSE, so the conversion must happen.
+SELECT count() > 0 FROM (
+    EXPLAIN SELECT count() FROM t_ann_left RIGHT JOIN t_ann_right ON t_ann_left.id = t_ann_right.id
+    WHERE t_ann_left.id = 12345 AND assumeNotNull(nullIf(t_ann_left.val, 0) + 42)
+) WHERE explain ILIKE '%Type: inner%';
+
 DROP TABLE t_ann_left;
 DROP TABLE t_ann_right;
