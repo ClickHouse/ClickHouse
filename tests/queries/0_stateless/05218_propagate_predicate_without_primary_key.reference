@@ -1,0 +1,5 @@
+comparison	2
+in set	1
+in set on a key column	2
+in set on a key column, no index analysis	1
+correctness	0
