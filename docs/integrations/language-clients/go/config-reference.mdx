@@ -1,0 +1,472 @@
+---
+sidebarTitle: 'Configuration reference'
+keywords: ['clickhouse', 'go', 'golang', 'configuration', 'options', 'reference', 'DSN', 'connection pool', 'TLS', 'compression', 'timeout']
+description: 'Complete per-option configuration reference for the clickhouse-go client, covering connection-level, context-level, and batch options.'
+slug: /integrations/language-clients/go/config-reference
+title: 'Go-client configuration reference'
+doc_type: 'reference'
+---
+
+This page documents every configurable option in `clickhouse-go` v2.x. For a guide with code examples, see [Configuration](/integrations/language-clients/go/configuration).
+
+<Info>
+**Version annotations**
+
+Options added in `clickhouse-go` v2.35.0 or later are marked with *(Since vX.Y.Z)* next to their description. Options without a "Since" tag have been available since v2.0 and are present in every supported release.
+</Info>
+
+## How options are set {#how-options-are-set}
+
+Options exist at three scopes:
+
+| Scope | How to set | Lifetime |
+|-------|-----------|----------|
+| **Connection** | `clickhouse.Options` struct or DSN string | All queries on the connection |
+| **Query** | `clickhouse.Context()` with `WithXxx` functions | Single query execution |
+| **Batch** | `PrepareBatch()` option functions | Single batch operation |
+
+Where scopes overlap, the more specific scope wins: **Batch > Query > Connection**. For `Settings`, query-level keys are merged with connection-level keys and query-level wins on conflict.
+
+**Via Options struct:**
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr:        []string{"localhost:9000"},
+    Auth:        clickhouse.Auth{Database: "default", Username: "default", Password: ""},
+    DialTimeout: 10 * time.Second,
+    Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
+})
+```
+
+**Via DSN string:**
+
+```go
+db, err := sql.Open("clickhouse", "clickhouse://user:pass@localhost:9000/default?dial_timeout=10s&compress=lz4")
+```
+
+**Via Connector (database/sql with Options struct):**
+
+```go
+db := sql.OpenDB(clickhouse.Connector(&clickhouse.Options{
+    Addr:        []string{"localhost:9000"},
+    Auth:        clickhouse.Auth{Database: "default", Username: "default"},
+    DialTimeout: 10 * time.Second,
+}))
+// Set database/sql-only pool settings after creation
+db.SetConnMaxIdleTime(5 * time.Minute)
+```
+
+**Via context (per-query):**
+
+```go
+ctx := clickhouse.Context(context.Background(),
+    clickhouse.WithQueryID("my-query-123"),
+    clickhouse.WithSettings(clickhouse.Settings{"max_execution_time": 60}),
+)
+rows, err := conn.Query(ctx, "SELECT ...")
+```
+
+---
+
+## Connection options {#connection-options}
+
+### Protocol and connection {#protocol-and-connection}
+
+| Option | Type | Default | DSN param | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-------------|---------------|-------------------|
+| `Protocol` | `Protocol` (int) | `Native` | Scheme: `clickhouse://`=Native, `http://`=HTTP | Communication protocol: `Native` (0) for TCP, `HTTP` (1) for HTTP | Use Native for ~30% better performance. Use HTTP for proxy support, firewall traversal (port 80/443), or HTTP-only compression (`gzip`/`br`). See [TCP vs HTTP](/integrations/language-clients/go/configuration#tcp-vs-http). | HTTP scheme with Native port (9000): connection refused. Native blocked by firewall: timeouts. |
+| `Addr` | `[]string` | `["localhost:9000"]` (Native) `["localhost:8123"]` (HTTP) | Comma-separated hosts in URL | List of `"host:port"` addresses for connection and failover | Specify multiple addresses in production for HA. Correct ports: 9000 (Native), 8123 (HTTP), 9440 (Native+TLS), 8443 (HTTP+TLS). | Single address: no failover. Wrong port: `"connection refused"`. Empty/nil: defaults to localhost, fails in distributed deployments. |
+| `ConnOpenStrategy` | `ConnOpenStrategy` (uint8) | `ConnOpenInOrder` (0) | `connection_open_strategy` (`in_order`, `round_robin`, `random`) | Strategy for selecting a server from `Addr`. `InOrder` (0)=failover, `RoundRobin` (1)=load balance, `Random` (2)=random. | `InOrder` for active-standby. `RoundRobin` for active-active/K8s. `Random` to avoid thundering herd. | `InOrder` with active-active: first server gets all load, others idle. All strategies try all servers on failure -- only affects which is tried *first*. |
+
+---
+
+### Authentication {#authentication}
+
+| Option | Type | Default | DSN param | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-------------|---------------|-------------------|
+| `Auth.Username` | `string` | `"default"` | `username` or URL user portion | Username for ClickHouse authentication | Never use `default` in production. Create dedicated users with minimal permissions. | Wrong username: `"Code: 516. DB::Exception: Authentication failed"`. Empty string: silently uses `"default"`. |
+| `Auth.Password` | `string` | `""` | `password` or URL password portion | Password for ClickHouse authentication | Use env vars or secret managers in production. URL-encode special characters in DSN. | Wrong password: `"Code: 516. DB::Exception: Authentication failed"`. Special chars not URL-encoded: parsing errors. |
+| `Auth.Database` | `string` | `""` (server default) | `database` or URL path (`/mydb`) | Default database for the connection | Always specify explicitly. Use dedicated databases per application in production. | Non-existent: `"Code: 81. DB::Exception: Database xyz doesn't exist"`. Empty in multi-tenant setup: queries hit wrong database. |
+| `GetJWT` | `func(ctx) (string, error)` | `nil` | (programmatic only) | Callback returning JWT for ClickHouse Cloud auth. Overridable per query with `WithJWT(token)`. *(Since v2.35.0)* | Implement token caching/refresh - called per connection/request. | Expired token: auth errors. Blocking callback: timeouts. JWT takes precedence over user/pass. Requires TLS - without it, falls back to user/pass silently. |
+
+```go
+GetJWT: func(ctx context.Context) (string, error) {
+    return getTokenFromVault(ctx)
+}
+```
+
+---
+
+### Timeouts {#timeouts}
+
+| Option | Type | Default | DSN param | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-------------|---------------|-------------------|
+| `DialTimeout` | `time.Duration` | `30s` | `dial_timeout` | Max time to establish a new connection. Also controls pool acquisition wait when `MaxOpenConns` is reached. | 5-10s on LAN, 15-30s on WAN/cloud, 1-2m if connecting to an idled ClickHouse Cloud service. Never below 1s. | Too short: `"clickhouse: acquire conn timeout"` during congestion, or connection failure before an idled Cloud service finishes waking. Too long (> 60s): app hangs during outages. |
+| `ReadTimeout` | `time.Duration` | `5m` (300s) | `read_timeout` | Max time to wait for a server response per read call. Applied per block, not entire query. Context deadline takes precedence. | 10-30s for short interactive queries; 5-30m for long analytical queries. | Too short: `"i/o timeout"` or `"read: connection reset by peer"` mid-query; server continues executing. Too long: dead connections not detected. |
+
+<Note title="ClickHouse Cloud idle services">
+A ClickHouse Cloud service that has been idle is paused, and wakes on the first incoming connection. Wake-up typically takes a few tens of seconds, during which the dial blocks. If `DialTimeout` is lower than the wake time, the first query after an idle period fails with a dial timeout instead of running.
+
+Set `DialTimeout` to `1m`–`2m` for clients that may be the first to reach an idled service. The tradeoff is slower failure detection during a real outage — dials block for the full timeout before erroring — so prefer scoping the higher timeout to the first connect, or use context deadlines on individual queries to cap end-to-end latency.
+</Note>
+
+---
+
+### Connection pool {#connection-pool}
+
+| Option | Type | Default | DSN param | API | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-----|-------------|---------------|-------------------|
+| `MaxIdleConns` | `int` | `5` | `max_idle_conns` | Both | Max idle (unused but alive) connections in pool | 50-80% of expected concurrent queries. Low: 2-5, medium: 10-20, high: 20-50. | Too low: connection churn, higher latency. Too high: wasted memory. Capped at `MaxOpenConns` automatically. |
+| `MaxOpenConns` | `int` | `MaxIdleConns + 5` (default: 10) | `max_open_conns` | Both | Max total connections (idle + active) | Low: 10-20, medium: 20-50, high: 50-100. Formula: concurrent queries + burst + buffer. Monitor: `SELECT * FROM system.metrics WHERE metric='TCPConnection'`. | Too low: `"clickhouse: acquire conn timeout"`. Too high: server `"Too many connections"`, FD limits exceeded. ClickHouse default `max_connections`: 1024 (shared). |
+| `ConnMaxLifetime` | `time.Duration` | `1h` | `conn_max_lifetime` | Both | Max duration a connection can be reused. Checked on return to pool. | 1-5h stable envs. 5-15m for K8s/rolling deploys. Never infinite. | Too short (&#60; 1m): churn, higher latency. Too long/infinite: stale connections, DNS changes not picked up, traffic never rebalances. |
+| `ConnMaxIdleTime` | `time.Duration` | `0` (none) | — | `database/sql` only | Max time a connection can sit *idle* before closing. Not in `Options` struct -- set via `db.SetConnMaxIdleTime()`. | 5-10m for K8s/bursty workloads to reclaim idle connections after traffic spikes. | Not set: idle connections persist until `ConnMaxLifetime`. Too short (&#60; 30s): connections recreated during normal gaps. |
+
+<Info>
+**database/sql only**
+
+`ConnMaxIdleTime` is a standard Go `database/sql` pool setting. It isn't available in the `clickhouse.Options` struct or via `clickhouse.Open()`. Set it after `OpenDB()`:
+```go
+db := clickhouse.OpenDB(&clickhouse.Options{...})
+db.SetConnMaxIdleTime(5 * time.Minute)
+```
+</Info>
+
+See [Connection Pooling](/integrations/language-clients/go/configuration#connection-pooling) for usage details.
+
+---
+
+### Standard database/sql pool settings {#sql-db-settings}
+
+When using `clickhouse.OpenDB()` or `sql.Open("clickhouse", dsn)`, the returned `*sql.DB` supports Go's standard pool methods. `OpenDB()` auto-applies the first three from `Options`:
+
+| Method | Options equivalent | Notes |
+|--------|--------------------|-------|
+| `db.SetMaxIdleConns(n)` | `MaxIdleConns` | Auto-applied by `OpenDB()` |
+| `db.SetMaxOpenConns(n)` | `MaxOpenConns` | Auto-applied by `OpenDB()` |
+| `db.SetConnMaxLifetime(d)` | `ConnMaxLifetime` | Auto-applied by `OpenDB()` |
+| `db.SetConnMaxIdleTime(d)` | *None* | Must be set manually post-creation |
+
+<Info>
+**ClickHouse API (clickhouse.Open)**
+
+These methods are **not** available on the connection returned by `clickhouse.Open()`. The ClickHouse API manages its own pool internally using the `Options` struct fields directly.
+</Info>
+
+---
+
+### Compression {#compression}
+
+| Option | Type | Default | DSN param | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-------------|---------------|-------------------|
+| `Compression.Method` | `CompressionMethod` (byte) | None | `compress` (`lz4`, `zstd`, `lz4hc`, `gzip`, `deflate`, `br`, or `true` for LZ4) | Compression algorithm for data transfer. See protocol support matrix below. | LAN: None or LZ4. WAN: ZSTD or LZ4. CPU constrained: LZ4. Max compression: ZSTD (Native) or Brotli (HTTP). Skip for inserts &#60; 1 MB. | GZIP/Brotli on Native: handshake failure. LZ4HC on HTTP: error or silent fallback. No compression on slow networks: 10-100x slower inserts. |
+| `Compression.Level` | `int` | `3` | `compress_level` | Algorithm-specific intensity. GZIP/Deflate: -2 to 9. Brotli: 0 to 11. LZ4/ZSTD: ignored. | GZIP balanced: 3-6. Brotli balanced: 4-6. | Very high levels: extreme CPU, minimal benefit. Non-zero for LZ4/ZSTD: silently ignored. Level without compression enabled: no effect. |
+| `MaxCompressionBuffer` | `int` (bytes) | `10485760` (10 MiB) | `max_compression_buffer` | Max compression buffer size before flushing. Each connection has its own buffer. | Default 10 MiB is good. 20-50 MiB for wide rows. Total memory = buffer x `MaxOpenConns`. | Too small (&#60; 1 MiB): frequent flushes, poor efficiency. Too large (> 100 MiB): OOM with many connections. |
+
+**Compression method support by protocol:**
+
+| Method | Native | HTTP |
+|--------|--------|------|
+| `CompressionLZ4` | Yes | Yes |
+| `CompressionLZ4HC` | Yes | No |
+| `CompressionZSTD` | Yes | Yes |
+| `CompressionGZIP` | No | Yes |
+| `CompressionDeflate` | No | Yes |
+| `CompressionBrotli` | No | Yes |
+
+---
+
+### TLS {#tls}
+
+| Option | Type | Default | DSN param | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-------------|---------------|-------------------|
+| `TLS` | `*tls.Config` | `nil` (plain text) | `secure=true`, `skip_verify=true` | TLS/SSL config. Non-nil enables TLS. Ports: Native 9000/9440, HTTP 8123/8443. | Always enable in production and ClickHouse Cloud (required). `InsecureSkipVerify: false` in production. Add custom CAs via `RootCAs`. | Wrong port: `"connection reset by peer"`. `skip_verify=true` in prod: MITM vulnerable. Expired cert: `"x509: certificate has expired"`. Wrong host: `"x509: certificate is valid for X, not Y"`. Untrusted CA: `"x509: certificate signed by unknown authority"`. HTTP DSN with `secure=true`: use `https://` scheme instead. |
+
+See [TLS](/integrations/language-clients/go/configuration#using-tls) for code examples.
+
+---
+
+### Logging {#logging}
+
+| Option | Type | Default | DSN param | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-------------|---------------|-------------------|
+| `Logger` | `*slog.Logger` | `nil` (no logging) | — | Structured logger via Go's `log/slog`. Priority: `Debug`+`Debugf` > `Logger` > no-op. *(Since v2.43.0)* | Use `slog` with JSON handler in production. Add app context with `logger.With(...)`. | — |
+| `Debug` (deprecated) | `bool` | `false` | `debug` | Legacy debug toggle. Use `Logger` instead. Logs to stdout unless `Debugf` is set. | — | Enabled in production: performance overhead, verbose logs, sensitive data in output. |
+| `Debugf` (deprecated) | `func(string, ...any)` | `nil` | — | Custom debug log function. Use `Logger` instead. Requires `Debug: true`. | — | — |
+
+```go
+logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Logger: logger,
+    // ...
+})
+```
+
+See [Logging](/integrations/language-clients/go/configuration#logging) for full examples.
+
+---
+
+### Buffers and memory {#buffers-and-memory}
+
+| Option | Type | Default | DSN param | Per-query | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-----------|-------------|---------------|-------------------|
+| `BlockBufferSize` | `uint8` | `2` | `block_buffer_size` | Yes (`WithBlockBufferSize`) | Decoded blocks to buffer when reading results. Enables concurrent read + decode. | Default 2 is fine. 5-10 for large streaming results. Memory = buffer x block size x concurrent queries. | Too small (1): blocks reader, higher latency. Too large (> 50): high memory, diminishing returns. |
+| `FreeBufOnConnRelease` | `bool` | `false` | — | No | Release connection memory buffer after each query instead of reusing. | `false` for high query rates. `true` in memory-constrained containers or infrequent large batches. | `false` + limited memory: buffers accumulate (memory = buffer x idle conns). `true` + high rate: GC pressure, increased CPU. |
+
+---
+
+### HTTP-specific {#http-specific}
+
+<Warning>
+**Silently ignored on Native**
+
+These options only affect `Protocol: clickhouse.HTTP`. They're silently ignored when using the Native protocol, and no error or warning is emitted.
+</Warning>
+
+| Option | Type | Default | DSN param | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-------------|---------------|-------------------|
+| `HttpHeaders` | `map[string]string` | `nil` | — | Additional HTTP headers on every request | Use for tracing (`X-Request-ID`), auth proxy headers. Keep minimal. | Overriding internal headers (`Content-Type`, `Authorization`): unpredictable behavior. |
+| `HttpUrlPath` | `string` | `""` | `http_path` | URL path appended to requests. Leading `/` added automatically. | Use when behind reverse proxy with path routing. | Wrong path: HTTP 404 from proxy/LB. |
+| `HttpMaxConnsPerHost` | `int` | `0` (unlimited) | — | TCP connections per host at transport layer (`http.Transport.MaxConnsPerHost`). | Leave at 0 for most apps. Only set when server has strict connection limits. | Too low (e.g., 10 with `MaxOpenConns`=50): transport bottleneck, slow queries despite low server load. |
+| `HTTPProxyURL` | `*url.URL` | `nil` (uses env vars) | `http_proxy` (URL-encoded) | HTTP proxy for routing requests | Set explicitly if proxy required. Overrides `HTTP_PROXY`/`HTTPS_PROXY` env vars. | Wrong address: `"dial tcp: lookup proxy: no such host"`. Proxy needs auth: HTTP 407. |
+| `TransportFunc` | `func(*http.Transport) (http.RoundTripper, error)` | `nil` | — | Custom HTTP transport factory. Receives default transport for wrapping. *(Since v2.41.0)* | Use for observability middleware. Don't override `Proxy`, `DialContext`, `TLSClientConfig`. | Returning `nil`: panic. Overriding client fields: TLS/proxy silently ignored. Blocking RoundTripper: deadlocks. |
+
+<Info>
+**Two-layer HTTP pooling**
+
+When using HTTP, there are two connection pools:
+- **Layer 1 (application):** `MaxIdleConns` / `MaxOpenConns` -- controls `httpConnect` objects
+- **Layer 2 (transport):** `HttpMaxConnsPerHost` -- controls underlying TCP connections
+
+The Native protocol has a simple 1:1 mapping and ignores `HttpMaxConnsPerHost`.
+</Info>
+
+```go
+TransportFunc: func(t *http.Transport) (http.RoundTripper, error) {
+    return &loggingRoundTripper{transport: t}, nil
+}
+```
+
+---
+
+### Advanced connection {#advanced-connection}
+
+| Option | Type | Default | DSN param | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-------------|---------------|-------------------|
+| `DialContext` | `func(ctx, addr) (net.Conn, error)` | `nil` (standard dialer) | — | Custom dial function for TCP connections. Works with both Native and HTTP. | Leave `nil` for 99% of cases. Use for Unix sockets, SOCKS proxy, custom DNS. | Not respecting context: hangs, resource leaks. With `TLS` set: custom dialer must handle TLS itself. Invalid `net.Conn`: crashes. |
+| `DialStrategy` | `func(ctx, connID, options, dial) (DialResult, error)` | `DefaultDialStrategy` | — | Custom server selection and connection strategy. Overrides `ConnOpenStrategy`. | Use default for 99.9% of cases. Custom only for geo-aware routing, weighted selection, health checks. | Not trying all servers: fails with healthy servers available. Expensive ops inside: blocks pool acquisition on every connect. |
+
+---
+
+### Client information {#client-information}
+
+| Option | Type | Default | DSN param | Per-query | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-----------|-------------|---------------|-------------------|
+| `ClientInfo` | `ClientInfo` struct | Auto: `clickhouse-go` version + Go runtime | `client_info_product=myapp/1.0` | Yes (`WithClientInfo`, appends) | App identification sent to ClickHouse. Contains `Products` (`[]struct{Name,Version}`) and `Comment` (`[]string`). Visible in `system.query_log`. | Always set app name + version. Query attribution: `SELECT client_name FROM system.query_log WHERE client_name LIKE '%myapp%'` | Not setting: can't identify which service issued queries in multi-service environments. |
+
+```go
+ClientInfo: clickhouse.ClientInfo{
+    Products: []struct{ Name, Version string }{
+        {Name: "my-service", Version: "1.0.0"},
+    },
+}
+// Appears as: clickhouse-go/2.x my-service/1.0.0 (lv:go/1.23; os:linux)
+```
+
+---
+
+### ClickHouse server settings {#server-settings}
+
+| Option | Type | Default | DSN param | Per-query | Description | Best practice | When misconfigured |
+|--------|------|---------|-----------|-----------|-------------|---------------|-------------------|
+| `Settings` | `map[string]any` | `nil` | Any unrecognized param (e.g. `?max_execution_time=60`) | Yes (`WithSettings`, context wins on conflict) | ClickHouse server settings applied to every query. DSN conversion: `"true"`→`1`, `"false"`→`0`, numeric→`int`. | Set common limits at connection level, override per-query via context. | Typos: silently ignored or error by version. Wrong types: `"Cannot parse string 'abc' as Int64"`. `max_execution_time=0` + no deadline: queries run forever. |
+| `CustomSetting` | `CustomSetting{Value string}` | — | — | Yes (via `WithSettings`) | Marks a setting as "custom" (non-important) for Native protocol. Won't error if server doesn't recognize it. HTTP treats all settings as custom by default. | Use for experimental or version-specific settings. | Marking important settings as custom: silently ignored if unsupported. |
+
+**Common settings:**
+
+| Setting | Type | Description |
+|---------|------|-------------|
+| `max_execution_time` | int | Query timeout in seconds |
+| `max_memory_usage` | int | Memory limit per query (bytes) |
+| `max_block_size` | int | Block size for processing |
+| `readonly` | int | 1 = read-only, 2 = read-only + settings changes |
+
+```go
+Settings: clickhouse.Settings{
+    "max_execution_time":  60,                                        // important -- errors if unknown
+    "my_custom_setting":   clickhouse.CustomSetting{Value: "value"},  // custom -- ignored if unknown
+}
+```
+
+---
+
+## Context-level query options {#context-options}
+
+Set per-query using `clickhouse.Context()`:
+
+```go
+ctx := clickhouse.Context(context.Background(),
+    clickhouse.WithQueryID("my-query"),
+    clickhouse.WithSettings(clickhouse.Settings{"max_execution_time": 60}),
+)
+```
+
+<Info>
+**Context deadline behavior**
+
+If the context has a deadline > 1s, `max_execution_time` is automatically set to `seconds_remaining + 5`. This overrides any manually set value.
+</Info>
+
+| Option | Type | Default | Protocol | Description | Best practice | When misconfigured |
+|--------|------|---------|----------|-------------|---------------|-------------------|
+| `WithQueryID` | `string` | Auto-generated | Both | Custom query identifier. Visible in `system.query_log` and `system.processes`. | Use UUIDs. Useful for `KILL QUERY WHERE query_id='...'`. | Duplicate IDs: confusion in `system.query_log`. |
+| `WithQuotaKey` | `string` | `""` | Both | Quota key for multi-tenant resource limits. Requires server-side quota config. | Use for per-customer/per-user limits. | Quota not configured: silently ignored. |
+| `WithJWT` | `string` | `""` | HTTPS only | Per-query JWT override for ClickHouse Cloud. *(Since v2.35.0)* | Use for per-request auth in multi-tenant proxies. | Without TLS: ignored, falls back to connection auth. Expired: `"Token has expired"`. |
+| `WithSettings` | `Settings` | Inherits connection | Both | Per-query server settings. Merged with connection settings; context wins on conflict. | Override `max_execution_time` or `max_rows_to_read` per query type. | Same as connection-level `Settings`. |
+| `WithParameters` | `Parameters` (`map[string]string`) | `nil` | Both | Server-side parameterized query values. Query syntax: `{param_name:Type}`. | Use instead of string concatenation for SQL injection safety. | Missing param: `"Substitution {param_name:Type} isn't set"`. Wrong type: `"Cannot parse string 'abc' as UInt64"`. |
+| `WithAsync` | `bool` (wait) | Sync | Both | Async insert mode. Sets `async_insert=1`. `wait=true` adds `wait_for_async_insert=1`. Requires ClickHouse 21.11+. *(Since v2.41.0; supersedes the older `WithStdAsync`.)* | Use for high-throughput inserts. | `wait=false`: errors may be async -- check `system.asynchronous_insert_log`. With SELECT: ignored. Old server: `"Unknown setting async_insert"`. |
+| `WithLogs` | `func(*Log)` | `nil` | Native only | Server log entries callback during query execution. | Keep fast -- blocks execution. Use goroutines for heavy processing. | On HTTP: silently never called. |
+| `WithProgress` | `func(*Progress)` | `nil` | Native only | Query progress updates (rows/bytes processed). | Keep fast -- blocks execution. | On HTTP: silently never called. |
+| `WithProfileInfo` | `func(*ProfileInfo)` | `nil` | Native only | Query execution statistics callback. | Keep fast -- blocks execution. | On HTTP: silently never called. |
+| `WithProfileEvents` | `func([]ProfileEvent)` | `nil` | Native only | Performance counters callback. | Keep fast -- blocks execution. | On HTTP: silently never called. |
+| `WithoutProfileEvents` | — | Events sent | Native only | Suppress profile events. Performance optimization for servers ≥ 25.11. *(Since v2.44.0)* | Use when you don't need profile events. | On older servers: error for unknown setting. |
+| `WithExternalTable` | `...*ext.Table` | `nil` | Both | Attach temporary lookup tables to query. Data transferred per query. | Keep tables &#60; 10 MB. Native more efficient than HTTP (multipart). | Large tables: network overhead per query. |
+| `WithUserLocation` | `*time.Location` | Server timezone | Both | Override timezone for DateTime parsing. | Set explicitly when client/server timezones differ. | Wrong timezone: DateTime values silently off by hours, potential data corruption. |
+| `WithColumnNamesAndTypes` | `[]ColumnNameAndType` | `nil` (runs DESCRIBE) | HTTP only | Skip `DESCRIBE TABLE` round trip on HTTP inserts by providing column info upfront. *(Since v2.37.0)* | Use when schema is known and stable. | Wrong types: `"Cannot convert String to UInt64"`. Schema drift after migration: stale info. |
+| `WithBlockBufferSize` | `uint8` | Connection-level (2) | Both | Override connection-level `BlockBufferSize` for a single query. | Increase for large result sets on specific queries. | — |
+| `WithClientInfo` | `ClientInfo` | Connection-level | Both | Append additional client info for a single query. Does not replace, appends. *(Since v2.42.0)* | Add per-request context (e.g., endpoint name). | — |
+| `WithSpan` | `trace.SpanContext` | Empty | Native only | OpenTelemetry span context for distributed tracing. | See [OpenTelemetry](/integrations/language-clients/go/clickhouse-api#open-telemetry). | — |
+
+```go
+ctx := clickhouse.Context(ctx,
+    clickhouse.WithQueryID("query-123"),
+    clickhouse.WithParameters(clickhouse.Parameters{
+        "user_id": "12345",
+    }),
+    clickhouse.WithProgress(func(p *clickhouse.Progress) {
+        log.Printf("Progress: %d rows, %d bytes", p.Rows, p.Bytes)
+    }),
+)
+rows, err := conn.Query(ctx, "SELECT * FROM users WHERE id = {user_id:String}")
+```
+
+---
+
+## Batch options {#batch-options}
+
+Passed to `PrepareBatch()`. Import: `github.com/ClickHouse/clickhouse-go/v2/lib/driver`.
+
+| Option | Default | Description | Best practice | When misconfigured |
+|--------|---------|-------------|---------------|-------------------|
+| `WithReleaseConnection` | Connection held until `Send()` | Release connection to pool immediately after `PrepareBatch()`. Re-acquires on `Send()`/`Flush()`. | Use for long-lived batches (minutes/hours) to prevent pool exhaustion. | Not using for long batches: `"acquire conn timeout"` if many active. |
+| `WithCloseOnFlush` | Batch stays open | Auto-close batch when `Flush()` is called. | Use for one-shot batches. Saves explicit `Close()`. | Using with multiple `Flush()` calls: first flush closes batch, subsequent ops fail. |
+
+```go
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
+    driver.WithReleaseConnection(),
+    driver.WithCloseOnFlush(),
+)
+```
+
+---
+
+## Quick reference tables {#quick-reference-tables}
+
+### Connection pool sizing recommendations {#pool-sizing}
+
+| Application type | MaxIdleConns | MaxOpenConns | ConnMaxLifetime |
+|------------------|-------------|-------------|-----------------|
+| Low-traffic web app | 5 | 10 | 1h |
+| Medium-traffic API | 20 | 50 | 30m |
+| High-traffic service | 50 | 100 | 15m |
+| Background batch jobs | 10 | 20 | 2h |
+| Kubernetes deployment | 10 | 20 | 10m |
+| Serverless (Lambda) | 1 | 5 | 5m |
+
+### Timeout recommendations {#timeout-recommendations}
+
+| Environment | DialTimeout | ReadTimeout |
+|-------------|------------|-------------|
+| Local / LAN | 5s | 30s |
+| Cloud, same region | 10s | 2m |
+| Cloud, cross region | 30s | 5m |
+| OLAP workload | 10s | 30m |
+| Realtime / OLTP | 5s | 10s |
+
+### DSN parameter quick reference {#dsn-parameters}
+
+| DSN parameter | Options field | Example |
+|---------------|--------------|---------|
+| `username` | `Auth.Username` | `?username=admin` |
+| `password` | `Auth.Password` | `?password=secret` |
+| `database` | `Auth.Database` | `?database=mydb` or `/mydb` in path |
+| `dial_timeout` | `DialTimeout` | `?dial_timeout=10s` |
+| `read_timeout` | `ReadTimeout` | `?read_timeout=5m` |
+| `max_open_conns` | `MaxOpenConns` | `?max_open_conns=50` |
+| `max_idle_conns` | `MaxIdleConns` | `?max_idle_conns=20` |
+| `conn_max_lifetime` | `ConnMaxLifetime` | `?conn_max_lifetime=30m` |
+| `connection_open_strategy` | `ConnOpenStrategy` | `?connection_open_strategy=round_robin` |
+| `block_buffer_size` | `BlockBufferSize` | `?block_buffer_size=10` |
+| `compress` | `Compression.Method` | `?compress=lz4` |
+| `compress_level` | `Compression.Level` | `?compress_level=6` |
+| `max_compression_buffer` | `MaxCompressionBuffer` | `?max_compression_buffer=20971520` |
+| `secure` | `TLS` | `?secure=true` |
+| `skip_verify` | `TLS.InsecureSkipVerify` | `?skip_verify=true` |
+| `debug` | `Debug` | `?debug=true` |
+| `client_info_product` | `ClientInfo.Products` | `?client_info_product=myapp/1.0` |
+| `http_proxy` | `HTTPProxyURL` | `?http_proxy=http%3A%2F%2Fproxy%3A8080` |
+| `http_path` | `HttpUrlPath` | `?http_path=/clickhouse` |
+| *(any other)* | `Settings[key]` | `?max_execution_time=60` |
+
+---
+
+## Troubleshooting {#troubleshooting}
+
+### Connection pool exhausted: "acquire conn timeout" {#acquire-conn-timeout}
+
+**Cause:** Connection pool exhausted - all `MaxOpenConns` connections are in use and none became available within `DialTimeout`.
+
+**Fix**
+
+Try the following steps in order, and diagnose the root cause before tuning knobs:
+
+1. Check for long-running queries holding connections: `SELECT query_id, elapsed FROM system.processes ORDER BY elapsed DESC`. If found, address the slow queries first.
+2. If you run long-lived batches (minutes/hours between `PrepareBatch()` and `Send()`), use `WithReleaseConnection()` to return the connection to the pool while the batch is open.
+3. Increase `MaxOpenConns` to match observed concurrency.
+4. Increase `DialTimeout` only if bursts are expected and acquisition wait is the actual bottleneck.
+
+### Read timeout and connection reset errors {#io-timeout}
+
+**Cause:** `ReadTimeout` exceeded while waiting for a server response, or the connection was closed by the server/network.
+
+**Fix:**
+- Increase `ReadTimeout` for long-running queries
+- Use context deadlines for per-query timeout control
+- Check ClickHouse server-side `max_execution_time` limits
+
+### "Code: 516. Authentication failed" {#auth-failed}
+
+**Cause:** Wrong username, password, or the user doesn't exist.
+
+**Fix:**
+- Verify credentials against `system.users` table
+- Check for URL-encoding issues with special characters in DSN passwords
+- Confirm the user has access to the specified database
+
+### TLS certificate errors {#tls-errors}
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `x509: certificate has expired` | Server cert expired | Renew server certificate |
+| `x509: certificate is valid for X, not Y` | Hostname mismatch | Use correct hostname or add to SANs |
+| `x509: certificate signed by unknown authority` | Untrusted CA | Add CA to `tls.Config.RootCAs` |
+| `connection reset by peer` | TLS/port mismatch | Use port 9440 (Native) or 8443 (HTTP) for TLS |
+
+### Gradual memory growth {#memory-growth}
+
+**Cause:** Large idle connection buffers accumulating.
+
+**Fix:**
+- Set `FreeBufOnConnRelease: true` in memory-constrained environments
+- Reduce `MaxIdleConns` to limit idle connections
+- Reduce `MaxCompressionBuffer` if using compression
+- Lower `ConnMaxLifetime` to cycle connections more frequently

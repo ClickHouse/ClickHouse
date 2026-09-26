@@ -1,0 +1,39 @@
+# Source files for LLVMObject
+set(LLVMOBJECT_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/Object/Archive.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/ArchiveWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/Binary.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/BuildID.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/COFFImportFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/COFFModuleDefinition.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/COFFObjectFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/Decompressor.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/DXContainer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/ELF.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/ELFObjectFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/Error.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/FaultMapParser.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/GOFFObjectFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/IRObjectFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/IRSymtab.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/MachOObjectFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/MachOUniversal.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/MachOUniversalWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/Minidump.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/ModuleSymbolTable.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/Object.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/ObjectFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/OffloadBinary.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/OffloadBundle.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/RecordStreamer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/RelocationResolver.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/SFrameParser.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/SymbolicFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/SymbolSize.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/TapiFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/TapiUniversal.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/WasmObjectFile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/WindowsMachineFlag.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/WindowsResource.cpp
+    ${LLVM_SOURCE_DIR}/lib/Object/XCOFFObjectFile.cpp
+)

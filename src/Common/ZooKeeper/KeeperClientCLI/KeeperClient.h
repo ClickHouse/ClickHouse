@@ -4,6 +4,8 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/Names.h>
 #include <filesystem>
+#include <future>
+#include <unordered_map>
 
 
 namespace fs = std::filesystem;
@@ -44,7 +46,10 @@ public:
     std::function<void()> confirmation_callback;
     bool ask_confirmation = true;
 
-    inline static std::map<String, Command> commands;
+    /// Defined out of line: a definition in the header gives every shared object its own copy.
+    static std::map<String, Command> commands;
+
+    std::unordered_map<String, std::future<Coordination::WatchResponse>> watches;
 
     std::ostream & cout;
     std::ostream & cerr;

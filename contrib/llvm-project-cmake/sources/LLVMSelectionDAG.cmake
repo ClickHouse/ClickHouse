@@ -1,0 +1,29 @@
+# Source files for LLVMSelectionDAG
+set(LLVMSELECTIONDAG_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/DAGCombiner.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/FastISel.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/FunctionLoweringInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/InstrEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/LegalizeDAG.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/LegalizeFloatTypes.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/LegalizeIntegerTypes.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/LegalizeTypes.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/LegalizeTypesGeneric.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/LegalizeVectorOps.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/LegalizeVectorTypes.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/ResourcePriorityQueue.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/ScheduleDAGFast.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/ScheduleDAGRRList.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/ScheduleDAGSDNodes.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/ScheduleDAGVLIW.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/SDNodeInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/SelectionDAGAddressAnalysis.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/SelectionDAGBuilder.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/SelectionDAG.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/SelectionDAGDumper.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/SelectionDAGISel.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/SelectionDAGPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/SelectionDAGTargetInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/StatepointLowering.cpp
+    ${LLVM_SOURCE_DIR}/lib/CodeGen/SelectionDAG/TargetLowering.cpp
+)

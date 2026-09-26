@@ -20,7 +20,7 @@ namespace DB
     }
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ExecutableFunctionToModifiedJulianDay : public IExecutableFunction
+    class ExecutableFunctionToModifiedJulianDay final : public IExecutableFunction
     {
     public:
         String getName() const override
@@ -101,10 +101,18 @@ namespace DB
         {
             return true;
         }
+
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so the throwing variant must not be executed on the whole dictionary -
+        /// the empty string is not a date and it would fail on entirely valid data.
+        bool canBeExecutedOnDefaultArguments() const override
+        {
+            return nullOnErrors;
+        }
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class FunctionBaseToModifiedJulianDay : public IFunctionBase
+    class FunctionBaseToModifiedJulianDay final : public IFunctionBase
     {
     public:
         explicit FunctionBaseToModifiedJulianDay(DataTypes argument_types_, DataTypePtr return_type_)
@@ -135,7 +143,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
 
         bool hasInformationAboutMonotonicity() const override
@@ -145,6 +153,9 @@ namespace DB
 
         Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
         {
+            /// The OrNull variant maps multiple invalid inputs to NULL, breaking monotonicity.
+            if constexpr (nullOnErrors)
+                return {};
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
         }
 
@@ -154,7 +165,7 @@ namespace DB
     };
 
     template <typename Name, typename ToDataType, bool nullOnErrors>
-    class ToModifiedJulianDayOverloadResolver : public IFunctionOverloadResolver
+    class ToModifiedJulianDayOverloadResolver final : public IFunctionOverloadResolver
     {
     public:
         static constexpr auto name = Name::name;
@@ -202,7 +213,7 @@ namespace DB
 
         bool isInjective(const ColumnsWithTypeAndName &) const override
         {
-            return true;
+            return !nullOnErrors;
         }
     };
 
@@ -264,12 +275,12 @@ SELECT toModifiedJulianDayOrNull('2020-01-01');
 SELECT toModifiedJulianDayOrNull('0000-00-00'); -- invalid date, returns NULL
         )",
             R"(
-┌─toModifiedJu⋯020-01-01')─┐
-│                    58849 │
-└──────────────────────────┘
-┌─toModifiedJu⋯000-00-00')─┐
-│                     ᴺᵁᴸᴸ │
-└──────────────────────────┘
+┌─toModifiedJulianDayOrNull('2020-01-01')─┐
+│                                   58849 │
+└─────────────────────────────────────────┘
+┌─toModifiedJulianDayOrNull('0000-00-00')─┐
+│                                    ᴺᵁᴸᴸ │
+└─────────────────────────────────────────┘
         )"}
         };
         FunctionDocumentation::IntroducedIn introduced_in_toModifiedJulianDayOrNull = {21, 1};

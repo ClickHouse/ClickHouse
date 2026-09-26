@@ -1,0 +1,117 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>cardinality</name>
+            <values>
+                <value>1000</value>
+                <value>100000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE test_limit_by_{cardinality}
+        (a UInt32, b UInt32, v UInt64)
+        ENGINE = MergeTree
+        ORDER BY (a, b)
+    </create_query>
+
+    <fill_query>
+        INSERT INTO test_limit_by_{cardinality}
+        SELECT number % {cardinality}, number % 97, number
+        FROM numbers(5000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO test_limit_by_{cardinality}
+        SELECT number % {cardinality}, number % 97, number
+        FROM numbers(5000000)
+    </fill_query>
+
+    <!-- Full sort, unordered BY (BY column is not a sort prefix) -->
+    <query>
+        SELECT number % {cardinality} AS k, number AS v
+        FROM numbers_mt(10000000)
+        ORDER BY v LIMIT 10 BY k
+        FORMAT NULL
+    </query>
+
+    <!-- Full sort (BY column is the sort prefix) -->
+    <query>
+        SELECT number % {cardinality} AS k, number AS v
+        FROM numbers_mt(10000000)
+        ORDER BY k, v LIMIT 10 BY k
+        FORMAT NULL
+    </query>
+
+    <!-- Full sort with a derived BY expression -->
+    <query>
+        SELECT number % {cardinality} AS grp, number AS v
+        FROM numbers_mt(10000000)
+        ORDER BY v LIMIT 10 BY grp % 64
+        FORMAT NULL
+    </query>
+
+    <!-- Full sort with an expensive BY expression -->
+    <query>
+        SELECT number, concat(toString(number), '-', lowerUTF8(toString(number * 31)), '-', toString(number % 97)) AS bucket
+        FROM numbers_mt(10000000)
+        ORDER BY number LIMIT 10 BY bucket
+        FORMAT NULL
+    </query>
+
+    <!-- Read-in-order from MergeTree -->
+    <query>
+        SELECT a, b, v FROM test_limit_by_{cardinality}
+        ORDER BY a, b LIMIT 10 BY a
+        FORMAT NULL
+    </query>
+
+    <!-- Read-in-order from MergeTree, unordered BY -->
+    <query>
+        SELECT a, b, v FROM test_limit_by_{cardinality}
+        ORDER BY a, b LIMIT 10 BY b
+        FORMAT NULL
+    </query>
+
+    <!-- Read-in-order with a trailing non-PK sort column (prefix-sorted input) -->
+    <query>
+        SELECT a, b, v FROM test_limit_by_{cardinality}
+        ORDER BY a, b, v + 1 LIMIT 10 BY a
+        FORMAT NULL
+    </query>
+
+    <!-- Skewed key distribution: ~90% of rows fall into a single hot key, interleaved with cold keys -->
+    <query>
+        SELECT if(number % 10 = 0, number % {cardinality}, 0) AS k, number AS v
+        FROM numbers_mt(10000000)
+        ORDER BY k, v LIMIT 10 BY k
+        FORMAT NULL
+    </query>
+
+    <!-- UInt8 BY key: narrow integer type -->
+    <query>
+        SELECT toUInt8(number % {cardinality}) AS k, number AS v
+        FROM numbers_mt(10000000)
+        ORDER BY k, v LIMIT 10 BY k
+        FORMAT NULL
+    </query>
+
+    <!-- LowCardinality(String) BY key -->
+    <query>
+        SELECT toLowCardinality(toString(number % {cardinality})) AS k, number AS v
+        FROM numbers_mt(10000000)
+        ORDER BY k, v LIMIT 10 BY k
+        FORMAT NULL
+    </query>
+
+    <!-- Two String BY columns -->
+    <query>
+        SELECT toString(number % {cardinality}) AS k1, toString(number % 97) AS k2, number AS v
+        FROM numbers_mt(10000000)
+        ORDER BY k1, k2, v LIMIT 10 BY k1, k2
+        FORMAT NULL
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS test_limit_by_{cardinality}</drop_query>
+</test>

@@ -21,6 +21,7 @@ BlockIO InterpreterShowPrivilegesQuery::execute()
     return executeQuery("SELECT * FROM system.privileges", query_context, QueryFlags{ .internal = true }).second;
 }
 
+void registerInterpreterShowPrivilegesQuery(InterpreterFactory & factory);
 void registerInterpreterShowPrivilegesQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

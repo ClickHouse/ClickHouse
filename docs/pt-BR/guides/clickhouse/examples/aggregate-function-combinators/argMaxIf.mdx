@@ -1,0 +1,67 @@
+---
+slug: '/examples/aggregate-function-combinators/argMaxIf'
+title: 'argMaxIf'
+description: 'Exemplo de uso do combinador argMaxIf'
+keywords: ['argMax', 'if', 'combinador', 'exemplos', 'argMaxIf']
+sidebarTitle: 'argMaxIf'
+doc_type: 'referência'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+O combinador [`If`](/pt-BR/reference/functions/aggregate-functions/combinators#-if) pode ser aplicado à função [`argMax`](/pt-BR/reference/functions/aggregate-functions/argMax)
+para encontrar o valor de `arg` que corresponde ao valor máximo de `val` nas linhas em que a condição é verdadeira,
+usando a função de combinador de agregação `argMaxIf`.
+
+A função `argMaxIf` é útil quando você precisa encontrar o valor associado
+ao valor máximo em um conjunto de dados, mas apenas nas linhas que atendem a uma condição
+específica.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Neste exemplo, usaremos um conjunto de dados de vendas de produtos para demonstrar como
+`argMaxIf` funciona. Vamos encontrar o nome do produto com o maior preço, mas
+apenas entre os produtos que foram vendidos pelo menos 10 vezes.
+
+```sql title="Query"
+CREATE TABLE product_sales
+(
+    product_name String,
+    price Decimal32(2),
+    sales_count UInt32
+) ENGINE = Memory;
+
+INSERT INTO product_sales VALUES
+    ('Laptop', 999.99, 10),
+    ('Phone', 499.99, 15),
+    ('Tablet', 299.99, 0),
+    ('Watch', 1199.99, 5),
+    ('Headphones', 79.99, 20);
+
+SELECT argMaxIf(product_name, price, sales_count >= 10) AS most_expensive_popular_product
+FROM product_sales;
+```
+
+A função `argMaxIf` retornará o nome do produto com o maior preço
+entre todos os produtos vendidos pelo menos 10 vezes (sales&#95;count &gt;= 10).
+Neste caso, ela retornará &#39;Laptop&#39;, pois é o produto com o maior preço (999.99)
+entre os produtos populares.
+
+```response title="Response"
+   ┌─most_expensi⋯lar_product─┐
+1. │ Laptop                   │
+   └──────────────────────────┘
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`argMax`](/pt-BR/reference/functions/aggregate-functions/argMax)
+* [`argMin`](/pt-BR/reference/functions/aggregate-functions/argMin)
+* [`argMinIf`](/pt-BR/guides/clickhouse/examples/aggregate-function-combinators/argMinIf)
+* [`combinador If`](/pt-BR/reference/functions/aggregate-functions/combinators#-if)

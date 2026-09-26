@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <Common/SharedLockGuard.h>
 #include <IO/WriteBufferFromString.h>
 #include <Storages/RocksDB/EmbeddedRocksDBBulkSink.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
@@ -43,6 +44,7 @@ namespace ErrorCodes
 {
 extern const int ROCKSDB_ERROR;
 extern const int LOGICAL_ERROR;
+extern const int TABLE_IS_DROPPED;
 }
 
 static const IColumn::Permutation & getAscendingPermutation(const IColumn & column, IColumn::Permutation & perm)
@@ -181,7 +183,11 @@ std::pair<ColumnString::Ptr, ColumnString::Ptr> EmbeddedRocksDBBulkSink::seriali
         [[maybe_unused]] auto get_rocksdb_ts = [this](String & ts_string)
         {
             Int64 curtime = -1;
-            auto * system_clock = storage.rocksdb_ptr->GetEnv()->GetSystemClock().get();
+            SharedLockGuard lock(storage.rocksdb_ptr_mx);
+            if (!storage.rocksdb_ptr)
+                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+            auto system_clock = storage.rocksdb_ptr->GetEnv()->GetSystemClock();
+            lock.unlock();
             rocksdb::Status st = system_clock->GetCurrentTime(&curtime);
             if (!st.ok())
                 throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB error: {}", st.ToString());
@@ -248,8 +254,13 @@ void EmbeddedRocksDBBulkSink::consume(Chunk & chunk_)
     /// Ingest the SST file
     rocksdb::IngestExternalFileOptions ingest_options;
     ingest_options.move_files = true; /// The temporary file is on the same disk, so move (or hardlink) file will be faster than copy
-    if (auto status = storage.rocksdb_ptr->IngestExternalFile({sst_file_path}, ingest_options); !status.ok())
-        throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+    {
+        SharedLockGuard lock(storage.rocksdb_ptr_mx);
+        if (!storage.rocksdb_ptr)
+            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
+        if (auto status = storage.rocksdb_ptr->IngestExternalFile({sst_file_path}, ingest_options); !status.ok())
+            throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
+    }
 
     LOG_DEBUG(getLogger("EmbeddedRocksDBBulkSink"), "SST file {} has been ingested", sst_file_path);
     if (fs::exists(sst_file_path))

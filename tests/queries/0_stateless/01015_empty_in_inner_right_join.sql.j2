@@ -1,6 +1,7 @@
 SET joined_subquery_requires_alias = 0;
 
 SET query_plan_join_swap_table = 'auto';
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test joins unbounded system.numbers and relies on the planner not materializing it
 
 {% for join_algorithm in ['partial_merge', 'hash'] -%}
 
