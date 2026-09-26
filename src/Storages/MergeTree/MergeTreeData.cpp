@@ -13947,7 +13947,8 @@ ReservationPtr MergeTreeData::balancedReservation(
     MergeTreeData::DataPartsVector covered_parts,
     std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
     const IMergeTreeDataPart::TTLInfos * ttl_infos,
-    bool is_insert)
+    bool is_insert,
+    time_t time_of_move)
 {
     ReservationPtr reserved_space;
     auto min_bytes_to_rebalance_partition_over_jbod = (*getSettings())[MergeTreeSetting::min_bytes_to_rebalance_partition_over_jbod];
@@ -14070,7 +14071,7 @@ ReservationPtr MergeTreeData::balancedReservation(
                         metadata_snapshot,
                         part_size,
                         *ttl_infos,
-                        time(nullptr),
+                        time_of_move ? time_of_move : time(nullptr),
                         max_volume_index,
                         is_insert,
                         getStoragePolicy()->getDiskByName(selected_disk_name));
