@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Tags: long
 # ^ long: waits for the background merge pool to make progress within a bounded time window.
+# The waits are bounded by wall clock, not by a poll count: on slow builds (sanitizers, coverage) each
+# poll spawns a client whose startup alone can take seconds, and an iteration-counted loop would
+# multiply that overhead past the per-test timeout instead of giving up after the intended window.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -56,7 +59,8 @@ SYSTEM START MERGES t_writable;
 # Wait until the writable table gets its parts merged in the background.
 # This proves the background merge pool is actively making progress right now.
 merged=0
-for _ in $(seq 1 120); do
+deadline=$((SECONDS + 120))
+while [[ $SECONDS -lt $deadline ]]; do
     count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 't_writable' AND active")
     if [[ "$count" -lt 10 ]]; then
         merged=1
@@ -119,7 +123,8 @@ SYSTEM START MERGES t_writable_ttl;
 # Wait until the writable control table drops its expired part via a background TTL merge.
 # This proves the background TTL merge path is actively making progress right now.
 dropped=0
-for _ in $(seq 1 120); do
+deadline=$((SECONDS + 120))
+while [[ $SECONDS -lt $deadline ]]; do
     count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t_writable_ttl")
     if [[ "$count" -eq 1 ]]; then
         dropped=1

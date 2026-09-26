@@ -16,7 +16,7 @@ rm -rf "$TABLE_PATH_UNPART" "$TABLE_PATH_PART" "$TABLE_PATH_NOKERNEL" "$TABLE_PA
 
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 
 DROP TABLE IF EXISTS t_dl_unpart;
@@ -40,7 +40,7 @@ DROP TABLE t_dl_unpart;
 # Use `grep -q` (existence, not line count): the error is echoed on more than one line.
 if $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 SET allow_delta_lake_create_table = 1;
 CREATE TABLE t_dl_part (id Int32, name String, country String)
     ENGINE = DeltaLakeLocal('${TABLE_PATH_PART}', Parquet)
