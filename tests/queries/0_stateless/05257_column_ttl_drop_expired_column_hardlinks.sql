@@ -121,6 +121,7 @@ FROM system.part_log WHERE database = currentDatabase() AND table = 't_ttl_repla
 DROP TABLE t_ttl_replacing;
 
 -- A `RECOMPRESS` TTL that is due must still recompress the part, so the files cannot be hardlinked.
+-- The default codec is pinned, because the one randomized in CI may already be the codec of the TTL.
 DROP TABLE IF EXISTS t_ttl_recompress;
 
 CREATE TABLE t_ttl_recompress
@@ -131,7 +132,7 @@ CREATE TABLE t_ttl_recompress
 )
 ENGINE = MergeTree ORDER BY key
 TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(ZSTD(1))
-SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 0;
+SETTINGS default_compression_codec = 'LZ4', min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, ttl_only_drop_parts = 1, max_number_of_merges_with_ttl_in_pool = 0;
 
 INSERT INTO t_ttl_recompress VALUES ('2020-01-01', 1, '{"a" : 1}');
 
