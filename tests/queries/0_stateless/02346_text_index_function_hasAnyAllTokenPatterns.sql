@@ -7,6 +7,7 @@ SET use_skip_indexes_on_data_read = 1;
 SET query_plan_direct_read_from_text_index = 1;
 SET use_text_index_like_evaluation_by_dictionary_scan = 1;
 SET use_query_condition_cache = 0;
+SET query_plan_text_index_add_hint = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -60,11 +61,11 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE
 
 SELECT '-- direct read replaces the function';
 SELECT 'hasAnyTokenPrefix', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenPrefix(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg'));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg'));
 SELECT 'hasAnyTokenLike', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenLike(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%harg%'));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%harg%'));
 SELECT 'hasAnyTokenRegexp', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenRegexp(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^[0-9]{5}$'));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^[0-9]{5}$'));
 
 SELECT '-- arrays of patterns';
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokenPrefix(msg, ['charg', '1234']);
@@ -75,7 +76,7 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokenRegexp(msg, ['^[0-9]{
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokenRegexp(msg, ['^[0-9]{5}$', '^Ch']) SETTINGS use_skip_indexes = 0;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, ['charg', '1234'])) WHERE explain LIKE '%Granules:%';
 SELECT 'hasAnyTokenPrefix', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenPrefix(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, ['charg', '1234']));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, ['charg', '1234']));
 
 SELECT '-- hasAllTokenLike: one pattern is exact, several patterns are a hint';
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokenLike(msg, ['charg%']);
@@ -86,11 +87,11 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasAllTokenLike(msg, ['%harg%', 
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%', 'twice'])) WHERE explain LIKE '%Granules:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%', 'twice']) SETTINGS query_plan_text_index_add_hint = 0) WHERE explain LIKE '%Granules:%';
 SELECT 'one pattern', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAllTokenLike(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%']));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%']));
 SELECT 'two patterns', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAllTokenLike(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%', 'twice']));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%', 'twice']));
 SELECT 'two patterns, no hint', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAllTokenLike(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%', 'twice']) SETTINGS query_plan_text_index_add_hint = 0);
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%', 'twice']) SETTINGS query_plan_text_index_add_hint = 0);
 
 SELECT '-- an empty array or an empty pattern does not use the index';
 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, []);
@@ -112,13 +113,13 @@ SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '('); -- { serverError CANN
 SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, ['^charg', '(']); -- { serverError CANNOT_COMPILE_REGEXP }
 
 SELECT '-- too many matching posting lists: the functions are evaluated on the column';
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'u') SETTINGS text_index_like_max_postings_to_read = 0, log_comment = 'has_token_pattern_fallback';
+SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'u') SETTINGS text_index_like_max_postings_to_read = 0, log_comment = 'has_any_all_token_patterns_fallback';
 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'u') SETTINGS use_skip_indexes = 0;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['TextIndexDiscardPatternScan'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment = 'has_token_pattern_fallback';
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment = 'has_any_all_token_patterns_fallback';
 
 DROP TABLE tab;
 
@@ -296,17 +297,17 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 -- Every row has its own token, so all postings are small and embedded.
 INSERT INTO tab SELECT number, concat('req id', toString(number), ' ok') FROM numbers(2000);
 
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_prefix';
-SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'id1%') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_token_like';
-SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^id[0-9]*5$') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_match';
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 0, log_comment = 'has_token_pattern_matched_tokens_unlimited';
+SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_matched_tokens_prefix';
+SELECT count() FROM tab WHERE hasAnyTokenLike(msg, 'id1%') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_matched_tokens_token_like';
+SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^id[0-9]*5$') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_matched_tokens_match';
+SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 0, log_comment = 'has_any_all_token_patterns_matched_tokens_unlimited';
 -- LIKE, ILIKE, startsWith and endsWith are not capped.
 -- The endsWith needle is one character, so it matches 200 tokens.
-SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_like';
-SELECT count() FROM tab WHERE msg ILIKE '%ID12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_ilike';
-SELECT count() FROM tab WHERE startsWith(msg, 'id12') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_starts_with';
-SELECT count() FROM tab WHERE endsWith(msg, '5') SETTINGS text_index_like_min_pattern_length = 1, text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_ends_with';
-SELECT count() FROM tab WHERE msg LIKE '%id12%' OR hasAnyTokenPrefix(msg, 'id199') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_like_or_prefix';
+SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_matched_tokens_like';
+SELECT count() FROM tab WHERE msg ILIKE '%ID12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_matched_tokens_ilike';
+SELECT count() FROM tab WHERE startsWith(msg, 'id12') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_matched_tokens_starts_with';
+SELECT count() FROM tab WHERE endsWith(msg, '5') SETTINGS text_index_like_min_pattern_length = 1, text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_matched_tokens_ends_with';
+SELECT count() FROM tab WHERE msg LIKE '%id12%' OR hasAnyTokenPrefix(msg, 'id199') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_any_all_token_patterns_matched_tokens_like_or_prefix';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100) WHERE explain LIKE '%Granules:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE endsWith(msg, '5') SETTINGS text_index_like_min_pattern_length = 1, text_index_like_max_matched_tokens = 100) WHERE explain LIKE '%Granules:%';
 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'id1') SETTINGS use_skip_indexes = 0;
@@ -314,15 +315,15 @@ SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^id[0-9]*5$') SETTINGS use
 SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE msg LIKE '%id12%' OR hasAnyTokenPrefix(msg, 'id199') SETTINGS use_skip_indexes = 0;
 -- The cap counts distinct tokens of all patterns: 111 tokens start with 'id19', and 111 with 'id18'.
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'id19') SETTINGS text_index_like_max_matched_tokens = 150, log_comment = 'has_token_pattern_matched_tokens_distinct_one';
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, ['id19', 'id18']) SETTINGS text_index_like_max_matched_tokens = 150, log_comment = 'has_token_pattern_matched_tokens_distinct_two';
-SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, ['id19', 'id19']) SETTINGS text_index_like_max_matched_tokens = 150, log_comment = 'has_token_pattern_matched_tokens_distinct_same';
+SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'id19') SETTINGS text_index_like_max_matched_tokens = 150, log_comment = 'has_any_all_token_patterns_matched_tokens_distinct_one';
+SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, ['id19', 'id18']) SETTINGS text_index_like_max_matched_tokens = 150, log_comment = 'has_any_all_token_patterns_matched_tokens_distinct_two';
+SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, ['id19', 'id19']) SETTINGS text_index_like_max_matched_tokens = 150, log_comment = 'has_any_all_token_patterns_matched_tokens_distinct_same';
 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, ['id19', 'id18']) SETTINGS use_skip_indexes = 0;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['TextIndexDiscardPatternScan'] > 0
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment LIKE 'has_token_pattern_matched_tokens_%'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment LIKE 'has_any_all_token_patterns_matched_tokens_%'
 ORDER BY log_comment;
 
 DROP TABLE tab;
@@ -630,7 +631,7 @@ SELECT 'hasAnyTokenPrefix', count() FROM tab_preprocessors_swapped WHERE hasAnyT
 SELECT 'hasAnyTokenPrefix', count() FROM tab_preprocessors_swapped WHERE hasAnyTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg') SETTINGS use_skip_indexes = 0;
 SELECT 'hasAnyTokenPrefix', countIf(hasAnyTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg')) FROM tab_preprocessors_swapped;
 SELECT 'hasAnyTokenPrefix', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenPrefix(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab_preprocessors_swapped WHERE hasAnyTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg'));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab_preprocessors_swapped WHERE hasAnyTokenPrefix(if(notEmpty(msg), msg, 'none'), 'Charg'));
 
 SELECT 'hasAnyTokenLike', count() FROM tab_preprocessors WHERE hasAnyTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%');
 SELECT 'hasAnyTokenLike', count() FROM tab_preprocessors WHERE hasAnyTokenLike(if(notEmpty(msg), msg, 'none'), 'Charg%') SETTINGS use_skip_indexes = 0;
@@ -686,9 +687,9 @@ SELECT 'env:prod array', count() FROM tab_agree WHERE hasAnyTokenPrefix(if(notEm
 SELECT 'env:prod array', count() FROM tab_agree WHERE hasAnyTokenPrefix(if(notEmpty(tag), tag, 'none'), ['env:prod', 'zzz']) SETTINGS use_skip_indexes = 0;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_agree WHERE hasAnyTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod')) WHERE explain LIKE '%Granules:%';
 SELECT 'direct read by idx_a', countIf(explain LIKE '%\_\_text\_index\_idx\_a\_hasAnyTokenPrefix%') > 0, countIf(explain LIKE '%\_\_text\_index\_idx\_b\_%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab_agree WHERE hasAnyTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod'));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab_agree WHERE hasAnyTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod'));
 SELECT 'direct read by idx_a', countIf(explain LIKE '%\_\_text\_index\_idx\_a\_hasAnyTokenPrefix%') > 0, countIf(explain LIKE '%\_\_text\_index\_idx\_b\_%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab_agree_swapped WHERE hasAnyTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod'));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab_agree_swapped WHERE hasAnyTokenPrefix(if(notEmpty(tag), tag, 'none'), 'env:prod'));
 
 DROP TABLE tab_agree;
 DROP TABLE tab_agree_swapped;

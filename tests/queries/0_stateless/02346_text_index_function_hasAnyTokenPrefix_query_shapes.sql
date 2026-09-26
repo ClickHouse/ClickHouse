@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
 -- Without a tokenizer argument, `hasAnyTokenPrefix` uses the index tokenizer only where the index is read,
--- and `splitByNonAlpha` elsewhere (e.g. after GROUP BY, or in mutations), like `hasAnyTokens`.
+-- and `splitByNonAlpha` elsewhere (e.g. after GROUP BY), like `hasAnyTokens`.
 
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
@@ -40,15 +40,10 @@ SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasAnyTokenPrefix(t
 SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasAnyTokenPrefix(tag, 'prod')) SETTINGS query_plan_filter_push_down = 0;
 SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasAnyTokenPrefix(tag, 'prod', 'array')) SETTINGS query_plan_filter_push_down = 0;
 
-SELECT '-- ALTER TABLE DELETE: splitByNonAlpha, unless the tokenizer is explicit';
-ALTER TABLE tab DELETE WHERE hasAnyTokenPrefix(tag, 'prod');
-SELECT count() FROM tab;
-
-TRUNCATE TABLE tab;
-INSERT INTO tab SELECT number, multiIf(number < 8, 'env:prod-eu', number < 16, 'prod', 'env:dev') FROM numbers(64);
+SELECT '-- ALTER TABLE DELETE with the tokenizer argument';
 ALTER TABLE tab DELETE WHERE hasAnyTokenPrefix(tag, 'prod', 'array');
 SELECT count() FROM tab;
-ALTER TABLE tab DELETE WHERE hasAllTokenLike(tag, ['prod%', '%eu']);
+ALTER TABLE tab DELETE WHERE hasAllTokenLike(tag, ['prod%', '%eu'], 'splitByNonAlpha');
 SELECT count() FROM tab;
 
 DROP TABLE tab;

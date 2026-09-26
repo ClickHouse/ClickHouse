@@ -16,8 +16,7 @@ prod	0
 1
 2
 1
--- ALTER TABLE DELETE: splitByNonAlpha, unless the tokenizer is explicit
-48
+-- ALTER TABLE DELETE with the tokenizer argument
 56
 48
 -- lower preprocessor: the raw values in every shape

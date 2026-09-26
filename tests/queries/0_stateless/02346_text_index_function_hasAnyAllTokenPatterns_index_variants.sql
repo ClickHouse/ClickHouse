@@ -144,11 +144,11 @@ SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%', 'twice']);
 SELECT count() FROM tab WHERE hasAllTokenLike(msg, ['charg%', 'twice']) SETTINGS use_skip_indexes = 0;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg')) WHERE explain LIKE '%Granules:%';
 SELECT 'hasAnyTokenPrefix', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenPrefix(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg'));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenPrefix(msg, 'charg'));
 SELECT 'hasAnyTokenLike', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenLike(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%harg%'));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenLike(msg, '%harg%'));
 SELECT 'hasAnyTokenRegexp', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION hasAnyTokenRegexp(%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^[0-9]{5}$'));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenRegexp(msg, '^[0-9]{5}$'));
 
 DROP TABLE tab;
 
@@ -250,7 +250,7 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE
 
 SELECT 'direct read', countIf(explain LIKE '%\_\_text\_index\_idx\_ngrams\_%') > 0, countIf(explain LIKE '%\_\_text\_index\_idx\_sparse\_%') > 0,
     countIf(explain LIKE '%\_\_text\_index\_idx\_split\_%') > 0, countIf(explain LIKE '%\_\_text\_index\_idx\_cjk\_%') > 0
-FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasAnyTokenPrefix(s_ngrams, 'har') AND hasAnyTokenLike(s_sparse, '%harg%') AND hasAnyTokenRegexp(s_split, '^[a-z]+;$') AND hasAnyTokenPrefix(s_cjk, 'x:'));
+FROM (EXPLAIN actions = 1, compact = 0 SELECT count() FROM tab WHERE hasAnyTokenPrefix(s_ngrams, 'har') AND hasAnyTokenLike(s_sparse, '%harg%') AND hasAnyTokenRegexp(s_split, '^[a-z]+;$') AND hasAnyTokenPrefix(s_cjk, 'x:'));
 
 DROP TABLE tab;
 
