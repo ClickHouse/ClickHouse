@@ -1,0 +1,20 @@
+inserted	5000
+both rows	0
+both detached parts	1	broken-on-start
+both broken projections	0
+inserted	5000
+projection only rows	5000
+projection only detached parts	0	\N
+projection only broken projections	1
+inserted	5000
+both, no checksums rows	0
+both, no checksums detached parts	1	broken-on-start
+both, no checksums broken projections	0
+inserted	5000
+projection only, no checksums rows	5000
+projection only, no checksums detached parts	0	\N
+projection only, no checksums broken projections	1
+inserted	5000
+wide, no checksums rows	5000
+wide, no checksums detached parts	0	\N
+wide, no checksums broken projections	0
